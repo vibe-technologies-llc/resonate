@@ -56,7 +56,7 @@ pub(crate) fn no_playlist() -> OwnedObjectPath {
     ObjectPath::from_static_str_unchecked(NO_PLAYLIST).into()
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PlaybackStatus {
     Playing,
     Paused,
@@ -120,7 +120,7 @@ pub(crate) fn repeat_mode(status: &str) -> Option<RepeatMode> {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum SleepMode {
     Off,
     After,
@@ -249,6 +249,7 @@ pub(crate) fn metadata(
     let Some(digest) = playing_digest(state, digest) else {
         return fields;
     };
+
     insert(
         &mut fields,
         "xesam:url",
@@ -281,6 +282,7 @@ pub(crate) fn queued_metadata(
     }
 
     let mut fields = HashMap::new();
+
     insert(
         &mut fields,
         "mpris:trackid",
@@ -300,6 +302,7 @@ pub(crate) fn queued_metadata(
     let Some(media) = media else {
         return fields;
     };
+
     if let Some(duration) = media.duration {
         insert(
             &mut fields,
@@ -313,6 +316,7 @@ pub(crate) fn queued_metadata(
 
 pub(crate) fn unlisted_metadata(asked: &OwnedObjectPath) -> HashMap<String, OwnedVariant> {
     let mut fields = HashMap::new();
+
     insert(&mut fields, "mpris:trackid", asked.clone().into_inner());
     fields
 }
@@ -321,6 +325,7 @@ fn absorb_plays(fields: &mut HashMap<String, OwnedVariant>, heard: Option<Heard>
     let Some(heard) = heard else {
         return;
     };
+
     insert(
         fields,
         "xesam:useCount",
@@ -378,6 +383,7 @@ pub(crate) fn iso_8601(date: &str) -> Option<String> {
     let rest = date.get(4..).unwrap_or_default();
     let parted = rest.starts_with(['-', '.', '/']);
     let at = |field: usize| if parted { 5 + 3 * field } else { 4 + 2 * field };
+
     let month = digits(at(0), at(0) + 2).filter(|month| (LEAST_MONTH..=MOST_MONTH).contains(month));
     let day = month
         .and_then(|month| Some((month, digits(at(1), at(1) + 2)?)))
@@ -551,8 +557,10 @@ mod tests {
     fn a_position_converts_to_microseconds_and_back_without_drifting() {
         for (frames, rate) in [(44_100_u64, 44_100), (0, 48_000), (96_000, 96_000)] {
             let micros = micros(Frames(frames), rate);
+
             assert_eq!(super::frames(micros.unsigned_abs(), rate), Frames(frames));
         }
+
         assert_eq!(micros(Frames(44_100), 44_100), 1_000_000);
     }
 
@@ -561,6 +569,7 @@ mod tests {
         for repeat in [RepeatMode::Off, RepeatMode::Track, RepeatMode::Queue] {
             assert_eq!(repeat_mode(loop_status(repeat)), Some(repeat));
         }
+
         assert_eq!(repeat_mode("Sideways"), None);
     }
 
@@ -631,6 +640,7 @@ mod tests {
         ] {
             assert_eq!(PlaybackStatus::read(status.as_str()), Some(status));
         }
+
         assert_eq!(PlaybackStatus::read("Sideways"), None);
     }
 
@@ -653,6 +663,7 @@ mod tests {
     #[test]
     fn a_track_path_read_back_names_the_track_it_was_built_from() {
         let track = TrackId::new(7).expect("7 is non-zero");
+
         assert_eq!(track_of(track_path(track).as_str()), Some(track));
         assert_eq!(track_of(no_track().as_str()), None);
         assert_eq!(track_of("/org/resonate/track/0"), None);
@@ -662,6 +673,7 @@ mod tests {
     #[test]
     fn a_playlist_path_read_back_names_the_playlist_it_was_built_from() {
         let playlist = PlaylistId::new(4).expect("4 is non-zero");
+
         assert_eq!(
             playlist_of(playlist_path(playlist).as_str()),
             Some(playlist)
@@ -710,6 +722,7 @@ mod tests {
         let state = PlayerState::default();
 
         let unheard_of = queued_metadata(&item, &state, None, None, None, None);
+
         assert_eq!(count(&unheard_of, "xesam:useCount"), None);
         assert_eq!(reads(&unheard_of, "xesam:lastUsed"), None);
 
@@ -725,6 +738,7 @@ mod tests {
                 favourite: false,
             }),
         );
+
         assert_eq!(count(&never_played, "xesam:useCount"), Some(0));
         assert_eq!(reads(&never_played, "xesam:lastUsed"), None);
 
@@ -740,6 +754,7 @@ mod tests {
                 favourite: false,
             }),
         );
+
         assert_eq!(count(&played, "xesam:useCount"), Some(7));
         assert_eq!(
             reads(&played, "xesam:lastUsed").as_deref(),
@@ -822,17 +837,21 @@ mod tests {
 
         for day in 0..366 {
             let stamp = utc_stamp(at(start_of_2024 + day * SECONDS_PER_DAY));
+
             assert_eq!(
                 stamp,
                 format!("2024-{:02}-{:02}T00:00:00Z", expected.0, expected.1)
             );
+
             let length = lengths[expected.0 as usize - 1];
+
             expected = if expected.1 == length {
                 (expected.0 + 1, 1)
             } else {
                 (expected.0, expected.1 + 1)
             };
         }
+
         assert_eq!(expected, (13, 1));
     }
 }

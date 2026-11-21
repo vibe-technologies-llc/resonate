@@ -8,7 +8,7 @@ pub const LINKS_SHARED_AT_MOST: usize = 32;
 pub const CODES_SHARED_AT_MOST: usize = 8;
 const WEIGHT_OF_AN_ITEM: usize = 16;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Figure(u32);
 
 impl Figure {
@@ -77,7 +77,7 @@ impl SharedPrint {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct WholeFile {
     pub packets: u64,
     pub frames: u64,

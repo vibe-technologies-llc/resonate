@@ -27,6 +27,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let keystroke = &event.keystroke;
+
         if keystroke.modifiers.control || keystroke.modifiers.platform || keystroke.modifiers.alt {
             return;
         }
@@ -55,6 +56,7 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.type_where_typing_goes(typed, window, cx);
             }
         }
@@ -63,10 +65,12 @@ impl RootView {
 
     pub(super) fn jumping(&mut self, cx: &mut Context<Self>) -> Option<(Shift, usize)> {
         let (shift, held) = self.reachable(cx)?;
+
         match shift {
             Shift::Queue => {}
             Shift::Playlist(_) | Shift::Listing(_) => return None,
         }
+
         let from = self
             .reach_in(shift, held, cx)
             .map_or_else(|| self.opening_row(shift, held, cx), |reach| reach.row);
@@ -78,6 +82,7 @@ impl RootView {
         if !self.typing.ahead.is_live() {
             return;
         }
+
         let Some((shift, from)) = self.jumping(cx) else {
             return;
         };
@@ -157,9 +162,11 @@ impl RootView {
         let landing = jumped(names, from, typed);
 
         self.typing.ahead.landed(landing.is_some());
+
         let Some(row) = landing else {
             return;
         };
+
         self.reach_at(shift, row, false, cx);
         self.typing.landed_by_a_jump = self.reach(cx).cloned();
         self.show_row(shift, row, cx);
@@ -168,6 +175,7 @@ impl RootView {
     pub(super) fn stops_typing_soon(&mut self, cx: &mut Context<Self>) {
         self.typing._stops = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(typing::HELD_FOR).await;
+
             let stopped = this.update(cx, |this, cx| {
                 if this.typing.ahead.ran_out_by(Instant::now()) {
                     this.stop_typing(cx);

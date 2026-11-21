@@ -23,6 +23,7 @@ impl SpotifyGrants for KeptByThePhone {
 
     fn renewed(&self, grant: &SpotifyGrant, token: &str) {
         let mut held = self.held.lock();
+
         if held.as_ref() == Some(grant) {
             *held = Some(SpotifyGrant {
                 client_id: grant.client_id.clone(),
@@ -36,6 +37,7 @@ impl SpotifyGrants for KeptByThePhone {
 impl KeptByThePhone {
     fn given(&self, client_id: &str, refresh_token: &str) {
         let (client_id, refresh_token) = (client_id.trim(), refresh_token.trim());
+
         *self.held.lock() =
             (!client_id.is_empty() && !refresh_token.is_empty()).then(|| SpotifyGrant {
                 client_id: client_id.to_owned(),
@@ -70,7 +72,9 @@ impl MobilePlayer {
 
     pub fn authorize_spotify(&self, client_id: String) -> Result<String> {
         self.require_online()?;
+
         let client_id = client_id.trim();
+
         if client_id.is_empty() {
             return Err(Error::NoSpotifyClient);
         }
@@ -79,12 +83,14 @@ impl MobilePlayer {
             .cancelled
             .store(false, Ordering::Relaxed);
         *self.services.spotify_signing.waiting.lock() = None;
+
         let authorizing = self
             .services
             .spotify_sign_in()
             .authorizing(client_id)
             .map_err(signing_failed)?;
         let address = authorizing.authorize_at.clone();
+
         *self.services.spotify_signing.waiting.lock() = Some(authorizing);
 
         Ok(address)
@@ -92,6 +98,7 @@ impl MobilePlayer {
 
     pub fn finish_spotify_authorization(&self) -> Result<Option<String>> {
         self.require_online()?;
+
         let Some(authorizing) = self.services.spotify_signing.waiting.lock().take() else {
             return Ok(None);
         };
@@ -121,8 +128,10 @@ impl MobilePlayer {
 
     pub fn sign_out_of_spotify(&self) -> Result<u32> {
         self.services.spotify_grants.given("", "");
+
         let link = ProfileLink::SpotifyAccount;
         let connection = self.catalog.0.lock();
+
         let let_go = connection
             .execute(
                 "DELETE FROM playlist_links WHERE link IN
@@ -130,6 +139,7 @@ impl MobilePlayer {
                 params![link.page()],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         connection
             .execute(
                 "DELETE FROM profile_links WHERE link = ?1",
@@ -159,14 +169,18 @@ mod tests {
         let kept = KeptByThePhone::default();
 
         kept.given("registered", " ");
+
         assert_eq!(kept.grant(), None);
 
         kept.given(" registered ", "first");
+
         let given = kept.grant().expect("a whole grant");
+
         assert_eq!(given.client_id, "registered");
         assert_eq!(given.refresh_token, "first");
 
         kept.renewed(&given, "second");
+
         assert_eq!(
             kept.grant().map(|grant| grant.refresh_token),
             Some("second".to_owned()),
@@ -175,13 +189,16 @@ mod tests {
         assert_eq!(kept.rotated.lock().take().as_deref(), Some("second"));
 
         kept.given("", "");
+
         assert_eq!(kept.grant(), None);
     }
 
     #[test]
     fn a_rotation_landing_after_a_sign_out_does_not_sign_back_in() {
         let kept = KeptByThePhone::default();
+
         kept.given("registered", "first");
+
         let given = kept.grant().expect("a whole grant");
 
         kept.given("", "");
@@ -198,7 +215,9 @@ mod tests {
             player.authorize_spotify("registered".to_owned()),
             Err(Error::OnlineOff)
         ));
+
         player.configure_online(true);
+
         assert!(matches!(
             player.authorize_spotify("  ".to_owned()),
             Err(Error::NoSpotifyClient)
@@ -209,17 +228,20 @@ mod tests {
                 .expect("nothing waits"),
             None
         );
+
         player.configure_online(false);
     }
 
     #[test]
     fn an_account_nobody_signed_in_to_says_so_and_asks_nothing() {
         let player = player();
+
         player.configure_online(true);
 
         let told = player.follow_profile(spotify_account_link(), true);
 
         player.configure_online(false);
+
         assert!(matches!(told, Err(Error::NotSignedInToSpotify)));
     }
 
@@ -240,11 +262,14 @@ mod tests {
     fn signing_out_lets_the_accounts_playlists_go_and_keeps_their_rows() {
         let player = player();
         let liked = PlaylistLink::SpotifyLiked.page();
+
         let imported = player
             .import_linked_playlist(liked.clone(), "Liked Songs".to_owned(), Vec::new(), true)
             .expect("a playlist kept in step");
+
         {
             let connection = player.catalog.0.lock();
+
             connection
                 .execute(
                     "INSERT INTO profile_links (link, name, refreshed) VALUES (?1, 'A Listener', 0)",

@@ -85,6 +85,7 @@ impl<W: Wire> Session<W> {
             v: PROTOCOL,
             client_id: app.to_string(),
         };
+
         session.send(Opcode::Handshake, &encoded(&handshake)?)?;
         session.await_ready()?;
         Ok(session)
@@ -92,6 +93,7 @@ impl<W: Wire> Session<W> {
 
     pub(crate) fn set(&mut self, activity: Option<&Activity>) -> Result<()> {
         self.nonce = self.nonce.wrapping_add(1);
+
         let command = Command {
             cmd: SET_ACTIVITY,
             args: Arguments {
@@ -112,6 +114,7 @@ impl<W: Wire> Session<W> {
 
     fn await_ready(&mut self) -> Result<()> {
         let deadline = Instant::now() + READY_WITHIN;
+
         while let Some(frame) = self.next_frame_by(deadline)? {
             if frame.opcode == Opcode::Frame {
                 let reply: ReplyDoc = decoded(&frame.body)?;
@@ -139,7 +142,9 @@ impl<W: Wire> Session<W> {
             if let Some(frame) = split_frame(&mut self.received)? {
                 return Ok(Some(frame));
             }
+
             let left = deadline.saturating_duration_since(Instant::now());
+
             if left.is_zero() {
                 return Ok(None);
             }

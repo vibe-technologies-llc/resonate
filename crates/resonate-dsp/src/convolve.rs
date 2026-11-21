@@ -37,6 +37,7 @@ fn smooth_length_from(least: usize) -> usize {
         .step_by(2)
         .find(|length| {
             let mut rest = *length;
+
             for factor in [2, 3, 5] {
                 while rest.is_multiple_of(factor) {
                     rest /= factor;
@@ -75,7 +76,7 @@ impl PartialEq for Impulse {
 
 pub const CROSSED_RESPONSES: usize = 4;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Speaker {
     Left,
     Right,
@@ -140,6 +141,7 @@ impl Impulse {
                 right: right.frames(),
             });
         }
+
         let taps = left.taps.iter().chain(&right.taps).cloned().collect();
         Self::crossed(left.rate, taps).ok_or(Error::SpeakersUnusable)
     }
@@ -166,12 +168,15 @@ impl Impulse {
         let mut window = fft.make_input_vec();
         let mut scratch = fft.make_scratch_vec();
         let mut spectra: Vec<Vec<Complex<f64>>> = Vec::with_capacity(self.taps.len());
+
         for channel in &self.taps {
             window.fill(0.0);
             for (slot, tap) in window.iter_mut().zip(channel) {
                 *slot = *tap;
             }
+
             let mut spectrum = fft.make_output_vec();
+
             if fft
                 .process_with_scratch(&mut window, &mut spectrum, &mut scratch)
                 .is_err()
@@ -194,9 +199,11 @@ impl Impulse {
     #[must_use]
     pub fn with_headroom(self) -> Self {
         let loudest = self.loudest_gain();
+
         if !loudest.is_finite() || loudest <= 1.0 {
             return self;
         }
+
         let scale = loudest.recip();
         Self {
             rate: self.rate,
@@ -213,6 +220,7 @@ impl Impulse {
     pub fn heard_at(&self, hertz: &[f64], rate: SampleRate) -> Result<Vec<Vec<(f64, f64)>>> {
         let taps = self.at(rate)?;
         let mut heard = vec![Vec::with_capacity(taps.len()); hertz.len()];
+
         for channel in taps.iter() {
             for (at, sum) in response_of(channel, hertz, rate).into_iter().enumerate() {
                 heard[at].push(sum);
@@ -228,15 +236,19 @@ impl Impulse {
         if let Some((_, held)) = self.at_rates.lock().iter().find(|(held, _)| *held == rate) {
             return Ok(Arc::clone(held));
         }
+
         let resampled_frames =
             (self.frames() as u64 * u64::from(rate.hz())).div_ceil(u64::from(self.rate.hz()));
+
         refused_over(resampled_frames * self.taps.len() as u64 * BYTES_A_TAP)?;
+
         let resampled: Taps = self
             .taps
             .iter()
             .map(|channel| resampled(channel, self.rate, rate))
             .collect::<Result<Vec<_>>>()?
             .into();
+
         self.at_rates.lock().push((rate, Arc::clone(&resampled)));
         Ok(resampled)
     }
@@ -264,6 +276,7 @@ pub fn response_of(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<(f64, f
         })
         .collect();
     let blocks: Vec<&[(f64, f64)]> = turns.chunks(POINTS_A_BLOCK).collect();
+
     let workers = if taps.len().saturating_mul(turns.len()) < TURNS_WORTH_A_THREAD {
         1
     } else {
@@ -271,12 +284,14 @@ pub fn response_of(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<(f64, f
             .map_or(1, NonZeroUsize::get)
             .min(blocks.len())
     };
+
     if workers <= 1 {
         return blocks
             .iter()
             .flat_map(|block| summed_turns(taps, block))
             .collect();
     }
+
     let next = AtomicUsize::new(0);
     let mut summed: Vec<(usize, Vec<(f64, f64)>)> = thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
@@ -288,6 +303,7 @@ pub fn response_of(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<(f64, f
                         let Some(block) = blocks.get(at) else {
                             return taken;
                         };
+
                         taken.push((at, summed_turns(taps, block)));
                     }
                 })
@@ -302,6 +318,7 @@ pub fn response_of(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<(f64, f
             })
             .collect()
     });
+
     summed.sort_by_key(|(block, _)| *block);
     summed.into_iter().flat_map(|(_, sums)| sums).collect()
 }
@@ -331,6 +348,7 @@ fn summed_turns(taps: &[f64], steps: &[(f64, f64)]) -> Vec<(f64, f64)> {
             .zip(&step_imaginary)
         {
             let next_real = *turned_real * step_real - *turned_imaginary * step_imaginary;
+
             *turned_imaginary = *turned_real * step_imaginary + *turned_imaginary * step_real;
             *turned_real = next_real;
         }
@@ -348,15 +366,21 @@ fn resampled(taps: &[f64], from: SampleRate, to: SampleRate) -> Result<Vec<f64>>
         max_frames_in: RESAMPLED_A_BLOCK_AT_A_TIME,
     })?;
     let spec = StreamSpec::new(from, ChannelLayout::Mono, resonate_core::SampleFormat::F32);
+
     let most = resampler.prepare(spec, RESAMPLED_A_BLOCK_AT_A_TIME)?;
     let mut out = vec![0.0; most.max(resampler.max_flush_frames())];
     let mut written = Vec::new();
+
     for block in taps.chunks(RESAMPLED_A_BLOCK_AT_A_TIME) {
         let counted = resampler.process(block, &mut out);
+
         written.extend_from_slice(&out[..counted.frames_out]);
     }
+
     let flushed = resampler.flush(&mut out);
+
     written.extend_from_slice(&out[..flushed]);
+
     let scale = f64::from(from.hz()) / f64::from(to.hz());
     let length = (taps.len() as u64 * u64::from(to.hz())).div_ceil(u64::from(from.hz())) as usize;
     Ok(written
@@ -389,6 +413,7 @@ impl Channel {
             current: Vec::with_capacity(partition),
             ready: VecDeque::with_capacity(2 * partition),
         };
+
         channel.primed();
         channel
     }
@@ -415,11 +440,15 @@ impl Channel {
         let Some(spectrum) = self.history.get_mut(self.head) else {
             return;
         };
+
         convolving.forward(self.previous.iter().chain(&self.current).copied(), spectrum);
 
         convolving.summed.fill(Complex::default());
+
         let (newer, older) = self.history.split_at(self.head + 1);
+
         let newest_first = newer.iter().rev().chain(older.iter().rev());
+
         for (held, filter) in newest_first.zip(self.filter.iter()) {
             for ((sum, input), tap) in convolving.summed.iter_mut().zip(held).zip(filter) {
                 *sum += input * tap;
@@ -460,6 +489,7 @@ pub struct Convolver {
 impl Convolving {
     fn planned(partition: usize) -> Self {
         let mut planner = RealFftPlanner::new();
+
         let fft = planner.plan_fft_forward(2 * partition);
         let ifft = planner.plan_fft_inverse(2 * partition);
         Self {
@@ -489,6 +519,7 @@ impl Convolving {
 
     fn inverse_into(&mut self, ready: &mut VecDeque<f64>, partition: usize) {
         let scale = 1.0 / (2 * partition) as f64;
+
         if self
             .ifft
             .process_with_scratch(&mut self.summed, &mut self.time, &mut self.inverse_scratch)
@@ -509,6 +540,7 @@ impl Convolving {
         (0..partitions)
             .map(|nth| {
                 let mut spectrum = vec![Complex::default(); partition + 1];
+
                 self.forward(
                     taps.iter().skip(nth * partition).take(partition).copied(),
                     &mut spectrum,
@@ -551,23 +583,28 @@ impl Processor for Convolver {
     fn prepare(&mut self, spec: StreamSpec, max_frames_in: usize) -> Result<usize> {
         let taps = self.impulse.at(spec.rate)?;
         let partition = partition_frames_at(spec.rate);
+
         if partition != self.partition {
             self.partition = partition;
             self.convolving = Convolving::planned(partition);
         }
         self.width = usize::from(spec.channel_count().get());
         self.crossed = self.crosses(spec);
+
         let count = if self.crossed {
             CROSSED_RESPONSES
         } else {
             self.width
         };
+
         refused_over(spectra_bytes(&taps, count, partition))?;
+
         let filters: Vec<Spectra> = taps
             .iter()
             .take(count)
             .map(|channel| self.convolving.filter_of(channel, partition))
             .collect();
+
         self.channels = (0..count)
             .filter_map(|channel| filters.get(channel % filters.len().max(1)))
             .map(|filter| Channel::of(Arc::clone(filter), partition))
@@ -602,7 +639,9 @@ impl Processor for Convolver {
         let count = self.width.max(1);
         let frames = input.len() / count;
         let room = output.len() / count;
+
         let frames = frames.min(room);
+
         for (frame, out) in input
             .chunks_exact(count)
             .zip(output.chunks_exact_mut(count))
@@ -626,6 +665,7 @@ impl Processor for Convolver {
     fn flush(&mut self, output: &mut [f64]) -> usize {
         let count = self.width.max(1);
         let frames = (output.len() / count).min(self.tail);
+
         for out in output.chunks_exact_mut(count).take(frames) {
             if self.crossed {
                 self.crossed_frame(&[0.0, 0.0], out);
@@ -646,7 +686,9 @@ impl Convolver {
         out.fill(0.0);
         for (path, channel) in self.channels.iter_mut().enumerate() {
             let heard = frame.get(path / 2).copied().unwrap_or(0.0);
+
             channel.take(heard, &mut self.convolving);
+
             let produced = channel.ready.pop_front().unwrap_or(0.0);
             if let Some(slot) = out.get_mut(path % 2) {
                 *slot += produced;
@@ -670,15 +712,22 @@ mod tests {
     fn convolved(taps: Vec<Vec<f64>>, input: &[f64], block: usize) -> Vec<f64> {
         let impulse = Arc::new(Impulse::new(RATE, taps).expect("an impulse"));
         let mut stage = Convolver::new(impulse);
+
         stage.prepare(stereo(), block).expect("a prepared stage");
+
         let mut written = Vec::new();
         let mut out = vec![0.0; block * 2];
+
         for chunk in input.chunks(block * 2) {
             let counted = stage.process(chunk, &mut out);
+
             written.extend_from_slice(&out[..counted.frames_out * 2]);
         }
+
         let mut tail = vec![0.0; stage.max_flush_frames() * 2];
+
         let flushed = stage.flush(&mut tail);
+
         written.extend_from_slice(&tail[..flushed * 2]);
         written
     }
@@ -701,9 +750,11 @@ mod tests {
         let written = convolved(vec![vec![1.0]], &input, 700);
 
         let late = partition_frames_at(RATE) * 2;
+
         for (at, sample) in input.iter().enumerate() {
             assert!((written[late + at] - sample).abs() < 1e-9, "sample {at}");
         }
+
         assert!(written[..late].iter().all(|sample| sample.abs() < 1e-12));
     }
 
@@ -715,6 +766,7 @@ mod tests {
             .map(|at| (-(at as f64) / 400.0).exp() * 0.3)
             .collect();
         let right: Vec<f64> = vec![0.0, 0.0, 0.5, -0.25];
+
         let written = convolved(vec![left.clone(), right.clone()], &input, 1_024);
 
         for (channel, taps) in [(0_usize, &left), (1, &right)] {
@@ -726,6 +778,7 @@ mod tests {
                     .map(|(lag, tap)| tap * input[(at - lag) * 2 + channel])
                     .sum();
                 let heard = written[(partition_frames_at(RATE) + at) * 2 + channel];
+
                 assert!(
                     (heard - direct).abs() < 1e-9,
                     "channel {channel} frame {at}: {heard} against {direct}"
@@ -754,6 +807,7 @@ mod tests {
                             imaginary + tap * (angle * lag as f64).sin(),
                         )
                     });
+
             assert!((heard[at][0].0 - direct.0).abs() < 1e-12, "{hertz} Hz");
             assert!((heard[at][0].1 - direct.1).abs() < 1e-12, "{hertz} Hz");
             assert_eq!(heard[at][1], (1.0, 0.0));
@@ -773,6 +827,7 @@ mod tests {
         assert_eq!(shared.len(), hertz.len());
         for at in [0, 127, 128, 500, 999] {
             let alone = response_of(&taps, &hertz[at..=at], RATE);
+
             assert!((shared[at].0 - alone[0].0).abs() < 1e-9, "point {at}");
             assert!((shared[at].1 - alone[0].1).abs() < 1e-9, "point {at}");
         }
@@ -799,6 +854,7 @@ mod tests {
                             imaginary + tap * (angle * lag as f64).sin(),
                         )
                     });
+
             assert!((heard[at][0].0 - direct.0).abs() < 1e-9, "point {at}");
             assert!((heard[at][0].1 - direct.1).abs() < 1e-9, "point {at}");
         }
@@ -820,7 +876,9 @@ mod tests {
             .with_headroom();
 
         assert!((boosted.loudest_gain() - 1.0).abs() < 1e-9);
+
         let taps = boosted.at(RATE).expect("the response at its own rate");
+
         assert!((taps[0][1] - 0.5).abs() < 1e-9, "{:?}", taps[0]);
         assert!(
             (taps[1][0] - 0.125).abs() < 1e-9,
@@ -840,7 +898,9 @@ mod tests {
     #[test]
     fn a_response_taken_at_another_rate_keeps_its_peak_where_it_was_in_time() {
         let mut taps = vec![0.0; 4_410];
+
         taps[441] = 1.0;
+
         let impulse = Impulse::new(SampleRate::HZ_44100, vec![taps]).expect("an impulse");
 
         let at_ours = impulse.at(RATE).expect("a response resampled");
@@ -849,6 +909,7 @@ mod tests {
             .enumerate()
             .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
             .map(|(at, _)| at);
+
         assert_eq!(peak, Some(480), "the response moved in time");
     }
 
@@ -858,6 +919,7 @@ mod tests {
             Impulse::new(SampleRate::HZ_96000, vec![vec![1.0; 9_600]]).expect("an impulse");
         let at_ours = impulse.at(RATE).expect("a response resampled");
         let length = at_ours[0].len();
+
         assert!((4_700..=4_900).contains(&length), "{length}");
         assert!(Arc::ptr_eq(
             &at_ours,
@@ -869,6 +931,7 @@ mod tests {
     fn a_mono_response_holds_one_spectrum_for_every_channel() {
         let impulse = Arc::new(Impulse::new(RATE, vec![vec![0.5; 3_000]]).expect("an impulse"));
         let mut stage = Convolver::new(impulse);
+
         stage.prepare(stereo(), 512).expect("a prepared stage");
 
         assert_eq!(stage.channels.len(), 2);
@@ -884,6 +947,7 @@ mod tests {
             Impulse::new(RATE, vec![vec![0.5; 3_000], vec![0.25; 3_000]]).expect("an impulse"),
         );
         let mut stage = Convolver::new(impulse);
+
         stage.prepare(stereo(), 512).expect("a prepared stage");
 
         assert!(!Arc::ptr_eq(
@@ -901,6 +965,7 @@ mod tests {
         let refused = stage
             .prepare(stereo(), 512)
             .expect_err("a response too large");
+
         assert!(matches!(
             refused,
             Error::ResponseTooLarge { bytes, at_most }
@@ -914,6 +979,7 @@ mod tests {
             Impulse::new(SampleRate::HZ_48000, vec![vec![0.0; 5_000_000]; 4]).expect("an impulse");
 
         let refused = impulse.at(SampleRate::HZ_192000).expect_err("too large");
+
         assert!(matches!(refused, Error::ResponseTooLarge { .. }));
     }
 
@@ -934,11 +1000,13 @@ mod tests {
         for least in [1, 2, 7, 4_001, 1_000_003, 7_680_000] {
             let length = smooth_length_from(least);
             let mut rest = length;
+
             for factor in [2, 3, 5] {
                 while rest.is_multiple_of(factor) {
                     rest /= factor;
                 }
             }
+
             assert!(
                 length >= least && length.is_multiple_of(2) && rest == 1,
                 "{least}: {length}"
@@ -950,15 +1018,22 @@ mod tests {
     fn crossed(taps: [Vec<f64>; 4], input: &[f64], block: usize) -> Vec<f64> {
         let impulse = Arc::new(Impulse::crossed(RATE, taps.to_vec()).expect("a crossed impulse"));
         let mut stage = Convolver::new(impulse);
+
         stage.prepare(stereo(), block).expect("a prepared stage");
+
         let mut written = Vec::new();
         let mut out = vec![0.0; block * 2];
+
         for chunk in input.chunks(block * 2) {
             let counted = stage.process(chunk, &mut out);
+
             written.extend_from_slice(&out[..counted.frames_out * 2]);
         }
+
         let mut tail = vec![0.0; stage.max_flush_frames() * 2];
+
         let flushed = stage.flush(&mut tail);
+
         written.extend_from_slice(&tail[..flushed * 2]);
         written
     }
@@ -1062,6 +1137,7 @@ mod tests {
             vec![0.0, 0.2, 0.0, 0.0, 0.1],
             vec![0.8, 0.0, -0.05],
         ];
+
         let written = crossed(taps.clone(), &input, 512);
 
         for at in (0..frames).step_by(61) {
@@ -1077,6 +1153,7 @@ mod tests {
                     })
                     .sum();
                 let heard = written[(partition_frames_at(RATE) + at) * 2 + ear];
+
                 assert!((heard - direct).abs() < 1e-9, "ear {ear} frame {at}");
             }
         }
@@ -1090,7 +1167,9 @@ mod tests {
 
         assert!((summing.loudest_gain() - 1.0).abs() < 1e-9);
         assert!(summing.is_crossed());
+
         let taps = summing.at(RATE).expect("the response");
+
         assert!((taps[0][0] - 0.5).abs() < 1e-9);
     }
 

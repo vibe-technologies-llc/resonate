@@ -83,11 +83,14 @@ fn browsed(song_at: SocketAddr) -> String {
 fn head_and_body(stream: &mut TcpStream) -> Option<String> {
     let mut held = Vec::new();
     let mut buffer = [0; 4096];
+
     let ends = loop {
         if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
             break at + 4;
         }
+
         let read = stream.read(&mut buffer).ok()?;
+
         if read == 0 {
             return None;
         }
@@ -102,8 +105,10 @@ fn head_and_body(stream: &mut TcpStream) -> Option<String> {
                 .and_then(|length| length.trim().parse::<usize>().ok())
         })
         .unwrap_or_default();
+
     while held.len() < ends + declared {
         let read = stream.read(&mut buffer).ok()?;
+
         if read == 0 {
             break;
         }
@@ -127,12 +132,14 @@ fn song_answered(stream: &mut TcpStream, framed: Framed) {
         Framed::Declared => answered(stream, "audio/flac", &song),
         Framed::Chunked => {
             let mut written = b"HTTP/1.1 200 OK\r\nContent-Type: audio/flac\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n".to_vec();
+
             for chunk in song.chunks(CHUNK_BYTES) {
                 written.extend_from_slice(format!("{:x};name=part\r\n", chunk.len()).as_bytes());
                 written.extend_from_slice(chunk);
                 written.extend_from_slice(b"\r\n");
             }
             written.extend_from_slice(b"0\r\n\r\n");
+
             let _ = stream.write_all(&written);
         }
     }
@@ -183,12 +190,15 @@ impl Fake {
         let song_at = SocketAddr::new(shape.song_on, port);
 
         let mut listeners = vec![(listener, shape.described[0].1)];
+
         for (ip, udn) in shape.described.iter().skip(1) {
             let also = TcpListener::bind(SocketAddr::new(*ip, port)).expect("bound beside");
+
             listeners.push((also, udn));
         }
         for (listener, udn) in listeners {
             let framed = shape.framed;
+
             thread::spawn(move || serve(listener, udn, song_at, framed));
         }
 
@@ -196,6 +206,7 @@ impl Fake {
         let heard_at = searched.local_addr().expect("an address");
         let location = SocketAddr::new(shape.located_on, port);
         let usn = shape.usn;
+
         thread::spawn(move || answer_searches(searched, location, usn));
 
         Self { heard_at }
@@ -216,6 +227,7 @@ fn the_song_of(server: &ServerFound) -> Option<Vec<u8>> {
     let played = item.played_from()?;
     let mut fetched = server.fetched(&played.at).expect("the song is fetched");
     let mut whole = Vec::new();
+
     fetched.read_to_end(&mut whole).expect("read whole");
     Some(whole)
 }
@@ -309,9 +321,12 @@ fn a_chunked_song_is_read_whole_and_a_seek_reads_through_to_where_it_lands() {
     let played = listing.items[0].played_from().expect("a resource");
     let mut fetched = server.fetched(&played.at).expect("the song is fetched");
     let mut whole = Vec::new();
+
     fetched.read_to_end(&mut whole).expect("read whole");
+
     let landed = fetched.seek(SeekFrom::Start(600)).expect("a seek");
     let mut after = Vec::new();
+
     fetched.read_to_end(&mut after).expect("read from there");
 
     assert_eq!(fetched.length(), None);

@@ -148,8 +148,10 @@ impl ActiveStream {
             self.drain_asked = false;
             self.drained.set(false);
         }
+
         let was = self.asked.get();
         let asked = was.asking_for(request.spec);
+
         if asked != was {
             let Ok(formats) = enum_formats(asked.spec) else {
                 return Reshaped::Refused {
@@ -171,6 +173,7 @@ impl ActiveStream {
                 spec: was.spec,
                 word: WireWord::Padded,
             });
+
             self.taking.store(settled.took(asked));
             self.asked.set(asked);
             if let Err(error) = self.opened.stream.update_params(&mut params) {
@@ -185,6 +188,7 @@ impl ActiveStream {
         }
 
         let cycle = Cycle::new(asked, Arc::clone(&self.taking), Arc::clone(&self.clock));
+
         if let Err(feed) = self.handing.hand(Feed::new(cycle, source)) {
             return Reshaped::Refused {
                 source: feed.into_source(),
@@ -374,6 +378,7 @@ struct SinkRecord {
 impl SinkRecord {
     fn formats_moved(&mut self, serial: bool) -> bool {
         let was = self.format_serial.replace(serial);
+
         if was.is_none_or(|was| was == serial) {
             return false;
         }
@@ -383,6 +388,7 @@ impl SinkRecord {
 
     fn running_moved(&mut self, serial: bool) -> bool {
         let was = self.running_serial.replace(serial);
+
         if was.is_none_or(|was| was == serial) {
             return false;
         }
@@ -447,8 +453,10 @@ impl Discovered {
         if subject != CORE_ID {
             return DefaultSink::Stayed;
         }
+
         let Some(key) = key else {
             let mut moved = DefaultSink::Stayed;
+
             for key in held.keys() {
                 if self.heard_key(key, None) == DefaultSink::Moved {
                     moved = DefaultSink::Moved;
@@ -469,6 +477,7 @@ impl Discovered {
             DEFAULT_SOURCE => self.default_source = value.and_then(parse_default_sink),
             DEFAULT_SINK => {
                 let named = value.and_then(parse_default_sink);
+
                 if named == self.default_sink {
                     return DefaultSink::Stayed;
                 }
@@ -489,8 +498,10 @@ impl Discovered {
                     .iter()
                     .flat_map(|entry| entry.rates.iter().copied())
                     .collect();
+
                 advertised.sort_unstable();
                 advertised.dedup();
+
                 let allowed = if self.allowed_rates.is_empty() {
                     advertised
                 } else {
@@ -545,6 +556,7 @@ impl Discovered {
         let record = self.sinks.get(&sink.get())?;
         let above = record.device?;
         let seat = record.seat?;
+
         let route = self.ports.get(&above)?.turning(seat)?;
         let turned = RouteChange {
             index: route.index?,
@@ -592,6 +604,7 @@ pub struct Survey {
 impl Survey {
     fn roundtrip(&self, timeout: Duration) -> Result<()> {
         let (reply, done) = bounded(1);
+
         self.commands
             .send(Request::Sync(reply))
             .map_err(|_| Error::LoopStopped)?;
@@ -688,13 +701,16 @@ impl Survey {
 
     fn settled(&self, timeout: Duration) -> Result<()> {
         let half = timeout / 2;
+
         self.roundtrip(half)?;
         self.roundtrip(half)
     }
 
     pub fn enumerate_sinks(&self, timeout: Duration) -> Result<Vec<SinkInfo>> {
         self.settled(timeout)?;
+
         let sinks = self.shared.lock().snapshot();
+
         if sinks.is_empty() {
             return Err(Error::NoSink);
         }
@@ -771,6 +787,7 @@ impl PipeWire {
         let (events, incoming) = bounded(64);
         let (reply, outcome) = bounded(1);
         let stream = self.survey.keys.next();
+
         self.survey
             .commands
             .send(Request::Capture(Box::new(CaptureOpen {
@@ -825,6 +842,7 @@ impl PipeWire {
 
     pub fn shutdown(mut self) -> Result<()> {
         let _ = self.survey.commands.send(Request::Shutdown);
+
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
@@ -854,11 +872,13 @@ fn reshape_on_the_loop(
         source,
         reply,
     }));
+
     if let Err(unsent) = commands.send(asked) {
         let source = match unsent {
             Request::Reshape(unsent) => unsent.source,
             _ => return Reshaped::Lost(resonate_audio::Error::LoopStopped),
         };
+
         return Reshaped::Refused {
             source,
             because: Unreshapable::NoStream,
@@ -905,6 +925,7 @@ fn run(
     let mainloop = stage!(MainLoopRc::new(None), PwOp::MainLoopCreate);
     let context = stage!(ContextRc::new(&mainloop, None), PwOp::ContextCreate);
     let pending: Pending = Rc::new(RefCell::new(Vec::new()));
+
     let reaching = Reaching {
         app_name: app_name.to_owned(),
         context,
@@ -944,6 +965,7 @@ fn run(
                     return;
                 };
                 let mut sequence = sequence.borrow_mut();
+
                 *sequence = sequence.wrapping_add(1);
                 match core.sync(*sequence) {
                     Ok(seq) => pending.borrow_mut().push((seq.seq(), reply)),
@@ -953,8 +975,10 @@ fn run(
             Request::Open(open) => {
                 let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
                     let _ = open.reply.send(Err(Error::Disconnected));
+
                     return;
                 };
+
                 open_stream(&core, *open, &active);
             }
             Request::Reshape(reshape) => {
@@ -964,6 +988,7 @@ fn run(
                     source,
                     reply,
                 } = *reshape;
+
                 let reshaped = match active.borrow_mut().get_mut(&stream) {
                     Some(playing) => playing.reshape(&request, source),
                     None => Reshaped::Refused {
@@ -976,6 +1001,7 @@ fn run(
             Request::Capture(open) => {
                 let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
                     let _ = open.reply.send(Err(Error::Disconnected));
+
                     return;
                 };
                 let CaptureOpen {
@@ -988,6 +1014,7 @@ fn run(
                 match build_capture_stream(&core, &request, sink, &events) {
                     Ok(capture) => {
                         heard.borrow_mut().insert(stream, capture);
+
                         let _ = reply.send(Ok(()));
                     }
                     Err(error) => {
@@ -1024,6 +1051,7 @@ fn run(
             Request::Drain(stream) => {
                 if let Some(playing) = active.borrow_mut().get_mut(&stream) {
                     let _ = playing.stream().flush(true);
+
                     playing.drain_asked = true;
                     playing.drained.set(false);
                 }
@@ -1038,11 +1066,13 @@ fn run(
                 for playing in active.borrow_mut().values_mut() {
                     playing.handing.let_go_of_the_spent();
                 }
+
                 let Some(core) = graph.borrow().as_ref().map(|held| held.core.clone()) else {
                     beat.borrow_mut().take();
                     return;
                 };
                 let mut beating = beat.borrow_mut();
+
                 match beating.as_ref().map(Beat::heard) {
                     Some(Heard::Waiting) => return,
                     Some(Heard::Never) => {
@@ -1057,8 +1087,10 @@ fn run(
                     }
                     Some(Heard::Answered) | None => {}
                 }
+
                 let (reply, answer) = bounded(1);
                 let mut sequence = sequence.borrow_mut();
+
                 *sequence = sequence.wrapping_add(1);
                 if let Ok(seq) = core.sync(*sequence) {
                     pending.borrow_mut().push((seq.seq(), reply));
@@ -1104,6 +1136,7 @@ fn run(
             let _ = commands.send(Request::Heartbeat);
         }
     });
+
     if let Err(error) = heartbeat
         .update_timer(Some(HEARTBEAT_EVERY), Some(HEARTBEAT_EVERY))
         .into_result()
@@ -1112,6 +1145,7 @@ fn run(
     }
 
     let _ = ready.send(Ok(()));
+
     mainloop.run();
 
     drop(receiver);
@@ -1131,6 +1165,7 @@ fn lose_the_graph(
     let Some(gone) = graph.borrow_mut().take() else {
         return;
     };
+
     tracing::warn!("the PipeWire daemon went away; reconnecting when it is back");
     connected.store(false, Ordering::Release);
     active.borrow_mut().clear();
@@ -1272,6 +1307,7 @@ impl Reaching {
             .name("resonate-pipewire-reconnect".to_owned())
             .spawn(move || {
                 thread::sleep(RECONNECT_EVERY);
+
                 let _ = commands.send(Request::Reconnect);
             });
         if let Err(error) = spawned {
@@ -1312,6 +1348,7 @@ fn watch_the_registry(
             move |global| match global.type_ {
                 ObjectType::Node => {
                     let class = node_property(global, *keys::MEDIA_CLASS);
+
                     if class.as_deref() == Some(MICROPHONE_CLASS) {
                         shared.lock().microphones.insert(
                             global.id,
@@ -1326,6 +1363,7 @@ fn watch_the_registry(
                     if class.as_deref() != Some("Audio/Sink") {
                         return;
                     }
+
                     let record = SinkRecord {
                         name: node_property(global, *keys::NODE_NAME).unwrap_or_default(),
                         description: node_property(global, *keys::NODE_DESCRIPTION)
@@ -1339,6 +1377,7 @@ fn watch_the_registry(
                         running_at: None,
                         running_serial: None,
                     };
+
                     shared.lock().sinks.insert(global.id, record);
 
                     let Ok(node) = registry.bind::<Node, _>(global) else {
@@ -1362,8 +1401,10 @@ fn watch_the_registry(
                                         serial_of(ParamType::EnumFormat),
                                         serial_of(ParamType::Format),
                                     );
+
                                     let (offered_moved, running_moved) = {
                                         let mut state = shared.lock();
+
                                         let record = state.sinks.get_mut(&id);
                                         record.map_or((false, false), |record| {
                                             (
@@ -1376,10 +1417,12 @@ fn watch_the_registry(
                                             )
                                         })
                                     };
+
                                     let asked_again = [
                                         (offered_moved, ParamType::EnumFormat),
                                         (running_moved, ParamType::Format),
                                     ];
+
                                     for (moved, param) in asked_again {
                                         if !moved {
                                             continue;
@@ -1396,6 +1439,7 @@ fn watch_the_registry(
                                 if !info.change_mask().contains(NodeChangeMask::PROPS) {
                                     return;
                                 }
+
                                 let seat = info
                                     .props()
                                     .and_then(|props| props.get(CARD_PROFILE_DEVICE))
@@ -1410,6 +1454,7 @@ fn watch_the_registry(
                             let id = global.id;
                             move |_seq, param_type, index, _next, param| {
                                 let Some(param) = param else { return };
+
                                 if param_type == ParamType::Format {
                                     if let Some(record) = shared.lock().sinks.get_mut(&id) {
                                         record.running_at = running_rate(param);
@@ -1419,6 +1464,7 @@ fn watch_the_registry(
                                 if param_type != ParamType::EnumFormat {
                                     return;
                                 }
+
                                 let Ok((_, value)) =
                                     PodDeserializer::deserialize_any_from(param.as_bytes())
                                 else {
@@ -1427,9 +1473,11 @@ fn watch_the_registry(
                                 let Some(advertised) = parse_enum_format(&value) else {
                                     return;
                                 };
+
                                 if advertised.formats.is_empty() || advertised.rates.is_empty() {
                                     return;
                                 }
+
                                 let AdvertisedFormat {
                                     formats,
                                     rates,
@@ -1453,6 +1501,7 @@ fn watch_the_registry(
                             }
                         })
                         .register();
+
                     node.enum_params(0, Some(ParamType::EnumFormat), 0, u32::MAX);
                     node.enum_params(0, Some(ParamType::Format), 0, u32::MAX);
                     nodes.borrow_mut().insert(global.id, (node, listener));
@@ -1493,16 +1542,19 @@ fn watch_the_registry(
                                 else {
                                     return;
                                 };
+
                                 if param_type == ParamType::Profile {
                                     let Some(profile) = parse_profile(&value) else {
                                         return;
                                     };
                                     let mut state = shared.lock();
+
                                     let was = state.profiles.insert(id, profile);
                                     let moved = was.is_some_and(|was| {
                                         state.profiles.get(&id).map(|now| now.index)
                                             != Some(was.index)
                                     });
+
                                     if moved {
                                         for sink in state.sinks_on(id) {
                                             let _ = announce.try_send(SinkChange::Switched(sink));
@@ -1510,6 +1562,7 @@ fn watch_the_registry(
                                     }
                                     return;
                                 }
+
                                 let Some(held) = Held::of(param_type) else {
                                     return;
                                 };
@@ -1517,6 +1570,7 @@ fn watch_the_registry(
                                     return;
                                 };
                                 let mut state = shared.lock();
+
                                 let turned =
                                     state.ports.entry(id).or_default().keep(held, index, route);
                                 let Some(seats) = turned else {
@@ -1528,6 +1582,7 @@ fn watch_the_registry(
                             }
                         })
                         .register();
+
                     device.subscribe_params(&[
                         ParamType::Route,
                         ParamType::EnumRoute,
@@ -1547,6 +1602,7 @@ fn watch_the_registry(
                     let Ok(metadata) = registry.bind::<Metadata, _>(global) else {
                         return;
                     };
+
                     let listener = metadata
                         .add_listener_local()
                         .property({
@@ -1554,6 +1610,7 @@ fn watch_the_registry(
                             let announce = announce.clone();
                             move |subject, key, _type, value| {
                                 let moved = shared.lock().heard(held, subject, key, value);
+
                                 if moved == DefaultSink::Moved {
                                     let _ = announce.try_send(SinkChange::DefaultChanged);
                                 }
@@ -1561,6 +1618,7 @@ fn watch_the_registry(
                             }
                         })
                         .register();
+
                     metadatas
                         .borrow_mut()
                         .insert(global.id, (metadata, listener, held));
@@ -1576,12 +1634,15 @@ fn watch_the_registry(
             let announce = announce.clone();
             move |id| {
                 let gone = metadatas.borrow_mut().remove(&id);
+
                 if let Some((_, _, held)) = gone
                     && shared.lock().heard(held, CORE_ID, None, None) == DefaultSink::Moved
                 {
                     let _ = announce.try_send(SinkChange::DefaultChanged);
                 }
+
                 let mut state = shared.lock();
+
                 state.driven.remove(&id);
                 state.microphones.remove(&id);
                 state.profiles.remove(&id);
@@ -1590,6 +1651,7 @@ fn watch_the_registry(
                 if state.sinks.remove(&id).is_some() {
                     drop(state);
                     nodes.borrow_mut().remove(&id);
+
                     let _ = announce.try_send(SinkChange::Removed(SinkId::new(id)));
                 }
             }
@@ -1610,16 +1672,19 @@ fn turn_the_route(device: &Device, turned: &RouteChange) {
     let Some(pod) = Pod::from_bytes(&bytes) else {
         return;
     };
+
     device.set_param(ParamType::Route, 0, pod);
 }
 
 fn format_pod(spec: StreamSpec, word: WireWord, id: u32) -> Result<Vec<u8>> {
     let mut info = AudioInfoRaw::new();
+
     info.set_format(spa_format(spec.format, word));
     info.set_rate(spec.rate.hz());
     info.set_channels(u32::from(spec.channel_count().get()));
 
     let mut position = [0; MAX_CHANNELS];
+
     for (slot, channel) in position.iter_mut().zip(spa_position(spec.channels)) {
         *slot = channel;
     }
@@ -1655,6 +1720,7 @@ fn open_stream(core: &pipewire::core::CoreRc, open: OpenRequest, active: &Playin
         reply,
         awaiting,
     } = open;
+
     if awaiting.is_given_up() {
         return;
     }
@@ -1662,10 +1728,12 @@ fn open_stream(core: &pipewire::core::CoreRc, open: OpenRequest, active: &Playin
     match build_stream(core, &request, target.as_ref(), source, &slots) {
         Ok(stream) if awaiting.kept() => {
             active.borrow_mut().insert(key, stream);
+
             let _ = reply.send(Ok(()));
         }
         Ok(abandoned) => {
             tracing::debug!("a stream opened after its asker gave up waiting is closed");
+
             let _ = abandoned.stream().disconnect();
         }
         Err(error) => {
@@ -1697,6 +1765,7 @@ fn build_stream(
         *keys::AUDIO_RATE => spec.rate.hz().to_string(),
         NODE_DONT_MOVE => "true",
     };
+
     if let Some(target) = target {
         properties.insert(*keys::TARGET_OBJECT, target.as_str());
     }
@@ -1707,6 +1776,7 @@ fn build_stream(
         LatencyRequest::Auto => {}
         LatencyRequest::Duration(duration) => {
             let frames = (duration.as_secs_f64() * f64::from(spec.rate.hz())).round() as u64;
+
             properties.insert(*keys::NODE_LATENCY, format!("{frames}/{}", spec.rate.hz()));
         }
     }
@@ -1719,6 +1789,7 @@ fn build_stream(
         spec,
         word: WireWord::Padded,
     };
+
     let taking = Arc::new(Taking::new(presumed.took(first)));
     let asked = Rc::new(Cell::new(first));
     let settled = Rc::new(Cell::new(None));
@@ -1733,6 +1804,7 @@ fn build_stream(
             let drained = Rc::clone(&drained);
             move |_stream, _fed| {
                 drained.set(true);
+
                 let _ = events.try_send(StreamEvent::Drained);
             }
         })
@@ -1741,6 +1813,7 @@ fn build_stream(
             move |_stream, _fed, from, to| {
                 let from = stream_state(&from);
                 let to = stream_state(&to);
+
                 let _ = events.try_send(StreamEvent::StateChanged { from, to });
             }
         })
@@ -1756,8 +1829,10 @@ fn build_stream(
                     let Some(taken) = param.and_then(|param| negotiated(param, asked.spec)) else {
                         return;
                     };
+
                     settled.set(Some(taken));
                     taking.store(taken.took(asked));
+
                     let _ = events.try_send(taken.changed());
                 }
                 sys::SPA_PARAM_Props => {
@@ -1773,6 +1848,7 @@ fn build_stream(
 
     let formats = enum_formats(spec)?;
     let mut params = Vec::with_capacity(formats.len());
+
     for bytes in &formats {
         params.push(Pod::from_bytes(bytes).ok_or(Error::PodUnread {
             param: PodParam::EnumFormat,
@@ -1780,6 +1856,7 @@ fn build_stream(
     }
 
     let mut flags = StreamFlags::MAP_BUFFERS | StreamFlags::AUTOCONNECT;
+
     if request.realtime {
         flags |= StreamFlags::RT_PROCESS;
     }
@@ -1828,6 +1905,7 @@ fn build_capture_stream(
         *keys::AUDIO_RATE => spec.rate.hz().to_string(),
         *keys::NODE_DONT_RECONNECT => "true",
     };
+
     match &request.from {
         Capturing::Desktop { sink } => {
             properties.insert(*keys::STREAM_CAPTURE_SINK, "true");
@@ -1852,6 +1930,7 @@ fn build_capture_stream(
             move |_stream, _sink, from, to| {
                 let from = stream_state(&from);
                 let to = stream_state(&to);
+
                 let _ = events.try_send(StreamEvent::StateChanged { from, to });
             }
         })
@@ -1873,6 +1952,7 @@ fn build_capture_stream(
     let mut params = [Pod::from_bytes(&format).ok_or(Error::PodUnread {
         param: PodParam::EnumFormat,
     })?];
+
     stream
         .connect(
             Direction::Input,
@@ -1938,6 +2018,7 @@ mod tests {
             for word in [WireWord::Padded, WireWord::Packed] {
                 let spec = asked(layout, SampleFormat::S24);
                 let settled = format_pod(spec, word, sys::SPA_PARAM_Format).expect("a pod");
+
                 let taken = read_back(&settled, spec);
 
                 assert_eq!(taken.spec, spec, "{layout} read back as another layout");
@@ -1956,6 +2037,7 @@ mod tests {
         let stereo = asked(ChannelLayout::Stereo, SampleFormat::S16);
         let five = asked(ChannelLayout::Surround50, SampleFormat::S16);
         let settled = format_pod(five, WireWord::Padded, sys::SPA_PARAM_Format).expect("a pod");
+
         let taken = read_back(&settled, stereo);
 
         assert_eq!(taken.spec, five);
@@ -1980,9 +2062,11 @@ mod tests {
     #[test]
     fn a_graph_naming_no_positions_leaves_the_layout_asked_for_where_the_count_agrees() {
         let mut info = AudioInfoRaw::new();
+
         info.set_format(spa_format(SampleFormat::F32, WireWord::Padded));
         info.set_rate(SampleRate::HZ_48000.hz());
         info.set_channels(5);
+
         let unplaced = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
 
         assert_eq!(
@@ -2006,10 +2090,13 @@ mod tests {
     #[test]
     fn positions_naming_no_layout_read_as_unnamed_channels() {
         let mut info = AudioInfoRaw::new();
+
         info.set_format(spa_format(SampleFormat::F32, WireWord::Padded));
         info.set_rate(SampleRate::HZ_48000.hz());
         info.set_channels(6);
+
         let mut position = [0; MAX_CHANNELS];
+
         for (slot, channel) in position.iter_mut().zip([
             sys::SPA_AUDIO_CHANNEL_FL,
             sys::SPA_AUDIO_CHANNEL_FR,
@@ -2021,17 +2108,22 @@ mod tests {
             *slot = channel;
         }
         info.set_position(position);
+
         let six_oh = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
 
         let mut info = AudioInfoRaw::new();
+
         info.set_format(spa_format(SampleFormat::F32, WireWord::Padded));
         info.set_rate(SampleRate::HZ_48000.hz());
         info.set_channels(6);
+
         let mut position = [0; MAX_CHANNELS];
+
         for (slot, channel) in position.iter_mut().zip(sys::SPA_AUDIO_CHANNEL_AUX0..) {
             *slot = channel;
         }
         info.set_position(position);
+
         let auxiliary = pod_of(info, sys::SPA_PARAM_Format).expect("a pod");
 
         assert_eq!(
@@ -2116,6 +2208,7 @@ mod tests {
     #[test]
     fn a_sinks_formats_are_read_again_only_when_the_node_says_they_moved() {
         let mut record = sink(true, Some(49));
+
         record.formats.insert(3, Vec::new());
 
         assert!(
@@ -2137,14 +2230,18 @@ mod tests {
     #[test]
     fn a_running_device_reports_its_own_rate_and_the_graphs_once_it_stops() {
         let mut graph = Discovered::default();
+
         graph.heard(HeldIn::Settings, CORE_ID, Some(CLOCK_RATE), Some("48000"));
+
         let mut record = sink(true, Some(49));
+
         record.running_at = Some(SampleRate::HZ_44100);
         graph.sinks.insert(50, record);
 
         assert_eq!(graph.snapshot()[0].current_rate, Some(SampleRate::HZ_44100));
 
         let record = graph.sinks.get_mut(&50).expect("the sink held");
+
         assert!(!record.running_moved(false), "the first sighting moved");
         assert!(record.running_moved(true));
         assert_eq!(
@@ -2211,6 +2308,7 @@ mod tests {
         const NAMED: &str = r#"{ "name": "alsa_output.test" }"#;
 
         let mut graph = Discovered::default();
+
         graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), Some(NAMED));
         graph.heard(HeldIn::Settings, CORE_ID, Some(FORCED_RATE), Some("96000"));
         graph.heard(
@@ -2241,6 +2339,7 @@ mod tests {
         const A_STREAM: u32 = 87;
 
         let mut graph = Discovered::default();
+
         graph.heard(HeldIn::Defaults, CORE_ID, Some(DEFAULT_SINK), Some(NAMED));
 
         assert_eq!(
@@ -2266,6 +2365,7 @@ mod tests {
     #[test]
     fn a_sink_is_hardware_where_it_or_the_device_above_it_names_a_driver() {
         let mut graph = Discovered::default();
+
         graph.driven.insert(49);
 
         assert!(
@@ -2297,6 +2397,7 @@ mod tests {
     #[test]
     fn a_metadata_object_that_leaves_takes_the_values_it_held_with_it() {
         let mut graph = Discovered::default();
+
         graph.heard(
             HeldIn::Defaults,
             CORE_ID,
@@ -2304,6 +2405,7 @@ mod tests {
             Some(r#"{ "name": "alsa_output.usb" }"#),
         );
         graph.heard(HeldIn::Settings, CORE_ID, Some(CLOCK_RATE), Some("44100"));
+
         assert_eq!(graph.default_sink.as_deref(), Some("alsa_output.usb"));
         assert!(graph.clock_rate.is_some());
 
@@ -2315,7 +2417,9 @@ mod tests {
             graph.clock_rate.is_some(),
             "the settings object's values were cleared with the defaults'"
         );
+
         graph.heard(HeldIn::Settings, CORE_ID, None, None);
+
         assert_eq!(graph.clock_rate, None);
     }
 
@@ -2323,6 +2427,7 @@ mod tests {
     fn a_sink_comes_out_of_the_route_its_card_seats_it_on() {
         let mut graph = Discovered::default();
         let mut ports = DevicePorts::default();
+
         ports.keep(Held::Offered, 0, serving(&[1], headphones(Plugged::Yes)));
         ports.keep(
             Held::Offered,
@@ -2361,6 +2466,7 @@ mod tests {
     fn the_route_a_card_is_switched_to_outranks_the_one_it_merely_offers() {
         let mut graph = Discovered::default();
         let mut ports = DevicePorts::default();
+
         ports.keep(Held::Offered, 0, serving(&[1], headphones(Plugged::Unsaid)));
         ports.keep(Held::Current, 0, serving(&[1], headphones(Plugged::Yes)));
         graph.ports.insert(49, ports);
@@ -2376,6 +2482,7 @@ mod tests {
     fn a_port_a_card_offers_and_is_not_switched_to_is_what_an_unplugged_sink_reads_as() {
         let mut graph = Discovered::default();
         let mut ports = DevicePorts::default();
+
         ports.keep(
             Held::Offered,
             0,
@@ -2407,18 +2514,21 @@ mod tests {
     #[test]
     fn a_device_that_goes_away_leaves_the_nodes_under_it_reading_as_the_graphs_own() {
         let mut graph = Discovered::default();
+
         graph.driven.insert(49);
         graph.sinks.insert(59, sink(false, Some(49)));
 
         assert!(graph.snapshot()[0].is_hardware);
 
         graph.driven.remove(&49);
+
         assert!(!graph.snapshot()[0].is_hardware);
     }
 
     #[test]
     fn a_route_the_card_is_switched_to_says_which_seats_it_turned_when_its_volume_moves() {
         let mut ports = DevicePorts::default();
+
         assert_eq!(
             ports.keep(Held::Current, 0, serving(&[1], heard_at(0.125))),
             None,
@@ -2457,10 +2567,14 @@ mod tests {
     #[test]
     fn a_sink_turns_the_route_its_card_is_switched_to_and_no_other() {
         let mut graph = Discovered::default();
+
         graph.sinks.insert(59, sink(false, Some(49)));
+
         let mut ports = DevicePorts::default();
+
         ports.keep(Held::Offered, 3, serving(&[1], heard_at(0.125)));
         graph.ports.insert(49, ports);
+
         let half = RouteSetting::Volume(Gain::new(0.5).expect("in range"));
 
         assert_eq!(
@@ -2474,6 +2588,7 @@ mod tests {
             .entry(49)
             .or_default()
             .keep(Held::Current, 3, serving(&[1], heard_at(0.125)));
+
         assert_eq!(
             graph.route_turning(SinkId::new(59), half),
             Some((

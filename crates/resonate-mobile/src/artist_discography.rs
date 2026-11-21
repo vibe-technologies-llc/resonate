@@ -248,6 +248,7 @@ impl Catalog {
         let mut documents = connection
             .prepare_cached(HELD_BY_THE_ARTIST)
             .map_err(read_error)?;
+
         let rows = documents
             .query_map(params![id, folded], |row| {
                 Ok((
@@ -258,8 +259,10 @@ impl Catalog {
                 ))
             })
             .map_err(read_error)?;
+
         for row in rows {
             let (group, release, album, title) = row.map_err(read_error)?;
+
             held.groups.insert(group);
             held.releases.insert(release);
             held.albums.insert(album);
@@ -269,9 +272,11 @@ impl Catalog {
         let mut matched = connection
             .prepare_cached(GROUPS_OF_ALBUMS_HELD)
             .map_err(read_error)?;
+
         let groups = matched
             .query_map(params![id, folded], |row| row.get::<_, String>(0))
             .map_err(read_error)?;
+
         for group in groups {
             held.groups.insert(group.map_err(read_error)?);
         }
@@ -294,6 +299,7 @@ impl Catalog {
             .map_err(read_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)?;
+
         releases.retain(|release| {
             let songs = Self::songs_of_the_group(connection, &release.group).unwrap_or_default();
             !held.holds(release) && !held.holds_a_release_of(&songs)
@@ -350,6 +356,7 @@ impl Catalog {
             return Ok(Vec::new());
         };
         let connection = self.0.lock();
+
         let held = Self::held_by_the_artist(&connection, Some(&artist), name)?;
 
         Self::releases_kept(&connection, &artist, &held)?
@@ -376,6 +383,7 @@ impl Catalog {
             return Ok(Vec::new());
         };
         let connection = self.0.lock();
+
         let held = Self::held_by_the_artist(&connection, Some(&artist), name)?;
         let mut seen_recordings = HashSet::new();
         let mut seen_titles = HashSet::new();
@@ -403,6 +411,7 @@ impl Catalog {
     ) -> Result<Vec<SearchSong>> {
         let id = self.artist_named(artist)?;
         let connection = self.0.lock();
+
         let held = Self::held_by_the_artist(&connection, id.as_ref(), artist)?;
         let songs = Self::songs_of_the_group(&connection, group)?;
 
@@ -422,14 +431,18 @@ impl Catalog {
 
     fn keep_discography(&self, artist: &Mbid, releases: &[ArtistRelease]) -> Result<usize> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
+
         transaction
             .execute(
                 "DELETE FROM artist_releases WHERE artist = ?1",
                 [artist.as_str()],
             )
             .map_err(write_error)?;
+
         let mut kept = 0;
+
         {
             let mut insert = transaction
                 .prepare_cached(
@@ -464,11 +477,15 @@ impl Catalog {
 
     fn keep_the_pressing(&self, group: &str, pressing: Option<&Release>) -> Result<usize> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
+
         transaction
             .execute("DELETE FROM group_songs WHERE release_group = ?1", [group])
             .map_err(write_error)?;
+
         let mut kept = 0;
+
         if let Some(pressing) = pressing {
             let mut insert = transaction
                 .prepare_cached(
@@ -513,6 +530,7 @@ impl Catalog {
         let connection = self.0.lock();
         let held = Self::held_by_the_artist(&connection, Some(artist), name)?;
         let mut due = Vec::new();
+
         for release in Self::releases_kept(&connection, artist, &held)? {
             let asked_lately: bool = connection
                 .query_row(
@@ -521,9 +539,11 @@ impl Catalog {
                     |row| row.get(0),
                 )
                 .map_err(read_error)?;
+
             if asked_lately {
                 continue;
             }
+
             let pressing: Option<String> = connection
                 .query_row(PRESSING_READ_FOR_THE_GROUP, [&release.group], |row| {
                     row.get(0)
@@ -569,6 +589,7 @@ impl Catalog {
         let connection = self.0.lock();
         let held = Self::held_by_the_artist(&connection, Some(artist), name)?;
         let mut unread = Vec::new();
+
         for release in Self::releases_kept(&connection, artist, &held)? {
             if !Self::group_is_read(&connection, &release.group)? {
                 unread.push(release.group);
@@ -587,16 +608,19 @@ fn learned_discography(
     let Some(artist) = catalog.artist_named(name)? else {
         return Ok(false);
     };
+
     if catalog.discography_is_fresh(&artist)? {
         return Ok(false);
     }
 
     let mut releases = Vec::new();
     let mut from = 0;
+
     for _ in 0..=FURTHER_PAGES_AT_MOST {
         let page = asked(&artist, from)
             .map_err(|source| Error::reference(LookupOp::ReleaseGroupsOfArtist, source))?;
         let further = (page.unread > 0 && page.read_to > from).then_some(page.read_to);
+
         releases.extend(page.releases);
         match further {
             Some(next) => from = next,
@@ -615,6 +639,7 @@ fn learned_group(
     if Catalog::group_is_read(&catalog.0.lock(), group)? {
         return Ok(false);
     }
+
     let id = Mbid::new(group)?;
     let pressing = pressing_of(
         asked(&id).map_err(|source| Error::reference(LookupOp::ReleasesOfGroup, source))?,
@@ -633,6 +658,7 @@ fn learned_songs(
     };
 
     let mut read = 0;
+
     for group in catalog
         .groups_to_read(&artist, name)?
         .into_iter()
@@ -655,6 +681,7 @@ fn learned_covers(
     };
 
     let mut read = 0;
+
     for (group, pressing) in catalog
         .covers_to_ask(&artist, name)?
         .into_iter()
@@ -662,6 +689,7 @@ fn learned_covers(
     {
         let art = asked(pressing.as_ref(), &group)
             .map_err(|source| Error::reference(LookupOp::Cover, source))?;
+
         catalog.keep_unheld_cover(&group, art.as_ref())?;
         read += 1;
     }
@@ -728,6 +756,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a song");
+
         catalog
             .0
             .lock()
@@ -802,6 +831,7 @@ mod tests {
     fn a_release_the_albums_group_or_title_names_is_held_and_the_rest_are_listed_newest_first() {
         let catalog = opened();
         let song = held(&catalog, "One", "Held album");
+
         catalog
             .0
             .lock()
@@ -838,8 +868,11 @@ mod tests {
     #[test]
     fn a_single_is_held_wherever_its_song_is_and_a_live_album_is_never_kept() {
         let catalog = opened();
+
         held(&catalog, "Single Song", "Some album");
+
         let mut live = released(LACKED_GROUP, "Live", "Album", "2003");
+
         live.secondary = vec!["Live".into()];
 
         learned(
@@ -861,12 +894,15 @@ mod tests {
     #[test]
     fn the_songs_of_an_unheld_release_are_read_once_and_listed_without_what_is_held() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
         learned(
             &catalog,
             vec![released(LACKED_GROUP, "Lacked", "Album", "2010")],
         );
+
         let mut asked = 0;
+
         let mut ask = |_: &Mbid| {
             asked += 1;
             Ok(vec![pressing(&["First", "held song", "Third"])])
@@ -897,6 +933,7 @@ mod tests {
     #[test]
     fn a_song_on_two_releases_is_offered_once_and_a_release_with_no_pressing_is_read_empty() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
         learned(
             &catalog,
@@ -905,6 +942,7 @@ mod tests {
                 released(SINGLE_GROUP, "Lacked single", "Single", "2011"),
             ],
         );
+
         let mut ask = |group: &Mbid| {
             Ok(if group.as_str() == LACKED_GROUP {
                 vec![pressing(&["Shared", "Only here"])]
@@ -924,13 +962,16 @@ mod tests {
     #[test]
     fn a_song_downloaded_from_a_release_makes_the_release_held() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
         learned(
             &catalog,
             vec![released(LACKED_GROUP, "Lacked", "Album", "2010")],
         );
         learned_songs(&catalog, NAME, |_| Ok(vec![pressing(&["First", "Second"])])).expect("read");
+
         let landed = held(&catalog, "First", "Lacked album as tagged");
+
         catalog
             .0
             .lock()
@@ -951,7 +992,9 @@ mod tests {
     #[test]
     fn a_discography_is_asked_once_a_month_and_an_artist_without_an_id_is_never_asked() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
+
         let asked = Cell::new(0);
         let ask = |_: &Mbid, _: u32| {
             asked.set(asked.get() + 1);
@@ -984,7 +1027,9 @@ mod tests {
     #[test]
     fn a_discography_with_more_to_read_is_followed_a_few_pages_and_kept_whole() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
+
         let mut pages = Vec::new();
 
         let learned = learned_discography(&catalog, NAME, |_, from| {
@@ -1019,6 +1064,7 @@ mod tests {
     #[test]
     fn a_release_not_held_is_asked_for_its_sleeve_by_the_pressing_read_else_by_its_group() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
         learned(
             &catalog,
@@ -1035,6 +1081,7 @@ mod tests {
             })
         })
         .expect("read");
+
         let mut asked = Vec::new();
 
         let read = learned_covers(&catalog, NAME, |pressing, group| {
@@ -1058,13 +1105,16 @@ mod tests {
             catalog.unheld_release_cover(LACKED_GROUP).expect("a cover"),
             Some(sleeve().bytes)
         );
+
         let lacking = catalog.artist_releases_not_held(NAME).expect("the rows");
+
         assert!(lacking.iter().all(|release| release.covered));
     }
 
     #[test]
     fn a_sleeve_is_kept_and_not_asked_again_and_a_miss_waits_a_month() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
         learned(
             &catalog,
@@ -1073,6 +1123,7 @@ mod tests {
                 released(SINGLE_GROUP, "Other", "Single", "2012"),
             ],
         );
+
         let asked = Cell::new(0);
         let mut ask = |_: Option<&Mbid>, group: &Mbid| {
             asked.set(asked.get() + 1);
@@ -1084,6 +1135,7 @@ mod tests {
         assert_eq!(asked.get(), 2);
 
         let lacking = catalog.artist_releases_not_held(NAME).expect("the rows");
+
         assert_eq!(
             lacking
                 .iter()
@@ -1112,11 +1164,13 @@ mod tests {
     #[test]
     fn a_failed_ask_for_a_sleeve_is_not_remembered_and_a_later_miss_never_blanks_one_held() {
         let catalog = opened();
+
         held(&catalog, "Held song", "Held album");
         learned(
             &catalog,
             vec![released(LACKED_GROUP, "Lacked", "Album", "2010")],
         );
+
         let failed = learned_covers(&catalog, NAME, |_, _| {
             Err(resonate_library::Error::Refused {
                 op: LookupOp::Cover,
@@ -1127,10 +1181,12 @@ mod tests {
         assert!(failed.is_err());
 
         let group = Mbid::new(LACKED_GROUP).expect("an mbid");
+
         assert_eq!(
             learned_covers(&catalog, NAME, |_, _| Ok(Some(sleeve()))).expect("asked"),
             1
         );
+
         catalog.keep_unheld_cover(&group, None).expect("a miss");
 
         assert_eq!(
@@ -1143,6 +1199,7 @@ mod tests {
     fn a_release_that_becomes_held_is_no_longer_asked_for_and_an_artist_without_an_id_is_never_asked()
      {
         let catalog = opened();
+
         held(&catalog, "Same Title Song", "Same Title");
         learned(
             &catalog,

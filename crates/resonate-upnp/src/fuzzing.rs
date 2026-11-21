@@ -81,12 +81,14 @@ fn relations_in(query: &Query) -> usize {
 fn read_what_a_control_point_asks(bytes: &[u8], text: Option<&str>) {
     let _ = announce::searched_for(bytes);
     let _ = offered::routed(bytes);
+
     for method in [events::Method::Subscribe, events::Method::Unsubscribe] {
         if let Subscribing::New { callback, kept } = events::subscribing(bytes, method, SENDER) {
             assert!(callback.is_at(SENDER));
             assert!(kept >= events::KEPT_AT_LEAST && kept <= events::KEPT_AT_MOST);
         }
     }
+
     let Some(text) = text else {
         return;
     };
@@ -102,11 +104,14 @@ fn read_what_a_control_point_asks(bytes: &[u8], text: Option<&str>) {
     }
 
     let _ = offered::route_of(text);
+
     if let Some(object) = Object::read(text) {
         assert_eq!(object.to_string(), text);
     }
+
     let _ = Udn::read(text);
     let length = bytes.len() as u64;
+
     if let Wanted::Part { from, to } = offered::wanted(Some(text), length) {
         assert!(from <= to && to < length);
     }
@@ -122,6 +127,7 @@ fn read_what_a_control_point_asks(bytes: &[u8], text: Option<&str>) {
             name: naming::server_name(),
             watched: &watched,
         };
+
         let envelope = match asking.answer(service, &called) {
             Answered::Said(envelope) => envelope,
             Answered::Faulted(fault) => directory::fault_envelope(fault),
@@ -149,6 +155,7 @@ pub fn read_a_listing(bytes: &[u8]) {
     let served_from = Located::parse(SERVED_FROM_AT).expect("a fixed address reads");
     let also = Located::parse(ALSO_SERVING_AT).expect("a fixed address reads");
     let also_serving = |at: &Located| at.is_on_host_of(&also);
+
     let origin = listing::Origin {
         served_from: &served_from,
         also_serving: &also_serving,
@@ -161,11 +168,14 @@ pub fn read_a_listing(bytes: &[u8]) {
         Ok(answered) => answered.named("Result").map(str::to_owned),
         Err(_) => None,
     };
+
     for text in [Some(text.to_owned()), didl].into_iter().flatten() {
         let Ok(listing) = listing::read_from(&text, &origin) else {
             continue;
         };
+
         assert!(listing.len() <= ENTRIES_A_LISTING_AT_MOST);
+
         for container in &listing.containers {
             assert!(!container.id.as_str().is_empty());
             assert!(!container.title.is_empty());
@@ -182,6 +192,7 @@ pub fn read_a_listing(bytes: &[u8]) {
             }
         }
     }
+
     let _ = listing::length_of(text);
     let _ = fetched::range_of(text);
 }
@@ -199,7 +210,9 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
 
     let _ = http::unchunked(bytes);
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut response = httparse::Response::new(&mut headers);
+
     if response.parse(bytes).is_ok() {
         let _ = http::length_of(response.headers);
     }
@@ -208,8 +221,11 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
         read_what_a_control_point_asks(bytes, None);
         return;
     };
+
     read_what_a_control_point_asks(bytes, Some(text));
+
     let described_at = Located::parse(DESCRIBED_AT).expect("a fixed address reads");
+
     if let Ok(server) = description::read_server(&described_at, text) {
         assert!(server.directory.control.is_on_host_of(&described_at));
     }
@@ -226,10 +242,13 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
             assert!(service.control.is_on_host_of(&described_at));
         }
     }
+
     let _ = soap::answered(text, Action::GetPositionInfo);
     let _ = soap::fault_code(text, Action::Play);
+
     if let Ok(located) = Located::parse(text) {
         let _ = located.to_string();
     }
+
     let _ = described_at.join(text);
 }

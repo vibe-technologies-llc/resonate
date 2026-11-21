@@ -92,9 +92,11 @@ impl Decimator {
                     continue;
                 };
                 let at = frame * per_frame;
+
                 let Some(fresh) = plane.get(at..at + per_frame) else {
                     continue;
                 };
+
                 for byte in fresh {
                     history.took(ordered(*byte, self.bits));
                 }
@@ -114,8 +116,10 @@ fn ordered(byte: u8, bits: BitOrder) -> u8 {
 fn convolved(table: &PartialSums, history: &History) -> f32 {
     let mask = table.bytes - 1;
     let mut sum = 0.0;
+
     for (step, sums) in table.sums.as_chunks::<BYTE_VALUES>().0.iter().enumerate() {
         let byte = history.held[(history.oldest + step) & mask];
+
         sum += sums[usize::from(byte)];
     }
     sum
@@ -124,15 +128,19 @@ fn convolved(table: &PartialSums, history: &History) -> f32 {
 fn partial_sums(dsd_hz: u32) -> PartialSums {
     let bytes = fir_bytes_for(dsd_hz);
     let cutoff = PASSBAND_HZ / f64::from(dsd_hz);
+
     let kernel = kaiser_sinc(bytes * 8, cutoff, beta_for(STOPBAND_DB));
 
     let mut sums = vec![0.0_f32; bytes * BYTE_VALUES];
+
     for (step, steps) in sums.as_chunks_mut::<BYTE_VALUES>().0.iter_mut().enumerate() {
         for (value, slot) in steps.iter_mut().enumerate() {
             let mut sum = 0.0;
+
             for bit in 0..8 {
                 let set = (value >> (7 - bit)) & 1 == 1;
                 let weight = kernel.get(step * 8 + bit).copied().unwrap_or(0.0);
+
                 sum += weight * if set { ONE_BIT_HIGH } else { ONE_BIT_LOW };
             }
             *slot = sum as f32;
@@ -165,6 +173,7 @@ impl DcBlock {
 
     fn next(&mut self, sample: f32) -> f32 {
         let out = sample - self.last_in + self.pole * self.last_out;
+
         self.last_in = sample;
         self.last_out = out;
         out
@@ -184,6 +193,7 @@ mod tests {
         let mut held = Decimator::new(DSD64, CARRIER, 1, BitOrder::MostSignificantFirst);
         let bytes = vec![plane; frames * DOP_DECIMATION as usize / 8];
         let mut out = Vec::new();
+
         held.frames(&[bytes], &mut out, 1);
         out
     }
@@ -191,8 +201,10 @@ mod tests {
     fn gain_db(kernel: &[f64], hz: f64, dsd_hz: u32) -> f64 {
         let cycles = hz / f64::from(dsd_hz);
         let (mut real, mut imaginary) = (0.0, 0.0);
+
         for (tap, weight) in kernel.iter().enumerate() {
             let angle = std::f64::consts::TAU * cycles * tap as f64;
+
             real += weight * angle.cos();
             imaginary -= weight * angle.sin();
         }
@@ -218,6 +230,7 @@ mod tests {
             );
             for hz in [10_000.0, 20_000.0] {
                 let gain = gain_db(&kernel, hz, dsd_hz);
+
                 assert!(gain.abs() < 0.02, "{dsd_hz} Hz falls {gain} dB by {hz} Hz");
             }
         }
@@ -261,12 +274,15 @@ mod tests {
         let per_frame = DOP_DECIMATION as usize / 8;
 
         let mut out = Vec::new();
+
         for frame in 0..plane.len() / per_frame {
             for byte in &plane[frame * per_frame..(frame + 1) * per_frame] {
                 held.remove(0);
                 held.push(*byte);
             }
+
             let mut sum = 0.0;
+
             for (step, byte) in held.iter().enumerate() {
                 sum += table.at(step, *byte);
             }
@@ -283,6 +299,7 @@ mod tests {
 
         let mut held = Decimator::new(DSD64, CARRIER, 1, BitOrder::MostSignificantFirst);
         let mut ringed = Vec::new();
+
         held.frames(slice::from_ref(&plane), &mut ringed, 1);
 
         assert_eq!(ringed, shifting_history(&plane));

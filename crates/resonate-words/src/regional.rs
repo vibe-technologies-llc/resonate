@@ -105,6 +105,7 @@ pub(crate) fn settled() -> Rc<Settled> {
             Some((held, settled)) if *held == generation => Rc::clone(settled),
             _ => {
                 let settled = Rc::new(Settled::of(&CURRENT.read()));
+
                 *built = Some((generation, Rc::clone(&settled)));
                 settled
             }
@@ -114,6 +115,7 @@ pub(crate) fn settled() -> Rc<Settled> {
 
 pub(crate) fn latin_digits(identifier: LanguageIdentifier) -> Locale {
     let mut locale = Locale::from(identifier);
+
     locale
         .extensions
         .unicode
@@ -126,6 +128,7 @@ fn parsed(tag: &str) -> Option<Locale> {
     let tag = tagged(tag)?;
     let locale = Locale::try_from_str(&tag).ok()?;
     let mut identifier = locale.id;
+
     identifier.variants.clear();
 
     Some(latin_digits(identifier))
@@ -165,6 +168,7 @@ mod tests {
 
     fn tag(conventions: &Conventions) -> String {
         let mut identifier = conventions.numbers().id.clone();
+
         identifier.variants.clear();
         identifier.to_string()
     }
@@ -226,10 +230,12 @@ mod tests {
             ("LC_NUMERIC", "de_DE.UTF-8"),
             ("LC_TIME", "de_DE.UTF-8"),
         ]));
+
         assert_eq!(numbers.as_deref(), Some("fr_FR.UTF-8"));
         assert_eq!(dates.as_deref(), Some("fr_FR.UTF-8"));
 
         let (numbers, dates) = named_in(environment(&[("LC_ALL", ""), ("LANG", "hi_IN.UTF-8")]));
+
         assert_eq!(numbers.as_deref(), Some("hi_IN.UTF-8"));
         assert_eq!(dates.as_deref(), Some("hi_IN.UTF-8"));
     }

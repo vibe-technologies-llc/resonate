@@ -70,6 +70,7 @@ pub fn forbid_writing(path: &Path) {
     let mut permissions = fs::metadata(path)
         .expect("the fixture file stands")
         .permissions();
+
     permissions.set_readonly(true);
     fs::set_permissions(path, permissions).expect("the fixture file takes the read-only mark");
 }
@@ -80,6 +81,7 @@ pub fn allow_writing(path: &Path) {
     let mut permissions = fs::metadata(path)
         .expect("the fixture file stands")
         .permissions();
+
     permissions.set_readonly(false);
     fs::set_permissions(path, permissions).expect("the fixture file loses the read-only mark");
 }

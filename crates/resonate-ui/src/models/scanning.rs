@@ -26,6 +26,7 @@ impl LibraryModel {
     ) {
         let location = wanted.location.clone();
         let span = wanted.span;
+
         self.kept(
             super::Change::KeepTheLyricsTiming,
             move |library| library.hold_lyrics_ahead(&location, span, ahead),
@@ -131,18 +132,22 @@ impl LibraryModel {
             }
             return;
         }
+
         let forgotten = self
             .running
             .roots_waiting
             .iter()
             .position(|waiting| matches!(waiting, RootWaiting::ToForget(_)));
+
         if let Some(at) = forgotten {
             let RootWaiting::ToForget(root) = self.running.roots_waiting.remove(at) else {
                 return;
             };
+
             self.forget_root(root, cx);
             return;
         }
+
         let added: Vec<PathBuf> = self
             .running
             .roots_waiting
@@ -152,6 +157,7 @@ impl LibraryModel {
                 RootWaiting::ToForget(_) => None,
             })
             .collect();
+
         self.scan(added, cx);
     }
 
@@ -169,6 +175,7 @@ impl LibraryModel {
         if self.running.work.is_busy() {
             return false;
         }
+
         let handle = match walk(&self.library, roots, reading, prompted) {
             Ok(Some(handle)) => handle,
             Ok(None) => return true,
@@ -192,6 +199,7 @@ impl LibraryModel {
 
         self.running._scan = cx.spawn(async move |this, cx| {
             let mut polled = 0;
+
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
                 polled += 1;
@@ -216,6 +224,7 @@ impl LibraryModel {
                         if let Some(notice) = scanned(&summary, prompted) {
                             toast::tell(notice, cx);
                         }
+
                         let brought = summary.stats.added + summary.stats.updated > 0;
                         let worth_asking = prompted == Prompted::ByHand || brought;
                         if !summary.cancelled && worth_asking {

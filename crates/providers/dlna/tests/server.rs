@@ -88,6 +88,7 @@ impl Catalog for Shelf3 {
         let words = |query: &Query| -> Vec<String> {
             let mut held = Vec::new();
             let mut stack = vec![query.clone()];
+
             while let Some(one) = stack.pop() {
                 match one {
                     Query::All(all) | Query::Any(all) => stack.extend(all),
@@ -101,9 +102,11 @@ impl Catalog for Shelf3 {
             }
             held
         };
+
         if kind != Kind::Song {
             return Ok(Searched::Found(paged(Vec::new(), page)));
         }
+
         let wanted = words(query);
         let found = songs()
             .into_iter()
@@ -240,14 +243,18 @@ fn a_song_on_a_media_server_is_named_by_a_location_and_streamed_as_served_and_se
     let server = offered();
     let dlna = Dlna::searching(server.heard_at(), ANSWERED_WITHIN);
     let song = id(&format!("{SERVER_UDN}/song-2"));
+
     let location = dlna.location_of(&Named::Song(song.clone()));
 
     let read = MediaLocation::from_uri(&location.to_uri()).expect("the uri reads");
     let mut streamed = dlna.streamed(&song).expect("the song is streamed");
     let mut whole = Vec::new();
+
     streamed.read_to_end(&mut whole).expect("read whole");
     streamed.seek(SeekFrom::Start(900)).expect("a seek");
+
     let mut tail = Vec::new();
+
     streamed.read_to_end(&mut tail).expect("read on");
 
     assert_eq!(dlna.named_by(&read), Some(Named::Song(song)));
@@ -285,6 +292,7 @@ fn a_server_that_has_left_the_network_is_said_to_be_away_and_is_no_longer_listed
     let server = offered();
     let dlna = Dlna::searching(server.heard_at(), ANSWERED_WITHIN);
     let listed = dlna.artists().expect("the network is searched");
+
     drop(server);
 
     let streamed = dlna.streamed(&id(&format!("{SERVER_UDN}/song-1")));

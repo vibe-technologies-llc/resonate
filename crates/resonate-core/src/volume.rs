@@ -30,7 +30,7 @@ impl Decibels {
 
 const MILLIBELS_PER_DECIBEL: f32 = 100.0;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Trim(i32);
 
 impl Trim {
@@ -46,6 +46,7 @@ impl Trim {
 
     pub fn from_decibels(decibels: f64) -> Result<Self> {
         let millibels = (decibels * f64::from(MILLIBELS_PER_DECIBEL)).round();
+
         if !millibels.is_finite() {
             return Err(Error::TrimOutOfRange(i32::MAX));
         }
@@ -220,6 +221,7 @@ mod tests {
     #[test]
     fn minus_six_decibels_halves_amplitude() {
         let gain = Decibels::new(-6.0206).expect("finite").to_gain();
+
         assert!((gain.get() - 0.5).abs() < 1e-4, "got {gain}");
     }
 
@@ -233,6 +235,7 @@ mod tests {
     fn decibel_gain_round_trip_is_stable() {
         for db in [-60.0, -24.0, -6.0, -0.5, 0.0, 3.0, 12.0] {
             let round_tripped = Decibels::new(db).expect("finite").to_gain().to_decibels();
+
             assert!(
                 (round_tripped.get() - db).abs() < 1e-3,
                 "{db} dB round-tripped to {round_tripped}"
@@ -245,11 +248,13 @@ mod tests {
         for position in [0.0, 0.2, 0.5, 0.8, 1.0] {
             let volume = Volume::new(position).expect("in range");
             let heard = Volume::heard_at(volume.to_gain());
+
             assert!(
                 (heard.get() - position).abs() < 1e-6,
                 "{position} read back as {heard}"
             );
         }
+
         assert_eq!(Volume::heard_at(Gain(1.5)), Volume::MAX);
     }
 
@@ -352,6 +357,7 @@ mod tests {
             gain: None,
             peak: Some(gain(0.5)),
         };
+
         assert!(
             (halved.headroom().expect("a peak").get() - 6.0206).abs() < 1e-3,
             "{:?}",
@@ -362,12 +368,14 @@ mod tests {
             gain: Some(decibels(12.0)),
             peak: Some(gain(0.5)),
         };
+
         assert!(capped.headroom().expect("a peak").get().abs() < 1e-3);
     }
 
     #[test]
     fn a_measured_true_peak_over_full_scale_attenuates_a_track_nothing_tagged() {
         let untagged = AppliedGain::default().heeding(Some(gain(1.25)));
+
         assert!(
             untagged.adjusts(),
             "an over the file carries was left to clip"
@@ -375,12 +383,14 @@ mod tests {
         assert!((untagged.applied().get() - 0.8).abs() < 1e-6);
 
         let under = AppliedGain::default().heeding(Some(gain(0.9)));
+
         assert!(!under.adjusts(), "a track under full scale was turned down");
 
         let tagged = AppliedGain {
             gain: Some(decibels(6.0)),
             peak: Some(gain(0.4)),
         };
+
         assert_eq!(tagged.heeding(Some(gain(0.3))).peak, Some(gain(0.4)));
         assert_eq!(tagged.heeding(Some(gain(0.6))).peak, Some(gain(0.6)));
         assert_eq!(tagged.heeding(None), tagged);

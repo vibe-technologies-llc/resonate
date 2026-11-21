@@ -205,10 +205,12 @@ mod tests {
     #[test]
     fn a_point_on_the_curve_reads_back_as_the_frequency_and_level_it_was_drawn_at() {
         let plot = plot();
+
         for at in [
             20.0, 31.5, 100.0, 440.0, 1_000.0, 3_150.0, 10_000.0, 20_000.0,
         ] {
             let read = plot.hertz_at(plot.x_of(at));
+
             assert!(
                 (read / at - 1.0).abs() < 1e-4,
                 "{at} Hz read back as {read}"
@@ -216,6 +218,7 @@ mod tests {
         }
         for level in [-15.0, -6.0, -0.5, 0.0, 3.2, 15.0] {
             let read = plot.decibels_at(plot.y_of(level));
+
             assert!(
                 (read - level).abs() < 1e-4,
                 "{level} dB read back as {read}"
@@ -237,6 +240,7 @@ mod tests {
         for (at, hertz) in columns.iter().enumerate() {
             let x = 40.0 + WIDE * at as f32 / 6.0;
             let read = plot.hertz_at(x);
+
             assert!(
                 (read / hertz - 1.0).abs() < 1e-4,
                 "{hertz} Hz read as {read}"
@@ -249,14 +253,17 @@ mod tests {
         let plot = plot();
 
         let low = plot.placed(plot.x_of(57.3), plot.y_of(0.0));
+
         assert_eq!(low.frequency, hertz(57.0));
         assert_eq!(low.gain, BandGain::FLAT);
 
         let middle = plot.placed(plot.x_of(1_234.0), plot.y_of(4.44));
+
         assert_eq!(middle.frequency, hertz(1_230.0));
         assert_eq!(middle.gain, decibels(4.4));
 
         let high = plot.placed(plot.x_of(12_345.0), plot.y_of(-7.06));
+
         assert_eq!(high.frequency, hertz(12_300.0));
         assert_eq!(high.gain, decibels(-7.1));
     }
@@ -266,10 +273,12 @@ mod tests {
         let plot = plot();
 
         let beyond = plot.placed(-5_000.0, -5_000.0);
+
         assert_eq!(beyond.frequency, hertz(RESPONSE_FROM_HZ));
         assert_eq!(beyond.gain, decibels(f64::from(WIDEST)));
 
         let under = plot.placed(5_000.0, 5_000.0);
+
         assert_eq!(under.frequency, hertz(RESPONSE_TO_HZ));
         assert_eq!(under.gain, decibels(-f64::from(WIDEST)));
     }
@@ -284,16 +293,19 @@ mod tests {
         });
 
         let (x, y) = plot.handle(band);
+
         assert!(
             (y - plot.y_of(-1.5)).abs() < 1e-3,
             "a handle drawn off the curve"
         );
 
         let placed = plot.placed(x, y);
+
         assert_eq!(placed.gain, decibels(3.0));
         assert_eq!(placed.frequency, hertz(1_000.0));
 
         let dropped = plot.placed(x, plot.y_of(-f64::from(WIDEST)));
+
         assert_eq!(
             dropped.gain,
             decibels(-f64::from(WIDEST) + 4.5),
@@ -305,8 +317,11 @@ mod tests {
     fn a_range_drawn_wider_than_a_band_holds_is_held_to_what_a_band_holds() {
         let plot = Plot::spanning(0.0, 0.0, WIDE, TALL, 60.0);
         let top = plot.placed(WIDE / 2.0, 0.0);
+
         assert_eq!(top.gain.milli_decibels(), BandGain::WIDEST_MILLI_DECIBELS);
+
         let bottom = plot.placed(WIDE / 2.0, TALL);
+
         assert_eq!(
             bottom.gain.milli_decibels(),
             -BandGain::WIDEST_MILLI_DECIBELS
@@ -317,6 +332,7 @@ mod tests {
     fn a_box_that_has_not_been_laid_out_places_nothing_outside_the_vocabulary() {
         let plot = Plot::within(Bounds::default(), 0.0, Preamp::NONE);
         let placed = plot.placed(100.0, 100.0);
+
         assert_eq!(placed.frequency, hertz(RESPONSE_FROM_HZ));
         assert_eq!(placed.gain, BandGain::FLAT);
     }
@@ -336,10 +352,12 @@ mod tests {
         ];
 
         let (x, y) = plot.handle(bands[1]);
+
         assert_eq!(plot.nearest(&bands, x + 3.0, y - 4.0), Some(1));
         assert_eq!(plot.nearest(&bands, x + HANDLE_REACH + 1.0, y), None);
 
         let (x, y) = plot.handle(bands[2]);
+
         assert!(
             (y - plot.y_of(0.0)).abs() < 1e-4,
             "a notch drawn off the zero line"
@@ -354,11 +372,14 @@ mod tests {
         let plot = plot();
         let under = a_band_at(plot.placed(plot.x_of(1_000.0), plot.y_of(0.0)));
         let over = under;
+
         let (x, y) = plot.handle(under);
+
         assert_eq!(plot.nearest(&[under, over], x, y), Some(1));
 
         let beside = a_band_at(plot.placed(plot.x_of(1_100.0), plot.y_of(0.0)));
         let (beside_x, _) = plot.handle(beside);
+
         assert_eq!(plot.nearest(&[beside, under], beside_x - 1.0, y), Some(0));
     }
 
@@ -372,7 +393,9 @@ mod tests {
         assert_eq!(band.frequency, hertz(250.0));
         assert_eq!(band.gain, decibels(-4.0));
         assert!(band.on);
+
         let (x, y) = plot.handle(band);
+
         assert!((x - plot.x_of(250.0)).abs() < 1e-3);
         assert!((y - plot.y_of(-4.0)).abs() < 1e-3);
     }
@@ -381,12 +404,15 @@ mod tests {
     fn a_curve_takes_bands_until_it_holds_as_many_as_the_stage_runs() {
         let plot = plot();
         let mut profile = Profile::new(Preamp::NONE, Vec::new()).expect("empty");
+
         for at in 0..MAX_BANDS {
             let x = 40.0 + WIDE * at as f32 / MAX_BANDS as f32;
+
             profile
                 .push(a_band_at(plot.placed(x, plot.y_of(1.0))))
                 .expect("room for another band");
         }
+
         assert!(
             profile.push(a_band_at(plot.placed(300.0, 150.0))).is_err(),
             "a curve took a band past MAX_BANDS"
@@ -403,9 +429,11 @@ mod tests {
             decibels(6.4),
             Q::from_units(0.7).expect("in range"),
         );
+
         shelf.on = false;
 
         let landed = moved(shelf, plot.placed(plot.x_of(80.0), plot.y_of(3.0)));
+
         assert_eq!(landed.kind, BandKind::LowShelf);
         assert_eq!(landed.q, shelf.q);
         assert!(!landed.on);
@@ -419,6 +447,7 @@ mod tests {
             Q::BUTTERWORTH,
         );
         let landed = moved(notch, plot.placed(plot.x_of(2_000.0), plot.y_of(9.0)));
+
         assert_eq!(landed.frequency, hertz(2_000.0));
         assert_eq!(
             landed.gain,
@@ -433,6 +462,7 @@ mod tests {
 
         let narrower = narrowed(start, 1.0);
         let wider = narrowed(start, -1.0);
+
         assert!(narrower > start && wider < start);
         assert_eq!(narrower.milli() % 10, 0, "a turned Q is not on a hundredth");
         assert_eq!(narrowed(narrowed(start, 6.0), -6.0), start);
@@ -446,10 +476,12 @@ mod tests {
     #[test]
     fn a_small_turn_of_the_wheel_still_moves_the_q_a_step() {
         let widest = Q::from_units(0.1).expect("in range");
+
         assert_eq!(narrowed(widest, 0.01).milli(), 110);
         assert_eq!(narrowed(widest, -0.01), widest);
 
         let typed = Q::from_milli(707).expect("in range");
+
         assert_eq!(narrowed(typed, 0.01).milli(), 710);
         assert_eq!(narrowed(typed, -0.01).milli(), 700);
     }

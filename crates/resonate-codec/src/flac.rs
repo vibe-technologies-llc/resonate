@@ -65,6 +65,7 @@ pub(crate) fn samples_in_a_frame(header: &[u8]) -> Option<u64> {
     let [sync, tail, sizing, ..] = *header else {
         return None;
     };
+
     if sync != FRAME_SYNC || tail & FRAME_SYNC_TAIL_MASK != FRAME_SYNC_TAIL {
         return None;
     }
@@ -102,6 +103,7 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Flac {
         return Flac::default();
     };
     let found = scan(source).unwrap_or_default();
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("a FLAC metadata block scan could not restore the stream position");
     }
@@ -110,12 +112,14 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Flac {
 
 fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Flac> {
     let start = past_id3(source)?;
+
     source.seek(SeekFrom::Start(start)).ok()?;
     if read_exact::<4, S>(source)? != MAGIC {
         return None;
     }
 
     let mut found = Flac::default();
+
     for _ in 0..MAX_BLOCKS {
         let Some(header) = read_exact::<BLOCK_HEADER_BYTES, S>(source) else {
             break;
@@ -135,6 +139,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Flac> {
         let Some(next) = body.checked_add(declared) else {
             break;
         };
+
         if source.seek(SeekFrom::Start(next)).is_err() {
             break;
         }
@@ -151,13 +156,17 @@ fn chapter_comments<S: Read + ?Sized>(
     declared: u64,
 ) -> Option<Vec<(String, String)>> {
     let mut block = Vec::new();
+
     source.take(declared).read_to_end(&mut block).ok()?;
 
     let mut at = 0;
+
     next_field(&block, &mut at)?;
+
     let count = next_count(&block, &mut at)?;
 
     let mut chapters = Vec::new();
+
     for _ in 0..count.min(MOST_COMMENTS) {
         let comment = next_field(&block, &mut at)?;
         let Some((key, value)) = str::from_utf8(comment)
@@ -176,6 +185,7 @@ fn chapter_comments<S: Read + ?Sized>(
 
 fn next_count(block: &[u8], at: &mut usize) -> Option<usize> {
     let count = u32::from_le_bytes(block.get(*at..*at + 4)?.try_into().ok()?);
+
     *at += 4;
     usize::try_from(count).ok()
 }
@@ -183,6 +193,7 @@ fn next_count(block: &[u8], at: &mut usize) -> Option<usize> {
 fn next_field<'b>(block: &'b [u8], at: &mut usize) -> Option<&'b [u8]> {
     let length = next_count(block, at)?;
     let field = block.get(*at..at.checked_add(length)?)?;
+
     *at += length;
     Some(field)
 }
@@ -201,6 +212,7 @@ fn declared_bytes(header: &[u8; BLOCK_HEADER_BYTES]) -> u64 {
 
 fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueFile> {
     let mut block = Vec::new();
+
     if source.take(declared).read_to_end(&mut block).is_err() {
         return None;
     }
@@ -214,6 +226,7 @@ fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueF
 
     let mut tracks = Vec::with_capacity(count.min(block.len() / TRACK_BYTES));
     let mut at = SHEET_HEADER_BYTES;
+
     for _ in 0..count {
         let record = block.get(at..at.checked_add(TRACK_BYTES)?)?;
         let indexes = usize::from(record[TRACK_INDEX_COUNT_AT]);
@@ -223,6 +236,7 @@ fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueF
         let points = block.get(at + TRACK_BYTES..past)?;
 
         let mut track = cue_track(record, points, lead_out);
+
         track.tags.barcode.clone_from(&catalog);
         tracks.push(track);
         at = past;
@@ -232,6 +246,7 @@ fn read_cuesheet<S: Read + ?Sized>(source: &mut S, declared: u64) -> Option<CueF
         named: String::new(),
         tracks,
     };
+
     cut.heard_from_the_head();
     Some(cut)
 }
@@ -278,6 +293,7 @@ fn index_at(points: &[u8], number: u8) -> Option<u64> {
 
 fn eight_bytes(from: &[u8]) -> u64 {
     let mut held = [0_u8; 8];
+
     held.copy_from_slice(&from[..8]);
     u64::from_be_bytes(held)
 }
@@ -300,6 +316,7 @@ mod tests {
             sizing << BLOCK_SIZE_SHIFT | 0x9,
             0x18,
         ];
+
         header.extend_from_slice(coded_number);
         header.extend_from_slice(spelled);
         header.push(0xAB);
@@ -354,6 +371,7 @@ mod tests {
 
     fn block(into: &mut Vec<u8>, kind: u8, payload: &[u8], last: bool) {
         let head = kind | if last { LAST_BLOCK } else { 0 };
+
         into.push(head);
         into.extend_from_slice(&(payload.len() as u32).to_be_bytes()[1..]);
         into.extend_from_slice(payload);
@@ -361,6 +379,7 @@ mod tests {
 
     fn flac(blocks: &[(u8, Vec<u8>)]) -> Vec<u8> {
         let mut file = MAGIC.to_vec();
+
         for (at, (kind, payload)) in blocks.iter().enumerate() {
             block(&mut file, *kind, payload, at + 1 == blocks.len());
         }
@@ -407,7 +426,9 @@ mod tests {
         fn written(&self, into: &mut Vec<u8>) {
             into.extend_from_slice(&self.offset.to_be_bytes());
             into.push(self.number);
+
             let mut isrc = [0; 12];
+
             isrc[..self.isrc.len()].copy_from_slice(self.isrc.as_bytes());
             into.extend_from_slice(&isrc);
             into.push(if self.audio { 0 } else { NOT_AUDIO });
@@ -423,6 +444,7 @@ mod tests {
 
     fn cuesheet(tracks: &[Track], declared: Option<u8>) -> Vec<u8> {
         let mut payload = vec![0_u8; SHEET_HEADER_BYTES];
+
         payload[IS_CD_DA_AT] = IS_CD_DA;
         payload[TRACK_COUNT_AT] = declared.unwrap_or(tracks.len() as u8);
         for track in tracks {
@@ -475,6 +497,7 @@ mod tests {
     #[test]
     fn a_track_whose_music_starts_after_its_pregap_begins_at_the_first_index() {
         let mut tracks = meddle();
+
         tracks[1].points.insert(
             0,
             Point {
@@ -512,6 +535,7 @@ mod tests {
     #[test]
     fn audio_ahead_of_the_first_tracks_first_index_is_the_first_tracks() {
         let mut tracks = meddle();
+
         tracks[0].points.insert(
             0,
             Point {
@@ -531,8 +555,11 @@ mod tests {
     #[test]
     fn a_block_names_each_tracks_isrc_and_the_discs_catalogue_number() {
         let mut tracks = meddle();
+
         tracks[1].isrc = "GBN9Y7100002";
+
         let mut sheet = cuesheet(&tracks, None);
+
         sheet[..13].copy_from_slice(b"0724356757828");
 
         let cut = found(flac(&[(CUESHEET, sheet)]))
@@ -561,6 +588,7 @@ mod tests {
     fn a_block_cut_short_of_what_it_declares_names_nothing() {
         let payload = cuesheet(&meddle(), None);
         let mut file = MAGIC.to_vec();
+
         file.push(CUESHEET | LAST_BLOCK);
         file.extend_from_slice(&(payload.len() as u32).to_be_bytes()[1..]);
         file.extend_from_slice(&payload[..payload.len() - TRACK_BYTES]);
@@ -578,6 +606,7 @@ mod tests {
     #[test]
     fn a_length_that_would_run_past_the_end_of_the_count_is_not_followed() {
         let mut file = MAGIC.to_vec();
+
         file.push(CUESHEET);
         file.extend_from_slice(&[0xFF, 0xFF, 0xFF]);
         file.extend_from_slice(&cuesheet(&meddle(), None));
@@ -585,6 +614,7 @@ mod tests {
         assert_eq!(found(file).cue, None);
 
         let mut short = MAGIC.to_vec();
+
         short.push(PADDING);
         short.extend_from_slice(&[0xFF, 0xFF, 0xFF]);
         short.push(CUESHEET | LAST_BLOCK);
@@ -604,6 +634,7 @@ mod tests {
     #[test]
     fn a_sheet_behind_a_leading_id3_tag_is_still_found() {
         let mut file = b"ID3\x04\x00\x00\x00\x00\x01\x00".to_vec();
+
         file.extend_from_slice(&[0; 128]);
         file.extend(flac(&[(CUESHEET, cuesheet(&meddle(), None))]));
 
@@ -630,8 +661,11 @@ mod tests {
     #[test]
     fn a_block_claiming_more_bytes_than_a_sheet_can_hold_is_refused_rather_than_read() {
         let mut file = MAGIC.to_vec();
+
         file.push(CUESHEET | LAST_BLOCK);
+
         let declared = MAX_CUESHEET_BYTES + 1;
+
         file.extend_from_slice(&(declared as u32).to_be_bytes()[1..]);
         file.extend_from_slice(&cuesheet(&meddle(), None));
 

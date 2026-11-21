@@ -101,6 +101,7 @@ impl ReplacingSheet {
 
     pub(crate) fn told(&mut self, track: TrackId, looked: Looked) {
         self.looking.remove(&track);
+
         let Some(row) = self
             .rows
             .iter_mut()
@@ -111,6 +112,7 @@ impl ReplacingSheet {
         };
         let found = matches!(looked, Looked::Offered { .. });
         let nowhere = looked == Looked::Unoffered;
+
         row.looked = Some(looked);
         if found && row.can_be_ticked() {
             self.ticked.insert(track);
@@ -193,11 +195,13 @@ fn standing_of(row: &Replaceable, looking: bool) -> String {
 impl RootView {
     pub(crate) fn open_replacing(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
         self.close_the_menu(cx);
+
         let pressed = self.press_a_lookup();
         let model = self.library.read(cx);
         let shelved = model.playlist_name(playlist);
         let unshelved = shelved.is_none();
         let catalog = model.catalog();
+
         if let Some(earlier) = self.replacing.as_mut() {
             earlier.stop_looking();
         }
@@ -213,8 +217,10 @@ impl RootView {
                 .flatten();
             (catalog.songs_to_better_in(playlist), named)
         });
+
         cx.spawn(async move |this, cx| {
             let (read, named) = reading.await;
+
             let _ = this.update(cx, |this, cx| {
                 this.the_lossy_songs_read(playlist, pressed, read, named, cx);
             });
@@ -235,6 +241,7 @@ impl RootView {
                 .replacing
                 .as_ref()
                 .is_some_and(|sheet| sheet.playlist == playlist && sheet.rows.is_none());
+
         if !still_asked {
             return;
         }
@@ -270,8 +277,11 @@ impl RootView {
         let Some(mut sheet) = self.replacing.take() else {
             return;
         };
+
         sheet.stop_looking();
+
         let chosen = sheet.ticked_rows();
+
         cx.notify();
         self.library
             .update(cx, |library, cx| library.replace_lossy_songs(chosen, cx));
@@ -283,6 +293,7 @@ impl RootView {
             cx.notify();
             return;
         }
+
         let model = self.library.read(cx);
         let Some(providers) = model.providers_to_look_through(cx) else {
             return;
@@ -292,15 +303,19 @@ impl RootView {
             return;
         };
         let rows = sheet.lookable_rows();
+
         if rows.is_empty() {
             return;
         }
+
         let stop = Arc::new(AtomicBool::new(false));
+
         sheet.begin_looking(Arc::clone(&stop), &rows);
         cx.notify();
 
         let (told, mut heard) = unbounded::<(TrackId, Looked)>();
         let stopped = Arc::clone(&stop);
+
         cx.spawn(async move |this, cx| {
             let looking = cx.background_executor().spawn(async move {
                 let cancelled = || stopped.load(Ordering::Acquire);
@@ -316,11 +331,14 @@ impl RootView {
                     },
                 )
             });
+
             while let Ok(first) = heard.recv().await {
                 let mut landed = vec![first];
+
                 while let Ok(more) = heard.try_recv() {
                     landed.push(more);
                 }
+
                 let heard_by = this.update(cx, |this, cx| {
                     let Some(sheet) = this
                         .replacing
@@ -329,6 +347,7 @@ impl RootView {
                     else {
                         return;
                     };
+
                     for (track, looked) in landed {
                         sheet.told(track, looked);
                     }
@@ -338,6 +357,7 @@ impl RootView {
                     return;
                 }
             }
+
             let looked = looking.await;
             let _ = this.update(cx, |this, cx| {
                 if let Err(error) = &looked {
@@ -480,6 +500,7 @@ impl RootView {
             };
             (press, words::replacing::look(), hint)
         };
+
         let button = kit::button_when(
             press,
             "look-for-lossless-copies",
@@ -502,6 +523,7 @@ impl RootView {
             0 => kit::Press::Greyed,
             _ => kit::Press::Takes,
         };
+
         let button = kit::button_when(
             press,
             "replace-the-lossy-songs",
@@ -561,6 +583,7 @@ impl RootView {
             true => kit::Press::Takes,
             false => kit::Press::Greyed,
         };
+
         let ticking = kit::checkbox_when(
             press,
             SharedString::from(format!("replacing-row-{track}")),
@@ -661,9 +684,11 @@ mod tests {
     #[test]
     fn a_row_says_why_it_stands_naming_the_codec_held_with_no_article() {
         let mut alac = row(1, true, false, false);
+
         if let Some(held) = alac.held.as_mut() {
             held.codec = Codec::Alac;
         }
+
         assert_eq!(standing_of(&alac, false), "you hold it in ALAC");
         assert_eq!(
             standing_of(&row(2, false, true, false), false),
@@ -681,11 +706,14 @@ mod tests {
         let id = unmatched.track.id;
         let mut sheet =
             ReplacingSheet::asking(PlaylistId::new(1).expect("a valid id"), "Road trip".into());
+
         sheet.arrived(vec![unmatched]);
+
         assert!(sheet.ticked.is_empty());
         assert_eq!(sheet.lookable_rows().len(), 1);
 
         let by = resonate_core::SourceId::new("tidal").expect("a source name");
+
         sheet.told(
             id,
             Looked::Offered {
@@ -695,7 +723,9 @@ mod tests {
         );
 
         assert!(sheet.ticked.contains(&id));
+
         let rows = sheet.rows.clone().unwrap_or_default();
+
         assert_eq!(standing_of(&rows[0], false), "found lossless on tidal");
         assert_eq!(sheet.ticked_rows().len(), 1);
     }
@@ -705,29 +735,38 @@ mod tests {
         let found = row(1, false, true, false);
         let nowhere = row(2, false, true, false);
         let unheard = row(3, false, true, false);
+
         let ids = [found.track.id, nowhere.track.id, unheard.track.id];
         let mut kept_nowhere = row(4, false, true, false);
+
         kept_nowhere.looked = Some(Looked::Unoffered);
+
         let mut sheet =
             ReplacingSheet::asking(PlaylistId::new(1).expect("a valid id"), "Road trip".into());
+
         sheet.arrived(vec![found, nowhere, unheard, kept_nowhere]);
+
         assert_eq!(sheet.ticked, ids.into_iter().collect());
 
         sheet.begin_looking(Arc::new(AtomicBool::new(false)), &sheet.lookable_rows());
+
         let by = resonate_core::SourceId::new("shop").expect("a source name");
         let shop = Looked::Offered {
             at: resonate_core::MediaLocation::new(by.clone(), "track/1"),
             by,
         };
+
         assert_eq!(
             standing_of(&sheet.rows.clone().unwrap_or_default()[0], true),
             "checking…"
         );
+
         sheet.told(ids[0], shop);
         sheet.told(ids[1], Looked::Unoffered);
         sheet.told(ids[2], Looked::Unheard);
 
         let rows = sheet.rows.clone().unwrap_or_default();
+
         assert_eq!(standing_of(&rows[0], false), "found lossless on shop");
         assert_eq!(standing_of(&rows[1], false), "no lossless copy found");
         assert_eq!(standing_of(&rows[2], false), "not every service answered");
@@ -740,23 +779,29 @@ mod tests {
         let held = row(1, true, false, false);
         let wanted = row(2, false, true, false);
         let pending = row(3, false, true, true);
+
         let ids = [held.track.id, wanted.track.id, pending.track.id];
         let mut sheet =
             ReplacingSheet::asking(PlaylistId::new(1).expect("a valid id"), "Road trip".into());
+
         sheet.arrived(vec![held, wanted, pending]);
 
         assert_eq!(sheet.ticked, [ids[0], ids[1]].into_iter().collect());
 
         sheet.tick_all();
+
         assert!(sheet.ticked.is_empty());
 
         sheet.tick_all();
+
         assert_eq!(sheet.ticked, [ids[0], ids[1]].into_iter().collect());
 
         sheet.tick(ids[2]);
+
         assert_eq!(sheet.ticked, [ids[0], ids[1]].into_iter().collect());
 
         sheet.tick(ids[0]);
+
         assert_eq!(
             sheet
                 .ticked_rows()

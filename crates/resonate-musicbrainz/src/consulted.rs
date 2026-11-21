@@ -41,6 +41,7 @@ impl Consultation {
                 return None;
             }
         };
+
         if let Some(mirror) = self.mirror.as_ref().and_then(|mirror| mirror.held()) {
             match mirror.answer(&asked) {
                 Ok(answer) => {
@@ -54,6 +55,7 @@ impl Consultation {
                 }
             }
         }
+
         let kept = self.kept.as_ref()?;
         match kept.answer_dated(&asked) {
             Ok(Some(dated)) => Some(Consulted {
@@ -134,12 +136,14 @@ impl<A: Ask> Consulting<A> {
 impl<A: Ask> Peers for Consulting<A> {
     fn consult(&self, asked: &Asked) -> Option<Heard> {
         let encoded = asked.encoded();
+
         for device in self.asking.devices() {
             let lately = self
                 .passed_over
                 .lock()
                 .get(&device)
                 .is_some_and(|at| at.elapsed() < CONSULTED_AGAIN_AFTER);
+
             if lately {
                 continue;
             }

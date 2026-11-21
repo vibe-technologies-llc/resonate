@@ -100,6 +100,7 @@ impl Posted {
     pub(crate) fn packed_form(fields: Params) -> Self {
         let plain = fields.finish_as_form().into_bytes();
         let mut packing = GzEncoder::new(Vec::new(), Compression::best());
+
         let packed = packing.write_all(&plain).and_then(|()| packing.finish());
 
         match packed {
@@ -204,7 +205,7 @@ impl Host {
             | Self::SpotifyApi
             | Self::SoundCloud
             | Self::SoundCloudPictures
-            | Self::Catbox
+            | Self::NullPointer
             | Self::SongLink
             | Self::LastFm
             | Self::Youtube
@@ -316,7 +317,7 @@ impl Host {
             | Self::SpotifyApi
             | Self::SoundCloud
             | Self::SoundCloudPictures
-            | Self::Catbox
+            | Self::NullPointer
             | Self::SongLink
             | Self::Youtube
             | Self::TidalEmbed
@@ -388,6 +389,7 @@ impl Drop for Listening<'_> {
     fn drop(&mut self) {
         let now = self.clock.now();
         let mut turns = self.pacing.0.turns.lock();
+
         if let Some(waiting) = turns.listening.get_mut(&self.host) {
             *waiting = waiting.saturating_sub(1);
         }
@@ -414,6 +416,7 @@ impl Pacing {
         may_wait: impl Fn() -> bool,
     ) -> Option<Instant> {
         let mut turns = self.0.turns.lock();
+
         while turns.is_listened_to(host) {
             if !may_wait() {
                 return Some(clock.now());
@@ -422,8 +425,10 @@ impl Pacing {
                 .answered
                 .wait_for(&mut turns, CANCELLATION_CHECK_EVERY);
         }
+
         let now = clock.now();
         let free = turns.free_for_one_yielding(host, now);
+
         if free > now {
             return Some(free);
         }
@@ -433,6 +438,7 @@ impl Pacing {
 
     fn reserve(&self, host: Host, now: Instant, until: Instant) -> Option<Instant> {
         let mut turns = self.0.turns.lock();
+
         let slot = turns
             .next
             .get(&host)
@@ -441,6 +447,7 @@ impl Pacing {
             .cooling
             .get(&host)
             .map_or(slot, |until| slot.max(*until));
+
         if slot > until {
             return None;
         }
@@ -458,18 +465,23 @@ impl Pacing {
 
     fn backed_off(&self, host: Host, named: Option<Duration>, now: Instant) -> Duration {
         let mut turns = self.0.turns.lock();
+
         if let Some(until) = turns.cooling.get(&host).filter(|until| **until > now) {
             return *until - now;
         }
+
         let by_default = turns
             .backing_off
             .get(&host)
             .copied()
             .unwrap_or(RETRY_AFTER_BY_DEFAULT);
+
         turns
             .backing_off
             .insert(host, (by_default * 2).min(RETRY_AFTER_AT_MOST));
+
         let wait = named.unwrap_or(by_default.min(RETRY_AFTER_AT_MOST));
+
         turns.cooling.insert(host, now + wait);
         wait
     }
@@ -653,15 +665,18 @@ impl Client {
     ) -> Result<Option<T>> {
         let response = self.exchange(host, op, url, Sending::Post(body))?;
         let status = response.status();
+
         if !status.is_client_error() || status == StatusCode::NOT_FOUND {
             let Some(bytes) = Self::read(response, host, op, LARGEST_DOCUMENT)? else {
                 return Ok(None);
             };
+
             return serde_json::from_slice(&bytes).map(Some).map_err(|error| {
                 tracing::debug!(%error, ?host, ?op, "an answer was not the document expected");
                 Error::Unreadable { host, op }
             });
         }
+
         let bytes = Self::body_of(response, host, op, LARGEST_DOCUMENT)?;
         serde_json::from_slice(&bytes)
             .map(Some)
@@ -710,20 +725,24 @@ impl Client {
     }
 
     pub(crate) fn upload_file(&self, path: &std::path::Path) -> Result<Option<String>> {
-        self.upload_file_to(path, &format!("{}/user/api.php", Host::Catbox.base()))
+        self.upload_file_to(path, Host::NullPointer.base())
     }
 
     fn upload_file_to(&self, path: &std::path::Path, url: &str) -> Result<Option<String>> {
-        let host = Host::Catbox;
+        let host = Host::NullPointer;
         let op = LookupOp::ShareFile;
+
         self.reachable(host, op)?;
+
         let file =
             std::fs::File::open(path).map_err(|source| Error::Unreachable { host, op, source })?;
         let size = file
             .metadata()
             .map_err(|source| Error::Unreachable { host, op, source })?
             .len();
-        const MAX_UPLOAD: u64 = 200 * 1024 * 1024;
+
+        const MAX_UPLOAD: u64 = 512 * 1024 * 1024;
+
         if size > MAX_UPLOAD {
             return Err(Error::TooLarge {
                 host,
@@ -731,6 +750,7 @@ impl Client {
                 limit: MAX_UPLOAD as usize,
             });
         }
+
         let extension = path
             .extension()
             .and_then(|value| value.to_str())
@@ -738,17 +758,20 @@ impl Client {
             .unwrap_or("bin");
         let boundary = format!("resonate{}", uuid::Uuid::new_v4().simple());
         let prefix = format!(
-            "--{boundary}\r\nContent-Disposition: form-data; name=\"reqtype\"\r\n\r\nfileupload\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"fileToUpload\"; filename=\"audio.{extension}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"secret\"\r\n\r\n\r\n--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"audio.{extension}\"\r\nContent-Type: application/octet-stream\r\n\r\n"
         );
         let suffix = format!("\r\n--{boundary}--\r\n");
+
         let length = prefix.len() as u64 + size + suffix.len() as u64;
         let mut body = std::io::Cursor::new(prefix.into_bytes())
             .chain(file.take(size))
             .chain(std::io::Cursor::new(suffix.into_bytes()));
+
         if !self.pace(host) {
             return Err(self.wait_ended(host, op));
         }
         self.reachable(host, op)?;
+
         let response = self
             .agent
             .post(url)
@@ -768,6 +791,7 @@ impl Client {
         let link = std::str::from_utf8(&bytes)
             .map_err(|_| Error::Unreadable { host, op })?
             .trim();
+
         if !valid_upload_link(link) {
             return Err(Error::Unreadable { host, op });
         }
@@ -799,6 +823,7 @@ impl Client {
         limit: usize,
     ) -> Result<Option<Vec<u8>>> {
         let status = response.status();
+
         if status == StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -819,6 +844,7 @@ impl Client {
         limit: usize,
     ) -> Result<Vec<u8>> {
         let mut read = Vec::new();
+
         response
             .body_mut()
             .as_reader()
@@ -858,6 +884,7 @@ impl Client {
                 return Err(self.wait_ended(host, op));
             }
             self.reachable(host, op)?;
+
             let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
                 Sending::Get { authorization } => self.got(url, &introduced, authorization),
@@ -895,11 +922,13 @@ impl Client {
             }
 
             retried += 1;
+
             let wait = self.pacing.backed_off(
                 host,
                 named_cooling_off(response.headers()),
                 self.clock.now(),
             );
+
             tracing::debug!(
                 ?host,
                 ?op,
@@ -925,6 +954,7 @@ impl Client {
             None => request,
         };
         let named = self.introduction.named();
+
         if introduced == named {
             return request.call();
         }
@@ -932,6 +962,7 @@ impl Client {
         let origin = host_of(url);
         let mut at = url.to_owned();
         let mut response = request.config().max_redirects(0).build().call()?;
+
         for _ in 0..REDIRECTS_FOLLOWED {
             let Some(next) = redirected_to(&at, &response) else {
                 return Ok(response);
@@ -941,6 +972,7 @@ impl Client {
             } else {
                 named.as_str()
             };
+
             response = self
                 .agent
                 .get(&next)
@@ -968,11 +1000,14 @@ impl Client {
 
     fn wait(&self, duration: Duration) -> bool {
         let until = self.clock.now() + duration;
+
         while self.clock.now() < until {
             if !self.is_reaching() {
                 return false;
             }
+
             let remaining = until.saturating_duration_since(self.clock.now());
+
             self.clock.sleep(if self.cancelled.is_some() {
                 remaining.min(CANCELLATION_CHECK_EVERY)
             } else {
@@ -992,6 +1027,7 @@ impl Client {
                 .is_some_and(|slot| self.wait(slot.saturating_duration_since(now))),
             Standing::Yielding => {
                 let may_wait = || self.is_reaching() && self.clock.now() < until;
+
                 while may_wait() {
                     let Some(free) = self.pacing.yielded(host, self.clock.as_ref(), may_wait)
                     else {
@@ -1022,10 +1058,13 @@ fn redirected_to(at: &str, response: &Response<Body>) -> Option<String> {
             | StatusCode::TEMPORARY_REDIRECT
             | StatusCode::PERMANENT_REDIRECT
     );
+
     if !redirects {
         return None;
     }
+
     let location = response.headers().get(LOCATION)?.to_str().ok()?;
+
     if location
         .parse::<Uri>()
         .is_ok_and(|uri| uri.scheme().is_some())
@@ -1035,9 +1074,11 @@ fn redirected_to(at: &str, response: &Response<Body>) -> Option<String> {
 
     let from = at.parse::<Uri>().ok()?;
     let scheme = from.scheme_str()?;
+
     if location.starts_with("//") {
         return Some(format!("{scheme}:{location}"));
     }
+
     let authority = from.authority()?;
     location
         .starts_with('/')
@@ -1059,13 +1100,28 @@ fn named_cooling_off(headers: &HeaderMap) -> Option<Duration> {
 }
 
 fn valid_upload_link(link: &str) -> bool {
-    link.strip_prefix("https://files.catbox.moe/")
-        .is_some_and(|name| {
-            !name.is_empty()
-                && name
-                    .bytes()
-                    .all(|byte| byte.is_ascii_alphanumeric() || byte == b'.')
-        })
+    let Some(path) = link.strip_prefix("https://0x0.st/") else {
+        return false;
+    };
+    let valid_segment = |segment: &str| {
+        !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'-' | b'_'))
+    };
+    let mut segments = path.split('/');
+    match (
+        segments.next(),
+        segments.next(),
+        segments.next(),
+        segments.next(),
+    ) {
+        (Some(file), None, None, None) => valid_segment(file),
+        (Some("s"), Some(token), Some(file), None) => valid_segment(token) && valid_segment(file),
+        _ => false,
+    }
 }
 
 #[cfg(test)]
@@ -1105,14 +1161,17 @@ mod tests {
     fn answer(mut stream: TcpStream, answer: &Answer) {
         let mut head = Vec::new();
         let mut byte = [0u8; 1];
+
         while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
             head.push(byte[0]);
         }
+
         let reason = match answer.status {
             200 => "OK",
             _ => "Service Unavailable",
         };
         let mut response = format!("HTTP/1.1 {} {reason}\r\n", answer.status);
+
         if let Some(seconds) = answer.retry_after {
             response.push_str(&format!("Retry-After: {seconds}\r\n"));
         }
@@ -1122,7 +1181,9 @@ mod tests {
 
     fn serving_gzipped(decoded: Vec<u8>) -> (String, JoinHandle<()>) {
         let mut packed = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::best());
+
         packed.write_all(&decoded).expect("a packed body");
+
         let packed = packed.finish().expect("a packed body");
 
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
@@ -1134,9 +1195,11 @@ mod tests {
             let (mut stream, _) = listener.accept().expect("a connection");
             let mut head = Vec::new();
             let mut byte = [0u8; 1];
+
             while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
                 head.push(byte[0]);
             }
+
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: {}\r\n\
                  Connection: close\r\n\r\n",
@@ -1158,8 +1221,11 @@ mod tests {
             Carried::Plain,
         );
         let (url, served) = serving_gzipped(vec![0; CAP * 16]);
+
         let read = client.bytes(Host::CoverArtArchive, LookupOp::Cover, &url, CAP);
+
         served.join().expect("the server");
+
         assert!(
             matches!(read, Err(Error::TooLarge { limit: CAP, .. })),
             "a body sixteen times the cap was read whole: {read:?}"
@@ -1167,7 +1233,9 @@ mod tests {
 
         let (url, served) = serving_gzipped(vec![7; CAP]);
         let read = client.bytes(Host::CoverArtArchive, LookupOp::Cover, &url, CAP);
+
         served.join().expect("the server");
+
         assert_eq!(
             read.expect("a body at the cap").map(|held| held.len()),
             Some(CAP)
@@ -1190,9 +1258,11 @@ mod tests {
             let (mut stream, _) = listener.accept().expect("a connection");
             let mut head = Vec::new();
             let mut byte = [0u8; 1];
+
             while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
                 head.push(byte[0]);
             }
+
             let head = String::from_utf8(head)
                 .expect("a head in ASCII")
                 .to_ascii_lowercase();
@@ -1202,7 +1272,9 @@ mod tests {
                 .and_then(|length| length.trim().parse::<usize>().ok())
                 .expect("a declared length");
             let mut body = vec![0; length];
+
             stream.read_exact(&mut body).expect("the body");
+
             let _ = stream.write_all(answer.as_bytes());
             (head, body)
         });
@@ -1213,30 +1285,59 @@ mod tests {
     fn a_file_upload_sends_bytes_without_its_local_name_and_refuses_an_invalid_answer() {
         let path =
             std::env::temp_dir().join(format!("private-title-{}.flac", uuid::Uuid::new_v4()));
+
         std::fs::write(&path, b"test audio bytes").expect("a fixture");
+
         let client = Client::on_clock(
             Introduction::as_(&identity(None)),
             Faked::new(),
             Carried::Plain,
         );
         let (url, served) = serving_one_post();
+
         let read = client.upload_file_to(&path, &url);
+
         std::fs::remove_file(&path).expect("remove fixture");
+
         let (head, body) = served.join().expect("the server");
         let body = String::from_utf8(body).expect("ASCII fixture");
+
         assert!(head.contains("multipart/form-data"));
-        assert!(body.contains("name=\"reqtype\"\r\n\r\nfileupload"));
-        assert!(body.contains("filename=\"audio.flac\""));
+        assert!(body.contains("name=\"secret\"\r\n\r\n\r\n"));
+        assert!(body.contains("name=\"file\"; filename=\"audio.flac\""));
         assert!(body.contains("test audio bytes"));
         assert!(!body.contains("private-title"));
         assert!(matches!(
             read,
             Err(Error::Unreadable {
-                host: Host::Catbox,
+                host: Host::NullPointer,
                 ..
             })
         ));
+
+        let path =
+            std::env::temp_dir().join(format!("private-valid-{}.flac", uuid::Uuid::new_v4()));
+
+        std::fs::write(&path, b"test audio bytes").expect("a fixture");
+
+        let response_body = "https://0x0.st/s/tuvXWfRFu5BRHEI5RUD51w/o5xB.flac\n";
+        let (url, served) = serving_one_post_answered(format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+            response_body.len()
+        ));
+        let read = client.upload_file_to(&path, &url);
+
+        std::fs::remove_file(&path).expect("remove fixture");
+
+        let _ = served.join().expect("the server");
+
+        assert_eq!(
+            read.expect("a public upload link").as_deref(),
+            Some("https://0x0.st/s/tuvXWfRFu5BRHEI5RUD51w/o5xB.flac")
+        );
+
         client.reach(false);
+
         assert!(matches!(
             client.upload_file(&path),
             Err(Error::Offline { .. })
@@ -1250,9 +1351,11 @@ mod tests {
             let (mut stream, _) = listener.accept().expect("a connection");
             let mut head = Vec::new();
             let mut byte = [0u8; 1];
+
             while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
                 head.push(byte[0]);
             }
+
             let _ = stream.write_all(answer.as_bytes());
             String::from_utf8(head)
                 .expect("a head in ASCII")
@@ -1289,9 +1392,11 @@ mod tests {
         );
 
         assert_eq!(read.expect("the cover").as_deref(), Some(&b"ok"[..]));
+
         let first = asking.join().expect("the asked host");
         let second = staying.join().expect("the same host again");
         let last = landing.join().expect("the other host");
+
         assert!(first.contains(told), "{first}");
         assert!(second.contains(told), "{second}");
         assert!(
@@ -1319,9 +1424,11 @@ mod tests {
             &Posted::json(&Value::Null),
         );
         let (first, _) = asking.join().expect("the asked host");
+
         elsewhere
             .set_nonblocking(true)
             .expect("a listener that need not wait");
+
         let reached = elsewhere.accept();
 
         assert!(first.contains(told), "{first}");
@@ -1411,7 +1518,9 @@ mod tests {
     fn a_contact_given_after_the_client_was_built_is_what_the_next_request_says() {
         let introduction = Introduction::as_(&identity(None));
         let client = Client::on_clock(introduction.clone(), Faked::new(), Carried::Plain);
+
         introduction.change_to(&identity(Some("someone who typed a contact")));
+
         let (url, served) = serving_one_post();
 
         let _: Option<serde_json::Value> = client
@@ -1467,6 +1576,7 @@ mod tests {
             } else {
                 "user-agent: resonate/9.9.9\r\n"
             };
+
             assert!(head.contains(said), "{host:?} was told {head}");
             assert_eq!(head.matches("user-agent: ").count(), 1, "{head}");
         }
@@ -1489,6 +1599,7 @@ mod tests {
         assert_eq!(client.user_agent(), "resonate/9.9.9");
 
         *written.lock() = Some(Some("someone who edited the file".to_owned()));
+
         let (url, served) = serving_one_post();
         let _: Option<serde_json::Value> = client
             .posted(
@@ -1499,6 +1610,7 @@ mod tests {
             )
             .expect("an answer");
         let (head, _) = served.join().expect("the server");
+
         assert!(
             head.contains("user-agent: resonate/9.9.9 ( someone who edited the file )\r\n"),
             "{head}"
@@ -1511,6 +1623,7 @@ mod tests {
         );
 
         *written.lock() = Some(None);
+
         assert_eq!(client.user_agent(), "resonate/9.9.9");
     }
 
@@ -1542,10 +1655,13 @@ mod tests {
             head.contains(&format!("content-type: {FORM}\r\n")),
             "{head}"
         );
+
         let mut unpacked = String::new();
+
         flate2::read::GzDecoder::new(body.as_slice())
             .read_to_string(&mut unpacked)
             .expect("a gzipped body");
+
         assert_eq!(unpacked, "client=a%20key&fingerprint=AQAA-_x");
     }
 
@@ -1553,7 +1669,9 @@ mod tests {
     fn a_client_that_meets_the_network_refuses_a_plain_address() {
         let client = Client::new(identity(None));
         let (url, _served) = serving_gzipped(Vec::new());
+
         let read = client.bytes(Host::CoverArtArchive, LookupOp::Cover, &url, 1);
+
         assert!(matches!(read, Err(Error::Unreachable { .. })), "{read:?}");
     }
 
@@ -1565,8 +1683,10 @@ mod tests {
         );
         let served = thread::spawn(move || {
             let mut served = 0;
+
             for scripted in &answers {
                 let (stream, _) = listener.accept().expect("a connection");
+
                 answer(stream, scripted);
                 served += 1;
             }
@@ -1584,15 +1704,18 @@ mod tests {
             Carried::Plain,
         );
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+
         listener
             .set_nonblocking(true)
             .expect("a listener that does not wait");
+
         let url = format!(
             "http://{}/",
             listener.local_addr().expect("a bound address")
         );
 
         client.reach(false);
+
         let refused = client.exchange(
             Host::Lrclib,
             LookupOp::Lyrics,
@@ -1619,12 +1742,15 @@ mod tests {
         );
 
         client.reach(true);
+
         assert_eq!(fetched_by(&client, vec![FINE]).0, 200);
     }
 
     fn metered_client(shut: bool, meter: Meter) -> (Client, Gate, Metering) {
         let metering = Metering::new();
+
         metering.report(meter);
+
         let gate = Gate::new(metering.clone(), shut);
         let client = Client::on_clock(
             Introduction::as_(&identity(None)),
@@ -1647,6 +1773,7 @@ mod tests {
                 },
             )
             .map(|response| response.status().as_u16());
+
         if answered.is_ok() {
             served.join().expect("the server");
         }
@@ -1657,9 +1784,11 @@ mod tests {
     fn a_metered_connection_stops_a_lookup_before_anything_is_sent() {
         let (client, _, _) = metered_client(true, Meter::Metered);
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+
         listener
             .set_nonblocking(true)
             .expect("a listener that does not wait");
+
         let url = format!(
             "http://{}/",
             listener.local_addr().expect("a bound address")
@@ -1702,12 +1831,15 @@ mod tests {
         assert!(client.is_held_by_the_meter(Host::Lrclib));
 
         metering.report(Meter::Unmetered);
+
         assert!(!client.is_held_by_the_meter(Host::Lrclib));
 
         metering.report(Meter::Metered);
+
         assert!(client.is_held_by_the_meter(Host::Lrclib));
 
         gate.shut_while_metered(false);
+
         assert!(!client.is_held_by_the_meter(Host::Lrclib));
     }
 
@@ -1815,6 +1947,7 @@ mod tests {
         );
 
         let built = Identity::of_this_build();
+
         assert_eq!(built.contact, None);
         assert_eq!(
             Client::new(built).user_agent(),
@@ -1833,18 +1966,22 @@ mod tests {
 
         client.pace(Host::MusicBrainz);
         client.pace(Host::MusicBrainz);
+
         assert_eq!(clock.slept(), vec![MUSICBRAINZ_INTERVAL]);
 
         client.pace(Host::Lrclib);
         client.pace(Host::Lrclib);
+
         assert_eq!(clock.slept(), vec![MUSICBRAINZ_INTERVAL, OTHERS_INTERVAL]);
 
         client.pace(Host::CoverArtArchive);
         client.pace(Host::Commons);
+
         assert_eq!(clock.slept(), vec![MUSICBRAINZ_INTERVAL, OTHERS_INTERVAL]);
 
         client.clock.sleep(MUSICBRAINZ_INTERVAL);
         client.pace(Host::MusicBrainz);
+
         assert_eq!(
             clock.slept(),
             vec![MUSICBRAINZ_INTERVAL, OTHERS_INTERVAL, MUSICBRAINZ_INTERVAL]
@@ -1889,6 +2026,7 @@ mod tests {
         reference.pace(Host::MusicBrainz);
         recogniser.pace(Host::MusicBrainz);
         reference.pace(Host::MusicBrainz);
+
         assert_eq!(
             clock.slept(),
             vec![MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
@@ -1896,6 +2034,7 @@ mod tests {
 
         let first = Client::new(identity(None));
         let second = Client::introduced(Introduction::as_(&identity(Some("a contact"))));
+
         assert!(Arc::ptr_eq(&first.pacing.0, &second.pacing.0));
         assert!(Arc::ptr_eq(&first.pacing.0, &first.yielding().pacing.0));
     }
@@ -1914,6 +2053,7 @@ mod tests {
     fn a_long_cooldown_ends_the_call_instead_of_sleeping_past_its_deadline() {
         let clock = Faked::new();
         let (listener, yielding) = listener_and_its_yielding_twin(&clock);
+
         listener.pacing.backed_off(
             Host::MusicBrainz,
             Some(Duration::from_secs(3600)),
@@ -1939,23 +2079,29 @@ mod tests {
         let clock = Faked::new();
         let (listener, yielding) = listener_and_its_yielding_twin(&clock);
         let cancelled = Arc::new(AtomicBool::new(false));
+
         let yielding = yielding.cancellable(Arc::clone(&cancelled));
         let asking = listener
             .pacing
             .listening(Host::MusicBrainz, listener.clock.as_ref());
         let (sent, received) = std::sync::mpsc::channel();
+
         let waiting = thread::spawn(move || {
             sent.send(yielding.pace(Host::MusicBrainz))
                 .expect("wait ended");
         });
+
         assert!(received.recv_timeout(Duration::from_millis(50)).is_err());
+
         cancelled.store(true, Ordering::Release);
+
         assert!(
             !received
                 .recv_timeout(Duration::from_secs(2))
                 .expect("cancel heard")
         );
         assert!(listener.is_reaching());
+
         drop(asking);
         waiting.join().expect("waiter finished");
     }
@@ -1968,9 +2114,11 @@ mod tests {
         let (listener, yielding) = listener_and_its_yielding_twin(&clock);
 
         yielding.pace(Host::MusicBrainz);
+
         let asking = listener
             .pacing
             .listening(Host::MusicBrainz, listener.clock.as_ref());
+
         listener.pace(Host::MusicBrainz);
         clock.sleep(IN_FLIGHT);
         drop(asking);
@@ -1997,8 +2145,10 @@ mod tests {
         });
 
         assert!(paced.recv_timeout(Duration::from_millis(50)).is_err());
+
         listener.pace(Host::MusicBrainz);
         listener.pace(Host::MusicBrainz);
+
         assert_eq!(clock.slept(), vec![MUSICBRAINZ_INTERVAL]);
         assert!(
             paced.try_recv().is_err(),
@@ -2010,6 +2160,7 @@ mod tests {
             .recv_timeout(Duration::from_secs(5))
             .expect("the yielding client to ask once the listener was answered");
         waiting.join().expect("the yielding client");
+
         assert_eq!(
             clock.slept(),
             vec![MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
@@ -2057,11 +2208,15 @@ mod tests {
         assert!(Arc::ptr_eq(&listener.pacing.0, &yielding.pacing.0));
 
         introduction.change_to(&identity(Some("someone who typed a contact")));
+
         assert_eq!(yielding.user_agent(), listener.user_agent());
 
         listener.reach(false);
+
         assert!(!yielding.is_reaching());
+
         listener.reach(true);
+
         assert!(yielding.is_reaching());
     }
 
@@ -2076,6 +2231,7 @@ mod tests {
             status: 504,
             retry_after: None,
         };
+
         let (status, served) = fetched(&clock, vec![bad_gateway, gateway_timeout, FINE]);
 
         assert_eq!(status, 200);
@@ -2096,6 +2252,7 @@ mod tests {
         );
 
         let (status, served) = fetched_by(&client, vec![BUSY, BUSY, BUSY, BUSY]);
+
         assert_eq!((status, served), (503, 4));
         assert_eq!(
             clock.slept(),
@@ -2107,8 +2264,11 @@ mod tests {
         );
 
         let (status, served) = fetched_by(&client, vec![BUSY]);
+
         assert_eq!((status, served), (503, 1));
+
         let (status, served) = fetched_by(&client, vec![BUSY]);
+
         assert_eq!((status, served), (503, 1));
         assert_eq!(
             clock.slept()[3..],
@@ -2116,8 +2276,11 @@ mod tests {
         );
 
         let (status, served) = fetched_by(&client, vec![FINE]);
+
         assert_eq!((status, served), (200, 1));
+
         let (status, served) = fetched_by(&client, vec![BUSY, FINE]);
+
         assert_eq!((status, served), (200, 2));
     }
 
@@ -2131,15 +2294,20 @@ mod tests {
         );
 
         let (status, served) = fetched_by(&client, vec![BUSY, BUSY, BUSY, busy_for(7)]);
+
         assert_eq!((status, served), (503, 4));
 
         let (status, served) = fetched_by(&client, vec![BUSY]);
+
         assert_eq!((status, served), (503, 1));
         assert_eq!(clock.slept()[3..], [Duration::from_secs(7)]);
 
         let (status, served) = fetched_by(&client, vec![FINE]);
+
         assert_eq!((status, served), (200, 1));
+
         let (status, served) = fetched_by(&client, vec![FINE]);
+
         assert_eq!((status, served), (200, 1));
         assert_eq!(
             clock.slept()[4..],
@@ -2154,6 +2322,7 @@ mod tests {
             status: 429,
             retry_after: Some(5),
         };
+
         let (status, served) = fetched(&clock, vec![slow_down, FINE]);
 
         assert_eq!(status, 200);
@@ -2247,6 +2416,7 @@ mod tests {
     fn a_retry_after_is_honoured_in_seconds_or_as_a_date_and_kept_whole_up_to_a_day() {
         let with = |value: Option<&str>| {
             let mut headers = HeaderMap::new();
+
             if let Some(value) = value {
                 headers.insert(
                     ureq::http::header::RETRY_AFTER,
@@ -2274,18 +2444,22 @@ mod tests {
         let first_wave = (0..4)
             .map(|_| pacing.backed_off(host, None, start))
             .collect::<Vec<_>>();
+
         assert_eq!(first_wave, vec![Duration::from_secs(2); 4]);
 
         let later = start + Duration::from_secs(2);
         let second_wave = (0..4)
             .map(|_| pacing.backed_off(host, None, later))
             .collect::<Vec<_>>();
+
         assert_eq!(second_wave, vec![Duration::from_secs(4); 4]);
 
         let after = later + Duration::from_secs(4);
+
         assert_eq!(pacing.backed_off(host, None, after), Duration::from_secs(8));
 
         pacing.heard(host, StatusCode::OK, None, after);
+
         assert_eq!(pacing.backed_off(host, None, after), RETRY_AFTER_BY_DEFAULT);
     }
 
@@ -2308,18 +2482,29 @@ mod tests {
 #[cfg(test)]
 mod upload_tests {
     #[test]
-    fn only_public_catbox_file_links_are_copied() {
-        assert!(super::valid_upload_link(
-            "https://files.catbox.moe/abc123.flac"
-        ));
+    fn only_public_null_pointer_file_links_are_copied() {
         for link in [
-            "https://files.catbox.moe/",
-            "https://files.catbox.moe.evil/a",
-            "http://files.catbox.moe/a",
-            "https://files.catbox.moe/a\nerror",
+            "https://0x0.st/abc123.flac",
+            "https://0x0.st/8_ab-1.flac",
+            "https://0x0.st/s/tuvXWfRFu5BRHEI5RUD51w/o5xB.flac",
+        ] {
+            assert!(super::valid_upload_link(link), "{link}");
+        }
+        for link in [
+            "https://0x0.st/",
+            "https://0x0.st/s/",
+            "https://0x0.st/s/token/",
+            "https://0x0.st/s/token/file/extra",
+            "https://0x0.st/other/a",
+            "https://0x0.st/..",
+            "https://0x0.st/s/../a",
+            "https://0x0.st.evil/a",
+            "http://0x0.st/a",
+            "https://0x0.st/a\nerror",
+            "https://0x0.st/a?q=1",
             "Upload failed",
         ] {
-            assert!(!super::valid_upload_link(link));
+            assert!(!super::valid_upload_link(link), "{link}");
         }
     }
 }

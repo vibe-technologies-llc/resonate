@@ -95,7 +95,9 @@ impl Polyphase {
         if let Some(vector) = self.vectors.get(&(lane, at)) {
             return *vector;
         }
+
         let mut rows = [0.0_f32; POLYPHASE_ROWS];
+
         for (samples, weights) in samples
             .rchunks_exact(POLYPHASE_ROWS)
             .zip(self.analysis_window.as_chunks::<POLYPHASE_ROWS>().0)
@@ -104,8 +106,10 @@ impl Polyphase {
                 *row += sample * weight;
             }
         }
+
         let mut sums = [SUM_STARTS_FROM; SUBBANDS];
         let folded = folded_rows(&rows);
+
         for (cosines, value) in self.matrix_by_row.iter().zip(&folded) {
             for (sum, cosine) in sums[self.subbands.clone()]
                 .iter_mut()
@@ -114,7 +118,9 @@ impl Polyphase {
                 *sum += cosine * value;
             }
         }
+
         let mut vector = [0.0_f32; SUBBANDS];
+
         vector[self.subbands.clone()].copy_from_slice(&sums[self.subbands.clone()]);
         if self.vectors.len() >= VECTORS_KEPT_AT_MOST {
             self.vectors.clear();
@@ -148,14 +154,17 @@ impl Mp3 {
     fn transformed_short(&mut self, lane: usize, subband: usize) {
         for window in 0..SHORT_WINDOWS {
             let mut windowed = [0.0_f32; SHORT_BLOCK];
+
             for (nth, slot) in windowed.iter_mut().enumerate() {
                 let at = SHORT_FIRST + SHORT_LINES * window + nth;
                 let inverted = subband % 2 == 1 && at % 2 == 1;
                 let value = self.blocks[lane][at][subband] * self.short_window[nth];
+
                 *slot = if inverted { -value } else { value };
             }
             for line in 0..SHORT_LINES {
                 let row = &self.short_turning[line * SHORT_BLOCK..(line + 1) * SHORT_BLOCK];
+
                 self.lines[subband][window * SHORT_LINES + line] = SHORT_GAIN
                     * row
                         .iter()
@@ -168,23 +177,30 @@ impl Mp3 {
 
     fn transformed(&mut self, lane: usize, subband: usize, kind: usize) {
         let mut windowed = [0.0_f32; VECTORS_A_BLOCK];
+
         for (nth, slot) in windowed.iter_mut().enumerate() {
             let inverted = subband % 2 == 1 && nth % 2 == 1;
             let value = self.blocks[lane][nth][subband] * self.block_windows[kind][nth];
+
             *slot = if inverted { -value } else { value };
         }
+
         let quarter = LINES_A_SUBBAND / 2;
         let (front, back) = windowed.split_at(LINES_A_SUBBAND);
+
         let (first, second) = front.split_at(quarter);
         let (third, fourth) = back.split_at(quarter);
         let (low, high) = self.folded.split_at_mut(quarter);
+
         for ((slot, third), fourth) in low.iter_mut().zip(third.iter().rev()).zip(fourth) {
             *slot = -third - fourth;
         }
         for ((slot, first), second) in high.iter_mut().zip(first).zip(second.iter().rev()) {
             *slot = first - second;
         }
+
         let lines = &mut self.lines[subband];
+
         lines.fill(SUM_STARTS_FROM);
         for (cosines, value) in self.turning.iter().zip(&self.folded) {
             for (line, cosine) in lines.iter_mut().zip(cosines) {
@@ -197,6 +213,7 @@ impl Mp3 {
         if self.block_at[lane] != Some(at) {
             for nth in 0..VECTORS_A_BLOCK {
                 let from = nth * SUBBANDS;
+
                 self.blocks[lane][nth] = self.polyphase.vector(
                     lane,
                     &samples[from..from + POLYPHASE_TAPS],
@@ -226,6 +243,7 @@ impl Mp3 {
             for (nth, (sine, cosine)) in self.butterflies.iter().enumerate() {
                 let below = self.lines[subband - 1][LINES_A_SUBBAND - 1 - nth];
                 let above = self.lines[subband][nth];
+
                 self.lines[subband - 1][LINES_A_SUBBAND - 1 - nth] = below * cosine + above * sine;
                 self.lines[subband][nth] = above * cosine - below * sine;
             }
@@ -269,6 +287,7 @@ const ROWS_BEFORE_THE_CENTRE: usize = 16;
 
 fn folded_rows(rows: &[f32; POLYPHASE_ROWS]) -> [f32; SUBBANDS] {
     let mut folded = [0.0_f32; SUBBANDS];
+
     for (row, value) in rows.iter().enumerate() {
         if row < ROWS_BEFORE_THE_CENTRE {
             folded[ROWS_BEFORE_THE_CENTRE - row] += value;
@@ -448,6 +467,7 @@ pub(crate) mod tests {
                         self.history[slot] * f64::from(SYNTHESIS_WINDOW[tap]) / WINDOW_UNITS_A_ONE
                     })
                     .sum();
+
                 out.push(sum);
             }
         }
@@ -475,6 +495,7 @@ pub(crate) mod tests {
                     std::array::from_fn(|line| coefficients(subband * LINES_A_SUBBAND + line))
                 })
                 .collect();
+
             for subband in 1..SUBBANDS {
                 if kind == SHORT_KIND {
                     break;
@@ -483,14 +504,18 @@ pub(crate) mod tests {
                     let (sine, cosine) = (f64::from(*sine), f64::from(*cosine));
                     let below = lines[subband - 1][LINES_A_SUBBAND - 1 - nth];
                     let above = lines[subband][nth];
+
                     lines[subband - 1][LINES_A_SUBBAND - 1 - nth] = below * cosine - above * sine;
                     lines[subband][nth] = above * cosine + below * sine;
                 }
             }
+
             let mut subband_samples = vec![[0.0_f64; SUBBANDS]; LINES_A_SUBBAND];
+
             for (subband, held) in lines.iter().enumerate() {
                 let block: Vec<f64> = if kind == SHORT_KIND {
                     let mut block = vec![0.0_f64; VECTORS_A_BLOCK];
+
                     for window in 0..SHORT_WINDOWS {
                         for nth in 0..SHORT_BLOCK {
                             let sum: f64 = (0..SHORT_LINES)
@@ -501,6 +526,7 @@ pub(crate) mod tests {
                                     held[window * SHORT_LINES + line] * angle.cos()
                                 })
                                 .sum();
+
                             block[SHORT_FIRST + SHORT_LINES * window + nth] +=
                                 sum * short_slope(nth) * 2.0 / LINES_A_SUBBAND as f64;
                         }
@@ -526,6 +552,7 @@ pub(crate) mod tests {
                 for nth in 0..LINES_A_SUBBAND {
                     let value = block[nth] + overlap[subband][nth];
                     let inverted = subband % 2 == 1 && nth % 2 == 1;
+
                     subband_samples[nth][subband] = if inverted { -value } else { value };
                     overlap[subband][nth] = block[nth + LINES_A_SUBBAND];
                 }
@@ -543,6 +570,7 @@ pub(crate) mod tests {
     fn lines_on_the_quantiser_steps_are_found_through_the_hybrid_filterbank_at_any_offset() {
         let left = synthesised(quantised(11));
         let right = synthesised(quantised(23));
+
         for skipped in [0, 300] {
             let steps = stepped::<Mp3>(&left, &right, skipped).expect("weighed");
 
@@ -554,6 +582,7 @@ pub(crate) mod tests {
 
         let left = synthesised(unquantised(11));
         let right = synthesised(unquantised(23));
+
         let steps = stepped::<Mp3>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice < 0.01, "{steps:?}");
@@ -564,6 +593,7 @@ pub(crate) mod tests {
         let kind_of = |granule: usize| BLOCK_SEQUENCE[granule % BLOCK_SEQUENCE.len()];
         let left = synthesised_blocks(quantised(11), kind_of);
         let right = synthesised_blocks(quantised(23), kind_of);
+
         for skipped in [0, 300] {
             let steps = stepped::<Mp3>(&left, &right, skipped).expect("weighed");
 
@@ -574,6 +604,7 @@ pub(crate) mod tests {
 
         let left = synthesised_blocks(unquantised(11), kind_of);
         let right = synthesised_blocks(unquantised(23), kind_of);
+
         let steps = stepped::<Mp3>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice < 0.01, "{steps:?}");
@@ -589,6 +620,7 @@ pub(crate) mod tests {
     #[test]
     fn the_folded_matrixing_is_the_standards_matrix() {
         let mut wandering = Wandering(5);
+
         let rows: [f32; POLYPHASE_ROWS] = std::array::from_fn(|_| wandering.next() as f32 - 0.5);
         let matrixing = matrixing();
         let folded = folded_rows(&rows);
@@ -607,6 +639,7 @@ pub(crate) mod tests {
                     f64::from(*value) * matrix_angle(subband, centred).cos()
                 })
                 .sum();
+
             assert!(
                 (f64::from(fast) - slow).abs() < 1e-4,
                 "{subband} {fast} {slow}"
@@ -618,9 +651,11 @@ pub(crate) mod tests {
     fn the_folded_block_transform_is_the_standards_mdct() {
         let mut mp3 = Mp3::new(44_100, &Band::of(44_100, GRANULE, 0.0, 22_050.0));
         let mut wandering = Wandering(9);
+
         for vector in &mut mp3.blocks[0] {
             *vector = std::array::from_fn(|_| wandering.next() as f32 - 0.5);
         }
+
         let subband = 4;
 
         mp3.transformed(0, subband, 0);
@@ -636,6 +671,7 @@ pub(crate) mod tests {
                 })
                 .sum();
             let fast = f64::from(mp3.lines[subband][line]);
+
             assert!((fast - slow).abs() < 1e-4, "{line} {fast} {slow}");
         }
     }

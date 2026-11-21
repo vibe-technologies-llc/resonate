@@ -4,13 +4,14 @@ const VOLUME_WORD: &str = "volume";
 const GUID_GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
 const GROUP_SEPARATOR: char = '-';
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct VolumeGuid(String);
 
 impl VolumeGuid {
     pub fn within(text: &str) -> Option<Self> {
         let lowered = text.to_ascii_lowercase();
         let after_the_word = lowered.find(VOLUME_WORD)? + VOLUME_WORD.len();
+
         let opened = lowered.get(after_the_word..)?.strip_prefix('{')?;
         let (guid, _) = opened.split_once('}')?;
         let groups: Vec<&str> = guid.split(GROUP_SEPARATOR).collect();
@@ -64,6 +65,7 @@ mod tests {
         ] {
             assert_eq!(VolumeGuid::within(&spelled), Some(guid()), "{spelled}");
         }
+
         assert_eq!(guid().as_str(), GUID);
     }
 

@@ -44,6 +44,7 @@ impl Playback {
         let stop = Arc::new(AtomicBool::new(false));
         let (ready, started) = sync_channel(1);
         let stopping = Arc::clone(&stop);
+
         let thread = thread::Builder::new()
             .name("resonate-listen-playback".into())
             .spawn(move || run(&output, played, &ready, &stopping))
@@ -91,6 +92,7 @@ fn run(output: &Output, mut played: Played, ready: &SyncSender<Result<()>>, stop
         Ok(rendering) => rendering,
         Err(error) => {
             let _ = ready.send(Err(error));
+
             return;
         }
     };
@@ -100,6 +102,7 @@ fn run(output: &Output, mut played: Played, ready: &SyncSender<Result<()>>, stop
         event,
         mut scratch,
     } = rendering;
+
     let started = filled(&client, &render, &mut scratch, &mut played).and_then(|()| {
         client
             .start_stream()
@@ -108,11 +111,15 @@ fn run(output: &Output, mut played: Played, ready: &SyncSender<Result<()>>, stop
                 source: Box::new(source),
             })
     });
+
     if let Err(error) = started {
         let _ = ready.send(Err(error));
+
         return;
     }
+
     let _ = ready.send(Ok(()));
+
     while !stop.load(Ordering::Acquire) {
         let _ = event.wait_for_event(EVENT_WAIT_MS);
         if let Err(error) = filled(&client, &render, &mut scratch, &mut played) {
@@ -120,6 +127,7 @@ fn run(output: &Output, mut played: Played, ready: &SyncSender<Result<()>>, stop
             break;
         }
     }
+
     let _ = client.stop_stream();
 }
 
@@ -146,6 +154,7 @@ fn rendering_for(output: &Output) -> Result<Rendering> {
             .get_device(id)
             .map_err(|_| Error::NoSuchSink { name: name.clone() })?,
     };
+
     let mut client = device
         .get_iaudioclient()
         .map_err(|e| play(e, Operation::Open))?;
@@ -153,9 +162,11 @@ fn rendering_for(output: &Output) -> Result<Rendering> {
         autoconvert: true,
         buffer_duration_hns: DEFAULT_BUFFER,
     };
+
     client
         .initialize_client(&heard_wave(), Direction::Render, mode, None)
         .map_err(|e| Error::capture(CaptureOp::Play, initialize_error(Operation::Format, e)))?;
+
     let event = client
         .set_get_eventhandle()
         .map_err(|e| play(e, Operation::Open))?;
@@ -190,9 +201,11 @@ fn filled(
         return Ok(());
     };
     let frames = played.fill(block) / BYTES_PER_FRAME;
+
     let Some(window) = block.get(..frames * BYTES_PER_FRAME) else {
         return Ok(());
     };
+
     if frames == 0 {
         return Ok(());
     }

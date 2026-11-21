@@ -44,20 +44,25 @@ impl Conforming {
         for frame in heard.chunks_exact(self.channels.get()) {
             let left = frame.first().copied().unwrap_or(0.0);
             let right = frame.get(1).copied().unwrap_or(left);
+
             self.stereo.push(f64::from(left));
             self.stereo.push(f64::from(right));
         }
+
         let mut bytes = Vec::with_capacity(self.stereo.len() * size_of::<f32>());
+
         let mut keep = |samples: &[f64]| {
             for sample in samples {
                 bytes.extend_from_slice(&(*sample as f32).to_le_bytes());
             }
         };
+
         match &mut self.resampler {
             None => keep(&self.stereo),
             Some(resampler) => {
                 for block in self.stereo.chunks(CONFORMED_IN_FRAMES * HEARD_IN_CHANNELS) {
                     let made = resampler.process(block, &mut self.scratch).frames_out;
+
                     keep(
                         self.scratch
                             .get(..made * HEARD_IN_CHANNELS)
@@ -115,6 +120,7 @@ mod tests {
         let heard = samples(&conforming.conformed(&second));
 
         let frames = heard.len() / HEARD_IN_CHANNELS;
+
         assert!((47_000..=48_000).contains(&frames), "{frames}");
         assert!(heard.iter().any(|sample| sample.abs() > 0.4));
         assert!(heard.iter().all(|sample| sample.abs() < 0.6));

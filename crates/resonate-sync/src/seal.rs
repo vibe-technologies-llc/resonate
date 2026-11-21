@@ -10,16 +10,19 @@ pub const SEALED_AT_LEAST: usize = NONCE_LEN + MAX_TAG_LEN;
 
 pub fn sealed(sealer: &LessSafeKey, space: SpaceId, plain: &[u8]) -> Result<Vec<u8>> {
     let mut packed = DeflateEncoder::new(Vec::with_capacity(plain.len() / 2), Compression::best());
+
     packed.write_all(plain).map_err(|source| Error::Deflate {
         op: DeflateOp::Pack,
         source,
     })?;
+
     let mut in_out = packed.finish().map_err(|source| Error::Deflate {
         op: DeflateOp::Pack,
         source,
     })?;
 
     let nonce_bytes = random_bytes::<NONCE_LEN>()?;
+
     sealer
         .seal_in_place_append_tag(
             Nonce::assume_unique_for_key(nonce_bytes),
@@ -29,6 +32,7 @@ pub fn sealed(sealer: &LessSafeKey, space: SpaceId, plain: &[u8]) -> Result<Vec<
         .map_err(|_| Error::Unsealed)?;
 
     let mut blob = Vec::with_capacity(NONCE_LEN + in_out.len());
+
     blob.extend_from_slice(&nonce_bytes);
     blob.extend_from_slice(&in_out);
     Ok(blob)
@@ -45,12 +49,14 @@ pub fn opened(
     };
     let nonce = Nonce::try_assume_unique_for_key(nonce).map_err(|_| Error::Unsealed)?;
     let mut in_out = sealed.to_vec();
+
     let packed = sealer
         .open_in_place(nonce, Aad::from(space.0), &mut in_out)
         .map_err(|_| Error::Unsealed)?;
 
     let mut plain = Vec::with_capacity((packed.len() * 3).min(ceiling));
     let bound = u64::try_from(ceiling.saturating_add(1)).unwrap_or(u64::MAX);
+
     DeflateDecoder::new(&packed[..])
         .take(bound)
         .read_to_end(&mut plain)
@@ -106,7 +112,9 @@ mod tests {
             .derived()
             .expect("derived");
         let mut blob = sealed(&derived.sealer, derived.space, b"favourites").expect("sealed");
+
         let last = blob.len() - 1;
+
         blob[last] ^= 1;
 
         assert!(matches!(
@@ -126,6 +134,7 @@ mod tests {
             .derived()
             .expect("derived");
         let plain = vec![0_u8; 1024 * 1024];
+
         let blob = sealed(&derived.sealer, derived.space, &plain).expect("sealed");
 
         assert!(blob.len() < 4096);

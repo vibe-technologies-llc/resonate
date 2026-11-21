@@ -64,6 +64,7 @@ impl Writing<'_> {
 
 pub(crate) fn at_the_most_compression() -> Result<Verified<config::Encoder>> {
     let mut encoder = config::Encoder::default();
+
     encoder.block_size = BLOCK_FRAMES;
     encoder.multithread = false;
     encoder.stereo_coding.use_leftside = true;
@@ -101,10 +102,12 @@ pub(crate) fn encode(
     let rate = spec.rate.hz() as usize;
     let whole_block = BLOCK_FRAMES * channels;
     let config = at_the_most_compression()?;
+
     #[cfg(test)]
     ENCODES_BEGUN.with(|begun| begun.set(begun.get() + 1));
 
     let mut stream = unencodable(Stream::new(rate, channels, depth), spec, bits)?;
+
     unencodable(
         stream
             .stream_info_mut()
@@ -120,6 +123,7 @@ pub(crate) fn encode(
         written: 0,
         ceiling,
     };
+
     writing.write(&written(&stream)?)?;
 
     let mut framebuf = unencodable(FrameBuf::with_size(channels, BLOCK_FRAMES), spec, bits)?;
@@ -130,9 +134,11 @@ pub(crate) fn encode(
 
     loop {
         halt.heard()?;
+
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Read, source))?;
+
         if status == DecodeStatus::EndOfStream {
             break;
         }
@@ -144,6 +150,7 @@ pub(crate) fn encode(
         pending.extend_from_slice(&widened);
 
         let mut at = 0;
+
         while pending.len() - at >= whole_block {
             emit(
                 &config,
@@ -171,6 +178,7 @@ pub(crate) fn encode(
 
     let digest = context.md5_digest();
     let total = context.total_samples();
+
     if writing.outgrew() {
         return Ok(Encode::Encoded(Encoded {
             key: VaultKey::of(digest),
@@ -190,6 +198,7 @@ pub(crate) fn encode(
 
     let header = written(&stream)?;
     let mut file = writing.file;
+
     file.seek(SeekFrom::Start(0))
         .map_err(|source| Error::io(VaultOp::Write, into, source))?;
     file.write_all(&header)
@@ -213,6 +222,7 @@ fn emit(
     samples: &[i32],
 ) -> Result<()> {
     let mut filling = (&mut *framebuf, &mut *context);
+
     filling.fill_interleaved(samples).map_err(|source| {
         tracing::warn!(%source, "a block of samples could not be laid into a frame");
         Error::Encoding { op: FlacOp::Fill }
@@ -236,6 +246,7 @@ fn emit(
 
 fn written<T: BitRepr>(component: &T) -> Result<Vec<u8>> {
     let mut sink = MemSink::<u8>::new();
+
     component
         .write(&mut sink)
         .map_err(|source| Error::Written {
@@ -267,13 +278,16 @@ mod tests {
     fn noise_wave() -> Vec<u8> {
         let mut state = 0x9e37_79b9_u32;
         let mut data = Vec::with_capacity(FRAMES as usize * 4);
+
         for _ in 0..FRAMES * 2 {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
             data.extend_from_slice(&((state >> 16) as i16).to_le_bytes());
         }
+
         let mut wave = b"RIFF".to_vec();
+
         wave.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
         wave.extend_from_slice(b"WAVEfmt ");
         wave.extend_from_slice(&16_u32.to_le_bytes());
@@ -292,7 +306,9 @@ mod tests {
     fn encoded(source: &Path, into: &Path, ceiling: Option<u64>) -> Encoded {
         let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(source))
             .expect("a readable source");
+
         decoder.set_output_format(SampleFormat::S16);
+
         let spec = StreamSpec::new(info.spec.rate, info.spec.channels, SampleFormat::S16);
         let narrowing = Narrowing::between(SampleFormat::S16, SampleFormat::S16);
         match encode(
@@ -313,9 +329,13 @@ mod tests {
     #[test]
     fn an_encode_that_outgrows_its_ceiling_stops_writing_but_still_names_the_samples() {
         let folder = env::temp_dir().join(format!("resonate-vault-flac-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let source = folder.join("noise.wav");
+
         fs::write(&source, noise_wave()).expect("a written source");
+
         let whole_at = folder.join("whole.flac");
         let cut_at = folder.join("cut.flac");
 
@@ -345,6 +365,7 @@ mod tests {
 
     fn digest_of(bytes: &[u8]) -> String {
         let mut digest = crate::pcm::Digest::default();
+
         digest.note(bytes);
         digest.settled().to_string()
     }
@@ -352,12 +373,16 @@ mod tests {
     #[test]
     fn the_encoders_an_object_is_stamped_for_are_the_ones_this_build_runs() {
         let folder = env::temp_dir().join(format!("resonate-vault-pinned-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let source = folder.join("noise.wav");
         let flac_at = folder.join("noise.flac");
+
         fs::write(&source, noise_wave()).expect("a written source");
 
         encoded(&source, &flac_at, None);
+
         let flac = fs::read(&flac_at).expect("an encoded file");
         let _ = fs::remove_dir_all(&folder);
         let zstd = zstd::bulk::compress(&noise_wave(), crate::wave::ARCHIVED_AT)

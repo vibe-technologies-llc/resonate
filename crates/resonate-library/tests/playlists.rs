@@ -35,11 +35,13 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-playlists-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
 
         Self {
@@ -51,6 +53,7 @@ impl Tree {
 
     fn write(&self, relative: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(relative);
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("a writable temporary directory");
         }
@@ -74,6 +77,7 @@ fn wav(frames: u32) -> Vec<u8> {
     let data = vec![0_u8; frames as usize * usize::from(block_align)];
 
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&CHANNELS.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
@@ -82,10 +86,12 @@ fn wav(frames: u32) -> Vec<u8> {
     format.extend_from_slice(&BITS.to_le_bytes());
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -137,14 +143,19 @@ fn an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached() -> Res
     let rows: Vec<Cut> = (0..PAST_WHAT_THE_UNDO_STACK_HOLDS)
         .map(|row| whole(format!("/music/{row}.wav")))
         .collect();
+
     let id = library.start_playlist("Long", &rows)?;
     let before = library.playlist_cuts(id)?;
 
     library.add_to_playlist(id, &[whole("/music/added.wav")])?;
+
     let appended = library.playlist_cuts(id)?;
     let near_the_end = appended.len() - 20;
+
     library.remove_from_playlist(id, Span::between(near_the_end, near_the_end + 2))?;
+
     let removed = library.playlist_cuts(id)?;
+
     library.move_in_playlist(
         id,
         Span::between(near_the_end, near_the_end + 1),
@@ -158,20 +169,31 @@ fn an_edit_to_a_long_playlist_holds_only_the_rows_from_where_it_reached() -> Res
     );
 
     let moved = library.playlist_cuts(id)?;
+
     assert_ne!(moved, removed);
 
     library.undo()?;
+
     assert_eq!(library.playlist_cuts(id)?, removed);
+
     library.undo()?;
+
     assert_eq!(library.playlist_cuts(id)?, appended);
+
     library.undo()?;
+
     assert_eq!(library.playlist_cuts(id)?, before);
 
     library.redo()?;
+
     assert_eq!(library.playlist_cuts(id)?, appended);
+
     library.redo()?;
+
     assert_eq!(library.playlist_cuts(id)?, removed);
+
     library.redo()?;
+
     assert_eq!(library.playlist_cuts(id)?, moved);
     Ok(())
 }
@@ -183,6 +205,7 @@ fn an_undo_refuses_a_playlist_another_catalog_changed_since_the_edit() -> Result
     let ours = Library::open(&database)?;
     let theirs = Library::open(&database)?;
     let id = ours.start_playlist("Evening", &[whole("/music/a.wav")])?;
+
     ours.add_to_playlist(id, &[whole("/music/b.wav")])?;
 
     theirs.add_to_playlist(id, &[whole("/music/c.wav")])?;
@@ -212,9 +235,11 @@ fn an_edit_by_position_is_refused_once_the_playlist_has_moved_since_it_was_drawn
         "Evening",
         &["a", "b", "c", "d"].map(|name| whole(format!("/music/{name}.wav"))),
     )?;
+
     let drawn = as_drawn_now(&library, id)?;
 
     library.move_in_playlist(id, Span::one(0), 3)?;
+
     let moved = library.playlist_cuts(id)?;
     let gathered =
         library.gather_in_playlist_as_drawn(id, &[Span::one(0), Span::one(2)], 3, &drawn);
@@ -247,6 +272,7 @@ fn an_edit_by_position_lands_where_the_playlist_still_stands_as_drawn() -> Resul
 
     library.move_in_playlist_as_drawn(id, Span::one(0), 3, &as_drawn_now(&library, id)?)?;
     library.remove_from_playlist_as_drawn(id, Span::one(0), &as_drawn_now(&library, id)?)?;
+
     let narrowed = AsDrawn::narrowed(
         library
             .playlist_entries(id, None)?
@@ -254,6 +280,7 @@ fn an_edit_by_position_lands_where_the_playlist_still_stands_as_drawn() -> Resul
             .filter(|entry| entry.position == 1)
             .collect(),
     );
+
     library.add_to_playlist(id, &[whole("/music/e.wav")])?;
     library.remove_runs_from_playlist_as_drawn(id, &[Span::one(1)], &narrowed)?;
 
@@ -275,16 +302,24 @@ fn an_edit_near_the_top_of_a_long_playlist_holds_only_the_rows_it_crossed() -> R
     let rows: Vec<Cut> = (0..PAST_WHAT_THE_UNDO_STACK_HOLDS)
         .map(|row| whole(format!("/music/{row}.wav")))
         .collect();
+
     let id = library.start_playlist("Long", &rows)?;
     let before = library.playlist_cuts(id)?;
 
     library.remove_from_playlist(id, Span::between(2, 4))?;
+
     let removed = library.playlist_cuts(id)?;
+
     library.move_in_playlist(id, Span::between(1, 2), 6)?;
+
     let moved = library.playlist_cuts(id)?;
+
     library.move_in_playlist(id, Span::between(9, 10), 0)?;
+
     let raised = library.playlist_cuts(id)?;
+
     library.remove_from_playlist(id, Span::between(0, 0))?;
+
     let dropped = library.playlist_cuts(id)?;
 
     assert_eq!(
@@ -300,10 +335,12 @@ fn an_edit_near_the_top_of_a_long_playlist_holds_only_the_rows_it_crossed() -> R
 
     for standing in [&raised, &moved, &removed, &before] {
         library.undo()?;
+
         assert_eq!(library.playlist_cuts(id)?, *standing);
     }
     for standing in [&removed, &moved, &raised, &dropped] {
         library.redo()?;
+
         assert_eq!(library.playlist_cuts(id)?, *standing);
     }
     Ok(())
@@ -320,6 +357,7 @@ fn a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_n
     let database = tree.path().join("library.db");
 
     let library = Library::open(&database)?;
+
     scan(&library, &tree.path().join("home"), false)?;
     scan(&library, &tree.path().join("drive"), false)?;
     rusqlite::Connection::open(&database)
@@ -330,6 +368,7 @@ fn a_row_on_a_drive_that_is_not_mounted_is_kept_by_a_tidy_and_a_deleted_one_is_n
             )
         })
         .expect("the catalog takes a volume");
+
     let id = library.start_playlist(
         "Evening",
         &[&on_the_drive, &deleted, &staying, &never_scanned, &alone].map(whole),
@@ -356,12 +395,15 @@ fn a_volume_holding_only_a_listed_row_stays_noted_through_a_scan_and_its_row_thr
     let tree = Tree::new();
     let home = tree.path().join("home");
     let drive = home.join("drive");
+
     tree.write("home/stays.wav", &wav(4_410));
+
     let on_the_drive = tree.write("home/drive/one.wav", &wav(4_410));
     let database = tree.path().join("library.db");
 
     let library = Library::open(&database)?;
     let id = library.start_playlist("Evening", &[whole(&on_the_drive)])?;
+
     rusqlite::Connection::open(&database)
         .and_then(|catalog| {
             catalog.execute("INSERT INTO volumes (path) VALUES (?1)", [drive.to_str()])
@@ -380,11 +422,15 @@ fn a_prune_keeps_the_rows_under_a_root_that_is_not_there() -> Result<()> {
     let tree = Tree::new();
     let root = tree.path().join("root");
     let inside = tree.write("root/album/one.wav", &wav(4_410));
+
     tree.write("beside.wav", &wav(4_410));
 
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(&library, &root, false)?;
+
     let id = library.start_playlist("Evening", &[whole(&inside)])?;
+
     fs::remove_dir_all(&root).expect("the fixture root can be taken away");
 
     assert_eq!(library.prune_playlist(id)?, 0);
@@ -401,12 +447,16 @@ fn a_tidy_and_a_prune_keep_a_row_whose_file_name_is_not_text_while_the_file_is_t
     let cafe =
         root.join(<std::ffi::OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(b"caf\xe9.wav"));
     let deleted = tree.write("root/gone.wav", &wav(4_410));
+
     fs::write(&cafe, wav(4_410)).expect("a file with a name that is not text");
 
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(&library, &root, false)?;
+
     let tidied = library.start_playlist("Evening", &[&cafe, &deleted].map(whole))?;
     let pruned = library.start_playlist("Morning", &[&cafe, &deleted].map(whole))?;
+
     fs::remove_file(&deleted).expect("the fixture file can be deleted");
 
     assert_eq!(library.tidy_playlist(tidied)?, 1);
@@ -424,6 +474,7 @@ fn a_sheet_title_carrying_a_character_xml_forbids_is_written_without_it() -> Res
     let sheet = tree.path().join("bells.xspf");
 
     library.export_playlist(id, &sheet)?;
+
     let written = fs::read_to_string(&sheet).expect("the sheet was written");
 
     assert!(
@@ -444,8 +495,10 @@ fn a_timed_row_takes_its_rate_from_the_catalog_rather_than_probing_the_file() ->
     let tree = Tree::new();
     let file = tree.write("side.wav", &wav(RATE));
     let library = Library::open_in_memory()?;
+
     scan(&library, tree.path(), false)?;
     fs::write(&file, b"no longer a wave").expect("the fixture file can be spoiled");
+
     let sheet = tree.write(
         "cut.m3u",
         format!(
@@ -484,13 +537,16 @@ fn an_export_that_fails_leaves_nothing_staged_beside_its_target() -> Result<()> 
     let id = library.start_playlist("Evening", &[whole("/music/a.wav")])?;
     let folder = tree.path().join("sheets");
     let taken = folder.join("evening.m3u");
+
     fs::create_dir_all(&taken).expect("a folder stands where the sheet would go");
+
     let kept = folder.join("kept.m3u");
 
     assert!(matches!(
         library.export_playlist(id, &taken),
         Err(Error::Io { .. })
     ));
+
     library.export_playlist(id, &kept)?;
     library.export_playlist(id, &kept)?;
 
@@ -498,6 +554,7 @@ fn an_export_that_fails_leaves_nothing_staged_beside_its_target() -> Result<()> 
         .expect("the sheets folder reads")
         .map(|entry| entry.expect("an entry reads").path())
         .collect();
+
     assert_eq!(left, BTreeSet::from([taken, kept]));
     Ok(())
 }
@@ -514,6 +571,7 @@ fn a_playlist_exported_over_a_link_naming_no_sheet_yet_writes_where_it_points_an
     let first = folder.join("evening.m3u");
     let second = folder.join("chained.m3u");
     let landing = kept.join("evening.m3u");
+
     fs::create_dir_all(&folder).expect("a folder for the links");
     fs::create_dir_all(&kept).expect("a folder the link points into");
     std::os::unix::fs::symlink("chained.m3u", &first).expect("a link to a link");
@@ -554,6 +612,7 @@ fn a_playlist_exported_over_a_linked_sheet_rewrites_what_the_link_names_and_keep
     let folder = tree.path().join("sheets");
     let kept = tree.write("kept/evening.m3u", b"#EXTM3U\n");
     let link = folder.join("evening.m3u");
+
     fs::create_dir_all(&folder).expect("a folder for the link");
     std::os::unix::fs::symlink(&kept, &link).expect("a linked sheet");
 
@@ -612,6 +671,7 @@ fn two_catalogs_duplicating_one_playlist_at_once_each_find_a_free_name() -> Resu
         .into_iter()
         .map(|found| found.name)
         .collect();
+
     assert_eq!(copies.len(), DUPLICATING_THREADS * DUPLICATES_EACH);
     assert_eq!(names.len(), DUPLICATING_THREADS * DUPLICATES_EACH + 1);
     assert!(names.contains("Evening (copy)"));
@@ -623,6 +683,7 @@ fn a_sheet_naming_a_file_through_a_link_the_scan_followed_lands_on_the_catalog_r
     let tree = Tree::new();
     let elsewhere = Tree::new();
     let root = tree.path().join("root");
+
     tree.write("root/home.wav", &wav(4_410));
     elsewhere.write("far.wav", &wav(4_410));
     if !link_to_directory(elsewhere.path(), &root.join("linked"))
@@ -632,7 +693,9 @@ fn a_sheet_naming_a_file_through_a_link_the_scan_followed_lands_on_the_catalog_r
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &root, true)?;
+
     let catalogued = root.join("linked/far.wav");
     let sheet = tree.write(
         "list.m3u",

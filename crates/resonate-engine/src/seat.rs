@@ -133,6 +133,7 @@ impl Seat {
         let mut before = self.before.lock();
         if before.is_none() {
             let state = self.player.state();
+
             *before = Some(Before {
                 repeat: state.repeat,
                 resumption: resumption_of(&state, &self.player.queued()),
@@ -164,6 +165,7 @@ impl Seat {
 
         self.remember_what_was_here();
         self.player.send(Command::SetRepeat(RepeatMode::Off))?;
+
         let resumed = self
             .player
             .request(Command::Resume(Self::resumed_at(rows, Frames::ZERO)))?;
@@ -206,6 +208,7 @@ impl Seat {
             Duration::ZERO
         };
         let here = position.saturating_add(elapsed);
+
         self.player
             .request(Command::Resume(Self::resumed_at(
                 rows,
@@ -253,6 +256,7 @@ impl Seat {
         let Some(playing) = state.queue_position else {
             return Ok(false);
         };
+
         if let Some(track) = state.current.as_ref()
             && let Some(length) = track.duration
         {
@@ -281,14 +285,18 @@ impl Seat {
 
         let mut revision = queued.revision;
         let mut rows = queued.rows.clone();
+
         if standing.len() > alike {
             let removal = Command::Remove(Span::between(first_unlike, queued.rows.len() - 1));
+
             if !self.edited_if_still(revision, removal)? {
                 return Ok(false);
             }
+
             let Some((after, now)) = self.settled_view() else {
                 return Ok(false);
             };
+
             if now.queue_position != Some(playing) || after.rows.len() != first_unlike {
                 return Ok(false);
             }
@@ -297,10 +305,13 @@ impl Seat {
         }
 
         let rest = ahead.get(alike..).unwrap_or_default();
+
         if rest.is_empty() {
             return Ok(true);
         }
+
         let mut minting = Unclaimed::beside(rows.iter().map(AsRef::as_ref));
+
         let items = rest
             .iter()
             .map(|row| QueueItem {
@@ -370,6 +381,7 @@ impl Seat {
 
     fn gathered_moves(&self) -> MutexGuard<'_, Vec<(QueueStamp, QueueStamp)>> {
         let mut moved = self.moved.lock();
+
         for relocated in self.moves.try_iter() {
             moved.extend_from_slice(&relocated.rows);
             if let Some(before) = self.before.lock().as_mut() {
@@ -389,6 +401,7 @@ impl Seat {
 
     pub fn put_back(&self) -> Result<()> {
         drop(self.gathered_moves());
+
         let Some(before) = self.before.lock().take() else {
             return Ok(());
         };

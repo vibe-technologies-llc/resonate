@@ -13,7 +13,7 @@ const TICKS_PER_MICRO: i64 = 10;
 #[cfg(any(windows, target_os = "macos"))]
 pub(crate) const TIMELINE_EVERY: Duration = Duration::from_secs(1);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Status {
     Closed,
     Stopped,
@@ -44,7 +44,7 @@ impl Status {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub(crate) struct Buttons {
     pub(crate) play: bool,
     pub(crate) pause: bool,
@@ -71,7 +71,7 @@ impl Buttons {
 }
 
 #[cfg(any(windows, test))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Pressed {
     Play,
     Pause,
@@ -122,7 +122,7 @@ pub(crate) const fn micros_of_ticks(ticks: i64) -> i64 {
     ticks / TICKS_PER_MICRO
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct Timeline {
     pub(crate) position: i64,
     pub(crate) end: i64,
@@ -152,7 +152,7 @@ impl Timeline {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub(crate) struct Displayed {
     pub(crate) title: String,
     pub(crate) artist: String,
@@ -190,7 +190,7 @@ pub(crate) struct Controls {
     pub(crate) timeline: Option<Timeline>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct Moved {
     pub(crate) status: bool,
     #[cfg(any(windows, test))]
@@ -350,20 +350,26 @@ mod tests {
     fn only_what_moved_is_told_again_and_the_clock_on_a_seek_or_when_due() {
         let before = playing();
         let mut paused = playing();
+
         paused.status = Some(Status::Paused);
+
         let mut moving = playing();
+
         moving.timeline = Some(Timeline::of(
             Frames(4_410),
             Some(Frames(44_100)),
             44_100,
             true,
         ));
+
         let mut covered = playing();
+
         if let Some(shown) = covered.displayed.as_mut() {
             shown.art = Some("file:///C:/art.png".to_owned());
         }
 
         let still = Moved::between(&before, &playing(), false, false);
+
         assert_eq!(
             still,
             Moved {
@@ -376,16 +382,19 @@ mod tests {
         );
 
         let flowing = Moved::between(&before, &moving, false, false);
+
         assert!(!flowing.timeline, "a playhead moving on its own was told");
 
         assert!(Moved::between(&before, &moving, true, false).timeline);
         assert!(Moved::between(&before, &moving, false, true).timeline);
 
         let halted = Moved::between(&before, &paused, false, false);
+
         assert!(halted.status);
         assert!(halted.timeline);
 
         let laid = Moved::between(&before, &covered, false, false);
+
         assert!(laid.displayed);
         assert!(laid.timeline);
     }

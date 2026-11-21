@@ -31,6 +31,7 @@ pub(crate) fn reconstructs(jxl: &[u8], jpeg: &[u8]) -> bool {
 
 fn sealed(mut jxl: Vec<u8>) -> Vec<u8> {
     let mut digest = Digest::default();
+
     digest.note(&jxl);
 
     jxl.extend_from_slice(&(SEAL_BYTES as u32).to_be_bytes());
@@ -45,6 +46,7 @@ fn is_sealed(jxl: &[u8]) -> bool {
     };
     let (body, seal) = jxl.split_at(sealed_from);
     let mut digest = Digest::default();
+
     digest.note(body);
 
     seal[..4] == (SEAL_BYTES as u32).to_be_bytes()
@@ -56,10 +58,12 @@ pub(crate) fn of(jpeg: &[u8]) -> Option<Transcoded> {
     let data = read_jpeg(jpeg)
         .inspect_err(|source| tracing::debug!(%source, "a JPEG cover is not transcoded"))
         .ok()?;
+
     if !encodable(&data) {
         tracing::debug!("a JPEG cover is shaped otherwise than the transcoder takes");
         return None;
     }
+
     let bytes = encode_jpeg_to_jxl_container(&data)
         .inspect_err(|source| tracing::debug!(%source, "a JPEG cover could not be transcoded"))
         .ok()?;
@@ -108,6 +112,7 @@ pub(crate) fn reconstructed(jxl: &[u8], picture: &JxlImage) -> Result<Option<Vec
     }
 
     let mut jpeg = Vec::new();
+
     picture.reconstruct_jpeg(&mut jpeg).map_err(|source| {
         tracing::warn!(%source, "a JPEG could not be reconstructed from a JXL picture");
         Error::PictureRead {

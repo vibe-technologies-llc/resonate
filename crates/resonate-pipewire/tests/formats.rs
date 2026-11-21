@@ -131,6 +131,7 @@ impl Hosted {
         for stale in [SOCKET, "pipewire-0.lock"] {
             let _ = fs::remove_file(folder.join(stale));
         }
+
         let daemon = Command::new("pipewire")
             .arg("-c")
             .arg(folder.join("hosted.conf"))
@@ -142,6 +143,7 @@ impl Hosted {
             .ok()?;
 
         let deadline = Instant::now() + PATIENCE;
+
         while !folder.join(SOCKET).exists() && Instant::now() < deadline {
             thread::sleep(POLL_EVERY);
         }
@@ -232,6 +234,7 @@ fn seven_oh() -> ChannelLayout {
         ChannelPosition::SideRight,
     ]))
     .expect("seven places are a layout");
+
     assert!(matches!(placed, ChannelLayout::Placed(_)));
     placed
 }
@@ -272,6 +275,7 @@ fn request(sink: &SinkInfo, spec: StreamSpec) -> StreamRequest {
 
 fn the_hosted_sinks(pipewire: &PipeWire) -> Vec<SinkInfo> {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if let Ok(sinks) = pipewire.enumerate_sinks(ASKED_WITHIN)
             && HOSTED.iter().all(|hosting| {
@@ -296,6 +300,7 @@ fn named<'a>(sinks: &'a [SinkInfo], name: &str) -> &'a SinkInfo {
 
 fn until(mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if done() {
             return true;
@@ -317,6 +322,7 @@ fn every_word_and_map_is_read_as_the_sink_names_it(_: &Path) {
             .iter()
             .find(|entry| entry.format == hosting.spec.format)
             .unwrap_or_else(|| panic!("{}: no {:?} entry", hosting.sink, hosting.spec.format));
+
         assert_eq!(entry.words, hosting.words, "{}", hosting.sink);
         assert_eq!(entry.rates, [hosting.spec.rate], "{}", hosting.sink);
         assert!(
@@ -345,9 +351,11 @@ fn every_word_and_map_is_taken_by_the_daemon_with_nothing_converting(_: &Path) {
         let stream = pipewire
             .open(&request(sink, hosting.spec), Box::new(Silence))
             .unwrap_or_else(|error| panic!("{}: the stream would not open: {error}", hosting.sink));
+
         stream.set_active(true).expect("the stream activates");
 
         let mut heard = Vec::new();
+
         let taken = until(|| {
             heard.extend(stream.events().try_iter());
             heard.iter().any(|event| {
@@ -360,6 +368,7 @@ fn every_word_and_map_is_taken_by_the_daemon_with_nothing_converting(_: &Path) {
                 )
             })
         });
+
         stream.close().expect("the stream closes");
 
         assert!(taken, "{}: never taken: {heard:?}", hosting.sink);
@@ -375,6 +384,7 @@ fn every_word_and_map_is_taken_by_the_daemon_with_nothing_converting(_: &Path) {
             hosting.sink
         );
     }
+
     let _ = pipewire.shutdown();
 }
 
@@ -416,6 +426,7 @@ fn the_playback_nodes(folder: &Path) -> Vec<String> {
     };
     let mut node = None;
     let mut nodes = Vec::new();
+
     for line in String::from_utf8_lossy(&listed.stdout).lines() {
         if let Some(id) = line.trim().strip_prefix("id ") {
             node = id.split(',').next().map(str::to_owned);
@@ -447,6 +458,7 @@ fn the_first_output_of(folder: &Path, node: &str) -> Option<String> {
         .ok()?;
     let mut port = None;
     let mut on_the_node = false;
+
     for line in String::from_utf8_lossy(&listed.stdout).lines() {
         if let Some(id) = line.trim().strip_prefix("id ") {
             port = id.split(',').next().map(str::to_owned);
@@ -500,6 +512,7 @@ fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Pat
     for hosting in *HOSTED {
         let sink = named(&sinks, hosting.sink);
         let pulled = Arc::new(AtomicUsize::new(0));
+
         let stream = pipewire
             .open(
                 &request(sink, hosting.spec),
@@ -508,6 +521,7 @@ fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Pat
                 }),
             )
             .unwrap_or_else(|error| panic!("{}: the stream would not open: {error}", hosting.sink));
+
         stream.set_active(true).expect("the stream activates");
 
         let ported = until(|| port_the_stream(folder, hosting));
@@ -515,6 +529,7 @@ fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Pat
         let wanted = bytes_in_a_quarter_second(hosting);
         let flowing = until(|| pulled.load(Ordering::Relaxed) >= wanted);
         let heard: Vec<StreamEvent> = stream.events().try_iter().collect();
+
         stream.close().expect("the stream closes");
 
         assert!(ported, "{}: the stream was given no ports", hosting.sink);
@@ -534,6 +549,7 @@ fn frames_flow_through_every_word_and_map_once_the_stream_is_linked(folder: &Pat
             hosting.sink
         );
     }
+
     let _ = pipewire.shutdown();
 }
 
@@ -550,6 +566,7 @@ fn a_live_stream_handed_a_new_source_and_format(folder: &Path) {
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
     let hosting = HOSTED[3];
+
     let sink = named(&sinks, hosting.sink);
     let elsewhere = named(&sinks, HOSTED[0].sink);
     let asked = request(sink, hosting.spec);
@@ -574,7 +591,9 @@ fn a_live_stream_handed_a_new_source_and_format(folder: &Path) {
             }),
         )
         .expect("the stream opens");
+
     stream.set_active(true).expect("the stream activates");
+
     let linked =
         until(|| port_the_stream(folder, hosting)) && until(|| link_the_stream(folder, hosting));
     let wanted = bytes_in_a_quarter_second(hosting);
@@ -596,6 +615,7 @@ fn a_live_stream_handed_a_new_source_and_format(folder: &Path) {
         Reshaped::Kept
     );
     let mut heard = Vec::new();
+
     let settled = until(|| port_the_stream(folder, slower))
         && until(|| {
             heard.extend(stream.events().try_iter());
@@ -633,6 +653,7 @@ fn a_stream_drained_or_turned_between_converted_and_not(folder: &Path) {
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
     let hosting = HOSTED[3];
+
     let sink = named(&sinks, hosting.sink);
     let asked = request(sink, hosting.spec);
     let converted = StreamRequest {
@@ -656,7 +677,9 @@ fn a_stream_drained_or_turned_between_converted_and_not(folder: &Path) {
             }),
         )
         .expect("the stream opens");
+
     stream.set_active(true).expect("the stream activates");
+
     let linked =
         until(|| port_the_stream(folder, hosting)) && until(|| link_the_stream(folder, hosting));
     let wanted = bytes_in_a_quarter_second(hosting);
@@ -670,7 +693,9 @@ fn a_stream_drained_or_turned_between_converted_and_not(folder: &Path) {
     };
 
     let _ = stream.events().try_iter().count();
+
     stream.drain().expect("the stream takes a drain");
+
     let drained = until(|| {
         stream
             .events()
@@ -715,11 +740,13 @@ fn a_sink_leaving_under_an_open_stream(folder: &Path) {
     let changes = pipewire.subscribe_sinks();
     let sinks = the_hosted_sinks(&pipewire);
     let hosting = HOSTED[2];
+
     let sink = named(&sinks, hosting.sink).clone();
 
     let stream = pipewire
         .open(&request(&sink, hosting.spec), Box::new(Silence))
         .expect("the stream opens");
+
     stream.set_active(true).expect("the stream activates");
 
     let destroyed = Command::new("pw-cli")
@@ -729,6 +756,7 @@ fn a_sink_leaving_under_an_open_stream(folder: &Path) {
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success());
+
     assert!(destroyed, "pw-cli could not take the sink away");
 
     let announced = until(|| {
@@ -781,6 +809,7 @@ fn two_streams_on_one_client(folder: &Path) {
     let other = HOSTED[2];
     let first = Arc::new(AtomicUsize::new(0));
     let second = Arc::new(AtomicUsize::new(0));
+
     let wanted = bytes_in_a_quarter_second(one).max(bytes_in_a_quarter_second(other));
 
     let a = pipewire
@@ -789,8 +818,11 @@ fn two_streams_on_one_client(folder: &Path) {
             counting(&first),
         )
         .expect("the first stream opens");
+
     a.set_active(true).expect("the first stream activates");
+
     let mut alone = Vec::new();
+
     let one_stood = until(|| {
         alone = the_playback_nodes(folder);
         alone.len() == 1
@@ -806,8 +838,11 @@ fn two_streams_on_one_client(folder: &Path) {
             counting(&second),
         )
         .expect("the second stream opens");
+
     b.set_active(true).expect("the second stream activates");
+
     let mut both = Vec::new();
+
     let two_stood = until(|| {
         both = the_playback_nodes(folder);
         both.len() == 2
@@ -822,10 +857,13 @@ fn two_streams_on_one_client(folder: &Path) {
     let both_flowed = grows(&second, wanted) && grows(&first, wanted);
 
     a.set_active(false).expect("the first stream deactivates");
+
     let a_stood_down_alone = grows(&second, wanted) && grows_while(&second, wanted, &first);
 
     a.close().expect("the first stream closes");
+
     let mut left = Vec::new();
+
     let one_left = until(|| {
         left = the_playback_nodes(folder);
         left == [b_node.clone()]
@@ -840,6 +878,7 @@ fn two_streams_on_one_client(folder: &Path) {
     );
 
     drop(b);
+
     let none_left = until(|| the_playback_nodes(folder).is_empty());
     let _ = pipewire.shutdown();
 
@@ -881,6 +920,7 @@ fn the_playback_node(folder: &Path) -> Option<String> {
         .output()
         .ok()?;
     let mut node = None;
+
     for line in String::from_utf8_lossy(&listed.stdout).lines() {
         if let Some(id) = line.trim().strip_prefix("id ") {
             node = id.split(',').next().map(str::to_owned);
@@ -909,13 +949,16 @@ fn a_stream_turned_by_another_client(folder: &Path) {
     let pipewire = PipeWire::start(STREAM).expect("the hosted daemon answers");
     let sinks = the_hosted_sinks(&pipewire);
     let hosting = HOSTED[0];
+
     let sink = named(&sinks, hosting.sink);
     let stream = pipewire
         .open(&request(sink, hosting.spec), Box::new(Silence))
         .expect("the stream opens");
+
     stream.set_active(true).expect("the stream activates");
 
     let mut heard = Vec::new();
+
     let mut heard_as = |wanted: StreamVolume| {
         until(|| {
             heard.extend(stream.events().try_iter());
@@ -1027,6 +1070,7 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
             eprintln!("skipped: no pipewire binary to host a daemon with");
             return;
         };
+
         under(&folder);
         return;
     }
@@ -1042,8 +1086,10 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
     }
 
     let folder = env::temp_dir().join(format!("rpf-{}-{tag}", std::process::id()));
+
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
+
     let ran = Command::new(env::current_exe().expect("the test binary"))
         .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)

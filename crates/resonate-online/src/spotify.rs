@@ -39,13 +39,16 @@ pub(crate) fn artist(url: &str) -> Option<&str> {
     let path = on_host(url, "open.spotify.com")?;
     let path = path.split(['?', '#']).next()?;
     let mut segments = path.split('/').filter(|segment| !segment.is_empty());
+
     let mut kind = segments.next()?;
+
     if kind.starts_with("intl-") {
         kind = segments.next()?;
     }
     if kind != "artist" {
         return None;
     }
+
     let id = segments.next()?;
 
     names_an_id(id).then_some(id)
@@ -59,6 +62,7 @@ pub(crate) fn playlist_named(
     if !names_an_id(playlist) {
         return Ok(None);
     }
+
     let page = format!("{pages}{EMBEDDED_PLAYLIST}{playlist}");
     let held = client.bytes(Host::Spotify, LookupOp::FollowLink, &page, LARGEST_DOCUMENT)?;
 
@@ -75,9 +79,11 @@ fn embedded(page: &str) -> Option<LinkedPlaylist> {
         .inspect_err(|error| tracing::debug!(%error, "Spotify's page data did not read"))
         .ok()?;
     let entity = document.props.page_props.state.data.entity;
+
     if entity.kind.as_deref() != Some(A_PLAYLIST) {
         return None;
     }
+
     let name = stated(entity.name.as_deref().or(entity.title.as_deref()))?;
 
     Some(LinkedPlaylist {

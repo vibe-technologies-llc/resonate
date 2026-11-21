@@ -18,6 +18,7 @@ impl LibraryModel {
             loop {
                 cx.background_executor().timer(waiting).await;
                 waiting = LINKS_LOOKED_AT_EVERY;
+
                 let Ok(Some((library, reference))) =
                     this.update(cx, |this, _| this.follows_links())
                 else {
@@ -26,6 +27,7 @@ impl LibraryModel {
                     }
                     continue;
                 };
+
                 let read = cx
                     .background_executor()
                     .spawn(async move { refreshed_where_due(&library, reference.as_ref()) })
@@ -49,6 +51,7 @@ impl LibraryModel {
 
         self.watchers._refreshing = cx.spawn(async move |this, cx| {
             before.await;
+
             let read = cx
                 .background_executor()
                 .spawn(async move { vec![(id, library.refresh_playlist(reference.as_ref(), id))] })
@@ -69,6 +72,7 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 library.keep_playlist_from_its_link(id, upkeep)?;
+
                 let name = library
                     .playlist(id)?
                     .map_or_else(|| unnamed_playlist(id), |found| found.name);
@@ -88,14 +92,18 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         let mut moved = false;
+
         for (playlist, answer) in read {
             match answer {
                 Ok(Some(from)) => {
                     let wanted = from.found.len();
+
                     for found in from.found {
                         self.want_found(found, cx);
                     }
+
                     let brought = from.added + from.removed + wanted > 0;
+
                     moved |= brought;
                     if asked || brought {
                         toast::tell(

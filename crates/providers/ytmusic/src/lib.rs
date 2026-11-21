@@ -50,6 +50,7 @@ impl OneAtATime {
     fn turn_within(self: &Arc<Self>, within: Duration) -> Option<Turn> {
         let by = Instant::now() + within;
         let mut taken = self.taken.lock();
+
         while *taken {
             if self.freed.wait_until(&mut taken, by).timed_out() && *taken {
                 return None;
@@ -225,6 +226,7 @@ impl YtMusic {
     fn listed(&self, identity: &Identity) -> Result<Option<Row>> {
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
+
         for words in &wordings {
             for row in self.songs(words)? {
                 row.weigh(identity, &mut choosing);
@@ -233,6 +235,7 @@ impl YtMusic {
                 break;
             }
         }
+
         let seen = choosing.seen();
         let taken = choosing
             .ranked()
@@ -273,6 +276,7 @@ impl YtMusic {
             .tool
             .formats_standing(&video)?
             .is_none_or(|formats| formats.best.is_some_and(Tier::is_premium));
+
         looking.concluded(premium);
         Ok(premium)
     }
@@ -364,6 +368,7 @@ impl Provider for YtMusic {
             );
             return Ok(Obtained::Nothing);
         };
+
         self.holds_up(&video, tier)?;
         tracing::info!(
             video = video.as_str(),
@@ -440,6 +445,7 @@ mod tests {
         let known = thread::scope(|scope| {
             let waiting =
                 scope.spawn(|| matches!(account.standing(), Standing::Known(premium) if premium));
+
             thread::sleep(Duration::from_millis(100));
             looking.concluded(true);
             waiting.join().expect("the waiting lane")
@@ -457,6 +463,7 @@ mod tests {
 
         let looks_itself = thread::scope(|scope| {
             let waiting = scope.spawn(|| matches!(account.standing(), Standing::Ours(_)));
+
             thread::sleep(Duration::from_millis(100));
             drop(looking);
             waiting.join().expect("the waiting lane")

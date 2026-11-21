@@ -69,6 +69,7 @@ impl Notifier {
         if !self.actions {
             return;
         }
+
         let proxy = self.proxy.clone();
         let raised = Arc::clone(&self.raised);
         let shared = Arc::clone(shared);
@@ -97,6 +98,7 @@ impl Notifier {
             shown.body.clone()
         };
         let mut hints: HashMap<&str, Variant<'_>> = HashMap::new();
+
         hints.insert("urgency", Variant::U8(LOW_URGENCY));
         hints.insert("transient", Variant::Bool(transient));
         if let Some(entry) = self.entry.as_deref() {
@@ -124,6 +126,7 @@ impl Notifier {
             Ok(raised) => slot.store(raised, Ordering::Release),
             Err(source) => {
                 let error = Error::bus(BusOp::Notify, source);
+
                 tracing::debug!(%error, "a track change did not reach the desktop");
             }
         }
@@ -139,11 +142,13 @@ impl Notifier {
 
     pub(crate) fn hush(&self) {
         let raised = self.raised.swap(NOTHING_TO_REPLACE, Ordering::AcqRel);
+
         if raised == NOTHING_TO_REPLACE {
             return;
         }
         if let Err(source) = self.proxy.call::<_, _, ()>("CloseNotification", &(raised,)) {
             let error = Error::bus(BusOp::Shutdown, source);
+
             tracing::debug!(%error, "a notification outlived the player that raised it");
         }
     }
@@ -154,6 +159,7 @@ fn answer(proxy: &Proxy<'static>, raised: &AtomicU32, shared: &Shared) {
         Ok(presses) => presses,
         Err(source) => {
             let error = Error::bus(BusOp::Listen, source);
+
             tracing::warn!(%error, "what a notification offers will not reach the transport");
             return;
         }
@@ -165,6 +171,7 @@ fn answer(proxy: &Proxy<'static>, raised: &AtomicU32, shared: &Shared) {
         let Ok((notification, key)) = body.deserialize::<(u32, String)>() else {
             continue;
         };
+
         if notification != raised.load(Ordering::Acquire) {
             continue;
         }
@@ -179,6 +186,7 @@ fn capabilities(proxy: &Proxy<'_>) -> Vec<String> {
         Ok(capabilities) => capabilities,
         Err(source) => {
             let error = Error::bus(BusOp::Notify, source);
+
             tracing::debug!(%error, "the desktop did not say what a notification may carry");
             Vec::new()
         }
@@ -191,6 +199,7 @@ fn declares(capabilities: &[String], capability: &str) -> bool {
 
 fn escaped(body: &str) -> String {
     let mut held = String::with_capacity(body.len());
+
     for character in body.chars() {
         match character {
             '&' => held.push_str("&amp;"),

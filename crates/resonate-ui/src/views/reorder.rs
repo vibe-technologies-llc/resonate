@@ -153,10 +153,12 @@ impl Chosen {
 
     pub(crate) fn of_rows(rows: impl IntoIterator<Item = usize>) -> Self {
         let mut rows: Vec<usize> = rows.into_iter().collect();
+
         rows.sort_unstable();
         rows.dedup();
 
         let mut runs: Vec<Span> = Vec::new();
+
         for row in rows {
             match runs.last_mut() {
                 Some(last) if last.last() + 1 == row => *last = Span::between(last.first(), row),
@@ -203,6 +205,7 @@ impl Chosen {
             .enumerate()
             .filter(|(_, row)| self.holds(**row))
             .map(|(place, _)| place);
+
         let first = landed.next()?;
 
         Some(Span::between(first, landed.next_back().unwrap_or(first)))
@@ -217,6 +220,7 @@ impl Chosen {
         self.0.sort_by_key(|span| span.first());
 
         let mut merged: Vec<Span> = Vec::with_capacity(self.0.len());
+
         for span in self.0 {
             match merged.last_mut() {
                 Some(last) if span.first() <= last.last().saturating_add(1) => {
@@ -231,6 +235,7 @@ impl Chosen {
 
     pub(crate) fn without(self, row: usize) -> Self {
         let mut left = Vec::with_capacity(self.0.len() + 1);
+
         for span in self.0 {
             if !span.holds(row) {
                 left.push(span);
@@ -314,6 +319,7 @@ impl Reach {
 
     pub(crate) fn acted_on(&self) -> Chosen {
         let chosen = self.selected();
+
         if chosen.runs().is_empty() {
             return Chosen::of(self.rows());
         }
@@ -327,6 +333,7 @@ impl Reach {
 
     pub(crate) fn toggled(&self, row: usize) -> Self {
         let selected = self.selected();
+
         if selected.holds(row) {
             return Self {
                 shift: self.shift,
@@ -385,6 +392,7 @@ impl Reach {
         {
             return Some(Self::spanning(self.shift, anchor, row));
         }
+
         let row = row.or_else(|| chosen.first())?;
         let stands_on_the_chosen = chosen.holds(row);
 
@@ -412,6 +420,7 @@ impl Reach {
     pub(crate) fn after_dropping_runs(shift: Shift, runs: &[Span], held: usize) -> Option<Self> {
         let mut held = held;
         let mut reach = None;
+
         for rows in runs.iter().rev() {
             reach = Self::after_dropping(shift, *rows, held);
             held = held.saturating_sub(rows.rows());
@@ -742,6 +751,7 @@ fn toward_an_edge(at: Point<Pixels>, bounds: Bounds<Pixels>) -> Option<Toward> {
     if !bounds.contains(&at) {
         return None;
     }
+
     let edge = px(DRAGGING_EDGE);
 
     if at.y < bounds.top() + edge {
@@ -756,6 +766,7 @@ fn toward_an_edge(at: Point<Pixels>, bounds: Bounds<Pixels>) -> Option<Toward> {
 impl RootView {
     pub(crate) fn creep(&mut self, creeping: Creeping, window: &Window, cx: &mut Context<Self>) {
         let already = self.creeping.is_some();
+
         self.creeping = creeping.step(window.mouse_position()).then_some(creeping);
 
         if already || self.creeping.is_none() {
@@ -765,10 +776,12 @@ impl RootView {
         self.creeping_on = cx.spawn_in(window, async move |this, cx| {
             loop {
                 cx.background_executor().timer(DRAGGING_STEP).await;
+
                 let carried_on = this.update_in(cx, |this, window, cx| {
                     let Some(creeping) = this.creeping.clone() else {
                         return false;
                     };
+
                     if !cx.has_active_drag() || !creeping.step(window.mouse_position()) {
                         this.creeping = None;
                         return false;
@@ -887,8 +900,10 @@ mod tests {
 
     fn moved(list: &[usize], rows: Span, to: usize) -> Vec<usize> {
         let mut moved = list.to_vec();
+
         let taken = moved.drain(rows.range()).collect::<Vec<_>>();
         let at = rows.landing(to);
+
         moved.splice(at..at, taken);
         moved
     }
@@ -929,6 +944,7 @@ mod tests {
             .iter()
             .map(|track| track.title.as_str())
             .collect();
+
         assert_eq!(titles, ["Song 2", "Song 3", "Song 5"]);
         assert_eq!(lifted.title(), "Song 2 and 2 more");
     }
@@ -1106,6 +1122,7 @@ mod tests {
         for listed in [Listed::Missing, Listed::Offered, Listed::Heard] {
             assert!(!Shift::Listing(listed).chooses_apart(), "{listed:?}");
         }
+
         assert!(!Shift::Queue.chooses_apart());
         assert!(Shift::Playlist(PlaylistId::new(1).expect("a valid id")).chooses_apart());
     }

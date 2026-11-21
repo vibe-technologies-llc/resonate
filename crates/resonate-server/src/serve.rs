@@ -158,11 +158,13 @@ pub fn pem(
             path: certificate.to_path_buf(),
             source,
         })?;
+
     if chain.is_empty() {
         return Err(Error::NoCertificate {
             path: certificate.to_path_buf(),
         });
     }
+
     let key = PrivateKeyDer::from_pem_file(key).map_err(|source| Error::Pem {
         op: PemOp::Key,
         path: key.to_path_buf(),
@@ -181,10 +183,13 @@ pub fn serving(
         .with_no_client_auth()
         .with_single_cert(chain, key)
         .map_err(|source| Error::Tls(Box::new(source)))?;
+
     tls.alpn_protocols = vec![SERVER_ALPN.to_vec()];
+
     let crypto =
         quinn::crypto::rustls::QuicServerConfig::try_from(tls).map_err(|_| Error::QuicCrypto)?;
     let mut config = ServerConfig::with_crypto(Arc::new(crypto));
+
     config.transport_config(Arc::new(server_transport(KEEP_EVERY, SILENT_FOR)));
     Ok(config)
 }
@@ -208,16 +213,20 @@ impl Server {
 
     pub async fn serve(self: Arc<Self>, endpoint: Endpoint) {
         let sweeping = tokio::spawn(Arc::clone(&self).sweep());
+
         while let Some(incoming) = endpoint.accept().await {
             if !incoming.remote_address_validated() && incoming.may_retry() {
                 let _ = incoming.retry();
+
                 continue;
             }
+
             let Some(admitted) = self.guard.admit(incoming.remote_address().ip()) else {
                 incoming.refuse();
                 continue;
             };
             let server = Arc::clone(&self);
+
             tokio::spawn(async move {
                 if let Err(error) = server.welcome(incoming, admitted).await {
                     tracing::debug!(%error, "a device's session ended");
@@ -246,9 +255,11 @@ impl Server {
                 tokio::time::sleep(Duration::from_millis(50)).await;
                 continue;
             };
+
             if let Err(error) = stream.set_nodelay(true) {
                 tracing::debug!(%error, "a connection could not leave Nagle's algorithm");
             }
+
             let forwarded_by = header_trusted_from(forwarded_by.as_ref(), peer.ip());
             let admitted = match forwarded_by {
                 Some(_) => None,
@@ -262,6 +273,7 @@ impl Server {
             };
             let server = Arc::clone(&self);
             let certificates = Arc::clone(&android_certificates);
+
             tokio::spawn(async move {
                 let Some(stream) = answered_as_a_page(stream, &certificates).await else {
                     return;
@@ -280,6 +292,7 @@ impl Server {
         let wait = (self.limits.idle_for / 30).min(LONGEST_SWEEP_WAIT);
         loop {
             tokio::time::sleep(wait).await;
+
             let idle = i64::try_from(self.limits.idle_for.as_secs()).unwrap_or(i64::MAX);
             let store = Arc::clone(&self.store);
             let unused = Arc::clone(&self.store);
@@ -289,7 +302,9 @@ impl Server {
                     .sweep_unused(now().saturating_sub(UNUSED_SPACE_KEPT_FOR))
             })
             .await;
+
             self.guard.forget_quiet_addresses();
+
             let staged = Arc::clone(&self.store);
             let _ = in_the_store(move || {
                 staged
@@ -315,6 +330,7 @@ impl Server {
         let Ok(Ok((send, recv))) = streams else {
             return Ok(());
         };
+
         let served = self
             .hello(Writer::Quic(send), Reader::Quic(recv), address, admitted)
             .await;
@@ -334,7 +350,9 @@ impl Server {
             return Ok(());
         };
         let upgraded = upgraded?;
+
         drop(handshake);
+
         let admitted = match (admitted, upgraded.forwarded_for) {
             (Some(admitted), _) => admitted,
             (None, Some(client)) => match self.guard.admit(client) {
@@ -368,7 +386,9 @@ impl Server {
             Ok(Ok(None) | Err(_)) | Err(_) => return Ok(()),
         };
         let decoded = ToServer::decoded(&said.payload);
+
         drop(said);
+
         let Ok(first) = decoded else {
             return Ok(());
         };
@@ -438,6 +458,7 @@ impl Server {
                 if version != PROTOCOL_VERSION {
                     return refuse(&mut send, Refusal::Version).await;
                 }
+
                 let knock = Knock {
                     room,
                     token,
@@ -479,9 +500,11 @@ impl Server {
             device,
             after,
         } = door;
+
         if version != PROTOCOL_VERSION {
             return refuse(&mut send, Refusal::Version).await;
         }
+
         let kind = match viewer {
             Some(_) => SpaceKind::Shared,
             None => SpaceKind::Personal,
@@ -489,12 +512,15 @@ impl Server {
         let store = Arc::clone(&self.store);
         let digest = token.digest();
         let making = Arc::clone(&admitted);
+
         let claim = in_the_store(move || {
             let mut store = store.lock();
+
             let claim = store.claim(space, &digest, now(), || match viewer {
                 Some(_) => making.may_make_a_shared_space(),
                 None => making.may_make_a_space(),
             })?;
+
             if let (Some(viewer), Claim::Made | Claim::Held) = (viewer.as_ref(), claim) {
                 store.allow_viewers(space, viewer)?;
             }
@@ -504,6 +530,7 @@ impl Server {
             Ok(claim)
         })
         .await?;
+
         match claim {
             Claim::Refused => return refuse(&mut send, Refusal::Token).await,
             Claim::Throttled => return refuse(&mut send, Refusal::TooFast).await,
@@ -511,6 +538,7 @@ impl Server {
             Claim::Made => tracing::info!("a space was made"),
             Claim::Held => {}
         }
+
         let Some(joined) = self.hub.join(space, device, address, self.limits.devices) else {
             return refuse(&mut send, Refusal::Busy).await;
         };
@@ -523,10 +551,13 @@ impl Server {
             seen: address,
         };
         let mut staging = None;
+
         let served = self.session(send, recv, seat, joined, &mut staging).await;
+
         self.hub.leave(space, device, session);
         if let Some(id) = staging {
             let store = Arc::clone(&self.store);
+
             in_the_store(move || store.lock().unstage(space, id)).await?;
         }
         served
@@ -541,21 +572,26 @@ impl Server {
             after,
             ..
         } = door;
+
         if version != PROTOCOL_VERSION {
             return refuse(&mut send, Refusal::Version).await;
         }
+
         let store = Arc::clone(&self.store);
         let digest = token.digest();
         let (may, head, closed) = in_the_store(move || {
             let mut store = store.lock();
+
             if !store.may_view(space, &digest, now())? {
                 return Ok((false, 0, None));
             }
+
             let (head, _) = store.head(space)?;
 
             Ok((true, head, store.closed(space)?))
         })
         .await?;
+
         if !may {
             return refuse(&mut send, Refusal::Token).await;
         }
@@ -565,8 +601,11 @@ impl Server {
             seen_at: address,
             head,
         };
+
         send.send(&welcome.encoded()).await?;
+
         let mut sent = Sent::after(after);
+
         self.send_records(&mut send, space, device, &mut sent)
             .await?;
         if let Some(sealed) = closed {
@@ -581,8 +620,10 @@ impl Server {
         if version != PROTOCOL_VERSION {
             return refuse(&mut send, Refusal::Version).await;
         }
+
         let store = Arc::clone(&self.store);
         let heads = in_the_store(move || store.lock().heads(&asked, now())).await?;
+
         send.send(&FromServer::Heads { heads }.encoded()).await?;
         send.finish().await;
 
@@ -606,6 +647,7 @@ impl Server {
         let digest = token.digest();
         let host_digest = host.as_ref().map(Token::digest);
         let seat_digest = seat.as_ref().map(Token::digest);
+
         let asked = rooms::Asked {
             room,
             token: &digest,
@@ -617,6 +659,7 @@ impl Server {
             rooms: self.limits.rooms,
             members: self.limits.room_members,
         };
+
         let joined = match self
             .rooms
             .join(&asked, &limits, || admitted.may_host_a_room())
@@ -631,6 +674,7 @@ impl Server {
         if let Leaving::TheHostLeft(absence) = self.rooms.leave(room, member, session) {
             let server_rooms = Arc::clone(&self.rooms);
             let grace = self.limits.host_back_within;
+
             tokio::spawn(async move {
                 tokio::time::sleep(grace).await;
                 server_rooms.end_unless_the_host_came_back(room, absence);
@@ -656,6 +700,7 @@ impl Server {
             backlog,
             ..
         } = joined;
+
         send.send(&FromServer::RoomWelcome { members, host }.encoded())
             .await?;
 
@@ -663,6 +708,7 @@ impl Server {
         let mut pace = Pace::of(self.limits.frames_per_minute);
         let mut allowance = Bucket::new(self.limits.room_bytes_per_second);
         let mut keeping = interval(KEEP_EVERY);
+
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
@@ -737,6 +783,7 @@ impl Server {
                 },
             }
         };
+
         finished_with_nothing_unread(&mut send, frames, reading).await;
 
         ended
@@ -764,22 +811,28 @@ impl Server {
             backlog,
         } = joined;
         let store = Arc::clone(&self.store);
+
         let (head, _) = in_the_store(move || store.lock().head(space)).await?;
         let online = match kind {
             SpaceKind::Personal => others,
             SpaceKind::Shared => Vec::new(),
         };
+
         let welcome = FromServer::Welcome {
             online,
             seen_at: seen,
             head,
         };
+
         send.send(&welcome.encoded()).await?;
 
         let mut sent = Sent::after(after);
+
         self.send_records(&mut send, space, device, &mut sent)
             .await?;
+
         let store = Arc::clone(&self.store);
+
         if let Some(sealed) = in_the_store(move || store.lock().closed(space)).await? {
             send.send(&FromServer::Closed { sealed }.encoded()).await?;
         }
@@ -788,6 +841,7 @@ impl Server {
         let mut pace = Pace::of(self.limits.frames_per_minute);
         let mut allowance = Bucket::new(self.limits.relay_bytes_per_second);
         let mut keeping = interval(KEEP_EVERY);
+
         let ended = loop {
             tokio::select! {
                 frame = frames.recv() => {
@@ -886,6 +940,7 @@ impl Server {
                 }
             }
         };
+
         finished_with_nothing_unread(&mut send, frames, reading).await;
         ended
     }
@@ -903,9 +958,11 @@ impl Server {
         {
             return refuse(send, Refusal::TooLarge).await;
         }
+
         let count = u32::try_from(blobs.len()).unwrap_or(u32::MAX);
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
+
         let appended =
             in_the_store(move || store.lock().append(space, device, &blobs, space_bytes)).await?;
         match appended {
@@ -928,6 +985,7 @@ impl Server {
     ) -> Result<()> {
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
+
         let compacted =
             in_the_store(move || store.lock().compact(space, through, &parts, space_bytes)).await?;
         self.told_compacted(send, space, compacted).await
@@ -958,6 +1016,7 @@ impl Server {
     ) -> Result<()> {
         let id = StagingId(staging_id()?);
         let store = Arc::clone(&self.store);
+
         in_the_store(move || store.lock().stage(space, id, now())).await?;
         *staging = Some(id);
         send.send(&FromServer::Staging.encoded()).await?;
@@ -977,6 +1036,7 @@ impl Server {
         };
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
+
         let staged =
             in_the_store(move || store.lock().staged(space, id, &parts, space_bytes, now()))
                 .await?;
@@ -1006,6 +1066,7 @@ impl Server {
         };
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
+
         let compacted = in_the_store(move || {
             store
                 .lock()
@@ -1019,8 +1080,10 @@ impl Server {
         if sealed.len() > self.limits.record_bytes {
             return refuse(send, Refusal::TooLarge).await;
         }
+
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
+
         match in_the_store(move || store.lock().close(space, &sealed, space_bytes)).await? {
             Closing::Now(kept) => self.hub.tell_all(space, &Notice::Closed(kept)),
             Closing::Before(first) => {
@@ -1035,6 +1098,7 @@ impl Server {
 
     async fn told_it_closed(&self, send: &mut Writer, space: SpaceId) -> Result<()> {
         let store = Arc::clone(&self.store);
+
         if let Some(sealed) = in_the_store(move || store.lock().closed(space)).await? {
             send.send(&FromServer::Closed { sealed }.encoded()).await?;
         }
@@ -1053,6 +1117,7 @@ impl Server {
             let store = Arc::clone(&self.store);
             let after = sent.through;
             let reading = sent.reading;
+
             let caught = in_the_store(move || {
                 store.lock().catch_up(
                     space,
@@ -1082,6 +1147,7 @@ impl Server {
                         through: told_through,
                         parts: snapshot.parts,
                     };
+
                     send.send(&frame.encoded()).await?;
                     sent.through = told_through;
                 }
@@ -1096,6 +1162,7 @@ impl Server {
                             blob: (record.device != device).then_some(record.blob),
                         })
                         .collect();
+
                     send.send(&FromServer::Records { entries }.encoded())
                         .await?;
                     sent.through = last;
@@ -1115,6 +1182,7 @@ async fn answered_as_a_page(mut stream: TcpStream, certificates: &[String]) -> O
     };
 
     let answer = pages::answer(asked, certificates);
+
     if let Ok(Ok(())) = timeout(HELLO_WITHIN, stream.write_all(&answer)).await {
         let _ = stream.shutdown().await;
         let _ = timeout(A_PAGE_ASKER_LEAVES_WITHIN, read_out(&mut stream)).await;
@@ -1134,6 +1202,7 @@ async fn page_asked_of(stream: &TcpStream) -> Option<pages::Asked> {
     let mut seen = vec![0; pages::reads_at_most()];
     loop {
         let read = stream.peek(&mut seen).await.ok()?;
+
         if read == 0 {
             return None;
         }
@@ -1181,10 +1250,12 @@ async fn finished_with_nothing_unread(
     reading: JoinHandle<()>,
 ) {
     send.finish().await;
+
     let _ = timeout(WHAT_WAS_SAID_LEAVES_WITHIN, async {
         while frames.recv().await.is_some() {}
     })
     .await;
+
     reading.abort();
 }
 
@@ -1203,6 +1274,7 @@ async fn in_the_store<T: Send + 'static>(
 
 fn staging_id() -> Result<u64> {
     let mut id = [0; 8];
+
     SystemRandom::new()
         .fill(&mut id)
         .map_err(|_| Error::Random)?;

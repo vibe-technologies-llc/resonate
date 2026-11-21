@@ -16,7 +16,7 @@ use resonate_dsp::{
 
 use crate::{KinSource, PreviousRestarts, SkipUnderRepeat, SmartShuffle, seed};
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Equalisation {
     pub enabled: bool,
     pub bound: BTreeMap<NodeName, Arc<Profile>>,
@@ -82,7 +82,7 @@ pub struct EngineConfig {
     pub kinship: KinSource,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct BluetoothWake {
     pub on: bool,
     pub lead: Duration,
@@ -104,7 +104,7 @@ impl Default for BluetoothWake {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Attenuator {
     #[default]
     Stream,
@@ -134,7 +134,7 @@ impl Attenuator {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Levelling {
     pub pre_amp: Trim,
     pub untagged: Trim,
@@ -172,7 +172,7 @@ impl Default for EngineConfig {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum OutputMode {
     BitPerfect,
     Repacked,
@@ -558,12 +558,14 @@ pub fn plan_for(
         });
     let source = source.spec;
     let stream = target;
+
     let resample = (stream.rate != source.rate).then_some((source.rate, stream.rate));
     let remix = (stream.channel_count() != source.channel_count())
         .then_some((source.channels, stream.channels));
     let equalisation = eq_config(config, sink, stream.rate);
     let convolution = config.convolution.clone();
     let crossfeed = crossfeed_config(config, stream);
+
     let converts = resample.is_some()
         || remix.is_some()
         || equalisation.is_some()
@@ -899,6 +901,7 @@ mod tests {
                 ..EngineConfig::default()
             };
             let sink = sink(&[rate], &[SampleFormat::S16]);
+
             let plan = plan(
                 spec(SampleRate::HZ_44100, SampleFormat::S24),
                 &sink,
@@ -988,6 +991,7 @@ mod tests {
 
         let hardware = turning_its_own(HardwareVolume::Yes, exact.clone());
         let handed = plan(cd, &hardware, &handing_over);
+
         assert_eq!(handed.mode, OutputMode::BitPerfect);
         assert!(handed.gain.is_none());
 
@@ -1003,6 +1007,7 @@ mod tests {
             ("a node with no port", exact),
         ] {
             let kept = plan(cd, &heard, &handing_over);
+
             assert_eq!(
                 kept.mode,
                 OutputMode::Converted,
@@ -1012,6 +1017,7 @@ mod tests {
         }
 
         let kept = plan(cd, &hardware, &half_volume());
+
         assert_eq!(
             kept.mode,
             OutputMode::Converted,
@@ -1053,6 +1059,7 @@ mod tests {
         let gain = plan
             .gain
             .expect("a ReplayGain adjustment is the stream's own");
+
         assert_eq!(gain.volume, Volume::MAX);
         assert_eq!(gain.replay_gain, levelled);
     }
@@ -1098,6 +1105,7 @@ mod tests {
             dither: DitherKind::None,
             ..EngineConfig::default()
         };
+
         let plan = plan(
             spec(SampleRate::HZ_48000, SampleFormat::S24),
             &sink,
@@ -1120,6 +1128,7 @@ mod tests {
             dither: DitherKind::None,
             ..EngineConfig::default()
         };
+
         let plan = plan(
             spec(SampleRate::HZ_48000, SampleFormat::F32),
             &sink,
@@ -1161,6 +1170,7 @@ mod tests {
             &sink,
             &EngineConfig::default(),
         );
+
         assert!(resampled.true_peak);
         assert!(
             resampled
@@ -1179,6 +1189,7 @@ mod tests {
             &sink,
             &EngineConfig::default(),
         );
+
         assert!(
             float.true_peak,
             "a float source's overs were left to the conversion"
@@ -1189,6 +1200,7 @@ mod tests {
             &sink,
             &EngineConfig::default(),
         );
+
         assert_eq!(untouched.mode, OutputMode::BitPerfect);
         assert!(!untouched.true_peak);
 
@@ -1196,6 +1208,7 @@ mod tests {
             true_peak: false,
             ..EngineConfig::default()
         };
+
         assert!(!plan(spec(SampleRate::HZ_44100, SampleFormat::S16), &sink, &off).true_peak);
     }
 
@@ -1237,14 +1250,18 @@ mod tests {
         };
 
         let restored = plan_output(lossy, &sink, &extending, AppliedGain::default());
+
         assert!(restored.restoration.is_some() && restored.resample.is_some());
+
         let mut chain = restored
             .build_chain(source, &extending, BLOCK)
             .expect("a restoring, resampling chain builds");
 
         let input = vec![0.25; BLOCK * 2];
         let mut output = vec![0.0; chain.max_output_frames() * 2];
+
         let count = chain.process(&input, &mut output);
+
         assert_eq!(count.frames_in, BLOCK);
     }
 
@@ -1306,6 +1323,7 @@ mod tests {
         };
 
         let restored = plan_output(lossy, &sink, &extending, AppliedGain::default());
+
         assert_eq!(
             restored.restoration,
             Some(RestoreConfig {
@@ -1316,9 +1334,11 @@ mod tests {
         );
         assert_eq!(restored.mode, OutputMode::Converted);
         assert!(!restored.is_transparent());
+
         let chain = restored
             .build_chain(source, &extending, BLOCK)
             .expect("a restoring chain builds");
+
         assert!(chain.latency_frames() > 0.0);
 
         let unasked = plan_output(
@@ -1327,6 +1347,7 @@ mod tests {
             &EngineConfig::default(),
             AppliedGain::default(),
         );
+
         assert_eq!(unasked.restoration, None);
 
         let lossless = plan_output(
@@ -1335,6 +1356,7 @@ mod tests {
             &extending,
             AppliedGain::default(),
         );
+
         assert_eq!(lossless.restoration, None);
         assert_eq!(lossless.mode, OutputMode::BitPerfect);
     }
@@ -1388,6 +1410,7 @@ mod tests {
             &sink,
             &EngineConfig::default(),
         );
+
         assert_eq!(float.mode, OutputMode::Dithered);
         assert_eq!(float.dither_to, Some(BitDepth::Bits32));
 
@@ -1396,6 +1419,7 @@ mod tests {
             &sink,
             &EngineConfig::default(),
         );
+
         assert_eq!(held.mode, OutputMode::Repacked);
         assert_eq!(held.dither_to, None);
     }
@@ -1407,6 +1431,7 @@ mod tests {
             dither: DitherKind::None,
             ..EngineConfig::default()
         };
+
         let plan = plan(
             spec(SampleRate::HZ_44100, SampleFormat::S24),
             &sink,
@@ -1427,6 +1452,7 @@ mod tests {
             prefer_bit_perfect: false,
             ..EngineConfig::default()
         };
+
         let plan = plan(
             spec(SampleRate::HZ_44100, SampleFormat::S32),
             &sink,
@@ -1468,11 +1494,13 @@ mod tests {
             &config,
             AppliedGain::default(),
         );
+
         assert_eq!(untagged.mode, OutputMode::BitPerfect);
         assert!(untagged.gain.is_none());
 
         let applied = boost(-7.5);
         let tagged = plan_output(Decoded::samples(source), &sink, &config, applied);
+
         assert_eq!(tagged.mode, OutputMode::Converted);
         assert_eq!(tagged.gain.map(|gain| gain.replay_gain), Some(applied));
     }
@@ -1487,6 +1515,7 @@ mod tests {
             album_gain: Some(album),
             ..ReplayGain::default()
         };
+
         assert_eq!(
             resolve_replay_gain(ReplayGainMode::Album, Levelling::default(), &both).gain,
             Some(album)
@@ -1500,6 +1529,7 @@ mod tests {
             track_gain: Some(track),
             ..ReplayGain::default()
         };
+
         assert_eq!(
             resolve_replay_gain(ReplayGainMode::Album, Levelling::default(), &track_only).gain,
             Some(track)
@@ -1523,11 +1553,13 @@ mod tests {
         };
 
         let raised = resolve_replay_gain(ReplayGainMode::Track, levelling, &tagged);
+
         assert_eq!(raised.gain, Some(Decibels::new(-6.0).expect("finite")));
         assert_eq!(raised.peak, Gain::new(0.5).ok());
 
         let untagged =
             resolve_replay_gain(ReplayGainMode::Album, levelling, &ReplayGain::default());
+
         assert_eq!(untagged.gain, Some(Decibels::new(-6.0).expect("finite")));
         assert_eq!(untagged.peak, None);
 
@@ -1551,6 +1583,7 @@ mod tests {
         };
 
         let applied = resolve_replay_gain(ReplayGainMode::Track, levelling, &tagged);
+
         assert!(applied.is_capped());
         assert!((applied.applied().get() * 0.9 - 1.0).abs() < 1e-4);
     }
@@ -1565,10 +1598,12 @@ mod tests {
         };
 
         let album = resolve_replay_gain(ReplayGainMode::Album, Levelling::default(), &tags);
+
         assert_eq!(album.gain, tags.album_gain);
         assert_eq!(album.peak, Gain::new(1.02).ok());
 
         let track = resolve_replay_gain(ReplayGainMode::Track, Levelling::default(), &tags);
+
         assert_eq!(track.gain, tags.track_gain);
         assert_eq!(track.peak, Gain::new(0.99).ok());
 
@@ -1634,6 +1669,7 @@ mod tests {
     fn a_renegotiated_stream_takes_the_channel_layout_the_graph_named() {
         let source = spec(SampleRate::HZ_44100, SampleFormat::S24);
         let target = StreamSpec::new(SampleRate::HZ_48000, ChannelLayout::Mono, SampleFormat::F32);
+
         let plan = plan_for(
             Decoded::samples(source),
             &this_sink_info(),
@@ -1693,6 +1729,7 @@ mod tests {
             ChannelLayout::Surround51,
             SampleFormat::S32,
         );
+
         let plan = plan(source, &sink, &EngineConfig::default());
 
         assert_eq!(plan.stream.channels, ChannelLayout::Stereo);
@@ -1716,6 +1753,7 @@ mod tests {
             ChannelLayout::Surround51,
             SampleFormat::S32,
         );
+
         let plan = plan(source, &sink, &EngineConfig::default());
 
         assert_eq!(plan.mode, OutputMode::BitPerfect);
@@ -1761,6 +1799,7 @@ mod tests {
             SampleFormat::S24,
         );
         let config = EngineConfig::default();
+
         let plan = plan(source, &sink, &config);
 
         assert_eq!(
@@ -1780,11 +1819,15 @@ mod tests {
         let frames_to_wait_through = chain.latency_frames().ceil() as usize + BLOCK;
 
         let mut frames_out = 0;
+
         for _ in 0..frames_to_wait_through.div_ceil(BLOCK) {
             let count = chain.process(&fed, &mut produced);
+
             assert_eq!(count.frames_in, BLOCK);
+
             frames_out += count.frames_out;
         }
+
         assert!(frames_out > 0);
     }
 
@@ -1797,6 +1840,7 @@ mod tests {
         );
         let source = spec(SampleRate::HZ_48000, SampleFormat::S32);
         let config = EngineConfig::default();
+
         let plan = plan(source, &sink, &config);
 
         assert_eq!(plan.stream.channels, ChannelLayout::Surround51);
@@ -1806,6 +1850,7 @@ mod tests {
             .expect("an upmixing chain builds");
         let fed = vec![0.5; BLOCK * 2];
         let mut produced = vec![0.0; chain.max_output_frames() * 6];
+
         chain.process(&fed, &mut produced);
 
         let frame = produced.get(..6).expect("one frame came out");
@@ -1879,6 +1924,7 @@ mod tests {
             &EngineConfig::default(),
             AppliedGain::default(),
         );
+
         assert_eq!(decimated.silence(), Silence::Unmarked);
     }
 
@@ -1923,6 +1969,7 @@ mod tests {
             .gain
             .map(|gain| gain.replay_gain.requested())
             .expect("a raised decimation carries a gain stage");
+
         assert!(
             (asked.to_decibels().get() - DSD_MODULATION_DB).abs() < 1e-3,
             "{asked:?}"
@@ -1943,6 +1990,7 @@ mod tests {
             },
             AppliedGain::default(),
         );
+
         assert!(matches!(marked.packing, Packing::DopMarked(_)));
     }
 
@@ -1974,6 +2022,7 @@ mod tests {
         };
 
         let decimated = plan_output(packed(source), &sink, &quiet, AppliedGain::default());
+
         assert_eq!(decimated.packing, Packing::Samples);
         assert!(!packs_again(
             packed(source),
@@ -2006,6 +2055,7 @@ mod tests {
 
         for sink in [narrow, wrong_rate] {
             let plan = plan_output(packed(source), &sink, &dop_config(), AppliedGain::default());
+
             assert_eq!(
                 plan.packing,
                 Packing::Samples,
@@ -2058,6 +2108,7 @@ mod tests {
         ];
 
         let mut marked = 0_usize;
+
         for sink in &sinks {
             for gain in gains {
                 for equaliser in &equalisations {
@@ -2088,6 +2139,7 @@ mod tests {
                                         continue;
                                     }
                                     marked += 1;
+
                                     assert!(
                                         plan.is_transparent(),
                                         "a marked plan carries a stage that would rewrite its \
@@ -2169,16 +2221,21 @@ mod tests {
         };
 
         let at_48 = planned_at(SampleRate::HZ_48000);
+
         assert!(Arc::ptr_eq(&at_48, &kept));
 
         let at_96 = planned_at(SampleRate::HZ_96000);
+
         assert_ne!(at_96.bands(), kept.bands());
+
         let wanted = kept.target().expect("a curve").at(16_000.0);
         let heard = |profile: &Profile, rate| {
             profile.magnitude_db(16_000.0, rate) - profile.preamp().decibels()
         };
+
         let refitted_misses = (heard(&at_96, SampleRate::HZ_96000) - wanted).abs();
         let kept_misses = (heard(&kept, SampleRate::HZ_96000) - wanted).abs();
+
         assert!(refitted_misses < 0.3, "{refitted_misses}");
         assert!(
             kept_misses > 3.0 * refitted_misses,
@@ -2258,9 +2315,11 @@ mod tests {
 
         assert_eq!(plan.mode, OutputMode::Converted);
         assert_eq!(plan.convolution, Some(impulse));
+
         let chain = plan
             .build_chain(source, &config, 1_024)
             .expect("a chain that convolves");
+
         assert!(
             chain.latency_frames()
                 >= resonate_dsp::partition_frames_at(SampleRate::HZ_48000) as f64
@@ -2310,6 +2369,7 @@ mod tests {
                 },
                 AppliedGain::default(),
             );
+
             assert_eq!(bare, with_bindings);
         }
     }
@@ -2376,6 +2436,7 @@ mod tests {
             })),
             ..EngineConfig::default()
         };
+
         assert!(plan(&other, &with_fallback).equalisation.is_some());
     }
 
@@ -2387,6 +2448,7 @@ mod tests {
             equaliser: Arc::new(equaliser),
             ..EngineConfig::default()
         };
+
         let plan = |config: &EngineConfig| {
             plan_output(
                 Decoded::samples(source),
@@ -2466,6 +2528,7 @@ mod tests {
                                 ..EngineConfig::default()
                             };
                             let plan = plan_output(Decoded::samples(source), sink, &config, gain);
+
                             let chain = plan
                                 .build_chain(source, &config, BLOCK)
                                 .expect("every plan the pane can produce builds");
@@ -2543,6 +2606,7 @@ mod tests {
                         config,
                         AppliedGain::default(),
                     );
+
                     assert!(
                         plan.build_chain(source, config, BLOCK).is_ok(),
                         "{source} -> {stream} did not build",
@@ -2622,6 +2686,7 @@ mod tests {
             let carried = full
                 .gain
                 .expect("a converting plan at full volume left its gain stage out");
+
             assert_eq!(carried.volume, Volume::MAX);
             assert!(!carried.replay_gain.adjusts());
             assert_eq!(full.mode, OutputMode::Converted);
@@ -2662,6 +2727,7 @@ mod tests {
             ("a narrowing turned down", studio, &exact, &plain, &quiet),
             ("a downmix equalised", surround, &stereo, &plain, &equalised),
         ];
+
         for (what, source, sink, from, to) in reshaped {
             let running = plan(source, sink, from);
             let wanted = plan(source, sink, to);
@@ -2678,6 +2744,7 @@ mod tests {
 
         let resampled = plan(cd, &slower, &plain);
         let resampled_and_equalised = plan(cd, &slower, &equalised);
+
         assert!(
             resampled.carries_the_front_into(&resampled_and_equalised),
             "an equaliser switched on under a resampler reopened a stream whose resampler it could carry"
@@ -2695,10 +2762,12 @@ mod tests {
             AppliedGain::default(),
             Attenuator::Stream,
         );
+
         assert!(!plan(cd, &exact, &plain).becomes_on_the_same_stream(&renegotiated));
 
         let carrier = spec(SampleRate::HZ_176400, SampleFormat::S24);
         let takes_the_carrier = sink(&[SampleRate::HZ_176400], &[SampleFormat::S24]);
+
         let marked = plan_output(
             packed(carrier),
             &takes_the_carrier,
@@ -2711,6 +2780,7 @@ mod tests {
             &plain,
             AppliedGain::default(),
         );
+
         assert!(!marked.becomes_on_the_same_stream(&decimated));
     }
 }

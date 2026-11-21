@@ -77,13 +77,16 @@ impl Energies {
             levels: [0.0; BANDS],
             weights: [0.0; BANDS],
         };
+
         for (band, power) in powers.iter().enumerate() {
             let lines = (BAND_EDGES[band + 1] - BAND_EDGES[band]) * SHORTS;
             let level = 0.5 * power.max(f64::MIN_POSITIVE).log2();
             let rounding = 0.5 * (lines as f64 * ROUNDING_A_LINE * ROUNDING_A_LINE).log2();
+
             let rounding_in_turns =
                 ROUNDING_NOISE_TURNS * TURNS_AN_ENERGY_STEP * (-(level - rounding)).exp2()
                     / (LN_2 * (lines as f64).sqrt());
+
             energies.levels[band] = level - ENERGY_MEANS[band] - SCALE_OCTAVES;
             energies.weights[band] =
                 (-2.0 * PI * PI * rounding_in_turns * rounding_in_turns).exp() as f32;
@@ -93,6 +96,7 @@ impl Energies {
 
     fn of_lines(coefficients: &[f32]) -> Self {
         let mut powers = [0.0_f64; BANDS];
+
         for (power, edges) in powers.iter_mut().zip(BAND_EDGES.windows(2)) {
             *power = coefficients[edges[0] * SHORTS..edges[1] * SHORTS]
                 .iter()
@@ -124,6 +128,7 @@ const KINDS: [Kind; 8] = {
         intra: false,
     }; 8];
     let mut at = 0;
+
     while at < 8 {
         kinds[at] = Kind {
             before: blocks[at & 1],
@@ -150,10 +155,13 @@ pub(crate) struct Opus {
 impl Opus {
     fn energies(&mut self, lane: usize, samples: &[f32], at: u64, block: Block) -> Energies {
         let short = matches!(block, Block::Short);
+
         if let Some(energies) = self.energies.get(&(lane, at, short)) {
             return *energies;
         }
+
         let mut powers = [0.0_f64; BANDS];
+
         let mut add = |coefficients: &[f32], lines_a_unit: usize| {
             for (band, edges) in BAND_EDGES.windows(2).enumerate() {
                 powers[band] += coefficients[edges[0] * lines_a_unit..edges[1] * lines_a_unit]
@@ -162,6 +170,7 @@ impl Opus {
                     .sum::<f64>();
             }
         };
+
         self.emphasised.clear();
         self.emphasised
             .extend(samples.iter().enumerate().map(|(nth, sample)| {
@@ -177,6 +186,7 @@ impl Opus {
             Block::Short => {
                 for nth in 0..SHORTS {
                     let from = 1 + QUIET + nth * OVERLAP;
+
                     self.short.coefficients(
                         &self.emphasised[from..from + 2 * OVERLAP],
                         0,
@@ -186,7 +196,9 @@ impl Opus {
                 }
             }
         }
+
         let energies = Energies::of(&powers);
+
         if self.energies.len() >= ENERGIES_KEPT_AT_MOST {
             self.energies.clear();
         }
@@ -258,9 +270,11 @@ impl Grid for Opus {
 
     fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
         let mut tally = Tally::default();
+
         for (lane, fines) in [Some(left), right].into_iter().flatten().enumerate() {
             for band in lines.clone() {
                 let weight = self.weights[lane][band];
+
                 tally.add(Tally::weighed(self.phase(fines[band]) * weight, weight));
             }
         }
@@ -284,6 +298,7 @@ impl Grid for Opus {
             taking.at + FRAME as u64,
             now,
         );
+
         into[..BANDS].copy_from_slice(&fines(&old, &new, intra));
         self.weights[taking.lane.min(1)] = new.weights;
         0..BANDS
@@ -313,10 +328,12 @@ fn fines(old: &Energies, new: &Energies, intra: bool) -> [f32; BANDS] {
     };
     let mut running = 0.0;
     let mut fines = [0.0; BANDS];
+
     for (band, fine) in fines.iter_mut().enumerate() {
         let residual =
             new.levels[band] - prediction * old.levels[band].max(OLDEST_ENERGY) - running;
         let step = residual.round();
+
         *fine = (residual - step) as f32;
         running += step - decay * step;
     }
@@ -330,6 +347,7 @@ fn phase_of(phases: &[Complex<f32>], fine: f32) -> Complex<f32> {
 
 fn weighed(phases: &[Complex<f32>], old: &Energies, new: &Energies) -> Tally {
     let mut tally = Tally::default();
+
     for (fine, weight) in fines(old, new, false).iter().zip(&new.weights) {
         tally.add(Tally::weighed(phase_of(phases, *fine) * *weight, *weight));
     }
@@ -421,14 +439,18 @@ impl Undoing {
             self.old = [None; 2];
             self.pitch.forget();
         }
+
         let lanes = &lanes[..lanes.len().min(2)];
+
         for (emphasised, samples) in self.emphasised.iter_mut().zip(lanes) {
             emphasised.clear();
             emphasised.push(samples[0]);
             emphasised.extend(samples.windows(2).map(|pair| pair[1] - EMPHASIS * pair[0]));
         }
+
         let heard_from = FIRST_SAMPLE + OWN_FILTER_FROM - LONGEST_PERIOD;
         let heard_to = FIRST_SAMPLE + OWN_FILTER_FROM + FRAME;
+
         let heard: Vec<&[f32]> = self.emphasised[..lanes.len()]
             .iter()
             .map(|emphasised| &emphasised[heard_from..heard_to])
@@ -439,8 +461,10 @@ impl Undoing {
         let lowest_lag = period - PERIODS_EITHER_SIDE - TAP_REACH;
 
         let mut plain_old = [None; 2];
+
         for (lane, plain_old) in plain_old.iter_mut().enumerate().take(lanes.len()) {
             let emphasised = &self.emphasised[lane];
+
             long.coefficients(
                 &emphasised[FIRST_SAMPLE..FIRST_SAMPLE + WINDOW],
                 0,
@@ -456,6 +480,7 @@ impl Undoing {
             }
             if self.before.gain > 0.0 {
                 let before = self.before;
+
                 for (sample, slot) in self.taken.iter_mut().enumerate() {
                     *slot = if sample < QUIET {
                         0.0
@@ -471,6 +496,7 @@ impl Undoing {
             }
             for (nth, shifted) in self.shifted[lane].iter_mut().enumerate() {
                 let lag = lowest_lag + nth;
+
                 for (sample, slot) in self.taken.iter_mut().enumerate() {
                     *slot = if sample < OWN_FILTER_FROM {
                         0.0
@@ -488,6 +514,7 @@ impl Undoing {
                 .or(plain_old[lane])
                 .unwrap_or(Energies::of(&[0.0; BANDS]))
         });
+
         histories.push((self.before.gain > 0.0, chained));
         if self.before.gain > 0.0 {
             histories.push((
@@ -497,12 +524,14 @@ impl Undoing {
         }
 
         let mut best: Option<(f64, Tally, PostFilter, [Energies; 2])> = None;
+
         let mut consider = |tally: Tally, filter: PostFilter, news: [Energies; 2]| {
             let strength = tally.rayleigh();
             if best.as_ref().is_none_or(|(held, ..)| strength > *held) {
                 best = Some((strength, tally, filter, news));
             }
         };
+
         for (kept, olds) in &histories {
             let own: Vec<[f64; BANDS]> = (0..lanes.len())
                 .map(|lane| {
@@ -516,6 +545,7 @@ impl Undoing {
                 .collect();
             let mut news = [Energies::of(&[0.0; BANDS]); 2];
             let mut tally = Tally::default();
+
             for lane in 0..lanes.len() {
                 news[lane] = Energies::of(&own[lane]);
                 tally.add(weighed(phases, &olds[lane], &news[lane]));
@@ -524,16 +554,19 @@ impl Undoing {
 
             for offset in 0..=2 * PERIODS_EITHER_SIDE {
                 let candidate = lowest_lag + TAP_REACH + offset;
+
                 if estimated_gain < ENCODER_FILTERS_FROM
                     || !(SHORTEST_PERIOD..=LONGEST_CODED_PERIOD).contains(&candidate)
                 {
                     continue;
                 }
+
                 let centre = TAP_REACH + offset;
                 for (tapset, taps) in TAPSETS.iter().enumerate() {
                     let crossed: Vec<Crossed> = (0..lanes.len())
                         .map(|lane| {
                             let shifted = &self.shifted[lane];
+
                             for (line, slot) in self.combed.iter_mut().enumerate() {
                                 *slot = taps[0] * shifted[centre][line]
                                     + taps[1]
@@ -541,6 +574,7 @@ impl Undoing {
                                     + taps[2]
                                         * (shifted[centre - 2][line] + shifted[centre + 2][line]);
                             }
+
                             let spectrum = if *kept {
                                 &self.kept[lane]
                             } else {
@@ -562,6 +596,7 @@ impl Undoing {
                         };
                         let mut news = [Energies::of(&[0.0; BANDS]); 2];
                         let mut tally = Tally::default();
+
                         for (lane, crossed) in crossed.iter().enumerate() {
                             let g = f64::from(gain);
                             let filtered: [f64; BANDS] = std::array::from_fn(|band| {
@@ -569,6 +604,7 @@ impl Undoing {
                                     + g * g * crossed.combed[band])
                                     .max(0.0)
                             });
+
                             news[lane] = Energies::of(&filtered);
                             tally.add(weighed(phases, &olds[lane], &news[lane]));
                         }
@@ -584,6 +620,7 @@ impl Undoing {
             NO_POST_FILTER,
             [Energies::of(&[0.0; BANDS]); 2],
         ));
+
         self.before = filter;
         for (old, new) in self.old.iter_mut().zip(news).take(lanes.len()) {
             *old = Some(new);
@@ -596,6 +633,7 @@ impl Undoing {
 
 fn powers(one: &[f32], other: &[f32]) -> [f64; BANDS] {
     let mut powers = [0.0_f64; BANDS];
+
     for (power, edges) in powers.iter_mut().zip(BAND_EDGES.windows(2)) {
         *power = one[edges[0] * SHORTS..edges[1] * SHORTS]
             .iter()
@@ -626,10 +664,12 @@ fn impulses() -> Vec<f32> {
         })
     };
     let mut columns = Vec::with_capacity((REACHED_PAST - REACHED_FROM) * COUPLED_LINES.len());
+
     for sample in REACHED_FROM..REACHED_PAST {
         for line in COUPLED_LINES {
             let own = sample.checked_sub(1).map_or(0.0, |at| kernel(at, line));
             let next = kernel(sample, line);
+
             columns.push((scale * (own - f64::from(EMPHASIS) * next)) as f32);
         }
     }
@@ -675,37 +715,48 @@ fn left_by(clipped: &[usize], lines: &Range<usize>, left: &[f32], right: &[f32])
     let mut kept: Vec<usize> = Vec::with_capacity(count);
     let mut along_left = vec![0.0_f64; count];
     let mut along_right = vec![0.0_f64; count];
+
     for row in 0..count {
         let own = dot(columns[row], columns[row]);
+
         for (nth, column) in kept.iter().copied().enumerate() {
             let earlier: f64 = kept[..nth]
                 .iter()
                 .map(|before| factor[row * count + before] * factor[column * count + before])
                 .sum();
+
             factor[row * count + column] =
                 (dot(columns[row], columns[column]) - earlier) / factor[column * count + column];
         }
+
         let lengthwise: f64 = kept
             .iter()
             .map(|column| factor[row * count + column].powi(2))
             .sum();
         let pivot = own - lengthwise;
+
         if own <= 0.0 || pivot <= SPANNED_WITHIN * own {
             continue;
         }
+
         let diagonal = pivot.sqrt();
+
         factor[row * count + row] = diagonal;
+
         let solved = |along: &mut [f64], lane: &[f32]| {
             let earlier: f64 = kept
                 .iter()
                 .map(|column| factor[row * count + column] * along[*column])
                 .sum();
+
             along[row] = (dot(columns[row], lane) - earlier) / diagonal;
         };
+
         solved(&mut along_left, &left[lines.clone()]);
         solved(&mut along_right, &right[lines.clone()]);
         kept.push(row);
     }
+
     let left = &left[lines.clone()];
     let right = &right[lines.clone()];
     Remainder {
@@ -750,10 +801,13 @@ impl Cell {
 impl Coupling {
     fn cell(&self, band: usize, clipped: &[usize], left: &[f32], right: &[f32]) -> Option<Cell> {
         let lines = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
+
         if clipped.is_empty() {
             let (mut own, mut other, mut shared) = (0.0_f64, 0.0_f64, 0.0_f64);
+
             for (one, two) in left[lines.clone()].iter().zip(&right[lines.clone()]) {
                 let (one, two) = (f64::from(*one), f64::from(*two));
+
                 own += one * one;
                 other += two * two;
                 shared += one * two;
@@ -763,6 +817,7 @@ impl Coupling {
         if clipped.len() as f64 > CLIPPED_SHARE_OF_A_BAND_AT_MOST * lines.len() as f64 {
             return None;
         }
+
         let Remainder {
             own,
             other,
@@ -779,6 +834,7 @@ impl Coupling {
             .chain(&self.clipped[1])
             .copied()
             .collect();
+
         clipped.sort_unstable();
         clipped.dedup();
         clipped
@@ -809,6 +865,7 @@ impl Grid for Coupling {
     fn new(_: u32, _: &Band) -> Self {
         let roundings = line_roundings();
         let mut noise = [0.0; BANDS];
+
         for (band, edges) in BAND_EDGES.windows(2).enumerate() {
             noise[band] = roundings[edges[0] * SHORTS..edges[1] * SHORTS].iter().sum();
         }
@@ -827,6 +884,7 @@ impl Grid for Coupling {
         let clipped = self.clipped();
         let mut on = 0;
         let mut counted = 0;
+
         for band in FIRST_COUPLED_BAND..BANDS {
             if let Some(cell) = self
                 .cell(band, &clipped, left, right)
@@ -841,6 +899,7 @@ impl Grid for Coupling {
 
     fn coefficients(&mut self, lane: usize, samples: &[f32], _: u64, _: usize, into: &mut [f32]) {
         let clipped = &mut self.clipped[lane.min(1)];
+
         clipped.clear();
         clipped.extend(
             (REACHED_FROM..REACHED_PAST.min(samples.len()))
@@ -878,6 +937,7 @@ mod tests {
             .collect();
         let scale = (2.0 / FRAME as f64).sqrt();
         let mut out = vec![0.0_f64; (frames.len() + 2) * FRAME];
+
         for (frame, lines) in frames.iter().enumerate() {
             for nth in 0..2 * FRAME {
                 let row = &cosines[nth * FRAME..(nth + 1) * FRAME];
@@ -886,9 +946,11 @@ mod tests {
                     .zip(lines)
                     .map(|(cosine, line)| cosine * line)
                     .sum();
+
                 out[frame * FRAME + nth] += sum * scale * window[nth];
             }
         }
+
         let mut before = 0.0;
         out.iter()
             .map(|sample| {
@@ -901,13 +963,16 @@ mod tests {
     fn synthesised(seed: u64, on_the_steps: bool) -> Vec<f32> {
         let mut wandering = Wandering(seed);
         let mut old = [LEVEL; BANDS];
+
         let frames: Vec<Vec<f64>> = (0..SECONDS * OPUS_RATE as usize / FRAME)
             .map(|_| {
                 let mut running = 0.0;
                 let mut levels = [0.0; BANDS];
+
                 for band in 0..BANDS {
                     let predicted = INTER_PREDICTION * old[band].max(OLDEST_ENERGY) + running;
                     let wanted = LEVEL + wandering.laplacian(1.0);
+
                     let step = (wanted - predicted).round();
                     let fine = if on_the_steps {
                         let bits = (wandering.next() * FINE_BITS_AT_MOST).floor();
@@ -916,11 +981,14 @@ mod tests {
                     } else {
                         wandering.next() - 0.5
                     };
+
                     levels[band] = predicted + step + fine;
                     running += step - INTER_DECAY * step;
                 }
                 old = levels;
+
                 let mut lines = vec![0.0_f64; FRAME];
+
                 for band in 0..BANDS {
                     let range = BAND_EDGES[band] * SHORTS..BAND_EDGES[band + 1] * SHORTS;
                     let shape: Vec<f64> = range.clone().map(|_| wandering.laplacian(1.0)).collect();
@@ -946,9 +1014,11 @@ mod tests {
         let mut wandering = Wandering(seed);
         let mut left = Vec::new();
         let mut right = Vec::new();
+
         for _ in 0..SECONDS * OPUS_RATE as usize / FRAME {
             let mut one = vec![0.0_f64; FRAME];
             let mut other = vec![0.0_f64; FRAME];
+
             for band in 0..BANDS {
                 let gain =
                     (LEVEL + lift + ENERGY_MEANS[band] + SCALE_OCTAVES + wandering.laplacian(0.5))
@@ -982,6 +1052,7 @@ mod tests {
             .flat_map(|(left, right)| [*left, *right])
             .collect();
         let mut stepping = Stepping::<G>::new(OPUS_RATE, 2);
+
         for block in interleaved.chunks(4_096 * 2) {
             stepping.note(block);
         }
@@ -993,6 +1064,7 @@ mod tests {
      {
         let left = synthesised(11, true);
         let right = synthesised(23, true);
+
         for skipped in [0, 300] {
             let steps = stepped::<Opus>(&left, &right, skipped).expect("weighed");
 
@@ -1004,6 +1076,7 @@ mod tests {
 
         let left = synthesised(11, false);
         let right = synthesised(23, false);
+
         let steps = stepped::<Opus>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice < 0.03, "{steps:?}");
@@ -1013,6 +1086,7 @@ mod tests {
     fn channels_proportional_band_by_band_on_each_frame_are_found_and_proportional_everywhere_are_not()
      {
         let (left, right) = coupled_from(5, Moving::OnEachFrame, 0.0);
+
         for skipped in [0, 300] {
             let steps = stepped::<Coupling>(&left, &right, skipped).expect("weighed");
 
@@ -1023,6 +1097,7 @@ mod tests {
         }
 
         let (left, right) = coupled_from(5, Moving::Everywhere, 0.0);
+
         let steps = stepped::<Coupling>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice > 0.9, "{steps:?}");
@@ -1035,11 +1110,14 @@ mod tests {
         let mut lines = vec![0.0; FRAME];
         for sample in [REACHED_FROM, 700, 1_000, REACHED_PAST - 1] {
             let mut samples = vec![0.0_f32; 2 * FRAME + 1];
+
             samples[sample] = 1.0;
+
             let emphasised: Vec<f32> = samples
                 .windows(2)
                 .map(|pair| pair[1] - EMPHASIS * pair[0])
                 .collect();
+
             mdct.coefficients(&emphasised, 0, &mut lines);
 
             for (ours, transformed) in impulse_of(sample, &COUPLED_LINES)
@@ -1057,6 +1135,7 @@ mod tests {
     #[test]
     fn channels_coupled_on_each_frame_are_found_through_a_decode_that_clips() {
         let (left, right) = coupled_from(5, Moving::OnEachFrame, LIFT_TO_CLIP);
+
         let clipped = left
             .iter()
             .chain(&right)

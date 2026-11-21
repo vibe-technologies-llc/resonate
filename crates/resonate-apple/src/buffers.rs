@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::{
@@ -41,15 +41,19 @@ pub(crate) unsafe fn rendered(
     let Some(buffers) = (unsafe { buffers.as_mut() }) else {
         return ANSWERED;
     };
+
     if buffers.mNumberBuffers < 1 {
         return ANSWERED;
     }
+
     let [buffer] = &mut buffers.mBuffers;
     let Some(data) = NonNull::new(buffer.mData.cast::<u8>()) else {
         return ANSWERED;
     };
+
     let bytes = unsafe { slice::from_raw_parts_mut(data.as_ptr(), buffer.mDataByteSize as usize) };
     let host = host_time_of(time, now, rendered.clock);
+
     rendered.render.render(bytes, host);
     ANSWERED
 }
@@ -63,12 +67,14 @@ pub(crate) unsafe fn heard<I: Copy>(
     let Some(wanted) = (frames as usize).checked_mul(hearing.frame.get()) else {
         return ANSWERED;
     };
+
     let Some(window) = hearing.scratch.get_mut(..wanted) else {
         return ANSWERED;
     };
     let Ok(declared) = u32::try_from(wanted) else {
         return ANSWERED;
     };
+
     let mut list = AudioBufferList {
         mNumberBuffers: 1,
         mBuffers: [AudioBuffer {
@@ -77,11 +83,14 @@ pub(crate) unsafe fn heard<I: Copy>(
             mData: window.as_mut_ptr().cast::<c_void>(),
         }],
     };
+
     if pull(hearing.unit, NonNull::from(&mut list)) != ANSWERED {
         return ANSWERED;
     }
+
     let [buffer] = &list.mBuffers;
     let given = (buffer.mDataByteSize as usize).min(wanted);
+
     if let Some(taken) = hearing.scratch.get(..given) {
         hearing.hear.hear(taken);
     }
@@ -161,6 +170,7 @@ mod tests {
 
     fn timed(host: u64, flags: AudioTimeStampFlags) -> AudioTimeStamp {
         let mut time: AudioTimeStamp = unsafe { std::mem::zeroed() };
+
         time.mHostTime = host;
         time.mFlags = flags;
         time
@@ -174,6 +184,7 @@ mod tests {
     fn the_systems_buffer_is_handed_over_up_to_the_bytes_it_declares_and_no_further() {
         let (mut rendering, _) = marking();
         let mut memory = [0x11_u8; 24];
+
         let mut list = list_over(memory.as_mut_ptr().cast(), 16);
 
         let answer = unsafe { rendered(handed(&mut rendering), &mut list, &untimed(), 0) };
@@ -209,6 +220,7 @@ mod tests {
     fn a_list_of_no_buffers_is_answered_and_its_stale_first_buffer_is_never_written() {
         let (mut rendering, seen) = marking();
         let mut memory = [0x11_u8; 8];
+
         let mut list = list_of(0, memory.as_mut_ptr().cast(), 8);
 
         let answer = unsafe { rendered(handed(&mut rendering), &mut list, &untimed(), 0) };
@@ -222,6 +234,7 @@ mod tests {
     fn a_buffer_declaring_no_bytes_is_never_written() {
         let (mut rendering, seen) = marking();
         let mut memory = [0x11_u8; 8];
+
         let mut list = list_over(memory.as_mut_ptr().cast(), 0);
 
         unsafe { rendered(handed(&mut rendering), &mut list, &untimed(), 0) };
@@ -255,6 +268,7 @@ mod tests {
     fn the_render_reads_the_host_time_through_the_clock_its_unit_opened_with() {
         let (mut rendering, seen) = marking();
         let mut memory = [0_u8; 8];
+
         let mut list = list_over(memory.as_mut_ptr().cast(), 8);
         let time = timed(48_000, AudioTimeStampFlags::HostTimeValid);
 
@@ -291,10 +305,12 @@ mod tests {
     fn filling(with: u8) -> impl FnOnce(u8, NonNull<AudioBufferList>) -> i32 {
         move |unit, mut list| {
             assert_eq!(unit, 7);
+
             let [buffer] = &mut unsafe { list.as_mut() }.mBuffers;
             let bytes = unsafe {
                 slice::from_raw_parts_mut(buffer.mData.cast::<u8>(), buffer.mDataByteSize as usize)
             };
+
             bytes.fill(with);
             ANSWERED
         }
@@ -343,6 +359,7 @@ mod tests {
         unsafe {
             heard(handed(&mut hearing), 4, |_: u8, mut list| {
                 let [buffer] = &mut list.as_mut().mBuffers;
+
                 buffer.mDataByteSize = 8;
                 ANSWERED
             })

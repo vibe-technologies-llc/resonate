@@ -21,7 +21,7 @@ use crate::{
     process::{Asked, Taken, Took},
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub(crate) enum WireWord {
     #[default]
     Padded,
@@ -63,6 +63,7 @@ pub(crate) const fn packs_narrower(format: SampleFormat) -> bool {
 
 fn one_of_each(raw: impl Iterator<Item = u32>) -> Vec<(SampleFormat, Words)> {
     let mut kept: Vec<(SampleFormat, Words)> = Vec::new();
+
     for raw in raw {
         let Some(format) = sample_format(raw) else {
             continue;
@@ -103,6 +104,7 @@ fn placed_at(channel: u32) -> Option<ChannelPosition> {
 
 pub(crate) fn spa_position(layout: ChannelLayout) -> [u32; PLACES_AT_MOST] {
     let mut position = [0; PLACES_AT_MOST];
+
     if layout == ChannelLayout::Mono {
         position[0] = sys::SPA_AUDIO_CHANNEL_MONO;
         return position;
@@ -189,6 +191,7 @@ impl Offered {
                 let mut values: Offering<i32> = iter::once(span.default)
                     .chain(named.filter(|value| span.holds(*value)))
                     .collect();
+
                 values.sort_unstable();
                 values.dedup();
                 values
@@ -295,6 +298,7 @@ fn placed(info: &AudioInfoRaw, channels: ChannelCount, asked: StreamSpec) -> Cha
             .iter()
             .take(count)
             .all(|channel| *channel == 0);
+
     if unspoken {
         return if asked.channel_count() == channels {
             asked.channels
@@ -324,6 +328,7 @@ fn named_by(answered: &[u32], channels: ChannelCount) -> ChannelLayout {
 fn advertised_layout(position: &[u32], channels: ChannelCount) -> ChannelLayout {
     let spoken = position.len() == usize::from(channels.get())
         && position.iter().any(|channel| *channel != 0);
+
     if !spoken {
         return ChannelLayout::from_count(channels);
     }
@@ -342,11 +347,13 @@ pub(crate) fn negotiated(param: &Pod, asked: StreamSpec) -> Option<Negotiated> {
     let (media_type, media_subtype) = format_utils::parse_format(param)
         .inspect_err(|error| tracing::debug!(%error, "a stream format pod named no media type"))
         .ok()?;
+
     if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
         return None;
     }
 
     let mut info = AudioInfoRaw::default();
+
     info.parse(param)
         .inspect_err(|error| tracing::debug!(%error, "a raw audio format pod would not parse"))
         .ok()?;
@@ -364,11 +371,13 @@ pub(crate) fn negotiated(param: &Pod, asked: StreamSpec) -> Option<Negotiated> {
 
 pub(crate) fn running_rate(param: &Pod) -> Option<SampleRate> {
     let (media_type, media_subtype) = format_utils::parse_format(param).ok()?;
+
     if media_type != MediaType::Audio || media_subtype != MediaSubtype::Raw {
         return None;
     }
 
     let mut info = AudioInfoRaw::default();
+
     info.parse(param).ok()?;
     SampleRate::new(info.rate()).ok()
 }
@@ -377,6 +386,7 @@ pub(crate) fn parse_enum_format(value: &Value) -> Option<AdvertisedFormat> {
     let Value::Object(object) = value else {
         return None;
     };
+
     if object.type_ != sys::SPA_TYPE_OBJECT_Format {
         return None;
     }
@@ -483,6 +493,7 @@ impl RouteChange {
             .filter(|volume| volume.is_finite())
             .fold(0.0_f32, f32::max);
         let wanted = gain.get();
+
         if loudest <= 0.0 {
             return vec![wanted; self.channel_volumes.len()];
         }
@@ -513,6 +524,7 @@ impl Levels {
             return Self::default();
         };
         let mut levels = Self::default();
+
         for property in &object.properties {
             match (property.key, &property.value) {
                 (sys::SPA_PROP_channelVolumes, Value::ValueArray(ValueArray::Float(volumes))) => {
@@ -535,6 +547,7 @@ pub(crate) fn parse_route(value: &Value) -> Option<AdvertisedRoute> {
     let Value::Object(object) = value else {
         return None;
     };
+
     if object.type_ != sys::SPA_TYPE_OBJECT_ParamRoute {
         return None;
     }
@@ -641,6 +654,7 @@ pub(crate) fn parse_profile(value: &Value) -> Option<CardProfile> {
     let Value::Object(object) = value else {
         return None;
     };
+
     if object.type_ != sys::SPA_TYPE_OBJECT_ParamProfile {
         return None;
     }
@@ -749,6 +763,7 @@ mod tests {
             sys::SPA_PARAM_ROUTE_direction,
             Value::Id(Id(direction)),
         )];
+
         held.extend(properties);
 
         Value::Object(Object {
@@ -775,9 +790,11 @@ mod tests {
 
     fn running(format: AudioFormat, hz: u32) -> Vec<u8> {
         let mut info = AudioInfoRaw::new();
+
         info.set_format(format);
         info.set_rate(hz);
         info.set_channels(2);
+
         let object = Value::Object(Object {
             type_: sys::SPA_TYPE_OBJECT_Format,
             id: sys::SPA_PARAM_Format,
@@ -821,12 +838,14 @@ mod tests {
                 a_headphone_jack(available),
             ))
             .expect("an output route");
+
             assert_eq!(route.port.plugged, read_as);
         }
     }
 
     fn told(pairs: &[(&str, &str)]) -> Property {
         let mut items = vec![Value::Int(pairs.len() as i32)];
+
         for (key, value) in pairs {
             items.push(Value::String((*key).to_owned()));
             items.push(Value::String((*value).to_owned()));
@@ -843,6 +862,7 @@ mod tests {
             ("neither", HardwareVolume::Unsaid),
         ] {
             let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
+
             properties.push(told(&[
                 ("port.type", "headphones"),
                 ("route.hw-mute", "true"),
@@ -851,6 +871,7 @@ mod tests {
 
             let route = parse_route(&routed(Direction::Output.as_raw(), properties))
                 .expect("an output route");
+
             assert_eq!(route.port.hardware_volume, read_as, "reading {said}");
         }
     }
@@ -875,18 +896,24 @@ mod tests {
     #[test]
     fn a_route_reads_its_loudest_channel_as_its_volume_and_its_mute_apart_from_it() {
         let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
+
         properties.push(Property::new(sys::SPA_PARAM_ROUTE_index, Value::Int(4)));
         properties.push(at_levels(&[0.125, 0.25], false));
+
         let route =
             parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
+
         assert_eq!(route.index, Some(4));
         assert_eq!(route.channel_volumes, vec![0.125, 0.25]);
         assert_eq!(route.port.volume, Gain::new(0.25).ok());
 
         let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
+
         properties.push(at_levels(&[0.125, 0.25], true));
+
         let muted =
             parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
+
         assert_eq!(muted.port.volume, Gain::new(0.25).ok());
         assert!(muted.port.muted);
         assert!(!route.port.muted);
@@ -896,6 +923,7 @@ mod tests {
             a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes),
         ))
         .expect("an output route");
+
         assert_eq!(bare.port.volume, None);
         assert!(bare.channel_volumes.is_empty());
     }
@@ -998,12 +1026,16 @@ mod tests {
             a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes),
         ))
         .expect("an output route");
+
         assert_eq!(bare.port.hardware_volume, HardwareVolume::Unsaid);
 
         let mut properties = a_headphone_jack(sys::SPA_PARAM_AVAILABILITY_yes);
+
         properties.push(told(&[("port.type", "headphones")]));
+
         let quiet =
             parse_route(&routed(Direction::Output.as_raw(), properties)).expect("an output route");
+
         assert_eq!(quiet.port.hardware_volume, HardwareVolume::Unsaid);
     }
 
@@ -1028,6 +1060,7 @@ mod tests {
                 Value::String("Analog Stereo Duplex".to_owned()),
             ),
         ]);
+
         assert_eq!(
             parse_profile(&described),
             Some(CardProfile {
@@ -1041,12 +1074,14 @@ mod tests {
             Property::new(sys::SPA_PARAM_PROFILE_name, Value::String("off".to_owned())),
         ]);
         let off = parse_profile(&bare).expect("a profile");
+
         assert_eq!(off.description, "off");
 
         let unnumbered = a_profile(vec![Property::new(
             sys::SPA_PARAM_PROFILE_name,
             Value::String("off".to_owned()),
         )]);
+
         assert_eq!(parse_profile(&unnumbered), None);
     }
 
@@ -1149,6 +1184,7 @@ mod tests {
             ),
             Property::new(sys::SPA_FORMAT_AUDIO_channels, Value::Int(count)),
         ];
+
         if let Some(position) = position {
             properties.push(Property::new(
                 sys::SPA_FORMAT_AUDIO_position,
@@ -1229,6 +1265,7 @@ mod tests {
         let placed = |positions: &[ChannelPosition]| {
             ChannelLayout::placed(Places::of(positions.iter().copied())).expect("places")
         };
+
         for layout in [
             placed(&[
                 ChannelPosition::FrontLeft,
@@ -1260,11 +1297,13 @@ mod tests {
                 "{layout} did not read back as itself once the graph settled on it"
             );
         }
+
         let crossed = [
             sys::SPA_AUDIO_CHANNEL_FL,
             sys::SPA_AUDIO_CHANNEL_FC,
             sys::SPA_AUDIO_CHANNEL_FR,
         ];
+
         assert_eq!(
             named_by(&crossed, ChannelCount::new(3).expect("three channels")),
             ChannelLayout::Discrete(ChannelCount::new(3).expect("three channels")),
@@ -1331,6 +1370,7 @@ mod tests {
             5,
             Some(spa_position(ChannelLayout::Surround50)[..5].to_vec()),
         );
+
         if let Value::Object(object) = &mut advertisement {
             object.properties.reverse();
         }
@@ -1485,6 +1525,7 @@ mod tests {
     #[test]
     fn allowed_rates_parse_the_daemons_json_array() {
         let rates = parse_allowed_rates("[ 44100, 48000, 96000 ]");
+
         assert_eq!(
             rates,
             vec![
@@ -1649,6 +1690,7 @@ mod tests {
             );
             assert_eq!(words.spelled(SampleFormat::S24), spelled);
         }
+
         assert_eq!(
             Words::PackedAndPadded.spelled(SampleFormat::S24),
             "S24LE, S24_32LE"
@@ -1671,6 +1713,7 @@ mod tests {
                 .take(layout.count().get() as usize)
                 .filter(|channel| **channel != 0)
                 .count();
+
             assert_eq!(
                 named,
                 layout.count().get() as usize,

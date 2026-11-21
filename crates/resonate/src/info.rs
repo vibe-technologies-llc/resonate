@@ -30,6 +30,7 @@ pub fn print(path: &Path, sources: &Sources, config: &EngineConfig, graph: bool)
     if names_a_sheet(path) {
         return sheet(path);
     }
+
     let report = probe_stream(sources, &MediaLocation::local(path))?;
 
     heading(words::info::file());
@@ -75,6 +76,7 @@ pub(crate) fn pairs(rows: Vec<(&str, String)>) {
     let width = rows.iter().map(|(name, _)| name.width()).max().unwrap_or(0);
     for (name, value) in rows {
         let padding = " ".repeat(width - name.width());
+
         said!("  {name}{padding}  {value}");
     }
 }
@@ -114,6 +116,7 @@ fn sheet(path: &Path) -> Result<()> {
 
     for cut in &held.files {
         heading(&words::info::file_named(cut.named.as_str()));
+
         let beside = path
             .parent()
             .and_then(|folder| the_file_a_cue_names(folder, &cut.named));
@@ -135,12 +138,14 @@ fn cut_table(cut: &CueFile, rate: Option<(SampleRate, Option<Frames>)>) {
         words::info::start_heading(),
         words::info::length_heading(),
     ]);
+
     for (index, track) in cut.audio_tracks() {
         let span = rate.and_then(|(rate, whole)| cut.span_of(index, rate, whole));
         let length = match (span.and_then(|span| span.frames()), rate) {
             (Some(frames), Some((rate, _))) => clock(frames, rate),
             _ => unknown(),
         };
+
         table.push(vec![
             track.number.to_string(),
             track.tags.title.clone().unwrap_or_else(unknown),
@@ -252,6 +257,7 @@ fn boxes(layout: &resonate_codec::BoxLayout) {
             Faststart::Trailing => words::info::faststart_trailing(state.to_string()),
         },
     );
+
     pairs(vec![("faststart", verdict)]);
 
     let mut table = Table::new(vec![
@@ -260,6 +266,7 @@ fn boxes(layout: &resonate_codec::BoxLayout) {
         words::info::offset_heading(),
         words::info::size_heading(),
     ]);
+
     for entry in &layout.boxes {
         table.push(vec![
             String::new(),
@@ -304,6 +311,7 @@ fn bitrate(profile: &StreamProfile) {
     ]);
 
     let mut table = Table::new(vec!["", "P05", "P25", "P50", "P75", "P95", "P99"]);
+
     table.push(vec![
         String::new(),
         kbps(p05),
@@ -326,6 +334,7 @@ fn plot(profile: &StreamProfile) {
         return;
     };
     let floor = series.iter().copied().reduce(f64::min).unwrap_or(0.0);
+
     let span = (top - floor).max(f64::EPSILON);
 
     for row in (0..GRAPH_ROWS).rev() {
@@ -337,6 +346,7 @@ fn plot(profile: &StreamProfile) {
                 BLOCKS[(filled.clamp(0.0, 1.0) * 8.0).round() as usize]
             })
             .collect();
+
         said!("  {:>9} │{line}", format!("{:.0}k", label / 1_000.0));
     }
 
@@ -360,6 +370,7 @@ fn tags(tags: &[RawTag]) {
         words::info::key_heading(),
         words::info::value_heading(),
     ]);
+
     for tag in tags {
         table.push(vec![
             String::new(),
@@ -374,6 +385,7 @@ fn on_one_line(value: &TagValue) -> String {
     let folded = table::on_one_line(&value.to_string());
 
     let mut kept: String = folded.chars().take(WIDEST_TAG_VALUE).collect();
+
     if folded.chars().nth(WIDEST_TAG_VALUE).is_some() {
         kept.push(ELLIPSIS);
     }
@@ -401,8 +413,10 @@ pub fn bytes_text(bytes: u64) -> String {
         |value| words::info::mebibytes(value),
         |value| words::info::gibibytes(value),
     ];
+
     let mut value = bytes as f64;
     let mut unit = 0;
+
     while value >= 1024.0 && unit < UNITS.len() {
         value /= 1024.0;
         unit += 1;

@@ -100,6 +100,7 @@ pub(crate) fn moved<'a>(before: &[PlaylistInfo], now: &'a [PlaylistInfo]) -> Mov
 
     let mut renamed = Vec::new();
     let mut still_held = 0;
+
     for row in now {
         if let Some(name) = named.get(&row.id) {
             still_held += 1;

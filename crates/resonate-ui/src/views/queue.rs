@@ -135,6 +135,7 @@ impl QueuePane {
             .named
             .as_ref()
             .map(|(named, names)| (*named, Arc::clone(names)));
+
         if held.as_ref().is_some_and(|(named, _)| {
             named.queue == revision.queue && named.names_still_hold_at(&revision)
         }) {
@@ -150,6 +151,7 @@ impl QueuePane {
             return;
         }
         self.names.asked = Some(revision);
+
         let Over {
             queued,
             player,
@@ -193,6 +195,7 @@ impl QueuePane {
             total: Duration::ZERO,
             unmeasured: 0,
         };
+
         if let Some(held) = self.length.held
             && held.measures(measured)
         {
@@ -212,6 +215,7 @@ impl QueuePane {
             return;
         }
         self.length.asked = Some(measured);
+
         let Over {
             queued, library, ..
         } = over;
@@ -234,6 +238,7 @@ impl QueuePane {
                     (lengths.into_iter().flatten().sum::<Duration>(), unmeasured)
                 })
                 .await;
+
             let landed = this.update(cx, |this, cx| {
                 this.length.held = Some(QueueLength {
                     total,
@@ -261,6 +266,7 @@ impl QueuePane {
             player,
             library,
         } = over;
+
         if queued.rows.len() < 2 {
             return;
         }
@@ -272,6 +278,7 @@ impl QueuePane {
                 .background_executor()
                 .spawn(async move { ordered_rows(&library, &player, &rows, order, reading) })
                 .await;
+
             let landed = this.update(cx, |_, cx| {
                 cx.emit(PutInOrder {
                     revision,
@@ -355,6 +362,7 @@ fn named_again<'a>(
         })
         .map(|named| (&named.item, named))
         .collect();
+
     let unknown: Vec<QueueItem> = rows
         .iter()
         .filter(|item| !known.contains_key(*item))
@@ -468,6 +476,7 @@ impl QueueParts {
     fn of(rows: usize, playing: Option<usize>, next: Option<Span>) -> Self {
         let playing = playing.filter(|at| *at < rows);
         let mut edges: SmallVec<[usize; 6]> = smallvec![0, rows];
+
         edges.extend(playing.into_iter().flat_map(|at| [at, at + 1]));
         edges.extend(
             next.into_iter()
@@ -478,6 +487,7 @@ impl QueueParts {
         edges.dedup();
 
         let mut runs: SmallVec<[Run; 5]> = SmallVec::new();
+
         for pair in edges.windows(2) {
             let &[first, end] = pair else {
                 continue;
@@ -515,6 +525,7 @@ impl QueueParts {
         }
 
         let mut headed = 0;
+
         for run in &self.runs {
             if item == run.rows.first() + headed {
                 return Some(Line::Heading(*run));
@@ -564,6 +575,7 @@ pub(crate) struct TakenOut {
 impl TakenOut {
     fn of(queue: &QueueRows, rows: Span) -> Option<Self> {
         let taken = queue.run(rows)?;
+
         if taken.is_empty() {
             return None;
         }
@@ -622,11 +634,13 @@ impl TakenBack {
             .iter()
             .filter_map(|rows| TakenOut::of(queue, *rows))
             .collect();
+
         if taken.is_empty() {
             return None;
         }
 
         let kept = taken.iter().map(|taken| taken.rows.len()).sum();
+
         self.put_back.clear();
         for taken in taken {
             self.stack(taken);
@@ -667,11 +681,13 @@ impl TakenBack {
 
     pub(crate) fn take(&mut self, queue: &QueueRows) -> Option<PuttingBack> {
         self.standing(queue)?;
+
         let taken = self.steps.pop()?;
         let putting = PuttingBack {
             rows: taken.rows.clone(),
             at: taken.landing_in(queue),
         };
+
         self.put_back.push(taken);
         Some(putting)
     }
@@ -679,6 +695,7 @@ impl TakenBack {
     pub(crate) fn take_again(&mut self, queue: &QueueRows) -> Option<Span> {
         let rows = self.standing_again(queue)?.standing_in(queue)?;
         let taken = self.put_back.pop()?;
+
         self.stack(taken);
         Some(rows)
     }
@@ -737,6 +754,7 @@ impl RootView {
     pub(crate) fn queue_pane(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let _ = self.names_in_the_queue(cx);
         let queue = self.player.read(cx).queue();
+
         if queue.is_empty() {
             let nothing = empty(
                 Icon::Queue,
@@ -771,6 +789,7 @@ impl RootView {
         };
         let height = measured.get();
         let shown = (f32::from(height) / theme::row_height()) as usize;
+
         let lines = parts.lines() + parts.room_below(shown);
         let heading = self.queue_heading(&queue, cx);
         let drawn_at = self.player.read(cx).queued().revision;
@@ -813,6 +832,7 @@ impl RootView {
                             lines,
                             cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 let mut rows = Vec::new();
+
                                 for drawn in range {
                                     let index = match parts.line(drawn) {
                                         Some(Line::Row(index)) => index,
@@ -870,6 +890,7 @@ impl RootView {
                                             offer.service.as_str(),
                                         ))
                                     });
+
                                     if let Some(offer) = &explored_offer {
                                         drawn.title = SharedString::from(offer.song.title.clone());
                                         if let Some(artist) = &offer.song.artist {
@@ -882,6 +903,7 @@ impl RootView {
                                                 SharedString::from(format::spanned(length));
                                         }
                                     }
+
                                     let cover = this.cover(
                                         Pictured::Track {
                                             album: drawn.album,
@@ -913,6 +935,7 @@ impl RootView {
                                     let menued = Arc::clone(&holding);
                                     let queued_as = item.id.get();
                                     let fitted = this.rooms.columns_fit.shown();
+
                                     let listed = row(current)
                                         .id(("queued", queued_as))
                                         .debug_selector(move || format!("queued-{queued_as}"))
@@ -1066,6 +1089,7 @@ impl RootView {
                                         .on_click(cx.listener(
                                             move |this, event: &ClickEvent, _, cx| {
                                                 let extending = event.modifiers().shift;
+
                                                 this.reach_at(Shift::Queue, index, extending, cx);
                                                 if !extending {
                                                     this.send_by_position_at(
@@ -1077,6 +1101,7 @@ impl RootView {
                                             },
                                         ));
                                     let reach = this.at_the_reach(Shift::Queue, index, cx);
+
                                     let listed = menu::opens_a_reachable_menu(
                                         listed,
                                         reach,
@@ -1173,6 +1198,7 @@ impl RootView {
         let position = self.player.read(cx).state().queue_position;
         let total = self.queue_length(cx);
         let mut under: format::Parts<String> = smallvec![words::queue::tracks(queue.len())];
+
         if let Some((total, unmeasured)) = total.filter(|(total, _)| !total.is_zero()) {
             under.push(if unmeasured > 0 {
                 words::queue::at_least(format::spanned(total))
@@ -1183,7 +1209,9 @@ impl RootView {
         if let Some(position) = position {
             under.push(words::queue::on_row(position + 1));
         }
+
         let waiting = waiting_to_play(self.player.read(cx).queued().next, position);
+
         if waiting > 0 {
             under.push(words::queue::waiting(waiting));
         }
@@ -1276,6 +1304,7 @@ impl RootView {
                                     let Some(last) = queued.len().checked_sub(1) else {
                                         return;
                                     };
+
                                     this.drop_rows(Shift::Queue, Span::between(0, last), cx);
                                 },
                                 cx,
@@ -1296,6 +1325,7 @@ impl RootView {
                                         .iter()
                                         .map(|item| queued_cut(item))
                                         .collect();
+
                                     this.hold_for_a_playlist(Held::of(queued), window, cx);
                                 },
                                 cx,
@@ -1344,6 +1374,7 @@ impl RootView {
             return false;
         };
         let items = self.with_the_versions_chosen(taken.rows, cx);
+
         self.send_by_position_at(
             queued.revision,
             Command::Insert {
@@ -1402,6 +1433,7 @@ impl RootView {
         else {
             return false;
         };
+
         self.send_by_position(Command::Remove(rows), cx);
         true
     }
@@ -1414,6 +1446,7 @@ impl RootView {
             |this, order, cx| this.put_the_queue_in_order(order, Direction::Ascending, cx),
             |this, reading, cx| {
                 let (order, _) = this.queue.read(cx).order();
+
                 this.put_the_queue_in_order(order, reading, cx);
             },
             cx,
@@ -1427,6 +1460,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let over = self.queue_over(cx);
+
         self.queue.update(cx, |queue, cx| {
             queue.put_in_order(order, reading, over, cx);
         });
@@ -1463,6 +1497,7 @@ fn ordered_rows(
         .enumerate()
         .map(|(row, (item, track))| Keyed::of(row, item, track, &titles, player))
         .collect();
+
     keyed.sort_by(|left, right| {
         let weighed = left.weighed(order, right);
         match reading {
@@ -1612,6 +1647,7 @@ fn waiting_to_play(next: Option<Span>, playing: Option<usize>) -> usize {
 
 fn runs_of(rows: &[usize]) -> Vec<Span> {
     let mut runs: Vec<Span> = Vec::new();
+
     for &row in rows {
         match runs.last_mut() {
             Some(run) if run.last() + 1 == row => *run = Span::between(run.first(), row),
@@ -1756,6 +1792,7 @@ mod tests {
 
     fn without(queue: &[Arc<QueueItem>], rows: Span) -> Vec<Arc<QueueItem>> {
         let mut left = queue.to_vec();
+
         left.drain(rows.range());
         left
     }
@@ -1769,6 +1806,7 @@ mod tests {
         let Some(taken) = kept.take(&rows_of(queue)) else {
             return false;
         };
+
         queue.splice(taken.at..taken.at, taken.rows.into_iter().map(Arc::new));
         true
     }
@@ -1777,6 +1815,7 @@ mod tests {
         let Some(rows) = kept.take_again(&rows_of(queue)) else {
             return false;
         };
+
         queue.drain(rows.range());
         true
     }
@@ -1793,6 +1832,7 @@ mod tests {
         let parts = QueueParts::of(6, Some(2), Some(Span::between(3, 4)));
 
         let drawn: Vec<Option<Line>> = (0..=parts.lines()).map(|item| parts.line(item)).collect();
+
         assert_eq!(
             drawn,
             [
@@ -1845,6 +1885,7 @@ mod tests {
     #[test]
     fn the_queue_opens_on_the_now_playing_heading_with_room_to_lift_it_to_the_top() {
         let playing_in_the_middle = QueueParts::of(8, Some(3), None);
+
         assert_eq!(playing_in_the_middle.opens_at(), Some(4));
         assert_eq!(
             playing_in_the_middle.line(4),
@@ -1857,10 +1898,12 @@ mod tests {
         assert_eq!(playing_in_the_middle.room_below(3), 0);
 
         let nothing_heard = QueueParts::of(8, Some(0), None);
+
         assert_eq!(nothing_heard.opens_at(), Some(0));
         assert_eq!(nothing_heard.room_below(20), 0);
 
         let nothing_playing = QueueParts::of(8, None, None);
+
         assert_eq!(nothing_playing.opens_at(), None);
         assert_eq!(nothing_playing.room_below(20), 0);
     }
@@ -1894,6 +1937,7 @@ mod tests {
 
         back(&mut kept, &mut queue, Span::between(4, 4));
         back(&mut kept, &mut queue, Span::between(0, 1));
+
         assert_eq!(queue, queued(&[3, 4]));
 
         assert!(put_back(&mut kept, &mut queue));
@@ -1910,6 +1954,7 @@ mod tests {
 
         back(&mut kept, &mut queue, Span::between(4, 4));
         back(&mut kept, &mut queue, Span::between(0, 1));
+
         assert!(put_back(&mut kept, &mut queue));
         assert!(put_back(&mut kept, &mut queue));
         assert_eq!(queue, queued(&[1, 2, 3, 4, 5]));
@@ -1931,19 +1976,24 @@ mod tests {
         let mut kept = TakenBack::default();
 
         back(&mut kept, &mut queue, Span::between(0, 0));
+
         assert!(put_back(&mut kept, &mut queue));
+
         let offer = kept
             .offered_again(&rows_of(&queue))
             .expect("the put back is offered");
+
         assert_eq!((offer.rows, offer.behind), (1, 0));
 
         queue.insert(0, queued(&[9])[0].clone());
+
         assert!(kept.offered_again(&rows_of(&queue)).is_some());
         assert!(take_again(&mut kept, &mut queue));
         assert_eq!(queue, queued(&[9, 2, 3]));
         assert!(put_back(&mut kept, &mut queue));
 
         back(&mut kept, &mut queue, Span::between(2, 2));
+
         assert_eq!(
             kept.offered_again(&rows_of(&queue)),
             None,
@@ -1959,15 +2009,19 @@ mod tests {
         assert_eq!(kept.offered(&rows_of(&queue)), None);
 
         back(&mut kept, &mut queue, Span::between(3, 3));
+
         let offer = kept
             .offered(&rows_of(&queue))
             .expect("the gesture is offered back");
+
         assert_eq!((offer.rows, offer.behind), (1, 0));
 
         back(&mut kept, &mut queue, Span::between(0, 1));
+
         let offer = kept
             .offered(&rows_of(&queue))
             .expect("the gesture is offered back");
+
         assert_eq!((offer.rows, offer.behind), (2, 1));
     }
 
@@ -1978,12 +2032,15 @@ mod tests {
 
         back(&mut kept, &mut queue, Span::between(1, 2));
         back(&mut kept, &mut queue, Span::between(0, 0));
+
         assert_eq!(queue, queued(&[4]));
+
         queue.insert(0, queued(&[9])[0].clone());
 
         let offer = kept
             .offered(&rows_of(&queue))
             .expect("the walk still stands");
+
         assert_eq!((offer.rows, offer.behind), (1, 1));
         assert!(put_back(&mut kept, &mut queue));
         assert_eq!(queue, queued(&[1, 9, 4]));
@@ -2008,6 +2065,7 @@ mod tests {
         let runs = [Span::one(1), Span::between(3, 4)];
 
         assert_eq!(kept.keeping_all(&rows_of(&queue), &runs), Some(3));
+
         queue = queued(&[1, 3]);
 
         assert!(put_back(&mut kept, &mut queue));
@@ -2056,7 +2114,9 @@ mod tests {
             .map(|(seconds, name)| folder.tone(&format!("{name}.wav"), *seconds))
             .collect();
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
+
         let mut driven = Driven::opened_in(cx, library, folder);
 
         driven.play(&files);
@@ -2119,6 +2179,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (mut driven, mut files) = queue_of(cx, &folder, &[2, 1]);
+
         files.push(folder.tone("unscanned.wav", 4));
 
         driven.play(&files);
@@ -2188,7 +2249,9 @@ mod tests {
     fn one_more_row_landed(driven: &mut Driven) {
         let queued = driven.read(|root, cx| root.player.read(cx).queue());
         let mut more = QueueItem::clone(queued.first().expect("a queued row"));
+
         more.id = resonate_engine::unclaimed_id(queued.iter().map(AsRef::as_ref));
+
         let rows = queued.len();
 
         let more = Command::Insert {
@@ -2196,6 +2259,7 @@ mod tests {
             at: resonate_engine::Placement::At(rows),
             play: false,
         };
+
         driven.read(|root, cx| behind_the_window(root, cx, more));
         driven.until(|root, cx| root.player.read(cx).queue().len() > rows);
     }
@@ -2241,6 +2305,7 @@ mod tests {
 
     fn told_behind_the_window(driven: &mut Driven, zone: ZoneId, command: Command) {
         let before = revision_of(driven, zone);
+
         driven.read(|root, cx| {
             root.zones
                 .iter()
@@ -2295,7 +2360,9 @@ mod tests {
             .root
             .update(&mut driven.cx, |root, cx| root.add_a_zone(cx));
         driven.until(|root, _| root.zones.len() == 2);
+
         let second = driven.read(|root, _| root.switcher.selected());
+
         told_behind_the_window(
             &mut driven,
             second,
@@ -2343,6 +2410,7 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
         driven.root.update(&mut driven.cx, |root, cx| {
             behind_the_window(root, cx, Command::Order(vec![2, 1, 0]));
+
             assert!(root.put_the_queue_back(cx), "a step stood to put back");
         });
         one_more_row_landed(&mut driven);
@@ -2373,6 +2441,7 @@ mod tests {
 
         driven.root.update(&mut driven.cx, |root, cx| {
             let drawn = root.library.read(cx).playlist_as_drawn();
+
             behind_the_window(root, cx, Command::Order(vec![1, 0, 2, 3]));
             root.landed(&lifted, LiftedTo::QueueRow { row: 1, drawn_at }, drawn, cx);
         });
@@ -2424,21 +2493,28 @@ mod tests {
         let (mut driven, _) = queue_of(cx, &folder, &[1, 1, 1, 1]);
         let drawn_at = driven.read(|root, cx| root.player.read(cx).queued().revision);
         let raise = driven.centre_of("raise-2");
+
         driven.hover(raise);
 
         driven.read(|root, cx| behind_the_window(root, cx, Command::Order(vec![1, 0, 2, 3])));
+
         let engine = driven.read(|root, cx| root.player.read(cx).engine());
         let began = std::time::Instant::now();
+
         while engine.queued().revision == drawn_at {
             assert!(
                 began.elapsed() < std::time::Duration::from_secs(10),
                 "the engine never took the reorder"
             );
+
             std::thread::yield_now();
         }
+
         let root = driven.root.clone();
+
         driven.cx.update(|window, cx| {
             let player = root.read(cx).player.clone();
+
             player.update(cx, |player, _| {
                 player.read_the_queue_leaving_the_frame_drawn();
             });
@@ -2508,6 +2584,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         const ROWS: usize = 90;
+
         let folder = Folder::new();
         let files: Vec<PathBuf> = (0..ROWS)
             .map(|row| folder.tone(&format!("{row:02}.wav"), 1))
@@ -2517,16 +2594,21 @@ mod tests {
             Arc::new(Library::open_in_memory().expect("a catalog in memory")),
             &folder,
         );
+
         driven.play(&files);
         driven.click("queue");
+
         let queued = driven.queue();
+
         driven.until_drawn(row_of(queued[0]));
 
         assert!(driven.cx.debug_bounds(row_of(queued[ROWS - 1])).is_none());
 
         let root = driven.root.clone();
+
         driven.cx.update(|window, cx| {
             let focus = root.read(cx).focus.clone();
+
             window.focus(&focus, cx);
         });
         driven.settle();
@@ -2548,6 +2630,7 @@ mod tests {
     fn showing_another_zone_lets_go_of_the_rows_offered_back(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (mut driven, _) = queue_of(cx, &folder, &[1, 1]);
+
         driven.click("clear-queue");
         driven.until(|root, cx| root.player.read(cx).queue().is_empty());
         driven.until_drawn("put-the-queue-back");
@@ -2581,12 +2664,15 @@ mod tests {
         let offer = kept
             .offered(&rows_of(&queue))
             .expect("the last gesture is offered");
+
         assert_eq!(offer.behind, KEPT_GESTURES - 1);
 
         let mut walked = 0;
+
         while put_back(&mut kept, &mut queue) {
             walked += 1;
         }
+
         assert_eq!(walked, KEPT_GESTURES);
         assert_eq!(queue, queued(&held[held.len() - 1 - KEPT_GESTURES..]));
     }

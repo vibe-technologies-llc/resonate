@@ -365,6 +365,7 @@ impl RootView {
                             pre_amp: step.0,
                             ..this.player.read(cx).output_settings().levelling
                         };
+
                         this.send(Command::SetLevelling(levelling), cx);
                         this.store(&Setting::PreAmp(step.0), cx);
                     },
@@ -381,6 +382,7 @@ impl RootView {
                             untagged: step.0,
                             ..this.player.read(cx).output_settings().levelling
                         };
+
                         this.send(Command::SetLevelling(levelling), cx);
                         this.store(&Setting::Untagged(step.0), cx);
                     },

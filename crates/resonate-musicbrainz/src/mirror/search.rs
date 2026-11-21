@@ -51,10 +51,13 @@ fn bare_title_token(title: &str) -> Option<String> {
 fn words_shared(asked: &[String], found: &[String]) -> f64 {
     let asked: BTreeSet<&String> = asked.iter().collect();
     let found: BTreeSet<&String> = found.iter().collect();
+
     let total = asked.len() + found.len();
+
     if total == 0 {
         return 0.0;
     }
+
     let shared = asked.intersection(&found).count();
     2.0 * shared as f64 / total as f64
 }
@@ -82,6 +85,7 @@ pub fn credit_agreement(name: Option<&str>, mbid: Option<&Mbid>, credit: &[Credi
     {
         return WHOLE;
     }
+
     let Some(name) = name else {
         return if mbid.is_some() { 0.0 } else { WHOLE };
     };
@@ -124,6 +128,7 @@ pub(crate) fn words_of_names(names: &[String]) -> String {
 
 pub(crate) fn words_of_a_credited(title: &str, credit: &[Credit]) -> String {
     let mut words = words_of_a_name(title);
+
     words.extend(words_of_credit(credit));
     words.extend(bare_title_token(title));
     words.join(" ")
@@ -163,6 +168,7 @@ fn asked_queries(title: &str, artist: Option<&str>, wording: Wording) -> Vec<Str
     match (wording, any_of(&credited)) {
         (Wording::Phrase, _) => {
             let mut every = titled;
+
             every.extend(credited);
             all_of(&every)
                 .map(|every| narrowed_first(title, every))
@@ -170,6 +176,7 @@ fn asked_queries(title: &str, artist: Option<&str>, wording: Wording) -> Vec<Str
         }
         (Wording::Words, Some(any_artist)) => {
             let mut queries = narrowed_first(title, format!("{title_alone} AND {any_artist}"));
+
             queries.extend(narrowed_first(title, title_alone));
             queries
         }
@@ -194,10 +201,12 @@ impl Mirror {
         let queries = asked_queries(&asked.title, asked.artist.as_deref(), asked.wording);
         let phrase = asked.wording == Wording::Phrase;
         let mut found = Vec::new();
+
         for id in self.matched_first(RECORDING_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(recording) = self.recording_at(id)? else {
                 continue;
             };
+
             if phrase && !lengths_agree(asked.length, recording.length) {
                 continue;
             }
@@ -210,6 +219,7 @@ impl Mirror {
             {
                 continue;
             }
+
             let score = scored(
                 agreement(&asked.title, &recording.title)
                     * credit_agreement(
@@ -219,6 +229,7 @@ impl Mirror {
                     ),
             );
             let mut matched = RecordingMatch::from(recording);
+
             matched.score = score;
             found.push((score, matched));
         }
@@ -239,17 +250,22 @@ impl Mirror {
                 return Ok(read);
             }
         }
+
         let words = words_of_a_name(&asked.words);
         let queries = words_asked(&asked.words);
         let mut found = Vec::new();
+
         for id in self.matched_first(RECORDING_WORDS, &queries, SONGS_FOUND_AT_MOST)? {
             let Some(recording) = self.recording_at(id)? else {
                 continue;
             };
             let mut held = words_of_a_name(&recording.title);
+
             held.extend(words_of_credit(&recording.credit));
+
             let score = scored(words_shared(&words, &held));
             let mut matched = RecordingMatch::from(recording);
+
             matched.score = score;
             found.push((score, matched));
         }
@@ -260,14 +276,17 @@ impl Mirror {
         let queries = asked_queries(&asked.title, asked.artist.as_deref(), asked.wording);
         let phrase = asked.wording == Wording::Phrase;
         let mut found = Vec::new();
+
         for id in self.matched_first(RELEASE_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.release_at(id)? else {
                 continue;
             };
             let release = doc.release;
+
             if phrase && !pressed_as_asked(asked, &release) {
                 continue;
             }
+
             let score = scored(
                 agreement(&asked.title, &release.title)
                     * credit_agreement(
@@ -276,6 +295,7 @@ impl Mirror {
                         &release.credit,
                     ),
             );
+
             found.push((
                 score,
                 ReleaseMatch {
@@ -296,11 +316,13 @@ impl Mirror {
         let queries = asked_queries(&asked.title, asked.artist.as_deref(), asked.wording);
         let phrase = asked.wording == Wording::Phrase;
         let mut found = Vec::new();
+
         for id in self.matched_first(GROUP_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.group_at(id)? else {
                 continue;
             };
             let group = doc.group;
+
             if phrase
                 && let Some(year) = asked.year
                 && !group
@@ -310,6 +332,7 @@ impl Mirror {
             {
                 continue;
             }
+
             let score = scored(
                 agreement(&asked.title, &group.title)
                     * credit_agreement(
@@ -318,6 +341,7 @@ impl Mirror {
                         &group.credit,
                     ),
             );
+
             found.push((
                 score,
                 GroupMatch {
@@ -335,14 +359,18 @@ impl Mirror {
         let asked = words_of_a_name(words);
         let queries = words_asked(words);
         let mut found = Vec::new();
+
         for id in self.matched_first(GROUP_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.group_at(id)? else {
                 continue;
             };
             let group = doc.group;
             let mut held = words_of_a_name(&group.title);
+
             held.extend(words_of_credit(&group.credit));
+
             let score = scored(words_shared(&asked, &held));
+
             found.push((
                 score,
                 AlbumMatch {
@@ -362,6 +390,7 @@ impl Mirror {
     pub fn find_artist(&self, name: &str) -> Result<Vec<ArtistMatch>> {
         let queries = words_asked(name);
         let mut found = Vec::new();
+
         for id in self.matched_first(ARTIST_WORDS, &queries, CANDIDATES_WEIGHED)? {
             let Some(doc) = self.artist_at(id)? else {
                 continue;
@@ -374,6 +403,7 @@ impl Mirror {
                 .map(|alias| agreement(name, alias))
                 .fold(agreement(name, &artist.name), f64::max);
             let score = scored(named);
+
             found.push((
                 score,
                 ArtistMatch {

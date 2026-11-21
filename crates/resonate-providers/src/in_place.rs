@@ -21,7 +21,7 @@ const ALBUM_KEY: &str = "album/";
 const ARTIST_KEY: &str = "artist/";
 const MIX_KEY: &str = "mix/";
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Id(Box<str>);
 
 impl Id {
@@ -54,6 +54,7 @@ impl Named {
         if location.source() != source {
             return None;
         }
+
         let key = location.locator().as_key()?;
         [
             (SONG_KEY, Self::Song as fn(Id) -> Self),
@@ -189,6 +190,7 @@ fn explicit_first<T>(
         .filter(|(_, (stands_aside, _))| !stands_aside)
         .map(|(item, (_, place))| (place, item))
         .collect();
+
     kept.sort_by_key(|(place, _)| *place);
 
     kept.into_iter().map(|(_, item)| item).collect()
@@ -346,6 +348,7 @@ pub trait PlaysInPlace: Send + Sync {
 
     fn first_page(&self) -> Result<Found> {
         let artists = self.artists()?;
+
         if artists.is_empty() {
             return self.favourites();
         }
@@ -361,6 +364,7 @@ pub trait PlaysInPlace: Send + Sync {
             Named::Album(id) => Ok(self.album(id)?.songs),
             Named::Artist(id) => {
                 let mut songs = Vec::new();
+
                 for album in self.artist(id)?.albums {
                     songs.extend(self.album(&album.id)?.songs);
                 }
@@ -478,7 +482,9 @@ mod tests {
     #[test]
     fn songs_named_alike_of_other_lengths_are_other_songs_and_both_stay() {
         let mut long = a_song("long", "Bad Guy", Rating::Unmarked);
+
         long.length = Some(Duration::from_secs(400));
+
         let found = Found {
             songs: vec![long, a_song("explicit", "Bad Guy", Rating::Explicit)],
             ..Found::default()
@@ -534,6 +540,7 @@ mod tests {
                 Some(named)
             );
         }
+
         assert_eq!(
             Named::read(
                 &MediaLocation::from_uri("subsonic:track/42").expect("a uri"),
@@ -569,6 +576,7 @@ mod tests {
 
         let refused = onward.seek(SeekFrom::Start(1));
         let landed = seeking.seek(SeekFrom::Start(2)).expect("a seek");
+
         seeking.read_exact(&mut read).expect("a byte");
 
         assert!(!onward.is_seekable());

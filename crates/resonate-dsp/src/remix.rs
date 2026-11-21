@@ -75,6 +75,7 @@ impl Processor for Remix {
 
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let (inputs, outputs) = (self.inputs(), self.outputs());
+
         let frames = (input.len() / inputs).min(output.len() / outputs);
 
         for frame in 0..frames {
@@ -118,6 +119,7 @@ fn matrix(input: ChannelLayout, output: ChannelLayout) -> Vec<f64> {
     }
 
     let mut rows = vec![0.0; outputs * inputs];
+
     for (column, source) in sources.iter().enumerate() {
         for (target, gain) in routes(*source, targets) {
             if let Some(row) = targets.iter().position(|position| *position == target)
@@ -134,6 +136,7 @@ fn in_turn(inputs: usize, outputs: usize) -> Vec<f64> {
     let mut rows = vec![0.0; outputs * inputs];
     let deepest = inputs.div_ceil(outputs).max(1);
     let gain = UNITY / deepest as f64;
+
     for channel in 0..inputs {
         if let Some(cell) = rows.get_mut((channel % outputs) * inputs + channel) {
             *cell = gain;
@@ -207,6 +210,7 @@ fn within_full_scale(mut rows: Vec<f64>, inputs: usize) -> Vec<f64> {
 
 fn is_identity(rows: &[f64], input: ChannelLayout, output: ChannelLayout) -> bool {
     let inputs = input.count().get() as usize;
+
     if input.count() != output.count() {
         return false;
     }
@@ -230,12 +234,14 @@ mod tests {
 
     fn run(input: ChannelLayout, output: ChannelLayout, frame: &[f64]) -> Vec<f64> {
         let mut stage = Remix::new(input, output);
+
         stage
             .prepare(spec(input), FRAMES)
             .expect("the stage takes the layout it was built for");
 
         let fed: Vec<f64> = frame.repeat(FRAMES);
         let mut produced = vec![0.0; FRAMES * output.count().get() as usize];
+
         let count = stage.process(&fed, &mut produced);
 
         assert_eq!(count.frames_in, FRAMES);
@@ -291,6 +297,7 @@ mod tests {
             ChannelLayout::Stereo,
             &[0.0, 0.0, 0.5],
         );
+
         assert!(
             close(three[0], three[1]) && three[0] > 0.0,
             "a 3.0 centre reached the speakers as {three:?}"
@@ -301,6 +308,7 @@ mod tests {
             ChannelLayout::Stereo,
             &[0.0, 0.0, 1.0],
         );
+
         assert_eq!(two_one, [0.0, 0.0], "a 2.1's LFE was played in a speaker");
 
         let seven = Remix::new(
@@ -315,9 +323,11 @@ mod tests {
             ]),
             ChannelLayout::Surround71,
         );
+
         for channel in 0..3 {
             assert_eq!(seven.gain(channel, channel), Some(UNITY));
         }
+
         assert_eq!(seven.gain(3, 3), Some(0.0), "a 7.0 fed the LFE");
         for (into, from) in [(4, 3), (5, 4), (6, 5), (7, 6)] {
             assert_eq!(
@@ -349,6 +359,7 @@ mod tests {
     #[test]
     fn a_relabelled_layout_of_the_same_width_is_transparent() {
         let two = ChannelCount::new(2).expect("2 is in range");
+
         assert!(Remix::new(ChannelLayout::Discrete(two), ChannelLayout::Stereo).is_transparent());
     }
 
@@ -366,6 +377,7 @@ mod tests {
             (1, 5, MINUS_3_DB / carried),
         ] {
             let gain = stage.gain(channel, column).expect("a cell of the matrix");
+
             assert!(
                 close(gain, expected),
                 "channel {channel} takes {gain} of input {column}, not {expected}"
@@ -376,6 +388,7 @@ mod tests {
     #[test]
     fn the_low_frequency_channel_is_dropped_rather_than_folded() {
         let stage = Remix::new(ChannelLayout::Surround51, ChannelLayout::Stereo);
+
         const LFE: usize = 3;
 
         assert_eq!(stage.gain(0, LFE), Some(0.0));
@@ -410,6 +423,7 @@ mod tests {
     #[test]
     fn stereo_folds_into_mono_as_the_average_of_its_two_channels() {
         let mixed = run(ChannelLayout::Stereo, ChannelLayout::Mono, &[1.0, 0.0]);
+
         assert_eq!(mixed.len(), 1);
         assert!(
             close(mixed.first().copied().unwrap_or_default(), 0.5),
@@ -420,6 +434,7 @@ mod tests {
     #[test]
     fn mono_reaches_both_speakers_at_equal_power() {
         let spread = run(ChannelLayout::Mono, ChannelLayout::Stereo, &[1.0]);
+
         assert_eq!(spread.len(), 2);
         for sample in spread {
             assert!(close(sample, MINUS_3_DB), "got {sample}");
@@ -444,12 +459,14 @@ mod tests {
     #[test]
     fn the_side_channels_of_a_seven_one_mix_fold_into_the_rears_of_a_five_one() {
         let stage = Remix::new(ChannelLayout::Surround71, ChannelLayout::Surround51);
+
         const REAR_LEFT: usize = 4;
         const SIDE_LEFT: usize = 6;
 
         let folded = stage
             .gain(REAR_LEFT, SIDE_LEFT)
             .expect("a cell of the matrix");
+
         assert!(folded > 0.0, "the side channel was dropped");
         assert_eq!(stage.gain(REAR_LEFT, 5), Some(0.0));
     }
@@ -457,6 +474,7 @@ mod tests {
     #[test]
     fn a_layout_the_stage_was_not_built_for_is_refused() {
         let mut stage = Remix::new(ChannelLayout::Surround51, ChannelLayout::Stereo);
+
         let error = stage
             .prepare(spec(ChannelLayout::Stereo), FRAMES)
             .expect_err("a five-channel stage took a stereo frame");

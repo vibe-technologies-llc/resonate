@@ -129,6 +129,7 @@ mod tests {
     fn a_zone_kept_is_opened_on_its_own_device_at_its_own_volume_and_the_first_keeps_its_name() {
         let second = ZoneId::new(2).expect("a second zone");
         let half = Volume::new(0.5).expect("half way");
+
         let kept = vec![
             KeptZone {
                 id: ZoneId::FIRST,

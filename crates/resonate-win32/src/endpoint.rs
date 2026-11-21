@@ -226,6 +226,7 @@ mod real {
             nudge: Nudge,
         ) -> Raw<IAudioEndpointVolumeCallback> {
             let callback: IAudioEndpointVolumeCallback = Nudging { nudge }.into();
+
             unsafe { volume.RegisterControlChangeNotify(&callback) }.map_err(hresult)?;
             Ok(callback)
         }
@@ -259,7 +260,7 @@ mod tests {
         Callback,
     }
 
-    #[derive(Clone, PartialEq, Debug)]
+    #[derive(Clone, Debug, PartialEq)]
     enum Call {
         Enumerator,
         Device(String),
@@ -486,10 +487,13 @@ mod tests {
             ..Fake::default()
         };
         let opened = Opened::of(fake.clone(), "{id}").expect("opened");
+
         fake.calls.lock().clear();
 
         opened.set_level(Level::new(0.5)).expect("set");
+
         let muted = opened.is_muted().expect("read");
+
         opened.set_muted(false).expect("unmuted");
 
         assert!(muted);
@@ -527,6 +531,7 @@ mod tests {
     fn a_refused_watch_releases_the_volume_and_the_watch_unregisters_once_when_dropped() {
         let refusing = Fake::refusing("watch");
         let opened = Opened::of(refusing.clone(), "{id}").expect("opened");
+
         refusing.calls.lock().clear();
 
         let refused = opened.watched(Box::new(|| {}));
@@ -548,6 +553,7 @@ mod tests {
             .expect("opened")
             .watched(Box::new(|| {}))
             .expect("watched");
+
         fake.calls.lock().clear();
         drop(watched);
 
@@ -572,6 +578,7 @@ mod tests {
             .watched(Box::new(move || *counting.lock() += 1))
             .expect("watched");
         let nudge = fake.nudges.lock().pop().expect("a registered closure");
+
         nudge();
         nudge();
 

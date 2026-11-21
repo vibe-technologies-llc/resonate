@@ -68,6 +68,7 @@ impl Documents for Folder {
         let Some(name) = uri.strip_prefix(FOLDER) else {
             return DOCUMENT_REFUSED;
         };
+
         self.wait_while_opens_are_held();
         match File::open(self.root.join(name)) {
             Ok(file) => file.into_raw_fd(),
@@ -220,6 +221,7 @@ impl Drop for Harness {
         if let Some(zones) = self.player.playing.take() {
             let _ = crate::zoning::shut_down(zones);
         }
+
         let _ = fs::remove_dir_all(&self.folder);
     }
 }
@@ -246,11 +248,13 @@ impl Harness {
 
     fn beside(device: Device, rendering: Rendering) -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let folder = env::temp_dir().join(format!(
             "resonate-mobile-queue-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&folder).expect("a test folder");
         for name in SONGS {
             fs::write(folder.join(format!("{name}.wav")), silence()).expect("a song");
@@ -263,13 +267,16 @@ impl Harness {
         });
         let served = crate::served::Served::default();
         let files = Arc::clone(&documents);
+
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         ))));
         let told =
             UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
+
         told.set_read_timeout(Some(LOOKED_AGAIN_AFTER))
             .expect("a read timeout");
+
         let offering = Offering {
             heard_on: SocketAddr::new(LOOPBACK, 0),
             told: told.local_addr().expect("the told address"),
@@ -296,6 +303,7 @@ impl Harness {
             kinds,
         )
         .expect("an engine over the backend");
+
         let player = MobilePlayer {
             playing: Playing::start(engine, Arc::new(Routing::new()), None, engines),
             catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
@@ -314,6 +322,7 @@ impl Harness {
             offered: Offered::on(folder.clone(), offering),
             releases: resonate_online::KeptRelease::in_folder(&folder),
         };
+
         player.services.files.reach_through(files);
 
         let songs = SONGS
@@ -407,13 +416,16 @@ impl Harness {
         let began = Instant::now();
         loop {
             let snapshot = self.player.snapshot().expect("a snapshot");
+
             if until(&snapshot) {
                 return snapshot;
             }
+
             assert!(
                 began.elapsed() < SETTLED_WITHIN,
                 "never settled: {snapshot:?}"
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
     }
@@ -447,6 +459,7 @@ fn engine_over(
 ) -> resonate_engine::Result<Player> {
     Player::with_sources_and_backend(config, sources, move |_| {
         let (announces, changes) = unbounded();
+
         let backend: Box<dyn Backend> = match device {
             Device::None => Box::new(Silent {
                 _announces: announces,
@@ -469,10 +482,12 @@ pub(crate) fn name_of(track: &Track) -> char {
 pub(crate) fn silence() -> Vec<u8> {
     let channels = 2_u16;
     let bits = 16_u16;
+
     let block_align = channels * bits / 8;
     let data = vec![0_u8; (RATE * SECONDS_A_SONG) as usize * usize::from(block_align)];
 
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
@@ -481,6 +496,7 @@ pub(crate) fn silence() -> Vec<u8> {
     format.extend_from_slice(&bits.to_le_bytes());
 
     let mut body = b"WAVE".to_vec();
+
     for (id, payload) in [(b"fmt ", &format), (b"data", &data)] {
         body.extend_from_slice(id);
         body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
@@ -488,6 +504,7 @@ pub(crate) fn silence() -> Vec<u8> {
     }
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file

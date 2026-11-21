@@ -226,6 +226,7 @@ pub struct ReadCovers(Vec<(i64, CoverArt)>);
 impl OwedCovers {
     pub fn read(self) -> ReadCovers {
         let mut read: Vec<(i64, CoverArt)> = Vec::new();
+
         for (album, path) in self.0 {
             if read.iter().any(|(held, _)| *held == album) {
                 continue;
@@ -252,6 +253,7 @@ pub fn land_covers(tx: &Transaction<'_>, cache: &mut Cache, read: ReadCovers) ->
     for (album, art) in read.0 {
         let bettered = held_picture(tx, album, Some(CoverSource::Archive))?
             .is_some_and(|archived| betters(&archived, &art));
+
         if !cover_present(tx, album)? && !bettered {
             cached(
                 tx,
@@ -280,6 +282,7 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
         |row| row.get(0),
     )
     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if !wanted {
         return Ok(0);
     }
@@ -289,10 +292,14 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
     let mut merged = 0;
+
     for (key, mut sharing) in unsettled {
         sharing.sort_by_key(|held| (Reverse(marks_in(&held.name)), held.id));
+
         let spelling = sharing[0].name.clone();
+
         sharing.sort_by_key(|held| (usize::from(!held.identified), held.id));
+
         let (keeps, gone) = sharing
             .split_first()
             .expect("a group holds at least one row");
@@ -301,7 +308,9 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
             take_over_artist(&tx, held.id, keeps.id)?;
             merged += 1;
         }
+
         let rekeyed = keeps.key != key;
+
         rekey_artist(&tx, keeps.id, &key, &spelling)?;
         if !gone.is_empty() || rekeyed {
             reindex_the_tracks_of(&tx, keeps.id)?;
@@ -326,6 +335,7 @@ pub fn refold_the_index(connection: &mut Connection) -> Result<usize> {
         |row| row.get(0),
     )
     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if !wanted {
         return Ok(0);
     }
@@ -373,6 +383,7 @@ pub fn refold_the_index(connection: &mut Connection) -> Result<usize> {
             .collect()
     };
     let refolded = stale.len();
+
     for (track, artist) in stale {
         index_row(
             &tx,
@@ -396,12 +407,14 @@ fn artists_folding_together(connection: &Connection) -> Result<Vec<(String, Vec<
     let mut statement = connection
         .prepare("SELECT id, name, key, mbid IS NOT NULL FROM artists")
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     let held = statement
         .query_map([], Held::read)
         .and_then(Iterator::collect::<rusqlite::Result<Vec<Held>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut folded: AHashMap<String, Vec<Held>> = AHashMap::new();
+
     for one in held {
         folded
             .entry(folded_letters(&one.name))
@@ -860,6 +873,7 @@ pub fn compose_the_album_keys(connection: &mut Connection) -> Result<usize> {
         |row| row.get(0),
     )
     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if !wanted {
         return Ok(0);
     }
@@ -880,6 +894,7 @@ pub fn compose_the_album_keys(connection: &mut Connection) -> Result<usize> {
             .collect()
     };
     let rekeyed = decomposed.len();
+
     for key in decomposed {
         let named = composed(&key);
         match album_keyed(&tx, &named)? {
@@ -928,6 +943,7 @@ fn grouping_keys(
     }
 
     let mut naming = Vec::new();
+
     if !tags.compilation
         && let Some(owner) = named(tags.album_artist.as_deref())
     {
@@ -994,6 +1010,7 @@ fn attribution(tags: &TagSet) -> (Option<Billing<'_>>, Option<Billing<'_>>) {
     if tags.compilation {
         return (None, artist.or(album_artist));
     }
+
     let owner = album_artist.or(artist);
     (owner, owner)
 }
@@ -1012,11 +1029,13 @@ pub fn apply(
         );
         return Ok(false);
     }
+
     let (owner, performer) = attribution(&record.tags);
     let owner_id = match owner {
         Some(billed) => Some(artist(tx, cache, billed)?),
         None => None,
     };
+
     let performer_id = match performer {
         Some(billed) if owner.is_none_or(|owner| owner.name != billed.name) => {
             Some(artist(tx, cache, billed)?)
@@ -1038,7 +1057,9 @@ pub fn apply(
     };
 
     follow_a_cut_that_moved(tx, record)?;
+
     let stored = track(tx, record, performer_id, album_id, generation)?;
+
     index(tx, &stored, record)?;
     entries_follow_the_length(tx, record)?;
     Ok(true)
@@ -1046,6 +1067,7 @@ pub fn apply(
 
 fn entries_follow_the_length(tx: &Transaction<'_>, record: &TrackRecord) -> Result<()> {
     let (span_start, span_frames) = span_columns(record.span);
+
     cached(
         tx,
         "UPDATE playlist_entries SET span_frames = ?3
@@ -1063,6 +1085,7 @@ fn follow_a_cut_that_moved(tx: &Transaction<'_>, record: &TrackRecord) -> Result
     let path = path_text(&record.path);
     let (span_start, _) = span_columns(Some(span));
     let id = existing.get() as i64;
+
     let held: Option<(i64, Option<i64>, Option<String>)> = queried(
         tx,
         "SELECT span_start, track_number, tagged_title FROM tracks WHERE id = ?1 AND path = ?2",
@@ -1074,14 +1097,18 @@ fn follow_a_cut_that_moved(tx: &Transaction<'_>, record: &TrackRecord) -> Result
     let Some((was_at, number, title)) = held else {
         return Ok(());
     };
+
     if was_at == span_start {
         return Ok(());
     }
+
     let same_number = number.is_some() && number == record.tags.track_number.map(i64::from);
     let same_title = title.is_some() && title == record.tags.title;
+
     if !same_number && !same_title {
         return Ok(());
     }
+
     let taken: bool = queried(
         tx,
         "SELECT EXISTS (SELECT 1 FROM tracks WHERE path = ?1 AND span_start = ?2)",
@@ -1089,6 +1116,7 @@ fn follow_a_cut_that_moved(tx: &Transaction<'_>, record: &TrackRecord) -> Result
         |row| row.get(0),
     )
     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if taken {
         return Ok(());
     }
@@ -1125,6 +1153,7 @@ fn delivered_at(tx: &Transaction<'_>, record: &TrackRecord) -> Result<bool> {
 
 pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
     let held = roots_held(tx)?;
+
     if let Some((_, outer)) = held
         .iter()
         .find(|(_, held)| canonical != held && canonical.starts_with(held))
@@ -1136,6 +1165,7 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
     }
 
     let text = path_text(canonical);
+
     cached(
         tx,
         "INSERT INTO roots (path) VALUES (?1) ON CONFLICT(path) DO NOTHING",
@@ -1156,6 +1186,7 @@ pub fn register_root(tx: &Transaction<'_>, canonical: &Path) -> Result<i64> {
         .filter(|(_, held)| canonical != held && held.starts_with(canonical))
         .map(|(inner, _)| *inner)
         .collect();
+
     take_in(tx, id, &taken_in)?;
 
     Ok(id)
@@ -1165,6 +1196,7 @@ pub(crate) fn register_root_beside_a_walk(tx: &Transaction<'_>, canonical: &Path
     let widens = roots_held(tx)?
         .iter()
         .any(|(_, held)| canonical != held && held.starts_with(canonical));
+
     if widens {
         return Ok(());
     }
@@ -1188,6 +1220,7 @@ fn take_in(tx: &Transaction<'_>, root: i64, taken: &[i64]) -> Result<()> {
     if taken.is_empty() {
         return Ok(());
     }
+
     let scoped = taken
         .iter()
         .map(ToString::to_string)
@@ -1256,6 +1289,7 @@ pub fn mark_the_unreached(
     if roots.is_empty() {
         return Ok(0);
     }
+
     let unwritten: Vec<i64> = tx
         .prepare(&format!(
             "SELECT id FROM tracks WHERE root_id IN ({}) AND seen != ?1",
@@ -1269,6 +1303,7 @@ pub fn mark_the_unreached(
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut marked = 0;
+
     for id in unwritten.into_iter().filter(|id| !reached.holds(*id)) {
         marked += cached(
             tx,
@@ -1284,9 +1319,11 @@ pub fn prune(tx: &Transaction<'_>, roots: &[i64], generation: i64) -> Result<u64
     if roots.is_empty() {
         return Ok(0);
     }
+
     let scoped = scoped(roots);
 
     copies::unreached_links_hand_over_their_history(tx, &scoped, generation)?;
+
     let removed = forget_rows(
         tx,
         Forgetting::Unreached,
@@ -1329,6 +1366,7 @@ pub fn word_the_titles(connection: &mut Connection) -> Result<()> {
         |row| row.get(0),
     )
     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if !wanted {
         return Ok(());
     }
@@ -1336,6 +1374,7 @@ pub fn word_the_titles(connection: &mut Connection) -> Result<()> {
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+
     tx.execute_batch(
         "UPDATE tracks SET title_words = words_of(title) WHERE title_words IS NULL;
          DROP TABLE IF EXISTS title_words_wanted;",
@@ -1349,6 +1388,7 @@ pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
     let owed: bool = connection
         .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if !owed {
         return Ok(());
     }
@@ -1356,6 +1396,7 @@ pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+
     sweep_orphans(&tx)?;
     tx.commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))
@@ -1387,6 +1428,7 @@ pub fn sized_files_under(connection: &Connection, root: i64) -> Result<Vec<(Path
               WHERE root_id = ?1 AND vault_key IS NULL GROUP BY path",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let found = statement
         .query_map(params![root], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
@@ -1413,6 +1455,7 @@ pub fn rooted_paths_at(
                AND (path = ?1 OR (path >= ?2 AND path < ?3))",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let found = statement
         .query_map(params![path, from, past], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
@@ -1432,9 +1475,11 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
     let mut rows = connection
         .prepare("SELECT title, artist, genre FROM tracks")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let mut read = rows
         .query([])
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     while let Some(row) = read
         .next()
         .map_err(|source| Error::store(StoreOp::Query, source))?
@@ -1448,6 +1493,7 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
         let genre: Option<String> = row
             .get(2)
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         spellings.taking(Column::Title, &title);
         if let Some(artist) = artist {
             spellings.taking(Column::Artist, &artist);
@@ -1465,6 +1511,7 @@ pub fn spellings(connection: &Connection) -> Result<Spellings> {
         let mut statement = connection
             .prepare(named)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let found = statement
             .query_map([], |row| row.get::<_, String>(0))
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -1511,6 +1558,7 @@ fn artist(tx: &Transaction<'_>, cache: &mut Cache, billed: Billing<'_>) -> Resul
     let key = folded_letters(billed.name);
     let mbid = mbid_in(billed.mbid);
     let marks = marks_in(billed.name);
+
     if let Some(known) = cache.artists.get_mut(&key) {
         if !known.identified
             && let Some(mbid) = &mbid
@@ -1534,6 +1582,7 @@ fn artist(tx: &Transaction<'_>, cache: &mut Cache, billed: Billing<'_>) -> Resul
     let known = match held_artist(tx, &key)? {
         Some(held) => {
             let held_marks = marks_in(&held.name);
+
             if marks > held_marks {
                 respell_artist(tx, held.id, billed.name)?;
             }
@@ -1595,6 +1644,7 @@ fn held_artist(tx: &Transaction<'_>, key: &str) -> Result<Option<Held>> {
 
 pub(crate) fn artist_named(tx: &Transaction<'_>, name: &str, mbid: Option<&Mbid>) -> Result<i64> {
     let key = folded_letters(name);
+
     if let Some(held) = held_artist(tx, &key)? {
         if !held.identified
             && let Some(mbid) = mbid
@@ -1697,6 +1747,7 @@ fn album(
                 Some(held) => fill_album(tx, held, &declared)?,
                 None => make_album(tx, &declared)?,
             };
+
             name_the_album(tx, cache, &naming, grouped)?;
             grouped.id
         }
@@ -1753,6 +1804,7 @@ pub(crate) fn album_received_in(
     let grouped = match album_already_named(tx, &naming)? {
         Some(held) => {
             let mut grouped = grouped_album(tx, held)?;
+
             if grouped.owner.is_some() && grouped.owner != owner_id {
                 disown(tx, grouped.id)?;
                 grouped.owner = None;
@@ -1779,6 +1831,7 @@ pub(crate) fn album_received_in(
             },
         )?,
     };
+
     name_the_album(tx, &mut Cache::default(), &naming, grouped)?;
 
     Ok(grouped.id)
@@ -1893,12 +1946,15 @@ fn kept_where_it_was(
         return Ok(None);
     };
     let sleeve = sleeve_key(title, folder);
+
     if !naming.contains(&sleeve) {
         return Ok(None);
     }
+
     let Some(was) = album_of_the_row(tx, record)? else {
         return Ok(None);
     };
+
     for key in naming {
         match album_keyed(tx, key)? {
             Some(named) if *key != sleeve || named == was => return Ok(None),
@@ -2429,6 +2485,7 @@ pub(crate) fn index_what_is_sung(
 pub(crate) fn sung_words(text: &str) -> String {
     let mut words = String::with_capacity(text.len());
     let mut closing = None;
+
     for letter in text.chars() {
         match (closing, letter) {
             (Some(close), _) if letter == close => closing = None,
@@ -2459,6 +2516,7 @@ pub(crate) fn reindex_the_tracks_of(tx: &Transaction<'_>, artist: i64) -> Result
               WHERE t.artist_id = ?1",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held: Vec<Indexable> = statement
         .query_map(params![artist], |row| {
             Ok(Indexable {
@@ -2471,6 +2529,7 @@ pub(crate) fn reindex_the_tracks_of(tx: &Transaction<'_>, artist: i64) -> Result
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     drop(statement);
 
     for track in held {
@@ -2531,6 +2590,7 @@ pub(crate) fn reindex_the_tracks_on(tx: &Transaction<'_>, album: i64) -> Result<
               WHERE t.album_id = ?1",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held: Vec<(Indexable, Option<i64>)> = statement
         .query_map(params![album], |row| {
             Ok((
@@ -2546,6 +2606,7 @@ pub(crate) fn reindex_the_tracks_on(tx: &Transaction<'_>, album: i64) -> Result<
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     drop(statement);
 
     for (track, artist) in held {
@@ -2578,6 +2639,7 @@ fn genres_of_the_artist(tx: &Transaction<'_>, artist: Option<i64>) -> Result<Vec
     let mut statement = tx
         .prepare("SELECT name FROM artist_genres WHERE artist_id = ?1 ORDER BY weight DESC, name")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let named = statement
         .query_map(params![artist], |row| row.get::<_, String>(0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -2588,6 +2650,7 @@ fn genres_of_the_artist(tx: &Transaction<'_>, artist: Option<i64>) -> Result<Vec
 
 fn indexed_genre(tagged: Option<&str>, given: &[String]) -> String {
     let mut named: Vec<&str> = Vec::with_capacity(given.len() + 1);
+
     named.extend(tagged.map(str::trim).filter(|genre| !genre.is_empty()));
     for genre in given {
         let genre = genre.trim();
@@ -2631,6 +2694,7 @@ pub fn path_of(text: &str) -> PathBuf {
 
 pub fn year(date: &str) -> Option<i64> {
     let digits: String = date.chars().take_while(char::is_ascii_digit).collect();
+
     if !DATE_DIGITS.contains(&digits.len()) {
         return None;
     }
@@ -2724,6 +2788,7 @@ impl NamedAlike<'_> {
     fn first_words(&self) -> Vec<String> {
         let title = bare(self.title);
         let mut asked = vec![title_words(title), words_of_a_name(title).join(" ")];
+
         asked.dedup();
         asked
     }
@@ -2748,6 +2813,7 @@ fn candidate_at(
     let title: String = row.get(5)?;
     let credit: Option<String> = row.get(6)?;
     let key: Option<String> = row.get(7)?;
+
     if !song.stood_for_by(&title, credit.as_deref(), key.as_deref())
         || !song.lasts_as_long_as(row.get(8)?, row.get(9)?)
     {
@@ -2786,23 +2852,28 @@ pub(crate) fn held_named_alike(
         rating: rating_in_the_title(title),
         title,
     };
+
     if song.bare.is_empty() || song.lead.is_empty() {
         return Ok(Vec::new());
     }
+
     let mut found: AHashMap<TrackId, Candidate> = AHashMap::new();
     let lead_key = folded_letters(lead.trim());
     let first_words = song.first_words();
     let length_secs = song.length.as_secs_f64();
     let slack_secs =
         A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY.as_secs_f64() + LENGTH_PREFILTER_SLACK_SECS;
+
     let asked = first_words
         .iter()
         .map(|words| (HELD_BY_THEIR_FIRST_WORDS, words))
         .chain([(HELD_BY_THEIR_ARTIST, &lead_key)]);
+
     for (sql, value) in asked {
         let mut statement = connection
             .prepare_cached(sql)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let candidates = statement
             .query_map(params![value, length_secs, slack_secs], |row| {
                 candidate_at(row, &song)
@@ -2815,6 +2886,7 @@ pub(crate) fn held_named_alike(
     }
 
     let mut held: Vec<Candidate> = found.into_values().collect();
+
     held.sort_by_key(|held| (held.shown_last, held.a_lesser_copy, held.alike.track));
     Ok(held.into_iter().map(|held| held.alike).collect())
 }
@@ -2861,6 +2933,7 @@ mod tests {
 
     fn laid_out() -> Connection {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
         crate::schema::lay_out(&connection).expect("the schema applies");
         connection
@@ -2891,6 +2964,7 @@ mod tests {
     #[test]
     fn a_lyric_goes_with_the_track_that_held_its_key_and_stays_where_one_holds_it_again() {
         let mut connection = laid_out();
+
         connection
             .execute_batch(
                 "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec,
@@ -2916,6 +2990,7 @@ mod tests {
             .expect("a catalog whose tracks moved and went");
 
         let transaction = connection.transaction().expect("a write");
+
         sweep_orphans(&transaction).expect("the sweep");
         transaction.commit().expect("the sweep is kept");
 
@@ -2942,6 +3017,7 @@ mod tests {
     #[test]
     fn a_held_copy_is_looked_for_along_the_indexes_of_its_words_and_its_artist() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         crate::schema::configure(&connection, crate::schema::Role::Writing).expect("the pragmas");
         crate::schema::lay_out(&connection).expect("the schema applies");
 
@@ -2964,7 +3040,9 @@ mod tests {
     #[test]
     fn a_cover_is_owed_inside_the_write_and_read_only_once_it_is_over() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
+
         let tx = connection.transaction().expect("a transaction");
         let mut cache = Cache::default();
         let pictured = |path: &str| TrackRecord {
@@ -2983,6 +3061,7 @@ mod tests {
             true,
         )
         .expect("the album is stored");
+
         album(
             &tx,
             &mut cache,
@@ -2994,6 +3073,7 @@ mod tests {
         )
         .expect("the album is stored");
         album(&tx, &mut cache, ALBUM, None, None, &dated(None), true).expect("the album is stored");
+
         let owed = cache.take_owed_covers();
 
         assert_eq!(
@@ -3004,20 +3084,27 @@ mod tests {
             ]
         );
         assert!(cache.take_owed_covers().0.is_empty());
+
         let read = owed.read();
+
         assert!(read.is_empty(), "a file that is not there gave a cover");
+
         land_covers(&tx, &mut cache, read).expect("nothing to land lands");
+
         assert!(!cache.covered.contains(&id));
     }
 
     #[test]
     fn an_artist_taken_over_hands_its_dismissed_releases_to_the_one_that_keeps() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch("PRAGMA foreign_keys = ON;")
             .expect("foreign keys are kept");
+
         let tx = connection.transaction().expect("a transaction");
+
         tx.execute_batch(
             "INSERT INTO artists (id, key, name) VALUES (1, 'sigur ros', 'Sigur Ros');
              INSERT INTO artists (id, key, name) VALUES (2, 'sigur rós', 'Sigur Rós');
@@ -3036,12 +3123,15 @@ mod tests {
                     .collect::<rusqlite::Result<_>>()
             })
             .expect("the dismissals read");
+
         assert_eq!(held, vec![2]);
     }
 
     fn year_of(scanned: [Option<&str>; 2]) -> Option<i64> {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
+
         let tx = connection.transaction().expect("a transaction");
         let mut cache = Cache::default();
 
@@ -3065,7 +3155,9 @@ mod tests {
             spreads.windows(2).all(|pair| pair[0] != pair[1]),
             "two artists next to each other fall due together: {spreads:?}"
         );
+
         let first_half = spreads.iter().filter(|one| **one < spread / 2).count();
+
         assert!(
             (16..=48).contains(&first_half),
             "the artists bunch at one end of the spread: {first_half} of 64"
@@ -3081,10 +3173,12 @@ mod tests {
 
     fn billed_to(names: [&str; 2]) -> (Connection, Vec<(String, String)>) {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
         {
             let tx = connection.transaction().expect("a transaction");
             let mut cache = Cache::default();
+
             for name in names {
                 artist(&tx, &mut cache, Billing::named(name, None)).expect("the artist is stored");
             }
@@ -3131,6 +3225,7 @@ mod tests {
     fn folding_a_name_twice_says_what_folding_it_once_said() {
         for name in ["Marcin Przybyłowicz", "Björk", "Straße", "細野晴臣", "ΑΒΓ"] {
             let once = folded_letters(name);
+
             assert_eq!(
                 folded_letters(&once),
                 once,
@@ -3161,6 +3256,7 @@ mod tests {
     #[test]
     fn a_catalog_keyed_before_the_fold_is_folded_back_into_one_artist_when_it_is_opened() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -3229,6 +3325,7 @@ mod tests {
     #[test]
     fn the_artists_are_read_for_folding_only_while_a_step_has_left_the_fold_owed() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -3238,6 +3335,7 @@ mod tests {
                  DROP TABLE artists_fold_wanted;",
             )
             .expect("a catalog keyed the old way, its fold not owed");
+
         let marked = |connection: &Connection| {
             connection
                 .query_row(
@@ -3254,6 +3352,7 @@ mod tests {
         connection
             .execute_batch("CREATE TABLE artists_fold_wanted (since INTEGER) STRICT;")
             .expect("a step owes the fold");
+
         assert_eq!(
             reconcile_artists(&mut connection).expect("the artists reconcile"),
             1
@@ -3265,6 +3364,7 @@ mod tests {
     #[test]
     fn an_artist_folded_into_another_hands_on_its_favourite_and_its_portrait() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -3298,6 +3398,7 @@ mod tests {
                 )
                 .expect("the artist that was kept")
         };
+
         assert_eq!(held(1), (Some(500), Some(vec![0x89]), Some(1)));
         assert_eq!(held(3), (Some(700), Some(vec![0x01]), Some(0)));
     }
@@ -3305,6 +3406,7 @@ mod tests {
     #[test]
     fn the_tracks_of_a_folded_artist_are_found_by_every_genre_it_now_holds() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -3325,7 +3427,9 @@ mod tests {
                       44100, 2, 0, 0, 1, 0, 0, 0);",
             )
             .expect("a catalog keyed the old way");
+
         let tx = connection.transaction().expect("a transaction");
+
         reindex_the_tracks_of(&tx, 1).expect("the first artist's tracks index");
         reindex_the_tracks_of(&tx, 2).expect("the second artist's tracks index");
         tx.commit().expect("the index commits");
@@ -3344,6 +3448,7 @@ mod tests {
                 })
                 .expect("the index answers")
         };
+
         assert_eq!(found("folk"), [10, 20]);
         assert_eq!(found("soundtrack"), [10, 20]);
     }

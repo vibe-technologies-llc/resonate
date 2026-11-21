@@ -67,6 +67,7 @@ impl Heard {
             .into_iter()
             .next()
             .ok_or(AudioError::NoSink)?;
+
         let channels = stream.physical_format().map_err(open)?.channels();
         let hz = device.nominal_rate().map_err(open)?;
         let rate = (hz.is_finite() && hz >= 1.0)
@@ -86,6 +87,7 @@ impl Heard {
     fn raw_samples_for(&self, clip_samples: usize) -> usize {
         let clip_frames = clip_samples / HEARD_IN_CHANNELS;
         let device_hz = self.rate.hz() as usize;
+
         let frames = clip_frames.saturating_mul(device_hz) / HEARD_AT.hz() as usize;
         frames
             .saturating_add(device_hz.saturating_mul(HEARD_FOR_LONGER_THAN_ASKED_SECONDS))
@@ -117,6 +119,7 @@ struct Carrying {
 impl Carrying {
     fn carry(&mut self) {
         let heard = self.raw.heard_since(self.carried);
+
         self.carried += heard.len();
         if !heard.is_empty() {
             self.recorder.admit(&self.conforming.conformed(&heard));
@@ -137,6 +140,7 @@ fn hearing(
         Ok(conforming) => conforming,
         Err(_) => {
             let _ = ready.send(Err(AudioError::FormatRefused));
+
             return;
         }
     };
@@ -145,6 +149,7 @@ fn hearing(
         device: Some(heard.device.id()),
         format: Format::new(f64::from(heard.rate.hz()), heard.channels, Word::Float32),
     };
+
     let unit = Unit::hearing(
         shape,
         Box::new(Raw(Recorder::admitting(Arc::clone(&raw)))),
@@ -163,6 +168,7 @@ fn hearing(
         Ok(unit) => unit,
         Err(error) => {
             let _ = ready.send(Err(error));
+
             return;
         }
     };
@@ -173,13 +179,16 @@ fn hearing(
         conforming,
         recorder,
     };
+
     while stopped.recv_timeout(CONFORMED_EVERY) == Err(RecvTimeoutError::Timeout) {
         carrying.carry();
         if !heard.device.is_alive() {
             lost.store(true, Ordering::Release);
         }
     }
+
     let _ = unit.stop();
+
     carrying.carry();
 }
 
@@ -189,6 +198,7 @@ impl Capture {
         let (stopping, stopped) = mpsc::channel();
         let (ready, opened) = mpsc::channel();
         let lost = Arc::new(AtomicBool::new(false));
+
         let thread = thread::Builder::new()
             .name("resonate-listen-capture".into())
             .spawn({

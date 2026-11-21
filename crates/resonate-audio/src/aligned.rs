@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 const WORD_BYTES: usize = 4;
@@ -13,6 +13,7 @@ pub fn left_aligned(window: &mut [u8]) {
     let (words, _) = window.as_chunks_mut::<WORD_BYTES>();
     for word in words {
         let shifted = i32::from_le_bytes(*word) << LEFT_ALIGNED_BY_BITS;
+
         *word = shifted.to_le_bytes();
     }
 }
@@ -33,6 +34,7 @@ mod tests {
     #[test]
     fn twenty_four_bits_sit_against_the_top_of_their_word() {
         let mut window = Vec::new();
+
         for word in [1_i32, -1, 0x7F_FFFF, -0x80_0000] {
             window.extend_from_slice(&word.to_le_bytes());
         }

@@ -19,6 +19,7 @@ pub fn encoded(path: &Path) -> Cow<'_, str> {
     }
 
     let mut text = String::with_capacity(path.as_os_str().len());
+
     for chunk in os_bytes::bytes_of(path.as_os_str()).utf8_chunks() {
         for letter in chunk.valid().chars() {
             if letter == ESCAPE {
@@ -84,6 +85,7 @@ pub fn decoded(text: &str) -> PathBuf {
 
     let mut bytes = Vec::with_capacity(text.len());
     let mut letters = text.chars().peekable();
+
     while let Some(letter) = letters.next() {
         if letter != ESCAPE {
             push_letter(&mut bytes, letter);
@@ -100,12 +102,14 @@ pub fn decoded(text: &str) -> PathBuf {
 
 fn push_letter(bytes: &mut Vec<u8>, letter: char) {
     let mut buffer = [0; 4];
+
     bytes.extend_from_slice(letter.encode_utf8(&mut buffer).as_bytes());
 }
 
 fn byte_after_escape(letters: &mut Peekable<Chars<'_>>) -> Option<u8> {
     let mut ahead = letters.clone();
     let mut value = 0;
+
     for _ in 0..HEX_DIGITS {
         value = value * HEX_RADIX + ahead.next()?.to_digit(HEX_RADIX)?;
     }

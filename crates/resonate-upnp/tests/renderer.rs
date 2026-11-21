@@ -126,6 +126,7 @@ impl Heard {
                 .map(|began| began.elapsed())
                 .unwrap_or_default();
         }
+
         let Some(per_second) = self
             .fetched
             .get(BYTES_A_SECOND_AT..BYTES_A_SECOND_AT + 4)
@@ -161,11 +162,15 @@ impl Fake {
         }));
 
         let searched = Arc::clone(&heard);
+
         thread::spawn(move || answer_searches(&ssdp, described_at, &searched));
+
         let asked = Arc::clone(&heard);
+
         thread::spawn(move || {
             for stream in http.incoming().flatten() {
                 let asked = Arc::clone(&asked);
+
                 thread::spawn(move || answer(stream, &asked));
             }
         });
@@ -206,6 +211,7 @@ impl Fake {
                 since.elapsed() < WAITED_AT_MOST,
                 "waited too long for {what}"
             );
+
             thread::sleep(LOOKS_EVERY);
         }
     }
@@ -215,11 +221,14 @@ fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr, heard: &Mutex<Hea
     let mut buffer = [0; 2048];
     while let Ok((read, from)) = ssdp.recv_from(&mut buffer) {
         let asked = String::from_utf8_lossy(&buffer[..read]).into_owned();
+
         if !asked.starts_with("M-SEARCH") || !asked.contains("device:MediaRenderer:1") {
             continue;
         }
+
         let udn = {
             let mut held = heard.lock();
+
             held.searches += 1;
             held.udn.unwrap_or(UDN)
         };
@@ -262,6 +271,7 @@ fn description(openhome: bool, udn: &str) -> String {
 fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
     let mut held = Vec::new();
     let mut buffer = [0; 4096];
+
     let head_ends = loop {
         if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
             break at + 4;
@@ -273,7 +283,9 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
     };
     let head = String::from_utf8_lossy(&held[..head_ends]).into_owned();
     let mut lines = head.lines();
+
     let mut first = lines.next().unwrap_or_default().split(' ');
+
     let method = first.next().unwrap_or_default().to_owned();
     let path = first.next().unwrap_or_default().to_owned();
     let header = |name: &str| {
@@ -289,12 +301,14 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         .and_then(|length| length.parse().ok())
         .unwrap_or(0);
     let mut body = held[head_ends..].to_vec();
+
     while body.len() < length {
         match stream.read(&mut buffer) {
             Ok(0) | Err(_) => return,
             Ok(read) => body.extend_from_slice(&buffer[..read]),
         }
     }
+
     let body = String::from_utf8_lossy(&body).into_owned();
 
     if method == "GET" && path == "/device/description.xml" {
@@ -302,14 +316,17 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
             let held = heard.lock();
             (held.profile.openhome, held.udn.unwrap_or(UDN))
         };
+
         let description = description(openhome, udn);
         let (first, second) = description.split_at(description.len() / 2);
+
         let chunked = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/xml\r\nTransfer-Encoding: chunked\r\n\r\n{:x}\r\n{first}\r\n{:x}\r\n{second}\r\n0\r\n\r\n",
             first.len(),
             second.len()
         );
         let _ = stream.write_all(chunked.as_bytes());
+
         return;
     }
 
@@ -321,8 +338,10 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
                 .map(|(_, action)| action.to_owned())
         })
         .unwrap_or_default();
+
     if path.starts_with("/oh/") {
         heard.lock().openhome.push((action.clone(), body.clone()));
+
         let arguments = match action.as_str() {
             "Characteristics" => "<VolumeMax>50</VolumeMax><VolumeUnity>25</VolumeUnity>",
             "Volume" => "<Value>20</Value>",
@@ -336,6 +355,7 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
             envelope.len()
         );
         let _ = stream.write_all(answer.as_bytes());
+
         return;
     }
     heard.lock().calls.push((action.clone(), body.clone()));
@@ -348,6 +368,7 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
         "GetVolume" => "<CurrentVolume>40</CurrentVolume>".to_owned(),
         "SetAVTransportURI" => {
             let mut heard = heard.lock();
+
             heard.offered = between(&body, "<CurrentURI>", "</CurrentURI>");
             heard.undecodable = false;
             if let Some(offered) = heard.offered.clone() {
@@ -381,6 +402,7 @@ fn answer(mut stream: TcpStream, heard: &Arc<Mutex<Heard>>) {
             } else {
                 held.heard_for()
             };
+
             drop(held);
             format!("<Track>1</Track><RelTime>{}</RelTime>", clock(heard_for))
         }
@@ -401,11 +423,13 @@ fn shape_of(fetched: &[u8]) -> Option<(u32, u16)> {
         let info = fetched.get(18..21)?;
         let rate = u32::from(info[0]) << 12 | u32::from(info[1]) << 4 | u32::from(info[2]) >> 4;
         let channels = u16::from((info[2] >> 1) & 0b111) + 1;
+
         return Some((rate, channels));
     }
     if fetched.starts_with(b"RIFF") {
         let channels = u16::from_le_bytes([*fetched.get(22)?, *fetched.get(23)?]);
         let rate = u32::from_le_bytes(fetched.get(24..28)?.try_into().ok()?);
+
         return Some((rate, channels));
     }
     None
@@ -431,9 +455,11 @@ fn clock(heard: Duration) -> String {
 fn fetch(heard: &Arc<Mutex<Heard>>) {
     let offered = {
         let mut heard = heard.lock();
+
         let Some(offered) = heard.offered.clone() else {
             return;
         };
+
         if heard.fetching.as_ref() == Some(&offered) {
             return;
         }
@@ -444,22 +470,27 @@ fn fetch(heard: &Arc<Mutex<Heard>>) {
         offered
     };
     let heard = Arc::clone(heard);
+
     thread::spawn(move || {
         let rest = offered.strip_prefix("http://").expect("an http address");
         let (authority, path) = rest.split_at(rest.find('/').expect("a path"));
         let mut stream = TcpStream::connect(authority).expect("the stream server answers");
+
         stream
             .write_all(format!("GET {path} HTTP/1.1\r\nHost: {authority}\r\n\r\n").as_bytes())
             .expect("the fetch is asked");
+
         let mut held = Vec::new();
         let mut buffer = [0; 4096];
         let mut head_ends = None;
+
         loop {
             let read = match stream.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(read) => read,
             };
             let mut heard = heard.lock();
+
             if heard.fetching.as_ref() != Some(&offered) {
                 return;
             }
@@ -474,11 +505,13 @@ fn fetch(heard: &Arc<Mutex<Heard>>) {
                 held.extend_from_slice(&buffer[..read]);
                 if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
                     assert!(held.starts_with(b"HTTP/1.1 200 OK\r\n"));
+
                     head_ends = Some(at + 4);
                     heard.fetched.extend_from_slice(&held[at + 4..]);
                 }
             }
         }
+
         let mut heard = heard.lock();
         if heard.fetching.as_ref() == Some(&offered) {
             heard.fetch_ended = true;
@@ -550,6 +583,7 @@ struct Counting {
 impl AudioSource for Counting {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         let filled = dst.len().min(self.left);
+
         for byte in &mut dst[..filled] {
             *byte = self.next;
             self.next = self.next.wrapping_add(1);
@@ -573,6 +607,7 @@ fn stereo_sixteen() -> StreamSpec {
 
 fn the_renderer(network: &Network) -> SinkInfo {
     let sinks = network.sinks();
+
     assert_eq!(
         sinks.len(),
         1,
@@ -602,9 +637,13 @@ fn a_renderer_answering_the_search_is_described_and_listed_as_a_sink() {
         ChannelLayout::Stereo,
         SampleFormat::F32
     )));
+
     let port = sink.port.expect("a renderer names where it is");
+
     assert_eq!(port.hardware_volume, HardwareVolume::Always);
+
     let volume = Volume::heard_at(port.volume.expect("the renderer's volume was read"));
+
     assert!((volume.get() - 0.4).abs() < 1e-4);
     assert_eq!(
         fake.heard.lock().actions(),
@@ -641,12 +680,15 @@ fn a_stream_on_a_renderer_is_offered_by_address_played_paused_drained_and_stoppe
             }),
         )
         .expect("the renderer takes the stream");
+
     stream.set_active(true).expect("plays");
     fake.until("the whole stream to be fetched", |heard| {
         heard.fetched.len() >= WAVE_HEADER_BYTES + half_a_second
     });
     stream.drain().expect("drains");
+
     let drained = drained_within(stream.events());
+
     stream.set_active(false).expect("pauses");
     fake.until("the renderer to be paused", |heard| {
         heard.body_of("Pause").is_some()
@@ -663,6 +705,7 @@ fn a_stream_on_a_renderer_is_offered_by_address_played_paused_drained_and_stoppe
     });
 
     let heard = fake.heard.lock();
+
     assert_eq!(drained, Some(StreamEvent::Drained));
     assert_eq!(
         heard.actions(),
@@ -676,12 +719,16 @@ fn a_stream_on_a_renderer_is_offered_by_address_played_paused_drained_and_stoppe
             "Stop"
         ]
     );
+
     let offered = heard.offered.as_deref().expect("an address was offered");
+
     assert!(
         offered.starts_with("http://127.0.0.1:"),
         "offered {offered}"
     );
+
     let set = heard.body_of("SetAVTransportURI").expect("set");
+
     assert!(set.contains("protocolInfo=&quot;http-get:*:audio/wav:*&quot;"));
     assert!(set.contains("Songs &amp;amp; &amp;lt;Sounds&amp;gt;"));
     assert!(
@@ -708,17 +755,20 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-upnp-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self { root }
     }
 
     fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, bytes).expect("a writable temporary file");
         path
     }
@@ -732,6 +782,7 @@ impl Drop for Tree {
 
 fn wave_file(pcm: &[u8]) -> Vec<u8> {
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
     file.extend_from_slice(b"WAVEfmt ");
     file.extend_from_slice(&16_u32.to_le_bytes());
@@ -749,9 +800,11 @@ fn wave_file(pcm: &[u8]) -> Vec<u8> {
 
 fn music(frames: usize) -> Vec<u8> {
     let mut pcm = Vec::with_capacity(frames * STRIDE);
+
     for frame in 0..frames {
         let left = 1_000 + (frame * 37 % 20_000) as i16;
         let right = -1_000 - (frame * 53 % 20_000) as i16;
+
         pcm.extend_from_slice(&left.to_le_bytes());
         pcm.extend_from_slice(&right.to_le_bytes());
     }
@@ -791,6 +844,7 @@ fn finished(player: &Player) {
             }
             Ok(_) | Err(_) => {}
         }
+
         assert!(since.elapsed() < WAITED_AT_MOST, "the song never finished");
     }
 }
@@ -806,6 +860,7 @@ fn a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit() {
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3 / 4);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&network);
 
@@ -816,6 +871,7 @@ fn a_song_played_through_the_engine_to_a_renderer_reaches_it_bit_for_bit() {
     });
 
     let heard = fake.heard.lock();
+
     assert!(heard.actions().starts_with(&[
         "GetProtocolInfo",
         "GetVolume",
@@ -831,6 +887,7 @@ fn a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3 / 2);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&network);
 
@@ -838,13 +895,17 @@ fn a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit
     fake.until("half a second to be fetched", |heard| {
         heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(500))
     });
+
     let paused_at = Instant::now();
+
     player.send(Command::Pause).expect("pauses");
     fake.until("the renderer to be paused", |heard| {
         heard.body_of("Pause").is_some()
     });
+
     let pausing_took = paused_at.elapsed();
     let turned_at = Instant::now();
+
     player
         .send(Command::SetVolume(Volume::new(0.5).expect("a volume")))
         .expect("turns");
@@ -853,7 +914,9 @@ fn a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit
             .body_of("SetVolume")
             .is_some_and(|body| body.contains("<DesiredVolume>50</DesiredVolume>"))
     });
+
     let turning_took = turned_at.elapsed();
+
     player.send(Command::Play).expect("plays on");
     finished(&player);
     fake.until("the fetch to take the whole song", |heard| {
@@ -861,6 +924,7 @@ fn a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit
     });
 
     let heard = fake.heard.lock();
+
     assert!(
         pausing_took < SOONER_THAN,
         "the pause took {pausing_took:?} to reach the renderer"
@@ -870,9 +934,11 @@ fn a_pause_and_a_volume_change_reach_a_renderer_at_once_and_the_song_resumes_bit
         "the volume took {turning_took:?} to reach the renderer"
     );
     assert_eq!(heard.offers.len(), 1, "a pause asked for a new address");
+
     let actions = heard.actions();
     let paused = actions.iter().position(|action| *action == "Pause");
     let played_again = actions.iter().rposition(|action| *action == "Play");
+
     assert!(paused < played_again, "{actions:?}");
 }
 
@@ -883,6 +949,7 @@ fn a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_la
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&network);
     let lands_at = Duration::from_secs(2);
@@ -891,7 +958,9 @@ fn a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_la
     fake.until("a quarter second to be fetched", |heard| {
         heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(250))
     });
+
     let sought_at = Instant::now();
+
     player
         .send(Command::Seek(Frames::from_duration(
             lands_at,
@@ -901,24 +970,31 @@ fn a_seek_on_a_renderer_stops_it_and_offers_a_fresh_address_starting_where_it_la
     fake.until("a second address to be fetched", |heard| {
         heard.offers.len() >= 2 && heard.fetching == heard.offers.last().cloned()
     });
+
     let seeking_took = sought_at.elapsed();
+
     finished(&player);
+
     let rest = &pcm[pcm_bytes(lands_at + PAST_THE_FADE_IN)..];
+
     fake.until("the fetch to take the song from where it landed", |heard| {
         contains(&heard.fetched, rest)
     });
 
     let heard = fake.heard.lock();
+
     assert!(
         seeking_took < SOONER_THAN,
         "the seek took {seeking_took:?} to reach the renderer"
     );
     assert_ne!(heard.offers[0], heard.offers[1]);
+
     let actions = heard.actions();
     let stopped = actions
         .iter()
         .position(|action| *action == "Stop")
         .expect("the renderer was stopped");
+
     assert_eq!(
         actions[stopped..stopped + 3],
         ["Stop", "SetAVTransportURI", "Play"],
@@ -947,6 +1023,7 @@ fn preamped(decibels: f64) -> Arc<Equalisation> {
 fn loudness_of(fetched: &[u8], from: Duration, lasting: Duration) -> f64 {
     let start = WAVE_HEADER_BYTES + pcm_bytes(from);
     let end = start + pcm_bytes(lasting);
+
     let lefts: Vec<f64> = fetched[start..end]
         .as_chunks::<STRIDE>()
         .0
@@ -958,6 +1035,7 @@ fn loudness_of(fetched: &[u8], from: Duration, lasting: Duration) -> f64 {
 
 fn pcm_as_fetched(pcm: &[u8]) -> Vec<u8> {
     let mut fetched = vec![0; WAVE_HEADER_BYTES];
+
     fetched.extend_from_slice(pcm);
     fetched
 }
@@ -978,6 +1056,7 @@ fn an_equaliser_change_dragged_on_a_renderer_restarts_its_stream_once_from_where
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 4);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&network);
     let unchanged = loudness_of(
@@ -990,30 +1069,38 @@ fn an_equaliser_change_dragged_on_a_renderer_restarts_its_stream_once_from_where
     fake.until("a quarter second to be fetched", |heard| {
         heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_millis(250))
     });
+
     let before = loudness_of(
         &fake.heard.lock().fetched,
         PAST_THE_FADE_IN,
         Duration::from_millis(150),
     );
+
     for decibels in [-1.0, -2.0, -3.0, -4.0, -5.0, -6.0] {
         player
             .send(Command::SetEqualisation(preamped(decibels)))
             .expect("equalises");
         thread::sleep(DRAGGED_EVERY);
     }
+
     let dragged_at = Instant::now();
+
     fake.until("a second address to be fetched", |heard| {
         heard.offers.len() >= 2 && heard.fetching == heard.offers.last().cloned()
     });
+
     let restarting_took = dragged_at.elapsed();
+
     fake.until("a second of the fresh address to be fetched", |heard| {
         heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_secs(1))
     });
+
     let after = loudness_of(
         &fake.heard.lock().fetched,
         PAST_THE_FADE_IN * 4,
         Duration::from_millis(500),
     );
+
     thread::sleep(QUIET_FOR);
     player
         .send(Command::SetVolume(Volume::new(0.5).expect("a volume")))
@@ -1023,6 +1110,7 @@ fn an_equaliser_change_dragged_on_a_renderer_restarts_its_stream_once_from_where
     let heard = fake.heard.lock();
     let actions = heard.actions();
     let ratio = after / unchanged;
+
     assert!(
         restarting_took < RESTARTED_WITHIN,
         "the drag took {restarting_took:?} to restart the stream"
@@ -1041,10 +1129,12 @@ fn an_equaliser_change_dragged_on_a_renderer_restarts_its_stream_once_from_where
         (1, 2),
         "a drag or a volume change restarted the stream more than once: {actions:?}"
     );
+
     let stopped = actions
         .iter()
         .position(|action| *action == "Stop")
         .expect("the renderer was stopped");
+
     assert_eq!(
         actions[stopped..stopped + 3],
         ["Stop", "SetAVTransportURI", "Play"],
@@ -1059,6 +1149,7 @@ fn a_replay_gain_change_on_a_renderer_restarts_its_stream_and_the_fresh_address_
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 4);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&network);
     let unchanged = loudness_of(
@@ -1086,15 +1177,18 @@ fn a_replay_gain_change_on_a_renderer_restarts_its_stream_and_the_fresh_address_
     fake.until("a second of the fresh address to be fetched", |heard| {
         heard.fetched.len() >= WAVE_HEADER_BYTES + pcm_bytes(Duration::from_secs(1))
     });
+
     let after = loudness_of(
         &fake.heard.lock().fetched,
         PAST_THE_FADE_IN * 4,
         Duration::from_millis(500),
     );
+
     thread::sleep(QUIET_FOR);
 
     let heard = fake.heard.lock();
     let ratio = after / unchanged;
+
     assert!(
         (0.45..0.56).contains(&ratio),
         "the fresh address was not the song at -6 dB: {ratio}"
@@ -1128,6 +1222,7 @@ fn within(fetched: &[u8], pcm: &[u8]) -> bool {
 
 fn drained_within(events: &Receiver<StreamEvent>) -> Option<StreamEvent> {
     let since = Instant::now();
+
     while since.elapsed() < WAITED_AT_MOST {
         if let Ok(event) = events.recv_timeout(LOOKS_EVERY)
             && event == StreamEvent::Drained
@@ -1155,9 +1250,12 @@ fn decoded(tree: &Tree, flac: &[u8], format: SampleFormat) -> Vec<u8> {
     let path = tree.write("fetched.flac", flac);
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a FLAC stream");
+
     decoder.set_output_format(format);
+
     let mut block = AudioBuffer::empty(StreamSpec::new(info.spec.rate, info.spec.channels, format));
     let mut samples = Vec::new();
+
     while decoder.next_block(&mut block).expect("a decoded block") != DecodeStatus::EndOfStream {
         samples.extend_from_slice(block.as_bytes());
     }
@@ -1194,6 +1292,7 @@ impl Pattern {
 
     fn expected(channels: u32, frames: u32) -> Vec<u8> {
         let mut bytes = Vec::new();
+
         for frame in 0..frames {
             for channel in 0..channels {
                 bytes.extend_from_slice(&Self::word(frame, channel).to_le_bytes());
@@ -1207,9 +1306,11 @@ impl AudioSource for Pattern {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         let stride = self.channels as usize * 4;
         let mut filled = 0;
+
         while filled + stride <= dst.len() && self.frame < self.frames {
             for channel in 0..self.channels {
                 let at = filled + channel as usize * 4;
+
                 dst[at..at + 4].copy_from_slice(&Self::word(self.frame, channel).to_le_bytes());
             }
             filled += stride;
@@ -1276,6 +1377,7 @@ fn a_song_played_to_a_renderer_taking_flac_is_sent_flac_that_decodes_to_the_samp
         Arc::new(Network::start(fake.searching(), FirstSearch::Awaited).expect("searches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3 / 4);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&network);
 
@@ -1285,6 +1387,7 @@ fn a_song_played_to_a_renderer_taking_flac_is_sent_flac_that_decodes_to_the_samp
 
     let heard = fake.heard.lock();
     let offered = heard.offered.as_deref().expect("an address was offered");
+
     assert!(offered.ends_with(".flac"), "offered {offered}");
     assert!(
         heard
@@ -1300,6 +1403,7 @@ fn a_song_played_to_a_renderer_taking_flac_is_sent_flac_that_decodes_to_the_samp
     );
 
     let samples = decoded(&tree, &heard.fetched, SampleFormat::S16);
+
     assert!(within(&samples, &pcm), "the decoded stream lacks the song");
     if let Some(by_the_tool) = decoded_by_the_flac_tool(&tree, &heard.fetched) {
         assert_eq!(by_the_tool, samples, "two decoders disagree on the stream");
@@ -1317,13 +1421,16 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
     });
     let network = Network::start(flac.searching(), FirstSearch::Awaited).expect("searches");
     let sink = the_renderer(&network);
+
     assert!(sink.supports(StreamSpec::new(
         SampleRate::HZ_48000,
         ChannelLayout::Surround51,
         SampleFormat::S24
     )));
+
     let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
     let stream = surround_stream(&backend, &sink, frames).expect("the renderer takes six channels");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     flac.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1331,12 +1438,14 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
 
     let tree = Tree::new();
     let heard = flac.heard.lock();
+
     assert_eq!(&heard.fetched[..4], b"fLaC");
     assert_eq!(
         decoded(&tree, &heard.fetched, SampleFormat::S24),
         expected,
         "the six channels did not come back from the FLAC as they went in"
     );
+
     drop(heard);
 
     let wave = Fake::with(Profile {
@@ -1346,7 +1455,9 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
     let network = Network::start(wave.searching(), FirstSearch::Awaited).expect("searches");
     let sink = the_renderer(&network);
     let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
+
     let stream = surround_stream(&backend, &sink, frames).expect("the renderer takes six channels");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     wave.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1354,6 +1465,7 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
 
     let heard = wave.heard.lock();
     let fetched = &heard.fetched;
+
     assert_eq!(&fetched[..4], b"RIFF");
     assert_eq!(u16::from_le_bytes([fetched[20], fetched[21]]), 0xFFFE);
     assert_eq!(u16::from_le_bytes([fetched[22], fetched[23]]), 6);
@@ -1370,7 +1482,9 @@ fn a_renderer_that_states_channels_is_sent_all_six_of_a_surround_stream_in_flac_
     );
     assert_eq!(&fetched[44..48], &[1, 0, 0, 0]);
     assert_eq!(&fetched[60..64], b"data");
+
     let packed = packed_words(&expected);
+
     assert_eq!(&fetched[EXTENSIBLE_HEADER_BYTES..], packed.as_slice());
 }
 
@@ -1403,8 +1517,11 @@ fn a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_
     let backend = Beside::over(Box::new(NoGraph::new()), Arc::new(network));
 
     let port = sink.port.as_ref().expect("a renderer names where it is");
+
     assert_eq!(port.hardware_volume, HardwareVolume::Always);
+
     let volume = Volume::heard_at(port.volume.expect("the renderer's volume was read"));
+
     assert!(
         (volume.get() - 0.4).abs() < 1e-4,
         "20 steps of 50 are {volume:?}"
@@ -1424,6 +1541,7 @@ fn a_renderer_offering_openhome_volume_is_turned_through_it_and_its_playlist_is_
         .iter()
         .map(|(action, _)| action.as_str())
         .collect();
+
     assert_eq!(
         openhome,
         ["Characteristics", "Volume", "SetVolume", "SetMute"]
@@ -1455,6 +1573,7 @@ fn flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave
         let frames = rate.hz() / 3;
 
         let stream = pattern_stream(&backend, &sink, spec, frames).expect("the renderer takes it");
+
         stream.set_active(true).expect("plays");
         stream.drain().expect("drains");
         fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1462,6 +1581,7 @@ fn flac_carries_twenty_four_bits_up_to_ninety_six_kilohertz_bit_for_bit_and_wave
 
         let tree = Tree::new();
         let heard = fake.heard.lock();
+
         assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]), "{rate:?}");
         assert_eq!(
             decoded(&tree, &heard.fetched, SampleFormat::S24),
@@ -1492,6 +1612,7 @@ fn flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_an
         let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::S24);
 
         let stream = pattern_stream(&backend, &sink, spec, frames).expect("the renderer takes it");
+
         stream.set_active(true).expect("plays");
         stream.drain().expect("drains");
         fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1500,11 +1621,14 @@ fn flac_above_ninety_six_kilohertz_is_sent_where_the_renderer_states_the_rate_an
         let tree = Tree::new();
         let heard = fake.heard.lock();
         let offered = heard.offered.as_deref().expect("an address was offered");
+
         assert!(offered.ends_with(".flac"), "{rate:?} offered {offered}");
         assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]), "{rate:?}");
+
         let streaminfo_rate = (u32::from(heard.fetched[18]) << 12)
             | (u32::from(heard.fetched[19]) << 4)
             | (u32::from(heard.fetched[20]) >> 4);
+
         assert_eq!(
             streaminfo_rate,
             rate.hz(),
@@ -1542,6 +1666,7 @@ fn a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both() {
     let frames = 192_000 / 4;
 
     let stream = pattern_stream(&backend, &sink, spec, frames).expect("the renderer takes it");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1549,9 +1674,12 @@ fn a_rate_flac_cannot_carry_is_sent_as_wave_to_a_renderer_taking_both() {
 
     let heard = fake.heard.lock();
     let offered = heard.offered.as_deref().expect("an address was offered");
+
     assert!(offered.ends_with(".wav"), "offered {offered}");
     assert_eq!(&heard.fetched[..4], b"RIFF");
+
     let packed = packed_words(&Pattern::expected(2, frames));
+
     assert_eq!(&heard.fetched[WAVE_HEADER_BYTES..], packed.as_slice());
 }
 
@@ -1559,6 +1687,7 @@ const FLAC_ALONE: &str = "http-get:*:audio/mpeg:*,http-get:*:audio/flac:*";
 
 fn network_vouching(fake: &Fake, vouched: Vouched) -> Network {
     let network = Network::resting(fake.searching()).expect("rests");
+
     network.vouch(vouched);
     network.look(FirstSearch::Awaited).expect("searches");
     network
@@ -1615,6 +1744,7 @@ fn a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_wh
 
     let stream =
         pattern_stream(&backend, &sink, high_flac(), frames).expect("the renderer takes it");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1623,6 +1753,7 @@ fn a_renderer_taking_flac_alone_is_offered_it_above_ninety_six_kilohertz_only_wh
     let tree = Tree::new();
     let heard = fake.heard.lock();
     let offered = heard.offered.as_deref().expect("an address was offered");
+
     assert!(offered.ends_with(".flac"), "offered {offered}");
     assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]));
     assert_eq!(
@@ -1645,6 +1776,7 @@ fn a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_other
 
     let stream =
         pattern_stream(&backend, &sink, high_flac(), frames).expect("the renderer takes it");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
@@ -1653,6 +1785,7 @@ fn a_vouched_renderer_taking_flac_and_wave_is_sent_flac_at_a_rate_it_would_other
     let tree = Tree::new();
     let heard = fake.heard.lock();
     let offered = heard.offered.as_deref().expect("an address was offered");
+
     assert!(offered.ends_with(".flac"), "offered {offered}");
     assert_eq!(
         decoded(&tree, &heard.fetched, SampleFormat::S24),
@@ -1695,6 +1828,7 @@ fn refused_search() -> Searching {
 fn nobody_listening_at() -> Located {
     let free = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
     let at = free.local_addr().expect("its address");
+
     drop(free);
     Located::parse(&format!("http://{at}/description.xml")).expect("reads")
 }
@@ -1712,9 +1846,12 @@ fn a_renderer_given_by_the_address_of_its_description_is_listed_though_the_searc
     network
         .locate(fake.description_address())
         .expect("a resting network only holds the address");
+
     assert!(network.sinks().is_empty());
     assert!(fake.heard.lock().actions().is_empty());
+
     network.look(FirstSearch::Awaited).expect("looks");
+
     let sink = the_renderer(&network);
 
     assert_eq!(sink.name, NodeName::new(format!("upnp:{UDN}")));
@@ -1729,10 +1866,12 @@ fn a_renderer_given_by_address_stays_through_every_search_that_misses_it_and_is_
     let fake = Fake::start();
     let deaf = Deaf::start();
     let network = Network::resting(deaf.searching(Duration::from_millis(60))).expect("rests");
+
     network
         .locate(fake.description_address())
         .expect("holds the address");
     network.look(FirstSearch::Awaited).expect("looks");
+
     let sink = the_renderer(&network);
 
     thread::sleep(Duration::from_millis(900));
@@ -1759,12 +1898,15 @@ fn an_address_given_to_a_looking_network_lists_the_renderer_at_once_and_forgetti
     )
     .expect("looks");
     let changes = changes_of(&network);
+
     assert!(network.sinks().is_empty());
 
     network
         .locate(fake.description_address())
         .expect("the renderer is described");
+
     let sink = the_renderer(&network);
+
     network.unlocate(&fake.description_address());
 
     assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink.id)));
@@ -1778,10 +1920,12 @@ fn a_renderer_both_found_by_the_search_and_given_by_address_is_listed_once_and_k
  {
     let fake = Fake::start();
     let network = Network::resting(fake.searching()).expect("rests");
+
     network
         .locate(fake.description_address())
         .expect("holds the address");
     network.look(FirstSearch::Awaited).expect("looks");
+
     let sink = the_renderer(&network);
 
     network.unlocate(&fake.description_address());
@@ -1813,6 +1957,7 @@ fn a_network_that_cannot_send_its_search_still_reaches_the_renderers_given_by_ad
     let network = Network::resting(refused_search()).expect("rests");
 
     assert!(network.look(FirstSearch::Awaited).is_err());
+
     network
         .locate(fake.description_address())
         .expect("holds the address");
@@ -1828,14 +1973,18 @@ fn resting_forgets_the_renderers_and_keeps_the_addresses_to_reach_again() {
     let fake = Fake::start();
     let deaf = Deaf::start();
     let network = Network::resting(deaf.searching(Duration::from_secs(3_600))).expect("rests");
+
     network
         .locate(fake.description_address())
         .expect("holds the address");
     network.look(FirstSearch::Awaited).expect("looks");
+
     assert_eq!(network.sinks().len(), 1);
 
     network.rest();
+
     assert!(network.sinks().is_empty());
+
     network.look(FirstSearch::Awaited).expect("looks again");
 
     assert_eq!(the_renderer(&network).description, NAME);
@@ -1845,6 +1994,7 @@ fn resting_forgets_the_renderers_and_keeps_the_addresses_to_reach_again() {
 fn a_network_reaching_addresses_alone_sends_no_search_and_lists_the_renderer_given() {
     let fake = Fake::start();
     let network = Network::resting(fake.searching()).expect("rests");
+
     network
         .locate(fake.description_address())
         .expect("holds the address");
@@ -1852,6 +2002,7 @@ fn a_network_reaching_addresses_alone_sends_no_search_and_lists_the_renderer_giv
     network
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     let sink = the_renderer(&network);
 
     assert_eq!(sink.description, NAME);
@@ -1864,6 +2015,7 @@ fn a_network_reaching_addresses_alone_sends_no_search_and_lists_the_renderer_giv
 fn an_address_given_to_a_network_reaching_addresses_alone_is_reached_at_once_without_a_search() {
     let fake = Fake::start();
     let network = Network::resting(fake.searching()).expect("rests");
+
     network
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
@@ -1880,6 +2032,7 @@ fn an_address_given_to_a_network_reaching_addresses_alone_is_reached_at_once_wit
 fn a_network_reaching_addresses_alone_that_is_asked_to_look_searches_the_network_too() {
     let fake = Fake::start();
     let network = Network::resting(fake.searching()).expect("rests");
+
     network
         .locate(fake.description_address())
         .expect("holds the address");
@@ -1898,19 +2051,25 @@ fn a_network_reaching_addresses_alone_that_is_asked_to_look_searches_the_network
 fn a_network_that_stops_multicasting_keeps_the_renderers_given_by_address_and_drops_the_rest() {
     let heard = Fake::start();
     let given = Fake::start();
+
     given.heard.lock().udn = Some("uuid:renderer-given");
+
     let network = Network::resting(heard.searching()).expect("rests");
+
     network.look(FirstSearch::Awaited).expect("looks");
     network
         .locate(given.description_address())
         .expect("the renderer is described");
+
     assert_eq!(network.sinks().len(), 2);
 
     network.stop_multicasting();
 
     assert!(!network.is_looking());
     assert!(network.is_reaching());
+
     let remaining = network.sinks();
+
     assert_eq!(remaining.len(), 1);
     assert_eq!(remaining[0].name, NodeName::new("upnp:uuid:renderer-given"));
 }
@@ -1919,6 +2078,7 @@ fn a_network_that_stops_multicasting_keeps_the_renderers_given_by_address_and_dr
 fn a_network_with_no_address_that_stops_multicasting_rests() {
     let fake = Fake::start();
     let network = Network::start(fake.searching(), FirstSearch::Awaited).expect("looks");
+
     assert_eq!(network.sinks().len(), 1);
 
     network.stop_multicasting();
@@ -1937,9 +2097,11 @@ fn vouching_for_a_renderer_already_found_offers_it_high_rate_flac_at_once_and_vo
     let network = network_vouching(&fake, Vouched::default());
     let changes = changes_of(&network);
     let before = the_renderer(&network);
+
     assert!(!before.supports(high_flac()));
 
     network.vouch(Vouched::flac_at_any_rate([Udn::new(UDN)]));
+
     let vouched = the_renderer(&network);
 
     assert_eq!(vouched.id, before.id);
@@ -1970,6 +2132,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
     let network = Arc::new(network_vouching(&fake, Vouched::default()));
     let changes = changes_of(&network);
     let before = the_renderer(&network);
+
     assert!(!before.supports(high_flac()));
     assert!(!before.supports(surround(ChannelLayout::Surround51)));
 
@@ -1981,8 +2144,11 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
     );
     assert_eq!(learning.plays(), Plays::from_iter(Trial::ALL));
     assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+
     let learnt = the_renderer(&network);
+
     assert_eq!(learnt.id, before.id);
+
     for spec in [
         high_flac(),
         StreamSpec::new(
@@ -2020,6 +2186,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
     }
     {
         let heard = fake.heard.lock();
+
         assert_eq!(
             stops_and_offers(&heard),
             (8, 8),
@@ -2038,16 +2205,20 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
         Arc::clone(&network) as Arc<dyn Neighbours>,
     );
     let frames = 192_000 / 4;
+
     let stream =
         pattern_stream(&backend, &learnt, high_flac(), frames).expect("the renderer takes it");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
     stream.close().expect("closes");
 
     let tree = Tree::new();
+
     {
         let heard = fake.heard.lock();
+
         assert_eq!(heard.fetched.get(..4), Some(&b"fLaC"[..]));
         assert_eq!(
             decoded(&tree, &heard.fetched, SampleFormat::S24),
@@ -2058,6 +2229,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
 
     let frames = 48_000 / 2;
     let stream = surround_stream(&backend, &learnt, frames).expect("the renderer takes six");
+
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
     fake.until("the second stream's fetch to end once drained", |heard| {
@@ -2068,6 +2240,7 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
     stream.close().expect("closes");
 
     let heard = fake.heard.lock();
+
     assert_eq!(
         decoded(&tree, &heard.fetched, SampleFormat::S24),
         Pattern::expected(6, frames),
@@ -2141,8 +2314,10 @@ fn a_renderer_is_offered_surround_up_to_the_rate_it_played_it_at_and_high_rates_
         learning.verdict_on(Trial::EightChannelsAt96kHz),
         Some(TrialVerdict::Untried)
     );
+
     let learnt = the_renderer(&network);
     let five_one = |rate| StreamSpec::new(rate, ChannelLayout::Surround51, SampleFormat::S24);
+
     assert!(learnt.supports(five_one(SampleRate::HZ_96000)));
     assert!(learnt.supports(five_one(SampleRate::HZ_44100)));
     assert!(!learnt.supports(five_one(SampleRate::HZ_192000)));
@@ -2167,6 +2342,7 @@ fn a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it
         Box::new(NoGraph::new()),
         Arc::clone(&network) as Arc<dyn Neighbours>,
     );
+
     let stream =
         pattern_stream(&backend, &sink, stereo_sixteen(), 44_100).expect("the renderer takes it");
 
@@ -2176,6 +2352,7 @@ fn a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it
     ));
 
     stream.close().expect("closes");
+
     let changes = changes_of(&network);
     let learnt: Learnt = [(sink.name.clone(), Plays::from_iter([Trial::FlacAt192kHz]))]
         .into_iter()

@@ -69,6 +69,7 @@ impl SuggestionsPane {
                 pane.take_what_landed(&library, cx);
             }),
         };
+
         pane.take_what_landed(library, cx);
 
         pane
@@ -78,6 +79,7 @@ impl SuggestionsPane {
         let Some(offered) = library.update(cx, |library, _| library.take_the_offers()) else {
             return;
         };
+
         self.offered = offered;
         cx.notify();
     }
@@ -97,17 +99,21 @@ impl SuggestionsPane {
     fn open(&mut self, query: Option<SavedQuery>, cx: &mut Context<Self>) {
         self.explore.open_playlist(None);
         self.explore.mix_changed();
+
         let Some(query) = query else {
             self.opened = None;
             self._previewing = Task::ready(());
             cx.notify();
             return;
         };
+
         if self.opened.as_ref().is_some_and(|held| held.query == query) {
             return;
         }
+
         let opening = Previewed::opening(query.clone());
         let asked = opening.asked();
+
         self.opened = Some(opening);
         cx.notify();
         self.read_the_preview(query, asked, cx);
@@ -121,11 +127,13 @@ impl SuggestionsPane {
         else {
             return;
         };
+
         self.read_the_preview(query, asked, cx);
     }
 
     fn read_the_preview(&mut self, query: SavedQuery, asked_for: usize, cx: &mut Context<Self>) {
         let catalog = Arc::clone(&self.catalog);
+
         self._previewing = cx.spawn(async move |this, cx| {
             let asked = query.clone();
             let read = cx
@@ -151,6 +159,7 @@ impl SuggestionsPane {
                     }
                 };
                 let still_open = this.opened.as_ref().is_some_and(|held| held.query == query);
+
                 this.library.update(cx, |library, cx| {
                     library.remember(&tracks);
                     if still_open {
@@ -174,6 +183,7 @@ impl RootView {
         let opened = pane.opened.clone();
         let scroll = pane.shelves.clone();
         let has_explore_playlist = pane.explore.opened_playlist().is_some();
+
         if self.explore_enabled(cx)
             && has_explore_playlist
             && let Some(playlist_view) = self.opened_explore_playlist(cx)
@@ -184,6 +194,7 @@ impl RootView {
             && let Some(suggestion) = offered.iter().find(|held| held.query == opened.query)
         {
             let suggestion = suggestion.clone();
+
             return self.opened_suggestion(&suggestion, &opened.tracks, cx);
         }
 
@@ -202,6 +213,7 @@ impl RootView {
             .track_scroll(&scroll);
         let shelved = in_shelf_order(&offered);
         let mut explore_placed = false;
+
         for kind in SuggestionKind::ALL {
             let cards: Vec<AnyElement> = shelved
                 .iter()
@@ -214,6 +226,7 @@ impl RootView {
                         .into_any_element()
                 })
                 .collect();
+
             if !cards.is_empty() {
                 shelves = shelves.child(
                     div()
@@ -434,6 +447,7 @@ impl RootView {
         } else {
             (explore::MixPage::Idle, Vec::new())
         };
+
         let mix_banner = if mix_mode {
             self.mix_explore_banner(&mix_page, mix_offers.len(), cx)
         } else {
@@ -541,7 +555,9 @@ impl RootView {
                             this.suggestions.update(cx, |pane, cx| {
                                 pane.preview_further(range.end, cx);
                             });
+
                             let mut drawn = Vec::new();
+
                             if let Some(entries) = &woven {
                                 for index in range {
                                     let Some(entry) = entries.get(index) else {
@@ -554,6 +570,7 @@ impl RootView {
                                                 .filter(|item| matches!(item, MixEntry::Local(_)))
                                                 .count();
                                             let shift = Shift::Listing(Listed::Suggested);
+
                                             let row = this.track_row(
                                                 &rows,
                                                 local_index,
@@ -573,6 +590,7 @@ impl RootView {
                                                 },
                                                 cx,
                                             );
+
                                             drawn.push(this.marked_where_reached(
                                                 shift,
                                                 local_index,
@@ -594,6 +612,7 @@ impl RootView {
                                     continue;
                                 };
                                 let shift = Shift::Listing(Listed::Suggested);
+
                                 let row = this.track_row(
                                     &rows,
                                     index,
@@ -606,6 +625,7 @@ impl RootView {
                                     },
                                     cx,
                                 );
+
                                 drawn.push(this.marked_where_reached(shift, index, row, cx));
                             }
                             drawn
@@ -662,6 +682,7 @@ impl RootView {
             .saved_playlists()
             .iter()
             .any(|playlist| playlist.query.as_ref() == Some(&suggestion.query));
+
         if saved {
             return kit::mark_when(
                 Press::Greyed,
@@ -671,6 +692,7 @@ impl RootView {
                 "suggestion-card",
             );
         }
+
         let saving = suggestion.query.clone();
         let named = suggestion.name.clone();
 
@@ -678,8 +700,10 @@ impl RootView {
             kit::icon_button(id, Icon::Plus, words::suggestions::save_hint()),
             move |this, _, cx| {
                 cx.stop_propagation();
+
                 let saved = saving.clone();
                 let name = named.clone();
+
                 this.library.update(cx, |library, cx| {
                     library.save_query(name, saved, cx);
                 });
@@ -704,9 +728,11 @@ impl RootView {
             ),
             move |this, window, cx| {
                 let offers = explore_offers.clone();
+
                 this.with_the_rows_of(&queueing, window, cx, move |this, rows, _, cx| {
                     if let Some(offers) = offers.filter(|offers| !offers.is_empty()) {
                         let woven = explore::weave_suggestion_tracks(&rows, offers);
+
                         this.queue_mixed(&woven, Placement::Queued, cx);
                     } else {
                         this.queue(&listed(&rows), Placement::Queued, cx);
@@ -756,9 +782,11 @@ impl RootView {
             ),
             move |this, window, cx| {
                 let offers = explore_offers.clone();
+
                 this.with_the_rows_of(&playing, window, cx, move |this, rows, _, cx| {
                     if let Some(offers) = offers.filter(|offers| !offers.is_empty()) {
                         let woven = explore::weave_suggestion_tracks(&rows, offers);
+
                         this.play_mixed(&woven, 0, false, cx);
                     } else {
                         this.plays_in_order(cx);
@@ -788,9 +816,11 @@ impl RootView {
             ),
             move |this, window, cx| {
                 let offers = explore_offers.clone();
+
                 this.with_the_rows_of(&shuffling, window, cx, move |this, rows, _, cx| {
                     if let Some(offers) = offers.filter(|offers| !offers.is_empty()) {
                         let woven = explore::weave_suggestion_tracks(&rows, offers);
+
                         this.play_mixed(&woven, 0, true, cx);
                     } else {
                         this.play_shuffled(&rows, cx);
@@ -817,6 +847,7 @@ fn in_shelf_order(offered: &[Suggestion]) -> Vec<usize> {
 
 fn measured(suggestion: &Suggestion) -> String {
     let mut parts = vec![words::suggestions::tracks(suggestion.rows)];
+
     if let Some(length) = suggestion.length {
         parts.push(format::spanned(length));
     }
@@ -894,8 +925,11 @@ mod tests {
         for nth in 1..=SONGS {
             folder.tone(&format!("Track {nth}.wav"), 1);
         }
+
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
+
         let ids = library
             .tracks(&TrackQuery::default())
             .expect("the scanned tracks")
@@ -909,6 +943,7 @@ mod tests {
     fn suggestions_shown(cx: &mut TestAppContext, folder: &Folder) -> (Driven, Vec<TrackId>) {
         let (library, ids) = twelve_songs(folder);
         let mut driven = Driven::opened_in(cx, library, folder);
+
         driven.until(|root, cx| !root.offered_in_shelf_order(cx).is_empty());
         driven.click("tab-suggestions");
         driven.until_drawn("suggestion-open-0");
@@ -944,6 +979,7 @@ mod tests {
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
         const TAB_STOPS_AT_MOST: usize = 64;
+
         let root = driven.root.clone();
         (0..TAB_STOPS_AT_MOST).any(|_| {
             driven.cx.simulate_keystrokes("tab");
@@ -996,6 +1032,7 @@ mod tests {
         let (mut driven, ids) = suggestions_shown(cx, &folder);
 
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(
             reached_at(&mut driven),
             Some((Shift::Listing(Listed::Offered), 0))
@@ -1005,6 +1042,7 @@ mod tests {
         driven.until_drawn("suggestions-back");
         until_songs_are_drawn(&mut driven, &ids);
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(
             reached_at(&mut driven),
             Some((Shift::Listing(Listed::Suggested), 0))
@@ -1029,6 +1067,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (mut driven, ids) = suggestions_shown(cx, &folder);
+
         driven.click("suggestion-open-0");
         driven.until_drawn("suggestions-back");
         until_songs_are_drawn(&mut driven, &ids);
@@ -1037,22 +1076,29 @@ mod tests {
             tabbed_onto(&mut driven, "suggestions-back"),
             "tab never reached the way back"
         );
+
         driven.cx.simulate_keystrokes("tab");
+
         assert!(focused_on(&mut driven, "opened-suggestion-play"));
+
         driven.cx.simulate_keystrokes("shift-tab");
+
         assert!(focused_on(&mut driven, "suggestions-back"));
 
         driven.cx.simulate_keystrokes("enter");
         driven.until_drawn("suggestion-open-0");
+
         assert!(driven.cx.debug_bounds("suggestions-back").is_none());
 
         driven.click("suggestion-open-0");
         driven.until_drawn("suggestions-back");
         until_songs_are_drawn(&mut driven, &ids);
+
         assert!(
             tabbed_onto(&mut driven, "opened-suggestion-play"),
             "tab never reached the suggestion's Play"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.until(|root, cx| !root.player.read(cx).queue().is_empty());
 
@@ -1112,6 +1158,7 @@ mod tests {
         for rows in [1, 2, 7, 500] {
             assert!(crate::views::root::somewhere_in(rows) < rows);
         }
+
         assert_eq!(crate::views::root::somewhere_in(0), 0);
     }
 }

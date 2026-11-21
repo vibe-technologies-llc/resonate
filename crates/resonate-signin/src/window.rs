@@ -39,6 +39,7 @@ pub fn sign_in(jar: PathBuf, profile: PathBuf) -> Result<Infallible> {
     resonate_words::speak(resonate_words::negotiated(
         &resonate_words::languages_the_listener_reads(),
     ));
+
     let event_loop = EventLoopBuilder::<Woken>::with_user_event().build();
     let window = WindowBuilder::new()
         .with_title(words::window::title())
@@ -46,6 +47,7 @@ pub fn sign_in(jar: PathBuf, profile: PathBuf) -> Result<Infallible> {
         .build(&event_loop)
         .map_err(|source| Error::Window { source })?;
     let mut context = WebContext::new(Some(profile));
+
     let builder = WebViewBuilder::new_with_web_context(&mut context)
         .with_incognito(THE_ENGINE_KEEPS_NO_PROFILE_OF_OURS)
         .with_url(SIGN_IN_PAGE)
@@ -117,14 +119,17 @@ fn looked(webview: &WebView, jar: &std::path::Path) -> Result<Looked> {
         op: EngineOp::Address,
         source: Box::new(source),
     })?;
+
     if !is_youtube_music(&address) {
         return Ok(Looked::Waiting);
     }
+
     let held = webview.cookies().map_err(|source| Error::Engine {
         op: EngineOp::Cookies,
         source: Box::new(source),
     })?;
     let cookies = kept(held.iter().filter_map(cookie_of).collect());
+
     if !signed_in(&cookies) {
         return Ok(Looked::Waiting);
     }

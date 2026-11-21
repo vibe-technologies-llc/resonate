@@ -110,6 +110,7 @@ impl Listener {
             Ok(playback) => playback,
             Err(error) => {
                 let _ = opened.stop();
+
                 return Err(error);
             }
         };
@@ -124,6 +125,7 @@ impl Listener {
             .map(Capture::stop)
             .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
+
         drop(accompanying);
         drop(tap);
 

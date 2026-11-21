@@ -94,6 +94,7 @@ fn tell_of(link: String, told: &Sender<Followed>) {
 
 pub(crate) fn in_the_window(seats: Seats) {
     let told = seats.told.clone();
+
     *SEATS.lock() = Some(seats);
 
     OFFERING.lock().opened_to(told);
@@ -110,6 +111,7 @@ pub(crate) fn offer(text: &str) -> bool {
         Invited::Party => true,
         Invited::Playlist => one.server.is_some(),
     };
+
     if !invitation_in(text).is_some_and(asks_first) {
         return false;
     }
@@ -161,7 +163,9 @@ pub(crate) fn begin(zone: ZoneId) -> Result<()> {
         seats.time_server.clone(),
     )?;
     let party = Party::host(settings).map_err(Error::Party)?;
+
     leave();
+
     let room = opened(party, player, zone, &seats)?;
 
     *ROOM.lock() = Some(room);
@@ -183,7 +187,9 @@ pub(crate) fn join(code: &str, server: Option<String>, zone: ZoneId) -> Result<(
         seats.time_server.clone(),
     )?;
     let party = Party::join(settings, code).map_err(Error::Party)?;
+
     leave();
+
     let room = opened(party, player, zone, &seats)?;
 
     *ROOM.lock() = Some(room);
@@ -203,6 +209,7 @@ pub(crate) fn accept(text: &str) -> bool {
                 .lock()
                 .as_ref()
                 .and_then(|seats| seats.zones.listed().first().map(|zone| zone.id));
+
             if let Some(zone) = zone {
                 if let Err(error) = join(&invitation.code, invitation.server.clone(), zone) {
                     tracing::warn!(%error, "a party could not be joined");
@@ -292,6 +299,7 @@ pub(crate) fn play_a_request_next(request: PartyRequestId) -> bool {
     }) else {
         return false;
     };
+
     let Some(_claim) = party.claim_a_request(&wanted) else {
         return true;
     };
@@ -300,6 +308,7 @@ pub(crate) fn play_a_request_next(request: PartyRequestId) -> bool {
     };
     let queued = player.queued();
     let id = resonate_engine::unclaimed_id(queued.rows.iter().map(AsRef::as_ref));
+
     let placed = player.send(Command::Insert {
         items: vec![QueueItem {
             id,
@@ -309,6 +318,7 @@ pub(crate) fn play_a_request_next(request: PartyRequestId) -> bool {
         at: Placement::Next,
         play: false,
     });
+
     party.take_a_request(wanted);
 
     placed.is_ok()
@@ -341,6 +351,7 @@ mod tests {
 
         offering.offer("resonate://party/AAAAA".to_owned());
         offering.offer("resonate://party/BBBBB".to_owned());
+
         assert!(heard(&listening).is_empty());
 
         offering.opened_to(told);
@@ -358,6 +369,7 @@ mod tests {
     fn a_link_that_comes_while_the_window_is_open_is_told_at_once() {
         let (told, listening) = unbounded();
         let mut offering = Offering::Waiting(Vec::new());
+
         offering.opened_to(told);
 
         offering.offer(A_PARTY.to_owned());
@@ -373,6 +385,7 @@ mod tests {
         let (told, _closed) = unbounded();
         let (next, listening) = unbounded();
         let mut offering = Offering::Waiting(Vec::new());
+
         offering.opened_to(told);
 
         offering.closed();
@@ -401,7 +414,9 @@ mod tests {
     fn a_shared_list_naming_a_server_is_told_to_the_window_with_the_server_it_names() {
         let (told, listening) = unbounded();
         let mut offering = Offering::Waiting(Vec::new());
+
         offering.opened_to(told);
+
         let link = "resonate://shared/E-ABCDE?server=wss%3A%2F%2Fstranger.example%2F";
 
         offering.offer(link.to_owned());

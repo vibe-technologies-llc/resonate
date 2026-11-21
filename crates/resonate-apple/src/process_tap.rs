@@ -53,8 +53,10 @@ struct Tapping {
 impl Tapping {
     fn of_this_system() -> Option<Self> {
         AnyClass::get(TAP_CLASS)?;
+
         let create = unsafe { dlsym(EVERY_LOADED_IMAGE, CREATE_TAP.as_ptr()) };
         let destroy = unsafe { dlsym(EVERY_LOADED_IMAGE, DESTROY_TAP.as_ptr()) };
+
         if create.is_null() || destroy.is_null() {
             return None;
         }
@@ -88,21 +90,26 @@ impl DesktopTap {
                 &NSArray::new(),
             )
         };
+
         unsafe {
             described.setName(&NSString::from_str(TAPPED_NAME));
             described.setPrivate(true);
         }
+
         let tap_uid = unsafe { described.UUID() }.UUIDString().to_string();
 
         let mut tap = 0;
+
         OsStatus::checked(unsafe { (tapping.create)(Retained::as_ptr(&described), &raw mut tap) })
             .map_err(Error::refused(Op::CreateTap))?;
 
         let description = aggregate_over(&output_uid, &tap_uid);
         let mut aggregate = 0;
+
         let made = OsStatus::checked(unsafe {
             AudioHardwareCreateAggregateDevice(as_cf(&description), NonNull::from(&mut aggregate))
         });
+
         if let Err(status) = made {
             unsafe { (tapping.destroy)(tap) };
             return Err(Error::refused(Op::CreateAggregate)(status));

@@ -180,7 +180,7 @@ pub struct Record {
     pub blob: Option<Vec<u8>>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Refusal {
     Version,
     Token,
@@ -415,6 +415,7 @@ impl Writer {
     pub fn number(&mut self, mut value: u64) {
         loop {
             let low = (value & 0x7f) as u8;
+
             value >>= 7;
             if value == 0 {
                 self.0.push(low);
@@ -543,6 +544,7 @@ impl Writer {
     pub fn print(&mut self, shared: &SharedPrint) {
         let encoded = shared.print.encoded();
         let end = encoded.len().min(LONGEST_SHARED_PRINT);
+
         self.bytes(&encoded.as_bytes()[..end]);
         self.number(shared.print.length().as_secs());
         match &shared.recognition {
@@ -569,11 +571,14 @@ impl Writer {
 
     pub fn lyricsfile(&mut self, lyricsfile: &SharedLyricsfile) {
         let end = lyricsfile.text.floor_char_boundary(LONGEST_SHARED_LYRICS);
+
         self.bytes(&lyricsfile.text.as_bytes()[..end]);
         self.flag(lyricsfile.synced);
+
         let end = lyricsfile
             .document
             .floor_char_boundary(LARGEST_SHARED_LYRICSFILE);
+
         self.bytes(&lyricsfile.document.as_bytes()[..end]);
     }
 
@@ -581,7 +586,9 @@ impl Writer {
         match answer {
             Answer::Lyrics(lyrics) => {
                 self.byte(ANSWER_LYRICS);
+
                 let end = lyrics.text.floor_char_boundary(LONGEST_SHARED_LYRICS);
+
                 self.bytes(&lyrics.text.as_bytes()[..end]);
                 self.flag(lyrics.synced);
             }
@@ -604,7 +611,9 @@ impl Writer {
                 self.optional_byte(study.dynamic_range);
                 self.number(study.clipped);
                 self.flag(study.mono_as_stereo);
+
                 let end = study.band_levels.len().min(BAND_LEVELS_AT_MOST);
+
                 self.bytes(&study.band_levels[..end]);
             }
             Answer::Release(release) => {
@@ -615,7 +624,9 @@ impl Writer {
                 self.byte(ANSWER_BAND_PEAKS);
                 self.whole_file(shared.file);
                 self.number(u64::from(shared.judged_under));
+
                 let end = shared.peaks.len().min(BAND_PEAKS_AT_MOST);
+
                 self.bytes(&shared.peaks[..end]);
             }
         }
@@ -627,6 +638,7 @@ impl Writer {
 
     fn links(&mut self, links: &[Link]) {
         let kept = &links[..links.len().min(LINKS_SHARED_AT_MOST)];
+
         self.length(kept.len());
         for link in kept {
             self.text(link.relation.spelled());
@@ -677,7 +689,9 @@ impl Writer {
         self.optional_mbid(track.recording.as_ref());
         self.optional_mbid(track.track.as_ref());
         self.optional_number(track.length_ms);
+
         let codes = &track.isrcs[..track.isrcs.len().min(CODES_SHARED_AT_MOST)];
+
         self.length(codes.len());
         for code in codes {
             self.text(code);
@@ -732,6 +746,7 @@ impl<'a> Reader<'a> {
             .rest
             .split_first()
             .ok_or(Error::Malformed(Malformed::Ended))?;
+
         self.rest = rest;
         Ok(*first)
     }
@@ -746,9 +761,11 @@ impl<'a> Reader<'a> {
 
     pub fn number(&mut self) -> Result<u64> {
         let mut value = 0_u64;
+
         for shift in (0..64).step_by(7) {
             let byte = self.byte()?;
             let low = u64::from(byte & 0x7f);
+
             if shift == 63 && low > 1 {
                 return Err(Error::Malformed(Malformed::Number));
             }
@@ -771,6 +788,7 @@ impl<'a> Reader<'a> {
 
     pub fn length(&mut self, most: usize) -> Result<usize> {
         let length = usize::try_from(self.number()?).unwrap_or(usize::MAX);
+
         if length > most || length > self.rest.len() {
             return Err(Error::Malformed(Malformed::Overlong { length }));
         }
@@ -787,6 +805,7 @@ impl<'a> Reader<'a> {
 
     pub fn sealed(&mut self) -> Result<Vec<u8>> {
         let blob = self.bytes(LARGEST_BLOB)?;
+
         if blob.len() < SEALED_AT_LEAST {
             return Err(Error::Malformed(Malformed::Short { length: blob.len() }));
         }
@@ -797,6 +816,7 @@ impl<'a> Reader<'a> {
         let Some((taken, rest)) = self.rest.split_first_chunk::<N>() else {
             return Err(Error::Malformed(Malformed::Ended));
         };
+
         self.rest = rest;
         Ok(*taken)
     }
@@ -804,6 +824,7 @@ impl<'a> Reader<'a> {
     pub fn bytes(&mut self, most: usize) -> Result<&'a [u8]> {
         let length = self.length(most)?;
         let (taken, rest) = self.rest.split_at(length);
+
         self.rest = rest;
         Ok(taken)
     }
@@ -856,6 +877,7 @@ impl<'a> Reader<'a> {
         let encoded = str::from_utf8(self.bytes(LONGEST_SHARED_PRINT)?)
             .map_err(|_| Error::Malformed(Malformed::NotText))?;
         let length = Duration::from_secs(self.number()?);
+
         let print = Chromaprint::new(encoded, length)
             .map_err(|_| Error::Malformed(Malformed::NotAPrint))?;
         let recognition = if self.flag()? {
@@ -959,6 +981,7 @@ impl<'a> Reader<'a> {
 
     fn answer_among(&mut self, known: &[u8]) -> Result<Option<Answer>> {
         let kind = self.byte()?;
+
         if !known.contains(&kind) {
             return Ok(None);
         }
@@ -1024,6 +1047,7 @@ impl<'a> Reader<'a> {
 
     fn at_most(&mut self, each_at_least: usize, most: usize) -> Result<usize> {
         let count = self.count_of(each_at_least)?;
+
         if count > most {
             return Err(Error::Malformed(Malformed::Overlong { length: count }));
         }
@@ -1139,6 +1163,7 @@ impl<'a> Reader<'a> {
     pub fn blobs(&mut self) -> Result<Vec<Vec<u8>>> {
         let count = self.at_most(SEALED_AT_LEAST + 1, BLOBS_A_FRAME_AT_MOST)?;
         let mut blobs = reserved(count);
+
         for _ in 0..count {
             blobs.push(self.sealed()?);
         }
@@ -1153,6 +1178,7 @@ fn version_read(reader: &mut Reader<'_>) -> Result<u16> {
 impl ToServer {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         match self {
             Self::Hello {
                 version,
@@ -1289,6 +1315,7 @@ impl ToServer {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let message = match reader.byte()? {
             0 => Self::Hello {
                 version: u16::try_from(reader.number()?)
@@ -1338,10 +1365,13 @@ impl ToServer {
             9 => {
                 let version = version_read(&mut reader)?;
                 let count = reader.count_of(SPACE_ASKED_AT_LEAST)?;
+
                 if count > HEADS_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Number));
                 }
+
                 let mut asked = reserved(count);
+
                 for _ in 0..count {
                     asked.push(SpaceAsked {
                         space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
@@ -1392,6 +1422,7 @@ impl ToServer {
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
+
         reader.done()?;
         Ok(message)
     }
@@ -1432,6 +1463,7 @@ impl Refusal {
 impl FromServer {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         match self {
             Self::Welcome {
                 online,
@@ -1547,10 +1579,12 @@ impl FromServer {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let message = match reader.byte()? {
             0 => {
                 let count = reader.count()?;
                 let mut online = reserved(count);
+
                 for _ in 0..count {
                     online.push(reader.device()?);
                 }
@@ -1567,6 +1601,7 @@ impl FromServer {
             2 => {
                 let count = reader.count_of(RECORD_AT_LEAST)?;
                 let mut entries = reserved(count);
+
                 for _ in 0..count {
                     let seq = reader.number()?;
                     let blob = if reader.flag()? {
@@ -1574,6 +1609,7 @@ impl FromServer {
                     } else {
                         None
                     };
+
                     entries.push(Record { seq, blob });
                 }
                 Self::Records { entries }
@@ -1606,6 +1642,7 @@ impl FromServer {
             11 => {
                 let count = reader.count_of(SPACE_HEAD_AT_LEAST)?;
                 let mut heads = reserved(count);
+
                 for _ in 0..count {
                     heads.push(SpaceHead {
                         space: SpaceId(reader.fixed::<SPACE_BYTES>()?),
@@ -1618,6 +1655,7 @@ impl FromServer {
             12 => {
                 let count = reader.count_of(DEVICE_BYTES)?;
                 let mut members = reserved(count);
+
                 for _ in 0..count {
                     members.push(reader.device()?);
                 }
@@ -1644,6 +1682,7 @@ impl FromServer {
             18 => Self::Staging,
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
+
         reader.done()?;
         Ok(message)
     }
@@ -1652,6 +1691,7 @@ impl FromServer {
 impl ToPeer {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         match self {
             Self::Holdings => writer.byte(0),
             Self::Fetch { recording, offset } => {
@@ -1743,6 +1783,7 @@ impl ToPeer {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let message = match reader.byte()? {
             0 => Self::Holdings,
             1 => Self::Fetch {
@@ -1762,10 +1803,13 @@ impl ToPeer {
             },
             5 => {
                 let count = reader.count_of(MBID_AT_LEAST)?;
+
                 if count > COVERS_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong { length: count }));
                 }
+
                 let mut releases = reserved(count);
+
                 for _ in 0..count {
                     releases.push(reader.mbid()?);
                 }
@@ -1773,10 +1817,13 @@ impl ToPeer {
             }
             6 => {
                 let count = reader.count_of(RECORDING_AT_LEAST)?;
+
                 if count > LYRICSFILES_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong { length: count }));
                 }
+
                 let mut recordings = reserved(count);
+
                 for _ in 0..count {
                     recordings.push(reader.recording()?);
                 }
@@ -1784,10 +1831,13 @@ impl ToPeer {
             }
             7 => {
                 let count = reader.count_of(WHOLE_FILE_AT_LEAST)?;
+
                 if count > PRINTS_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong { length: count }));
                 }
+
                 let mut files = reserved(count);
+
                 for _ in 0..count {
                     files.push(reader.whole_file()?);
                 }
@@ -1813,6 +1863,7 @@ impl ToPeer {
                 let asker = reader.device()?;
                 let after = reader.number()?;
                 let most = reader.small()?;
+
                 if most as usize > KEPT_ASKED_AT_MOST {
                     return Err(Error::Malformed(Malformed::Overlong {
                         length: most as usize,
@@ -1835,6 +1886,7 @@ impl ToPeer {
             },
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
+
         reader.done()?;
         Ok(message)
     }
@@ -1843,6 +1895,7 @@ impl ToPeer {
 impl FromPeer {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         match self {
             Self::Held { items } => {
                 writer.byte(0);
@@ -1941,10 +1994,12 @@ impl FromPeer {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let message = match reader.byte()? {
             0 => {
                 let count = reader.count()?;
                 let mut items = reserved(count);
+
                 for _ in 0..count {
                     items.push(Held {
                         recording: reader.recording()?,
@@ -2019,6 +2074,7 @@ impl FromPeer {
             }
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
+
         reader.done()?;
         Ok(message)
     }
@@ -2027,6 +2083,7 @@ impl FromPeer {
 impl Beacon {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         writer.device(self.device);
         writer.number(u64::from(self.port));
         writer.flag(self.answering);
@@ -2039,6 +2096,7 @@ impl Beacon {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let beacon = Self {
             device: reader.device()?,
             port: u16::try_from(reader.number()?)
@@ -2047,12 +2105,14 @@ impl Beacon {
             addresses: {
                 let count = reader.count()?;
                 let mut addresses = reserved(count);
+
                 for _ in 0..count {
                     addresses.push(reader.ip()?);
                 }
                 addresses
             },
         };
+
         reader.done()?;
         Ok(beacon)
     }
@@ -2061,6 +2121,7 @@ impl Beacon {
 impl SentBeacon {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         writer.number(self.sent_at);
         writer.fixed(&self.beacon.encoded());
         writer.finish()
@@ -2068,6 +2129,7 @@ impl SentBeacon {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let sent_at = reader.number()?;
         let beacon = Beacon::decoded(reader.rest)?;
         Ok(Self { sent_at, beacon })
@@ -2077,6 +2139,7 @@ impl SentBeacon {
 impl Candidates {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         writer.byte(CANDIDATES_READ_AS_NONE_BEFORE);
         writer.byte(CANDIDATES_BOUND_TO_A_PAIR);
         writer.device(self.asker);
@@ -2091,17 +2154,20 @@ impl Candidates {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         for expected in [CANDIDATES_READ_AS_NONE_BEFORE, CANDIDATES_BOUND_TO_A_PAIR] {
             let tag = reader.byte()?;
             if tag != expected {
                 return Err(Error::Malformed(Malformed::Tag { tag }));
             }
         }
+
         let asker = reader.device()?;
         let asked = reader.device()?;
         let sealed_at = reader.number()?;
         let count = reader.count()?;
         let mut addresses = reserved(count);
+
         for _ in 0..count {
             addresses.push(reader.address()?);
         }
@@ -2124,6 +2190,7 @@ const PLATFORM_OTHER: u8 = 255;
 
 pub fn encoded_bundle(changes: &[Change]) -> Vec<u8> {
     let mut writer = Writer::new();
+
     writer.length(changes.len());
     for change in changes {
         writer.bytes(&encoded_change(change));
@@ -2133,6 +2200,7 @@ pub fn encoded_bundle(changes: &[Change]) -> Vec<u8> {
 
 pub fn encoded_change(change: &Change) -> Vec<u8> {
     let mut writer = Writer::new();
+
     match change {
         Change::Device(note) => {
             writer.byte(0);
@@ -2281,8 +2349,10 @@ pub fn decoded_bundle(bytes: &[u8]) -> Result<Vec<Change>> {
 
 fn decoded_bundle_knowing(bytes: &[u8], answers: &[u8]) -> Result<Vec<Change>> {
     let mut reader = Reader::new(bytes);
+
     let count = reader.count()?;
     let mut changes = reserved(count);
+
     for _ in 0..count {
         let encoded = reader.bytes(LARGEST_BLOB)?;
         if let Some(change) = decoded_change(encoded, answers)? {
@@ -2295,6 +2365,7 @@ fn decoded_bundle_knowing(bytes: &[u8], answers: &[u8]) -> Result<Vec<Change>> {
 
 fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
     let mut reader = Reader::new(bytes);
+
     let change = match reader.byte()? {
         0 => Change::Device(DeviceNote {
             device: reader.device()?,
@@ -2316,6 +2387,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
                 let name = reader.text()?;
                 let count = reader.count()?;
                 let mut entries = reserved(count);
+
                 for _ in 0..count {
                     entries.push(reader.recording()?);
                 }
@@ -2342,6 +2414,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
             let stamp = reader.stamp()?;
             let count = reader.count()?;
             let mut rows = reserved(count);
+
             for _ in 0..count {
                 rows.push(reader.recording()?);
             }
@@ -2404,6 +2477,7 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
             let into = PlaylistKey(reader.fixed()?);
             let count = reader.count()?;
             let mut entries = reserved(count);
+
             for _ in 0..count {
                 entries.push(reader.recording()?);
             }
@@ -2446,12 +2520,14 @@ fn decoded_change(bytes: &[u8], answers: &[u8]) -> Result<Option<Change>> {
         }),
         _ => return Ok(None),
     };
+
     reader.done()?;
     Ok(Some(change))
 }
 
 pub fn encoded_recordings(recordings: &[Recording]) -> Vec<u8> {
     let mut writer = Writer::new();
+
     writer.length(recordings.len());
     for recording in recordings {
         writer.recording(recording);
@@ -2461,8 +2537,10 @@ pub fn encoded_recordings(recordings: &[Recording]) -> Vec<u8> {
 
 pub fn decoded_recordings(bytes: &[u8]) -> Result<Vec<Recording>> {
     let mut reader = Reader::new(bytes);
+
     let count = reader.count()?;
     let mut recordings = reserved(count);
+
     for _ in 0..count {
         recordings.push(reader.recording()?);
     }
@@ -2472,13 +2550,16 @@ pub fn decoded_recordings(bytes: &[u8]) -> Result<Vec<Recording>> {
 
 pub fn encoded_answer(answer: &Answer) -> Vec<u8> {
     let mut writer = Writer::new();
+
     writer.answer(answer);
     writer.finish()
 }
 
 pub fn decoded_answer(bytes: &[u8]) -> Result<Option<Answer>> {
     let mut reader = Reader::new(bytes);
+
     let answer = reader.answer()?;
+
     if answer.is_some() {
         reader.done()?;
     }
@@ -2487,13 +2568,16 @@ pub fn decoded_answer(bytes: &[u8]) -> Result<Option<Answer>> {
 
 pub fn encoded_recording(recording: &Recording) -> Vec<u8> {
     let mut writer = Writer::new();
+
     writer.recording(recording);
     writer.finish()
 }
 
 pub fn decoded_recording(bytes: &[u8]) -> Result<Recording> {
     let mut reader = Reader::new(bytes);
+
     let recording = reader.recording()?;
+
     reader.done()?;
     Ok(recording)
 }
@@ -2523,6 +2607,7 @@ mod tests {
     fn the_frames_of_shared_spaces_and_rooms_read_back_as_themselves() {
         let space = SpaceId([1; SPACE_BYTES]);
         let device = DeviceId([2; DEVICE_BYTES]);
+
         let to_server = [
             ToServer::Share {
                 version: PROTOCOL_VERSION,
@@ -2625,6 +2710,7 @@ mod tests {
     #[test]
     fn a_frame_asking_after_more_heads_than_a_server_answers_is_refused() {
         let mut writer = Writer::new();
+
         writer.byte(9);
         writer.number(u64::from(PROTOCOL_VERSION));
         writer.length(HEADS_ASKED_AT_MOST + 1);
@@ -2682,6 +2768,7 @@ mod tests {
 
         assert!(heads.encoded().len() <= FIRST_FRAME_AT_MOST);
         assert!(share.encoded().len() <= FIRST_FRAME_AT_MOST);
+
         const { assert!(FIRST_FRAME_AT_MOST < 16 * 1024) };
     }
 
@@ -2774,6 +2861,7 @@ mod tests {
             blobs: vec![vec![1; SEALED_AT_LEAST - 1]],
         };
         let mut writer = Writer::new();
+
         writer.byte(1);
         writer.number(u64::try_from(LARGEST_FRAME).expect("a count"));
         writer.0.extend(std::iter::repeat_n(0, 1024));
@@ -3015,13 +3103,16 @@ mod tests {
             size: 11_000_000_000,
         };
         let mut unknown = asked[0].encoded();
+
         unknown[1] = 2;
+
         let seeded = include_bytes!("../../../fuzz/seeds/sync/export");
         let seeded_offer = include_bytes!("../../../fuzz/seeds/sync/exporting");
 
         for ask in &asked {
             assert_eq!(&ToPeer::decoded(&ask.encoded()).expect("decoded"), ask);
         }
+
         assert_eq!(
             FromPeer::decoded(&offered.encoded()).expect("decoded"),
             offered
@@ -3206,13 +3297,18 @@ mod tests {
         }
         .encoded();
         let mut not_a_print = printed.clone();
+
         let at = not_a_print
             .iter()
             .position(|byte| *byte == b'A')
             .expect("the print");
+
         not_a_print[at] = b'+';
+
         let mut unknown_kind = printed;
+
         let last = unknown_kind.len() - 1;
+
         unknown_kind[last] = 9;
 
         assert!(matches!(
@@ -3355,10 +3451,12 @@ mod tests {
         ];
 
         let mut bundle = encoded_bundle(&changes);
+
         assert_eq!(decoded_bundle(&bundle).expect("decoded"), changes);
 
         bundle[0] += 1;
         bundle.extend_from_slice(&[1, 200]);
+
         assert_eq!(decoded_bundle(&bundle).expect("decoded"), changes);
     }
 
@@ -3397,12 +3495,15 @@ mod tests {
             answer: studied(),
         });
         let mut later = Writer::new();
+
         later.byte(7);
         later.recording(&song("Echoes"));
         later.stamp(stamp());
         later.byte(200);
         later.text("a release");
+
         let mut bundle = Writer::new();
+
         bundle.length(2);
         bundle.bytes(&later.finish());
         bundle.bytes(&encoded_change(&known));
@@ -3470,6 +3571,7 @@ mod tests {
             stamp: stamp(),
             answer: studied(),
         });
+
         let bundle = encoded_bundle(&[release.clone(), study.clone()]);
 
         assert_eq!(
@@ -3507,6 +3609,7 @@ mod tests {
             stamp: stamp(),
             answer: peaked(),
         });
+
         let bundle = encoded_bundle(&[study.clone(), peaks.clone()]);
 
         assert_eq!(
@@ -3552,7 +3655,9 @@ mod tests {
             .zip(&linux)
             .position(|(ios, linux)| ios != linux)
             .expect("the platform tag");
+
         later[tag] = 9;
+
         assert_eq!(
             decoded_bundle(&later).expect("decoded"),
             noted(Platform::Other)
@@ -3562,6 +3667,7 @@ mod tests {
     #[test]
     fn lengths_past_what_is_left_are_refused_before_allocating() {
         let mut writer = Writer::new();
+
         writer.byte(1);
         writer.number(u64::MAX >> 1);
 
@@ -3591,6 +3697,7 @@ mod tests {
             ],
         };
         let mut writer = Writer::new();
+
         writer.device(beacon.device);
         writer.number(u64::from(u16::MAX) + 1);
         writer.flag(false);
@@ -3605,8 +3712,10 @@ mod tests {
 
     fn older_builds_candidates(bytes: &[u8]) -> Result<Vec<SocketAddr>> {
         let mut reader = Reader::new(bytes);
+
         let count = reader.count()?;
         let mut candidates = Vec::new();
+
         for _ in 0..count {
             candidates.push(reader.address()?);
         }
@@ -3616,6 +3725,7 @@ mod tests {
 
     fn older_builds_list(addresses: &[SocketAddr]) -> Vec<u8> {
         let mut writer = Writer::new();
+
         writer.length(addresses.len());
         for address in addresses {
             writer.address(*address);
@@ -3662,7 +3772,9 @@ mod tests {
     fn signed_numbers_survive_the_zigzag() {
         for value in [0, 1, -1, i64::MIN, i64::MAX, 1_700_000_000_000_000_000] {
             let mut writer = Writer::new();
+
             writer.signed(value);
+
             let bytes = writer.finish();
             let mut reader = Reader::new(&bytes);
 

@@ -13,10 +13,12 @@ pub(crate) const BIT_REVERSE: [u8; 256] = reversed();
 const fn reversed() -> [u8; 256] {
     let mut table = [0_u8; 256];
     let mut value = 0_usize;
+
     while value < 256 {
         let mut held = value as u8;
         let mut turned = 0_u8;
         let mut bit = 0;
+
         while bit < 8 {
             turned = (turned << 1) | (held & 1);
             held >>= 1;
@@ -101,6 +103,7 @@ mod tests {
     fn a_marked_sample_keeps_its_marker_in_the_bytes_a_sink_reads() {
         for (marker, held) in [(DOP_MARK_FIRST, 0xBEEF_u32), (DOP_MARK_SECOND, 0x0000)] {
             let bytes = packed(marker, held).to_le_bytes();
+
             assert_eq!(
                 bytes[2], marker,
                 "the marker left the byte a DAC reads it in"
@@ -152,6 +155,7 @@ mod tests {
     fn reversing_a_byte_twice_is_the_byte_again() {
         for value in 0..=u8::MAX {
             let turned = BIT_REVERSE[usize::from(value)];
+
             assert_eq!(BIT_REVERSE[usize::from(turned)], value);
         }
     }

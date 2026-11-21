@@ -112,10 +112,12 @@ impl Follow {
             seen.host_next.contains(&mine)
                 || (self.last_host_row == Some(mine) && self.last_host_next.contains(&host_row))
         });
+
         if !handed {
             self.handing_on_since = None;
             return false;
         }
+
         let since = *self.handing_on_since.get_or_insert(seen.now_nanos);
         let within = u64::try_from(HANDED_ON_WITHIN.as_nanos()).unwrap_or(u64::MAX);
 
@@ -148,6 +150,7 @@ impl Follow {
             return self.stood(Standing::WaitingForTheHost, Doing::Nothing);
         };
         let doing = self.step_with_a_song(seen, host_row);
+
         if self.last_host_row != Some(host_row) {
             self.last_host_row = seen.host_row;
             self.last_host_next = seen.host_next.to_vec();
@@ -164,6 +167,7 @@ impl Follow {
                 } else {
                     Doing::Nothing
                 };
+
                 return self.stood(Standing::SittingOut(why), doing);
             }
             self.out_for = None;
@@ -187,6 +191,7 @@ impl Follow {
             } else {
                 Doing::Nothing
             };
+
             return self.stood(Standing::HostPaused, doing);
         }
         if seen.mine != Mine::Playing {
@@ -204,8 +209,10 @@ impl Follow {
         let (Some(mine), Some(host)) = (seen.mine_position, seen.host_position) else {
             return Doing::Nothing;
         };
+
         let apart = mine.abs_diff(host);
         let threshold = u64::try_from(OUT_OF_STEP_PAST.as_nanos()).unwrap_or(u64::MAX);
+
         if apart <= threshold {
             self.over = 0;
             return Doing::Nothing;
@@ -215,7 +222,9 @@ impl Follow {
         if self.over < SAMPLES_BEFORE_A_NUDGE {
             return Doing::Nothing;
         }
+
         let apart_at_least = u64::try_from(NUDGES_APART.as_nanos()).unwrap_or(u64::MAX);
+
         if self
             .last_moved_at
             .is_some_and(|at| seen.now_nanos.saturating_sub(at) < apart_at_least)
@@ -231,6 +240,7 @@ impl Follow {
         self.aligned_row = Some(host_row);
 
         let far = u64::try_from(FAR_ENOUGH_TO_SEEK.as_nanos()).unwrap_or(u64::MAX);
+
         if apart > far {
             return Doing::Seek { to_nanos: host };
         }
@@ -337,6 +347,7 @@ mod tests {
         for _ in 0..PAUSES_SEEN_BEFORE_SITTING_OUT {
             assert_eq!(follow.step(&seen(0, Mine::Paused, Some(1))), Doing::Nothing);
         }
+
         assert_eq!(follow.standing(), Standing::SittingOut(SittingOut::AskedTo));
 
         let back = Seen {
@@ -387,21 +398,28 @@ mod tests {
 
         for _ in 0..SAMPLES_BEFORE_A_NUDGE - 1 {
             assert_eq!(follow.step(&off(at)), Doing::Nothing);
+
             at += 200 * MS;
         }
+
         assert_eq!(
             follow.step(&seen(at, Mine::Playing, Some(1))),
             Doing::Nothing
         );
+
         at += 200 * MS;
         for _ in 0..SAMPLES_BEFORE_A_NUDGE - 1 {
             assert_eq!(follow.step(&off(at)), Doing::Nothing);
+
             at += 200 * MS;
         }
+
         assert_eq!(follow.step(&off(at)), Doing::Nudge);
+
         at += 200 * MS;
         for _ in 0..SAMPLES_BEFORE_A_NUDGE * 2 {
             assert_eq!(follow.step(&off(at)), Doing::Nothing);
+
             at += 200 * MS;
         }
     }
@@ -443,7 +461,9 @@ mod tests {
                 mine_position: Some(10 * SECOND + 80 * MS),
                 ..seen(at, Mine::Playing, Some(1))
             });
+
             assert_eq!(doing, Doing::Nothing);
+
             at += 200 * MS;
         }
     }

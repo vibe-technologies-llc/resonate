@@ -230,6 +230,7 @@ impl Tally {
             *self = Self::Lost;
             return;
         };
+
         if block.track != of.track {
             return;
         }
@@ -277,6 +278,7 @@ pub(crate) fn read_segment_counted<S: Read + Seek + ?Sized>(
         return Segment::default();
     };
     let found = scan(source, known).unwrap_or_default();
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("an EBML segment scan could not restore the stream position");
     }
@@ -285,6 +287,7 @@ pub(crate) fn read_segment_counted<S: Read + Seek + ?Sized>(
 
 fn scan<S: Read + Seek + ?Sized>(source: &mut S, known: Option<&ClusterTally>) -> Option<Segment> {
     let header = element(source)?;
+
     if header.id != EBML_HEADER {
         return None;
     }
@@ -300,19 +303,23 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S, known: Option<&ClusterTally>) -
     if source.seek(SeekFrom::Start(body)).is_ok() {
         found.bit_depth = read_bit_depth(source, within);
     }
+
     let tally = match known {
         Some(known) => known.clone(),
         None => counted_clusters(source, body, within, found.scale),
     };
+
     found.counted = tally.counted;
     found.discarded = tally.discarded;
     found.opus_samples = tally.opus_samples;
     found.framed_samples = tally.framed_samples;
     found.counted_track = tally.counted_track;
+
     let wavpack_track = source
         .seek(SeekFrom::Start(body))
         .ok()
         .and_then(|_| read_track_coded_as(source, within, WAVPACK_CODEC_ID));
+
     if let Some(track) = wavpack_track
         && source.seek(SeekFrom::Start(body)).is_ok()
     {
@@ -336,12 +343,14 @@ fn voided(chapters: &Element) -> Option<Voided> {
     let width = u32::try_from(width)
         .ok()
         .filter(|width| (1..=MAX_LENGTH_BYTES).contains(width))?;
+
     if body >= (1_u64 << (7 * width)) - 1 {
         return None;
     }
 
     let sized = ((1_u64 << (7 * width)) | body).to_be_bytes();
     let mut header = vec![VOID];
+
     header.extend_from_slice(sized.get(sized.len() - width as usize..)?);
     Some(Voided {
         at: chapters.at,
@@ -356,10 +365,12 @@ fn read_chapters<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) ->
     let within = edition.end();
 
     let mut marked = Vec::new();
+
     for _ in 0..MAX_ELEMENTS {
         let Some(element) = element(source) else {
             break;
         };
+
         if element.id == CHAPTER_ATOM
             && let Some(atom) = read_atom(source, element.end())
         {
@@ -368,6 +379,7 @@ fn read_chapters<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) ->
                 break;
             }
         }
+
         let Some(next) = skip(source, &element) else {
             break;
         };
@@ -382,8 +394,10 @@ fn read_atom<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Opt
     let limit = limit?;
     let mut start = None;
     let mut title = None;
+
     for _ in 0..MAX_ELEMENTS {
         let element = element(source)?;
+
         match element.id {
             CHAPTER_TIME_START => start = uint(source, element.length),
             CHAPTER_DISPLAY if title.is_none() => {
@@ -419,6 +433,7 @@ fn counted_clusters<S: Read + Seek + ?Sized>(
         .ok()
         .map(|_| read_tracks_coded_as(source, within, OPUS_CODEC_ID))
         .unwrap_or_default();
+
     if source.seek(SeekFrom::Start(body)).is_err() {
         return ClusterTally::default();
     }
@@ -465,6 +480,7 @@ fn count_clusters<S: Read + Seek + ?Sized>(
         let Some(next) = next else {
             break;
         };
+
         if within.is_some_and(|within| next >= within) {
             reached_the_end = within == Some(next);
             break;
@@ -496,12 +512,14 @@ fn read_cluster<S: Read + Seek + ?Sized>(
             break;
         }
         into.walked = into.walked.saturating_add(1);
+
         let Ok(starts) = source.stream_position() else {
             break;
         };
         let Some(element) = element(source) else {
             break;
         };
+
         if limit.is_none() && SEGMENT_CHILDREN.contains(&element.id) {
             unsized_until = Some(starts);
             reached_the_end = true;
@@ -511,12 +529,14 @@ fn read_cluster<S: Read + Seek + ?Sized>(
             CLUSTER_TIMESTAMP => at = uint(source, element.length),
             SIMPLE_BLOCK => {
                 let block = read_block(source, element, into.tally.reading());
+
                 offsets.saw(block.map(|block| block.offset));
                 into.tally.add(block);
                 into.forget_the_padding_after(block);
             }
             BLOCK_GROUP => {
                 let group = read_group(source, element.end(), into.tally.reading());
+
                 offsets.saw(group.block.map(|block| block.offset));
                 into.tally.add(group.block);
                 into.take_the_padding_of(&group);
@@ -539,9 +559,11 @@ fn read_cluster<S: Read + Seek + ?Sized>(
 
     if let Some(at) = at {
         let reached = at.saturating_add(offsets.reach());
+
         into.ticks = Some(into.ticks.unwrap_or(0).max(reached));
         into.blocks = into.blocks.saturating_add(offsets.blocks);
     }
+
     let _ = source.seek(SeekFrom::Start(body));
     unsized_until
 }
@@ -588,6 +610,7 @@ fn read_group<S: Read + Seek + ?Sized>(
         let Some(element) = element(source) else {
             break;
         };
+
         match element.id {
             BLOCK => group.block = read_block(source, element, reading),
             DISCARD_PADDING => {
@@ -621,6 +644,7 @@ impl Offsets {
         let Some(offset) = offset else {
             return;
         };
+
         self.blocks = self.blocks.saturating_add(1);
         self.furthest = self.furthest.max(offset);
     }
@@ -647,6 +671,7 @@ fn read_block<S: Read + Seek + ?Sized>(
         return None;
     };
     let [high, low, flags] = read_exact::<3, S>(source)?;
+
     let tallied = reading
         .filter(|reading| reading.of.track == track)
         .and_then(|reading| samples_in(source, end, Lacing::of(flags), reading));
@@ -684,6 +709,7 @@ fn samples_in<S: Read + Seek + ?Sized>(
     reading: Reading,
 ) -> Option<Tallied> {
     let mut sizes = [0_u64; LACED_FRAMES_AT_MOST];
+
     let sizes = lace_sizes(source, end, lacing, &mut sizes)?;
     let mut at = source.stream_position().ok()?;
     let mut tallied = Tallied {
@@ -695,10 +721,12 @@ fn samples_in<S: Read + Seek + ?Sized>(
 
     for size in sizes {
         source.seek(SeekFrom::Start(at)).ok()?;
+
         let more = match reading.of.counts {
             Counts::Vorbis(windows) => {
                 let block = windows.block_of(frame_head(source, *size, &mut held)?)?;
                 let between = Windows::samples_between(previous, block);
+
                 previous = Some(block);
                 tallied.last = Some(block);
                 between
@@ -706,6 +734,7 @@ fn samples_in<S: Read + Seek + ?Sized>(
             Counts::Opus => opus::samples_in_a_packet(frame_head(source, *size, &mut held)?)?,
             Counts::Flac => flac::samples_in_a_frame(frame_head(source, *size, &mut held)?)?,
         };
+
         tallied.samples = tallied.samples.checked_add(more)?;
         at = at.checked_add(*size)?;
     }
@@ -745,15 +774,19 @@ fn lace_sizes<'a, S: Read + Seek + ?Sized>(
     }
 
     let data = end.checked_sub(source.stream_position().ok()?)?;
+
     if lacing == Lacing::Fixed {
         let frames = u64::try_from(frames).ok()?;
         let each = data / frames;
+
         (each * frames == data).then_some(())?;
         declared.fill(each);
     }
+
     let held = declared
         .iter()
         .try_fold(0_u64, |held, size| held.checked_add(*size))?;
+
     *last = data.checked_sub(held)?;
 
     Some(sizes)
@@ -761,8 +794,10 @@ fn lace_sizes<'a, S: Read + Seek + ?Sized>(
 
 fn xiph_lace<S: Read + ?Sized>(source: &mut S) -> Option<u64> {
     let mut size = 0_u64;
+
     for _ in 0..MAX_ELEMENTS {
         let [byte] = read_exact::<1, S>(source)?;
+
         size = size.checked_add(u64::from(byte))?;
         if byte != XIPH_LACE_CONTINUES {
             return Some(size);
@@ -777,6 +812,7 @@ fn ebml_lace<S: Read + ?Sized>(source: &mut S, previous: Option<u64>) -> Option<
         return Some(value);
     };
     let bias = (1_i64 << (7 * width - 1)) - 1;
+
     let difference = i64::try_from(value).ok()? - bias;
     previous.checked_add_signed(difference)
 }
@@ -790,6 +826,7 @@ fn frame_head<'a, S: Read + ?Sized>(
         .unwrap_or(FRAME_HEAD_BYTES)
         .min(FRAME_HEAD_BYTES);
     let head = held.get_mut(..head_bytes)?;
+
     source.read_exact(head).ok()?;
     Some(head)
 }
@@ -824,6 +861,7 @@ fn read_tracks_coded_as<S: Read + Seek + ?Sized>(
     codec: &str,
 ) -> Vec<u64> {
     let mut numbers = Vec::new();
+
     walk_tracks::<_, ()>(source, within, |entry| {
         if entry.codec.as_deref() == Some(codec)
             && let Some(number) = entry.number
@@ -858,6 +896,7 @@ fn walk_tracks<S: Read + Seek + ?Sized, T>(
         let Some(entry) = element(source) else {
             break;
         };
+
         if entry.id == TRACK_ENTRY
             && let ControlFlow::Break(found) = visit(read_entry(source, entry.end()))
         {
@@ -888,6 +927,7 @@ fn read_entry<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> En
         let Some(element) = element(source) else {
             break;
         };
+
         match element.id {
             TRACK_NUMBER => entry.number = positive(uint(source, element.length)),
             CODEC_ID => entry.codec = text(source, element.length),
@@ -913,6 +953,7 @@ fn read_wavpack_coding<S: Read + Seek + ?Sized>(
 ) -> Option<Coding> {
     for _ in 0..MAX_CLUSTERS {
         let element = element(source)?;
+
         if element.id == CLUSTER
             && let Some(coding) = wavpack_coding_in_cluster(source, element.end(), track)
         {
@@ -937,14 +978,17 @@ fn wavpack_coding_in_cluster<S: Read + Seek + ?Sized>(
 ) -> Option<Coding> {
     for _ in 0..MAX_BLOCKS {
         let element = element(source)?;
+
         if limit.is_none() && SEGMENT_CHILDREN.contains(&element.id) {
             break;
         }
+
         let block = match element.id {
             SIMPLE_BLOCK => Some(element),
             BLOCK_GROUP => find(source, BLOCK, element.end()),
             _ => None,
         };
+
         if let Some(block) = block
             && let Some(coding) = wavpack_coding_in_block(source, block, track)
         {
@@ -965,16 +1009,22 @@ fn wavpack_coding_in_block<S: Read + Seek + ?Sized>(
     track: u64,
 ) -> Option<Coding> {
     let end = block.end()?;
+
     source.seek(SeekFrom::Start(block.body)).ok()?;
+
     let Length::Known(number) = length(source)? else {
         return None;
     };
+
     if number != track {
         return None;
     }
+
     let [_, _, flags] = read_exact::<3, S>(source)?;
     let mut sizes = [0_u64; LACED_FRAMES_AT_MOST];
+
     lace_sizes(source, end, Lacing::of(flags), &mut sizes)?;
+
     let head = read_exact::<{ wavpack::MATROSKA_HEAD_BYTES }, S>(source)?;
     Some(Coding::of_matroska_head(head))
 }
@@ -983,10 +1033,13 @@ fn bytes<S: Read + ?Sized>(source: &mut S, length: Length) -> Option<Vec<u8>> {
     let Length::Known(size) = length else {
         return None;
     };
+
     if size > PRIVATE_BYTES_AT_MOST {
         return None;
     }
+
     let mut held = vec![0_u8; usize::try_from(size).ok()?];
+
     source.read_exact(&mut held).ok()?;
     Some(held)
 }
@@ -997,10 +1050,13 @@ fn read_bit_depth<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) 
     let audio = find(source, TRACK_AUDIO, entry.end())?;
 
     let limit = audio.end();
+
     for _ in 0..MAX_ELEMENTS {
         let element = element(source)?;
+
         if element.id == BIT_DEPTH {
             let bits = positive(uint(source, element.length))?;
+
             return (bits <= MAX_BIT_DEPTH).then_some(bits as u32);
         }
 
@@ -1021,6 +1077,7 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         let Some(element) = element(source) else {
             break;
         };
+
         match element.id {
             TITLE => title = text(source, element.length),
             SEGMENT_DURATION => ticks = float(source, element.length),
@@ -1070,13 +1127,16 @@ fn uint<S: Read + ?Sized>(source: &mut S, length: Length) -> Option<u64> {
     let Length::Known(bytes) = length else {
         return None;
     };
+
     if bytes == 0 || bytes > u64::from(MAX_LENGTH_BYTES) {
         return None;
     }
 
     let mut value = 0_u64;
+
     for _ in 0..bytes {
         let [byte] = read_exact::<1, S>(source)?;
+
         value = (value << 8) | u64::from(byte);
     }
     Some(value)
@@ -1121,6 +1181,7 @@ impl Element {
 fn find<S: Read + Seek + ?Sized>(source: &mut S, id: u32, limit: Option<u64>) -> Option<Element> {
     for _ in 0..MAX_ELEMENTS {
         let element = element(source)?;
+
         if element.id == id {
             return Some(element);
         }
@@ -1157,8 +1218,10 @@ fn id<S: Read + ?Sized>(source: &mut S) -> Option<u32> {
     let width = width(lead, MAX_ID_BYTES)?;
 
     let mut id = u32::from(lead);
+
     for _ in 1..width {
         let [byte] = read_exact::<1, S>(source)?;
+
         id = (id << 8) | u32::from(byte);
     }
     Some(id)
@@ -1180,8 +1243,10 @@ fn vint<S: Read + ?Sized>(source: &mut S) -> Option<(u64, u32)> {
     let marker = 0x80_u8 >> (width - 1);
 
     let mut value = u64::from(lead & (marker - 1));
+
     for _ in 1..width {
         let [byte] = read_exact::<1, S>(source)?;
+
         value = (value << 8) | u64::from(byte);
     }
     Some((value, width))
@@ -1198,6 +1263,7 @@ fn text<S: Read + ?Sized>(source: &mut S, length: Length) -> Option<String> {
     };
 
     let mut value = vec![0_u8; usize::try_from(bytes.min(MAX_TITLE_BYTES)).ok()?];
+
     source.read_exact(&mut value).ok()?;
 
     let end = value
@@ -1228,6 +1294,7 @@ mod tests {
 
     fn element(id: u32, body: &[u8]) -> Vec<u8> {
         let mut bytes = id.to_be_bytes().to_vec();
+
         while bytes.first() == Some(&0) {
             bytes.remove(0);
         }
@@ -1238,16 +1305,19 @@ mod tests {
 
     fn file(title: &str) -> Vec<u8> {
         let mut segment = element(SEEK_HEAD, b"a seek head");
+
         segment.extend_from_slice(&element(INFO, &titled(title)));
         segment.extend_from_slice(&element(CLUSTER, b"a cluster"));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
         bytes
     }
 
     fn titled(title: &str) -> Vec<u8> {
         let mut info = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+
         info.extend_from_slice(&element(SEGMENT_DURATION, &2_003.0_f64.to_be_bytes()));
         info.extend_from_slice(&element(TITLE, title.as_bytes()));
         info.extend_from_slice(&element(MUXING_APP, b"Lavf63.1.101"));
@@ -1265,9 +1335,11 @@ mod tests {
     #[test]
     fn a_duration_the_segment_does_not_declare_is_left_unknown() {
         let mut info = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+
         info.extend_from_slice(&element(TITLE, b"Echoes"));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &element(INFO, &info)));
 
         assert_eq!(read_segment(&mut Cursor::new(bytes)).duration(), None);
@@ -1276,9 +1348,11 @@ mod tests {
     #[test]
     fn a_timestamp_scale_of_its_own_is_what_the_ticks_are_counted_in() {
         let mut info = element(TIMESTAMP_SCALE, &100_u32.to_be_bytes());
+
         info.extend_from_slice(&element(SEGMENT_DURATION, &10_000_000.0_f64.to_be_bytes()));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &element(INFO, &info)));
 
         assert_eq!(
@@ -1309,10 +1383,12 @@ mod tests {
     #[test]
     fn a_segment_of_unbounded_length_is_still_walked() {
         let mut segment = SEGMENT.to_be_bytes().to_vec();
+
         segment.push(UNBOUNDED);
         segment.extend_from_slice(&element(INFO, &titled("Echoes")));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&segment);
 
         assert_eq!(
@@ -1327,9 +1403,11 @@ mod tests {
             INFO,
             &element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes()),
         );
+
         segment.extend_from_slice(&element(CLUSTER, b"a cluster"));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
 
         assert!(read_segment(&mut Cursor::new(bytes)).title.is_none());
@@ -1342,6 +1420,7 @@ mod tests {
 
     fn simple_block_of(track: u8, offset: i16) -> Vec<u8> {
         let mut block = vec![0x80 | track];
+
         block.extend_from_slice(&offset.to_be_bytes());
         block.push(0);
         element(SIMPLE_BLOCK, &block)
@@ -1349,6 +1428,7 @@ mod tests {
 
     fn cluster(at: u64, offsets: &[i16]) -> Vec<u8> {
         let mut body = element(CLUSTER_TIMESTAMP, &at.to_be_bytes());
+
         for offset in offsets {
             body.extend_from_slice(&simple_block(*offset));
         }
@@ -1361,6 +1441,7 @@ mod tests {
 
     fn clustered_of(entries: &[Vec<u8>], info: &[u8], clusters: &[Vec<u8>]) -> Vec<u8> {
         let mut segment = element(INFO, info);
+
         if !entries.is_empty() {
             segment.extend_from_slice(&element(TRACKS, &entries.concat()));
         }
@@ -1369,6 +1450,7 @@ mod tests {
         }
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
         bytes
     }
@@ -1379,9 +1461,12 @@ mod tests {
 
     fn grouped_of(track: u8, offset: i16, discarded: &[u8]) -> Vec<u8> {
         let mut block = vec![0x80 | track];
+
         block.extend_from_slice(&offset.to_be_bytes());
         block.push(0);
+
         let mut group = element(BLOCK, &block);
+
         group.extend_from_slice(&element(DISCARD_PADDING, discarded));
         element(BLOCK_GROUP, &group)
     }
@@ -1390,8 +1475,10 @@ mod tests {
     fn the_padding_the_last_block_discards_is_what_the_segment_discards() {
         let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
         let mut last = element(CLUSTER_TIMESTAMP, &1_000_u64.to_be_bytes());
+
         last.extend_from_slice(&simple_block(0));
         last.extend_from_slice(&grouped(20, &[0x35, 0x67, 0xE0]));
+
         let bytes = clustered_of(
             &[track_entry(1, OPUS_CODEC_ID)],
             &scale,
@@ -1412,22 +1499,28 @@ mod tests {
     fn a_padding_an_earlier_block_or_a_negative_one_discards_is_no_padding_at_the_end() {
         let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
         let mut earlier = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         earlier.extend_from_slice(&grouped(0, &[0x35, 0x67, 0xE0]));
         earlier.extend_from_slice(&simple_block(20));
+
         let bytes = clustered_of(
             &[track_entry(1, OPUS_CODEC_ID)],
             &scale,
             &[element(CLUSTER, &earlier)],
         );
+
         assert!(read_segment(&mut Cursor::new(bytes)).discarded.is_empty());
 
         let mut negative = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         negative.extend_from_slice(&grouped(0, &[0xCA, 0x98, 0x20]));
+
         let bytes = clustered_of(
             &[track_entry(1, OPUS_CODEC_ID)],
             &scale,
             &[element(CLUSTER, &negative)],
         );
+
         assert!(read_segment(&mut Cursor::new(bytes)).discarded.is_empty());
     }
 
@@ -1438,31 +1531,40 @@ mod tests {
         let padding = [0x35, 0x67, 0xE0];
 
         let mut video_last = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         video_last.extend_from_slice(&grouped_of(2, 0, &padding));
         video_last.extend_from_slice(&simple_block_of(1, 20));
+
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &video_last)]);
+
         assert_eq!(
             read_segment(&mut Cursor::new(bytes)).discarded.get(&2),
             Some(&Duration::from_micros(3_500))
         );
 
         let mut other_audio = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         other_audio.extend_from_slice(&grouped_of(2, 0, &padding));
         other_audio.extend_from_slice(&grouped_of(3, 20, &[0x0F, 0x42, 0x40]));
+
         let tracks = [
             track_entry(1, "V_VP9"),
             track_entry(2, OPUS_CODEC_ID),
             track_entry(3, "A_AAC"),
         ];
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &other_audio)]);
+
         assert_eq!(
             read_segment(&mut Cursor::new(bytes)).discarded.get(&2),
             Some(&Duration::from_micros(3_500))
         );
 
         let mut padded_elsewhere = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         padded_elsewhere.extend_from_slice(&grouped_of(3, 0, &padding));
+
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &padded_elsewhere)]);
+
         assert!(read_segment(&mut Cursor::new(bytes)).discarded.is_empty());
     }
 
@@ -1475,8 +1577,10 @@ mod tests {
             track_entry(3, OPUS_CODEC_ID),
         ];
         let mut blocks = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         blocks.extend_from_slice(&grouped_of(1, 0, &[0x35, 0x67, 0xE0]));
         blocks.extend_from_slice(&grouped_of(3, 20, &[0x0F, 0x42, 0x40]));
+
         let bytes = clustered_of(&tracks, &scale, &[element(CLUSTER, &blocks)]);
         let rate = SampleRate::new(48_000).expect("a rate");
 
@@ -1513,6 +1617,7 @@ mod tests {
     #[test]
     fn a_duration_the_clusters_run_past_is_the_writers_mistake_and_the_count_wins() {
         let mut info = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+
         info.extend_from_slice(&element(SEGMENT_DURATION, &400.0_f64.to_be_bytes()));
 
         let bytes = clustered(&info, &[cluster(0, &[0]), cluster(1_000, &[0, 500])]);
@@ -1525,6 +1630,7 @@ mod tests {
     #[test]
     fn a_duration_the_clusters_stay_within_is_kept_as_the_writer_wrote_it() {
         let mut info = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+
         info.extend_from_slice(&element(SEGMENT_DURATION, &2_003.0_f64.to_be_bytes()));
 
         let bytes = clustered(&info, &[cluster(0, &[0, 500]), cluster(1_000, &[0, 500])]);
@@ -1537,6 +1643,7 @@ mod tests {
 
     fn unsized_cluster(at: u64, offsets: &[i16]) -> Vec<u8> {
         let mut cluster = CLUSTER.to_be_bytes().to_vec();
+
         cluster.push(UNBOUNDED);
         cluster.extend_from_slice(&element(CLUSTER_TIMESTAMP, &at.to_be_bytes()));
         for offset in offsets {
@@ -1549,6 +1656,7 @@ mod tests {
     fn a_live_recording_of_clusters_of_unknown_length_is_counted_to_its_last_block() {
         let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
         let mut segment = SEGMENT.to_be_bytes().to_vec();
+
         segment.push(UNBOUNDED);
         segment.extend_from_slice(&element(INFO, &scale));
         segment.extend_from_slice(&unsized_cluster(0, &[0, 500]));
@@ -1556,6 +1664,7 @@ mod tests {
         segment.extend_from_slice(&unsized_cluster(2_000, &[0, 750]));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&segment);
 
         assert_eq!(
@@ -1568,11 +1677,13 @@ mod tests {
     fn a_cluster_of_unknown_length_ends_where_the_next_element_of_the_segment_begins() {
         let scale = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
         let mut segment = element(INFO, &scale);
+
         segment.extend_from_slice(&unsized_cluster(0, &[0, 500]));
         segment.extend_from_slice(&element(CUES, b"a cue point or two"));
         segment.extend_from_slice(&cluster(3_000, &[0, 250]));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
 
         assert_eq!(
@@ -1587,6 +1698,7 @@ mod tests {
 
     fn track_entry(number: u8, codec: &str) -> Vec<u8> {
         let mut entry = element(TRACK_NUMBER, &[number]);
+
         entry.extend_from_slice(&element(CODEC_ID, codec.as_bytes()));
         element(TRACK_ENTRY, &entry)
     }
@@ -1600,14 +1712,18 @@ mod tests {
             INFO,
             &element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes()),
         );
+
         segment.extend_from_slice(&element(TRACKS, &entries.concat()));
+
         let mut cluster = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
         for block in blocks {
             cluster.extend_from_slice(block);
         }
         segment.extend_from_slice(&element(CLUSTER, &cluster));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
         bytes
     }
@@ -1657,12 +1773,14 @@ mod tests {
 
     fn frame(toc: u8, bytes: usize) -> Vec<u8> {
         let mut frame = vec![0xFC; bytes];
+
         frame[0] = toc;
         frame
     }
 
     fn laced_block(flags: u8, sizes: &[u8], frames: &[Vec<u8>]) -> Vec<u8> {
         let mut block = vec![0x81, 0, 0, flags, (frames.len() - 1) as u8];
+
         block.extend_from_slice(sizes);
         block.extend_from_slice(&frames.concat());
         element(SIMPLE_BLOCK, &block)
@@ -1695,6 +1813,7 @@ mod tests {
     fn an_ebml_laced_block_reads_its_sizes_as_a_first_and_signed_differences() {
         let first = [0x41, 0x2C];
         let three_less_than_three_hundred = [0x5E, 0xD6];
+
         let sizes = [first, three_less_than_three_hundred].concat();
 
         assert_eq!(
@@ -1760,6 +1879,7 @@ mod tests {
     fn a_flac_track_is_counted_frame_by_frame_out_of_its_frame_headers() {
         let four_thousand_and_ninety_six = 12;
         let one_hundred_and_ninety_two = 1;
+
         let bytes = with_tracks(
             &[track_entry(1, FLAC_CODEC_ID)],
             &[
@@ -1816,19 +1936,24 @@ mod tests {
     #[test]
     fn a_file_of_more_blocks_than_the_walk_will_read_leaves_the_count_unknown() {
         const BLOCKS_A_CLUSTER: usize = 40_000;
+
         let clusters = MAX_ELEMENTS_COUNTED / BLOCKS_A_CLUSTER + 2;
         let block = opus_block(1, 0, CELT_20_MS);
         let mut segment = element(
             INFO,
             &element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes()),
         );
+
         segment.extend_from_slice(&element(TRACKS, &track_entry(1, OPUS_CODEC_ID)));
         for _ in 0..clusters {
             let mut body = element(CLUSTER_TIMESTAMP, &0_u64.to_be_bytes());
+
             body.extend_from_slice(&block.repeat(BLOCKS_A_CLUSTER));
             segment.extend_from_slice(&element(CLUSTER, &body));
         }
+
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
 
         let found = read_segment(&mut Cursor::new(bytes));
@@ -1842,6 +1967,7 @@ mod tests {
 
     fn wavpack_frame(flags: u32) -> Vec<u8> {
         let mut frame = 4_608_u32.to_le_bytes().to_vec();
+
         frame.extend_from_slice(&flags.to_le_bytes());
         frame.extend_from_slice(&[0; 8]);
         frame
@@ -1849,6 +1975,7 @@ mod tests {
 
     fn wavpack_block(track: u8, flags: u32) -> Vec<u8> {
         let mut block = vec![0x80 | track, 0, 0, 0];
+
         block.extend_from_slice(&wavpack_frame(flags));
         element(SIMPLE_BLOCK, &block)
     }
@@ -1886,7 +2013,9 @@ mod tests {
         let wavpack = track_entry(1, WAVPACK_CODEC_ID);
         let hybrid = WAVPACK_HYBRID | WAVPACK_FINAL_BLOCK;
         let mut grouped = vec![0x81, 0, 0, 0];
+
         grouped.extend_from_slice(&wavpack_frame(hybrid));
+
         let group = element(BLOCK_GROUP, &element(BLOCK, &grouped));
         let frames = [wavpack_frame(hybrid), wavpack_frame(WAVPACK_FINAL_BLOCK)];
 
@@ -1917,9 +2046,11 @@ mod tests {
         let tracks = element(TRACKS, &element(TRACK_ENTRY, &audio));
 
         let mut segment = element(INFO, &titled("Echoes"));
+
         segment.extend_from_slice(&tracks);
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &segment));
 
         assert_eq!(read_segment(&mut Cursor::new(bytes)).bit_depth, Some(24));
@@ -1952,11 +2083,13 @@ mod tests {
     #[test]
     fn a_title_that_claims_more_than_the_file_holds_yields_nothing() {
         let mut info = element(TIMESTAMP_SCALE, &NANOSECONDS_PER_TICK.to_be_bytes());
+
         info.extend_from_slice(&TITLE.to_be_bytes()[2..]);
         info.extend_from_slice(&vint(64, 8));
         info.extend_from_slice(b"Echo");
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
+
         bytes.extend_from_slice(&element(SEGMENT, &element(INFO, &info)));
 
         assert!(read_segment(&mut Cursor::new(bytes)).title.is_none());

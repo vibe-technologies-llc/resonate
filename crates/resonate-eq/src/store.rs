@@ -37,7 +37,7 @@ const DEVICES_WINDOWS_NUMBERS: [&str; 2] = ["COM", "LPT"];
 const A_DEVICE_NUMBER: &str = "0123456789\u{b9}\u{b2}\u{b3}";
 const FOR_A_DEVICE_NAME: &str = "profile";
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProfileName(Box<str>);
 
 impl ProfileName {
@@ -70,6 +70,7 @@ impl ProfileName {
 
     pub fn after(label: &str) -> Self {
         let mut spelled = String::with_capacity(label.len());
+
         for glyph in label.chars() {
             if glyph == '/'
                 || glyph == '\\'
@@ -82,6 +83,7 @@ impl ProfileName {
                 spelled.push(glyph);
             }
         }
+
         let spelled: String = spelled.split_whitespace().collect::<Vec<_>>().join(" ");
         let cut = cut_to_fit(&spelled).trim_end_matches(['.', ' ']);
         let spoken_for = match is_a_device_name(cut) {
@@ -106,7 +108,7 @@ impl std::fmt::Display for ProfileName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Binding {
     Profile(ProfileName),
     Own,
@@ -197,9 +199,11 @@ impl Store {
 
         let names = walked.flatten().filter_map(|entry| {
             let path = entry.path();
+
             if path.extension().is_none_or(|held| held != EXTENSION) {
                 return None;
             }
+
             let stem = path.file_stem()?.to_str()?;
             ProfileName::standing(stem).ok()
         });
@@ -214,6 +218,7 @@ impl Store {
         };
 
         let mut bytes = Vec::new();
+
         file.take(limit as u64 + 1)
             .read_to_end(&mut bytes)
             .map_err(Self::failed(path, StoreOp::Read))?;
@@ -224,6 +229,7 @@ impl Store {
         let Some(bytes) = Self::bytes_up_to(path, apo::LARGEST_PROFILE)? else {
             return Ok(None);
         };
+
         if bytes.len() > apo::LARGEST_PROFILE {
             return Err(Error::TooLarge {
                 op: EqOp::Parse,
@@ -247,12 +253,14 @@ impl Store {
 
     pub fn keep(&self, name: &ProfileName, profile: &Profile) -> Result<PathBuf> {
         let path = self.path_of(name);
+
         Self::revised(&path, profile)?;
         Ok(path)
     }
 
     pub fn keep_read(&self, name: &ProfileName, kept: &Kept) -> Result<PathBuf> {
         let path = self.path_of(name);
+
         Self::staged(&path, &kept.bytes)?;
         Ok(path)
     }
@@ -272,6 +280,7 @@ impl Store {
 
     fn revised(path: &Path, profile: &Profile) -> Result<()> {
         let rendered = Self::rendered(Some(path), profile);
+
         if Self::bytes_of(path).ok().flatten().as_deref() == Some(rendered.as_slice()) {
             return Ok(());
         }
@@ -283,6 +292,7 @@ impl Store {
             fs::create_dir_all(folder).map_err(Self::failed(folder, StoreOp::Write))?;
             sweep_staged_in(folder);
         }
+
         let staged = staging_name_for(path);
         Self::written_and_synced(&staged, path, bytes).map_err(Self::failed(path, StoreOp::Write))
     }
@@ -290,6 +300,7 @@ impl Store {
     fn written_and_synced(staged: &Path, path: &Path, bytes: &[u8]) -> std::io::Result<()> {
         let landed = Held::made(staged).and_then(|held| {
             let mut file = held.file();
+
             file.write_all(bytes)?;
             file.sync_all()?;
             fs::rename(staged, path)?;
@@ -301,6 +312,7 @@ impl Store {
                 None => Ok(()),
             }
         });
+
         if landed.is_err() {
             let _ = fs::remove_file(staged);
         }
@@ -328,12 +340,14 @@ impl Store {
 
     pub fn keep_own(&self, device: Option<&str>, profile: &Profile) -> Result<PathBuf> {
         let path = self.own_path(device)?;
+
         Self::revised(&path, profile)?;
         Ok(path)
     }
 
     pub fn keep_own_read(&self, device: Option<&str>, kept: &Kept) -> Result<PathBuf> {
         let path = self.own_path(device)?;
+
         Self::staged(&path, &kept.bytes)?;
         Ok(path)
     }
@@ -355,9 +369,11 @@ impl Store {
 
         let owners = walked.flatten().filter_map(|entry| {
             let path = entry.path();
+
             if path.extension().is_none_or(|held| held != EXTENSION) {
                 return None;
             }
+
             let stem = path.file_stem()?.to_str()?;
             if stem == EVERY_OTHER_DEVICE {
                 Some(None)
@@ -394,6 +410,7 @@ impl Store {
         };
 
         let reading = apo::read(&text::decoded(&bytes).0)?;
+
         if reading.profile.is_transparent() && reading.profile.target().is_none() {
             return Err(Error::NotAProfile {
                 path: from.to_path_buf(),
@@ -467,6 +484,7 @@ impl Store {
     pub fn import(&self, from: &Path, called: Option<&ProfileName>) -> Result<(ProfileName, Kept)> {
         let kept = Self::read_in(from)?;
         let name = Self::name_for_import(from, called);
+
         self.keep_read(&name, &kept)?;
         Ok((name, kept))
     }
@@ -494,6 +512,7 @@ fn stamp_of_staged(name: &str) -> Option<u32> {
     let stamped = name.strip_prefix(HIDDEN)?.strip_suffix(STAGED_SUFFIX)?;
     let (_, tail) = stamped.rsplit_once('.')?;
     let (pid, counter) = tail.split_once('-')?;
+
     counter.parse::<u64>().ok()?;
     pid.parse().ok()
 }
@@ -524,6 +543,7 @@ fn is_a_device_name(text: &str) -> bool {
         .unwrap_or_default()
         .trim_end_matches(' ')
         .to_uppercase();
+
     if DEVICES_WINDOWS_RESERVES.contains(&stem.as_str()) {
         return true;
     }
@@ -551,6 +571,7 @@ fn cut_to_fit(spelled: &str) -> &str {
 fn the_least<T: Ord>(walked: impl Iterator<Item = T>, folder: &Path) -> Vec<T> {
     let mut least = BinaryHeap::with_capacity(PROFILES_AT_MOST + 1);
     let mut passed_over = 0_usize;
+
     for item in walked {
         least.push(item);
         if least.len() > PROFILES_AT_MOST {
@@ -571,6 +592,7 @@ fn the_least<T: Ord>(walked: impl Iterator<Item = T>, folder: &Path) -> Vec<T> {
 
 fn stem_for_a_device(device: &str) -> Result<String> {
     let mut stem = String::with_capacity(A_DEVICE.len() + device.len());
+
     stem.push_str(A_DEVICE);
     for byte in device.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-') {
@@ -581,6 +603,7 @@ fn stem_for_a_device(device: &str) -> Result<String> {
     }
 
     let file_length = stem.len() + 1 + EXTENSION.len();
+
     if device.is_empty() || file_length > NAME_BYTES_AT_MOST {
         return Err(Error::DeviceNotNameable);
     }
@@ -589,10 +612,13 @@ fn stem_for_a_device(device: &str) -> Result<String> {
 
 fn device_of_a_stem(stem: &str) -> Option<String> {
     let mut rest = stem.strip_prefix(A_DEVICE)?.as_bytes();
+
     let mut bytes = Vec::with_capacity(rest.len());
+
     while let Some((&byte, after)) = rest.split_first() {
         if byte == b'%' {
             let digits = std::str::from_utf8(after.get(..2)?).ok()?;
+
             bytes.push(u8::from_str_radix(digits, 16).ok()?);
             rest = after.get(2..)?;
         } else {
@@ -624,6 +650,7 @@ mod tests {
     impl Scratch {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let folder = env::temp_dir().join(format!(
                 "resonate-eq-{}-{}",
                 process::id(),
@@ -667,6 +694,7 @@ mod tests {
             .store
             .keep(&name, &profile())
             .expect("a writable folder");
+
         assert_eq!(
             scratch.store.read(&name).expect("it reads"),
             Some(profile())
@@ -759,6 +787,7 @@ mod tests {
                 "{label:?} became {name}"
             );
         }
+
         assert_eq!(ProfileName::after("...").as_str(), "profile");
     }
 
@@ -766,6 +795,7 @@ mod tests {
     fn a_profile_kept_under_a_name_this_build_would_not_make_is_still_listed_and_read() {
         const HELD_EVERYWHERE: &[&str] = &["HD 650 raw."];
         const HELD_OUTSIDE_WINDOWS: &[&str] = &["HD 650: raw?"];
+
         let kept_here = match cfg!(windows) {
             true => HELD_EVERYWHERE.to_vec(),
             false => [HELD_EVERYWHERE, HELD_OUTSIDE_WINDOWS].concat(),
@@ -774,8 +804,10 @@ mod tests {
         for kept in kept_here {
             let scratch = Scratch::new();
             let folder = scratch.store.folder().to_path_buf();
+
             fs::create_dir_all(&folder).expect("a writable folder");
             fs::write(folder.join(format!("{kept}.txt")), "Preamp: -3 dB\n").expect("a file");
+
             let name = ProfileName::standing(kept).expect("it stood");
 
             assert_eq!(
@@ -794,6 +826,7 @@ mod tests {
     #[test]
     fn two_names_apart_only_in_case_are_one_file_where_the_filesystem_takes_them_so() {
         let scratch = Scratch::new();
+
         scratch
             .store
             .keep(&named("Sennheiser HD 650"), &profile())
@@ -825,8 +858,11 @@ mod tests {
     fn the_profiles_listed_past_the_limit_are_the_first_by_name_whatever_the_folder_order() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let held = PROFILES_AT_MOST + 20;
+
         for at in (0..held).rev() {
             fs::write(folder.join(format!("p{at:04}.txt")), "Preamp: -1 dB").expect("writable");
         }
@@ -843,8 +879,11 @@ mod tests {
     fn a_parametric_file_imports_as_the_bands_it_names() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("measured.txt");
+
         fs::write(&from, apo::write(&profile())).expect("a writable file");
 
         let (name, kept) = scratch.store.import(&from, None).expect("it imports");
@@ -862,13 +901,16 @@ mod tests {
     fn a_utf16_file_past_the_bytes_a_profile_holds_is_refused_rather_than_read_in_part() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("wide.txt");
         let text = "Filter 1: ON PK Fc 1000 Hz Gain 1 dB Q 1\n".repeat(1_000);
         let bytes: Vec<u8> = [0xFF, 0xFE]
             .into_iter()
             .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
             .collect();
+
         fs::write(&from, bytes).expect("a writable file");
 
         assert!(matches!(Store::read_in(&from), Err(Error::TooLarge { .. })));
@@ -878,17 +920,24 @@ mod tests {
     fn a_store_says_whether_a_name_is_kept_before_an_import_takes_it() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let source = folder.join("source");
+
         fs::create_dir_all(&source).expect("a writable folder");
+
         let from = source.join("measured.txt");
+
         fs::write(&from, apo::write(&profile())).expect("a writable file");
 
         let name = Store::name_for_import(&from, None);
+
         assert_eq!(name.as_str(), "measured");
         assert!(!scratch.store.holds(&name));
 
         scratch.store.import(&from, None).expect("it imports");
+
         assert!(scratch.store.holds(&name));
         assert_eq!(
             Store::name_for_import(&from, Some(&named("other"))),
@@ -900,9 +949,12 @@ mod tests {
     fn a_file_a_windows_editor_saved_as_utf_16_imports_as_the_bands_it_names() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("measured.txt");
         let mut wide = vec![0xFF, 0xFE];
+
         for unit in apo::write(&profile()).encode_utf16() {
             wide.extend_from_slice(&unit.to_le_bytes());
         }
@@ -917,8 +969,11 @@ mod tests {
     fn a_graphic_file_imports_as_a_conversion_and_says_so() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("curve.txt");
+
         fs::write(&from, "GraphicEQ: 20 -9; 200 -9; 2000 0; 20000 0").expect("a writable file");
 
         let (name, kept) = scratch
@@ -935,8 +990,11 @@ mod tests {
     fn a_graphic_file_is_kept_as_its_curve_and_reads_back_able_to_fit_again() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("curve.txt");
+
         fs::write(&from, "GraphicEQ: 20 -9; 200 -9; 2000 0; 20000 0").expect("a writable file");
 
         let (name, kept) = scratch.store.import(&from, None).expect("it imports");
@@ -950,15 +1008,18 @@ mod tests {
         assert_eq!(read, kept.profile);
 
         let mut shaped = read;
+
         if let Some(band) = shaped.band_mut(0) {
             band.on = false;
         }
         scratch.store.keep(&name, &shaped).expect("it keeps");
+
         let reshaped = scratch
             .store
             .read(&name)
             .expect("it reads")
             .expect("it was kept");
+
         assert_eq!(reshaped.target(), None);
         assert_eq!(reshaped, shaped);
     }
@@ -967,8 +1028,11 @@ mod tests {
     fn a_preamp_written_beside_a_graphic_curve_is_the_one_it_plays_at() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("curve.txt");
+
         fs::write(
             &from,
             "Preamp: -4.5 dB\nGraphicEQ: 20 -9; 200 -9; 2000 0; 20000 0\n",
@@ -985,8 +1049,11 @@ mod tests {
     fn a_file_that_is_neither_is_refused_rather_than_kept_empty() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let from = folder.join("nonsense.txt");
+
         fs::write(&from, "the quick brown fox\n").expect("a writable file");
 
         assert!(matches!(
@@ -999,13 +1066,16 @@ mod tests {
     fn a_profile_exported_is_a_file_another_player_reads() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let to = folder.join("exported.txt");
 
         scratch
             .store
             .export(&profile(), None, &to)
             .expect("it writes");
+
         let text = fs::read_to_string(&to).expect("it reads back");
 
         assert!(text.starts_with("Preamp:"), "{text}");
@@ -1076,6 +1146,7 @@ mod tests {
             None,
         ];
         let paths: Vec<PathBuf> = spellings.into_iter().map(own).collect();
+
         for (at, path) in paths.iter().enumerate() {
             assert_eq!(
                 path.parent(),
@@ -1111,6 +1182,7 @@ mod tests {
             "..",
             "Kopfhörer",
         ];
+
         for device in devices {
             scratch
                 .store
@@ -1127,7 +1199,9 @@ mod tests {
             .map(|device| Some(device.to_owned()))
             .chain([None])
             .collect();
+
         expected.sort();
+
         assert_eq!(scratch.store.owners().expect("it walks"), expected);
     }
 
@@ -1135,6 +1209,7 @@ mod tests {
     fn a_file_no_device_is_written_as_is_not_listed_as_an_own_curve() {
         let scratch = Scratch::new();
         let own = scratch.store.folder().join(OWN_FOLDER);
+
         fs::create_dir_all(&own).expect("a writable folder");
         for stray in [
             "device-a%2fb.txt",
@@ -1158,6 +1233,7 @@ mod tests {
     fn an_own_curve_forgotten_leaves_its_device_flat_and_every_other_curve_standing() {
         let scratch = Scratch::new();
         let device = "alsa_output.usb";
+
         scratch
             .store
             .keep_own(Some(device), &profile())
@@ -1184,12 +1260,14 @@ mod tests {
     fn a_crash_part_way_through_a_write_cannot_truncate_a_profile() {
         let scratch = Scratch::new();
         let name = named("held");
+
         scratch
             .store
             .keep(&name, &profile())
             .expect("a writable folder");
 
         let staged = scratch.store.path_of(&name).with_extension("txt.new");
+
         assert!(!staged.exists(), "the staged file outlived the rename");
     }
 
@@ -1205,19 +1283,23 @@ mod tests {
             .flatten()
             .filter_map(|entry| entry.file_name().into_string().ok())
             .collect();
+
         names.sort();
         names
     }
 
     fn placed(scratch: &Scratch, name: &ProfileName, bytes: &[u8]) -> PathBuf {
         fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
+
         let path = scratch.store.path_of(name);
+
         fs::write(&path, bytes).expect("a writable folder");
         path
     }
 
     fn louder() -> Profile {
         let mut louder = profile();
+
         louder.band_mut(0).expect("a band").gain = BandGain::from_decibels(7.0).expect("in range");
         louder
     }
@@ -1226,6 +1308,7 @@ mod tests {
     fn a_profile_kept_over_a_hand_edited_file_changes_the_lines_it_moved_and_nothing_else() {
         let scratch = Scratch::new();
         let name = named("hand edited");
+
         let path = placed(&scratch, &name, ANNOTATED.as_bytes());
 
         scratch.store.keep(&name, &louder()).expect("it keeps");
@@ -1243,6 +1326,7 @@ mod tests {
     fn a_profile_kept_unchanged_leaves_its_file_untouched() {
         let scratch = Scratch::new();
         let name = named("hand edited");
+
         let path = placed(&scratch, &name, ANNOTATED.as_bytes());
         let read = scratch.store.read(&name).expect("it reads").expect("kept");
 
@@ -1264,13 +1348,16 @@ mod tests {
         ] {
             let name = named(label);
             let mut bytes = encoding.byte_order_mark().to_vec();
+
             bytes.extend(text::encoded(body, encoding).expect("every letter fits"));
+
             let path = placed(&scratch, &name, &bytes);
 
             scratch.store.keep(&name, &louder()).expect("it keeps");
 
             let kept = fs::read(&path).expect("it reads");
             let (decoded, found) = text::decoded(&kept);
+
             assert_eq!(found, encoding, "{label}");
             assert_eq!(
                 kept.starts_with(encoding.byte_order_mark()) && bom,
@@ -1287,7 +1374,9 @@ mod tests {
         let scratch = Scratch::new();
         let name = named("marked");
         let mut bytes = UTF8_BOM.to_vec();
+
         bytes.extend_from_slice(ANNOTATED.as_bytes());
+
         let path = placed(&scratch, &name, &bytes);
 
         scratch.store.keep(&name, &louder()).expect("it keeps");
@@ -1299,8 +1388,10 @@ mod tests {
     fn text_with_a_letter_its_code_page_lacks_is_kept_as_utf8_rather_than_lost() {
         let scratch = Scratch::new();
         let name = named("latin");
+
         let path = placed(&scratch, &name, b"# caf\xe9\nPreamp: -6.1 dB\n");
         let mut with_a_letter = profile();
+
         with_a_letter.set_preamp(Preamp::from_decibels(-3.0).expect("in range"));
 
         scratch.store.keep(&name, &with_a_letter).expect("it keeps");
@@ -1316,6 +1407,7 @@ mod tests {
     fn an_import_keeps_the_file_it_read_comments_and_all() {
         let scratch = Scratch::new();
         let source = scratch.store.folder().join("elsewhere.txt");
+
         fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
         fs::write(&source, ANNOTATED).expect("a writable folder");
 
@@ -1332,8 +1424,11 @@ mod tests {
     fn an_import_over_a_profile_of_that_name_replaces_it_whole_rather_than_editing_it() {
         let scratch = Scratch::new();
         let name = named("elsewhere");
+
         placed(&scratch, &name, b"# the old one\nPreamp: -1 dB\n");
+
         let source = scratch.store.folder().join("elsewhere.txt.src");
+
         fs::write(&source, ANNOTATED).expect("a writable folder");
 
         scratch
@@ -1351,6 +1446,7 @@ mod tests {
     fn an_export_is_the_kept_text_where_nothing_moved_and_is_staged_beside_its_target() {
         let scratch = Scratch::new();
         let name = named("hand edited");
+
         let kept = placed(&scratch, &name, ANNOTATED.as_bytes());
         let to = scratch.store.folder().join("out.txt");
         let read = scratch.store.read(&name).expect("it reads").expect("kept");
@@ -1385,15 +1481,19 @@ mod tests {
     fn two_writers_stage_under_names_of_their_own_and_a_dead_ones_leftover_is_swept() {
         let scratch = Scratch::new();
         let name = named("shared");
+
         let path = scratch.store.path_of(&name);
+
         fs::create_dir_all(scratch.store.folder()).expect("a writable folder");
 
         let first = staging_name_for(&path);
         let second = staging_name_for(&path);
+
         assert_ne!(first, second);
         assert_eq!(first.parent(), path.parent());
 
         let dead = scratch.store.folder().join(".shared.txt.999999999-0.new");
+
         fs::write(&dead, "half").expect("a writable folder");
         std::fs::File::options()
             .write(true)
@@ -1405,10 +1505,12 @@ mod tests {
                 )
             })
             .expect("a file left long ago");
+
         let living = scratch
             .store
             .folder()
             .join(format!(".other.txt.{}-77.new", process::id()));
+
         fs::write(&living, "half").expect("a writable folder");
 
         scratch.store.keep(&name, &profile()).expect("it keeps");
@@ -1435,7 +1537,9 @@ mod tests {
             .expect("a device whose file fits keeps its curve");
 
         assert_eq!(kept.file_name().map(OsStr::len), Some(NAME_BYTES_AT_MOST));
+
         let staged = staging_name_for(&kept);
+
         assert!(staged.file_name().expect("a name").len() <= NAME_BYTES_AT_MOST);
         assert_eq!(
             scratch.store.own(Some(&device)).expect("it reads"),
@@ -1469,7 +1573,9 @@ mod tests {
     fn a_measurement_in_a_file_is_fitted_and_says_how_it_was_laid_out() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let file = folder.join("measured.txt");
         let dip: String = (0..60)
             .map(|step| {
@@ -1482,6 +1588,7 @@ mod tests {
                 format!("{hertz:.2}\t{level:.2}\n")
             })
             .collect();
+
         fs::write(&file, format!("* REW\n{dip}")).expect("a writable folder");
 
         let measured = Store::fit_file(&file, &Response::flat(), &Fitting::default())
@@ -1492,10 +1599,12 @@ mod tests {
         assert!(measured.fitted.off_by_db_after < measured.fitted.off_by_db_before);
 
         let name = named("fitted");
+
         scratch
             .store
             .keep(&name, &measured.fitted.profile)
             .expect("kept");
+
         assert_eq!(
             scratch.store.read(&name).expect("it reads"),
             Some(measured.fitted.profile)
@@ -1506,8 +1615,11 @@ mod tests {
     fn a_target_is_a_built_in_by_name_or_else_a_file_in_the_same_formats() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let file = folder.join("mine.csv");
+
         fs::write(
             &file,
             format!("frequency,raw\n{}", response_text(4.0).replace(' ', ",")),
@@ -1535,8 +1647,11 @@ mod tests {
     fn a_measurement_file_larger_than_a_measurement_may_be_is_refused() {
         let scratch = Scratch::new();
         let folder = scratch.store.folder().to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable folder");
+
         let file = folder.join("huge.txt");
+
         fs::write(&file, vec![b'1'; LARGEST_MEASUREMENT + 1]).expect("a writable folder");
 
         assert!(matches!(

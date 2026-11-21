@@ -26,7 +26,7 @@ const OCTAVE_Q_HELD_WITHIN: f32 = 0.001;
 const RESPONSE_POINTS_AT_LEAST: u32 = 2;
 const RESPONSE_POINTS_AT_MOST: u32 = 2_048;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, uniffi::Enum)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, uniffi::Enum)]
 pub enum EqualiserFilter {
     #[default]
     Peaking,
@@ -204,6 +204,7 @@ pub struct EqualiserLimits {
 impl EqualiserBand {
     fn band(self, at: usize) -> Result<Band> {
         let place = u32::try_from(at).unwrap_or(u32::MAX);
+
         if !(LOWEST_HZ..=HIGHEST_HZ).contains(&self.frequency_hz) {
             return Err(Error::BandFrequency {
                 band: place,
@@ -342,6 +343,7 @@ pub(crate) fn imported(profile: &Profile, name: String) -> EqualiserImport {
         .filter(|band| band.on)
         .map(|band| {
             let (held, was_held) = EqualiserBand::of(band).held_within_limits();
+
             clamped += u32::from(was_held);
             held
         })
@@ -349,6 +351,7 @@ pub(crate) fn imported(profile: &Profile, name: String) -> EqualiserImport {
 
     let preamp = profile.preamp().decibels() as f32;
     let preamp_db = preamp.clamp(-PREAMP_AT_MOST_DB, PREAMP_AT_MOST_DB);
+
     clamped += u32::from(preamp_db != preamp);
 
     EqualiserImport {
@@ -429,6 +432,7 @@ impl MobilePlayer {
     pub fn fitted_preamp(&self, curve: EqualiserCurve, rate_hz: Option<u32>) -> Result<f32> {
         let applied = self.applied(curve)?;
         let rate = rate_hz.map_or(Ok(FITTED_AT), SampleRate::new)?;
+
         let fitted = applied.fitted_preamp(rate)?.decibels() as f32;
 
         Ok(fitted.max(-PREAMP_AT_MOST_DB))
@@ -449,6 +453,7 @@ impl MobilePlayer {
         };
 
         let watch = Arc::new(Watch::default());
+
         if let Some(previous) = self.services.fitting.lock().replace(Arc::clone(&watch)) {
             previous.stop();
         }
@@ -528,6 +533,7 @@ mod tests {
         );
         for (hertz, decibels) in sweep(points).zip(&drawn) {
             let expected = designed.magnitude_db(hertz, FITTED_AT) as f32;
+
             assert!(
                 (decibels - expected).abs() < 0.001,
                 "{decibels} against {expected} dB at {hertz} Hz"
@@ -538,6 +544,7 @@ mod tests {
     #[test]
     fn the_response_is_drawn_at_the_rate_asked_and_with_the_preamp() {
         let mut shaped = curve(vec![peaking(15_000.0, 6.0, 1.0)]);
+
         shaped.preamp_db = -3.0;
 
         let at_48 = response_curve(shaped.clone(), 64, None).expect("a valid curve");
@@ -621,26 +628,32 @@ mod tests {
             .player
             .fitted_preamp(treble.clone(), None)
             .expect("a fit");
+
         harness
             .player
             .keep_room_correction(lowpassing_the_treble(), "wav".to_owned())
             .expect("a kept response");
+
         let kept_and_off = harness
             .player
             .fitted_preamp(treble.clone(), None)
             .expect("a fit");
+
         harness
             .player
             .apply_room_correction(true)
             .expect("an applied response");
+
         let corrected = harness
             .player
             .fitted_preamp(treble.clone(), None)
             .expect("a fit");
+
         harness
             .player
             .apply_room_correction(false)
             .expect("a response taken off");
+
         let taken_off = harness.player.fitted_preamp(treble, None).expect("a fit");
 
         assert!((alone + 6.0).abs() < 0.05, "{alone}");
@@ -658,6 +671,7 @@ mod tests {
 
         let harness = Harness::new();
         let boosted = curve(vec![peaking(1000.0, 6.0, 1.0)]);
+
         kept_sounding_at_one_kilohertz(&harness, 'a', 0.9);
         harness
             .player
@@ -669,6 +683,7 @@ mod tests {
             .fitted_preamp_to_the_queue(boosted.clone())
             .expect("a fit")
             .expect("a measure");
+
         harness
             .player
             .keep_room_correction(averaging_two_dozen_taps(), "wav".to_owned())
@@ -677,15 +692,18 @@ mod tests {
             .player
             .apply_room_correction(true)
             .expect("an applied response");
+
         let corrected = harness
             .player
             .fitted_preamp_to_the_queue(boosted.clone())
             .expect("a fit")
             .expect("a measure");
+
         harness
             .player
             .forget_room_correction()
             .expect("a response forgotten");
+
         let forgotten = harness
             .player
             .fitted_preamp_to_the_queue(boosted)
@@ -718,6 +736,7 @@ mod tests {
             .player
             .load(harness.ids("ab"), 0, false)
             .expect("a queue");
+
         assert_eq!(
             harness
                 .player
@@ -727,6 +746,7 @@ mod tests {
         );
 
         let broken = curve(vec![peaking(1000.0, 60.0, 1.0)]);
+
         assert!(matches!(
             harness.player.fitted_preamp_to_the_queue(broken),
             Err(Error::BandGain { .. })
@@ -766,6 +786,7 @@ mod tests {
         use crate::harness::Harness;
 
         let harness = Harness::new();
+
         kept_sounding_at_one_kilohertz(&harness, 'a', 0.5);
         harness
             .player
@@ -790,6 +811,7 @@ mod tests {
             .expect("the studies owed a measure");
 
         let expected = -(20.0 * (0.5_f64 * 2.0).log10()) as f32;
+
         assert!(
             (fitted - expected).abs() < 0.15,
             "{fitted} against {expected} dB"
@@ -803,6 +825,7 @@ mod tests {
 
         let harness = Harness::new();
         let boosted = curve(vec![peaking(1000.0, 6.0, 1.0)]);
+
         kept_sounding_at_one_kilohertz(&harness, 'a', 0.5);
         kept_sounding_at_one_kilohertz(&harness, 'c', 0.9);
 
@@ -810,6 +833,7 @@ mod tests {
             .player
             .load(harness.ids("ab"), 0, false)
             .expect("a queue");
+
         let queued_and_kept = harness
             .player
             .fitted_preamp_to_the_queue(boosted.clone())
@@ -820,6 +844,7 @@ mod tests {
             .player
             .load(vec![], 0, false)
             .expect("an empty queue");
+
         let catalog_alone = harness
             .player
             .fitted_preamp_to_the_queue(boosted)
@@ -827,6 +852,7 @@ mod tests {
             .expect("a measure");
 
         let expected = -(20.0 * (0.9_f64 * 2.0).log10()) as f32;
+
         assert!(
             (queued_and_kept - expected).abs() < 0.15,
             "{queued_and_kept} against {expected} dB"
@@ -839,7 +865,9 @@ mod tests {
         use crate::harness::Harness;
 
         let harness = Harness::new();
+
         kept_sounding_at_one_kilohertz(&harness, 'a', 0.9);
+
         let cuts = |name: char, span| {
             vec![resonate_analysis::Cut {
                 location: crate::documents::location(&harness.song(name).uri).expect("a location"),
@@ -853,6 +881,7 @@ mod tests {
             'a',
             Some(resonate_core::FrameSpan::starting(resonate_core::Frames(0))),
         ));
+
         harness
             .player
             .catalog
@@ -860,6 +889,7 @@ mod tests {
             .lock()
             .execute("UPDATE documents SET modified = 5", [])
             .expect("a touched file");
+
         let touched = harness.player.catalog.unmeasured(&cuts('a', None));
 
         assert_eq!(measured.expect("a read").len(), 0);
@@ -942,6 +972,7 @@ mod tests {
     #[test]
     fn a_band_played_on_no_channel_is_refused_naming_it() {
         let mut silent = peaking(1000.0, 0.0, 1.0);
+
         silent.channels = 0;
 
         assert!(matches!(
@@ -993,7 +1024,9 @@ mod tests {
         );
 
         let mut loud = curve(Vec::new());
+
         loud.preamp_db = f32::NAN;
+
         assert!(matches!(loud.profile(), Err(Error::PreampRange { .. })));
     }
 

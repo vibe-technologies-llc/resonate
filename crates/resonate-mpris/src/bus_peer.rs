@@ -87,8 +87,10 @@ impl BusPeer {
 
     fn added_one_by_one(&self, uris: &[String], after: &OwnedObjectPath, play: bool) -> Result<()> {
         let tracks = self.proxy(TRACK_LIST)?;
+
         for (place, uri) in uris.iter().enumerate().rev() {
             let heard_now = play && place == 0;
+
             tracks
                 .call_method(ADD_TRACK, &(uri, after, heard_now))
                 .map_err(|source| Error::bus(BusOp::Queue, source))?;
@@ -337,6 +339,7 @@ fn ours(connection: &Connection) -> Result<Vec<WellKnownName<'static>>> {
         .map(|name| name.as_str())
         .filter(|name| names_this_build(name))
         .collect();
+
     ours.sort_unstable();
 
     ours.into_iter()

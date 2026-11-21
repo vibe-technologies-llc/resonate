@@ -26,6 +26,7 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         .iter()
         .filter(|track| track.studied.recognised.is_some())
         .count();
+
     said!(
         "{} | {}",
         words::studies::judged(
@@ -43,6 +44,7 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
     } else {
         library.studies(filter)?
     };
+
     if shown.is_empty() {
         said!("{}", words::studies::none_match());
         return Ok(());
@@ -58,6 +60,7 @@ pub fn print(library: &Library, filter: StudyFilter) -> Result<()> {
         words::studies::artist(),
         words::studies::title(),
     ]);
+
     for track in &shown {
         table.push(row(track));
     }

@@ -15,6 +15,7 @@ pub(crate) enum Callback {
 
 pub(crate) fn answered<T>(callback: Callback, call: impl FnOnce() -> T) -> Option<T> {
     let answer = panic::catch_unwind(AssertUnwindSafe(call)).ok();
+
     if answer.is_none() && callback != Callback::Logbook {
         tracing::warn!(
             ?callback,

@@ -147,6 +147,7 @@ fn icon_images() -> Vec<([u8; 4], Vec<u8>)> {
         bytes.len(),
         "the icon declares another length than it has"
     );
+
     while at < bytes.len() {
         let kind: [u8; 4] = bytes[at..at + 4].try_into().unwrap();
         let length = u32::from_be_bytes(bytes[at + 4..at + ICON_HEADER].try_into().unwrap());
@@ -246,12 +247,14 @@ fn every_placeholder_the_property_list_holds_is_filled_with_the_version_cargo_de
     let held = placeholders(&info);
 
     assert_eq!(held, BTreeSet::from(["VERSION"]));
+
     for placeholder in held {
         assert!(
             build.contains(&format!("s/@{placeholder}@/")),
             "the property list holds @{placeholder}@, which build.sh never fills"
         );
     }
+
     assert_eq!(
         text_of(&info, "CFBundleShortVersionString"),
         text_of(&info, "CFBundleVersion")
@@ -302,6 +305,7 @@ fn the_build_script_builds_apple_silicon_and_intel_over_the_checkouts_native_fla
     assert_eq!(flags, ["\"\"", "\"-C target-cpu=x86-64-v3\""]);
     assert_eq!(assigned(&build, "architecture"), Some("${3:-aarch64}"));
     assert!(!build.contains("target-cpu=native"));
+
     for package in [
         "--package resonate --bin resonate",
         "--package resonate-signin",
@@ -314,6 +318,7 @@ fn the_build_script_builds_apple_silicon_and_intel_over_the_checkouts_native_fla
             "build.sh does not build {package} in a run of its own"
         );
     }
+
     assert!(
         build.contains("resonate-$version-$named-macos.dmg")
             && holds_the_line(&build, "        named=aarch64")
@@ -343,6 +348,7 @@ fn the_cask_names_the_two_images_build_sh_makes_and_every_placeholder_is_filled(
             "fill-cask.sh never fills {placeholder}"
         );
     }
+
     assert!(
         cask.contains("arch arm: \"aarch64\", intel: \"x86_64_v3\"")
             && cask.contains("resonate-#{version}-#{arch}-macos.dmg"),
@@ -371,6 +377,7 @@ fn the_bundle_says_why_it_asks_for_the_microphone_the_macs_own_sound_and_the_net
             "the bundle asks without {prompt}"
         );
     }
+
     assert_eq!(
         keys_of(&entitlements),
         BTreeSet::from(["com.apple.security.device.audio-input"]),
@@ -426,6 +433,7 @@ fn the_release_workflow_signs_only_with_the_secrets_the_script_reads() {
             "sign.sh does not read {variable}, or fails where it is not set"
         );
     }
+
     assert_eq!(
         workflow.matches("RESONATE_MACOS_").count(),
         SECRET_VARIABLES.len(),
@@ -457,12 +465,14 @@ fn nothing_the_bundle_is_made_of_names_a_maintainer_or_a_repository() {
     let fetched = addresses(&build);
 
     assert_eq!(fetched.len(), 2, "build.sh fetches the two faces alone");
+
     for address in &fetched {
         assert!(
             flatpak.contains(&format!("{ADDRESS_OPENS}{address}")),
             "build.sh fetches {address}, which the Flatpak does not"
         );
     }
+
     assert_eq!(
         digests(&build),
         digests(&flatpak),

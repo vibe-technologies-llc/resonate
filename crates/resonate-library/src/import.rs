@@ -62,7 +62,7 @@ pub struct Vaulted {
     pub deduped: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Passing {
     SourceGone,
     Unreadable,
@@ -181,12 +181,14 @@ pub(crate) fn start(
     let walking = library.walk_the_tree()?;
     let progress = Arc::new(ImportProgress::default());
     let owned = Arc::clone(&progress);
+
     walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-import".to_owned())
         .spawn(move || {
             let outcome = run(&library, &vault, &sources, &options, &progress);
+
             drop(walking);
             outcome
         })
@@ -203,6 +205,7 @@ fn run(
     progress: &ImportProgress,
 ) -> Result<ImportSummary> {
     let known = library.roots()?;
+
     for root in &options.roots {
         if !known.contains(root) {
             return Err(Error::NotARoot { path: root.clone() });
@@ -210,6 +213,7 @@ fn run(
     }
 
     let mut rows = library.tracks_to_vault(&options.roots)?;
+
     rows.retain(worth_weighing);
     if let Some(cap) = options.at_most {
         rows.truncate(cap.get());
@@ -217,6 +221,7 @@ fn run(
     progress.walked.store(rows.len() as u64, Ordering::Relaxed);
 
     let mut plan = ImportPlan::default();
+
     if !options.apply {
         plan.wanted = rows.iter().map(wanted).collect();
         return Ok(ImportSummary {
@@ -240,7 +245,9 @@ fn run(
     let workers = options
         .workers
         .min(NonZeroUsize::new(rows.len()).unwrap_or(NonZeroUsize::MIN));
+
     let mut settled = thread::scope(|scope| shared.worked_through(scope, workers))?;
+
     settled.sort_by_key(|(at, _)| *at);
     for (_, outcome) in settled {
         match outcome {
@@ -250,6 +257,7 @@ fn run(
     }
 
     let stats = progress.snapshot();
+
     if stats.vaulted + stats.deduped > 0 {
         library.restate_the_statistics();
     }
@@ -284,6 +292,7 @@ impl<'a> Shared<'a> {
         workers: NonZeroUsize,
     ) -> Result<Vec<(usize, Outcome)>> {
         let mut spawned = Vec::with_capacity(workers.get());
+
         for index in 0..workers.get() {
             match thread::Builder::new()
                 .name(format!("resonate-import-{index}"))
@@ -299,6 +308,7 @@ impl<'a> Shared<'a> {
 
         let mut settled = Vec::with_capacity(self.rows.len());
         let mut first_error = None;
+
         for worker in spawned {
             match worker.join() {
                 Ok(Ok(done)) => settled.extend(done),
@@ -317,11 +327,13 @@ impl<'a> Shared<'a> {
 
     fn work(&self, worker: usize) -> Result<Vec<(usize, Outcome)>> {
         let mut done = Vec::new();
+
         while !self.progress.is_cancelled() && !self.failed.load(Ordering::Relaxed) {
             if !self.progress.lets_work(worker) {
                 thread::sleep(HELD_BACK_LOOKS_AGAIN_AFTER);
                 continue;
             }
+
             let claimed = self.next.fetch_add(1, Ordering::Relaxed);
             let Some(&at) = self.claimed_in.get(claimed) else {
                 break;
@@ -348,6 +360,7 @@ impl<'a> Shared<'a> {
         let Some(album) = row.album_id else {
             return Ok(());
         };
+
         if !self.covered.lock().insert(album) {
             return Ok(());
         }
@@ -363,6 +376,7 @@ fn keep_one(
     progress: &ImportProgress,
 ) -> Result<Option<Outcome>> {
     let asked = wanted(row);
+
     if !row.path.is_file() {
         return Ok(Some(passed(progress, &asked, Passing::SourceGone)));
     }
@@ -398,6 +412,7 @@ fn keep_one(
                 bytes: kept.was,
                 ..asked
             };
+
             library.note_vaulted(row, &kept)?;
             progress.vaulted.fetch_add(1, Ordering::Relaxed);
             progress.was_bytes.fetch_add(asked.bytes, Ordering::Relaxed);
@@ -441,6 +456,7 @@ fn cover_of(
             return Ok(());
         }
     };
+
     if library.note_vaulted_cover(album, &kept, &art)? {
         progress.covers.fetch_add(1, Ordering::Relaxed);
     }
@@ -457,6 +473,7 @@ fn passed(progress: &ImportProgress, asked: &Wanted, why: Passing) -> Outcome {
 
 fn costliest_first(rows: &[TrackToVault]) -> Vec<usize> {
     let mut order: Vec<usize> = (0..rows.len()).collect();
+
     order.sort_by_key(|&at| Reverse(cost_of(&rows[at])));
     order
 }
@@ -517,13 +534,16 @@ mod tests {
     #[test]
     fn workers_past_what_the_import_is_held_to_wait_and_every_one_works_once_let_go() {
         let progress = ImportProgress::default();
+
         assert!((0..8).all(|worker| progress.lets_work(worker)));
 
         progress.hold_to(NonZeroUsize::new(2));
+
         assert!(progress.lets_work(1));
         assert!(!progress.lets_work(2));
 
         progress.hold_to(None);
+
         assert!(progress.lets_work(7));
     }
 
@@ -537,6 +557,7 @@ mod tests {
         fn new(named: &str) -> Self {
             let path = env::temp_dir().join(format!("resonate-import-{}-{named}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(path.join("music")).expect("a scratch folder");
             Self(path)
         }
@@ -555,13 +576,16 @@ mod tests {
     fn noise(seed: u32) -> Vec<u8> {
         let mut state = seed;
         let mut data = Vec::with_capacity(FRAMES as usize * 4);
+
         for _ in 0..FRAMES * 2 {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
             data.extend_from_slice(&((state >> 16) as u16).to_le_bytes());
         }
+
         let mut wave = b"RIFF".to_vec();
+
         wave.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
         wave.extend_from_slice(b"WAVEfmt ");
         wave.extend_from_slice(&16_u32.to_le_bytes());
@@ -617,6 +641,7 @@ mod tests {
             .collect();
         let drawn = image::RgbaImage::from_raw(16, 16, pixels).expect("a drawn picture");
         let mut written = Cursor::new(Vec::new());
+
         image::DynamicImage::ImageRgba8(drawn)
             .write_to(&mut written, image::ImageFormat::Png)
             .expect("a written picture");
@@ -628,9 +653,12 @@ mod tests {
 
     fn hummed(step: u32) -> Vec<u8> {
         let mut wave = noise(1);
+
         let data = wave.len() - FRAMES as usize * 4;
+
         for (at, frame) in wave[data..].as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let level = ((at as u32 * step) % 512) as u16;
+
             frame[..2].copy_from_slice(&level.to_le_bytes());
             frame[2..].copy_from_slice(&level.to_le_bytes());
         }
@@ -661,9 +689,11 @@ mod tests {
         let scratch = Scratch::new("foretold");
         let library = opened(&scratch);
         let music = scratch.music().canonicalize().expect("a scratch folder");
+
         fs::create_dir_all(music.join("a")).expect("a folder");
         fs::write(music.join("a/hum.wav"), hummed(3)).expect("a written source");
         scanned(&library, &music);
+
         let first = imported(&library);
         let landed = keys_held(&library);
 
@@ -673,6 +703,7 @@ mod tests {
         fs::write(music.join("b/hum.wav"), hummed(3)).expect("a written source");
         fs::write(music.join("c/other.wav"), hummed(5)).expect("a written source");
         scanned(&library, &music);
+
         let copy = foretold_for(&library, &music.join("b/hum.wav"));
         let other = foretold_for(&library, &music.join("c/other.wav"));
         let second = imported(&library);
@@ -680,6 +711,7 @@ mod tests {
         fs::create_dir_all(music.join("d")).expect("a folder");
         fs::write(music.join("d/third.wav"), hummed(7)).expect("a written source");
         scanned(&library, &music);
+
         let shared = foretold_for(&library, &music.join("d/third.wav"));
 
         assert_eq!(first.stats.vaulted, 1);
@@ -700,13 +732,16 @@ mod tests {
         let scratch = Scratch::new("standing");
         let library = opened(&scratch);
         let music = scratch.music().canonicalize().expect("a scratch folder");
+
         fs::write(music.join("hum.wav"), hummed(3)).expect("a written source");
         scanned(&library, &music);
         imported(&library);
+
         let object = library
             .vault_objects()
             .expect("the objects noted")
             .remove(0);
+
         library
             .inner()
             .write(|transaction| {
@@ -735,12 +770,14 @@ mod tests {
         let scratch = Scratch::new("refused");
         let library = opened(&scratch);
         let audio = scratch.music().join("noise.wav");
+
         fs::write(&audio, noise(0x9e37_79b9)).expect("a written source");
         fs::write(scratch.music().join("noise.cue"), SHEET).expect("a written sheet");
         scanned(&library, &scratch.music());
 
         let first = imported(&library);
         let again = imported(&library);
+
         library
             .inner()
             .write(|transaction| {
@@ -750,9 +787,12 @@ mod tests {
                     .map_err(|source| Error::store(crate::error::StoreOp::Update, source))
             })
             .expect("an older stamp");
+
         let behind = imported(&library);
+
         fs::write(&audio, noise(0x2545_f491)).expect("a rewritten source");
         scanned(&library, &scratch.music());
+
         let rewritten = imported(&library);
 
         assert_eq!(first.stats.walked, 2);
@@ -780,6 +820,7 @@ mod tests {
         let vault = Arc::clone(library.vault().expect("a vault"));
         let first = picture(10);
         let better = picture(200);
+
         let albums: Vec<AlbumId> = ["Meddle", "Animals"]
             .into_iter()
             .map(|title| {
@@ -812,6 +853,7 @@ mod tests {
             .expect("a read")
             .expect("a cover");
         let kept = vault.keep_cover(&asked).expect("a kept cover");
+
         library
             .inner()
             .write(|transaction| {
@@ -824,6 +866,7 @@ mod tests {
                     .map_err(|source| Error::store(crate::error::StoreOp::Update, source))
             })
             .expect("a better cover landed");
+
         let moved_over_the_better = library
             .note_vaulted_cover(raced, &kept, &asked)
             .expect("a noting");

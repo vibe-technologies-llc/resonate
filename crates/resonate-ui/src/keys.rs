@@ -291,6 +291,7 @@ fn in_apples_marks(keys: &str) -> String {
         .filter(|(named, _)| held.split('-').any(|part| part == *named))
         .map(|(_, mark)| *mark)
         .collect();
+
     marks.push_str(&key_as_apple_marks_it(key));
     marks
 }

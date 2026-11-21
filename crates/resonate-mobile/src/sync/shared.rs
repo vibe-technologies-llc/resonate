@@ -42,6 +42,7 @@ pub(super) fn hides(connection: &Connection, at: LocalPlaylistId) -> rusqlite::R
 impl SharedCatalog for DocumentCatalog {
     fn shared_read(&self, at: LocalPlaylistId) -> Result<Option<LocalShared>, Refused> {
         let connection = self.catalog.0.lock();
+
         if !flagged(&connection, at).map_err(unavailable)? {
             return Ok(None);
         }
@@ -57,8 +58,10 @@ impl SharedCatalog for DocumentCatalog {
         editable: bool,
     ) -> Result<LocalShared, Refused> {
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(unavailable)?;
         let mut rows = Vec::with_capacity(entries.len());
+
         for entry in entries {
             rows.extend(self.resolved_in(&transaction, entry)?);
         }
@@ -78,6 +81,7 @@ impl SharedCatalog for DocumentCatalog {
             Some(id) => id,
             None => {
                 let named = a_free_name(&transaction, name, None).map_err(unavailable)?;
+
                 transaction
                     .execute(
                         "INSERT INTO playlists(name, folded, created) VALUES (?1, ?2, ?3)",
@@ -88,6 +92,7 @@ impl SharedCatalog for DocumentCatalog {
             }
         };
         let named = a_free_name(&transaction, name, Some(id)).map_err(unavailable)?;
+
         transaction
             .execute(
                 "UPDATE playlists SET name = ?2, folded = ?3, revision = revision + 1 WHERE id = ?1",
@@ -98,11 +103,13 @@ impl SharedCatalog for DocumentCatalog {
             tracing::warn!(%error, "a shared playlist could not be written");
             Refused::Unavailable
         })?;
+
         let created: i64 = transaction
             .query_row("SELECT created FROM playlists WHERE id = ?1", [id], |row| {
                 row.get(0)
             })
             .map_err(unavailable)?;
+
         transaction
             .execute(
                 "INSERT INTO playlist_shares(playlist, created, editable) VALUES (?1, ?2, ?3)
@@ -110,10 +117,12 @@ impl SharedCatalog for DocumentCatalog {
                 params![id, created, editable],
             )
             .map_err(unavailable)?;
+
         let at = LocalPlaylistId { id, created };
         let written = local_at(&transaction, at)
             .map_err(unavailable)?
             .ok_or(Refused::Unavailable)?;
+
         transaction.commit().map_err(unavailable)?;
         self.arrived();
 
@@ -129,6 +138,7 @@ impl SharedCatalog for DocumentCatalog {
         let Some(local) = local_at(&connection, at).map_err(unavailable)? else {
             return Ok(None);
         };
+
         connection
             .execute(
                 "INSERT INTO playlist_shares(playlist, created, editable) VALUES (?1, ?2, ?3)
@@ -204,9 +214,11 @@ mod tests {
         let id = phone
             .create_playlist("Road Trip".to_owned())
             .expect("a list");
+
         phone
             .add_to_playlist(id, vec![song.id])
             .expect("a song on it");
+
         let documents = documents_of(&phone, &there);
         let at = phone.synced_playlist(id).expect("its identity");
 
@@ -245,9 +257,11 @@ mod tests {
         let personal = phone
             .create_playlist("Personal".to_owned())
             .expect("a list");
+
         for id in [shared, followed, personal] {
             phone.add_to_playlist(id, vec![song.id]).expect("a song");
         }
+
         let documents = documents_of(&phone, &there);
 
         documents
@@ -256,6 +270,7 @@ mod tests {
         documents
             .shared_flag(phone.synced_playlist(followed).expect("identity"), false)
             .expect("flagged");
+
         let listed = phone.playlists().expect("listed");
         let flags = |id| {
             listed
@@ -278,9 +293,11 @@ mod tests {
         let id = phone
             .create_playlist("Followed".to_owned())
             .expect("a list");
+
         phone
             .add_to_playlist(id, vec![song.id])
             .expect("a song on it");
+
         let documents = documents_of(&phone, &there);
         let at = phone.synced_playlist(id).expect("its identity");
 
@@ -305,9 +322,11 @@ mod tests {
             .create_playlist("Followed".to_owned())
             .expect("a list");
         let own = phone.create_playlist("Own".to_owned()).expect("a list");
+
         phone
             .add_to_playlist(followed, vec![song.id])
             .expect("a song on it");
+
         let documents = documents_of(&phone, &there);
         let at = phone.synced_playlist(followed).expect("its identity");
 
@@ -339,6 +358,7 @@ mod tests {
         let there = folder("shared-write");
         let phone = player(&there);
         let held = song(&phone, "content://test/three.flac", "Three", None);
+
         let documents = documents_of(&phone, &there);
         let recording = documents
             .shared_held_as(&Recording {

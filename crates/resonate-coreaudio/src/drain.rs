@@ -34,9 +34,11 @@ impl Drain {
             self.ready_at = None;
             return false;
         }
+
         let ready_at = *self
             .ready_at
             .get_or_insert_with(|| now + latency.max(SHORTEST_DRAIN));
+
         if now < ready_at {
             return false;
         }
@@ -84,6 +86,7 @@ mod tests {
         let latency = Duration::from_millis(100);
 
         drain.request();
+
         assert!(!drain.settled(true, latency, start));
         assert!(!drain.settled(false, latency, start + Duration::from_millis(90)));
 

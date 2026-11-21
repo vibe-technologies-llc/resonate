@@ -22,15 +22,19 @@ impl Engine {
 
     fn sleep_is_due_in(&self) -> Option<Duration> {
         let sleeping = self.sleep?;
+
         if let Some(left) = sleeping.left() {
             return Some(left);
         }
+
         let ends_here = sleeping.ends_the_track()
             || (sleeping.ends_the_queue()
                 && (self.queue.ends_with_this_row() || self.queue.wraps_next()));
+
         if !ends_here {
             return None;
         }
+
         let track = self.heard_track()?;
         let music = track
             .info
@@ -46,6 +50,7 @@ impl Engine {
             return Some(music);
         };
         let rate = output.plan.stream.rate;
+
         if output.has_handed_on_the_chains_tail() {
             return Some(output.frames_left_to_sound().to_duration(rate));
         }
@@ -69,10 +74,13 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+
         output.note_the_pulls();
+
         let lifting = output
             .sleep_lifted
             .is_some_and(|lifted| lifted.elapsed() < output.quiet_within());
+
         if !playing
             || output.sleep_fading
             || lifting
@@ -103,6 +111,7 @@ impl Engine {
         let Some(output) = self.output.as_mut().filter(|output| output.sleep_fading) else {
             return;
         };
+
         output.sleep_fading = false;
         output.sleep_lifted = Some(Instant::now());
         if playing {

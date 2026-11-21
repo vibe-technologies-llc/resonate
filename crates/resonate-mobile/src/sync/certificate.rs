@@ -13,8 +13,10 @@ pub(super) fn keep(folder: &Path, pem: &[u8]) -> Result<()> {
     let checked = check_trusted_certificate(&staged).map_err(|source| Error::SyncCertificate {
         source: Box::new(source),
     });
+
     if let Err(refusal) = checked {
         let _ = fs::remove_file(&staged);
+
         return Err(refusal);
     }
 
@@ -89,6 +91,7 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
         player
             .sync_start(nearby("ca.pem", " stun.example.org:3479 "))
             .expect("sync started");
+
         let reaching = player.syncing.reaching.lock().clone();
 
         assert_eq!(
@@ -106,6 +109,7 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
         player
             .sync_start(nearby("", ""))
             .expect("sync started without it");
+
         let reaching = player.syncing.reaching.lock().clone();
 
         assert!(reaching.trusted.is_none());
@@ -121,6 +125,7 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
         player
             .sync_keep_certificate(CERTIFICATE.as_bytes().to_vec())
             .expect("a certificate kept");
+
         let refused = player.sync_keep_certificate(b"not a certificate".to_vec());
 
         assert!(matches!(refused, Err(Error::SyncCertificate { .. })));

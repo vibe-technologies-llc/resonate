@@ -17,6 +17,7 @@ impl Figures {
     pub(crate) fn of(locale: &Locale) -> Self {
         let formatter = |strategy: Option<GroupingStrategy>| {
             let mut options = DecimalFormatterOptions::default();
+
             options.grouping_strategy = strategy;
 
             DecimalFormatter::try_new(DecimalFormatterPreferences::from(locale), options).ok()
@@ -40,6 +41,7 @@ impl Figures {
     fn numbered(&self, number: &FluentNumber) -> Option<String> {
         let plain = number.as_string();
         let mut decimal = Decimal::try_from_str(&plain).ok()?;
+
         if let Some(most) = number.options.maximum_fraction_digits {
             decimal.round(-i16::try_from(most).ok()?);
         }
@@ -122,10 +124,13 @@ mod tests {
         let figures = Figures::of(german.numbers());
 
         let count = FluentNumber::from(12_345);
+
         assert_eq!(figures.numbered(&count), Some("12.345".to_owned()));
 
         let mut year = FluentNumber::from(2026);
+
         year.options.use_grouping = false;
+
         assert_eq!(figures.numbered(&year), Some("2026".to_owned()));
 
         assert_eq!(figures.fixed(1234.5, 1), "1.234,5");

@@ -28,6 +28,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
         }
         if let Some(declared) = line.strip_prefix(NAME_TAG) {
             let declared = declared.trim();
+
             if !declared.is_empty() {
                 sheet.declared = Some(declared.to_owned());
             }

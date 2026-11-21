@@ -18,6 +18,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let runs: Vec<&[Track]> = tracks.chunks().collect();
+
         self.play_runs(&runs, start_at, cx);
     }
 
@@ -31,11 +32,13 @@ impl RootView {
                 span: track.span,
             })
             .collect();
+
         if items.is_empty() {
             return;
         }
 
         let started = runs.iter().flat_map(|run| run.iter()).nth(start_at);
+
         self.library.update(cx, |library, _| {
             library.set_playing_playlist(None);
             for run in runs {
@@ -66,9 +69,11 @@ impl RootView {
         if entries.is_empty() {
             return;
         }
+
         let arranged: Vec<MixEntry<Track>> = if shuffle {
             let mut local = Vec::new();
             let mut suggested = Vec::new();
+
             for entry in entries {
                 match entry {
                     MixEntry::Local(track) => local.push(track.clone()),
@@ -82,9 +87,11 @@ impl RootView {
             entries.to_vec()
         };
         let (items, local, offers) = mixed_items(&arranged, &[]);
+
         if items.is_empty() {
             return;
         }
+
         let start_at = if shuffle {
             0
         } else {
@@ -94,6 +101,7 @@ impl RootView {
             MixEntry::Local(track) => Some(track),
             MixEntry::Suggested(_) => None,
         });
+
         self.server
             .update(cx, |server, _| server.remember_explored(&offers));
         self.library.update(cx, |library, _| {
@@ -130,20 +138,25 @@ impl RootView {
             .collect();
         let (items, local, offers) = mixed_items(entries, &beside);
         let rows = items.len();
+
         if rows == 0 {
             return;
         }
+
         let play = self.player_acted_on().read(cx).state().current.is_none();
+
         self.server
             .update(cx, |server, _| server.remember_explored(&offers));
         self.library
             .update(cx, |library, _| library.remember(&local));
         self.send(Command::Insert { items, at, play }, cx);
+
         let label = match (play, at) {
             (true, _) => words::root::queued_and_playing(rows),
             (false, Placement::Next) => words::root::to_play_next(rows),
             (false, Placement::Queued | Placement::At(_)) => words::root::added_to_the_queue(rows),
         };
+
         self.report(Notice::Done(label), cx);
         cx.notify();
     }
@@ -156,6 +169,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let mut offers = offers.to_vec();
+
         if offers.is_empty() {
             return;
         }
@@ -164,8 +178,10 @@ impl RootView {
         }
         self.server
             .update(cx, |server, _| server.remember_explored(&offers));
+
         let locations = offers.into_iter().map(|offer| offer.location).collect();
         let start = if shuffle { 0 } else { start_at };
+
         self.play_served(locations, start, cx);
     }
 
@@ -180,7 +196,9 @@ impl RootView {
         }
         self.server
             .update(cx, |server, _| server.remember_explored(offers));
+
         let locations = offers.iter().map(|offer| offer.location.clone()).collect();
+
         self.queue_served(locations, at, cx);
     }
 
@@ -189,11 +207,14 @@ impl RootView {
             return;
         };
         let Continuing { cuts, at } = syncing.continue_from(device);
+
         if cuts.is_empty() {
             self.report(Notice::Trouble(words::root::nothing_continued(device)), cx);
             return;
         }
+
         let mut minting = Unclaimed::beside(&[]);
+
         let items = cuts
             .into_iter()
             .map(|cut| QueueItem {
@@ -202,6 +223,7 @@ impl RootView {
                 span: cut.span,
             })
             .collect();
+
         self.library
             .update(cx, |library, _| library.set_playing_playlist(None));
         self.send(
@@ -226,6 +248,7 @@ fn mixed_items(
     let mut local = Vec::new();
     let mut offers = Vec::new();
     let mut existing: Vec<QueueItem> = beside.to_vec();
+
     for entry in entries {
         if let MixEntry::Local(track) = entry {
             existing.push(QueueItem {
@@ -236,8 +259,10 @@ fn mixed_items(
             local.push(track.clone());
         }
     }
+
     let mut minting = Unclaimed::beside(&existing);
     let mut items = Vec::with_capacity(entries.len());
+
     for entry in entries {
         match entry {
             MixEntry::Local(track) => items.push(QueueItem {
@@ -258,6 +283,7 @@ fn shuffle_slice<T>(items: &mut [T]) {
     if items.len() < 2 {
         return;
     }
+
     let mut state = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_or(0x9e37_79b9_7f4a_7c15_u64, |since| since.as_nanos() as u64)
@@ -266,7 +292,9 @@ fn shuffle_slice<T>(items: &mut [T]) {
         state ^= state << 13;
         state ^= state >> 7;
         state ^= state << 17;
+
         let swap = (state as usize) % (index + 1);
+
         items.swap(index, swap);
     }
 }

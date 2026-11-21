@@ -7,21 +7,21 @@ use std::{
 use resonate_core::MediaLocation;
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum FlacOp {
     Configure,
     Fill,
     Frame,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PictureOp {
     Open,
     Render,
     Reconstruct,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum VaultOp {
     MakeFolder,
     Resolve,
@@ -148,6 +148,7 @@ mod tests {
     #[test]
     fn an_error_travels_to_whichever_thread_asked() {
         const fn carried<T: Send + Sync>() {}
+
         carried::<Error>();
     }
 }

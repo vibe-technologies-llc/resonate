@@ -68,27 +68,36 @@ struct Music {
 fn request_of(stream: &TcpStream) -> Option<Asked> {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
+
     reader.read_line(&mut line).ok()?;
+
     let mut headers = Vec::new();
+
     loop {
         let mut header = String::new();
+
         reader.read_line(&mut header).ok()?;
+
         let header = header.trim_end().to_owned();
+
         if header.is_empty() {
             break;
         }
         headers.push(header);
     }
+
     let mut asked = Asked {
         line: line.trim_end().to_owned(),
         headers,
         body: String::new(),
     };
+
     let length = asked
         .header("content-length")
         .and_then(|length| length.parse().ok())
         .unwrap_or(0);
     let mut body = vec![0; length];
+
     reader.read_exact(&mut body).ok()?;
     asked.body = String::from_utf8_lossy(&body).into_owned();
     Some(asked)
@@ -115,6 +124,7 @@ impl Music {
         let address = format!("http://{}", listener.local_addr().expect("an address"));
         let asked = Arc::new(Mutex::new(Vec::new()));
         let noted = Arc::clone(&asked);
+
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let Some(request) = request_of(&stream) else {
@@ -125,6 +135,7 @@ impl Music {
                 } else {
                     &answers.client_data
                 };
+
                 noted.lock().push(request);
                 answered(stream, body);
             }
@@ -246,6 +257,7 @@ fn key_of(obtained: Obtained) -> Box<str> {
 fn the_provider_is_named_ytmusic_a_last_resort_and_holds_no_lane_from_the_others() {
     let fake = keeping(&[]);
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::None);
 
     assert_eq!(provider.source().as_str(), "ytmusic");
@@ -279,6 +291,7 @@ fn a_want_named_alike_is_offered_and_opened_only_when_taken() {
         .expect("an answer");
 
     let (key, extension, opening) = offered(obtained);
+
     assert_eq!(&*key, "track/9RfVp-GhKfs");
     assert_eq!(extension.as_str(), "mka");
     assert!(!opening.is_resumable());
@@ -289,6 +302,7 @@ fn a_want_named_alike_is_offered_and_opened_only_when_taken() {
         panic!("the offer did not open");
     };
     let mut read = String::new();
+
     reader.read_to_string(&mut read).expect("the whole song");
 
     assert_eq!(read, AUDIO);
@@ -323,6 +337,7 @@ fn a_search_is_signed_out_of_the_songs_filter_as_the_web_client_read_from_the_se
 
     let searches = music.searches();
     let body: Value = serde_json::from_str(&searches[0].body).expect("a document");
+
     assert_eq!(body["context"]["client"]["clientName"], "WEB_REMIX");
     assert_eq!(
         body["context"]["client"]["clientVersion"],
@@ -349,12 +364,14 @@ fn a_search_is_signed_out_of_the_songs_filter_as_the_web_client_read_from_the_se
 fn the_client_version_is_read_once_and_kept() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(SONGS);
+
     let provider = music.provider(&fake, Cookies::None);
 
     provider.find(&creep()).expect("an answer");
     provider.find(&creep()).expect("an answer");
 
     let asked = music.asked();
+
     assert_eq!(asked.len(), 3);
     assert!(asked[0].line.starts_with("GET /sw.js_data "));
     assert_eq!(music.searches().len(), 2);
@@ -420,10 +437,12 @@ fn every_wording_is_asked_until_one_holds_the_song_and_nothing_found_is_nothing(
     assert!(fake.calls().is_empty());
 
     let found = Music::answering(SONGS);
+
     found
         .provider(&fake, Cookies::None)
         .find(&creep())
         .expect("an answer");
+
     assert_eq!(found.searches().len(), 1);
 }
 
@@ -431,6 +450,7 @@ fn every_wording_is_asked_until_one_holds_the_song_and_nothing_found_is_nothing(
 fn every_request_waits_its_turn_apart_from_the_last() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(&answer_of(&[]));
+
     let provider = music
         .provider(&fake, Cookies::None)
         .asked_apart(PACED_APART);
@@ -439,6 +459,7 @@ fn every_request_waits_its_turn_apart_from_the_last() {
     provider.find(&creep()).expect("an answer");
 
     let requests = u32::try_from(music.asked().len()).expect("a few requests");
+
     assert!(began.elapsed() >= PACED_APART * (requests - 1));
 }
 
@@ -446,6 +467,7 @@ fn every_request_waits_its_turn_apart_from_the_last() {
 fn a_song_of_another_length_or_by_another_artist_is_not_the_song() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(SONGS);
+
     let provider = music.provider(&fake, Cookies::None);
 
     let longer = provider
@@ -540,6 +562,7 @@ fn a_want_with_a_plain_youtube_link_is_searched_for() {
 fn a_link_naming_no_video_that_can_be_asked_is_searched_for() {
     let fake = keeping(&[("774", 1)]);
     let music = Music::answering(SONGS);
+
     let provider = music.provider(&fake, Cookies::None);
 
     for link in [
@@ -550,6 +573,7 @@ fn a_link_naming_no_video_that_can_be_asked_is_searched_for() {
 
         assert_eq!(&*key_of(obtained), "track/9RfVp-GhKfs");
     }
+
     assert_eq!(music.searches().len(), 2);
 }
 
@@ -560,6 +584,7 @@ fn a_linked_song_found_gone_is_searched_for_and_a_listed_one_is_passed_over() {
         row(CREEP, "Creep", "Radiohead • Creep • 3:59", true),
         row(ANOTHER, "Creep", "Radiohead • Pablo Honey • 3:58", false),
     ]));
+
     let provider = music.provider(&fake, Cookies::None);
     let gone = resonate_core::MediaLocation::new(
         provider.source().clone(),
@@ -731,11 +756,13 @@ fn lanes_asking_at_once_wait_on_one_look_at_the_account() {
         listed(&[("251", 1)]),
     ));
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::read("firefox"));
 
     thread::scope(|scope| {
         for video in ["first", "second", "third"] {
             let provider = &provider;
+
             scope.spawn(move || provider.find(&song_at(video)).expect("an answer"));
         }
     });
@@ -745,6 +772,7 @@ fn lanes_asking_at_once_wait_on_one_look_at_the_account() {
         .iter()
         .filter(|call| call.iter().any(|argument| argument.ends_with(CHECKED_WITH)))
         .count();
+
     assert_eq!(asked_about_the_account, 1);
 }
 
@@ -771,6 +799,7 @@ fn a_check_that_could_not_be_made_is_no_verdict_and_is_asked_again() {
         listed(&[("251", 1)])
     ));
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::read("firefox"));
 
     for _ in 0..2 {
@@ -787,6 +816,7 @@ fn a_check_that_could_not_be_made_is_no_verdict_and_is_asked_again() {
 fn the_account_is_asked_about_once_a_poll_however_many_songs_lack_premium() {
     let fake = checked_as(&[("251", 1)], &[("774", 1)]);
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::read("firefox"));
 
     for video in ["first", "second", "third"] {
@@ -798,6 +828,7 @@ fn the_account_is_asked_about_once_a_poll_however_many_songs_lack_premium() {
         .iter()
         .filter(|call| call.iter().any(|argument| argument.ends_with(CHECKED_WITH)))
         .count();
+
     assert_eq!(asked_about_the_account, 1);
     assert_eq!(fake.calls().len(), 4);
 }
@@ -810,12 +841,14 @@ fn a_lapse_heard_in_a_download_outranks_an_account_checked_premium() {
         listed(&[("251", 1)]),
     ));
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::read("/home/a/cookies.txt"));
     let (_, _, opening) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
 
     reader_of(opening)
         .read_to_end(&mut Vec::new())
         .expect("the bytes asked for");
+
     let refused = provider
         .find(&song_at("second"))
         .expect_err("cookies heard lapsed");
@@ -828,6 +861,7 @@ fn a_lapse_heard_in_a_download_outranks_an_account_checked_premium() {
 fn one_download_runs_at_a_time_for_as_long_as_its_reader_lives() {
     let fake = keeping(&[("774", 1)]);
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::None);
     let (_, _, first) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
     let (_, _, second) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
@@ -841,6 +875,7 @@ fn one_download_runs_at_a_time_for_as_long_as_its_reader_lives() {
             .recv_timeout(THE_TURN_IS_HELD_FOR_AT_LEAST)
             .is_err()
     );
+
     drop(reader);
     took_its_turn
         .recv_timeout(A_TURN_FREED_IS_TAKEN_WITHIN)
@@ -851,6 +886,7 @@ fn one_download_runs_at_a_time_for_as_long_as_its_reader_lives() {
 fn a_turn_not_had_within_its_limit_is_busy_and_starts_no_tool() {
     let fake = keeping(&[("774", 1)]);
     let music = no_server();
+
     let provider = music
         .provider(&fake, Cookies::None)
         .waiting_for_a_turn_at_most(A_SHORT_WAIT_FOR_A_TURN);
@@ -878,19 +914,23 @@ fn a_turn_not_had_within_its_limit_is_busy_and_starts_no_tool() {
 fn a_turn_is_handed_on_though_the_reader_holding_it_went_down_in_a_panic() {
     let fake = keeping(&[("774", 1)]);
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::None);
     let (_, _, first) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
     let (_, _, second) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
 
     let panicked = thread::spawn(move || {
         let _reader = reader_of(first);
+
         panic::resume_unwind(Box::new("the reader's thread went down"));
     })
     .join();
     let (opened, took_its_turn) = mpsc::channel();
+
     thread::spawn(move || opened.send(reader_of(second)));
 
     assert!(panicked.is_err());
+
     took_its_turn
         .recv_timeout(A_TURN_FREED_IS_TAKEN_WITHIN)
         .expect("the second download");
@@ -903,12 +943,15 @@ fn a_song_found_gone_when_opened_hands_its_turn_on() {
         listed(&[("774", 1)]),
     ));
     let music = no_server();
+
     let provider = music.provider(&fake, Cookies::None);
     let (_, _, gone) = offered(provider.find(&song_at(CREEP)).expect("an answer"));
     let (_, _, next) = offered(provider.find(&song_at(ANOTHER)).expect("an answer"));
 
     assert!(matches!(gone.open(), Ok(Opened::Gone)));
+
     let (opened, took_its_turn) = mpsc::channel();
+
     thread::spawn(move || opened.send(reader_of(next)));
 
     took_its_turn

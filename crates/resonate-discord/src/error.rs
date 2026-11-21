@@ -6,7 +6,7 @@ use crate::frame::LARGEST_FRAME;
 
 const INVALID_CLIENT_ID: i64 = 4000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum IpcOp {
     Connect,
     Credentials,
@@ -15,7 +15,7 @@ pub enum IpcOp {
     Read,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum JsonOp {
     Encode,
     Decode,

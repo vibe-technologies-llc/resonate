@@ -21,7 +21,9 @@ pub(crate) fn document(shown: &Shown, buttons: Buttons) -> String {
             escaped(art)
         );
     }
+
     let _ = write!(xml, "<text>{}</text>", escaped(&shown.summary));
+
     for line in lines_under_the_title(&shown.body) {
         let _ = write!(xml, "<text>{}</text>", escaped(line));
     }
@@ -52,6 +54,7 @@ fn lines_under_the_title(body: &str) -> Vec<&str> {
 
 fn escaped(text: &str) -> String {
     let mut held = String::with_capacity(text.len());
+
     for character in text
         .chars()
         .filter(|character| is_xml_character(*character))
@@ -120,6 +123,7 @@ mod tests {
                 r#"<action content="{label}" arguments="{key}" activationType="foreground"/>"#
             )));
         }
+
         assert_eq!(xml.matches("<action ").count(), 3);
     }
 

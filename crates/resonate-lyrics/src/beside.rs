@@ -114,7 +114,9 @@ impl<T> SheetsBeside<T> {
     ) -> std::result::Result<Placing<T>, E> {
         let (ending, body) = sheet.form();
         let mut found = self.found;
+
         found.sort_by_key(|sheet| (sheet.ending, !sheet.beside));
+
         let same = found
             .iter()
             .position(|sheet| sheet.ending == ending && sheet.beside);
@@ -148,6 +150,7 @@ pub fn plan_beside(track: &Path, sheet: KeptSheet<'_>, standing: Standing) -> Re
 
 pub fn write_beside(track: &Path, sheet: KeptSheet<'_>, standing: Standing) -> Result<Beside> {
     let planned = Planned::of(track, sheet, standing)?;
+
     if let Beside::Written(target) = &planned.beside {
         sweep_what_a_dead_writer_staged(&planned.folder, &planned.name);
         settled(
@@ -178,12 +181,14 @@ impl<'a> Planned<'a> {
                 track: track.to_path_buf(),
             })?;
         let mut name = stem.to_os_string();
+
         name.push(sheet.ending());
         if name.len() > NAME_BYTES_AT_MOST {
             return Err(Error::SidecarNameTooLong {
                 track: track.to_path_buf(),
             });
         }
+
         let folder = match track.parent() {
             Some(folder) if !folder.as_os_str().is_empty() => folder.to_path_buf(),
             _ => PathBuf::from("."),
@@ -213,6 +218,7 @@ impl<'a> Planned<'a> {
 
 fn sheets_named_after(folder: &Path, stem: &str) -> Result<SheetsBeside<PathBuf>> {
     let mut sheets = SheetsBeside::named_after(stem);
+
     for (name, path) in names_in(folder)? {
         if WITHIN.contains(&name.as_str()) && path.is_dir() {
             for (name, path) in names_in(&path)? {
@@ -250,6 +256,7 @@ fn ending_after(name: &str, stem: &str) -> Option<usize> {
 
 fn says(path: &Path, body: &str) -> Result<bool> {
     let mut held = Vec::new();
+
     File::open(path)
         .and_then(|file| file.take(READ_BACK_AT_MOST).read_to_end(&mut held))
         .map_err(|cause| unwritten(path, SidecarOp::Look, cause))?;
@@ -270,6 +277,7 @@ fn settled(
         format!(".{}.{STAGED}", process::id()),
     ));
     let held = Held::made(&staged).map_err(|cause| unwritten(&staged, SidecarOp::Stage, cause))?;
+
     let landed = written_into(held.file(), body)
         .map_err(|cause| unwritten(&staged, SidecarOp::Stage, cause))
         .and_then(|()| {
@@ -280,6 +288,7 @@ fn settled(
             }
             fs::rename(&staged, target).map_err(|cause| unwritten(target, SidecarOp::Settle, cause))
         });
+
     if landed.is_err() {
         let _ = fs::remove_file(&staged);
     }
@@ -309,6 +318,7 @@ fn sweep_what_a_dead_writer_staged(folder: &Path, name: &OsString) {
                 staged = %path.display(),
                 "taking away a lyric sheet a run that did not finish staged"
             );
+
             let _ = fs::remove_file(path);
         }
     }
@@ -358,17 +368,20 @@ mod tests {
     impl Folder {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let root = env::temp_dir().join(format!(
                 "resonate-beside-{}-{}",
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&root).expect("a writable temporary directory");
             Self(root)
         }
 
         fn track(&self) -> PathBuf {
             let track = self.0.join("Echoes.flac");
+
             fs::write(&track, b"fLaC").expect("a track");
             track
         }
@@ -380,6 +393,7 @@ mod tests {
                 .map(|entry| entry.file_name().to_string_lossy().into_owned())
                 .filter(|name| name != "Echoes.flac")
                 .collect();
+
             names.sort();
             names.retain(|held| held.contains(name));
             names
@@ -442,6 +456,7 @@ mod tests {
         let plain = "all that you touch\nall that you see\n";
 
         write_beside(&track, kept(plain), Standing::LeftAlone).expect("a sheet written");
+
         let read = read_beside(&track);
 
         assert_eq!(read.detail(), Detail::Unsynced);
@@ -502,6 +517,7 @@ mod tests {
         let folder = Folder::new();
         let track = folder.track();
         let theirs = "[00:02.00]a sheet of the listener's own\n";
+
         fs::write(folder.0.join("Echoes.lrc"), theirs).expect("a sheet of their own");
 
         let refused = write_beside(&track, kept(SYNCED), Standing::LeftAlone);
@@ -525,6 +541,7 @@ mod tests {
     fn a_sheet_standing_in_a_lyrics_folder_or_spelled_otherwise_is_left_alone_unasked() {
         let folder = Folder::new();
         let track = folder.track();
+
         fs::create_dir_all(folder.0.join("Lyrics")).expect("a lyrics folder");
         fs::write(
             folder.0.join("Lyrics").join("echoes.LRC"),
@@ -561,6 +578,7 @@ mod tests {
         let track = folder.track();
 
         write_beside(&track, kept(SYNCED), Standing::LeftAlone).expect("a sheet written");
+
         let again = write_beside(&track, kept(SYNCED), Standing::LeftAlone);
 
         assert_eq!(
@@ -573,6 +591,7 @@ mod tests {
     fn a_richer_sheet_beside_the_track_is_never_hidden_behind_a_plainer_one() {
         let folder = Folder::new();
         let track = folder.track();
+
         fs::write(folder.0.join("Echoes.lyricsfile.yaml"), WORDED).expect("a richer sheet");
 
         let refused = write_beside(&track, kept(SYNCED), Standing::Replaced);
@@ -590,6 +609,7 @@ mod tests {
         let track = folder.track();
         let left = folder.0.join(".Echoes.lrc.4194999.resonate-staging");
         let file = File::create(&left).expect("a staged sheet left behind");
+
         file.set_modified(SystemTime::now() - Duration::from_secs(60))
             .expect("an old stamp");
         drop(file);

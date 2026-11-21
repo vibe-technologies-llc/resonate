@@ -16,13 +16,13 @@ const LINE_ENDING: &str = "\n";
 const INDENTED_PAST_ITS_TRACK_BY: &str = "  ";
 const QUOTE: char = '"';
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SheetScope {
     Disc,
     Track(u32),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum SheetField {
     Title,
     Performer,
@@ -204,6 +204,7 @@ impl<'a> SheetText<'a> {
         for (content, ending) in lines_of(bytes, body, encoding) {
             let text = decoded_as(&bytes[content.clone()], encoding);
             let said = said(&text);
+
             match &said {
                 Said::Track(number) => {
                     scope = number.map_or(SheetScope::Disc, SheetScope::Track);
@@ -284,6 +285,7 @@ impl<'a> SheetText<'a> {
                 }
                 (Some(value), None) => {
                     let line = format!("{}{}", self.indent_of(edit.scope), edit.field.line(value));
+
                     inserted[self.anchor_of(edit.scope)].push(self.spelled(location, &line)?);
                 }
                 (None, _) => {
@@ -297,6 +299,7 @@ impl<'a> SheetText<'a> {
 
         let ending = self.ending(location)?;
         let mut written = Vec::with_capacity(self.bytes.len() + 64);
+
         written.extend_from_slice(&self.bytes[..self.body]);
         for (at, line) in self.lines.iter().enumerate() {
             for new in &inserted[at] {
@@ -321,6 +324,7 @@ impl<'a> SheetText<'a> {
                 .rev()
                 .find(|(at, _)| !removed[*at])
                 .is_some_and(|(_, line)| line.ending.is_empty());
+
             if unended {
                 written.extend_from_slice(&ending);
             }
@@ -350,6 +354,7 @@ impl<'a> SheetText<'a> {
             .enumerate()
             .filter(|(_, line)| line.said == Said::Track(Some(number)))
             .map(|(at, _)| at);
+
         let first = found.next()?;
         found.next().is_none().then_some(first)
     }
@@ -366,6 +371,7 @@ impl<'a> SheetText<'a> {
                     return self.lines.len();
                 };
                 let mut at = track + 1;
+
                 while let Some(line) = self.lines.get(at)
                     && line.scope == scope
                     && !matches!(line.said, Said::Index | Said::File | Said::Track(_))
@@ -406,11 +412,14 @@ impl<'a> SheetText<'a> {
         let Said::Field { value_at, .. } = &line.said else {
             return self.spelled(location, &field.line(value));
         };
+
         let (before, after) = line.text.split_at(*value_at);
         let spelled = field.spelled(value, after.trim_start().starts_with(QUOTE));
+
         if before.is_ascii() && self.keeps_ascii() {
             let kept = before.len() * self.encoding.unit_bytes();
             let mut rewritten = self.bytes[line.content.start..line.content.start + kept].to_vec();
+
             rewritten.extend_from_slice(&self.spelled(location, &spelled)?);
             return Ok(rewritten);
         }
@@ -441,6 +450,7 @@ impl<'a> SheetText<'a> {
 
 fn body_of(bytes: &[u8], encoding: TextEncoding) -> usize {
     let mark = encoding.byte_order_mark();
+
     if !mark.is_empty() && bytes.starts_with(mark) {
         return mark.len();
     }
@@ -459,12 +469,14 @@ fn lines_of(
     let mut lines = Vec::new();
     let mut start = body;
     let mut at = body;
+
     while at + unit <= bytes.len() {
         let Some(ends) = line_break(&bytes[at..at + unit], encoding) else {
             at += unit;
             continue;
         };
         let mut ending = at + unit;
+
         if ends == '\r'
             && let Some(next) = bytes.get(ending..ending + unit)
             && line_break(next, encoding) == Some('\n')
@@ -522,6 +534,7 @@ fn said(text: &str) -> Said {
         let Some((named, value, value_at)) = command_of(rest) else {
             return Said::Other;
         };
+
         return match SheetField::remarked_by(named) {
             Some(field) => Said::Field {
                 field,
@@ -544,6 +557,7 @@ fn said(text: &str) -> Said {
 fn command_of(text: &str) -> Option<(&str, &str, usize)> {
     let lead = text.len() - text.trim_start().len();
     let line = text[lead..].trim_end();
+
     if line.is_empty() {
         return None;
     }
@@ -684,7 +698,9 @@ mod tests {
             "{}",
             String::from_utf8_lossy(&written)
         );
+
         let tags = &read_back.files[0].tracks[1].tags;
+
         assert_eq!(tags.album.as_deref(), Some("Meddle (Remastered)"));
         assert_eq!(tags.date.as_deref(), Some("1971"));
     }
@@ -722,12 +738,14 @@ mod tests {
             )
             .expect("an edit the sheet can hold");
         let rewritten = SheetText::read(&written);
+
         assert_eq!(
             rewritten
                 .own(SheetScope::Track(1), SheetField::Title)
                 .as_deref(),
             Some("Echoes")
         );
+
         let back = rewritten
             .edited(
                 &location(),
@@ -747,6 +765,7 @@ mod tests {
         let text = "TITLE \"Caf\u{e9} del Mar\"\nFILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Entr\u{e9}e\"\n    INDEX 01 00:00:00\n";
         let bytes = encoded(text, TextEncoding::WINDOWS_1252).expect("a Latin sheet");
         let sheet = SheetText::read(&bytes);
+
         assert!(matches!(sheet.encoding(), TextEncoding::Legacy(_)));
 
         let written = sheet
@@ -796,6 +815,7 @@ mod tests {
         let text = "\u{feff}TITLE \"Meddle\"\r\nFILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    INDEX 01 00:00:00\r\n";
         let bytes = encoded(text, TextEncoding::Utf16Le).expect("a wide sheet");
         let sheet = SheetText::read(&bytes);
+
         assert_eq!(sheet.encoding(), TextEncoding::Utf16Le);
 
         let written = sheet

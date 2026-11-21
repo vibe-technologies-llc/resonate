@@ -2,6 +2,7 @@ use crate::{SinkChange, SinkInfo};
 
 pub fn changes_between(before: &[SinkInfo], after: &[SinkInfo]) -> Vec<SinkChange> {
     let mut changes = Vec::new();
+
     for gone in before
         .iter()
         .filter(|held| after.iter().all(|now| now.id != held.id))
@@ -13,6 +14,7 @@ pub fn changes_between(before: &[SinkInfo], after: &[SinkInfo]) -> Vec<SinkChang
             changes.push(SinkChange::Added(now.id));
             continue;
         };
+
         if held.formats != now.formats || held.current_rate != now.current_rate {
             changes.push(SinkChange::Reformatted(now.id));
         }
@@ -20,7 +22,9 @@ pub fn changes_between(before: &[SinkInfo], after: &[SinkInfo]) -> Vec<SinkChang
             changes.push(SinkChange::Turned(now.id));
         }
     }
+
     let default_of = |sinks: &[SinkInfo]| sinks.iter().find(|sink| sink.is_default).map(|s| s.id);
+
     if default_of(before) != default_of(after) {
         changes.push(SinkChange::DefaultChanged);
     }
@@ -92,10 +96,15 @@ mod tests {
             muted,
         };
         let mut before = sink(1, true);
+
         before.port = Some(port(0.5, false));
+
         let mut turned = before.clone();
+
         turned.port = Some(port(0.25, false));
+
         let mut muted = before.clone();
+
         muted.port = Some(port(0.5, true));
 
         assert_eq!(
@@ -115,6 +124,7 @@ mod tests {
 
         let before = [sink(1, true)];
         let mut moved = sink(1, true);
+
         moved.current_rate = Some(SampleRate::HZ_48000);
 
         assert_eq!(

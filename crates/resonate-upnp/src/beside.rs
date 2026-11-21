@@ -39,6 +39,7 @@ impl Beside {
 
     pub fn and(self, more: Arc<dyn Neighbours>) -> Self {
         let mut neighbours = self.neighbours.as_ref().clone();
+
         neighbours.push(more);
         Self {
             inner: self.inner,
@@ -58,15 +59,18 @@ fn owner_among(neighbours: &[Arc<dyn Neighbours>], sink: SinkId) -> Option<&Arc<
 impl Backend for Beside {
     fn subscribe_sinks(&self) -> Receiver<SinkChange> {
         let mut sources = vec![self.inner.subscribe_sinks()];
+
         sources.extend(
             self.neighbours
                 .iter()
                 .map(|neighbours| neighbours.subscribe()),
         );
+
         let (announce, changes) = unbounded();
         let spawned = thread::Builder::new()
             .name("resonate-upnp-sinks".to_owned())
             .spawn(move || forward(&sources, &announce));
+
         if let Err(error) = spawned {
             tracing::warn!(%error, "renderers coming and going will not be told");
         }
@@ -110,9 +114,11 @@ fn forward(sources: &[Receiver<SinkChange>], announce: &Sender<SinkChange>) {
     let mut open: Vec<&Receiver<SinkChange>> = sources.iter().collect();
     while !open.is_empty() {
         let mut select = Select::new();
+
         for source in &open {
             select.recv(source);
         }
+
         let ready = select.select();
         let at = ready.index();
         let Some(source) = open.get(at) else {
@@ -139,6 +145,7 @@ struct Surveyed {
 impl Surveyor for Surveyed {
     fn enumerate_sinks(&self, timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
         let mut sinks = self.inner.enumerate_sinks(timeout)?;
+
         for neighbours in self.neighbours.iter() {
             sinks.extend(neighbours.sinks());
         }

@@ -14,7 +14,7 @@ use crate::{
     tools::{Tool, WindowArg},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Prompt {
     BuildAPlaylist,
     ReviewMyListening,
@@ -227,6 +227,7 @@ impl Prompt {
 
     fn given(self, argument: Field, value: &str) -> std::result::Result<&str, Refusal> {
         let value = value.trim();
+
         if value.is_empty() {
             return Err(Refusal::BlankArgument {
                 prompt: self,

@@ -33,11 +33,13 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-search-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self {
             root: root.canonicalize().expect("a canonical path"),
@@ -46,6 +48,7 @@ impl Tree {
 
     fn write(&self, relative: &str, wav: &Wav) {
         let path = self.root.join(relative);
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("a writable temporary directory");
         }
@@ -86,6 +89,7 @@ impl Wav {
 
     fn text(mut self, id: &[u8; 4], value: &str) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(value.as_bytes());
         self.id3.extend_from_slice(id);
         self.id3.extend_from_slice(&synchsafe(body.len() as u32));
@@ -98,6 +102,7 @@ impl Wav {
         let data = vec![0_u8; self.frames as usize * 2];
 
         let mut fmt = Vec::new();
+
         fmt.extend_from_slice(&1_u16.to_le_bytes());
         fmt.extend_from_slice(&1_u16.to_le_bytes());
         fmt.extend_from_slice(&self.rate.to_le_bytes());
@@ -106,11 +111,13 @@ impl Wav {
         fmt.extend_from_slice(&16_u16.to_le_bytes());
 
         let mut body = Vec::new();
+
         body.extend_from_slice(b"WAVE");
         chunk(&mut body, b"fmt ", &fmt);
         chunk(&mut body, b"data", &data);
 
         let mut file = Vec::new();
+
         if !self.id3.is_empty() {
             file.extend_from_slice(b"ID3\x04\x00\x00");
             file.extend_from_slice(&synchsafe(self.id3.len() as u32));
@@ -152,6 +159,7 @@ fn scanned(tree: &Tree) -> Result<Library> {
             workers: NonZeroUsize::MIN,
         })?
         .join()?;
+
     assert!(!summary.cancelled, "the scan reported itself cancelled");
 
     Ok(library)
@@ -175,6 +183,7 @@ fn named(titles: &[&str]) -> BTreeSet<String> {
 #[test]
 fn a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
@@ -191,6 +200,7 @@ fn a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything() -> R
             "{text} held too little"
         );
     }
+
     assert_eq!(titled(&library, "echoes !!!")?, named(&["Echoes"]));
     Ok(())
 }
@@ -199,6 +209,7 @@ fn a_search_made_only_of_punctuation_asks_nothing_and_so_holds_everything() -> R
 fn a_name_typed_or_tagged_with_combining_accents_is_found_as_the_precomposed_name_is() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new()
@@ -230,6 +241,7 @@ fn a_name_typed_or_tagged_with_combining_accents_is_found_as_the_precomposed_nam
 #[test]
 fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
@@ -246,6 +258,7 @@ fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<
                 ..SavedQuery::default()
             },
         )?;
+
         assert_eq!(
             library.playlist_entries(saved, None)?.len(),
             2,
@@ -258,6 +271,7 @@ fn a_saved_query_with_no_search_fills_itself_with_the_whole_catalog() -> Result<
 #[test]
 fn a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_none() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada"),
@@ -271,6 +285,7 @@ fn a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_no
         .into_iter()
         .map(|file| Cut::whole(MediaLocation::local(tree.path().join(file))))
         .collect();
+
     library.add_to_playlist(list, &cuts)?;
 
     assert_eq!(library.playlist_entries(list, Some("!!!"))?.len(), 0);
@@ -285,6 +300,7 @@ fn a_list_narrowed_by_a_text_a_search_reads_nothing_in_holds_no_row_and_drops_no
 #[test]
 fn an_exact_length_holds_every_track_that_long_to_the_unit_it_was_typed_in() -> Result<()> {
     let tree = Tree::new();
+
     for (title, tenths) in [
         ("Short", 2_095),
         ("Just", 2_100),
@@ -334,6 +350,7 @@ fn an_exact_length_holds_every_track_that_long_to_the_unit_it_was_typed_in() -> 
 #[test]
 fn a_range_typed_backwards_and_a_rate_in_kilohertz_hold_what_they_name() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "nineties/a.wav",
         &Wav::new()
@@ -365,6 +382,7 @@ fn a_range_typed_backwards_and_a_rate_in_kilohertz_hold_what_they_name() -> Resu
 #[test]
 fn an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it() -> Result<()> {
     let tree = Tree::new();
+
     for number in 0..ENOUGH_TO_BE_OFFERED {
         tree.write(
             &format!("air/{number}.wav"),
@@ -386,6 +404,7 @@ fn an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it
         .iter()
         .find(|suggestion| suggestion.reason == Reason::Artist && suggestion.name == "Air")
         .expect("Air is offered a mix of its own");
+
     let saved = library.save_query("Air", &mix.query)?;
     let held = library.playlist_entries(saved, None)?;
 
@@ -418,6 +437,7 @@ fn an_artist_mix_holds_the_artist_it_names_and_not_one_whose_name_begins_with_it
 fn a_listing_paged_through_its_ties_hands_out_every_row_once() -> Result<()> {
     let tree = Tree::new();
     let held = 7;
+
     for number in 0..held {
         tree.write(
             &format!("{number}/a.wav"),
@@ -433,6 +453,7 @@ fn a_listing_paged_through_its_ties_hands_out_every_row_once() -> Result<()> {
     for sort in SortOrder::ALL {
         for reading in Direction::ALL {
             let mut seen: Vec<TrackId> = Vec::new();
+
             for offset in 0..held {
                 seen.extend(
                     library
@@ -447,6 +468,7 @@ fn a_listing_paged_through_its_ties_hands_out_every_row_once() -> Result<()> {
                         .map(|track| track.id),
                 );
             }
+
             let whole: Vec<TrackId> = library
                 .tracks(&TrackQuery {
                     sort,
@@ -464,6 +486,7 @@ fn a_listing_paged_through_its_ties_hands_out_every_row_once() -> Result<()> {
     for sort in AlbumOrder::ALL {
         for reading in Direction::ALL {
             let mut seen = Vec::new();
+
             for offset in 0..held {
                 seen.extend(
                     library
@@ -478,6 +501,7 @@ fn a_listing_paged_through_its_ties_hands_out_every_row_once() -> Result<()> {
                         .map(|album| album.id),
                 );
             }
+
             let whole: Vec<_> = library
                 .albums(&AlbumQuery {
                     sort,

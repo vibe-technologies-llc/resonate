@@ -144,6 +144,7 @@ pub(crate) fn rows_of_found(found: ServedFound) -> Vec<Row> {
         mixes,
     } = found;
     let mut rows = Vec::new();
+
     if !artists.is_empty() {
         rows.push(Row::Heading(words::serving::artists()));
         rows.extend(artists.into_iter().map(Row::Artist));
@@ -219,7 +220,7 @@ pub(crate) enum Page {
     Failed(Failure),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum CoverKey {
     Named(SourceId, ServedCover),
     Located(MediaLocation),
@@ -275,6 +276,7 @@ impl ServerModel {
             shown: false,
             owes_a_first_page: false,
         };
+
         model.refresh(cx);
         model
     }
@@ -349,6 +351,7 @@ impl ServerModel {
     pub(crate) fn remember_explore(&mut self, offer: &ExploreOffer) {
         self.explored
             .retain(|(held, _)| held.location != offer.location);
+
         let song = &offer.song;
         let served = ServedSong {
             location: offer.location.clone(),
@@ -365,6 +368,7 @@ impl ServerModel {
             favourite: song.favourite,
             rating: song.rating,
         };
+
         self.explored.push_front((offer.clone(), served));
         self.explored.truncate(COVERS_HELD.get());
     }
@@ -426,11 +430,15 @@ impl ServerModel {
         let app = cx.global::<ResonateApp>();
         let online = app.online.clone();
         let serving = app.serving.clone();
+
         let opened = serving.opened(&online);
+
         if the_same(&self.services, &opened) {
             return;
         }
+
         let was = self.serves().map(|serves| serves.scheme().clone());
+
         self.chosen = was
             .and_then(|was| opened.iter().position(|serves| *serves.scheme() == was))
             .unwrap_or_default();
@@ -478,6 +486,7 @@ impl ServerModel {
 
     fn read(&mut self, cx: &mut Context<Self>) {
         self.reading += 1;
+
         let serial = self.reading;
         let Some(serves) = self.serves() else {
             self.page = Page::Reading;
@@ -485,6 +494,7 @@ impl ServerModel {
             cx.notify();
             return;
         };
+
         self.page = Page::Reading;
         self.owes_a_first_page = self.waits_to_be_shown(serves.as_ref());
         cx.notify();
@@ -497,6 +507,7 @@ impl ServerModel {
         let read = cx
             .background_executor()
             .spawn(async move { rows_at(serves.as_ref(), &place) });
+
         self._read = Some(cx.spawn(async move |this, cx| {
             let read = read.await;
             let _ = this.update(cx, |this, cx| {
@@ -517,6 +528,7 @@ impl ServerModel {
 
     fn forget_the_covers(&mut self, cx: &mut Context<Self>) {
         let held: Vec<_> = self.covers.entries().map(|(key, _)| key.clone()).collect();
+
         for key in held {
             if let Some(Some(picture)) = self.covers.peek(&key).cloned() {
                 picture.forget(cx);
@@ -551,6 +563,7 @@ impl ServerModel {
         let remembered = known
             .cloned()
             .or_else(|| self.explored(of).and_then(|song| song.cover.clone()));
+
         let explored = explored.as_ref().filter(|offer| {
             offer
                 .song
@@ -576,12 +589,14 @@ impl ServerModel {
             key: key.clone(),
             side: drawn.side(self.scale),
         };
+
         if let Some(held) = self.covers.get(&wanted) {
             return held.clone();
         }
         if !self.fetching.may_ask(&key) {
             return None;
         }
+
         let fetch = self.fetching.begin(key);
 
         let side = wanted.side;
@@ -593,6 +608,7 @@ impl ServerModel {
             )
         });
         let drawer = cx.global::<Drawer>().clone();
+
         let fetched = cx.background_executor().spawn(async move {
             fetch_cover(
                 &drawer,
@@ -604,6 +620,7 @@ impl ServerModel {
             )
             .await
         });
+
         cx.spawn(async move |this, cx| {
             let (answered, decoded) = match fetched.await {
                 Ok(picture) => (true, picture),
@@ -612,12 +629,14 @@ impl ServerModel {
                     (false, None)
                 }
             };
+
             let _ = this.update(cx, |this, cx| {
                 let landed = if answered {
                     this.fetching.answered(&wanted.key, fetch)
                 } else {
                     this.fetching.failed(wanted.key.clone(), fetch)
                 };
+
                 if !landed {
                     decoded.forget(cx);
                     return;
@@ -663,11 +682,13 @@ async fn fetch_cover(
     {
         return Ok(Some(picture));
     }
+
     let bytes = serves.cover(location, known, side.get())?;
     let Some((picture, bytes)) = drawer.draw(move || drawn_from(bytes, side)).await.flatten()
     else {
         return Ok(None);
     };
+
     if let Some((library, offer)) = cache {
         library.keep_explore_cover(offer, side, &bytes);
     }

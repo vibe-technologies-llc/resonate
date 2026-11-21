@@ -13,6 +13,7 @@ pub struct Ahead {
 impl Ahead {
     pub fn step(&mut self, host_next: &[u64], standing: &[u64]) -> Option<Vec<u64>> {
         let wanted = wanted_ahead(host_next);
+
         if wanted == standing {
             self.asked_for = None;
             return None;
@@ -74,6 +75,7 @@ mod tests {
     #[test]
     fn a_run_found_for_a_queue_the_host_has_edited_since_is_not_taken() {
         let mut ahead = Ahead::default();
+
         let wanted = ahead.step(&[3, 4, 5], &[3]).expect("something to find");
 
         assert!(!ahead.found(&wanted, &[3, 9, 5]));
@@ -83,6 +85,7 @@ mod tests {
     #[test]
     fn what_the_guest_does_not_hold_is_not_asked_for_again_until_the_host_moves_on() {
         let mut ahead = Ahead::default();
+
         let wanted = ahead.step(&[3, 4, 5], &[]).expect("something to find");
 
         assert!(ahead.found(&wanted, &[3, 4, 5]));
@@ -93,9 +96,11 @@ mod tests {
     #[test]
     fn a_run_the_seat_could_not_keep_is_asked_for_again() {
         let mut ahead = Ahead::default();
+
         let wanted = ahead.step(&[3, 4, 5], &[]).expect("something to find");
 
         assert!(ahead.found(&wanted, &[3, 4, 5]));
+
         ahead.not_kept();
 
         assert_eq!(ahead.step(&[3, 4, 5], &[]), Some(vec![3, 4, 5]));
@@ -104,6 +109,7 @@ mod tests {
     #[test]
     fn a_search_that_could_not_begin_leaves_the_next_look_free_to_ask() {
         let mut ahead = Ahead::default();
+
         ahead.step(&[3, 4, 5], &[]).expect("something to find");
 
         ahead.not_found();

@@ -213,6 +213,7 @@ pub(super) fn rows<T>(
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let found = statement
         .query_map(params_from_iter(binds), read)
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -666,6 +667,7 @@ pub(super) fn grouped_links(
     binds: Vec<Value>,
 ) -> Result<AHashMap<i64, Vec<Link>>> {
     let mut grouped: AHashMap<i64, Vec<Link>> = AHashMap::new();
+
     for (owner, link) in rows(connection, sql, binds, read_owned_link)? {
         grouped.entry(owner).or_default().push(link);
     }

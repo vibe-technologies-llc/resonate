@@ -37,6 +37,7 @@ fn is_smooth(mut value: usize) -> bool {
 
 fn exponent_of(mut points: usize, radix: usize) -> u32 {
     let mut exponent = 0;
+
     while points.is_multiple_of(radix) {
         points /= radix;
         exponent += 1;
@@ -91,6 +92,7 @@ impl Blocks {
         );
         let unit_in = (u64::from(conversion.input_hz) / common) as usize;
         let unit_out = (u64::from(conversion.output_hz) / common) as usize;
+
         if !is_smooth(unit_in) || !is_smooth(unit_out) {
             return None;
         }
@@ -102,8 +104,10 @@ impl Blocks {
         let lead_in = whole_frames(conversion.lead_seconds);
         let trail_in = whole_frames(conversion.trail_seconds);
         let trail_units = trail_in.div_ceil(unit_in);
+
         let rounded_a_side = trail_units + lead_in.div_ceil(unit_in);
         let rounded_once = (lead_in + trail_in).div_ceil(unit_in);
+
         let (overlap_units, primed_in) = if rounded_once < rounded_a_side {
             (rounded_once, rounded_once * unit_in - lead_in)
         } else {
@@ -213,6 +217,7 @@ impl Response {
         let block_seconds = input_points as f64 / f64::from(conversion.input_hz);
         let bins_in_the_band =
             (conversion.band_hz * block_seconds / 2.0 + BINS_ROUNDED_WITHIN).floor() as usize;
+
         let bins = bins_in_the_band
             .min(input_points / 2)
             .min(blocks.output_points() / 2)
@@ -226,19 +231,26 @@ impl Response {
                 let points = EVEN_POINTS_OVER_THE_BAND * 2 * bins;
                 let step = block_seconds / points as f64;
                 let mut spectrum = vec![SILENCE; points];
+
                 if let Some(first) = spectrum.first_mut() {
                     first.re = at_seconds(0.0);
                 }
+
                 let (rising, falling) = spectrum.split_at_mut(points / 2 + 1);
+
                 let mirrored = rising.iter_mut().skip(1).zip(falling.iter_mut().rev());
+
                 for (point, (at, mirror)) in mirrored.enumerate() {
                     let tap = at_seconds((point + 1) as f64 * step);
+
                     at.re = tap;
                     mirror.re = tap;
                 }
                 planner.plan_fft_forward(points).process(&mut spectrum);
+
                 let scale = unity / spectrum.first().map_or(1.0, |bin| bin.re);
                 let held = spectrum.get(..bins).unwrap_or_default();
+
                 let gains = held.iter().map(|bin| bin.re * scale);
                 if lands {
                     Self::Even(gains.collect())
@@ -255,6 +267,7 @@ impl Response {
                 let points = TURNED_POINTS_OVER_THE_BAND * 2 * bins;
                 let step = block_seconds / points as f64;
                 let halfway = points / 2;
+
                 let mut spectrum: Vec<Complex<f64>> = (0..points)
                     .map(|point| {
                         let after = if point < halfway {
@@ -265,7 +278,9 @@ impl Response {
                         Complex::new(at_seconds(after * step), 0.0)
                     })
                     .collect();
+
                 planner.plan_fft_forward(points).process(&mut spectrum);
+
                 let scale = unity / spectrum.first().map_or(1.0, |bin| bin.re);
                 let held = spectrum.get(..bins).unwrap_or_default();
                 Self::Turned(
@@ -296,8 +311,11 @@ impl Response {
         let bins = self.bins();
         let negative_bins = bins - 1;
         let (rising, rest) = product.split_at_mut(bins);
+
         let (between, falling) = rest.split_at_mut(rest.len() - negative_bins);
+
         between.fill(SILENCE);
+
         let heard_rising = spectrum.get(..bins).unwrap_or_default();
         let heard_falling = spectrum
             .get(spectrum.len() - negative_bins..)
@@ -307,6 +325,7 @@ impl Response {
         match self {
             Self::Even(gains) => {
                 let rising_bins = rising.iter_mut().zip(heard_rising);
+
                 for ((slot, heard), gain) in rising_bins.zip(gains) {
                     *slot = Complex::new(heard.re * gain, heard.im * gain);
                 }
@@ -348,13 +367,16 @@ impl Plan {
         {
             return Arc::clone(kept);
         }
+
         let mut planner = FftPlanner::<f64>::new();
+
         let built = Arc::new(Self {
             blocks,
             forward: planner.plan_fft_forward(blocks.input_points()),
             inverse: planner.plan_fft_inverse(blocks.output_points()),
             response: Response::of(design, blocks, conversion, &mut planner),
         });
+
         *cache.lock() = (built.response.bytes() <= KEPT_PLAN_BYTES_AT_MOST)
             .then(|| (wanted, Arc::clone(&built)));
         built
@@ -435,6 +457,7 @@ impl Spectral {
         if !self.answering {
             return self.room();
         }
+
         let blocks = self.plan.blocks;
         let heard = self.filled - blocks.kept_in();
         let most = ((self.released + room_out + 1) * blocks.unit_in - 1) / blocks.unit_out;
@@ -443,6 +466,7 @@ impl Spectral {
 
     pub(crate) fn gather(&mut self, input: &[f64], channels: usize, frames: usize) {
         let filled = self.filled;
+
         if let ([lane], 2) = (self.lanes.as_mut_slice(), channels) {
             let (pairs, _) = input.as_chunks::<2>();
             if let Some(run) = lane.window.get_mut(filled..filled + frames) {
@@ -468,6 +492,7 @@ impl Spectral {
 
     pub(crate) fn gather_silence(&mut self, frames: usize) {
         let filled = self.filled;
+
         for lane in &mut self.lanes {
             if let Some(run) = lane.window.get_mut(filled..filled + frames) {
                 run.fill(SILENCE);
@@ -480,9 +505,11 @@ impl Spectral {
         if !self.answering {
             return 0..0;
         }
+
         let blocks = self.plan.blocks;
         let due = (self.filled - blocks.kept_in()) * blocks.unit_out / blocks.unit_in;
         let run = self.released..due;
+
         self.released = due;
         run
     }
@@ -490,9 +517,11 @@ impl Spectral {
     pub(crate) fn interleaved_into(&self, run: Range<usize>, output: &mut [f64], channels: usize) {
         let from = self.plan.blocks.released_from;
         let span = from + run.start..from + run.end;
+
         if let ([lane], 2) = (self.lanes.as_slice(), channels) {
             let (frames, _) = output.as_chunks_mut::<2>();
             let heard = lane.ready.get(span).unwrap_or_default();
+
             for (frame, sample) in frames.iter_mut().zip(heard) {
                 *frame = [sample.re, sample.im];
             }
@@ -531,9 +560,11 @@ impl Spectral {
 
     pub(crate) fn turn_when_full(&mut self) {
         let blocks = self.plan.blocks;
+
         if self.filled < blocks.input_points() {
             return;
         }
+
         let Self {
             plan,
             lanes,
@@ -543,8 +574,10 @@ impl Spectral {
             inverse_scratch,
             ..
         } = self;
+
         for lane in lanes {
             let kept = lane.window.get(blocks.hop_in()..).unwrap_or_default();
+
             if let Some(start) = lane.spare.get_mut(..kept.len()) {
                 start.copy_from_slice(kept);
             }
@@ -596,12 +629,14 @@ mod tests {
             let blocks = Blocks::fitting(wanted).expect("common rates are smooth");
             let block_seconds = blocks.input_points() as f64 / f64::from(input_hz);
             let also_seconds = blocks.output_points() as f64 / f64::from(output_hz);
+
             assert!((block_seconds - also_seconds).abs() < 1e-12);
             assert!(blocks.input_points().is_multiple_of(2));
             assert!(blocks.output_points().is_multiple_of(2));
 
             let unit_seconds = blocks.unit_in as f64 / f64::from(input_hz);
             let hop_seconds = blocks.hop_units as f64 * unit_seconds;
+
             assert!(
                 hop_seconds + wanted.lead_seconds + wanted.trail_seconds <= block_seconds + 1e-12,
                 "{input_hz} -> {output_hz}: {hop_seconds} s of hop and the kernel fill more than {block_seconds} s"
@@ -613,6 +648,7 @@ mod tests {
     fn a_kernel_gives_up_only_the_cycles_its_whole_length_needs() {
         const REACH_A_SIDE: usize = 220;
         const CYCLE: usize = 147;
+
         let reach_seconds = REACH_A_SIDE as f64 / 44_100.0;
         let wanted = Conversion {
             lead_seconds: reach_seconds,
@@ -722,6 +758,7 @@ mod tests {
             released_from: 64,
         };
         let mut planner = FftPlanner::new();
+
         let response = Response::of(
             Design::Even(|after: f64| f64::from(after == 0.0)),
             blocks,
@@ -739,6 +776,7 @@ mod tests {
         let cache = Mutex::new(None);
         let cutoff_hz = 19_000.0_f64;
         let reach_seconds = 64.0 / 44_100.0;
+
         let plan = Plan::kept_for(
             &cache,
             0_u8,
@@ -746,9 +784,11 @@ mod tests {
             blocks,
             Design::Even(|after: f64| {
                 let along = after.abs() / reach_seconds;
+
                 if along >= 1.0 {
                     return 0.0;
                 }
+
                 let turned = TAU * cutoff_hz * after;
                 let sinc = if turned == 0.0 {
                     1.0
@@ -771,11 +811,15 @@ mod tests {
         let mut output = vec![0.0; 2 * blocks.outputs_of(frames as usize)];
         let mut made = 0;
         let mut taken = 0;
+
         while taken < frames as usize {
             let run = stereo.room().min(frames as usize - taken);
+
             stereo.gather(&interleaved[taken * 2..], 2, run);
+
             let due = stereo.due();
             let to = made + due.len();
+
             stereo.interleaved_into(due, &mut output[made * 2..to * 2], 2);
             made = to;
             stereo.turn_when_full();
@@ -793,6 +837,7 @@ mod tests {
             let t = index as f64 / 48_000.0;
             let left = (TAU * 1_000.0 * t).sin();
             let right = 0.5 * (TAU * 7_000.0 * t).cos();
+
             assert!(
                 (frame[0] - left).abs() < 1e-4,
                 "left {} at {index}",

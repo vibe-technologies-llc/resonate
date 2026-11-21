@@ -156,6 +156,7 @@ impl Toolbox for AudioToolbox {
         let place = Place::of_the_devices_side(bus);
         let mut format = MaybeUninit::<AudioStreamBasicDescription>::zeroed();
         let mut bytes = size_of::<AudioStreamBasicDescription>() as u32;
+
         let status = unsafe {
             AudioUnitGetProperty(
                 unit,

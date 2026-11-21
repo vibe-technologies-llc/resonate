@@ -101,12 +101,14 @@ impl Toaster {
     fn raise(&self, shown: &Shown, buttons: Buttons, tag: &str) -> Result<ToastNotification> {
         let template =
             XmlDocument::new().map_err(|source| Error::windows(WindowsOp::Template, source))?;
+
         template
             .LoadXml(&HSTRING::from(document(shown, buttons)))
             .map_err(|source| Error::windows(WindowsOp::Template, source))?;
 
         let toast = ToastNotification::CreateToastNotification(&template)
             .map_err(|source| Error::windows(WindowsOp::Toast, source))?;
+
         toast
             .SetTag(&HSTRING::from(tag))
             .map_err(|source| Error::windows(WindowsOp::Toast, source))?;
@@ -132,6 +134,7 @@ impl Toaster {
                     .as_ref()
                     .and_then(key_pressed)
                     .and_then(|key| pressed(&key));
+
                 if let Some(command) = command {
                     let _ = shared.settle(command);
                 }
@@ -150,6 +153,7 @@ impl Toaster {
         };
         if let Err(source) = self.notifier.Hide(&toast) {
             let error = Error::windows(WindowsOp::Hide, source);
+
             tracing::debug!(%error, "a notification outlived the player that raised it");
         }
     }

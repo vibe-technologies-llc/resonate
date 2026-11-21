@@ -180,12 +180,14 @@ const SHORT_BLOCK_ENCODING: Encoding = encoding(
 
 fn tones(lowest: f64, highest: f64, count: usize) -> Vec<f64> {
     let mut seed: u64 = 0x5265_736F_6E61_7465;
+
     let mut draw = || {
         seed ^= seed << 13;
         seed ^= seed >> 7;
         seed ^= seed << 17;
         (seed >> 11) as f64 / (1_u64 << 53) as f64
     };
+
     let voices: Vec<(f64, f64)> = (0..count)
         .map(|_| (lowest + draw() * (highest - lowest), draw() * 2.0 * PI))
         .collect();
@@ -215,6 +217,7 @@ fn encoded_and_decoded(encoding: &Encoding, samples: &[f64]) -> Option<Vec<f64>>
         .stderr(Stdio::null())
         .spawn()
         .ok()?;
+
     let mut feed = encoder.stdin.take()?;
     let encoded = encoder.stdout.take()?;
     let decoder = Command::new("ffmpeg")
@@ -230,10 +233,12 @@ fn encoded_and_decoded(encoding: &Encoding, samples: &[f64]) -> Option<Vec<f64>>
         .iter()
         .flat_map(|sample| sample.to_le_bytes())
         .collect();
+
     let feeding = thread::spawn(move || feed.write_all(&bytes).is_ok());
     let decoded = decoder.wait_with_output().ok()?;
     let fed = feeding.join().unwrap_or(false);
     let encoded_well = encoder.wait().ok()?.success();
+
     if !fed || !encoded_well || !decoded.status.success() || decoded.stdout.is_empty() {
         return None;
     }
@@ -254,6 +259,7 @@ fn through(restoration: Restoration, tuning: Tuning, input: &[f64]) -> (Vec<f64>
         tuning,
         wall: None,
     });
+
     let most = stage
         .prepare(
             StreamSpec::new(
@@ -266,12 +272,17 @@ fn through(restoration: Restoration, tuning: Tuning, input: &[f64]) -> (Vec<f64>
         .expect("the stage prepares");
     let mut scratch = vec![0.0; most * 2];
     let mut output = Vec::new();
+
     for block in input.chunks(BLOCK * 2) {
         let count = stage.process(block, &mut scratch);
+
         output.extend_from_slice(&scratch[..count.frames_out * 2]);
     }
+
     let mut tail = vec![0.0; stage.max_flush_frames() * 2];
+
     let drained = stage.flush(&mut tail);
+
     output.extend_from_slice(&tail[..drained * 2]);
     (output, stage)
 }
@@ -279,6 +290,7 @@ fn through(restoration: Restoration, tuning: Tuning, input: &[f64]) -> (Vec<f64>
 fn band_db(samples: &[f64], frames: Range<usize>, from_hz: f64, to_hz: f64) -> f64 {
     let length = frames.len();
     let mut planner = FftPlanner::<f64>::new();
+
     let fft = planner.plan_fft_forward(length);
     let mut spectrum: Vec<Complex<f64>> = (0..length)
         .map(|n| {
@@ -290,7 +302,9 @@ fn band_db(samples: &[f64], frames: Range<usize>, from_hz: f64, to_hz: f64) -> f
             Complex::new(left * hann, 0.0)
         })
         .collect();
+
     fft.process(&mut spectrum);
+
     let bin = |hz: f64| (hz * length as f64 / RATE) as usize;
     let power: f64 = spectrum[bin(from_hz)..bin(to_hz)]
         .iter()
@@ -310,12 +324,14 @@ fn every_lossy_codec_is_extended_from_its_first_half_second() {
             return;
         };
         let (extended, stage) = through(Restoration::Extend, encoding.tuning, &decoded);
+
         assert_eq!(
             extended.len(),
             decoded.len(),
             "{} changed length",
             encoding.name
         );
+
         let wall = f64::from(
             stage
                 .wall()
@@ -326,8 +342,10 @@ fn every_lossy_codec_is_extended_from_its_first_half_second() {
         let from = wall + PATCHED_FROM_ABOVE_THE_WALL_HZ;
         let to = (wall + PATCHED_TO_ABOVE_THE_WALL_HZ).min(RATE / 2.0 * 0.95);
         let early = HALF_A_SECOND..HALF_A_SECOND + MEASURED;
+
         let raised =
             band_db(&extended, early.clone(), from, to) - band_db(&decoded, early, from, to);
+
         assert!(
             raised >= RAISED_AT_LEAST_DB,
             "{} with its wall at {wall} Hz was raised by {raised:.1} dB above it half a second in",
@@ -341,12 +359,14 @@ fn a_band_one_granule_missing_from_every_lossy_codec_is_filled() {
     let mut source = tones(500.0, 6_000.0, 200);
     let band = tones(HOLE_FROM_HZ, HOLE_TO_HZ, 60);
     let gap = 2 * 44_100..2 * 44_100 + GRANULE_FRAMES;
+
     for (frame, pair) in source.as_chunks_mut::<2>().0.iter_mut().enumerate() {
         if !gap.contains(&frame) {
             pair[0] += band[frame * 2];
             pair[1] += band[frame * 2 + 1];
         }
     }
+
     let within = HOLE_FROM_HZ + 300.0;
     let without = HOLE_TO_HZ - 300.0;
     for encoding in &ENCODINGS {
@@ -391,6 +411,7 @@ fn a_band_one_granule_missing_from_every_lossy_codec_is_filled() {
 fn music(seconds: f64, seed: u64) -> Vec<f64> {
     let frames = (seconds * RATE) as usize;
     let mut state = seed;
+
     let mut draw = || {
         state ^= state << 13;
         state ^= state >> 7;
@@ -398,8 +419,10 @@ fn music(seconds: f64, seed: u64) -> Vec<f64> {
         (state >> 11) as f64 / (1_u64 << 53) as f64
     };
     let mut channels = [vec![0.0; frames], vec![0.0; frames]];
+
     for samples in &mut channels {
         let notes = (seconds / NOTE_SECONDS) as usize;
+
         for note in 0..notes {
             let from = (note as f64 * NOTE_SECONDS * RATE) as usize;
             let fundamental = 110.0 * 2.0_f64.powf((draw() * 36.0).floor() / 12.0);
@@ -415,15 +438,18 @@ fn music(seconds: f64, seed: u64) -> Vec<f64> {
                             / (h as f64).powf(1.1)
                     })
                     .sum();
+
                 *slot += tone * envelope * NOTE_LEVEL;
             }
         }
+
         let strikes = (seconds / STRIKE_SECONDS) as usize;
         for strike in 0..strikes {
             let from = (strike as f64 * STRIKE_SECONDS * RATE) as usize;
             let rings = (STRIKE_RINGS_SECONDS * RATE) as usize;
             for (offset, slot) in samples.iter_mut().skip(from).take(rings).enumerate() {
                 let t = offset as f64 / RATE;
+
                 *slot += (draw() - 0.5) * (-t / STRIKE_DECAY_SECONDS).exp() * STRIKE_LEVEL;
             }
         }
@@ -444,18 +470,22 @@ fn every_bitrate_of_every_lossy_codec_is_extended_only_where_the_encoder_cut() {
             return;
         };
         let (extended, stage) = through(Restoration::Extend, encoding.tuning, &decoded);
+
         assert_eq!(
             extended.len(),
             decoded.len(),
             "{} changed length",
             encoding.name
         );
+
         let wall = stage
             .wall()
             .map(|wall| f64::from(wall.centihertz()) / 100.0);
+
         if encoding.cuts_a_deep_wall {
             assert!(wall.is_some(), "no wall was found in {}", encoding.name);
         }
+
         let Some(wall) = wall else {
             continue;
         };
@@ -469,8 +499,10 @@ fn every_bitrate_of_every_lossy_codec_is_extended_only_where_the_encoder_cut() {
             wall - BELOW_THE_WALL_FROM_HZ,
             wall - BELOW_THE_WALL_TO_HZ,
         );
+
         let before = band_db(&decoded, early.clone(), from, to) - below;
         let after = band_db(&extended, early, from, to) - below;
+
         assert!(
             (EXTENSION_AT_LEAST_DB..=EXTENSION_AT_MOST_DB).contains(&after),
             "{} with its wall at {wall} Hz sits at {after:.1} dB against the band below it",
@@ -497,12 +529,14 @@ fn a_hole_an_encoder_kept_deep_is_filled_at_every_bitrate() {
     let mut source = tones(500.0, 6_000.0, 200);
     let band = tones(HOLE_FROM_HZ, HOLE_TO_HZ, 60);
     let gap = 2 * 44_100..2 * 44_100 + GRANULE_FRAMES;
+
     for (frame, pair) in source.as_chunks_mut::<2>().0.iter_mut().enumerate() {
         if !gap.contains(&frame) {
             pair[0] += band[frame * 2];
             pair[1] += band[frame * 2 + 1];
         }
     }
+
     let within = HOLE_FROM_HZ + 300.0;
     let without = HOLE_TO_HZ - 300.0;
     for encoding in &BREADTH {
@@ -526,8 +560,10 @@ fn a_hole_an_encoder_kept_deep_is_filled_at_every_bitrate() {
             .expect("the gap is longer than a slice");
         let steady = gap.start - MEASURED..gap.start - MEASURED / 2;
         let taken = band_db(&decoded, deepest.clone(), within, without);
+
         let kept = band_db(&decoded, steady, within, without) - taken;
         let raised = band_db(&repaired, deepest, within, without) - taken;
+
         assert!(
             raised >= -0.01,
             "the hole {} kept was lowered by {raised:.1} dB",
@@ -560,6 +596,7 @@ fn holes_an_aac_encoder_left_in_its_short_blocks_are_filled() {
         return;
     };
     let (repaired, stage) = through(Restoration::Repair, Tuning::Aac, &decoded);
+
     assert_eq!(repaired.len(), decoded.len(), "the stage changed length");
     assert!(
         repaired.iter().all(|sample| sample.is_finite()),
@@ -573,6 +610,7 @@ fn holes_an_aac_encoder_left_in_its_short_blocks_are_filled() {
     let before = SHORT_BLOCK_NEIGHBOURS / 2 * SHORT_BLOCK_FRAMES;
     let mut filled = 0;
     let mut at = before;
+
     while at + before < frames {
         let mut around: Vec<f64> = (0..SHORT_BLOCK_NEIGHBOURS)
             .map(|neighbour| {
@@ -583,16 +621,20 @@ fn holes_an_aac_encoder_left_in_its_short_blocks_are_filled() {
                 )
             })
             .collect();
+
         around.sort_by(f64::total_cmp);
+
         let taken = level_in_a_short_block(&decoded, at, to_hz);
         let heard = level_in_a_short_block(&repaired, at, to_hz);
         let is_a_hole =
             around[SHORT_BLOCK_NEIGHBOURS / 2] - taken > SHORT_HOLE_UNDER_ITS_NEIGHBOURS_DB;
+
         if is_a_hole && heard - taken > SHORT_HOLE_RAISED_AT_LEAST_DB {
             filled += 1;
         }
         at += SHORT_BLOCK_STRIDE_FRAMES;
     }
+
     assert!(
         filled >= SHORT_HOLES_FILLED_AT_LEAST,
         "only {filled} windows one short block long were filled out of the holes the encoder left"

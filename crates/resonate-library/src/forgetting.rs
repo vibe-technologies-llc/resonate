@@ -104,6 +104,7 @@ impl Rows<'_> {
                 .map(|batch| {
                     let held = vec!["?"; batch.len()].join(",");
                     let mut bound = Vec::with_capacity(batch.len() + 1);
+
                     bound.push(Value::Integer(*root));
                     bound.extend(
                         batch
@@ -137,6 +138,7 @@ impl Rows<'_> {
 
 pub(crate) fn forget_rows(tx: &Transaction<'_>, why: Forgetting, rows: &[Rows<'_>]) -> Result<u64> {
     let mut forgotten = 0;
+
     for condition in rows.iter().flat_map(Rows::conditions) {
         if why.keeps_the_listens() {
             keep_the_listens(tx, &condition)?;
@@ -153,6 +155,7 @@ pub(crate) fn forget_rows(tx: &Transaction<'_>, why: Forgetting, rows: &[Rows<'_
     }
 
     let rows_went = forgotten > 0;
+
     match why.afterwards() {
         Afterwards::TheCaller => {}
         Afterwards::SweepAndSettleWhereRowsWent => {
@@ -202,6 +205,7 @@ fn drop_the_wants(tx: &Transaction<'_>, condition: &Condition) -> Result<()> {
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     offered.extend(selected);
 
     for path in offered {
@@ -265,15 +269,19 @@ mod tests {
         let mut squeezed = String::with_capacity(source.len());
         let mut line_of: Vec<usize> = Vec::with_capacity(source.len());
         let mut line = 1;
+
         for letter in source.chars() {
             let seen_on = line;
+
             if letter == '\n' {
                 line += 1;
             }
+
             let letter = match letter.is_whitespace() {
                 true => ' ',
                 false => letter.to_ascii_lowercase(),
             };
+
             if letter == ' ' && squeezed.ends_with(' ') {
                 continue;
             }
@@ -295,21 +303,26 @@ mod tests {
     fn no_source_in_the_library_deletes_tracks_outside_forget_rows() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
         let mut sources = Vec::new();
+
         sources_under(&root, &mut sources);
 
         let mut raw = Vec::new();
+
         for source in sources {
             let name = source
                 .strip_prefix(&root)
                 .expect("a source sits under src")
                 .to_string_lossy()
                 .replace('\\', "/");
+
             if name == THE_ONLY_MODULE_THAT_DELETES_TRACKS || name.ends_with("tests.rs") {
                 continue;
             }
+
             let text = fs::read_to_string(&source)
                 .expect("a source is read")
                 .replace("\r\n", "\n");
+
             raw.extend(
                 deletes_tracks(the_code_apart_from_its_tests(&text))
                     .into_iter()

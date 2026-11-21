@@ -1,6 +1,6 @@
 use crate::{FrameSpan, Frames, MediaLocation, Span, TrackId};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Resumable {
     pub location: MediaLocation,
     pub span: Option<FrameSpan>,

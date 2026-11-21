@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::{
@@ -92,6 +92,7 @@ impl Rendering {
         let device = host.and_then(|host| self.read_by_the_host(host, bytes));
         let stamp = self.clock.stamp_by(device);
         let filled = self.fed.source().fill_stamped(bytes, stamp);
+
         self.empty.store(filled == 0, Ordering::Release);
         if let Some(unfilled) = bytes.get_mut(filled..) {
             unfilled.fill(0);
@@ -129,6 +130,7 @@ impl resonate_apple::Render for Rendering {
             now: host.now,
             of_the_buffer: host.of_the_buffer,
         });
+
         self.fill(bytes, host);
     }
 }
@@ -150,6 +152,7 @@ mod tests {
     impl AudioSource for Supply {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             let given = self.left.min(dst.len());
+
             dst[..given].fill(0xAB);
             self.left -= given;
             given
@@ -244,6 +247,7 @@ mod tests {
         rendering.fill(&mut [0_u8; 8], None);
 
         let stamp = seen.lock().expect("the render stamped its fill");
+
         assert_eq!(stamp.ahead, Frames(2_048));
         assert!(stamp.at >= before);
     }
@@ -251,6 +255,7 @@ mod tests {
     #[test]
     fn a_buffer_the_host_timed_is_heard_at_its_host_time_plus_the_routes_latency_past_the_buffer() {
         const BUFFER_FRAMES: u64 = 256;
+
         let clock = Arc::new(StreamClock::behind_by(Frames(2_048)));
         let (mut rendering, seen) = stamped(clock, Shaped::float_stereo_behind_a_route());
         let host = HostNanos {
@@ -262,6 +267,7 @@ mod tests {
         rendering.fill(&mut [0_u8; 8 * BUFFER_FRAMES as usize], Some(host));
 
         let stamp = seen.lock().expect("the render stamped its fill");
+
         assert_eq!(stamp.ahead, Frames(2_048 - BUFFER_FRAMES));
         assert!(stamp.at >= before.after(Duration::from_millis(4)));
         assert!(stamp.at <= Moment::now().after(Duration::from_millis(4)));
@@ -288,6 +294,7 @@ mod tests {
         rendering.fill(&mut [0_u8; 4_096], Some(host));
 
         let stamp = seen.lock().expect("the render stamped its fill");
+
         assert_eq!(stamp.ahead, Frames(300));
         assert!(stamp.at >= before.after(Duration::from_millis(10)));
         assert!(stamp.at <= Moment::now().after(Duration::from_millis(10)));
@@ -306,6 +313,7 @@ mod tests {
         rendering.fill(&mut [0_u8; 8], Some(host));
 
         let stamp = seen.lock().expect("the render stamped its fill");
+
         assert_eq!(stamp.ahead, Frames(2_048));
         assert!(stamp.at >= before);
         assert!(stamp.at <= Moment::now());
@@ -316,6 +324,7 @@ mod tests {
     impl AudioSource for Words {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             let mut written = 0;
+
             for (slot, word) in dst.as_chunks_mut::<4>().0.iter_mut().zip(self.0.drain(..)) {
                 slot.copy_from_slice(&word.to_le_bytes());
                 written += 4;
@@ -346,6 +355,7 @@ mod tests {
             .iter()
             .map(|word| i32::from_le_bytes(*word))
             .collect();
+
         assert_eq!(words, [1 << 8, -1 << 8, 0x7F_FFFF << 8, 0]);
     }
 
@@ -361,10 +371,13 @@ mod tests {
         let mut bytes = [0_u8; 4];
 
         rendering.fill(&mut bytes, None);
+
         assert!(empty.load(Ordering::Acquire));
 
         assert!(handing.hand(Box::new(Supply { left: 4 })).is_ok());
+
         rendering.fill(&mut bytes, None);
+
         assert!(!empty.load(Ordering::Acquire));
     }
 }

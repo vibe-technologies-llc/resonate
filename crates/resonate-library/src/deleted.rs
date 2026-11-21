@@ -55,11 +55,13 @@ pub(crate) struct Forgotten {
 
 pub(crate) fn files_of(connection: &Connection, tracks: &[TrackId]) -> Result<BTreeSet<PathBuf>> {
     let mut paths: AHashMap<TrackId, String> = AHashMap::with_capacity(tracks.len());
+
     for batch in tracks.chunks(PATHS_ASKED_AT_ONCE) {
         let held = vec!["?"; batch.len()].join(",");
         let mut statement = connection
             .prepare_cached(&format!("SELECT id, path FROM tracks WHERE id IN ({held})"))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let found = statement
             .query_map(
                 params_from_iter(batch.iter().map(|track| track.get() as i64)),
@@ -142,6 +144,7 @@ pub(crate) fn sidecars_of(file: &Path) -> Vec<PathBuf> {
         .collect();
 
     let mut sidecars = lyrics_of(file, &beside);
+
     sidecars.extend(
         beside
             .iter()
@@ -157,6 +160,7 @@ fn lyrics_of(file: &Path, beside: &[PathBuf]) -> Vec<PathBuf> {
     let shared_with_another_song = beside
         .iter()
         .any(|other| other != file && scan::is_audio(other) && other.file_stem() == stem);
+
     if shared_with_another_song {
         return Vec::new();
     }
@@ -180,6 +184,7 @@ fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bo
     };
 
     let mut cuts_the_file = false;
+
     for cut in &read.files {
         if the_folder_a_cue_names(folder, &cut.named) != folder {
             return false;
@@ -208,6 +213,7 @@ pub(crate) fn note_before_removing(
         already: AHashSet::new(),
         told_everywhere: BTreeMap::new(),
     };
+
     for path in files {
         if why == Why::DeletedEverywhere {
             marked.told_everywhere.insert(
@@ -215,7 +221,9 @@ pub(crate) fn note_before_removing(
                 synced::recordings_at(tx, &store::path_text(path))?,
             );
         }
+
         let keys = synced::keys_deleted_with(tx, &store::path_text(path))?;
+
         for key in &keys {
             if !marked.by_file.values().any(|held| held.contains(key))
                 && synced::is_marked_deleted(tx, key)?
@@ -279,6 +287,7 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
         .iter()
         .map(|path| store::path_text(path).into_owned())
         .collect();
+
     for path in &named {
         let held = tx
             .prepare_cached(
@@ -289,6 +298,7 @@ pub(crate) fn forget_files(tx: &Transaction<'_>, files: &[PathBuf]) -> Result<Fo
                     .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             })
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         vault_keys.extend(held);
     }
 

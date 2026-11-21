@@ -43,17 +43,21 @@ impl Readout {
         if !self.live {
             return;
         }
+
         let state = player.state();
         let billed = state
             .current
             .map(|current| billing(player, current.id))
             .unwrap_or_default();
+
         crate::said::raw(CLEAR_THE_LINE);
+
         let line = line_of(&state, &billed, &self.typing);
         let shown = match columns() {
             Some(columns) => within(&line, columns.saturating_sub(LEFT_FOR_THE_CARET)),
             None => line,
         };
+
         said_on!("{shown}");
         crate::said::flushed();
         self.drawn = true;
@@ -89,6 +93,7 @@ pub fn line_of(state: &PlayerState, billed: &str, typing: &str) -> String {
         where_in(state.current),
         words::readout::volume(format!("{:.0}", state.volume.get() * WHOLE))
     );
+
     if state.shuffle {
         line.push_str("  ");
         line.push_str(words::readout::shuffle());
@@ -147,6 +152,7 @@ fn columns() -> Option<usize> {
 
 fn within(line: &str, columns: usize) -> String {
     let wide = |text: &str| -> usize { text.chars().filter_map(char::width).sum() };
+
     if wide(line) <= columns {
         return line.to_owned();
     }
@@ -154,8 +160,10 @@ fn within(line: &str, columns: usize) -> String {
     let room = columns.saturating_sub(CUT_SHORT.width().unwrap_or(1));
     let mut kept = String::with_capacity(line.len());
     let mut taken = 0;
+
     for letter in line.chars() {
         let width = letter.width().unwrap_or(0);
+
         if taken + width > room {
             break;
         }

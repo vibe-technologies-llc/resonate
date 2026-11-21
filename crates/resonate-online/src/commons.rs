@@ -65,6 +65,7 @@ fn named(url: &str) -> Option<&str> {
 
     if let Some(rest) = rest.strip_prefix(UPLOAD) {
         let rest = rest.split(['?', '#']).next()?;
+
         return match rest.strip_prefix(THUMBNAIL) {
             Some(thumbnail) => thumbnail.split('/').nth(FANNED_OUT),
             None => rest.rsplit('/').next(),
@@ -93,12 +94,14 @@ mod tests {
     #[test]
     fn a_portrait_in_a_format_this_build_cannot_draw_is_a_miss_rather_than_a_refusal() {
         let url = "https://commons.wikimedia.org/wiki/Special:FilePath/Logo.svg?width=600";
+
         assert_eq!(
             drawable(url, b"<svg xmlns=\"http://www.w3.org/2000/svg\"/>".to_vec()),
             None
         );
 
         let png = b"\x89PNG\r\n\x1a\n rest".to_vec();
+
         assert_eq!(
             drawable(url, png.clone()),
             Some(CoverArt {

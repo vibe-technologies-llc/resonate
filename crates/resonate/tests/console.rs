@@ -57,6 +57,7 @@ fn an_errand_run_inside_the_console() {
         READ_THE_MODE => {
             let mode = console_input_mode().expect("the console's input mode");
             let asked = env::var(ASKED).unwrap_or_default();
+
             println!("{MODE_SAID}{asked}={}.", mode.0);
         }
         INTERRUPT => tell_the_console(ConsoleEvent::Interrupt).expect("an interrupt told"),
@@ -70,6 +71,7 @@ struct Home(PathBuf);
 impl Home {
     fn new(name: &str) -> Self {
         let path = env::temp_dir().join(format!("resonate-{name}-{}", std::process::id()));
+
         fs::create_dir_all(&path).expect("a temporary home");
         Self(path)
     }
@@ -77,6 +79,7 @@ impl Home {
     fn silence(&self) -> PathBuf {
         let data = RATE * SECONDS * 4;
         let mut wav = b"RIFF".to_vec();
+
         wav.extend_from_slice(&(36 + data).to_le_bytes());
         wav.extend_from_slice(b"WAVEfmt ");
         wav.extend_from_slice(&16_u32.to_le_bytes());
@@ -91,6 +94,7 @@ impl Home {
         wav.resize(wav.len() + data as usize, 0);
 
         let path = self.0.join("silence.wav");
+
         fs::write(&path, wav).expect("a silent file to play");
         path
     }
@@ -99,6 +103,7 @@ impl Home {
         let mut environment: Vec<(OsString, OsString)> = env::vars_os()
             .filter(|(key, _)| key != ERRAND && key != ASKED)
             .collect();
+
         environment.extend(
             [
                 ("XDG_CONFIG_HOME", self.0.join("config")),
@@ -132,12 +137,14 @@ struct Console {
 fn shown_from(mut output: PipeReader) -> Arc<Mutex<Vec<u8>>> {
     let shown = Arc::new(Mutex::new(Vec::new()));
     let keeping = Arc::clone(&shown);
+
     thread::spawn(move || {
         let mut held = [0_u8; 4_096];
         while let Ok(read) = output.read(&mut held) {
             let Some(arrived) = held.get(..read).filter(|arrived| !arrived.is_empty()) else {
                 return;
             };
+
             keeping.lock().extend_from_slice(arrived);
         }
     });
@@ -147,6 +154,7 @@ fn shown_from(mut output: PipeReader) -> Arc<Mutex<Vec<u8>>> {
 fn without_escapes(text: &str) -> String {
     let mut plain = String::with_capacity(text.len());
     let mut letters = text.chars().peekable();
+
     while let Some(letter) = letters.next() {
         if letter != ESCAPE {
             plain.push(letter);
@@ -169,6 +177,7 @@ fn without_escapes(text: &str) -> String {
 fn mode_said(shown: &str, asked: usize) -> Option<ConsoleMode> {
     let said = format!("{MODE_SAID}{asked}=");
     let plain = without_escapes(shown);
+
     let (_, after) = plain.rsplit_once(&said)?;
     let (digits, _) = after.split_once('.')?;
     digits.trim().parse().ok().map(ConsoleMode)
@@ -212,11 +221,13 @@ impl Console {
         let asked = ASKINGS.fetch_add(1, Ordering::Relaxed);
         let errand = self.errand(home, READ_THE_MODE, asked);
         let mut mode = None;
+
         let answered = until(|| {
             mode = mode_said(&self.shown(), asked);
             mode.is_some()
         });
         let _ = errand.end();
+
         assert!(
             answered,
             "the console's mode was never said; it showed:\n{}",
@@ -247,6 +258,7 @@ impl Console {
 
 fn until(mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if done() {
             return true;
@@ -258,12 +270,14 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
 
 fn left(child: &Process) -> u32 {
     let mut code = None;
+
     until(|| {
         code = child.exit_code().expect("the child to be waited on");
         code.is_some()
     });
     code.unwrap_or_else(|| {
         let _ = child.end();
+
         panic!("play did not leave within {PATIENCE:?} of being told to");
     })
 }
@@ -287,28 +301,35 @@ fn told_to_leave(told: Telling) {
         eprintln!("skipped: no audio endpoint for play to play to");
         return;
     }
+
     let Some(mut console) = Console::open() else {
         eprintln!("skipped: no pseudo console to give play");
         return;
     };
     let home = Home::new("console");
+
     let before = console.mode(&home);
+
     assert!(before.takes_a_line_at_a_time(), "{before:?}");
 
     let child = console.playing(&home);
     let keyed = until(|| {
         child.exit_code().ok().flatten().is_none() && !console.mode(&home).takes_a_line_at_a_time()
     });
+
     thread::sleep(SETTLED_FOR);
+
     let still_playing = child
         .exit_code()
         .expect("the child to be waited on")
         .is_none();
+
     match told {
         Telling::TypedCtrlC => console.type_a_ctrl_c(),
         Telling::Interrupt => drop(console.errand(&home, INTERRUPT, usize::MAX)),
         Telling::Break => drop(console.errand(&home, BREAK, usize::MAX)),
     }
+
     let code = left(&child);
     let after = console.mode(&home);
 
@@ -346,6 +367,7 @@ fn a_console_closed_under_play_leaves_it() {
         eprintln!("skipped: no audio endpoint for play to play to");
         return;
     }
+
     let Some(console) = Console::open() else {
         eprintln!("skipped: no pseudo console to give play");
         return;
@@ -356,7 +378,9 @@ fn a_console_closed_under_play_leaves_it() {
     let keyed = until(|| {
         child.exit_code().ok().flatten().is_none() && !console.mode(&home).takes_a_line_at_a_time()
     });
+
     thread::sleep(SETTLED_FOR);
+
     let still_playing = child
         .exit_code()
         .expect("the child to be waited on")
@@ -367,8 +391,10 @@ fn a_console_closed_under_play_leaves_it() {
         typed,
         shown: _,
     } = console;
+
     drop(pseudo);
     drop(typed);
+
     let code = left(&child);
 
     assert!(

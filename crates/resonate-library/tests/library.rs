@@ -139,11 +139,13 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-library-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self {
             root: root.canonicalize().expect("a canonical path"),
@@ -152,6 +154,7 @@ impl Tree {
 
     fn write(&self, relative: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(relative);
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("a writable temporary directory");
         }
@@ -218,6 +221,7 @@ impl Wav {
 
     fn text(mut self, id: &[u8; 4], value: &str) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(value.as_bytes());
         frame(&mut self.id3, id, &body);
         self
@@ -225,6 +229,7 @@ impl Wav {
 
     fn described(mut self, description: &str, value: &str) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(description.as_bytes());
         body.push(0);
         body.extend_from_slice(value.as_bytes());
@@ -234,6 +239,7 @@ impl Wav {
 
     fn sung(mut self, words: &str) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(b"eng\0");
         body.extend_from_slice(words.as_bytes());
         frame(&mut self.id3, b"USLT", &body);
@@ -242,6 +248,7 @@ impl Wav {
 
     fn identified(mut self, owner: &str, id: &str) -> Self {
         let mut body = owner.as_bytes().to_vec();
+
         body.push(0);
         body.extend_from_slice(id.as_bytes());
         frame(&mut self.id3, UNIQUE_FILE_ID, &body);
@@ -250,6 +257,7 @@ impl Wav {
 
     fn picture(mut self, bytes: &[u8]) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(b"image/png\0");
         body.push(FRONT_COVER);
         body.push(0);
@@ -262,13 +270,16 @@ impl Wav {
         let stride = usize::from(self.bits / 8);
         let span = 1_i64 << (self.bits - 1);
         let mut data = Vec::with_capacity(self.frames * usize::from(CHANNELS) * stride);
+
         for n in self.from..self.from + self.frames * usize::from(CHANNELS) {
             let sample = ((n as i64 % (2 * span - 1)) - span + 1) as i32;
+
             data.extend_from_slice(&sample.to_le_bytes()[..stride]);
         }
 
         let block_align = CHANNELS * self.bits / 8;
         let mut fmt = Vec::new();
+
         fmt.extend_from_slice(&1_u16.to_le_bytes());
         fmt.extend_from_slice(&CHANNELS.to_le_bytes());
         fmt.extend_from_slice(&self.rate.to_le_bytes());
@@ -277,11 +288,13 @@ impl Wav {
         fmt.extend_from_slice(&self.bits.to_le_bytes());
 
         let mut body = Vec::new();
+
         body.extend_from_slice(b"WAVE");
         chunk(&mut body, b"fmt ", &fmt);
         chunk(&mut body, b"data", &data);
 
         let mut tag = Vec::new();
+
         if !self.id3.is_empty() {
             tag.extend_from_slice(b"ID3\x04\x00\x00");
             tag.extend_from_slice(&synchsafe(self.id3.len() as u32));
@@ -289,6 +302,7 @@ impl Wav {
         }
 
         let mut file = Vec::new();
+
         if self.id3_in_a_chunk {
             chunk(&mut body, b"id3 ", &tag);
         } else {
@@ -328,6 +342,7 @@ fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
 
 fn png(size: usize) -> Vec<u8> {
     let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+
     bytes.extend((0..size).map(|n| n as u8));
     bytes
 }
@@ -344,6 +359,7 @@ fn options(tree: &Tree) -> ScanOptions {
 
 fn scan(library: &Library, options: &ScanOptions) -> Result<ScanStats> {
     let summary = library.scan(options.clone())?.join()?;
+
     assert!(!summary.cancelled, "the scan reported itself cancelled");
     Ok(summary.stats)
 }
@@ -378,6 +394,7 @@ fn titles(tracks: &[Track]) -> Vec<&str> {
 #[test]
 fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -396,6 +413,7 @@ fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> R
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert!(
@@ -448,6 +466,7 @@ fn a_search_that_matches_nothing_is_answered_in_the_catalogs_own_spelling() -> R
 #[test]
 fn a_text_search_is_ordered_by_relevance_rather_than_by_album() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, album, artist) in [
         ("a.wav", "Zenith", "Zenith", "Ada"),
         ("b.wav", "Alpha Zenith", "Nightfall", "Ben"),
@@ -464,12 +483,14 @@ fn a_text_search_is_ordered_by_relevance_rather_than_by_album() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let ranked = library.tracks(&TrackQuery {
         text: Some("zenith".to_owned()),
         ..TrackQuery::default()
     })?;
+
     assert_eq!(
         titles(&ranked).first(),
         Some(&"Zenith"),
@@ -483,6 +504,7 @@ fn a_text_search_is_ordered_by_relevance_rather_than_by_album() -> Result<()> {
         reading: SortOrder::Title.reads(),
         ..TrackQuery::default()
     })?;
+
     assert_eq!(titles(&by_title), vec!["Alpha Zenith", "Beta", "Zenith"]);
     Ok(())
 }
@@ -490,6 +512,7 @@ fn a_text_search_is_ordered_by_relevance_rather_than_by_album() -> Result<()> {
 #[test]
 fn relevance_falls_back_to_album_order_when_there_is_no_text_to_rank() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, track) in [("a.wav", "second", "2"), ("b.wav", "first", "1")] {
         tree.write(
             file,
@@ -502,9 +525,11 @@ fn relevance_falls_back_to_album_order_when_there_is_no_text_to_rank() -> Result
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let listed = library.tracks(&TrackQuery::default())?;
+
     assert_eq!(titles(&listed), vec!["first", "second"]);
     Ok(())
 }
@@ -522,6 +547,7 @@ fn an_empty_library_opens_and_reads_back_as_empty() -> Result<()> {
 #[test]
 fn a_scan_stores_what_the_probe_found() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "one.wav",
         &Wav::new()
@@ -543,6 +569,7 @@ fn a_scan_stores_what_the_probe_found() -> Result<()> {
 
     let tracks = all(&library)?;
     let track = tracks.first().expect("the scan added one track");
+
     assert_eq!(track.title, "Coma Ecliptic");
     assert_eq!(track.artist.as_deref(), Some("Between the Buried and Me"));
     assert_eq!(track.track_number, Some(4));
@@ -564,6 +591,7 @@ fn a_scan_stores_what_the_probe_found() -> Result<()> {
 fn a_scan_keeps_content_advisories_and_updates_them_on_a_rescan() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     for (advisory, expected) in [("1", Some(true)), ("2", Some(false)), ("0", None)] {
         tree.write(
             "one.wav",
@@ -572,10 +600,14 @@ fn a_scan_keeps_content_advisories_and_updates_them_on_a_rescan() -> Result<()> 
                 .described("ITUNESADVISORY", advisory)
                 .build(),
         );
+
         let mut scanning = options(&tree);
+
         scanning.incremental = false;
         scan(&library, &scanning)?;
+
         let tracks = all(&library)?;
+
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].explicit, expected);
     }
@@ -584,6 +616,7 @@ fn a_scan_keeps_content_advisories_and_updates_them_on_a_rescan() -> Result<()> 
 
 fn a_variable_rate_stream() -> Vec<u8> {
     let mut file = Vec::new();
+
     for (header, length, count) in [
         ([0xff, 0xfb, 0x10, 0x00], 104, 40),
         ([0xff, 0xfb, 0xe0, 0x00], 1_044, 60),
@@ -600,6 +633,7 @@ fn a_variable_rate_stream() -> Vec<u8> {
 fn a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback() -> Result<()> {
     let tree = Tree::new();
     let bytes = a_variable_rate_stream();
+
     let path = tree.write("walked.mp3", &bytes);
 
     let library = Library::open_in_memory()?;
@@ -628,6 +662,7 @@ fn a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback() ->
 #[test]
 fn every_sample_format_survives_the_round_trip() -> Result<()> {
     let tree = Tree::new();
+
     for (index, bits) in [16_u16, 24, 32].into_iter().enumerate() {
         tree.write(
             &format!("{index}.wav"),
@@ -639,12 +674,14 @@ fn every_sample_format_survives_the_round_trip() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let formats: Vec<SampleFormat> = all(&library)?
         .iter()
         .map(|track| track.spec.format)
         .collect();
+
     assert_eq!(
         formats,
         vec![SampleFormat::S16, SampleFormat::S24, SampleFormat::S32]
@@ -655,14 +692,17 @@ fn every_sample_format_survives_the_round_trip() -> Result<()> {
 #[test]
 fn a_second_scan_of_an_untouched_tree_changes_nothing() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "one").build());
     tree.write("two.wav", &Wav::new().text(TITLE, "two").build());
 
     let library = Library::open_in_memory()?;
     let first = scan(&library, &options(&tree))?;
+
     assert_eq!(first.added, 2);
 
     let second = scan(&library, &options(&tree))?;
+
     assert_eq!(second.discovered, 2);
     assert_eq!(second.processed, 2);
     assert_eq!(second.added, 0);
@@ -675,6 +715,7 @@ fn a_second_scan_of_an_untouched_tree_changes_nothing() -> Result<()> {
 #[test]
 fn hidden_trash_and_system_folders_and_dot_files_are_passed_over() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("album/one.wav", &Wav::new().text(TITLE, "one").build());
     tree.write("album/._one.wav", b"Mac OS X        AppleDouble");
     tree.write(
@@ -705,6 +746,7 @@ fn hidden_trash_and_system_folders_and_dot_files_are_passed_over() -> Result<()>
         .into_iter()
         .map(|track| track.title)
         .collect();
+
     assert_eq!(titles, ["one"]);
     assert_eq!(
         stats.failed.total(),
@@ -717,15 +759,18 @@ fn hidden_trash_and_system_folders_and_dot_files_are_passed_over() -> Result<()>
 #[test]
 fn a_rewritten_file_is_probed_again() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "before").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     tree.write(
         "one.wav",
         &Wav::new().frames(8_820).text(TITLE, "after").build(),
     );
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.added, 0);
@@ -733,6 +778,7 @@ fn a_rewritten_file_is_probed_again() -> Result<()> {
 
     let tracks = all(&library)?;
     let track = tracks.first().expect("the track is still there");
+
     assert_eq!(track.title, "after");
     assert_eq!(track.duration.map(|frames| frames.get()), Some(8_820));
     Ok(())
@@ -742,17 +788,23 @@ fn a_rewritten_file_is_probed_again() -> Result<()> {
 fn a_file_that_left_the_tree_leaves_the_library() -> Result<()> {
     let tree = Tree::new();
     let gone = tree.write("gone.wav", &Wav::new().text(TITLE, "gone").build());
+
     tree.write("kept.wav", &Wav::new().text(TITLE, "kept").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(all(&library)?.len(), 2);
 
     fs::remove_file(&gone).expect("the fixture is removable");
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.removed, 1);
+
     let tracks = all(&library)?;
+
     assert_eq!(tracks.len(), 1);
     assert_eq!(
         tracks.first().map(|track| track.title.as_str()),
@@ -766,16 +818,20 @@ fn a_file_that_left_the_tree_leaves_the_library() -> Result<()> {
 fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> Result<()> {
     let tree = Tree::new();
     let gone = tree.write("album/gone.wav", &Wav::new().text(TITLE, "gone").build());
+
     tree.write("album/kept.wav", &Wav::new().text(TITLE, "kept").build());
     tree.write("other/one.wav", &Wav::new().text(TITLE, "one").build());
     tree.write("other/two.wav", &Wav::new().text(TITLE, "two").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(all(&library)?.len(), 4);
 
     fs::remove_file(&gone).expect("the fixture is removable");
     fs::remove_dir_all(tree.path().join("other")).expect("the folder is removable");
+
     let root = tree.path().canonicalize().expect("the tree is there");
     let named = [
         root.join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
@@ -796,21 +852,27 @@ fn a_file_the_watch_heard_gone_is_forgotten_beside_a_name_no_row_can_hold() -> R
 fn a_file_forgotten_as_gone_keeps_its_listens_and_has_them_back_when_it_returns() -> Result<()> {
     let tree = Tree::new();
     let bytes = Wav::new().text(TITLE, "Echoes").build();
+
     let echoes = tree.write("echoes.wav", &bytes);
+
     tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     for _ in 0..2 {
         let counted = library
             .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
             .expect("a counted play");
+
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
+
     let before = library.statistics(Window::Everything)?;
 
     fs::remove_file(&echoes).expect("the file goes");
+
     assert_eq!(library.forget_the_gone(slice::from_ref(&echoes))?, 1);
 
     let after = library.statistics(Window::Everything)?;
@@ -843,8 +905,10 @@ fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result
 
     let data = Tree::new();
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?
         .into_iter()
         .find(|track| track.title == "doomed")
@@ -864,12 +928,14 @@ fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result
     assert!(!doomed.exists());
     assert!(kept.exists());
     assert!(data.path().join("Trash/files/doomed.wav").is_file());
+
     let info = fs::read_to_string(data.path().join("Trash/info/doomed.wav.trashinfo"))
         .expect("a record of where the file came from");
     let written = format!(
         "[Trash Info]\nPath={}\nDeletionDate=",
         doomed.display().to_string().replace(' ', "%20")
     );
+
     assert!(info.starts_with(&written), "{info}");
     assert_eq!(titles(&all(&library)?), vec!["kept"]);
     assert!(matches!(
@@ -886,24 +952,31 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
     const SHEET: &str =
         "FILE \"song.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"Song\"\n    INDEX 01 00:00:00\n";
     const SHARED_SHEET: &str = "FILE \"x.wav\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"X\"\n    INDEX 01 00:00:00\nFILE \"y.wav\" WAVE\n  TRACK 02 AUDIO\n    TITLE \"Y\"\n    INDEX 01 00:00:00\n";
+
     let tree = Tree::new();
     let data = Tree::new();
     let song = tree.write("album/one/song.wav", &Wav::new().frames(44_100).build());
     let lyrics = tree.write("album/one/song.lrc", b"[00:01.00]words");
     let sheet = tree.write("album/one/song.cue", SHEET.as_bytes());
     let note = tree.write("album/one/notes.txt", b"liner notes");
+
     tree.write("album/two/x.wav", &Wav::new().frames(44_100).build());
     tree.write("album/two/y.wav", &Wav::new().frames(22_050).build());
+
     let shared = tree.write("album/two/both.cue", SHARED_SHEET.as_bytes());
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let song_row = library
         .tracks(&TrackQuery::default())?
         .into_iter()
         .find(|row| row.title == "Song")
         .expect("the sheet's row");
+
     library.track_played(&song_row.location, song_row.span, Duration::ZERO)?;
+
     let before = library.statistics(Window::Everything)?;
 
     library.delete_tracks(&[song_row.id])?;
@@ -916,7 +989,9 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
         note.parent().expect("a folder").is_dir(),
         "a folder still holding a file was removed"
     );
+
     let after = library.statistics(Window::Everything)?;
+
     assert_eq!(after.plays, before.plays);
     assert_eq!(after.listened, before.listened);
 
@@ -925,7 +1000,9 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
         .into_iter()
         .find(|row| row.title == "X")
         .expect("the shared sheet's first row");
+
     library.delete_tracks(&[x.id])?;
+
     assert!(
         shared.exists(),
         "a sheet cutting another file too was taken"
@@ -933,11 +1010,15 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
     assert!(tree.path().join("album/two").is_dir());
 
     let emptied = tree.write("album/three/alone.wav", &Wav::new().frames(8_820).build());
+
     scan(&library, &options(&tree))?;
+
     let alone = library
         .track_at(&emptied, None)?
         .expect("the file was scanned");
+
     library.delete_tracks(&[alone.id])?;
+
     assert!(!tree.path().join("album/three").exists());
     assert!(tree.path().is_dir(), "the root itself was pruned");
     Ok(())
@@ -948,6 +1029,7 @@ fn deleting_a_track_takes_its_lyrics_and_the_sheet_that_cuts_it_alone_and_the_fo
 fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_none_of_them_again()
 -> Result<()> {
     const ORIGIN: [u8; 16] = [9; 16];
+
     let tree = Tree::new();
     let data = Tree::new();
     let cold = tree.write(
@@ -966,20 +1048,26 @@ fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_non
         length: Some(Duration::from_millis(100)),
     };
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let told = Told::default();
+
     library.submit_listens(&told)?;
 
     for _ in 0..2 {
         let counted = library
             .track_played(&MediaLocation::local(&cold), None, Duration::from_secs(2))?
             .expect("a counted play");
+
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
     library.settle_listens_after(Duration::ZERO);
+
     let synced = library.listens_to_sync(0, 10)?;
     let mark = synced.last().expect("the listens to sync").id;
+
     assert!(library.credit_listen_elsewhere(
         &recording,
         &ORIGIN,
@@ -988,6 +1076,7 @@ fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_non
         Duration::from_secs(60)
     )?);
     assert_eq!(library.submit_listens(&told)?.submitted, 2);
+
     let before = library.statistics(Window::Everything)?;
     let held = library.track_at(&cold, None)?.expect("held");
 
@@ -1017,21 +1106,27 @@ fn a_track_deleted_and_restored_gets_back_its_listens_as_they_were_and_tells_non
 fn deleting_two_files_of_one_name_keeps_both_in_the_trash() -> Result<()> {
     let tree = Tree::new();
     let data = Tree::new();
+
     tree.write("a/song.wav", &Wav::new().text(TITLE, "First").build());
     tree.write("b/song.wav", &Wav::new().text(TITLE, "Second").build());
+
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let both: Vec<TrackId> = all(&library)?.iter().map(|track| track.id).collect();
 
     let deleted = library.delete_tracks(&both)?;
 
     assert_eq!(deleted.files, 2);
+
     let held = |folder: &str| {
         fs::read_dir(data.path().join("Trash").join(folder))
             .expect("a trash folder")
             .count()
     };
+
     assert_eq!(held("files"), 2);
     assert_eq!(held("info"), 2);
     Ok(())
@@ -1044,8 +1139,10 @@ fn a_file_with_no_trash_to_go_to_is_kept_with_its_row() -> Result<()> {
     let song = tree.write("song.wav", &Wav::new().text(TITLE, "Song").build());
     let blocked = data.write("not-a-folder", b"");
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(blocked));
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?[0].id;
 
     let deleted = library.delete_tracks(&[track])?;
@@ -1089,15 +1186,19 @@ fn a_file_is_trashed_through_the_desktops_trash_where_one_is_given_and_never_by_
         answer: Removal::Removed,
     });
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.root.clone()));
     library.trash_through(Some(Arc::clone(&desktop) as Arc<dyn Trashes>));
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?[0].id;
 
     let deleted = library.delete_tracks(&[track])?;
 
     assert_eq!(deleted.files, 1);
+
     let asked = desktop.asked.lock().clone();
+
     assert_eq!(asked.len(), 1);
     assert!(asked[0].ends_with("song.wav"));
     assert!(!song.exists());
@@ -1115,8 +1216,10 @@ fn a_file_the_desktops_trash_would_not_take_is_kept_with_its_row() -> Result<()>
         answer: Removal::Kept,
     });
     let library = Library::open_in_memory()?;
+
     library.trash_through(Some(desktop as Arc<dyn Trashes>));
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?[0].id;
 
     let deleted = library.delete_tracks(&[track])?;
@@ -1137,6 +1240,7 @@ fn a_file_the_desktops_trash_would_not_take_is_kept_with_its_row() -> Result<()>
 #[test]
 fn tracks_group_into_one_album_under_their_album_artist() -> Result<()> {
     let tree = Tree::new();
+
     for (index, title) in ["Lunar", "Solar", "Stellar"].into_iter().enumerate() {
         tree.write(
             &format!("disc/{index}.wav"),
@@ -1151,19 +1255,26 @@ fn tracks_group_into_one_album_under_their_album_artist() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1);
+
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.title, "Orbits");
     assert_eq!(album.track_count, 3);
     assert_eq!(album.year, Some(1998));
     assert!(album.artist_id.is_some());
 
     let results = library.search("Orbiters", 10)?;
+
     assert_eq!(results.artists.len(), 1);
+
     let artist = results.artists.first().expect("the album artist is stored");
+
     assert_eq!(artist.name, "The Orbiters");
     assert_eq!(artist.track_count, 3);
     assert_eq!(artist.album_count, 1);
@@ -1172,9 +1283,11 @@ fn tracks_group_into_one_album_under_their_album_artist() -> Result<()> {
         album: Some(album.id),
         ..TrackQuery::default()
     })?;
+
     assert_eq!(by_album.len(), 3);
 
     let listed = library.artists(&ArtistQuery::default())?;
+
     assert_eq!(listed.len(), 1);
     assert_eq!(listed.first().map(|entry| entry.id), Some(artist.id));
     Ok(())
@@ -1183,6 +1296,7 @@ fn tracks_group_into_one_album_under_their_album_artist() -> Result<()> {
 #[test]
 fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "beatles.wav",
         &Wav::new()
@@ -1218,6 +1332,7 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let named = |reading| -> Result<Vec<String>> {
@@ -1231,6 +1346,7 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
             .map(|artist| artist.name)
             .collect())
     };
+
     assert_eq!(
         named(Direction::Ascending)?,
         ["ABBA", "The Beatles", "Blur", "The Cure", "Doves"]
@@ -1249,6 +1365,7 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
         .into_iter()
         .map(|album| album.title)
         .collect();
+
     assert_eq!(
         by_owner,
         ["ABBA", "Help!", "Blur", "Disintegration", "Doves"]
@@ -1259,6 +1376,7 @@ fn an_artist_is_listed_under_the_name_its_files_sort_it_by() -> Result<()> {
 #[test]
 fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, sort) in [
         ("black.wav", "The Black Album", Some("Black Album, The")),
         (
@@ -1277,10 +1395,12 @@ fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
             Some(sort) => wav.text(ALBUM_SORT, sort),
             None => wav,
         };
+
         tree.write(file, &wav.build());
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let titled = |reading| -> Result<Vec<String>> {
@@ -1294,6 +1414,7 @@ fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
             .map(|album| album.title)
             .collect())
     };
+
     assert_eq!(
         titled(Direction::Ascending)?,
         ["Abbey Road", "The Black Album", "Revolver"]
@@ -1308,6 +1429,7 @@ fn an_album_is_listed_under_the_title_its_files_sort_it_by() -> Result<()> {
 #[test]
 fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, title_sort, artist, artist_sort) in [
         ("end.wav", "The End", Some("End, The"), "Doves", None),
         ("abba.wav", "Angel Eyes", None, "ABBA", None),
@@ -1330,10 +1452,12 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
             Some(sort) => wav.text(ARTIST_SORT, sort),
             None => wav,
         };
+
         tree.write(file, &wav.build());
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let listed = |sort, reading| -> Result<Vec<String>> {
@@ -1347,6 +1471,7 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
             .map(|track| track.title)
             .collect())
     };
+
     assert_eq!(
         listed(SortOrder::Title, Direction::Ascending)?,
         ["Angel Eyes", "The End", "Fade", "Help!", "Yesterday"]
@@ -1355,7 +1480,9 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
         listed(SortOrder::Title, Direction::Descending)?,
         ["Yesterday", "Help!", "Fade", "The End", "Angel Eyes"]
     );
+
     let by_artist = listed(SortOrder::Artist, Direction::Ascending)?;
+
     assert_eq!(&by_artist[..1], ["Angel Eyes"]);
     assert_eq!(
         by_artist[1..3].iter().collect::<BTreeSet<_>>(),
@@ -1363,7 +1490,9 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
         "a Beatles track its file does not sort was not filed under the artist's sort name"
     );
     assert_eq!(&by_artist[3..], ["Fade", "The End"]);
+
     let backwards = listed(SortOrder::Artist, Direction::Descending)?;
+
     assert_eq!(&backwards[..2], ["The End", "Fade"]);
     assert_eq!(&backwards[4..], ["Angel Eyes"]);
     Ok(())
@@ -1372,6 +1501,7 @@ fn a_track_is_listed_under_the_title_and_artist_its_file_sorts_it_by() -> Result
 #[test]
 fn a_compilation_stays_one_album_while_its_performers_stay_their_own() -> Result<()> {
     let tree = Tree::new();
+
     for (index, (title, artist)) in [("Dawn", "Ada"), ("Noon", "Ben"), ("Dusk", "Cleo")]
         .into_iter()
         .enumerate()
@@ -1388,11 +1518,15 @@ fn a_compilation_stays_one_album_while_its_performers_stay_their_own() -> Result
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "a compilation split into {albums:?}");
+
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.title, "Hours");
     assert_eq!(album.track_count, 3);
     assert_eq!(
@@ -1402,8 +1536,11 @@ fn a_compilation_stays_one_album_while_its_performers_stay_their_own() -> Result
 
     let artists = library.artists(&ArtistQuery::default())?;
     let mut names: Vec<&str> = artists.iter().map(|artist| artist.name.as_str()).collect();
+
     names.sort_unstable();
+
     assert_eq!(names, vec!["Ada", "Ben", "Cleo"]);
+
     for artist in &artists {
         assert_eq!(artist.track_count, 1, "{} lost its track", artist.name);
     }
@@ -1417,11 +1554,13 @@ fn a_release_id_holds_together_a_compilation_that_carries_no_flag() -> Result<()
 
     let tagged = Tree::new();
     let untagged = Tree::new();
+
     for (index, (title, artist)) in performers.into_iter().enumerate() {
         let track = Wav::new()
             .text(TITLE, title)
             .text(ARTIST, artist)
             .text(ALBUM, "Hours");
+
         untagged.write(&format!("{index}.wav"), &track.build());
         tagged.write(
             &format!("{index}.wav"),
@@ -1430,7 +1569,9 @@ fn a_release_id_holds_together_a_compilation_that_carries_no_flag() -> Result<()
     }
 
     let loose = Library::open_in_memory()?;
+
     scan(&loose, &options(&untagged))?;
+
     assert_eq!(
         loose.albums(&AlbumQuery::default())?.len(),
         3,
@@ -1438,11 +1579,15 @@ fn a_release_id_holds_together_a_compilation_that_carries_no_flag() -> Result<()
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tagged))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "a release id did not group {albums:?}");
+
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.title, "Hours");
     assert_eq!(album.track_count, 3);
     assert_eq!(
@@ -1452,8 +1597,11 @@ fn a_release_id_holds_together_a_compilation_that_carries_no_flag() -> Result<()
 
     let artists = library.artists(&ArtistQuery::default())?;
     let mut names: Vec<&str> = artists.iter().map(|artist| artist.name.as_str()).collect();
+
     names.sort_unstable();
+
     assert_eq!(names, vec!["Ada", "Ben", "Cleo"]);
+
     for artist in &artists {
         assert_eq!(artist.track_count, 1, "{} lost its track", artist.name);
     }
@@ -1464,6 +1612,7 @@ fn a_release_id_holds_together_a_compilation_that_carries_no_flag() -> Result<()
 fn a_release_every_track_agrees_about_keeps_its_artist() -> Result<()> {
     let tree = Tree::new();
     let release = "1c2d3e4f-5a6b-7c8d-9e0f-1a2b3c4d5e6f";
+
     for index in 0..3 {
         tree.write(
             &format!("{index}.wav"),
@@ -1478,11 +1627,15 @@ fn a_release_every_track_agrees_about_keeps_its_artist() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1);
+
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.track_count, 3);
     assert_eq!(album.year, Some(1998));
     assert!(
@@ -1495,6 +1648,7 @@ fn a_release_every_track_agrees_about_keeps_its_artist() -> Result<()> {
 #[test]
 fn two_releases_that_share_a_title_and_an_artist_are_told_apart_by_their_ids() -> Result<()> {
     let tree = Tree::new();
+
     for (index, release) in [
         "aaaaaaaa-0000-0000-0000-000000000001",
         "bbbbbbbb-0000-0000-0000-000000000002",
@@ -1514,14 +1668,17 @@ fn two_releases_that_share_a_title_and_an_artist_are_told_apart_by_their_ids() -
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(
         albums.len(),
         2,
         "two releases sharing a title were merged into {albums:?}"
     );
+
     for album in &albums {
         assert_eq!(album.track_count, 1);
         assert!(album.artist_id.is_some());
@@ -1532,6 +1689,7 @@ fn two_releases_that_share_a_title_and_an_artist_are_told_apart_by_their_ids() -
 #[test]
 fn an_album_artist_outranks_the_compilation_flag() -> Result<()> {
     let tree = Tree::new();
+
     for (index, artist) in ["Ada", "Ben"].into_iter().enumerate() {
         tree.write(
             &format!("{index}.wav"),
@@ -1546,9 +1704,11 @@ fn an_album_artist_outranks_the_compilation_flag() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1);
     assert_eq!(albums.first().map(|album| album.track_count), Some(2));
     Ok(())
@@ -1557,6 +1717,7 @@ fn an_album_artist_outranks_the_compilation_flag() -> Result<()> {
 #[test]
 fn two_albums_loose_in_a_root_sharing_a_title_stay_apart_under_their_own_artists() -> Result<()> {
     let tree = Tree::new();
+
     for (index, artist) in ["Ada", "Ben"].into_iter().enumerate() {
         tree.write(
             &format!("{index}.wav"),
@@ -1569,6 +1730,7 @@ fn two_albums_loose_in_a_root_sharing_a_title_stay_apart_under_their_own_artists
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(library.albums(&AlbumQuery::default())?.len(), 2);
@@ -1593,12 +1755,15 @@ fn a_compilation_loose_in_a_root(tree: &Tree) {
 #[test]
 fn a_compilation_loose_in_a_root_is_one_album_whatever_its_artists() -> Result<()> {
     let tree = Tree::new();
+
     a_compilation_loose_in_a_root(&tree);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let album = only_album(&library)?;
+
     assert_eq!(album.track_count, 3);
     assert_eq!(
         album.artist_id, None,
@@ -1611,9 +1776,13 @@ fn a_compilation_loose_in_a_root_is_one_album_whatever_its_artists() -> Result<(
 #[test]
 fn a_compilation_gathered_out_of_a_root_stays_one_album_when_a_file_is_read_again() -> Result<()> {
     let tree = Tree::new();
+
     a_compilation_loose_in_a_root(&tree);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let gathered = only_album(&library)?;
 
     tree.write(
@@ -1629,6 +1798,7 @@ fn a_compilation_gathered_out_of_a_root_stays_one_album_when_a_file_is_read_agai
     scan(&library, &options(&tree))?;
 
     let album = only_album(&library)?;
+
     assert_eq!(album.id, gathered.id);
     assert_eq!(album.track_count, 3);
     Ok(())
@@ -1638,13 +1808,20 @@ fn a_compilation_gathered_out_of_a_root_stays_one_album_when_a_file_is_read_agai
 fn a_compilation_whose_last_artist_arrives_later_is_gathered_by_the_scan_that_reads_it()
 -> Result<()> {
     let tree = Tree::new();
+
     a_compilation_loose_in_a_root(&tree);
+
     let late = tree.path().join("2.wav");
     let held = fs::read(&late).expect("the third track was written");
+
     fs::remove_file(&late).expect("the third track is held back");
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let gathered = only_album(&library)?;
+
     tree.write("elsewhere.wav", &Wav::new().text(ALBUM, "Animals").build());
 
     fs::write(&late, held).expect("the third track arrives");
@@ -1655,6 +1832,7 @@ fn a_compilation_whose_last_artist_arrives_later_is_gathered_by_the_scan_that_re
         .iter()
         .filter(|album| album.title == "Now That's What I Call Music 42")
         .collect();
+
     assert_eq!(compilation.len(), 1, "the late artist's track stood apart");
     assert_eq!(compilation[0].id, gathered.id);
     assert_eq!(compilation[0].track_count, 3);
@@ -1664,6 +1842,7 @@ fn a_compilation_whose_last_artist_arrives_later_is_gathered_by_the_scan_that_re
 #[test]
 fn two_albums_loose_in_a_root_numbered_from_one_each_stay_apart() -> Result<()> {
     let tree = Tree::new();
+
     for (index, artist) in ["Ada", "Ada", "Ben", "Ben"].into_iter().enumerate() {
         tree.write(
             &format!("{index}.wav"),
@@ -1677,6 +1856,7 @@ fn two_albums_loose_in_a_root_numbered_from_one_each_stay_apart() -> Result<()> 
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(library.albums(&AlbumQuery::default())?.len(), 2);
@@ -1686,6 +1866,7 @@ fn two_albums_loose_in_a_root_numbered_from_one_each_stay_apart() -> Result<()> 
 #[test]
 fn a_folder_whose_files_name_different_album_artists_is_still_one_album() -> Result<()> {
     let tree = Tree::new();
+
     for (index, owner) in ["P. T. Adamczyk", "Marcin Przybyłowicz", "Kerry Eurodyne"]
         .into_iter()
         .enumerate()
@@ -1702,15 +1883,19 @@ fn a_folder_whose_files_name_different_album_artists_is_still_one_album() -> Res
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(
         albums.len(),
         1,
         "one sleeve became an album per album artist: {albums:?}"
     );
+
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.track_count, 3);
     assert_eq!(
         album.artist_id, None,
@@ -1723,6 +1908,7 @@ fn a_folder_whose_files_name_different_album_artists_is_still_one_album() -> Res
 fn a_track_that_moves_between_the_folders_of_one_set_stays_under_the_album_it_was_in() -> Result<()>
 {
     let tree = Tree::new();
+
     for (folder, owner) in [("Part One", "Ada"), ("Part Two", "Ada")] {
         tree.write(
             &format!("{folder}/one.wav"),
@@ -1737,7 +1923,9 @@ fn a_track_that_moves_between_the_folders_of_one_set_stays_under_the_album_it_wa
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(library.albums(&AlbumQuery::default())?.len(), 1);
     assert_eq!(
         keys(&database).len(),
@@ -1750,6 +1938,7 @@ fn a_track_that_moves_between_the_folders_of_one_set_stays_under_the_album_it_wa
 #[test]
 fn tracks_sharing_a_folder_are_one_album_however_their_singers_differ() -> Result<()> {
     let tree = Tree::new();
+
     for (index, artist) in ["Ada", "Ben", "Ada"].into_iter().enumerate() {
         tree.write(
             &format!("Under One Roof/{index}.wav"),
@@ -1762,11 +1951,15 @@ fn tracks_sharing_a_folder_are_one_album_however_their_singers_differ() -> Resul
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "one album split into {albums:?}");
+
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.track_count, 3);
     assert_eq!(album.artist_count, 2);
     assert_eq!(
@@ -1779,6 +1972,7 @@ fn tracks_sharing_a_folder_are_one_album_however_their_singers_differ() -> Resul
 #[test]
 fn two_albums_sharing_a_title_in_folders_of_their_own_stay_apart() -> Result<()> {
     let tree = Tree::new();
+
     for (index, artist) in ["Ada", "Ben"].into_iter().enumerate() {
         tree.write(
             &format!("{artist}/Greatest Hits/{index}.wav"),
@@ -1791,6 +1985,7 @@ fn two_albums_sharing_a_title_in_folders_of_their_own_stay_apart() -> Result<()>
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(library.albums(&AlbumQuery::default())?.len(), 2);
@@ -1800,6 +1995,7 @@ fn two_albums_sharing_a_title_in_folders_of_their_own_stay_apart() -> Result<()>
 #[test]
 fn the_discs_of_a_set_in_folders_of_their_own_are_still_one_album() -> Result<()> {
     let tree = Tree::new();
+
     for (index, disc) in ["CD1", "Disc 2", "disk-03"].into_iter().enumerate() {
         tree.write(
             &format!("The Wall/{disc}/{index}.wav"),
@@ -1812,9 +2008,11 @@ fn the_discs_of_a_set_in_folders_of_their_own_are_still_one_album() -> Result<()
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "a disc set split into {albums:?}");
     assert_eq!(albums.first().map(|album| album.track_count), Some(3));
     Ok(())
@@ -1823,6 +2021,7 @@ fn the_discs_of_a_set_in_folders_of_their_own_are_still_one_album() -> Result<()
 #[test]
 fn the_discs_of_a_set_numbered_in_words_gather_the_way_numbered_ones_do() -> Result<()> {
     let tree = Tree::new();
+
     for (index, disc) in ["Disc One", "Second Disc", "CD Three"]
         .into_iter()
         .enumerate()
@@ -1838,9 +2037,11 @@ fn the_discs_of_a_set_numbered_in_words_gather_the_way_numbered_ones_do() -> Res
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "a disc set split into {albums:?}");
     assert_eq!(albums.first().map(|album| album.track_count), Some(3));
     Ok(())
@@ -1849,6 +2050,7 @@ fn the_discs_of_a_set_numbered_in_words_gather_the_way_numbered_ones_do() -> Res
 #[test]
 fn a_folder_whose_name_merely_starts_like_a_disc_is_an_album_of_its_own() -> Result<()> {
     let tree = Tree::new();
+
     for (index, folder) in ["Discovery", "Disconnected"].into_iter().enumerate() {
         tree.write(
             &format!("Ada/{folder}/{index}.wav"),
@@ -1861,9 +2063,11 @@ fn a_folder_whose_name_merely_starts_like_a_disc_is_an_album_of_its_own() -> Res
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 2, "two albums gathered into {albums:?}");
     Ok(())
 }
@@ -1871,6 +2075,7 @@ fn a_folder_whose_name_merely_starts_like_a_disc_is_an_album_of_its_own() -> Res
 #[test]
 fn an_album_artist_still_gathers_discs_the_folders_keep_apart() -> Result<()> {
     let tree = Tree::new();
+
     for (index, folder) in ["The Wall Part One", "The Wall Part Two"]
         .into_iter()
         .enumerate()
@@ -1887,9 +2092,11 @@ fn an_album_artist_still_gathers_discs_the_folders_keep_apart() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "an album artist did not gather {albums:?}");
     Ok(())
 }
@@ -1897,6 +2104,7 @@ fn an_album_artist_still_gathers_discs_the_folders_keep_apart() -> Result<()> {
 #[test]
 fn an_album_names_its_artist_on_its_own_row() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new()
@@ -1908,10 +2116,12 @@ fn an_album_names_its_artist_on_its_own_row() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
     let album = albums.first().expect("the scanned album");
+
     assert_eq!(album.title, "Harbour");
     assert_eq!(album.artist.as_deref(), Some("Ida Fenn"));
     assert!(album.artist_id.is_some(), "the album should name an artist");
@@ -1921,6 +2131,7 @@ fn an_album_names_its_artist_on_its_own_row() -> Result<()> {
 #[test]
 fn an_album_names_its_artist_although_the_artists_listing_left_it_out() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, album, artist) in [
         ("a.wav", "Blue Light", "Harbour", "Ida Fenn"),
         ("b.wav", "Slack Water", "Estuary", "Omar Pike"),
@@ -1937,20 +2148,24 @@ fn an_album_names_its_artist_although_the_artists_listing_left_it_out() -> Resul
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let listed = library.artists(&ArtistQuery {
         limit: Some(1),
         ..ArtistQuery::default()
     })?;
+
     assert_eq!(
         listed.len(),
         1,
         "the cap should hold the listing to one artist"
     );
+
     let left_out = listed[0].name.clone();
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     for album in &albums {
         assert!(
             album.artist.is_some(),
@@ -1958,6 +2173,7 @@ fn an_album_names_its_artist_although_the_artists_listing_left_it_out() -> Resul
             album.title
         );
     }
+
     assert!(
         albums
             .iter()
@@ -1970,6 +2186,7 @@ fn an_album_names_its_artist_although_the_artists_listing_left_it_out() -> Resul
 #[test]
 fn an_artists_detail_names_the_artist_it_is_about() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new()
@@ -1981,11 +2198,13 @@ fn an_artists_detail_names_the_artist_it_is_about() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let artists = library.artists(&ArtistQuery::default())?;
     let id = artists.first().expect("the scanned artist").id;
     let detail = library.artist_detail(id)?.expect("the artist detail");
+
     assert_eq!(detail.name, "Ida Fenn");
     Ok(())
 }
@@ -1993,6 +2212,7 @@ fn an_artists_detail_names_the_artist_it_is_about() -> Result<()> {
 #[test]
 fn albums_and_artists_are_ordered_by_index_rank_rather_than_by_name() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, album, artist) in [
         ("a.wav", "Filler", "Zephyr Sessions", "Wanda Zephyr"),
         ("b.wav", "Zephyr", "Zephyr", "Zephyr"),
@@ -2009,12 +2229,14 @@ fn albums_and_artists_are_ordered_by_index_rank_rather_than_by_name() -> Result<
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery {
         text: Some("zephyr".to_owned()),
         ..AlbumQuery::default()
     })?;
+
     assert_eq!(
         albums.first().map(|album| album.title.as_str()),
         Some("Zephyr"),
@@ -2026,6 +2248,7 @@ fn albums_and_artists_are_ordered_by_index_rank_rather_than_by_name() -> Result<
         text: Some("zephyr".to_owned()),
         ..ArtistQuery::default()
     })?;
+
     assert_eq!(
         artists.first().map(|artist| artist.name.as_str()),
         Some("Zephyr"),
@@ -2037,6 +2260,7 @@ fn albums_and_artists_are_ordered_by_index_rank_rather_than_by_name() -> Result<
     );
 
     let searched = library.search("zephyr", 10)?;
+
     assert_eq!(
         searched.albums.first().map(|album| album.title.as_str()),
         Some("Zephyr")
@@ -2047,6 +2271,7 @@ fn albums_and_artists_are_ordered_by_index_rank_rather_than_by_name() -> Result<
 #[test]
 fn an_unmatched_album_query_still_lists_every_album_by_title() -> Result<()> {
     let tree = Tree::new();
+
     for (file, album) in [("a.wav", "Beta"), ("b.wav", "Alpha")] {
         tree.write(
             file,
@@ -2059,9 +2284,11 @@ fn an_unmatched_album_query_still_lists_every_album_by_title() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(
         albums
             .iter()
@@ -2071,6 +2298,7 @@ fn an_unmatched_album_query_still_lists_every_album_by_title() -> Result<()> {
     );
 
     let artists = library.artists(&ArtistQuery::default())?;
+
     assert_eq!(
         artists
             .iter()
@@ -2084,6 +2312,7 @@ fn an_unmatched_album_query_still_lists_every_album_by_title() -> Result<()> {
 #[test]
 fn removing_a_root_takes_its_tracks_and_their_index_with_it() -> Result<()> {
     let kept = Tree::new();
+
     kept.write(
         "keep.wav",
         &Wav::new()
@@ -2092,7 +2321,9 @@ fn removing_a_root_takes_its_tracks_and_their_index_with_it() -> Result<()> {
             .text(ALBUM_ARTIST, "Kept Artist")
             .build(),
     );
+
     let dropped = Tree::new();
+
     dropped.write(
         "drop.wav",
         &Wav::new()
@@ -2103,6 +2334,7 @@ fn removing_a_root_takes_its_tracks_and_their_index_with_it() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(
         &library,
         &ScanOptions {
@@ -2110,6 +2342,7 @@ fn removing_a_root_takes_its_tracks_and_their_index_with_it() -> Result<()> {
             ..options(&kept)
         },
     )?;
+
     assert_eq!(all(&library)?.len(), 2);
     assert_eq!(library.roots()?.len(), 2);
 
@@ -2130,10 +2363,13 @@ fn removing_a_root_takes_its_tracks_and_their_index_with_it() -> Result<()> {
 #[test]
 fn removing_a_root_whose_directory_is_gone_still_clears_it() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "Gone").build());
+
     let root = tree.path().canonicalize().expect("a real directory");
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     fs::remove_dir_all(&root).expect("a removable directory");
 
@@ -2146,6 +2382,7 @@ fn removing_a_root_whose_directory_is_gone_still_clears_it() -> Result<()> {
 #[test]
 fn an_album_titled_composed_on_one_track_and_decomposed_on_another_is_one_album() -> Result<()> {
     let tree = Tree::new();
+
     for (file, album) in [
         ("01.wav", "\u{c1}g\u{e6}tis byrjun"),
         ("02.wav", "A\u{301}g\u{e6}tis byrjun"),
@@ -2161,6 +2398,7 @@ fn an_album_titled_composed_on_one_track_and_decomposed_on_another_is_one_album(
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(library.albums(&AlbumQuery::default())?.len(), 1);
@@ -2178,6 +2416,7 @@ fn a_row_under_a_folder_deeper_than_the_walk_reads_is_kept_rather_than_pruned() 
     let narrow = tree.path().join(["d"; 10].join("/"));
 
     let library = Library::open_in_memory()?;
+
     scan(
         &library,
         &ScanOptions {
@@ -2185,6 +2424,7 @@ fn a_row_under_a_folder_deeper_than_the_walk_reads_is_kept_rather_than_pruned() 
             ..options(&tree)
         },
     )?;
+
     let held = library
         .track_at(&deep, None)?
         .expect("the narrow root reached the file");
@@ -2201,13 +2441,16 @@ fn a_row_under_a_folder_deeper_than_the_walk_reads_is_kept_rather_than_pruned() 
 #[test]
 fn a_root_gone_from_the_disc_is_cleared_however_its_path_is_spelt() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "Gone").build());
+
     let root = tree.path().canonicalize().expect("a real directory");
     let spelt_otherwise = root
         .join("..")
         .join(root.file_name().expect("a named folder"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     fs::remove_dir_all(&root).expect("a removable directory");
 
@@ -2219,6 +2462,7 @@ fn a_root_gone_from_the_disc_is_cleared_however_its_path_is_spelt() -> Result<()
 #[test]
 fn search_matches_a_track_through_any_of_its_indexed_fields() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "one.wav",
         &Wav::new()
@@ -2237,6 +2481,7 @@ fn search_matches_a_track_through_any_of_its_indexed_fields() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     for query in [
@@ -2252,6 +2497,7 @@ fn search_matches_a_track_through_any_of_its_indexed_fields() -> Result<()> {
         "artist:ELDER",
     ] {
         let results = library.search(query, 10)?;
+
         assert_eq!(results.tracks.len(), 1, "{query} matched the wrong count");
         assert_eq!(
             results.tracks.first().map(|track| track.title.as_str()),
@@ -2273,6 +2519,7 @@ fn search_matches_a_track_through_any_of_its_indexed_fields() -> Result<()> {
 #[test]
 fn a_name_is_found_however_its_letters_are_marked_or_cased() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "one.wav",
         &Wav::new()
@@ -2283,6 +2530,7 @@ fn a_name_is_found_however_its_letters_are_marked_or_cased() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     for query in [
@@ -2299,6 +2547,7 @@ fn a_name_is_found_however_its_letters_are_marked_or_cased() -> Result<()> {
         "Straße",
     ] {
         let results = library.search(query, 10)?;
+
         assert_eq!(
             results.tracks.first().map(|track| track.title.as_str()),
             Some("Kıskanç"),
@@ -2313,9 +2562,11 @@ fn a_name_is_found_however_its_letters_are_marked_or_cased() -> Result<()> {
 #[test]
 fn search_text_that_would_break_the_index_query_is_treated_as_words() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "Quotes and OR").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     for query in ["\"quotes\"", "quotes OR", "quotes*(", "AND OR NOT"] {
@@ -2324,6 +2575,7 @@ fn search_text_that_would_break_the_index_query_is_treated_as_words() -> Result<
             "{query} was passed through to the index"
         );
     }
+
     assert_eq!(library.search("\"quotes\"", 10)?.tracks.len(), 1);
     Ok(())
 }
@@ -2332,6 +2584,7 @@ fn search_text_that_would_break_the_index_query_is_treated_as_words() -> Result<
 fn cover_art_is_extracted_once_and_read_back_whole() -> Result<()> {
     let art = png(512);
     let tree = Tree::new();
+
     for index in 0..3 {
         tree.write(
             &format!("{index}.wav"),
@@ -2345,10 +2598,12 @@ fn cover_art_is_extracted_once_and_read_back_whole() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
     let album = albums.first().expect("one album was grouped");
+
     assert!(album.has_cover_art);
     assert_eq!(
         library.cover_art(album.id)?,
@@ -2364,11 +2619,13 @@ fn cover_art_is_extracted_once_and_read_back_whole() -> Result<()> {
 fn an_album_takes_the_cover_any_of_its_tracks_carries_rather_than_only_the_first() -> Result<()> {
     let art = png(512);
     let tree = Tree::new();
+
     for index in 0..6 {
         let mut file = Wav::new()
             .text(TITLE, &format!("track {index}"))
             .text(ALBUM, "Covered")
             .text(ALBUM_ARTIST, "Someone");
+
         if index == 0 {
             file = file.picture(&art);
         }
@@ -2376,10 +2633,12 @@ fn an_album_takes_the_cover_any_of_its_tracks_carries_rather_than_only_the_first
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
     let album = albums.first().expect("one album was grouped");
+
     assert!(
         album.has_cover_art,
         "an album kept no cover although one of its tracks carries one"
@@ -2397,11 +2656,13 @@ fn an_album_takes_the_cover_any_of_its_tracks_carries_rather_than_only_the_first
 #[test]
 fn an_album_takes_the_year_any_of_its_tracks_declares_rather_than_only_the_first() -> Result<()> {
     let tree = Tree::new();
+
     for index in 0..6 {
         let mut file = Wav::new()
             .text(TITLE, &format!("track {index}"))
             .text(ALBUM, "Dated")
             .text(ALBUM_ARTIST, "Someone");
+
         if index == 0 {
             file = file.text(YEAR, "1971-10-30");
         }
@@ -2409,10 +2670,12 @@ fn an_album_takes_the_year_any_of_its_tracks_declares_rather_than_only_the_first
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
     let album = albums.first().expect("one album was grouped");
+
     assert_eq!(album.year, Some(1971));
     assert_eq!(matched(&library, "year:1971")?.len(), 6);
     Ok(())
@@ -2421,6 +2684,7 @@ fn an_album_takes_the_year_any_of_its_tracks_declares_rather_than_only_the_first
 #[test]
 fn a_date_written_with_no_separators_still_names_the_year_it_starts_with() -> Result<()> {
     let tree = Tree::new();
+
     for (file, written) in [
         ("compact.wav", "19750601"),
         ("month.wav", "197506"),
@@ -2437,10 +2701,13 @@ fn a_date_written_with_no_separators_still_names_the_year_it_starts_with() -> Re
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 3);
+
     for album in &albums {
         assert_eq!(album.year, Some(1975), "{} kept no year", album.title);
     }
@@ -2450,6 +2717,7 @@ fn a_date_written_with_no_separators_still_names_the_year_it_starts_with() -> Re
 #[test]
 fn cover_art_is_left_alone_when_the_scan_did_not_ask_for_it() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "one.wav",
         &Wav::new()
@@ -2460,6 +2728,7 @@ fn cover_art_is_left_alone_when_the_scan_did_not_ask_for_it() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(
         &library,
         &ScanOptions {
@@ -2470,6 +2739,7 @@ fn cover_art_is_left_alone_when_the_scan_did_not_ask_for_it() -> Result<()> {
 
     let albums = library.albums(&AlbumQuery::default())?;
     let album = albums.first().expect("one album was grouped");
+
     assert!(!album.has_cover_art);
     assert_eq!(library.cover_art(album.id)?, None);
     Ok(())
@@ -2478,9 +2748,12 @@ fn cover_art_is_left_alone_when_the_scan_did_not_ask_for_it() -> Result<()> {
 #[test]
 fn a_failed_file_is_counted_as_what_went_wrong_with_it() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
     tree.write("lying.flac", b"this is not a flac file at all");
+
     let whole = Wav::new().text(TITLE, "cut short").build();
+
     tree.write("cut.wav", &whole[..24]);
 
     let library = Library::open_in_memory()?;
@@ -2505,19 +2778,23 @@ fn a_failed_file_is_counted_as_what_went_wrong_with_it() -> Result<()> {
 #[test]
 fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -> Result<()> {
     let tree = Tree::new();
+
     for number in 0..200 {
         tree.write(
             &format!("album/{number:03}.wav"),
             &Wav::new().text(TITLE, "a track").build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     assert!(
         library.wind_down(Duration::from_millis(1)),
         "nothing was running and it waited for something"
     );
 
     let scanning = library.scan(options(&tree))?;
+
     assert!(
         library.wind_down(Duration::from_secs(20)),
         "the scan was never let go of"
@@ -2527,7 +2804,9 @@ fn winding_down_cancels_the_pass_walking_the_tree_and_waits_for_it_to_let_go() -
         library.scan(options(&tree)).is_ok(),
         "the tree was still held after winding down"
     );
+
     let summary = scanning.join()?;
+
     assert!(summary.cancelled || summary.stats.added == 200);
     Ok(())
 }
@@ -2538,6 +2817,7 @@ fn a_name_a_mac_hands_back_decomposed_is_catalogued_composed_and_still_opens() -
     let tree = Tree::new();
     let decomposed = tree.path().join("Bjo\u{308}rk").join("Je\u{301}ga.wav");
     let composed = tree.path().join("Bj\u{f6}rk").join("J\u{e9}ga.wav");
+
     fs::create_dir(tree.path().join("Bjo\u{308}rk")).expect("a folder named decomposed");
     fs::write(&decomposed, Wav::new().text(TITLE, "Joga").build())
         .expect("a file named decomposed");
@@ -2564,13 +2844,16 @@ fn a_name_a_mac_hands_back_decomposed_is_catalogued_composed_and_still_opens() -
 fn a_file_with_a_name_that_is_not_text_is_catalogued_and_opens_under_the_name_it_has() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
+
     let bytes = |name: &[u8]| {
         tree.path()
             .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(name))
     };
     let cafe = bytes(b"caf\xe9.wav");
     let inside = bytes(b"dir\xff").join("inside.wav");
+
     fs::write(&cafe, Wav::new().text(TITLE, "cafe").build())
         .expect("a file with a name that is not text");
     fs::create_dir(bytes(b"dir\xff")).expect("a folder with a name that is not text");
@@ -2618,13 +2901,17 @@ fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<
         .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
             b"caf\xe9.wav",
         ));
+
     fs::write(&cafe, Wav::new().text(TITLE, "cafe").build()).expect("a file");
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(all(&library)?.len(), 1);
 
     fs::remove_file(&cafe).expect("the file goes");
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.removed, 1, "got {stats:?}");
@@ -2636,6 +2923,7 @@ fn a_file_with_a_name_that_is_not_text_is_forgotten_once_it_is_gone() -> Result<
 #[test]
 fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
     fs::write(
         tree.path()
@@ -2647,6 +2935,7 @@ fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Re
     .expect("a sheet with a name that is not text");
 
     let library = Library::open_in_memory()?;
+
     for _ in 0..2 {
         let stats = scan(&library, &options(&tree))?;
 
@@ -2661,6 +2950,7 @@ fn a_cue_sheet_with_a_name_that_is_not_text_still_cuts_the_file_it_names() -> Re
 fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_whole() -> Result<()>
 {
     let tree = Tree::new();
+
     fs::write(
         tree.path()
             .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
@@ -2672,6 +2962,7 @@ fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_
     tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
 
     let library = Library::open_in_memory()?;
+
     for _ in 0..2 {
         let stats = scan(&library, &options(&tree))?;
 
@@ -2684,6 +2975,7 @@ fn a_cue_sheet_cannot_name_a_file_whose_name_is_not_text_so_the_file_is_scanned_
 #[test]
 fn a_file_that_will_not_probe_is_counted_and_stepped_over() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("good.wav", &Wav::new().text(TITLE, "good").build());
     tree.write("broken.flac", b"this is not a flac file at all");
     tree.write("ignored.txt", b"not audio, never discovered");
@@ -2701,12 +2993,15 @@ fn a_file_that_will_not_probe_is_counted_and_stepped_over() -> Result<()> {
 #[test]
 fn a_track_with_no_title_tag_is_named_after_its_file() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("nested/Unnamed Take.wav", &Wav::new().build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let tracks = all(&library)?;
+
     assert_eq!(
         tracks.first().map(|track| track.title.as_str()),
         Some("Unnamed Take")
@@ -2718,6 +3013,7 @@ fn a_track_with_no_title_tag_is_named_after_its_file() -> Result<()> {
 #[test]
 fn nested_directories_are_walked_to_the_bottom() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("a/b/c/d/deep.wav", &Wav::new().text(TITLE, "deep").build());
     tree.write("a/shallow.wav", &Wav::new().text(TITLE, "shallow").build());
 
@@ -2732,12 +3028,15 @@ fn nested_directories_are_walked_to_the_bottom() -> Result<()> {
 #[test]
 fn scanning_registers_the_root_it_was_given() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let roots = library.roots()?;
+
     assert_eq!(roots.len(), 1);
     assert_eq!(
         roots.first().map(PathBuf::as_path),
@@ -2766,6 +3065,7 @@ fn a_root_that_is_not_a_directory_is_refused() -> Result<()> {
         roots: vec![file],
         ..options(&tree)
     })?;
+
     assert!(matches!(
         handle.join(),
         Err(Error::RootNotADirectory { .. })
@@ -2779,12 +3079,15 @@ fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_fav
     let tree = Tree::new();
     let path = tree.write("one.wav", &Wav::new().text(TITLE, "Echoes").build());
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?.remove(0);
     let named = library.names_stamp();
 
     library.track_played(&MediaLocation::local(&path), None, Duration::ZERO)?;
     library.favour(Favoured::Track(track.id), true)?;
+
     assert!(
         named.still_holds_at(library.names_stamp()),
         "a play or a favourite moved the names a window reads"
@@ -2792,6 +3095,7 @@ fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_fav
 
     tree.write("one.wav", &Wav::new().text(TITLE, "Dogs").build());
     scan(&library, &options(&tree))?;
+
     assert!(!named.still_holds_at(library.names_stamp()));
     Ok(())
 }
@@ -2799,10 +3103,14 @@ fn the_names_stamp_moves_for_a_title_written_and_stands_through_a_play_and_a_fav
 #[test]
 fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrived() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "Echoes").build());
     tree.write("two.wav", &Wav::new().text(TITLE, "Time").build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let held = all(&library)?;
     let echoes = held
         .iter()
@@ -2820,7 +3128,9 @@ fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrive
 
     tree.write("one.wav", &Wav::new().text(TITLE, "Dogs").build());
     scan(&library, &options(&tree))?;
+
     let moved = library.names_moved_since(named);
+
     assert!(moved.names(Some(echoes)));
     assert!(
         !moved.names(Some(time)),
@@ -2832,9 +3142,12 @@ fn the_catalog_names_only_the_rows_retitled_since_a_stamp_and_whether_any_arrive
     );
 
     let retitled = library.names_stamp();
+
     tree.write("three.wav", &Wav::new().text(TITLE, "Money").build());
     scan(&library, &options(&tree))?;
+
     let moved = library.names_moved_since(retitled);
+
     assert!(moved.names(None), "a row arriving is not said to have");
     assert!(!moved.names(Some(echoes)));
     Ok(())
@@ -2845,18 +3158,23 @@ fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() ->
     let kept = Tree::new();
     let unplugged = Tree::new();
     let dropped = Tree::new();
+
     kept.write("one.wav", &Wav::new().build());
     unplugged.write("two.wav", &Wav::new().build());
     dropped.write("three.wav", &Wav::new().build());
+
     let library = Library::open_in_memory()?;
+
     for tree in [&kept, &unplugged, &dropped] {
         scan(&library, &options(tree))?;
     }
+
     let canonical = |tree: &Tree| tree.path().canonicalize().expect("the tree exists");
     let (kept_root, unplugged_root, dropped_root) =
         (canonical(&kept), canonical(&unplugged), canonical(&dropped));
 
     assert!(library.remove_root(&dropped_root)?);
+
     fs::remove_dir_all(&unplugged_root).expect("the tree taken away");
     kept.write("four.wav", &Wav::new().build());
 
@@ -2868,6 +3186,7 @@ fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() ->
             })?
             .is_none()
     );
+
     let summary = library
         .scan_what_is_held(ScanOptions {
             roots: vec![unplugged_root.clone(), kept_root.clone(), dropped_root],
@@ -2877,8 +3196,11 @@ fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() ->
         .join()?;
 
     assert_eq!(summary.stats.added, 1);
+
     let mut held = vec![kept_root, unplugged_root];
+
     held.sort();
+
     assert_eq!(library.roots()?, held);
     assert_eq!(all(&library)?.len(), 3);
     Ok(())
@@ -2888,12 +3210,16 @@ fn a_scan_of_what_is_held_passes_over_a_root_that_is_gone_or_no_longer_held() ->
 fn a_scan_the_watch_asked_for_leaves_the_roots_beside_it_to_the_watch() -> Result<()> {
     let changed = Tree::new();
     let beside = Tree::new();
+
     changed.write("one.wav", &Wav::new().build());
     beside.write("two.wav", &Wav::new().build());
+
     let library = Library::open_in_memory()?;
+
     for tree in [&changed, &beside] {
         scan(&library, &options(tree))?;
     }
+
     let changed_root = changed.path().canonicalize().expect("the tree exists");
 
     fs::remove_file(beside.path().join("two.wav")).expect("the file taken away");
@@ -2927,11 +3253,15 @@ fn a_scan_the_watch_asked_for_leaves_the_roots_beside_it_to_the_watch() -> Resul
 #[test]
 fn a_root_inside_a_root_is_refused() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rock/one.wav", &Wav::new().build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let inside = tree.path().join("rock");
+
     assert!(matches!(
         library.add_root(&inside),
         Err(Error::RootInsideRoot { .. })
@@ -2941,6 +3271,7 @@ fn a_root_inside_a_root_is_refused() -> Result<()> {
         roots: vec![inside],
         ..options(&tree)
     })?;
+
     assert!(matches!(handle.join(), Err(Error::RootInsideRoot { .. })));
     assert_eq!(library.roots()?.len(), 1);
     Ok(())
@@ -2949,8 +3280,10 @@ fn a_root_inside_a_root_is_refused() -> Result<()> {
 #[test]
 fn a_root_takes_in_the_one_it_covers_and_the_counts_it_held() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rock/one.wav", &Wav::new().text(TITLE, "One").build());
     tree.write("two.wav", &Wav::new().text(TITLE, "Two").build());
+
     let library = Library::open_in_memory()?;
 
     scan(
@@ -2960,7 +3293,9 @@ fn a_root_takes_in_the_one_it_covers_and_the_counts_it_held() -> Result<()> {
             ..options(&tree)
         },
     )?;
+
     let one = MediaLocation::local(tree.path().join("rock/one.wav"));
+
     assert_eq!(
         library
             .track_played(&one, None, Duration::ZERO)?
@@ -2989,6 +3324,7 @@ fn a_root_takes_in_the_one_it_covers_and_the_counts_it_held() -> Result<()> {
 fn a_directory_past_the_depth_limit_is_stepped_past_and_the_prune_still_runs() -> Result<()> {
     let tree = Tree::new();
     let deep: String = "down/".repeat(40);
+
     tree.write(
         &format!("{deep}far.wav"),
         &Wav::new().text(TITLE, "Far").build(),
@@ -2996,10 +3332,13 @@ fn a_directory_past_the_depth_limit_is_stepped_past_and_the_prune_still_runs() -
     tree.write("near.wav", &Wav::new().text(TITLE, "Near").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(titles(&all(&library)?), vec!["Near"]);
 
     fs::remove_file(tree.path().join("near.wav")).expect("the fixture file is writable");
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.removed, 1);
@@ -3011,13 +3350,16 @@ fn a_directory_past_the_depth_limit_is_stepped_past_and_the_prune_still_runs() -
 fn a_changed_file_that_will_not_probe_keeps_its_row_and_what_was_heard_of_it() -> Result<()> {
     let tree = Tree::new();
     let path = tree.write("torn.wav", &Wav::new().text(TITLE, "Torn").build());
+
     tree.write("whole.wav", &Wav::new().text(TITLE, "Whole").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     library.track_played(&MediaLocation::local(&path), None, Duration::ZERO)?;
 
     fs::write(&path, b"RIFF torn midway through a write").expect("the fixture file is writable");
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.removed, 0);
@@ -3033,6 +3375,7 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
     use std::os::unix::fs::PermissionsExt as _;
 
     let tree = Tree::new();
+
     tree.write(
         "locked/deep/one.wav",
         &Wav::new().text(TITLE, "One").build(),
@@ -3041,9 +3384,11 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
     tree.write("open.wav", &Wav::new().text(TITLE, "Open").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let locked = tree.path().join("locked");
+
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000))
         .expect("the fixture folder takes a mode");
     if fs::read_dir(&locked).is_ok() {
@@ -3052,7 +3397,9 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
         eprintln!("skipping: this user reads a folder whatever its mode");
         return Ok(());
     }
+
     let stats = scan(&library, &options(&tree));
+
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))
         .expect("the fixture folder takes a mode");
 
@@ -3069,15 +3416,18 @@ fn a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scan
 
     let here = Tree::new();
     let there = Tree::new();
+
     here.write("here.wav", &Wav::new().text(TITLE, "Here").build());
     there.write("shut/one.wav", &Wav::new().text(TITLE, "One").build());
     there.write("open.wav", &Wav::new().text(TITLE, "Open").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&here))?;
     scan(&library, &options(&there))?;
 
     let shut = there.path().join("shut");
+
     fs::set_permissions(&shut, fs::Permissions::from_mode(0o444))
         .expect("the fixture folder takes a mode");
     if fs::metadata(shut.join("one.wav")).is_ok() {
@@ -3086,7 +3436,9 @@ fn a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scan
         eprintln!("skipping: this user searches a folder whatever its mode");
         return Ok(());
     }
+
     let stats = scan(&library, &options(&here));
+
     fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
         .expect("the fixture folder takes a mode");
 
@@ -3099,12 +3451,14 @@ fn a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scan
 fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_or_gone()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "drive/album/one.wav",
         &Wav::new().text(TITLE, "One").build(),
     );
     tree.write("drive/two.wav", &Wav::new().text(TITLE, "Two").build());
     tree.write("home.wav", &Wav::new().text(TITLE, "Home").build());
+
     let drive = tree
         .path()
         .canonicalize()
@@ -3113,6 +3467,7 @@ fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_o
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     beside(&database)
         .execute(
@@ -3123,12 +3478,14 @@ fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_o
 
     fs::remove_dir_all(&drive).expect("the fixture drive can be emptied");
     fs::create_dir(&drive).expect("the fixture mount point can be made");
+
     let emptied = scan(&library, &options(&tree))?;
 
     assert_eq!(emptied.removed, 0);
     assert_eq!(titles(&all(&library)?), vec!["Home", "One", "Two"]);
 
     fs::remove_dir(&drive).expect("the fixture mount point can be taken away");
+
     let vanished = scan(&library, &options(&tree))?;
 
     assert_eq!(vanished.removed, 0);
@@ -3142,14 +3499,18 @@ fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_o
 fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted() -> Result<()> {
     let tree = Tree::new();
     let elsewhere = Path::new("/dev/shm").join(format!("resonate-volume-{}", process::id()));
+
     if fs::create_dir_all(&elsewhere).is_err() {
         eprintln!("skipping: no second volume to link into");
         return Ok(());
     }
+
     let same_volume = fs::metadata(&elsewhere).map(|held| held.dev()).ok()
         == fs::metadata(tree.path()).map(|held| held.dev()).ok();
+
     if same_volume {
         let _ = fs::remove_dir_all(&elsewhere);
+
         eprintln!("skipping: the shared memory folder is on the fixture tree's volume");
         return Ok(());
     }
@@ -3159,7 +3520,9 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
     )
     .expect("the second volume is writable");
     tree.write("near.wav", &Wav::new().text(TITLE, "Near").build());
+
     let link = tree.path().join("far");
+
     std::os::unix::fs::symlink(&elsewhere, &link).expect("the fixture tree takes a link");
 
     let database = tree.path().join("library.db");
@@ -3168,7 +3531,9 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
         follow_symlinks: true,
         ..options(&tree)
     };
+
     scan(&library, &following)?;
+
     let noted: Vec<String> = beside(&database)
         .prepare("SELECT path FROM volumes")
         .and_then(|mut statement| {
@@ -3180,6 +3545,7 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
 
     fs::remove_file(&link).expect("the fixture link can be taken away");
     fs::create_dir(&link).expect("the fixture mount point can be made");
+
     let unmounted = scan(&library, &following);
     let _ = fs::remove_dir_all(&elsewhere);
 
@@ -3187,6 +3553,7 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
         .path()
         .canonicalize()
         .expect("the fixture tree has a canonical path");
+
     assert_eq!(noted, vec![canonical.join("far").display().to_string()]);
     assert_eq!(unmounted?.removed, 0);
     assert_eq!(titles(&all(&library)?), vec!["Far", "Near"]);
@@ -3197,6 +3564,7 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
 fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> Result<()> {
     let tree = Tree::new();
     let shared = Tree::new();
+
     tree.write("albums/keep.wav", &Wav::new().text(TITLE, "Keep").build());
     shared.write("one.wav", &Wav::new().text(TITLE, "One").build());
 
@@ -3207,6 +3575,7 @@ fn two_links_to_one_directory_are_walked_once_rather_than_read_as_a_cycle() -> R
     }
 
     let library = Library::open_in_memory()?;
+
     scan(
         &library,
         &ScanOptions {
@@ -3224,6 +3593,7 @@ fn a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes
 -> Result<()> {
     let tree = Tree::new();
     let shared = Tree::new();
+
     shared.write("inner/one.wav", &Wav::new().text(TITLE, "One").build());
     fs::create_dir_all(tree.path().join("albums")).expect("a writable temporary directory");
 
@@ -3238,6 +3608,7 @@ fn a_link_to_a_folder_inside_another_links_target_is_walked_once_whichever_comes
     }
 
     let library = Library::open_in_memory()?;
+
     scan(
         &library,
         &ScanOptions {
@@ -3255,6 +3626,7 @@ fn a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not() 
     let tree = Tree::new();
     let shared = Tree::new();
     let song = tree.write("album/song.wav", &Wav::new().text(TITLE, "Song").build());
+
     shared.write("far.wav", &Wav::new().text(TITLE, "Far").build());
 
     let linked = [
@@ -3262,13 +3634,16 @@ fn a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not() 
         link_to_file(&song, &tree.path().join("album/also.wav")),
         link_to_directory(shared.path(), &tree.path().join("shared")),
     ];
+
     if linked.contains(&false) {
         return Ok(());
     }
 
     let mut followed = Vec::new();
+
     for follow_symlinks in [false, true] {
         let library = Library::open_in_memory()?;
+
         scan(
             &library,
             &ScanOptions {
@@ -3288,6 +3663,7 @@ fn a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not() 
         .path()
         .canonicalize()
         .expect("the fixture tree has a canonical path");
+
     assert_eq!(followed[0], vec![canonical.join("album/song.wav")]);
     assert_eq!(
         followed[1].iter().collect::<BTreeSet<_>>(),
@@ -3304,13 +3680,18 @@ fn a_link_naming_a_file_is_never_catalogued_whether_links_are_followed_or_not() 
 fn a_row_an_older_build_catalogued_for_a_link_hands_its_history_to_the_file_it_names() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write("album/song.wav", &Wav::new().text(TITLE, "Song").build());
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let song = root.join("album/song.wav");
     let link = root.join("alias.wav");
+
     std::os::unix::fs::symlink(&song, &link).expect("the fixture tree takes a link");
     catalogued_again_at(&database, &song, &link);
 
@@ -3319,16 +3700,21 @@ fn a_row_an_older_build_catalogued_for_a_link_hands_its_history_to_the_file_it_n
             let counted = library
                 .track_played(&MediaLocation::local(played), None, Duration::from_secs(2))?
                 .expect("a counted play");
+
             library.listened(counted.listen, Duration::from_secs(2))?;
         }
     }
+
     let linked = library
         .track_at(&link, None)?
         .expect("the row the older build kept");
+
     library.favour(Favoured::Track(linked.id), true)?;
+
     let before = library.statistics(Window::Everything)?;
 
     scan(&library, &options(&tree))?;
+
     let after = library.statistics(Window::Everything)?;
     let standing = library.track_at(&song, None)?.expect("the file's own row");
 
@@ -3362,6 +3748,7 @@ fn catalogued_again_at(database: &Path, held: &Path, at: &Path) {
             other => other,
         })
         .collect();
+
     let written = catalog
         .execute(
             &format!(
@@ -3372,6 +3759,7 @@ fn catalogued_again_at(database: &Path, held: &Path, at: &Path) {
             rusqlite::params![settled_text(at), settled(held)],
         )
         .expect("the catalog takes a second row");
+
     assert_eq!(written, 1);
 }
 
@@ -3387,6 +3775,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
     const MP3: i64 = 7;
 
     let tree = Tree::new();
+
     for index in 0..5 {
         tree.write(
             &format!("{index}.wav"),
@@ -3400,6 +3789,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     beside(&database)
@@ -3408,6 +3798,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
             [MP3],
         )
         .expect("the catalog takes a codec");
+
     assert_eq!(
         library
             .tracks(&TrackQuery {
@@ -3428,12 +3819,14 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
         limit: Some(2),
         ..TrackQuery::default()
     };
+
     assert_eq!(library.tracks(&paged)?.len(), 2);
 
     let whole = library.measured(&TrackQuery {
         limit: None,
         ..paged.clone()
     })?;
+
     assert_eq!(whole.rows, 5);
     assert_eq!(
         whole.lossless, 3,
@@ -3442,6 +3835,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
     assert!(whole.length.is_some());
 
     let capped = library.measured(&paged)?;
+
     assert_eq!(
         capped.rows, 2,
         "a measurement given a limit answers for the page it names"
@@ -3451,6 +3845,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
         limit: Some(1),
         ..AlbumQuery::default()
     };
+
     assert_eq!(library.albums(&albums)?.len(), 1);
     assert_eq!(library.albums_counted(&albums)?, 3);
 
@@ -3458,6 +3853,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
         limit: Some(1),
         ..ArtistQuery::default()
     };
+
     assert_eq!(library.artists(&artists)?.len(), 1);
     assert_eq!(library.artists_counted(&artists)?, 2);
 
@@ -3465,6 +3861,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
         text: Some("Other".to_owned()),
         ..ArtistQuery::default()
     };
+
     assert_eq!(
         library.artists_counted(&narrowed)?,
         1,
@@ -3476,6 +3873,7 @@ fn a_count_answers_for_the_whole_match_where_a_page_answers_for_itself() -> Resu
 #[test]
 fn limit_and_offset_page_through_a_sorted_result() -> Result<()> {
     let tree = Tree::new();
+
     for index in 0..5 {
         tree.write(
             &format!("{index}.wav"),
@@ -3484,6 +3882,7 @@ fn limit_and_offset_page_through_a_sorted_result() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let page = library.tracks(&TrackQuery {
@@ -3507,6 +3906,7 @@ fn limit_and_offset_page_through_a_sorted_result() -> Result<()> {
 #[test]
 fn cancelling_a_scan_stops_it_before_it_prunes() -> Result<()> {
     let tree = Tree::new();
+
     for index in 0..200 {
         tree.write(
             &format!("{index}.wav"),
@@ -3515,14 +3915,18 @@ fn cancelling_a_scan_stops_it_before_it_prunes() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(all(&library)?.len(), 200);
 
     let handle = library.scan(ScanOptions {
         incremental: false,
         ..options(&tree)
     })?;
+
     handle.cancel();
+
     let summary = handle.join()?;
 
     assert!(summary.cancelled, "the scan outran the cancel");
@@ -3535,16 +3939,22 @@ fn cancelling_a_scan_stops_it_before_it_prunes() -> Result<()> {
 fn a_root_the_scan_was_not_given_is_tidied_of_the_files_that_have_gone() -> Result<()> {
     let here = Tree::new();
     let there = Tree::new();
+
     here.write("here.wav", &Wav::new().text(TITLE, "here").build());
+
     let gone = there.write("gone.wav", &Wav::new().text(TITLE, "gone").build());
+
     there.write("stays.wav", &Wav::new().text(TITLE, "stays").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&here))?;
     scan(&library, &options(&there))?;
+
     assert_eq!(titles(&all(&library)?), vec!["gone", "here", "stays"]);
 
     fs::remove_file(&gone).expect("the fixture file is removable");
+
     let stats = scan(&library, &options(&here))?;
 
     assert_eq!(
@@ -3559,14 +3969,17 @@ fn a_root_the_scan_was_not_given_is_tidied_of_the_files_that_have_gone() -> Resu
 fn a_root_that_is_not_there_is_left_alone_rather_than_emptied() -> Result<()> {
     let here = Tree::new();
     let unplugged = Tree::new();
+
     here.write("here.wav", &Wav::new().text(TITLE, "here").build());
     unplugged.write("away.wav", &Wav::new().text(TITLE, "away").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&here))?;
     scan(&library, &options(&unplugged))?;
 
     fs::remove_dir_all(unplugged.path()).expect("the fixture tree is removable");
+
     let stats = scan(
         &library,
         &ScanOptions {
@@ -3586,6 +3999,7 @@ fn a_root_that_is_not_there_is_left_alone_rather_than_emptied() -> Result<()> {
 #[test]
 fn the_progress_a_watcher_holds_both_reports_a_scan_and_stops_it() -> Result<()> {
     let tree = Tree::new();
+
     for index in 0..200 {
         tree.write(
             &format!("{index}.wav"),
@@ -3598,6 +4012,7 @@ fn the_progress_a_watcher_holds_both_reports_a_scan_and_stops_it() -> Result<()>
     let watched = Arc::clone(handle.progress());
 
     watched.cancel();
+
     let summary = handle.join()?;
 
     assert!(watched.is_cancelled(), "the progress forgot the cancel");
@@ -3609,9 +4024,11 @@ fn the_progress_a_watcher_holds_both_reports_a_scan_and_stops_it() -> Result<()>
 #[test]
 fn a_track_reads_back_by_its_own_id() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "findable").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let tracks = all(&library)?;
@@ -3628,18 +4045,25 @@ fn a_queue_of_tracks_and_their_albums_reads_back_in_one_pass() -> Result<()> {
     let (_tree, library) = scanned_two_discs();
     let rows = library.tracks(&TrackQuery::default())?;
     let mut ids: Vec<TrackId> = rows.iter().map(|row| row.id).collect();
+
     ids.extend(ids.clone());
     ids.push(TrackId::MAX);
 
     let mut read = library.tracks_with_ids(&ids)?;
+
     read.sort_by_key(|track| track.id);
+
     let mut wanted = rows.clone();
+
     wanted.sort_by_key(|track| track.id);
+
     assert_eq!(read, wanted);
 
     let albums: Vec<AlbumId> = rows.iter().filter_map(|row| row.album_id).collect();
     let titles = library.album_titles(&albums)?;
+
     assert!(!titles.is_empty());
+
     for (album, title) in titles {
         assert_eq!(library.album(album)?.map(|held| held.title), Some(title));
     }
@@ -3649,17 +4073,22 @@ fn a_queue_of_tracks_and_their_albums_reads_back_in_one_pass() -> Result<()> {
 #[test]
 fn a_file_library_survives_being_closed_and_reopened() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "persistent").build());
+
     let database = tree.path().join("library.db");
 
     {
         let library = Library::open(&database)?;
+
         scan(&library, &options(&tree))?;
+
         assert_eq!(all(&library)?.len(), 1);
     }
 
     let library = Library::open(&database)?;
     let tracks = all(&library)?;
+
     assert_eq!(
         tracks.first().map(|track| track.title.as_str()),
         Some("persistent")
@@ -3690,11 +4119,13 @@ fn named_as(library: &Library, named: Option<&str>) -> Result<Vec<String>> {
 
 fn scanned_playlist_tree() -> (Tree, Library) {
     let tree = Tree::new();
+
     for (file, title) in [("a.wav", "Echoes"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
         tree.write(file, &Wav::new().text(TITLE, title).build());
     }
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of three files");
     (tree, library)
 }
@@ -3708,9 +4139,11 @@ fn a_playlist_keeps_the_order_rows_were_added_in() -> Result<()> {
         .collect();
 
     let id = library.create_playlist("  Evening  ")?;
+
     assert_eq!(library.add_to_playlist(id, &wanted)?, 3);
 
     let listed = library.playlists(PlaylistOrder::Name, Direction::Ascending, None)?;
+
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].name, "Evening", "the name was stored untrimmed");
     assert_eq!(listed[0].entries, 3);
@@ -3721,6 +4154,7 @@ fn a_playlist_keeps_the_order_rows_were_added_in() -> Result<()> {
         .iter()
         .map(|entry| entry.track.as_ref().map(|track| track.title.as_str()))
         .collect();
+
     assert_eq!(titles, vec![Some("Dogs"), Some("Echoes"), Some("Sheep")]);
     assert_eq!(library.playlist_cuts(id)?, wanted);
     Ok(())
@@ -3729,6 +4163,7 @@ fn a_playlist_keeps_the_order_rows_were_added_in() -> Result<()> {
 #[test]
 fn playlists_are_read_a_page_at_a_time_in_the_order_they_are_listed_in() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     for name in ["Echo", "Alpha", "Delta", "Bravo", "Charlie"] {
         library.create_playlist(name)?;
     }
@@ -3754,6 +4189,7 @@ fn a_row_the_scan_has_never_seen_is_still_a_row() -> Result<()> {
     let unscanned = MediaLocation::local(tree.path().join("nothing-scanned.wav"));
 
     let id = library.create_playlist("Mixed")?;
+
     library.add_to_playlist(
         id,
         &[
@@ -3763,12 +4199,14 @@ fn a_row_the_scan_has_never_seen_is_still_a_row() -> Result<()> {
     )?;
 
     let entries = library.playlist_entries(id, None)?;
+
     assert_eq!(entries.len(), 2);
     assert!(entries[0].track.is_some());
     assert_eq!(entries[1].location(), &unscanned);
     assert!(entries[1].track.is_none(), "an unscanned row grew a track");
 
     let listed = library.playlists(PlaylistOrder::Name, Direction::Ascending, None)?;
+
     assert_eq!(listed[0].entries, 2, "an unscanned row was not counted");
     Ok(())
 }
@@ -3778,6 +4216,7 @@ fn a_playlist_moves_and_loses_a_whole_span_of_rows_at_once() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let files = ["a.wav", "b.wav", "c.wav", "d.wav", "e.wav"];
+
     for file in &files[3..] {
         tree.write(file, &Wav::new().text(TITLE, file).build());
     }
@@ -3823,6 +4262,7 @@ fn a_playlist_moves_and_loses_a_whole_span_of_rows_at_once() -> Result<()> {
         id,
         &[Cut::whole(MediaLocation::local(tree.path().join("a.wav")))],
     )?;
+
     assert_eq!(
         stems(&library.playlist_cuts(id)?),
         vec!["c", "d", "e", "a"],
@@ -3836,6 +4276,7 @@ fn a_playlist_gathers_and_loses_rows_chosen_apart_as_one_undo_step() -> Result<(
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let files = ["a.wav", "b.wav", "c.wav", "d.wav", "e.wav"];
+
     for file in &files[3..] {
         tree.write(file, &Wav::new().text(TITLE, file).build());
     }
@@ -3846,6 +4287,7 @@ fn a_playlist_gathers_and_loses_rows_chosen_apart_as_one_undo_step() -> Result<(
             .map(|file| Cut::whole(MediaLocation::local(tree.path().join(file))))
             .collect::<Vec<_>>(),
     )?;
+
     let apart = [Span::one(0), Span::one(2)];
 
     assert!(library.gather_in_playlist(id, &apart, 3)?);
@@ -3886,6 +4328,7 @@ fn a_playlist_gathers_and_loses_rows_chosen_apart_as_one_undo_step() -> Result<(
 fn a_playlist_reorders_and_loses_the_row_it_is_told_to() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["a.wav", "b.wav", "c.wav"]
@@ -3920,6 +4363,7 @@ fn a_playlist_reorders_and_loses_the_row_it_is_told_to() -> Result<()> {
         id,
         &[Cut::whole(MediaLocation::local(tree.path().join("a.wav")))],
     )?;
+
     assert_eq!(
         stems(&library.playlist_cuts(id)?),
         vec!["b", "c", "a"],
@@ -3944,6 +4388,7 @@ fn two_playlists_cannot_share_a_name_however_it_is_cased() -> Result<()> {
 
     library.rename_playlist(id, "Evening")?;
     library.rename_playlist(id, "Morning")?;
+
     assert_eq!(
         library.playlist(id)?.map(|playlist| playlist.name),
         Some("Morning".to_owned())
@@ -3984,6 +4429,7 @@ fn a_name_is_one_name_however_its_accents_are_written() -> Result<()> {
     let library = Library::open_in_memory()?;
     let composed = "Caf\u{e9}";
     let combining = "Cafe\u{301}";
+
     let id = library.create_playlist(composed)?;
 
     assert_ne!(composed, combining, "the two spellings are the same bytes");
@@ -4008,6 +4454,7 @@ fn a_name_is_one_name_however_its_accents_are_written() -> Result<()> {
     );
 
     let renamed = library.rename_playlist(id, "Cafe\u{301} Noir");
+
     assert!(renamed.is_ok(), "a rename in one spelling was refused");
     assert_eq!(
         library
@@ -4025,6 +4472,7 @@ fn a_playlist_nothing_holds_is_never_the_one_in_play() -> Result<()> {
     let unknown = PlaylistId::new(404)?;
 
     library.set_playing_playlist(loaded(unknown));
+
     assert_eq!(
         library.playing_playlist(QueueStamp::default()),
         None,
@@ -4044,6 +4492,7 @@ fn a_playlist_is_in_play_only_while_the_queue_is_the_one_it_was_loaded_as() -> R
         playlist: evening,
         queue: as_loaded,
     }));
+
     assert_eq!(library.playing_playlist(as_loaded), Some(evening));
     assert_eq!(
         library.playing_playlist(after_an_edit),
@@ -4062,6 +4511,7 @@ fn a_playlist_is_in_play_only_while_the_queue_is_the_one_it_was_loaded_as() -> R
 fn a_playlist_that_is_dropped_takes_its_rows_and_the_transport_with_it() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &[Cut::whole(MediaLocation::local(tree.path().join("a.wav")))],
@@ -4085,12 +4535,14 @@ fn forgetting_a_root_leaves_the_playlist_rows_that_came_from_it() -> Result<()> 
     let (tree, library) = scanned_playlist_tree();
     let file = Cut::whole(MediaLocation::local(tree.path().join("a.wav")));
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(id, slice::from_ref(&file))?;
 
     assert!(library.remove_root(tree.path())?);
     assert!(all(&library)?.is_empty());
 
     let entries = library.playlist_entries(id, None)?;
+
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0].location(), &file.location);
     assert!(entries[0].track.is_none());
@@ -4104,17 +4556,21 @@ fn only_an_edit_moves_the_revision_a_bus_client_watches() -> Result<()> {
 
     let id = library.create_playlist("Evening")?;
     let named = library.playlists_revision();
+
     assert_ne!(named, created, "creating a playlist moved nothing");
 
     library.add_to_playlist(
         id,
         &[Cut::whole(MediaLocation::local(tree.path().join("a.wav")))],
     )?;
+
     let filled = library.playlists_revision();
+
     assert_ne!(filled, named, "adding a row moved nothing");
 
     library.playlists(PlaylistOrder::Name, Direction::Ascending, None)?;
     library.playlist_entries(id, None)?;
+
     assert_eq!(library.playlists_revision(), filled, "a read moved it");
 
     assert!(!library.remove_from_playlist(id, Span::one(9))?);
@@ -4147,6 +4603,7 @@ fn a_playlist_holds_local_files_only() -> Result<()> {
 fn a_playlist_written_out_carries_what_a_reader_needs_and_comes_back_whole() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["b.wav", "gone.wav", "a.wav"]
@@ -4157,10 +4614,12 @@ fn a_playlist_written_out_carries_what_a_reader_needs_and_comes_back_whole() -> 
 
     let sheet = tree.path().join("evening.m3u8");
     let written = library.export_playlist(id, &sheet)?;
+
     assert_eq!(written.rows, 3);
     assert_eq!(written.format, PlaylistFormat::M3u);
 
     let written = fs::read_to_string(&sheet).expect("the sheet was written");
+
     assert!(
         written.starts_with("#EXTM3U\n#PLAYLIST:Evening\n"),
         "{written}"
@@ -4176,6 +4635,7 @@ fn a_playlist_written_out_carries_what_a_reader_needs_and_comes_back_whole() -> 
     );
 
     let read_back = library.import_playlist(&sheet, Some("Evening again"))?;
+
     assert_eq!(read_back.name, "Evening again");
     assert_eq!(read_back.added, 3);
     assert_eq!(read_back.elsewhere, 0);
@@ -4194,6 +4654,7 @@ fn a_playlist_written_out_carries_what_a_reader_needs_and_comes_back_whole() -> 
 fn a_sheet_another_player_wrote_names_itself_and_counts_what_it_could_not_take() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let sheet = tree.path().join("from-another-player.m3u");
+
     fs::write(
         &sheet,
         format!(
@@ -4213,6 +4674,7 @@ fn a_sheet_another_player_wrote_names_itself_and_counts_what_it_could_not_take()
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.name, "Someone else's evening");
     assert_eq!(imported.added, 3);
     assert_eq!(imported.elsewhere, 1, "a stream was read as a file");
@@ -4223,6 +4685,7 @@ fn a_sheet_another_player_wrote_names_itself_and_counts_what_it_could_not_take()
     );
 
     let again = library.import_playlist(&sheet, None)?;
+
     assert_eq!(
         again.id, imported.id,
         "a second import made a second playlist"
@@ -4251,22 +4714,28 @@ fn one_song(bits: u16, frames: usize) -> Vec<u8> {
 #[test]
 fn one_song_in_two_formats_is_listed_once_as_the_better_of_the_two() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+
     let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let rows = all(&library)?;
+
     assert_eq!(rows.len(), 1, "one song in two formats was listed twice");
     assert_eq!(rows[0].location.as_path(), Some(best.as_path()));
     assert_eq!(rows[0].alternatives, 1);
 
     let alternatives = library.alternatives_of(rows[0].id)?;
+
     assert_eq!(alternatives.len(), 1);
     assert_eq!(alternatives[0].spec.format.valid_bits(), 16);
 
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1);
     assert_eq!(
         albums[0].track_count, 1,
@@ -4284,12 +4753,16 @@ fn two_identical_copies_of_one_song_are_listed_once_as_the_first_scanned() -> Re
     ];
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let rows = all(&library)?;
+
     assert_eq!(rows.len(), 1, "two identical copies were listed twice");
     assert_eq!(rows[0].alternatives, 1);
+
     let mut stored = Vec::new();
+
     for copy in &copies {
         stored.push(
             library
@@ -4298,7 +4771,9 @@ fn two_identical_copies_of_one_song_are_listed_once_as_the_first_scanned() -> Re
                 .id,
         );
     }
+
     let first_id = stored.into_iter().min().expect("two copies were stored");
+
     assert_eq!(
         rows[0].id, first_id,
         "the copy listed was not the one the catalog held first"
@@ -4340,10 +4815,13 @@ fn encoded_lasting(
     let held = Tree::new();
     let source = held.write("tone.wav", &Wav::new().frames(frames).build());
     let target = tree.path().join(name);
+
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).expect("a writable temporary directory");
     }
+
     let mut command = Command::new("ffmpeg");
+
     command
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -4352,6 +4830,7 @@ fn encoded_lasting(
     for tag in tags {
         command.args(["-metadata", tag]);
     }
+
     let encoded = command
         .arg(&target)
         .stdout(Stdio::null())
@@ -4395,6 +4874,7 @@ fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() ->
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let playlist = library.start_playlist(
@@ -4403,6 +4883,7 @@ fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() ->
     )?;
 
     let listed = library.songs_to_better_in(playlist)?;
+
     assert_eq!(
         listed
             .iter()
@@ -4410,7 +4891,9 @@ fn a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held() ->
             .collect::<Vec<_>>(),
         ["Echoes", "Time"]
     );
+
     let held = listed[0].held.as_ref().expect("the lossless copy is held");
+
     assert_eq!(library.track_at(&flac, None)?.expect("held").id, held.id);
     assert!(listed[0].can_be_ticked());
     assert_eq!(listed[1].held.as_ref().map(|copy| copy.id), None);
@@ -4453,9 +4936,12 @@ fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one
     ) else {
         return Ok(());
     };
+
     tree.write("whole.cue", A_SHEET_CUTTING_A_LOSSY_FILE.as_bytes());
     tree.write("album.cue", A_SHEET_CUTTING_A_LOSSLESS_FILE.as_bytes());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let cuts: Vec<Cut> = library
@@ -4467,12 +4953,17 @@ fn a_cut_of_a_sheet_is_neither_a_lossy_song_to_replace_nor_a_copy_to_replace_one
             span: row.span,
         })
         .collect();
+
     assert_eq!(cuts.len(), 4, "the sheets did not cut their files");
+
     let mut every = cuts;
+
     every.push(whole(&fearless));
+
     let playlist = library.start_playlist("Cuts", &every)?;
 
     let listed = library.songs_to_better_in(playlist)?;
+
     assert_eq!(listed.len(), 1, "a cut was listed as a lossy song");
     assert_eq!(listed[0].track.title, "Fearless");
     assert!(
@@ -4488,6 +4979,7 @@ fn a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_
     let tree = Tree::new();
     let tags = pink_floyd("Echoes");
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+
     let (Some(opus), Some(better), Some(chosen)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_lasting(
@@ -4502,13 +4994,16 @@ fn a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let song = library.track_at(&opus, None)?.expect("the song is held").id;
     let chosen = library.track_at(&chosen, None)?.expect("held").id;
     let playlist = library.start_playlist("Dark", &[whole(&opus)])?;
 
     let better = library.track_at(&better, None)?.expect("held");
     let chosen_row = library.track(chosen)?.expect("held");
+
     assert!(
         Quality::of(&better).is_above(Quality::of(&chosen_row)),
         "the copy chosen is not the lesser of the two"
@@ -4516,6 +5011,7 @@ fn a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_
     assert!(library.choose_version(song, chosen)?);
 
     let listed = library.songs_to_better_in(playlist)?;
+
     assert_eq!(listed.len(), 1);
     assert_eq!(listed[0].held.as_ref().map(|copy| copy.id), Some(better.id));
 
@@ -4546,8 +5042,10 @@ fn paired_on_a_release(library: &Library, songs: &[&Track]) -> Result<Vec<Releas
         .zip(1..)
         .map(|(song, position)| release_row(position, &song.title, Vec::new()))
         .collect();
+
     library.land_release(album, &orbits(rows, Vec::new()))?;
     library.rematch(album)?;
+
     let held = library.release_tracks(album)?;
     Ok(songs
         .iter()
@@ -4578,12 +5076,16 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everythi
     };
     let data = Tree::new();
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
     let lossless = the_row_at(&library, &flac)?;
+
     played_through(&library, &opus, 3)?;
     library.favour(Favoured::Track(lossy.id), true)?;
+
     let road_trip = library.start_playlist("Road trip", &[whole(&opus), whole(&opus)])?;
 
     let replacing = library.replace(&library.songs_to_better_in(road_trip)?)?;
@@ -4595,7 +5097,9 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everythi
     );
     assert!(opus.exists() && flac.exists());
     assert!(!trashed(&data, "A.opus"));
+
     let song = library.track(lossy.id)?.expect("the lossy song stays");
+
     assert_eq!(song.plays, 3);
     assert!(song.favourite.is_some());
     assert_eq!(
@@ -4605,19 +5109,26 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everythi
             copy: lossless.id,
         }]
     );
+
     let mut varied = library.tracks_with_variants()?;
     let mut both = [lossy.id, lossless.id];
+
     varied.sort();
     both.sort();
+
     assert_eq!(varied, both);
+
     let variants = library.variants_of(lossless.id)?.expect("the song stands");
+
     assert_eq!(variants.song.id, lossy.id);
     assert_eq!(
         variants.held.iter().map(|copy| copy.id).collect::<Vec<_>>(),
         [lossless.id]
     );
     assert_eq!(variants.plays(), lossless.id);
+
     let cuts = library.playlist_cuts(road_trip)?;
+
     assert!(
         cuts.iter()
             .all(|cut| cut.location.as_path() == Some(opus.as_path())),
@@ -4626,7 +5137,9 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_by_default_and_keeps_everythi
     assert!(library.songs_to_better_in(road_trip)?.is_empty());
 
     assert!(library.forget_the_version_chosen(lossy.id)?);
+
     let variants = library.variants_of(lossy.id)?.expect("the song stands");
+
     assert_eq!(variants.plays(), lossy.id);
     assert_eq!(
         variants.held.len(),
@@ -4642,6 +5155,7 @@ fn a_lossless_song_plays_a_copy_of_higher_resolution_and_never_one_alike() -> Re
     let tree = Tree::new();
     let tags = pink_floyd("Echoes");
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+
     let (Some(plain), Some(alike), Some(finer)) = (
         encoded_as_pink_floyd(&tree, "cd/A.flac", "Echoes"),
         encoded_as_pink_floyd(&tree, "again/A.flac", "Echoes"),
@@ -4656,6 +5170,7 @@ fn a_lossless_song_plays_a_copy_of_higher_resolution_and_never_one_alike() -> Re
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let song = the_row_at(&library, &plain)?;
@@ -4691,16 +5206,21 @@ fn two_lossy_copies_of_one_song_both_play_the_one_lossless_copy() -> Result<()> 
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
 
     let replacing = library.replace(&library.songs_to_better_in(playlist)?)?;
 
     let flac = the_row_at(&library, &flac)?.id;
+
     assert_eq!(replacing.beside, 2, "{replacing:?}");
     assert!(opus.exists() && mp3.exists());
+
     for lossy in [&opus, &mp3] {
         let song = the_row_at(&library, lossy)?.id;
+
         assert_eq!(library.version_chosen_for(song)?, Some(flac));
     }
     Ok(())
@@ -4717,7 +5237,9 @@ fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neithe
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
     let paired = paired_on_a_release(&library, &[&lossy])?[0];
     let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
@@ -4729,7 +5251,9 @@ fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neithe
         (0, 1, 1),
         "{replacing:?}"
     );
+
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(replacing.wants, [(paired, wants[0].id)]);
     assert_eq!(wants[0].release_track, paired);
@@ -4739,11 +5263,13 @@ fn a_lossy_song_matched_on_musicbrainz_is_wanted_and_waits_while_one_with_neithe
         "the lossy copy answered its own replacement"
     );
     assert!(opus.exists());
+
     let listed = library.songs_to_better_in(playlist)?;
     let waiting = listed
         .iter()
         .find(|row| row.track.id == lossy.id)
         .expect("the lossy song is still listed");
+
     assert!(waiting.pending);
     Ok(())
 }
@@ -4757,12 +5283,16 @@ fn a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_a
     };
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
     let paired = paired_on_a_release(&library, &[&lossy])?[0];
     let want = library.want(paired)?;
+
     {
         let other = beside(&database);
+
         other
             .execute(
                 "UPDATE wants SET offered = ?1, tried = 5, misses = 2 WHERE id = ?2",
@@ -4776,17 +5306,21 @@ fn a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_a
             )
             .expect("an offer was refused for the want");
     }
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
 
     let replacing = library.replace(&library.songs_to_better_in(playlist)?)?;
 
     assert_eq!(replacing.wanted, 1, "{replacing:?}");
+
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].id, want);
     assert_eq!(wants[0].offered, None);
     assert_eq!(wants[0].tried, None);
     assert_eq!(wants[0].misses, 0);
+
     let refused: i64 = beside(&database)
         .query_row(
             "SELECT count(*) FROM refused_offers WHERE want_id = ?1",
@@ -4794,6 +5328,7 @@ fn a_lossy_song_a_want_once_delivered_is_wanted_again_with_its_offer_forgotten_a
             |row| row.get(0),
         )
         .expect("the refusals are counted");
+
     assert_eq!(refused, 1, "re-arming the want forgot what it refused");
     Ok(())
 }
@@ -4804,6 +5339,7 @@ fn looked_for(
     rows: &[Replaceable],
 ) -> Result<Vec<(TrackId, Looked)>> {
     let told = Mutex::new(Vec::new());
+
     library.look_for_replacements(
         providers,
         rows,
@@ -4834,13 +5370,18 @@ fn a_lossy_song_is_found_where_a_provider_offers_it_lossless_and_the_finding_is_
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
+
     paired_on_a_release(&library, &[&lossy])?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
     let lossy_only = offering_as("one", "mp3");
     let lossless = offering_as("two", "flac");
     let rows = library.songs_to_better_in(playlist)?;
+
     assert_eq!(rows[0].looked, None);
 
     let told = looked_for(&library, &asking_in_turn(&[&lossy_only, &lossless]), &rows)?;
@@ -4850,6 +5391,7 @@ fn a_lossy_song_is_found_where_a_provider_offers_it_lossless_and_the_finding_is_
         at: MediaLocation::new(by.clone(), "track/1"),
         by,
     };
+
     assert_eq!(told, [(lossy.id, two.clone())]);
     assert_eq!(lossy_only.asked().len(), 1);
     assert_eq!(lossless.asked().len(), 1);
@@ -4869,9 +5411,13 @@ fn a_lossy_song_offered_only_lossy_is_offered_nowhere_whether_matched_or_not() -
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
+
     paired_on_a_release(&library, &[&lossy])?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
     let lossy_only = offering_as("one", "opus");
 
@@ -4883,22 +5429,29 @@ fn a_lossy_song_offered_only_lossy_is_offered_nowhere_whether_matched_or_not() -
 
     let unmatched = the_row_at(&library, &mp3)?;
     let mut told = told;
+
     told.sort_by_key(|(track, _)| *track);
+
     let mut expected = [
         (lossy.id, Looked::Unoffered),
         (unmatched.id, Looked::Unoffered),
     ];
+
     expected.sort_by_key(|(track, _)| *track);
+
     assert_eq!(told, expected);
     assert_eq!(lossy_only.asked().len(), 2);
+
     let asked_unmatched = lossy_only
         .asked()
         .into_iter()
         .find(|identity| identity.title == "Time")
         .expect("the unmatched song was asked about by its tags");
+
     assert_eq!(asked_unmatched.recording, None);
     assert!(asked_unmatched.artist.is_some());
     assert!(asked_unmatched.length.is_some());
+
     let listed = library.songs_to_better_in(playlist)?;
     let found = |id| {
         listed
@@ -4906,6 +5459,7 @@ fn a_lossy_song_offered_only_lossy_is_offered_nowhere_whether_matched_or_not() -
             .find(|row| row.track.id == id)
             .expect("the lossy song is listed")
     };
+
     assert!(found(lossy.id).is_offered_nowhere());
     assert!(found(lossy.id).can_be_ticked());
     assert!(found(unmatched.id).is_offered_nowhere());
@@ -4920,9 +5474,13 @@ fn a_look_a_provider_could_not_answer_keeps_nothing() -> Result<()> {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
+
     paired_on_a_release(&library, &[&lossy])?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
     let away = Unanswering::new("away", unreachable_server);
     let providers = Providers::none().and(Arc::clone(&away) as Arc<dyn Provider>);
@@ -4941,12 +5499,14 @@ fn a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_i
 -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(flac)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
     ) else {
         return Ok(());
     };
+
     FileTags::over(Sources::local())
         .write(
             &MediaLocation::local(&opus),
@@ -4959,12 +5519,17 @@ fn a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_i
             },
         )
         .expect("the lossy song takes a picture");
+
     let data = Tree::new();
     let library = Library::open(&tree.path().join("library.db"))?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
+
     played_through(&library, &opus, 2)?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
     let store = Arc::new(Offering::new(
         "store",
@@ -4975,20 +5540,26 @@ fn a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_i
         },
     ));
     let rows = library.songs_to_better_in(playlist)?;
+
     assert_eq!(rows[0].release_track, None, "the song is matched nowhere");
     assert!(!rows[0].can_be_ticked());
 
     looked_for(&library, &store.registered(), &rows)?;
+
     let rows = library.songs_to_better_in(playlist)?;
+
     assert!(rows[0].can_be_ticked(), "{rows:?}");
     assert_eq!(store.opened(), 0);
 
     let unfiled = library.replace(&rows)?;
+
     assert_eq!((unfiled.kept, unfiled.unfiled), (0, 1), "{unfiled:?}");
     assert_eq!(library.keeps_queued()?, 0);
 
     filing_into(&library, &tree);
+
     let replacing = library.replace(&rows)?;
+
     assert_eq!((replacing.kept, replacing.wanted), (1, 0), "{replacing:?}");
     assert!(library.songs_to_better_in(playlist)?[0].pending);
     assert!(library.wants()?.is_empty());
@@ -4999,9 +5570,12 @@ fn a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_i
     assert!(opus.exists(), "the lossy copy went");
     assert!(!trashed(&data, "A.opus"));
     assert!(library.songs_to_better_in(playlist)?.is_empty());
+
     let cuts = library.playlist_cuts(playlist)?;
+
     assert_eq!(cuts.len(), 1);
     assert_eq!(cuts[0].location, MediaLocation::local(&opus));
+
     let played = library
         .version_chosen_for(lossy.id)?
         .expect("the kept copy plays in the song's place");
@@ -5012,11 +5586,14 @@ fn a_song_matched_nowhere_is_found_by_its_tags_kept_from_the_service_and_plays_i
         .as_path()
         .expect("the kept copy is a file")
         .to_path_buf();
+
     assert_eq!(kept.extension(), Some(OsStr::new("flac")));
     assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+
     let carried = FileTags::over(Sources::local())
         .read(&MediaLocation::local(&kept), Picturing::Whether)
         .expect("the kept copy reads");
+
     assert!(
         carried.picture.carries_one(),
         "the lossless copy lost the lossy song's picture"
@@ -5029,6 +5606,7 @@ fn a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_loss
 -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(mp3)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
@@ -5036,16 +5614,23 @@ fn a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_loss
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+
     filing_into(&library, &tree);
+
     let by = SourceId::new("store").expect("a nameable source");
     let mut rows = library.songs_to_better_in(playlist)?;
+
     rows[0].looked = Some(Looked::Offered {
         at: MediaLocation::new(by.clone(), "track/77"),
         by,
     });
+
     assert_eq!(library.replace(&rows)?.kept, 1);
+
     let store = Arc::new(Offering::new(
         "store",
         Delivering::Bytes {
@@ -5060,7 +5645,9 @@ fn a_song_kept_to_replace_a_lossy_one_that_arrives_lossy_is_refused_and_the_loss
     assert_eq!((summary.landed, summary.unkept), (0, 1), "{summary:?}");
     assert!(opus.exists());
     assert!(files_named(tree.path(), "flac").is_empty());
+
     let listed = library.songs_to_better_in(playlist)?;
+
     assert_eq!(listed.len(), 1);
     assert!(!listed[0].pending, "a refused keep still holds the song");
     Ok(())
@@ -5071,6 +5658,7 @@ fn a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_fo
 -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(mp3)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
@@ -5078,16 +5666,23 @@ fn a_song_kept_to_replace_a_lossy_one_is_never_downloaded_from_an_offer_named_fo
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+
     filing_into(&library, &tree);
+
     let by = SourceId::new("store").expect("a nameable source");
     let mut rows = library.songs_to_better_in(playlist)?;
+
     rows[0].looked = Some(Looked::Offered {
         at: MediaLocation::new(by.clone(), "track/77"),
         by,
     });
+
     assert_eq!(library.replace(&rows)?.kept, 1);
+
     let store = Arc::new(Offering::new(
         "store",
         Delivering::Bytes {
@@ -5118,11 +5713,14 @@ fn a_last_resort_is_never_asked_whether_a_lossy_song_is_held_lossless() -> Resul
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
     let tube = offering_as("tube", "flac");
     let shop = offering_as("shop", "flac");
+
     let providers = Providers::none()
         .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>)
         .and(Arc::clone(&shop) as Arc<dyn Provider>);
@@ -5135,6 +5733,7 @@ fn a_last_resort_is_never_asked_whether_a_lossy_song_is_held_lossless() -> Resul
     )?;
 
     let by = SourceId::new("shop").expect("a nameable source");
+
     assert_eq!(
         told,
         [(
@@ -5179,24 +5778,32 @@ fn a_replacement_is_kept_while_another_pass_walks_the_tree_since_it_moves_no_fil
     };
     let doomed = tree.write("doomed.wav", &Wav::new().text(TITLE, "doomed").build());
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
     let lossless = the_row_at(&library, &flac)?;
     let unmatched = the_row_at(&library, &mp3)?;
+
     paired_on_a_release(&library, &[&unmatched])?;
+
     let doomed = the_row_at(&library, &doomed)?.id;
     let playlist = library.start_playlist("Road trip", &[whole(&opus), whole(&mp3)])?;
     let listed = library.songs_to_better_in(playlist)?;
+
     assert!(listed.iter().all(Replaceable::can_be_ticked), "{listed:?}");
 
     let (reached, reaches) = mpsc::channel();
     let (lift, lifted) = mpsc::channel();
+
     library.trash_through(Some(Arc::new(HeldOpenByTheDesktop {
         reached: Mutex::new(Some(reached)),
         lifted: Mutex::new(lifted),
     })));
+
     let replacing = thread::scope(|scope| -> Result<Replacing> {
         let deleting = scope.spawn(|| library.delete_tracks(&[doomed]));
+
         reaches.recv().expect("the deletion reached the trash");
 
         let replacing = library.replace(&listed);
@@ -5230,15 +5837,19 @@ fn a_vaulted_lossy_song_plays_its_lossless_copy_and_keeps_its_file_and_object() 
     };
     let data = Tree::new();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     let object = library
         .vault_objects()?
         .into_iter()
         .find(|object| object.taken_from == opus)
         .expect("the lossy song went into the vault");
+
     played_through(&library, &opus, 2)?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
 
     let replacing = library.replace(&library.songs_to_better_in(playlist)?)?;
@@ -5254,7 +5865,9 @@ fn a_vaulted_lossy_song_plays_its_lossless_copy_and_keeps_its_file_and_object() 
         "the lossy song's vault object was let go"
     );
     assert!(object.path.exists());
+
     let song = the_row_at(&library, &opus)?;
+
     assert_eq!(song.plays, 2);
     assert_eq!(
         library.version_chosen_for(song.id)?,
@@ -5273,11 +5886,15 @@ fn a_lossy_song_is_not_replaced_by_a_lossless_copy_whose_file_is_gone() -> Resul
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     played_through(&library, &opus, 1)?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
     let listed = library.songs_to_better_in(playlist)?;
+
     assert!(listed[0].held.is_some());
+
     fs::remove_file(&flac).expect("the lossless copy goes");
 
     let replacing = library.replace(&listed)?;
@@ -5299,17 +5916,25 @@ fn dismissing_a_replacements_want_cancels_it_and_leaves_the_lossy_song() -> Resu
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let lossy = the_row_at(&library, &opus)?;
+
     paired_on_a_release(&library, &[&lossy])?;
+
     let playlist = library.start_playlist("Road trip", &[whole(&opus)])?;
+
     library.replace(&library.songs_to_better_in(playlist)?)?;
+
     let want = library.wants()?.remove(0);
+
     assert_eq!(want.replacing, Some(lossy.id));
 
     assert!(library.unwant(want.id)?);
 
     let listed = library.songs_to_better_in(playlist)?;
+
     assert_eq!(listed.len(), 1);
     assert!(!listed[0].pending, "the replacement outlived its want");
     assert!(library.wants()?.is_empty());
@@ -5325,6 +5950,7 @@ fn paired_as_the_recording(
 ) -> Result<ReleaseTrackId> {
     let album = song.album_id.expect("the song files under an album");
     let mut row = release_row(1, &song.title, Vec::new());
+
     row.recording = recording.map(mbid);
     library.land_release(
         album,
@@ -5355,9 +5981,12 @@ fn waiting_to_be_replaced(
 ) -> Result<Waiting> {
     let lossy = the_row_at(library, opus)?;
     let row = paired_as_the_recording(library, &lossy, recording, RELEASE)?;
+
     played_through(library, opus, 2)?;
+
     let playlist = library.start_playlist("Road trip", &[whole(opus), whole(opus)])?;
     let replacing = library.replace(&library.songs_to_better_in(playlist)?)?;
+
     assert_eq!(replacing.wanted, 1, "{replacing:?}");
     Ok(Waiting {
         lossy,
@@ -5391,7 +6020,9 @@ fn offered(library: &Library, file: &Path) -> Result<()> {
 
 fn tagged_as_the_recording(tree: &Tree, name: &str, recording: &str) -> Option<PathBuf> {
     let mut tags = pink_floyd("Echoes").to_vec();
+
     tags.push(format!("MUSICBRAINZ_TRACKID={recording}"));
+
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
     encoded_with_tags(tree, name, &tags)
 }
@@ -5406,35 +6037,47 @@ fn a_lossless_copy_delivered_for_a_replacement_plays_in_the_lossy_songs_place() 
     let data = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
     let mut tags = pink_floyd("Echoes").to_vec();
+
     tags.push(format!("MUSICBRAINZ_ALBUMID={RELEASE}"));
+
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
     let Some(flac) = encoded_with_tags(&tree, "lossless/A.flac", &tags) else {
         return Ok(());
     };
+
     scan(&library, &options(&tree))?;
+
     assert!(
         still_pending(&library, &waiting)?,
         "a copy named alike was taken before it was offered"
     );
+
     offered(&library, &flac)?;
 
     let settled = library.settle_replacements()?;
 
     assert_eq!(settled.beside, 1, "{settled:?}");
+
     let kept = the_row_at(&library, &flac)?;
+
     assert_eq!(library.version_chosen_for(waiting.lossy.id)?, Some(kept.id));
     assert_eq!(the_row_at(&library, &opus)?.plays, 2);
+
     let cuts = library.playlist_cuts(waiting.playlist)?;
+
     assert_eq!(cuts.len(), 2);
     assert!(
         cuts.iter()
             .all(|cut| cut.location.as_path() == Some(opus.as_path())),
         "the playlist no longer names its own song: {cuts:?}"
     );
+
     let album = waiting
         .lossy
         .album_id
@@ -5444,6 +6087,7 @@ fn a_lossless_copy_delivered_for_a_replacement_plays_in_the_lossy_songs_place() 
         .into_iter()
         .find(|row| row.id == waiting.row)
         .expect("the release row stays");
+
     assert_eq!(row.track, Some(waiting.lossy.id));
     assert!(library.wants()?.is_empty(), "the want outlived its answer");
     assert!(replacements_of(&database, waiting.lossy.id).is_empty());
@@ -5462,8 +6106,10 @@ fn a_lossless_copy_holding_the_same_recording_plays_in_the_lossy_songs_place() -
     let data = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
     let Some(flac) = tagged_as_the_recording(&tree, "lossless/A.flac", RECORDING) else {
         return Ok(());
@@ -5493,11 +6139,14 @@ fn a_lossless_copy_named_alike_alone_never_replaces_a_song_unattended() -> Resul
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
     let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
         return Ok(());
     };
+
     scan(&library, &options(&tree))?;
 
     let settled = library.settle_replacements()?;
@@ -5518,11 +6167,14 @@ fn a_lossy_copy_offered_for_a_replacement_is_never_taken_for_it() -> Result<()> 
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
     let Some(other) = tagged_as_the_recording(&tree, "delivered/A.opus", RECORDING) else {
         return Ok(());
     };
+
     scan(&library, &options(&tree))?;
     offered(&library, &other)?;
 
@@ -5546,12 +6198,15 @@ fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
     let data = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
     let Some(flac) = encoded_as_pink_floyd(&tree, "lossless/A.flac", "Echoes") else {
         return Ok(());
     };
+
     scan(&library, &options(&tree))?;
     offered(&library, &flac)?;
     for index in 0..200 {
@@ -5565,7 +6220,9 @@ fn a_cancelled_scan_settles_no_replacement() -> Result<()> {
         incremental: false,
         ..options(&tree)
     })?;
+
     handle.cancel();
+
     let summary = handle.join()?;
 
     assert!(summary.cancelled, "the scan outran the cancel");
@@ -5588,8 +6245,11 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
     };
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+
     assert_eq!(
         replacements_of(&database, waiting.lossy.id),
         [Some(waiting.row.get() as i64)]
@@ -5599,6 +6259,7 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
         .lossy
         .album_id
         .expect("the song files under an album");
+
     library.land_release(
         album,
         &orbits(
@@ -5610,12 +6271,14 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
         ),
     )?;
     library.rematch(album)?;
+
     let again = library
         .release_tracks(album)?
         .into_iter()
         .find(|row| row.track == Some(waiting.lossy.id))
         .map(|row| row.id)
         .expect("the song holds a row of the release landed again");
+
     assert_ne!(again, waiting.row, "the release was not landed again");
     assert_eq!(replacements_of(&database, waiting.lossy.id), [None]);
 
@@ -5625,7 +6288,9 @@ fn a_replacement_whose_release_is_landed_again_rejoins_the_row_its_song_now_hold
         replacements_of(&database, waiting.lossy.id),
         [Some(again.get() as i64)]
     );
+
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1, "{wants:?}");
     assert_eq!(wants[0].release_track, again);
     assert_eq!(wants[0].replacing, Some(waiting.lossy.id));
@@ -5643,7 +6308,9 @@ fn a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_match
     };
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
     let album = waiting
         .lossy
@@ -5665,13 +6332,16 @@ fn a_replacement_whose_match_is_forgotten_waits_unpending_and_rejoins_once_match
     assert_eq!(the_row_at(&library, &opus)?.plays, 2);
 
     let again = paired_as_the_recording(&library, &waiting.lossy, None, RELEASE)?;
+
     assert_eq!(library.settle_replacements()?, Replaced::default());
 
     assert_eq!(
         replacements_of(&database, waiting.lossy.id),
         [Some(again.get() as i64)]
     );
+
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1, "{wants:?}");
     assert_eq!(wants[0].release_track, again);
     assert_eq!(wants[0].replacing, Some(waiting.lossy.id));
@@ -5694,8 +6364,10 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_the_lossy_song_keeps_i
     let data = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
     let tags = [
         "title=Echoes".to_owned(),
@@ -5706,28 +6378,36 @@ fn a_lossless_copy_on_another_album_keeps_its_own_row_and_the_lossy_song_keeps_i
     let Some(flac) = encoded_with_tags(&tree, "live/A.flac", &tags) else {
         return Ok(());
     };
+
     scan(&library, &options(&tree))?;
+
     let live = the_row_at(&library, &flac)?;
     let own = paired_as_the_recording(&library, &live, Some(RECORDING), HOURS)?;
     let live_album = live.album_id.expect("the copy files under an album");
+
     assert_ne!(live_album, waiting.lossy.album_id.expect("filed"));
+
     offered(&library, &flac)?;
 
     let settled = library.settle_replacements()?;
 
     assert_eq!(settled.beside, 1, "{settled:?}");
+
     let held_own = library
         .release_tracks(live_album)?
         .into_iter()
         .find(|row| row.id == own)
         .expect("the copy's own row stays");
+
     assert_eq!(held_own.track, Some(live.id));
+
     let lossy_album = waiting.lossy.album_id.expect("filed");
     let left = library
         .release_tracks(lossy_album)?
         .into_iter()
         .find(|row| row.id == waiting.row)
         .expect("the lossy song's row stays on its album");
+
     assert_eq!(left.track, Some(waiting.lossy.id));
     assert!(opus.exists());
     assert_eq!(library.version_chosen_for(waiting.lossy.id)?, Some(live.id));
@@ -5751,7 +6431,9 @@ fn live_at_pompeii(recording: &str) -> [String; 4] {
 fn wanted_with_no_copy_held(library: &Library, opus: &Path) -> Result<Waiting> {
     let lossy = the_row_at(library, opus)?;
     let row = paired_as_the_recording(library, &lossy, Some(RECORDING), RELEASE)?;
+
     played_through(library, opus, 2)?;
+
     let playlist = library.start_playlist("Road trip", &[whole(opus), whole(opus)])?;
     let replacing = library.replace(&[Replaceable {
         track: the_row_at(library, opus)?,
@@ -5760,6 +6442,7 @@ fn wanted_with_no_copy_held(library: &Library, opus: &Path) -> Result<Waiting> {
         pending: false,
         looked: None,
     }])?;
+
     assert_eq!(replacing.wanted, 1, "{replacing:?}");
     Ok(Waiting {
         lossy,
@@ -5783,10 +6466,13 @@ fn a_replacement_whose_row_another_song_now_holds_is_never_settled_by_that_rows_
     let data = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
     let time = the_row_at(&library, &mp3)?;
+
     beside(&database)
         .execute(
             "UPDATE release_tracks SET track_id = ?1 WHERE id = ?2",
@@ -5824,11 +6510,15 @@ fn a_lossless_copy_of_the_recording_lasting_otherwise_never_replaces_a_song_unat
     };
     let data = Tree::new();
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, Some(RECORDING))?;
     let mut tags = pink_floyd("Echoes").to_vec();
+
     tags.push(format!("MUSICBRAINZ_TRACKID={RECORDING}"));
+
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
     let Some(flac) = encoded_lasting(
         &tree,
@@ -5859,6 +6549,7 @@ fn a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song() -> Result<(
     let held = Tree::new();
     let tags = live_at_pompeii(RECORDING);
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+
     let (Some(opus), Some(flac)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_with_tags(&tree, "live/A.flac", &tags),
@@ -5867,15 +6558,18 @@ fn a_vaulted_copy_whose_object_is_gone_never_replaces_a_lossy_song() -> Result<(
     };
     let data = Tree::new();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     let object = library
         .vault_objects()?
         .into_iter()
         .find(|object| object.taken_from == flac)
         .expect("the lossless copy went into the vault");
     let waiting = wanted_with_no_copy_held(&library, &opus)?;
+
     fs::remove_file(&flac).expect("the lossless file goes");
     fs::remove_file(&object.path).expect("the lossless copy's object goes");
 
@@ -5895,6 +6589,7 @@ fn the_best_of_two_lossless_copies_of_the_recording_plays_in_the_lossy_songs_pla
     let tree = Tree::new();
     let tags = live_at_pompeii(RECORDING);
     let tags: Vec<&str> = tags.iter().map(String::as_str).collect();
+
     let (Some(opus), Some(plain)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_with_tags(&tree, "live/A.flac", &tags),
@@ -5903,8 +6598,10 @@ fn the_best_of_two_lossless_copies_of_the_recording_plays_in_the_lossy_songs_pla
     };
     let data = Tree::new();
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = wanted_with_no_copy_held(&library, &opus)?;
     let Some(finer) = encoded_lasting(
         &tree,
@@ -5920,6 +6617,7 @@ fn the_best_of_two_lossless_copies_of_the_recording_plays_in_the_lossy_songs_pla
 
     let plain = the_row_at(&library, &plain)?;
     let finer = the_row_at(&library, &finer)?;
+
     assert!(plain.id < finer.id, "the finer copy was catalogued first");
     assert_eq!(finer.spec.rate.hz(), 96_000);
     assert_eq!(
@@ -5940,15 +6638,20 @@ fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_ag
     };
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
     let album = waiting
         .lossy
         .album_id
         .expect("the song files under an album");
+
     assert!(library.forget_the_match(album)?);
+
     let again = paired_as_the_recording(&library, &waiting.lossy, None, RELEASE)?;
     let want = library.want(again)?;
+
     beside(&database)
         .execute(
             "UPDATE wants SET offered = ?1, tried = 5, misses = 1 WHERE id = ?2",
@@ -5959,6 +6662,7 @@ fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_ag
     assert_eq!(library.settle_replacements()?, Replaced::default());
 
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1, "{wants:?}");
     assert_eq!(wants[0].id, want);
     assert_eq!(wants[0].replacing, Some(waiting.lossy.id));
@@ -5975,14 +6679,17 @@ fn a_replacement_rejoining_a_row_whose_want_delivered_the_lossy_song_wants_it_ag
 #[test]
 fn a_copy_in_the_best_copys_own_format_is_hidden_beside_one_in_another() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("a/06 Echoes.wav", &one_song(24, 44_100));
     tree.write("b/06 Echoes.wav", &one_song(24, 44_100));
     tree.write("c/06 Echoes.wav", &one_song(16, 44_100));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let rows = all(&library)?;
+
     assert_eq!(
         rows.len(),
         1,
@@ -6003,12 +6710,15 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
         .text(ALBUM, "Meddle (Remastered)")
         .text(TRACK, "6")
         .build();
+
     tree.write("a/06 Echoes.wav", &one_song(16, 44_100));
     tree.write("b/06 Echoes.wav", &reissue);
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         all(&library)?.len(),
         2,
@@ -6021,7 +6731,9 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
             [],
         )
         .expect("the album row is writable");
+
     assert_eq!(billed, 1);
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(
@@ -6035,17 +6747,22 @@ fn a_copy_billed_under_its_release_title_still_meets_one_tagged_the_same() -> Re
 #[test]
 fn a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("06 Echoes.wav", &one_song(16, 44_100));
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let billed_wrongly =
         "UPDATE tracks SET codec = 11, vault_key = 'kept', vault_path = 'audio/kept'";
+
     beside(&database)
         .execute(billed_wrongly, [])
         .expect("the track row is writable");
     scan(&library, &options(&tree))?;
+
     let held = |database: &Path| {
         beside(database)
             .query_row(
@@ -6062,6 +6779,7 @@ fn a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved()
             )
             .expect("the track row reads")
     };
+
     assert_eq!(
         held(&database).0,
         11,
@@ -6084,10 +6802,12 @@ fn a_row_marked_to_be_probed_again_is_read_again_though_its_file_has_not_moved()
 #[test]
 fn two_copies_whose_lengths_disagree_are_two_songs() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("a/06 Echoes.wav", &one_song(16, 44_100));
     tree.write("b/06 Echoes.wav", &one_song(24, 44_100 * 4));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(all(&library)?.len(), 2);
@@ -6097,15 +6817,19 @@ fn two_copies_whose_lengths_disagree_are_two_songs() -> Result<()> {
 #[test]
 fn the_better_copy_leaving_puts_the_one_it_hid_back_on_the_list() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+
     let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     fs::remove_file(&best).expect("the better copy goes");
     scan(&library, &options(&tree))?;
 
     let rows = all(&library)?;
+
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].spec.format.valid_bits(), 16);
     assert_eq!(rows[0].alternatives, 0);
@@ -6116,14 +6840,19 @@ fn the_better_copy_leaving_puts_the_one_it_hid_back_on_the_list() -> Result<()> 
 fn a_better_copy_added_later_takes_the_song_over_and_one_gone_by_the_watch_hands_it_back()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("flac/06 Echoes.wav", &one_song(16, 44_100));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let best = tree.write("hires/06 Echoes.wav", &one_song(24, 44_100));
+
     scan(&library, &options(&tree))?;
 
     let rows = all(&library)?;
+
     assert_eq!(
         rows.len(),
         1,
@@ -6133,9 +6862,11 @@ fn a_better_copy_added_later_takes_the_song_over_and_one_gone_by_the_watch_hands
     assert_eq!(rows[0].alternatives, 1);
 
     fs::remove_file(&best).expect("the better copy goes");
+
     assert_eq!(library.forget_the_gone(&[best])?, 1);
 
     let rows = all(&library)?;
+
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].spec.format.valid_bits(), 16);
     assert_eq!(rows[0].alternatives, 0);
@@ -6145,8 +6876,11 @@ fn a_better_copy_added_later_takes_the_song_over_and_one_gone_by_the_watch_hands
 #[test]
 fn a_sheet_written_on_windows_resolves_its_backslashed_rows() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
+
     fs::create_dir_all(tree.path().join("lists")).expect("a writable temporary folder");
+
     let sheet = tree.path().join("lists/windows.m3u");
+
     fs::write(&sheet, "#EXTM3U\r\n..\\a.wav\r\n..\\b.wav\r\n").expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
@@ -6165,6 +6899,7 @@ fn a_sheet_written_on_windows_resolves_its_backslashed_rows() -> Result<()> {
 fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing_folders_name()
 -> Result<()> {
     let tree = Tree::new();
+
     for relative in [
         "Artist/Album/one.wav",
         "Artist/Album/two.wav",
@@ -6172,9 +6907,13 @@ fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing
     ] {
         tree.write(relative, &Wav::new().frames(4_410).build());
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let sheet = tree.path().join("windows.m3u");
+
     fs::write(
         &sheet,
         "#EXTM3U\r\nD:\\Music\\Artist\\Album\\two.wav\r\n\
@@ -6191,7 +6930,9 @@ fn a_sheet_from_another_drive_layout_is_reconnected_by_the_one_file_its_trailing
         imported.missing, 2,
         "the row two files answered to, and the one nothing answered to, are the missing"
     );
+
     let cuts = library.playlist_cuts(imported.id)?;
+
     assert_eq!(
         cuts[0].location.as_path(),
         Some(tree.path().join("Artist/Album/two.wav").as_path())
@@ -6238,11 +6979,14 @@ fn asked_tracks_of_the_only_album(library: &Library) -> Result<Option<u32>> {
 fn a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_it_adds_up_to()
 -> Result<()> {
     let tree = Tree::new();
+
     deluxe_disc_tree(
         &tree,
         [(1, "1/3"), (1, "2/3"), (1, "3/3"), (2, "1/2"), (2, "2/2")],
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(asked_tracks_of_the_only_album(&library)?, Some(5));
@@ -6253,11 +6997,14 @@ fn a_set_declaring_its_track_count_a_disc_at_a_time_is_asked_after_as_the_whole_
 fn a_set_numbered_straight_on_across_its_discs_is_asked_after_as_the_count_each_file_declares()
 -> Result<()> {
     let tree = Tree::new();
+
     deluxe_disc_tree(
         &tree,
         [(1, "1/5"), (1, "2/5"), (1, "3/5"), (2, "4/5"), (2, "5/5")],
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(asked_tracks_of_the_only_album(&library)?, Some(5));
@@ -6267,10 +7014,15 @@ fn a_set_numbered_straight_on_across_its_discs_is_asked_after_as_the_count_each_
 #[test]
 fn a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("Artist/Album/étude.wav", &Wav::new().frames(4_410).build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let sheet = tree.path().join("windows.m3u");
+
     fs::write(&sheet, "#EXTM3U\r\nD:\\Music\\Artist\\Album\\ÉTUDE.WAV\r\n")
         .expect("a writable temporary file");
 
@@ -6288,9 +7040,11 @@ fn a_sheet_naming_a_file_in_another_case_beyond_ascii_still_reconnects_it() -> R
 fn a_sheet_that_names_one_file_twice_keeps_both_rows() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let sheet = tree.path().join("doubled.m3u8");
+
     fs::write(&sheet, "#EXTM3U\na.wav\nb.wav\na.wav\n").expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, Some("Evening"))?;
+
     assert_eq!(
         imported.added, 3,
         "a file the sheet itself repeated was lost"
@@ -6302,6 +7056,7 @@ fn a_sheet_that_names_one_file_twice_keeps_both_rows() -> Result<()> {
     );
 
     let again = library.import_playlist(&sheet, Some("Evening"))?;
+
     assert_eq!(again.added, 0, "the same sheet read twice was not a no-op");
     assert_eq!(again.already, 3);
     assert_eq!(
@@ -6317,6 +7072,7 @@ fn a_row_a_sheet_cannot_name_plainly_is_written_as_a_uri() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
     let awkward = ["#hash.wav", "two\nlines.wav", "plain.wav"];
+
     for file in awkward {
         tree.write(file, b"a file no scan has read");
     }
@@ -6331,9 +7087,11 @@ fn a_row_a_sheet_cannot_name_plainly_is_written_as_a_uri() -> Result<()> {
 
     for (name, format) in [("awkward.m3u8", "M3U"), ("awkward.pls", "PLS")] {
         let sheet = tree.path().join(name);
+
         library.export_playlist(id, &sheet)?;
 
         let read_back = library.import_playlist(&sheet, Some(format))?;
+
         assert_eq!(
             read_back.added, 3,
             "{format} lost a row whose path it could not write plainly"
@@ -6359,19 +7117,25 @@ fn a_playlist_of_cue_rows_exports_and_imports_as_the_rows_it_holds() -> Result<(
             span: row.span,
         })
         .collect();
+
     assert!(cuts.iter().all(|cut| cut.span.is_some()));
+
     let id = library.start_playlist("Meddle", &cuts)?;
 
     for (name, format) in [("meddle.m3u8", "M3U"), ("meddle.xspf", "XSPF")] {
         let sheet = tree.path().join(name);
+
         library.export_playlist(id, &sheet)?;
+
         let written = fs::read_to_string(&sheet).expect("a written sheet");
+
         assert!(
             written.contains("start-time="),
             "{format} carried no cut: {written}"
         );
 
         let read_back = library.import_playlist(&sheet, Some(format))?;
+
         assert_eq!(read_back.added, 3, "{format}");
         assert_eq!(
             library.playlist_cuts(read_back.id)?,
@@ -6387,9 +7151,11 @@ fn a_row_whose_file_is_not_there_is_still_stored_as_an_absolute_path() -> Result
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
     let sheet = tree.path().join("beneath/list.m3u8");
+
     tree.write("beneath/list.m3u8", b"#EXTM3U\n../missing.wav\n");
 
     let imported = library.import_playlist(&sheet, Some("Evening"))?;
+
     assert_eq!(imported.added, 1);
     assert_eq!(imported.missing, 1);
     assert_eq!(
@@ -6407,6 +7173,7 @@ fn a_row_holding_an_escaped_nul_names_no_file() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
     let sheet = tree.path().join("nul.m3u8");
+
     fs::write(
         &sheet,
         format!(
@@ -6417,6 +7184,7 @@ fn a_row_holding_an_escaped_nul_names_no_file() -> Result<()> {
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, Some("Evening"))?;
+
     assert_eq!(imported.added, 1);
     assert_eq!(
         imported.elsewhere, 1,
@@ -6430,6 +7198,7 @@ fn a_row_holding_an_escaped_nul_names_no_file() -> Result<()> {
 fn tidying_a_playlist_drops_only_the_rows_whose_files_have_gone() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["a.wav", "gone.wav", "b.wav"]
@@ -6439,11 +7208,13 @@ fn tidying_a_playlist_drops_only_the_rows_whose_files_have_gone() -> Result<()> 
     )?;
 
     let filled = library.playlists_revision();
+
     assert_eq!(library.prune_playlist(id)?, 1);
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["a", "b"]);
     assert_ne!(library.playlists_revision(), filled, "a tidy moved nothing");
 
     let tidied = library.playlists_revision();
+
     assert_eq!(library.prune_playlist(id)?, 0);
     assert_eq!(
         library.playlists_revision(),
@@ -6471,6 +7242,7 @@ fn a_playlist_file_neither_side_can_read_is_refused_by_name() -> Result<()> {
     );
 
     let unknown = PlaylistId::new(9_999)?;
+
     assert!(matches!(
         library.export_playlist(unknown, &tree.path().join("nothing.m3u8")),
         Err(Error::UnknownPlaylist(_))
@@ -6480,6 +7252,7 @@ fn a_playlist_file_neither_side_can_read_is_refused_by_name() -> Result<()> {
 
 fn left_long_ago(path: &Path) {
     let long_ago = SystemTime::now() - writer::UNHELD_AND_UNTOUCHED_FOR * 2;
+
     fs::File::options()
         .write(true)
         .open(path)
@@ -6501,6 +7274,7 @@ fn stems(cuts: &[Cut]) -> Vec<String> {
 fn a_playlist_goes_out_and_comes_back_as_pls() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["b.wav", "a.wav"]
@@ -6511,10 +7285,12 @@ fn a_playlist_goes_out_and_comes_back_as_pls() -> Result<()> {
 
     let sheet = tree.path().join("evening.pls");
     let written = library.export_playlist(id, &sheet)?;
+
     assert_eq!(written.format, PlaylistFormat::Pls);
     assert_eq!(written.rows, 2);
 
     let text = fs::read_to_string(&sheet).expect("the sheet was written");
+
     assert!(
         text.starts_with("[playlist]\nX-GNOME-Title=Evening\n"),
         "{text}"
@@ -6524,6 +7300,7 @@ fn a_playlist_goes_out_and_comes_back_as_pls() -> Result<()> {
     assert!(text.ends_with("NumberOfEntries=2\nVersion=2\n"), "{text}");
 
     let read_back = library.import_playlist(&sheet, Some("Evening again"))?;
+
     assert_eq!(read_back.format, PlaylistFormat::Pls);
     assert_eq!(read_back.added, 2);
     assert_eq!(
@@ -6542,6 +7319,7 @@ fn a_playlist_goes_out_and_comes_back_as_pls() -> Result<()> {
 fn a_playlist_goes_out_and_comes_back_as_xspf() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["b.wav", "a.wav"]
@@ -6552,15 +7330,18 @@ fn a_playlist_goes_out_and_comes_back_as_xspf() -> Result<()> {
 
     let sheet = tree.path().join("evening.xspf");
     let written = library.export_playlist(id, &sheet)?;
+
     assert_eq!(written.format, PlaylistFormat::Xspf);
     assert_eq!(written.rows, 2);
 
     let text = fs::read_to_string(&sheet).expect("the sheet was written");
+
     assert!(text.contains("<title>Evening</title>"), "{text}");
     assert!(text.contains("<location>b.wav</location>"), "{text}");
     assert!(text.contains("<title>Dogs</title>"), "{text}");
 
     let read_back = library.import_playlist(&sheet, None)?;
+
     assert_eq!(
         read_back.id, id,
         "the title the sheet declares named another playlist"
@@ -6574,6 +7355,7 @@ fn a_playlist_goes_out_and_comes_back_as_xspf() -> Result<()> {
 fn an_xspf_sheet_another_player_wrote_is_read_past_its_markup() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let sheet = tree.path().join("from-another-player.xspf");
+
     fs::write(
         &sheet,
         format!(
@@ -6597,6 +7379,7 @@ fn an_xspf_sheet_another_player_wrote_is_read_past_its_markup() -> Result<()> {
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.name, "Someone else's evening");
     assert_eq!(imported.format, PlaylistFormat::Xspf);
     assert_eq!(imported.added, 2);
@@ -6609,11 +7392,13 @@ fn an_xspf_sheet_another_player_wrote_is_read_past_its_markup() -> Result<()> {
 fn an_xspf_sheet_resolves_its_rows_against_the_base_it_declares() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     for file in ["discs/one/a.wav", "discs/two/b.wav", "discs/d.wav", "c.wav"] {
         tree.write(file, b"a file no scan has read");
     }
 
     let sheet = tree.path().join("based.xspf");
+
     fs::write(
         &sheet,
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -6635,6 +7420,7 @@ fn an_xspf_sheet_resolves_its_rows_against_the_base_it_declares() -> Result<()> 
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.name, "Both discs");
     assert_eq!(imported.added, 4);
     assert_eq!(
@@ -6658,9 +7444,11 @@ fn an_xspf_base_naming_the_file_scheme_in_capitals_still_resolves_the_rows_under
 {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     tree.write("discs/a.wav", b"a file no scan has read");
 
     let sheet = tree.path().join("shouted.xspf");
+
     fs::write(
         &sheet,
         format!(
@@ -6675,6 +7463,7 @@ fn an_xspf_base_naming_the_file_scheme_in_capitals_still_resolves_the_rows_under
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.added, 1);
     assert_eq!(imported.elsewhere, 0, "a local base was read as elsewhere");
     assert_eq!(imported.missing, 0);
@@ -6686,10 +7475,12 @@ fn an_xspf_base_naming_the_file_scheme_in_capitals_still_resolves_the_rows_under
 fn an_xspf_sheet_a_windows_player_wrote_resolves_with_its_separators_turned() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     tree.write("discs/one/a.wav", b"a file no scan has read");
     tree.write("AC\\DC.wav", b"a file whose name holds a backslash");
 
     let sheet = tree.path().join("windows.xspf");
+
     fs::write(
         &sheet,
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -6703,6 +7494,7 @@ fn an_xspf_sheet_a_windows_player_wrote_resolves_with_its_separators_turned() ->
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.added, 2);
     assert_eq!(
         imported.missing, 0,
@@ -6719,9 +7511,11 @@ fn an_xspf_sheet_a_windows_player_wrote_resolves_with_its_separators_turned() ->
 fn an_xspf_location_written_with_a_capital_hex_reference_reads_as_the_character() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     tree.write("discs/a.wav", b"a file no scan has read");
 
     let sheet = tree.path().join("referenced.xspf");
+
     fs::write(
         &sheet,
         "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\
@@ -6732,6 +7526,7 @@ fn an_xspf_location_written_with_a_capital_hex_reference_reads_as_the_character(
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.added, 1);
     assert_eq!(
         imported.missing, 0,
@@ -6744,11 +7539,13 @@ fn an_xspf_location_written_with_a_capital_hex_reference_reads_as_the_character(
 fn a_pls_sheet_is_weighed_against_the_count_it_declares() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     for file in ["a.wav", "b.wav"] {
         tree.write(file, b"a file no scan has read");
     }
 
     let sheet = tree.path().join("half.pls");
+
     fs::write(
         &sheet,
         "[playlist]\nX-GNOME-Title=Half a sheet\nFile1=a.wav\nFile2=b.wav\n\
@@ -6757,6 +7554,7 @@ fn a_pls_sheet_is_weighed_against_the_count_it_declares() -> Result<()> {
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.name, "Half a sheet");
     assert_eq!(imported.added, 2);
     assert_eq!(
@@ -6771,9 +7569,11 @@ fn a_pls_sheet_is_weighed_against_the_count_it_declares() -> Result<()> {
 fn a_blank_pls_row_names_no_file_rather_than_the_sheets_own_folder() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     tree.write("a.wav", b"a file no scan has read");
 
     let sheet = tree.path().join("blank.pls");
+
     fs::write(
         &sheet,
         "[playlist]\nFile1=\nFile2=a.wav\nNumberOfEntries=2\nVersion=2\n",
@@ -6781,6 +7581,7 @@ fn a_blank_pls_row_names_no_file_rather_than_the_sheets_own_folder() -> Result<(
     .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.added, 1);
     assert_eq!(imported.elsewhere, 1, "a blank row was read as a file");
     assert_eq!(imported.missing, 0);
@@ -6792,10 +7593,12 @@ fn a_blank_pls_row_names_no_file_rather_than_the_sheets_own_folder() -> Result<(
 fn a_sheet_is_read_by_what_it_holds_rather_than_what_it_is_called() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let sheet = tree.path().join("mislabelled.m3u");
+
     fs::write(&sheet, "[playlist]\nFile1=a.wav\nNumberOfEntries=1\n")
         .expect("a writable temporary file");
 
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.format, PlaylistFormat::Pls);
     assert_eq!(imported.name, "mislabelled", "the stem did not name it");
     assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["a"]);
@@ -6806,9 +7609,11 @@ fn a_sheet_is_read_by_what_it_holds_rather_than_what_it_is_called() -> Result<()
 fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     tree.write("Bj\u{f6}rk.wav", b"a file no scan has read");
 
     let mut bytes = b"#EXTM3U\n#PLAYLIST:Kv".to_vec();
+
     bytes.push(0xe6);
     bytes.extend_from_slice(b"ld ");
     bytes.push(0x93);
@@ -6820,6 +7625,7 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
 
     let sheet = tree.write("legacy.m3u", &bytes);
     let imported = library.import_playlist(&sheet, None)?;
+
     assert_eq!(imported.encoding, TextEncoding::WINDOWS_1252);
     assert_eq!(
         imported.name, "Kvæld “Live”",
@@ -6830,6 +7636,7 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
     assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Björk"]);
 
     let strict = tree.write("legacy.m3u8", &bytes);
+
     assert!(
         matches!(
             library.import_playlist(&strict, None),
@@ -6844,14 +7651,19 @@ fn a_sheet_written_in_a_legacy_encoding_still_comes_in() -> Result<()> {
 fn a_sheet_in_utf_16_or_a_cyrillic_code_page_comes_in_whole() -> Result<()> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     tree.write("Кино.wav", b"a file no scan has read");
+
     let sheet = "#EXTM3U\n#PLAYLIST:Группа крови\nКино.wav\n";
 
     let mut wide = vec![0xFF, 0xFE];
+
     for unit in sheet.encode_utf16() {
         wide.extend_from_slice(&unit.to_le_bytes());
     }
+
     let imported = library.import_playlist(&tree.write("wide.m3u8", &wide), None)?;
+
     assert_eq!(imported.encoding, TextEncoding::Utf16Le);
     assert_eq!(imported.name, "Группа крови");
     assert_eq!(stems(&library.playlist_cuts(imported.id)?), vec!["Кино"]);
@@ -6862,6 +7674,7 @@ fn a_sheet_in_utf_16_or_a_cyrillic_code_page_comes_in_whole() -> Result<()> {
     )
     .expect("Cyrillic letters");
     let imported = library.import_playlist(&tree.write("cyrillic.m3u", &cyrillic), None)?;
+
     assert_eq!(
         imported.encoding,
         TextEncoding::Legacy(resonate_core::LegacyEncoding::WINDOWS_1251)
@@ -6885,7 +7698,9 @@ fn a_playlist_that_is_played_records_when_and_how_often() -> Result<()> {
     );
 
     library.set_playing_playlist(loaded(evening));
+
     let played = library.playlist(evening)?.and_then(|found| found.played);
+
     assert!(played.is_some(), "playing a playlist recorded nothing");
     assert_eq!(
         library.playlist(evening)?.map(|found| found.plays),
@@ -6898,6 +7713,7 @@ fn a_playlist_that_is_played_records_when_and_how_often() -> Result<()> {
         .into_iter()
         .map(|playlist| playlist.name)
         .collect();
+
     assert_eq!(
         by_play,
         vec!["Morning", "Evening"],
@@ -6905,6 +7721,7 @@ fn a_playlist_that_is_played_records_when_and_how_often() -> Result<()> {
     );
 
     library.set_playing_playlist(None);
+
     assert_eq!(
         library.playlist(evening)?.and_then(|found| found.played),
         played,
@@ -6922,6 +7739,7 @@ fn a_playlist_that_is_played_records_when_and_how_often() -> Result<()> {
 #[test]
 fn the_playlists_most_played_this_month_are_ordered_by_what_the_month_played() -> Result<()> {
     const TWO_MONTHS: i64 = 60 * 86_400 * 1_000_000_000;
+
     let tree = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
@@ -6958,6 +7776,7 @@ fn a_playlist_taking_the_id_of_one_discarded_starts_with_no_plays_this_month() -
     let library = Library::open_in_memory()?;
     let anthems = library.create_playlist("Anthems")?;
     let carols = library.create_playlist("Carols")?;
+
     library.set_playing_playlist(loaded(anthems));
     for _ in 0..3 {
         library.set_playing_playlist(loaded(carols));
@@ -6965,6 +7784,7 @@ fn a_playlist_taking_the_id_of_one_discarded_starts_with_no_plays_this_month() -
     library.remove_playlist(carols)?;
 
     let ballads = library.create_playlist("Ballads")?;
+
     assert_eq!(
         ballads, carols,
         "the discarded playlist's id was not taken again"
@@ -7064,6 +7884,7 @@ fn a_saved_query_fills_itself_as_the_library_grows() -> Result<()> {
     )?;
 
     let found = library.playlist(id)?.expect("the playlist was saved");
+
     assert_eq!(found.entries, 3, "the query did not count what it matches");
     assert!(found.duration.is_some_and(|played| !played.is_zero()));
     assert_eq!(
@@ -7076,10 +7897,12 @@ fn a_saved_query_fills_itself_as_the_library_grows() -> Result<()> {
         .iter()
         .map(|entry| entry.track.as_ref().expect("a scanned row").title.as_str())
         .collect();
+
     assert_eq!(titles, vec!["Dogs", "Echoes", "Sheep"]);
 
     tree.write("d.wav", &Wav::new().text(TITLE, "Animals").build());
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library.playlist(id)?.map(|found| found.entries),
         Some(4),
@@ -7091,6 +7914,7 @@ fn a_saved_query_fills_itself_as_the_library_grows() -> Result<()> {
 #[test]
 fn a_saved_query_takes_its_rows_from_the_text_and_the_limit() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
+
     tree.write("d.wav", &Wav::new().text(TITLE, "Dogs Live").build());
     scan(&library, &options(&tree))?;
 
@@ -7103,6 +7927,7 @@ fn a_saved_query_takes_its_rows_from_the_text_and_the_limit() -> Result<()> {
             limit: None,
         },
     )?;
+
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["b", "d"]);
 
     let capped = library.save_query(
@@ -7114,6 +7939,7 @@ fn a_saved_query_takes_its_rows_from_the_text_and_the_limit() -> Result<()> {
             limit: Some(1),
         },
     )?;
+
     assert_eq!(library.playlist_entries(capped, None)?.len(), 1);
     assert_eq!(
         library.playlist(capped)?.map(|found| found.entries),
@@ -7126,6 +7952,7 @@ fn a_saved_query_takes_its_rows_from_the_text_and_the_limit() -> Result<()> {
 #[test]
 fn a_saved_query_is_revised_where_it_stands() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
+
     tree.write("d.wav", &Wav::new().text(TITLE, "Dogs Live").build());
     scan(&library, &options(&tree))?;
 
@@ -7138,7 +7965,9 @@ fn a_saved_query_is_revised_where_it_stands() -> Result<()> {
             limit: None,
         },
     )?;
+
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["b", "d"]);
+
     let saved = library.playlists_revision();
 
     let revised = SavedQuery {
@@ -7147,7 +7976,9 @@ fn a_saved_query_is_revised_where_it_stands() -> Result<()> {
         reading: SortOrder::Title.reads(),
         limit: Some(1),
     };
+
     library.revise_query(id, "Dogs Live", &revised)?;
+
     assert_ne!(
         library.playlists_revision(),
         saved,
@@ -7155,6 +7986,7 @@ fn a_saved_query_is_revised_where_it_stands() -> Result<()> {
     );
 
     let found = library.playlist(id)?.expect("the playlist is still there");
+
     assert_eq!(found.name, "Dogs Live", "a revision left the name behind");
     assert_eq!(found.query, Some(revised), "the query read back as it was");
     assert_eq!(found.entries, 1, "the count did not follow the new search");
@@ -7166,6 +7998,7 @@ fn a_saved_query_is_revised_where_it_stands() -> Result<()> {
 fn a_search_narrows_a_playlist_to_the_rows_it_matches() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["b.wav", "a.wav", "c.wav"]
@@ -7175,6 +8008,7 @@ fn a_search_narrows_a_playlist_to_the_rows_it_matches() -> Result<()> {
     )?;
 
     let whole = library.playlist_entries(id, None)?;
+
     assert_eq!(
         whole.iter().map(|entry| entry.position).collect::<Vec<_>>(),
         vec![0, 1, 2],
@@ -7182,6 +8016,7 @@ fn a_search_narrows_a_playlist_to_the_rows_it_matches() -> Result<()> {
     );
 
     let narrowed = library.playlist_entries(id, Some("sheep"))?;
+
     assert_eq!(narrowed.len(), 1, "the search narrowed to the wrong rows");
     assert_eq!(
         narrowed[0].position, 2,
@@ -7209,6 +8044,7 @@ fn a_playlist_row_no_scan_has_seen_matches_no_search() -> Result<()> {
     let unscanned = tree.write("late.wav", &Wav::new().text(TITLE, "Sheep").build());
 
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &[
@@ -7218,7 +8054,9 @@ fn a_playlist_row_no_scan_has_seen_matches_no_search() -> Result<()> {
     )?;
 
     assert_eq!(library.playlist_entries(id, None)?.len(), 2);
+
     let narrowed = library.playlist_entries(id, Some("sheep"))?;
+
     assert_eq!(
         stems(
             &narrowed
@@ -7235,6 +8073,7 @@ fn a_playlist_row_no_scan_has_seen_matches_no_search() -> Result<()> {
 #[test]
 fn a_search_narrows_the_index_by_the_words_it_holds() -> Result<()> {
     let (_tree, library) = scanned_playlist_tree();
+
     for name in ["Evening jazz", "Morning jazz", "Anthems"] {
         library.create_playlist(name)?;
     }
@@ -7265,6 +8104,7 @@ fn a_search_narrows_the_index_by_the_words_it_holds() -> Result<()> {
 fn a_listing_of_names_reads_the_same_order_as_the_listing_beside_it_and_stops_where_told()
 -> Result<()> {
     let library = Library::open_in_memory()?;
+
     for name in ["Anthems", "Ballads", "Carols", "Dirges"] {
         library.create_playlist(name)?;
     }
@@ -7301,6 +8141,7 @@ fn the_count_is_counted_rather_than_read_off_a_listing() -> Result<()> {
     assert_eq!(library.playlist_count(None)?, 0);
 
     let evening = library.create_playlist("Evening jazz")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav")])?;
     library.create_playlist("Morning jazz")?;
     library.save_query("Anthems", &SavedQuery::default())?;
@@ -7333,11 +8174,13 @@ fn the_lists_are_read_without_the_playlists_that_fill_themselves() -> Result<()>
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
 
     let evening = library.create_playlist("Evening jazz")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav")])?;
     library.create_playlist("Morning jazz")?;
     library.save_query("Anthems", &SavedQuery::default())?;
 
     let lists = library.playlist_lists(PlaylistOrder::Name, Direction::Ascending)?;
+
     assert_eq!(
         lists
             .iter()
@@ -7354,6 +8197,7 @@ fn the_lists_are_read_without_the_playlists_that_fill_themselves() -> Result<()>
     assert_eq!(lists[1].entries, 0);
 
     let reversed = library.playlist_lists(PlaylistOrder::Name, Direction::Descending)?;
+
     assert_eq!(
         reversed
             .iter()
@@ -7367,6 +8211,7 @@ fn the_lists_are_read_without_the_playlists_that_fill_themselves() -> Result<()>
 #[test]
 fn a_saved_query_and_a_search_both_have_to_hold() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
+
     tree.write("d.wav", &Wav::new().text(TITLE, "Dogs Live").build());
     scan(&library, &options(&tree))?;
 
@@ -7379,9 +8224,11 @@ fn a_saved_query_and_a_search_both_have_to_hold() -> Result<()> {
             limit: None,
         },
     )?;
+
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["b", "d"]);
 
     let narrowed = library.playlist_entries(id, Some("live"))?;
+
     assert_eq!(
         stems(
             &narrowed
@@ -7404,6 +8251,7 @@ fn a_saved_query_and_a_search_both_have_to_hold() -> Result<()> {
 fn a_list_has_no_query_to_revise() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &[Cut::whole(MediaLocation::local(tree.path().join("a.wav")))],
@@ -7432,6 +8280,7 @@ fn sortable_playlist_tree() -> (Tree, Library) {
         ("a.wav", "Dogs", "Pink Floyd", 13_230),
         ("b.wav", "Sheep", "Roger Waters", 4_410),
     ];
+
     for (file, title, artist, frames) in written {
         tree.write(
             file,
@@ -7444,6 +8293,7 @@ fn sortable_playlist_tree() -> (Tree, Library) {
     }
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of three files");
     (tree, library)
 }
@@ -7456,6 +8306,7 @@ fn held(library: &Library, id: PlaylistId) -> Result<Vec<String>> {
 fn a_playlist_is_put_in_order_rather_than_moved_a_row_at_a_time() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["c.wav", "a.wav", "b.wav"]
@@ -7482,12 +8333,15 @@ fn a_playlist_is_put_in_order_rather_than_moved_a_row_at_a_time() -> Result<()> 
     assert_eq!(held(&library, id)?, vec!["b", "c", "a"]);
 
     library.sort_playlist(id, RowOrder::Artist, Direction::Ascending)?;
+
     assert_eq!(held(&library, id)?, vec!["a", "b", "c"]);
 
     library.sort_playlist(id, RowOrder::Length, Direction::Ascending)?;
+
     assert_eq!(held(&library, id)?, vec!["b", "a", "c"]);
 
     library.sort_playlist(id, RowOrder::File, Direction::Descending)?;
+
     assert_eq!(held(&library, id)?, vec!["c", "b", "a"]);
     Ok(())
 }
@@ -7496,6 +8350,7 @@ fn a_playlist_is_put_in_order_rather_than_moved_a_row_at_a_time() -> Result<()> 
 fn putting_a_list_in_order_leaves_a_row_no_scan_has_seen_at_the_end() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Mixed")?;
+
     library.add_to_playlist(
         id,
         &["c.wav", "d.wav", "a.wav"]
@@ -7505,9 +8360,11 @@ fn putting_a_list_in_order_leaves_a_row_no_scan_has_seen_at_the_end() -> Result<
     )?;
 
     library.sort_playlist(id, RowOrder::Title, Direction::Ascending)?;
+
     assert_eq!(held(&library, id)?, vec!["a", "c", "d"]);
 
     library.sort_playlist(id, RowOrder::Title, Direction::Descending)?;
+
     assert_eq!(
         held(&library, id)?,
         vec!["c", "a", "d"],
@@ -7515,6 +8372,7 @@ fn putting_a_list_in_order_leaves_a_row_no_scan_has_seen_at_the_end() -> Result<
     );
 
     library.sort_playlist(id, RowOrder::File, Direction::Ascending)?;
+
     assert_eq!(
         held(&library, id)?,
         vec!["a", "c", "d"],
@@ -7527,6 +8385,7 @@ fn putting_a_list_in_order_leaves_a_row_no_scan_has_seen_at_the_end() -> Result<
 fn putting_a_list_in_order_moves_what_a_pane_redraws_on() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         id,
         &["c.wav", "a.wav"]
@@ -7534,13 +8393,17 @@ fn putting_a_list_in_order_moves_what_a_pane_redraws_on() -> Result<()> {
             .map(|file| Cut::whole(MediaLocation::local(tree.path().join(file))))
             .collect::<Vec<_>>(),
     )?;
+
     let added = library.playlists_revision();
 
     library.sort_playlist(id, RowOrder::Title, Direction::Ascending)?;
+
     let sorted = library.playlists_revision();
+
     assert_ne!(sorted, added, "putting a list in order redrew nothing");
 
     library.sort_playlist(id, RowOrder::Title, Direction::Ascending)?;
+
     assert_eq!(
         library.playlists_revision(),
         sorted,
@@ -7554,6 +8417,7 @@ fn a_list_kept_in_an_order_puts_a_row_added_later_where_the_order_wants_it() -> 
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.add_to_playlist(id, &[file("b.wav"), file("c.wav")])?;
 
     assert_eq!(
@@ -7569,6 +8433,7 @@ fn a_list_kept_in_an_order_puts_a_row_added_later_where_the_order_wants_it() -> 
     assert_eq!(held(&library, id)?, vec!["c", "b"]);
 
     library.add_to_playlist(id, slice::from_ref(&file("a.wav")))?;
+
     assert_eq!(
         held(&library, id)?,
         vec!["a", "c", "b"],
@@ -7576,6 +8441,7 @@ fn a_list_kept_in_an_order_puts_a_row_added_later_where_the_order_wants_it() -> 
     );
 
     let kept = library.playlist(id)?.expect("the playlist is there").kept;
+
     assert_eq!(
         kept,
         Some(Kept {
@@ -7591,6 +8457,7 @@ fn a_list_kept_in_an_order_is_not_one_to_place_by_hand() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.add_to_playlist(id, &[file("c.wav"), file("b.wav"), file("a.wav")])?;
     library.keep_playlist_in_order(
         id,
@@ -7624,7 +8491,9 @@ fn putting_a_list_that_is_already_in_hand_back_in_hand_writes_nothing() -> Resul
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.add_to_playlist(id, &[file("c.wav"), file("b.wav")])?;
+
     let unchanged = library.playlist(id)?.expect("the playlist").modified;
 
     assert_eq!(library.keep_playlist_in_order(id, None)?, 0);
@@ -7646,6 +8515,7 @@ fn a_span_past_the_end_of_a_list_takes_only_the_rows_there_are() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.add_to_playlist(id, &[file("c.wav"), file("b.wav"), file("a.wav")])?;
 
     assert!(!library.move_in_playlist(id, Span::one(usize::MAX), 0)?);
@@ -7675,6 +8545,7 @@ fn letting_a_kept_order_go_leaves_the_rows_where_they_stand() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.add_to_playlist(id, &[file("c.wav"), file("b.wav"), file("a.wav")])?;
     library.keep_playlist_in_order(
         id,
@@ -7683,6 +8554,7 @@ fn letting_a_kept_order_go_leaves_the_rows_where_they_stand() -> Result<()> {
             reading: Direction::Descending,
         }),
     )?;
+
     assert_eq!(held(&library, id)?, vec!["c", "b", "a"]);
 
     assert_eq!(library.keep_playlist_in_order(id, None)?, 0);
@@ -7694,7 +8566,9 @@ fn letting_a_kept_order_go_leaves_the_rows_where_they_stand() -> Result<()> {
 
     assert!(library.move_in_playlist(id, Span::one(0), 2)?);
     assert_eq!(held(&library, id)?, vec!["b", "a", "c"]);
+
     library.add_to_playlist(id, slice::from_ref(&file("d.wav")))?;
+
     assert_eq!(
         held(&library, id)?,
         vec!["b", "a", "c", "d"],
@@ -7708,13 +8582,16 @@ fn keeping_a_list_in_an_order_moves_what_a_pane_redraws_on() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.add_to_playlist(id, &[file("a.wav"), file("b.wav")])?;
+
     let added = library.playlists_revision();
 
     let kept = Kept {
         order: RowOrder::File,
         reading: Direction::Ascending,
     };
+
     assert_eq!(library.keep_playlist_in_order(id, Some(kept))?, 0);
     assert_ne!(
         library.playlists_revision(),
@@ -7728,6 +8605,7 @@ fn keeping_a_list_in_an_order_moves_what_a_pane_redraws_on() -> Result<()> {
 fn an_imported_sheet_lands_in_the_order_a_list_is_kept_in() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let id = library.create_playlist("Evening")?;
+
     library.keep_playlist_in_order(
         id,
         Some(Kept {
@@ -7737,6 +8615,7 @@ fn an_imported_sheet_lands_in_the_order_a_list_is_kept_in() -> Result<()> {
     )?;
 
     let sheet = tree.path().join("evening.m3u8");
+
     fs::write(
         &sheet,
         format!(
@@ -7826,15 +8705,20 @@ fn a_saved_query_is_renamed_dropped_and_written_out_like_any_other() -> Result<(
         library.save_query("evening", &SavedQuery::default()),
         Err(Error::DuplicatePlaylist { .. })
     ));
+
     library.rename_playlist(id, "Morning")?;
 
     let sheet = tree.path().join("morning.m3u8");
+
     assert_eq!(library.export_playlist(id, &sheet)?.rows, 1);
+
     let written = fs::read_to_string(&sheet).expect("the sheet was written");
+
     assert!(written.contains("a.wav\n"), "{written}");
     assert!(written.contains(",Echoes\n"), "{written}");
 
     let read_back = library.import_playlist(&sheet, Some("A list"))?;
+
     assert!(
         library
             .playlist(read_back.id)?
@@ -7849,6 +8733,7 @@ fn a_saved_query_is_renamed_dropped_and_written_out_like_any_other() -> Result<(
 
 fn scanned_shapes() -> (Tree, Library) {
     let tree = Tree::new();
+
     tree.write(
         "cold.wav",
         &Wav::new()
@@ -7872,6 +8757,7 @@ fn scanned_shapes() -> (Tree, Library) {
     );
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of two files");
     (tree, library)
 }
@@ -7937,6 +8823,7 @@ fn a_play_is_counted_against_the_track_it_named() -> Result<()> {
     let once = library
         .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
+
     assert_eq!(the_row_of(&once).plays, 1);
     assert_eq!(the_row_of(&once).location, cold);
     assert!(the_row_of(&once).played.is_some());
@@ -7944,6 +8831,7 @@ fn a_play_is_counted_against_the_track_it_named() -> Result<()> {
     let twice = library
         .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
+
     assert_eq!(the_row_of(&twice).plays, 2);
     assert_eq!(the_row_of(&twice).id, the_row_of(&once).id);
     assert_ne!(twice.listen, once.listen);
@@ -7951,11 +8839,13 @@ fn a_play_is_counted_against_the_track_it_named() -> Result<()> {
     let played = library
         .track_at(tree.path().join("cold.wav").as_path(), None)?
         .expect("the track the scan stored");
+
     assert_eq!(Some(played), twice.track);
 
     let heat = library
         .track_at(tree.path().join("heat.wav").as_path(), None)?
         .expect("the track the scan stored");
+
     assert_eq!(heat.plays, 0);
     assert_eq!(heat.played, None);
     Ok(())
@@ -7972,6 +8862,7 @@ fn a_play_of_something_the_catalog_does_not_hold_counts_against_no_row() -> Resu
             Duration::ZERO,
         )?
         .expect("a local file is kept against its path");
+
     assert_eq!(unheld.track, None);
     assert!(
         library
@@ -7993,7 +8884,9 @@ fn a_song_played_in_place_counts_as_a_listen_against_its_uri_and_never_as_a_row(
     let counted = library
         .track_played(&served, None, Duration::from_secs(40))?
         .expect("a play kept against the song's uri");
+
     library.listened(counted.listen, Duration::from_secs(90))?;
+
     let statistics = library.statistics(Window::Everything)?;
 
     assert_eq!(counted.track, None);
@@ -8015,6 +8908,7 @@ fn a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one() -> 
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
     let served = MediaLocation::from_uri("subsonic:track/so-1").expect("a served song");
+
     let resumption = Resumption {
         rows: [served.clone(), cold.clone()]
             .into_iter()
@@ -8030,6 +8924,7 @@ fn a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one() -> 
     };
 
     library.keep_resumption(ZoneId::FIRST, &resumption)?;
+
     let resumed = library.resumption()?.expect("the queue kept");
 
     assert_eq!(
@@ -8105,6 +9000,7 @@ impl Scrobbler for Told {
         let broken = self
             .batches_before_unreachable
             .is_some_and(|accepted| self.batches.lock().len() >= accepted);
+
         if broken || self.unreachable.load(Ordering::Relaxed) {
             return Err(Error::Unreachable {
                 op: LookupOp::Submit,
@@ -8150,6 +9046,7 @@ impl Scrobbler for Told {
 fn a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmarked() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write(
         "named.wav",
         &Wav::new()
@@ -8162,13 +9059,17 @@ fn a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmar
         "bare.wav",
         &Wav::new().text(TITLE, "Bare").text(ARTIST, "Ada").build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let tracks = library.tracks(&TrackQuery::default())?;
+
     for track in &tracks {
         library.favour(Favoured::Track(track.id), true)?;
     }
+
     let named = tracks
         .iter()
         .find(|track| track.title == "Named")
@@ -8187,22 +9088,26 @@ fn a_favourite_with_a_recording_is_told_as_a_love_once_and_taken_back_when_unmar
     assert_eq!(library.tell_loves(&told)?, LovesTold::default());
 
     library.favour(Favoured::Track(named.id), false)?;
+
     assert_eq!(library.tell_loves(&told)?.taken_back, 1);
     assert_eq!(
         told.loves.lock().last(),
         Some(&(mbid(RECORDING), Love::TakenBack))
     );
     assert_eq!(library.tell_loves(&told)?, LovesTold::default());
+
     let ada_named = Some(LovedNames {
         title: "Named".to_owned(),
         artist: "Ada".to_owned(),
     });
+
     assert_eq!(*told.named.lock(), vec![ada_named.clone(), ada_named]);
     Ok(())
 }
 
 fn two_favourites_with_recordings() -> (Tree, Library) {
     let tree = Tree::new();
+
     for (name, recording) in [("first.wav", RECORDING), ("second.wav", HOURS)] {
         tree.write(
             name,
@@ -8213,7 +9118,9 @@ fn two_favourites_with_recordings() -> (Tree, Library) {
                 .build(),
         );
     }
+
     let library = Library::open_in_memory().expect("an in-memory library opens");
+
     scan(&library, &options(&tree)).expect("the tree scans");
     for track in library
         .tracks(&TrackQuery::default())
@@ -8284,6 +9191,7 @@ fn scanned_listening() -> (Tree, Library, [MediaLocation; 3]) {
     let loose = tree.write("loose.wav", &Wav::new().text(TITLE, "Loose").build());
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of three files");
     (tree, library, [cold, heat, loose].map(MediaLocation::local))
 }
@@ -8291,10 +9199,13 @@ fn scanned_listening() -> (Tree, Library, [MediaLocation; 3]) {
 #[test]
 fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once() -> Result<()> {
     let (_tree, library, [cold, heat, loose]) = scanned_listening();
+
     library.track_played(&cold, None, Duration::ZERO)?;
+
     let told = Told::default();
 
     let started = library.submit_listens(&told)?;
+
     assert!(started.started);
     assert_eq!(started.submitted, 0);
     assert!(told.titles().is_empty());
@@ -8302,13 +9213,16 @@ fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once(
     library.track_played(&heat, None, Duration::ZERO)?;
     library.track_played(&loose, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
+
     let submitted = library.submit_listens(&told)?;
 
     assert_eq!(submitted.submitted, 2);
     assert_eq!(submitted.unnamed, 1);
     assert!(!submitted.started);
     assert_eq!(told.titles(), vec![vec!["Heat", "Cold"]]);
+
     let batch = told.batches.lock()[0].clone();
+
     assert_eq!(batch[0].billed.artist, "Ben");
     assert_eq!(batch[0].billed.album, None);
     assert_eq!(batch[0].billed.length, Some(Duration::from_secs(1)));
@@ -8326,12 +9240,16 @@ fn a_service_is_told_what_was_heard_after_it_was_first_asked_and_each_play_once(
 #[test]
 fn a_listen_is_told_as_when_it_began_rather_than_when_it_counted() -> Result<()> {
     const HEARD_FOR: Duration = Duration::from_secs(95);
+
     let (_tree, library, [cold, heat, _]) = scanned_listening();
     let told = Told::default();
+
     library.submit_listens(&told)?;
 
     library.track_played(&cold, None, HEARD_FOR)?;
+
     let counted = SystemTime::now();
+
     library.track_played(&heat, None, Duration::ZERO)?;
     library.submit_listens(&told)?;
 
@@ -8339,6 +9257,7 @@ fn a_listen_is_told_as_when_it_began_rather_than_when_it_counted() -> Result<()>
     let began = counted
         .duration_since(batch[0].at)
         .expect("a listen told as beginning after it counted");
+
     assert!(
         began >= HEARD_FOR && began < HEARD_FOR + Duration::from_secs(5),
         "a listen heard for {HEARD_FOR:?} was told as beginning {began:?} before it counted"
@@ -8355,6 +9274,7 @@ fn what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold
     let billed = library
         .billed_as(&cold, None)?
         .expect("a scanned track the service can be told of");
+
     assert_eq!(billed.title, "Cold");
     assert_eq!(billed.artist, "Ada");
     assert_eq!(library.billed_as(&loose, None)?, None);
@@ -8369,6 +9289,7 @@ fn what_is_playing_is_billed_as_the_catalog_names_it_and_a_file_it_does_not_hold
 fn plays_from_before_the_service_was_first_asked_are_told_once_and_only_when_asked_for()
 -> Result<()> {
     const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+
     let tree = Tree::new();
     let cold = MediaLocation::local(tree.write(
         "cold.wav",
@@ -8380,25 +9301,33 @@ fn plays_from_before_the_service_was_first_asked_are_told_once_and_only_when_ask
     ));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let told = Told::default();
     let a_year = HistoryKept::parse("365").expect("a span of days");
 
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&heat, None, Duration::ZERO)?;
+
     assert!(library.submit_listens(&told)?.started);
+
     library.track_played(&heat, None, Duration::ZERO)?;
+
     assert_eq!(library.submit_listens(&told)?.submitted, 1);
     assert!(!library.earlier_listens_owed(ListeningService::ListenBrainz)?);
 
     library.tell_earlier_listens(ListeningService::ListenBrainz)?;
     library.tell_earlier_listens(ListeningService::ListenBrainz)?;
+
     assert!(library.earlier_listens_owed(ListeningService::ListenBrainz)?);
+
     beside(&database)
         .execute_batch(&format!(
             "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};"
         ))
         .expect("the history is moved back past a year");
+
     assert_eq!(
         library.age_the_history(a_year)?.listens,
         0,
@@ -8406,6 +9335,7 @@ fn plays_from_before_the_service_was_first_asked_are_told_once_and_only_when_ask
     );
 
     library.track_played(&cold, None, Duration::ZERO)?;
+
     let submitted = library.submit_listens(&told)?;
 
     assert_eq!(submitted.submitted, 3);
@@ -8423,6 +9353,7 @@ fn plays_from_before_the_service_was_first_asked_are_told_once_and_only_when_ask
 #[test]
 fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told() -> Result<()> {
     const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+
     let tree = Tree::new();
     let cold = MediaLocation::local(tree.write(
         "cold.wav",
@@ -8434,11 +9365,15 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
     ));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     library.track_played(&cold, None, Duration::ZERO)?;
+
     let told = Told::default();
+
     assert!(library.submit_listens(&told)?.started);
+
     library.track_played(&heat, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
     library.passed(Duration::from_secs(20))?;
@@ -8453,7 +9388,9 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
         library.age_the_history(HistoryKept::Forever)?,
         Aged::default()
     );
+
     let a_year = HistoryKept::parse("365").expect("a span of days");
+
     assert_eq!(
         library.age_the_history(a_year)?,
         Aged {
@@ -8481,6 +9418,7 @@ fn a_history_kept_for_a_span_forgets_what_is_older_once_every_service_was_told()
 #[test]
 fn a_service_no_longer_told_holds_the_history_back_no_longer() -> Result<()> {
     const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+
     let tree = Tree::new();
     let cold = MediaLocation::local(tree.write(
         "cold.wav",
@@ -8488,10 +9426,13 @@ fn a_service_no_longer_told_holds_the_history_back_no_longer() -> Result<()> {
     ));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let told = Told::default();
+
     assert!(library.submit_listens(&told)?.started);
+
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
     beside(&database)
@@ -8499,6 +9440,7 @@ fn a_service_no_longer_told_holds_the_history_back_no_longer() -> Result<()> {
             "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};"
         ))
         .expect("the history is moved back past a year");
+
     let a_year = HistoryKept::parse("365").expect("a span of days");
 
     assert_eq!(library.age_the_history(a_year)?.listens, 0);
@@ -8511,6 +9453,7 @@ fn a_service_no_longer_told_holds_the_history_back_no_longer() -> Result<()> {
 #[test]
 fn a_play_counted_after_the_newest_listens_were_forgotten_is_still_told() -> Result<()> {
     const WELL_BEFORE_A_YEAR: i64 = 400 * 86_400 * 1_000_000_000;
+
     let tree = Tree::new();
     let cold = MediaLocation::local(tree.write(
         "cold.wav",
@@ -8518,12 +9461,16 @@ fn a_play_counted_after_the_newest_listens_were_forgotten_is_still_told() -> Res
     ));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let told = Told::default();
+
     assert!(library.submit_listens(&told)?.started);
+
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
+
     assert_eq!(library.submit_listens(&told)?.submitted, 2);
 
     beside(&database)
@@ -8531,7 +9478,9 @@ fn a_play_counted_after_the_newest_listens_were_forgotten_is_still_told() -> Res
             "UPDATE listens SET at = at - {WELL_BEFORE_A_YEAR};"
         ))
         .expect("the history is moved back past a year");
+
     let a_year = HistoryKept::parse("365").expect("a span of days");
+
     assert_eq!(library.age_the_history(a_year)?.listens, 2);
 
     library.track_played(&cold, None, Duration::ZERO)?;
@@ -8543,6 +9492,7 @@ fn a_play_counted_after_the_newest_listens_were_forgotten_is_still_told() -> Res
 #[test]
 fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Result<()> {
     const TWO_MONTHS: i64 = 60 * 86_400 * 1_000_000_000;
+
     let tree = Tree::new();
     let cold = MediaLocation::local(tree.write(
         "cold.wav",
@@ -8554,6 +9504,7 @@ fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Re
     ));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     for _ in 0..3 {
         library.track_played(&cold, None, Duration::ZERO)?;
@@ -8574,6 +9525,7 @@ fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Re
             .map(|track| track.title)
             .collect())
     };
+
     assert_eq!(titles(SortOrder::Plays)?, vec!["Cold", "Heat"]);
     assert_eq!(titles(SortOrder::PlaysThisMonth)?, vec!["Heat", "Cold"]);
     Ok(())
@@ -8583,11 +9535,13 @@ fn the_tracks_most_played_this_month_are_ordered_by_what_the_month_heard() -> Re
 fn a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told() -> Result<()> {
     let (_tree, library, [cold, heat, _]) = scanned_listening();
     let told = Told::refusing("Heat");
+
     library.submit_listens(&told)?;
 
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&heat, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
+
     let submitted = library.submit_listens(&told)?;
 
     assert_eq!(submitted.submitted, 2);
@@ -8611,11 +9565,13 @@ fn a_play_the_service_refuses_as_malformed_is_passed_over_and_the_rest_are_told(
 fn a_play_a_service_could_not_be_reached_for_is_told_the_next_time() -> Result<()> {
     let (_tree, library, [cold, heat, _]) = scanned_listening();
     let told = Told::default();
+
     library.submit_listens(&told)?;
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&heat, None, Duration::ZERO)?;
 
     told.unreachable.store(true, Ordering::Relaxed);
+
     assert!(matches!(
         library.submit_listens(&told),
         Err(Error::Unreachable {
@@ -8625,6 +9581,7 @@ fn a_play_a_service_could_not_be_reached_for_is_told_the_next_time() -> Result<(
     ));
 
     told.unreachable.store(false, Ordering::Relaxed);
+
     assert_eq!(library.submit_listens(&told)?.submitted, 2);
     assert_eq!(told.titles(), vec![vec!["Cold", "Heat"]]);
     Ok(())
@@ -8634,6 +9591,7 @@ fn a_play_a_service_could_not_be_reached_for_is_told_the_next_time() -> Result<(
 fn a_batch_a_service_takes_in_pieces_is_marked_a_piece_at_a_time() -> Result<()> {
     let (_tree, library, [cold, heat, _]) = scanned_listening();
     let told = Told::taking(2, 1);
+
     library.submit_listens(&told)?;
     for track in [&cold, &heat, &cold, &heat, &cold] {
         library.track_played(track, None, Duration::ZERO)?;
@@ -8647,6 +9605,7 @@ fn a_batch_a_service_takes_in_pieces_is_marked_a_piece_at_a_time() -> Result<()>
 
     let again = Told::taking(2, usize::MAX);
     let submitted = library.submit_listens(&again)?;
+
     assert_eq!(submitted.submitted, 3);
     assert_eq!(again.titles(), vec![vec!["Cold", "Heat"], vec!["Cold"]]);
     Ok(())
@@ -8655,10 +9614,13 @@ fn a_batch_a_service_takes_in_pieces_is_marked_a_piece_at_a_time() -> Result<()>
 #[test]
 fn a_rescan_keeps_how_often_a_track_was_played() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().text(TITLE, "before").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert!(
         library
             .track_played(
@@ -8677,6 +9639,7 @@ fn a_rescan_keeps_how_often_a_track_was_played() -> Result<()> {
 
     let tracks = all(&library)?;
     let track = tracks.first().expect("the track is still there");
+
     assert_eq!(track.title, "after");
     assert_eq!(track.plays, 1);
     assert!(track.played.is_some());
@@ -8687,6 +9650,7 @@ fn a_rescan_keeps_how_often_a_track_was_played() -> Result<()> {
 fn a_search_narrows_by_how_often_and_how_lately_a_track_was_played() -> Result<()> {
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
+
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
 
@@ -8708,6 +9672,7 @@ fn a_play_counted_against_a_track_is_a_listen_a_window_can_narrow_on() -> Result
     assert!(matched(&library, "plays:>0@30d")?.is_empty());
 
     library.track_played(&cold, None, Duration::ZERO)?;
+
     assert_eq!(matched(&library, "plays:>0@30d")?, vec!["Cold"]);
     assert_eq!(matched(&library, "plays:1@30d")?, vec!["Cold"]);
     assert_eq!(matched(&library, "plays:0@30d")?, vec!["Heat"]);
@@ -8719,6 +9684,7 @@ fn a_window_narrows_on_how_often_a_track_was_heard_inside_it() -> Result<()> {
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
     let heat = MediaLocation::local(tree.path().join("heat.wav"));
+
     for _ in 0..3 {
         library.track_played(&cold, None, Duration::ZERO)?;
     }
@@ -8738,14 +9704,17 @@ fn forgetting_a_root_keeps_the_listens_counted_under_it_for_the_rows_that_come_b
 {
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
+
     library.track_played(&cold, None, Duration::ZERO)?;
     library.track_played(&cold, None, Duration::ZERO)?;
+
     assert_eq!(matched(&library, "plays:>1@30d")?, vec!["Cold"]);
 
     assert!(library.remove_root(tree.path())?);
     assert!(all(&library)?.is_empty());
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(titles(&all(&library)?), vec!["Cold", "Heat"]);
     assert_eq!(matched(&library, "plays:0")?, vec!["Heat"]);
     assert_eq!(matched(&library, "plays:>1@30d")?, vec!["Cold"]);
@@ -8755,6 +9724,7 @@ fn forgetting_a_root_keeps_the_listens_counted_under_it_for_the_rows_that_come_b
 #[test]
 fn a_track_never_played_answers_a_denied_play_term() -> Result<()> {
     let (tree, library) = scanned_shapes();
+
     library.track_played(
         &MediaLocation::local(tree.path().join("cold.wav")),
         None,
@@ -8769,6 +9739,7 @@ fn a_track_never_played_answers_a_denied_play_term() -> Result<()> {
 #[test]
 fn a_track_nothing_has_played_falls_to_the_bottom_of_both_play_orders() -> Result<()> {
     let (tree, library) = scanned_shapes();
+
     library.track_played(
         &MediaLocation::local(tree.path().join("heat.wav")),
         None,
@@ -8780,6 +9751,7 @@ fn a_track_nothing_has_played_falls_to_the_bottom_of_both_play_orders() -> Resul
         reading: SortOrder::Played.reads(),
         ..TrackQuery::default()
     })?;
+
     assert_eq!(titles(&lately), vec!["Heat", "Cold"]);
 
     let most = library.tracks(&TrackQuery {
@@ -8787,6 +9759,7 @@ fn a_track_nothing_has_played_falls_to_the_bottom_of_both_play_orders() -> Resul
         reading: SortOrder::Plays.reads(),
         ..TrackQuery::default()
     })?;
+
     assert_eq!(titles(&most), vec!["Heat", "Cold"]);
     Ok(())
 }
@@ -8794,6 +9767,7 @@ fn a_track_nothing_has_played_falls_to_the_bottom_of_both_play_orders() -> Resul
 #[test]
 fn a_saved_query_fills_itself_from_what_was_played_most() -> Result<()> {
     let (tree, library) = scanned_shapes();
+
     library.track_played(
         &MediaLocation::local(tree.path().join("heat.wav")),
         None,
@@ -8809,6 +9783,7 @@ fn a_saved_query_fills_itself_from_what_was_played_most() -> Result<()> {
             limit: Some(25),
         },
     )?;
+
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["heat"]);
 
     library.track_played(
@@ -8821,11 +9796,13 @@ fn a_saved_query_fills_itself_from_what_was_played_most() -> Result<()> {
         None,
         Duration::ZERO,
     )?;
+
     assert_eq!(stems(&library.playlist_cuts(id)?), vec!["cold", "heat"]);
 
     let revised = library
         .playlist(id)?
         .expect("the saved query is still there");
+
     assert_eq!(
         revised.query.map(|query| query.sort),
         Some(SortOrder::Plays)
@@ -8901,6 +9878,7 @@ fn a_denial_and_an_alternation_reach_the_album_and_artist_listings_too() -> Resu
         text: Some("-is:hires".to_owned()),
         ..AlbumQuery::default()
     })?;
+
     assert_eq!(
         albums
             .iter()
@@ -8913,6 +9891,7 @@ fn a_denial_and_an_alternation_reach_the_album_and_artist_listings_too() -> Resu
         text: Some("year:1975 or year:1995".to_owned()),
         ..ArtistQuery::default()
     })?;
+
     assert_eq!(
         artists
             .iter()
@@ -8940,6 +9919,7 @@ fn a_saved_query_fills_itself_from_what_it_denies() -> Result<()> {
 
     tree.write("more.wav", &Wav::new().text(TITLE, "Warmth").build());
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         stems(&library.playlist_cuts(id)?),
         vec!["cold", "more"],
@@ -8971,6 +9951,7 @@ fn a_term_reaches_the_album_and_artist_listings_too() -> Result<()> {
         text: Some("depth:24".to_owned()),
         ..AlbumQuery::default()
     })?;
+
     assert_eq!(
         albums
             .iter()
@@ -8983,6 +9964,7 @@ fn a_term_reaches_the_album_and_artist_listings_too() -> Result<()> {
         text: Some("is:hires".to_owned()),
         ..ArtistQuery::default()
     })?;
+
     assert_eq!(
         artists
             .iter()
@@ -8992,6 +9974,7 @@ fn a_term_reaches_the_album_and_artist_listings_too() -> Result<()> {
     );
 
     let searched = library.search("year:1975", 10)?;
+
     assert_eq!(searched.tracks.len(), 1);
     assert_eq!(searched.albums.len(), 1);
     assert_eq!(searched.artists.len(), 1);
@@ -9019,6 +10002,7 @@ fn a_saved_query_fills_itself_from_its_terms() -> Result<()> {
         &Wav::new().bits(24).text(TITLE, "Warmth").build(),
     );
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library.playlist(id)?.map(|found| found.entries),
         Some(2),
@@ -9033,6 +10017,7 @@ fn a_playlist_is_copied_into_another_rather_than_moved_out_of() -> Result<()> {
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
     let anthems = library.create_playlist("Anthems")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav")])?;
     library.add_to_playlist(anthems, slice::from_ref(&file("b.wav")))?;
 
@@ -9062,6 +10047,7 @@ fn a_copy_refuses_the_playlist_it_came_from() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = Cut::whole(MediaLocation::local(tree.path().join("a.wav")));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, slice::from_ref(&file))?;
 
     assert!(matches!(
@@ -9075,6 +10061,7 @@ fn a_copy_refuses_the_playlist_it_came_from() -> Result<()> {
     );
 
     let unknown = PlaylistId::new(404)?;
+
     assert!(matches!(
         library.copy_playlist(evening, unknown, None),
         Err(Error::UnknownPlaylist(_))
@@ -9085,6 +10072,7 @@ fn a_copy_refuses_the_playlist_it_came_from() -> Result<()> {
     ));
 
     let query = library.save_query("Everything", &SavedQuery::default())?;
+
     assert!(matches!(
         library.copy_playlist(evening, query, None),
         Err(Error::NotAList { .. })
@@ -9125,6 +10113,7 @@ fn a_search_narrowing_a_saved_query_is_read_beside_it_rather_than_into_it() -> R
             limit: None,
         },
     )?;
+
     assert!(
         narrowed_to(&library, dangling, Some("sheep"))?.is_empty(),
         "a trailing or alternated with a word the saved text never held"
@@ -9185,6 +10174,7 @@ fn a_search_narrows_what_a_copy_takes() -> Result<()> {
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
     let anthems = library.create_playlist("Anthems")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
 
     assert_eq!(library.copy_playlist(evening, anthems, Some("dogs"))?, 1);
@@ -9207,6 +10197,7 @@ fn a_copy_into_a_kept_list_lands_where_the_order_puts_it() -> Result<()> {
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
     let anthems = library.create_playlist("Anthems")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("b.wav")])?;
     library.add_to_playlist(anthems, slice::from_ref(&file("a.wav")))?;
     library.keep_playlist_in_order(
@@ -9231,6 +10222,7 @@ fn a_search_takes_the_rows_it_matched_out_of_a_playlist() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
 
     assert_eq!(library.remove_matching(evening, "dogs")?, 1);
@@ -9265,6 +10257,7 @@ fn a_row_no_scan_has_seen_survives_every_search_that_drops() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let unscanned = tree.write("late.wav", &Wav::new().text(TITLE, "Dogs").build());
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         evening,
         &[
@@ -9299,6 +10292,7 @@ fn a_kept_list_is_dropped_out_of_and_stays_in_its_order() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
     library.keep_playlist_in_order(
         evening,
@@ -9322,6 +10316,7 @@ fn what_a_search_dropped_is_put_back_where_it_stood() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
 
     assert_eq!(library.remove_matching(evening, "dogs")?, 1);
@@ -9333,6 +10328,7 @@ fn what_a_search_dropped_is_put_back_where_it_stood() -> Result<()> {
     );
 
     let put_back = library.undo()?.expect("the drop is there to put back");
+
     assert_eq!(put_back.edit, Edit::Dropped);
     assert_eq!(put_back.playlist, evening);
     assert_eq!(put_back.name, "Evening");
@@ -9358,6 +10354,7 @@ fn folding_keeps_the_first_of_every_doubled_row_and_drops_the_rest() -> Result<(
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         evening,
         &[
@@ -9393,7 +10390,9 @@ fn folding_a_playlist_that_holds_each_file_once_writes_nothing() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
+
     let unchanged = library.playlist(evening)?.expect("the playlist").modified;
 
     assert_eq!(library.fold_doubles(evening)?, 0);
@@ -9416,6 +10415,7 @@ fn tidying_drops_gone_and_doubled_rows_in_one_undoable_edit() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(
         evening,
         &[
@@ -9432,6 +10432,7 @@ fn tidying_drops_gone_and_doubled_rows_in_one_undoable_edit() -> Result<()> {
     assert_eq!(held(&library, evening)?, vec!["a", "b"]);
 
     let put_back = library.undo()?.expect("the tidy is there to put back");
+
     assert_eq!(put_back.edit, Edit::Tidied);
     assert_eq!(held(&library, evening)?, vec!["a", "a", "b", "c", "c"]);
 
@@ -9445,12 +10446,14 @@ fn what_a_fold_took_out_is_put_back_where_it_stood() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("c.wav")])?;
 
     assert_eq!(library.fold_doubles(evening)?, 1);
     assert_eq!(held(&library, evening)?, vec!["c", "a"]);
 
     let put_back = library.undo()?.expect("the fold is there to put back");
+
     assert_eq!(put_back.edit, Edit::Folded);
     assert_eq!(put_back.name, "Evening");
     assert_eq!(
@@ -9469,6 +10472,7 @@ fn a_kept_list_is_folded_and_stays_in_its_order() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("c.wav")])?;
     library.keep_playlist_in_order(
         evening,
@@ -9504,6 +10508,7 @@ fn undoing_walks_back_one_edit_at_a_time() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav")])?;
     library.add_to_playlist(evening, &[file("b.wav")])?;
     library.sort_playlist(evening, RowOrder::File, Direction::Ascending)?;
@@ -9548,6 +10553,7 @@ fn a_step_says_how_many_are_behind_it() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav")])?;
     library.sort_playlist(evening, RowOrder::File, Direction::Ascending)?;
 
@@ -9566,6 +10572,7 @@ fn a_step_says_how_many_are_behind_it() -> Result<()> {
 
     library.undo()?.expect("the addition is there to put back");
     library.undo()?.expect("the start is there to put back");
+
     assert_eq!(library.undoable(), None);
     assert_eq!(
         library.redoable().map(|again| again.behind),
@@ -9584,14 +10591,17 @@ fn a_discarded_playlist_comes_back_under_the_id_it_had() -> Result<()> {
         reading: Direction::Descending,
     };
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
     library.keep_playlist_in_order(evening, Some(kept))?;
+
     let standing = library.playlist(evening)?.expect("the playlist is there");
 
     assert!(library.remove_playlist(evening)?);
     assert!(library.playlist(evening)?.is_none());
 
     let put_back = library.undo()?.expect("the discard is there to put back");
+
     assert_eq!(put_back.edit, Edit::Discarded);
     assert_eq!(put_back.name, "Evening");
     assert_eq!(
@@ -9612,7 +10622,9 @@ fn a_saved_query_comes_back_with_the_search_it_filled_itself_from() -> Result<()
         reading: SortOrder::Title.reads(),
         limit: None,
     };
+
     let floyd = library.save_query("Floyd", &asked)?;
+
     library.revise_query(
         floyd,
         "Barrett",
@@ -9625,6 +10637,7 @@ fn a_saved_query_comes_back_with_the_search_it_filled_itself_from() -> Result<()
     )?;
 
     let put_back = library.undo()?.expect("the revision is there to put back");
+
     assert_eq!(put_back.edit, Edit::Revised);
     assert_eq!(
         put_back.name, "Floyd",
@@ -9632,6 +10645,7 @@ fn a_saved_query_comes_back_with_the_search_it_filled_itself_from() -> Result<()
     );
 
     let found = library.playlist(floyd)?.expect("the query is still there");
+
     assert_eq!(found.name, "Floyd");
     assert_eq!(found.query, Some(asked));
     Ok(())
@@ -9642,6 +10656,7 @@ fn an_edit_that_moved_nothing_leaves_nothing_to_put_back() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav"), file("c.wav")])?;
 
     assert_eq!(
@@ -9664,12 +10679,15 @@ fn a_play_counted_between_an_edit_and_its_undo_is_not_taken_back() -> Result<()>
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav")])?;
     library.remove_from_playlist(evening, Span::one(1))?;
     library.set_playing_playlist(loaded(evening));
 
     library.undo()?.expect("the removal is there to put back");
+
     let found = library.playlist(evening)?.expect("the playlist is there");
+
     assert_eq!(
         found.plays, 1,
         "the play the undo crossed was taken back with it"
@@ -9683,14 +10701,17 @@ fn a_play_counted_between_an_edit_and_its_undo_is_not_taken_back() -> Result<()>
 fn only_so_many_steps_are_held_to_walk_back() -> Result<()> {
     let (_tree, library) = sortable_playlist_tree();
     let evening = library.create_playlist("hold 0")?;
+
     for step in 1..=40 {
         library.rename_playlist(evening, &format!("hold {step}"))?;
     }
 
     let mut walked = 0;
+
     while library.undo()?.is_some() {
         walked += 1;
     }
+
     assert_eq!(walked, 32, "the stack held a different number of steps");
     assert_eq!(
         library.playlist(evening)?.map(|found| found.name),
@@ -9707,6 +10728,7 @@ fn a_rename_is_a_step_that_holds_a_name_rather_than_the_rows_beneath_it() -> Res
     let rows: Vec<Cut> = (0..2_000)
         .map(|row| Cut::whole(MediaLocation::local(tree.path().join(format!("{row}.wav")))))
         .collect();
+
     library.add_to_playlist(evening, &rows)?;
     for step in 1..=32 {
         library.rename_playlist(evening, &format!("hold {step}"))?;
@@ -9719,12 +10741,15 @@ fn a_rename_is_a_step_that_holds_a_name_rather_than_the_rows_beneath_it() -> Res
     );
 
     let mut walked = 0;
+
     while library.undo()?.is_some() {
         walked += 1;
     }
+
     assert_eq!(walked, 32, "the stack held a different number of steps");
 
     let found = library.playlist(evening)?.expect("the playlist is there");
+
     assert_eq!(found.name, "hold 0");
     assert_eq!(
         found.entries, 2_000,
@@ -9738,8 +10763,11 @@ fn a_copy_and_an_import_are_each_one_step_to_walk_back() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav")])?;
+
     let morning = library.create_playlist("Morning")?;
+
     library.copy_playlist(evening, morning, None)?;
 
     assert_eq!(held(&library, morning)?, vec!["a", "b"]);
@@ -9762,6 +10790,7 @@ fn a_copy_and_an_import_are_each_one_step_to_walk_back() -> Result<()> {
         .as_bytes(),
     );
     let read = library.import_playlist(&sheet, Some("Night"))?;
+
     assert_eq!(read.added, 2);
     assert_eq!(
         library.undo()?.map(|put_back| put_back.edit),
@@ -9779,6 +10808,7 @@ fn a_step_walked_back_is_put_back_again() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav"), file("b.wav")])?;
     library.sort_playlist(evening, RowOrder::File, Direction::Ascending)?;
     library.remove_from_playlist(evening, Span::one(0))?;
@@ -9807,6 +10837,7 @@ fn a_step_walked_back_is_put_back_again() -> Result<()> {
     );
 
     let again = library.redo()?.expect("the removal is there to do again");
+
     assert_eq!(again.edit, Edit::Removed);
     assert_eq!(again.playlist, evening);
     assert_eq!(again.name, "Evening");
@@ -9842,14 +10873,17 @@ fn walking_forward_crosses_every_step_walking_back_did() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav")])?;
     library.rename_playlist(evening, "Morning")?;
     library.sort_playlist(evening, RowOrder::File, Direction::Ascending)?;
 
     let mut walked = Vec::new();
+
     while let Some(put_back) = library.undo()? {
         walked.push(put_back.edit);
     }
+
     assert_eq!(
         walked,
         vec![Edit::Ordered, Edit::Renamed, Edit::Added, Edit::Started]
@@ -9857,9 +10891,11 @@ fn walking_forward_crosses_every_step_walking_back_did() -> Result<()> {
     assert!(library.playlist(evening)?.is_none());
 
     let mut again = Vec::new();
+
     while let Some(done) = library.redo()? {
         again.push(done.edit);
     }
+
     assert_eq!(
         again,
         vec![Edit::Started, Edit::Added, Edit::Renamed, Edit::Ordered],
@@ -9867,6 +10903,7 @@ fn walking_forward_crosses_every_step_walking_back_did() -> Result<()> {
     );
 
     let found = library.playlist(evening)?.expect("the playlist is back");
+
     assert_eq!(
         found.name, "Morning",
         "the name the edits left did not come back"
@@ -9880,12 +10917,15 @@ fn an_edit_forgets_what_was_walked_back() -> Result<()> {
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav")])?;
     library.remove_from_playlist(evening, Span::one(0))?;
     library.undo()?.expect("the removal is there to put back");
 
     assert!(library.redoable().is_some());
+
     library.rename_playlist(evening, "Morning")?;
+
     assert_eq!(
         library.redoable(),
         None,
@@ -9901,6 +10941,7 @@ fn an_edit_that_moved_nothing_forgets_nothing_that_was_walked_back() -> Result<(
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("a.wav"), file("b.wav")])?;
     library.undo()?.expect("the addition is there to put back");
 
@@ -9910,7 +10951,9 @@ fn an_edit_that_moved_nothing_forgets_nothing_that_was_walked_back() -> Result<(
         Some(Edit::Added),
         "an edit that wrote nothing took away what was there to put back"
     );
+
     library.redo()?.expect("the addition is there to do again");
+
     assert_eq!(held(&library, evening)?, vec!["a", "b"]);
     Ok(())
 }
@@ -9920,6 +10963,7 @@ fn a_discarded_playlist_goes_again_under_the_id_it_came_back_with() -> Result<()
     let (tree, library) = sortable_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let evening = library.create_playlist("Evening")?;
+
     library.add_to_playlist(evening, &[file("c.wav"), file("a.wav")])?;
     library.keep_playlist_in_order(
         evening,
@@ -9928,13 +10972,17 @@ fn a_discarded_playlist_goes_again_under_the_id_it_came_back_with() -> Result<()
             reading: Direction::Ascending,
         }),
     )?;
+
     let standing = library.playlist(evening)?.expect("the playlist is there");
+
     assert!(library.remove_playlist(evening)?);
 
     library.undo()?.expect("the discard is there to put back");
+
     assert_eq!(library.playlist(evening)?, Some(standing));
 
     let again = library.redo()?.expect("the discard is there to do again");
+
     assert_eq!(again.edit, Edit::Discarded);
     assert_eq!(again.name, "Evening");
     assert!(
@@ -9967,10 +11015,12 @@ fn a_saved_query_is_revised_again_after_the_revision_was_walked_back() -> Result
             limit: None,
         },
     )?;
+
     library.revise_query(floyd, "Barrett", &revised)?;
     library.undo()?.expect("the revision is there to put back");
 
     let again = library.redo()?.expect("the revision is there to do again");
+
     assert_eq!(again.edit, Edit::Revised);
     assert_eq!(
         again.name, "Barrett",
@@ -9978,6 +11028,7 @@ fn a_saved_query_is_revised_again_after_the_revision_was_walked_back() -> Result
     );
 
     let found = library.playlist(floyd)?.expect("the query is still there");
+
     assert_eq!(found.name, "Barrett");
     assert_eq!(found.query, Some(revised));
     Ok(())
@@ -10000,10 +11051,12 @@ FILE "Meddle.wav" WAVE
 
 fn scanned_sheet() -> (Tree, Library) {
     let tree = Tree::new();
+
     tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
     tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of one file a sheet cuts");
     (tree, library)
 }
@@ -10022,6 +11075,7 @@ fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<
     );
 
     let held = MediaLocation::local(tree.path().join("Meddle.wav"));
+
     for row in &rows {
         assert_eq!(row.location, held, "every row names the one file");
         assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
@@ -10031,6 +11085,7 @@ fn a_file_a_cue_sheet_cuts_is_scanned_as_the_tracks_the_sheet_names() -> Result<
         .iter()
         .map(|row| row.span.map(FrameSpan::start))
         .collect();
+
     assert_eq!(
         spans,
         vec![
@@ -10052,8 +11107,11 @@ fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Res
         .into_iter()
         .find(|row| row.title == "Echoes")
         .expect("the third cut");
+
     library.track_played(&held, echoes.span, Duration::ZERO)?;
+
     let playlist = library.create_playlist("Side Two")?;
+
     library.add_to_playlist(playlist, &[Cut::of(&echoes)])?;
 
     tree.write(
@@ -10069,13 +11127,16 @@ fn a_cue_track_whose_index_moves_keeps_its_row_and_what_was_heard_of_it() -> Res
         .into_iter()
         .find(|row| row.title == "Echoes")
         .expect("the third cut, still there");
+
     assert_eq!(moved.id, echoes.id, "the cut became a row of its own");
     assert_eq!(moved.plays, 1);
     assert_eq!(
         moved.span.map(FrameSpan::start),
         Some(Frames(44_100 / 75 * 45))
     );
+
     let entries = library.playlist_entries(playlist, None)?;
+
     assert!(
         entries[0].track.is_some(),
         "the playlist row lost the cut it named"
@@ -10102,9 +11163,11 @@ FILE "Meddle.wav" WAVE
 #[test]
 fn two_sheets_in_one_folder_naming_one_file_cut_it_once_by_the_first_in_name_order() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
     tree.write("A.cue", MEDDLE_SHEET.as_bytes());
     tree.write("B.cue", MEDDLE_TWO_TRACK_SHEET.as_bytes());
+
     let library = Library::open_in_memory()?;
 
     for _ in 0..3 {
@@ -10115,6 +11178,7 @@ fn two_sheets_in_one_folder_naming_one_file_cut_it_once_by_the_first_in_name_ord
             .into_iter()
             .map(|row| row.title)
             .collect();
+
         assert_eq!(
             titles,
             ["One of These Days", "A Pillow of Winds", "Echoes"],
@@ -10130,12 +11194,15 @@ const GAPS_APPENDED_SHEET: &str = "PERFORMER \"AURORA\"\r\nTITLE \"The Gods We C
 fn a_sheet_that_ends_each_file_with_the_next_tracks_gap_is_scanned_as_one_whole_row_a_file()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("13.wav", &Wav::new().frames(44_100).build());
     tree.write("14.wav", &Wav::new().frames(44_100).build());
     tree.write("The Gods We Can Touch.cue", GAPS_APPENDED_SHEET.as_bytes());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let rows = library.tracks(&TrackQuery::default())?;
 
     let held: Vec<_> = rows
@@ -10149,6 +11216,7 @@ fn a_sheet_that_ends_each_file_with_the_next_tracks_gap_is_scanned_as_one_whole_
             )
         })
         .collect();
+
     assert_eq!(
         held,
         vec![
@@ -10174,11 +11242,13 @@ const TWO_DISC_SHEET: &str = "PERFORMER \"Pink Floyd\"\nTITLE \"The Wall\"\nFILE
 
 fn scanned_two_discs() -> (Tree, Library) {
     let tree = Tree::new();
+
     tree.write("CD1/wall.wav", &Wav::new().frames(44_100).build());
     tree.write("CD2/wall.wav", &Wav::new().frames(44_100).build());
     tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of two files a sheet above them cuts");
     (tree, library)
 }
@@ -10198,7 +11268,9 @@ fn a_sheet_naming_files_in_folders_below_it_cuts_them_there() -> Result<()> {
             )
         })
         .collect();
+
     held.sort();
+
     assert_eq!(
         held,
         vec![
@@ -10222,6 +11294,7 @@ fn a_sheet_naming_files_in_folders_below_it_cuts_them_there() -> Result<()> {
     );
 
     let again = scan(&library, &options(&tree))?;
+
     assert_eq!(
         (again.added, again.updated, again.removed),
         (0, 0, 0),
@@ -10241,6 +11314,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it() -> Result<(
         .collect();
 
     tree.write("The Wall.cue", b"");
+
     let stats = scan(&library, &options(&tree))?;
     let during: Vec<_> = library
         .tracks(&TrackQuery::default())?
@@ -10259,6 +11333,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_in_folders_below_it() -> Result<(
 
     tree.write("The Wall.cue", TWO_DISC_SHEET.as_bytes());
     scan(&library, &options(&tree))?;
+
     let after: Vec<_> = library
         .tracks(&TrackQuery::default())?
         .iter()
@@ -10275,9 +11350,13 @@ fn a_file_a_sheet_above_it_cuts_is_left_where_it_stands() -> Result<()> {
 
     let summary = previewed(&library)?;
     let root = filed_under(&tree);
+
     assert!(summary.plan.moves.is_empty(), "{:?}", summary.plan.moves);
+
     let mut refused: Vec<Refused> = summary.plan.refused.clone();
+
     refused.sort_by(|one, other| one.from.cmp(&other.from));
+
     assert_eq!(
         refused,
         ["CD1/wall.wav", "CD2/wall.wav"]
@@ -10296,6 +11375,7 @@ fn a_file_a_sheet_above_it_cuts_is_left_where_it_stands() -> Result<()> {
 #[test]
 fn a_sheet_naming_its_file_by_another_case_extension_or_folder_still_cuts_it() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("album.wav", &Wav::new().frames(88_200).build());
     tree.write("other.wav", &Wav::new().frames(44_100).build());
     tree.write(
@@ -10308,7 +11388,9 @@ fn a_sheet_naming_its_file_by_another_case_extension_or_folder_still_cuts_it() -
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let rows = library.tracks(&TrackQuery::default())?;
 
     let mut held: Vec<_> = rows
@@ -10320,7 +11402,9 @@ fn a_sheet_naming_its_file_by_another_case_extension_or_folder_still_cuts_it() -
             )
         })
         .collect();
+
     held.sort();
+
     assert_eq!(
         held,
         vec![
@@ -10342,10 +11426,12 @@ fn a_play_counted_against_one_cue_row_is_not_counted_against_its_neighbours() ->
     let counted = library
         .track_played(&second.location, second.span, Duration::ZERO)?
         .expect("the row that was heard");
+
     assert_eq!(the_row_of(&counted).plays, 1);
     assert_eq!(the_row_of(&counted).id, second.id);
 
     let after = library.tracks(&TrackQuery::default())?;
+
     assert_eq!(
         after.iter().map(|row| row.plays).collect::<Vec<_>>(),
         vec![0, 1, 0],
@@ -10359,6 +11445,7 @@ fn reading_every_file_again_keeps_each_rows_id_plays_and_favourite() -> Result<(
     let (tree, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;
     let second = &rows[1];
+
     library.track_played(&second.location, second.span, Duration::ZERO)?;
     library.favour(Favoured::Track(second.id), true)?;
 
@@ -10369,9 +11456,11 @@ fn reading_every_file_again_keeps_each_rows_id_plays_and_favourite() -> Result<(
             ..options(&tree)
         },
     )?;
+
     assert_eq!(read.updated, 3, "a row was skipped rather than read");
 
     let after = library.tracks(&TrackQuery::default())?;
+
     assert_eq!(
         after.iter().map(|row| row.id).collect::<Vec<_>>(),
         rows.iter().map(|row| row.id).collect::<Vec<_>>()
@@ -10389,6 +11478,7 @@ fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> R
     let (tree, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;
     let removed = &rows[1];
+
     library.favour(Favoured::Track(removed.id), true)?;
 
     assert!(library.hide_track(removed.id, true)?);
@@ -10412,6 +11502,7 @@ fn removing_a_track_from_the_library_keeps_its_file_and_survives_a_rescan() -> R
             ..options(&tree)
         },
     )?;
+
     assert!(tree.path().join("Meddle.wav").exists());
     assert!(library.track(removed.id)?.is_some());
     assert_eq!(library.tracks(&TrackQuery::default())?.len(), 2);
@@ -10423,12 +11514,14 @@ fn a_hidden_track_is_found_by_asking_for_it_and_shown_again() -> Result<()> {
     let (_, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;
     let hidden = &rows[1];
+
     library.hide_track(hidden.id, true)?;
 
     let asked = library.tracks(&TrackQuery {
         text: Some("is:hidden".to_owned()),
         ..TrackQuery::default()
     })?;
+
     assert_eq!(
         asked
             .iter()
@@ -10464,8 +11557,11 @@ fn the_hidden_tracks_are_listed_by_title_counted_past_the_list_and_shown_again_a
 -> Result<()> {
     let (_, library) = scanned_sheet();
     let rows = library.tracks(&TrackQuery::default())?;
+
     assert_eq!(library.hidden_tracks(10)?, HiddenTracks::default());
+
     let mut hidden: Vec<&Track> = rows.iter().take(2).collect();
+
     for track in &hidden {
         library.hide_track(track.id, true)?;
     }
@@ -10502,6 +11598,7 @@ fn a_cue_rows_neighbours_are_told_apart_by_the_span_rather_than_the_path() -> Re
         let found = library
             .track_at(row.location.as_path().expect("a local row"), row.span)?
             .expect("a row read back by path and span");
+
         assert_eq!(
             found.id, row.id,
             "a row was read back as one of its siblings"
@@ -10514,9 +11611,11 @@ fn a_cue_rows_neighbours_are_told_apart_by_the_span_rather_than_the_path() -> Re
 #[test]
 fn taking_the_sheet_away_leaves_the_file_as_the_one_track_it_is() -> Result<()> {
     let (tree, library) = scanned_sheet();
+
     fs::remove_file(tree.path().join("Meddle.cue")).expect("the sheet goes away");
 
     scan(&library, &options(&tree))?;
+
     let rows = library.tracks(&TrackQuery::default())?;
 
     assert_eq!(
@@ -10537,9 +11636,11 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_until_it_reads_again() -> Result<
         .into_iter()
         .find(|row| row.title == "Echoes")
         .expect("the third cut");
+
     library.track_played(&held, echoes.span, Duration::ZERO)?;
 
     tree.write("Meddle.cue", b"");
+
     let stats = scan(&library, &options(&tree))?;
     let rows = library.tracks(&TrackQuery::default())?;
 
@@ -10555,6 +11656,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_until_it_reads_again() -> Result<
 
     tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
     scan(&library, &options(&tree))?;
+
     let again = library.tracks(&TrackQuery::default())?;
 
     assert_eq!(again.len(), 3);
@@ -10569,6 +11671,7 @@ fn a_sheet_read_as_empty_keeps_the_rows_it_cut_until_it_reads_again() -> Result<
 fn aged(path: &Path, by: Duration) {
     let held = fs::metadata(path).expect("the file is there");
     let when = held.modified().expect("an mtime the platform keeps") - by;
+
     fs::File::options()
         .write(true)
         .open(path)
@@ -10580,12 +11683,17 @@ fn aged(path: &Path, by: Duration) {
 #[test]
 fn a_sheet_older_than_the_file_it_cut_is_still_missed_once_it_has_gone() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+
     let sheet = tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+
     aged(&sheet, A_DAY);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library.tracks(&TrackQuery::default())?.len(),
         3,
@@ -10593,6 +11701,7 @@ fn a_sheet_older_than_the_file_it_cut_is_still_missed_once_it_has_gone() -> Resu
     );
 
     fs::remove_file(&sheet).expect("the sheet goes away");
+
     let stats = scan(&library, &options(&tree))?;
     let rows = library.tracks(&TrackQuery::default())?;
 
@@ -10616,6 +11725,7 @@ fn a_sheet_rewritten_under_a_file_that_has_not_moved_cuts_it_again() -> Result<(
             .map(|row| row.title)
             .collect())
     };
+
     assert_eq!(titles(&library)?.len(), 3);
 
     tree.write(
@@ -10667,9 +11777,11 @@ fn a_cue_row_put_in_a_playlist_is_the_cut_it_was_rather_than_the_file_it_came_ou
     let span = cut.span.expect("a cue row is a cut of its file");
 
     let id = library.create_playlist("Meddle")?;
+
     library.add_to_playlist(id, &[Cut::of(&cut)])?;
 
     let entries = library.playlist_entries(id, None)?;
+
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].span(),
@@ -10692,9 +11804,11 @@ fn the_rows_a_sheet_cut_are_a_playlist_of_their_own_lengths() -> Result<()> {
     let cuts: Vec<Cut> = rows.iter().map(Cut::of).collect();
 
     let id = library.create_playlist("Meddle")?;
+
     library.add_to_playlist(id, &cuts)?;
 
     let entries = library.playlist_entries(id, None)?;
+
     assert_eq!(
         entries
             .iter()
@@ -10729,6 +11843,7 @@ fn a_search_narrowing_a_playlist_of_one_files_cuts_matches_the_cut_it_names_alon
     let rows = library.tracks(&TrackQuery::default())?;
     let cuts: Vec<Cut> = rows.iter().map(Cut::of).collect();
     let id = library.create_playlist("Meddle")?;
+
     library.add_to_playlist(id, &cuts)?;
 
     let echoes = rows
@@ -10736,6 +11851,7 @@ fn a_search_narrowing_a_playlist_of_one_files_cuts_matches_the_cut_it_names_alon
         .find(|track| track.title == "Echoes")
         .expect("a row titled Echoes");
     let shown = library.playlist_entries(id, Some("echoes"))?;
+
     assert_eq!(
         shown.len(),
         1,
@@ -10744,7 +11860,9 @@ fn a_search_narrowing_a_playlist_of_one_files_cuts_matches_the_cut_it_names_alon
     assert_eq!(shown[0].cut, Cut::of(echoes));
 
     assert_eq!(library.remove_matching(id, "echoes")?, 1);
+
     let left = library.playlist_entries(id, None)?;
+
     assert_eq!(left.len(), 2);
     assert!(left.iter().all(|entry| entry.cut != Cut::of(echoes)));
     Ok(())
@@ -10760,6 +11878,7 @@ fn two_rows_one_sheet_cut_out_of_a_file_are_not_doubles_of_each_other() -> Resul
         .collect();
 
     let id = library.create_playlist("Meddle")?;
+
     library.add_to_playlist(id, &cuts)?;
 
     assert_eq!(
@@ -10770,6 +11889,7 @@ fn two_rows_one_sheet_cut_out_of_a_file_are_not_doubles_of_each_other() -> Resul
     assert_eq!(library.playlist_entries(id, None)?.len(), 3);
 
     library.add_to_playlist(id, &cuts[..1])?;
+
     assert_eq!(
         library.fold_doubles(id)?,
         1,
@@ -10821,6 +11941,7 @@ fn flac_embedding(tree: &Tree, name: &str, sheet: &str) -> Option<PathBuf> {
     let held = Tree::new();
     let source = held.write("tone.wav", &Wav::new().frames(88_200).build());
     let target = tree.path().join(name);
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -10860,10 +11981,12 @@ fn a_file_carrying_its_own_cue_sheet_is_scanned_as_the_tracks_that_sheet_names()
     );
 
     let held = MediaLocation::local(&path);
+
     for row in &rows {
         assert_eq!(row.location, held, "every row names the one file");
         assert_eq!(row.artist.as_deref(), Some("Pink Floyd"));
     }
+
     assert_eq!(
         rows.iter().map(|row| row.span).collect::<Vec<_>>(),
         vec![
@@ -10882,6 +12005,7 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
         eprintln!("skipped: no ffmpeg to build a chaptered book");
         return Ok(());
     }
+
     let tree = Tree::new();
     let held = Tree::new();
     let source = held.write("tone.wav", &Wav::new().frames(88_200).build());
@@ -10892,6 +12016,7 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
 [CHAPTER]\nTIMEBASE=1/1000\nSTART=1200\nEND=2000\ntitle=Roast Mutton\n",
     );
     let path = tree.path().join("The Hobbit.m4b");
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -10911,13 +12036,16 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+
     if !encoded.is_ok_and(|status| status.success()) {
         eprintln!("skipped: ffmpeg would not write a chaptered book");
         return Ok(());
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let rows = library.tracks(&TrackQuery::default())?;
 
     assert_eq!(
@@ -10930,7 +12058,9 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
         ],
         "the book was not cut where its chapters start"
     );
+
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(
         albums
             .iter()
@@ -10944,13 +12074,16 @@ fn a_book_carrying_chapters_is_scanned_as_a_row_a_chapter() -> Result<()> {
 #[test]
 fn a_sheet_beside_the_file_still_cuts_it_where_the_file_embeds_one_too() -> Result<()> {
     let tree = Tree::new();
+
     if flac_embedding(&tree, "Meddle.flac", EMBEDDED_SHEET).is_none() {
         return Ok(());
     }
     tree.write("Meddle.cue", SHEET_BESIDE_IT.as_bytes());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let rows = library.tracks(&TrackQuery::default())?;
 
     assert_eq!(
@@ -10966,12 +12099,15 @@ fn a_sheet_beside_the_file_still_cuts_it_where_the_file_embeds_one_too() -> Resu
 #[test]
 fn a_rescan_of_a_file_that_embeds_its_own_sheet_changes_nothing() -> Result<()> {
     let tree = Tree::new();
+
     if flac_embedding(&tree, "Meddle.flac", EMBEDDED_SHEET).is_none() {
         return Ok(());
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let before = library.tracks(&TrackQuery::default())?;
 
     let stats = scan(&library, &options(&tree))?;
@@ -10999,6 +12135,7 @@ fn mbid(text: &str) -> Mbid {
 
 fn only_album(library: &Library) -> Result<Album> {
     let mut albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1, "one album was expected, got {albums:?}");
     Ok(albums.remove(0))
 }
@@ -11094,6 +12231,7 @@ fn orbiters() -> ArtistProfile {
 
 fn orbits_tree() -> Tree {
     let tree = Tree::new();
+
     for (file, title, number) in [
         ("1.wav", "One of These Days", Some("1")),
         ("2.wav", "A Pillow of Winds", Some("2")),
@@ -11103,6 +12241,7 @@ fn orbits_tree() -> Tree {
             .text(TITLE, title)
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits");
+
         if let Some(number) = number {
             track = track.text(TRACK, number);
         }
@@ -11115,6 +12254,7 @@ fn orbits_tree() -> Tree {
 fn scanned_orbits() -> Result<(Tree, Library)> {
     let tree = orbits_tree();
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     Ok((tree, library))
 }
@@ -11123,6 +12263,7 @@ fn scanned_orbits_on_disk() -> Result<(Tree, Library, PathBuf)> {
     let tree = orbits_tree();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     Ok((tree, library, database))
 }
@@ -11183,12 +12324,14 @@ fn answer_track(database: &Path, file: &Path, title: &str, artist: &str, release
             rusqlite::params![title, artist, release, ASKED, ANSWERED, settled(file)],
         )
         .expect("the row the enrichment answers for is writable");
+
     assert_eq!(written, 1, "one track row was expected to be answered for");
 }
 
 #[test]
 fn a_scan_writes_the_release_and_artist_ids_the_tags_carry() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "dawn.wav",
         &Wav::new()
@@ -11220,6 +12363,7 @@ fn a_scan_writes_the_release_and_artist_ids_the_tags_carry() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
@@ -11227,12 +12371,15 @@ fn a_scan_writes_the_release_and_artist_ids_the_tags_carry() -> Result<()> {
         .iter()
         .find(|album| album.title == "Orbits")
         .expect("the release was grouped");
+
     assert_eq!(orbits.mbid, Some(mbid(RELEASE)));
     assert_eq!(orbits.missing, 0);
+
     let hours = albums
         .iter()
         .find(|album| album.title == "Hours")
         .expect("the compilation was grouped");
+
     assert_eq!(hours.mbid, None);
 
     assert_eq!(
@@ -11270,6 +12417,7 @@ fn a_scan_writes_the_release_and_artist_ids_the_tags_carry() -> Result<()> {
 #[test]
 fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "1.wav",
         &Wav::new()
@@ -11307,6 +12455,7 @@ fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let albums = library.albums(&AlbumQuery::default())?;
@@ -11315,6 +12464,7 @@ fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
         .find(|album| album.title == "Orbits")
         .expect("the release was grouped");
     let held = library.release_of(orbits.id)?.expect("the album is known");
+
     assert_eq!(held.barcode.as_deref(), Some("724382920021"));
     assert_eq!(
         held.catalog_number.as_deref(),
@@ -11330,6 +12480,7 @@ fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
     let asked = library
         .album_to_ask(orbits.id)?
         .expect("the album is known");
+
     assert_eq!(asked.track_count, 2);
     assert_eq!(asked.tagged_tracks, Some(12));
     assert_eq!(asked.catalog_number.as_deref(), Some("SHVL 795"));
@@ -11341,6 +12492,7 @@ fn a_scan_stores_what_the_tags_declare_about_the_release() -> Result<()> {
         .find(|album| album.title == "Hours")
         .expect("the compilation was grouped");
     let asked = library.album_to_ask(hours.id)?.expect("the album is known");
+
     assert_eq!(asked.tagged_tracks, None);
     assert_eq!(asked.catalog_number, None);
     assert_eq!(asked.owner_mbid, None);
@@ -11359,14 +12511,19 @@ fn a_rescan_keeps_a_barcode_the_file_no_longer_carries() -> Result<()> {
             .text(TITLE, "One of These Days")
             .text(ARTIST, "The Orbiters")
             .text(ALBUM, "Orbits");
+
         if let Some(barcode) = barcode {
             track = track.described(BARCODE, barcode);
         }
         track.build()
     };
+
     tree.write("1.wav", &tagged(Some("724382920021")));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
     let barcode = |library: &Library| -> Result<Option<String>> {
         Ok(library
@@ -11374,9 +12531,11 @@ fn a_rescan_keeps_a_barcode_the_file_no_longer_carries() -> Result<()> {
             .expect("the album is known")
             .barcode)
     };
+
     assert_eq!(barcode(&library)?.as_deref(), Some("724382920021"));
 
     tree.write("1.wav", &tagged(None));
+
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
     assert_eq!(only_album(&library)?.id, album.id);
     assert_eq!(
@@ -11386,6 +12545,7 @@ fn a_rescan_keeps_a_barcode_the_file_no_longer_carries() -> Result<()> {
     );
 
     tree.write("1.wav", &tagged(Some("5099902894027")));
+
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
     assert_eq!(
         barcode(&library)?.as_deref(),
@@ -11398,6 +12558,7 @@ fn a_rescan_keeps_a_barcode_the_file_no_longer_carries() -> Result<()> {
 #[test]
 fn an_artist_is_found_by_the_fold_of_a_credit_name_however_it_is_spelled() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "blood.wav",
         &Wav::new()
@@ -11408,9 +12569,11 @@ fn an_artist_is_found_by_the_fold_of_a_credit_name_however_it_is_spelled() -> Re
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let billed = artist_named(&library, "Marcin Przybyłowicz")?;
+
     assert_eq!(
         library.artist_named("Marcin Przybyłowicz")?,
         Some(billed.id),
@@ -11434,6 +12597,7 @@ fn an_artist_is_found_by_the_fold_of_a_credit_name_however_it_is_spelled() -> Re
 fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let album = only_album(&library)?;
+
     assert!(
         library
             .albums_to_ask(WAITED, false)?
@@ -11456,8 +12620,11 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
             )],
         ),
     )?;
+
     assert_eq!(library.rematch(album.id)?, 3);
+
     let art = png(256);
+
     assert!(library.land_archive_cover(
         album.id,
         &CoverArt {
@@ -11488,11 +12655,13 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
 
     let before = library.release_of(album.id)?.expect("the album is known");
     let rows_before = library.release_tracks(album.id)?;
+
     assert_eq!(before.cover_source, CoverSource::Archive);
     assert_eq!(before.links.len(), 1);
     assert!(before.asked.is_some() && before.answered.is_some());
 
     let pillow = tree.path().join("2.wav");
+
     answer_track(
         &database,
         &pillow,
@@ -11511,10 +12680,13 @@ fn a_rescan_leaves_every_enrichment_column_where_it_stood() -> Result<()> {
             .text(TRACK, "2")
             .build(),
     );
+
     let stats = scan(&library, &options(&tree))?;
+
     assert_eq!(stats.updated, 1);
 
     let after = only_album(&library)?;
+
     assert_eq!(after.id, album.id);
     assert_eq!(after.mbid, Some(mbid(RELEASE)));
     assert_eq!(after.year, Some(1998));
@@ -11550,9 +12722,11 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
         .text(TITLE, "one of these days")
         .text(ARTIST, "the orbiters")
         .build();
+
     let file = tree.write("1.wav", &tagged);
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     answer_track(
@@ -11564,6 +12738,7 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
     );
 
     tree.write("1.wav", &tagged);
+
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
     assert_eq!(
         stored(&database, &file),
@@ -11586,6 +12761,7 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
             .text(ARTIST, "the orbiters")
             .build(),
     );
+
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
     assert_eq!(
         stored(&database, &file),
@@ -11618,9 +12794,11 @@ fn an_isrc_tag_is_stored_in_the_one_spelling_a_recording_code_has() -> Result<()
     let nonsense = tree.write("3.wav", &Wav::new().text(ISRC, "not a code").build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let held = stored(&database, &named);
+
     assert_eq!(held.isrc.as_deref(), Some("GBAYE7100195"));
     assert_eq!(
         stored(&database, &nonsense).isrc,
@@ -11631,6 +12809,7 @@ fn an_isrc_tag_is_stored_in_the_one_spelling_a_recording_code_has() -> Result<()
     assert_eq!(held.tagged_artist.as_deref(), Some("The Orbiters"));
 
     let untagged = stored(&database, &bare);
+
     assert_eq!(untagged.isrc, None);
     assert_eq!(untagged.title, "2");
     assert_eq!(
@@ -11655,13 +12834,16 @@ fn a_stem_is_never_read_over_a_tag_the_file_already_carried() -> Result<()> {
     let bare = tree.write("01 - Ada - Zenith.wav", &Wav::new().build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let held = stored(&database, &tagged);
+
     assert_eq!(held.tagged_title.as_deref(), Some("Blue in Green"));
     assert_eq!(held.tagged_artist.as_deref(), Some("Bill Evans"));
 
     let named = stored(&database, &bare);
+
     assert_eq!(named.title, "Zenith");
     assert_eq!(
         named.tagged_title.as_deref(),
@@ -11677,6 +12859,7 @@ fn a_stem_is_never_read_over_a_tag_the_file_already_carried() -> Result<()> {
             .find(|track| track.title == title)
             .and_then(|track| track.track_number)
     };
+
     assert_eq!(
         numbered("Blue in Green"),
         Some(9),
@@ -11700,13 +12883,16 @@ fn an_artist_is_taken_from_a_stem_only_where_the_title_it_parsed_is_the_title_ta
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let taken = stored(&database, &agreeing);
+
     assert_eq!(taken.tagged_title.as_deref(), Some("So What"));
     assert_eq!(taken.tagged_artist.as_deref(), Some("Miles Davis"));
 
     let refused = stored(&database, &disagreeing);
+
     assert_eq!(refused.tagged_title.as_deref(), Some("So What"));
     assert_eq!(
         refused.tagged_artist, None,
@@ -11719,6 +12905,7 @@ fn an_artist_is_taken_from_a_stem_only_where_the_title_it_parsed_is_the_title_ta
 fn a_file_cover_found_on_a_rescan_replaces_one_the_archive_gave() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     assert!(library.land_archive_cover(
         album.id,
         &CoverArt {
@@ -11738,6 +12925,7 @@ fn a_file_cover_found_on_a_rescan_replaces_one_the_archive_gave() -> Result<()> 
     );
 
     let art = png(512);
+
     tree.write(
         "3.wav",
         &Wav::new()
@@ -11769,6 +12957,7 @@ fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_res
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -11781,6 +12970,7 @@ fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_res
             Vec::new(),
         ),
     )?;
+
     assert_eq!(library.rematch(album.id)?, 3);
 
     let by_title: Vec<(String, Option<String>)> = library
@@ -11796,6 +12986,7 @@ fn release_rows_are_matched_by_recording_id_then_title_then_position_and_the_res
             Ok((row.title, matched))
         })
         .collect::<Result<_>>()?;
+
     assert_eq!(
         by_title,
         vec![
@@ -11820,6 +13011,7 @@ fn a_pressing_in_another_order_pairs_each_row_with_the_song_of_its_title() -> Re
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let album = only_album(&library)?;
     let mut swapped = release_row(1, "A Pillow of Winds", Vec::new());
+
     swapped.recording = Some(mbid(RECORDING));
     library.land_release(
         album.id,
@@ -11841,12 +13033,14 @@ fn a_pressing_in_another_order_pairs_each_row_with_the_song_of_its_title() -> Re
             .transpose()?
             .flatten()
             .expect("every row has its song");
+
         assert_eq!(
             entitled(&paired.title),
             entitled(&row.title),
             "a row was paired by its place with its neighbour"
         );
     }
+
     assert_eq!(
         recorded(&database, &tree.path().join("2.wav")).as_deref(),
         Some(RECORDING),
@@ -11864,6 +13058,7 @@ fn entitled(title: &str) -> String {
 fn every_link_a_release_and_its_recordings_carry_is_kept_with_its_provider() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -11893,15 +13088,18 @@ fn every_link_a_release_and_its_recordings_carry_is_kept_with_its_provider() -> 
     )?;
 
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(release.mbid, Some(mbid(RELEASE)));
     assert_eq!(release.group, Some(mbid(RELEASE_GROUP)));
     assert_eq!(release.label.as_deref(), Some("Harvest"));
     assert_eq!(release.barcode.as_deref(), Some("724382920021"));
+
     let providers: Vec<(Relation, Service)> = release
         .links
         .iter()
         .map(|link| (link.relation, link.service))
         .collect();
+
     assert_eq!(
         providers,
         vec![
@@ -11912,8 +13110,11 @@ fn every_link_a_release_and_its_recordings_carry_is_kept_with_its_provider() -> 
     );
 
     let rows = library.release_tracks(album.id)?;
+
     assert_eq!(rows.len(), 1);
+
     let row = &rows[0];
+
     assert_eq!(row.length, Some(Duration::from_secs(1)));
     assert_eq!(
         row.links,
@@ -11937,6 +13138,7 @@ fn every_link_a_release_and_its_recordings_carry_is_kept_with_its_provider() -> 
 fn an_artist_profile_genres_links_and_portrait_are_written_and_read_back_whole() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert!(library.artists_to_ask(WAITED, false)?.contains(&artist.id));
     assert_eq!(
         library.artist_detail(artist.id)?.map(|held| held.mbid),
@@ -11944,12 +13146,16 @@ fn an_artist_profile_genres_links_and_portrait_are_written_and_read_back_whole()
     );
 
     let profile = orbiters();
+
     assert_eq!(
         resonate_library::portrait_urls(&profile.links).collect::<Vec<&str>>(),
         vec![ORBITERS_PICTURE]
     );
+
     library.land_artist(artist.id, &profile)?;
+
     let portrait = png(96);
+
     assert!(library.land_portrait(
         artist.id,
         &CoverArt {
@@ -11968,6 +13174,7 @@ fn an_artist_profile_genres_links_and_portrait_are_written_and_read_back_whole()
     let detail = library
         .artist_detail(artist.id)?
         .expect("the artist is known");
+
     assert_eq!(detail.mbid, Some(profile.mbid.clone()));
     assert_eq!(detail.sort_name, profile.sort_name);
     assert_eq!(detail.kind, profile.kind);
@@ -11988,6 +13195,7 @@ fn an_artist_profile_genres_links_and_portrait_are_written_and_read_back_whole()
     );
 
     let again = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(again.mbid, Some(mbid(ORBITERS)));
     assert!(again.has_portrait);
     assert_eq!(
@@ -12000,6 +13208,7 @@ fn an_artist_profile_genres_links_and_portrait_are_written_and_read_back_whole()
     assert!(!library.artists_to_ask(WAITED, false)?.contains(&artist.id));
 
     library.write_artist_mbid(artist.id, &mbid(ADA))?;
+
     assert_eq!(
         artist_named(&library, "The Orbiters")?.mbid,
         Some(mbid(ADA))
@@ -12022,10 +13231,14 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
     }));
 
     let summary = enrich(&library, &fake, false)?;
+
     assert_eq!(summary.stats.lyrics, 2);
     assert_eq!(summary.stats.lyrics_missing, 1);
+
     let mut asked = fake.sung();
+
     asked.sort_by(|one, other| one.title.cmp(&other.title));
+
     assert_eq!(
         asked
             .iter()
@@ -12046,6 +13259,7 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
             .kept_lyrics(&orbits_file(&tree, file), None)?
             .and_then(|kept| kept.sung))
     };
+
     assert_eq!(
         kept("1.wav")?,
         Some(timed_words("[00:01.00]One of these days"))
@@ -12063,14 +13277,18 @@ fn a_lookup_fetches_every_track_its_lyrics_and_keeps_them_against_the_file() -> 
     );
 
     let again = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &again, false)?;
+
     assert!(
         again.sung().is_empty(),
         "a track kept lately was asked again"
     );
 
     let refreshed = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &refreshed, true)?;
+
     assert_eq!(refreshed.sung().len(), 3);
     assert_eq!(
         kept("1.wav")?,
@@ -12087,6 +13305,7 @@ fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettere
         lyrics: vec![("One of These Days", words("One of these days"))],
         ..Canned::default()
     }));
+
     enrich(&library, &plainly, false)?;
 
     beside(&database)
@@ -12095,6 +13314,7 @@ fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettere
             [i64::try_from((BETTERED_AFTER * 2).as_nanos()).expect("fits")],
         )
         .expect("the kept rows age");
+
     let documented = LyricText {
         lyricsfile: Some("version: '1.0'".to_owned()),
         ..timed_words("[00:01.00]One of these days")
@@ -12104,6 +13324,7 @@ fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettere
         ..Canned::default()
     }));
     let summary = enrich(&library, &better, false)?;
+
     assert_eq!(better.sung().len(), 3);
     assert_eq!(summary.stats.lyrics, 1);
     assert_eq!(
@@ -12116,8 +13337,11 @@ fn a_set_short_of_a_lyricsfile_is_asked_about_again_once_it_has_aged_and_bettere
     beside(&database)
         .execute("UPDATE lyrics_kept SET taken = 0", [])
         .expect("the kept rows age");
+
     let settled = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &settled, false)?;
+
     assert_eq!(
         settled.sung().len(),
         2,
@@ -12131,6 +13355,7 @@ fn a_lookup_told_not_to_fetch_lyrics_asks_for_none_and_one_that_cannot_reach_the
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(Canned::default()));
+
     library
         .enrich(
             Arc::clone(&fake) as Arc<dyn Reference>,
@@ -12141,17 +13366,20 @@ fn a_lookup_told_not_to_fetch_lyrics_asks_for_none_and_one_that_cannot_reach_the
             },
         )?
         .join()?;
+
     assert!(fake.sung().is_empty());
 
     let unreachable =
         Arc::new(Fake::new(Canned::default()).faulting(LookupOp::Lyrics, 0, Fault::Unreachable));
     let summary = enrich(&library, &unreachable, false)?;
+
     assert_eq!(unreachable.sung().len(), 1);
     assert_eq!(summary.stopped_by, None);
 
     let refusing =
         Arc::new(Fake::new(Canned::default()).faulting(LookupOp::Lyrics, 0, Fault::Refused));
     let summary = enrich(&library, &refusing, false)?;
+
     assert_eq!(refusing.sung().len(), 3);
     assert_eq!(summary.stats.refused, 1);
     Ok(())
@@ -12180,23 +13408,31 @@ fn a_lyrics_offset_is_held_per_row_and_goes_with_the_track() -> Result<()> {
         &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let whole = MediaLocation::local(&path);
     let cut = Some(FrameSpan::starting(Frames(44_100)));
     let ahead = LyricsAhead::ZERO.earlier().earlier().earlier();
 
     assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
+
     library.hold_lyrics_ahead(&whole, None, ahead)?;
+
     assert_eq!(library.lyrics_ahead(&whole, None)?, ahead);
     assert_eq!(library.lyrics_ahead(&whole, cut)?, LyricsAhead::ZERO);
 
     library.hold_lyrics_ahead(&whole, None, LyricsAhead::ZERO)?;
+
     assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
 
     library.hold_lyrics_ahead(&whole, None, ahead.later().later().later().later())?;
+
     assert_eq!(library.lyrics_ahead(&whole, None)?.millis(), -100);
+
     fs::remove_file(&path).expect("the file goes");
     library.forget_the_gone(std::slice::from_ref(&path))?;
+
     assert_eq!(library.lyrics_ahead(&whole, None)?, LyricsAhead::ZERO);
     Ok(())
 }
@@ -12213,6 +13449,7 @@ fn a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_trac
         &Wav::new().text(TITLE, "Echoes").text(ARTIST, "Ada").build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let song = library.track_at(&opus, None)?.expect("the song is held").id;
@@ -12237,18 +13474,21 @@ fn a_version_chosen_for_a_song_is_kept_until_forgotten_and_goes_with_either_trac
     assert_eq!(library.version_chosen_for(song)?, None);
 
     let unheld = resonate_core::TrackId::new(9_999).expect("an id");
+
     assert!(matches!(
         library.choose_version(unheld, copy),
         Err(Error::UnknownTrack(id)) if id == unheld
     ));
 
     library.choose_version(song, copy)?;
+
     assert!(library.forget_the_version_chosen(song)?);
     assert!(!library.forget_the_version_chosen(song)?);
 
     library.choose_version(song, copy)?;
     fs::remove_file(&flac).expect("the copy goes");
     library.forget_the_gone(std::slice::from_ref(&flac))?;
+
     assert_eq!(library.version_chosen_for(song)?, None);
     assert!(
         library
@@ -12277,6 +13517,7 @@ fn a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_
         &Wav::new().text(TITLE, "Time").text(ARTIST, "Ada").build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let song = library.track_at(&opus, None)?.expect("the song is held").id;
@@ -12291,6 +13532,7 @@ fn a_song_with_a_version_chosen_is_played_as_that_version_only_where_the_row_is_
     assert!(library.chosen_among(&[song, other])?.is_empty());
 
     library.choose_version(song, copy)?;
+
     let chosen = library.chosen_among(&[song, other, song])?;
 
     assert_eq!(
@@ -12334,19 +13576,24 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
     let kept = library
         .kept_lyrics(&whole, None)?
         .expect("the lyrics were kept");
+
     assert_eq!(
         kept.sung,
         Some(timed_words("[00:01.00]Overhead the albatross"))
     );
+
     let miss = library
         .kept_lyrics(&whole, cut)?
         .expect("the miss was kept");
+
     assert_eq!(miss.sung, None);
 
     assert!(!library.keep_lyrics(&whole, None, Some(&words("Overhead the albatross")))?);
+
     let held = library
         .kept_lyrics(&whole, None)?
         .expect("the lyrics were kept");
+
     assert_eq!(
         held.sung,
         Some(timed_words("[00:01.00]Overhead the albatross")),
@@ -12367,6 +13614,7 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
         lyricsfile: Some("version: '1.0'".to_owned()),
         ..timed_words("[00:01.00]Overhead the albatross")
     };
+
     assert!(library.keep_lyrics(&whole, None, Some(&documented))?);
     assert_eq!(
         library
@@ -12376,6 +13624,7 @@ fn kept_lyrics_are_keyed_by_path_and_span_and_a_miss_is_remembered() -> Result<(
     );
 
     let elsewhere = MediaLocation::new(SourceId::new("tidal")?, "55391743");
+
     assert!(matches!(
         library.kept_lyrics(&elsewhere, None),
         Err(Error::NotALocalFile { .. })
@@ -12394,14 +13643,17 @@ fn kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_al
     let first = orbits_file(&tree, "1.wav");
     let second = orbits_file(&tree, "2.wav");
     let third = orbits_file(&tree, "3.wav");
+
     for location in [&first, &second, &third] {
         library.keep_lyrics(location, None, Some(&words("Overhead the albatross")))?;
     }
+
     let refusals = |database: &Path| -> i64 {
         beside(database)
             .query_row("SELECT count(*) FROM lyrics_refused", [], |row| row.get(0))
             .expect("the refusals count")
     };
+
     for location in [&first, &second, &third] {
         beside(&database)
             .execute(
@@ -12410,11 +13662,13 @@ fn kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_al
             )
             .expect("a refusal is written");
     }
+
     let is_kept = |location: &MediaLocation| -> Result<bool> {
         Ok(library.kept_lyrics(location, None)?.is_some())
     };
 
     scan(&library, &options(&tree))?;
+
     assert!(is_kept(&first)? && is_kept(&second)? && is_kept(&third)?);
     assert_eq!(refusals(&database), 3);
 
@@ -12444,6 +13698,7 @@ fn kept_lyrics_go_with_a_file_that_goes_or_is_replaced_and_stay_with_one_left_al
 fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -12461,6 +13716,7 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
             Vec::new(),
         ),
     )?;
+
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
@@ -12468,6 +13724,7 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
         .expect("the release holds the row");
 
     let want = library.want(missing.id)?;
+
     assert_eq!(library.want(missing.id)?, want);
     assert!(matches!(
         library.want(ReleaseTrackId::MAX),
@@ -12475,6 +13732,7 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
     ));
 
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].id, want);
     assert_eq!(wants[0].release_track, missing.id);
@@ -12490,7 +13748,9 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
             .collect::<Vec<_>>(),
         vec![Service::Spotify]
     );
+
     let standing = library.wants_as_they_stand()?;
+
     assert_eq!(
         standing.iter().map(|want| want.id).collect::<Vec<_>>(),
         [want]
@@ -12505,6 +13765,7 @@ fn a_want_is_one_per_release_row_and_carries_its_links() -> Result<()> {
     assert!(library.wants()?.is_empty());
 
     let again = library.want(missing.id)?;
+
     assert_eq!(library.wants()?.len(), 1);
     assert_eq!(library.wants()?[0].id, again);
     assert!(library.remove_root(tree.path())?);
@@ -12523,6 +13784,7 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
         recording: Some(mbid(recording)),
         ..release_row(position, title, Vec::new())
     };
+
     library.land_release(
         album.id,
         &orbits(
@@ -12533,11 +13795,13 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
             Vec::new(),
         ),
     )?;
+
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
         .find(|row| row.title == "San Tropez")
         .expect("the release holds the row");
+
     library.want(missing.id)?;
 
     library.land_release(
@@ -12553,16 +13817,19 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
     )?;
 
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(
         wants[0].title, "San Tropez",
         "the want moved to whatever row now sits where its own used to"
     );
+
     let moved = library
         .release_tracks(album.id)?
         .into_iter()
         .find(|row| row.title == "San Tropez")
         .expect("the re-edited release still holds the row");
+
     assert_eq!(wants[0].release_track, moved.id);
     assert_eq!(moved.position, 3);
     Ok(())
@@ -12572,6 +13839,7 @@ fn a_want_follows_the_track_it_was_for_across_a_release_the_reference_re_edited(
 fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -12582,11 +13850,13 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
             Vec::new(),
         ),
     )?;
+
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
         .find(|row| row.title == "San Tropez")
         .expect("the release holds the row");
+
     library.want(missing.id)?;
 
     library.land_release(
@@ -12599,6 +13869,7 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
             Vec::new(),
         ),
     )?;
+
     assert_eq!(
         library.wants()?.len(),
         1,
@@ -12615,6 +13886,7 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
             Vec::new(),
         ),
     )?;
+
     assert!(
         library.wants()?.is_empty(),
         "a want for one song was carried onto another that took its seat"
@@ -12626,6 +13898,7 @@ fn a_want_follows_its_seat_only_to_the_song_it_was_for() -> Result<()> {
 fn forgetting_a_root_takes_the_release_rows_under_its_albums_with_it() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -12636,6 +13909,7 @@ fn forgetting_a_root_takes_the_release_rows_under_its_albums_with_it() -> Result
             )],
         ),
     )?;
+
     assert_eq!(library.rematch(album.id)?, 1);
     assert_eq!(library.release_tracks(album.id)?.len(), 1);
 
@@ -12792,6 +14066,7 @@ impl Fake {
     fn gated_on_the(self, op: Option<LookupOp>, at: usize) -> (Self, Receiver<()>, Sender<()>) {
         let (started, has_started) = mpsc::channel();
         let (go, may_go) = mpsc::channel();
+
         *self.gate.lock() = Some(Gate {
             op,
             at,
@@ -12816,6 +14091,7 @@ impl Fake {
     fn note(&self, called: Called) -> Result<()> {
         let op = called.op();
         let nth = self.called(op);
+
         self.calls.lock().push(called);
 
         let gate = {
@@ -12827,6 +14103,7 @@ impl Fake {
                 Some(_) | None => None,
             }
         };
+
         if let Some(gate) = gate {
             let _ = gate.started.send(());
             let _ = gate.go.recv();
@@ -12958,6 +14235,7 @@ impl Reference for Fake {
 
     fn releases_of_artist(&self, artist: &Mbid, from: u32) -> Result<ArtistPressings> {
         self.note(Called::ReleasesOfArtist(artist.clone(), from))?;
+
         let pages = self
             .canned
             .artist_pressings
@@ -12986,6 +14264,7 @@ impl Reference for Fake {
 
     fn release_groups_of(&self, artist: &Mbid, from: u32) -> Result<Discography> {
         const FIRST_READ: u32 = 1_000;
+
         self.note(Called::ReleaseGroupsOf(artist.clone()))?;
         if from > 0 {
             return Ok(Discography {
@@ -12994,6 +14273,7 @@ impl Reference for Fake {
                 read_to: from + self.canned.releases_unread,
             });
         }
+
         let releases = self
             .canned
             .artist_releases
@@ -13113,9 +14393,11 @@ impl Reference for Fake {
     fn lyrics(&self, asked: &LyricsAsked) -> Result<Option<LyricText>> {
         let nth = {
             let mut sung = self.sung.lock();
+
             sung.push(asked.clone());
             sung.len() - 1
         };
+
         self.fault(LookupOp::Lyrics, nth)?;
         Ok(self
             .canned
@@ -13155,7 +14437,9 @@ impl io::Read for Stall {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         if !self.began {
             self.began = true;
+
             let given = into.len().min(64);
+
             into[..given].fill(0);
             return Ok(given);
         }
@@ -13174,7 +14458,9 @@ impl io::Read for DiesPartWay {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         if !self.began {
             self.began = true;
+
             let given = into.len().min(64);
+
             into[..given].fill(0);
             return Ok(given);
         }
@@ -13189,7 +14475,9 @@ impl io::Read for DiesPartWay {
 impl io::Read for Trickle {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         thread::sleep(Duration::from_millis(5));
+
         let given = into.len().min(64);
+
         into[..given].fill(0);
         Ok(given)
     }
@@ -13339,6 +14627,7 @@ fn enrich(library: &Library, fake: &Arc<Fake>, refresh: bool) -> Result<EnrichSu
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
 }
@@ -13357,6 +14646,7 @@ fn write_orbits(tree: &Tree, tagged: bool) {
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
         let number = index as u32 + 1;
         let mut track = orbits_track(title, number);
+
         if tagged {
             track = track.described(MUSICBRAINZ_ALBUM, RELEASE);
         }
@@ -13494,6 +14784,7 @@ fn write_hours(tree: &Tree, picture: Option<&[u8]>) {
         .text(ALBUM, "Hours")
         .described(MUSICBRAINZ_ALBUM, HOURS)
         .described(MUSICBRAINZ_ARTIST, ADA);
+
     if let Some(picture) = picture {
         track = track.picture(picture);
     }
@@ -13529,8 +14820,11 @@ fn album_titled(library: &Library, title: &str) -> Result<Album> {
 #[test]
 fn an_album_tagged_with_a_release_id_is_asked_for_by_that_id_and_never_searched() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -13557,7 +14851,9 @@ fn an_album_tagged_with_a_release_id_is_asked_for_by_that_id_and_never_searched(
 fn a_release_the_reference_answers_fills_the_album_and_lists_every_track_it_names() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(
@@ -13591,18 +14887,24 @@ fn a_release_the_reference_answers_fills_the_album_and_lists_every_track_it_name
         1,
         "the picture the release names was not fetched beside the pass"
     );
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(album.missing, 1);
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(release.label.as_deref(), Some("Harvest"));
     assert!(release.asked.is_some() && release.answered.is_some());
     assert_eq!(release.links.len(), 1);
+
     let titles: Vec<String> = library
         .release_tracks(album.id)?
         .into_iter()
         .map(|row| row.title)
         .collect();
+
     assert_eq!(
         titles,
         vec![
@@ -13634,6 +14936,7 @@ fn write_orbits_as_two_discs(tree: &Tree) {
             let track = orbits_track(title, number)
                 .text(ALBUM, &format!("Orbits [Disc {disc}]"))
                 .described(MUSICBRAINZ_ALBUM, RELEASE);
+
             tree.write(&format!("Orbits/CD{disc}/{number}.wav"), &track.build());
         }
     }
@@ -13661,11 +14964,15 @@ fn orbits_on_two_discs() -> Release {
 fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for_each_disc()
 -> Result<()> {
     let tree = Tree::new();
+
     write_orbits_as_two_discs(&tree);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let scanned = only_album(&library)?.title;
+
     assert!(
         DISC_TITLES
             .iter()
@@ -13678,12 +14985,15 @@ fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for
         releases: vec![orbits_on_two_discs()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let album = only_album(&library)?;
+
     assert_eq!(album.title, "Orbits");
 
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(
         release.media,
         vec![
@@ -13705,6 +15015,7 @@ fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for
         .into_iter()
         .map(|row| (row.disc, row.position, row.title))
         .collect();
+
     assert_eq!(
         placed,
         vec![
@@ -13716,6 +15027,7 @@ fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for
     );
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         only_album(&library)?.title,
         "Orbits",
@@ -13728,7 +15040,9 @@ fn a_set_of_two_discs_is_billed_by_the_release_and_keeps_a_medium_of_its_own_for
 fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(
@@ -13740,17 +15054,23 @@ fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result
         )],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
 
     assert!(library.forget_the_match(album.id)?);
 
     let forgotten = only_album(&library)?;
+
     assert_eq!(forgotten.mbid, None);
     assert_eq!(forgotten.missing, 0);
     assert!(library.release_tracks(album.id)?.is_empty());
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert!(release.links.is_empty());
     assert!(
         release.asked.is_none(),
@@ -13759,6 +15079,7 @@ fn a_match_the_listener_forgets_is_taken_away_and_never_landed_again() -> Result
     assert!(library.refuses(album.id, &mbid(RELEASE))?);
 
     let again = enrich(&library, &fake, false)?;
+
     assert_eq!(again.stats.albums_rejected, 1);
     assert_eq!(again.stats.albums_unmatched, 0);
     assert_eq!(again.stats.releases, 0);
@@ -13784,7 +15105,9 @@ fn forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_trac
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     let album = only_album(&library)?;
     let track = library
         .tracks(&TrackQuery::default())?
@@ -13797,6 +15120,7 @@ fn forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_trac
         .expect("a local file")
         .to_path_buf();
     let tagged = stored(&database, &file);
+
     library.land_recording(
         track.id,
         &Recording {
@@ -13810,10 +15134,13 @@ fn forgetting_a_match_puts_back_the_names_the_files_gave_and_asks_about_the_trac
         Certainty::Exactly,
         None,
     )?;
+
     assert_eq!(stored(&database, &file).title, "Renamed By The Match");
 
     assert!(library.forget_the_match(album.id)?);
+
     let forgotten = stored(&database, &file);
+
     assert_eq!(
         Some(forgotten.title.as_str()),
         tagged.tagged_title.as_deref(),
@@ -13853,6 +15180,7 @@ fn a_near_match_credited_to_another_artist_leaves_the_track_filed_under_its_own(
     )?;
 
     let landed = library.track(track.id)?.expect("the track is held");
+
     assert_eq!(landed.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(
         landed.artist_id, own,
@@ -13865,15 +15193,20 @@ fn a_near_match_credited_to_another_artist_leaves_the_track_filed_under_its_own(
 fn forgetting_a_match_takes_away_the_recording_ids_and_codes_it_stamped() -> Result<()> {
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let mut rows = orbits_rows();
+
     rows[0].recording = Some(mbid(RECORDING));
     rows[0].isrcs = vec!["GBN9Y1100089".to_owned()];
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(rows, Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     let file = tree.path().join("1.wav");
+
     assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
     assert_eq!(
         stored(&database, &file).isrc.as_deref(),
@@ -13897,7 +15230,9 @@ fn a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took
 
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "Bonus Track", Vec::new()));
+
     let japanese = Release {
         id: mbid(THE_JAPANESE_PRESSING),
         country: Some("JP".to_owned()),
@@ -13908,12 +15243,17 @@ fn a_pressing_the_listener_chooses_is_landed_in_place_of_the_one_the_lookup_took
         releases: vec![orbits(orbits_rows(), Vec::new()), japanese],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
 
     assert!(library.take_pressing(album.id, fake.as_ref(), &mbid(THE_JAPANESE_PRESSING))?);
+
     let taken = only_album(&library)?;
+
     assert_eq!(taken.mbid, Some(mbid(THE_JAPANESE_PRESSING)));
     assert_eq!(
         taken.missing, 1,
@@ -13970,6 +15310,7 @@ fn a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_on
             on(RELEASE, "Orbits", Some("Album")),
         ],
     };
+
     let fake = Fake::new(Canned {
         recordings: vec![recording.clone()],
         releases: vec![orbits(orbits_rows(), Vec::new()), japanese],
@@ -13980,10 +15321,12 @@ fn a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_on
         .into_iter()
         .next()
         .expect("a scanned track");
+
     assert!(
         library.recordings_of(track.id, &fake)?.is_empty(),
         "a track nothing identified offered releases"
     );
+
     library.land_recording(track.id, &recording, Certainty::Nearly, None)?;
 
     let offered = library
@@ -13995,6 +15338,7 @@ fn a_held_track_is_placed_on_the_release_the_listener_chooses_rather_than_the_on
         .into_iter()
         .map(|release| release.title.as_str())
         .collect();
+
     assert_eq!(order, ["Orbits", "Orbits (Japan)"]);
 
     assert!(library.place_on(track.id, &fake, &offered, &mbid(THE_JAPANESE_PRESSING))?);
@@ -14019,7 +15363,9 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
+
     assert_eq!(
         fake.called(LookupOp::FindRelease),
         2,
@@ -14030,9 +15376,13 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
     assert_eq!(summary.stats.releases, 0);
     assert_eq!(summary.stats.refused, 0);
     assert_eq!(fake.called(LookupOp::Release), 0);
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, None);
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert!(release.asked.is_some());
     assert_eq!(release.answered, None);
 
@@ -14042,11 +15392,14 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(fake.called(LookupOp::Release), 1);
     assert_eq!(only_album(&library)?.mbid, Some(mbid(RELEASE)));
 
     let tree = Tree::new();
+
     for (file, title, artist) in [
         ("dawn.wav", "Dawn", "Ada"),
         ("noon.wav", "Noon", "Ben"),
@@ -14062,10 +15415,15 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     assert_eq!(album.artist_id, None);
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![ReleaseMatch {
             release: mbid(HOURS),
@@ -14079,7 +15437,9 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
         releases: vec![hours()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(fake.called(LookupOp::Release), 1);
     assert_eq!(only_album(&library)?.mbid, Some(mbid(HOURS)));
     Ok(())
@@ -14089,6 +15449,7 @@ fn a_search_match_is_taken_only_under_the_strict_rule_and_a_near_miss_stamps_ask
 fn an_album_naming_no_owner_is_not_taken_for_a_release_by_somebody_none_of_its_tracks_bill()
 -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, artist) in [
         ("dawn.wav", "Dawn", "Ada"),
         ("noon.wav", "Noon", "Ben"),
@@ -14104,8 +15465,11 @@ fn an_album_naming_no_owner_is_not_taken_for_a_release_by_somebody_none_of_its_t
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let hit = |artist| ReleaseMatch {
         release: mbid(HOURS),
         group: None,
@@ -14127,10 +15491,12 @@ fn an_album_naming_no_owner_is_not_taken_for_a_release_by_somebody_none_of_its_t
     }));
 
     enrich(&library, &elsewhere, false)?;
+
     assert_eq!(elsewhere.called(LookupOp::Release), 0);
     assert_eq!(only_album(&library)?.mbid, None);
 
     enrich(&library, &performed, true)?;
+
     assert_eq!(performed.called(LookupOp::Release), 1);
     assert_eq!(only_album(&library)?.mbid, Some(mbid(HOURS)));
     Ok(())
@@ -14145,6 +15511,7 @@ fn a_phrase_that_answers_nothing_is_asked_again_in_words_and_lands_under_the_str
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(
@@ -14169,6 +15536,7 @@ fn a_phrase_that_answers_nothing_is_asked_again_in_words_and_lands_under_the_str
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(
@@ -14190,6 +15558,7 @@ fn a_phrase_that_answers_nothing_is_asked_again_in_words_and_lands_under_the_str
 
 fn orbits_in_two_folders() -> Tree {
     let tree = Tree::new();
+
     for (folder, frames) in [("ripped", 4_410), ("ripped again", 44_100 * 4)] {
         for (file, title) in [
             ("1.wav", "One of These Days"),
@@ -14216,11 +15585,14 @@ fn a_rescan_writes_no_row_whose_file_it_found_unchanged_and_still_prunes_the_one
 {
     let tree = Tree::new();
     let tone = Wav::new().frames(16).build();
+
     for nth in 0..3 {
         tree.write(&format!("{nth}.wav"), &tone);
     }
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     beside(&database)
         .execute_batch(
@@ -14231,6 +15603,7 @@ fn a_rescan_writes_no_row_whose_file_it_found_unchanged_and_still_prunes_the_one
         .expect("a trigger noting every row written");
 
     fs::remove_file(tree.path().join("2.wav")).expect("the file is taken away");
+
     let summary = scan(&library, &options(&tree))?;
 
     let written: i64 = beside(&database)
@@ -14238,6 +15611,7 @@ fn a_rescan_writes_no_row_whose_file_it_found_unchanged_and_still_prunes_the_one
             row.get(0)
         })
         .expect("the notes read back");
+
     assert_eq!(summary.removed, 1);
     assert_eq!(all(&library)?.len(), 2);
     assert_eq!(written, 1, "a row whose file was unchanged was written");
@@ -14251,12 +15625,15 @@ fn a_scan_whose_write_fails_answers_the_failure_and_hands_the_tree_back() -> Res
 
     let tree = Tree::new();
     let tone = Wav::new().frames(16).build();
+
     for nth in 0..FILES {
         tree.write(&format!("{nth:04}.wav"), &tone);
     }
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
     let mut wide = options(&tree);
+
     wide.workers = NonZeroUsize::new(4).expect("four workers");
     scan(&library, &wide)?;
 
@@ -14270,12 +15647,15 @@ fn a_scan_whose_write_fails_answers_the_failure_and_hands_the_tree_back() -> Res
 
     let handle = library.scan(wide.clone())?;
     let (told, heard) = mpsc::channel();
+
     thread::spawn(move || {
         let _ = told.send(handle.join());
     });
+
     let answered = heard
         .recv_timeout(WAITS_AT_MOST)
         .expect("a scan whose write failed never finished");
+
     assert!(matches!(answered, Err(Error::Store { .. })));
 
     beside(&database)
@@ -14290,7 +15670,9 @@ fn two_albums_that_turn_out_to_share_a_release_are_gathered_into_one() -> Result
     let tree = orbits_in_two_folders();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library.albums(&AlbumQuery::default())?.len(),
         2,
@@ -14302,9 +15684,11 @@ fn two_albums_that_turn_out_to_share_a_release_are_gathered_into_one() -> Result
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(
         album.track_count, 6,
@@ -14318,7 +15702,9 @@ fn two_albums_that_turn_out_to_share_a_release_are_gathered_into_one() -> Result
     );
 
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     assert_eq!(
         album.mbid,
         Some(mbid(RELEASE)),
@@ -14334,12 +15720,17 @@ fn a_gathered_album_brings_its_favourite_and_its_vaulted_cover_with_it() -> Resu
         let tree = orbits_in_two_folders();
         let held = Tree::new();
         let (library, vault) = opened_with_a_vault(&held)?;
+
         scan(&library, &options(&tree))?;
 
         let albums = library.albums(&AlbumQuery::default())?;
+
         assert_eq!(albums.len(), 2);
+
         let chosen = albums[marked].id;
+
         library.favour(Favoured::Album(chosen), true)?;
+
         assert!(library.land_archive_cover(chosen, &a_real_picture(12, 12))?);
         assert!(library.albums(&AlbumQuery::default())?[marked].has_cover_art);
 
@@ -14348,9 +15739,11 @@ fn a_gathered_album_brings_its_favourite_and_its_vaulted_cover_with_it() -> Resu
             releases: vec![orbits(orbits_rows(), Vec::new())],
             ..Canned::default()
         }));
+
         enrich(&library, &fake, false)?;
 
         let album = only_album(&library)?;
+
         assert!(
             album.favourite.is_some(),
             "the favourite was lost gathering album {marked} into the other"
@@ -14381,6 +15774,7 @@ fn a_phrase_that_answers_a_near_miss_is_asked_again_in_words_and_lands_there() -
         )],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let searches: Vec<Called> = asked_in_order(&fake)
@@ -14392,6 +15786,7 @@ fn a_phrase_that_answers_a_near_miss_is_asked_again_in_words_and_lands_there() -
             )
         })
         .collect();
+
     assert_eq!(
         searches,
         vec![
@@ -14401,9 +15796,13 @@ fn a_phrase_that_answers_a_near_miss_is_asked_again_in_words_and_lands_there() -
         "a phrase that landed nothing was not asked again in words, or the words were \
          not enough to spare the group search"
     );
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert!(release.answered.is_some());
     Ok(())
 }
@@ -14425,13 +15824,16 @@ fn an_album_no_release_matches_is_landed_as_its_release_group_with_a_cover() -> 
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(summary.stopped_by, None);
+
     let of_the_album: Vec<Called> = asked_in_order(&fake)
         .into_iter()
         .filter(|called| called.op() != LookupOp::FindRecording)
         .collect();
+
     assert_eq!(
         of_the_album,
         vec![
@@ -14445,12 +15847,14 @@ fn an_album_no_release_matches_is_landed_as_its_release_group_with_a_cover() -> 
     assert_eq!(fake.called(LookupOp::Cover), 1);
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, None);
     assert_eq!(album.year, Some(1971));
     assert!(album.has_cover_art);
     assert!(library.release_tracks(album.id)?.is_empty());
 
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(release.mbid, None);
     assert_eq!(release.group, Some(mbid(RELEASE_GROUP)));
     assert_eq!(release.kind.as_deref(), Some("Album"));
@@ -14493,6 +15897,7 @@ fn a_group_whose_release_matches_the_album_lands_that_release_and_its_rows() -> 
         covers: vec![(mbid(RELEASE), png_art(128))],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(
@@ -14509,11 +15914,13 @@ fn a_group_whose_release_matches_the_album_lands_that_release_and_its_rows() -> 
     assert_eq!(fake.called(LookupOp::Cover), 1);
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(library.release_tracks(album.id)?.len(), 3);
     assert_eq!(album.missing, 0);
 
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(release.group, Some(mbid(RELEASE_GROUP)));
     assert_eq!(release.label.as_deref(), Some("Harvest"));
     assert_eq!(release.date.as_deref(), Some("1998-03-02"));
@@ -14542,12 +15949,14 @@ fn an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one() -> Res
         releases: vec![orbits(two_of_the_three, Vec::new())],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     let of_the_album: Vec<Called> = asked_in_order(&fake)
         .into_iter()
         .filter(|called| called.op() != LookupOp::FindRecording)
         .collect();
+
     assert_eq!(
         of_the_album,
         vec![
@@ -14561,6 +15970,7 @@ fn an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one() -> Res
     );
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(library.release_tracks(album.id)?.len(), 2);
     assert_eq!(album.missing, 0);
@@ -14568,7 +15978,9 @@ fn an_album_wider_than_every_pressing_of_its_group_lands_the_widest_one() -> Res
     assert_eq!(summary.stats.matched, 2);
 
     let landed = retagged(&library, false)?;
+
     enrich(&library, &fake, true)?;
+
     let landed_again = retagged(&library, false)?;
 
     for preview in [&landed, &landed_again] {
@@ -14624,16 +16036,20 @@ fn an_album_every_pressing_of_its_group_counts_alike_is_written_the_totals_but_n
         releases: vec![orbits(five_track_pressing_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let landed = retagged(&library, false)?;
+
     enrich(&library, &fake, true)?;
+
     let landed_again = retagged(&library, false)?;
 
     for preview in [&landed, &landed_again] {
         assert!(!preview.retagging.writes.is_empty());
         for write in &preview.retagging.writes {
             let fields = fields_of(write);
+
             for written in [TagField::TrackTotal, TagField::DiscTotal] {
                 assert!(
                     fields.contains(&written),
@@ -14650,11 +16066,13 @@ fn an_album_every_pressing_of_its_group_counts_alike_is_written_the_totals_but_n
                     "the closest pressing was written as a match: {fields:?}"
                 );
             }
+
             let total = write
                 .edits
                 .iter()
                 .find(|edit| edit.field == TagField::TrackTotal)
                 .map(|edit| edit.value.as_str());
+
             assert_eq!(total, Some("5"));
         }
     }
@@ -14671,11 +16089,13 @@ fn an_album_the_pressings_of_its_group_count_apart_is_written_no_totals() -> Res
         releases: vec![orbits(five_track_pressing_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let preview = retagged(&library, false)?;
 
     assert!(!preview.retagging.writes.is_empty());
+
     for write in &preview.retagging.writes {
         let fields = fields_of(write);
         for withheld in [TagField::TrackTotal, TagField::DiscTotal] {
@@ -14692,8 +16112,10 @@ fn an_album_the_pressings_of_its_group_count_apart_is_written_no_totals() -> Res
 fn an_album_tagged_with_a_release_group_id_is_asked_for_that_group_and_never_searched_for_one()
 -> Result<()> {
     let tree = Tree::new();
+
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
         let number = index as u32 + 1;
+
         tree.write(
             &format!("Orbits/{number}.wav"),
             &orbits_track(title, number)
@@ -14701,7 +16123,9 @@ fn an_album_tagged_with_a_release_group_id_is_asked_for_that_group_and_never_sea
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -14709,6 +16133,7 @@ fn an_album_tagged_with_a_release_group_id_is_asked_for_that_group_and_never_sea
         groups: vec![orbits_group(Vec::new(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindReleaseGroup), 0);
@@ -14724,8 +16149,11 @@ fn an_album_tagged_with_a_release_group_id_is_asked_for_that_group_and_never_sea
     );
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, None);
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(release.group, Some(mbid(RELEASE_GROUP)));
     assert_eq!(release.kind.as_deref(), Some("Album"));
     assert!(release.answered.is_some());
@@ -14739,9 +16167,12 @@ fn an_album_asked_within_the_retry_window_is_not_asked_again_and_refresh_asks_an
     let fake = Arc::new(Fake::new(Canned::default()));
 
     enrich(&library, &fake, false)?;
+
     assert_eq!(fake.called(LookupOp::FindRelease), 2);
     assert_eq!(fake.called(LookupOp::FindArtist), 1);
+
     let album = only_album(&library)?;
+
     assert!(
         library
             .release_of(album.id)?
@@ -14749,12 +16180,14 @@ fn an_album_asked_within_the_retry_window_is_not_asked_again_and_refresh_asks_an
     );
 
     let summary = enrich(&library, &fake, false)?;
+
     assert_eq!(fake.called(LookupOp::FindRelease), 2);
     assert_eq!(fake.called(LookupOp::FindArtist), 1);
     assert_eq!(summary.stats.albums, 0);
     assert_eq!(summary.stats.artists, 0);
 
     let summary = enrich(&library, &fake, true)?;
+
     assert_eq!(fake.called(LookupOp::FindRelease), 4);
     assert_eq!(fake.called(LookupOp::FindArtist), 2);
     assert_eq!(summary.stats.albums, 1);
@@ -14765,10 +16198,15 @@ fn an_album_asked_within_the_retry_window_is_not_asked_again_and_refresh_asks_an
 #[test]
 fn a_cover_the_archive_holds_lands_only_where_the_files_embedded_none() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let embedded = png(64);
+
     write_hours(&tree, Some(&embedded));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -14783,6 +16221,7 @@ fn a_cover_the_archive_holds_lands_only_where_the_files_embedded_none() -> Resul
         .into_iter()
         .filter(|called| called.op() == LookupOp::Cover)
         .collect();
+
     assert_eq!(
         covers,
         vec![Called::Cover(mbid(RELEASE), Some(mbid(RELEASE_GROUP)))]
@@ -14790,12 +16229,15 @@ fn a_cover_the_archive_holds_lands_only_where_the_files_embedded_none() -> Resul
     assert_eq!(summary.stats.covers, 1);
 
     let orbits = album_titled(&library, "Orbits")?;
+
     assert_eq!(library.cover_art(orbits.id)?, Some(png_art(256)));
     assert_eq!(
         library.release_of(orbits.id)?.map(|held| held.cover_source),
         Some(CoverSource::Archive)
     );
+
     let hours = album_titled(&library, "Hours")?;
+
     assert_eq!(
         library.cover_art(hours.id)?,
         Some(CoverArt {
@@ -14815,11 +16257,13 @@ fn an_artist_named_in_a_release_credit_is_looked_up_by_the_credit_id_and_never_s
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut release = orbits(orbits_rows(), Vec::new());
+
     release.credit = vec![Credit {
         name: "The Orbiters".to_owned(),
         joined_by: String::new(),
         mbid: Some(mbid(ORBITERS)),
     }];
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![release],
@@ -14829,19 +16273,24 @@ fn an_artist_named_in_a_release_credit_is_looked_up_by_the_credit_id_and_never_s
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindArtist), 0);
+
     let artists: Vec<Called> = fake
         .calls()
         .into_iter()
         .filter(|called| called.op() == LookupOp::Artist)
         .collect();
+
     assert_eq!(artists, vec![Called::Artist(mbid(ORBITERS))]);
     assert_eq!(summary.stats.artists, 1);
 
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(artist.mbid, Some(mbid(ORBITERS)));
+
     let detail = library
         .artist_detail(artist.id)?
         .expect("the artist is known");
+
     assert!(detail.answered.is_some());
     assert_eq!(detail.sort_name.as_deref(), Some("Orbiters, The"));
     Ok(())
@@ -14927,11 +16376,13 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut release = orbits(orbits_rows(), Vec::new());
+
     release.credit = vec![Credit {
         name: "The Orbiters".to_owned(),
         joined_by: String::new(),
         mbid: Some(mbid(ORBITERS)),
     }];
+
     let canned = || Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![release.clone()],
@@ -14963,6 +16414,7 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
         unheld(&artist, SCORE_GROUP, "The Orbit", "Album", Some("2003-11")),
         unheld(&artist, SINGLE_GROUP, "San Tropez", "Single", None),
     ];
+
     assert_eq!(library.unheld_releases(None, None)?, expected);
     assert_eq!(library.unheld_releases(None, Some(1))?, expected[..1]);
     assert_eq!(
@@ -14981,6 +16433,7 @@ fn an_artists_discography_is_kept_once_its_profile_lands_and_the_catalog_says_wh
 
     let fake = Arc::new(Fake::new(canned()));
     let summary = enrich(&library, &fake, true)?;
+
     assert_eq!(fake.called(LookupOp::ReleaseGroupsOfArtist), 1);
     assert_eq!(summary.stats.releases_found, 4);
     assert_eq!(library.unheld_releases(None, None)?, expected);
@@ -15045,6 +16498,7 @@ fn hours_pressings() -> Vec<Release> {
 
 fn learnt_canned() -> Canned {
     let mut release = orbits(orbits_rows(), Vec::new());
+
     release.credit = credited(Some("The Orbiters"), Some(ORBITERS));
     Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
@@ -15108,7 +16562,9 @@ fn the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_ask
     );
 
     let again = Arc::new(Fake::new(learnt_canned()));
+
     enrich(&library, &again, false)?;
+
     assert_eq!(again.called(LookupOp::ReleasesOfGroup), 0);
     Ok(())
 }
@@ -15117,6 +16573,7 @@ fn the_songs_of_releases_not_held_are_learnt_in_the_lookup_and_found_without_ask
 fn the_albums_of_a_library_artist_not_held_answer_a_search_without_asking() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(learnt_canned()));
+
     enrich(&library, &fake, false)?;
 
     let kept = |text| -> Result<Vec<(Mbid, String, String)>> {
@@ -15162,8 +16619,10 @@ fn an_artists_page_reads_the_songs_of_its_releases_not_held_before_the_lookup_re
         0,
         Fault::Unreachable,
     ));
+
     let _ = enrich(&library, &cut_short, false);
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert!(
         library.songs_not_held_by(artist.id)?.is_empty(),
         "the songs were read before the page asked"
@@ -15198,6 +16657,7 @@ fn a_group_an_artists_page_read_while_the_lookup_ran_is_not_asked_for_again() ->
     let (fake, has_started, go) =
         Fake::new(learnt_canned()).gated_on(Some(LookupOp::ReleasesOfGroup));
     let fake = Arc::new(fake);
+
     let handle = library.enrich(
         Arc::clone(&fake) as Arc<dyn Reference>,
         Arc::new(Fingerprinters::none()),
@@ -15207,8 +16667,10 @@ fn a_group_an_artists_page_read_while_the_lookup_ran_is_not_asked_for_again() ->
     has_started
         .recv()
         .expect("the lookup reaches the songs of a group");
+
     let artist = artist_named(&library, "The Orbiters")?;
     let page = Fake::new(learnt_canned());
+
     library.learn_the_songs_of_artist(&page, artist.id, &PageTold::default())?;
     go.send(()).expect("the lookup is still waiting");
     handle.join()?;
@@ -15323,6 +16785,7 @@ fn an_artist_with_few_groups_due_is_asked_for_each_group_alone() -> Result<()> {
         1,
         Fault::Unreachable,
     ));
+
     let _ = enrich(&library, &cut_short, false);
     let artist = artist_named(&library, "The Orbiters")?;
 
@@ -15331,6 +16794,7 @@ fn an_artist_with_few_groups_due_is_asked_for_each_group_alone() -> Result<()> {
         credited: 2,
         read_to: 2,
     }]));
+
     library.learn_the_songs_of_artist(&page, artist.id, &PageTold::default())?;
 
     assert_eq!(page.called(LookupOp::ReleasesOfArtist), 0);
@@ -15385,6 +16849,7 @@ fn an_artists_page_is_told_of_each_batch_of_songs_as_it_lands() -> Result<()> {
     let landed = library.learn_the_songs_of_artist(&page, artist, &told)?;
 
     let batches = told.batches.lock().clone();
+
     assert_eq!(batches.len(), 3, "{batches:?}");
     assert_eq!(batches.iter().sum::<usize>(), landed);
     assert_eq!(batches[0], 2, "the earliest group was not told first");
@@ -15425,7 +16890,9 @@ fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Resul
         Arc::new(Fake::new(learnt_canned()).faulting(LookupOp::ReleasesOfGroup, 0, Fault::Refused));
 
     enrich(&library, &fake, false)?;
+
     let again = Arc::new(Fake::new(learnt_canned()));
+
     enrich(&library, &again, false)?;
 
     assert!(library.songs_kept_for("daybreak")?.is_empty());
@@ -15437,7 +16904,9 @@ fn a_release_group_refused_waits_before_its_songs_are_asked_for_again() -> Resul
 fn the_sleeve_of_a_release_not_held_is_asked_for_as_soon_as_its_songs_land() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut canned = learnt_canned();
+
     canned.covers.push((mbid(HOURS), png_art(8)));
+
     let (fake, has_started, go) =
         Fake::new(canned).gated_on_the(Some(LookupOp::ReleasesOfGroup), 1);
     let fake = Arc::new(fake);
@@ -15450,7 +16919,9 @@ fn the_sleeve_of_a_release_not_held_is_asked_for_as_soon_as_its_songs_land() -> 
     has_started
         .recv()
         .expect("the lookup reaches the songs of a second group");
+
     let asked_while_held = waited_for(|| fake.called(LookupOp::Cover) >= 1);
+
     go.send(()).expect("the lookup is still waiting");
     handle.join()?;
 
@@ -15467,8 +16938,10 @@ fn the_sleeve_of_a_release_not_held_is_asked_for_as_soon_as_its_songs_land() -> 
 fn the_covers_of_releases_not_held_are_kept_in_the_lookup_and_not_asked_for_again() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut canned = learnt_canned();
+
     canned.covers.push((mbid(HOURS), png_art(8)));
     canned.group_covers.push((mbid(SCORE_GROUP), png_art(16)));
+
     let fake = Arc::new(Fake::new(canned));
 
     enrich(&library, &fake, false)?;
@@ -15486,6 +16959,7 @@ fn the_covers_of_releases_not_held_are_kept_in_the_lookup_and_not_asked_for_agai
     assert_eq!(library.unheld_cover(&mbid(SINGLE_GROUP))?, None);
 
     let again = Arc::new(Fake::new(learnt_canned()));
+
     enrich(&library, &again, false)?;
 
     assert_eq!(again.called(LookupOp::Cover), 0);
@@ -15496,7 +16970,9 @@ fn the_covers_of_releases_not_held_are_kept_in_the_lookup_and_not_asked_for_agai
 fn an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(learnt_canned()));
+
     enrich(&library, &fake, false)?;
+
     let artist = artist_named(&library, "The Orbiters")?;
 
     let wanted = library.want_album(fake.as_ref(), &mbid(HOURS_GROUP), None)?;
@@ -15533,6 +17009,7 @@ fn an_album_not_held_is_wanted_whole_from_the_pressing_its_songs_were_read_off()
 fn an_album_not_held_is_opened_as_an_album_with_its_songs_listed_and_none_wanted() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = Arc::new(Fake::new(learnt_canned()));
+
     enrich(&library, &fake, false)?;
 
     let opened = library.open_album_uncovered(fake.as_ref(), &mbid(HOURS_GROUP))?;
@@ -15562,14 +17039,18 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
 -> Result<()> {
     const FEARLESS_SINGLE: &str = "4a5b6c7d-8e9f-4a0b-9c1d-2e3f4a5b6c7d";
     const SATELLITE_SINGLE: &str = "5b6c7d8e-9f0a-4b1c-8d2e-3f4a5b6c7d8e";
+
     let (_tree, library) = scanned_orbits()?;
     let mut release = orbits(orbits_rows(), Vec::new());
+
     release.credit = vec![Credit {
         name: "The Orbiters".to_owned(),
         joined_by: String::new(),
         mbid: Some(mbid(ORBITERS)),
     }];
+
     let mut groups = orbiters_groups();
+
     groups.push(artist_release(
         FEARLESS_SINGLE,
         "Fearless",
@@ -15584,6 +17065,7 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
         &[],
         Some("2004-01-01"),
     ));
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![release],
@@ -15599,6 +17081,7 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
         )],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let artist = artist_named(&library, "The Orbiters")?;
@@ -15607,6 +17090,7 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
         .into_iter()
         .map(|release| release.title)
         .collect();
+
     assert!(
         unheld.contains(&"Satellite".to_owned()),
         "a single whose song is not held was not listed: {unheld:?}"
@@ -15615,22 +17099,28 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
         !unheld.contains(&"Fearless".to_owned()),
         "a single whose song is held on the album was listed: {unheld:?}"
     );
+
     let detail = library.artist_detail(artist.id)?.expect("the artist");
+
     assert_eq!(detail.releases_unheld, 4);
     assert_eq!(detail.releases_unread, 250);
 
     assert_eq!(library.read_the_rest_of(artist.id, fake.as_ref())?, 1);
+
     let unheld: Vec<String> = library
         .unheld_releases(None, None)?
         .into_iter()
         .map(|release| release.title)
         .collect();
+
     assert!(unheld.contains(&"Nightfall".to_owned()), "{unheld:?}");
     assert!(
         unheld.contains(&"Satellite".to_owned()),
         "reading the rest took away what the first read kept: {unheld:?}"
     );
+
     let detail = library.artist_detail(artist.id)?.expect("the artist");
+
     assert_eq!(detail.releases_unheld, 5);
     assert_eq!(detail.releases_unread, 0);
     assert_eq!(
@@ -15645,11 +17135,13 @@ fn a_single_is_not_held_only_where_its_song_is_not_and_a_discography_says_what_i
 fn what_the_catalog_is_short_of_is_narrowed_by_the_words_typed() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut release = orbits(orbits_rows(), Vec::new());
+
     release.credit = vec![Credit {
         name: "The Orbiters".to_owned(),
         joined_by: String::new(),
         mbid: Some(mbid(ORBITERS)),
     }];
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![release],
@@ -15657,6 +17149,7 @@ fn what_the_catalog_is_short_of_is_narrowed_by_the_words_typed() -> Result<()> {
         artist_releases: vec![(mbid(ORBITERS), orbiters_groups())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let artist = artist_named(&library, "The Orbiters")?;
@@ -15694,8 +17187,10 @@ fn what_the_catalog_is_short_of_is_narrowed_by_the_words_typed() -> Result<()> {
 
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     assert_eq!(library.rematch(album.id)?, 3);
 
     assert_eq!(library.missing_tracks(Some("orbits"), None)?.len(), 1);
@@ -15714,6 +17209,7 @@ fn what_the_catalog_is_short_of_is_narrowed_by_the_words_typed() -> Result<()> {
 fn an_unheld_release_is_found_by_a_name_spelt_either_way() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let artist = artist_named(&library, "The Orbiters")?;
+
     library.land_artist_releases(
         artist.id,
         &[artist_release(
@@ -15739,6 +17235,7 @@ fn an_unheld_release_is_found_by_a_piece_of_a_word_whatever_its_length_or_punctu
 {
     let (_tree, library) = scanned_orbits()?;
     let artist = artist_named(&library, "The Orbiters")?;
+
     library.land_artist_releases(
         artist.id,
         &[artist_release(
@@ -15758,6 +17255,7 @@ fn an_unheld_release_is_found_by_a_piece_of_a_word_whatever_its_length_or_punctu
             "{piece}"
         );
     }
+
     assert!(library.unheld_releases(Some("axb"), None)?.is_empty());
     assert_eq!(library.albums_kept_for("a_b")?.len(), 1);
     assert!(library.albums_kept_for("axb")?.is_empty());
@@ -15769,10 +17267,13 @@ fn the_rows_an_album_is_short_of_are_listed_with_their_wants() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     assert_eq!(library.rematch(album.id)?, 3);
+
     let san_tropez = library
         .release_tracks(album.id)?
         .into_iter()
@@ -15781,6 +17282,7 @@ fn the_rows_an_album_is_short_of_are_listed_with_their_wants() -> Result<()> {
     let want = library.want(san_tropez.id)?;
 
     let missing = library.missing_tracks(None, None)?;
+
     assert_eq!(missing.len(), 2);
     assert_eq!(
         missing[0],
@@ -15819,10 +17321,12 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     library.land_release(album.id, &orbits(rows.clone(), Vec::new()))?;
     library.rematch(album.id)?;
+
     let row_titled = |title: &str| -> Result<ReleaseTrackId> {
         Ok(library
             .release_tracks(album.id)?
@@ -15840,6 +17344,7 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
     };
 
     library.want(row_titled("San Tropez")?)?;
+
     assert!(library.dismiss_missing(row_titled("San Tropez")?)?);
     assert!(!library.dismiss_missing(row_titled("San Tropez")?)?);
     assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
@@ -15862,11 +17367,15 @@ fn a_dismissed_missing_row_leaves_the_listing_through_a_refresh_until_wanted_or_
 
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     library.rematch(album.id)?;
+
     assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
 
     library.dismiss_missing(row_titled("Seamus")?)?;
+
     assert!(titles(&library)?.is_empty());
+
     library.want(row_titled("Seamus")?)?;
+
     assert_eq!(titles(&library)?, vec!["Seamus".to_owned()]);
 
     assert_eq!(
@@ -15893,11 +17402,13 @@ fn dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed() -> Re
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "Interlude", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     rows.push(release_row(6, "Interlude", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     library.rematch(album.id)?;
+
     let first = library
         .release_tracks(album.id)?
         .into_iter()
@@ -15912,6 +17423,7 @@ fn dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed() -> Re
         .into_iter()
         .map(|row| (row.position, row.title))
         .collect();
+
     assert_eq!(
         listed,
         [(5, "Seamus".to_owned()), (6, "Interlude".to_owned())]
@@ -15924,11 +17436,13 @@ fn dismissing_one_of_two_missing_rows_of_a_title_leaves_the_other_listed() -> Re
 fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut release = orbits(orbits_rows(), Vec::new());
+
     release.credit = vec![Credit {
         name: "The Orbiters".to_owned(),
         joined_by: String::new(),
         mbid: Some(mbid(ORBITERS)),
     }];
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![release],
@@ -15936,7 +17450,9 @@ fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Resu
         artist_releases: vec![(mbid(ORBITERS), orbiters_groups())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     let artist = artist_named(&library, "The Orbiters")?;
 
     assert!(library.dismiss_release(artist.id, &mbid(HOURS_GROUP))?);
@@ -15964,6 +17480,7 @@ fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Resu
     );
 
     library.bring_back_dismissed()?;
+
     assert_eq!(library.unheld_releases(None, None)?.len(), 3);
     Ok(())
 }
@@ -15972,11 +17489,13 @@ fn a_dismissed_unheld_release_leaves_the_listing_and_the_artists_count() -> Resu
 fn an_artist_named_in_a_release_group_credit_is_spared_a_search_the_same_way() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut group = orbits_group(vec![group_release(HOURS, "1996-05-06", None)], Vec::new());
+
     group.credit = vec![Credit {
         name: "The Orbiters".to_owned(),
         joined_by: String::new(),
         mbid: Some(mbid(ORBITERS)),
     }];
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(4))],
         found_groups: vec![orbits_group_match(100, Some("The Orbiters"))],
@@ -15987,15 +17506,18 @@ fn an_artist_named_in_a_release_group_credit_is_spared_a_search_the_same_way() -
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindArtist), 0);
+
     let artists: Vec<Called> = fake
         .calls()
         .into_iter()
         .filter(|called| called.op() == LookupOp::Artist)
         .collect();
+
     assert_eq!(artists, vec![Called::Artist(mbid(ORBITERS))]);
     assert_eq!(summary.stats.artists, 1);
 
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(artist.mbid, Some(mbid(ORBITERS)));
     Ok(())
 }
@@ -16017,14 +17539,20 @@ fn an_artist_search_is_taken_only_at_a_perfect_score_with_the_same_folded_name()
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(fake.called(LookupOp::FindArtist), 1);
     assert_eq!(fake.called(LookupOp::Artist), 0);
+
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(artist.mbid, None);
+
     let detail = library
         .artist_detail(artist.id)?
         .expect("the artist is known");
+
     assert!(detail.asked.is_some());
     assert_eq!(detail.answered, None);
 
@@ -16033,7 +17561,9 @@ fn an_artist_search_is_taken_only_at_a_perfect_score_with_the_same_folded_name()
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, true)?;
+
     assert_eq!(fake.called(LookupOp::Artist), 0);
     assert_eq!(artist_named(&library, "The Orbiters")?.mbid, None);
 
@@ -16042,9 +17572,13 @@ fn an_artist_search_is_taken_only_at_a_perfect_score_with_the_same_folded_name()
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, true)?;
+
     assert_eq!(fake.called(LookupOp::Artist), 1);
+
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(artist.mbid, Some(mbid(ORBITERS)));
     assert!(
         library
@@ -16057,6 +17591,7 @@ fn an_artist_search_is_taken_only_at_a_perfect_score_with_the_same_folded_name()
 #[test]
 fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "Orbits/1.wav",
         &orbits_track("One of These Days", 1)
@@ -16064,7 +17599,9 @@ fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held(
             .build(),
     );
     write_hours(&tree, None);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -16079,6 +17616,7 @@ fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held(
         .into_iter()
         .filter(|called| called.op() == LookupOp::Portrait)
         .collect();
+
     assert_eq!(
         portraits,
         vec![Called::Portrait(ORBITERS_PICTURE.to_owned())]
@@ -16088,13 +17626,17 @@ fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held(
     assert_eq!(summary.stats.portraits_missing, 0);
 
     let orbiters = artist_named(&library, "The Orbiters")?;
+
     assert!(orbiters.has_portrait);
     assert_eq!(library.portrait(orbiters.id)?, Some(png_art(96)));
+
     let ada = artist_named(&library, "Ada")?;
+
     assert!(!ada.has_portrait);
     assert_eq!(library.portrait(ada.id)?, None);
 
     let summary = enrich(&library, &fake, true)?;
+
     assert_eq!(fake.called(LookupOp::Portrait), 1);
     assert_eq!(summary.stats.portraits, 0);
     Ok(())
@@ -16103,9 +17645,12 @@ fn a_portrait_is_fetched_only_where_the_profile_names_an_image_and_none_is_held(
 #[test]
 fn a_reference_that_cannot_be_reached_ends_the_pass_and_stamps_nothing() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
     write_hours(&tree, None);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(
@@ -16129,6 +17674,7 @@ fn a_reference_that_cannot_be_reached_ends_the_pass_and_stamps_nothing() -> Resu
 
     let mut answered = 0;
     let mut untouched = 0;
+
     for album in library.albums(&AlbumQuery::default())? {
         let release = library.release_of(album.id)?.expect("the album is known");
         match (release.asked, release.answered) {
@@ -16137,6 +17683,7 @@ fn a_reference_that_cannot_be_reached_ends_the_pass_and_stamps_nothing() -> Resu
             other => panic!("an album was left half stamped: {other:?}"),
         }
     }
+
     assert_eq!((answered, untouched), (1, 1));
     Ok(())
 }
@@ -16148,9 +17695,12 @@ fn a_pass_a_shut_gate_or_a_switched_off_network_ends_says_so_and_not_unreached()
         (Fault::Offline, Stopped::Offline),
     ] {
         let tree = Tree::new();
+
         write_orbits(&tree, true);
         write_hours(&tree, None);
+
         let library = Library::open_in_memory()?;
+
         scan(&library, &options(&tree))?;
 
         let fake = Arc::new(
@@ -16183,6 +17733,7 @@ fn a_refusal_counts_and_stamps_asked_and_the_pass_carries_on() -> Result<()> {
         })
         .faulting(LookupOp::Release, 0, Fault::Refused),
     );
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(summary.stopped_by, None);
@@ -16194,8 +17745,11 @@ fn a_refusal_counts_and_stamps_asked_and_the_pass_carries_on() -> Result<()> {
     assert_eq!(fake.called(LookupOp::FindArtist), 1);
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, None);
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert!(release.asked.is_some());
     assert_eq!(release.answered, None);
     Ok(())
@@ -16212,6 +17766,7 @@ fn a_release_too_large_to_read_is_stamped_asked_and_counts_as_no_refusal() -> Re
         })
         .faulting(LookupOp::Release, 0, Fault::TooLarge),
     );
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(summary.stopped_by, None);
@@ -16221,6 +17776,7 @@ fn a_release_too_large_to_read_is_stamped_asked_and_counts_as_no_refusal() -> Re
     let release = library
         .release_of(only_album(&library)?.id)?
         .expect("the album is known");
+
     assert!(release.asked.is_some());
     assert_eq!(release.answered, None);
     Ok(())
@@ -16237,6 +17793,7 @@ fn a_refused_release_search_stamps_the_refusal_rather_than_asking_down_the_ladde
         })
         .faulting(LookupOp::FindRelease, 0, Fault::Refused),
     );
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(summary.stats.refused, 1);
@@ -16250,6 +17807,7 @@ fn a_refused_release_search_stamps_the_refusal_rather_than_asking_down_the_ladde
         refused_again_after: Duration::ZERO,
         refresh_after: A_DAY,
     };
+
     assert_eq!(library.albums_to_ask(refused_at_once, false)?.len(), 1);
     Ok(())
 }
@@ -16265,6 +17823,7 @@ fn a_refusal_earns_the_wait_a_service_is_given_rather_than_the_one_a_miss_earns(
         })
         .faulting(LookupOp::Release, 0, Fault::Refused),
     );
+
     assert_eq!(enrich(&library, &fake, false)?.stats.refused, 1);
 
     let refused_at_once = Waits {
@@ -16293,13 +17852,16 @@ fn a_refusal_earns_the_wait_a_service_is_given_rather_than_the_one_a_miss_earns(
 #[test]
 fn a_rescan_that_adds_a_track_takes_it_off_the_missing_count_without_asking_again() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "Orbits/1.wav",
         &orbits_track("One of These Days", 1)
             .described(MUSICBRAINZ_ALBUM, RELEASE)
             .build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -16307,6 +17869,7 @@ fn a_rescan_that_adds_a_track_takes_it_off_the_missing_count_without_asking_agai
         ..Canned::default()
     }));
     let summary = enrich(&library, &fake, false)?;
+
     assert_eq!(summary.stats.matched, 1);
     assert_eq!(only_album(&library)?.missing, 2);
 
@@ -16316,12 +17879,15 @@ fn a_rescan_that_adds_a_track_takes_it_off_the_missing_count_without_asking_agai
             .described(MUSICBRAINZ_ALBUM, RELEASE)
             .build(),
     );
+
     let stats = scan(&library, &options(&tree))?;
+
     assert_eq!(stats.added, 1);
     assert_eq!(only_album(&library)?.missing, 2);
 
     let silent = Arc::new(Fake::new(Canned::default()));
     let summary = enrich(&library, &silent, false)?;
+
     assert!(
         silent.calls().is_empty(),
         "the reference was asked again: {:?}",
@@ -16339,8 +17905,11 @@ fn a_rescan_that_adds_a_track_takes_it_off_the_missing_count_without_asking_agai
 #[test]
 fn a_picture_is_fetched_beside_the_pass_rather_than_in_it() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let (fake, has_started, go) = Fake::new(Canned {
@@ -16360,8 +17929,11 @@ fn a_picture_is_fetched_beside_the_pass_rather_than_in_it() -> Result<()> {
     )?;
 
     has_started.recv().expect("the cover reaches the reference");
+
     let asked_while_held = waited_for(|| fake.called(LookupOp::FindArtist) == 1);
+
     go.send(()).expect("the reference is still waiting");
+
     let summary = handle.join()?;
 
     assert!(
@@ -16377,10 +17949,14 @@ fn a_picture_is_fetched_beside_the_pass_rather_than_in_it() -> Result<()> {
 #[test]
 fn a_pass_the_reference_ended_is_left_for_the_next_run_to_pick_up() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
     write_hours(&tree, None);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(library.unfinished_enrichment()?, None);
 
     let fake = Arc::new(
@@ -16396,9 +17972,11 @@ fn a_pass_the_reference_ended_is_left_for_the_next_run_to_pick_up() -> Result<()
         summary.stopped_by,
         Some(Stopped::Unreached(LookupOp::Release))
     );
+
     let left = library
         .unfinished_enrichment()?
         .expect("a pass the reference ended is left unfinished");
+
     assert!(
         left.refresh,
         "the next run would pick the pass up without the refresh it was asked for"
@@ -16408,7 +17986,9 @@ fn a_pass_the_reference_ended_is_left_for_the_next_run_to_pick_up() -> Result<()
         releases: vec![orbits(orbits_rows(), Vec::new()), hours()],
         ..Canned::default()
     }));
+
     enrich(&library, &answering, true)?;
+
     assert_eq!(
         library.unfinished_enrichment()?,
         None,
@@ -16419,8 +17999,11 @@ fn a_pass_the_reference_ended_is_left_for_the_next_run_to_pick_up() -> Result<()
 
 fn tagged_orbits() -> Result<(Tree, Library)> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     Ok((tree, library))
 }
@@ -16436,7 +18019,9 @@ fn a_cover_the_archive_did_not_hand_over_is_asked_for_again_by_the_next_pass() -
         })
         .faulting(LookupOp::Cover, 0, Fault::Refused),
     );
+
     let first = enrich(&library, &faulted, false)?;
+
     assert_eq!(first.stats.releases, 1);
     assert_eq!(first.stats.covers, 0);
     assert_eq!(library.cover_art(only_album(&library)?.id)?, None);
@@ -16468,20 +18053,25 @@ fn a_cover_the_archive_answered_it_does_not_hold_is_not_asked_for_again_within_t
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &empty_handed, false)?;
+
     assert_eq!(empty_handed.called(LookupOp::Cover), 1);
 
     let again = Arc::new(Fake::new(Canned {
         covers: vec![(mbid(RELEASE), png_art(128))],
         ..Canned::default()
     }));
+
     enrich(&library, &again, false)?;
 
     assert_eq!(again.called(LookupOp::Cover), 0);
     assert_eq!(library.cover_art(only_album(&library)?.id)?, None);
 
     assert_eq!(library.ask_again_for_covers()?, 1);
+
     let asked_again = enrich(&library, &again, false)?;
+
     assert_eq!(again.called(LookupOp::Cover), 1);
     assert_eq!(asked_again.stats.covers, 1);
     assert_eq!(library.ask_again_for_covers()?, 0);
@@ -16493,20 +18083,27 @@ fn a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again() -> Result
     const A_YEAR_AGO_IN_NANOS: i64 = 365 * 24 * 60 * 60 * 1_000_000_000;
 
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let empty_handed = Arc::new(Fake::new(Canned {
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &empty_handed, false)?;
+
     assert_eq!(empty_handed.called(LookupOp::Cover), 1);
 
     let stamped: i64 = beside(&database)
         .query_row("SELECT cover_asked FROM albums", [], |row| row.get(0))
         .expect("the answer was stamped");
+
     beside(&database)
         .execute(
             "UPDATE albums SET cover_asked = ?1",
@@ -16532,9 +18129,12 @@ fn a_cover_the_archive_said_it_lacked_a_month_ago_is_asked_for_again() -> Result
 #[test]
 fn cancelling_an_enrichment_stops_it_between_requests() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
     write_hours(&tree, None);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let (fake, has_started, go) = Fake::new(Canned {
@@ -16555,8 +18155,11 @@ fn cancelling_an_enrichment_stops_it_between_requests() -> Result<()> {
         .recv()
         .expect("the first request reaches the reference");
     handle.cancel();
+
     assert!(handle.progress().is_cancelled());
+
     go.send(()).expect("the reference is still waiting");
+
     let summary = handle.join()?;
 
     assert!(summary.cancelled);
@@ -16581,6 +18184,7 @@ fn cancelling_an_enrichment_stops_it_between_requests() -> Result<()> {
                 .is_some_and(|release| release.answered.is_some())
         })
         .count();
+
     assert_eq!(answered, 1);
     Ok(())
 }
@@ -16588,10 +18192,13 @@ fn cancelling_an_enrichment_stops_it_between_requests() -> Result<()> {
 #[test]
 fn an_album_gone_while_a_lookup_asks_about_it_is_passed_over_and_the_pass_goes_on() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
     write_hours(&tree, None);
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let (fake, has_started, go) = Fake::new(Canned {
@@ -16609,13 +18216,17 @@ fn an_album_gone_while_a_lookup_asks_about_it_is_passed_over_and_the_pass_goes_o
     has_started
         .recv()
         .expect("the release lookup reaches the reference");
+
     let gone = beside(&database)
         .execute("DELETE FROM albums WHERE title = 'Orbits'", [])
         .expect("the album is removed under the lookup");
+
     assert_eq!(gone, 1);
+
     go.send(()).expect("the reference is still waiting");
 
     let summary = handle.join()?;
+
     assert!(!summary.cancelled);
     assert_eq!(summary.stopped_by, None);
     assert!(
@@ -16631,6 +18242,7 @@ fn waited_for(settled: impl Fn() -> bool) -> bool {
 
     (0..LOOKS).any(|_| {
         let now = settled();
+
         if !now {
             thread::sleep(BETWEEN_LOOKS);
         }
@@ -16666,6 +18278,7 @@ fn under_a_gated_pass(
 ) -> Result<(Arc<Fake>, EnrichSummary)> {
     let fake = Arc::new(fake);
     let sought = Arc::new(Sought::default());
+
     let handle = library.enrich(
         Arc::clone(&fake) as Arc<dyn Reference>,
         Arc::new(Fingerprinters::none()),
@@ -16681,7 +18294,9 @@ fn under_a_gated_pass(
         .expect("the first request reaches the reference");
     reached(&sought);
     go.send(()).expect("the reference is still waiting");
+
     let summary = handle.join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
 
     Ok((fake, summary))
@@ -16694,8 +18309,11 @@ fn asked_at(fake: &Fake, wanted: &Called) -> Option<usize> {
 #[test]
 fn an_album_that_became_due_under_a_running_pass_is_asked_next_when_it_is_sought() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let (fake, has_started, go) = Fake::new(Canned {
@@ -16705,6 +18323,7 @@ fn an_album_that_became_due_under_a_running_pass_is_asked_next_when_it_is_sought
         ..Canned::default()
     })
     .gated();
+
     let (fake, _) = under_a_gated_pass(&library, fake, &has_started, &go, false, |sought| {
         write_hours(&tree, None);
         scan(&library, &options(&tree)).expect("a second scan lands the new album");
@@ -16716,15 +18335,18 @@ fn an_album_that_became_due_under_a_running_pass_is_asked_next_when_it_is_sought
     })?;
 
     let hours = asked_at(&fake, &Called::Release(mbid(HOURS)));
+
     assert!(
         hours.is_some(),
         "an album scanned under the pass was never asked about: {:?}",
         fake.calls()
     );
+
     let artist = fake
         .calls()
         .iter()
         .position(|called| called.op() == LookupOp::FindArtist || called.op() == LookupOp::Artist);
+
     assert!(
         hours < artist,
         "the sought album was asked after the artists the queue already held: {:?}",
@@ -16736,8 +18358,11 @@ fn an_album_that_became_due_under_a_running_pass_is_asked_next_when_it_is_sought
 #[test]
 fn a_seek_naming_an_album_the_reference_has_already_answered_asks_nothing() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let answering = Arc::new(Fake::new(Canned {
@@ -16746,12 +18371,15 @@ fn a_seek_naming_an_album_the_reference_has_already_answered_asks_nothing() -> R
         found_artists: vec![artist_match(100, "The Orbiters")],
         ..Canned::default()
     }));
+
     enrich(&library, &answering, false)?;
 
     let orbits = album_titled(&library, "Orbits")?.id;
     let silent = Arc::new(Fake::new(Canned::default()));
     let sought = Arc::new(Sought::default());
+
     sought.album(orbits);
+
     let summary = library
         .enrich(
             Arc::clone(&silent) as Arc<dyn Reference>,
@@ -16764,6 +18392,7 @@ fn a_seek_naming_an_album_the_reference_has_already_answered_asks_nothing() -> R
         .join()?;
 
     let asked = queued(&silent);
+
     assert!(
         asked.is_empty(),
         "a seek asked again about an album that was not due: {asked:?}"
@@ -16783,8 +18412,11 @@ fn queued(fake: &Fake) -> Vec<Called> {
 fn a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference_twice()
 -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let refusing = Arc::new(
@@ -16796,7 +18428,9 @@ fn a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference
         })
         .faulting(LookupOp::Portrait, 0, Fault::Refused),
     );
+
     enrich(&library, &refusing, false)?;
+
     assert_eq!(
         refusing.called(LookupOp::Portrait),
         1,
@@ -16804,6 +18438,7 @@ fn a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference
     );
 
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert!(!artist.has_portrait, "the fake answered with a portrait");
 
     let answering = Arc::new(Fake::new(Canned {
@@ -16826,7 +18461,9 @@ fn a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference
     assert!(artist_named(&library, "The Orbiters")?.has_portrait);
 
     let settled = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &settled, false)?;
+
     assert_eq!(
         settled.called(LookupOp::Portrait),
         0,
@@ -16838,9 +18475,13 @@ fn a_portrait_that_never_landed_is_looked_for_again_without_asking_the_reference
 #[test]
 fn a_seek_naming_the_album_the_pass_is_asking_about_does_not_ask_twice() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let album = album_titled(&library, "Orbits")?.id;
 
     let (fake, has_started, go) = Fake::new(Canned {
@@ -16850,6 +18491,7 @@ fn a_seek_naming_the_album_the_pass_is_asking_about_does_not_ask_twice() -> Resu
         ..Canned::default()
     })
     .gated();
+
     let (fake, _) = under_a_gated_pass(&library, fake, &has_started, &go, true, |sought| {
         sought.album(album);
     })?;
@@ -16919,6 +18561,7 @@ fn scanned_lone(track: Wav) -> Result<(Tree, Library, PathBuf, PathBuf)> {
     let file = tree.write("1.wav", &track.build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     Ok((tree, library, database, file))
 }
@@ -16944,6 +18587,7 @@ fn an_isrc_that_names_no_release_is_followed_up_by_asking_where_the_recording_si
 
     let bare = orbits_recording(RECORDING, "One of These Days", CODE, Vec::new());
     let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+
     let fake = Arc::new(Fake::new(Canned {
         isrcs: vec![(isrc(CODE), bare)],
         recordings: vec![whole],
@@ -16962,6 +18606,7 @@ fn an_isrc_that_names_no_release_is_followed_up_by_asking_where_the_recording_si
     assert_eq!(summary.stats.tracks, 1);
 
     let held = stored(&database, &file);
+
     assert_eq!(
         held.release_title.as_deref(),
         Some("Orbits"),
@@ -16972,6 +18617,7 @@ fn an_isrc_that_names_no_release_is_followed_up_by_asking_where_the_recording_si
     let row = library
         .track_at(&file, None)?
         .expect("the catalog holds the track");
+
     assert_eq!(
         row.track_number,
         Some(2),
@@ -16998,6 +18644,7 @@ fn a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_st
 
     let bare = orbits_recording(RECORDING, "One of These Days", CODE, Vec::new());
     let whole = orbits_recording(RECORDING, "One of These Days", CODE, on_orbits(2));
+
     let fake = Fake::new(Canned {
         isrcs: vec![(isrc(CODE), bare)],
         recordings: vec![whole],
@@ -17012,11 +18659,14 @@ fn a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_st
         .expect("the catalog holds the named track");
 
     let by_code = coded.recordings_of(coded_track.id, &fake)?;
+
     assert_eq!(fake.called(LookupOp::Isrc), 1);
     assert_eq!(fake.called(LookupOp::FindRecording), 0);
+
     let [offered] = by_code.as_slice() else {
         panic!("the ISRC offered {} recordings, not one", by_code.len());
     };
+
     assert_eq!(offered.id, mbid(RECORDING));
     assert_eq!(
         offered.releases.len(),
@@ -17034,10 +18684,13 @@ fn a_track_with_no_recording_id_is_placed_through_its_isrc_and_else_through_a_st
     );
 
     let by_name = named.recordings_of(named_track.id, &fake)?;
+
     assert_eq!(fake.called(LookupOp::FindRecording), 1);
+
     let [searched] = by_name.as_slice() else {
         panic!("the search offered {} recordings, not one", by_name.len());
     };
+
     assert_eq!(searched.id, mbid(RECORDING));
     assert_eq!(searched.releases.len(), 1);
     Ok(())
@@ -17060,6 +18713,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
         score: 34,
         ..recording_match(ANOTHER_RECORDING, "One of These Nights")
     };
+
     let fake = Fake::new(Canned {
         found_recordings_in_words: vec![far, near],
         recordings: vec![orbits_recording(
@@ -17079,6 +18733,7 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
         .iter()
         .map(|recording| recording.id.clone())
         .collect();
+
     assert_eq!(
         ids,
         [mbid(RECORDING), mbid(ANOTHER_RECORDING)],
@@ -17088,11 +18743,13 @@ fn a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_ch
     let [chosen, _] = offered.as_slice() else {
         panic!("two recordings were offered");
     };
+
     assert!(library.take_recording(track.id, &fake, chosen)?);
 
     let taken = library
         .track_at(&file, None)?
         .expect("the catalog still holds the track");
+
     assert_eq!(taken.title, "One of These Days");
     assert_eq!(taken.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(
@@ -17111,6 +18768,7 @@ fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE),
     )?;
+
     assert!(library.albums(&AlbumQuery::default())?.is_empty());
 
     let fake = Arc::new(Fake::new(Canned {
@@ -17135,16 +18793,19 @@ fn a_track_with_no_album_is_identified_by_the_isrc_the_file_carries() -> Result<
     assert_eq!(summary.stats.tracks_unmatched, 0);
 
     let held = stored(&database, &file);
+
     assert_eq!(held.title, "One of These Days");
     assert_eq!(held.release_title.as_deref(), Some("Orbits"));
     assert!(held.asked.is_some() && held.answered.is_some());
     assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
 
     let tracks = all(&library)?;
+
     assert_eq!(tracks[0].track_number, Some(1));
     assert_eq!(tracks[0].disc_number, Some(1));
 
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(artist.mbid, Some(mbid(ORBITERS)));
     assert_eq!(tracks[0].artist_id, Some(artist.id));
     assert_eq!(fake.called(LookupOp::FindArtist), 0);
@@ -17161,6 +18822,7 @@ fn a_pass_tells_what_it_found_no_strict_match_for_apart_from_what_a_service_refu
             .text(ARTIST, "The Orbiters"),
     )?;
     let fake = Arc::new(Fake::new(Canned::default()));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(summary.stats.tracks, 1);
@@ -17180,6 +18842,7 @@ fn a_pass_tells_what_it_found_no_strict_match_for_apart_from_what_a_service_refu
     )?;
     let fake =
         Arc::new(Fake::new(Canned::default()).faulting(LookupOp::FindRecording, 0, Fault::Refused));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(summary.stats.refused, 1);
@@ -17195,6 +18858,7 @@ fn a_track_is_identified_by_the_recording_id_the_file_carries_before_any_search(
             .text(ARTIST, "The Orbiters")
             .identified(MUSICBRAINZ, RECORDING),
     )?;
+
     assert_eq!(
         recorded(&database, &file).as_deref(),
         Some(RECORDING),
@@ -17223,6 +18887,7 @@ fn a_track_is_identified_by_the_recording_id_the_file_carries_before_any_search(
     assert_eq!(summary.stats.tracks, 1);
 
     let held = stored(&database, &file);
+
     assert_eq!(held.isrc.as_deref(), Some("GBAYE7100195"));
     assert_eq!(held.release_title.as_deref(), Some("Orbits"));
     assert!(held.answered.is_some());
@@ -17247,6 +18912,7 @@ fn an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass(
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     assert!(
@@ -17254,10 +18920,12 @@ fn an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass(
         "the artist the recording credited was left for the next pass: {:?}",
         fake.calls()
     );
+
     let artist = artist_named(&library, "The Orbiters")?;
     let detail = library
         .artist_detail(artist.id)?
         .expect("the artist is known");
+
     assert!(detail.answered.is_some());
     Ok(())
 }
@@ -17266,10 +18934,12 @@ fn an_artist_a_landing_names_for_the_first_time_is_asked_about_in_the_same_pass(
 fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
     let (_tree, library, database, file) =
         scanned_lone(Wav::new().text(TITLE, "One of These Days"))?;
+
     assert!(
         library.albums(&AlbumQuery::default())?.is_empty(),
         "a file naming no album was filed under one"
     );
+
     let fake = Arc::new(Fake::new(Canned {
         found_recordings: vec![recording_match(RECORDING, "One of These Days")],
         recordings: vec![orbits_recording(
@@ -17289,7 +18959,9 @@ fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
     );
     assert_eq!(summary.stats.tracks, 1);
     assert_eq!(summary.stats.named, 0);
+
     let held = stored(&database, &file);
+
     assert!(held.asked.is_some());
     assert_eq!(held.answered, None);
     assert_eq!(recorded(&database, &file), None);
@@ -17305,7 +18977,9 @@ fn a_track_that_names_no_artist_is_never_searched_for() -> Result<()> {
         )],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(
         fake.called(LookupOp::FindRecording),
         0,
@@ -17323,8 +18997,11 @@ fn a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_na
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(stored(&database, &file).tagged_title, None);
+
     let fake = Arc::new(Fake::new(Canned {
         found_recordings: vec![recording_match(RECORDING, "One of These Days")],
         recordings: vec![orbits_recording(
@@ -17335,6 +19012,7 @@ fn a_file_named_like_a_song_by_an_artist_it_names_is_searched_for_by_its_file_na
         )],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindRecording), 1);
@@ -17350,8 +19028,11 @@ fn a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release(
             .text(TITLE, "One of These Days")
             .text(ALBUM, "Orbits"),
     )?;
+
     assert_eq!(only_album(&library)?.artist, None);
+
     let fake = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &fake, false)?;
 
     let searched: Vec<Called> = fake
@@ -17367,6 +19048,7 @@ fn a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release(
         length: Some(THE_FILES_LENGTH),
         wording: Wording::Phrase,
     };
+
     assert_eq!(
         searched,
         vec![
@@ -17384,6 +19066,7 @@ fn a_track_naming_no_artist_under_an_unowned_album_is_searched_with_its_release(
 fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_lands() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write(
         "Orbits/1.wav",
         &Wav::new()
@@ -17394,6 +19077,7 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
             .text(TRACK, "1")
             .build(),
     );
+
     let unnamed = tree.write(
         "Orbits/2.wav",
         &Wav::new()
@@ -17405,8 +19089,11 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     assert_eq!(album.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(stored(&database, &unnamed).artist, None);
 
@@ -17429,6 +19116,7 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
         .into_iter()
         .filter(|called| called.op() == LookupOp::FindRecording)
         .collect();
+
     assert!(
         searched.contains(&Called::FindRecording(RecordingAsked {
             title: "A Pillow of Winds".to_owned(),
@@ -17442,7 +19130,9 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
     );
     assert_eq!(summary.stats.named, 1);
     assert_eq!(recorded(&database, &unnamed).as_deref(), Some(RECORDING));
+
     let held = stored(&database, &unnamed);
+
     assert_eq!(held.artist.as_deref(), Some("The Orbiters"));
     assert!(held.answered.is_some());
     Ok(())
@@ -17452,8 +19142,10 @@ fn a_track_naming_no_artist_under_an_owned_album_is_searched_with_the_owner_and_
 fn a_tagged_release_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands() -> Result<()>
 {
     let tree = Tree::new();
+
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
         let number = index as u32 + 1;
+
         tree.write(
             &format!("Orbits/{number}.wav"),
             &orbits_track(title, number)
@@ -17461,8 +19153,11 @@ fn a_tagged_release_id_the_reference_does_not_hold_falls_back_to_a_search_that_l
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(only_album(&library)?.mbid, Some(mbid(HOURS)));
 
     let fake = Arc::new(Fake::new(Canned {
@@ -17483,7 +19178,9 @@ fn a_tagged_release_id_the_reference_does_not_hold_falls_back_to_a_search_that_l
     );
     assert_eq!(summary.stats.releases, 1);
     assert_eq!(summary.stats.matched, 3);
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(album.missing, 0);
     Ok(())
@@ -17493,8 +19190,10 @@ fn a_tagged_release_id_the_reference_does_not_hold_falls_back_to_a_search_that_l
 fn a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_search() -> Result<()>
 {
     let tree = Tree::new();
+
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
         let number = index as u32 + 1;
+
         tree.write(
             &format!("Orbits/{number}.wav"),
             &orbits_track(title, number)
@@ -17502,7 +19201,9 @@ fn a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_s
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -17514,6 +19215,7 @@ fn a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_s
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     assert_eq!(
@@ -17528,9 +19230,13 @@ fn a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_s
             Called::FindArtist("The Orbiters".to_owned()),
         ]
     );
+
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert_eq!(release.group, Some(mbid(RELEASE_GROUP)));
     Ok(())
 }
@@ -17539,14 +19245,18 @@ fn a_tagged_release_group_id_the_reference_does_not_hold_falls_back_to_a_group_s
 fn a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_lands() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write(
         "Orbits/1.wav",
         &orbits_track("One of These Days", 1)
             .described(MUSICBRAINZ_ARTIST, ADA)
             .build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         artist_named(&library, "The Orbiters")?.mbid,
         Some(mbid(ADA))
@@ -17568,6 +19278,7 @@ fn a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_la
             )
         })
         .collect();
+
     assert_eq!(
         of_the_artist,
         vec![
@@ -17577,7 +19288,9 @@ fn a_tagged_artist_id_the_reference_does_not_hold_falls_back_to_a_search_that_la
         ]
     );
     assert_eq!(summary.stats.artists, 1);
+
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(artist.mbid, Some(mbid(ORBITERS)));
     assert!(
         library
@@ -17592,7 +19305,9 @@ fn a_hit_one_track_short_lands_the_pressing_its_group_names_and_lists_the_missin
 {
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![ReleaseMatch {
             group: Some(mbid(RELEASE_GROUP)),
@@ -17624,6 +19339,7 @@ fn a_hit_one_track_short_lands_the_pressing_its_group_names_and_lists_the_missin
     assert_eq!(summary.stats.matched, 3);
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(album.missing, 1);
     assert_eq!(library.release_tracks(album.id)?.len(), 4);
@@ -17644,15 +19360,18 @@ fn identifiers(database: &Path, file: &Path) -> (Option<String>, Option<String>,
 fn a_paired_track_receives_the_identifiers_its_release_row_holds() -> Result<()> {
     let (tree, library, database) = scanned_orbits_on_disk()?;
     let file = tree.path().join("1.wav");
+
     assert_eq!(identifiers(&database, &file), (None, None, None));
 
     let mut rows = orbits_rows();
+
     rows[0] = ReleaseTrack {
         recording: Some(mbid(RECORDING)),
         track: Some(mbid(RELEASE_TRACK)),
         isrcs: vec!["GBAYE7100195".to_owned()],
         ..rows[0].clone()
     };
+
     let fake = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(rows, Vec::new())],
@@ -17679,8 +19398,10 @@ fn a_paired_track_receives_the_identifiers_its_release_row_holds() -> Result<()>
 #[test]
 fn an_album_whose_owner_holds_an_id_is_searched_for_by_that_id_and_agrees_by_it() -> Result<()> {
     let tree = Tree::new();
+
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
         let number = index as u32 + 1;
+
         tree.write(
             &format!("Orbits/{number}.wav"),
             &orbits_track(title, number)
@@ -17688,8 +19409,11 @@ fn an_album_whose_owner_holds_an_id_is_searched_for_by_that_id_and_agrees_by_it(
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         artist_named(&library, "The Orbiters")?.mbid,
         Some(mbid(ORBITERS))
@@ -17726,9 +19450,13 @@ fn an_album_whose_owner_holds_an_id_is_searched_for_by_that_id_and_agrees_by_it(
 #[test]
 fn a_track_the_album_pass_already_paired_is_never_asked_about() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let fake = Arc::new(Fake::new(Canned {
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
@@ -17741,9 +19469,13 @@ fn a_track_the_album_pass_already_paired_is_never_asked_about() -> Result<()> {
     assert_eq!(fake.called(LookupOp::Isrc), 0);
 
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let two_of_the_three: Vec<ReleaseTrack> = orbits_rows().into_iter().take(2).collect();
     let fake = Arc::new(Fake::new(Canned {
         releases: vec![orbits(two_of_the_three, Vec::new())],
@@ -17753,6 +19485,7 @@ fn a_track_the_album_pass_already_paired_is_never_asked_about() -> Result<()> {
 
     assert_eq!(summary.stats.matched, 2);
     assert_eq!(summary.stats.tracks, 1);
+
     let searched: Vec<Called> = fake
         .calls()
         .into_iter()
@@ -17766,6 +19499,7 @@ fn a_track_the_album_pass_already_paired_is_never_asked_about() -> Result<()> {
         length: Some(THE_FILES_LENGTH),
         wording: Wording::Phrase,
     };
+
     assert_eq!(
         searched,
         vec![
@@ -17798,6 +19532,7 @@ fn a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_a
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindRecording), 1);
@@ -17806,6 +19541,7 @@ fn a_search_match_leaves_the_title_the_file_carried_and_writes_the_identifiers_a
     assert_eq!(summary.stats.named, 0);
 
     let held = stored(&database, &file);
+
     assert_eq!(held.title, "One of These Days");
     assert_eq!(held.tagged_title.as_deref(), Some("One of These Days"));
     assert_eq!(held.artist.as_deref(), Some("The Orbiters"));
@@ -17834,7 +19570,9 @@ fn a_whole_rescan_keeps_the_recording_a_lookup_identified_a_file_by_until_it_is_
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
 
     scan(
@@ -17879,6 +19617,7 @@ fn a_track_the_phrase_answered_nothing_for_is_searched_again_in_words() -> Resul
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     let asked = RecordingAsked {
@@ -17894,6 +19633,7 @@ fn a_track_the_phrase_answered_nothing_for_is_searched_again_in_words() -> Resul
         .into_iter()
         .filter(|called| called.op() == LookupOp::FindRecording)
         .collect();
+
     assert_eq!(
         searched,
         vec![
@@ -17925,6 +19665,7 @@ fn a_recording_the_search_placed_is_landed_without_asking_for_it_again() -> Resu
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     let summary = enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindRecording), 1);
@@ -17936,6 +19677,7 @@ fn a_recording_the_search_placed_is_landed_without_asking_for_it_again() -> Resu
     assert_eq!(summary.stats.tracks, 1);
 
     let held = stored(&database, &file);
+
     assert_eq!(held.release_title.as_deref(), Some("Orbits"));
     assert_eq!(
         held.isrc, None,
@@ -17945,6 +19687,7 @@ fn a_recording_the_search_placed_is_landed_without_asking_for_it_again() -> Resu
     assert_eq!(recorded(&database, &file).as_deref(), Some(RECORDING));
 
     let tracks = all(&library)?;
+
     assert_eq!(tracks[0].track_number, Some(4));
     assert_eq!(tracks[0].disc_number, Some(1));
     Ok(())
@@ -17967,6 +19710,7 @@ fn a_code_the_search_answer_named_is_written_without_asking_for_the_recording_ag
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     assert_eq!(fake.called(LookupOp::FindRecording), 1);
@@ -17996,7 +19740,9 @@ fn an_exact_identification_corrects_a_title_the_file_carried() -> Result<()> {
     let bare = tree.write("2.wav", &Wav::new().text(ISRC, ANOTHER_CODE).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(stored(&database, &bare).title, "2");
 
     let fake = Arc::new(Fake::new(Canned {
@@ -18024,11 +19770,13 @@ fn an_exact_identification_corrects_a_title_the_file_carried() -> Result<()> {
     assert_eq!(summary.stats.named, 2);
 
     let corrected = stored(&database, &carried);
+
     assert_eq!(corrected.title, "One of These Days");
     assert_eq!(corrected.tagged_title.as_deref(), Some("one of these days"));
     assert_eq!(corrected.artist.as_deref(), Some("The Orbiters"));
 
     let filled = stored(&database, &bare);
+
     assert_eq!(filled.title, "A Pillow of Winds");
     assert_eq!(filled.tagged_title, None);
     assert_eq!(filled.artist.as_deref(), Some("The Orbiters"));
@@ -18045,6 +19793,7 @@ fn a_track_whose_album_never_answered_lands_the_release_its_recording_names() ->
             .text(ALBUM, "Orbits")
             .text(ISRC, CODE),
     )?;
+
     assert_eq!(only_album(&library)?.mbid, None);
 
     let fake = Arc::new(Fake::new(Canned {
@@ -18070,10 +19819,13 @@ fn a_track_whose_album_never_answered_lands_the_release_its_recording_names() ->
     assert_eq!(summary.stats.matched, 1);
 
     let album = only_album(&library)?;
+
     assert_eq!(album.mbid, Some(mbid(RELEASE)));
     assert_eq!(album.missing, 2);
     assert_eq!(library.release_tracks(album.id)?.len(), 3);
+
     let release = library.release_of(album.id)?.expect("the album is known");
+
     assert!(release.answered.is_some());
     assert_eq!(
         stored(&database, &file).release_title.as_deref(),
@@ -18090,6 +19842,7 @@ fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()>
             .text(ARTIST, "The Orbiters")
             .text(ISRC, CODE),
     )?;
+
     assert_eq!(titles(&library.search("Echos", 10)?.tracks), vec!["Echos"]);
 
     let fake = Arc::new(Fake::new(Canned {
@@ -18101,6 +19854,7 @@ fn a_corrected_title_is_what_the_search_index_finds_the_track_by() -> Result<()>
         ..Canned::default()
     }));
     let summary = enrich(&library, &fake, false)?;
+
     assert_eq!(summary.stats.named, 1);
 
     assert_eq!(
@@ -18124,6 +19878,7 @@ fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again
             .text(ALBUM, "Orbits")
             .text(ISRC, CODE),
     )?;
+
     assert_eq!(titles(&library.search("Zephyr", 10)?.tracks), vec!["Echos"]);
 
     let fake = Arc::new(Fake::new(Canned {
@@ -18134,6 +19889,7 @@ fn an_album_artist_still_finds_its_tracks_once_the_enrichment_indexes_them_again
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     assert_eq!(enrich(&library, &fake, false)?.stats.named, 1);
 
     assert_eq!(
@@ -18162,14 +19918,19 @@ fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     assert_eq!(enrich(&library, &fake, false)?.stats.named, 1);
+
     let answered = library.search("Echoes", 10)?.tracks;
+
     assert_eq!(titles(&answered), vec!["Echoes"]);
 
     tree.write("1.wav", &tagged().build());
+
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
 
     let rescanned = library.search("Echoes", 10)?.tracks;
+
     assert_eq!(
         titles(&rescanned),
         vec!["Echoes"],
@@ -18187,8 +19948,10 @@ fn a_rescan_indexes_and_bills_the_names_the_lookup_kept() -> Result<()> {
 fn wanted_san_tropez(library: &Library) -> Result<WantId> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
@@ -18203,6 +19966,7 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
     let want = wanted_san_tropez(&library)?;
 
     let providers = Arc::new(Providers::none());
+
     assert!(!providers.has_a_source());
     assert_eq!(
         providers.names(),
@@ -18213,6 +19977,7 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
+
     assert!(!summary.cancelled);
     assert_eq!(summary.stats.asked, 1);
     assert_eq!(summary.stats.nothing, 1);
@@ -18220,6 +19985,7 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
     assert_eq!(summary.stats.refused, 0);
 
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].id, want);
     assert!(wants[0].tried.is_some());
@@ -18231,10 +19997,13 @@ fn the_stub_provider_delivers_nothing_and_a_poll_stamps_the_try() -> Result<()> 
 #[test]
 fn a_file_delivered_with_no_vault_is_written_as_the_offer() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
+
     let delivered = tree.path().join("inbox").join("san-tropez.flac");
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
     let providers = inbox.registered();
+
     assert!(providers.has_a_source());
     assert_eq!(
         providers.names(),
@@ -18245,6 +20014,7 @@ fn a_file_delivered_with_no_vault_is_written_as_the_offer() -> Result<()> {
     );
 
     let summary = library.poll(providers, PollOptions::default())?.join()?;
+
     assert_eq!(summary.stats.asked, 1);
     assert_eq!(summary.stats.offered, 1);
     assert_eq!(summary.stats.kept, 0);
@@ -18253,6 +20023,7 @@ fn a_file_delivered_with_no_vault_is_written_as_the_offer() -> Result<()> {
     assert_eq!(inbox.asked().len(), 1);
 
     let wants = library.wants()?;
+
     assert_eq!(
         wants[0].offered,
         Some(MediaLocation::local(&delivered).to_uri())
@@ -18266,6 +20037,7 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(ReleaseTrack {
         recording: Some(mbid(ORBITERS)),
         track: Some(mbid(RELEASE_TRACK)),
@@ -18289,19 +20061,23 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
             )],
         ),
     )?;
+
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
         .find(|row| row.title == "San Tropez")
         .expect("the release holds the row");
+
     library.want(missing.id)?;
 
     let asked = Arc::new(Offering::new("asked", Delivering::Nothing));
+
     library
         .poll(asked.registered(), PollOptions::default())?
         .join()?;
 
     let identity = asked.asked().pop().expect("the want was asked about");
+
     assert_eq!(identity.title, "San Tropez");
     assert_eq!(identity.album.as_deref(), Some("Orbits"));
     assert_eq!(identity.recording, Some(mbid(ORBITERS)));
@@ -18325,19 +20101,23 @@ fn a_provider_is_handed_the_identity_and_the_service_links_the_catalog_holds() -
 #[test]
 fn a_want_tried_lately_is_not_asked_again_until_the_window_passes() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
+
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let providers = quiet.registered();
 
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
+
     assert_eq!(summary.stats.asked, 1);
     assert_eq!(quiet.asked().len(), 1);
 
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
+
     assert_eq!(summary.stats.asked, 0);
     assert_eq!(quiet.asked().len(), 1);
 
@@ -18350,6 +20130,7 @@ fn a_want_tried_lately_is_not_asked_again_until_the_window_passes() -> Result<()
             },
         )?
         .join()?;
+
     assert_eq!(summary.stats.asked, 1);
     assert_eq!(quiet.asked().len(), 2);
     Ok(())
@@ -18384,6 +20165,7 @@ fn a_kept_queue_comes_back_as_it_was_left() -> Result<()> {
     };
 
     library.keep_resumption(ZoneId::FIRST, &kept)?;
+
     assert_eq!(library.resumption()?, Some(kept));
     Ok(())
 }
@@ -18406,6 +20188,7 @@ fn what_was_queued_to_play_next_comes_back_and_goes_when_nothing_is() -> Result<
     };
 
     library.keep_resumption(ZoneId::FIRST, &kept)?;
+
     assert_eq!(library.resumption()?, Some(kept.clone()));
 
     library.keep_order(
@@ -18418,6 +20201,7 @@ fn what_was_queued_to_play_next_comes_back_and_goes_when_nothing_is() -> Result<
             next: None,
         },
     )?;
+
     assert_eq!(library.resumption()?.and_then(|kept| kept.next), None);
     Ok(())
 }
@@ -18439,6 +20223,7 @@ fn a_shuffled_queue_comes_back_saying_where_each_row_was_loaded() -> Result<()> 
     };
 
     library.keep_resumption(ZoneId::FIRST, &kept)?;
+
     assert_eq!(library.resumption()?, Some(kept));
     Ok(())
 }
@@ -18461,6 +20246,7 @@ fn a_row_from_a_source_that_is_not_the_filesystem_is_kept_by_its_uri() -> Result
     };
 
     library.keep_resumption(ZoneId::FIRST, &kept)?;
+
     assert_eq!(
         library.resumption()?.map(|kept| kept.rows),
         Some(vec![Resumable {
@@ -18515,6 +20301,7 @@ fn an_order_kept_on_its_own_leaves_the_rows_where_they_were() -> Result<()> {
         resumable("/music/second.flac"),
         resumable("/music/third.flac"),
     ];
+
     library.keep_resumption(
         ZoneId::FIRST,
         &Resumption {
@@ -18577,6 +20364,7 @@ fn a_queue_kept_again_replaces_the_rows_rather_than_adding_to_them() -> Result<(
 
     library.keep_resumption(ZoneId::FIRST, &longer)?;
     library.keep_resumption(ZoneId::FIRST, &shorter)?;
+
     assert_eq!(library.resumption()?, Some(shorter));
     Ok(())
 }
@@ -18630,6 +20418,7 @@ fn forgetting_a_kept_queue_takes_the_place_with_it() -> Result<()> {
     library.forget_resumption()?;
 
     assert_eq!(library.resumption()?, None);
+
     library.forget_resumption()?;
     Ok(())
 }
@@ -18708,6 +20497,7 @@ fn filed_under(tree: &Tree) -> PathBuf {
 
 fn previewed(library: &Library) -> Result<OrganiseSummary> {
     let summary = library.organise(OrganiseOptions::default())?.join()?;
+
     assert!(!summary.cancelled, "the preview reported itself cancelled");
     assert_eq!(summary.stats.moved, 0, "a preview reported a file moved");
     assert_eq!(
@@ -18776,14 +20566,17 @@ fn landings(summary: &OrganiseSummary) -> Vec<(PathBuf, PathBuf)> {
 #[test]
 fn a_preview_moves_nothing_and_names_every_file_it_would_move() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("1.wav", &meddle("One of These Days", "1"));
     tree.write("2.wav", &meddle("Echoes", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = previewed(&library)?;
     let root = filed_under(&tree);
+
     assert_eq!(
         landings(&summary),
         vec![
@@ -18799,6 +20592,7 @@ fn a_preview_moves_nothing_and_names_every_file_it_would_move() -> Result<()> {
     );
     assert!(summary.plan.refused.is_empty());
     assert_eq!(summary.plan.unchanged, 0);
+
     nothing_moved(&summary);
     Ok(())
 }
@@ -18812,15 +20606,18 @@ fn a_track_already_where_the_layout_puts_it_is_counted_unchanged_and_never_moved
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = previewed(&library)?;
+
     assert!(summary.plan.moves.is_empty());
     assert!(summary.plan.refused.is_empty());
     assert_eq!(summary.plan.unchanged, 1);
     assert_eq!(summary.stats.unchanged, 1);
     assert!(summary.plan.folders.is_empty());
     assert!(held.exists(), "the file the layout already names moved");
+
     nothing_moved(&summary);
     Ok(())
 }
@@ -18829,6 +20626,7 @@ fn a_track_already_where_the_layout_puts_it_is_counted_unchanged_and_never_moved
 fn a_set_filed_as_disc_folders_is_planned_into_one_album_folder_with_the_disc_in_each_name()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "The Wall/CD1/a.wav",
         &Wav::new()
@@ -18851,10 +20649,12 @@ fn a_set_filed_as_disc_folders_is_planned_into_one_album_folder_with_the_disc_in
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = previewed(&library)?;
     let root = filed_under(&tree);
+
     assert_eq!(
         landings(&summary),
         vec![
@@ -18873,6 +20673,7 @@ fn a_set_filed_as_disc_folders_is_planned_into_one_album_folder_with_the_disc_in
         vec![root.join("The Wall/CD1"), root.join("The Wall/CD2")]
     );
     assert!(summary.plan.refused.is_empty());
+
     nothing_moved(&summary);
     Ok(())
 }
@@ -18881,14 +20682,17 @@ fn a_set_filed_as_disc_folders_is_planned_into_one_album_folder_with_the_disc_in
 fn two_tracks_naming_one_destination_leave_the_first_moving_and_the_second_collided() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write("a.wav", &meddle("Echoes", "6"));
     tree.write("b.wav", &meddle("Echoes", "6"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = previewed(&library)?;
     let root = filed_under(&tree);
+
     assert_eq!(
         landings(&summary),
         vec![(
@@ -18906,6 +20710,7 @@ fn two_tracks_naming_one_destination_leave_the_first_moving_and_the_second_colli
         }]
     );
     assert_eq!(summary.stats.collided, 1);
+
     nothing_moved(&summary);
     Ok(())
 }
@@ -18913,13 +20718,16 @@ fn two_tracks_naming_one_destination_leave_the_first_moving_and_the_second_colli
 #[test]
 fn a_track_with_nothing_to_file_it_under_is_counted_unidentified() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose.wav", &Wav::new().text(TITLE, "Stray").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = previewed(&library)?;
     let root = filed_under(&tree);
+
     assert!(summary.plan.moves.is_empty());
     assert_eq!(
         summary.plan.refused,
@@ -18929,6 +20737,7 @@ fn a_track_with_nothing_to_file_it_under_is_counted_unidentified() -> Result<()>
         }]
     );
     assert_eq!(summary.stats.unidentified, 1);
+
     nothing_moved(&summary);
     Ok(())
 }
@@ -18940,7 +20749,9 @@ fn a_cue_cut_file_keeps_its_own_name_and_is_planned_by_its_rows_folder() -> Resu
     let root = filed_under(&tree);
 
     assert_eq!(summary.plan.moves.len(), 1);
+
     let planned = &summary.plan.moves[0];
+
     assert_eq!(planned.from, root.join("Meddle.wav"));
     assert_eq!(planned.rows, 3);
     assert_eq!(
@@ -18961,6 +20772,7 @@ fn a_cue_cut_file_keeps_its_own_name_and_is_planned_by_its_rows_folder() -> Resu
         }]
     );
     assert!(summary.plan.refused.is_empty());
+
     nothing_moved(&summary);
     Ok(())
 }
@@ -18979,12 +20791,14 @@ fn applied(library: &Library) -> Result<OrganiseSummary> {
         summary.plan.files_moving(),
         "the run counted moves it does not name"
     );
+
     let landings: Vec<&Path> = summary
         .plan
         .moves
         .iter()
         .flat_map(|planned| planned.files().map(|(_, to)| to))
         .collect();
+
     for planned in &summary.plan.moves {
         for (from, to) in planned.files() {
             assert!(
@@ -19017,9 +20831,12 @@ FILE "Meddle.wav" WAVE
 fn a_sheet_that_cuts_one_track_out_of_a_file_names_it_by_the_name_the_layout_gave_it() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
     tree.write("Meddle.cue", ECHOES_SHEET.as_bytes());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = applied(&library)?;
@@ -19043,6 +20860,7 @@ fn a_sheet_that_cuts_one_track_out_of_a_file_names_it_by_the_name_the_layout_gav
 
     let written = fs::read_to_string(root.join("Pink Floyd/Meddle/01 Echoes.cue"))
         .expect("the sheet travelled with the file it cuts");
+
     assert_eq!(
         written,
         ECHOES_SHEET.replace("\"Meddle.wav\"", "\"01 Echoes.wav\""),
@@ -19071,6 +20889,7 @@ fn a_sheet_that_cuts_a_file_into_several_rows_keeps_naming_the_name_it_kept() ->
 fn a_sheet_named_apart_from_the_file_it_cuts_travels_with_it_and_the_rows_survive_a_rescan()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("CDImage.wav", &Wav::new().frames(44_100).build());
     tree.write(
         "Meddle.cue",
@@ -19078,16 +20897,22 @@ fn a_sheet_named_apart_from_the_file_it_cuts_travels_with_it_and_the_rows_surviv
             .replace("\"Meddle.wav\"", "\"CDImage.wav\"")
             .as_bytes(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let rows = all(&library)?;
+
     assert_eq!(rows.len(), 3);
+
     for row in &rows {
         library.track_played(&row.location, row.span, Duration::ZERO)?;
     }
 
     let summary = applied(&library)?;
     let root = filed_under(&tree);
+
     assert_eq!(summary.stats.moved, 1);
     assert_eq!(
         summary.plan.moves[0].sidecars,
@@ -19098,7 +20923,9 @@ fn a_sheet_named_apart_from_the_file_it_cuts_travels_with_it_and_the_rows_surviv
     );
 
     scan(&library, &options(&tree))?;
+
     let after = all(&library)?;
+
     assert_eq!(
         after.len(),
         3,
@@ -19126,13 +20953,18 @@ FILE "two.wav" WAVE
 #[test]
 fn a_sheet_that_cuts_no_audio_track_leaves_its_file_to_the_whole_file_pass() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &meddle("One of These Days", "1"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let file = filed_under(&tree).join("one.wav");
     let before = library
         .track_at(&file, None)?
         .expect("the file is a track of its own");
+
     library.favour(Favoured::Track(before.id), true)?;
 
     tree.write(
@@ -19144,6 +20976,7 @@ fn a_sheet_that_cuts_no_audio_track_leaves_its_file_to_the_whole_file_pass() -> 
     let after = library
         .track_at(&file, None)?
         .expect("a sheet cutting nothing took the file's row away");
+
     assert_eq!(after.id, before.id);
     assert!(after.favourite.is_some());
     Ok(())
@@ -19152,15 +20985,20 @@ fn a_sheet_that_cuts_no_audio_track_leaves_its_file_to_the_whole_file_pass() -> 
 #[test]
 fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_them() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rip/one.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/two.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/Meddle.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
     tree.write("rip/one.log", b"ripped");
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
 
     let preview = previewed(&library)?;
+
     assert!(
         preview.plan.refused.is_empty(),
         "{:?}",
@@ -19172,7 +21010,9 @@ fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_the
         "the files one sheet names were planned apart"
     );
     assert_eq!(preview.plan.files_moving(), 2);
+
     let album = root.join("Pink Floyd/Meddle");
+
     assert_eq!(
         preview.plan.moves[0]
             .files()
@@ -19200,13 +21040,17 @@ fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_the
         ]
     );
     assert_eq!(preview.plan.folders, vec![root.join("rip")]);
+
     nothing_moved(&preview);
 
     let summary = applied(&library)?;
+
     assert_eq!(summary.stats.moved, 2);
     assert!(!root.join("rip").exists(), "the emptied folder was left");
+
     let written =
         fs::read_to_string(album.join("Meddle.cue")).expect("the sheet travelled beside its files");
+
     assert_eq!(
         written,
         MEDDLE_BY_FILE_SHEET
@@ -19214,10 +21058,12 @@ fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_the
             .replace("\"two.wav\"", "\"02 Echoes.wav\""),
         "the sheet still names a file by the name it no longer has"
     );
+
     let held: Vec<PathBuf> = all(&library)?
         .into_iter()
         .filter_map(|track| track.location.as_path().map(Path::to_path_buf))
         .collect();
+
     assert_eq!(
         held.len(),
         2,
@@ -19231,6 +21077,7 @@ fn the_files_a_sheet_names_one_each_are_filed_together_with_the_sheet_beside_the
 fn the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_first() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write("rip/one.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/two.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/Meddle.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
@@ -19238,12 +21085,16 @@ fn the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_f
         "Pink Floyd/Meddle/01 One of These Days.wav",
         &meddle("Fearless", "3"),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let album = root.join("Pink Floyd/Meddle");
 
     let preview = previewed(&library)?;
+
     assert!(
         preview.plan.refused.is_empty(),
         "{:?}",
@@ -19268,6 +21119,7 @@ fn the_files_a_sheet_names_wait_for_a_file_standing_where_one_lands_to_move_on_f
             ..OrganiseOptions::default()
         })?
         .join()?;
+
     assert_eq!(summary.stats.moved, 3);
     assert_eq!(summary.stats.failed, 0);
     assert!(!root.join("rip").exists(), "the emptied folder was left");
@@ -19284,21 +21136,29 @@ fn organising_a_second_name_onto_the_filed_copy_of_its_file_keeps_the_filed_rows
     let tree = Tree::new();
     let filed = tree.write("Pink Floyd/Meddle/02 Echoes.wav", &meddle("Echoes", "2"));
     let linked = filed.with_file_name("echoes.wav");
+
     fs::hard_link(&filed, &linked).expect("a second name for the filed copy");
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let filed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
     let linked = root.join("Pink Floyd/Meddle/echoes.wav");
+
     for _ in 0..2 {
         let counted = library
             .track_played(&MediaLocation::local(&filed), None, Duration::from_secs(2))?
             .expect("a counted play");
+
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
+
     let favoured = library.track_at(&filed, None)?.expect("the filed row").id;
+
     library.favour(Favoured::Track(favoured), true)?;
+
     let before = library.statistics(Window::Everything)?;
 
     let summary = applied(&library)?;
@@ -19324,24 +21184,32 @@ fn organising_a_second_name_in_another_folder_lands_it_on_the_filed_name_with_bo
     let tree = Tree::new();
     let filed = tree.write("Pink Floyd/Meddle/02 Echoes.wav", &meddle("Echoes", "2"));
     let downloaded = tree.path().join("downloads/echoes.wav");
+
     fs::create_dir_all(tree.path().join("downloads")).expect("a download client's folder");
     fs::hard_link(&filed, &downloaded).expect("a second name for the filed copy");
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let filed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
     let downloaded = root.join("downloads/echoes.wav");
+
     for (played, times) in [(&filed, 2), (&downloaded, 1)] {
         for _ in 0..times {
             let counted = library
                 .track_played(&MediaLocation::local(played), None, Duration::from_secs(2))?
                 .expect("a counted play");
+
             library.listened(counted.listen, Duration::from_secs(2))?;
         }
     }
+
     let favoured = library.track_at(&filed, None)?.expect("the filed row").id;
+
     library.favour(Favoured::Track(favoured), true)?;
+
     let before = library.statistics(Window::Everything)?;
 
     let summary = applied(&library)?;
@@ -19377,12 +21245,16 @@ fn organising_a_second_name_in_another_folder_lands_it_on_the_filed_name_with_bo
 fn the_files_a_sheet_names_wait_in_vain_on_a_file_that_stays_and_each_says_what_it_met()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rip/one.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/two.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/Meddle.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
     tree.write("Pink Floyd/Meddle/02 Echoes.wav", &meddle("Echoes", "2"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let held = root.join("Pink Floyd/Meddle/02 Echoes.wav");
 
@@ -19390,8 +21262,11 @@ fn the_files_a_sheet_names_wait_in_vain_on_a_file_that_stays_and_each_says_what_
 
     assert!(preview.plan.moves.is_empty(), "{:?}", preview.plan.moves);
     assert_eq!(preview.plan.unchanged, 1);
+
     let mut refused: Vec<Refused> = preview.plan.refused.clone();
+
     refused.sort_by(|one, other| one.from.cmp(&other.from));
+
     assert_eq!(
         refused,
         ["rip/one.wav", "rip/two.wav"]
@@ -19409,6 +21284,7 @@ fn the_files_a_sheet_names_wait_in_vain_on_a_file_that_stays_and_each_says_what_
 #[test]
 fn a_file_a_sheet_names_beside_one_nothing_scanned_is_left_where_it_stands() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("one.wav", &Wav::new().frames(44_100).build());
     tree.write("two.wav", &Wav::new().frames(44_100).build());
     tree.write("three.raw", b"not audio this build scans");
@@ -19419,14 +21295,20 @@ fn a_file_a_sheet_names_beside_one_nothing_scanned_is_left_where_it_stands() -> 
         )
         .as_bytes(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = previewed(&library)?;
     let root = filed_under(&tree);
+
     assert!(summary.plan.moves.is_empty());
+
     let mut refused: Vec<Refused> = summary.plan.refused.clone();
+
     refused.sort_by(|one, other| one.from.cmp(&other.from));
+
     assert_eq!(
         refused,
         ["one.wav", "two.wav"]
@@ -19446,11 +21328,15 @@ fn a_file_a_sheet_names_beside_one_nothing_scanned_is_left_where_it_stands() -> 
 fn naming_a_root_files_the_tracks_scanned_from_it_and_leaves_the_others_where_they_stand()
 -> Result<()> {
     let one = Tree::new();
+
     one.write("here.wav", &meddle("Echoes", "1"));
+
     let other = Tree::new();
+
     other.write("there.wav", &meddle("Fearless", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(
         &library,
         &ScanOptions {
@@ -19486,8 +21372,11 @@ fn naming_a_root_files_the_tracks_scanned_from_it_and_leaves_the_others_where_th
 #[test]
 fn a_root_the_catalog_does_not_hold_is_refused_rather_than_filing_nothing() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("here.wav", &meddle("Echoes", "1"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let elsewhere = env::temp_dir();
@@ -19508,17 +21397,21 @@ fn a_root_the_catalog_does_not_hold_is_refused_rather_than_filing_nothing() -> R
 #[cfg(unix)]
 fn across_the_boundary() -> Option<PathBuf> {
     static NEXT: AtomicU64 = AtomicU64::new(0);
+
     let elsewhere = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!(
         "resonate-elsewhere-{}-{}",
         process::id(),
         NEXT.fetch_add(1, Ordering::Relaxed)
     ));
+
     fs::create_dir_all(&elsewhere).expect("a writable directory beside the build");
 
     let here = fs::metadata(env::temp_dir()).expect("a temporary directory to move out of");
     let there = fs::metadata(&elsewhere).expect("the directory just made");
+
     if here.dev() == there.dev() {
         let _ = fs::remove_dir_all(&elsewhere);
+
         return None;
     }
 
@@ -19532,6 +21425,7 @@ fn a_track_whose_destination_is_on_another_filesystem_is_copied_over_and_taken_a
     let tree = Tree::new();
     let stood = tree.write("here.wav", &meddle("Echoes", "1"));
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let Some(elsewhere) = across_the_boundary() else {
@@ -19539,6 +21433,7 @@ fn a_track_whose_destination_is_on_another_filesystem_is_copied_over_and_taken_a
         return Ok(());
     };
     let root = filed_under(&tree);
+
     std::os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
         .expect("a link into the second filesystem");
 
@@ -19581,6 +21476,7 @@ fn a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed() -
     let tree = Tree::new();
     let stood = tree.write("here.wav", &meddle("Echoes", "1"));
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let Some(elsewhere) = across_the_boundary() else {
@@ -19588,14 +21484,19 @@ fn a_copy_a_killed_run_left_whole_on_the_other_filesystem_is_taken_as_landed() -
         return Ok(());
     };
     let root = filed_under(&tree);
+
     std::os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
         .expect("a link into the second filesystem");
+
     let landed = root.join("Pink Floyd/Meddle/01 Echoes.wav");
+
     fs::create_dir_all(landed.parent().expect("a folder")).expect("the folder a run made");
     fs::copy(&stood, &landed).expect("the copy a killed run wrote");
+
     let stamp = fs::metadata(&stood)
         .and_then(|standing| standing.modified())
         .expect("a filesystem that keeps a modification time");
+
     fs::File::options()
         .write(true)
         .open(&landed)
@@ -19634,6 +21535,7 @@ fn a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way() -> Res
     let tree = Tree::new();
     let stood = tree.write("here.wav", &meddle("Echoes", "1"));
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let Some(elsewhere) = across_the_boundary() else {
@@ -19641,17 +21543,25 @@ fn a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way() -> Res
         return Ok(());
     };
     let root = filed_under(&tree);
+
     std::os::unix::fs::symlink(&elsewhere, root.join("Pink Floyd"))
         .expect("a link into the second filesystem");
+
     let landed = root.join("Pink Floyd/Meddle/01 Echoes.wav");
+
     fs::create_dir_all(landed.parent().expect("a folder")).expect("a folder");
+
     let mut other = fs::read(&stood).expect("the file the scan walked");
+
     let last = other.len() - 1;
+
     other[last] ^= 0xFF;
     fs::write(&landed, &other).expect("another file of the same size");
+
     let stamp = fs::metadata(&stood)
         .and_then(|standing| standing.modified())
         .expect("a modification time");
+
     fs::File::options()
         .write(true)
         .open(&landed)
@@ -19670,6 +21580,7 @@ fn a_file_of_the_same_size_and_time_but_other_bytes_is_still_in_the_way() -> Res
 
 fn where_the_rows_are(library: &Library) -> Result<Vec<PathBuf>> {
     let mut rows = Vec::new();
+
     for track in all(library)? {
         rows.extend(library.alternatives_of(track.id)?);
         rows.push(track);
@@ -19684,10 +21595,12 @@ fn where_the_rows_are(library: &Library) -> Result<Vec<PathBuf>> {
 fn organising_puts_every_track_in_its_owner_and_album_folder_and_the_catalog_names_it_where_it_landed()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("1.wav", &meddle("One of These Days", "1"));
     tree.write("2.wav", &meddle("Echoes", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = applied(&library)?;
@@ -19717,6 +21630,7 @@ fn organising_puts_every_track_in_its_owner_and_album_folder_and_the_catalog_nam
 fn a_set_filed_as_disc_folders_lands_in_one_album_folder_with_the_disc_written_into_each_name()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "The Wall/CD1/a.wav",
         &Wav::new()
@@ -19739,6 +21653,7 @@ fn a_set_filed_as_disc_folders_lands_in_one_album_folder_with_the_disc_written_i
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = applied(&library)?;
@@ -19762,9 +21677,11 @@ fn a_set_filed_as_disc_folders_lands_in_one_album_folder_with_the_disc_written_i
 fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten_rather_than_rescanned()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
@@ -19772,9 +21689,11 @@ fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten
     let before = library
         .track_at(&stood, None)?
         .expect("the scan stored the file it walked");
+
     library.track_played(&before.location, None, Duration::ZERO)?;
 
     applied(&library)?;
+
     let landed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
     let after = library
         .track_at(&landed, None)?
@@ -19789,11 +21708,14 @@ fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten
     assert_eq!(library.track_at(&stood, None)?, None);
 
     let counts = scan(&library, &options(&tree))?;
+
     assert_eq!(counts.added, 0, "the scan read the moved file as a new one");
     assert_eq!(counts.removed, 0, "the scan pruned the row it had moved");
+
     let settled = library
         .track_at(&landed, None)?
         .expect("the row outlived the scan that walked past it");
+
     assert_eq!(settled.id, before.id);
     assert_eq!(settled.plays, 1);
     Ok(())
@@ -19803,11 +21725,15 @@ fn a_play_counted_against_a_track_survives_the_move_because_the_row_is_rewritten
 fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_them_again()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
     tree.write("loose/echoes.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
     tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let stood = root.join("loose/echoes.wav");
     let filed = root.join("Pink Floyd/Meddle/02 Echoes.wav");
@@ -19816,6 +21742,7 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
         .expect("the loose file was counted");
 
     let forward = applied(&library)?;
+
     assert_eq!(forward.plan.files_moving(), 2);
     assert!(filed.is_file());
 
@@ -19829,10 +21756,12 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
             .join()
     };
     let preview = walked(false)?;
+
     assert_eq!(preview.plan.files_moving(), 2);
     assert!(filed.is_file(), "a preview of the walk back moved a file");
 
     let back = walked(true)?;
+
     assert_eq!(back.stats.moved, 2);
     assert!(stood.is_file(), "the file was not put back where it stood");
     assert!(root.join("loose/days.wav").is_file());
@@ -19841,13 +21770,16 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
         !root.join("Pink Floyd").exists(),
         "the folders the run made were left behind"
     );
+
     let returned = library
         .track_at(&stood, None)?
         .expect("the row followed its file back");
+
     assert_eq!(returned.id, the_row_of(&heard).id);
     assert_eq!(returned.plays, 1);
 
     let again = walked(true)?;
+
     assert_eq!(again.stats.moved, 2);
     assert!(
         filed.is_file(),
@@ -19859,16 +21791,22 @@ fn an_applied_run_is_walked_back_file_for_file_and_walking_it_back_again_files_t
 #[test]
 fn a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
     tree.write("loose/echoes.lrc", b"[00:01.00]overhead the albatross");
     tree.write("loose/days.wav", &meddle("One of These Days", "1"));
     tree.write("loose/days.txt", b"one of these days");
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
 
     applied(&library)?;
+
     let filed = root.join("Pink Floyd/Meddle");
+
     assert!(filed.join("02 Echoes.lrc").is_file());
     assert!(filed.join("01 One of These Days.txt").is_file());
 
@@ -19901,17 +21839,22 @@ fn a_walk_back_leaves_a_sidecar_rather_than_overwrite_a_file_or_refuse_its_track
 #[test]
 fn a_sidecar_travels_with_the_track_whose_longer_stem_it_carries() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("One of These Days", "1"));
     tree.write("loose/echoes.lrc", b"[00:01.00]overhead the albatross");
     tree.write("loose/echoes.x.wav", &meddle("Echoes", "2"));
     tree.write("loose/echoes.x.lrc", b"[00:01.00]live");
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
 
     let summary = applied(&library)?;
 
     let filed = root.join("Pink Floyd/Meddle");
+
     assert_eq!(summary.stats.moved, 2, "{:?}", summary.plan.refused);
     assert_eq!(
         fs::read(filed.join("01 One of These Days.lrc")).expect("the sidecar of the shorter stem"),
@@ -19929,10 +21872,14 @@ fn a_sidecar_whose_new_name_would_outrun_a_component_is_left_and_its_track_still
 -> Result<()> {
     let tree = Tree::new();
     let long = format!("echoes.{}", "x".repeat(248));
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
     tree.write(&format!("loose/{long}"), b"notes");
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
 
     let summary = applied(&library)?;
@@ -19946,16 +21893,22 @@ fn a_sidecar_whose_new_name_would_outrun_a_component_is_left_and_its_track_still
 #[test]
 fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
     tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let days = root.join("loose/days.wav");
     let echoes = root.join("loose/echoes.wav");
 
     let forward = applied(&library)?;
+
     assert_eq!(forward.plan.files_moving(), 2);
+
     fs::create_dir_all(root.join("loose")).expect("the emptied folder again");
     fs::write(&days, b"in the way").expect("a file where one stood");
 
@@ -19969,12 +21922,15 @@ fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Re
             .join()
     };
     let cut_short = walked()?;
+
     assert_eq!(cut_short.stats.moved, 1);
     assert!(echoes.is_file());
     assert!(library.walks_back()?);
 
     fs::remove_file(&days).expect("the file in the way goes");
+
     let rest = walked()?;
+
     assert_eq!(rest.stats.moved, 1, "the file left behind was forgotten");
     assert!(days.is_file());
     assert!(echoes.is_file(), "a file already put back was moved again");
@@ -19985,8 +21941,11 @@ fn a_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Re
 #[test]
 fn a_path_named_twice_in_a_run_is_planned_once() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
@@ -20006,6 +21965,7 @@ fn a_path_named_twice_in_a_run_is_planned_once() -> Result<()> {
 #[test]
 fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_folder() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
     tree.write("loose/days.wav", &meddle("One of These Days", "1"));
     tree.write("loose/cover.jpg", b"picture");
@@ -20013,7 +21973,9 @@ fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_fold
     tree.write("split/echoes.wav", &meddle("Echoes", "2"));
     tree.write("split/cover.jpg", b"picture");
     tree.write("split/kept.wav", &meddle("Fearless", "3"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
@@ -20041,6 +22003,7 @@ fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_fold
             ..OrganiseOptions::default()
         })?
         .join()?;
+
     assert_eq!(back.stats.moved, 2);
     assert!(root.join("loose/cover.jpg").is_file());
     assert!(!filed.exists());
@@ -20052,6 +22015,7 @@ fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_fold
             ..OrganiseOptions::default()
         })?
         .join()?;
+
     assert_eq!(split.stats.moved, 1);
     assert!(root.join("split/cover.jpg").is_file());
     Ok(())
@@ -20060,10 +22024,13 @@ fn a_folders_pictures_follow_its_tracks_only_where_every_track_lands_in_one_fold
 #[test]
 fn a_run_given_files_files_those_alone_and_leaves_the_rest_where_they_stand() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
     tree.write("loose/echoes.cue", MEDDLE_BY_FILE_SHEET.as_bytes());
     tree.write("loose/days.wav", &meddle("One of These Days", "1"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
@@ -20093,11 +22060,14 @@ fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -
     let tree = Tree::new();
     let echoes = meddle("Echoes", "2");
     let days = meddle("One of These Days", "1");
+
     tree.write("Pink Floyd/Meddle/01 One of These Days.wav", &echoes);
     tree.write("Pink Floyd/Meddle/02 Echoes.wav", &days);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let root = filed_under(&tree);
     let first = root.join("Pink Floyd/Meddle/01 One of These Days.wav");
     let second = root.join("Pink Floyd/Meddle/02 Echoes.wav");
@@ -20120,20 +22090,24 @@ fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -
         fs::read(&first).expect("the other where it was filed"),
         days
     );
+
     let moved = library
         .track_at(&second, None)?
         .expect("Echoes is named where it now stands");
+
     assert_eq!(moved.id, the_row_of(&heard).id);
     assert_eq!(moved.plays, 1);
     assert_eq!(
         library.track_at(&first, None)?.map(|track| track.plays),
         Some(0)
     );
+
     let left: Vec<_> = fs::read_dir(root.join("Pink Floyd/Meddle"))
         .expect("the album's folder")
         .flatten()
         .map(|entry| entry.file_name())
         .collect();
+
     assert_eq!(left.len(), 2, "a parked name was left behind: {left:?}");
     Ok(())
 }
@@ -20141,14 +22115,17 @@ fn two_files_filed_under_each_others_names_trade_places_and_keep_their_plays() -
 #[test]
 fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_moved() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("loose/echoes.wav", &meddle("Echoes", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
     let stood = MediaLocation::local(root.join("loose/echoes.wav"));
     let set = library.start_playlist("Set", &[Cut::whole(stood.clone())])?;
+
     library.keep_lyrics(&stood, None, Some(&words("and no one sings me lullabies")))?;
     library.keep_resumption(
         ZoneId::FIRST,
@@ -20167,9 +22144,11 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
     )?;
 
     applied(&library)?;
+
     let landed = MediaLocation::local(root.join("Pink Floyd/Meddle/02 Echoes.wav"));
 
     let rows = library.playlist_entries(set, None)?;
+
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].location(), &landed);
     assert!(
@@ -20180,12 +22159,14 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
     let kept = library
         .kept_lyrics(&landed, None)?
         .expect("the words kept against the file followed it");
+
     assert_eq!(kept.sung, Some(words("and no one sings me lullabies")));
     assert_eq!(library.kept_lyrics(&stood, None)?, None);
 
     let resumed = library
         .resumption()?
         .expect("the queue kept for the next run is still there");
+
     assert_eq!(resumed.rows.len(), 1);
     assert_eq!(resumed.rows[0].location, landed);
     assert_eq!(
@@ -20204,10 +22185,12 @@ fn a_playlist_row_a_kept_lyric_and_a_kept_queue_row_all_follow_the_file_that_mov
 fn a_destination_another_file_already_holds_is_refused_and_both_files_stay_where_they_are()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("Pink Floyd/Meddle/01 Echoes.wav", &meddle("Echoes", "1"));
     tree.write("elsewhere/x.wav", &meddle("Echoes", "1"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = applied(&library)?;
@@ -20227,8 +22210,11 @@ fn a_destination_another_file_already_holds_is_refused_and_both_files_stay_where
     );
 
     assert!(held.exists() && standing.exists());
+
     let mut where_they_are = where_the_rows_are(&library)?;
+
     where_they_are.sort();
+
     assert_eq!(where_they_are, vec![held, standing]);
     Ok(())
 }
@@ -20240,10 +22226,12 @@ fn a_cue_sheet_moves_with_the_file_it_cuts_and_that_file_keeps_the_name_the_shee
     let before = library.tracks(&TrackQuery::default())?;
 
     let summary = applied(&library)?;
+
     assert_eq!(summary.stats.moved, 1);
     assert_eq!(summary.plan.moves.len(), 1);
 
     let landed = summary.plan.moves[0].to.clone();
+
     assert_eq!(summary.plan.moves[0].rows, 3);
     assert_eq!(landed.file_name(), Some(OsStr::new("Meddle.wav")));
     assert_eq!(
@@ -20252,12 +22240,15 @@ fn a_cue_sheet_moves_with_the_file_it_cuts_and_that_file_keeps_the_name_the_shee
     );
 
     let sheet = landed.with_file_name("Meddle.cue");
+
     assert!(sheet.exists(), "the sheet did not travel with the file");
     assert!(!tree.path().join("Meddle.wav").exists());
     assert!(!tree.path().join("Meddle.cue").exists());
 
     let after = library.tracks(&TrackQuery::default())?;
+
     assert_eq!(after.len(), 3);
+
     for (was, now) in before.iter().zip(&after) {
         assert_eq!(now.id, was.id, "a cue row was rescanned rather than moved");
         assert_eq!(now.span, was.span);
@@ -20265,6 +22256,7 @@ fn a_cue_sheet_moves_with_the_file_it_cuts_and_that_file_keeps_the_name_the_shee
     }
 
     let counts = scan(&library, &options(&tree))?;
+
     assert_eq!(counts.added, 0, "the sheet's rows were read as new ones");
     assert_eq!(counts.removed, 0, "the sheet's rows were pruned");
     Ok(())
@@ -20273,11 +22265,13 @@ fn a_cue_sheet_moves_with_the_file_it_cuts_and_that_file_keeps_the_name_the_shee
 #[test]
 fn a_source_folder_left_empty_is_taken_away_and_one_still_holding_a_file_is_not() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rips/1.wav", &meddle("One of These Days", "1"));
     tree.write("keeps/2.wav", &meddle("Echoes", "2"));
     tree.write("keeps/notes.txt", b"what the rip was made from");
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = applied(&library)?;
@@ -20301,17 +22295,22 @@ fn a_source_folder_left_empty_is_taken_away_and_one_still_holding_a_file_is_not(
 fn a_second_run_moves_nothing_because_every_file_is_already_where_the_layout_puts_it() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write("rips/1.wav", &meddle("One of These Days", "1"));
     tree.write("rips/2.wav", &meddle("Echoes", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let first = applied(&library)?;
+
     assert_eq!(first.stats.moved, 2);
+
     let landed = where_the_rows_are(&library)?;
 
     let again = applied(&library)?;
+
     assert_eq!(again.stats.moved, 0, "a settled library was moved again");
     assert_eq!(again.stats.unchanged, 2);
     assert_eq!(again.stats.pruned, 0);
@@ -20321,6 +22320,7 @@ fn a_second_run_moves_nothing_because_every_file_is_already_where_the_layout_put
     assert!(again.plan.refused.is_empty());
     assert!(again.plan.folders.is_empty());
     assert_eq!(where_the_rows_are(&library)?, landed);
+
     for path in &landed {
         assert!(path.exists(), "{} left on the second run", path.display());
     }
@@ -20332,9 +22332,11 @@ fn a_file_that_has_gone_since_the_scan_is_counted_failed_and_the_rest_of_the_run
 -> Result<()> {
     let tree = Tree::new();
     let gone = tree.write("1.wav", &meddle("One of These Days", "1"));
+
     tree.write("2.wav", &meddle("Echoes", "2"));
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     fs::remove_file(&gone).expect("the file goes away");
 
@@ -20364,12 +22366,15 @@ fn a_file_that_has_gone_since_the_scan_is_counted_failed_and_the_rest_of_the_run
 fn a_track_still_plays_after_the_move_because_the_catalog_names_where_it_landed() -> Result<()> {
     let tree = Tree::new();
     let bytes = meddle("Echoes", "2");
+
     tree.write("loose/echoes.wav", &bytes);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     applied(&library)?;
+
     let landed = filed_under(&tree).join("Pink Floyd/Meddle/02 Echoes.wav");
     let track = library
         .track_at(&landed, None)?
@@ -20390,6 +22395,7 @@ fn a_track_still_plays_after_the_move_because_the_catalog_names_where_it_landed(
 #[test]
 fn a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("1.wav", &meddle("One of These Days", "1"));
     tree.write(
         "2.wav",
@@ -20403,6 +22409,7 @@ fn a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands() 
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     tree.write("Blocked", b"a file where a folder has to go");
 
@@ -20410,6 +22417,7 @@ fn a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands() 
     let root = filed_under(&tree);
 
     let days = root.join("Pink Floyd/Meddle/01 One of These Days.wav");
+
     assert_eq!(
         summary.stats.moved, 1,
         "one refused move took its whole batch with it"
@@ -20434,7 +22442,9 @@ fn a_move_the_volume_refuses_is_refused_alone_and_the_rest_of_its_batch_lands() 
     );
 
     fs::remove_file(root.join("Blocked")).expect("the file in the folder's way goes away");
+
     let again = applied(&library)?;
+
     assert_eq!(
         again.stats.moved, 1,
         "what was refused was not there for the run after it"
@@ -20455,15 +22465,19 @@ struct AnotherVolume(PathBuf);
 impl AnotherVolume {
     fn beside(tree: &Tree) -> Option<Self> {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let folder = Path::new("/dev/shm").join(format!(
             "resonate-organise-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&folder).ok()?;
+
         let volume = Self(folder);
         let apart = fs::metadata(&volume.0).map(|held| held.dev()).ok()
             != fs::metadata(tree.path()).map(|held| held.dev()).ok();
+
         if !apart {
             eprintln!("skipping: the shared memory folder is on the fixture tree's volume");
             return None;
@@ -20488,6 +22502,7 @@ fn ripped_on_another_volume(
     far: &AnotherVolume,
 ) -> Result<(Library, PathBuf, PathBuf)> {
     let rip = far.0.join("1.wav");
+
     fs::write(&rip, meddle("One of These Days", "1")).expect("the second volume is writable");
     fs::File::options()
         .write(true)
@@ -20498,6 +22513,7 @@ fn ripped_on_another_volume(
         .expect("the fixture tree takes a link");
 
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(
         &library,
         &ScanOptions {
@@ -20505,8 +22521,10 @@ fn ripped_on_another_volume(
             ..options(tree)
         },
     )?;
+
     let source = filed_under(tree).join("rips/1.wav");
     let landing = filed_under(tree).join("Pink Floyd/Meddle/01 One of These Days.wav");
+
     assert!(library.track_at(&source, None)?.is_some());
     Ok((library, source, landing))
 }
@@ -20531,6 +22549,7 @@ fn a_file_organised_onto_another_volume_lands_whole_before_the_catalog_follows_a
     let Some(far) = AnotherVolume::beside(&tree) else {
         return Ok(());
     };
+
     let (library, source, landing) = ripped_on_another_volume(&tree, &far)?;
     let bytes = fs::read(&source).expect("the rip");
     let stood = fs::metadata(&source)
@@ -20570,14 +22589,17 @@ fn a_copy_a_killed_run_landed_on_another_volume_is_taken_as_copied_and_one_that_
     let Some(far) = AnotherVolume::beside(&tree) else {
         return Ok(());
     };
+
     let (library, source, landing) = ripped_on_another_volume(&tree, &far)?;
     let bytes = fs::read(&source).expect("the rip");
     let stood = fs::metadata(&source)
         .and_then(|held| held.modified())
         .expect("a stamped rip");
     let mut spoiled = bytes.clone();
+
     *spoiled.last_mut().expect("a rip holds bytes") ^= 1;
     fs::create_dir_all(landing.parent().expect("a folder")).expect("the landing folder");
+
     let landed_by_the_killed_run = |held: &[u8]| {
         fs::write(&landing, held).expect("the copy the killed run landed");
         fs::File::options()
@@ -20588,11 +22610,13 @@ fn a_copy_a_killed_run_landed_on_another_volume_is_taken_as_copied_and_one_that_
     };
 
     landed_by_the_killed_run(&spoiled);
+
     let collided = applied(&library)?;
     let source_kept = fs::read(&source).expect("the rip stays");
     let copy_kept = fs::read(&landing).expect("the differing copy stays");
 
     landed_by_the_killed_run(&bytes);
+
     let resumed = applied(&library)?;
 
     assert_eq!(collided.stats.moved, 0);
@@ -20624,8 +22648,10 @@ fn a_catalog_that_will_not_follow_a_copy_onto_another_volume_keeps_the_source_an
     let Some(far) = AnotherVolume::beside(&tree) else {
         return Ok(());
     };
+
     let (library, source, landing) = ripped_on_another_volume(&tree, &far)?;
     let bytes = fs::read(&source).expect("the rip");
+
     beside(&tree.path().join("library.db"))
         .execute_batch(
             "CREATE TRIGGER moves_refused BEFORE UPDATE OF path ON tracks
@@ -20655,15 +22681,18 @@ fn a_catalog_that_will_not_follow_a_copy_onto_another_volume_keeps_the_source_an
 fn a_stale_row_naming_a_destination_is_taken_out_of_the_way_rather_than_failing_its_batch()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("1.wav", &meddle("One of These Days", "1"));
     tree.write("nameless.wav", &Wav::new().text(TITLE, "Nothing").build());
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
     let days = root.join("Pink Floyd/Meddle/01 One of These Days.wav");
+
     beside(&database)
         .execute(
             "UPDATE tracks SET path = ?1 WHERE path LIKE '%nameless.wav'",
@@ -20702,11 +22731,13 @@ const FIELDS: &str = "The Fields of Ard Skellig";
 
 fn scanned_soundtrack() -> Result<(Tree, Library, PathBuf)> {
     let tree = Tree::new();
+
     tree.write("OST/1.wav", &hunted(SILVER, "Marcin Przybylowicz", "1"));
     tree.write("OST/2.wav", &hunted(FIELDS, "Percival", "2"));
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     Ok((tree, library, database))
 }
@@ -20738,20 +22769,25 @@ fn an_album_grouped_by_its_folder_is_re_keyed_to_the_folder_it_moved_into() -> R
     let root = filed_under(&tree);
 
     let stood = grouping_key(&database);
+
     assert!(
         names_the_folder(&stood, &root.join("OST")),
         "the scan keyed the album by something other than its folder: {stood:?}"
     );
+
     let before = only_album(&library)?;
 
     applied(&library)?;
+
     let landed = root.join("Hunted");
+
     assert!(
         landed.is_dir(),
         "the album did not land in a folder of its own"
     );
 
     let key = grouping_key(&database);
+
     assert!(
         names_the_folder(&key, &landed),
         "the album still names the folder it came out of: {key:?}"
@@ -20776,10 +22812,13 @@ fn a_re_scan_after_a_move_still_finds_one_album_rather_than_two() -> Result<()> 
             rusqlite::params![RELEASE, cover, 1, before.id.get() as i64],
         )
         .expect("the album the enrichment answers for is writable");
+
     assert_eq!(written, 1, "one album row was expected to be answered for");
 
     applied(&library)?;
+
     let landed = filed_under(&tree).join("Hunted/01 Silver for Monsters.wav");
+
     assert!(
         landed.exists(),
         "the first track did not land where it was planned"
@@ -20795,9 +22834,12 @@ fn a_re_scan_after_a_move_still_finds_one_album_rather_than_two() -> Result<()> 
             .text(TRACK, "1")
             .build(),
     );
+
     let counts = scan(&library, &options(&tree))?;
+
     assert_eq!(counts.updated, 1, "the touched file was not probed again");
     assert_eq!(counts.added, 0, "the touched file was read as a new one");
+
     only_album(&library)?;
 
     tree.write(
@@ -20813,6 +22855,7 @@ fn a_re_scan_after_a_move_still_finds_one_album_rather_than_two() -> Result<()> 
     scan(&library, &options(&tree))?;
 
     let after = only_album(&library)?;
+
     assert_eq!(
         after.id, before.id,
         "the re-probed track was grouped onto an album of its own"
@@ -20844,6 +22887,7 @@ fn an_album_whose_tracks_land_in_different_folders_keeps_the_key_it_had() -> Res
         .join()?;
 
     let root = filed_under(&tree);
+
     assert_eq!(summary.stats.moved, 2);
     assert!(
         root.join("Marcin Przybylowicz/Hunted/01 Silver for Monsters.wav")
@@ -20865,18 +22909,22 @@ fn an_album_whose_tracks_land_in_different_folders_keeps_the_key_it_had() -> Res
 #[test]
 fn an_album_moving_into_a_folder_another_album_already_names_keeps_the_key_it_had() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("A/1.wav", &hunted(SILVER, "Marcin Przybylowicz", "1"));
     tree.write("B/2.wav", &hunted(FIELDS, "Marcin Przybylowicz", "2"));
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let root = filed_under(&tree);
     let held = keys(&database);
+
     assert_eq!(held.len(), 2, "two folders were expected to be two albums");
 
     applied(&library)?;
+
     let landed = root.join("Marcin Przybylowicz/Hunted");
     let after = keys(&database);
 
@@ -20899,10 +22947,14 @@ fn an_album_moving_into_a_folder_another_album_already_names_keeps_the_key_it_ha
 #[test]
 fn a_whole_rescan_after_two_albums_land_in_one_folder_keeps_each_the_album_it_was() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("A/1.wav", &hunted(SILVER, "Marcin Przybylowicz", "1"));
     tree.write("B/2.wav", &hunted(FIELDS, "Marcin Przybylowicz", "2"));
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let filed = |library: &Library| -> Result<Vec<(String, Option<AlbumId>)>> {
         Ok(all(library)?
             .into_iter()
@@ -20910,6 +22962,7 @@ fn a_whole_rescan_after_two_albums_land_in_one_folder_keeps_each_the_album_it_wa
             .collect())
     };
     let before = filed(&library)?;
+
     assert_ne!(
         before[0].1, before[1].1,
         "two folders were expected to be two albums"
@@ -20969,6 +23022,7 @@ impl Aiff {
 
     fn text(mut self, id: &[u8; 4], value: &str) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(value.as_bytes());
         frame(&mut self.id3, id, &body);
         self
@@ -20976,6 +23030,7 @@ impl Aiff {
 
     fn described(mut self, description: &str, value: &str) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(description.as_bytes());
         body.push(0);
         body.extend_from_slice(value.as_bytes());
@@ -20985,6 +23040,7 @@ impl Aiff {
 
     fn picture(mut self, bytes: &[u8]) -> Self {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(b"image/png\0");
         body.push(FRONT_COVER);
         body.push(0);
@@ -20996,29 +23052,36 @@ impl Aiff {
     fn build(&self) -> Vec<u8> {
         let bits = 16_u16;
         let mut common = Vec::new();
+
         common.extend_from_slice(&CHANNELS.to_be_bytes());
         common.extend_from_slice(&self.frames.to_be_bytes());
         common.extend_from_slice(&bits.to_be_bytes());
+
         let leading = RATE.leading_zeros();
         let exponent = (16_383 + 31 - leading) as u16;
+
         common.extend_from_slice(&exponent.to_be_bytes());
         common.extend_from_slice(&(u64::from(RATE) << (leading + 32)).to_be_bytes());
 
         let stride = usize::from(CHANNELS) * usize::from(bits / 8);
         let mut sound = vec![0_u8; 8];
+
         sound.resize(sound.len() + self.frames as usize * stride, 0);
 
         let mut body = b"AIFF".to_vec();
+
         aiff_chunk(&mut body, b"COMM", &common);
         aiff_chunk(&mut body, b"SSND", &sound);
         if !self.id3.is_empty() {
             let mut tag = b"ID3\x04\x00\x00".to_vec();
+
             tag.extend_from_slice(&synchsafe(self.id3.len() as u32));
             tag.extend_from_slice(&self.id3);
             aiff_chunk(&mut body, b"ID3 ", &tag);
         }
 
         let mut file = b"FORM".to_vec();
+
         file.extend_from_slice(&(body.len() as u32).to_be_bytes());
         file.extend_from_slice(&body);
         file
@@ -21046,6 +23109,7 @@ fn retagged(library: &Library, apply: bool) -> Result<RetagSummary> {
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
 }
@@ -21068,6 +23132,7 @@ fn cover_of(file: &Path) -> Option<CoverArt> {
 fn covered(library: &Library, art: &CoverArt) -> Result<()> {
     let albums = library.albums(&AlbumQuery::default())?;
     let album = albums.first().expect("one album was grouped");
+
     assert!(
         library.land_archive_cover(album.id, art)?,
         "the catalog took no cover to write back"
@@ -21097,7 +23162,9 @@ fn a_track_number_read_off_the_file_name_is_never_written_into_the_file() -> Res
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library
             .track_at(&file, None)?
@@ -21106,6 +23173,7 @@ fn a_track_number_read_off_the_file_name_is_never_written_into_the_file() -> Res
         Some(3),
         "the file name numbered nothing"
     );
+
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
     let preview = retagged(&library, false)?;
@@ -21131,10 +23199,12 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
     let preview = retagged(&library, false)?;
+
     assert_eq!(preview.retagging.writes.len(), 1);
     assert_eq!(
         fields_of(&preview.retagging.writes[0]),
@@ -21148,6 +23218,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     );
 
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.written, 1);
     assert_eq!(applied.stats.fields, 1);
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
@@ -21158,6 +23229,7 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
     );
 
     let again = retagged(&library, false)?;
+
     assert!(
         again.retagging.writes.is_empty(),
         "the write did not stick: {:?}",
@@ -21179,6 +23251,7 @@ fn walked_back(library: &Library, apply: bool) -> Result<RetagSummary> {
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
 }
@@ -21194,6 +23267,7 @@ fn lyrics_tagged(library: &Library, tracks: Vec<TrackId>, apply: bool) -> Result
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
 }
@@ -21203,6 +23277,7 @@ fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_t
 -> Result<()> {
     const SHEET: &str =
         "[00:01.00]Overhead the albatross\n[00:05.00]Hangs motionless upon the air\n";
+
     let tree = Tree::new();
     let sung = tree.write(
         "1.aiff",
@@ -21220,6 +23295,7 @@ fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_t
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     library.keep_lyrics(
         &MediaLocation::local(&sung),
@@ -21230,6 +23306,7 @@ fn fetched_lyrics_go_into_a_songs_tags_only_when_asked_and_the_walk_back_takes_t
             lyricsfile: None,
         }),
     )?;
+
     let asked = [&sung, &unsung]
         .into_iter()
         .map(|file| Ok(library.track_at(file, None)?.expect("a scanned song").id))
@@ -21289,6 +23366,7 @@ const CONTENT_OF_LYRICS: u8 = 1;
 
 fn timed_lyrics(lines: &[(&str, u32)]) -> Vec<u8> {
     let mut body = vec![UTF8];
+
     body.extend_from_slice(b"eng");
     body.extend_from_slice(&[STAMPED_IN_MILLISECONDS, CONTENT_OF_LYRICS, 0]);
     for (text, at) in lines {
@@ -21301,6 +23379,7 @@ fn timed_lyrics(lines: &[(&str, u32)]) -> Vec<u8> {
 
 fn untimed_lyrics(text: &str) -> Vec<u8> {
     let mut body = vec![UTF8];
+
     body.extend_from_slice(b"eng");
     body.push(0);
     body.extend_from_slice(text.as_bytes());
@@ -21313,18 +23392,22 @@ fn id3_frames_of(file: &Path) -> Vec<([u8; 4], Vec<u8>)> {
         .windows(4)
         .position(|window| window == b"ID3 ")
         .expect("an ID3 chunk");
+
     let tag = &bytes[at + 8..];
     let synchsafe = |held: &[u8]| {
         held[..4].iter().fold(0_usize, |size, byte| {
             (size << 7) | usize::from(*byte & 0x7f)
         })
     };
+
     let whole = synchsafe(&tag[6..10]);
     let mut frames = Vec::new();
     let mut rest = &tag[10..10 + whole];
+
     while rest.len() >= 10 && rest[0] != 0 {
         let id: [u8; 4] = rest[..4].try_into().expect("a frame id");
         let size = synchsafe(&rest[4..8]);
+
         frames.push((id, rest[10..10 + size].to_vec()));
         rest = &rest[10 + size..];
     }
@@ -21342,12 +23425,14 @@ fn lyric_frames_of(file: &Path) -> Vec<([u8; 4], Vec<u8>)> {
 #[test]
 fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result<()> {
     const SHEET: &str = "[00:01.00]Overhead the albatross\n";
+
     let tree = Tree::new();
     let sung = tree
         .path()
         .join(<OsStr as std::os::unix::ffi::OsStrExt>::from_bytes(
             b"caf\xe9.aiff",
         ));
+
     fs::write(
         &sung,
         Aiff::new()
@@ -21356,7 +23441,9 @@ fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result
             .build(),
     )
     .expect("a file with a name that is not text");
+
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(&library, &options(&tree))?;
     library.keep_lyrics(
         &MediaLocation::local(&sung),
@@ -21367,6 +23454,7 @@ fn the_walk_back_puts_back_the_tags_of_a_file_whose_name_is_not_text() -> Result
             lyricsfile: None,
         }),
     )?;
+
     let asked = vec![library.track_at(&sung, None)?.expect("a scanned song").id];
 
     let written = lyrics_tagged(&library, asked, true)?;
@@ -21390,6 +23478,7 @@ fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_
 -> Result<()> {
     const FETCHED: &str = "[00:02.00]Strangers passing in the street\n";
     const TIMED_AS: &str = "[00:01.000]Overhead the albatross\n[00:05.000]Hangs motionless\n";
+
     let tree = Tree::new();
     let sung = tree.write(
         "1.aiff",
@@ -21412,6 +23501,7 @@ fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     library.keep_lyrics(
         &MediaLocation::local(&sung),
@@ -21422,6 +23512,7 @@ fn lyrics_written_over_a_timed_frame_read_back_and_the_walk_back_puts_the_timed_
             lyricsfile: None,
         }),
     )?;
+
     let asked = vec![library.track_at(&sung, None)?.expect("a scanned song").id];
     let before = tags_of(&sung).lyrics;
     let framed_before = lyric_frames_of(&sung);
@@ -21464,9 +23555,11 @@ fn walking_a_tag_run_back_leaves_a_field_another_tagger_changed_since() -> Resul
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
     retagged(&library, true)?;
+
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
 
     fs::write(
@@ -21500,24 +23593,30 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
     let location = MediaLocation::local(&file);
     let track = library
         .track_at(&file, None)?
         .expect("the scanned track")
         .id;
+
     library.favour(Favoured::Track(track), true)?;
+
     assert!(
         !library.retag_walks_back()?,
         "a run was kept before any applied"
     );
 
     retagged(&library, true)?;
+
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
     assert!(library.retag_walks_back()?);
 
     let preview = walked_back(&library, false)?;
+
     assert_eq!(preview.retagging.writes.len(), 1);
     assert_eq!(preview.stats.written, 0);
     assert_eq!(
@@ -21527,6 +23626,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     );
 
     let undone = walked_back(&library, true)?;
+
     assert_eq!(undone.stats.written, 1);
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echos"));
     assert_eq!(tags_of(&file).artist.as_deref(), Some("The Orbiters"));
@@ -21543,6 +23643,7 @@ fn an_applied_tag_run_is_put_back_field_for_field_and_putting_it_back_again_writ
     );
 
     walked_back(&library, true)?;
+
     assert_eq!(
         tags_of(&file).title.as_deref(),
         Some("Echoes"),
@@ -21569,15 +23670,19 @@ fn a_tag_run_keeps_the_study_of_every_file_it_wrote() -> Result<()> {
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let location = MediaLocation::local(&file);
     let studied = library
         .study_of(&location, None)?
         .expect("the enrichment studied the file");
 
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.written, 1);
 
     assert_eq!(
@@ -21609,8 +23714,10 @@ fn a_study_the_enrichment_keeps_holds_the_bands_its_music_sounds_in() -> Result<
     let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let location = MediaLocation::local(&file);
 
     let loudest = library.loudest_kept(&flat_gains())?;
@@ -21628,12 +23735,15 @@ fn a_study_kept_without_its_bands_is_measured_alone_and_keeps_everything_else_it
     let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let location = MediaLocation::local(&file);
     let studied = library
         .study_of(&location, None)?
         .expect("the enrichment studied the file");
+
     beside(&database)
         .execute(
             "UPDATE track_studies SET band_levels = NULL, band_peaks = NULL",
@@ -21665,6 +23775,7 @@ fn bands_that_cannot_be_measured_are_kept_as_failed_and_not_decoded_again_on_eve
     let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
     beside(&database)
@@ -21676,6 +23787,7 @@ fn bands_that_cannot_be_measured_are_kept_as_failed_and_not_decoded_again_on_eve
     fs::write(&file, b"no longer audio").expect("the file broken");
 
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let kept_as_failed: i64 = beside(&database)
         .query_row("SELECT count(*) FROM unstudied", [], |row| row.get(0))
         .expect("the failed studies counted");
@@ -21691,10 +23803,13 @@ fn a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until
     let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let location = MediaLocation::local(&file);
     let kept = library.loudest_kept(&flat_gains())?.peak;
+
     beside(&database)
         .execute("UPDATE track_studies SET band_peaks = NULL", [])
         .expect("the study reads as one kept before its peaks were measured");
@@ -21708,7 +23823,9 @@ fn a_study_kept_without_its_peaks_is_measured_alone_and_is_not_fitted_from_until
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
 
     assert_eq!(library.unmeasured(&[whole_cut(&location)])?, vec![]);
+
     let measured = library.loudest_kept(&flat_gains())?;
+
     assert_eq!(measured.measured, 1);
     assert!(
         (measured.peak - kept).abs() < 1e-6,
@@ -21724,8 +23841,10 @@ fn peaks_kept_before_what_came_together_still_fit_and_are_measured_again() -> Re
     let file = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let location = MediaLocation::local(&file);
     let length_kept = || -> i64 {
         beside(&database)
@@ -21734,6 +23853,7 @@ fn peaks_kept_before_what_came_together_still_fit_and_are_measured_again() -> Re
             })
             .expect("a kept row")
     };
+
     beside(&database)
         .execute(
             "UPDATE track_studies SET band_peaks = substr(band_peaks, 1, ?1)",
@@ -21757,8 +23877,10 @@ fn a_song_no_study_holds_is_left_to_be_decoded_and_one_it_does_is_not() -> Resul
     let studied = tree.write("1.wav", &Wav::new().frames(4 * RATE as usize).build());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     enrich(&library, &Arc::new(Fake::new(Canned::default())), false)?;
+
     let unscanned = MediaLocation::local(tree.path().join("elsewhere.wav"));
 
     let owed = library.unmeasured(&[
@@ -21787,10 +23909,12 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
     let missed = written("missed/2.aiff");
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let found_at = MediaLocation::local(&found);
     let missed_at = MediaLocation::local(&missed);
+
     library.keep_lyrics(&found_at, None, Some(&words("Overhead the albatross")))?;
     library.keep_lyrics(&missed_at, None, None)?;
     beside(&database)
@@ -21802,7 +23926,9 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
 
     answer_track(&database, &found, "Echoes", "The Orbiters", "Orbits");
     answer_track(&database, &missed, "Echoes", "The Orbiters", "Orbits");
+
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.written, 2);
 
     assert_eq!(
@@ -21817,9 +23943,11 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
         library.kept_lyrics(&missed_at, None)?.is_none(),
         "a miss under the old name was kept past the new one"
     );
+
     let refusals: i64 = beside(&database)
         .query_row("SELECT count(*) FROM lyrics_refused", [], |row| row.get(0))
         .expect("the refusals count");
+
     assert_eq!(refusals, 0, "a refusal under the old name was kept");
     Ok(())
 }
@@ -21840,10 +23968,12 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
     let shut = written("shut/2.aiff");
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &open, "Echoes", "The Orbiters", "Orbits");
     answer_track(&database, &shut, "Echoes", "The Orbiters", "Orbits");
     retagged(&library, true)?;
+
     assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
 
     forbid_writing(&shut);
@@ -21852,8 +23982,11 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
         eprintln!("skipping: this user writes a file whatever its mode");
         return Ok(());
     }
+
     let cut_short = walked_back(&library, true)?;
+
     allow_writing(&shut);
+
     assert_eq!(cut_short.stats.written, 1);
     assert_eq!(cut_short.retagging.passed_over.len(), 1);
     assert_eq!(tags_of(&open).title.as_deref(), Some("Echos"));
@@ -21861,6 +23994,7 @@ fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -
     assert!(library.retag_walks_back()?);
 
     let rest = walked_back(&library, true)?;
+
     assert_eq!(rest.stats.written, 1, "the file left behind was forgotten");
     assert_eq!(tags_of(&shut).title.as_deref(), Some("Echos"));
     assert_eq!(
@@ -21877,6 +24011,7 @@ fn a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote() -> Result<()>
     let file = tree.write("loose/echoes.wav", &meddle("Echos", "2"));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "Pink Floyd", "Meddle");
     retagged(&library, true)?;
@@ -21887,6 +24022,7 @@ fn a_tag_run_is_put_back_after_organise_moved_the_files_it_wrote() -> Result<()>
         .map(|(_, to)| to)
         .next()
         .expect("the tagged file was filed");
+
     assert!(!file.exists(), "organise left the file where it stood");
     assert_eq!(tags_of(&landed).title.as_deref(), Some("Echoes"));
 
@@ -21908,12 +24044,15 @@ fn a_tag_run_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
     let file = tree.write("loose/echoes.wav", &meddle("Echos", "2"));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "Pink Floyd", "Meddle");
     retagged(&library, true)?;
 
     let after = tree.path().join("filed/Pink Floyd/02 Echoes.wav");
+
     moved(&file, &after);
+
     let stats = scan(&library, &options(&tree))?;
     let undone = walked_back(&library, true)?;
 
@@ -21983,6 +24122,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
@@ -21997,6 +24137,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
             },
         )?
         .join()?;
+
     assert_eq!(misheard.stats.written, 0);
     assert_eq!(misheard.retagging.passed_over.len(), 1);
     assert_eq!(
@@ -22010,6 +24151,7 @@ fn a_write_that_lands_but_reads_back_otherwise_can_still_be_put_back() -> Result
     );
 
     walked_back(&library, true)?;
+
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echos"));
     Ok(())
 }
@@ -22037,8 +24179,10 @@ impl EditedDuringTheReadBack {
                 popularity: None,
             },
         )?;
+
         let touched = fs::metadata(path).and_then(|held| held.modified());
         let later = touched.expect("a written file's time") + Duration::from_secs(3_600);
+
         fs::File::options()
             .write(true)
             .open(path)
@@ -22094,6 +24238,7 @@ fn an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
@@ -22111,7 +24256,9 @@ fn an_edit_another_program_lands_while_a_write_is_read_back_is_read_by_the_next_
             },
         )?
         .join()?;
+
     scan(&library, &options(&tree))?;
+
     let tracks = library.tracks(&TrackQuery::default())?;
 
     assert_eq!(retagged.stats.written, 1);
@@ -22137,6 +24284,7 @@ fn a_tag_run_the_catalog_cannot_note_writes_no_file() -> Result<()> {
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
     beside(&database)
@@ -22170,6 +24318,7 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
@@ -22179,7 +24328,9 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
         eprintln!("skipping: this user writes a file whatever its mode");
         return Ok(());
     }
+
     let summary = retagged(&library, true);
+
     allow_writing(&file);
 
     assert_eq!(summary?.stats.written, 0);
@@ -22192,6 +24343,7 @@ fn a_write_that_fails_is_not_noted_as_one_to_put_back() -> Result<()> {
 
 fn drawn_png(side: u32) -> Vec<u8> {
     let mut written = std::io::Cursor::new(Vec::new());
+
     image::RgbImage::from_pixel(side, side, image::Rgb([200, 40, 40]))
         .write_to(&mut written, image::ImageFormat::Png)
         .expect("a picture drawn in memory");
@@ -22212,6 +24364,7 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
     let tree = Tree::new();
     let thumbnail = drawn_png(120);
     let mut files = Vec::new();
+
     for (file, title, number) in [
         ("1.wav", "One of These Days", "1"),
         ("2.wav", "A Pillow of Winds", "2"),
@@ -22231,9 +24384,13 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
             ),
         );
     }
+
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     assert_eq!(
         library
             .cover_art(album.id)?
@@ -22253,7 +24410,9 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
         )],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(
         library
             .cover_art(album.id)?
@@ -22269,6 +24428,7 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
             ..options(&tree)
         },
     )?;
+
     assert_eq!(
         library
             .cover_art(album.id)?
@@ -22278,6 +24438,7 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
     );
 
     let planned = retagged(&library, false)?;
+
     assert!(
         planned
             .retagging
@@ -22286,7 +24447,9 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
             .all(|write| write.picture.is_some()),
         "a file's thumbnail was not offered the better cover"
     );
+
     let applied = retagged(&library, true)?;
+
     assert_eq!(front_cover_side(&files[0]), Some(600));
     assert!(
         applied
@@ -22296,14 +24459,17 @@ fn a_thumbnail_a_ripper_embedded_gives_way_to_a_cover_twice_its_size() -> Result
             .all(|write| write.was.picture.is_none()),
         "a replaced picture was held past its page"
     );
+
     let kept: i64 = beside(&tree.path().join("library.db"))
         .query_row("SELECT count(*) FROM retagged_pictures", [], |row| {
             row.get(0)
         })
         .expect("the kept pictures count");
+
     assert_eq!(kept, 1, "one thumbnail three files held was kept thrice");
 
     walked_back(&library, true)?;
+
     assert_eq!(
         front_cover_side(&files[0]),
         Some(120),
@@ -22317,6 +24483,7 @@ fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_
 {
     let tree = Tree::new();
     let held = drawn_png(500);
+
     for (file, title, number) in [
         ("1.wav", "One of These Days", "1"),
         ("2.wav", "A Pillow of Winds", "2"),
@@ -22334,9 +24501,12 @@ fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_
                 .build(),
         );
     }
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
     let answers = || Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
@@ -22352,12 +24522,16 @@ fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_
     beside(&database)
         .execute_batch("CREATE TABLE larger_covers_wanted (since INTEGER) STRICT;")
         .expect("the step owes the larger covers again");
+
     let archive = Arc::new(Fake::new(Canned {
         covers: vec![(mbid(RELEASE), larger)],
         ..answers()
     }));
+
     enrich(&library, &archive, false)?;
+
     let asked_once = archive.called(LookupOp::Cover);
+
     enrich(&library, &archive, false)?;
 
     assert_eq!(
@@ -22376,6 +24550,7 @@ fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_
         Some(1200),
         "the archive's larger cover did not take the small one's place"
     );
+
     let owed: bool = beside(&database)
         .query_row(
             "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'larger_covers_wanted')",
@@ -22383,6 +24558,7 @@ fn a_cover_under_the_small_size_held_before_the_step_is_asked_once_for_a_larger_
             |row| row.get(0),
         )
         .expect("the schema reads back");
+
     assert!(!owed, "the walk left the larger covers owed");
     Ok(())
 }
@@ -22398,12 +24574,15 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
             .build(),
     );
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(&library, &options(&tree))?;
+
     let location = MediaLocation::local(&file);
     let track = library
         .track_at(&file, None)?
         .expect("the scanned track")
         .id;
+
     library.favour(Favoured::Track(track), true)?;
     library.track_played(&location, None, Duration::ZERO)?;
     library.track_played(&location, None, Duration::ZERO)?;
@@ -22413,6 +24592,7 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
         favourite: true,
         plays: 2,
     };
+
     assert_eq!(
         preview
             .retagging
@@ -22424,6 +24604,7 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
     );
 
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.ratings, 1);
     assert_eq!(
         FileTags::default()
@@ -22431,7 +24612,9 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
             .expect("a rating that reads back"),
         Rated::Favourite { plays: Some(2) }
     );
+
     let again = retagged(&library, false)?;
+
     assert!(
         again.retagging.writes.is_empty(),
         "the rating did not stick: {:?}",
@@ -22440,6 +24623,7 @@ fn a_favourite_and_its_plays_are_written_into_the_file_and_taken_away_again() ->
 
     library.favour(Favoured::Track(track), false)?;
     retagged(&library, true)?;
+
     assert_eq!(
         FileTags::default()
             .rated(&location)
@@ -22460,13 +24644,17 @@ fn a_play_count_is_written_into_a_file_nobody_marked_a_favourite() -> Result<()>
             .build(),
     );
     let library = Library::open(&tree.path().join("library.db"))?;
+
     scan(&library, &options(&tree))?;
+
     let location = MediaLocation::local(&file);
+
     for _ in 0..3 {
         library.track_played(&location, None, Duration::ZERO)?;
     }
 
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.ratings, 1);
     assert_eq!(
         FileTags::default()
@@ -22493,11 +24681,13 @@ fn a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew() -> Result
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
     retagged(&library, true)?;
 
     let held = stored(&database, &file);
+
     assert_eq!(
         held.tagged_title.as_deref(),
         Some("Echoes"),
@@ -22514,6 +24704,7 @@ fn a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew() -> Result
     )?;
 
     let after = stored(&database, &file);
+
     assert_eq!(after.title, "Echoes");
     assert!(
         after.answered.is_some(),
@@ -22525,8 +24716,10 @@ fn a_rescan_reads_this_builds_own_write_as_the_names_it_already_knew() -> Result
 #[test]
 fn a_release_that_landed_is_written_into_every_file_it_named() -> Result<()> {
     let tree = Tree::new();
+
     for (index, title) in ORBITS_TITLES.into_iter().enumerate() {
         let number = index as u32 + 1;
+
         tree.write(
             &format!("Orbits/{number}.aiff"),
             &Aiff::new()
@@ -22538,18 +24731,24 @@ fn a_release_that_landed_is_written_into_every_file_it_named() -> Result<()> {
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let fake = Arc::new(Fake::new(Canned {
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let summary = retagged(&library, true)?;
+
     assert_eq!(summary.stats.written, 3, "{:?}", why_passed_over(&summary));
 
     let held = tags_of(&tree.path().join("Orbits/1.aiff"));
+
     assert_eq!(held.album.as_deref(), Some("Orbits"));
     assert_eq!(held.date.as_deref(), Some("1998-03-02"));
     assert_eq!(held.label.as_deref(), Some("Harvest"));
@@ -22581,20 +24780,26 @@ fn a_cover_the_catalog_holds_is_written_into_a_file_that_carries_none() -> Resul
             .build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let art = png_art(512);
+
     covered(&library, &art)?;
 
     let preview = retagged(&library, false)?;
+
     assert_eq!(preview.retagging.writes.len(), 1);
     assert_eq!(preview.retagging.writes[0].picture.as_deref(), Some(&art));
     assert_eq!(cover_of(&file), None, "a preview wrote a picture");
 
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.pictures, 1, "{:?}", why_passed_over(&applied));
     assert_eq!(cover_of(&file), Some(art));
 
     let again = retagged(&library, false)?;
+
     assert!(
         again.retagging.writes.is_empty(),
         "the picture did not stick: {:?}",
@@ -22613,6 +24818,7 @@ fn matroska_named(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
     let source = held.write("tone.wav", &Wav::new().frames(88_200).build());
     let target = tree.path().join(name);
     let mut command = Command::new("ffmpeg");
+
     command
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -22620,6 +24826,7 @@ fn matroska_named(tree: &Tree, name: &str, tags: &[&str]) -> Option<PathBuf> {
     for tag in tags {
         command.args(["-metadata", tag]);
     }
+
     let encoded = command
         .arg(&target)
         .stdout(Stdio::null())
@@ -22646,19 +24853,23 @@ fn a_matroska_under_an_album_with_a_cover_takes_its_names_and_is_offered_no_pict
     };
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     covered(&library, &png_art(512))?;
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
     let preview = retagged(&library, false)?;
+
     assert_eq!(preview.retagging.writes.len(), 1);
     assert_eq!(preview.retagging.writes[0].picture, None);
 
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.written, 1, "{:?}", why_passed_over(&applied));
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
 
     let again = retagged(&library, true)?;
+
     assert_eq!(why_passed_over(&again), Vec::new());
     assert_eq!(again.stats.written, 0);
     Ok(())
@@ -22668,6 +24879,7 @@ fn a_matroska_under_an_album_with_a_cover_takes_its_names_and_is_offered_no_pict
 fn a_file_that_carries_a_picture_keeps_the_one_it_has() -> Result<()> {
     let held = png_art(64);
     let tree = Tree::new();
+
     let file = tree.write(
         "1.aiff",
         &Aiff::new()
@@ -22678,6 +24890,7 @@ fn a_file_that_carries_a_picture_keeps_the_one_it_has() -> Result<()> {
             .build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = retagged(&library, true)?;
@@ -22697,6 +24910,7 @@ fn a_track_under_no_album_is_offered_no_picture() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write("1.aiff", &Aiff::new().text(TITLE, "Echoes").build());
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let summary = retagged(&library, true)?;
@@ -22715,19 +24929,23 @@ fn a_wave_file_is_written_into_and_read_back_as_what_was_written() -> Result<()>
             .text(ARTIST, "The Orbiters")
             .id3_in_a_chunk(),
     )?;
+
     assert_eq!(
         stored(&database, &file).tagged_title.as_deref(),
         Some("Echos"),
         "the scan did not read the ID3 chunk"
     );
+
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
 
     let applied = retagged(&library, true)?;
+
     assert_eq!(applied.stats.written, 1, "{:?}", why_passed_over(&applied));
     assert_eq!(tags_of(&file).title.as_deref(), Some("Echoes"));
     assert_eq!(tags_of(&file).artist.as_deref(), Some("The Orbiters"));
 
     let again = retagged(&library, false)?;
+
     assert!(
         again.retagging.writes.is_empty(),
         "the write did not stick: {:?}",
@@ -22741,13 +24959,17 @@ fn a_wave_file_tagged_ahead_of_its_riff_header_has_the_tag_moved_into_a_chunk_an
 -> Result<()> {
     let (_tree, library, database, file) =
         scanned_lone(Wav::new().text(TITLE, "Echos").text(ARTIST, "The Orbiters"))?;
+
     answer_track(&database, &file, "Echoes", "The Orbiters", "Orbits");
+
     let before = decoded_samples(&file);
 
     let summary = retagged(&library, true)?;
 
     assert!(why_passed_over(&summary).is_empty(), "{summary:?}");
+
     let written = fs::read(&file).expect("the file is still there");
+
     assert!(
         written.starts_with(b"RIFF"),
         "a tag still stands ahead of the header"
@@ -22772,6 +24994,7 @@ fn decoded_samples(file: &Path) -> Vec<u8> {
         .windows(4)
         .position(|window| window == b"data")
         .expect("a data chunk");
+
     let length = u32::from_le_bytes(bytes[at + 4..at + 8].try_into().expect("a length")) as usize;
     bytes[at + 8..at + 8 + length].to_vec()
 }
@@ -22779,9 +25002,13 @@ fn decoded_samples(file: &Path) -> Vec<u8> {
 #[test]
 fn a_format_this_build_would_not_read_its_own_write_back_from_is_passed_over() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("1.caf", &Wav::new().text(TITLE, "Echoes").build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let summary = retagged(&library, true)?;
 
     assert!(summary.retagging.writes.is_empty());
@@ -22796,7 +25023,9 @@ fn a_row_cut_out_of_a_file_it_shares_never_has_its_names_written_into_the_file()
     let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
     let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library.tracks(&TrackQuery::default())?.len(),
         2,
@@ -22833,6 +25062,7 @@ fn answer_the_cut(database: &Path, file: &Path, second: bool, title: &str, artis
             rusqlite::params![title, artist, ASKED, ANSWERED, settled(file), second],
         )
         .expect("the row the enrichment answers for is writable");
+
     assert_eq!(written, 1, "one cut row was expected to be answered for");
 }
 
@@ -22842,6 +25072,7 @@ fn titles_held(library: &Library) -> Result<Vec<String>> {
         .into_iter()
         .map(|track| track.title)
         .collect();
+
     titles.sort();
     Ok(titles)
 }
@@ -22853,11 +25084,14 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
     let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_the_cut(&database, &file, true, "Echoes (Live)", "Pink Floyd");
+
     let held = fs::read(&file).expect("the cut file is there");
 
     let preview = retagged(&library, false)?;
+
     assert!(preview.retagging.writes.is_empty(), "{preview:?}");
     assert_eq!(preview.retagging.sheets.len(), 1, "{preview:?}");
     assert_eq!(
@@ -22876,6 +25110,7 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
     );
 
     let applied = retagged(&library, true)?;
+
     assert!(why_passed_over(&applied).is_empty(), "{applied:?}");
     assert_eq!(applied.stats.written, 1);
     assert_eq!(applied.stats.fields, 1);
@@ -22896,20 +25131,24 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
         .map(|entry| entry.file_name().to_string_lossy().into_owned())
         .filter(|name| name.contains(".resonate-"))
         .collect();
+
     assert!(
         left.is_empty(),
         "the staged sheet was left behind: {left:?}"
     );
 
     let again = retagged(&library, false)?;
+
     assert!(again.retagging.sheets.is_empty(), "{again:?}");
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         titles_held(&library)?,
         vec!["Echoes (Live)".to_owned(), "One of These Days".to_owned()],
         "the rescan did not read the sheet as the catalog had followed it"
     );
+
     let unasked: i64 = beside(&database)
         .query_row(
             "SELECT count(*) FROM tracks WHERE answered IS NULL AND span_start > 0",
@@ -22917,6 +25156,7 @@ fn a_name_answered_for_a_cue_cut_row_is_written_into_its_track_of_the_sheet() ->
             |row| row.get(0),
         )
         .expect("the rows are readable");
+
     assert_eq!(
         unasked, 0,
         "the rescan read the written sheet as retagged by hand"
@@ -22931,16 +25171,19 @@ fn a_sheet_edited_since_the_scan_read_it_is_not_written_over() -> Result<()> {
     let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_the_cut(&database, &file, true, "Echoes (Live)", "Pink Floyd");
 
     let edited = MEDDLE_AIFF_SHEET.replace("Meddle\"\nFILE", "Meddle (Remastered)\"\nFILE");
+
     fs::write(&sheet, &edited).expect("the sheet is writable");
     fs::File::options()
         .write(true)
         .open(&sheet)
         .and_then(|held| held.set_modified(SystemTime::now() + Duration::from_secs(5)))
         .expect("the sheet takes a later stamp");
+
     let summary = retagged(&library, true)?;
 
     assert_eq!(why_passed_over(&summary), vec![Unwritten::SheetChanged]);
@@ -22959,13 +25202,17 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
     let sheet = tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_the_cut(&database, &file, false, "One of These Days", "Ada");
     answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
 
     let applied = retagged(&library, true)?;
+
     assert!(why_passed_over(&applied).is_empty(), "{applied:?}");
+
     let written = fs::read_to_string(&sheet).expect("the sheet is there");
+
     assert!(
         written
             .contains("    TITLE \"Echoes (Live)\"\n    PERFORMER \"Ada\"\n    INDEX 01 00:00:20"),
@@ -22977,6 +25224,7 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
     );
 
     let preview = walked_back(&library, false)?;
+
     assert_eq!(preview.retagging.sheets.len(), 1, "{preview:?}");
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is there"),
@@ -22985,6 +25233,7 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
     );
 
     let put_back = walked_back(&library, true)?;
+
     assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is there"),
@@ -22993,6 +25242,7 @@ fn a_tag_run_written_into_a_sheet_is_put_back_byte_for_byte() -> Result<()> {
     );
 
     let again = walked_back(&library, true)?;
+
     assert!(why_passed_over(&again).is_empty(), "{again:?}");
     assert_eq!(
         fs::read_to_string(&sheet).expect("the sheet is there"),
@@ -23007,13 +25257,18 @@ fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and
 -> Result<()> {
     let tree = Tree::new();
     let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+
     tree.write("Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_the_cut(&database, &file, false, "One of These Days", "Ada");
     answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+
     let written = retagged(&library, true)?;
+
     assert!(why_passed_over(&written).is_empty(), "{written:?}");
 
     let organised = applied(&library)?;
@@ -23023,13 +25278,17 @@ fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and
         .next()
         .expect("the file a sheet cuts was filed");
     let sheet = landed.with_file_name("Meddle.cue");
+
     assert!(sheet.exists(), "the sheet did not travel with the file");
     assert!(!tree.path().join("Meddle.cue").exists());
 
     let put_back = walked_back(&library, true)?;
+
     assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
     assert_eq!(put_back.retagging.sheets.len(), 1, "{put_back:?}");
+
     let read = fs::read_to_string(&sheet).expect("the sheet is where organise put it");
+
     assert!(read.contains("    TITLE \"Echoes\"\n"), "{read}");
     assert!(!read.contains("Echoes (Live)"), "{read}");
     Ok(())
@@ -23039,26 +25298,36 @@ fn a_tag_run_written_into_a_sheet_is_put_back_after_organise_moved_the_sheet_and
 fn a_tag_run_written_into_a_sheet_is_put_back_after_a_hand_move_the_scan_followed() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write("rip/Meddle.aiff", &Aiff::new().frames(44_100).build());
+
     tree.write("rip/Meddle.cue", MEDDLE_AIFF_SHEET.as_bytes());
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     answer_the_cut(&database, &file, false, "One of These Days", "Ada");
     answer_the_cut(&database, &file, true, "Echoes (Live)", "Ada");
+
     let written = retagged(&library, true)?;
+
     assert!(why_passed_over(&written).is_empty(), "{written:?}");
 
     fs::create_dir_all(tree.path().join("filed")).expect("a writable temporary directory");
     fs::rename(tree.path().join("rip"), tree.path().join("filed/Meddle"))
         .expect("the rip is moved by hand");
+
     let stats = scan(&library, &options(&tree))?;
+
     assert_eq!(stats.moved, 2);
 
     let put_back = walked_back(&library, true)?;
+
     assert!(why_passed_over(&put_back).is_empty(), "{put_back:?}");
     assert_eq!(put_back.retagging.sheets.len(), 1, "{put_back:?}");
+
     let read = fs::read_to_string(tree.path().join("filed/Meddle/Meddle.cue"))
         .expect("the sheet is where the hand put it");
+
     assert!(read.contains("    TITLE \"Echoes\"\n"), "{read}");
     assert!(!read.contains("Echoes (Live)"), "{read}");
     Ok(())
@@ -23074,10 +25343,13 @@ fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused
     let sheet_text = "PERFORMER \"Ad\u{e9}la\u{ef}de\"\nTITLE \"Caf\u{e9} cr\u{e8}me\"\nFILE \"Meddle.aiff\" AIFF\n  TRACK 01 AUDIO\n    TITLE \"Entr\u{e9}e\"\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    TITLE \"Fl\u{e2}nerie\"\n    INDEX 01 00:00:20\n";
     let tree = Tree::new();
     let file = tree.write("Meddle.aiff", &Aiff::new().frames(44_100).build());
+
     let sheet = tree.write("Meddle.cue", &latin(sheet_text));
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     assert!(
         titles_held(&library)?.contains(&"Fl\u{e2}nerie".to_owned()),
         "the sheet was not read in its code page"
@@ -23090,7 +25362,9 @@ fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused
         "Fl\u{e2}nerie \u{e0} l'aube",
         "Ad\u{e9}la\u{ef}de",
     );
+
     let applied = retagged(&library, true)?;
+
     assert!(why_passed_over(&applied).is_empty(), "{applied:?}");
     assert_eq!(
         fs::read(&sheet).expect("the sheet is there"),
@@ -23099,6 +25373,7 @@ fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused
     );
 
     let standing = fs::read(&sheet).expect("the sheet is there");
+
     answer_the_cut(
         &database,
         &file,
@@ -23106,7 +25381,9 @@ fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused
         "\u{6771}\u{4eac}",
         "Ad\u{e9}la\u{ef}de",
     );
+
     let refused = retagged(&library, true)?;
+
     assert_eq!(why_passed_over(&refused), vec![Unwritten::Refused]);
     assert_eq!(
         fs::read(&sheet).expect("the sheet is there"),
@@ -23119,8 +25396,11 @@ fn a_sheet_in_a_code_page_is_written_in_it_and_a_name_it_cannot_spell_is_refused
 #[test]
 fn a_suggestion_is_read_against_the_catalog_as_the_scan_left_it() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(library.did_you_mean("metalica")?, None);
@@ -23156,15 +25436,19 @@ fn heard_in(database: &Path) -> Vec<i64> {
 #[test]
 fn a_play_records_how_long_of_it_was_heard() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("cold.wav", &Wav::new().text(TITLE, "Cold").build());
+
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
     let counted = library
         .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
+
     assert_eq!(
         heard_in(&database),
         vec![0],
@@ -23172,13 +25456,17 @@ fn a_play_records_how_long_of_it_was_heard() -> Result<()> {
     );
 
     library.listened(counted.listen, Duration::from_secs(90))?;
+
     assert_eq!(heard_in(&database), vec![90_000_000_000]);
 
     let again = library
         .track_played(&cold, None, Duration::ZERO)?
         .expect("the row the play counted");
+
     assert_ne!(again.listen, counted.listen);
+
     library.listened(again.listen, Duration::from_millis(1_500))?;
+
     assert_eq!(
         heard_in(&database),
         vec![90_000_000_000, 1_500_000_000],
@@ -23202,9 +25490,11 @@ fn favoured_tracks(library: &Library) -> Result<Vec<String>> {
 #[test]
 fn a_favourite_track_is_found_by_is_favourite() -> Result<()> {
     let (tree, library) = scanned_shapes();
+
     let cold = library
         .track_at(&tree.path().join("cold.wav"), None)?
         .expect("the scan stored the file it walked");
+
     assert_eq!(cold.favourite, None);
     assert!(favoured_tracks(&library)?.is_empty());
 
@@ -23215,6 +25505,7 @@ fn a_favourite_track_is_found_by_is_favourite() -> Result<()> {
         sort: SortOrder::Title,
         ..TrackQuery::default()
     })?;
+
     assert_eq!(titles(&narrowed), vec!["Cold"]);
     assert!(narrowed[0].favourite.is_some());
     assert_eq!(
@@ -23229,6 +25520,7 @@ fn a_favourite_track_is_found_by_is_favourite() -> Result<()> {
 fn favouriting_an_album_leaves_its_tracks_alone() -> Result<()> {
     let (_tree, library) = scanned_shapes();
     let winter = album_titled(&library, "Winter")?;
+
     assert_eq!(winter.favourite, None);
 
     assert!(library.favour(Favoured::Album(winter.id), true)?);
@@ -23253,6 +25545,7 @@ fn favouriting_an_album_leaves_its_tracks_alone() -> Result<()> {
     );
 
     let ada = artist_named(&library, "Ada")?;
+
     assert_eq!(ada.favourite, None);
     assert!(library.favour(Favoured::Artist(ada.id), true)?);
     assert_eq!(
@@ -23270,6 +25563,7 @@ fn favouriting_an_album_leaves_its_tracks_alone() -> Result<()> {
 #[test]
 fn unfavouriting_puts_a_row_back_the_way_it_was() -> Result<()> {
     let (tree, library) = scanned_shapes();
+
     let cold = library
         .track_at(&tree.path().join("cold.wav"), None)?
         .expect("the scan stored the file it walked");
@@ -23294,15 +25588,18 @@ fn unfavouriting_puts_a_row_back_the_way_it_was() -> Result<()> {
 fn favouring_a_favourite_keeps_the_stamp_it_was_marked_with_and_answers_that_nothing_moved()
 -> Result<()> {
     let (tree, library) = scanned_shapes();
+
     let cold = library
         .track_at(&tree.path().join("cold.wav"), None)?
         .expect("the scan stored the file it walked");
 
     assert!(library.favour(Favoured::Track(cold.id), true)?);
+
     let marked = library
         .track(cold.id)?
         .expect("the row is still there")
         .favourite;
+
     assert!(marked.is_some(), "favouring left no stamp");
 
     assert!(
@@ -23328,6 +25625,7 @@ fn favouring_a_favourite_keeps_the_stamp_it_was_marked_with_and_answers_that_not
 
 fn listed_playlists(library: &Library) -> Result<Vec<Vec<String>>> {
     let mut every = Vec::new();
+
     for order in PlaylistOrder::ALL {
         for reading in Direction::ALL {
             every.push(
@@ -23347,9 +25645,12 @@ fn listed_playlists(library: &Library) -> Result<Vec<Vec<String>>> {
 fn a_pinned_playlist_leads_every_order() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     library.start_playlist("Morning", &[file("a.wav")])?;
     library.start_playlist("Evening", &[file("b.wav"), file("c.wav")])?;
+
     let night = library.start_playlist("Night", &[file("c.wav")])?;
+
     assert!(
         listed_playlists(&library)?
             .iter()
@@ -23364,6 +25665,7 @@ fn a_pinned_playlist_leads_every_order() -> Result<()> {
             .and_then(|found| found.pinned)
             .is_some()
     );
+
     for listed in listed_playlists(&library)? {
         assert_eq!(
             listed.first().map(String::as_str),
@@ -23393,6 +25695,7 @@ fn a_pinned_playlist_leads_every_order() -> Result<()> {
 fn rows_put_into_a_playlist_at_a_place_land_there_and_one_undo_takes_them_out() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     let evening = library.start_playlist("Evening", &[file("a.wav"), file("b.wav")])?;
     let names = |library: &Library| -> Result<Vec<String>> {
         Ok(library
@@ -23429,18 +25732,21 @@ fn rows_put_into_a_playlist_at_a_place_land_there_and_one_undo_takes_them_out() 
     library
         .undo()?
         .expect("the insert at a place is there to take back");
+
     assert_eq!(names(&library)?, ["a.wav", "b.wav"]);
     Ok(())
 }
 
 fn offered_playlist_tree() -> (Tree, PathBuf) {
     let tree = Tree::new();
+
     for (file, title) in [("a.wav", "Echoes"), ("b.wav", "Dogs"), ("c.wav", "Sheep")] {
         tree.write(file, &Wav::new().text(TITLE, title).build());
     }
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database).expect("a catalog on disc");
+
     scan(&library, &options(&tree)).expect("a scan of three files");
     (tree, database)
 }
@@ -23451,10 +25757,13 @@ fn an_edit_a_model_made_is_taken_onto_the_windows_undo_and_walked_back_there() -
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
     let model = Library::open(&database)?;
     let window = Library::open(&database)?;
+
     model.offer_edits_as_a_model();
 
     let evening = model.start_playlist("Evening", &[file("a.wav"), file("b.wav")])?;
+
     assert!(model.remove_from_playlist(evening, Span::one(0))?);
+
     model.rename_playlist(evening, "Night")?;
 
     assert_eq!(model.take_what_a_model_offered()?, 0);
@@ -23469,24 +25778,30 @@ fn an_edit_a_model_made_is_taken_onto_the_windows_undo_and_walked_back_there() -
     let offered = window
         .undoable()
         .expect("the rename is on the window's undo");
+
     assert_eq!(offered.edit, Edit::Renamed);
     assert_eq!(offered.made_by, Maker::AModel);
     assert_eq!(offered.behind, 2);
 
     window.undo()?.expect("the rename is put back");
+
     assert_eq!(
         window.redoable().map(|redone| redone.made_by),
         Some(Maker::AModel),
         "the redo of a model's edit was not said to be the model's"
     );
+
     window.undo()?.expect("the dropped row is put back");
+
     let named = window.playlist(evening)?.expect("the playlist stands");
+
     assert_eq!(named.name, "Evening");
     assert_eq!(named.entries, 2);
 
     window
         .undo()?
         .expect("the playlist the model started is taken away");
+
     assert!(window.playlist(evening)?.is_none());
     assert!(
         matches!(model.undo(), Err(Error::PlaylistChanged(id)) if id == evening),
@@ -23502,19 +25817,24 @@ fn an_edit_a_model_undid_or_another_process_wrote_over_is_not_taken() -> Result<
     let model = Library::open(&database)?;
     let window = Library::open(&database)?;
     let command_line = Library::open(&database)?;
+
     model.offer_edits_as_a_model();
 
     let evening = model.start_playlist("Evening", &[file("a.wav")])?;
+
     assert_eq!(model.add_to_playlist(evening, &[file("b.wav")])?, 1);
+
     model.undo()?.expect("the model takes back its own add");
     model.rename_playlist(evening, "Night")?;
     model.undo()?.expect("the model takes back its rename");
     model.redo()?.expect("the model makes its rename again");
 
     assert_eq!(window.take_what_a_model_offered()?, 2);
+
     let offered = window
         .undoable()
         .expect("the rename made again is on the window's undo");
+
     assert_eq!(offered.edit, Edit::Renamed);
     assert_eq!(offered.behind, 1, "the add the model took back was offered");
 
@@ -23533,19 +25853,26 @@ fn an_edit_a_model_undid_or_another_process_wrote_over_is_not_taken() -> Result<
 fn undoing_an_edit_keeps_a_playlist_pinned() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     let evening = library.start_playlist("Evening", &[file("a.wav"), file("b.wav")])?;
+
     assert!(library.pin_playlist(evening, true)?);
+
     let pinned = library
         .playlist(evening)?
         .expect("the playlist is there")
         .pinned;
+
     assert!(pinned.is_some());
 
     assert!(library.remove_from_playlist(evening, Span::one(0))?);
+
     let put_back = library.undo()?.expect("the drop is there to put back");
+
     assert_eq!(put_back.playlist, evening);
 
     let after = library.playlist(evening)?.expect("the playlist is there");
+
     assert_eq!(after.entries, 2, "the row did not come back");
     assert_eq!(
         after.pinned, pinned,
@@ -23558,12 +25885,17 @@ fn undoing_an_edit_keeps_a_playlist_pinned() -> Result<()> {
 fn a_pin_made_after_an_edit_survives_walking_the_edit_back() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     let evening = library.start_playlist("Evening", &[file("a.wav")])?;
 
     library.add_to_playlist(evening, &[file("b.wav")])?;
+
     assert!(library.pin_playlist(evening, true)?);
+
     library.undo()?.expect("the add is there to walk back");
+
     let after = library.playlist(evening)?.expect("the playlist is there");
+
     assert_eq!(after.entries, 1);
     assert!(
         after.pinned.is_some(),
@@ -23571,9 +25903,13 @@ fn a_pin_made_after_an_edit_survives_walking_the_edit_back() -> Result<()> {
     );
 
     library.add_to_playlist(evening, &[file("b.wav")])?;
+
     assert!(library.pin_playlist(evening, false)?);
+
     library.undo()?.expect("the add is there to walk back");
+
     let after = library.playlist(evening)?.expect("the playlist is there");
+
     assert!(
         after.pinned.is_none(),
         "walking back an add put a pin taken off back"
@@ -23596,6 +25932,7 @@ fn narrowed(library: &Library, text: &str) -> Result<Vec<String>> {
 #[test]
 fn a_genre_tag_is_searchable() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "a.wav",
         &Wav::new()
@@ -23604,12 +25941,15 @@ fn a_genre_tag_is_searchable() -> Result<()> {
             .build(),
     );
     tree.write("b.wav", &Wav::new().text(TITLE, "Dogs").build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let echoes = library
         .track_at(&tree.path().join("a.wav"), None)?
         .expect("the scan stored the file it walked");
+
     assert_eq!(echoes.genre.as_deref(), Some("Progressive Rock"));
 
     assert_eq!(narrowed(&library, "genre:progressive")?, vec!["Echoes"]);
@@ -23629,6 +25969,7 @@ fn a_genre_tag_is_searchable() -> Result<()> {
 #[test]
 fn a_whole_genre_is_asked_of_each_genre_a_track_lists_and_of_no_longer_name() -> Result<()> {
     let tree = Tree::new();
+
     for (name, genre) in [
         ("Strings", "House; Disco"),
         ("Brass", "Disco"),
@@ -23640,7 +25981,9 @@ fn a_whole_genre_is_asked_of_each_genre_a_track_lists_and_of_no_longer_name() ->
             &Wav::new().text(TITLE, name).text(GENRE, genre).build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     assert_eq!(narrowed(&library, "genre:=House")?, vec!["Strings"]);
@@ -23664,12 +26007,14 @@ fn a_whole_genre_is_asked_of_each_genre_a_track_lists_and_of_no_longer_name() ->
 #[test]
 fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -> Result<()> {
     let tree = Tree::new();
+
     for number in 1..=TRACKS_OF_A_DECADE {
         let genre = if number % 2 == 0 {
             "House; Disco"
         } else {
             "Rockabilly"
         };
+
         tree.write(
             &format!("{number:02}.wav"),
             &Wav::new()
@@ -23682,7 +26027,9 @@ fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -
         "rock.wav",
         &Wav::new().text(TITLE, "Rock").text(GENRE, "Rock").build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let suggestions = library.suggestions()?;
@@ -23699,6 +26046,7 @@ fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -
         .iter()
         .find(|suggestion| suggestion.query.text.as_deref() == Some("genre:=\"House\""))
         .expect("House is offered");
+
     assert_eq!(house.rows, u64::from(TRACKS_OF_A_DECADE / 2));
     Ok(())
 }
@@ -23706,6 +26054,7 @@ fn a_genre_list_is_offered_as_each_genre_in_it_and_as_the_whole_name_of_each() -
 #[test]
 fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     assert!(narrowed(&library, "genre:psychedelic")?.is_empty());
 
     let fake = Arc::new(Fake::new(Canned {
@@ -23720,6 +26069,7 @@ fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
         artists: vec![orbiters()],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     assert_eq!(
@@ -23739,14 +26089,19 @@ fn a_genre_musicbrainz_gave_an_artist_reaches_its_tracks() -> Result<()> {
 #[test]
 fn a_smart_playlists_count_follows_the_catalog_it_is_counted_in() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("a.wav", &Wav::new().text(TITLE, "Echoes").build());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let everything = library.save_query("Everything", &SavedQuery::default())?;
 
     let before = library
         .playlist(everything)?
         .expect("the playlist is there");
+
     assert_eq!(before.entries, 1);
 
     tree.write("b.wav", &Wav::new().text(TITLE, "Dogs").build());
@@ -23755,6 +26110,7 @@ fn a_smart_playlists_count_follows_the_catalog_it_is_counted_in() -> Result<()> 
     let after = library
         .playlist(everything)?
         .expect("the playlist is there");
+
     assert_eq!(
         after.entries, 2,
         "a count kept through a scan that added a track"
@@ -23819,6 +26175,7 @@ fn asked(suggestions: &[Suggestion]) -> Vec<&str> {
 #[test]
 fn listening_time_is_the_time_that_was_heard() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -23829,15 +26186,19 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?.remove(0);
 
     let counted = library
         .track_played(&track.location, track.span, Duration::ZERO)?
         .expect("the catalog counted the play against the row it scanned");
+
     library.listened(counted.listen, HEARD_FOR)?;
 
     let heard = library.statistics(Window::Week)?;
+
     assert_eq!(heard.plays, 1);
     assert_eq!(heard.listened, HEARD_FOR);
     assert_eq!(heard.tracks, 1);
@@ -23845,6 +26206,7 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
     assert_eq!(heard.artists, 1);
 
     let most = library.most_listened(Window::Week, 5)?;
+
     assert_eq!(
         most.tracks
             .first()
@@ -23862,6 +26224,7 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
     );
 
     let drawn = library.listening_by_day(Window::Week)?;
+
     assert_eq!(
         drawn.last().map(|day| (day.plays, day.listened)),
         Some((1, HEARD_FOR)),
@@ -23873,6 +26236,7 @@ fn listening_time_is_the_time_that_was_heard() -> Result<()> {
 #[test]
 fn a_thin_catalog_offers_no_suggestion_it_cannot_fill() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title) in [("a.wav", "Alpha"), ("b.wav", "Beta")] {
         tree.write(
             file,
@@ -23887,9 +26251,11 @@ fn a_thin_catalog_offers_no_suggestion_it_cannot_fill() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let suggestions = library.suggestions()?;
+
     assert!(
         suggestions.is_empty(),
         "a catalog of two tracks offered {:?}",
@@ -23901,16 +26267,20 @@ fn a_thin_catalog_offers_no_suggestion_it_cannot_fill() -> Result<()> {
 #[test]
 fn every_suggestion_reads_back_through_the_grammar_it_was_written_in() -> Result<()> {
     let tree = Tree::new();
+
     orbits_from_the_nineties(&tree);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let suggestions = library.suggestions()?;
+
     assert!(
         !suggestions.is_empty(),
         "a catalog of {TRACKS_OF_A_DECADE} tracks offered nothing"
     );
+
     for suggestion in suggestions.iter() {
         let text = suggestion
             .query
@@ -23931,6 +26301,7 @@ fn every_suggestion_reads_back_through_the_grammar_it_was_written_in() -> Result
     }
 
     let texts = asked(&suggestions);
+
     assert!(texts.contains(&"year:1990-1999"), "{texts:?}");
     assert!(texts.contains(&"genre:=\"Progressive Rock\""), "{texts:?}");
     assert!(texts.contains(&"artist:=\"The Orbiters\""), "{texts:?}");
@@ -23941,11 +26312,15 @@ fn every_suggestion_reads_back_through_the_grammar_it_was_written_in() -> Result
 #[test]
 fn a_suggestion_says_how_long_it_runs_and_which_covers_picture_it() -> Result<()> {
     let tree = Tree::new();
+
     orbits_from_the_nineties(&tree);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let bare = library.suggestions()?;
+
     assert!(
         bare.iter()
             .all(|suggestion| suggestion.pictured_by.is_empty() && suggestion.length.is_some()),
@@ -23953,8 +26328,11 @@ fn a_suggestion_says_how_long_it_runs_and_which_covers_picture_it() -> Result<()
     );
 
     let album = only_album(&library)?;
+
     assert!(library.land_archive_cover(album.id, &png_art(64))?);
+
     let pictured = library.suggestions()?;
+
     assert!(
         pictured
             .iter()
@@ -23975,6 +26353,7 @@ fn a_sleeve(side: u32, mirrored: bool) -> CoverArt {
         }
     });
     let mut written = std::io::Cursor::new(Vec::new());
+
     drawn
         .write_to(&mut written, image::ImageFormat::Png)
         .expect("a written picture");
@@ -24009,8 +26388,11 @@ fn orbits_in_three_editions(tree: &Tree) {
 #[test]
 fn one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once() -> Result<()> {
     let tree = Tree::new();
+
     orbits_in_three_editions(&tree);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let album = |title: &str| -> Result<AlbumId> {
@@ -24024,6 +26406,7 @@ fn one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once() -> Result<()
     let edition = album("Orbits")?;
     let expanded = album("Orbits (Expanded)")?;
     let other = album("Other Orbits")?;
+
     assert!(library.land_archive_cover(edition, &a_sleeve(600, false))?);
     assert!(library.land_archive_cover(expanded, &a_sleeve(250, false))?);
     assert!(library.land_archive_cover(other, &a_sleeve(600, true))?);
@@ -24034,6 +26417,7 @@ fn one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once() -> Result<()
         .find(|suggestion| suggestion.query.text.as_deref() == Some("year:1990-1999"))
         .cloned()
         .expect("the catalog suggests its decade");
+
     assert_eq!(decade.pictured_by.len(), 2, "{:?}", decade.pictured_by);
     assert!(decade.pictured_by.contains(&other));
     assert!(
@@ -24047,12 +26431,15 @@ fn one_sleeve_saved_at_two_resolutions_pictures_a_suggestion_once() -> Result<()
 #[test]
 fn suggestions_are_kept_until_a_name_they_were_built_from_moves() -> Result<()> {
     let tree = Tree::new();
+
     orbits_from_the_nineties(&tree);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let first = library.suggestions()?;
+
     assert!(
         Arc::ptr_eq(&first, &library.suggestions()?),
         "a second ask with nothing moved worked the suggestions out again"
@@ -24067,6 +26454,7 @@ fn suggestions_are_kept_until_a_name_they_were_built_from_moves() -> Result<()> 
             limit: None,
         },
     )?;
+
     assert!(
         Arc::ptr_eq(&first, &library.suggestions()?),
         "a playlist written moved suggestions that read no playlist"
@@ -24076,7 +26464,9 @@ fn suggestions_are_kept_until_a_name_they_were_built_from_moves() -> Result<()> 
         .into_iter()
         .next()
         .expect("the scan stored the files it walked");
+
     library.favour(Favoured::Track(cold.id), true)?;
+
     assert!(
         !Arc::ptr_eq(&first, &library.suggestions()?),
         "a track written was answered with suggestions from before it"
@@ -24087,9 +26477,11 @@ fn suggestions_are_kept_until_a_name_they_were_built_from_moves() -> Result<()> 
 #[test]
 fn a_suggestion_saves_as_the_query_it_already_was() -> Result<()> {
     let tree = Tree::new();
+
     orbits_from_the_nineties(&tree);
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let suggestion = library
@@ -24111,6 +26503,7 @@ fn a_suggestion_saves_as_the_query_it_already_was() -> Result<()> {
 #[test]
 fn a_share_names_the_track_and_the_album_it_came_from() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24122,12 +26515,15 @@ fn a_share_names_the_track_and_the_album_it_came_from() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?.remove(0);
 
     let shared = library
         .shareable(track.id)?
         .expect("the catalog holds the track it just scanned");
+
     assert_eq!(shared.title, "Echoes");
     assert_eq!(shared.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(shared.album.as_deref(), Some("Orbits"));
@@ -24140,6 +26536,7 @@ fn a_share_names_the_track_and_the_album_it_came_from() -> Result<()> {
 #[test]
 fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24151,8 +26548,11 @@ fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -24187,6 +26587,7 @@ fn a_share_prefers_a_streaming_link_over_musicbrainz() -> Result<()> {
 #[test]
 fn a_share_falls_back_to_musicbrainz_where_no_service_is_linked() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24198,8 +26599,11 @@ fn a_share_falls_back_to_musicbrainz_where_no_service_is_linked() -> Result<()> 
     );
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     library.land_release(
         album.id,
         &orbits(
@@ -24229,15 +26633,19 @@ fn a_share_falls_back_to_musicbrainz_where_no_service_is_linked() -> Result<()> 
 #[test]
 fn a_share_of_a_track_nothing_knows_about_has_no_link() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("mystery.wav", &Wav::new().build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let track = all(&library)?.remove(0);
 
     let shared = library
         .shareable(track.id)?
         .expect("the catalog holds the track it just scanned");
+
     assert_eq!(shared.recording, None);
     assert!(shared.links.is_empty());
     assert_eq!(shared.written(), None);
@@ -24256,8 +26664,11 @@ fn a_track_with_no_service_linked(tree: &Tree) -> Result<(Library, Track)> {
             .identified(MUSICBRAINZ, RECORDING)
             .build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(tree))?;
+
     let track = all(&library)?.remove(0);
 
     Ok((library, track))
@@ -24286,6 +26697,7 @@ fn a_share_with_no_service_linked_asks_where_the_track_streams_and_hands_that_to
     let [Called::StreamedAt(asked)] = calls.as_slice() else {
         panic!("the share asked {calls:?}");
     };
+
     assert_eq!(asked.title, "Echoes");
     assert_eq!(asked.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(asked.isrc.as_ref().map(Isrc::as_str), Some("GBAYE7100195"));
@@ -24302,9 +26714,11 @@ fn a_share_already_linked_to_a_service_asks_nothing() -> Result<()> {
     let tree = Tree::new();
     let (library, track) = a_track_with_no_service_linked(&tree)?;
     let fake = Fake::new(Canned::default());
+
     let mut shared = library
         .shareable(track.id)?
         .expect("the catalog holds the track it just scanned");
+
     shared
         .links
         .push(Link::new("streaming", A_STREAMING_LINK.to_owned()));
@@ -24353,19 +26767,23 @@ fn vaulted(library: &Library, apply: bool) -> Result<ImportSummary> {
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
 }
 
 fn a_real_picture(width: u32, height: u32) -> CoverArt {
     let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+
     for y in 0..height {
         for x in 0..width {
             pixels.extend_from_slice(&[(x * 5) as u8, (y * 9) as u8, (x + y) as u8, 255]);
         }
     }
+
     let drawn = image::RgbaImage::from_raw(width, height, pixels).expect("a drawn picture");
     let mut written = std::io::Cursor::new(Vec::new());
+
     image::DynamicImage::ImageRgba8(drawn)
         .write_to(&mut written, image::ImageFormat::Png)
         .expect("a written picture");
@@ -24400,15 +26818,18 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
         .expect("a stamped source file");
 
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
 
     let summary = vaulted(&library, true)?;
+
     assert_eq!(summary.stats.vaulted, 1);
     assert_eq!(summary.stats.passed, 0);
     assert_eq!(summary.plan.vaulted.len(), 1);
     assert_eq!(summary.plan.vaulted[0].wanted.form, Form::Flac);
 
     let rows = all(&library)?;
+
     assert_eq!(
         rows[0].location.as_path(),
         Some(path.as_path()),
@@ -24421,6 +26842,7 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
         .stands_in(&rows[0].location, rows[0].span)
         .expect("the vault stands in for the row");
     let landed = stood.location.as_path().expect("a local object");
+
     assert!(landed.starts_with(vault.root()));
     assert_eq!(landed.extension().and_then(OsStr::to_str), Some("flac"));
     assert_eq!(stood.tags.title.as_deref(), Some("Echoes"));
@@ -24436,6 +26858,7 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
     );
 
     let objects = library.vault_objects()?;
+
     assert_eq!(objects.len(), 1);
     assert_eq!(objects[0].form, Form::Flac);
     assert_eq!(objects[0].taken_from, path);
@@ -24447,6 +26870,7 @@ fn an_import_points_the_row_at_the_vault_and_leaves_the_file_where_it_stood() ->
 fn a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24458,8 +26882,11 @@ fn a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits()
     );
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
+
     let summary = vaulted(&library, true)?;
+
     assert_eq!(summary.stats.vaulted, 1);
     assert_eq!(summary.plan.vaulted[0].wanted.form, Form::Wave);
 
@@ -24468,6 +26895,7 @@ fn a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits()
         .stand_in()
         .stands_in(&rows[0].location, rows[0].span)
         .expect("the vault stands in for the row");
+
     assert_eq!(
         stood.bits,
         Some(24),
@@ -24480,6 +26908,7 @@ fn a_twenty_four_bit_master_kept_in_a_wider_wave_stands_in_as_twenty_four_bits()
 fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24495,7 +26924,9 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
     );
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(vaulted(&library, true)?.stats.vaulted, 1);
 
     let rows = all(&library)?;
@@ -24503,6 +26934,7 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
         .stand_in()
         .stands_in(&rows[0].location, rows[0].span)
         .expect("the vault stands in for the row");
+
     assert_eq!(stood.tags.title.as_deref(), Some("Echoes"));
     assert_eq!(stood.tags.track_number, Some(6));
     assert_eq!(stood.tags.track_total, Some(6), "the total was lost");
@@ -24517,6 +26949,7 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
 
     let key = library.vault_objects()?[0].key;
     let released = library.release_the_rows_of(&[key])?;
+
     assert_eq!(released.released, 1);
     assert!(
         library
@@ -24531,6 +26964,7 @@ fn a_vaulted_row_stands_in_under_the_credits_totals_and_notes_its_file_declared(
 fn a_rescan_after_an_import_leaves_the_row_in_the_vault_and_imports_nothing_again() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24540,15 +26974,18 @@ fn a_rescan_after_an_import_leaves_the_row_in_the_vault_and_imports_nothing_agai
     );
 
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
     let stats = scan(&library, &options(&tree))?;
+
     assert_eq!(stats.added, 0);
     assert_eq!(stats.updated, 0);
     assert_eq!(stats.removed, 0);
 
     let again = vaulted(&library, true)?;
+
     assert_eq!(again.stats.walked, 0);
     assert_eq!(again.stats.vaulted, 0);
 
@@ -24557,6 +26994,7 @@ fn a_rescan_after_an_import_leaves_the_row_in_the_vault_and_imports_nothing_agai
         .stand_in()
         .stands_in(&rows[0].location, rows[0].span)
         .expect("the vault still stands in for the row");
+
     assert!(
         stood
             .location
@@ -24573,13 +27011,17 @@ fn an_object_kept_under_an_older_encoder_is_weighed_again_and_stamped_with_this_
 {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let database = tree.path().join("library.db");
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
+
     let library = Library::open_with_vault(&database, Arc::clone(&vault))?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     assert_eq!(
         library.vault_objects()?[0].encoding,
         Encoding::OF_THIS_BUILD
@@ -24591,19 +27033,24 @@ fn an_object_kept_under_an_older_encoder_is_weighed_again_and_stamped_with_this_
         .expect("an object stamped as an older encoder's");
 
     let preview = vaulted(&library, false)?;
+
     assert_eq!(preview.stats.walked, 1);
     assert!(preview.plan.wanted[0].renewing);
     assert_eq!(preview.plan.wanted[0].form, Form::Flac);
 
     let renewed = vaulted(&library, true)?;
+
     assert_eq!(renewed.stats.vaulted, 1);
     assert_eq!(renewed.stats.passed, 0);
+
     let objects = library.vault_objects()?;
+
     assert_eq!(objects.len(), 1);
     assert_eq!(objects[0].encoding, Encoding::OF_THIS_BUILD);
     assert!(objects[0].path.is_file());
 
     let rows = all(&library)?;
+
     assert!(
         library
             .stand_in()
@@ -24623,7 +27070,9 @@ fn a_row_whose_source_has_gone_is_not_weighed_again_and_keeps_its_object() -> Re
 
     let database = tree.path().join("library.db");
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
+
     let library = Library::open_with_vault(&database, Arc::clone(&vault))?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
     fs::remove_file(&path).expect("the source goes");
@@ -24632,6 +27081,7 @@ fn a_row_whose_source_has_gone_is_not_weighed_again_and_keeps_its_object() -> Re
         .expect("an object stamped as an older encoder's");
 
     let summary = vaulted(&library, true)?;
+
     assert_eq!(summary.stats.walked, 0);
     assert_eq!(summary.stats.passed, 0);
     assert_eq!(library.vault_objects()?.len(), 1);
@@ -24642,6 +27092,7 @@ fn a_row_whose_source_has_gone_is_not_weighed_again_and_keeps_its_object() -> Re
 fn an_import_on_several_workers_keeps_every_row_and_shared_audio_once() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     for index in 0..12 {
         tree.write(
             &format!("{index:02}.wav"),
@@ -24653,7 +27104,9 @@ fn an_import_on_several_workers_keeps_every_row_and_shared_audio_once() -> Resul
     }
 
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
+
     let asked = vaulted(&library, false)?;
 
     let summary = library
@@ -24686,11 +27139,13 @@ fn an_import_on_several_workers_keeps_every_row_and_shared_audio_once() -> Resul
     );
     assert_eq!(library.vault_objects()?.len(), 3);
     assert_eq!(vault.holding().expect("a counted vault").objects, 3);
+
     for row in all(&library)? {
         let stood = library
             .stand_in()
             .stands_in(&row.location, row.span)
             .expect("the vault stands in for every row");
+
         assert!(stood.location.as_path().expect("a local object").is_file());
     }
     Ok(())
@@ -24701,9 +27156,13 @@ fn a_file_a_vaulted_sheet_cuts_is_stood_in_for_only_by_the_cut_it_was_asked_as()
     let tree = Tree::new();
     let held = Tree::new();
     let file = tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+
     tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(vaulted(&library, true)?.stats.vaulted, 3);
 
     let first = library
@@ -24735,16 +27194,21 @@ fn a_vaulted_row_counts_its_plays_and_sits_in_a_playlist_as_the_file_it_came_fro
     let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
     let row = all(&library)?.remove(0);
     let counted = library.track_played(&row.location, row.span, Duration::ZERO)?;
+
     assert!(counted.is_some(), "a play of a vaulted row was not counted");
 
     let playlist = library.create_playlist("Evening")?;
+
     library.add_to_playlist(playlist, &[Cut::of(&row)])?;
+
     let cuts = library.playlist_cuts(playlist)?;
+
     assert_eq!(cuts[0].location.as_path(), Some(path.as_path()));
     Ok(())
 }
@@ -24756,13 +27220,17 @@ fn a_vaulted_row_outlives_the_file_it_came_from_and_keeps_its_object() -> Result
     let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
     fs::remove_file(&path).expect("the source goes");
 
     let stats = scan(&library, &options(&tree))?;
+
     assert_eq!(stats.removed, 0, "the only copy's row was pruned");
+
     let rows = all(&library)?;
+
     assert_eq!(rows.len(), 1);
     assert!(
         library
@@ -24783,9 +27251,12 @@ fn forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows
     let echoes = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     let dogs = tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
+
     scan(&library, &options(&tree))?;
     fs::remove_file(&echoes).expect("the source goes");
 
@@ -24793,8 +27264,10 @@ fn forgetting_a_folder_leaves_its_vaulted_rows_and_keeps_the_listens_of_the_rows
         let counted = library
             .track_played(&MediaLocation::local(path), None, Duration::from_secs(2))?
             .expect("a counted play");
+
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
+
     let before = library.statistics(Window::Everything)?;
 
     assert!(library.remove_root(tree.path())?);
@@ -24832,12 +27305,15 @@ fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_o
     let path = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
     fs::write(&path, Wav::new().text(TITLE, "Echoes (remastered)").build())
         .expect("the file is ripped again");
+
     let later = SystemTime::now() + Duration::from_secs(60);
+
     fs::File::options()
         .write(true)
         .open(&path)
@@ -24846,6 +27322,7 @@ fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_o
     scan(&library, &options(&tree))?;
 
     let rows = all(&library)?;
+
     assert!(
         library
             .stand_in()
@@ -24861,15 +27338,19 @@ fn a_file_changed_where_it_stands_is_weighed_again_rather_than_played_from_its_o
 fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+
     let gone = tree.write(
         "dogs.wav",
         &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
     );
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
     fs::remove_file(&gone).expect("one source goes");
+
     let echoes_stands_in = |library: &Library| -> Result<bool> {
         let row = all(library)?
             .into_iter()
@@ -24882,6 +27363,7 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
     };
 
     let foretold = library.vault_release_foretold(&[])?;
+
     assert_eq!((foretold.released, foretold.stranded), (1, 1));
     assert!(
         echoes_stands_in(&library)?,
@@ -24892,11 +27374,13 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
     assert_eq!(library.vault_prune_foretold()?, Pruned::default());
 
     let released = library.release_from_vault(&[])?;
+
     assert_eq!(released.released, foretold.released);
     assert!(!echoes_stands_in(&library)?);
 
     let objects = vault.holding().expect("a counted vault").objects;
     let foretold = library.vault_prune_foretold()?;
+
     assert_eq!(foretold.objects, 1);
     assert_eq!(
         vault.holding().expect("a counted vault").objects,
@@ -24906,6 +27390,7 @@ fn a_release_and_a_prune_foretold_count_what_they_would_do_and_do_none_of_it() -
     assert_eq!(library.vault_objects_nothing_names()?.len(), 1);
 
     let pruned = library.prune_the_vault()?;
+
     assert_eq!(pruned.objects, foretold.objects);
     assert_eq!(library.vault_prune_foretold()?, Pruned::default());
     Ok(())
@@ -24916,18 +27401,22 @@ fn a_release_points_a_row_back_at_its_own_file_and_leaves_the_only_copy_where_it
 {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+
     let gone = tree.write(
         "dogs.wav",
         &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
     );
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
     fs::remove_file(&gone).expect("one source goes");
 
     let released = library.release_from_vault(&[])?;
+
     assert_eq!(released.released, 1);
     assert_eq!(
         released.stranded, 1,
@@ -24944,6 +27433,7 @@ fn a_release_points_a_row_back_at_its_own_file_and_leaves_the_only_copy_where_it
             .stands_in(&row.location, row.span)
             .is_some())
     };
+
     assert!(
         !stood_in("Echoes")?,
         "a released row still played from the vault"
@@ -24971,6 +27461,7 @@ fn a_release_points_a_row_back_at_its_own_file_and_leaves_the_only_copy_where_it
 fn a_vaulted_row_is_passed_over_by_a_retagging() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -24980,10 +27471,12 @@ fn a_vaulted_row_is_passed_over_by_a_retagging() -> Result<()> {
     );
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
     let summary = retagged(&library, false)?;
+
     assert_eq!(summary.retagging.passed_over.len(), 1);
     assert_eq!(summary.retagging.passed_over[0].why, Unwritten::Vaulted);
     assert!(summary.retagging.writes.is_empty());
@@ -24995,6 +27488,7 @@ fn an_albums_cover_moves_into_the_vault_and_reads_back_as_a_drawable_picture() -
     let tree = Tree::new();
     let held = Tree::new();
     let art = a_real_picture(24, 18);
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -25005,9 +27499,11 @@ fn an_albums_cover_moves_into_the_vault_and_reads_back_as_a_drawable_picture() -
     );
 
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
 
     let album = library.albums(&AlbumQuery::default())?[0].id;
+
     assert_eq!(
         library
             .release_of(album)?
@@ -25017,6 +27513,7 @@ fn an_albums_cover_moves_into_the_vault_and_reads_back_as_a_drawable_picture() -
     );
 
     let summary = vaulted(&library, true)?;
+
     assert_eq!(summary.stats.covers, 1);
     assert_eq!(
         library
@@ -25028,6 +27525,7 @@ fn an_albums_cover_moves_into_the_vault_and_reads_back_as_a_drawable_picture() -
     assert_eq!(vault.holding().expect("a counted vault").covers, 1);
 
     let drawn = library.cover_art(album)?.expect("a cover read back");
+
     assert_eq!(drawn.format, ImageFormat::Png);
 
     let went_in = image::load_from_memory(&art.bytes)
@@ -25036,6 +27534,7 @@ fn an_albums_cover_moves_into_the_vault_and_reads_back_as_a_drawable_picture() -
     let came_out = image::load_from_memory(&drawn.bytes)
         .expect("a picture")
         .to_rgba8();
+
     assert_eq!(went_in, came_out);
     Ok(())
 }
@@ -25045,6 +27544,7 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     let tree = Tree::new();
     let held = Tree::new();
     let art = a_real_picture(24, 18);
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -25053,9 +27553,11 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
             .picture(&art.bytes)
             .build(),
     );
+
     let catalog = held.path().join("catalog.db");
     let first = held.path().join("vault");
     let through = held.path().join("through");
+
     fs::create_dir_all(&first).expect("a vault folder");
     if !link_to_directory(&first, &through) {
         return Ok(());
@@ -25064,8 +27566,11 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     {
         let vault = Arc::new(Vault::make(&through).expect("a writable vault"));
         let library = Library::open_with_vault(&catalog, vault)?;
+
         scan(&library, &options(&tree))?;
+
         let summary = vaulted(&library, true)?;
+
         assert_eq!(summary.stats.vaulted, 1);
         assert_eq!(summary.stats.covers, 1);
     }
@@ -25075,6 +27580,7 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
         let library = Library::open_with_vault(&catalog, vault)?;
         library.prune_the_vault()?
     };
+
     assert_eq!(
         pruned,
         Pruned::default(),
@@ -25082,11 +27588,13 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     );
 
     let moved = held.path().join("moved");
+
     unlink_directory(&through).expect("the second spelling taken away");
     fs::rename(&first, &moved).expect("a moved vault");
 
     let vault = Arc::new(Vault::open(&moved).expect("a writable vault"));
     let library = Library::open_with_vault(&catalog, Arc::clone(&vault))?;
+
     assert_eq!(library.prune_the_vault()?, Pruned::default());
     assert_eq!(vault.holding().expect("a counted vault").covers, 1);
     assert_eq!(vault.holding().expect("a counted vault").objects, 1);
@@ -25096,6 +27604,7 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
         .stand_in()
         .stands_in(&rows[0].location, rows[0].span)
         .expect("the moved vault still stands in for the row");
+
     assert!(
         stood
             .location
@@ -25105,8 +27614,11 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
     );
 
     let album = library.albums(&AlbumQuery::default())?[0].id;
+
     assert!(library.cover_art(album)?.is_some());
+
     let objects = library.vault_objects()?;
+
     assert!(objects[0].path.starts_with(vault.root()));
     Ok(())
 }
@@ -25114,14 +27626,17 @@ fn a_vault_opened_through_another_spelling_or_moved_keeps_every_object_and_cover
 fn a_photographed_jpeg(width: u32, height: u32) -> CoverArt {
     let mut state = 0x9e37_79b9_u32;
     let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+
     for y in 0..height {
         for x in 0..width {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
+
             let grain = (state >> 24) as f32 / 255.0 - 0.5;
             let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
             let sky = 0.55 + 0.35 * (fy * 3.1).cos();
+
             let hill = 0.5 + 0.4 * ((fx * 5.0).sin() * (fy * 4.0).cos());
             for sample in [
                 sky * 0.9 + grain * 0.12,
@@ -25132,7 +27647,9 @@ fn a_photographed_jpeg(width: u32, height: u32) -> CoverArt {
             }
         }
     }
+
     let mut written = Vec::new();
+
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut written, 85)
         .encode(&pixels, width, height, image::ExtendedColorType::Rgb8)
         .expect("a written landscape");
@@ -25158,6 +27675,7 @@ impl OlderCovers {
         let tree = Tree::new();
         let held = Tree::new();
         let art = a_photographed_jpeg(320, 240);
+
         for (file, title, album) in [
             ("echoes.wav", "Echoes", "Meddle"),
             ("fearless.wav", "Fearless", "Meddle"),
@@ -25175,7 +27693,9 @@ impl OlderCovers {
 
         let database = tree.path().join("library.db");
         let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
+
         let library = Library::open_with_vault(&database, Arc::clone(&vault))?;
+
         scan(&library, &options(&tree))?;
         vaulted(&library, true)?;
 
@@ -25185,15 +27705,19 @@ impl OlderCovers {
             })
             .expect("one cover for every album");
         let transcoded = vault.at(Path::new(&named)).expect("a cover in the vault");
+
         assert_eq!(
             transcoded.extension().and_then(|held| held.to_str()),
             Some("jxl")
         );
 
         let kept = transcoded.with_extension("jpg");
+
         fs::remove_file(&transcoded).expect("the newer form taken away");
         fs::write(&kept, &art.bytes).expect("the JPEG an older build kept");
+
         let older = vault.within(&kept).expect("a cover in the vault");
+
         beside(&database)
             .execute(
                 "UPDATE albums SET cover_path = ?1",
@@ -25226,7 +27750,9 @@ impl OlderCovers {
 
     fn every_album_draws_the_very_jpeg(&self) -> Result<()> {
         let albums = self.library.albums(&AlbumQuery::default())?;
+
         assert_eq!(albums.len(), 2);
+
         for album in albums {
             assert_eq!(self.library.cover_art(album.id)?, Some(self.art.clone()));
         }
@@ -25239,6 +27765,7 @@ impl OlderCovers {
                 .vault
                 .at(Path::new(&named))
                 .expect("a cover in the vault");
+
             assert!(path.is_file(), "an album names {named}, which is gone");
         }
     }
@@ -25249,10 +27776,13 @@ fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_every_album
 -> Result<()> {
     let older = OlderCovers::new()?;
     let before = older.vault.holding().expect("a counted vault");
+
     assert_eq!(before.covers, 1);
+
     older.every_album_draws_the_very_jpeg()?;
 
     let foretold = older.library.vault_covers_compaction_foretold()?;
+
     assert_eq!(foretold.covers, 1);
     assert!(foretold.now < foretold.was);
     assert!(older.named().iter().all(|named| named.ends_with(".jpg")));
@@ -25260,15 +27790,18 @@ fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_every_album
     assert_eq!(older.vault.holding().expect("a counted vault"), before);
 
     let compacted = older.library.compact_the_vault_covers()?;
+
     assert_eq!(compacted.covers, 1);
     assert_eq!((compacted.was, compacted.now), (foretold.was, foretold.now));
     assert_eq!((compacted.kept, compacted.left), (0, 0));
     assert!(older.named().iter().all(|named| named.ends_with(".jxl")));
     assert!(!older.kept.exists());
+
     older.every_album_names_a_file_that_is_there();
     older.every_album_draws_the_very_jpeg()?;
 
     let after = older.vault.holding().expect("a counted vault");
+
     assert_eq!(after.covers, 1);
     assert_eq!(
         after.cover_bytes,
@@ -25293,22 +27826,29 @@ fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_every_album
 fn a_pass_stopped_between_landing_the_smaller_form_and_naming_it_is_finished_by_the_next()
 -> Result<()> {
     let older = OlderCovers::new()?;
+
     older
         .vault
         .compact_cover(&older.kept)
         .expect("a landed form");
+
     let jxl = older.kept.with_extension("jxl");
+
     assert!(jxl.is_file() && older.kept.is_file());
 
     assert!(older.named().iter().all(|named| named.ends_with(".jpg")));
+
     older.every_album_names_a_file_that_is_there();
     older.every_album_draws_the_very_jpeg()?;
+
     assert_eq!(older.library.prune_the_vault()?, Pruned::default());
 
     let compacted = older.library.compact_the_vault_covers()?;
+
     assert_eq!((compacted.covers, compacted.left), (1, 0));
     assert!(older.named().iter().all(|named| named.ends_with(".jxl")));
     assert!(!older.kept.exists());
+
     older.every_album_names_a_file_that_is_there();
     older.every_album_draws_the_very_jpeg()
 }
@@ -25317,28 +27857,35 @@ fn a_pass_stopped_between_landing_the_smaller_form_and_naming_it_is_finished_by_
 fn a_pass_stopped_between_naming_the_smaller_form_and_taking_the_jpeg_away_is_finished_by_the_next()
 -> Result<()> {
     let older = OlderCovers::new()?;
+
     older
         .vault
         .compact_cover(&older.kept)
         .expect("a landed form");
+
     let jxl = older.kept.with_extension("jxl");
     let named = older.vault.within(&jxl).expect("a cover in the vault");
+
     beside(&older.database)
         .execute(
             "UPDATE albums SET cover_path = ?1",
             [named.to_str().expect("a path the catalog can hold")],
         )
         .expect("the smaller form named");
+
     assert!(older.kept.is_file());
 
     older.every_album_names_a_file_that_is_there();
     older.every_album_draws_the_very_jpeg()?;
+
     assert_eq!(older.library.prune_the_vault()?, Pruned::default());
     assert!(older.kept.is_file());
 
     let compacted = older.library.compact_the_vault_covers()?;
+
     assert_eq!((compacted.covers, compacted.left), (1, 0));
     assert!(!older.kept.exists());
+
     older.every_album_names_a_file_that_is_there();
     older.every_album_draws_the_very_jpeg()
 }
@@ -25348,6 +27895,7 @@ fn a_prune_takes_away_a_cover_nothing_names_and_leaves_the_rest() -> Result<()> 
     let tree = Tree::new();
     let held = Tree::new();
     let art = a_real_picture(24, 18);
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -25358,13 +27906,16 @@ fn a_prune_takes_away_a_cover_nothing_names_and_leaves_the_rest() -> Result<()> 
     );
 
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     let stray = vault
         .keep_cover(&a_real_picture(8, 8))
         .expect("a cover nothing names");
 
     let pruned = library.prune_the_vault()?;
+
     assert_eq!(pruned.covers, 1);
     assert_eq!(pruned.objects, 0);
     assert!(!stray.path.exists());
@@ -25384,9 +27935,11 @@ fn a_rescan_leaves_an_album_the_vault_covers_with_the_vaults_cover_alone() -> Re
             .picture(&art.bytes)
             .build()
     };
+
     tree.write("echoes.wav", &track("Echoes"));
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
@@ -25394,6 +27947,7 @@ fn a_rescan_leaves_an_album_the_vault_covers_with_the_vaults_cover_alone() -> Re
     scan(&library, &options(&tree))?;
 
     let album = library.albums(&AlbumQuery::default())?[0].id;
+
     assert_eq!(
         library
             .release_of(album)?
@@ -25409,6 +27963,7 @@ fn a_rescan_leaves_an_album_the_vault_covers_with_the_vaults_cover_alone() -> Re
 fn a_cover_the_vault_cannot_read_is_passed_over_and_the_import_carries_on() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -25426,9 +27981,11 @@ fn a_cover_the_vault_cannot_read_is_passed_over_and_the_import_carries_on() -> R
     );
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
 
     let summary = vaulted(&library, true)?;
+
     assert_eq!(
         summary.stats.vaulted, 2,
         "one unreadable cover ended the import"
@@ -25444,6 +28001,7 @@ fn a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carrie
     let tree = Tree::new();
     let held = Tree::new();
     let art = a_real_picture(24, 18);
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -25452,9 +28010,12 @@ fn a_cover_naming_no_format_the_vault_knows_is_passed_over_and_the_import_carrie
             .picture(&art.bytes)
             .build(),
     );
+
     let database = tree.path().join("library.db");
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
+
     let library = Library::open_with_vault(&database, vault)?;
+
     scan(&library, &options(&tree))?;
     beside(&database)
         .execute("UPDATE albums SET cover_format = 99", [])
@@ -25477,15 +28038,20 @@ fn a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row() -> 
 
     let tree = Tree::new();
     let held = Tree::new();
+
     for title in ["Echoes", "Time", "Money"] {
         tree.write(
             &format!("{title}.wav"),
             &Wav::new().text(TITLE, title).build(),
         );
     }
+
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
+
     let staging = held.path().join("staging");
+
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o555))
         .expect("the staging folder takes a mode");
     if fs::write(staging.join("probe"), b"").is_ok() {
@@ -25505,6 +28071,7 @@ fn a_vault_that_cannot_write_ends_the_import_rather_than_billing_every_row() -> 
             },
         )?
         .join();
+
     fs::set_permissions(&staging, fs::Permissions::from_mode(0o755))
         .expect("the staging folder takes a mode");
 
@@ -25527,14 +28094,17 @@ fn a_cover_the_vault_already_holds_is_not_kept_a_second_time() -> Result<()> {
             .picture(&art.bytes)
             .build()
     };
+
     tree.write("echoes.wav", &track("Echoes"));
 
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
     tree.write("pillow.wav", &track("A Pillow of Winds"));
     scan(&library, &options(&tree))?;
+
     let again = vaulted(&library, true)?;
 
     assert_eq!(again.stats.vaulted, 1);
@@ -25552,11 +28122,15 @@ fn the_rows_a_sheet_cuts_are_weighed_against_their_share_of_the_file_and_play_as
     let tree = Tree::new();
     let held = Tree::new();
     let file = tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+
     tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+
     let size = fs::metadata(&file).expect("a sized file").len();
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
+
     let summary = vaulted(&library, true)?;
 
     assert_eq!(summary.stats.walked, 3);
@@ -25565,6 +28139,7 @@ fn the_rows_a_sheet_cuts_are_weighed_against_their_share_of_the_file_and_play_as
         "three rows of one file counted {} bytes of a {size}-byte file",
         summary.stats.was_bytes
     );
+
     for row in all(&library)? {
         assert_eq!(row.location.as_path(), Some(file.as_path()));
         if let Some(stood) = library.stand_in().stands_in(&row.location, row.span) {
@@ -25587,6 +28162,7 @@ fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
     );
 
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
@@ -25598,6 +28174,7 @@ fn an_object_nothing_names_any_more_is_what_a_prune_reads_back() -> Result<()> {
     assert!(library.forget_delivered(&echoes)?);
 
     let loose = library.vault_objects_nothing_names()?;
+
     assert_eq!(loose.len(), 1);
     assert!(library.forget_vault_object(&loose[0].key)?);
     assert!(library.vault_objects()?.is_empty());
@@ -25612,6 +28189,7 @@ fn a_prune_takes_away_an_object_no_row_names_once_it_has_stood_a_while() -> Resu
     let (library, _vault) = opened_with_a_vault(&held)?;
     let stood = held.write("audio/ab/ab000000000000000000000000000001.flac", b"fLaC");
     let landing = held.write("audio/ab/ab000000000000000000000000000002.flac", b"fLaC");
+
     fs::File::options()
         .write(true)
         .open(&stood)
@@ -25647,10 +28225,13 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
             .build(),
     );
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     assert!(library.remove_root(tree.path())?);
     assert!(library.forget_delivered(&echoes)?);
+
     let loose = library.vault_objects_nothing_names()?;
     let folder = vault
         .root()
@@ -25667,15 +28248,19 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
         eprintln!("skipping: this user writes into a folder whatever its mode");
         return Ok(());
     }
+
     let pruned = library.prune_the_vault();
+
     fs::set_permissions(&folder, fs::Permissions::from_mode(0o755))
         .expect("the vault folder takes a mode");
 
     let pruned = pruned?;
+
     assert_eq!((pruned.objects, pruned.left), (0, 1));
     assert_eq!(library.vault_objects()?.len(), 1);
 
     let pruned = library.prune_the_vault()?;
+
     assert_eq!((pruned.objects, pruned.left), (1, 0));
     assert!(library.vault_objects()?.is_empty());
     Ok(())
@@ -25684,6 +28269,7 @@ fn an_object_a_prune_could_not_take_away_keeps_its_row_for_the_next() -> Result<
 #[test]
 fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "echoes.wav",
         &Wav::new()
@@ -25692,9 +28278,12 @@ fn a_vault_kept_inside_a_root_is_never_scanned_as_tracks_of_its_own() -> Result<
             .text(ALBUM, "Meddle")
             .build(),
     );
+
     let vault = Arc::new(Vault::make(tree.path().join("vault")).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(vaulted(&library, true)?.stats.vaulted, 1);
 
     scan(
@@ -25720,18 +28309,23 @@ fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> 
     let orbits = orbits_tree();
     let database = tree.path().join("library.db");
     let vault = Arc::new(Vault::make(orbits.path().join("vault")).expect("a writable vault"));
+
     {
         let library = Library::open_with_vault(&database, vault)?;
+
         scan(&library, &options(&orbits))?;
         wanted_san_tropez(&library)?;
+
         let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
         let summary = library
             .poll(inbox.registered(), PollOptions::default())?
             .join()?;
+
         assert_eq!(summary.stats.kept, 1);
     }
 
     let library = Library::open(&database)?;
+
     scan(
         &library,
         &ScanOptions {
@@ -25746,6 +28340,7 @@ fn a_delivered_row_a_scan_walks_over_keeps_its_name_and_belongs_to_no_root() -> 
         .filter(|track| track.delivered)
         .cloned()
         .collect();
+
     assert_eq!(titles(&landed), vec!["San Tropez"]);
     assert_eq!(rows.len(), 4);
     Ok(())
@@ -25762,7 +28357,9 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
 
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let want = wanted_san_tropez(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
@@ -25774,6 +28371,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     assert_eq!(summary.stats.kept, 1);
 
     let objects = library.vault_objects()?;
+
     assert_eq!(objects.len(), 1);
     assert_eq!(objects[0].form, Form::Flac);
     assert!(objects[0].path.starts_with(vault.root()));
@@ -25783,6 +28381,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     );
 
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].id, want);
     assert_eq!(
@@ -25799,6 +28398,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     let held = row
         .track
         .expect("the delivery is paired with the row it was wanted for");
+
     assert_eq!(wants[0].held, Some(held));
     assert!(
         library
@@ -25808,6 +28408,7 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
     );
 
     let track = library.track(held)?.expect("the delivery is a track row");
+
     assert_eq!(track.title, "San Tropez");
     assert_eq!(track.album_id, Some(album.id));
     assert_eq!(track.location.as_path(), Some(objects[0].path.as_path()));
@@ -25819,15 +28420,18 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
         titles(&library.search("Tropez", 10)?.tracks),
         vec!["San Tropez"]
     );
+
     let stood = library
         .stand_in()
         .stands_in(&track.location, track.span)
         .expect("the vault stands in for the delivered row");
+
     assert_eq!(stood.location.as_path(), Some(objects[0].path.as_path()));
     assert_eq!(stood.tags.title.as_deref(), Some("San Tropez"));
     assert_eq!(stood.tags.album.as_deref(), Some("Orbits"));
 
     scan(&library, &options(&orbits))?;
+
     assert!(
         library.track(held)?.is_some(),
         "a scan of the roots took away a row that belongs to none"
@@ -25842,9 +28446,11 @@ fn a_delivered_file_lands_in_the_vault_and_the_want_names_where_it_went() -> Res
             },
         )?
         .join()?;
+
     assert_eq!(summary.stats.asked, 0, "a held want was asked about again");
 
     library.unwant(want)?;
+
     assert_eq!(library.prune_the_vault()?.objects, 0);
     assert!(
         objects[0].path.is_file(),
@@ -25864,12 +28470,16 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
 
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let want = wanted_san_tropez(&library)?;
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+
     library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
+
     let object = library.vault_objects()?[0].path.clone();
     let scanned = all(&library)?
         .into_iter()
@@ -25889,7 +28499,9 @@ fn a_delivered_row_is_forgotten_by_its_path_and_its_want_is_due_again() -> Resul
             .all(|track| track.title != "San Tropez")
     );
     assert!(library.track(scanned.id)?.is_some());
+
     let wants = library.wants()?;
+
     assert_eq!(wants[0].id, want);
     assert_eq!((wants[0].held, wants[0].offered.as_deref()), (None, None));
     assert!(library.is_a_want_due(PollOptions::default())?);
@@ -25908,9 +28520,12 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
 
     let scanned = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&scanned))?;
+
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
@@ -25921,6 +28536,7 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
     }
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+
     library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
@@ -25930,6 +28546,7 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
         .into_iter()
         .filter_map(|want| want.held)
         .collect();
+
     assert_eq!(landed.len(), 2);
     assert_eq!(landed[0], landed[1], "one object became two track rows");
 
@@ -25941,6 +28558,7 @@ fn one_object_delivered_for_two_wants_is_searched_for_by_the_row_it_stayed() -> 
     } else {
         "Seamus"
     };
+
     assert_eq!(
         titles(&library.search(&track.title, 10)?.tracks),
         vec![track.title.clone()]
@@ -25965,6 +28583,7 @@ impl Provider for CancelledAsItAnswers {
 
     fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let started = Instant::now();
+
         while started.elapsed() < Duration::from_secs(5) {
             if let Some(poll) = self.poll.lock().as_ref() {
                 poll.cancel();
@@ -25990,6 +28609,7 @@ impl Provider for WatchedAsItAnswers {
 
     fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let started = Instant::now();
+
         while started.elapsed() < Duration::from_secs(5) {
             if let Some(poll) = self.poll.lock().as_ref() {
                 self.heard.lock().push(poll.asking());
@@ -26007,7 +28627,9 @@ fn polled_into_a_vault(
 ) -> Result<(Library, WantId, Vec<Option<WantId>>)> {
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(held)?;
+
     scan(&library, &options(&orbits))?;
+
     let want = wanted_san_tropez(&library)?;
 
     let provider = Arc::new(WatchedAsItAnswers {
@@ -26021,6 +28643,7 @@ fn polled_into_a_vault(
         PollOptions::default(),
     )?;
     let progress = Arc::clone(handle.progress());
+
     *provider.poll.lock() = Some(Arc::clone(&progress));
     handle.join()?;
 
@@ -26029,6 +28652,7 @@ fn polled_into_a_vault(
         None,
         "a finished poll still names a want"
     );
+
     let heard = provider.heard.lock().clone();
     Ok((library, want, heard))
 }
@@ -26056,6 +28680,7 @@ fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()
         "delivered.wav",
         &Wav::new().text(TITLE, "San Tropez").frames(8_820).build(),
     );
+
     let (library, _want, _heard) = polled_into_a_vault(&held, delivered)?;
     let landed: Vec<TrackId> = library
         .wants()?
@@ -26063,6 +28688,7 @@ fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()
         .filter_map(|want| want.held)
         .collect();
     let objects = library.vault_objects()?;
+
     assert_eq!(landed.len(), 1);
     assert_eq!(objects.len(), 1);
 
@@ -26070,6 +28696,7 @@ fn deleting_a_delivered_track_takes_its_vault_object_and_its_want() -> Result<()
         asked: Mutex::new(Vec::new()),
         answer: Removal::Removed,
     })));
+
     let deleted = library.delete_tracks(&landed)?;
 
     assert_eq!(deleted.tracks, 1);
@@ -26090,7 +28717,9 @@ fn a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted() -> Result<(
     );
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let want = wanted_san_tropez(&library)?;
 
     let provider = Arc::new(CancelledAsItAnswers {
@@ -26102,14 +28731,20 @@ fn a_delivery_that_landed_as_the_poll_was_cancelled_is_still_noted() -> Result<(
         Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
         PollOptions::default(),
     )?;
+
     *provider.poll.lock() = Some(Arc::clone(handle.progress()));
+
     let summary = handle.join()?;
 
     assert!(summary.cancelled);
+
     let objects = library.vault_objects()?;
+
     assert_eq!(objects.len(), 1, "what landed was not noted");
     assert!(objects[0].path.starts_with(vault.root()));
+
     let wants = library.wants()?;
+
     assert_eq!(wants[0].id, want);
     assert_eq!(
         wants[0].offered.as_deref(),
@@ -26136,13 +28771,16 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
 
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let _want = wanted_san_tropez(&library)?;
 
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
     let summary = library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
+
     assert_eq!(summary.stats.kept, 1);
 
     let landed = library
@@ -26151,6 +28789,7 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
         .and_then(|want| want.held)
         .expect("the delivery is paired with the want");
     let track = library.track(landed)?.expect("the delivery is a track row");
+
     assert_eq!(
         titles(&library.search("genre:krautrock", 10)?.tracks),
         vec!["San Tropez"],
@@ -26162,6 +28801,7 @@ fn a_delivered_row_keeps_the_genre_the_gain_and_the_words_its_file_declared() ->
         .stands_in(&track.location, track.span)
         .expect("the vault stands in for the delivered row");
     let gain = stood.tags.replay_gain;
+
     assert!(
         gain.track_gain
             .is_some_and(|gain| (gain.get() + 7.5).abs() < 1e-3),
@@ -26188,6 +28828,7 @@ fn a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging() -> Res
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
 
@@ -26208,6 +28849,7 @@ fn a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging() -> Res
     assert_eq!(summary.stats.unkept, 0);
 
     let objects = library.vault_objects()?;
+
     assert_eq!(objects.len(), 1);
     assert!(objects[0].path.starts_with(vault.root()));
     assert_eq!(
@@ -26218,15 +28860,19 @@ fn a_streamed_delivery_lands_in_the_vault_and_leaves_nothing_in_staging() -> Res
     );
 
     let wants = library.wants()?;
+
     assert_eq!(
         wants[0].offered.as_deref(),
         Some(MediaLocation::local(&objects[0].path).to_uri().as_str())
     );
+
     let held = wants[0].held.expect("the stream is a track row");
     let track = library.track(held)?.expect("the delivered row");
+
     assert_eq!(track.location.as_path(), Some(objects[0].path.as_path()));
 
     let released = library.release_from_vault(&[])?;
+
     assert_eq!(
         released.released, 0,
         "a delivered row was released from the vault"
@@ -26245,13 +28891,16 @@ fn a_poll_cancelled_mid_delivery_stops_reading_and_leaves_the_want_untried() -> 
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
 
     let shop = Arc::new(Offering::new("shop", Delivering::Endless));
     let polling = library.poll(shop.registered(), PollOptions::default())?;
+
     thread::sleep(Duration::from_millis(100));
     polling.cancel();
+
     let summary = polling.join()?;
 
     assert!(summary.cancelled);
@@ -26264,7 +28913,9 @@ fn a_poll_cancelled_mid_delivery_stops_reading_and_leaves_the_want_untried() -> 
             .count(),
         0
     );
+
     let wants = library.wants()?;
+
     assert_eq!(wants[0].tried, None);
     Ok(())
 }
@@ -26273,10 +28924,13 @@ fn polling_endlessly() -> Result<(Tree, Tree, Library, PollHandle)> {
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let shop = Arc::new(Offering::new("shop", Delivering::Endless));
     let polling = library.poll(shop.registered(), PollOptions::default())?;
+
     thread::sleep(Duration::from_millis(100));
     Ok((held, orbits, library, polling))
 }
@@ -26287,7 +28941,9 @@ fn a_cancelled_poll_is_not_nudged_and_owes_nothing() -> Result<()> {
     let progress = Arc::clone(polling.progress());
 
     polling.cancel();
+
     let nudged = progress.wants_changed();
+
     polling.join()?;
 
     assert!(
@@ -26304,6 +28960,7 @@ fn a_poll_nudged_before_it_was_cancelled_owes_another() -> Result<()> {
     let progress = Arc::clone(polling.progress());
 
     assert!(progress.wants_changed());
+
     polling.cancel();
     polling.join()?;
 
@@ -26316,6 +28973,7 @@ fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_left_due() -> Re
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
 
@@ -26344,7 +29002,9 @@ fn a_stream_that_stops_sending_is_given_up_as_late_and_the_want_left_due() -> Re
             .count(),
         0
     );
+
     let wants = library.wants()?;
+
     assert!(
         wants[0].tried.is_none(),
         "a delivery that went quiet is no verdict on the song"
@@ -26362,7 +29022,9 @@ fn the_want_is_left_due_after_its_download_died(
     assert_eq!(summary.stats.refused, 1);
     assert_eq!(summary.stats.unkept, 0);
     assert_eq!(summary.stats.kept, 0);
+
     let wants = library.wants()?;
+
     assert!(
         wants[0].tried.is_none(),
         "a provider's failure part way is no verdict on the song"
@@ -26376,8 +29038,10 @@ fn a_download_its_provider_failed_part_way_into_the_vault_is_refused_and_no_miss
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let shop = Arc::new(Offering::new("shop", Delivering::DyingPartWay));
 
     let summary = library
@@ -26392,11 +29056,13 @@ fn a_download_its_provider_failed_part_way_into_the_vault_is_refused_and_no_miss
 fn a_download_its_provider_failed_part_way_into_the_music_folder_is_refused_and_no_miss()
 -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
         layout: Layout::default(),
     }));
+
     let shop = Arc::new(Offering::new("shop", Delivering::DyingPartWay));
 
     let summary = library
@@ -26410,6 +29076,7 @@ fn a_download_its_provider_failed_part_way_into_the_music_folder_is_refused_and_
 #[test]
 fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
 
     let shop = Arc::new(Offering::new(
@@ -26429,6 +29096,7 @@ fn a_streamed_delivery_with_no_vault_is_counted_unkept_and_offers_nothing() -> R
     assert_eq!(summary.stats.unkept, 1);
 
     let wants = library.wants()?;
+
     assert!(wants[0].tried.is_some());
     assert_eq!(wants[0].offered, None);
     Ok(())
@@ -26458,6 +29126,7 @@ impl Provider for WatchesTheWants {
                     .iter()
                     .filter(|want| want.held.is_some())
                     .count();
+
                 held_when_opened.lock().push(held);
                 Ok(Opened::Reading {
                     reader: Box::new(io::Cursor::new(Wav::new().frames(8_820).build())),
@@ -26473,6 +29142,7 @@ fn two_wants_filed_in_the_music_folder() -> Result<(Tree, Arc<Library>)> {
     let library = Arc::new(library);
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
@@ -26535,6 +29205,7 @@ fn an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_alb
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.extend([
         release_row(4, "San Tropez", Vec::new()),
         release_row(5, "Seamus", Vec::new()),
@@ -26543,6 +29214,7 @@ fn an_album_asked_for_whole_is_asked_song_by_song_in_its_order_and_before_an_alb
         release_row(8, "Free Four", Vec::new()),
     ]);
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     let held = library.release_tracks(album.id)?;
     let row_of = |title: &str| {
         held.iter()
@@ -26592,7 +29264,9 @@ impl io::Read for HeldUntilAskedAgain {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         if !self.waited {
             self.waited = true;
+
             let began = Instant::now();
+
             while !self.asked_again.load(Ordering::SeqCst)
                 && began.elapsed() < Duration::from_secs(5)
             {
@@ -26670,6 +29344,7 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
 -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
+
     wanted_san_tropez(&library)?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
@@ -26701,6 +29376,7 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
         .expect("a local file")
         .to_path_buf();
     let root = tree.path().canonicalize().expect("the tree");
+
     assert!(path.starts_with(&root), "{}", path.display());
     assert!(path.is_file());
     assert_eq!(
@@ -26719,7 +29395,9 @@ fn a_delivery_with_no_vault_is_filed_in_the_music_folder_and_joins_the_album_it_
     );
 
     scan(&library, &options(&tree))?;
+
     let again = library.track(held)?.expect("the row a rescan kept");
+
     assert_eq!(again.album_id, Some(album.id));
     assert_eq!(library.wants()?[0].held, Some(held));
     Ok(())
@@ -26733,6 +29411,7 @@ fn san_tropez_bytes() -> Vec<u8> {
 
 fn san_tropez_wanted_into_the_music_folder() -> Result<(Tree, Library)> {
     let (tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
@@ -26759,8 +29438,10 @@ fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_i
 {
     let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
     let metering = Metering::new();
+
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
+
     let shop = san_tropez_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
@@ -26777,6 +29458,7 @@ fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_i
     assert_eq!(library.wants()?[0].misses, 0);
 
     metering.report(Meter::Unmetered);
+
     let summary = polling.join()?;
 
     assert!(!progress.is_waiting_on_the_meter());
@@ -26790,9 +29472,13 @@ fn a_queued_download_waits_while_the_connection_is_metered_and_goes_on_when_it_i
 fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result<()> {
     let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
     let metering = Metering::new();
+
     metering.report(Meter::Metered);
+
     let gate = MeteredGate::new(metering, true);
+
     library.stall_downloads_by(gate.clone());
+
     let shop = san_tropez_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
@@ -26801,6 +29487,7 @@ fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result
     assert!(waited_for(|| progress.is_waiting_on_the_meter()));
 
     gate.shut_while_metered(false);
+
     let summary = polling.join()?;
 
     assert_eq!(summary.stats.kept, 1);
@@ -26810,7 +29497,9 @@ fn a_queued_download_goes_on_when_the_listener_turns_the_setting_off() -> Result
 #[test]
 fn a_connection_that_cannot_be_told_is_not_a_reason_to_hold_a_download() -> Result<()> {
     let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
+
     library.stall_downloads_by(MeteredGate::new(Metering::new(), true));
+
     let shop = san_tropez_offered();
 
     let summary = library
@@ -26825,8 +29514,10 @@ fn a_connection_that_cannot_be_told_is_not_a_reason_to_hold_a_download() -> Resu
 fn a_metered_connection_holds_nothing_back_unless_the_setting_asks() -> Result<()> {
     let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
     let metering = Metering::new();
+
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering, false));
+
     let shop = san_tropez_offered();
 
     let summary = library
@@ -26841,8 +29532,10 @@ fn a_metered_connection_holds_nothing_back_unless_the_setting_asks() -> Result<(
 fn a_poll_cancelled_while_it_waits_for_the_connection_ends_without_asking() -> Result<()> {
     let (_tree, library) = san_tropez_wanted_into_the_music_folder()?;
     let metering = Metering::new();
+
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering, true));
+
     let shop = san_tropez_offered();
 
     let polling = library.poll(shop.registered(), PollOptions::default())?;
@@ -26851,6 +29544,7 @@ fn a_poll_cancelled_while_it_waits_for_the_connection_ends_without_asking() -> R
     assert!(waited_for(|| progress.is_waiting_on_the_meter()));
 
     polling.cancel();
+
     let summary = polling.join()?;
 
     assert!(summary.cancelled);
@@ -26890,6 +29584,7 @@ impl Provider for TurnsMeteredDuring {
     fn find(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
         let bytes = san_tropez_bytes();
         let opened = Arc::clone(&self.opened);
+
         let opening = match self.when {
             TurnsMetered::WhenAsked => {
                 self.metering.report(Meter::Metered);
@@ -26925,7 +29620,9 @@ struct TurningMetered {
 fn turning_metered(when: TurnsMetered) -> Result<TurningMetered> {
     let (tree, library) = san_tropez_wanted_into_the_music_folder()?;
     let metering = Metering::new();
+
     library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
+
     let opened = Arc::new(AtomicUsize::new(0));
     let provider = Arc::new(TurnsMeteredDuring {
         source: SourceId::new("shop").expect("a nameable source"),
@@ -26963,6 +29660,7 @@ fn an_offer_found_as_the_connection_turned_metered_is_not_opened_until_it_is_not
     assert_eq!(opened.load(Ordering::SeqCst), 0);
 
     metering.report(Meter::Unmetered);
+
     let summary = polling.join()?;
 
     assert_eq!(opened.load(Ordering::SeqCst), 1);
@@ -26984,8 +29682,10 @@ fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_fini
     let polling = library.poll(providers, PollOptions::default())?;
     let progress = Arc::clone(polling.progress());
     let began = Instant::now();
+
     while progress.received() == 0 {
         assert!(began.elapsed() < Duration::from_secs(10), "nothing arrived");
+
         thread::sleep(Duration::from_millis(2));
     }
     metering.report(Meter::Metered);
@@ -27001,9 +29701,11 @@ fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_fini
     assert!(received < san_tropez_bytes().len() as u64);
 
     thread::sleep(THE_POLL_HAS_WAITED);
+
     assert_eq!(progress.received(), received);
 
     metering.report(Meter::Unmetered);
+
     let summary = polling.join()?;
 
     assert_eq!(summary.stats.kept, 1);
@@ -27014,11 +29716,13 @@ fn a_download_under_way_stops_reading_when_the_connection_turns_metered_and_fini
 fn wanted_lasting(library: &Library, length: Option<Duration>) -> Result<WantId> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();
+
     rows.push(ReleaseTrack {
         length,
         ..release_row(4, "San Tropez", Vec::new())
     });
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     let missing = library
         .release_tracks(album.id)?
         .into_iter()
@@ -27037,10 +29741,12 @@ fn handed_over(poll: &Mutex<Option<Arc<PollProgress>>>) -> Arc<PollProgress> {
         if let Some(progress) = poll.lock().as_ref() {
             return Arc::clone(progress);
         }
+
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "the poll was never handed to the provider"
         );
+
         thread::sleep(Duration::from_millis(5));
     }
 }
@@ -27073,6 +29779,7 @@ impl Provider for Watching {
 
     fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         let progress = handed_over(&self.poll);
+
         self.named.lock().push(progress.asking_provider());
 
         Ok(match &self.delivers {
@@ -27095,6 +29802,7 @@ fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Resul
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, None)?;
 
@@ -27102,6 +29810,7 @@ fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Resul
     let size = bytes.len() as u64;
     let named = Arc::new(Mutex::new(Vec::new()));
     let received = Arc::new(Mutex::new(Vec::new()));
+
     let watching = |name: &str, delivers: Option<Vec<u8>>| {
         Arc::new(Watching {
             source: source(name),
@@ -27123,8 +29832,10 @@ fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Resul
         PollOptions::default(),
     )?;
     let progress = Arc::clone(handle.progress());
+
     *quiet.poll.lock() = Some(Arc::clone(&progress));
     *shop.poll.lock() = Some(Arc::clone(&progress));
+
     let summary = handle.join()?;
 
     assert_eq!(summary.stats.kept, 1);
@@ -27133,7 +29844,9 @@ fn a_poll_names_the_provider_it_is_asking_and_counts_what_it_received() -> Resul
         [Some(source("quiet")), Some(source("shop"))],
         "a provider was not named while it was asked"
     );
+
     let most = received.lock().iter().copied().max().unwrap_or_default();
+
     assert!(
         most > 0 && most <= size,
         "{most} of {size} bytes were counted as the stream was read"
@@ -27152,10 +29865,12 @@ fn a_file_delivered_into_the_vault_counts_the_bytes_it_was_as_received() -> Resu
         .frames(4_000_000)
         .build();
     let size = bytes.len() as u64;
+
     let delivered = tree.write("delivered.wav", &bytes);
 
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, None)?;
 
@@ -27167,6 +29882,7 @@ fn a_file_delivered_into_the_vault_counts_the_bytes_it_was_as_received() -> Resu
         let sampled = Arc::clone(&sampled);
         move || {
             let mut most = 0;
+
             while !sampled.load(Ordering::Relaxed) {
                 most = most.max(progress.received());
                 thread::sleep(Duration::from_micros(200));
@@ -27175,7 +29891,9 @@ fn a_file_delivered_into_the_vault_counts_the_bytes_it_was_as_received() -> Resu
         }
     });
     let summary = handle.join()?;
+
     sampled.store(true, Ordering::Relaxed);
+
     let most = counted.join().expect("the sampling thread");
 
     assert_eq!(summary.stats.kept, 1);
@@ -27194,11 +29912,14 @@ fn a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let want = wanted_san_tropez(&library)?;
 
     let empty = Arc::new(Offering::new("inbox", Delivering::Nothing));
     let server = Arc::new(Offering::new("server", Delivering::File(delivered.clone())));
+
     let every_provider = Providers::none()
         .and(Arc::clone(&empty) as Arc<dyn Provider>)
         .and(Arc::clone(&server) as Arc<dyn Provider>);
@@ -27213,7 +29934,9 @@ fn a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_
     assert_eq!(summary.stats.nothing, 0);
     assert_eq!(empty.asked().len(), 1);
     assert!(server.asked().is_empty(), "the network was asked");
+
     let untried = library.wants()?[0].clone();
+
     assert_eq!((untried.tried, untried.misses), (None, 0));
     assert!(library.is_a_want_due(PollOptions::default())?);
 
@@ -27230,7 +29953,9 @@ fn a_poll_asking_the_inbox_alone_leaves_what_it_lacks_untried_and_lands_what_it_
 
     assert_eq!(summary.stats.kept, 1);
     assert!(server.asked().is_empty());
+
     let landed = library.wants()?[0].clone();
+
     assert_eq!(landed.id, want);
     assert!(landed.held.is_some(), "what the inbox held was not landed");
     Ok(())
@@ -27249,6 +29974,7 @@ fn half_of_san_tropez() -> Arc<Offering> {
 
 fn every_file_under(folder: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
+
     for entry in fs::read_dir(folder).expect("a readable folder").flatten() {
         let path = entry.path();
         if path.is_dir() {
@@ -27265,6 +29991,7 @@ fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_doe
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(60)))?;
 
@@ -27289,7 +30016,9 @@ fn a_delivery_not_as_long_as_the_wanted_track_is_refused_and_waits_as_a_miss_doe
             .iter()
             .all(|track| track.title != "San Tropez")
     );
+
     let refused = library.wants()?[0].clone();
+
     assert_eq!((refused.held, refused.offered), (None, None));
     assert_eq!(refused.misses, 1);
     assert!(!library.is_a_want_due(PollOptions::default())?);
@@ -27322,8 +30051,10 @@ fn a_delivery_refused_from_one_provider_is_asked_of_the_next() -> Result<()> {
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let wrong = half_of_san_tropez();
     let right = the_whole_of_san_tropez("store");
 
@@ -27350,8 +30081,10 @@ fn an_offer_that_cannot_be_opened_falls_through_to_the_next_provider() -> Result
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let broken = Arc::new(Offering::new("broken", Delivering::Unopenable));
     let gone = Arc::new(Offering::new("gone", Delivering::GoneWhenOpened));
     let right = the_whole_of_san_tropez("store");
@@ -27381,8 +30114,10 @@ fn an_offer_found_gone_is_told_to_its_provider_which_is_asked_again_without_it()
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let only = Arc::new(Offering::new(
         "only",
         Delivering::GoneUntilTold {
@@ -27399,6 +30134,7 @@ fn an_offer_found_gone_is_told_to_its_provider_which_is_asked_again_without_it()
         .join()?;
 
     let asked = only.asked();
+
     assert_eq!(asked.len(), 2);
     assert!(asked[0].gone.is_empty());
     assert_eq!(asked[1].gone, [linked]);
@@ -27413,8 +30149,10 @@ fn an_offer_the_race_did_not_take_is_never_opened() -> Result<()> {
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let first = Arc::new(
         Arc::into_inner(the_whole_of_san_tropez("first"))
             .expect("one holder")
@@ -27441,8 +30179,10 @@ fn an_offer_held_back_by_the_race_is_opened_when_the_one_taken_cannot_be() -> Re
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let first = Arc::new(
         Offering::new("first", Delivering::Unopenable)
             .answering_after(TURNED_TO_APART + Duration::from_millis(500)),
@@ -27470,12 +30210,16 @@ fn an_offer_refused_as_not_the_song_is_declined_by_the_next_poll_which_starts_el
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let wrong = half_of_san_tropez();
+
     library
         .poll(wrong.registered(), PollOptions::default())?
         .join()?;
+
     let right = the_whole_of_san_tropez("store");
 
     let summary = library
@@ -27495,18 +30239,24 @@ fn a_refused_offer_is_offered_again_once_the_want_is_asked_for_again() -> Result
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let wrong = half_of_san_tropez();
+
     library
         .poll(wrong.registered(), PollOptions::default())?
         .join()?;
+
     let row = library.wants()?[0].release_track;
 
     let declined = library
         .poll(wrong.registered(), PollOptions::ASKING_EVERY_WANT)?
         .join()?;
+
     library.want(row)?;
+
     let offered_again = library
         .poll(wrong.registered(), PollOptions::ASKING_EVERY_WANT)?
         .join()?;
@@ -27519,11 +30269,13 @@ fn a_refused_offer_is_offered_again_once_the_want_is_asked_for_again() -> Result
 #[test]
 fn a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_does() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     wanted_lasting(&library, Some(Duration::from_secs(60)))?;
     library.deliver_into(Some(DeliveryFolder {
         path: tree.path().to_path_buf(),
         layout: Layout::default(),
     }));
+
     let before = every_file_under(tree.path());
 
     let summary = library
@@ -27548,7 +30300,9 @@ fn a_filing_not_as_long_as_the_wanted_track_is_taken_away_and_waits_as_a_miss_do
             .iter()
             .all(|track| track.title != "San Tropez")
     );
+
     let refused = library.wants()?[0].clone();
+
     assert_eq!((refused.held, refused.offered), (None, None));
     assert_eq!(refused.misses, 1);
     assert!(!library.is_a_want_due(PollOptions::default())?);
@@ -27569,11 +30323,13 @@ impl Provider for PairedAsItAnswers {
 
     fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         scan(&self.library, &self.scanning).expect("the listener's own file is scanned");
+
         let album = only_album(&self.library).expect("the album the file joined");
         let paired = self
             .library
             .rematch(album.id)
             .expect("the album's rows are paired");
+
         assert!(paired > 0, "the listener's own file was not paired");
         Ok(Obtained::Found(Delivery::File(self.file.clone())))
     }
@@ -27591,8 +30347,11 @@ fn a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_fil
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
     let library = Arc::new(library);
+
     scan(&library, &options(&orbits))?;
+
     let want = wanted_san_tropez(&library)?;
+
     orbits.write("4.wav", &orbits_track("San Tropez", 4).build());
 
     let provider = Arc::new(PairedAsItAnswers {
@@ -27609,13 +30368,17 @@ fn a_delivery_landing_after_the_wanted_row_was_paired_with_the_listeners_own_fil
         .join()?;
 
     assert_eq!((summary.stats.kept, summary.stats.unkept), (0, 1));
+
     let tropez: Vec<Track> = all(&library)?
         .into_iter()
         .filter(|track| track.title == "San Tropez")
         .collect();
+
     assert_eq!(tropez.len(), 1, "the delivery became a row beside the file");
     assert!(!tropez[0].delivered);
+
     let wants = library.wants()?;
+
     assert_eq!(wants[0].id, want);
     assert_eq!(
         wants[0].held,
@@ -27637,17 +30400,22 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+
     library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
+
     let object = library.vault_objects()?[0].path.clone();
 
     assert!(library.forget_delivered(&object)?);
 
     let forgotten = library.wants()?[0].clone();
+
     assert_eq!(
         (forgotten.held, forgotten.offered, forgotten.tried),
         (None, None, None)
@@ -27661,6 +30429,7 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
     let summary = library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
+
     assert_eq!(inbox.asked().len(), 2);
     assert_eq!((summary.stats.offered, summary.stats.kept), (0, 0));
     assert_eq!(summary.stats.nothing, 1);
@@ -27686,8 +30455,11 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
     assert_eq!(inbox.asked().len(), 3);
     assert_eq!(shop.asked().len(), 1);
     assert_eq!(summary.stats.kept, 1);
+
     let landed = library.wants()?[0].clone();
+
     assert_eq!(landed.id, want);
+
     let row = library
         .track(landed.held.expect("the second provider's delivery is held"))?
         .expect("the delivered row");
@@ -27696,6 +30468,7 @@ fn a_forgotten_delivery_is_not_fetched_again_and_another_providers_is_landed_ins
         .into_iter()
         .find(|object| row.location.as_path() == Some(object.path.as_path()))
         .expect("the row's object");
+
     assert_eq!(object.taken_from, Path::new("shop:track/55391743"));
     Ok(())
 }
@@ -27706,11 +30479,14 @@ fn a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_decline
     let tree = Tree::new();
     let held = Tree::new();
     let song = Wav::new().text(TITLE, "San Tropez").frames(4_410).build();
+
     let delivered = tree.write("delivered.wav", &song);
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
     let shop = Arc::new(Offering::new(
         "shop",
@@ -27720,20 +30496,25 @@ fn a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_decline
             bytes: song,
         },
     ));
+
     let providers = Arc::new(
         Providers::none()
             .and(Arc::clone(&inbox) as Arc<dyn Provider>)
             .and(Arc::clone(&shop) as Arc<dyn Provider>),
     );
+
     library
         .poll(Arc::clone(&providers), PollOptions::ASKING_EVERY_WANT)?
         .join()?;
+
     let object = library.vault_objects()?[0].path.clone();
+
     assert!(library.forget_delivered(&object)?);
 
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::ASKING_EVERY_WANT)?
         .join()?;
+
     assert_eq!(
         summary.stats.kept, 1,
         "the second provider's delivery was not kept"
@@ -27749,6 +30530,7 @@ fn a_delivery_forgotten_once_a_second_provider_brought_the_same_audio_is_decline
     let summary = library
         .poll(providers, PollOptions::ASKING_EVERY_WANT)?
         .join()?;
+
     assert_eq!(
         summary.stats.kept, 0,
         "a provider whose delivery was forgotten delivered it again"
@@ -27768,13 +30550,18 @@ fn a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_ag
     );
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered.clone())));
+
     library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
+
     let object = library.vault_objects()?[0].path.clone();
+
     assert!(library.forget_delivered(&object)?);
 
     thread::sleep(Duration::from_millis(50));
@@ -27782,6 +30569,7 @@ fn a_file_put_back_in_the_inbox_after_its_delivery_was_forgotten_is_delivered_ag
         "delivered.wav",
         &Wav::new().text(TITLE, "San Tropez").frames(6_615).build(),
     );
+
     let summary = library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
@@ -27796,8 +30584,10 @@ fn a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again() -> Res
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let shop = Arc::new(Offering::new(
         "shop",
         Delivering::Bytes {
@@ -27812,15 +30602,19 @@ fn a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again() -> Res
         .join()?;
 
     assert_eq!((summary.stats.offered, summary.stats.unkept), (1, 1));
+
     let refused = library.wants()?[0].clone();
+
     assert_eq!(refused.misses, 1);
     assert_eq!(
         refused.due_at(),
         refused.tried.map(|tried| tried + RETRY_WAITS[0])
     );
+
     let summary = library
         .poll(shop.registered(), PollOptions::default())?
         .join()?;
+
     assert_eq!(
         summary.stats.asked, 0,
         "a refused delivery was fetched again at once"
@@ -27832,6 +30626,7 @@ fn a_delivery_the_vault_refuses_waits_longer_before_it_is_fetched_again() -> Res
 #[test]
 fn a_kana_voicing_mark_keeps_two_names_apart_and_an_old_index_is_folded_again() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "glass.wav",
         &Wav::new()
@@ -27846,15 +30641,20 @@ fn a_kana_voicing_mark_keeps_two_names_apart_and_an_old_index_is_folded_again() 
             .text(ARTIST, "ハンド")
             .build(),
     );
+
     let database = tree.path().join("library.db");
+
     {
         let library = Library::open(&database)?;
+
         scan(&library, &options(&tree))?;
+
         assert_eq!(library.artists(&ArtistQuery::default())?.len(), 2);
         assert_eq!(matching(&library, "ガラス")?, ["ガラス"]);
     }
 
     let older = beside(&database);
+
     older
         .busy_timeout(Duration::from_secs(10))
         .expect("the catalog waits for a writer");
@@ -27867,6 +30667,7 @@ fn a_kana_voicing_mark_keeps_two_names_apart_and_an_old_index_is_folded_again() 
         .expect("the index is laid back as the older fold left it");
 
     let reopened = Library::open(&database)?;
+
     assert_eq!(
         matching(&reopened, "ガラス")?,
         ["ガラス"],
@@ -27898,6 +30699,7 @@ fn orbits_file(tree: &Tree, name: &str) -> MediaLocation {
 #[test]
 fn a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     library.keep_lyrics(
         &orbits_file(&tree, "1.wav"),
         None,
@@ -27919,6 +30721,7 @@ fn a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for() -> 
     assert_eq!(matching(&library, "pillow")?, ["A Pillow of Winds"]);
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         matching(&library, "lyrics:albatross")?,
         ["One of These Days"]
@@ -27929,6 +30732,7 @@ fn a_track_is_found_by_the_words_it_sings_and_only_when_they_are_asked_for() -> 
 #[test]
 fn a_search_of_plain_words_is_offered_as_the_words_a_track_sings() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     library.keep_lyrics(
         &orbits_file(&tree, "2.wav"),
         None,
@@ -27940,6 +30744,7 @@ fn a_search_of_plain_words_is_offered_as_the_words_a_track_sings() -> Result<()>
     let sung = library
         .sung("albatross hangs")?
         .expect("a track sings those words");
+
     assert_eq!(sung.query, "lyrics:\"albatross hangs\"");
     assert_eq!(sung.tracks, 1);
     assert_eq!(matching(&library, &sung.query)?, ["A Pillow of Winds"]);
@@ -27954,11 +30759,14 @@ fn a_search_reaches_the_rows_the_catalog_knows_it_is_short_of() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     assert_eq!(library.rematch(album.id)?, 3);
 
     let found = library.unheld_matching("tropez", None)?;
+
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].title, "San Tropez");
     assert_eq!(found[0].album, album.id);
@@ -27975,8 +30783,11 @@ const MEDDLE: &str = "e8d3b4a1-4444-4555-8666-777788889999";
 
 fn meddle_release() -> Release {
     let mut echoes = release_row(2, "Echoes", Vec::new());
+
     echoes.recording = Some(mbid(ECHOES));
+
     let mut seamus = release_row(1, "Seamus", Vec::new());
+
     seamus.recording = Some(mbid(ANOTHER_RECORDING));
     Release {
         id: mbid(MEDDLE),
@@ -28033,6 +30844,7 @@ fn echoes_found() -> RecordingMatch {
 #[test]
 fn a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title, artist) in [
         ("1.wav", "You F.O.", "Stela Cole"),
         ("2.wav", "You F.O.", "Somebody Else"),
@@ -28043,7 +30855,9 @@ fn a_title_by_an_artist_is_read_as_that_title_by_the_artist_the_catalog_holds() 
             &Wav::new().text(TITLE, title).text(ARTIST, artist).build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let meant = library
@@ -28109,6 +30923,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
     ];
 
     let offered = library.unheld_artists_among(&matches, "ada")?;
+
     assert_eq!(
         offered,
         vec![ArtistFound {
@@ -28127,6 +30942,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
             .unheld_artists_among(&matches, "year:1971")?
             .is_empty()
     );
+
     let held = vec![RecordingMatch {
         credit: vec![Credit {
             name: "The Orbiters".to_owned(),
@@ -28135,6 +30951,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
         }],
         ..recording_match(RECORDING, "Echoes")
     }];
+
     assert!(
         library.unheld_artists_among(&held, "orbiters")?.is_empty(),
         "an artist the catalog holds is not offered"
@@ -28142,6 +30959,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
 
     let artist = library.open_artist_found(&fake, &offered[0])?;
     let detail = library.artist_detail(artist)?.expect("the artist landed");
+
     assert_eq!(detail.mbid, Some(mbid(ADA)));
     assert!(
         !library.albums_not_held_by(artist)?.is_empty(),
@@ -28154,6 +30972,7 @@ fn an_artist_named_by_what_was_typed_is_offered_when_unheld_and_landed_with_its_
     );
 
     library.settle_the_credits()?;
+
     assert!(
         library.artist_detail(artist)?.is_some(),
         "an artist found elsewhere outlives a sweep"
@@ -28188,6 +31007,7 @@ fn an_album_the_words_name_is_offered_unless_the_catalog_holds_it() -> Result<()
         secondary: vec!["Live".to_owned()],
         ..album_match(live_group, "Orbits Live", "Ada", "Album")
     };
+
     let matches = vec![
         album_match(ada_group, "Orbits Again", "Ada", "Album"),
         album_match(ada_group, "Orbits Again", "Ada", "Album"),
@@ -28242,7 +31062,9 @@ fn an_album_the_words_name_is_offered_unless_the_catalog_holds_it() -> Result<()
 fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let mut release = meddle_release();
+
     release.has_front_cover = true;
+
     let art = png_art(128);
     let fake = Fake::new(Canned {
         found_songs: vec![
@@ -28256,6 +31078,7 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     });
 
     let found = library.found_elsewhere(&fake, "echoes year:1971")?;
+
     assert_eq!(
         fake.calls(),
         vec![Called::FindSongs("echoes".to_owned())],
@@ -28272,6 +31095,7 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
 
     let want = library.want_found(&fake, &found[0])?;
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].id, want);
     assert_eq!(wants[0].title, "Echoes");
@@ -28284,7 +31108,9 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
         "a release the library holds nothing of lists only the row that was wanted"
     );
     assert_eq!(library.missing_counted(None)?.tracks, 1);
+
     let unheld = library.unheld_matching("echoes", None)?;
+
     assert_eq!(unheld.len(), 1);
     assert_eq!(unheld[0].want, Some(want));
     assert!(library.unheld_matching("seamus", None)?.is_empty());
@@ -28304,10 +31130,13 @@ fn a_song_found_elsewhere_is_wanted_by_landing_the_release_it_first_came_out_on(
     assert_eq!(library.want_found(&fake, &found[0])?, want);
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(library.wants()?.len(), 1, "a scan kept the wanted release");
 
     assert!(library.unwant(want)?);
+
     scan(&library, &options(&tree))?;
+
     assert!(library.unheld_matching("echoes", None)?.is_empty());
     Ok(())
 }
@@ -28317,13 +31146,16 @@ fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_rele
 -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let mut release = meddle_release();
+
     release.media[0].tracks[1].isrcs = vec!["GBN9Y1100065".to_owned(), "GBN9Y1100066".to_owned()];
+
     let fake = Fake::new(Canned {
         releases: vec![release],
         ..Canned::default()
     });
     let matched = echoes_found();
     let gone = matched.releases[0].clone();
+
     let found = resonate_library::Found {
         recording: matched.recording,
         title: matched.title,
@@ -28338,6 +31170,7 @@ fn a_song_found_elsewhere_is_wanted_with_every_code_of_it_and_from_its_next_rele
     library.want_found(&fake, &found)?;
 
     let wants = library.wants()?;
+
     assert_eq!(wants.len(), 1);
     assert_eq!(
         wants[0].album_title, "Meddle",
@@ -28380,13 +31213,17 @@ fn a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let fake = meddle_fake();
     let found = library.found_elsewhere(&fake, "echoes")?;
     let shop = a_provider_offering_echoes("shop");
 
     assert!(library.foresee(&shop.registered(), &found[0]));
+
     let asked = shop.asked();
+
     assert_eq!(asked.len(), 1);
     assert_eq!(asked[0].title, "Echoes");
     assert_eq!(asked[0].artist.as_deref(), Some("Pink Floyd"));
@@ -28395,6 +31232,7 @@ fn a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again
     assert_eq!(asked[0].length, Some(Duration::from_secs(1_411)));
 
     library.want_found(&fake, &found[0])?;
+
     let summary = library
         .poll(shop.registered(), PollOptions::default())?
         .join()?;
@@ -28412,19 +31250,23 @@ fn a_song_foreseen_from_what_the_search_found_is_not_asked_of_the_provider_again
 fn a_foresight_is_spent_by_the_poll_that_takes_it_and_asked_afresh_by_the_next() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = meddle_fake();
+
     let found = library.found_elsewhere(&fake, "echoes")?;
     let shop = a_provider_offering_echoes("shop");
 
     assert!(library.foresee(&shop.registered(), &found[0]));
+
     library.want_found(&fake, &found[0])?;
     library
         .poll(shop.registered(), PollOptions::default())?
         .join()?;
+
     assert_eq!(shop.asked().len(), 1);
 
     library
         .poll(shop.registered(), PollOptions::ASKING_EVERY_WANT)?
         .join()?;
+
     assert_eq!(
         shop.asked().len(),
         2,
@@ -28437,11 +31279,14 @@ fn a_foresight_is_spent_by_the_poll_that_takes_it_and_asked_afresh_by_the_next()
 fn a_provider_offering_nothing_foresees_nothing_and_the_poll_asks_for_itself() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = meddle_fake();
+
     let found = library.found_elsewhere(&fake, "echoes")?;
     let empty = Arc::new(Offering::new("shop", Delivering::Nothing));
 
     assert!(!library.foresee(&empty.registered(), &found[0]));
+
     library.want_found(&fake, &found[0])?;
+
     let summary = library
         .poll(empty.registered(), PollOptions::default())?
         .join()?;
@@ -28455,11 +31300,13 @@ fn a_provider_offering_nothing_foresees_nothing_and_the_poll_asks_for_itself() -
 fn an_offer_foreseen_of_a_provider_the_poll_does_not_register_is_not_taken() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = meddle_fake();
+
     let found = library.found_elsewhere(&fake, "echoes")?;
     let gone = a_provider_offering_echoes("old");
     let current = Arc::new(Offering::new("current", Delivering::Nothing));
 
     assert!(library.foresee(&gone.registered(), &found[0]));
+
     library.want_found(&fake, &found[0])?;
     library
         .poll(current.registered(), PollOptions::default())?
@@ -28474,10 +31321,12 @@ fn an_offer_foreseen_of_a_provider_the_poll_does_not_register_is_not_taken() -> 
 fn a_foresight_let_go_of_is_asked_afresh_by_the_poll() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
     let fake = meddle_fake();
+
     let found = library.found_elsewhere(&fake, "echoes")?;
     let shop = a_provider_offering_echoes("shop");
 
     assert!(library.foresee(&shop.registered(), &found[0]));
+
     library.forget_foresight(&found[0].recording);
     library.want_found(&fake, &found[0])?;
     library
@@ -28499,10 +31348,14 @@ fn a_link_to_a_song_nothing_holds_is_followed_by_its_isrc_to_the_recording_to_wa
     let library = Library::open_in_memory()?;
     let code = isrc(CODE);
     let mut short = echoes_found().into_recording();
+
     short.id = mbid(RECORDING);
     short.length = Some(Duration::from_secs(300));
+
     let mut take = echoes_found().into_recording();
+
     take.releases = vec![take.releases[1].clone()];
+
     let whole = echoes_found().into_recording();
     let fake = Fake::new(Canned {
         linked: Some(LinkNames {
@@ -28543,17 +31396,21 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
 {
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows[0] = ReleaseTrack {
         recording: Some(mbid(RECORDING)),
         isrcs: vec!["GBAYE7100195".to_owned()],
         ..rows[0].clone()
     };
+
     let identifying = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(rows, Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &identifying, false)?;
+
     let fake = Fake::new(Canned {
         linked: Some(LinkNames {
             isrcs: vec![isrc(CODE)],
@@ -28577,6 +31434,7 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
         title: ORBITS_TITLES[0].to_owned(),
         artist: Some("The Orbiters".to_owned()),
     };
+
     assert_eq!(by_isrc, held);
     assert_eq!(by_recording, held);
     assert_eq!(
@@ -28590,15 +31448,18 @@ fn a_link_to_a_song_the_library_holds_answers_the_track_and_asks_musicbrainz_not
 fn orbits_with_the_first_held_by_recording() -> Result<(Tree, Library)> {
     let (tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows[0] = ReleaseTrack {
         recording: Some(mbid(RECORDING)),
         ..rows[0].clone()
     };
+
     let identifying = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(rows, Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &identifying, false)?;
     Ok((tree, library))
 }
@@ -28723,7 +31584,9 @@ fn a_profile_followed_takes_its_new_playlists_lets_go_of_its_deleted_ones_and_ne
         .expect("a profile the service read");
     let loved = followed.playlists[0].playlist;
     let night = followed.playlists[1].playlist;
+
     library.keep_playlist_from_its_link(loved, Upkeep::Once)?;
+
     let again = library
         .follow_profile(&later, &profile, Upkeep::InStep)?
         .expect("the profile read again");
@@ -28806,6 +31669,7 @@ fn a_spotify_account_is_followed_as_a_profile_each_song_by_its_isrc_and_one_not_
         title: Some("Near the same name".to_owned()),
         artist: Some("Someone else".to_owned()),
     });
+
     let account = a_spotify_account_listing(vec![coded, nothing_knows]);
 
     let followed = library
@@ -28862,6 +31726,7 @@ fn a_profile_let_go_keeps_its_playlists_rows_and_no_longer_follows_them() -> Res
 
     assert_eq!(let_go, 2);
     assert!(library.profiles_followed()?.is_empty());
+
     for read in &followed.playlists {
         assert_eq!(library.playlist_source(read.playlist)?, None);
         assert_eq!(library.playlist_entries(read.playlist, None)?.len(), 1);
@@ -28876,6 +31741,7 @@ fn a_profile_moved_once_leaves_its_playlists_with_no_link_and_is_not_followed() 
     let holding = a_profile_holding(&[(1, "Loved Tracks", ListedSong::Recording(mbid(RECORDING)))]);
 
     library.follow_profile(&holding, &profile, Upkeep::InStep)?;
+
     let moved = library
         .follow_profile(&holding, &profile, Upkeep::Once)?
         .expect("the profile read");
@@ -28935,16 +31801,20 @@ fn a_playlist_link_names_the_songs_held_the_songs_to_want_and_fills_a_playlist_o
 {
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows[0] = ReleaseTrack {
         recording: Some(mbid(RECORDING)),
         ..rows[0].clone()
     };
+
     let identifying = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![orbits(rows, Vec::new())],
         ..Canned::default()
     }));
+
     enrich(&library, &identifying, false)?;
+
     let held = all(&library)?
         .into_iter()
         .find(|track| track.title == ORBITS_TITLES[0])
@@ -29070,10 +31940,14 @@ fn echoes_lasting(seconds: u64) -> RecordingMatch {
 fn a_music_video_running_past_its_song_is_followed_to_the_take_it_plays() -> Result<()> {
     let library = Library::open_in_memory()?;
     let mut live = echoes_lasting(1_402);
+
     live.recording = mbid(HOURS_BONUS);
     live.title = "Echoes (live)".to_owned();
+
     let mut demo = echoes_lasting(900);
+
     demo.recording = mbid(DAYBREAK);
+
     let video = Fake::new(Canned {
         linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
         found_recordings: vec![demo, echoes_lasting(1_330), live, echoes_lasting(1_500)],
@@ -29150,7 +32024,9 @@ fn a_song_link_naming_no_isrc_is_followed_by_its_title_and_artist_under_the_stri
 fn a_song_link_whose_title_finds_only_a_near_miss_still_names_nothing() -> Result<()> {
     let library = Library::open_in_memory()?;
     let mut by_another = echoes_found();
+
     by_another.credit = credited(Some("The Orbiters"), None);
+
     let longer = Fake::new(Canned {
         linked: Some(titled_on_the_page("Echoes", "Pink Floyd", 1_410)),
         found_recordings: vec![RecordingMatch {
@@ -29251,6 +32127,7 @@ fn a_link_to_an_album_is_followed_by_its_barcode_to_the_release_group_to_want() 
     );
 
     let wanted = library.want_album(&fake, &mbid(HOURS_GROUP), Some(&mbid(HOURS)))?;
+
     assert_eq!(wanted.len(), 2);
     assert_eq!(library.wants()?.len(), 2);
     Ok(())
@@ -29261,6 +32138,7 @@ fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_p
 -> Result<()> {
     let library = Library::open_in_memory()?;
     let mut canned = learnt_canned();
+
     canned.album_linked = Some(AlbumNames {
         barcodes: vec![barcode(ON_THE_PAGE)],
     });
@@ -29277,6 +32155,7 @@ fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_p
             ("Daybreak (demo)", HOURS_BONUS),
         ],
     ));
+
     let fake = Fake::new(canned);
 
     let Linked::Album { group, release, .. } =
@@ -29284,12 +32163,14 @@ fn an_album_linked_by_its_reissue_is_wanted_from_the_reissue_and_not_the_usual_p
     else {
         panic!("the link names an album");
     };
+
     let wanted = library.want_album(&fake, &group, release.as_ref())?;
 
     let songs: Vec<Mbid> = wanted
         .iter()
         .map(|(song, _)| song.recording.clone())
         .collect();
+
     assert_eq!(release, Some(mbid(HOURS_REISSUE)));
     assert_eq!(
         songs,
@@ -29334,6 +32215,7 @@ fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactl
     let Linked::HeldArtist { artist, name } = library.follow_artist_link(&held, &on_deezer)? else {
         panic!("the artist the catalog holds was not named");
     };
+
     assert_eq!(artist, artist_named(&library, "The Orbiters")?.id);
     assert_eq!(name, "The Orbiters");
     assert_eq!(held.called(LookupOp::FindArtist), 0);
@@ -29359,6 +32241,7 @@ fn a_link_to_an_artist_opens_the_artist_held_or_the_one_musicbrainz_names_exactl
 fn an_artist_link_on_spotify_is_followed_through_musicbrainz_to_the_artist_it_names() -> Result<()>
 {
     const PAGE: &str = "https://open.spotify.com/artist/3YQKmKGau1PzlVlkL1iodx";
+
     let library = Library::open_in_memory()?;
     let link = ArtistLink::read(&format!("{PAGE}?si=shared")).expect("an artist link");
     let named = Fake::new(Canned {
@@ -29434,6 +32317,7 @@ fn an_album_link_whose_codes_name_no_release_or_several_groups_names_nothing() -
             Linked::Unnamed
         );
     }
+
     assert_eq!(
         unnamed.calls(),
         vec![Called::AlbumLinked(linked_to_an_album())]
@@ -29446,15 +32330,21 @@ fn a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_
 {
     let (_tree, library) = scanned_orbits()?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "Daybreak", Vec::new()));
+
     let mut release = orbits(rows, Vec::new());
+
     release.credit = credited(Some("The Orbiters"), None);
+
     let identifying = Arc::new(Fake::new(Canned {
         found_releases: vec![orbits_match(100, Some("The Orbiters"), Some(3))],
         releases: vec![release.clone()],
         ..Canned::default()
     }));
+
     enrich(&library, &identifying, false)?;
+
     let album = library.albums(&AlbumQuery::default())?.remove(0);
     let fake = Fake::new(Canned {
         groups: vec![orbits_group(Vec::new(), Vec::new())],
@@ -29471,6 +32361,7 @@ fn a_link_to_an_album_the_library_holds_answers_the_album_and_how_many_songs_it_
         artist: Some("The Orbiters".to_owned()),
         missing: 1,
     };
+
     assert_eq!(by_group, held);
     assert_eq!(by_release, held);
     assert_eq!(
@@ -29488,9 +32379,13 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
 -> Result<()> {
     let library = Library::open_in_memory()?;
     let mut matched = echoes_found();
+
     matched.releases.clear();
+
     let mut recorded = matched.clone().into_recording();
+
     recorded.releases = echoes_found().releases;
+
     let fake = Fake::new(Canned {
         found_songs: vec![matched],
         recordings: vec![recorded],
@@ -29499,16 +32394,22 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
     });
 
     let found = library.found_elsewhere(&fake, "echoes")?;
+
     assert_eq!(found[0].release, None);
+
     library.want_found(&fake, &found[0])?;
+
     assert_eq!(library.wants()?[0].album_title, "Meddle");
 
     let mut lost = found[0].clone();
+
     lost.recording = mbid(RECORDING);
+
     assert!(matches!(
         library.want_found(&fake, &lost),
         Err(Error::Unreleased { .. })
     ));
+
     lost.release = Some(RecordingRelease {
         id: mbid(MEDDLE),
         title: "Meddle".to_owned(),
@@ -29517,6 +32418,7 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
         position: None,
         issued: Issued::default(),
     });
+
     assert!(matches!(
         library.want_found(&fake, &lost),
         Err(Error::NotOnTheRelease { .. })
@@ -29526,13 +32428,16 @@ fn a_song_with_no_release_named_is_wanted_from_the_one_its_recording_first_came_
 
 fn scanned_credits(files: &[(&str, &str, &str)]) -> Result<(Tree, Library)> {
     let tree = Tree::new();
+
     for (file, title, artist) in files {
         tree.write(
             file,
             &Wav::new().text(TITLE, title).text(ARTIST, artist).build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
     Ok((tree, library))
 }
@@ -29546,6 +32451,7 @@ fn titles_by(library: &Library, artist: resonate_core::ArtistId) -> Result<Vec<S
         .into_iter()
         .map(|track| track.title)
         .collect();
+
     titles.sort();
     Ok(titles)
 }
@@ -29564,6 +32470,7 @@ fn a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_
         .into_iter()
         .map(|artist| artist.name)
         .collect();
+
     assert!(
         !names.iter().any(|name| name == "Ada & The Orbiters"),
         "the collaboration was kept as an artist of its own: {names:?}"
@@ -29571,6 +32478,7 @@ fn a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_
 
     let ada = artist_named(&library, "Ada")?;
     let orbiters = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(titles_by(&library, ada.id)?, vec!["Both", "Cold"]);
     assert_eq!(titles_by(&library, orbiters.id)?, vec!["Both", "Heat"]);
     assert_eq!(ada.track_count, 2);
@@ -29581,6 +32489,7 @@ fn a_collaboration_is_listed_under_each_artist_it_credits_and_not_as_one_of_its_
         .into_iter()
         .find(|track| track.title == "Both")
         .expect("the collaboration is scanned");
+
     assert_eq!(both.artist.as_deref(), Some("Ada & The Orbiters"));
     Ok(())
 }
@@ -29598,6 +32507,7 @@ fn artists_a_tag_lists_apart_are_each_an_artist_though_none_was_held_alone() -> 
         .into_iter()
         .map(|artist| artist.name)
         .collect();
+
     assert!(
         !names.iter().any(|name| name.contains("; ")),
         "a list of artists was kept as an artist of its own: {names:?}"
@@ -29605,13 +32515,16 @@ fn artists_a_tag_lists_apart_are_each_an_artist_though_none_was_held_alone() -> 
 
     let billie = artist_named(&library, "Billie Eilish")?;
     let khalid = artist_named(&library, "Khalid")?;
+
     assert_eq!(
         titles_by(&library, billie.id)?,
         vec!["Lovely", "Ocean Eyes"]
     );
     assert_eq!(titles_by(&library, khalid.id)?, vec!["Lovely"]);
+
     for member in ["Ada", "Bea & Cy", "Dot"] {
         let artist = artist_named(&library, member)?;
+
         assert_eq!(titles_by(&library, artist.id)?, vec!["Trio"], "{member}");
     }
     Ok(())
@@ -29622,6 +32535,7 @@ fn a_name_whose_halves_name_nobody_held_is_one_artist() -> Result<()> {
     let (_tree, library) = scanned_credits(&[("song.wav", "Song", "Simon & Garfunkel")])?;
 
     let duo = artist_named(&library, "Simon & Garfunkel")?;
+
     assert_eq!(titles_by(&library, duo.id)?, vec!["Song"]);
     Ok(())
 }
@@ -29647,6 +32561,7 @@ fn a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time
         ],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let searched: Vec<Called> = fake
@@ -29654,6 +32569,7 @@ fn a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time
         .into_iter()
         .filter(|called| called.op() == LookupOp::FindArtist)
         .collect();
+
     assert_eq!(
         searched,
         vec![
@@ -29665,6 +32581,7 @@ fn a_collaboration_the_reference_cannot_name_is_asked_about_one_member_at_a_time
 
     let ada = artist_named(&library, "Ada")?;
     let orbiters = artist_named(&library, "The Orbiters")?;
+
     assert_eq!(ada.mbid, Some(mbid(ADA)));
     assert_eq!(titles_by(&library, ada.id)?, vec!["Both"]);
     assert_eq!(titles_by(&library, orbiters.id)?, vec!["Both"]);
@@ -29692,33 +32609,46 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
             .text(ARTIST, "Pink Floyd")
             .build(),
     );
+
     tree.write(
         "loose/seamus.wav",
         &Wav::new().text(TITLE, "Seamus").build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let echoes = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
         .track
         .expect("the play was counted against a row");
+
     library.favour(Favoured::Track(echoes.id), true)?;
+
     let playlist = library.create_playlist("Meddle")?;
+
     library.add_to_playlist(playlist, &[Cut::whole(MediaLocation::local(&before))])?;
+
     let ahead = LyricsAhead::ZERO.earlier().earlier();
+
     library.hold_lyrics_ahead(&MediaLocation::local(&before), None, ahead)?;
 
     let after = tree.path().join("filed/Pink Floyd/06 Echoes.wav");
+
     moved(&before, &after);
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 1);
     assert_eq!(stats.added, 0);
     assert_eq!(stats.removed, 0);
+
     let row = library
         .track_at(&after, None)?
         .expect("the row followed the file");
+
     assert_eq!(row.id, echoes.id);
     assert_eq!(row.plays, 1);
     assert!(row.favourite.is_some());
@@ -29728,7 +32658,9 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
         "the lyric offset stayed behind at the old path"
     );
     assert_eq!(all(&library)?.len(), 2);
+
     let entries = library.playlist_entries(playlist, None)?;
+
     assert_eq!(entries.len(), 1);
     assert_eq!(
         entries[0].location().as_path(),
@@ -29740,6 +32672,7 @@ fn a_file_moved_between_scans_keeps_its_row_its_plays_and_its_place_in_a_playlis
 #[test]
 fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()> {
     let tree = Tree::new();
+
     for (file, title) in [
         ("01.wav", "One of These Days"),
         ("02.wav", "A Pillow of Winds"),
@@ -29753,9 +32686,13 @@ fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let album = only_album(&library)?;
+
     library.favour(Favoured::Album(album.id), true)?;
 
     for file in ["01.wav", "02.wav"] {
@@ -29764,13 +32701,18 @@ fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()
             &tree.path().join("Pink Floyd/Meddle").join(file),
         );
     }
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 2);
+
     let still = only_album(&library)?;
+
     assert_eq!(still.id, album.id);
     assert!(still.favourite.is_some());
+
     scan(&library, &options(&tree))?;
+
     assert_eq!(only_album(&library)?.id, album.id);
     Ok(())
 }
@@ -29779,13 +32721,16 @@ fn an_album_moved_into_a_folder_of_its_own_stays_the_album_it_was() -> Result<()
 fn two_files_alike_in_every_way_are_not_guessed_between_when_they_move() -> Result<()> {
     let tree = Tree::new();
     let twin = Wav::new().text(TITLE, "Echoes").build();
+
     let first = tree.write("a/echoes.wav", &twin);
     let second = tree.write("b/echoes.wav", &twin);
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     moved(&first, &tree.path().join("c/echoes.wav"));
     moved(&second, &tree.path().join("d/echoes.wav"));
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 0);
@@ -29798,10 +32743,13 @@ fn two_files_alike_in_every_way_are_not_guessed_between_when_they_move() -> Resu
 fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() -> Result<()> {
     let tree = Tree::new();
     let twin = Wav::new().text(TITLE, "Echoes").build();
+
     let first = tree.write("vinyl/echoes.wav", &twin);
     let second = tree.write("tape/echoes.wav", &twin);
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let heard = library
         .track_played(&MediaLocation::local(&first), None, Duration::ZERO)?
         .expect("a counted play")
@@ -29810,16 +32758,20 @@ fn two_files_alike_in_every_way_are_told_apart_by_the_folders_they_moved_with() 
 
     let filed_first = tree.path().join("filed/vinyl/echoes.wav");
     let filed_second = tree.path().join("filed/tape/echoes.wav");
+
     moved(&first, &filed_first);
     moved(&second, &filed_second);
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 2);
     assert_eq!(stats.added, 0);
     assert_eq!(stats.removed, 0);
+
     let row = library
         .track_at(&filed_first, None)?
         .expect("the row followed the file");
+
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     assert_eq!(
@@ -29839,12 +32791,16 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
         "incoming/track01.wav",
         &Wav::new().frames(7_919).text(TITLE, "Echoes").build(),
     );
+
     tree.write(
         "incoming/track02.wav",
         &Wav::new().frames(7_907).text(TITLE, "Seamus").build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let heard = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
@@ -29852,6 +32808,7 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
         .expect("the play was counted against a row");
 
     fs::remove_file(&before).expect("the file is taken away");
+
     let after = tree.write(
         "Pink Floyd/Meddle/06 Echoes.wav",
         &Wav::new()
@@ -29865,9 +32822,11 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
 
     assert_eq!(stats.moved, 1);
     assert_eq!(stats.added, 0);
+
     let row = library
         .track_at(&after, None)?
         .expect("the row followed the file");
+
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     Ok(())
@@ -29877,6 +32836,7 @@ fn a_file_retagged_as_it_moved_is_followed_by_what_it_sounds_like() -> Result<()
 fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_study_took()
 -> Result<()> {
     const SECONDS_HEARD: usize = 6;
+
     let tree = Tree::new();
     let before = tree.write(
         "incoming/track01.wav",
@@ -29887,7 +32847,9 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
+
     let heard = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
@@ -29901,6 +32863,7 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     )
     .expect("a readable file")
     .expect("a print of the file");
+
     beside(&database)
         .execute(
             "INSERT INTO track_studies (track_id, studied, studied_under, verdict, peak, rms,
@@ -29914,6 +32877,7 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
         .expect("the row reads as one scanned before its packets were digested");
 
     fs::remove_file(&before).expect("the file is taken away");
+
     let after = tree.write(
         "Pink Floyd/Meddle/06 Money.wav",
         &Wav::new()
@@ -29925,9 +32889,11 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_print_its_stud
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 1);
+
     let row = library
         .track_at(&after, None)?
         .expect("the row followed the file");
+
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     Ok(())
@@ -29942,7 +32908,9 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
         &Wav::new().frames(9_973).text(TITLE, "Echoes").build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let heard = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
@@ -29950,6 +32918,7 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
         .expect("the play was counted against a row");
 
     fs::remove_file(&before).expect("the file is taken away");
+
     let after = tree.write(
         "Pink Floyd/Meddle/06 Money.wav",
         &Wav::new()
@@ -29961,9 +32930,11 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 1, "a file nobody studied was not followed");
+
     let row = library
         .track_at(&after, None)?
         .expect("the row followed the file");
+
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     assert_eq!(row.title, "Money", "the row kept the title it was heard as");
@@ -29985,15 +32956,20 @@ fn a_file_retagged_past_every_name_as_it_moved_is_followed_by_the_packets_its_sc
 #[test]
 fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let echoes = library
         .tracks(&TrackQuery::default())?
         .into_iter()
         .find(|row| row.title == "Echoes")
         .expect("the sheet's third row");
+
     library.track_played(&echoes.location, echoes.span, Duration::ZERO)?;
 
     fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
@@ -30002,16 +32978,19 @@ fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<(
         tree.path().join("Pink Floyd/Meddle"),
     )
     .expect("the rip is moved by hand");
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 3);
     assert_eq!(stats.added, 0);
+
     let moved = library
         .track_at(
             &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
             echoes.span,
         )?
         .expect("the row followed the file");
+
     assert_eq!(moved.id, echoes.id);
     assert_eq!(moved.plays, 1);
     Ok(())
@@ -30021,15 +33000,20 @@ fn a_file_a_sheet_cuts_moved_with_its_sheet_keeps_every_rows_plays() -> Result<(
 fn a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited_sheet_gives()
 -> Result<()> {
     let tree = Tree::new();
+
     tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
     tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let echoes = library
         .tracks(&TrackQuery::default())?
         .into_iter()
         .find(|row| row.title == "Echoes")
         .expect("the sheet's third row");
+
     library.track_played(&echoes.location, echoes.span, Duration::ZERO)?;
 
     fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
@@ -30042,16 +33026,19 @@ fn a_file_a_sheet_cuts_moved_as_its_sheet_was_edited_takes_the_titles_the_edited
         "Pink Floyd/Meddle/Meddle.cue",
         MEDDLE_SHEET.replace("Echoes", "Fearless").as_bytes(),
     );
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 3);
     assert_eq!(stats.added, 0);
+
     let moved = library
         .track_at(
             &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
             echoes.span,
         )?
         .expect("the row followed the file");
+
     assert_eq!(moved.id, echoes.id);
     assert_eq!(moved.plays, 1);
     assert_eq!(moved.title, "Fearless");
@@ -30068,13 +33055,17 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
 -> Result<()> {
     let named = Tree::new();
     let beside = Tree::new();
+
     named.write("one.wav", &Wav::new().frames(100).build());
+
     let before = beside.write("old/Echoes.wav", &Wav::new().frames(4_410).build());
     let deleted = beside.write("deleted.wav", &Wav::new().frames(9_973).build());
     let library = Library::open_in_memory()?;
+
     for tree in [&named, &beside] {
         scan(&library, &options(tree))?;
     }
+
     let heard = library
         .track_played(&MediaLocation::local(&before), None, Duration::ZERO)?
         .expect("a counted play")
@@ -30082,6 +33073,7 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
         .expect("the play was counted against a row");
 
     let after = beside.path().join("new/Echoes.wav");
+
     fs::create_dir_all(after.parent().expect("a folder")).expect("a writable folder");
     fs::rename(&before, &after).expect("the file is moved by hand");
     fs::remove_file(&deleted).expect("the file is taken away");
@@ -30100,7 +33092,9 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
 
     assert_eq!(stats.moved, 1);
     assert_eq!(stats.added, 0);
+
     let row = library.track_at(&after, None)?.expect("the row followed");
+
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     assert!(library.track_at(&before, None)?.is_none());
@@ -30111,12 +33105,14 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
 fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_heard_once_one_does()
 -> Result<()> {
     const HEARD_FOR: Duration = Duration::from_secs(90);
+
     let tree = Tree::new();
     let unheld = tree.write(
         "later/echoes.wav",
         &Wav::new().text(TITLE, "Echoes").build(),
     );
     let library = Library::open_in_memory()?;
+
     tree.write(
         "scanned/seamus.wav",
         &Wav::new().text(TITLE, "Seamus").build(),
@@ -30133,14 +33129,20 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_h
     let first = library
         .track_played(&location, None, Duration::ZERO)?
         .expect("an unheld play is still kept");
+
     assert_eq!(first.track, None);
     assert!(matches!(first.listen, resonate_library::Listen::Unheld(_)));
+
     library.listened(first.listen, HEARD_FOR)?;
+
     let second = library
         .track_played(&location, None, Duration::ZERO)?
         .expect("an unheld play is still kept");
+
     assert_ne!(second.listen, first.listen);
+
     let before = library.statistics(Window::Everything)?;
+
     assert_eq!(before.plays, 2);
     assert_eq!(before.tracks, 0);
     assert_eq!(
@@ -30149,15 +33151,19 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_h
     );
 
     scan(&library, &options(&tree))?;
+
     let row = library
         .track_at(&unheld, None)?
         .expect("the file a later scan found");
+
     assert_eq!(
         row.plays, 2,
         "the plays heard before the scan were not credited"
     );
     assert!(row.played.is_some());
+
     let after = library.statistics(Window::Everything)?;
+
     assert_eq!(after.plays, 2);
     assert_eq!(after.tracks, 1);
     assert_eq!(
@@ -30166,6 +33172,7 @@ fn a_file_played_before_any_scan_saw_it_is_credited_with_the_play_and_the_time_h
     );
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         library
             .track_at(&unheld, None)?
@@ -30183,6 +33190,7 @@ fn a_held_listen_whose_song_is_deleted_mid_play_is_still_spent_and_survives_a_re
 {
     const HEARD_AT_THE_START: Duration = Duration::from_secs(2);
     const HEARD_BY_THE_END: Duration = Duration::from_secs(120);
+
     let tree = Tree::new();
     let data = Tree::new();
     let cold = tree.write(
@@ -30190,13 +33198,16 @@ fn a_held_listen_whose_song_is_deleted_mid_play_is_still_spent_and_survives_a_re
         &Wav::new().text(TITLE, "Cold").text(ARTIST, "Ada").build(),
     );
     let library = Library::open_in_memory()?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
 
     let counted = library
         .track_played(&MediaLocation::local(&cold), None, HEARD_AT_THE_START)?
         .expect("a counted play");
+
     assert!(matches!(counted.listen, resonate_library::Listen::Held(_)));
+
     let held = library.track_at(&cold, None)?.expect("held");
 
     library.delete_tracks(&[held.id])?;
@@ -30212,6 +33223,7 @@ fn a_held_listen_whose_song_is_deleted_mid_play_is_still_spent_and_survives_a_re
     scan(&library, &options(&tree))?;
 
     let heard = library.statistics(Window::Everything)?;
+
     assert_eq!(heard.plays, 1);
     assert_eq!(heard.listened, HEARD_BY_THE_END);
     Ok(())
@@ -30221,6 +33233,7 @@ fn a_held_listen_whose_song_is_deleted_mid_play_is_still_spent_and_survives_a_re
 fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_one() -> Result<()> {
     const HEARD_FIRST: Duration = Duration::from_secs(90);
     const HEARD_SECOND: Duration = Duration::from_secs(5);
+
     let tree = Tree::new();
     let credited = tree.write(
         "scanned/echoes.wav",
@@ -30235,6 +33248,7 @@ fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_on
     let first = library
         .track_played(&MediaLocation::local(&credited), None, Duration::ZERO)?
         .expect("an unheld play is still kept");
+
     scan(
         &library,
         &ScanOptions {
@@ -30242,6 +33256,7 @@ fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_on
             ..options(&tree)
         },
     )?;
+
     let second = library
         .track_played(&MediaLocation::local(&still_unheld), None, Duration::ZERO)?
         .expect("an unheld play is still kept");
@@ -30255,6 +33270,7 @@ fn an_unheld_listen_credited_mid_song_is_still_spent_and_never_spends_a_later_on
 
     library.listened(first.listen, HEARD_FIRST)?;
     library.listened(second.listen, HEARD_SECOND)?;
+
     let heard = library.statistics(Window::Everything)?;
     let row = library
         .track_at(&credited, None)?
@@ -30279,6 +33295,7 @@ fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed(
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
     beside(&database)
         .execute(
@@ -30288,14 +33305,17 @@ fn a_row_named_by_its_file_name_keeps_what_a_lookup_answered_when_it_is_renamed(
         .expect("the row is answered");
 
     fs::remove_file(&before).expect("the file is renamed");
+
     let after = tree.write(
         "The Orbiters - Echoes (2011).wav",
         &Wav::new().frames(7_919).text(b"TCOM", "Somebody").build(),
     );
+
     scan(&library, &options(&tree))?;
     scan(&library, &options(&tree))?;
 
     let held = stored(&database, &after);
+
     assert_eq!(held.title, "Echoes (Answered)");
     assert!(
         held.answered.is_some(),
@@ -30312,6 +33332,7 @@ fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Resul
         &Wav::new().frames(7_919).text(TITLE, "Echoes").build(),
     );
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     fs::remove_file(&gone).expect("the file is taken away");
@@ -30323,6 +33344,7 @@ fn a_file_taken_away_and_another_of_its_length_added_are_not_one_file() -> Resul
             .text(TITLE, "Seamus")
             .build(),
     );
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 0);
@@ -30336,10 +33358,12 @@ fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
     let tree = Tree::new();
     let source = tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     fs::create_dir_all(tree.path().join("copy")).expect("a writable temporary directory");
     fs::copy(&source, tree.path().join("copy/echoes.wav")).expect("a copy");
+
     let stats = scan(&library, &options(&tree))?;
 
     assert_eq!(stats.moved, 0);
@@ -30352,6 +33376,7 @@ fn a_file_copied_rather_than_moved_is_a_row_of_its_own() -> Result<()> {
 fn a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name() -> Result<()> {
     let (tree, library) = scanned_playlist_tree();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     let evening =
         library.start_playlist("Evening", &[file("b.wav"), file("a.wav"), file("b.wav")])?;
 
@@ -30359,6 +33384,7 @@ fn a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name() -> Resu
     let second = library.duplicate_playlist(evening)?;
 
     let copied = library.playlist(copy)?.expect("the copy is there");
+
     assert_eq!(copied.name, "Evening (copy)");
     assert_eq!(
         library
@@ -30384,6 +33410,7 @@ fn a_duplicated_playlist_holds_what_the_source_holds_under_a_free_name() -> Resu
     library
         .undo()?
         .expect("the second copy is there to take back");
+
     assert!(
         library.playlist(second)?.is_none(),
         "undo left the copy standing"
@@ -30399,8 +33426,11 @@ fn a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had() -> Resul
         order: RowOrder::Title,
         reading: Direction::Ascending,
     };
+
     let evening = library.start_playlist("Evening", &[file("a.wav"), file("c.wav")])?;
+
     library.keep_playlist_in_order(evening, Some(kept))?;
+
     let wanted = SavedQuery {
         text: Some("dogs".to_owned()),
         sort: SortOrder::Title,
@@ -30420,15 +33450,19 @@ fn a_duplicated_playlist_keeps_the_order_or_the_search_the_source_had() -> Resul
         Some(kept),
         "the copy was left in hand"
     );
+
     library.add_to_playlist(kept_copy, &[file("b.wav")])?;
+
     let titles: Vec<String> = library
         .playlist_entries(kept_copy, None)?
         .into_iter()
         .filter_map(|entry| entry.track.map(|track| track.title))
         .collect();
+
     assert_eq!(titles, ["Dogs", "Echoes", "Sheep"]);
 
     let searched = library.playlist(query_copy)?.expect("the copy is there");
+
     assert_eq!(
         searched.query,
         Some(wanted),
@@ -30454,6 +33488,7 @@ fn duplicating_a_playlist_nothing_holds_is_refused() {
 
 fn four_albums_three_of_them_covered() -> (Tree, Library) {
     let tree = Tree::new();
+
     for (album, art) in [
         ("Alpha", Some(64)),
         ("Beta", Some(65)),
@@ -30465,6 +33500,7 @@ fn four_albums_three_of_them_covered() -> (Tree, Library) {
                 .text(TITLE, &format!("{album} {index}"))
                 .text(ALBUM, album)
                 .text(ALBUM_ARTIST, "Someone");
+
             if let Some(size) = art {
                 file = file.picture(&png(size));
             }
@@ -30473,6 +33509,7 @@ fn four_albums_three_of_them_covered() -> (Tree, Library) {
     }
 
     let library = Library::open_in_memory().expect("an in-memory library");
+
     scan(&library, &options(&tree)).expect("a scan of eight files");
     (tree, library)
 }
@@ -30491,6 +33528,7 @@ fn album_named(library: &Library, title: &str) -> AlbumId {
 fn a_playlist_is_pictured_by_the_covered_albums_its_rows_reach_first() -> Result<()> {
     let (tree, library) = four_albums_three_of_them_covered();
     let file = |name: &str| Cut::whole(MediaLocation::local(tree.path().join(name)));
+
     let evening = library.start_playlist(
         "Evening",
         &[
@@ -30514,6 +33552,7 @@ fn a_playlist_is_pictured_by_the_covered_albums_its_rows_reach_first() -> Result
     assert_eq!(library.playlist_pictures(evening, 2)?, vec![gamma, alpha]);
 
     let empty = library.start_playlist("Nothing yet", &[])?;
+
     assert!(library.playlist_pictures(empty, 4)?.is_empty());
     Ok(())
 }
@@ -30546,9 +33585,11 @@ fn the_pinned_playlists_are_listed_most_lately_pinned_first() -> Result<()> {
     let (_tree, library) = scanned_playlist_tree();
     let morning = library.create_playlist("Morning")?;
     let evening = library.create_playlist("Evening")?;
+
     library.create_playlist("Unpinned")?;
 
     assert!(library.pinned_playlists(8)?.is_empty());
+
     library.pin_playlist(morning, true)?;
     thread::sleep(Duration::from_millis(2));
     library.pin_playlist(evening, true)?;
@@ -30560,10 +33601,12 @@ fn the_pinned_playlists_are_listed_most_lately_pinned_first() -> Result<()> {
             .map(|pinned| pinned.name)
             .collect())
     };
+
     assert_eq!(named(8)?, ["Evening", "Morning"]);
     assert_eq!(named(1)?, ["Evening"]);
 
     library.pin_playlist(evening, false)?;
+
     assert_eq!(named(8)?, ["Morning"]);
     Ok(())
 }
@@ -30591,6 +33634,7 @@ fn what_is_playing_is_billed_with_the_code_and_the_release_group_the_catalog_hol
     );
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, &options(&tree))?;
 
     let grouped = beside(&database)
@@ -30622,12 +33666,14 @@ impl Provider for Withdrawing {
 
     fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
         *self.asked.lock() += 1;
+
         let asked_about = self
             .library
             .wants()
             .expect("the wants read")
             .into_iter()
             .find(|want| want.identity().title == identity.title);
+
         if let Some(want) = asked_about {
             self.library.unwant(want.id).expect("the want is withdrawn");
         }
@@ -30638,9 +33684,13 @@ impl Provider for Withdrawing {
 #[test]
 fn a_want_withdrawn_while_a_poll_asks_about_it_is_passed_over_and_the_poll_goes_on() -> Result<()> {
     let (_tree, library, database) = scanned_orbits_on_disk()?;
+
     wanted_every_missing_row(&library)?;
+
     let wanted = library.wants()?.len();
+
     assert!(wanted > 1);
+
     let withdrawing = Arc::new(Withdrawing {
         source: SourceId::new("shop").expect("a nameable source"),
         library: Library::open(&database)?,
@@ -30706,6 +33756,7 @@ fn wrong_password(provider: SourceId) -> resonate_providers::Error {
 fn wanted_every_missing_row(library: &Library) -> Result<()> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
@@ -30723,13 +33774,16 @@ fn wanted_every_missing_row(library: &Library) -> Result<()> {
 fn a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_poll() -> Result<()>
 {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
+
     let server = Unanswering::new("server", wrong_password);
     let providers = Arc::new(Providers::none().and(Arc::clone(&server) as Arc<dyn Provider>));
 
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
+
     assert_eq!(summary.stats.asked, 1);
     assert_eq!(summary.stats.refused, 1);
     assert_eq!(summary.stats.nothing, 0);
@@ -30737,6 +33791,7 @@ fn a_want_no_provider_could_answer_is_left_untried_and_asked_again_by_the_next_p
     assert!(library.is_a_want_due(PollOptions::default())?);
 
     let summary = library.poll(providers, PollOptions::default())?.join()?;
+
     assert_eq!(summary.stats.asked, 1);
     assert_eq!(server.asked(), 2);
     Ok(())
@@ -30752,6 +33807,7 @@ fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result
     library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
+
     assert!(library.wants()?[0].tried.is_some());
     assert!(!library.is_a_want_due(PollOptions::default())?);
 
@@ -30759,7 +33815,9 @@ fn a_want_asked_for_again_is_due_at_once_however_lately_it_was_tried() -> Result
 
     assert_eq!(library.wants()?[0].tried, None);
     assert!(library.is_a_want_due(PollOptions::default())?);
+
     library.poll(providers, PollOptions::default())?.join()?;
+
     assert_eq!(quiet.asked().len(), 2);
     Ok(())
 }
@@ -30775,7 +33833,9 @@ fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_
     library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
+
     let tried = library.wants()?[0].clone();
+
     assert_eq!(tried.misses, 1);
     assert!(!tried.gave_up());
     assert_eq!(
@@ -30790,14 +33850,18 @@ fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_
             .poll(Arc::clone(&providers), PollOptions::ASKING_EVERY_WANT)?
             .join()?;
     }
+
     let given_up = library.wants()?[0].clone();
+
     assert_eq!(given_up.misses, TRIES_BEFORE_GIVING_UP);
     assert!(given_up.gave_up());
     assert_eq!(given_up.due_at(), None);
     assert_eq!(library.next_want_due()?, None);
 
     assert_eq!(wanted_san_tropez(&library)?, want);
+
     let asked_again = library.wants()?[0].clone();
+
     assert_eq!(asked_again.misses, 0);
     assert!(!asked_again.gave_up());
     assert!(library.is_a_want_due(PollOptions::default())?);
@@ -30807,9 +33871,12 @@ fn a_want_tried_in_vain_is_retried_after_longer_waits_then_given_up_until_asked_
 #[test]
 fn a_want_one_provider_answered_and_another_refused_stays_due() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
+
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let server = Unanswering::new("server", wrong_password);
+
     let providers = Arc::new(
         Providers::none()
             .and(Arc::clone(&quiet) as Arc<dyn Provider>)
@@ -30826,14 +33893,19 @@ fn a_want_one_provider_answered_and_another_refused_stays_due() -> Result<()> {
 #[test]
 fn a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_want() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_every_missing_row(&library)?;
+
     let wanted = library.wants()?.len();
+
     assert!(
         wanted > 1,
         "the poll is to be asked about more than one want"
     );
+
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
     let server = Unanswering::new("server", unreachable_server);
+
     let providers = Arc::new(
         Providers::none()
             .and(Arc::clone(&server) as Arc<dyn Provider>)
@@ -30852,9 +33924,13 @@ fn a_provider_that_cannot_be_reached_is_asked_once_a_poll_rather_than_once_a_wan
 #[test]
 fn a_wrong_password_is_tried_once_a_poll_rather_than_once_a_want() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_every_missing_row(&library)?;
+
     let wanted = library.wants()?.len();
+
     assert!(wanted > 1);
+
     let server = Unanswering::new("server", wrong_password);
     let providers = Arc::new(Providers::none().and(Arc::clone(&server) as Arc<dyn Provider>));
 
@@ -30898,6 +33974,7 @@ impl Provider for Slow {
 
     fn find(&self, _identity: &Identity) -> ProvidedResult<Obtained> {
         let now = self.in_flight.fetch_add(1, Ordering::SeqCst) + 1;
+
         self.most_at_once.fetch_max(now, Ordering::SeqCst);
         thread::sleep(self.held_for);
         self.in_flight.fetch_sub(1, Ordering::SeqCst);
@@ -30908,9 +33985,13 @@ impl Provider for Slow {
 #[test]
 fn wants_are_asked_about_side_by_side_once_the_first_has_been_answered() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_every_missing_row(&library)?;
+
     let wanted = library.wants()?.len();
+
     assert!(wanted > 2);
+
     let slow = Slow::new(Duration::from_millis(150));
     let providers = Arc::new(Providers::none().and(Arc::clone(&slow) as Arc<dyn Provider>));
 
@@ -30929,7 +34010,9 @@ fn wants_are_asked_about_side_by_side_once_the_first_has_been_answered() -> Resu
 #[test]
 fn a_poll_with_one_lane_asks_about_one_want_at_a_time() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_every_missing_row(&library)?;
+
     let slow = Slow::new(Duration::from_millis(20));
     let providers = Arc::new(Providers::none().and(Arc::clone(&slow) as Arc<dyn Provider>));
 
@@ -30971,9 +34054,12 @@ impl Provider for WantsOneMore {
                 .into_iter()
                 .find(|row| row.title == "Seamus")
                 .expect("a row nobody wanted yet");
+
             self.library.want(late.id).expect("a want");
+
             let progress = self.progress.lock().clone();
             let progress = progress.expect("the poll's progress");
+
             assert!(progress.wants_changed(), "the poll had already closed");
         }
         thread::sleep(Duration::from_millis(30));
@@ -30987,14 +34073,17 @@ fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> 
     let library = Arc::new(library);
     let album = only_album(&library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, "San Tropez", Vec::new()));
     rows.push(release_row(5, "Seamus", Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
+
     let first = library
         .release_tracks(album.id)?
         .into_iter()
         .find(|row| row.title == "San Tropez")
         .expect("a row to want first");
+
     library.want(first.id)?;
 
     let provider = Arc::new(WantsOneMore {
@@ -31008,7 +34097,9 @@ fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> 
         Arc::new(Providers::none().and(Arc::clone(&provider) as Arc<dyn Provider>)),
         PollOptions::default(),
     )?;
+
     *provider.progress.lock() = Some(Arc::clone(handle.progress()));
+
     let summary = handle.join()?;
 
     assert_eq!(summary.stats.asked, 2);
@@ -31019,11 +34110,14 @@ fn a_want_pressed_while_a_poll_runs_is_asked_by_that_poll_and_not_the_next() -> 
 #[test]
 fn a_poll_that_has_finished_is_not_nudged() -> Result<()> {
     let (_tree, library) = scanned_orbits()?;
+
     wanted_san_tropez(&library)?;
+
     let quiet = Arc::new(Offering::new("quiet", Delivering::Nothing));
 
     let handle = library.poll(quiet.registered(), PollOptions::default())?;
     let progress = Arc::clone(handle.progress());
+
     handle.join()?;
 
     assert!(!progress.wants_changed());
@@ -31034,8 +34128,11 @@ fn a_poll_that_has_finished_is_not_nudged() -> Result<()> {
 fn a_portrait_the_reference_answered_it_lacks_is_not_looked_for_again_the_next_pass() -> Result<()>
 {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let empty_handed = Arc::new(Fake::new(Canned {
@@ -31044,10 +34141,13 @@ fn a_portrait_the_reference_answered_it_lacks_is_not_looked_for_again_the_next_p
         found_artists: vec![artist_match(100, "The Orbiters")],
         ..Canned::default()
     }));
+
     enrich(&library, &empty_handed, false)?;
+
     assert_eq!(empty_handed.called(LookupOp::Portrait), 1);
 
     let later = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &later, false)?;
 
     assert_eq!(
@@ -31062,8 +34162,11 @@ fn a_portrait_the_reference_answered_it_lacks_is_not_looked_for_again_the_next_p
 fn a_release_said_to_have_no_front_cover_is_pictured_by_its_group_and_never_by_itself() -> Result<()>
 {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -31073,6 +34176,7 @@ fn a_release_said_to_have_no_front_cover_is_pictured_by_its_group_and_never_by_i
         }],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
 
     let pictures: Vec<Called> = fake
@@ -31080,6 +34184,7 @@ fn a_release_said_to_have_no_front_cover_is_pictured_by_its_group_and_never_by_i
         .into_iter()
         .filter(|called| called.op() == LookupOp::Cover)
         .collect();
+
     assert_eq!(pictures, vec![Called::GroupCover(mbid(RELEASE_GROUP))]);
     Ok(())
 }
@@ -31087,8 +34192,11 @@ fn a_release_said_to_have_no_front_cover_is_pictured_by_its_group_and_never_by_i
 #[test]
 fn a_release_said_to_have_no_front_cover_and_no_group_is_never_asked_for_one() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned {
@@ -31099,7 +34207,9 @@ fn a_release_said_to_have_no_front_cover_and_no_group_is_never_asked_for_one() -
         }],
         ..Canned::default()
     }));
+
     enrich(&library, &fake, false)?;
+
     assert!(
         only_album(&library)?.mbid.is_some(),
         "the release did not land"
@@ -31107,7 +34217,9 @@ fn a_release_said_to_have_no_front_cover_and_no_group_is_never_asked_for_one() -
     assert_eq!(fake.called(LookupOp::Cover), 0);
 
     let later = Arc::new(Fake::new(Canned::default()));
+
     enrich(&library, &later, false)?;
+
     assert_eq!(
         later.called(LookupOp::Cover),
         0,
@@ -31119,8 +34231,11 @@ fn a_release_said_to_have_no_front_cover_and_no_group_is_never_asked_for_one() -
 #[test]
 fn a_discography_refused_as_its_artist_landed_is_asked_for_again_within_the_hour() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(
@@ -31132,15 +34247,20 @@ fn a_discography_refused_as_its_artist_landed_is_asked_for_again_within_the_hour
         })
         .faulting(LookupOp::ReleaseGroupsOfArtist, 0, Fault::Refused),
     );
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(fake.called(LookupOp::ReleaseGroupsOfArtist), 1);
 
     let artist = artist_named(&library, "The Orbiters")?;
+
     assert!(artist.mbid.is_some(), "the profile did not land");
+
     let an_hour_on = Waits {
         refused_again_after: Duration::ZERO,
         ..WAITED
     };
+
     assert!(!library.artist_is_due(artist.id, WAITED, false)?);
     assert!(
         library.artist_is_due(artist.id, an_hour_on, false)?,
@@ -31155,6 +34275,7 @@ fn a_reference_refusing_lookup_after_lookup_ends_the_pass() -> Result<()> {
     const ENDS_AFTER: u64 = 10;
 
     let tree = Tree::new();
+
     for nth in 0..ALBUMS {
         tree.write(
             &format!("{nth}.wav"),
@@ -31165,10 +34286,13 @@ fn a_reference_refusing_lookup_after_lookup_ends_the_pass() -> Result<()> {
                 .build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let mut fake = Fake::new(Canned::default());
+
     for nth in 0..ALBUMS * 4 {
         for op in [
             LookupOp::FindRelease,
@@ -31179,6 +34303,7 @@ fn a_reference_refusing_lookup_after_lookup_ends_the_pass() -> Result<()> {
             fake = fake.faulting(op, nth, Fault::Refused);
         }
     }
+
     let fake = Arc::new(fake);
     let summary = enrich(&library, &fake, false)?;
 
@@ -31194,12 +34319,17 @@ fn a_reference_refusing_lookup_after_lookup_ends_the_pass() -> Result<()> {
 #[test]
 fn a_lyric_the_service_refused_is_not_asked_for_again_on_the_next_pass() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     let fake = Arc::new(Fake::new(Canned::default()).faulting(LookupOp::Lyrics, 0, Fault::Refused));
+
     enrich(&library, &fake, false)?;
+
     assert_eq!(fake.sung().len(), ORBITS_TITLES.len());
 
     assert_eq!(
@@ -31249,12 +34379,15 @@ fn played_in_its_songs_place(
     file: &Path,
 ) -> Result<()> {
     let cuts = library.playlist_cuts(waiting.playlist)?;
+
     assert_eq!(cuts.len(), 2);
     assert!(
         cuts.iter().all(|cut| cut.location.as_path() == Some(song)),
         "the playlist no longer names its own song: {cuts:?}"
     );
+
     let copy = library.track_at(file, None)?.expect("the copy is held").id;
+
     assert_eq!(library.version_chosen_for(waiting.lossy.id)?, Some(copy));
     Ok(())
 }
@@ -31263,6 +34396,7 @@ fn played_in_its_songs_place(
 fn a_replacement_is_never_asked_of_a_last_resort() -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(flac)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
@@ -31270,9 +34404,13 @@ fn a_replacement_is_never_asked_of_a_last_resort() -> Result<()> {
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+
     filing_into(&library, &tree);
+
     let tube = Arc::new(Offering::new("tube", Delivering::File(flac)));
     let providers = Arc::new(
         Providers::none().and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>),
@@ -31298,6 +34436,7 @@ fn a_replacement_is_never_asked_of_a_last_resort() -> Result<()> {
 fn a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked() -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(offered_opus), Some(flac)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "one/A.opus", "Echoes"),
@@ -31309,8 +34448,10 @@ fn a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked() -
     let data = Tree::new();
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_with_vault(&tree.path().join("library.db"), vault)?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
     let one = Arc::new(Offering::new("one", Delivering::File(offered_opus)));
     let two = Arc::new(Offering::new("two", Delivering::File(flac)));
@@ -31333,19 +34474,27 @@ fn a_lossy_delivery_for_a_replacement_is_refused_and_the_next_provider_asked() -
     );
     assert_eq!((one.asked().len(), two.asked().len()), (1, 1));
     assert_eq!(summary.replaced.beside, 1, "{summary:?}");
+
     let mut kept = Vec::new();
+
     for object in library.vault_objects()? {
         kept.extend(library.track_at(&object.path, None)?);
     }
+
     assert_eq!(kept.len(), 1, "the vault holds {kept:?}");
+
     let kept = kept.remove(0);
+
     assert!(kept.codec.is_lossless(), "{kept:?}");
+
     let kept_at = kept
         .location
         .as_path()
         .expect("the vault's row names its object")
         .to_path_buf();
+
     played_in_its_songs_place(&library, &waiting, &opus, &kept_at)?;
+
     assert!(opus.exists());
     assert!(!trashed(&data, "A.opus"));
     assert!(library.wants()?.is_empty(), "the want outlived its answer");
@@ -31358,6 +34507,7 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
 -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(flac)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
@@ -31366,10 +34516,14 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
     };
     let data = Tree::new();
     let library = Library::open(&data.path().join("library.db"))?;
+
     library.trash_into(Some(data.path().to_path_buf()));
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+
     filing_into(&library, &tree);
+
     let store = Arc::new(Offering::new("store", Delivering::File(flac)));
 
     let summary = library
@@ -31378,9 +34532,13 @@ fn a_lossless_delivery_filed_in_the_music_folder_replaces_the_lossy_song_at_the_
 
     assert_eq!(summary.stats.kept, 1, "{summary:?}");
     assert_eq!(summary.replaced.beside, 1, "{summary:?}");
+
     let filed = files_named(tree.path(), "flac");
+
     assert_eq!(filed.len(), 1, "{filed:?}");
+
     played_in_its_songs_place(&library, &waiting, &opus, &filed[0])?;
+
     assert_eq!(the_row_at(&library, &opus)?.plays, 2);
     assert!(opus.exists());
     assert!(!trashed(&data, "A.opus"));
@@ -31392,6 +34550,7 @@ fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_asked_of_a_pro
 {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(flac)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.flac", "Echoes"),
@@ -31399,9 +34558,13 @@ fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_asked_of_a_pro
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+
     library.deliver_into(None);
+
     let store = Arc::new(Offering::new("store", Delivering::File(flac)));
 
     let summary = library
@@ -31435,6 +34598,7 @@ fn a_replacement_with_neither_a_vault_nor_a_music_folder_is_never_asked_of_a_pro
 fn a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused() -> Result<()> {
     let tree = Tree::new();
     let shop = Tree::new();
+
     let (Some(opus), Some(mp3)) = (
         encoded_as_pink_floyd(&tree, "lossy/A.opus", "Echoes"),
         encoded_as_pink_floyd(&shop, "A.mp3", "Echoes"),
@@ -31442,9 +34606,13 @@ fn a_lossy_file_filed_for_a_replacement_is_taken_away_and_refused() -> Result<()
         return Ok(());
     };
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let waiting = waiting_to_be_replaced(&library, &opus, None)?;
+
     filing_into(&library, &tree);
+
     let before = every_file_under(tree.path());
     let store = Arc::new(Offering::new("store", Delivering::File(mp3)));
 
@@ -31470,11 +34638,14 @@ fn a_last_resort_is_not_asked_in_a_later_round_after_an_earlier_provider_refused
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let broken = Unanswering::new("broken", unreachable_server);
     let wrong = half_of_san_tropez();
     let tube = the_whole_of_san_tropez("tube");
+
     let providers = Arc::new(
         Providers::none()
             .and(Arc::clone(&broken) as Arc<dyn Provider>)
@@ -31487,7 +34658,9 @@ fn a_last_resort_is_not_asked_in_a_later_round_after_an_earlier_provider_refused
     assert_eq!(summary.stats.offered, 1);
     assert_eq!(summary.stats.kept, 0);
     assert!(tube.asked().is_empty());
+
     let wants = library.wants()?;
+
     assert!(wants[0].held.is_none());
     assert_eq!(wants[0].tried, None);
     Ok(())
@@ -31498,10 +34671,13 @@ fn a_last_resort_is_asked_after_an_earlier_offer_was_not_the_song() -> Result<()
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_lasting(&library, Some(Duration::from_secs(10)))?;
+
     let wrong = half_of_san_tropez();
     let tube = the_whole_of_san_tropez("tube");
+
     let providers = Arc::new(
         Providers::none()
             .and(Arc::clone(&wrong) as Arc<dyn Provider>)
@@ -31520,11 +34696,14 @@ fn a_last_resort_is_never_foreseen_nor_started_by_a_search() -> Result<()> {
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let fake = meddle_fake();
     let found = library.found_elsewhere(&fake, "echoes")?;
     let empty = Arc::new(Offering::new("shop", Delivering::Nothing));
     let tube = a_provider_offering_echoes("tube");
+
     let providers = Providers::none()
         .and(Arc::clone(&empty) as Arc<dyn Provider>)
         .and(Arc::new(LastResort(Arc::clone(&tube))) as Arc<dyn Provider>);
@@ -31540,11 +34719,15 @@ fn a_refusal_heard_while_foreseeing_bars_the_last_resort_and_the_miss_from_the_p
     let held = Tree::new();
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
+
     let mut release = meddle_release();
+
     for row in &mut release.media[0].tracks {
         row.length = Some(Duration::from_secs(1_411));
     }
+
     let fake = Fake::new(Canned {
         found_songs: vec![echoes_found()],
         releases: vec![release],
@@ -31554,6 +34737,7 @@ fn a_refusal_heard_while_foreseeing_bars_the_last_resort_and_the_miss_from_the_p
     let broken = Unanswering::new("broken", unreachable_server);
     let short = a_provider_offering_echoes("shop");
     let tube = a_provider_offering_echoes("tube");
+
     let providers = Arc::new(
         Providers::none()
             .and(Arc::clone(&broken) as Arc<dyn Provider>)
@@ -31562,14 +34746,18 @@ fn a_refusal_heard_while_foreseeing_bars_the_last_resort_and_the_miss_from_the_p
     );
 
     assert!(library.foresee(&providers, &found[0]));
+
     library.want_found(&fake, &found[0])?;
+
     let summary = library
         .poll(Arc::clone(&providers), PollOptions::default())?
         .join()?;
 
     assert!(tube.asked().is_empty());
     assert_eq!(summary.stats.refused, 1);
+
     let wants = library.wants()?;
+
     assert_eq!(wants[0].tried, None);
     assert_eq!(wants[0].misses, 0);
     assert!(wants[0].held.is_none());
@@ -31690,10 +34878,13 @@ impl Provider for Tube {
 
     fn find(&self, identity: &Identity) -> ProvidedResult<Obtained> {
         self.asked.lock().push(identity.clone());
+
         let video = video_of(identity);
+
         if let Some(then) = self.when_asked.lock().remove(&video) {
             then();
         }
+
         let answer = self
             .answers
             .lock()
@@ -31792,6 +34983,7 @@ fn delivering_into(library: &Library, tree: &Tree) {
 fn a_music_folder() -> Result<(Tree, Library)> {
     let tree = Tree::new();
     let library = Library::open_in_memory()?;
+
     delivering_into(&library, &tree);
     Ok((tree, library))
 }
@@ -31800,6 +34992,7 @@ fn a_music_folder_on_disk() -> Result<(Tree, Library, PathBuf)> {
     let tree = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     delivering_into(&library, &tree);
     Ok((tree, library, database))
 }
@@ -31843,6 +35036,7 @@ fn files_under(folder: &Path, found: &mut Vec<PathBuf>) {
 
 fn songs_under(tree: &Tree) -> Vec<PathBuf> {
     let mut found = Vec::new();
+
     files_under(tree.path(), &mut found);
     found.retain(|path| path.extension() == Some(OsStr::new("wav")));
     found.sort();
@@ -31851,6 +35045,7 @@ fn songs_under(tree: &Tree) -> Vec<PathBuf> {
 
 fn staged_under(folder: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
+
     files_under(folder, &mut found);
     found.retain(|path| path.to_string_lossy().ends_with(STAGED_DELIVERY));
     found
@@ -31874,6 +35069,7 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
         KeptSong::Queued
     );
     assert_eq!(library.keeps_pending()?, 1);
+
     let summary = pass(&library, &tube)?;
 
     assert_eq!(
@@ -31884,7 +35080,9 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
         }
     );
     assert_eq!(library.keeps_pending()?, 0);
+
     let asked = tube.asked.lock()[0].clone();
+
     assert_eq!(asked.title, "San Tropez");
     assert_eq!(asked.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(asked.album.as_deref(), Some("Kept Songs"));
@@ -31895,10 +35093,13 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
     );
 
     let track = track_titled(&library, "San Tropez")?;
+
     assert_eq!(track.artist.as_deref(), Some("The Orbiters"));
+
     let album = library
         .album(track.album_id.expect("the song names its album"))?
         .expect("the album");
+
     assert_eq!(album.title, "Kept Songs");
     assert_eq!(
         track.location.as_path(),
@@ -31908,9 +35109,11 @@ fn a_song_kept_lands_in_the_music_folder_tagged_as_the_service_named_it() -> Res
                 .as_path()
         )
     );
+
     let tags = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Whether)
         .expect("the file reads");
+
     assert_eq!(tags.tags.title.as_deref(), Some("San Tropez"));
     assert_eq!(tags.tags.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(tags.tags.album.as_deref(), Some("Kept Songs"));
@@ -31924,6 +35127,7 @@ fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> 
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
     let address = "https://lh3.googleusercontent.com/cover";
+
     library.keep_song(SongToKeep {
         cover: Some(address.to_owned()),
         ..song_to_keep("abc123", "San Tropez")
@@ -31932,6 +35136,7 @@ fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> 
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
     assert_eq!(*tube.pictures_asked.lock(), [address]);
+
     let track = track_titled(&library, "San Tropez")?;
     let carried = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
@@ -31939,8 +35144,11 @@ fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> 
         .picture
         .into_copied()
         .expect("the file carries the picture");
+
     assert_eq!(carried.bytes, png(64));
+
     let album = track.album_id.expect("the song names its album");
+
     assert_eq!(
         library.cover_art(album)?.map(|art| art.bytes),
         Some(png(64)),
@@ -31953,48 +35161,61 @@ fn a_song_kept_lands_with_the_picture_its_service_showed_for_it() -> Result<()> 
 fn a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once() -> Result<()> {
     let (tree, library, database) = a_music_folder_on_disk()?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+
     assert_eq!(pass(&library, &tube)?.landed, 1);
+
     beside(&database)
         .execute(
             "UPDATE kept_songs SET cover = NULL, picture_asked = NULL",
             [],
         )
         .expect("the keep is made one from before pictures");
+
     let track = track_titled(&library, "San Tropez")?;
     let bare = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
         .expect("the file reads");
+
     assert_eq!(bare.picture.into_copied(), None);
+
     tube.pictures_asked.lock().clear();
 
     pass(&library, &tube)?;
     pass(&library, &tube)?;
 
     let named = format!("{A_PICTURE_THE_TUBE_NAMES}abc123");
+
     assert_eq!(
         *tube.pictures_asked.lock(),
         std::slice::from_ref(&named),
         "the picture was not asked for once"
     );
+
     let carried = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
         .expect("the file reads")
         .picture
         .into_copied()
         .expect("the file carries the picture");
+
     assert_eq!(carried.bytes, png(64));
+
     let album = track_titled(&library, "San Tropez")?
         .album_id
         .expect("the song names its album");
+
     assert_eq!(
         library.cover_art(album)?.map(|art| art.bytes),
         Some(png(64)),
         "the library still draws no cover for the kept song"
     );
+
     let kept: Option<String> = beside(&database)
         .query_row("SELECT cover FROM kept_songs", [], |row| row.get(0))
         .expect("the keep reads");
+
     assert_eq!(kept, Some(named));
     assert!(tree.path().join("library.db").exists());
     Ok(())
@@ -32004,6 +35225,7 @@ fn a_song_kept_bare_before_keeps_carried_their_picture_is_given_one_once() -> Re
 fn a_song_whose_picture_cannot_be_fetched_is_kept_all_the_same() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_song(SongToKeep {
         cover: Some(A_PICTURE_THE_TUBE_REFUSES.to_owned()),
         ..song_to_keep("abc123", "San Tropez")
@@ -32015,6 +35237,7 @@ fn a_song_whose_picture_cannot_be_fetched_is_kept_all_the_same() -> Result<()> {
     let tags = FileTags::over(Sources::local())
         .read(&track.location, Picturing::Copied)
         .expect("the file reads");
+
     assert_eq!(tags.tags.title.as_deref(), Some("San Tropez"));
     assert_eq!(tags.picture.into_copied(), None);
     Ok(())
@@ -32025,6 +35248,7 @@ fn a_song_pressed_again_keeps_the_picture_it_was_first_pressed_with() -> Result<
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
     let address = "https://i.ytimg.com/first";
+
     library.keep_song(SongToKeep {
         cover: Some(address.to_owned()),
         ..song_to_keep("abc123", "San Tropez")
@@ -32042,9 +35266,11 @@ fn a_keep_is_asked_of_its_own_provider_alone() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let shop = Tube::named("shop");
     let tube = Tube::new();
+
     let providers = Providers::none()
         .and(Arc::clone(&shop) as Arc<dyn Provider>)
         .and(Arc::clone(&tube) as Arc<dyn Provider>);
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
     let summary = library.keep_pending(&providers, &|| false)?;
@@ -32062,6 +35288,7 @@ fn a_last_resort_named_alone_is_asked_for_a_keep_whatever_else_is_registered() -
         let shop = Tube::named("shop");
         let tube = Tube::new();
         let last = Arc::new(LastResortTube(Arc::clone(&tube))) as Arc<dyn Provider>;
+
         let providers = if beside_another {
             Providers::none()
                 .and(Arc::clone(&shop) as Arc<dyn Provider>)
@@ -32069,6 +35296,7 @@ fn a_last_resort_named_alone_is_asked_for_a_keep_whatever_else_is_registered() -
         } else {
             Providers::none().and(last)
         };
+
         library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
         let summary = library.keep_pending(&providers, &|| false)?;
@@ -32083,6 +35311,7 @@ fn a_last_resort_named_alone_is_asked_for_a_keep_whatever_else_is_registered() -
 fn a_keep_with_no_length_or_artist_is_still_asked_and_lands_whatever_it_lasts() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering(
         "abc123",
         &[TubeAnswer::Lasting(LONGER_THAN_ANY_LENGTH_AGREES)],
@@ -32106,7 +35335,9 @@ fn a_keep_with_no_length_or_artist_is_still_asked_and_lands_whatever_it_lasts() 
 fn a_song_held_already_is_not_kept_again_and_its_copy_fills_the_list() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let held = held_as(&tree, "Elsewhere/held.wav", "TWO", A_SECOND_OF_FRAMES);
+
     scan(&library, &options(&tree))?;
+
     let tube = Tube::new();
     let the_held_track = track_titled(&library, "TWO")?;
 
@@ -32122,8 +35353,10 @@ fn a_song_held_already_is_not_kept_again_and_its_copy_fills_the_list() -> Result
     assert_eq!(summary.landed, 1);
     assert_eq!(tube.videos_asked(), ["one"]);
     assert_eq!(titles_in(&library, "Mix")?, ["One", "TWO"]);
+
     let list = library.playlist_named("Mix")?.expect("the list");
     let entries = library.playlist_entries(list.id, None)?;
+
     assert_eq!(entries[1].cut.location.as_path(), Some(held.as_path()));
     assert_eq!(
         songs_under(&tree).len(),
@@ -32141,6 +35374,7 @@ fn a_song_held_already_is_not_kept_again_and_its_copy_fills_the_list() -> Result
 #[test]
 fn a_song_named_alike_but_apart_in_length_or_by_another_artist_is_not_held() -> Result<()> {
     let (tree, library) = a_music_folder()?;
+
     held_as(&tree, "held.wav", "Two", 4 * A_SECOND_OF_FRAMES);
     scan(&library, &options(&tree))?;
 
@@ -32177,6 +35411,7 @@ fn a_song_named_alike_but_apart_in_length_or_by_another_artist_is_not_held() -> 
 fn a_song_whose_file_is_gone_by_hand_is_not_held() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let held = held_as(&tree, "held.wav", "Two", A_SECOND_OF_FRAMES);
+
     scan(&library, &options(&tree))?;
     fs::remove_file(held).expect("the file goes");
 
@@ -32239,6 +35474,7 @@ fn a_song_kept_with_no_name_to_weigh_is_known_by_its_video_once_it_has_landed() 
 fn a_kept_song_deleted_by_hand_is_queued_again_when_pressed_again() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
     pass(&library, &tube)?;
     for song in songs_under(&tree) {
@@ -32259,6 +35495,7 @@ fn a_kept_song_deleted_by_hand_is_queued_again_when_pressed_again() -> Result<()
 fn a_playlist_keeps_youtubes_order_however_its_songs_land() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Busy]);
     tube.answering("two", &[TubeAnswer::Busy, TubeAnswer::Busy]);
     library.keep_playlist(list_to_keep(
@@ -32268,9 +35505,13 @@ fn a_playlist_keeps_youtubes_order_however_its_songs_land() -> Result<()> {
     ))?;
 
     pass(&library, &tube)?;
+
     assert_eq!(titles_in(&library, "Mix")?, ["Three"]);
+
     pass(&library, &tube)?;
+
     assert_eq!(titles_in(&library, "Mix")?, ["One", "Three"]);
+
     pass(&library, &tube)?;
 
     assert_eq!(titles_in(&library, "Mix")?, ["One", "Two", "Three"]);
@@ -32282,6 +35523,7 @@ fn a_playlist_keeps_youtubes_order_however_its_songs_land() -> Result<()> {
 fn a_playlist_told_not_to_keep_order_is_in_the_order_songs_landed() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Busy]);
     tube.answering("two", &[TubeAnswer::Busy, TubeAnswer::Busy]);
     library.keep_playlist(list_to_keep(
@@ -32302,12 +35544,15 @@ fn a_playlist_told_not_to_keep_order_is_in_the_order_songs_landed() -> Result<()
 fn a_song_that_never_lands_leaves_its_place_and_the_rest_keep_theirs() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("two", &[TubeAnswer::Nothing]);
+
     let list = list_to_keep(
         "Mix",
         true,
         &[("one", "One"), ("two", "Two"), ("three", "Three")],
     );
+
     library.keep_playlist(list.clone())?;
 
     let summary = pass(&library, &tube)?;
@@ -32330,7 +35575,9 @@ fn a_song_that_never_lands_leaves_its_place_and_the_rest_keep_theirs() -> Result
         KeptList { queued: 1, held: 2 }
     );
     assert_eq!(library.keeps_pending()?, 1);
+
     pass(&library, &tube)?;
+
     assert_eq!(titles_in(&library, "Mix")?, ["One", "Two", "Three"]);
     Ok(())
 }
@@ -32339,9 +35586,12 @@ fn a_song_that_never_lands_leaves_its_place_and_the_rest_keep_theirs() -> Result
 fn a_second_press_adds_new_songs_in_their_places_and_leaves_a_removed_one_removed() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]))?;
     pass(&library, &tube)?;
+
     let list = library.playlist_named("Mix")?.expect("the list");
+
     assert!(library.remove_from_playlist(list.id, Span::between(1, 1))?);
 
     let kept = library.keep_playlist(list_to_keep(
@@ -32352,7 +35602,9 @@ fn a_second_press_adds_new_songs_in_their_places_and_leaves_a_removed_one_remove
 
     assert_eq!(kept, KeptList { queued: 1, held: 2 });
     assert_eq!(titles_in(&library, "Mix")?, ["One"]);
+
     pass(&library, &tube)?;
+
     assert_eq!(titles_in(&library, "Mix")?, ["New", "One"]);
     assert_eq!(tube.videos_asked(), ["one", "two", "new"]);
     Ok(())
@@ -32367,6 +35619,7 @@ fn a_song_in_two_kept_lists_is_downloaded_once_and_fills_both() -> Result<()> {
         length: None,
         ..song_to_keep("both", "Both")
     };
+
     for name in ["Mix", "Other Mix"] {
         library.keep_playlist(PlaylistToKeep {
             name: name.to_owned(),
@@ -32389,8 +35642,11 @@ fn a_song_in_two_kept_lists_is_downloaded_once_and_fills_both() -> Result<()> {
 fn a_song_that_arrived_since_it_was_queued_is_not_asked_for() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_playlist(list_to_keep("Mix", true, &[("two", "Two")]))?;
+
     let held = held_as(&tree, "held.wav", "Two", A_SECOND_OF_FRAMES);
+
     scan(&library, &options(&tree))?;
 
     let summary = pass(&library, &tube)?;
@@ -32407,6 +35663,7 @@ fn a_song_that_arrived_since_it_was_queued_is_not_asked_for() -> Result<()> {
 fn a_keep_longer_than_the_song_was_listed_is_not_kept() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering(
         "abc123",
         &[TubeAnswer::Lasting(LONGER_THAN_ANY_LENGTH_AGREES)],
@@ -32433,6 +35690,7 @@ fn a_keep_longer_than_the_song_was_listed_is_not_kept() -> Result<()> {
 fn bytes_that_do_not_decode_give_a_keep_up() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("abc123", &[TubeAnswer::Undecodable]);
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
@@ -32448,6 +35706,7 @@ fn bytes_that_do_not_decode_give_a_keep_up() -> Result<()> {
 fn a_video_gone_when_opened_gives_a_keep_up_and_a_second_press_asks_again() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("abc123", &[TubeAnswer::Gone]);
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
@@ -32486,6 +35745,7 @@ fn a_keep_with_no_delivery_folder_is_refused() -> Result<()> {
     assert_eq!(library.keeps_pending()?, 0);
 
     let tree = Tree::new();
+
     delivering_into(&library, &tree);
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
     library.deliver_into(None);
@@ -32501,11 +35761,14 @@ fn a_keep_with_no_delivery_folder_is_refused() -> Result<()> {
 
 fn keeps_until_killed(folder: &Path) -> Result<()> {
     let library = Library::open(&folder.join("library.db"))?;
+
     library.deliver_into(Some(DeliveryFolder {
         path: folder.to_path_buf(),
         layout: Layout::default(),
     }));
+
     let tube = Tube::new();
+
     tube.answering("abc123", &[TubeAnswer::Hanging]);
     pass(&library, &tube).map(drop)
 }
@@ -32519,10 +35782,12 @@ fn staged_by_a_keep_under_way(folder: &Path) -> PathBuf {
         {
             return staged;
         }
+
         assert!(
             began.elapsed() < A_KILLED_KEEP_IS_STAGED_WITHIN,
             "the keep to be killed staged nothing"
         );
+
         thread::sleep(Duration::from_millis(10));
     }
 }
@@ -32532,8 +35797,10 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
     if let Some(folder) = env::var_os(KILLED_KEEP_FOLDER) {
         return keeps_until_killed(Path::new(&folder));
     }
+
     let tree = Tree::new();
     let library = Library::open(&tree.path().join("library.db"))?;
+
     delivering_into(&library, &tree);
     library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "San Tropez")]))?;
 
@@ -32549,6 +35816,7 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
         .spawn()
         .expect("the test binary runs");
     let staged = staged_by_a_keep_under_way(tree.path());
+
     killed.kill().expect("the keep is killed");
     killed.wait().expect("the keep is gone");
 
@@ -32558,6 +35826,7 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
     );
     assert_eq!(library.keeps_pending()?, 1);
     assert!(songs_under(&tree).is_empty());
+
     left_long_ago(&staged);
 
     let tube = Tube::new();
@@ -32576,6 +35845,7 @@ fn a_keep_killed_part_way_is_taken_up_again_and_its_staging_swept() -> Result<()
 fn a_provider_away_stops_the_pass_and_keeps_the_queue() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Away]);
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]))?;
 
@@ -32596,6 +35866,7 @@ fn a_provider_failing_part_way_through_a_download_stops_the_pass_and_keeps_the_q
 {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::DyingAway]);
     library.keep_song(song_to_keep("one", "One"))?;
     library.keep_song(song_to_keep("two", "Two"))?;
@@ -32614,12 +35885,14 @@ fn a_provider_failing_part_way_through_a_download_stops_the_pass_and_keeps_the_q
 fn a_song_that_stopped_a_pass_goes_to_the_back_and_the_next_pass_begins_elsewhere() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Away]);
     library.keep_song(song_to_keep("one", "One"))?;
     library.keep_song(song_to_keep("two", "Two"))?;
     library.keep_song(song_to_keep("three", "Three"))?;
 
     assert!(pass(&library, &tube)?.stopped_by.is_some());
+
     let summary = pass(&library, &tube)?;
 
     assert_eq!(summary.landed, 3);
@@ -32631,11 +35904,14 @@ fn a_song_that_stopped_a_pass_goes_to_the_back_and_the_next_pass_begins_elsewher
 fn a_song_the_provider_was_busy_for_goes_behind_a_song_not_yet_tried() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Busy]);
     library.keep_song(song_to_keep("one", "One"))?;
 
     assert_eq!(pass(&library, &tube)?.unkept, 1);
+
     library.keep_song(song_to_keep("two", "Two"))?;
+
     assert_eq!(pass(&library, &tube)?.landed, 2);
 
     assert_eq!(tube.videos_asked(), ["one", "two", "one"]);
@@ -32647,6 +35923,7 @@ fn a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_
 {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::DyingAway; 5]);
     library.keep_song(song_to_keep("one", "One"))?;
 
@@ -32654,6 +35931,7 @@ fn a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_
         assert!(pass(&library, &tube)?.stopped_by.is_some());
         assert_eq!(library.keeps_pending()?, 1);
     }
+
     assert!(pass(&library, &tube)?.stopped_by.is_some());
     assert_eq!(library.keeps_pending()?, 0, "the fifth try gives it up");
     assert_eq!(pass(&library, &tube)?, KeepSummary::default());
@@ -32664,6 +35942,7 @@ fn a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_
     for _ in 0..4 {
         assert_eq!(pass(&library, &tube)?.unkept, 1);
     }
+
     assert_eq!(
         library.keeps_pending()?,
         1,
@@ -32677,6 +35956,7 @@ fn a_keep_that_keeps_failing_is_given_up_at_its_fifth_try_and_a_press_brings_it_
 fn a_pass_stopped_says_why_and_at_which_song() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Lapsed, TubeAnswer::Away]);
     tube.answering("two", &[TubeAnswer::Away]);
     library.keep_song(song_to_keep("one", "One"))?;
@@ -32703,6 +35983,7 @@ fn a_pass_stopped_says_why_and_at_which_song() -> Result<()> {
 fn a_lapsed_account_moves_a_keep_back_and_costs_it_no_try() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Lapsed; 7]);
     tube.answering("two", &[TubeAnswer::Lapsed; 7]);
     library.keep_song(song_to_keep("one", "One"))?;
@@ -32724,6 +36005,7 @@ fn a_music_folder_that_cannot_be_written_moves_a_keep_back_and_costs_it_no_try()
 
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("one", "One"))?;
     fs::set_permissions(tree.path(), fs::Permissions::from_mode(0o555))
         .expect("the music folder takes a mode");
@@ -32797,6 +36079,7 @@ impl Provider for OffersVideo {
 fn one_want_of(library: &Library, title: &str) -> Result<()> {
     let album = only_album(library)?;
     let mut rows = orbits_rows();
+
     rows.push(release_row(4, title, Vec::new()));
     library.land_release(album.id, &orbits(rows, Vec::new()))?;
     for row in library.release_tracks(album.id)? {
@@ -32817,8 +36100,10 @@ fn named_otherwise(video: &str) -> SongToKeep {
 #[test]
 fn a_video_a_want_filed_in_the_music_folder_is_not_fetched_again_for_a_keep() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     delivering_into(&library, &tree);
     one_want_of(&library, "San Tropez")?;
+
     assert_eq!(
         OffersVideo::registered("abc123")
             .polled_by(&library)?
@@ -32826,6 +36111,7 @@ fn a_video_a_want_filed_in_the_music_folder_is_not_fetched_again_for_a_keep() ->
             .kept,
         1
     );
+
     let tube = Tube::new();
 
     let kept = library.keep_song(named_otherwise("abc123"))?;
@@ -32846,9 +36132,11 @@ fn a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep() -> Result<
     let music = Tree::new();
     let held = Tree::new();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     delivering_into(&library, &music);
     one_want_of(&library, "San Tropez")?;
+
     assert_eq!(
         OffersVideo::registered("abc123")
             .polled_by(&library)?
@@ -32856,9 +36144,11 @@ fn a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep() -> Result<
             .kept,
         1
     );
+
     let tube = Tube::new();
 
     let kept = library.keep_song(named_otherwise("abc123"))?;
+
     pass(&library, &tube)?;
 
     assert!(matches!(kept, KeptSong::AlreadyHeld(_)), "{kept:?}");
@@ -32872,19 +36162,27 @@ fn a_video_a_want_kept_in_the_vault_is_not_fetched_again_for_a_keep() -> Result<
 #[test]
 fn a_video_a_keep_landed_is_declined_by_the_poll_while_its_file_stands() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
+
     delivering_into(&library, &tree);
     one_want_of(&library, "San Tropez")?;
+
     let tube = Tube::new();
+
     library.keep_song(named_otherwise("abc123"))?;
+
     assert_eq!(pass(&library, &tube)?.landed, 1);
+
     let kept = track_titled(&library, "A Name No Want Gave")?;
 
     let offers = OffersVideo::registered("abc123");
     let declined = offers.polled_by(&library)?;
+
     assert_eq!(declined.stats.kept, 0);
 
     fs::remove_file(kept.location.as_path().expect("a file")).expect("the file removed");
+
     let again = offers.polled_by(&library)?;
+
     assert_eq!(again.stats.kept, 1, "a file gone declines nothing");
     Ok(())
 }
@@ -32894,9 +36192,11 @@ fn opus_in_webm() -> Option<Vec<u8>> {
         eprintln!("skipped: no ffmpeg to build an Opus WebM");
         return None;
     }
+
     let held = Tree::new();
     let source = held.write("tone.wav", &Wav::new().frames(A_SECOND_OF_FRAMES).build());
     let target = held.path().join("served.webm");
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -32905,6 +36205,7 @@ fn opus_in_webm() -> Option<Vec<u8>> {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+
     if !encoded.is_ok_and(|status| status.success()) {
         eprintln!("skipped: ffmpeg would not encode Opus into WebM");
         return None;
@@ -32941,32 +36242,42 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
         source: source(KEPT_BY),
         bytes,
     }) as Arc<dyn Provider>);
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
     assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
 
     let path = tree.path().join("The Orbiters/Kept Songs/San Tropez.mka");
+
     assert!(path.is_file(), "{}", path.display());
+
     let read = FileTags::over(Sources::local())
         .read(&MediaLocation::local(&path), Picturing::Whether)
         .expect("the file reads");
+
     assert_eq!(read.tags.title.as_deref(), Some("San Tropez"));
     assert_eq!(read.tags.artist.as_deref(), Some("The Orbiters"));
     assert_eq!(read.tags.album.as_deref(), Some("Kept Songs"));
 
     scan(&library, &options(&tree))?;
+
     assert_eq!(
         track_titled(&library, "San Tropez")?.location,
         MediaLocation::local(&path)
     );
 
     let afresh = Library::open_in_memory()?;
+
     scan(&afresh, &options(&tree))?;
+
     let read_afresh = track_titled(&afresh, "San Tropez")?;
+
     assert_eq!(read_afresh.artist.as_deref(), Some("The Orbiters"));
+
     let album = afresh
         .album(read_afresh.album_id.expect("the song names its album"))?
         .expect("the album");
+
     assert_eq!(album.title, "Kept Songs");
     Ok(())
 }
@@ -32975,6 +36286,7 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
 fn a_busy_provider_leaves_the_song_queued_and_the_pass_goes_on() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("one", &[TubeAnswer::Busy]);
     library.keep_song(song_to_keep("one", "One"))?;
     library.keep_song(song_to_keep("two", "Two"))?;
@@ -32997,6 +36309,7 @@ fn a_busy_provider_leaves_the_song_queued_and_the_pass_goes_on() -> Result<()> {
 #[test]
 fn a_registry_without_the_provider_leaves_the_queue_as_it_stands() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
     library.deliver_into(None);
 
@@ -33013,13 +36326,17 @@ fn a_registry_without_the_provider_leaves_the_queue_as_it_stands() -> Result<()>
 fn a_keep_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let metering = Metering::new();
+
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering.clone(), true));
+
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
     let summary = thread::scope(|scope| {
         let keeping = scope.spawn(|| pass(&library, &tube));
+
         thread::sleep(THE_POLL_HAS_WAITED);
 
         assert!(!keeping.is_finished());
@@ -33039,6 +36356,7 @@ fn a_keep_waits_while_the_connection_is_metered_and_goes_on_when_it_is_not() -> 
 fn a_keep_cancelled_before_it_begins_asks_nothing() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
 
     let summary = library.keep_pending(&tube.registered(), &|| true)?;
@@ -33053,14 +36371,17 @@ fn a_keep_cancelled_before_it_begins_asks_nothing() -> Result<()> {
 fn a_keep_cancelled_part_way_through_a_download_leaves_the_song_queued() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("abc123", &[TubeAnswer::Hanging]);
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+
     let told = AtomicBool::new(false);
     let cancelled = || told.load(Ordering::SeqCst);
     let providers = tube.registered();
 
     let summary = thread::scope(|scope| {
         let keeping = scope.spawn(|| library.keep_pending(&providers, &cancelled));
+
         staged_by_a_keep_under_way(tree.path());
         told.store(true, Ordering::SeqCst);
         keeping.join().expect("the pass ends")
@@ -33077,6 +36398,7 @@ fn a_keep_cancelled_part_way_through_a_download_leaves_the_song_queued() -> Resu
 fn a_kept_song_filed_elsewhere_since_still_seats_what_lands_after_it() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     tube.answering("two", &[TubeAnswer::Busy]);
     library.keep_playlist(list_to_keep(
         "Mix",
@@ -33084,6 +36406,7 @@ fn a_kept_song_filed_elsewhere_since_still_seats_what_lands_after_it() -> Result
         &[("one", "One"), ("two", "Two"), ("three", "Three")],
     ))?;
     pass(&library, &tube)?;
+
     let summary = library
         .organise(OrganiseOptions {
             layout: Layout::read("Filed/{title}")?,
@@ -33091,6 +36414,7 @@ fn a_kept_song_filed_elsewhere_since_still_seats_what_lands_after_it() -> Result
             ..OrganiseOptions::default()
         })?
         .join()?;
+
     assert_eq!(summary.stats.moved, 2);
     assert!(tree.path().join("Filed/Three.wav").exists());
 
@@ -33113,6 +36437,7 @@ fn a_kept_list_named_as_a_saved_query_stands_beside_it_as_one_list() -> Result<(
             limit: None,
         },
     )?;
+
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]))?;
 
     pass(&library, &tube)?;
@@ -33133,6 +36458,7 @@ fn a_kept_list_named_as_a_saved_query_stands_beside_it_as_one_list() -> Result<(
 fn a_song_with_no_album_is_filed_under_its_artist_and_one_with_neither_at_the_top() -> Result<()> {
     let (tree, library) = a_music_folder()?;
     let tube = Tube::new();
+
     library.keep_song(SongToKeep {
         album: None,
         ..song_to_keep("artist", "Artist Alone")
@@ -33175,6 +36501,7 @@ fn a_blank_title_is_refused_at_the_press_and_nothing_is_queued() -> Result<()> {
 
 fn answered_with_held(held_title: &str, pressed_title: &str) -> Result<KeptSong> {
     let (tree, library) = a_music_folder()?;
+
     held_as(&tree, "held.wav", held_title, A_SECOND_OF_FRAMES);
     scan(&library, &options(&tree))?;
 
@@ -33230,6 +36557,7 @@ fn a_live_remix_acoustic_or_instrumental_take_is_another_song() -> Result<()> {
             "the song stood for {take:?}"
         );
     }
+
     assert_eq!(
         answered_with_held("Song And More", "Song")?,
         KeptSong::Queued
@@ -33265,19 +36593,23 @@ fn a_held_clean_take_stands_only_for_a_clean_one() -> Result<()> {
 fn on_disc(tree: &Tree) -> Result<(PathBuf, Library)> {
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     delivering_into(&library, tree);
     Ok((database, library))
 }
 
 fn walk_held_by_another_process(database: &Path) -> fs::File {
     let mut named = database.as_os_str().to_owned();
+
     named.push(".walk");
+
     let lock = fs::OpenOptions::new()
         .create(true)
         .truncate(false)
         .write(true)
         .open(PathBuf::from(named))
         .expect("the walk's lock opens");
+
     lock.try_lock().expect("the walk's lock is free");
     lock
 }
@@ -33287,8 +36619,11 @@ fn a_landing_the_walk_refused_is_read_before_the_pass_ends() -> Result<()> {
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]))?;
+
     let held = walk_held_by_another_process(&database);
+
     tube.when_asked_for("two", move || drop(held));
 
     let began = Instant::now();
@@ -33313,6 +36648,7 @@ fn a_file_landed_that_no_scan_reached_is_read_at_the_head_of_the_next_pass() -> 
         length: None,
         ..song_to_keep("abc123", "San Tropez")
     };
+
     library.keep_playlist(PlaylistToKeep {
         name: "Mix".to_owned(),
         ordered: true,
@@ -33322,6 +36658,7 @@ fn a_file_landed_that_no_scan_reached_is_read_at_the_head_of_the_next_pass() -> 
     beside(&database)
         .execute("DELETE FROM tracks", [])
         .expect("the row a scan never wrote");
+
     assert_eq!(titles_in(&library, "Mix")?, [""]);
 
     assert_eq!(library.keeps_pending()?, 1, "the read owed was not counted");
@@ -33351,6 +36688,7 @@ fn an_empty_queue_still_reads_a_landed_file_no_scan_reached() -> Result<()> {
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
     pass(&library, &tube)?;
     beside(&database)
@@ -33378,14 +36716,17 @@ fn a_poll_refused_by_a_keep_ends_the_pass_at_the_next_song_and_never_mid_downloa
     let (_database, library) = on_disc(&tree)?;
     let library = Arc::new(library);
     let tube = Tube::new();
+
     library.keep_playlist(list_to_keep(
         "Mix",
         true,
         &[("one", "One"), ("two", "Two"), ("three", "Three")],
     ))?;
+
     let refused = Arc::new(AtomicBool::new(false));
     let asking = Arc::clone(&library);
     let told = Arc::clone(&refused);
+
     tube.when_asked_for("one", move || {
         told.store(refused_a_poll(&asking), Ordering::SeqCst);
     });
@@ -33407,6 +36748,7 @@ fn a_poll_refused_by_a_keep_ends_the_pass_at_the_next_song_and_never_mid_downloa
     library
         .poll(Arc::new(Providers::none()), PollOptions::default())?
         .join()?;
+
     let again = pass(&library, &tube)?;
 
     assert_eq!(again.landed, 2);
@@ -33421,10 +36763,13 @@ fn a_poll_refused_in_another_process_leaves_a_keep_to_go_on() -> Result<()> {
     let (database, library) = on_disc(&tree)?;
     let elsewhere = Library::open(&database)?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("one", "One"))?;
     library.keep_song(song_to_keep("two", "Two"))?;
+
     let refused = Arc::new(AtomicBool::new(false));
     let told = Arc::clone(&refused);
+
     tube.when_asked_for("one", move || {
         told.store(refused_a_poll(&elsewhere), Ordering::SeqCst);
     });
@@ -33442,10 +36787,14 @@ fn a_poll_refused_while_a_keep_waits_on_the_meter_ends_the_wait() -> Result<()> 
     let tree = Tree::new();
     let (_database, library) = on_disc(&tree)?;
     let metering = Metering::new();
+
     metering.report(Meter::Metered);
     library.stall_downloads_by(MeteredGate::new(metering, true));
+
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
+
     let providers = tube.registered();
     let begun = AtomicBool::new(false);
     let heeded = || {
@@ -33455,6 +36804,7 @@ fn a_poll_refused_while_a_keep_waits_on_the_meter_ends_the_wait() -> Result<()> 
 
     let summary = thread::scope(|scope| {
         let keeping = scope.spawn(|| library.keep_pending(&providers, &heeded));
+
         assert!(
             waited_for(|| begun.load(Ordering::SeqCst)),
             "the keep never began"
@@ -33474,9 +36824,12 @@ fn a_kept_list_deleted_is_made_again_by_a_second_press() -> Result<()> {
     let (_tree, library) = a_music_folder()?;
     let tube = Tube::new();
     let list = list_to_keep("Mix", true, &[("one", "One"), ("two", "Two")]);
+
     library.keep_playlist(list.clone())?;
     pass(&library, &tube)?;
+
     let made = library.playlist_named("Mix")?.expect("the list");
+
     assert!(library.remove_playlist(made.id)?);
 
     let kept = library.keep_playlist(list)?;
@@ -33504,16 +36857,22 @@ fn a_kept_list_deleted_with_a_file_of_its_gone_asks_for_that_song_again() -> Res
             },
         ],
     };
+
     library.keep_playlist(list.clone())?;
     pass(&library, &tube)?;
+
     let made = library.playlist_named("Mix")?.expect("the list");
+
     assert!(library.remove_playlist(made.id)?);
+
     fs::remove_file(tree.path().join("Two.wav")).expect("the file goes");
 
     let kept = library.keep_playlist(list)?;
 
     assert_eq!(kept, KeptList { queued: 1, held: 1 });
+
     pass(&library, &tube)?;
+
     assert_eq!(titles_in(&library, "Mix")?, ["One", "Two"]);
     Ok(())
 }
@@ -33523,9 +36882,12 @@ fn a_press_seats_the_rows_it_added_and_leaves_the_order_the_listener_gave_the_re
     let (tree, library) = a_music_folder()?;
     let one = held_as(&tree, "one.wav", "One", A_SECOND_OF_FRAMES);
     let two = held_as(&tree, "two.wav", "Two", A_SECOND_OF_FRAMES);
+
     held_as(&tree, "three.wav", "Three", A_SECOND_OF_FRAMES);
     scan(&library, &options(&tree))?;
+
     let theirs = library.create_playlist("Mix")?;
+
     library.add_to_playlist(
         theirs,
         &[
@@ -33566,6 +36928,7 @@ fn a_list_followed_since_the_press_asks_for_nothing_and_holds_nothing_up() -> Re
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.create_playlist("Mix")?;
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
     library.keep_song(song_to_keep("two", "Two"))?;
@@ -33587,6 +36950,7 @@ fn a_list_followed_since_the_press_asks_for_nothing_and_holds_nothing_up() -> Re
     assert_eq!(library.keeps_pending()?, 1, "the song reads as removed");
 
     the_listeners_again(&database);
+
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
     assert_eq!(titles_in(&library, "Mix")?, ["One"]);
@@ -33601,10 +36965,13 @@ fn a_list_followed_as_its_song_was_fetched_holds_nothing_up_and_fetches_nothing_
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.create_playlist("Mix")?;
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
     library.keep_song(song_to_keep("two", "Two"))?;
+
     let following = database.clone();
+
     tube.when_asked_for("one", move || followed(&following, "Mix"));
 
     let summary = pass(&library, &tube)?;
@@ -33622,6 +36989,7 @@ fn a_list_followed_as_its_song_was_fetched_holds_nothing_up_and_fetches_nothing_
     assert_eq!(library.keeps_pending()?, 1, "the song reads as removed");
 
     the_listeners_again(&database);
+
     assert_eq!(pass(&library, &tube)?.landed, 1);
 
     assert_eq!(titles_in(&library, "Mix")?, ["One"]);
@@ -33635,21 +37003,26 @@ fn a_kept_list_named_as_a_followed_list_stands_beside_it() -> Result<()> {
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     held_as(&tree, "held.wav", "Held", A_SECOND_OF_FRAMES);
     scan(&library, &options(&tree))?;
     library.create_playlist("Mix")?;
     followed(&database, "Mix");
+
     let list = list_to_keep("Mix", true, &[("held", "Held"), ("one", "One")]);
 
     let kept = library.keep_playlist(list.clone())?;
 
     assert_eq!(kept, KeptList { queued: 1, held: 1 });
+
     pass(&library, &tube)?;
+
     assert_eq!(titles_in(&library, "Mix (copy)")?, ["Held", "One"]);
     assert_eq!(titles_in(&library, "Mix")?, Vec::<String>::new());
     assert_eq!(library.keeps_pending()?, 0);
 
     the_listeners_again(&database);
+
     let kept = library.keep_playlist(list)?;
 
     assert_eq!(kept, KeptList { queued: 0, held: 2 });
@@ -33663,8 +37036,10 @@ fn a_folder_forgotten_stays_forgotten_whatever_landed_in_it() -> Result<()> {
     let tree = Tree::new();
     let (_database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
     pass(&library, &tube)?;
+
     assert_eq!(library.roots()?.len(), 1);
 
     assert!(library.remove_root(tree.path())?);
@@ -33685,9 +37060,12 @@ fn a_landed_file_outside_every_root_owes_no_pass_once_the_music_folder_moved() -
     let elsewhere = Tree::new();
     let (_database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.keep_song(song_to_keep("abc123", "San Tropez"))?;
     pass(&library, &tube)?;
+
     assert!(library.remove_root(tree.path())?);
+
     delivering_into(&library, &elsewhere);
 
     assert_eq!(library.keeps_pending()?, 0);
@@ -33698,6 +37076,7 @@ fn a_landed_file_outside_every_root_owes_no_pass_once_the_music_folder_moved() -
 
 fn keeps_with_the_walk_refused(folder: &Path) -> Result<()> {
     let library = Library::open(&folder.join("library.db"))?;
+
     library.deliver_into(Some(DeliveryFolder {
         path: folder.to_path_buf(),
         layout: Layout::default(),
@@ -33707,11 +37086,13 @@ fn keeps_with_the_walk_refused(folder: &Path) -> Result<()> {
 
 fn root_left_by_a_keep_under_way(library: &Library) -> Result<()> {
     let began = Instant::now();
+
     while library.roots()?.is_empty() {
         assert!(
             began.elapsed() < A_KILLED_KEEP_IS_STAGED_WITHIN,
             "the landing left no root"
         );
+
         thread::sleep(Duration::from_millis(10));
     }
     Ok(())
@@ -33723,10 +37104,14 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
     if let Some(folder) = env::var_os(UNREAD_KEEP_FOLDER) {
         return keeps_with_the_walk_refused(Path::new(&folder));
     }
+
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
+
     library.keep_playlist(list_to_keep("Mix", true, &[("abc123", "San Tropez")]))?;
+
     assert_eq!(library.roots()?, Vec::<PathBuf>::new());
+
     let walk = walk_held_by_another_process(&database);
 
     let mut killed = Command::new(env::current_exe().expect("the test binary"))
@@ -33743,6 +37128,7 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
         .spawn()
         .expect("the test binary runs");
     let root_left = root_left_by_a_keep_under_way(&library);
+
     killed.kill().expect("the keep is killed");
     killed.wait().expect("the keep is gone");
     root_left?;
@@ -33753,6 +37139,7 @@ fn a_folder_never_scanned_is_read_by_the_next_run_though_the_walk_refused_the_la
     assert_eq!(library.keeps_queued()?, 0, "a landed song is not queued");
 
     let tube = Tube::new();
+
     assert_eq!(pass(&library, &tube)?, KeepSummary::default());
 
     assert_eq!(titles_in(&library, "Mix")?, ["San Tropez"]);
@@ -33771,12 +37158,15 @@ fn a_press_of_a_song_landed_in_a_forgotten_folder_brings_the_folder_back() -> Re
         length: None,
         ..song_to_keep("abc123", "San Tropez")
     };
+
     library.keep_song(by_link.clone())?;
     pass(&library, &tube)?;
+
     assert!(library.remove_root(tree.path())?);
 
     assert_eq!(library.keep_song(by_link.clone())?, KeptSong::Queued);
     assert_eq!(library.keeps_pending()?, 1);
+
     pass(&library, &tube)?;
 
     assert_eq!(library.roots()?.len(), 1);
@@ -33802,8 +37192,10 @@ fn a_song_of_a_new_list_landed_in_a_forgotten_folder_is_read_by_the_pass() -> Re
         length: None,
         ..song_to_keep("abc123", "San Tropez")
     };
+
     library.keep_song(by_link.clone())?;
     pass(&library, &tube)?;
+
     assert!(library.remove_root(tree.path())?);
 
     library.keep_playlist(PlaylistToKeep {
@@ -33827,8 +37219,11 @@ fn the_last_landing_the_walk_refused_is_read_before_the_pass_ends() -> Result<()
     let tree = Tree::new();
     let (database, library) = on_disc(&tree)?;
     let tube = Tube::new();
+
     library.keep_playlist(list_to_keep("Mix", true, &[("one", "One")]))?;
+
     let held = walk_held_by_another_process(&database);
+
     tube.when_asked_for("one", move || {
         thread::spawn(move || {
             thread::sleep(A_WALK_ENDS_AFTER_THE_LANDING);
@@ -33849,7 +37244,9 @@ fn a_kept_song_folded_into_its_twin_is_still_known_by_its_video() -> Result<()> 
     let tree = Tree::new();
     let trash = Tree::new();
     let (database, library) = on_disc(&tree)?;
+
     library.trash_into(Some(trash.path().to_path_buf()));
+
     let tube = Tube::new();
     let by_link = SongToKeep {
         artist: None,
@@ -33857,10 +37254,13 @@ fn a_kept_song_folded_into_its_twin_is_still_known_by_its_video() -> Result<()> 
         album: None,
         ..song_to_keep("abc123", "San Tropez")
     };
+
     library.keep_song(by_link.clone())?;
     pass(&library, &tube)?;
+
     let twin = tree.path().join("San Tropez.wav");
     let copy = tree.path().join("San Tropez (1).wav");
+
     fs::copy(&twin, &copy).expect("a copy");
     scan(&library, &options(&tree))?;
     beside(&database)
@@ -33871,7 +37271,9 @@ fn a_kept_song_folded_into_its_twin_is_still_known_by_its_video() -> Result<()> 
         .expect("the song landed as the copy");
 
     let found = library.identical_copies()?;
+
     assert_eq!(found.identical.len(), 1);
+
     library.fold_copies(&found.identical)?;
 
     assert!(matches!(
@@ -33891,17 +37293,20 @@ fn a_song_kept_by_its_link_on_a_drive_unplugged_is_not_fetched_again() -> Result
         .canonicalize()
         .expect("the fixture tree has a canonical path")
         .join("drive");
+
     fs::create_dir(&drive).expect("the fixture drive");
     library.deliver_into(Some(DeliveryFolder {
         path: drive.clone(),
         layout: Layout::default(),
     }));
+
     let tube = Tube::new();
     let by_link = SongToKeep {
         artist: None,
         length: None,
         ..song_to_keep("abc123", "San Tropez")
     };
+
     library.keep_song(by_link.clone())?;
     pass(&library, &tube)?;
     beside(&database)
@@ -33928,6 +37333,7 @@ fn an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_
             .text(TITLE, "One of These Days")
             .text(ARTIST, "The Orbiters"),
     )?;
+
     let track = library
         .track_at(&file, None)?
         .expect("the catalog holds the track");
@@ -33941,13 +37347,16 @@ fn an_isrc_typed_for_a_track_is_asked_by_the_next_lookup_though_it_was_asked_in_
     }));
 
     let first = enrich(&library, &fake, false)?;
+
     assert_eq!(first.stats.tracks, 1);
     assert_eq!(fake.called(LookupOp::Isrc), 0);
 
     let waiting = enrich(&library, &fake, false)?;
+
     assert_eq!(waiting.stats.tracks, 0);
 
     library.set_isrc(track.id, &isrc(CODE))?;
+
     let typed = enrich(&library, &fake, false)?;
 
     assert_eq!(typed.stats.tracks, 1);
@@ -33973,6 +37382,7 @@ fn look_up_the_song(library: &Library, fake: &Arc<Fake>, song: TrackId) -> Resul
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled, "the pass reported itself cancelled");
     Ok(summary)
 }
@@ -33981,6 +37391,7 @@ fn look_up_the_song(library: &Library, fake: &Arc<Fake>, song: TrackId) -> Resul
 fn a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else_is() -> Result<()>
 {
     let tree = Tree::new();
+
     tree.write(
         "1.wav",
         &Wav::new()
@@ -33995,8 +37406,11 @@ fn a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else
             .text(ARTIST, "The Orbiters")
             .build(),
     );
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let fake = Arc::new(Fake::new(Canned::default()));
 
     let first = enrich(&library, &fake, false)?;
@@ -34023,9 +37437,13 @@ fn a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else
 #[test]
 fn a_song_on_an_answered_album_is_looked_up_through_its_album_again() -> Result<()> {
     let tree = Tree::new();
+
     write_orbits(&tree, true);
+
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
+
     let fake = Arc::new(Fake::new(Canned {
         releases: vec![orbits(orbits_rows(), Vec::new())],
         ..Canned::default()
@@ -34052,12 +37470,15 @@ fn a_song_on_an_answered_album_is_looked_up_through_its_album_again() -> Result<
 fn weighing_a_vault_reads_every_object_back_and_notes_it_validated() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
     tree.write(
         "dogs.wav",
         &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
     );
+
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
@@ -34082,12 +37503,15 @@ fn weighing_a_vault_reads_every_object_back_and_notes_it_validated() -> Result<(
 fn a_weighing_counts_what_it_has_read_back_against_everything_it_will() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
     tree.write(
         "dogs.wav",
         &Wav::new().text(TITLE, "Dogs").frames(8_820).build(),
     );
+
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
 
@@ -34111,6 +37535,7 @@ fn a_weighing_counts_what_it_has_read_back_against_everything_it_will() -> Resul
 fn a_weighing_stopped_early_says_so_and_mends_nothing() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     for index in 0..40 {
         tree.write(
             &format!("{index}.wav"),
@@ -34120,15 +37545,21 @@ fn a_weighing_stopped_early_says_so_and_mends_nothing() -> Result<()> {
                 .build(),
         );
     }
+
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     let broken = library.vault_objects()?.remove(0);
+
     fs::write(&broken.path, b"no longer what went in").expect("an object overwritten");
 
     let handle = library.weigh_the_vault(true)?;
     let watched = Arc::clone(handle.progress());
+
     handle.cancel();
+
     let weighed = handle.join()?;
 
     assert!(watched.is_cancelled());
@@ -34138,7 +37569,9 @@ fn a_weighing_stopped_early_says_so_and_mends_nothing() -> Result<()> {
     assert!(weighed.objects_held + (weighed.objects_moved.len() as u64) < weighed.objects);
     assert!(weighed.mended.is_none());
     assert!(weighed.reframed.is_none());
+
     let row = all(&library)?.remove(0);
+
     assert!(
         library
             .stand_in()
@@ -34176,11 +37609,16 @@ fn weighing_a_vault_without_a_vault_is_refused() -> Result<()> {
 fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> Result<()> {
     let tree = Tree::new();
     let held = Tree::new();
+
     tree.write("echoes.wav", &Wav::new().text(TITLE, "Echoes").build());
+
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&tree))?;
     vaulted(&library, true)?;
+
     let object = library.vault_objects()?.remove(0);
+
     fs::write(&object.path, b"no longer what went in").expect("an object overwritten");
 
     let found = library.weigh_the_vault(false)?.join()?;
@@ -34189,7 +37627,9 @@ fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> 
     assert_eq!(found.objects_held, 0);
     assert!(found.has_something_to_mend());
     assert!(found.mended.is_none());
+
     let row = all(&library)?.remove(0);
+
     assert!(
         library
             .stand_in()
@@ -34219,18 +37659,23 @@ fn an_object_that_no_longer_reads_back_is_found_and_only_mended_when_asked() -> 
 fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() -> Result<()> {
     let tree = Tree::new();
     let bytes = Wav::new().text(TITLE, "Echoes").build();
+
     let echoes = tree.write("echoes.wav", &bytes);
+
     tree.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
 
     let library = Library::open_in_memory()?;
+
     scan(&library, &options(&tree))?;
 
     for _ in 0..2 {
         let counted = library
             .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
             .expect("a counted play");
+
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
+
     let before = library.statistics(Window::Everything)?;
 
     fs::remove_file(&echoes).expect("the file goes");
@@ -34265,20 +37710,26 @@ fn a_delivered_row_forgotten_keeps_its_listens() -> Result<()> {
 
     let orbits = orbits_tree();
     let (library, _vault) = opened_with_a_vault(&held)?;
+
     scan(&library, &options(&orbits))?;
     wanted_san_tropez(&library)?;
+
     let inbox = Arc::new(Offering::new("inbox", Delivering::File(delivered)));
+
     library
         .poll(inbox.registered(), PollOptions::default())?
         .join()?;
+
     let object = library.vault_objects()?[0].path.clone();
 
     for _ in 0..2 {
         let counted = library
             .track_played(&MediaLocation::local(&object), None, Duration::from_secs(2))?
             .expect("a counted play");
+
         library.listened(counted.listen, Duration::from_secs(2))?;
     }
+
     let before = library.statistics(Window::Everything)?;
 
     assert!(library.forget_delivered(&object)?);
@@ -34295,27 +37746,35 @@ fn a_delivered_row_forgotten_keeps_its_listens() -> Result<()> {
 fn deleting_more_tracks_than_one_query_reads_forgets_every_row_and_names_an_unknown_one()
 -> Result<()> {
     const MORE_THAN_ONE_BATCH: usize = 600;
+
     let tree = Tree::new();
+
     for number in 0..MORE_THAN_ONE_BATCH {
         tree.write(
             &format!("album/{number:04}.wav"),
             &Wav::new().text(TITLE, &format!("song {number}")).build(),
         );
     }
+
     let library = Library::open_in_memory()?;
+
     library.trash_through(Some(Arc::new(TrashedByTheDesktop {
         asked: Mutex::new(Vec::new()),
         answer: Removal::Removed,
     })));
     scan(&library, &options(&tree))?;
+
     let mut tracks: Vec<TrackId> = all(&library)?.into_iter().map(|track| track.id).collect();
+
     assert_eq!(tracks.len(), MORE_THAN_ONE_BATCH);
 
     tracks.push(TrackId::MAX);
+
     assert!(matches!(
         library.delete_tracks(&tracks),
         Err(Error::UnknownTrack(unknown)) if unknown == TrackId::MAX
     ));
+
     tracks.pop();
 
     let deleted = library.delete_tracks(&tracks)?;
@@ -34395,6 +37854,7 @@ impl resonate_providers::PlaysInPlace for ExploreCatalog {
         id: &resonate_providers::Id,
     ) -> ProvidedResult<resonate_providers::Streamed> {
         self.opened.lock().push(id.to_string());
+
         let audio = Wav::new().frames(RATE as usize).build();
         let length = audio.len() as u64;
         Ok(resonate_providers::Streamed::seeking(
@@ -34422,6 +37882,7 @@ impl resonate_providers::PlaysInPlace for ExploreCatalog {
 fn explore_song(id: &str, title: &str, artist: &str) -> resonate_providers::Song {
     let mut song =
         resonate_providers::Song::only(resonate_providers::Id::new(id).expect("a provider id"));
+
     song.title = title.to_owned();
     song.artist = Some(artist.to_owned());
     song.length = Some(Duration::from_secs(1));
@@ -34433,6 +37894,7 @@ fn explore_song(id: &str, title: &str, artist: &str) -> resonate_providers::Song
 fn explore_uses_the_library_and_mix_seeds_and_keeps_new_songs_from_answering_services() -> Result<()>
 {
     let (tree, library) = a_music_folder()?;
+
     held_as(&tree, "held.wav", "Held Song", RATE as usize);
     tree.write(
         "other.wav",
@@ -34461,6 +37923,7 @@ fn explore_uses_the_library_and_mix_seeds_and_keeps_new_songs_from_answering_ser
         away: true,
         ..ExploreCatalog::with("away", Vec::new())
     });
+
     let sources = [
         resonate_providers::SongCatalog::new("first".to_owned(), first.clone()),
         resonate_providers::SongCatalog::new("second".to_owned(), second.clone()),
@@ -34469,6 +37932,7 @@ fn explore_uses_the_library_and_mix_seeds_and_keeps_new_songs_from_answering_ser
     let cache = resonate_library::ExploreCache::default();
 
     let home = library.explore(None, &sources, &cache, false)?;
+
     assert_eq!(home.failed, 1);
     assert_eq!(home.songs.len(), 2);
     assert!(home.songs.iter().all(|offer| offer.catalog == "first"));
@@ -34483,12 +37947,14 @@ fn explore_uses_the_library_and_mix_seeds_and_keeps_new_songs_from_answering_ser
         ..SavedQuery::default()
     };
     let found = library.explore(Some(&mix), &sources, &cache, false)?;
+
     assert_eq!(found.songs.len(), 1);
     assert_eq!(found.songs[0].song.id.as_str(), "new");
     assert_eq!(first.searched.lock().len(), 2);
     assert_eq!(songs_under(&tree).len(), 2);
 
     library.explore(Some(&mix), &sources, &cache, true)?;
+
     assert_eq!(first.searched.lock().len(), 3);
     assert_eq!(
         first.searched.lock().last().map(String::as_str),
@@ -34503,6 +37969,7 @@ fn an_explored_song_streams_without_a_copy_and_its_exact_download_survives_reope
     let (tree, library, database) = a_music_folder_on_disk()?;
     let service = Arc::new(ExploreCatalog::with("exact", Vec::new()));
     let song = explore_song("song-42", "The Chosen Song", "The Orbiters");
+
     let location = resonate_providers::Named::Song(song.id.clone()).location(&service.source);
     let offer = resonate_library::ExploreOffer {
         catalog: "first".to_owned(),
@@ -34515,35 +37982,46 @@ fn an_explored_song_streams_without_a_copy_and_its_exact_download_survives_reope
         service.source.clone(),
         move |_: &SourceId| Some(Arc::clone(&playing) as Arc<dyn resonate_providers::PlaysInPlace>),
     )));
+
     let (decoder, _) =
         resonate_codec::Decoder::open(&sources, &location).expect("the stream plays");
+
     drop(decoder);
+
     assert!(songs_under(&tree).is_empty());
 
     assert_eq!(library.keep_explored(offer.clone())?, KeptSong::Queued);
     assert_eq!(library.keep_explored(offer.clone())?, KeptSong::Queued);
     assert_eq!(library.keeps_served_queued()?, 1);
     assert!(library.kept_explored_locations()?.contains(&location));
+
     drop(library);
 
     let library = Library::open(&database)?;
+
     delivering_into(&library, &tree);
+
     let changed = Providers::none().with_song_catalog(resonate_providers::SongCatalog::new(
         "another catalog".to_owned(),
         service.clone(),
     ));
+
     assert_eq!(library.keep_pending(&changed, &|| false)?.landed, 0);
     assert_eq!(*service.opened.lock(), ["song-42"]);
+
     let providers = changed.with_song_catalog(resonate_providers::SongCatalog::new(
         "first".to_owned(),
         service.clone(),
     ));
+
     assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
     assert_eq!(*service.opened.lock(), ["song-42", "song-42"]);
     assert_eq!(songs_under(&tree).len(), 1);
 
     scan(&library, &options(&tree))?;
+
     let tracks = library.tracks(&TrackQuery::default())?;
+
     assert_eq!(tracks.len(), 1);
     assert_eq!(tracks[0].title, "The Chosen Song");
     assert_eq!(
@@ -34563,7 +38041,9 @@ fn explore_rotates_direct_and_related_artists_and_stays_stable_within_the_day() 
         ("Kindred Two".to_owned(), "Jazz".to_owned()),
         ("Kindred Three".to_owned(), "Jazz".to_owned()),
     ]);
+
     let today = resonate_library::explore_seeds(&direct, &kinship, 0);
+
     assert_eq!(today, ["First", "Second", "Kindred One", "Kindred Three"]);
     assert_eq!(resonate_library::explore_seeds(&direct, &kinship, 0), today);
     assert_eq!(
@@ -34588,7 +38068,9 @@ fn explore_blueprints_and_playlists_generate_custom_curated_lists_and_share_cach
         ("Lunar Echo".to_owned(), "dream pop".to_owned()),
         ("Old Comet".to_owned(), "space rock".to_owned()),
     ]);
+
     let blueprints = resonate_library::explore_blueprints(&profile, &kinship, 0);
+
     assert!(
         blueprints
             .iter()
@@ -34616,6 +38098,7 @@ fn explore_blueprints_and_playlists_generate_custom_curated_lists_and_share_cach
     );
 
     let (tree, library) = a_music_folder()?;
+
     held_as(&tree, "held.wav", "Held Song", RATE as usize);
     tree.write(
         "other.wav",
@@ -34628,11 +38111,17 @@ fn explore_blueprints_and_playlists_generate_custom_curated_lists_and_share_cach
     scan(&library, &options(&tree))?;
 
     let mut song_a = explore_song("a1", "Orbit One", "The Orbiters");
+
     song_a.album = Some("Album One".to_owned());
+
     let mut song_b = explore_song("a2", "Orbit Two", "The Orbiters");
+
     song_b.album = Some("Album One".to_owned());
+
     let mut song_c = explore_song("a3", "Orbit Three", "The Orbiters");
+
     song_c.album = Some("Album One".to_owned());
+
     let song_d = explore_song("b1", "Drift Away", "Solar Drift");
     let song_e = explore_song("b2", "Drift Back", "Solar Drift");
 
@@ -34654,10 +38143,15 @@ fn explore_blueprints_and_playlists_generate_custom_curated_lists_and_share_cach
     let cache = resonate_library::ExploreCache::default();
 
     let first_run = library.explore_playlists(&sources, &cache, false)?;
+
     assert!(!first_run.playlists.is_empty());
+
     let searches_after_first = service.searched.lock().len();
+
     assert_eq!(searches_after_first, 2);
+
     let discover = &first_run.playlists[0];
+
     assert_eq!(
         discover.kind,
         resonate_library::ExplorePlaylistKind::DiscoverMix
@@ -34668,14 +38162,17 @@ fn explore_blueprints_and_playlists_generate_custom_curated_lists_and_share_cach
             .iter()
             .all(|offer| offer.song.title != "Held Song")
     );
+
     let album_one_count = discover
         .songs
         .iter()
         .filter(|offer| offer.song.album.as_deref() == Some("Album One"))
         .count();
+
     assert!(album_one_count <= 2);
 
     let second_run = library.explore_playlists(&sources, &cache, false)?;
+
     assert_eq!(second_run, first_run);
     assert_eq!(service.searched.lock().len(), searches_after_first);
     Ok(())
@@ -34709,6 +38206,7 @@ fn weave_mix_interleaves_streamed_suggestions_and_avoids_adjacent_same_artist() 
         make_offer("s2", "Sug Two", "Nova"),
         make_offer("s3", "Sug Three", "Orion"),
     ];
+
     let woven = resonate_library::weave_mix(local, |(_, artist)| Some(*artist), suggestions);
 
     assert_eq!(woven.len(), 9);
@@ -34724,12 +38222,14 @@ fn weave_mix_interleaves_streamed_suggestions_and_avoids_adjacent_same_artist() 
         woven[2],
         resonate_library::MixEntry::Local(("L3", _))
     ));
+
     match &woven[3] {
         resonate_library::MixEntry::Suggested(offer) => {
             assert_eq!(offer.song.artist.as_deref(), Some("Nova"));
         }
         resonate_library::MixEntry::Local(_) => panic!("expected a suggested song after 3 locals"),
     }
+
     assert!(matches!(
         woven[4],
         resonate_library::MixEntry::Local(("L4", _))
@@ -34752,6 +38252,7 @@ fn weave_mix_interleaves_streamed_suggestions_and_avoids_adjacent_same_artist() 
 #[test]
 fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Result<()> {
     let (tree, library, database) = a_music_folder_on_disk()?;
+
     held_as(&tree, "held.wav", "Held Song", RATE as usize);
     tree.write(
         "other.wav",
@@ -34764,12 +38265,14 @@ fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Res
     scan(&library, &options(&tree))?;
 
     let mut song_a = explore_song("a1", "Orbit One", "The Orbiters");
+
     song_a.album = Some("Album One".to_owned());
     song_a.disc = Some(1);
     song_a.track = Some(3);
     song_a.cover = resonate_providers::Id::new("cov-1");
     song_a.favourite = Some(true);
     song_a.rating = resonate_core::titles::Rating::Explicit;
+
     let song_b = explore_song("b1", "Drift Away", "Solar Drift");
 
     let service = Arc::new(ExploreCatalog::with(
@@ -34785,15 +38288,22 @@ fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Res
         service.clone(),
     )];
     let first_cache = resonate_library::ExploreCache::default();
+
     let first_run = library.explore_playlists(&sources, &first_cache, false)?;
+
     assert!(!first_run.playlists.is_empty());
+
     let searches_after_cold = service.searched.lock().len();
+
     assert_eq!(searches_after_cold, 2);
+
     drop(library);
 
     let reopened = Library::open(&database)?;
     let fresh_cache = resonate_library::ExploreCache::default();
+
     let warm_run = reopened.explore_playlists(&sources, &fresh_cache, false)?;
+
     assert_eq!(warm_run, first_run);
     assert_eq!(service.searched.lock().len(), searches_after_cold);
 
@@ -34802,17 +38312,21 @@ fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Res
         service.clone(),
     )];
     let other_cache = resonate_library::ExploreCache::default();
+
     let other_run = reopened.explore_playlists(&other_server, &other_cache, false)?;
+
     assert!(!other_run.playlists.is_empty());
     assert_eq!(service.searched.lock().len(), searches_after_cold + 2);
 
     let refreshed = reopened.explore_playlists(&sources, &fresh_cache, true)?;
+
     assert_eq!(refreshed, first_run);
     assert_eq!(service.searched.lock().len(), searches_after_cold + 4);
 
     let expiry_cache = resonate_library::ExploreCache::default();
     let blueprints = reopened.explore_blueprints()?;
     let day = resonate_core::Calendar::local().day_of(SystemTime::now());
+
     let still_warm = expiry_cache.hydrate_blueprints_with(
         day + resonate_library::EXPLORE_CACHE_DAYS - 1,
         blueprints.clone(),
@@ -34820,6 +38334,7 @@ fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Res
         false,
         &reopened,
     );
+
     assert!(!still_warm.artists().is_empty());
     assert_eq!(service.searched.lock().len(), searches_after_cold + 4);
 
@@ -34831,6 +38346,7 @@ fn explore_playlists_persist_across_restarts_until_refreshed_or_expired() -> Res
         false,
         &reopened,
     );
+
     assert_eq!(service.searched.lock().len(), searches_after_cold + 6);
     Ok(())
 }
@@ -34841,6 +38357,7 @@ fn explore_covers_survive_reopening_and_are_shared_by_cover_id_within_a_catalog(
     let source = SourceId::new("test-cover").expect("a source id");
     let offer_of = |id: &str, catalog: &str| {
         let mut song = explore_song(id, "Orbit One", "The Orbiters");
+
         song.cover = resonate_providers::Id::new("sleeve");
         resonate_library::ExploreOffer {
             catalog: catalog.to_owned(),
@@ -34852,12 +38369,15 @@ fn explore_covers_survive_reopening_and_are_shared_by_cover_id_within_a_catalog(
     let offer = offer_of("one", "first");
     let side = NonZeroU32::new(128).expect("a drawn side");
     let bytes = b"a cover";
+
     assert!(library.explore_cover(&offer, side).is_none());
+
     library.keep_explore_cover(&offer, side, bytes);
     drop(library);
 
     let reopened = Library::open(&database)?;
     let from_same_album = offer_of("two", "first");
+
     assert_eq!(
         reopened.explore_cover(&from_same_album, side).as_deref(),
         Some(bytes.as_slice())
@@ -34874,14 +38394,18 @@ fn explore_covers_survive_reopening_and_are_shared_by_cover_id_within_a_catalog(
     );
 
     let connection = rusqlite::Connection::open(&database).expect("the catalog reopens");
+
     connection
         .execute(
             "UPDATE explore_covers SET day = day - ?1",
             [resonate_library::EXPLORE_CACHE_DAYS],
         )
         .expect("the cover expires");
+
     assert!(reopened.explore_cover(&offer, side).is_none());
+
     reopened.keep_explore_cover(&offer, side, bytes);
+
     assert_eq!(
         reopened.explore_cover(&offer, side).as_deref(),
         Some(bytes.as_slice())

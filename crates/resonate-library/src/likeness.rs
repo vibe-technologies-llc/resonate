@@ -15,6 +15,7 @@ pub(crate) fn of(inner: &Inner, album: AlbumId, picture: &str) -> Result<Option<
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
+
     if let Some(kept) = kept {
         return Ok(kept.as_deref().and_then(Likeness::from_bytes));
     }
@@ -28,6 +29,7 @@ pub(crate) fn of(inner: &Inner, album: AlbumId, picture: &str) -> Result<Option<
         }
     };
     let likeness = Drawing::of(&art).and_then(|drawing| drawing.likeness());
+
     inner.write(|transaction| {
         transaction
             .execute(

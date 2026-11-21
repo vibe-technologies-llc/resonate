@@ -101,6 +101,7 @@ impl Choice for RegionChoice {
 
     fn meaning(self) -> SharedString {
         let (year, month, day) = A_DATE_THAT_ORDERS;
+
         let date = resonate_words::day_month_and_year(year, month, day);
 
         SharedString::from(match self {
@@ -217,6 +218,7 @@ impl RootView {
         let worn = theme::worn();
         let following = theme::chosen().follows.scheme;
         let mut shelf = div().flex().flex_wrap().gap_2();
+
         for palette in Theme::ALL {
             shelf = shelf.child(self.palette(palette, worn, cx));
         }
@@ -227,6 +229,7 @@ impl RootView {
             .items_center()
             .gap_2()
             .child(self.accent(None, worn, cx));
+
         for accent in Accent::ALL {
             accents = accents.child(self.accent(Some(accent), worn, cx));
         }
@@ -369,6 +372,7 @@ impl RootView {
                     cx,
                     |this, size: TextSize, cx| {
                         let kept = theme::chosen();
+
                         this.wear(
                             Appearance {
                                 text_size: size,
@@ -391,6 +395,7 @@ impl RootView {
     pub(crate) fn follow_the_desktop_scheme(&mut self, follows: bool, cx: &mut Context<Self>) {
         let worn = theme::worn();
         let kept = theme::chosen();
+
         let dressed = Appearance {
             theme: worn.theme,
             follows: Following {
@@ -407,6 +412,7 @@ impl RootView {
     pub(crate) fn follow_the_desktop_text_size(&mut self, follows: bool, cx: &mut Context<Self>) {
         let worn = theme::worn();
         let kept = theme::chosen();
+
         let dressed = Appearance {
             text_size: worn.text_size,
             follows: Following {
@@ -634,6 +640,7 @@ impl RootView {
                 words::settings_appearance::treble_lifted(),
                 self.choices("spectrum-tilt", spectral.tilt, cx, |this, tilt, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
+
                     this.read_the_spectrum(Spectral { tilt, ..held }, cx);
                     this.store(&Setting::SpectrumTilt(tilt), cx);
                 }),
@@ -642,6 +649,7 @@ impl RootView {
                 words::settings_appearance::floor(),
                 self.choices("spectrum-floor", spectral.floor, cx, |this, floor, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
+
                     this.read_the_spectrum(Spectral { floor, ..held }, cx);
                     this.store(&Setting::SpectrumFloor(floor), cx);
                 }),
@@ -650,6 +658,7 @@ impl RootView {
                 words::settings_appearance::bands_an_octave(),
                 self.choices("spectrum-bands", spectral.bands, cx, |this, bands, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
+
                     this.read_the_spectrum(Spectral { bands, ..held }, cx);
                     this.store(&Setting::SpectrumBands(bands), cx);
                 }),
@@ -658,6 +667,7 @@ impl RootView {
                 words::settings_appearance::bars_fall(),
                 self.choices("spectrum-falls", spectral.falls, cx, |this, falls, cx| {
                     let held = cx.global::<ResonateApp>().spectral;
+
                     this.read_the_spectrum(Spectral { falls, ..held }, cx);
                     this.store(&Setting::SpectrumFalls(falls), cx);
                 }),
@@ -821,7 +831,9 @@ impl RootView {
         if !self.remembered.tab {
             return;
         }
+
         let tab = self.in_front(cx);
+
         if cx.global::<ResonateApp>().last_tab == Some(tab) {
             return;
         }
@@ -836,7 +848,9 @@ impl RootView {
         {
             return;
         }
+
         let category = self.settings_pane.read(cx).shown.category;
+
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.last_settings_category = category;
         });
@@ -847,9 +861,11 @@ impl RootView {
         if !self.remembered.window_size {
             return;
         }
+
         let Some(size) = WindowSize::from_pixels(window.window_bounds().get_bounds().size) else {
             return;
         };
+
         self.remembered.last_window_size = Some(size);
         self.remembered.window_size_unkept = None;
         cx.update_global::<ResonateApp, _>(|global, _| global.window_size = Some(size));

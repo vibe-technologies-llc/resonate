@@ -7,7 +7,7 @@ use thiserror::Error;
 
 use crate::{passes::Pass, prompts::Prompt, tools::Tool};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StreamOp {
     Read,
     Write,
@@ -106,7 +106,7 @@ pub enum Error {
 
 pub type Result<T> = result::Result<T, Error>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct MethodName(Box<str>);
 
 impl MethodName {
@@ -121,7 +121,7 @@ impl fmt::Display for MethodName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct CursorText(Box<str>);
 
 impl CursorText {
@@ -136,7 +136,7 @@ impl fmt::Display for CursorText {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ToolName(Box<str>);
 
 impl ToolName {
@@ -151,7 +151,7 @@ impl fmt::Display for ToolName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ResourceUri(Box<str>);
 
 impl ResourceUri {
@@ -166,7 +166,7 @@ impl fmt::Display for ResourceUri {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PromptName(Box<str>);
 
 impl PromptName {
@@ -181,7 +181,7 @@ impl fmt::Display for PromptName {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Field(pub &'static str);
 
 impl fmt::Display for Field {
@@ -198,7 +198,7 @@ fn listed(fields: &[Field]) -> String {
         .join(", ")
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ArgumentName(Box<str>);
 
 impl ArgumentName {
@@ -304,7 +304,7 @@ pub enum Refusal {
     BlankField { tool: Tool, field: Field },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Code {
     ParseError,
     InvalidRequest,
@@ -356,6 +356,7 @@ impl Refusal {
 pub(crate) fn said(error: &(dyn std::error::Error + 'static)) -> String {
     let mut said = error.to_string();
     let mut cause = error.source();
+
     while let Some(reason) = cause {
         said.push_str(": ");
         said.push_str(&reason.to_string());

@@ -91,7 +91,7 @@ const EXTENSION_SEPARATOR: char = '.';
 const FIRST_PRINTABLE: char = ' ';
 const DELETED_CHARACTER: char = '\u{7f}';
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Field {
     AlbumArtist,
     Artist,
@@ -173,12 +173,14 @@ impl Segment {
         };
         let before_the_dot = dotted.strip_suffix(EXTENSION_SEPARATOR)?;
         let mut written = Self::written(ahead, named);
+
         written.push_str(before_the_dot);
         Some(written)
     }
 
     fn written(pieces: &[Piece], named: &Named<'_>) -> String {
         let mut written = String::new();
+
         for piece in pieces {
             match piece {
                 Piece::Literal(text) => written.push_str(text),
@@ -206,8 +208,10 @@ impl Layout {
 
         let mut segments = Vec::new();
         let mut start = 0;
+
         for text in template.split(SEGMENT_SEPARATOR) {
             let at = start;
+
             start += text.len() + SEGMENT_SEPARATOR.len_utf8();
             if text.is_empty() {
                 return Err(Error::LayoutSyntax {
@@ -252,6 +256,7 @@ impl Layout {
             .checked_sub(1)
             .ok_or(Refusal::Unidentified)?;
         let extension = named.extension.filter(|extension| !extension.is_empty());
+
         let ahead_of_the_extension =
             extension.and_then(|_| self.segments[last].write_ahead_of_the_extension(named));
         let appended = if ahead_of_the_extension.is_some() {
@@ -264,6 +269,7 @@ impl Layout {
         });
 
         let mut parts = Vec::with_capacity(self.segments.len());
+
         for (index, segment) in self.segments.iter().enumerate() {
             let budget = if index == last {
                 COMPONENT_BYTES.saturating_sub(tail)
@@ -276,6 +282,7 @@ impl Layout {
                 _ => segment.write(named),
             };
             let component = as_one_component(&text, budget, naming);
+
             if component.is_empty() {
                 if index == last {
                     return Err(Refusal::Unidentified);
@@ -287,15 +294,18 @@ impl Layout {
                 Some(extension) if index == last => format!("{EXTENSION_SEPARATOR}{extension}"),
                 _ => String::new(),
             };
+
             parts.push(Part::new(component, kept));
         }
 
         let weigh = |part: &Part| naming.clear_of_devices(part.whole()).encode_utf16().count();
+
         if !reach.fit(&mut parts, weigh) {
             return Err(Refusal::OutOfReach);
         }
 
         let mut path = PathBuf::new();
+
         for part in parts {
             path.push(naming.clear_of_devices(part.whole()));
         }
@@ -342,6 +352,7 @@ impl fmt::Display for Segment {
 
 fn escaped(literal: &str) -> String {
     let mut written = String::with_capacity(literal.len());
+
     for letter in literal.chars() {
         match letter {
             '{' => written.push_str("{{"),
@@ -376,17 +387,20 @@ fn read_segment(text: &str, start: usize) -> Result<Segment> {
                     });
                 };
                 let name = &text[at + 1..at + 1 + width];
+
                 if name.is_empty() {
                     return Err(Error::LayoutSyntax {
                         at: start + at,
                         fault: LayoutFault::EmptyField,
                     });
                 }
+
                 let Some(field) = Field::read(name) else {
                     return Err(Error::UnknownLayoutField {
                         field: FieldName::new(name),
                     });
                 };
+
                 flush(&mut literal, &mut pieces);
                 pieces.push(Piece::Named(field));
                 at += width + 2;
@@ -401,6 +415,7 @@ fn read_segment(text: &str, start: usize) -> Result<Segment> {
                 let next = text[at..]
                     .find(['{', '}'])
                     .map_or(bytes.len(), |offset| at + offset);
+
                 literal.push_str(&text[at..next]);
                 at = next;
             }
@@ -467,7 +482,7 @@ fn type_named_in(field: &[std::ffi::c_char]) -> String {
         .collect()
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Naming {
     #[default]
     Anything,
@@ -559,6 +574,7 @@ impl Default for Volume {
 
 fn as_one_component(text: &str, budget: usize, naming: Naming) -> String {
     let mut written = String::with_capacity(text.len());
+
     for character in text.chars() {
         match character {
             SEGMENT_SEPARATOR => written.push(SEPARATOR_STANDS_IN),
@@ -592,6 +608,7 @@ fn largest_prefix_within(text: &str, budget: usize) -> &str {
     if text.len() <= budget {
         return text;
     }
+
     let end = (0..=budget)
         .rev()
         .find(|at| text.is_char_boundary(*at))
@@ -767,12 +784,14 @@ pub(crate) fn start(library: Library, options: OrganiseOptions) -> Result<Organi
     let walking = library.walk_the_tree()?;
     let progress = Arc::new(OrganiseProgress::default());
     let owned = Arc::clone(&progress);
+
     walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-organise".to_owned())
         .spawn(move || {
             let outcome = run(&library, &options, &progress);
+
             drop(walking);
             outcome
         })
@@ -787,6 +806,7 @@ fn run(
     progress: &OrganiseProgress,
 ) -> Result<OrganiseSummary> {
     let known = library.roots()?;
+
     for root in &options.roots {
         if !known.contains(root) {
             return Err(Error::NotARoot { path: root.clone() });
@@ -803,8 +823,10 @@ fn run(
             moves: noted.iter().rev().map(Move::reversed).collect(),
             ..Plan::default()
         };
+
         if options.apply {
             let roots: AHashSet<PathBuf> = library.roots()?.into_iter().collect();
+
             apply(library, &mut plan, &roots, progress, Noting::Not);
             if let Err(error) = library.note_organised(&still_to_walk_back(noted, &plan.moves)) {
                 tracing::warn!(%error, "what the walk back left to put back was not noted");
@@ -823,9 +845,11 @@ fn run(
         roots: &options.roots,
     };
     let mut planner = Planner::new(&options.layout, progress, &tracked);
+
     library.each_file_to_file(&options.roots, |filing| planner.knows(&filing, &discs))?;
 
     let rows_of = |files: &[PathBuf]| library.tracks_to_file_at(&options.roots, files, &discs);
+
     if options.only.is_empty() {
         let mut paging = Paging::by(ROWS_A_PAGE);
         while !progress.is_cancelled() {
@@ -838,10 +862,12 @@ fn run(
             else {
                 break;
             };
+
             planner.plan(&page, rows_of)?;
         }
     } else {
         let mut named = AHashSet::with_capacity(options.only.len());
+
         let only: Vec<PathBuf> = options
             .only
             .iter()
@@ -858,6 +884,7 @@ fn run(
 
     let roots: AHashSet<PathBuf> = planner.volumes.keys().cloned().collect();
     let mut plan = planner.settle()?;
+
     if options.apply {
         apply(library, &mut plan, &roots, progress, Noting::Afresh);
     }
@@ -873,6 +900,7 @@ fn still_to_walk_back(noted: Vec<Move>, walked_back: &[Move]) -> Vec<Move> {
     if walked_back.len() == noted.len() {
         return walked_back.to_vec();
     }
+
     let put_back: AHashSet<(&Path, &Path)> = walked_back
         .iter()
         .map(|walked| (walked.to.as_path(), walked.from.as_path()))
@@ -983,6 +1011,7 @@ impl Beside {
 
         let mut files = Vec::new();
         let mut nothing_but_files = true;
+
         for entry in listed {
             match entry.as_ref().map(std::fs::DirEntry::file_type) {
                 Ok(Ok(kind)) if !kind.is_dir() => {
@@ -1068,6 +1097,7 @@ impl Claims {
 
     fn insert(&mut self, destination: PathBuf, by: PathBuf) {
         let key = self.key(&destination);
+
         self.held.insert(key, by);
     }
 
@@ -1091,11 +1121,13 @@ impl Claims {
         else {
             return false;
         };
+
         if let Some(known) = self.known.lock().get(standing) {
             return *known;
         }
 
         let blind = (self.blind)(standing);
+
         self.known.lock().insert(standing.to_path_buf(), blind);
         blind
     }
@@ -1112,6 +1144,7 @@ fn case_blind_beside(folder: &Path) -> bool {
         let Some(flipped) = entry.file_name().to_str().and_then(case_flipped) else {
             continue;
         };
+
         return names_one_file(&entry.path(), &folder.join(flipped));
     }
 
@@ -1182,6 +1215,7 @@ impl<'a> Planner<'a> {
         if let Some(album) = filing.album {
             let declared = album_discs.get(&(album.get() as i64)).copied().unwrap_or(0);
             let counted = self.discs.entry(album).or_default();
+
             *counted = (*counted)
                 .max(declared)
                 .max(disc_in(&filing.path, filing.disc).map_or(0, NonZeroU32::get));
@@ -1205,9 +1239,11 @@ impl<'a> Planner<'a> {
             if self.progress.is_cancelled() {
                 break;
             }
+
             let Some(first) = group.first() else {
                 continue;
             };
+
             if self.filed.remove(&first.path) {
                 continue;
             }
@@ -1219,6 +1255,7 @@ impl<'a> Planner<'a> {
             }
 
             let tied = self.tied_by_sheets(&first.path);
+
             if tied.sheets.is_empty() {
                 self.file(group);
                 self.tracks.failed()?;
@@ -1246,12 +1283,15 @@ impl<'a> Planner<'a> {
                         .or_else(|| fetched.get(file.as_path()).copied())
                 })
                 .collect();
+
             for file in tied.files.iter().filter(|file| **file != first.path) {
                 self.filed.insert(file.clone());
             }
+
             let held: Vec<&[TrackToFile]> = members.iter().flatten().copied().collect();
             let folder = first.path.parent();
             let across_folders = tied.files.iter().any(|file| file.parent() != folder);
+
             if across_folders || members.iter().any(Option::is_none) {
                 self.refuse_the_sheets(&held, &tied, None);
                 continue;
@@ -1267,11 +1307,13 @@ impl<'a> Planner<'a> {
             return;
         }
         self.around = folder.map(Path::to_path_buf);
+
         let Some(folder) = folder else {
             self.beside.clear();
             self.sheets.clear();
             return;
         };
+
         self.beside.retain(|listed, _| folder.starts_with(listed));
         self.sheets.retain(|listed, _| folder.starts_with(listed));
     }
@@ -1289,6 +1331,7 @@ impl<'a> Planner<'a> {
         };
 
         let destination = as_the_volume_names_it(&first.path, first.root.join(&rendered));
+
         if destination == first.path {
             self.plan.unchanged += 1;
             self.progress.unchanged.fetch_add(1, Ordering::Relaxed);
@@ -1323,7 +1366,9 @@ impl<'a> Planner<'a> {
             self.claimed.insert(sheet.to.clone(), sheet.from.clone());
             self.going.insert(sheet.from.clone());
         }
+
         let mut sidecars = sheets;
+
         sidecars.extend(self.sidecars(&first.path, &destination));
         self.note_the_folder(first);
 
@@ -1345,8 +1390,10 @@ impl<'a> Planner<'a> {
             files: vec![file.to_path_buf()],
         };
         let mut walked = 0;
+
         while let Some(next) = tied.files.get(walked).cloned() {
             walked += 1;
+
             let Some(folder) = next.parent() else {
                 continue;
             };
@@ -1389,6 +1436,7 @@ impl<'a> Planner<'a> {
                     sheet: sheet.clone(),
                 },
             };
+
             self.refuse(first, refusal);
         }
     }
@@ -1396,6 +1444,7 @@ impl<'a> Planner<'a> {
     fn file_together(&mut self, group: &[&[TrackToFile]], tied: &Tied) {
         let mut landing: Option<PathBuf> = None;
         let mut destinations = Vec::with_capacity(group.len());
+
         for member in group {
             let Some(first) = member.first() else {
                 continue;
@@ -1407,6 +1456,7 @@ impl<'a> Planner<'a> {
                     return;
                 }
             };
+
             if rendered.components().count() < 2 {
                 self.refuse_the_sheets(group, tied, Some((&first.path, Refusal::Loose)));
                 return;
@@ -1414,6 +1464,7 @@ impl<'a> Planner<'a> {
 
             let destination = as_the_volume_names_it(&first.path, first.root.join(&rendered));
             let folder = destination.parent().map(Path::to_path_buf);
+
             if landing.is_some() && landing != folder {
                 self.refuse_the_sheets(group, tied, None);
                 return;
@@ -1421,6 +1472,7 @@ impl<'a> Planner<'a> {
             landing = folder;
             destinations.push((first, member.len() as u32, destination));
         }
+
         let Some(landing) = landing else {
             return;
         };
@@ -1430,6 +1482,7 @@ impl<'a> Planner<'a> {
             .filter(|(first, _, destination)| *destination != first.path)
             .collect();
         let unchanged = (group.len() - moving.len()) as u64;
+
         self.plan.unchanged += unchanged;
         self.progress
             .unchanged
@@ -1439,6 +1492,7 @@ impl<'a> Planner<'a> {
         }
 
         let mut waits_for = Vec::new();
+
         for (first, _, destination) in &moving {
             match self.in_the_way(&first.path, destination) {
                 Some(InTheWay::Stands(refusal)) => {
@@ -1460,9 +1514,11 @@ impl<'a> Planner<'a> {
                 })
             })
             .collect();
+
         for sheet in &sheets {
             if self.in_the_way(&sheet.from, &sheet.to).is_some() {
                 let with = sheet.to.clone();
+
                 self.refuse_the_sheets(group, tied, None);
                 tracing::debug!(
                     sheet = %sheet.from.display(),
@@ -1481,16 +1537,20 @@ impl<'a> Planner<'a> {
             self.claimed.insert(sheet.to.clone(), sheet.from.clone());
             self.going.insert(sheet.from.clone());
         }
+
         let mut sidecars = sheets;
+
         for (first, _, destination) in &moving {
             sidecars.extend(self.sidecars(&first.path, destination));
             self.note_the_folder(first);
         }
 
         let mut members = moving.into_iter();
+
         let Some((first, rows, to)) = members.next() else {
             return;
         };
+
         self.moves.push(Planned {
             planned: Move {
                 from: first.path.clone(),
@@ -1518,13 +1578,16 @@ impl<'a> Planner<'a> {
 
     fn rendered(&self, group: &[TrackToFile]) -> std::result::Result<PathBuf, Refusal> {
         let first = group.first().ok_or(Refusal::Unidentified)?;
+
         if let [only] = group {
             return self.render_for(only);
         }
 
         let folder = self.one_folder(group)?;
         let name = first.path.file_name().ok_or(Refusal::Unidentified)?;
+
         let whole = folder.join(name);
+
         if !self.volume(first).reach.admits(&whole) {
             return Err(Refusal::OutOfReach);
         }
@@ -1542,6 +1605,7 @@ impl<'a> Planner<'a> {
 
     fn one_folder(&self, group: &[TrackToFile]) -> std::result::Result<PathBuf, Refusal> {
         let mut agreed: Option<PathBuf> = None;
+
         for row in group {
             let written = self.render_for(row)?;
             let under = written.parent().ok_or(Refusal::Unidentified)?.to_path_buf();
@@ -1630,6 +1694,7 @@ impl<'a> Planner<'a> {
         let renamed = to.file_stem().and_then(OsStr::to_str);
 
         let mut travelling = Vec::new();
+
         for claiming in self.sheets_in(folder) {
             if !claiming.files.iter().any(|file| file == from) {
                 continue;
@@ -1642,6 +1707,7 @@ impl<'a> Planner<'a> {
                 (Some(suffix), Some(renamed)) => landing.join(format!("{renamed}{suffix}")),
                 _ => landing.join(claiming.sheet.file_name().unwrap_or_default()),
             };
+
             travelling.push(Sidecar {
                 from: claiming.sheet.clone(),
                 to: destination,
@@ -1664,6 +1730,7 @@ impl<'a> Planner<'a> {
                     InTheWay::Stands(Refusal::Collided { with }) => with,
                     InTheWay::Stands(_) | InTheWay::MayGo(_) => sheet.to.clone(),
                 };
+
                 return Err(Refusal::Collided { with });
             }
         }
@@ -1674,11 +1741,13 @@ impl<'a> Planner<'a> {
         if !self.sheets.contains_key(folder) {
             let files = listing(&mut self.beside, folder).files.clone();
             let mut read = Vec::new();
+
             for sheet in files.iter().filter(|file| scan::is_a_sheet(file)) {
                 let Some(held) = scan::read_sheet(sheet) else {
                     continue;
                 };
                 let mut claimed = Vec::new();
+
                 for cut in &held.files {
                     let within = the_folder_a_cue_names(folder, &cut.named);
                     let candidates = if within == folder {
@@ -1686,6 +1755,7 @@ impl<'a> Planner<'a> {
                     } else {
                         &listing(&mut self.beside, &within).files
                     };
+
                     claimed.extend(scan::claimed_beside(&cut.named, candidates).cloned());
                 }
                 read.push(Claiming {
@@ -1741,6 +1811,7 @@ impl<'a> Planner<'a> {
             .filter_map(|file| file.file_stem().and_then(OsStr::to_str))
             .filter(|other| other.len() > stem.len() && other.starts_with(stem))
             .collect();
+
         let candidates: Vec<PathBuf> = beside
             .files
             .iter()
@@ -1755,15 +1826,18 @@ impl<'a> Planner<'a> {
             .collect();
 
         let mut sidecars = Vec::new();
+
         for file in candidates {
             let Some(suffix) = trailing(&file, stem) else {
                 continue;
             };
+
             if self.going.contains(&file) || names_audio(&file) {
                 continue;
             }
 
             let destination = landing.join(format!("{renamed}{suffix}"));
+
             if let Some(standing) = self.in_the_way(&file, &destination) {
                 tracing::debug!(
                     sidecar = %file.display(),
@@ -1789,6 +1863,7 @@ impl<'a> Planner<'a> {
         let Some(folder) = row.path.parent() else {
             return;
         };
+
         if folder == row.root {
             return;
         }
@@ -1835,8 +1910,10 @@ impl<'a> Planner<'a> {
         let asked = parked_out_of_their_cycles(mem::take(&mut self.moves));
         let mut waits = Vec::with_capacity(asked.len());
         let mut state = vec![Step::Unwalked; asked.len()];
+
         {
             let mut by_source: AHashMap<&Path, usize> = AHashMap::with_capacity(asked.len());
+
             for (at, held) in asked.iter().enumerate() {
                 for (from, _) in held.planned.files() {
                     by_source.insert(from, at);
@@ -1862,8 +1939,10 @@ impl<'a> Planner<'a> {
         let order = walked(&waits, &mut state);
         let mut held: Vec<Option<Planned>> = asked.into_iter().map(Some).collect();
         let mut moves = Vec::with_capacity(order.len());
+
         for at in order {
             let taken = held[at].take().expect("a move is ordered once");
+
             moves.push(taken.planned);
         }
         self.plan.moves = moves;
@@ -1881,11 +1960,13 @@ impl<'a> Planner<'a> {
                 .into_iter()
                 .next()
                 .expect("a move left out of the order is one waiting on a file that stays");
+
             tracing::debug!(
                 path = %left.planned.from.display(),
                 standing = %with.display(),
                 "a move waiting on a file that never goes was left where it stands"
             );
+
             let members: Vec<PathBuf> = left
                 .planned
                 .files()
@@ -1899,11 +1980,13 @@ impl<'a> Planner<'a> {
 
     fn pictures_follow_their_folders(&mut self) {
         let mut landings: AHashMap<PathBuf, FolderLanding> = AHashMap::new();
+
         for (at, planned) in self.plan.moves.iter().enumerate() {
             for (from, to) in planned.files() {
                 let (Some(folder), Some(landing)) = (from.parent(), to.parent()) else {
                     continue;
                 };
+
                 landings
                     .entry(folder.to_path_buf())
                     .and_modify(|held| held.meets(landing, at))
@@ -1918,16 +2001,19 @@ impl<'a> Planner<'a> {
                 _ => None,
             })
             .collect();
+
         landings.sort();
 
         for (folder, into, at) in landings {
             let beside = listing(&mut self.beside, &folder);
             let tracked = beside.tracked(&self.tracks);
             let files = beside.files.clone();
+
             let every_track_goes = files
                 .iter()
                 .filter(|file| tracked.contains(file.as_path()))
                 .all(|file| self.going.contains(file));
+
             self.beside.remove(&folder);
             if !every_track_goes {
                 continue;
@@ -1937,10 +2023,12 @@ impl<'a> Planner<'a> {
                 if !names_a_picture(&picture) || self.going.contains(&picture) {
                     continue;
                 }
+
                 let Some(name) = picture.file_name() else {
                     continue;
                 };
                 let destination = into.join(name);
+
                 if self.in_the_way(&picture, &destination).is_some() {
                     tracing::debug!(
                         picture = %picture.display(),
@@ -1989,10 +2077,12 @@ fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
 
     let mut seen = vec![0_usize; asked.len()];
     let mut broken = Vec::new();
+
     for start in 0..asked.len() {
         if seen[start] != 0 {
             continue;
         }
+
         let walk = start + 1;
         let mut at = start;
         loop {
@@ -2016,6 +2106,7 @@ fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
             continue;
         };
         let held = &mut asked[at];
+
         let landing = Planned {
             planned: Move {
                 from: parking.clone(),
@@ -2026,6 +2117,7 @@ fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
             },
             waits_for: mem::take(&mut held.waits_for),
         };
+
         held.planned.to = parking;
         asked.push(landing);
     }
@@ -2040,6 +2132,7 @@ fn a_place_to_park(from: &Path) -> Option<PathBuf> {
         Some(extension) => format!(".{PARKED}-{}.{extension}", process::id()),
         None => format!(".{PARKED}-{}", process::id()),
     };
+
     let named = format!(
         "{}{tail}",
         largest_prefix_within(stem, COMPONENT_BYTES.saturating_sub(tail.len()))
@@ -2050,12 +2143,14 @@ fn a_place_to_park(from: &Path) -> Option<PathBuf> {
 
 fn walked(waits: &[Vec<usize>], state: &mut [Step]) -> Vec<usize> {
     let mut order = Vec::with_capacity(waits.len());
+
     for start in 0..waits.len() {
         if state[start] != Step::Unwalked {
             continue;
         }
 
         state[start] = Step::Walking;
+
         let mut walking: Vec<(usize, usize)> = vec![(start, 0)];
         while let Some((at, next)) = walking.last_mut() {
             let at = *at;
@@ -2065,6 +2160,7 @@ fn walked(waits: &[Vec<usize>], state: &mut [Step]) -> Vec<usize> {
                 order.push(at);
                 continue;
             };
+
             *next += 1;
 
             match state[vacating] {
@@ -2207,6 +2303,7 @@ fn apply(
         }
 
         let applied = batch_moved(library, batch, progress, noting);
+
         if !applied.landed.is_empty() {
             noting = noting.past(applied.landed.len());
         }
@@ -2234,7 +2331,9 @@ fn batch_moved(
     noting: Noting,
 ) -> Applied {
     let mut made: Vec<PathBuf> = Vec::new();
+
     let applied = batch_landing(library, batch, progress, noting, &mut made);
+
     take_back_the_empty(&made);
     applied
 }
@@ -2267,9 +2366,11 @@ fn batch_landing(
                 tracing::warn!(%error, "a track could not be moved and was put back where it stood");
                 put_back(&done[mark..]);
                 done.truncate(mark);
+
                 let refusal = Refusal::Unmoved {
                     kind: moved_how(&error),
                 };
+
                 refused.push(refused_now(progress, planned, refusal));
             }
         }
@@ -2297,11 +2398,13 @@ fn batch_landing(
 
     left_behind(&done);
     sheets_follow_their_audio(library, &landed);
+
     let files = landed
         .iter()
         .filter(|planned| !planned.parks())
         .map(|planned| planned.files().count())
         .sum::<usize>();
+
     progress.moved.fetch_add(files as u64, Ordering::Relaxed);
     Applied { landed, refused }
 }
@@ -2330,6 +2433,7 @@ fn standing(planned: &Move) -> Option<Refusal> {
 
 fn with_the_sidecars_that_can_go(planned: &Move) -> Move {
     let mut trimmed = planned.clone();
+
     trimmed.sidecars.retain(|sidecar| {
         if fs::symlink_metadata(&sidecar.from).is_err() {
             tracing::debug!(sidecar = %sidecar.from.display(), "a sidecar has gone, and its track moves without it");
@@ -2366,6 +2470,7 @@ fn renamed_onto(
 ) -> Result<()> {
     if let Some(folder) = planned.to.parent() {
         let fresh = not_there_yet(folder);
+
         fs::create_dir_all(folder).map_err(|source| Error::Move {
             op: MoveOp::MakeFolder,
             path: folder.to_path_buf(),
@@ -2392,6 +2497,7 @@ fn landed_onto(library: &Library, from: &Path, to: &Path) -> Result<Renamed> {
             how: Landing::Linked,
         });
     }
+
     let renamed = if is_the_same_file(from, to) {
         fs::rename(from, to)
     } else {
@@ -2432,6 +2538,7 @@ fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
                 source,
             })
     });
+
     staged_left(library, &staged);
     landed.map(drop)
 }
@@ -2439,6 +2546,7 @@ fn copying(library: &Library, from: &Path, to: &Path) -> Result<()> {
 fn noted_staging(library: &Library, landing: &Path) -> Result<PathBuf> {
     let name = landing.file_name().unwrap_or_default();
     let staged = landing.with_file_name(naming::named_within("", name, STAGED));
+
     library.staging(&staged)?;
     Ok(staged)
 }
@@ -2456,6 +2564,7 @@ pub(crate) fn staged_left(library: &Library, staged: &Path) {
                 path: staged.to_path_buf(),
                 source,
             };
+
             tracing::warn!(%error, "a staging file is left for the next run to take away");
         }
     }
@@ -2543,6 +2652,7 @@ fn noted_from(tx: &Transaction<'_>, landed: &[Move], first_unit: usize) -> Resul
         "INSERT INTO organised (unit, part, rows, moved_from, moved_to)
          VALUES (?1, ?2, ?3, ?4, ?5)",
     )?;
+
     for (unit, planned) in (first_unit..).zip(landed) {
         let parts =
             iter::once((MOVED_ITSELF, planned.rows, &planned.from, &planned.to))
@@ -2574,6 +2684,7 @@ pub(crate) fn last_organised(connection: &Connection) -> Result<Vec<Move>> {
     let mut statement = connection
         .prepare("SELECT unit, part, rows, moved_from, moved_to FROM organised ORDER BY position")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let parts = statement
         .query_map([], |row| {
             Ok((
@@ -2588,6 +2699,7 @@ pub(crate) fn last_organised(connection: &Connection) -> Result<Vec<Move>> {
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut moves: Vec<(i64, Move)> = Vec::new();
+
     for (unit, part, rows, from, to) in parts {
         let rows = u32::try_from(rows).unwrap_or_default();
         match (part, moves.last_mut()) {
@@ -2646,9 +2758,11 @@ fn another_link_of(from: &Path, to: &Path) -> bool {
     if from == to || !is_the_same_file(from, to) {
         return false;
     }
+
     let (Some(from_folder), Some(to_folder)) = (from.parent(), to.parent()) else {
         return false;
     };
+
     if !is_the_same_folder(from_folder, to_folder) {
         return true;
     }
@@ -2687,6 +2801,7 @@ fn landing_named(from: &Path, to: PathBuf, sameness: Sameness) -> PathBuf {
         Sameness::ItsOwnName => true,
         Sameness::AnotherName => differs_only_in_case(from, &to),
     };
+
     if to == from || !renamed_only_in_case {
         return to;
     }
@@ -2707,6 +2822,7 @@ fn already_copied(from: &Path, to: &Path) -> bool {
     let (Ok(source), Ok(copy)) = (fs::symlink_metadata(from), fs::symlink_metadata(to)) else {
         return false;
     };
+
     let alike = source.is_file()
         && copy.is_file()
         && file_facts::volume_of(from) != file_facts::volume_of(to)
@@ -2725,6 +2841,7 @@ fn same_bytes(one: &Path, other: &Path) -> io::Result<bool> {
     let mut theirs = vec![0_u8; COMPARED_AT_ONCE];
     loop {
         let read = one.read(&mut ours)?;
+
         if read == 0 {
             return Ok(other.read(&mut theirs)? == 0);
         }
@@ -2753,6 +2870,7 @@ fn copied_whole(from: &Path, to: &Path) -> Result<Held> {
     })?;
     let held = Held::taken_over_closed(to).map_err(copy_failed)?;
     let mut written = held.file();
+
     io::copy(&mut source, &mut written)
         .and_then(|_| written.set_permissions(stood.permissions()))
         .map_err(copy_failed)?;
@@ -2766,6 +2884,7 @@ fn copied_whole(from: &Path, to: &Path) -> Result<Held> {
             path: to.to_path_buf(),
             source,
         };
+
         tracing::debug!(%error, "a copied file carries the time it was copied at");
     }
 
@@ -2784,6 +2903,7 @@ fn left_behind(done: &[Renamed]) {
                 path: step.from.clone(),
                 source,
             };
+
             tracing::warn!(
                 %error,
                 "a file copied onto another filesystem is still standing where it was"
@@ -2798,6 +2918,7 @@ fn sheets_follow_their_audio(library: &Library, landed: &[Move]) {
             let (Some(named), Some(naming)) = (file_name_of(from), file_name_of(to)) else {
                 continue;
             };
+
             if named == naming {
                 continue;
             }
@@ -2822,6 +2943,7 @@ fn sheet_renamed(library: &Library, sheet: &Path, named: &str, naming: &str) {
                 path: sheet.to_path_buf(),
                 source,
             };
+
             tracing::warn!(%error, "a sheet beside a renamed file still names the name it had");
             return;
         }
@@ -2848,8 +2970,10 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
         path: staged.clone(),
         source,
     };
+
     let held = Held::taken_over(&staged).map_err(landing)?;
     let mut file = held.file();
+
     let landed = file
         .write_all(written)
         .and_then(|()| {
@@ -2866,6 +2990,7 @@ fn staged_over(library: &Library, sheet: &Path, written: &[u8]) -> Result<()> {
                 source,
             })
         });
+
     drop(held);
     if landed.is_ok()
         && let Some(folder) = sheet.parent()
@@ -2889,6 +3014,7 @@ fn names_a_sheet(file: &Path) -> bool {
 fn not_there_yet(folder: &Path) -> Vec<PathBuf> {
     let mut fresh = Vec::new();
     let mut at = Some(folder);
+
     while let Some(step) = at.filter(|step| !step.as_os_str().is_empty() && !step.exists()) {
         fresh.push(step.to_path_buf());
         at = step.parent();
@@ -2899,6 +3025,7 @@ fn not_there_yet(folder: &Path) -> Vec<PathBuf> {
 
 fn take_back_the_empty(made: &[PathBuf]) {
     let mut folders: Vec<&Path> = made.iter().map(PathBuf::as_path).collect();
+
     folders.sort_by(|one, other| deepest_first(one, other));
     folders.dedup();
 
@@ -2923,6 +3050,7 @@ fn put_back(done: &[Renamed]) {
                 path: step.to.clone(),
                 source,
             };
+
             tracing::error!(
                 %error,
                 stood = %step.from.display(),
@@ -2947,6 +3075,7 @@ fn folders_to_settle<'a>(landed: &'a [Move], made: &'a [PathBuf]) -> Vec<&'a Pat
         .chain(made.iter().filter_map(|folder| folder.parent()))
         .filter(|folder| !folder.as_os_str().is_empty())
         .collect();
+
     folders.sort_by(|one, other| deepest_first(one, other));
     folders.dedup();
     folders
@@ -2959,6 +3088,7 @@ pub(crate) fn settled_folder(folder: &Path) {
             path: folder.to_path_buf(),
             source,
         };
+
         tracing::warn!(%error, "a folder this run wrote is not settled onto the disk");
     }
 }
@@ -3024,9 +3154,11 @@ pub(crate) fn files_moved(tx: &Transaction<'_>, landed: &[Move]) -> Result<()> {
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
         }
         sheeted::notes_follow_the_file(tx, from_path, to_path)?;
+
         let renamed = entries
             .execute(params![from, to])
             .map_err(|source| Error::store(StoreOp::Update, source))?;
+
         if renamed > 0 {
             touched
                 .execute(params![to, moved_at])
@@ -3101,6 +3233,7 @@ pub(crate) fn re_key_the_sleeves(tx: &Transaction<'_>, landed: &[Move]) -> Resul
         };
 
         let named = store::sleeve_key(&album.title, &folder);
+
         if named == album.key {
             continue;
         }
@@ -3127,6 +3260,7 @@ fn sleeved_albums(tx: &Transaction<'_>, landed: &[Move]) -> Result<Vec<Sleeved>>
 
     let mut moved: Vec<i64> = Vec::new();
     let mut counted: AHashSet<i64> = AHashSet::new();
+
     for (_, to) in landed.iter().flat_map(Move::files) {
         let to = store::path_text(to);
         let found = naming
@@ -3143,6 +3277,7 @@ fn sleeved_albums(tx: &Transaction<'_>, landed: &[Move]) -> Result<Vec<Sleeved>>
 
     let mut held = prepared(tx, "SELECT title FROM albums WHERE id = ?1")?;
     let mut sleeved = Vec::new();
+
     for id in moved {
         let title = held
             .query_row(params![id], |row| row.get::<_, String>(0))
@@ -3189,6 +3324,7 @@ fn the_one_folder_holding(tx: &Transaction<'_>, album: i64) -> Result<Option<Pat
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut agreed: Option<PathBuf> = None;
+
     for (path, root) in rows {
         let Some(sleeve) = scan::sleeve(&store::path_of(&path), &store::path_of(&root)) else {
             return Ok(None);
@@ -3210,6 +3346,7 @@ fn already_held(tx: &Transaction<'_>, key: &str, album: i64) -> Result<bool> {
 fn prune(landed: &[Move], roots: &AHashSet<PathBuf>, progress: &OrganiseProgress) {
     let mut folders: Vec<&Path> = Vec::new();
     let mut named: AHashSet<&Path> = AHashSet::new();
+
     for (from, _) in landed.iter().flat_map(Move::files) {
         if let Some(folder) = from.parent()
             && named.insert(folder)
@@ -3226,6 +3363,7 @@ fn prune(landed: &[Move], roots: &AHashSet<PathBuf>, progress: &OrganiseProgress
 
 pub(crate) fn prune_the_emptied(folders: &[PathBuf], roots: &AHashSet<PathBuf>) {
     let mut deepest_first_of_each: Vec<&PathBuf> = folders.iter().collect();
+
     deepest_first_of_each.sort_by(|one, other| deepest_first(one, other));
     deepest_first_of_each.dedup();
 
@@ -3249,6 +3387,7 @@ fn climb_out_of(folder: &Path, roots: &AHashSet<PathBuf>, progress: &OrganisePro
         let Some(up) = at.parent() else {
             return;
         };
+
         at = up;
     }
 }
@@ -3268,6 +3407,7 @@ fn taken_away(folder: &Path) -> Pruning {
                 path: folder.to_path_buf(),
                 source,
             };
+
             tracing::warn!(%error, "a folder this run emptied is still there");
             Pruning::Holds
         }
@@ -3305,10 +3445,13 @@ mod tests {
         library
             .files_moved(&[moved("b")], Noting::Afresh.past(1))
             .expect("the second batch landed");
+
         let after_two_batches = library.last_organised().expect("the note reads");
+
         library
             .files_moved(&[moved("c")], Noting::Afresh)
             .expect("another run's first batch landed");
+
         let after_another_run = library.last_organised().expect("the note reads");
 
         assert_eq!(after_two_batches, vec![moved("a"), moved("b")]);
@@ -3361,9 +3504,11 @@ mod tests {
     fn a_playlist_row_followed_to_its_new_path_ends_what_an_undo_could_put_back() {
         let library = Library::open_in_memory().expect("an in-memory catalog");
         let row = |path: &str| crate::Cut::whole(MediaLocation::local(Path::new(path)));
+
         let id = library
             .start_playlist("Evening", &[row("/music/a.flac")])
             .expect("a playlist");
+
         library
             .add_to_playlist(id, &[row("/music/b.flac")])
             .expect("a row appended");
@@ -3382,12 +3527,14 @@ mod tests {
             .expect("a move followed");
 
         assert!(matches!(library.undo(), Err(Error::PlaylistChanged(changed)) if changed == id));
+
         let paths: Vec<_> = library
             .playlist_cuts(id)
             .expect("the playlist's rows")
             .into_iter()
             .filter_map(|cut| cut.location.as_path().map(Path::to_path_buf))
             .collect();
+
         assert_eq!(
             paths,
             [
@@ -3427,9 +3574,11 @@ mod tests {
     fn a_row_removed_and_then_followed_to_its_new_path_is_put_back_there_by_an_undo_and_a_redo() {
         let library = Library::open_in_memory().expect("an in-memory catalog");
         let row = |path: &str| crate::Cut::whole(MediaLocation::local(Path::new(path)));
+
         let id = library
             .start_playlist("Evening", &[row("/music/a.flac"), row("/music/b.flac")])
             .expect("a playlist");
+
         library
             .remove_from_playlist(id, Span::between(0, 1))
             .expect("a row removed");
@@ -3464,9 +3613,11 @@ mod tests {
         let model = Library::open(&database).expect("the model's catalog");
         let ours = Library::open(&database).expect("our catalog");
         let row = |path: &str| crate::Cut::whole(MediaLocation::local(Path::new(path)));
+
         let id = ours
             .start_playlist("Evening", &[row("/music/a.flac"), row("/music/b.flac")])
             .expect("a playlist");
+
         model.offer_edits_as_a_model();
         model
             .remove_from_playlist(id, Span::between(0, 1))
@@ -3474,7 +3625,9 @@ mod tests {
 
         ours.files_moved(&[moving_a_to_the_artists_folder()], Noting::Not)
             .expect("a move followed");
+
         assert_eq!(ours.take_what_a_model_offered().expect("the offer"), 1);
+
         ours.undo().expect("the removal is undone");
 
         assert_eq!(
@@ -3495,6 +3648,7 @@ mod tests {
     fn a_volume_that_says_its_own_type_is_named_in_what_that_type_takes() {
         let typed = |kind: &str| {
             let mut field = [0; 16];
+
             for (unit, byte) in field.iter_mut().zip(kind.bytes()) {
                 *unit = std::ffi::c_char::from_ne_bytes([byte]);
             }
@@ -3511,6 +3665,7 @@ mod tests {
         for kind in ["apfs", "hfs", "nfs", ""] {
             assert_eq!(typed(kind), Naming::Anything);
         }
+
         assert_eq!(
             type_named_in(&[std::ffi::c_char::from_ne_bytes(*b"x"); 16]),
             "x".repeat(16),
@@ -3623,6 +3778,7 @@ mod tests {
         let layout = read(DEFAULT_LAYOUT);
         let reach = Reach::legacy(Path::new(r"C:\Users\someone\Music"));
         let (artist, album, title) = ("a".repeat(120), "b".repeat(120), "c".repeat(120));
+
         let named = a_long_track(&title, &artist, &album);
 
         let uncut = layout
@@ -3706,6 +3862,7 @@ mod tests {
         let Err(Error::UnknownLayoutField { field }) = Layout::read("{album}/{genre}") else {
             panic!("a field no track carries was read as one it does");
         };
+
         assert_eq!(field.as_str(), "genre");
     }
 
@@ -3731,14 +3888,17 @@ mod tests {
 
         let layout = read("{albumartist}/{title}");
         let mut named = comfortably_numb();
+
         named.album_artist = Some("/etc");
         named.title = "../../passwd";
+
         assert_eq!(rendered(&layout, &named), "-etc/-..-passwd.flac");
     }
 
     #[test]
     fn a_brace_is_written_by_doubling_it_and_an_unclosed_one_is_a_fault_at_its_own_offset() {
         let layout = read("{{{album}}}");
+
         assert_eq!(
             layout.segments[0].pieces,
             vec![
@@ -3786,8 +3946,10 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.as_str() == field.as_str())
                 .count();
+
             assert_eq!(sharing, 1, "{field} is written under a name another claims");
         }
+
         assert_eq!(Field::read("genre"), None);
         assert_eq!(Field::read(""), None);
     }
@@ -3797,7 +3959,9 @@ mod tests {
      {
         let layout = read(DEFAULT_LAYOUT);
         let mut named = comfortably_numb();
+
         named.album_artist = None;
+
         assert_eq!(
             rendered(&layout, &named),
             "The Wall/2-06 Comfortably Numb.flac"
@@ -3805,7 +3969,9 @@ mod tests {
 
         let ending_in_a_year = read("{album}/{year}");
         let mut undated = comfortably_numb();
+
         undated.year = None;
+
         assert_eq!(ending_in_a_year.render(&undated, Naming::Anything), None);
         assert_eq!(
             rendered(&ending_in_a_year, &comfortably_numb()),
@@ -3821,9 +3987,11 @@ mod tests {
         assert_eq!(rendered(&layout, &named), "06 Comfortably Numb.flac");
 
         named.track = Some(112);
+
         assert_eq!(rendered(&layout, &named), "112 Comfortably Numb.flac");
 
         named.track = None;
+
         assert_eq!(rendered(&layout, &named), "Comfortably Numb.flac");
     }
 
@@ -3836,10 +4004,12 @@ mod tests {
 
         named.discs = 1;
         named.disc = NonZeroU32::new(1);
+
         assert_eq!(rendered(&layout, &named), "06 Comfortably Numb.flac");
 
         named.discs = 2;
         named.disc = None;
+
         assert_eq!(rendered(&layout, &named), "06 Comfortably Numb.flac");
     }
 
@@ -3858,7 +4028,9 @@ mod tests {
         );
 
         let mut unlabelled = named;
+
         unlabelled.extension = None;
+
         assert_eq!(rendered(&read("{title}"), &unlabelled), "Comfortably Numb");
     }
 
@@ -3866,9 +4038,11 @@ mod tests {
     fn a_long_name_cut_to_fit_keeps_the_extension_the_layout_names() {
         let chanted = "音".repeat(300);
         let mut named = comfortably_numb();
+
         named.title = &chanted;
 
         let file = rendered(&read("{title}.{ext}"), &named);
+
         assert!(file.ends_with(".flac"), "{file} lost its extension");
         assert!(file.len() <= COMPONENT_BYTES);
         assert_eq!(
@@ -3912,6 +4086,7 @@ mod tests {
     fn a_separator_in_a_name_is_replaced_and_a_control_character_is_dropped() {
         let layout = read("{artist}/{title}");
         let mut named = comfortably_numb();
+
         named.artist = Some("AC/DC");
         named.title = "Ba\u{7}ck in Bla\u{7f}ck\nAgain";
 
@@ -3923,6 +4098,7 @@ mod tests {
         let chanted = "音".repeat(300);
         let layout = read("{album}/{title}");
         let mut named = comfortably_numb();
+
         named.album = Some(&chanted);
         named.title = &chanted;
 
@@ -3937,6 +4113,7 @@ mod tests {
             .as_os_str()
             .to_str()
             .expect("a rendered component is the text it was rendered from");
+
         assert_eq!(folder.len(), 255);
         assert_eq!(folder.chars().count(), 85);
 
@@ -3946,13 +4123,16 @@ mod tests {
             .as_os_str()
             .to_str()
             .expect("a rendered component is the text it was rendered from");
+
         assert_eq!(file.len(), 254);
         assert_eq!(file.chars().count(), 88);
         assert!(file.ends_with(".flac"));
 
         let cut_on_a_space = format!("{}{}", "a".repeat(249), " bbbbbbbbbb");
+
         named.album = Some("The Wall");
         named.title = &cut_on_a_space;
+
         assert_eq!(
             rendered(&layout, &named),
             format!("The Wall/{}.flac", "a".repeat(249))
@@ -3963,6 +4143,7 @@ mod tests {
     fn the_names_derived_beside_a_longest_name_still_fit_a_component() {
         let folder = a_folder_of_its_own();
         let longest = format!("{}.flac", "a".repeat(COMPONENT_BYTES - ".flac".len()));
+
         let landing = folder.join(&longest);
         let library = Library::open_in_memory().expect("an in-memory library");
 
@@ -3971,9 +4152,11 @@ mod tests {
 
         for derived in [&staged, &parking] {
             let name = derived.file_name().expect("a name");
+
             assert!(name.len() <= COMPONENT_BYTES, "{derived:?}");
             assert_eq!(derived.parent(), landing.parent());
         }
+
         assert!(staged.to_string_lossy().ends_with(STAGED));
         assert!(parking.to_string_lossy().ends_with(".flac"));
         assert!(
@@ -3988,6 +4171,7 @@ mod tests {
         );
 
         let shorter = folder.join("01 Echoes.flac");
+
         assert_eq!(
             noted_staging(&library, &shorter).expect("a staging name"),
             folder.join(format!("01 Echoes.flac{STAGED}"))
@@ -4000,15 +4184,20 @@ mod tests {
     fn a_staging_name_beside_a_longest_name_of_multibyte_letters_is_cut_on_a_letter() {
         let folder = a_folder_of_its_own();
         let longest = format!("a{}.flac", "é".repeat(124));
+
         assert_eq!(longest.len(), COMPONENT_BYTES - 1);
+
         let landing = folder.join(&longest);
         let library = Library::open_in_memory().expect("an in-memory library");
 
         let staged = noted_staging(&library, &landing).expect("a staging name");
 
         let name = staged.file_name().expect("a name");
+
         assert!(name.len() <= COMPONENT_BYTES);
+
         let text = name.to_str().expect("a name made of whole letters");
+
         assert!(text.ends_with(STAGED));
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
@@ -4021,6 +4210,7 @@ mod tests {
 
         for nothing in ["...", "   ", "..", ".", " . "] {
             named.album = Some(nothing);
+
             assert_eq!(
                 rendered(&layout, &named),
                 "Comfortably Numb.flac",
@@ -4029,19 +4219,23 @@ mod tests {
         }
 
         named.album = Some("...And Justice for All");
+
         assert_eq!(
             rendered(&layout, &named),
             "And Justice for All/Comfortably Numb.flac"
         );
 
         named.title = "Alive.";
+
         assert_eq!(rendered(&layout, &named), "And Justice for All/Alive.flac");
 
         named.album = Some(".38 Special");
         named.title = ". . .Hold On Loosely";
+
         assert_eq!(rendered(&layout, &named), "38 Special/Hold On Loosely.flac");
 
         named.title = "..";
+
         assert_eq!(layout.render(&named, Naming::Anything), None);
     }
 
@@ -4093,6 +4287,7 @@ mod tests {
             .collect();
         let tracked = Rows::of(rows);
         let mut planner = Planner::new(layout, progress, &tracked);
+
         for row in rows {
             planner.knows(
                 &Filing {
@@ -4112,11 +4307,13 @@ mod tests {
 
     fn a_folder_of_its_own() -> PathBuf {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let folder = env::temp_dir().join(format!(
             "resonate-organise-{}-{}",
             std::process::id(),
             NEXT.fetch_add(1, Counting::Relaxed)
         ));
+
         fs::create_dir_all(&folder).expect("a writable temporary directory");
         folder
     }
@@ -4151,7 +4348,9 @@ mod tests {
     #[test]
     fn a_layout_that_names_no_destination_for_a_track_leaves_it_unidentified() {
         let mut row = row(1, &format!("{NOWHERE}/somewhere/whatever.wav"));
+
         row.year = None;
+
         let (plan, stats) = preview(slice::from_ref(&row), "{album}/{year}");
 
         assert!(plan.moves.is_empty());
@@ -4208,7 +4407,9 @@ mod tests {
         let layout = read(DEFAULT_LAYOUT);
         let discs = AHashMap::new();
         let tracked = Rows::of(rows);
+
         let mut planner = Planner::new(&layout, progress, &tracked);
+
         planner.claimed.blind = blind;
         for row in rows {
             planner.knows(
@@ -4231,15 +4432,18 @@ mod tests {
     fn a_planner_keeps_the_listings_of_the_folders_around_the_track_it_is_on_and_no_path_it_filed()
     {
         let folder = a_folder_of_its_own();
+
         for name in ["a", "b", "b/c", "d"] {
             fs::create_dir_all(folder.join(name)).expect("a folder");
         }
+
         let paths = ["a/one.wav", "b/c/two.wav", "b/three.wav", "d/four.wav"];
         let rows: Vec<TrackToFile> = paths
             .iter()
             .enumerate()
             .map(|(at, path)| {
                 let path = folder.join(path);
+
                 fs::write(&path, b"RIFF").expect("a file");
                 TrackToFile {
                     root: folder.clone(),
@@ -4252,12 +4456,15 @@ mod tests {
         let layout = read(DEFAULT_LAYOUT);
         let progress = OrganiseProgress::default();
         let tracked = Rows::of(&rows);
+
         let mut planner = Planner::new(&layout, &progress, &tracked);
+
         planner
             .plan(&rows[..3], |_| Ok(Vec::new()))
             .expect("a page of rows held in memory");
 
         let listed: AHashSet<&Path> = planner.beside.keys().map(PathBuf::as_path).collect();
+
         assert!(listed.contains(folder.join("b").as_path()));
         assert!(!listed.contains(folder.join("a").as_path()));
         assert!(!listed.contains(folder.join("b/c").as_path()));
@@ -4265,7 +4472,9 @@ mod tests {
         planner
             .plan(&rows[3..], |_| Ok(Vec::new()))
             .expect("a last page of rows held in memory");
+
         let listed: AHashSet<&Path> = planner.beside.keys().map(PathBuf::as_path).collect();
+
         assert_eq!(
             listed,
             AHashSet::from_iter([folder.as_path(), folder.join("d").as_path()])
@@ -4273,7 +4482,9 @@ mod tests {
         assert!(planner.filed.is_empty());
 
         let settled = planner.settle().expect("a plan of rows held in memory");
+
         assert_eq!(settled.moves.len(), 4);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -4281,7 +4492,9 @@ mod tests {
     fn two_destinations_differing_in_case_collide_in_the_preview_on_a_volume_blind_to_case() {
         let first = row(1, &format!("{NOWHERE}/a.wav"));
         let mut second = row(2, &format!("{NOWHERE}/b.wav"));
+
         second.title = "ECHOES".to_owned();
+
         let rows = [first, second];
 
         let blind = planned_beside(&rows, |_| true, &OrganiseProgress::default());
@@ -4304,6 +4517,7 @@ mod tests {
     #[test]
     fn a_folder_is_blind_to_case_when_its_flipped_name_is_the_same_file() {
         let folder = a_folder_of_its_own();
+
         fs::write(folder.join("Echoes.wav"), b"").expect("a file");
 
         let sensitive = !fs::exists(folder.join("eCHOES.WAV")).expect("the folder answers");
@@ -4327,6 +4541,7 @@ mod tests {
         if env::var_os(CASEFOLD_AT).is_some() {
             return false;
         }
+
         let volume = a_folder_of_its_own();
         let ran = std::process::Command::new("unshare")
             .args(["--user", "--map-root-user", "--mount", "sh", "-c"])
@@ -4336,6 +4551,7 @@ mod tests {
             .arg(env::current_exe().expect("the test binary"))
             .args([this_test, "--exact", "--nocapture"])
             .status();
+
         fs::remove_dir_all(&volume).expect("the mount point goes");
         match ran {
             Ok(status) if status.code() == Some(0) => true,
@@ -4348,7 +4564,9 @@ mod tests {
                     .args(["--user", "--map-root-user", "--mount", "true"])
                     .status()
                     .is_ok_and(|status| !status.success());
+
                 assert!(refused, "the run on a casefold volume failed: {status}");
+
                 eprintln!("skipped: no user namespace to mount a volume in");
                 true
             }
@@ -4361,8 +4579,11 @@ mod tests {
 
     fn rows_colliding_in_case_under(root: &Path) -> Vec<TrackToFile> {
         let mut first = row(1, &format!("{}/a.wav", root.display()));
+
         first.root = root.to_path_buf();
+
         let mut second = row(2, &format!("{}/b.wav", root.display()));
+
         second.root = root.to_path_buf();
         second.title = "ECHOES".to_owned();
         vec![first, second]
@@ -4375,9 +4596,11 @@ mod tests {
         ) {
             return;
         }
+
         let volume = PathBuf::from(env::var_os(CASEFOLD_AT).expect("the casefold volume"));
         let blind = volume.join("blind");
         let sensitive = volume.join("plain");
+
         for folder in [&blind, &sensitive] {
             fs::write(folder.join("Echoes.wav"), b"").expect("a file");
         }
@@ -4409,8 +4632,11 @@ mod tests {
     #[test]
     fn the_rows_cut_out_of_one_file_file_it_by_their_folder_and_leave_it_the_name_it_has() {
         let mut first = row(1, &format!("{NOWHERE}/rips/Meddle.wav"));
+
         first.title = "One of These Days".to_owned();
+
         let mut second = row(2, &format!("{NOWHERE}/rips/Meddle.wav"));
+
         second.title = "Echoes".to_owned();
         second.track = Some(6);
 
@@ -4429,6 +4655,7 @@ mod tests {
     fn the_rows_cut_out_of_one_file_that_name_two_folders_leave_it_unidentified() {
         let first = row(1, &format!("{NOWHERE}/rips/Meddle.wav"));
         let mut second = row(2, &format!("{NOWHERE}/rips/Meddle.wav"));
+
         second.album = Some("Obscured by Clouds".to_owned());
 
         let (plan, stats) = preview(&[first, second], DEFAULT_LAYOUT);
@@ -4442,8 +4669,11 @@ mod tests {
     #[test]
     fn a_folder_spelling_a_disc_names_the_disc_where_no_tag_does() {
         let mut first = row(1, &format!("{NOWHERE}/The Wall/CD1/a.wav"));
+
         first.title = "In the Flesh".to_owned();
+
         let mut second = row(2, &format!("{NOWHERE}/The Wall/CD2/b.wav"));
+
         second.title = "Hey You".to_owned();
 
         let (plan, _) = preview(&[first, second], DEFAULT_LAYOUT);
@@ -4463,13 +4693,16 @@ mod tests {
     #[test]
     fn a_destination_another_file_already_holds_collides_and_a_source_that_has_gone_fails() {
         let folder = a_folder_of_its_own();
+
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         fs::write(folder.join("Meddle/Echoes.wav"), b"held").expect("a writable temporary file");
         fs::write(folder.join("here.wav"), b"standing").expect("a writable temporary file");
 
         let mut standing = row(1, "");
+
         standing.root = folder.clone();
         standing.path = folder.join("here.wav");
+
         let (plan, stats) = preview(slice::from_ref(&standing), "{album}/{title}");
 
         assert!(plan.moves.is_empty());
@@ -4485,7 +4718,9 @@ mod tests {
         assert_eq!(stats.collided, 1);
 
         let mut gone = standing.clone();
+
         gone.path = folder.join("gone.wav");
+
         let (plan, stats) = preview(slice::from_ref(&gone), "{album}/{title}");
 
         assert!(plan.moves.is_empty());
@@ -4505,6 +4740,7 @@ mod tests {
     fn a_file_beside_a_track_that_shares_its_name_travels_with_it_and_empties_the_folder() {
         let folder = a_folder_of_its_own();
         let rips = folder.join("rips");
+
         fs::create_dir_all(&rips).expect("a writable temporary directory");
         fs::write(rips.join("Meddle.wav"), b"audio").expect("a writable temporary file");
         fs::write(rips.join("Meddle.cue"), b"sheet").expect("a writable temporary file");
@@ -4512,11 +4748,14 @@ mod tests {
         fs::write(rips.join("Meddlesome.txt"), b"another").expect("a writable temporary file");
 
         let mut track = row(1, "");
+
         track.root = folder.clone();
         track.path = rips.join("Meddle.wav");
+
         let (plan, _) = preview(slice::from_ref(&track), DEFAULT_LAYOUT);
 
         let landing = folder.join("Pink Floyd/Meddle");
+
         assert_eq!(plan.moves.len(), 1);
         assert_eq!(
             plan.moves[0].sidecars,
@@ -4537,7 +4776,9 @@ mod tests {
         );
 
         fs::remove_file(rips.join("Meddlesome.txt")).expect("the odd file goes away");
+
         let (plan, _) = preview(slice::from_ref(&track), DEFAULT_LAYOUT);
+
         assert_eq!(plan.folders, vec![rips.clone()]);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
@@ -4546,14 +4787,18 @@ mod tests {
     #[test]
     fn a_track_moving_onto_a_file_that_is_itself_moving_is_ordered_behind_it() {
         let folder = a_folder_of_its_own();
+
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         fs::write(folder.join("Meddle/Echoes.wav"), b"held").expect("a writable temporary file");
         fs::write(folder.join("here.wav"), b"standing").expect("a writable temporary file");
 
         let mut arriving = row(1, "");
+
         arriving.root = folder.clone();
         arriving.path = folder.join("here.wav");
+
         let mut vacating = row(2, "");
+
         vacating.root = folder.clone();
         vacating.path = folder.join("Meddle/Echoes.wav");
         vacating.title = "Fearless".to_owned();
@@ -4612,6 +4857,7 @@ mod tests {
 
     fn ordered(waits: &[Vec<usize>]) -> (Vec<usize>, Vec<Step>) {
         let mut state = vec![Step::Unwalked; waits.len()];
+
         let order = walked(waits, &mut state);
         (order, state)
     }
@@ -4638,6 +4884,7 @@ mod tests {
     #[test]
     fn a_move_waiting_on_one_the_walk_already_doomed_is_doomed_too() {
         let mut state = vec![Step::Doomed, Step::Unwalked, Step::Unwalked];
+
         let order = walked(&[vec![], vec![0], vec![]], &mut state);
 
         assert_eq!(order, vec![2]);
@@ -4647,6 +4894,7 @@ mod tests {
     #[test]
     fn two_tracks_moving_onto_each_other_trade_places_through_a_parked_name() {
         let folder = a_folder_of_its_own();
+
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         for named in ["Echoes", "Fearless"] {
             fs::write(folder.join(format!("Meddle/{named}.wav")), b"held")
@@ -4654,10 +4902,13 @@ mod tests {
         }
 
         let mut one = row(1, "");
+
         one.root = folder.clone();
         one.path = folder.join("Meddle/Echoes.wav");
         one.title = "Fearless".to_owned();
+
         let mut other = row(2, "");
+
         other.root = folder.clone();
         other.path = folder.join("Meddle/Fearless.wav");
         other.title = "Echoes".to_owned();
@@ -4666,12 +4917,14 @@ mod tests {
 
         assert!(plan.refused.is_empty(), "{:?}", plan.refused);
         assert_eq!(stats.collided, 0);
+
         let parked = folder.join(format!("Meddle/Echoes.{PARKED}-{}.wav", process::id()));
         let steps: Vec<(PathBuf, PathBuf)> = plan
             .moves
             .iter()
             .map(|planned| (planned.from.clone(), planned.to.clone()))
             .collect();
+
         assert_eq!(
             steps,
             vec![
@@ -4687,14 +4940,18 @@ mod tests {
     #[test]
     fn a_track_moving_onto_a_file_that_is_already_where_it_belongs_collides_with_it() {
         let folder = a_folder_of_its_own();
+
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         fs::write(folder.join("Meddle/Echoes.wav"), b"held").expect("a writable temporary file");
         fs::write(folder.join("here.wav"), b"standing").expect("a writable temporary file");
 
         let mut arriving = row(1, "");
+
         arriving.root = folder.clone();
         arriving.path = folder.join("here.wav");
+
         let mut standing = row(2, "");
+
         standing.root = folder.clone();
         standing.path = folder.join("Meddle/Echoes.wav");
 
@@ -4720,6 +4977,7 @@ mod tests {
     #[cfg(unix)]
     fn a_destination_that_is_the_track_itself_under_another_case_is_never_a_collision() {
         let folder = a_folder_of_its_own();
+
         fs::create_dir_all(folder.join("meddle")).expect("a writable temporary directory");
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         fs::write(folder.join("meddle/echoes.wav"), b"held").expect("a writable temporary file");
@@ -4730,6 +4988,7 @@ mod tests {
         ] {
             let named_twice =
                 fs::hard_link(folder.join(spelled), folder.join(as_the_layout_spells_it));
+
             assert!(
                 named_twice
                     .as_ref()
@@ -4740,9 +4999,12 @@ mod tests {
         }
 
         let mut echoes = row(1, "");
+
         echoes.root = folder.clone();
         echoes.path = folder.join("meddle/echoes.wav");
+
         let mut time = row(2, "");
+
         time.root = folder.clone();
         time.path = folder.join("meddle/Time.wav");
         time.title = "Time".to_owned();
@@ -4772,6 +5034,7 @@ mod tests {
             companions: Vec::new(),
             sidecars: Vec::new(),
         };
+
         assert_eq!(standing(&onto_itself), None);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
@@ -4821,11 +5084,13 @@ mod tests {
         ) {
             return;
         }
+
         let blind =
             PathBuf::from(env::var_os(CASEFOLD_AT).expect("the casefold volume")).join("blind");
         let spelled = blind.join("meddle/echoes.wav");
         let filed = blind.join("Meddle/Echoes.wav");
         let downloaded = blind.join("downloads/echoes.wav");
+
         fs::create_dir_all(blind.join("meddle")).expect("a folder on the volume");
         fs::create_dir_all(blind.join("downloads")).expect("a folder on the volume");
         fs::write(&spelled, b"held").expect("a file on the volume");
@@ -4849,6 +5114,7 @@ mod tests {
         let filed = folder.join("Meddle/02 Echoes.wav");
         let downloaded = folder.join("downloads/echoes.wav");
         let copied = folder.join("downloads/copy.wav");
+
         fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
         fs::create_dir_all(folder.join("downloads")).expect("a writable temporary directory");
         fs::write(&filed, b"held").expect("a writable temporary file");
@@ -4867,12 +5133,15 @@ mod tests {
         let folder = a_folder_of_its_own();
         let from = folder.join("old.wav");
         let to = folder.join("new.wav");
+
         fs::write(&from, b"held").expect("a writable temporary file");
         fs::hard_link(&from, &to).expect("a second name for a temporary file");
+
         let library = Library::open_in_memory().expect("a catalog in memory");
 
         let landed = landed_onto(&library, &from, &to).expect("the track lands");
         let linked = landed.how == Landing::Linked;
+
         left_behind(&[landed]);
 
         assert!(linked, "a second name of the same file was renamed onto");
@@ -4887,8 +5156,10 @@ mod tests {
         let folder = a_folder_of_its_own();
         let from = folder.join("moving.wav");
         let to = folder.join("appeared.wav");
+
         fs::write(&from, b"moving").expect("a writable temporary file");
         fs::write(&to, b"appeared").expect("a writable temporary file");
+
         let library = Library::open_in_memory().expect("a catalog in memory");
 
         let refused = landed_onto(&library, &from, &to);
@@ -4907,19 +5178,23 @@ mod tests {
     fn a_preview_names_the_folders_it_would_empty_deepest_first() {
         let folder = a_folder_of_its_own();
         let set = folder.join("The Wall");
+
         for disc in ["CD1", "CD2"] {
             fs::create_dir_all(set.join(disc)).expect("a writable temporary directory");
             fs::write(set.join(disc).join("a.wav"), b"audio").expect("a writable temporary file");
         }
 
         let mut rows = Vec::new();
+
         for (id, disc) in ["CD1", "CD2"].into_iter().enumerate() {
             let mut track = row(id as u64 + 1, "");
+
             track.root = folder.clone();
             track.path = set.join(disc).join("a.wav");
             track.title = format!("Track {disc}");
             rows.push(track);
         }
+
         let (plan, _) = preview(&rows, DEFAULT_LAYOUT);
 
         assert_eq!(plan.moves.len(), 2);
@@ -4934,12 +5209,14 @@ mod tests {
         let library = Library::open_in_memory().expect("a catalog");
         let sheet = folder.join("Meddle.cue");
         let staged = folder.join(format!("Meddle.cue{STAGED}"));
+
         fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
 
         let living = Held::made(&staged).expect("a stage another run holds");
         let refused = staged_over(&library, &sheet, b"FILE \"Meddle.wav\" WAVE\n");
         let held_through = staged.exists();
         let unchanged = fs::read(&sheet).expect("the sheet");
+
         drop(living);
 
         staged_over(&library, &sheet, b"FILE \"Meddle.wav\" WAVE\n")
@@ -4974,6 +5251,7 @@ mod tests {
         let still_writing = folder.join(format!("02 Fearless.wav{STAGED}"));
         let not_ours = folder.join("03 San Tropez.wav");
         let sandboxed = folder.join(format!("04 One of These Days.wav{STAGED}"));
+
         for (left, bytes) in [
             (&killed, b"half a file".as_slice()),
             (&still_writing, b"a copy under way"),
@@ -4984,12 +5262,15 @@ mod tests {
         }
         left_long_ago(&killed);
         left_long_ago(&not_ours);
+
         let held = Held::made(&sandboxed).expect("a copy another namespace holds");
+
         library.staging(&sandboxed).expect("it is noted");
 
         let init = 1_u32;
         let gone = u32::MAX;
         let aside = Connection::open(&catalog).expect("the same catalog");
+
         for (left, pid) in [
             (&killed, gone),
             (&still_writing, init),
@@ -5016,13 +5297,16 @@ mod tests {
             "a run holding its staging file in another namespace lost it"
         );
         assert!(not_ours.exists(), "a file not named as staged was taken");
+
         let noted: Vec<PathBuf> = library
             .staged_writes()
             .expect("the journal reads")
             .into_iter()
             .map(|write| write.path)
             .collect();
+
         assert_eq!(noted, vec![still_writing, sandboxed]);
+
         drop(held);
         drop((aside, library));
 
@@ -5037,6 +5321,7 @@ mod tests {
 
         let killed = folder.join(format!(".01 Echoes.flac.7-0.{}", filed::STAGED_SUFFIX));
         let this_process = folder.join(format!(".02 Fearless.flac.8-0.{}", filed::STAGED_SUFFIX));
+
         for left in [&killed, &this_process] {
             fs::write(left, b"part of a stream").expect("a writable folder");
             library.staging(left).expect("it is noted");
@@ -5057,6 +5342,7 @@ mod tests {
             this_process.exists(),
             "a delivery this process is still writing lost its staging file"
         );
+
         drop(library);
 
         fs::remove_dir_all(&folder).expect("the temporary folder goes away");
@@ -5067,6 +5353,7 @@ mod tests {
         let folder = a_folder_of_its_own();
         let library = Library::open(&folder.join("library.db")).expect("a catalog");
         let sheet = folder.join("Meddle.cue");
+
         fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
 
         staged_over(&library, &sheet, b"FILE \"new.wav\" WAVE\n").expect("it is rewritten");
@@ -5076,7 +5363,9 @@ mod tests {
             b"FILE \"new.wav\" WAVE\n"
         );
         assert!(library.staged_writes().expect("it reads").is_empty());
+
         drop(library);
+
         assert_eq!(
             fs::read_dir(&folder)
                 .expect("the folder")
@@ -5097,8 +5386,10 @@ mod tests {
         let folder = a_folder_of_its_own();
         let library = Library::open(&folder.join("library.db")).expect("a catalog");
         let sheet = folder.join("Meddle.cue");
+
         fs::write(&sheet, b"FILE \"old.wav\" WAVE\n").expect("a sheet");
         fs::set_permissions(&sheet, fs::Permissions::from_mode(0o640)).expect("a mode");
+
         let attributed =
             rustix::fs::setxattr(&sheet, NAME, b"yes", rustix::fs::XattrFlags::empty()).is_ok();
 
@@ -5108,10 +5399,13 @@ mod tests {
             fs::metadata(&sheet).expect("the sheet").mode() & 0o777,
             0o640
         );
+
         if attributed {
             let mut held = [0_u8; 8];
+
             let read = rustix::fs::getxattr(&sheet, NAME, &mut held[..])
                 .expect("the attribute is still there");
+
             assert_eq!(held.get(..read), Some(b"yes".as_slice()));
         }
 
@@ -5126,8 +5420,10 @@ mod tests {
         let folder = a_folder_of_its_own();
         let from = folder.join("one.flac");
         let to = folder.join("two.flac");
+
         fs::write(&from, b"fLaC").expect("a file");
         fs::set_permissions(&from, fs::Permissions::from_mode(0o640)).expect("a mode");
+
         let attributed =
             rustix::fs::setxattr(&from, NAME, b"yes", rustix::fs::XattrFlags::empty()).is_ok();
         let stood = fs::metadata(&from)
@@ -5138,12 +5434,16 @@ mod tests {
         let held = copied_whole(&from, &to).expect("the copy lands");
 
         let copy = fs::metadata(&to).expect("the copy");
+
         assert_eq!(copy.mode() & 0o777, 0o640);
         assert_eq!(copy.modified().expect("a time"), stood);
+
         if attributed {
             let mut kept = [0_u8; 8];
+
             let read = rustix::fs::getxattr(&to, NAME, &mut kept[..])
                 .expect("the attribute is on the copy");
+
             assert_eq!(kept.get(..read), Some(b"yes".as_slice()));
         }
 
@@ -5156,6 +5456,7 @@ mod tests {
         let folder = a_folder_of_its_own();
         let inbox = folder.join("Inbox");
         let archive = folder.join("Archive");
+
         let moved = Move {
             from: inbox.join("echoes.flac"),
             to: archive.join("Pink Floyd/Meddle/echoes.flac"),
@@ -5200,6 +5501,7 @@ mod tests {
         let folder = a_folder_of_its_own();
         let from = folder.join("arriving.flac");
         let to = folder.join("copy.flac");
+
         mknodat(
             CWD,
             &from,
@@ -5217,18 +5519,27 @@ mod tests {
             .write(true)
             .open(&from)
             .expect("the pipe opened");
+
         arriving.write_all(b"fLaC").expect("the first bytes");
+
         let deadline = Instant::now() + PATIENCE;
+
         while fs::metadata(&to).map_or(true, |copy| copy.len() < 4) {
             assert!(Instant::now() < deadline, "the first bytes never arrived");
+
             thread::sleep(POLL_EVERY);
         }
+
         let while_arriving = fs::metadata(&to).expect("the copy").mode() & 0o777;
+
         drop(arriving);
+
         let copied = copier.join().expect("the copier finishes");
 
         assert_eq!(while_arriving, OURS_ALONE);
+
         copied.expect("the copy lands");
+
         assert_eq!(
             fs::metadata(&to).expect("the copy").mode() & 0o777,
             SHARED_WITH_THE_GROUP
@@ -5242,6 +5553,7 @@ mod tests {
         let folder = a_folder_of_its_own();
         let one = folder.join("rip/one.wav");
         let two = folder.join("rip/two.wav");
+
         fs::create_dir_all(folder.join("rip")).expect("a folder for the rip");
         fs::write(&one, b"RIFF").expect("a file");
         fs::write(&two, b"RIFF").expect("a file");
@@ -5250,6 +5562,7 @@ mod tests {
             b"FILE \"one.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"two.wav\" WAVE\n  TRACK 02 AUDIO\n    INDEX 01 00:00:00\n",
         )
         .expect("a sheet");
+
         let rooted = |id, path: &Path, track, title: &str| TrackToFile {
             root: folder.clone(),
             track: Some(track),
@@ -5266,8 +5579,10 @@ mod tests {
 
         let progress = OrganiseProgress::default();
         let tracked = Rows::of(&rows);
+
         let mut planner = Planner::new(&layout, &progress, &tracked);
         let discs = AHashMap::new();
+
         for row in &rows {
             planner.knows(
                 &Filing {
@@ -5279,6 +5594,7 @@ mod tests {
                 &discs,
             );
         }
+
         let rest = |files: &[PathBuf]| {
             Ok(rows
                 .iter()
@@ -5286,23 +5602,30 @@ mod tests {
                 .cloned()
                 .collect())
         };
+
         planner.plan(&rows[..1], rest).expect("a first page");
         planner.plan(&rows[1..], rest).expect("a second page");
+
         let paged = planner.settle().expect("a plan of rows held in memory");
 
         assert_eq!(whole.moves.len(), 1, "{whole:?}");
         assert_eq!(whole.moves[0].companions.len(), 1, "{whole:?}");
         assert_eq!(paged.moves, whole.moves);
         assert_eq!(paged.refused, whole.refused);
+
         let _ = fs::remove_dir_all(folder);
     }
 
     #[test]
     fn a_cancel_is_heard_between_the_moves_of_a_batch() {
         let folder = env::temp_dir().join(format!("resonate-cancelled-{}", std::process::id()));
+
         fs::create_dir_all(&folder).expect("a writable temporary folder");
+
         let from = folder.join("a.wav");
+
         fs::write(&from, b"audio").expect("a writable file");
+
         let batch = [Move {
             from: from.clone(),
             to: folder.join("b.wav"),
@@ -5312,6 +5635,7 @@ mod tests {
         }];
         let progress = OrganiseProgress::default();
         let library = Library::open_in_memory().expect("an in-memory catalog");
+
         progress.cancel();
 
         let applied = batch_moved(&library, &batch, &progress, Noting::Not);
@@ -5319,6 +5643,7 @@ mod tests {
         assert!(applied.landed.is_empty());
         assert!(applied.refused.is_empty());
         assert!(from.exists(), "a move began after the run was cancelled");
+
         let _ = fs::remove_dir_all(folder);
     }
 }

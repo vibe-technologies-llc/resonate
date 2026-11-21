@@ -69,6 +69,7 @@ fn rewrite_a_matroska(bytes: &[u8]) {
         return;
     };
     let mut landed = Cursor::new(bytes.to_vec());
+
     rewrite
         .laid_on(&mut landed)
         .expect("a rewrite lands on the file it was read from");
@@ -84,6 +85,7 @@ fn attach_to_a_matroska(tagged: &[u8]) {
     let Ok(rewrite) = matroska_tags::attached(&mut Cursor::new(tagged), &attached) else {
         return;
     };
+
     rewrite
         .laid_on(&mut Cursor::new(tagged.to_vec()))
         .expect("a picture lands on the file its tags were just laid on");
@@ -92,6 +94,7 @@ fn attach_to_a_matroska(tagged: &[u8]) {
 pub fn read_a_whole_copy(bytes: &[u8]) {
     let scratch = Scratch::holding("whole", bytes);
     let copy = fs::File::open(&scratch.0).expect("the scratch file opens");
+
     journal::read_a_whole_copy(&copy);
 }
 
@@ -100,14 +103,18 @@ pub fn rate_a_file(bytes: &[u8]) {
         return;
     };
     let extension = RATED_EXTENSIONS[usize::from(kind) % RATED_EXTENSIONS.len()];
+
     let scratch = Scratch::holding(extension, file);
     let opened = fs::File::open(&scratch.0).expect("the scratch file opens");
+
     let _ = writing::rating_in(opened, &MediaLocation::local(scratch.0.clone()));
 }
 
 pub fn read_an_undo_journal(bytes: &[u8]) {
     let mut sealed = bytes.to_vec();
+
     sealed.extend_from_slice(&journal::hashed(bytes).to_le_bytes());
+
     let _ = journal::decoded(journal::Journalled::Beside(Path::new("/music")), &sealed);
     let _ = journal::decoded(journal::Journalled::Away, &sealed);
 }
@@ -117,6 +124,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn holding(extension: &str, bytes: &[u8]) -> Self {
         let path = env::temp_dir().join(format!("resonate-fuzz-{}.{extension}", process::id()));
+
         fs::write(&path, bytes).expect("a scratch file");
         Self(path)
     }
@@ -132,6 +140,7 @@ pub fn edit_through_an_overlay(bytes: &[u8]) {
     let Some((base_length, operations)) = bytes.split_first() else {
         return;
     };
+
     let (base, operations) =
         operations.split_at((usize::from(*base_length) * 64).min(operations.len()));
     let mut model = base.to_vec();
@@ -147,6 +156,7 @@ pub fn edit_through_an_overlay(bytes: &[u8]) {
 
     for operation in operations.chunks_exact(OPERATION_BYTES) {
         let [kind, high, low, extra] = [operation[0], operation[1], operation[2], operation[3]];
+
         let offset = (u64::from(u16::from_be_bytes([high, low])) * 2).min(LARGEST_OVERLAID_OFFSET);
         match kind % 5 {
             0 => {
@@ -154,11 +164,14 @@ pub fn edit_through_an_overlay(bytes: &[u8]) {
             }
             1 => {
                 let written = vec![extra; usize::from(extra) * 32];
+
                 if written.is_empty() {
                     continue;
                 }
                 overlay.write_all(&written).expect("a write");
+
                 let start = at as usize;
+
                 if model.len() < start + written.len() {
                     model.resize(start + written.len(), 0);
                 }
@@ -167,9 +180,12 @@ pub fn edit_through_an_overlay(bytes: &[u8]) {
             }
             2 => {
                 let mut read = vec![0; usize::from(extra) * 16];
+
                 let count = overlay.read(&mut read).expect("a read");
                 let start = (at as usize).min(model.len());
+
                 assert_eq!(&read[..count], &model[start..start + count]);
+
                 at += count as u64;
             }
             3 => {

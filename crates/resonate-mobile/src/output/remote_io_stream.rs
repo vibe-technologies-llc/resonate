@@ -50,8 +50,11 @@ fn reshaper(
     let handing = Mutex::new(handing);
     Box::new(move |request, source| {
         let mut handing = handing.lock();
+
         handing.let_go_of_the_spent();
+
         let rate = routing.rate();
+
         if request.spec != shape_of(rate) {
             return Reshaped::Refused {
                 source,
@@ -64,7 +67,9 @@ fn reshaper(
                 because: Unreshapable::StillHandingOver,
             };
         }
+
         let (answer, answered) = bounded(1);
+
         if orders.send(Order::Reshape { rate, answer }).is_err() {
             return Reshaped::Refused {
                 source,
@@ -109,15 +114,18 @@ where
 {
     let rate = routing.rate();
     let spec = shape_of(rate);
+
     if request.spec != spec {
         return Err(Error::FormatRefused);
     }
+
     let (commands, asked) = unbounded();
     let (announced, events) = unbounded();
     let (ready, started) = bounded(1);
     let (disposed, closed) = bounded(1);
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let empty = Arc::new(AtomicBool::new(false));
+
     let (rendering, handing) = Rendering::fed_by(
         source,
         Arc::clone(&empty),
@@ -126,7 +134,9 @@ where
     );
     let thread_clock = Arc::clone(&clock);
     let routing = Arc::clone(routing);
+
     let reshape = reshaper(Arc::clone(&routing), commands.clone(), handing, within);
+
     thread::Builder::new()
         .name("resonate-mobile-output".into())
         .spawn(move || {
@@ -135,6 +145,7 @@ where
                 Ok(hardware) => hardware,
                 Err(refused) => {
                     let _ = ready.send(Err(refused));
+
                     return;
                 }
             };
@@ -143,6 +154,7 @@ where
                 words: Words::Whole,
             });
             let _ = ready.send(Ok(()));
+
             serve(
                 &hardware,
                 rate,
@@ -153,6 +165,7 @@ where
                 &announced,
             );
             drop(hardware);
+
             let _ = disposed.send(());
         })
         .map_err(|source| Error::Backend {
@@ -174,6 +187,7 @@ where
         clock,
         Box::new(move |command| {
             let closing = matches!(command, StreamCommand::Close);
+
             commands
                 .send(Order::Command(command))
                 .map_err(|_| Error::Disconnected)?;
@@ -199,6 +213,7 @@ fn serve<H: Hardware>(
     announced: &Sender<StreamEvent>,
 ) {
     let mut rate = rate;
+
     let mut tick = tick_of(rate);
     let mut state = StreamState::Paused;
     let mut drain = Drain::new();
@@ -212,11 +227,15 @@ fn serve<H: Hardware>(
             },
             rate,
         );
+
         let latency = clock.latency().to_duration(rate);
+
         if drain.settled(empty.load(Ordering::Acquire), latency, Instant::now()) {
             hardware.stop();
+
             let _ = announced.send(StreamEvent::Drained);
         }
+
         let wait = if drain.is_requested() {
             COMMAND_POLL
         } else {
@@ -235,14 +254,17 @@ fn serve<H: Hardware>(
                 answer,
             })) => {
                 drain = Drain::new();
+
                 let status = if wanted == rate {
                     0
                 } else {
                     hardware.reformat(wanted)
                 };
+
                 if status == 0 && wanted != rate {
                     rate = wanted;
                     tick = tick_of(rate);
+
                     let _ = announced.send(StreamEvent::FormatChanged {
                         spec: shape_of(rate),
                         words: Words::Whole,
@@ -252,9 +274,11 @@ fn serve<H: Hardware>(
                             from: state,
                             to: StreamState::Paused,
                         });
+
                         state = StreamState::Paused;
                     }
                 }
+
                 let _ = answer.send(status);
             }
             Some(Ok(Order::Command(StreamCommand::SetActive(active)))) => {
@@ -263,6 +287,7 @@ fn serve<H: Hardware>(
                 } else {
                     hardware.stop()
                 };
+
                 if status != 0 {
                     let op = if active {
                         Operation::Start
@@ -274,9 +299,11 @@ fn serve<H: Hardware>(
                         op,
                         status,
                     });
+
                     state = StreamState::Failed;
                     continue;
                 }
+
                 let next = if active {
                     StreamState::Streaming
                 } else {
@@ -286,6 +313,7 @@ fn serve<H: Hardware>(
                     from: state,
                     to: next,
                 });
+
                 state = next;
             }
             None => {}
@@ -399,6 +427,7 @@ mod tests {
         let calls = Arc::new(Mutex::new(Vec::new()));
         let disposed = Arc::new(AtomicUsize::new(0));
         let (flag, flagged) = bounded(1);
+
         let stream = launch(&routing, &request(&routing), Box::new(Silent), WAIT, {
             let calls = Arc::clone(&calls);
             let disposed = Arc::clone(&disposed);
@@ -453,6 +482,7 @@ mod tests {
                 words: Words::Whole,
             }
         );
+
         quiet(&opened);
     }
 
@@ -460,6 +490,7 @@ mod tests {
     fn a_request_for_another_format_is_refused_before_anything_is_made() {
         let routing = Arc::new(Routing::new());
         let mut asked = request(&routing);
+
         asked.spec = StreamSpec::new(
             SampleRate::HZ_44100,
             ChannelLayout::Stereo,
@@ -534,10 +565,13 @@ mod tests {
                 ref source
             }) if source.kind() == io::ErrorKind::TimedOut
         ));
+
         let until = Instant::now() + WAIT;
+
         while disposed.load(Ordering::Acquire) == 0 && Instant::now() < until {
             thread::sleep(Duration::from_millis(10));
         }
+
         assert_eq!(disposed.load(Ordering::Acquire), 1);
     }
 
@@ -561,9 +595,11 @@ mod tests {
     #[test]
     fn activating_starts_the_unit_and_deactivating_stops_it_each_announced_once() {
         let opened = opened();
+
         event(&opened);
 
         opened.stream.set_active(true).expect("a command");
+
         assert_eq!(
             event(&opened),
             StreamEvent::StateChanged {
@@ -571,7 +607,9 @@ mod tests {
                 to: StreamState::Streaming
             }
         );
+
         opened.stream.set_active(false).expect("a command");
+
         assert_eq!(
             event(&opened),
             StreamEvent::StateChanged {
@@ -581,15 +619,18 @@ mod tests {
         );
 
         assert_eq!(*opened.calls.lock(), [Call::Start, Call::Stop]);
+
         quiet(&opened);
     }
 
     #[test]
     fn a_refused_start_is_told_with_its_status_and_leaves_the_stream_failed() {
         let opened = opened_refusing(Some((Call::Start, 560_557_684)));
+
         event(&opened);
 
         opened.stream.set_active(true).expect("a command");
+
         assert_eq!(
             event(&opened),
             StreamEvent::Refused {
@@ -598,6 +639,7 @@ mod tests {
                 status: 560_557_684
             }
         );
+
         opened.stream.set_active(false).expect("a command");
 
         assert_eq!(
@@ -612,6 +654,7 @@ mod tests {
     #[test]
     fn a_refused_stop_is_told_as_a_refused_pause() {
         let opened = opened_refusing(Some((Call::Stop, -66_635)));
+
         event(&opened);
         opened.stream.set_active(true).expect("a command");
         event(&opened);
@@ -631,17 +674,20 @@ mod tests {
     #[test]
     fn a_drain_over_a_source_with_something_left_is_not_settled() {
         let opened = opened();
+
         event(&opened);
 
         opened.stream.drain().expect("a command");
 
         quiet(&opened);
+
         assert_eq!(*opened.calls.lock(), []);
     }
 
     #[test]
     fn a_drain_settles_once_the_source_is_empty_stopping_the_unit_and_saying_so_once() {
         let opened = opened();
+
         event(&opened);
         opened.empty.store(true, Ordering::Release);
 
@@ -649,15 +695,18 @@ mod tests {
 
         assert_eq!(event(&opened), StreamEvent::Drained);
         assert_eq!(*opened.calls.lock(), [Call::Stop]);
+
         quiet(&opened);
     }
 
     #[test]
     fn a_drain_waits_the_routes_latency_after_the_source_empties() {
         let opened = opened();
+
         event(&opened);
         opened.routing.route_changed(48_000, 400.0);
         opened.empty.store(true, Ordering::Release);
+
         let asked_at = Instant::now();
 
         opened.stream.drain().expect("a command");
@@ -673,22 +722,28 @@ mod tests {
     #[test]
     fn a_moved_latency_reaches_the_streams_clock_without_a_command() {
         let opened = opened();
+
         event(&opened);
+
         assert_eq!(opened.stream.latency(), Frames(0));
 
         opened.routing.route_changed(48_000, 10.0);
 
         let until = Instant::now() + WAIT;
+
         while opened.stream.latency() == Frames(0) && Instant::now() < until {
             thread::sleep(Duration::from_millis(5));
         }
+
         assert_eq!(opened.stream.latency(), Frames(480));
     }
 
     #[test]
     fn closing_returns_only_once_the_unit_is_disposed() {
         let opened = opened();
+
         event(&opened);
+
         let disposed = Arc::clone(&opened.disposed);
 
         opened.stream.close().expect("a closed stream");
@@ -699,20 +754,25 @@ mod tests {
     #[test]
     fn a_stream_dropped_without_closing_still_has_its_unit_disposed() {
         let opened = opened();
+
         event(&opened);
+
         let disposed = Arc::clone(&opened.disposed);
 
         drop(opened.stream);
 
         let until = Instant::now() + WAIT;
+
         while disposed.load(Ordering::Acquire) == 0 && Instant::now() < until {
             thread::sleep(Duration::from_millis(10));
         }
+
         assert_eq!(disposed.load(Ordering::Acquire), 1);
     }
 
     fn mark_heard(opened: &Opened) -> u8 {
         let mut bytes = [0_u8; 4];
+
         opened.rendering.lock().fill(&mut bytes, None);
         bytes[0]
     }
@@ -727,6 +787,7 @@ mod tests {
     #[test]
     fn a_stream_asked_for_the_shape_it_holds_takes_the_new_source_and_the_unit_is_left_alone() {
         let opened = opened();
+
         event(&opened);
 
         let reshaped = opened
@@ -736,37 +797,45 @@ mod tests {
         assert!(matches!(reshaped, Reshaped::Kept));
         assert_eq!(mark_heard(&opened), 7);
         assert_eq!(*opened.calls.lock(), []);
+
         quiet(&opened);
     }
 
     #[test]
     fn a_drain_asked_before_a_reshape_is_called_off_so_the_new_source_is_not_drained() {
         let opened = opened();
+
         event(&opened);
         opened.routing.route_changed(48_000, 100.0);
         opened.empty.store(true, Ordering::Release);
 
         opened.stream.drain().expect("a command");
+
         let reshaped = opened
             .stream
             .reshape(&request(&opened.routing), Box::new(Marked(7)));
 
         assert!(matches!(reshaped, Reshaped::Kept));
+
         quiet(&opened);
+
         assert_eq!(*opened.calls.lock(), []);
     }
 
     #[test]
     fn a_stream_that_drained_is_reshaped_and_started_again_rather_than_reopened() {
         let opened = opened();
+
         event(&opened);
         opened.empty.store(true, Ordering::Release);
         opened.stream.drain().expect("a command");
+
         assert_eq!(event(&opened), StreamEvent::Drained);
 
         let reshaped = opened
             .stream
             .reshape(&request(&opened.routing), Box::new(Marked(7)));
+
         opened.stream.set_active(true).expect("a command");
 
         assert!(matches!(reshaped, Reshaped::Kept));
@@ -784,6 +853,7 @@ mod tests {
     #[test]
     fn a_rate_the_route_took_since_the_unit_opened_reformats_the_unit_and_says_so() {
         let opened = opened();
+
         event(&opened);
         opened.stream.set_active(true).expect("a command");
         event(&opened);
@@ -819,6 +889,7 @@ mod tests {
         assert_eq!(mark_heard(&opened), 7);
 
         opened.stream.set_active(true).expect("a command");
+
         assert_eq!(
             event(&opened),
             StreamEvent::StateChanged {
@@ -831,15 +902,19 @@ mod tests {
     #[test]
     fn a_rate_already_held_is_not_reformatted_again() {
         let opened = opened();
+
         event(&opened);
         opened.routing.route_changed(44_100, 0.0);
+
         let again = request(&opened.routing);
 
         assert!(matches!(
             opened.stream.reshape(&again, Box::new(Marked(7))),
             Reshaped::Kept
         ));
+
         event(&opened);
+
         assert_eq!(mark_heard(&opened), 7);
         assert!(matches!(
             opened.stream.reshape(&again, Box::new(Marked(8))),
@@ -847,6 +922,7 @@ mod tests {
         ));
 
         quiet(&opened);
+
         assert_eq!(*opened.calls.lock(), [Call::Reformat(SampleRate::HZ_44100)]);
         assert_eq!(mark_heard(&opened), 8);
     }
@@ -854,6 +930,7 @@ mod tests {
     #[test]
     fn a_reformat_the_system_refuses_hands_the_source_back_and_announces_nothing() {
         let opened = opened_refusing(Some((Call::Reformat(SampleRate::HZ_44100), -50)));
+
         event(&opened);
         opened.routing.route_changed(44_100, 0.0);
 
@@ -869,16 +946,21 @@ mod tests {
             panic!("a unit the system would not reformat was kept");
         };
         let mut bytes = [0_u8; 2];
+
         source.fill(&mut bytes);
+
         assert_eq!(because, Unreshapable::FormatUnwritten);
         assert_eq!(bytes, [7, 7]);
+
         quiet(&opened);
     }
 
     #[test]
     fn a_shape_other_than_the_routes_is_refused_before_the_unit_is_touched() {
         let opened = opened();
+
         event(&opened);
+
         let asked = request(&opened.routing);
 
         for spec in [
@@ -905,10 +987,12 @@ mod tests {
                 },
                 Box::new(Marked(7)),
             );
+
             assert_eq!(refused_for(reshaped), Some(Unreshapable::AnotherFormat));
         }
 
         assert_eq!(*opened.calls.lock(), []);
+
         quiet(&opened);
     }
 }

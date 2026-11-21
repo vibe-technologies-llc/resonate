@@ -26,6 +26,7 @@ use crate::{
 impl RootView {
     pub(super) fn let_the_control_go(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.disarm(cx);
+
         let let_go = self.controls.lets_go(window, cx) | self.standing_controls.lets_go(window, cx);
         let remotely_held = self
             .settings_pane
@@ -33,9 +34,11 @@ impl RootView {
             .remotely
             .controls
             .holds_the_caret(window);
+
         if remotely_held {
             window.blur(cx);
         }
+
         let let_go = let_go | remotely_held;
         if let_go {
             cx.notify();
@@ -46,6 +49,7 @@ impl RootView {
         let library = self.library.read(cx);
         let shown = &self.settings_pane.read(cx).shown;
         let mut stamp = AHasher::default();
+
         self.pane.hash(&mut stamp);
         shown.category.hash(&mut stamp);
         shown.page.hash(&mut stamp);
@@ -61,6 +65,7 @@ impl RootView {
                 .borrow()
                 .base_handle
                 .offset();
+
             f32::from(offset.y).to_bits().hash(&mut stamp);
         }
         stamp.finish()
@@ -72,6 +77,7 @@ impl RootView {
             laid_out: self.laid_out(cx),
         };
         let moved = under.moved_since(self.under_the_pointer);
+
         self.under_the_pointer = Some(under);
         moved
     }
@@ -108,12 +114,14 @@ impl RootView {
             |_, _, _| (),
             move |_, (), window, _| {
                 let left = watching.clone();
+
                 window.on_mouse_event(move |_: &MouseExitEvent, _, window, cx| {
                     pointed::let_go(window);
                     left.update(cx, |this, cx| this.pointer_moved_to(Pointer::Gone, cx));
                 });
 
                 let came_back = watching.clone();
+
                 window.on_mouse_event(move |_: &MouseMoveEvent, _, _, cx| {
                     came_back.update(cx, |this, cx| {
                         this.pointer_moved_to(Pointer::InTheWindow, cx)
@@ -121,6 +129,7 @@ impl RootView {
                 });
 
                 let pressed = watching.clone();
+
                 window.on_mouse_event(move |_: &MouseDownEvent, phase, _, cx| {
                     if !phase.bubble() {
                         return;
@@ -155,6 +164,7 @@ impl RootView {
 
     pub(super) fn pointer_moved_to(&mut self, pointer: Pointer, cx: &mut Context<Self>) {
         let inside = pointer == Pointer::InTheWindow;
+
         if self.pointer_inside == inside {
             return;
         }
@@ -231,6 +241,7 @@ impl RootView {
         let landed = self
             .library
             .update(cx, |library, cx| library.land_artist_found(found, cx));
+
         cx.spawn(async move |this, cx| {
             let Some(artist) = landed.await else {
                 return;
@@ -246,6 +257,7 @@ impl RootView {
 
     pub(crate) fn opened(&mut self, selection: Selection, cx: &mut Context<Self>) {
         let leaving = self.here_now(cx);
+
         if leaving.selection == selection && leaving.pane == Pane::Tracks {
             return;
         }

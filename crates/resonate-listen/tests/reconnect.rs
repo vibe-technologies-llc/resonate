@@ -78,6 +78,7 @@ impl Hosted {
         for stale in [SOCKET, "pipewire-0.lock"] {
             let _ = fs::remove_file(folder.join(stale));
         }
+
         let daemon = Command::new("pipewire")
             .arg("-c")
             .arg(folder.join("hosted.conf"))
@@ -89,6 +90,7 @@ impl Hosted {
             .ok()?;
 
         let deadline = Instant::now() + PATIENCE;
+
         while !folder.join(SOCKET).exists() && Instant::now() < deadline {
             thread::sleep(POLL_EVERY);
         }
@@ -118,6 +120,7 @@ fn holds_the_capture(folder: &Path) -> bool {
 
 fn comes_to_hold_the_capture(folder: &Path) -> bool {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if holds_the_capture(folder) {
             return true;
@@ -129,6 +132,7 @@ fn comes_to_hold_the_capture(folder: &Path) -> bool {
 
 fn a_folder_of_its_own() -> PathBuf {
     let folder = env::temp_dir().join(format!("rls-{}", std::process::id()));
+
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
     folder
@@ -157,7 +161,9 @@ fn runs_under_a_hosted_daemon() -> bool {
     let captured_again = comes_to_hold_the_capture(&folder);
 
     hearing.stop();
+
     let _ = recording.join();
+
     hosted.kill();
 
     assert!(
@@ -176,6 +182,7 @@ fn a_capture_whose_daemon_restarts_is_opened_again_on_the_graph_that_comes_back(
     if runs_under_a_hosted_daemon() {
         return;
     }
+
     let tools = ["pipewire", "pw-cli"].into_iter().all(|tool| {
         Command::new(tool)
             .arg("--version")
@@ -184,6 +191,7 @@ fn a_capture_whose_daemon_restarts_is_opened_again_on_the_graph_that_comes_back(
             .status()
             .is_ok()
     });
+
     if !tools {
         eprintln!("skipped: no pipewire and pw-cli to host a daemon with");
         return;

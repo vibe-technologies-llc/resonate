@@ -59,6 +59,7 @@ impl Library {
                     params![now, text, start],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+
             if counted == 0 {
                 let unheld = transaction
                     .query_row(
@@ -69,6 +70,7 @@ impl Library {
                         |row| row.get::<_, i64>(0),
                     )
                     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
                 return Ok(Visited::Unheld(unheld));
             }
 
@@ -173,6 +175,7 @@ impl Library {
 
     pub fn age_the_history(&self, kept: HistoryKept) -> Result<Aged> {
         let now = SystemTime::now();
+
         if kept.before(now).is_some() {
             wrapped::freeze_the_finished_years(&self.inner, &Calendar::local(), kept, now)?;
         }
@@ -223,6 +226,7 @@ impl Library {
         let filters = self.music_filters();
         let now = SystemTime::now();
         let today = Calendar::local().day_of(now);
+
         if let Some(kept) = self.inner.suggested.lock().as_ref().filter(|kept| {
             kept.stamp.still_holds_at(stamp)
                 && kept.heard == heard
@@ -235,6 +239,7 @@ impl Library {
         let filing = self.inner.filing()?;
         let suggestions: Arc<[Suggestion]> =
             suggest::suggestions(&self.inner, &filing, today, now)?.into();
+
         *self.inner.suggested.lock() = Some(KeptSuggestions {
             stamp,
             heard,

@@ -77,6 +77,7 @@ pub(crate) fn told(inner: &Inner, ids: &[i64]) -> Result<()> {
         let mut statement = transaction
             .prepare_cached("DELETE FROM songs_deleted_everywhere WHERE id = ?1")
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         for id in ids {
             statement
                 .execute(params![id])
@@ -93,6 +94,7 @@ pub(crate) fn copies_of(inner: &Inner, recording: &Recording) -> Result<Vec<Copy
             .map(|row| row.path)
             .collect();
         let mut copies = Vec::new();
+
         for path in paths {
             copies.extend(copies_at(connection, &store::path_text(&path))?);
         }
@@ -109,6 +111,7 @@ fn copies_at(connection: &Connection, path: &str) -> Result<Vec<Copy>> {
                FROM tracks t WHERE t.path = ?1",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(params![path], |row| {
             Ok((

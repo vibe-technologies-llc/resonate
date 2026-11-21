@@ -27,6 +27,7 @@ mod tests {
     #[test]
     fn taking_one_owners_targets_leaves_every_other_owners_in_place() {
         let mut targets = Targets::new();
+
         targets.add(1, "play");
         targets.add(1, "pause");
         targets.add(2, "play");

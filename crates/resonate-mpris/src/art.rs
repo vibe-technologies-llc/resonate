@@ -124,14 +124,18 @@ impl Pictures {
 
     pub(crate) fn keep_rows(&self, queue: &QueueRows) {
         let mut laid = self.drawn.lock();
+
         if laid.queued.is_empty() {
             return;
         }
+
         let held: AHashSet<TrackId> = queue.iter().map(|item| item.id).collect();
 
         let mut gone = Vec::new();
+
         laid.queued.retain(|track, drawn| {
             let stays = held.contains(track);
+
             if !stays {
                 gone.push(drawn.path.clone());
             }
@@ -145,6 +149,7 @@ impl Pictures {
     fn laid_down(&self, playing: Option<Playing>, art: &CoverArt, kept: Kept) -> Option<String> {
         let path = {
             let mut laid = self.drawn.lock();
+
             if laid.made.is_none() {
                 match made_ours(&self.folder.0) {
                     Ok(marked) => laid.made = Some(marked),
@@ -158,6 +163,7 @@ impl Pictures {
                     }
                 }
             }
+
             let drawn_for = |held: &&Drawn| {
                 held.playing
                     .as_ref()
@@ -169,14 +175,17 @@ impl Pictures {
                 (Kept::Queued, Some(queued)) => laid.queued.get(&queued.track).filter(drawn_for),
                 (Kept::Queued, None) => None,
             };
+
             if let Some(held) = held {
                 return Some(held.uri.clone());
             }
+
             let path = self.folder.0.join(format!(
                 "{:016x}.{}",
                 digest_of(&art.bytes),
                 art.format.extension()
             ));
+
             if let (Kept::Queued, Some(queued)) = (kept, playing.as_ref())
                 && !laid.room_for_queued(&path, queued.track)
             {
@@ -187,6 +196,7 @@ impl Pictures {
 
         let laying = self.laying.lock();
         let written = lay_down(&path, &art.bytes);
+
         drop(laying);
         if let Err(error) = written {
             tracing::debug!(
@@ -199,15 +209,19 @@ impl Pictures {
 
         let uri = MediaLocation::local(&path).to_uri();
         let mut laid = self.drawn.lock();
+
         if laid.made.is_none() {
             let _ = fs::remove_file(&path);
+
             return None;
         }
+
         let drawn = Drawn {
             playing,
             path,
             uri: uri.clone(),
         };
+
         match (kept, drawn.playing.as_ref().map(|queued| queued.track)) {
             (Kept::Queued, Some(track)) => {
                 if let Some(replaced) = laid.queued.insert(track, drawn) {
@@ -220,6 +234,7 @@ impl Pictures {
                     let Some(gone) = laid.drawn.pop_front() else {
                         break;
                     };
+
                     laid.let_go_of(&gone.path);
                 }
             }
@@ -229,6 +244,7 @@ impl Pictures {
 
     pub(crate) fn forget(&self) {
         let mut laid = self.drawn.lock();
+
         if laid.made.take().is_some() {
             let _ = fs::remove_dir_all(&self.folder.0);
         }
@@ -239,6 +255,7 @@ impl Pictures {
 
 fn digest_of(bytes: &[u8]) -> u64 {
     let mut hasher = DefaultHasher::new();
+
     bytes.hash(&mut hasher);
     hasher.finish()
 }
@@ -248,11 +265,13 @@ struct Folder(PathBuf);
 impl Default for Folder {
     fn default() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let held = NEXT.fetch_add(1, Ordering::Relaxed);
         let beneath = env::var_os(RUNTIME_FOLDER)
             .map(PathBuf::from)
             .filter(|folder| folder.is_absolute())
             .unwrap_or_else(env::temp_dir);
+
         if held == 0 {
             sweep_the_departed(&beneath);
         }
@@ -300,6 +319,7 @@ fn sweep_the_departed(temporary: &Path) {
 fn laid_down_by(name: &str) -> Option<u32> {
     let rest = name.strip_prefix(FOLDER)?.strip_prefix('-')?;
     let (pid, count) = rest.split_once('-')?;
+
     count.parse::<u64>().ok()?;
     pid.parse().ok()
 }
@@ -337,8 +357,10 @@ fn lay_down(path: &Path, bytes: &[u8]) -> io::Result<()> {
     if already_laid(path, bytes) {
         return Ok(());
     }
+
     let staged = staging_for(path);
     let laid = write_staged(&staged, bytes).and_then(|()| fs::rename(&staged, path));
+
     if laid.is_err() {
         let _ = fs::remove_file(&staged);
     }
@@ -351,14 +373,17 @@ fn already_laid(path: &Path, bytes: &[u8]) -> bool {
 
 fn staging_for(path: &Path) -> PathBuf {
     let mut name = path.file_name().unwrap_or_default().to_os_string();
+
     name.push(STAGED);
     path.with_file_name(name)
 }
 
 fn write_staged(staged: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut options = OpenOptions::new();
+
     options.write(true).create(true).truncate(true);
     restrict_to_us(&mut options);
+
     let mut file = options.open(staged)?;
     file.write_all(bytes)
 }
@@ -396,14 +421,17 @@ mod tests {
         let art = art();
 
         let uri = pictures.uri(track(1), &art).expect("a cover was laid down");
+
         assert_eq!(pictures.uri(track(1), &art).as_deref(), Some(uri.as_str()));
 
         let laid = MediaLocation::from_uri(&uri).expect("a local location");
         let path = laid.as_path().expect("a path");
+
         assert_eq!(fs::read(path).expect("the cover reads back"), art.bytes);
         assert_eq!(path.extension().and_then(|held| held.to_str()), Some("png"));
 
         pictures.forget();
+
         assert!(!path.exists(), "a cover outlived the service that laid it");
     }
 
@@ -430,6 +458,7 @@ mod tests {
 
         assert_eq!(first, again);
         assert_ne!(first, second);
+
         pictures.forget();
     }
 
@@ -450,6 +479,7 @@ mod tests {
             fs::read(laid(&next)).expect("the cover reads back"),
             cover(2).bytes
         );
+
         pictures.forget();
     }
 
@@ -458,6 +488,7 @@ mod tests {
         let pictures = Pictures::default();
 
         let oldest = pictures.uri(track(1), &cover(1)).expect("the first cover");
+
         for number in 2..=(COVERS_KEPT as u64 + 1) {
             pictures
                 .uri(track(number), &cover(number))
@@ -465,12 +496,15 @@ mod tests {
         }
 
         assert!(!laid(&oldest).exists(), "a cover outlived the ones kept");
+
         let held = fs::read_dir(&pictures.folder.0)
             .expect("the folder")
             .flatten()
             .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
             .count();
+
         assert_eq!(held, COVERS_KEPT);
+
         pictures.forget();
     }
 
@@ -491,6 +525,7 @@ mod tests {
         let next = pictures
             .queued_uri(track(100), &cover(100))
             .expect("the queued row's cover");
+
         for number in 1..=(COVERS_KEPT as u64 + 1) {
             pictures
                 .uri(track(number), &cover(number))
@@ -503,13 +538,16 @@ mod tests {
         );
 
         pictures.keep_rows(&queued(&[100]));
+
         assert!(laid(&next).exists(), "a row still queued lost its cover");
 
         pictures.keep_rows(&queued(&[1]));
+
         assert!(
             !laid(&next).exists(),
             "a cover outlived the row it was laid for"
         );
+
         pictures.forget();
     }
 
@@ -519,6 +557,7 @@ mod tests {
         let album = cover(1);
 
         let mut named = Vec::new();
+
         for number in 1..=(QUEUED_COVERS_KEPT as u64) {
             named.push(
                 pictures
@@ -526,6 +565,7 @@ mod tests {
                     .expect("room for this cover"),
             );
         }
+
         let same_album = pictures
             .queued_uri(track(1_000), &album)
             .expect("a cover already laid down costs no room");
@@ -533,12 +573,14 @@ mod tests {
         assert_eq!(same_album, named[0]);
         assert_eq!(pictures.queued_uri(track(2_000), &cover(2_000)), None);
         assert!(named.iter().all(|uri| laid(uri).exists()));
+
         pictures.forget();
     }
 
     #[test]
     fn a_folder_someone_else_made_first_is_never_laid_a_cover_in() {
         let pictures = Pictures::default();
+
         fs::create_dir_all(&pictures.folder.0).expect("a folder standing where ours would go");
 
         assert_eq!(pictures.uri(track(1), &art()), None);
@@ -549,6 +591,7 @@ mod tests {
             0,
             "a cover was written into a folder this process did not make"
         );
+
         fs::remove_dir(&pictures.folder.0).expect("the folder taken away");
     }
 
@@ -558,14 +601,18 @@ mod tests {
         use std::os::unix::fs::PermissionsExt as _;
 
         let pictures = Pictures::default();
+
         pictures
             .uri(track(1), &art())
             .expect("a cover was laid down");
+
         let mode = fs::metadata(&pictures.folder.0)
             .expect("the folder")
             .permissions()
             .mode();
+
         assert_eq!(mode & 0o777, OURS_ALONE);
+
         pictures.forget();
     }
 
@@ -580,10 +627,13 @@ mod tests {
     #[test]
     fn a_cover_that_could_not_be_written_is_never_named_and_leaves_nothing_behind() {
         let pictures = Pictures::default();
+
         pictures.uri(track(1), &cover(1)).expect("the folder made");
+
         let unwritten = cover(2);
         let path = laid_for(&pictures, &unwritten);
         let staged = staging_for(&path);
+
         fs::create_dir(&staged).expect("something standing where the staging file goes");
 
         assert_eq!(pictures.uri(track(2), &unwritten), None);
@@ -593,24 +643,32 @@ mod tests {
         );
 
         fs::remove_dir(&staged).expect("the obstacle taken away");
+
         let uri = pictures
             .uri(track(2), &unwritten)
             .expect("the cover laid down the second time");
+
         assert_eq!(fs::read(laid(&uri)).expect("the cover"), unwritten.bytes);
         assert!(!staged.exists(), "the staging file outlived the rename");
+
         pictures.forget();
     }
 
     #[test]
     fn a_cover_cut_short_on_disc_is_written_again_rather_than_named() {
         let pictures = Pictures::default();
+
         pictures.uri(track(1), &cover(1)).expect("the folder made");
+
         let art = cover(2);
         let path = laid_for(&pictures, &art);
+
         fs::write(&path, &art.bytes[..3]).expect("a cover cut short");
 
         let uri = pictures.uri(track(2), &art).expect("the cover laid down");
+
         assert_eq!(fs::read(laid(&uri)).expect("the cover"), art.bytes);
+
         pictures.forget();
     }
 

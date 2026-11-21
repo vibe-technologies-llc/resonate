@@ -15,12 +15,16 @@ pub fn target_of(line: &str) -> Option<Target> {
     let (_, tail) = line.split_once(':')?;
 
     let mut points = Vec::new();
+
     for spelled in tail.split(';') {
         let spelled = spelled.trim();
+
         if spelled.is_empty() {
             continue;
         }
+
         let mut words = spelled.split_whitespace();
+
         let read = match (
             words.next().and_then(read_number),
             words.next().and_then(read_number),
@@ -120,7 +124,9 @@ mod tests {
             thinned.points().len(),
             resonate_core::eq::TARGET_POINTS_AT_MOST
         );
+
         let top = thinned.points().last().expect("a last point");
+
         assert!(top.frequency.hertz() > 19_000.0);
     }
 
@@ -142,7 +148,9 @@ mod tests {
         let curve = target(AUTOEQ);
 
         assert_eq!(curve.points().len(), 127);
+
         let first = curve.points().first().copied().expect("a first point");
+
         assert_eq!(first.frequency.centihertz(), 2_000);
         assert!((curve.at(20.0) - first.gain.decibels()).abs() < 1e-9);
     }
@@ -175,6 +183,7 @@ mod tests {
         for centre in fitted.bands().iter().map(|band| band.frequency.hertz()) {
             let wanted = curve.at(centre);
             let realised = fitted.magnitude_db(centre, FITTED_AT) - fitted.preamp().decibels();
+
             assert!(
                 (realised - wanted).abs() < FITS_WITHIN_DB,
                 "{centre} Hz wanted {wanted} dB and realised {realised} dB"
@@ -190,10 +199,12 @@ mod tests {
         for rate in EVERY_RATE_PLAYED {
             let played = kept.at_rate(rate);
             let worst = worst_centre_db(&played, &curve, rate);
+
             assert!(worst < FITS_WITHIN_DB, "{worst} dB off at {rate}");
         }
 
         let drifted = worst_centre_db(&kept, &curve, SampleRate::HZ_96000);
+
         assert!(
             drifted > 1.0,
             "the 48 kHz fit played at 96 kHz drifts only {drifted} dB, so refitting proves nothing"
@@ -203,15 +214,19 @@ mod tests {
     #[test]
     fn a_preamp_moved_by_hand_rides_along_when_the_curve_is_fitted_again() {
         let mut moved = Profile::fitted_to(target(AUTOEQ));
+
         let fitted = moved.preamp();
+
         moved.set_preamp(
             resonate_core::eq::Preamp::from_milli_decibels(fitted.milli_decibels() - 3_000)
                 .expect("in range"),
         );
+
         let moved = std::sync::Arc::new(moved);
 
         for rate in EVERY_RATE_PLAYED {
             let played = moved.at_rate(rate);
+
             assert_eq!(
                 played.preamp().milli_decibels(),
                 played.fitted_preamp(rate).milli_decibels() - 3_000,
@@ -236,6 +251,7 @@ mod tests {
 
     fn moved_by_hand() -> Arc<Profile> {
         let mut moved = Profile::fitted_to(target(TREBLE_LIFTED_PAST_FULL_SCALE));
+
         moved.set_preamp(
             Preamp::from_milli_decibels(
                 moved.preamp().milli_decibels() + MOVED_BY_HAND_MILLI_DECIBELS,
@@ -274,6 +290,7 @@ mod tests {
     #[test]
     fn the_levelled_arm_of_a_listening_test_plays_at_the_preamp_it_was_matched_at() {
         let kept = moved_by_hand();
+
         assert_ne!(
             kept.at_rate(SampleRate::HZ_44100).preamp(),
             kept.preamp(),
@@ -318,11 +335,13 @@ mod tests {
     #[test]
     fn a_shaped_band_lets_go_of_the_curve_it_was_fitted_to() {
         let mut edited = Profile::fitted_to(target(AUTOEQ));
+
         assert!(edited.target().is_some());
 
         if let Some(band) = edited.band_mut(0) {
             band.on = false;
         }
+
         assert_eq!(edited.target(), None);
     }
 

@@ -25,11 +25,13 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-scanned-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self {
             root: root
@@ -40,6 +42,7 @@ impl Tree {
 
     fn wav(&self, relative: &str) -> PathBuf {
         let path = self.root.join(relative);
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("a writable temporary directory");
         }
@@ -63,6 +66,7 @@ fn silence() -> Vec<u8> {
     let data = vec![0_u8; FRAMES * usize::from(block_align)];
 
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&1_u16.to_le_bytes());
     fmt.extend_from_slice(&CHANNELS.to_le_bytes());
     fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -71,6 +75,7 @@ fn silence() -> Vec<u8> {
     fmt.extend_from_slice(&BITS.to_le_bytes());
 
     let mut body = b"WAVE".to_vec();
+
     for (id, payload) in [(b"fmt ", fmt.as_slice()), (b"data", data.as_slice())] {
         body.extend_from_slice(id);
         body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
@@ -78,6 +83,7 @@ fn silence() -> Vec<u8> {
     }
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -95,6 +101,7 @@ fn following_links(root: &Path) -> ScanOptions {
 
 fn scan(library: &Library, options: ScanOptions) -> Result<()> {
     let summary = library.scan(options)?.join()?;
+
     assert!(!summary.cancelled, "the scan reported itself cancelled");
     Ok(())
 }
@@ -109,6 +116,7 @@ fn paths(library: &Library) -> Result<Vec<PathBuf>> {
         .into_iter()
         .filter_map(|track| track.location.as_path().map(Path::to_path_buf))
         .collect();
+
     held.sort();
     Ok(held)
 }
@@ -129,6 +137,7 @@ fn row(path: &str) -> Resumable {
 fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Result<()> {
     let tree = Tree::new();
     let real = tree.wav("albums/meddle/echoes.wav");
+
     for named in ["a link", "z link"] {
         if !link_to_directory(&tree.path().join("albums/meddle"), &tree.path().join(named)) {
             return Ok(());
@@ -136,6 +145,7 @@ fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Resu
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, following_links(tree.path()))?;
 
     assert_eq!(paths(&library)?, vec![real]);
@@ -146,11 +156,13 @@ fn a_link_to_a_folder_inside_the_same_root_is_not_walked_a_second_time() -> Resu
 fn a_link_to_a_folder_holding_the_root_is_not_walked_back_into_it() -> Result<()> {
     let tree = Tree::new();
     let real = tree.wav("music/echoes.wav");
+
     if !link_to_directory(tree.path(), &tree.path().join("music/everything")) {
         return Ok(());
     }
 
     let library = Library::open_in_memory()?;
+
     scan(&library, following_links(&tree.path().join("music")))?;
 
     assert_eq!(paths(&library)?, vec![real]);
@@ -162,6 +174,7 @@ fn a_link_into_another_root_leaves_its_files_to_that_root() -> Result<()> {
     let tree = Tree::new();
     let kept = tree.wav("first/kept.wav");
     let elsewhere = tree.wav("second/elsewhere.wav");
+
     if !link_to_directory(
         &tree.path().join("second"),
         &tree.path().join("first/second"),
@@ -170,6 +183,7 @@ fn a_link_into_another_root_leaves_its_files_to_that_root() -> Result<()> {
     }
 
     let library = Library::open_in_memory()?;
+
     library.add_root(&tree.path().join("second"))?;
     scan(&library, following_links(&tree.path().join("first")))?;
     scan(&library, following_links(&tree.path().join("second")))?;
@@ -182,12 +196,15 @@ fn a_link_into_another_root_leaves_its_files_to_that_root() -> Result<()> {
 fn a_volume_retired_for_good_forgets_its_rows_and_is_no_longer_remembered() -> Result<()> {
     let tree = Tree::new();
     let home = tree.wav("music/home.wav");
+
     tree.wav("music/drive/one.wav");
     tree.wav("music/drive/two.wav");
+
     let drive = tree.path().join("music/drive");
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     scan(&library, following_links(&tree.path().join("music")))?;
     beside(&database)
         .execute(
@@ -218,6 +235,7 @@ fn a_folder_whose_files_are_still_there_is_not_retired() -> Result<()> {
     let held = tree.wav("music/drive/one.wav");
 
     let library = Library::open_in_memory()?;
+
     scan(&library, following_links(&tree.path().join("music")))?;
 
     assert_eq!(library.retire(&tree.path().join("music/drive"))?, 0);
@@ -230,6 +248,7 @@ fn a_kept_queue_row_that_will_not_open_is_dropped_and_the_rest_resumed() -> Resu
     let tree = Tree::new();
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
+
     library.keep_resumption(
         ZoneId::FIRST,
         &Resumption {

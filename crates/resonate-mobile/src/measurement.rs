@@ -195,6 +195,7 @@ fn fitted(
     })?;
 
     let mut loaded = imported(&fitted.profile, name);
+
     loaded.passed_over = u32::try_from(passed_over).unwrap_or(u32::MAX);
 
     Ok(MeasurementFit {
@@ -293,6 +294,7 @@ mod tests {
     #[test]
     fn the_lines_of_a_measurement_that_are_no_point_are_counted() {
         let mut bytes = b"* Measurement data\n* Dated: today\nstray words here\n".to_vec();
+
         bytes.extend(dipped_at_three_kilohertz().split_off("frequency,raw\n".len()));
 
         let fit = fit_measurement(bytes, built_in("flat"), String::new()).expect("a fit");
@@ -418,8 +420,10 @@ mod tests {
         let total = sweep.recorded_frames as usize;
         let mut held = 0.0_f64;
         let mut heard = vec![0.0_f32; DELAY_FRAMES];
+
         for at in 0..total - DELAY_FRAMES {
             let sample = sweep.samples.get(at).copied().unwrap_or(0.0);
+
             held = SMOOTHING * f64::from(sample) + (1.0 - SMOOTHING) * held;
             heard.push(held as f32);
         }
@@ -476,6 +480,7 @@ mod tests {
             let (heard, sweep) = through_a_lowpass(rate);
             let played =
                 Sweep::for_measuring(SampleRate::new(rate).expect("a rate")).expect("a sweep");
+
             assert_eq!(sweep.samples, played.samples());
 
             let phone =
@@ -492,10 +497,13 @@ mod tests {
                     .map(|level| (level.hertz, level.decibels)),
             )
             .expect("a response");
+
             for hertz in [100.0, 1_000.0, 6_000.0, 10_000.0] {
                 let off = (measured.at(hertz) - lowpass_db(hertz, rate)).abs();
+
                 assert!(off < 0.5, "{hertz} Hz is {off:.2} dB off at {rate}");
             }
+
             let desktop = fit(
                 &measured,
                 &Store::goal_named("flat").expect("a built-in"),

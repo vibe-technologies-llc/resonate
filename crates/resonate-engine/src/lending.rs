@@ -48,6 +48,7 @@ impl Worker {
     fn start() -> Option<Self> {
         let (lending, lent) = crossbeam_channel::bounded::<Lent>(1);
         let (returning, returns) = crossbeam_channel::bounded(1);
+
         let started = thread::Builder::new()
             .name("resonate-decode".into())
             .spawn(move || {
@@ -155,6 +156,7 @@ impl Decoding {
         if !matches!(self.holding, Holding::Lent) {
             return;
         }
+
         let Some(worker) = self.worker.as_ref() else {
             self.holding = Holding::Gone;
             return;
@@ -188,12 +190,14 @@ impl Decoding {
         if self.worker.is_none() {
             self.worker = Worker::start();
         }
+
         let Some(worker) = self.worker.as_ref() else {
             return self.decoded_in_line(decoder, out);
         };
 
         self.position = decoder.position();
         self.last_packet = decoder.last_packet();
+
         let block = mem::replace(out, AudioBuffer::empty(out.spec()));
         match worker.lending.send(Lent { decoder, block }) {
             Ok(()) => {
@@ -202,6 +206,7 @@ impl Decoding {
             }
             Err(refused) => {
                 let Lent { decoder, block } = refused.into_inner();
+
                 *out = block;
                 self.worker = None;
                 self.decoded_in_line(decoder, out)
@@ -215,6 +220,7 @@ impl Decoding {
         out: &mut AudioBuffer,
     ) -> Result<Block, Lost> {
         let status = decoder.next_block(out);
+
         self.holding = Holding::Home(decoder);
         status.map(Block::from).map_err(Lost::Decode)
     }
@@ -225,6 +231,7 @@ impl Decoding {
             mut block,
             status,
         } = returned;
+
         if let Some(delivery) = self.owed.take() {
             decoder.deliver(delivery);
             block.retype(delivery.format);
@@ -249,6 +256,7 @@ mod tests {
     fn wave() -> Vec<u8> {
         let data = vec![0_u8; FRAMES * 4];
         let mut fmt = Vec::new();
+
         fmt.extend_from_slice(&1_u16.to_le_bytes());
         fmt.extend_from_slice(&2_u16.to_le_bytes());
         fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -257,12 +265,15 @@ mod tests {
         fmt.extend_from_slice(&16_u16.to_le_bytes());
 
         let mut body = b"WAVE".to_vec();
+
         for (id, payload) in [(b"fmt ", fmt.as_slice()), (b"data", data.as_slice())] {
             body.extend_from_slice(id);
             body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
             body.extend_from_slice(payload);
         }
+
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
         file
@@ -278,6 +289,7 @@ mod tests {
     fn landed(decoding: &mut Decoding) {
         let awaited = decoding.awaited().expect("a lent decoder").clone();
         let mut select = crossbeam_channel::Select::new();
+
         select.recv(&awaited);
         select.ready();
         decoding.take_what_came_back();
@@ -289,7 +301,9 @@ mod tests {
 
         let lent = decoding.next_block(&mut out, true).expect("lent");
         let held_back = decoding.home().is_none();
+
         landed(&mut decoding);
+
         let awaited_after = decoding.awaited().is_none();
         let back = decoding.next_block(&mut out, true).expect("taken back");
 
@@ -319,6 +333,7 @@ mod tests {
         let (mut decoding, mut out) = decoding();
         let (lending, lent) = crossbeam_channel::bounded::<Lent>(1);
         let (returning, returns) = crossbeam_channel::bounded::<Returned>(1);
+
         decoding.worker = Some(Worker { lending, returns });
 
         let first = decoding.next_block(&mut out, true).expect("lent");
@@ -328,7 +343,9 @@ mod tests {
             mut block,
         } = lent.try_recv().expect("one lending");
         let nothing_more = lent.try_recv().is_err();
+
         let status = decoder.next_block(&mut block);
+
         returning
             .send(Returned {
                 decoder,
@@ -336,6 +353,7 @@ mod tests {
                 status,
             })
             .expect("the worker returns it");
+
         let back = decoding.next_block(&mut out, true).expect("taken back");
 
         assert_eq!(first, Block::Awaited);
@@ -352,6 +370,7 @@ mod tests {
 
         decoding.next_block(&mut out, true).expect("lent");
         decoding.worker = None;
+
         let lost = decoding.next_block(&mut out, true);
         let again = decoding.next_block(&mut out, false);
 
@@ -366,6 +385,7 @@ mod tests {
         let (mut decoding, mut out) = decoding();
         let (lending, refused) = crossbeam_channel::bounded::<Lent>(1);
         let (_returning, returns) = crossbeam_channel::bounded::<Returned>(1);
+
         drop(refused);
         decoding.worker = Some(Worker { lending, returns });
 
@@ -386,6 +406,7 @@ mod tests {
         decoding.next_block(&mut out, true).expect("lent");
         decoding.deliver(Delivery::samples(SampleFormat::S32));
         landed(&mut decoding);
+
         let back = decoding.next_block(&mut out, true).expect("taken back");
 
         assert_eq!(back, Block::Decoded);

@@ -7,7 +7,7 @@ pub const UTF8_BOM: [u8; 3] = [0xEF, 0xBB, 0xBF];
 const UTF16_LE_BOM: [u8; 2] = [0xFF, 0xFE];
 const UTF16_BE_BOM: [u8; 2] = [0xFE, 0xFF];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct LegacyEncoding(&'static Encoding);
 
 impl LegacyEncoding {
@@ -26,7 +26,7 @@ impl LegacyEncoding {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum TextEncoding {
     #[default]
     Utf8,
@@ -83,6 +83,7 @@ pub fn detected(bytes: &[u8]) -> TextEncoding {
     }
 
     let body = bytes.strip_prefix(&UTF8_BOM).unwrap_or(bytes);
+
     if std::str::from_utf8(body).is_ok() {
         return TextEncoding::Utf8;
     }
@@ -91,6 +92,7 @@ pub fn detected(bytes: &[u8]) -> TextEncoding {
 
 fn guessed(bytes: &[u8]) -> &'static Encoding {
     let mut detector = EncodingDetector::new(Iso2022JpDetection::Deny);
+
     detector.feed(bytes, true);
     detector.guess(None, Utf8Detection::Deny)
 }
@@ -154,12 +156,14 @@ mod tests {
         } else {
             UTF16_BE_BOM.to_vec()
         };
+
         for unit in text.encode_utf16() {
             let pair = if little {
                 unit.to_le_bytes()
             } else {
                 unit.to_be_bytes()
             };
+
             bytes.extend_from_slice(&pair);
         }
         bytes
@@ -176,11 +180,13 @@ mod tests {
             (TextEncoding::Utf16Be, false),
         ] {
             let mut written = encoding.byte_order_mark().to_vec();
+
             written.extend(encoded("Écoute", encoding).expect("every letter fits"));
 
             assert_eq!(written, utf16("Écoute", little));
             assert_eq!(decoded(&written), ("Écoute".to_owned(), encoding));
         }
+
         assert!(TextEncoding::Utf8.byte_order_mark().is_empty());
         assert!(TextEncoding::WINDOWS_1252.byte_order_mark().is_empty());
     }
@@ -197,13 +203,16 @@ mod tests {
         );
 
         let mut marked = UTF8_BOM.to_vec();
+
         marked.extend_from_slice("Écoute".as_bytes());
+
         assert_eq!(decoded(&marked), ("Écoute".to_owned(), TextEncoding::Utf8));
     }
 
     #[test]
     fn a_utf8_mark_ahead_of_text_that_is_not_utf8_is_dropped_with_the_code_page_read() {
         let mut marked = UTF8_BOM.to_vec();
+
         marked.extend_from_slice(b"FILE \"Caf\xe9.flac\" WAVE\n");
 
         let (text, encoding) = decoded(&marked);
@@ -250,12 +259,14 @@ mod tests {
     #[test]
     fn text_is_written_back_in_the_encoding_it_was_read_in_where_that_holds_its_letters() {
         let wide = TextEncoding::Utf16Le;
+
         assert_eq!(
             decoded_as(&encoded("Écoute", wide).expect("any letter"), wide),
             "Écoute"
         );
 
         let cyrillic = TextEncoding::Legacy(LegacyEncoding::WINDOWS_1251);
+
         assert_eq!(encoded("Цой", cyrillic), Some(vec![0xD6, 0xEE, 0xE9]));
         assert_eq!(encoded("植松", cyrillic), None);
     }

@@ -19,6 +19,7 @@ use crate::{
 
 pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Result<()> {
     let roots = &wanted.roots;
+
     if let Some(root) = roots.iter().find(|root| !root.is_dir()) {
         return Err(Error::MissingLibraryRoot { path: root.clone() });
     }
@@ -28,6 +29,7 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
 
     let summary = until_told(handle)?;
     let stats = summary.stats;
+
     said!(
         "{}{}",
         words::main::scanned(
@@ -44,6 +46,7 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
         said!("{}", words::main::cancelled());
     }
     finished(PassKind::Scan, summary.cancelled)?;
+
     let scanned = none_failed(PassKind::Scan, stats.failed.total());
 
     if config.is_on(Switch::EnrichAfterScan)
@@ -66,6 +69,7 @@ pub(crate) fn scan(library: &Library, config: &Config, wanted: &ScanArgs) -> Res
                 },
             )?,
         )?)?;
+
         said_on!("{}", enriched(&summary));
         finished(PassKind::Enrich, summary.cancelled)?;
     }
@@ -85,6 +89,7 @@ fn scan_options(wanted: &ScanArgs, workers: NonZeroUsize) -> ScanOptions {
 pub(crate) fn enrich(library: &Library, config: &Config, options: EnrichOptions) -> Result<()> {
     let reference = online::reference_asked_for(config, Asking::InTheBackground)?;
     let options = carrying_on(library, options)?;
+
     let summary = until_told(library.enrich(
         reference,
         Arc::new(online::fingerprinters(
@@ -95,6 +100,7 @@ pub(crate) fn enrich(library: &Library, config: &Config, options: EnrichOptions)
         )),
         options,
     )?)?;
+
     said_on!("{}", enriched(&summary));
     finished(PassKind::Enrich, summary.cancelled)
 }
@@ -103,6 +109,7 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
     if options.refresh {
         return Ok(options);
     }
+
     let Some(left) = library.unfinished_enrichment()? else {
         return Ok(options);
     };
@@ -122,6 +129,7 @@ fn carrying_on(library: &Library, options: EnrichOptions) -> Result<EnrichOption
 
 fn enriched(summary: &EnrichSummary) -> String {
     let mut told = counted_by_section(&summary.stats);
+
     if let Some(stopped) = summary.stopped_by {
         told.push_str(&match stopped {
             Stopped::Unreached(op) => words::main::stopped_unreached(asked_for(op)),
@@ -142,6 +150,7 @@ fn counted_by_section(stats: &EnrichStats) -> String {
     if stats.is_blank() {
         return format!("{}\n", words::main::nothing_asked());
     }
+
     let widest = Outcome::ALL
         .into_iter()
         .map(|outcome| stats.of(outcome).to_string().len())
@@ -149,6 +158,7 @@ fn counted_by_section(stats: &EnrichStats) -> String {
         .unwrap_or(1);
 
     let mut told = String::new();
+
     for (section, counted) in stats.told_by_section() {
         told.push_str(section.title());
         told.push('\n');
@@ -274,8 +284,11 @@ mod tests {
     #[test]
     fn a_pass_no_signal_interrupts_answers_its_summary_through_until_told() {
         let root = crate::fixtures::scratch("until-told");
+
         fs::write(root.join("a.wav"), silent_wave(1)).expect("a track");
+
         let library = Library::open_in_memory().expect("a catalog");
+
         library.add_root(&root).expect("a root");
 
         let summary = until_told(
@@ -284,6 +297,7 @@ mod tests {
                 .expect("a scan under way"),
         )
         .expect("a summary");
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert_eq!(summary.stats.added, 1);

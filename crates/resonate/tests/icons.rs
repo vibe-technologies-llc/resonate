@@ -46,6 +46,7 @@ fn read_records(mut bytes: &[u8]) -> Vec<Record<'_>> {
         assert_eq!(word(bytes, 12), ORDINAL_MARK);
         assert_eq!(double(bytes, 16), 0, "a data version");
         assert_eq!(word(bytes, 22), 0, "a neutral language");
+
         read.push(Record {
             resource_type: word(bytes, 10),
             name: word(bytes, 14),
@@ -87,10 +88,12 @@ fn the_group_the_window_loads_names_each_image_as_the_icon_file_does() {
         .iter()
         .filter(|record| record.resource_type == RT_GROUP_ICON)
         .collect();
+
     assert_eq!(groups.len(), 1);
     assert_eq!(groups[0].name, WINDOW_ICON);
 
     let directory = groups[0].data;
+
     assert_eq!(word(directory, 0), 0);
     assert_eq!(word(directory, 2), 1);
     assert_eq!(usize::from(word(directory, 4)), held.len());
@@ -129,6 +132,7 @@ fn the_icon_records_go_in_ahead_of_a_resource_file_that_opens_with_the_empty_rec
     let icons = records(&ico, WINDOW_ICON).unwrap();
 
     let mut version = NULL_RECORD.to_vec();
+
     version.extend_from_slice(&[4, 0, 0, 0, 32, 0, 0, 0]);
     version.extend_from_slice(&[0xFF, 0xFF, 16, 0, 0xFF, 0xFF, 1, 0]);
     version.extend_from_slice(&[0; 16]);

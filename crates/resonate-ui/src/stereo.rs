@@ -65,6 +65,7 @@ impl TruePeaks {
             }
             _ => usize::MAX,
         };
+
         self.reached = Some(window.heard);
         if fresh == 0 {
             return self.read;
@@ -82,6 +83,7 @@ impl TruePeaks {
                 .get(from..centre)
                 .map_or(QUIETEST_DB, |fresh| decibels_of(meter.take(fresh) as f32))
         };
+
         self.read = (
             taken(&mut self.left, window.left),
             taken(&mut self.right, window.right),
@@ -117,6 +119,7 @@ impl Stereo {
         let Heard { left, right, .. } = window;
         let step = step.min(LONGEST_STEP);
         let (left_peak, right_peak) = self.true_peaks.read(window);
+
         self.left.fold(mean_square_db(left), step);
         self.right.fold(mean_square_db(right), step);
         self.left_peak.fold(left_peak, step);
@@ -162,7 +165,9 @@ pub(crate) fn mean_square_db(samples: &[f32]) -> f32 {
     if samples.is_empty() {
         return QUIETEST_DB;
     }
+
     let energy = samples.iter().map(|sample| sample * sample).sum::<f32>() / samples.len() as f32;
+
     if energy <= SILENT_ENERGY {
         return QUIETEST_DB;
     }
@@ -178,12 +183,15 @@ fn decibels_of(peak: f32) -> f32 {
 
 pub(crate) fn correlation(left: &[f32], right: &[f32]) -> Option<f32> {
     let (mut both, mut on_the_left, mut on_the_right) = (0.0_f64, 0.0_f64, 0.0_f64);
+
     for (left, right) in left.iter().zip(right) {
         let (left, right) = (f64::from(*left), f64::from(*right));
+
         both += left * right;
         on_the_left += left * left;
         on_the_right += right * right;
     }
+
     let apart = (on_the_left * on_the_right).sqrt();
     (apart > f64::from(SILENT_ENERGY)).then(|| (both / apart).clamp(-1.0, 1.0) as f32)
 }
@@ -230,10 +238,15 @@ mod tests {
         };
 
         stereo.take(window(10_000), Duration::from_millis(16));
+
         let first = stereo.metered();
+
         stereo.take(window(10_000), Duration::from_millis(16));
+
         let again = stereo.metered();
+
         stereo.take(window(10_800), Duration::from_millis(16));
+
         let on = stereo.metered();
 
         assert!(decibels_of(sampled) < -2.9);
@@ -282,7 +295,9 @@ mod tests {
             },
             Duration::from_millis(16),
         );
+
         let lit = stereo.metered();
+
         assert!(lit.left.level > 0.9 && lit.right.level > 0.9);
         assert_eq!(lit.correlation, Some(1.0));
 
@@ -296,6 +311,7 @@ mod tests {
                 Duration::from_millis(50),
             );
         }
+
         assert!(stereo.is_at_rest());
     }
 }

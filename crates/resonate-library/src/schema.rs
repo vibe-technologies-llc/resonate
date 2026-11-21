@@ -1713,6 +1713,7 @@ mod tests {
 
     fn opened() -> Connection {
         let connection = Connection::open_in_memory().expect("a database in memory");
+
         configure(&connection, Role::Writing).expect("the pragmas apply");
         connection
     }
@@ -1720,6 +1721,7 @@ mod tests {
     #[test]
     fn a_move_followed_finds_the_rows_naming_a_path_by_an_index() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
 
         for (statement, index) in [
@@ -1759,6 +1761,7 @@ mod tests {
     #[test]
     fn a_fresh_catalog_is_laid_out_and_stamped_with_what_this_build_writes() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
 
         assert_eq!(
@@ -1770,6 +1773,7 @@ mod tests {
     #[test]
     fn a_catalog_this_build_wrote_is_opened_again_without_being_laid_out_twice() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
 
         assert!(
@@ -1781,6 +1785,7 @@ mod tests {
     #[test]
     fn a_catalog_laid_out_at_the_first_release_is_carried_forward_not_refused() {
         let connection = opened();
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -1798,8 +1803,10 @@ mod tests {
                     .and_then(Iterator::collect)
             })
             .expect("the columns");
+
         assert!(columns.contains(&"origin_device".to_owned()));
         assert!(columns.contains(&"origin_id".to_owned()));
+
         let kept: Vec<String> = connection
             .prepare("SELECT name FROM pragma_table_info('unheld_listens')")
             .and_then(|mut query| {
@@ -1808,12 +1815,14 @@ mod tests {
                     .and_then(Iterator::collect)
             })
             .expect("the columns");
+
         for column in ["listen_id", "elsewhere", "origin_device", "origin_id"] {
             assert!(
                 kept.contains(&column.to_owned()),
                 "an unheld listen keeps no {column}"
             );
         }
+
         assert!(
             studies_hold_their_bands(&connection),
             "a study kept at the first release was not given a place for its bands and their peaks"
@@ -1828,11 +1837,14 @@ mod tests {
     #[test]
     fn an_existing_catalog_reads_content_advisories_on_its_next_scan() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == TRACKS_KEEP_THEIR_CONTENT_ADVISORY)
             .expect("the advisory migration");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -1843,6 +1855,7 @@ mod tests {
             .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
             .expect("the earlier stamp");
         lay_out(&connection).expect("the advisory migration");
+
         let kept = connection
             .query_row(
                 "SELECT title, explicit, probe_again FROM tracks",
@@ -1856,17 +1869,21 @@ mod tests {
                 },
             )
             .expect("the carried song");
+
         assert_eq!(kept, ("A song".to_owned(), None, true));
     }
 
     #[test]
     fn an_existing_catalog_has_its_artists_folded_once_more_on_its_next_open() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == THE_ARTISTS_ARE_FOLDED_AGAIN_ONCE)
             .expect("the fold migration");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -1891,17 +1908,21 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("the schema reads back");
+
         assert!(owed, "the fold was not owed after the step");
     }
 
     #[test]
     fn an_existing_catalog_owes_its_small_covers_a_larger_one_once_and_keeps_them_meanwhile() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE)
             .expect("the larger covers migration");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -1932,6 +1953,7 @@ mod tests {
                 row.get(0)
             })
             .expect("the album's cover");
+
         assert!(owed, "the larger covers were not owed after the step");
         assert_eq!(kept, b"\x89PNG", "the step took a held cover away");
     }
@@ -1941,11 +1963,14 @@ mod tests {
         type KeptUnheld = (i64, String, i64, i64, Option<i64>, bool, Option<Vec<u8>>);
 
         let connection = opened();
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == AN_UNHELD_LISTEN_NEVER_REUSES_ITS_ID)
             .expect("the numbering migration");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -1987,9 +2012,11 @@ mod tests {
                     .and_then(Iterator::collect)
             })
             .expect("the unheld listens read back");
+
         connection
             .execute("DELETE FROM unheld_listens WHERE id = 7", [])
             .expect("the latest unheld listen is credited");
+
         let next: i64 = connection
             .query_row(
                 "INSERT INTO unheld_listens (path, span_start, at)
@@ -2031,11 +2058,14 @@ mod tests {
     #[test]
     fn a_queue_kept_before_zones_is_read_back_as_the_first_zones() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == A_ZONE_KEEPS_ITS_OWN_QUEUE)
             .expect("the zones migration");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -2100,6 +2130,7 @@ mod tests {
             .expect("the order")
             .collect::<std::result::Result<_, rusqlite::Error>>()
             .expect("every order row");
+
         assert_eq!(position, (1, 2, 3500, 1, 7, Some(4), Some(9)));
         assert_eq!(
             rows,
@@ -2125,11 +2156,14 @@ mod tests {
     #[test]
     fn an_album_and_an_artist_a_blank_tag_named_are_let_go_and_the_named_ones_stay() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST)
             .expect("the blank-tag migration");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -2196,6 +2230,7 @@ mod tests {
             .iter()
             .position(|step| *step == RELEASES_LANDED_WITHOUT_THEIR_CREDIT_ARE_ASKED_AGAIN)
             .expect("the step that asks again");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2225,6 +2260,7 @@ mod tests {
                 })
                 .expect("an album")
         };
+
         assert_eq!(answered(1), Some(1));
         assert_eq!(answered(2), Some(500));
         assert_eq!(answered(3), None);
@@ -2233,11 +2269,14 @@ mod tests {
     #[test]
     fn a_catalog_from_before_its_answers_and_kept_songs_were_indexed_keeps_them_and_finds_them() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         connection.execute_batch(V1).expect("the baseline");
+
         let before = MIGRATIONS
             .iter()
             .position(|step| *step == ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN)
             .expect("the first indexing step");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -2351,6 +2390,7 @@ mod tests {
             .iter()
             .position(|step| *step == THE_PATHS_A_REMOVAL_OR_A_MOVE_LOOKS_UP_ARE_INDEXED)
             .expect("the step that indexes them");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2366,6 +2406,7 @@ mod tests {
                  VALUES ('a.cue', 'a.flac', -1, 'TITLE', NULL, 'Meddle');",
             )
             .expect("a note kept earlier");
+
         assert!(
             plan_of(
                 &connection,
@@ -2379,6 +2420,7 @@ mod tests {
         let kept: i64 = connection
             .query_row("SELECT count(*) FROM retagged_sheets", [], |row| row.get(0))
             .expect("the notes");
+
         assert_eq!(kept, 1);
         for (sql, index) in [
             (
@@ -2395,6 +2437,7 @@ mod tests {
             ),
         ] {
             let plan = plan_of(&connection, sql);
+
             assert!(plan.contains(index), "{sql} was planned as {plan}");
         }
     }
@@ -2406,6 +2449,7 @@ mod tests {
             .iter()
             .position(|step| *step == PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN)
             .expect("the step that forgets them");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2437,6 +2481,7 @@ mod tests {
                 )
                 .expect("a study")
         };
+
         assert_eq!(peaks(1), None);
         assert_eq!(peaks(2), Some(472));
     }
@@ -2448,6 +2493,7 @@ mod tests {
             .iter()
             .position(|step| *step == A_YEAR_OVER_IS_KEPT_AS_IT_WAS_HEARD)
             .expect("the step that keeps a year");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2470,6 +2516,7 @@ mod tests {
                 })
                 .expect("the table")
         };
+
         assert_eq!(count("roots"), 1);
         assert_eq!(count("wrapped_years"), 0);
         assert_eq!(
@@ -2486,6 +2533,7 @@ mod tests {
             .iter()
             .position(|step| *step == A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT)
             .expect("the step that keeps versions beside their song");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2540,6 +2588,7 @@ mod tests {
             .iter()
             .position(|step| *step == A_SONG_PLAYS_THE_VERSION_CHOSEN_FOR_IT)
             .expect("the step that keeps a chosen version");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2565,6 +2614,7 @@ mod tests {
                  DELETE FROM tracks WHERE id = 2;",
             )
             .expect("a version is chosen and its copy taken away");
+
         let count = |table: &str| -> i64 {
             connection
                 .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
@@ -2572,6 +2622,7 @@ mod tests {
                 })
                 .expect("the table")
         };
+
         assert_eq!(count("tracks"), 1);
         assert_eq!(count("versions_chosen"), 0);
         assert!(
@@ -2596,6 +2647,7 @@ mod tests {
             .iter()
             .position(|step| *step == SONGS_KEPT_FROM_A_SERVICE)
             .expect("the step that keeps a song");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2618,14 +2670,18 @@ mod tests {
                 params![playlist],
             )
         };
+
         kept(None).expect("a song kept alone");
         kept(Some("Mix")).expect("the same song in a list");
         kept(Some("Other Mix")).expect("the same song in another list");
+
         assert!(kept(None).is_err(), "a song was kept alone twice");
         assert!(kept(Some("Mix")).is_err(), "a list kept a song twice");
+
         let held: i64 = connection
             .query_row("SELECT count(*) FROM roots", [], |row| row.get(0))
             .expect("the table");
+
         assert_eq!(held, 1);
         assert_eq!(
             stamped(&connection).expect("the stamp reads back"),
@@ -2640,6 +2696,7 @@ mod tests {
             .iter()
             .position(|step| *step == A_LOSSY_SONG_WAITS_TO_BE_REPLACED)
             .expect("the step that makes the table");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2655,6 +2712,7 @@ mod tests {
         let waiting: i64 = connection
             .query_row("SELECT count(*) FROM replacements", [], |row| row.get(0))
             .expect("the table stands");
+
         assert_eq!(waiting, 0);
         assert!(
             plan_of(
@@ -2672,6 +2730,7 @@ mod tests {
             .iter()
             .position(|step| *step == A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD)
             .expect("the step that makes the table");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2709,6 +2768,7 @@ mod tests {
             .iter()
             .position(|step| *step == WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT)
             .expect("the step that makes the tables");
+
         connection
             .execute_batch(V1)
             .expect("the first release's schema");
@@ -2783,8 +2843,11 @@ mod tests {
     #[test]
     fn a_catalog_another_schema_wrote_is_refused_rather_than_read() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
+
         let elsewhere = SchemaFingerprint(SCHEMA_FINGERPRINT.0.wrapping_add(1));
+
         connection
             .pragma_update(None, "user_version", as_signed(elsewhere.0))
             .expect("the stamp is written");
@@ -2803,6 +2866,7 @@ mod tests {
     fn a_fingerprint_past_what_a_signed_stamp_holds_reads_back_whole() {
         let connection = opened();
         let highest = SchemaFingerprint(u32::MAX);
+
         connection
             .pragma_update(None, "user_version", as_signed(highest.0))
             .expect("the stamp is written");
@@ -2849,6 +2913,7 @@ mod tests {
     #[test]
     fn the_discography_index_follows_every_row_added_renamed_or_removed() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -2897,6 +2962,7 @@ mod tests {
     #[test]
     fn only_a_write_to_what_the_grouping_reads_owes_a_regroup_and_of_the_copies_it_touches() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -2909,6 +2975,7 @@ mod tests {
                  DELETE FROM regroup_owed_tracks;",
             )
             .expect("the rows are stored");
+
         let owed = || -> (bool, Vec<i64>) {
             let whole = connection
                 .query_row("SELECT owed FROM regroup_owed", [], |row| row.get(0))
@@ -2931,6 +2998,7 @@ mod tests {
                  UPDATE albums SET cover_asked = 1 WHERE id = 1;",
             )
             .expect("the counts are written");
+
         assert_eq!(
             owed(),
             (false, Vec::new()),
@@ -2943,6 +3011,7 @@ mod tests {
                 [],
             )
             .expect("the release is billed");
+
         assert_eq!(
             owed(),
             (false, vec![1, 2]),
@@ -2956,6 +3025,7 @@ mod tests {
                 [],
             )
             .expect("the copy is renamed");
+
         assert_eq!(
             owed(),
             (false, vec![1, 2]),
@@ -2966,6 +3036,7 @@ mod tests {
         connection
             .execute("DELETE FROM tracks WHERE id = 3", [])
             .expect("a lone track goes");
+
         assert_eq!(
             owed(),
             (false, Vec::new()),
@@ -2975,6 +3046,7 @@ mod tests {
         connection
             .execute("DELETE FROM tracks WHERE id = 1", [])
             .expect("the best copy goes");
+
         assert_eq!(
             owed(),
             (false, vec![2]),
@@ -2985,6 +3057,7 @@ mod tests {
     #[test]
     fn a_track_is_filed_by_its_sort_names_only_while_it_is_billed_as_its_file_names_it() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
         connection
             .execute_batch(
@@ -3050,6 +3123,7 @@ mod tests {
             .expect("an album held");
 
         let (carried_print, carried_before) = printed_as_before(1);
+
         assert!(carried_print.is_some());
         assert_eq!(carried_print, carried_before);
 
@@ -3062,7 +3136,9 @@ mod tests {
         connection
             .execute("INSERT INTO albums (id, title) VALUES (3, 'Bare')", [])
             .expect("an album with no cover");
+
         let (added, added_before) = printed_as_before(2);
+
         assert_eq!(added, added_before);
         assert_eq!(printed_as_before(3), (None, None));
 
@@ -3072,6 +3148,7 @@ mod tests {
         connection
             .execute("UPDATE albums SET cover_art = NULL WHERE id = 1", [])
             .expect("a cover dropped");
+
         assert_eq!(printed_as_before(3).0, carried_print);
         assert_eq!(printed_as_before(1), (None, None));
     }
@@ -3079,7 +3156,9 @@ mod tests {
     #[test]
     fn a_track_its_file_does_not_sort_is_filed_under_its_artists_sort_name() {
         let connection = opened();
+
         lay_out(&connection).expect("the schema applies");
+
         let filed = |path: &str| -> Option<String> {
             connection
                 .query_row(
@@ -3111,6 +3190,7 @@ mod tests {
         connection
             .execute_batch("UPDATE artists SET sort_name = 'Beatles, The' WHERE id = 2;")
             .expect("a lookup sorts the artist");
+
         assert_eq!(filed("beatles.flac").as_deref(), Some("Beatles, The"));
 
         connection
@@ -3118,6 +3198,7 @@ mod tests {
                 "UPDATE tracks SET artist_sort = 'Fab Four' WHERE path = 'beatles.flac';",
             )
             .expect("the file names a sort of its own");
+
         assert_eq!(filed("beatles.flac").as_deref(), Some("Fab Four"));
 
         connection
@@ -3125,6 +3206,7 @@ mod tests {
                 "UPDATE tracks SET artist = 'Beatles', artist_id = NULL WHERE path = 'beatles.flac';",
             )
             .expect("a lookup renames the credit");
+
         assert_eq!(filed("beatles.flac").as_deref(), Some("Beatles"));
     }
 

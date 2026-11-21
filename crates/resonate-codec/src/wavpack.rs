@@ -117,6 +117,7 @@ pub(crate) fn read_coding<S: Read + Seek + ?Sized>(source: &mut S) -> Coding {
         Some(header) if header.starts_with(MARKER) => Coding::of_flags(word(&header, FLAGS_AT)),
         Some(_) | None => Coding::Lossless,
     };
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("a WavPack header read could not restore the stream position");
     }
@@ -174,10 +175,12 @@ impl WavPack {
             .unwrap_or(0)
             .min(MOST_FRAMES_A_BLOCK);
         let mut integers = params.clone();
+
         integers.max_frames_per_packet = Some(capacity);
         if matches!(integers.sample_format, Some(SampleFormat::F32)) {
             integers.sample_format = Some(SampleFormat::S32);
         }
+
         let matroska_version = params
             .extra_data
             .as_deref()
@@ -201,8 +204,11 @@ impl WavPack {
         let GenericAudioBufferRef::S32(integers) = self.inner.last_decoded() else {
             return decode_error("wavpack: floating samples did not decode as integers");
         };
+
         self.buffer.clear();
+
         let frames = integers.frames();
+
         if frames > self.buffer.capacity() {
             self.buffer.grow_capacity(frames);
         }
@@ -210,12 +216,14 @@ impl WavPack {
 
         for floating in &self.rewriting.floating {
             let frames = floating.frames.min(frames);
+
             self.stored.clear();
             for frame in 0..frames {
                 for lane in 0..floating.stored_channels {
                     let Some(plane) = integers.plane(floating.first_channel + lane) else {
                         return decode_error("wavpack: a block names a channel the stream lacks");
                     };
+
                     self.stored.push(plane[frame]);
                 }
             }
@@ -237,6 +245,7 @@ impl WavPack {
                 };
                 for (frame, sample) in plane.iter_mut().take(frames).enumerate() {
                     let bits = self.stored[frame * floating.stored_channels + stored_lane];
+
                     *sample = f32::from_bits(bits as u32);
                 }
             }
@@ -253,6 +262,7 @@ impl Rewriting {
 
         let mut at = 0;
         let mut channel = 0;
+
         while at < data.len() {
             let Some(header) = data.get(at..at + HEADER_BYTES) else {
                 return decode_error("wavpack: a block is cut short");
@@ -261,6 +271,7 @@ impl Rewriting {
             let Some(block) = data.get(at..at + size) else {
                 return decode_error("wavpack: a block runs past its packet");
             };
+
             at += size;
 
             if u64::from(word(header, BLOCK_SAMPLES_AT)) > MOST_FRAMES_A_BLOCK {
@@ -268,6 +279,7 @@ impl Rewriting {
                     "wavpack: a block claims more samples than any encoder writes",
                 );
             }
+
             let flags = word(header, FLAGS_AT);
             let floats = flags & FLOAT_DATA != 0;
             let stored_channels = if flags & (MONO | FALSE_STEREO) != 0 {
@@ -282,16 +294,21 @@ impl Rewriting {
             };
 
             let written_from = self.rewritten.len();
+
             self.rewritten.extend_from_slice(header);
+
             let mut info = None;
             let mut extended = None;
 
             let mut read = HEADER_BYTES;
+
             while read < block.len() {
                 let Some(sub) = SubBlock::at(block, read) else {
                     return decode_error("wavpack: a metadata block runs past its block");
                 };
+
                 read = sub.end;
+
                 let function = sub.id & FUNCTION;
                 let payload = &block[sub.payload.clone()];
 
@@ -299,6 +316,7 @@ impl Rewriting {
                     let Some(held) = payload.get(..FLOAT_INFO_BYTES) else {
                         return decode_error("wavpack: the float information is cut short");
                     };
+
                     info = Some(FloatInfo {
                         flags: held[0],
                         shift: held[1],
@@ -311,8 +329,10 @@ impl Rewriting {
                     let Some(bits) = payload.get(EXTENDED_CHECKSUM_BYTES..) else {
                         return decode_error("wavpack: the extended bits are cut short");
                     };
+
                     if floats {
                         let start = self.extended.len();
+
                         self.extended.extend_from_slice(bits);
                         extended = Some(Extended {
                             bits: start..self.extended.len(),
@@ -329,12 +349,14 @@ impl Rewriting {
 
             let written = &mut self.rewritten[written_from..];
             let counted = u32::try_from(written.len() - UNCOUNTED_HEADER_BYTES).unwrap_or(u32::MAX);
+
             written[SIZE_AT].copy_from_slice(&counted.to_le_bytes());
 
             if floats {
                 let Some(info) = info else {
                     return decode_error("wavpack: floating samples carry no float information");
                 };
+
                 written[FLAGS_AT].copy_from_slice(&(flags & !FLOAT_DATA).to_le_bytes());
                 self.floating.push(Floating {
                     first_channel: channel,
@@ -353,6 +375,7 @@ impl Rewriting {
 
 fn word(bytes: &[u8], at: Range<usize>) -> u32 {
     let mut held = [0; 4];
+
     held.copy_from_slice(&bytes[at]);
     u32::from_le_bytes(held)
 }
@@ -369,11 +392,13 @@ impl SubBlock {
         let id = *block.get(from)?;
         let mut words = usize::from(*block.get(from + 1)?);
         let mut head = 2;
+
         if id & LARGE != 0 {
             words |= usize::from(*block.get(from + 2)?) << 8;
             words |= usize::from(*block.get(from + 3)?) << 16;
             head = 4;
         }
+
         let padded = words * 2;
         let bytes = if id & ODD_SIZE != 0 {
             padded.checked_sub(1)?
@@ -381,6 +406,7 @@ impl SubBlock {
             padded
         };
         let end = from + head + padded;
+
         if end > block.len() {
             return None;
         }
@@ -397,6 +423,7 @@ impl SubBlock {
         let words = payload.len().div_ceil(2);
         let large = words > usize::from(u8::MAX);
         let mut id = id & !(LARGE | ODD_SIZE);
+
         if large {
             id |= LARGE;
         }
@@ -421,6 +448,7 @@ fn expand_matroska(data: &[u8], version: u16, into: &mut Vec<u8>) -> Result<()> 
         return unsupported_error("wavpack: the Matroska stream version is not one WavPack wrote");
     }
     into.clear();
+
     let Some(samples) = data.get(..4) else {
         return decode_error("wavpack: a Matroska block is cut short");
     };
@@ -433,6 +461,7 @@ fn expand_matroska(data: &[u8], version: u16, into: &mut Vec<u8>) -> Result<()> 
             return decode_error("wavpack: a Matroska block is cut short");
         };
         let flags = word(prefix, 0..4);
+
         if into.is_empty() && flags & FINAL_BLOCK == 0 {
             several = true;
         }
@@ -442,6 +471,7 @@ fn expand_matroska(data: &[u8], version: u16, into: &mut Vec<u8>) -> Result<()> 
             let Some(size) = data.get(at..at + MATROSKA_BLOCK_SIZE_BYTES) else {
                 return decode_error("wavpack: a Matroska block names no size");
             };
+
             at += MATROSKA_BLOCK_SIZE_BYTES;
             word(size, 0..4) as usize
         } else {
@@ -450,10 +480,12 @@ fn expand_matroska(data: &[u8], version: u16, into: &mut Vec<u8>) -> Result<()> 
         let Some(body) = data.get(at..at + size) else {
             return decode_error("wavpack: a Matroska block runs past its packet");
         };
+
         at += size;
 
         let counted =
             u32::try_from(HEADER_BYTES - UNCOUNTED_HEADER_BYTES + size).unwrap_or(u32::MAX);
+
         into.extend_from_slice(MARKER);
         into.extend_from_slice(&counted.to_le_bytes());
         into.extend_from_slice(&version.to_le_bytes());
@@ -492,11 +524,14 @@ impl<'a> Bits<'a> {
             let Some(byte) = self.bytes.get(self.at) else {
                 return decode_error("wavpack: the extended bits run out");
             };
+
             self.held |= u64::from(*byte) << self.count;
             self.at += 1;
             self.count += 8;
         }
+
         let value = (self.held & ((1_u64 << wanted) - 1)) as u32;
+
         self.held >>= wanted;
         self.count -= wanted;
         Ok(value)
@@ -512,13 +547,16 @@ fn restore(stored: &mut [i32], info: FloatInfo) {
         if *sample == 0 {
             continue;
         }
+
         let mut exponent = u32::from(info.max_exponent);
         let mut out = 0;
         let mut value = sample.wrapping_shl(u32::from(info.shift));
+
         if value < 0 {
             value = value.wrapping_neg();
             out |= SIGN;
         }
+
         let mut magnitude = value as u32;
 
         if magnitude >= OVERFLOWED_MAGNITUDE {
@@ -528,6 +566,7 @@ fn restore(stored: &mut [i32], info: FloatInfo) {
             }
         } else if exponent != 0 {
             let mut shifted = 0;
+
             while magnitude & IMPLICIT_ONE == 0 {
                 exponent -= 1;
                 if exponent == 0 {
@@ -553,6 +592,7 @@ fn restore_extended(
     with_widths: bool,
 ) -> Result<()> {
     let mut bits = Bits::over(bits);
+
     let (fewest_zeros, most_ones) = if with_widths {
         (bits.take(WIDTH_BITS)?, bits.take(WIDTH_BITS)?)
     } else {
@@ -582,10 +622,12 @@ fn restore_extended(
         }
 
         let mut value = sample.wrapping_shl(u32::from(info.shift));
+
         if value < 0 {
             value = value.wrapping_neg();
             out |= SIGN;
         }
+
         let mut magnitude = value as u32;
 
         if magnitude == OVERFLOWED_MAGNITUDE {
@@ -595,6 +637,7 @@ fn restore_extended(
             exponent = INFINITE_EXPONENT;
         } else {
             let mut shifted = 0;
+
             if exponent != 0 {
                 while magnitude & IMPLICIT_ONE == 0 {
                     exponent -= 1;
@@ -612,12 +655,14 @@ fn restore_extended(
                     magnitude |= ones(shifted);
                 } else if info.flags & SHIFT_SENT != 0 {
                     let mut zeros = 0;
+
                     if most_ones != 0 && shifted > most_ones {
                         zeros = shifted - most_ones;
                     }
                     if fewest_zeros > zeros {
                         zeros = fewest_zeros.min(shifted);
                     }
+
                     let sent = shifted - zeros;
                     if sent > 0 {
                         magnitude |= (bits.take(sent)? << zeros) & ones(shifted);
@@ -659,6 +704,7 @@ impl AudioDecoder for WavPack {
         } else {
             return decode_error("wavpack: a packet carries no header and the stream no version");
         };
+
         self.rewriting.rewrite(data)?;
 
         let rewritten = PacketRef::new(
@@ -667,6 +713,7 @@ impl AudioDecoder for WavPack {
             packet.dur,
             &self.rewriting.rewritten,
         );
+
         self.inner.decode_ref(&rewritten)?;
 
         if self.rewriting.floating.is_empty() {
@@ -733,6 +780,7 @@ mod tests {
 
     fn header(flags: u32) -> Vec<u8> {
         let mut header = vec![0; HEADER_BYTES + 3];
+
         header[..MARKER.len()].copy_from_slice(MARKER);
         header[FLAGS_AT].copy_from_slice(&flags.to_le_bytes());
         header
@@ -756,7 +804,9 @@ mod tests {
         );
 
         let mut elsewhere = header(HYBRID);
+
         elsewhere[..MARKER.len()].copy_from_slice(b"fLaC");
+
         assert_eq!(read_coding(&mut Cursor::new(elsewhere)), Coding::Lossless);
 
         assert_eq!(

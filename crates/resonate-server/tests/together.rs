@@ -52,6 +52,7 @@ async fn hosted(limits: Limits) -> SocketAddr {
         .expect("listening");
     let address = listener.local_addr().expect("an address");
     let server = Server::new(Store::in_memory().expect("a store"), limits);
+
     tokio::spawn(server.serve_web(listener, None));
 
     address
@@ -66,6 +67,7 @@ impl Link {
     async fn to(server: SocketAddr) -> Self {
         let address = web_address(&format!("ws://{server}/")).expect("an address");
         let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+
         let (outgoing, incoming) = connect(&address, &tls).await.expect("connected");
 
         Self { outgoing, incoming }
@@ -110,6 +112,7 @@ async fn seated_in_the_room(
     seat: Option<Token>,
 ) -> Link {
     let mut link = Link::to(server).await;
+
     link.say(ToServer::Room {
         version: PROTOCOL_VERSION,
         room: ROOM,
@@ -125,6 +128,7 @@ async fn seated_in_the_room(
 
 async fn share_opened_as(server: SocketAddr, who: u8) -> Link {
     let mut link = Link::to(server).await;
+
     link.say(ToServer::Share {
         version: PROTOCOL_VERSION,
         space: SPACE,
@@ -134,6 +138,7 @@ async fn share_opened_as(server: SocketAddr, who: u8) -> Link {
         after: 0,
     })
     .await;
+
     assert!(matches!(
         link.heard().await,
         Some(FromServer::Welcome { .. })
@@ -144,6 +149,7 @@ async fn share_opened_as(server: SocketAddr, who: u8) -> Link {
 
 async fn share_opened(server: SocketAddr) -> Link {
     let mut link = Link::to(server).await;
+
     link.say(ToServer::Share {
         version: PROTOCOL_VERSION,
         space: SPACE,
@@ -153,6 +159,7 @@ async fn share_opened(server: SocketAddr) -> Link {
         after: 0,
     })
     .await;
+
     assert!(matches!(
         link.heard().await,
         Some(FromServer::Welcome { .. })
@@ -166,16 +173,21 @@ async fn a_host_is_heard_by_every_guest_a_guest_by_the_host_alone_and_the_clock_
     let server = hosted(Limits::default()).await;
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(matches!(
         host.heard().await,
         Some(FromServer::RoomWelcome { members, host }) if members.is_empty() && host == device(1)
     ));
+
     let mut one = in_the_room(server, 2, None).await;
+
     assert!(matches!(
         one.heard().await,
         Some(FromServer::RoomWelcome { host, .. }) if host == device(1)
     ));
+
     let mut other = in_the_room(server, 3, None).await;
+
     assert!(matches!(
         other.heard().await,
         Some(FromServer::RoomWelcome { .. })
@@ -186,10 +198,12 @@ async fn a_host_is_heard_by_every_guest_a_guest_by_the_host_alone_and_the_clock_
         sealed: vec![1, 2, 3],
     })
     .await;
+
     let told = FromServer::RoomHeard {
         from: device(1),
         sealed: vec![1, 2, 3],
     };
+
     assert_eq!(one.heard_past_presence().await, Some(told.clone()));
     assert_eq!(other.heard_past_presence().await, Some(told));
 
@@ -198,6 +212,7 @@ async fn a_host_is_heard_by_every_guest_a_guest_by_the_host_alone_and_the_clock_
         sealed: vec![4],
     })
     .await;
+
     assert_eq!(
         host.heard_past_presence().await,
         Some(FromServer::RoomHeard {
@@ -207,6 +222,7 @@ async fn a_host_is_heard_by_every_guest_a_guest_by_the_host_alone_and_the_clock_
     );
 
     other.say(ToServer::RoomPing { nonce: 11 }).await;
+
     assert!(
         matches!(
             other.heard_past_presence().await,
@@ -221,12 +237,16 @@ async fn a_guest_cannot_take_another_guests_place_by_joining_under_its_id() {
     let server = hosted(Limits::default()).await;
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(host.heard().await.is_some());
+
     let mut victim = seated_in_the_room(server, 2, None, Some(token(20))).await;
+
     assert!(victim.heard().await.is_some());
 
     let mut thief = seated_in_the_room(server, 2, None, Some(token(21))).await;
     let mut unseated = in_the_room(server, 2, None).await;
+
     assert_eq!(
         thief.heard().await,
         Some(FromServer::Refused(Refusal::Token))
@@ -237,16 +257,19 @@ async fn a_guest_cannot_take_another_guests_place_by_joining_under_its_id() {
     );
 
     victim.say(ToServer::RoomPing { nonce: 3 }).await;
+
     assert!(matches!(
         victim.heard_past_presence().await,
         Some(FromServer::RoomPong { nonce: 3, .. })
     ));
+
     victim
         .say(ToServer::RoomSay {
             to: None,
             sealed: vec![5],
         })
         .await;
+
     assert_eq!(
         host.heard_past_presence().await,
         Some(FromServer::RoomHeard {
@@ -256,6 +279,7 @@ async fn a_guest_cannot_take_another_guests_place_by_joining_under_its_id() {
     );
 
     let mut back = seated_in_the_room(server, 2, None, Some(token(20))).await;
+
     assert!(matches!(
         back.heard().await,
         Some(FromServer::RoomWelcome { .. })
@@ -267,7 +291,9 @@ async fn a_guest_without_a_secret_of_its_own_still_joins_as_before() {
     let server = hosted(Limits::default()).await;
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(host.heard().await.is_some());
+
     let mut old = in_the_room(server, 2, None).await;
 
     assert!(matches!(
@@ -281,8 +307,11 @@ async fn a_guest_without_a_secret_keeps_its_place_while_its_session_lives_and_ge
     let server = hosted(Limits::default()).await;
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(host.heard().await.is_some());
+
     let mut old = in_the_room(server, 2, None).await;
+
     assert!(matches!(
         old.heard().await,
         Some(FromServer::RoomWelcome { .. })
@@ -290,6 +319,7 @@ async fn a_guest_without_a_secret_keeps_its_place_while_its_session_lives_and_ge
 
     let mut thief = in_the_room(server, 2, None).await;
     let mut thief_with_a_secret = seated_in_the_room(server, 2, None, Some(token(21))).await;
+
     assert_eq!(
         thief.heard().await,
         Some(FromServer::Refused(Refusal::Busy))
@@ -300,6 +330,7 @@ async fn a_guest_without_a_secret_keeps_its_place_while_its_session_lives_and_ge
     );
 
     old.say(ToServer::RoomPing { nonce: 3 }).await;
+
     assert!(matches!(
         old.heard_past_presence().await,
         Some(FromServer::RoomPong { nonce: 3, .. })
@@ -316,6 +347,7 @@ async fn a_guest_without_a_secret_keeps_its_place_while_its_session_lives_and_ge
     }
 
     let mut back = in_the_room(server, 2, None).await;
+
     assert!(matches!(
         back.heard().await,
         Some(FromServer::RoomWelcome { .. })
@@ -327,18 +359,21 @@ async fn a_guest_finds_no_room_before_its_host_and_a_wrong_token_is_turned_away(
     let server = hosted(Limits::default()).await;
 
     let mut early = in_the_room(server, 2, None).await;
+
     assert_eq!(
         early.heard().await,
         Some(FromServer::Refused(Refusal::NoSuchRoom))
     );
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(matches!(
         host.heard().await,
         Some(FromServer::RoomWelcome { .. })
     ));
 
     let mut forged = in_the_room(server, 3, Some(token(8))).await;
+
     assert_eq!(
         forged.heard().await,
         Some(FromServer::Refused(Refusal::Token))
@@ -354,14 +389,20 @@ async fn a_room_ends_once_its_host_stays_gone_and_lasts_if_the_host_comes_back()
     .await;
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(host.heard().await.is_some());
+
     let mut guest = in_the_room(server, 2, None).await;
+
     assert!(guest.heard().await.is_some());
 
     host.say(ToServer::Bye).await;
     drop(host);
+
     let mut back = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(back.heard().await.is_some());
+
     tokio::time::sleep(Duration::from_millis(500)).await;
 
     back.say(ToServer::RoomSay {
@@ -369,6 +410,7 @@ async fn a_room_ends_once_its_host_stays_gone_and_lasts_if_the_host_comes_back()
         sealed: vec![1],
     })
     .await;
+
     assert!(matches!(
         guest.heard_past_presence().await,
         Some(FromServer::RoomHeard { .. })
@@ -376,6 +418,7 @@ async fn a_room_ends_once_its_host_stays_gone_and_lasts_if_the_host_comes_back()
 
     back.say(ToServer::Bye).await;
     drop(back);
+
     assert_eq!(
         guest.heard_past_presence().await,
         Some(FromServer::RoomEnded)
@@ -396,18 +439,26 @@ async fn a_host_dropping_twice_is_waited_for_from_its_second_drop_not_its_first(
     };
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(host.heard().await.is_some());
+
     let mut guest = in_the_room(server, 2, None).await;
+
     assert!(guest.heard().await.is_some());
 
     dropped(host).await;
+
     let first_drop = Instant::now();
     let mut back = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(back.heard().await.is_some());
+
     tokio::time::sleep(grace / 2).await;
     dropped(back).await;
     tokio::time::sleep_until((first_drop + grace + grace / 4).into()).await;
+
     let mut back_again = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(back_again.heard().await.is_some());
 
     back_again
@@ -416,6 +467,7 @@ async fn a_host_dropping_twice_is_waited_for_from_its_second_drop_not_its_first(
             sealed: vec![1],
         })
         .await;
+
     assert!(matches!(
         guest.heard_past_presence().await,
         Some(FromServer::RoomHeard { .. })
@@ -427,13 +479,19 @@ async fn the_host_turns_a_guest_out_and_a_host_may_end_the_room_for_everyone() {
     let server = hosted(Limits::default()).await;
 
     let mut host = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(host.heard().await.is_some());
+
     let mut turned_out = in_the_room(server, 2, None).await;
+
     assert!(turned_out.heard().await.is_some());
+
     let mut stays = in_the_room(server, 3, None).await;
+
     assert!(stays.heard().await.is_some());
 
     host.say(ToServer::RoomKick { member: device(2) }).await;
+
     assert_eq!(
         turned_out.heard_past_presence().await,
         Some(FromServer::RoomEnded)
@@ -443,6 +501,7 @@ async fn the_host_turns_a_guest_out_and_a_host_may_end_the_room_for_everyone() {
         sealed: vec![0; 28],
     })
     .await;
+
     assert_eq!(
         stays.heard_past_presence().await,
         Some(FromServer::RoomEnded)
@@ -454,17 +513,20 @@ async fn a_viewer_reads_a_shared_space_and_can_write_nothing_to_it() {
     let server = hosted(Limits::default()).await;
 
     let mut editor = share_opened(server).await;
+
     editor
         .say(ToServer::Append {
             blobs: vec![SEALED.to_vec()],
         })
         .await;
+
     assert!(matches!(
         editor.heard().await,
         Some(FromServer::Records { .. } | FromServer::Appended { .. })
     ));
 
     let mut viewer = Link::to(server).await;
+
     viewer
         .say(ToServer::View {
             version: PROTOCOL_VERSION,
@@ -474,17 +536,21 @@ async fn a_viewer_reads_a_shared_space_and_can_write_nothing_to_it() {
             after: 0,
         })
         .await;
+
     assert!(matches!(
         viewer.heard().await,
         Some(FromServer::Welcome { head: 1, online, .. }) if online.is_empty()
     ));
+
     let Some(FromServer::Records { entries }) = viewer.heard().await else {
         panic!("a viewer was handed no records");
     };
+
     assert_eq!(entries[0].blob.as_deref(), Some(SEALED.as_slice()));
     assert_eq!(viewer.heard().await, None, "a view is one read, then over");
 
     let mut wrote_with_the_viewers_token = Link::to(server).await;
+
     wrote_with_the_viewers_token
         .say(ToServer::Hello {
             version: PROTOCOL_VERSION,
@@ -494,12 +560,14 @@ async fn a_viewer_reads_a_shared_space_and_can_write_nothing_to_it() {
             after: 0,
         })
         .await;
+
     assert_eq!(
         wrote_with_the_viewers_token.heard().await,
         Some(FromServer::Refused(Refusal::Token))
     );
 
     let mut stranger = Link::to(server).await;
+
     stranger
         .say(ToServer::View {
             version: PROTOCOL_VERSION,
@@ -509,6 +577,7 @@ async fn a_viewer_reads_a_shared_space_and_can_write_nothing_to_it() {
             after: 0,
         })
         .await;
+
     assert_eq!(
         stranger.heard().await,
         Some(FromServer::Refused(Refusal::Token))
@@ -521,6 +590,7 @@ async fn a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets
 
     let _editor = share_opened(server).await;
     let mut as_a_personal_space = Link::to(server).await;
+
     as_a_personal_space
         .say(ToServer::Hello {
             version: PROTOCOL_VERSION,
@@ -530,7 +600,9 @@ async fn a_space_made_by_a_share_is_never_answered_to_a_hello_so_the_two_budgets
             after: 0,
         })
         .await;
+
     let mut shared_again = share_opened_as(server, 44).await;
+
     shared_again
         .say(ToServer::Append {
             blobs: vec![SEALED.to_vec()],
@@ -558,13 +630,17 @@ async fn a_share_does_only_what_a_shared_list_needs_so_it_cannot_stand_in_for_a_
         device: device(who),
         after: 0,
     };
+
     let refused_after = async |who: u8, asked: ToServer| {
         let mut link = Link::to(server).await;
+
         link.say(opened_as(who)).await;
+
         assert!(matches!(
             link.heard().await,
             Some(FromServer::Welcome { online, .. }) if online.is_empty()
         ));
+
         link.say(asked).await;
 
         loop {
@@ -576,19 +652,26 @@ async fn a_share_does_only_what_a_shared_list_needs_so_it_cannot_stand_in_for_a_
     };
 
     let mut first = Link::to(server).await;
+
     first.say(opened_as(1)).await;
+
     assert!(matches!(
         first.heard().await,
         Some(FromServer::Welcome { .. })
     ));
+
     let mut second = Link::to(server).await;
+
     second.say(opened_as(2)).await;
+
     let second_welcomed = second.heard().await;
+
     second
         .say(ToServer::Append {
             blobs: vec![SEALED.to_vec()],
         })
         .await;
+
     let appended = second.heard().await;
 
     let relaying = refused_after(3, ToServer::Relaying).await;
@@ -608,6 +691,7 @@ async fn a_share_does_only_what_a_shared_list_needs_so_it_cannot_stand_in_for_a_
         },
     )
     .await;
+
     first.say(ToServer::Bye).await;
 
     assert!(matches!(
@@ -648,14 +732,19 @@ async fn a_view_link_cannot_claim_a_shared_list_before_its_owner_does() {
     };
 
     let mut with_the_read_token = Link::to(server).await;
+
     with_the_read_token
         .say(claimed_with(viewing.read_token.clone(), 40))
         .await;
+
     let mut with_a_token_of_its_own = Link::to(server).await;
+
     with_a_token_of_its_own
         .say(claimed_with(token(77), 41))
         .await;
+
     let mut the_owner = Link::to(server).await;
+
     the_owner
         .say(claimed_with(
             owner.write_token.expect("an editor writes"),
@@ -682,11 +771,13 @@ async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyon
     let server = hosted(Limits::default()).await;
 
     let mut editor = share_opened(server).await;
+
     editor
         .say(ToServer::Close {
             sealed: SEALED.to_vec(),
         })
         .await;
+
     assert_eq!(
         editor.heard().await,
         Some(FromServer::Closed {
@@ -699,6 +790,7 @@ async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyon
             sealed: vec![9; 32],
         })
         .await;
+
     assert_eq!(
         editor.heard().await,
         Some(FromServer::Closed {
@@ -712,18 +804,21 @@ async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyon
             blobs: vec![vec![1; 32]],
         })
         .await;
+
     assert_eq!(
         editor.heard().await,
         Some(FromServer::Closed {
             sealed: SEALED.to_vec()
         })
     );
+
     editor
         .say(ToServer::Compact {
             through: 1,
             parts: vec![vec![1; 32]],
         })
         .await;
+
     assert_eq!(
         editor.heard().await,
         Some(FromServer::Closed {
@@ -732,6 +827,7 @@ async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyon
     );
 
     let mut viewer = Link::to(server).await;
+
     viewer
         .say(ToServer::View {
             version: PROTOCOL_VERSION,
@@ -741,6 +837,7 @@ async fn a_closed_space_keeps_the_first_word_and_takes_no_more_and_tells_everyon
             after: 0,
         })
         .await;
+
     assert!(matches!(
         viewer.heard().await,
         Some(FromServer::Welcome { head: 0, .. })
@@ -765,9 +862,11 @@ async fn a_space_closed_again_tells_only_the_one_asking_not_every_device_once_mo
             sealed: SEALED.to_vec(),
         })
         .await;
+
     let closed = FromServer::Closed {
         sealed: SEALED.to_vec(),
     };
+
     assert_eq!(first.heard().await, Some(closed.clone()));
     assert_eq!(second.heard().await, Some(closed.clone()));
 
@@ -776,9 +875,11 @@ async fn a_space_closed_again_tells_only_the_one_asking_not_every_device_once_mo
             sealed: vec![9; 32],
         })
         .await;
+
     assert_eq!(second.heard().await, Some(closed));
 
     let told_again = timeout(Duration::from_millis(500), first.incoming.read()).await;
+
     assert!(told_again.is_err(), "the other device was told again");
 }
 
@@ -787,14 +888,17 @@ async fn heads_are_told_for_a_token_that_fits_and_kept_from_one_that_does_not() 
     let server = hosted(Limits::default()).await;
 
     let mut editor = share_opened(server).await;
+
     editor
         .say(ToServer::Append {
             blobs: vec![SEALED.to_vec()],
         })
         .await;
+
     assert!(editor.heard().await.is_some());
 
     let mut asking = Link::to(server).await;
+
     asking
         .say(ToServer::Heads {
             version: PROTOCOL_VERSION,
@@ -810,15 +914,18 @@ async fn heads_are_told_for_a_token_that_fits_and_kept_from_one_that_does_not() 
             ],
         })
         .await;
+
     let Some(FromServer::Heads { heads }) = asking.heard().await else {
         panic!("no heads came back");
     };
+
     assert_eq!(heads.len(), 1);
     assert_eq!(heads[0].space, SPACE);
     assert_eq!(heads[0].head, 1);
     assert!(!heads[0].closed);
 
     let mut stranger = Link::to(server).await;
+
     stranger
         .say(ToServer::Heads {
             version: PROTOCOL_VERSION,
@@ -828,6 +935,7 @@ async fn heads_are_told_for_a_token_that_fits_and_kept_from_one_that_does_not() 
             }],
         })
         .await;
+
     assert_eq!(
         stranger.heard().await,
         Some(FromServer::Heads { heads: Vec::new() })
@@ -839,21 +947,26 @@ async fn a_page_is_answered_beside_the_socket_and_holds_nothing_of_the_invitatio
     let server = hosted(Limits::default()).await;
 
     let mut stream = TcpStream::connect(server).await.expect("connected");
+
     stream
         .write_all(b"GET /p/ HTTP/1.1\r\nHost: resonate.example\r\n\r\n")
         .await
         .expect("asked");
+
     let mut answer = Vec::new();
+
     timeout(ANSWERS_WITHIN, stream.read_to_end(&mut answer))
         .await
         .expect("answered in time")
         .expect("read");
+
     let answer = String::from_utf8(answer).expect("text");
 
     assert!(answer.starts_with("HTTP/1.1 200 OK"));
     assert!(answer.contains("resonate://party/"));
 
     let mut still_a_socket = in_the_room(server, 1, Some(token(9))).await;
+
     assert!(matches!(
         still_a_socket.heard().await,
         Some(FromServer::RoomWelcome { .. })
@@ -869,12 +982,15 @@ fn a_store_of_before_shared_spaces_is_carried_forward_with_its_records() {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos())
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
+
     let path = folder.join("store.sqlite");
     let digest = token(5).digest();
 
     {
         let earlier = rusqlite::Connection::open(&path).expect("a store of before");
+
         earlier
             .execute_batch(
                 "CREATE TABLE spaces (
@@ -903,6 +1019,7 @@ fn a_store_of_before_shared_spaces_is_carried_forward_with_its_records() {
     }
 
     let mut store = Store::open(&path).expect("carried forward");
+
     let heads = store
         .heads(
             &[SpaceAsked {
@@ -939,6 +1056,7 @@ async fn until(what: &str, reached: impl Fn() -> bool) {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
     while !reached() {
         assert!(tokio::time::Instant::now() < deadline, "{what}");
+
         tokio::time::sleep(Duration::from_millis(20)).await;
     }
 }
@@ -976,6 +1094,7 @@ async fn a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_hos
         anchor_nanos: 7,
         coarse: false,
     };
+
     host.tell(now.clone());
 
     let code = host.shown().code;
@@ -1009,6 +1128,7 @@ async fn a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_hos
     .await;
 
     let member = guest.shown().me;
+
     host.turn_out(member);
     until("the guest to be told the party is over", || {
         guest.shown().reach == PartyReach::Ended
@@ -1031,8 +1151,10 @@ async fn what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hea
     let server = hosted(Limits::default()).await;
     let host = a_party_in_the_room(server).await;
     let code = host.shown().code;
+
     let ada = Party::join(party_settings(server, "Ada"), &code).expect("Ada joins");
     let bo = Party::join(party_settings(server, "Bo"), &code).expect("Bo joins");
+
     until("everyone to be named to the host", || {
         let people = host.shown().people;
         people.iter().any(|one| one.name == "Ada") && people.iter().any(|one| one.name == "Bo")
@@ -1047,6 +1169,7 @@ async fn what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hea
         ("Ada".to_owned(), PartyChat::Words("Turn it up".to_owned())),
         ("Host".to_owned(), PartyChat::Reaction(PartyReaction::Fire)),
     ];
+
     for (who, party) in [("the host", &host), ("Ada", &ada), ("Bo", &bo)] {
         until(&format!("{who} to hear both lines"), || {
             words_heard(party) == heard
@@ -1055,11 +1178,14 @@ async fn what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hea
     }
 
     let late = Party::join(party_settings(server, "Cy"), &code).expect("Cy joins");
+
     until("the late guest to hear what came before", || {
         words_heard(&late) == heard
     })
     .await;
+
     let ids: Vec<u64> = host.shown().chat.iter().map(|line| line.id).collect();
+
     assert_eq!(
         late.shown()
             .chat
@@ -1074,8 +1200,10 @@ async fn what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hea
 async fn a_guest_saying_more_than_its_share_is_heard_only_as_far_as_its_share() {
     let server = hosted(Limits::default()).await;
     let host = a_party_in_the_room(server).await;
+
     let guest =
         Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest joins");
+
     until("the guest to arrive", || {
         guest.shown().reach == PartyReach::Here && host.shown().people.len() == 2
     })
@@ -1091,6 +1219,7 @@ async fn a_guest_saying_more_than_its_share_is_heard_only_as_far_as_its_share() 
     tokio::time::sleep(Duration::from_secs(2)).await;
 
     assert_eq!(host.shown().chat.len(), LINES_A_PERSON_SAYS_AT_MOST);
+
     until("the guest to hear its share back", || {
         guest.shown().chat.len() == LINES_A_PERSON_SAYS_AT_MOST
     })
@@ -1102,9 +1231,11 @@ async fn a_door_held_shut_until(server: SocketAddr, open: Arc<AtomicBool>) -> So
         .await
         .expect("listening");
     let address = listener.local_addr().expect("an address");
+
     tokio::spawn(async move {
         while let Ok((mut client, _)) = listener.accept().await {
             let open = Arc::clone(&open);
+
             tokio::spawn(async move {
                 while !open.load(Ordering::Acquire) {
                     tokio::time::sleep(Duration::from_millis(10)).await;
@@ -1123,24 +1254,30 @@ async fn a_door_held_shut_until(server: SocketAddr, open: Arc<AtomicBool>) -> So
 async fn a_guest_arriving_before_its_host_has_made_the_room_is_let_in_once_the_host_has() {
     let server = hosted(Limits::default()).await;
     let open = Arc::new(AtomicBool::new(false));
+
     let door = a_door_held_shut_until(server, Arc::clone(&open)).await;
 
     let host = Party::host(party_settings(door, "Host")).expect("the host starts");
     let guest =
         Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+
     until("the guest to be told the room is not there yet", || {
         guest.shown().reach != PartyReach::Connecting
     })
     .await;
+
     let before_the_host = guest.shown().reach;
+
     open.store(true, Ordering::Release);
 
     assert_eq!(before_the_host, PartyReach::Reconnecting);
+
     until(
         "the guest to be let in once the host has made the room",
         || guest.shown().reach == PartyReach::Here,
     )
     .await;
+
     assert_eq!(host.shown().reach, PartyReach::Here);
 }
 
@@ -1149,6 +1286,7 @@ async fn nobody_is_at_a_party_nobody_began() {
     let server = hosted(Limits::default()).await;
     let key = resonate_sync::party::PartyKey::hosted_by(&resonate_sync::Token([7; 32]))
         .expect("a key is minted");
+
     let guest = Party::join(party_settings(server, ""), &key.code()).expect("the guest starts");
 
     until("the guest to be told there is no such party", || {
@@ -1171,6 +1309,7 @@ impl Doorman {
             .expect("listening");
         let address = listener.local_addr().expect("an address");
         let closing = Arc::new(AtomicU32::new(clean_closes));
+
         let serving = tokio::spawn(Self::serve(listener, server, Arc::clone(&closing)));
 
         Self {
@@ -1214,6 +1353,7 @@ impl Doorman {
     async fn go_away(&mut self) {
         if let Some(serving) = self.serving.take() {
             serving.abort();
+
             let _ = serving.await;
         }
     }
@@ -1222,6 +1362,7 @@ impl Doorman {
         let listener = TcpListener::bind(self.address)
             .await
             .expect("listening again");
+
         self.serving = Some(tokio::spawn(Self::serve(
             listener,
             self.server,
@@ -1232,6 +1373,7 @@ impl Doorman {
 
 async fn a_party_in_the_room(server: SocketAddr) -> Party {
     let host = Party::host(party_settings(server, "Host")).expect("the host starts");
+
     until("the host to reach the server", || {
         host.shown().reach == PartyReach::Here
     })
@@ -1245,8 +1387,10 @@ async fn a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_b
     let server = hosted(Limits::default()).await;
     let host = a_party_in_the_room(server).await;
     let mut door = Doorman::before(server, 0).await;
+
     let guest = Party::join(party_settings(door.address, "Guest"), &host.shown().code)
         .expect("the guest starts");
+
     until("the guest to reach the party", || {
         guest.shown().reach == PartyReach::Here
     })
@@ -1264,6 +1408,7 @@ async fn a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_b
         host.shown().asked_for.len() == 1
     })
     .await;
+
     assert_eq!(host.shown().asked_for[0].song, a_song(9));
 }
 
@@ -1271,13 +1416,17 @@ async fn a_guests_request_made_while_it_reconnects_reaches_the_host_once_it_is_b
 async fn a_hosts_turn_out_made_while_it_reconnects_reaches_the_room_once_it_is_back() {
     let server = hosted(Limits::default()).await;
     let mut door = Doorman::before(server, 0).await;
+
     let host = Party::host(party_settings(door.address, "Host")).expect("the host starts");
+
     until("the host to reach the server", || {
         host.shown().reach == PartyReach::Here
     })
     .await;
+
     let guest =
         Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+
     until("the host to see the guest", || {
         host.shown().people.len() == 2
     })
@@ -1302,8 +1451,10 @@ async fn a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_
 {
     let server = hosted(Limits::default()).await;
     let host = a_party_in_the_room(server).await;
+
     let guest =
         Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+
     until("the guest to reach the party", || {
         guest.shown().reach == PartyReach::Here
     })
@@ -1313,6 +1464,7 @@ async fn a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_
         host.shown().asked_for.len() == 1
     })
     .await;
+
     let request = host.shown().asked_for[0].clone();
 
     let first = host.claim_a_request(&request);
@@ -1320,11 +1472,15 @@ async fn a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_
 
     assert!(first.is_some());
     assert!(second.is_none());
+
     drop(first);
+
     let again = host.claim_a_request(&request);
+
     assert!(again.is_some());
 
     host.take_a_request(request);
+
     assert!(host.shown().asked_for.is_empty());
 }
 
@@ -1332,8 +1488,10 @@ async fn a_request_pressed_twice_while_its_search_runs_is_claimed_once_and_free_
 async fn a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone() {
     let server = hosted(Limits::default()).await;
     let host = a_party_in_the_room(server).await;
+
     let guest =
         Party::join(party_settings(server, "Guest"), &host.shown().code).expect("the guest starts");
+
     until("the guest to reach the party", || {
         guest.shown().reach == PartyReach::Here
     })
@@ -1345,6 +1503,7 @@ async fn a_request_dismissed_is_the_one_named_whatever_else_has_come_and_gone() 
         host.shown().asked_for.len() == 2
     })
     .await;
+
     let second: PartyWantingASong = host.shown().asked_for[1].clone();
     let first: PartyWantingASong = host.shown().asked_for[0].clone();
 
@@ -1415,6 +1574,7 @@ impl PartySeat for FakeSeat {
         let at = (self.now_nanos)();
         let row = *self.row.lock();
         let paused = self.told.paused.load(Ordering::Acquire);
+
         let mine = match (row, paused) {
             (None, _) => Mine::Stopped,
             (Some(_), true) => Mine::Paused,
@@ -1513,6 +1673,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
     let host = Party::host(host_settings).expect("the host starts");
     let code = host.shown().code;
     let host_told = Told::default();
+
     let host_seat = FakeSeat {
         began: host_now(),
         now_nanos: host_now,
@@ -1527,6 +1688,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
     let guest_settings = party_settings(server, "Guest");
     let guest_now = Arc::clone(&guest_settings.now_nanos);
     let told = Told::default();
+
     let guest_seat = FakeSeat {
         began: guest_now(),
         now_nanos: guest_now,
@@ -1537,6 +1699,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
         moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
+
     let mut going =
         Going::begin(guest, guest_seat, Arc::new(HeldOnly(1))).expect("the guest's seat");
 
@@ -1546,6 +1709,7 @@ async fn a_guest_takes_up_what_the_host_plays_as_far_as_it_holds_and_puts_its_qu
     .await;
     {
         let taken = told.taken_up.lock();
+
         assert_eq!(taken[0].0, vec![1], "a next song it lacks stops the run");
         assert!(taken[0].2);
     }
@@ -1575,11 +1739,13 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
         next: Arc::new(Mutex::new(vec![2])),
         moves: Arc::default(),
     };
+
     let _hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(2))).expect("the host's seat");
 
     let guest_settings = party_settings(server, "Guest");
     let guest_now = Arc::clone(&guest_settings.now_nanos);
     let told = Told::default();
+
     let guest_seat = FakeSeat {
         began: guest_now(),
         now_nanos: guest_now,
@@ -1590,6 +1756,7 @@ async fn a_guest_holding_nothing_sits_out_and_is_not_moved() {
         moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
+
     let going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(0))).expect("the guest's seat");
 
     until("the guest to sit the song out", || {
@@ -1608,6 +1775,7 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
     let host = Party::host(host_settings).expect("the host starts");
     let code = host.shown().code;
     let host_next = Arc::new(Mutex::new(vec![2, 3]));
+
     let host_seat = FakeSeat {
         began: host_now(),
         now_nanos: host_now,
@@ -1622,6 +1790,7 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
     let guest_settings = party_settings(server, "Guest");
     let guest_now = Arc::clone(&guest_settings.now_nanos);
     let told = Told::default();
+
     let guest_seat = FakeSeat {
         began: guest_now(),
         now_nanos: guest_now,
@@ -1632,12 +1801,14 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
         moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
+
     let _going = Going::begin(guest, guest_seat, Arc::new(HeldOnly(9))).expect("the guest's seat");
 
     until("the guest to take the queue up", || {
         !told.taken_up.lock().is_empty()
     })
     .await;
+
     assert_eq!(told.taken_up.lock()[0].0, vec![1, 2, 3]);
 
     *host_next.lock() = vec![2, 3, 4, 5];
@@ -1645,6 +1816,7 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
         !told.kept_ahead.lock().is_empty()
     })
     .await;
+
     assert_eq!(told.kept_ahead.lock()[0], vec![2, 3, 4]);
 
     *host_next.lock() = vec![2, 4, 5];
@@ -1653,8 +1825,11 @@ async fn a_guests_queue_is_kept_current_as_the_host_edits_past_the_songs_found_a
         || told.kept_ahead.lock().len() == 2,
     )
     .await;
+
     assert_eq!(told.kept_ahead.lock()[1], vec![2, 4, 5]);
+
     let taken = told.taken_up.lock().clone();
+
     assert_eq!(
         taken.len(),
         1,
@@ -1672,6 +1847,7 @@ async fn a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_
     let host_now = Arc::clone(&host_settings.now_nanos);
     let host = Party::host(host_settings).expect("the host starts");
     let code = host.shown().code;
+
     let host_seat = FakeSeat {
         began: host_now(),
         now_nanos: Arc::clone(&host_now),
@@ -1686,6 +1862,7 @@ async fn a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_
     let guest_settings = party_settings(server, "Guest");
     let guest_now = Arc::clone(&guest_settings.now_nanos);
     let told = Told::default();
+
     let guest_seat = FakeSeat {
         began: guest_now(),
         now_nanos: guest_now,
@@ -1696,8 +1873,10 @@ async fn a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_
         moves: Arc::default(),
     };
     let guest = Party::join(guest_settings, &code).expect("the guest joins");
+
     let going =
         Going::begin(guest, guest_seat, Arc::new(HeldOnly(9_999))).expect("the guest's seat");
+
     until("the guest to stand in step", || {
         going.followed().standing == Standing::InStep
     })
@@ -1706,10 +1885,12 @@ async fn a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_
     host_moves.lock().push((1, 5_001));
     *host_row.lock() = Some(5_001);
     until("the host to take the move", || host_moves.lock().is_empty()).await;
+
     let moved_by = hosted
         .party()
         .to_server(host_now())
         .expect("the host reads the party's clock");
+
     until("the guest to hear the host after the move", || {
         going
             .shown()
@@ -1717,12 +1898,16 @@ async fn a_host_whose_song_moves_goes_on_naming_it_as_the_party_knows_it_and_no_
             .is_some_and(|now| now.anchor_nanos > moved_by)
     })
     .await;
+
     let heard = going.shown().now.expect("the guest heard the host");
+
     tokio::time::sleep(Duration::from_secs(1)).await;
 
     assert_eq!(heard.song.map(|song| song.row), Some(1));
     assert_eq!(going.followed().standing, Standing::InStep);
+
     let taken = told.taken_up.lock().clone();
+
     assert_eq!(
         taken.len(),
         1,
@@ -1738,6 +1923,7 @@ async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded(
     let began = Instant::now();
     let now: Arc<dyn Fn() -> u64 + Send + Sync> =
         Arc::new(move || u64::try_from(began.elapsed().as_nanos()).unwrap_or(u64::MAX));
+
     let settings = |name: &str| PartySettings {
         server: server.clone(),
         trusted: None,
@@ -1746,6 +1932,7 @@ async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded(
         time_server: None,
     };
     let host = Party::host(settings("Host")).expect("the host starts");
+
     let guest = Party::join(settings("Guest"), &host.shown().code).expect("the guest joins");
     let measured_for = Duration::from_secs(
         env::var("RESONATE_PARTY_SECONDS")
@@ -1763,12 +1950,14 @@ async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded(
     let mut sum = 0_u128;
     let mut samples = 0_u128;
     let end = Instant::now() + measured_for;
+
     while Instant::now() < end {
         let here = now();
         let apart = host
             .to_server(here)
             .expect("the host has a clock")
             .abs_diff(guest.to_server(here).expect("the guest has a clock"));
+
         most_apart = most_apart.max(apart);
         sum += u128::from(apart);
         samples += 1;
@@ -1776,11 +1965,13 @@ async fn the_clock_of_two_seats_on_the_live_path_agrees_within_what_is_recorded(
     }
 
     let trip = guest.shown().round_trip.expect("a round trip was measured");
+
     println!(
         "round trip {trip:?}, clocks apart on average {:?}, at most {:?}",
         Duration::from_nanos(u64::try_from(sum / samples.max(1)).unwrap_or(u64::MAX)),
         Duration::from_nanos(most_apart)
     );
+
     assert!(
         most_apart < 100_000_000,
         "two seats disagreed by {most_apart} ns"
@@ -1816,14 +2007,17 @@ async fn the_host_hands_the_party_to_a_guest_who_hosts_it_on_for_everyone_once_t
     })
     .await;
     let mut host = a_party_in_the_room(server).await;
+
     let code = host.shown().code;
     let ada = Party::join(party_settings(server, "Ada"), &code).expect("Ada joins");
     let bo = Party::join(party_settings(server, "Bo"), &code).expect("Bo joins");
+
     until("everyone to be named to the host", || {
         let people = host.shown().people;
         people.iter().any(|one| one.name == "Ada") && people.iter().any(|one| one.name == "Bo")
     })
     .await;
+
     let ada_is = ada.shown().me;
 
     host.hand_over(ada_is);
@@ -1860,6 +2054,7 @@ async fn the_host_hands_the_party_to_a_guest_who_hosts_it_on_for_everyone_once_t
         words_heard(&bo).contains(&("Ada".to_owned(), PartyChat::Words("Mine now".to_owned())))
     })
     .await;
+
     assert_eq!(
         bo.shown().reach,
         PartyReach::Here,
@@ -1876,6 +2071,7 @@ async fn a_party_handed_to_someone_who_never_takes_it_stays_the_hosts() {
         resonate_sync::party::PartyKey::from_code(&host.shown().code).expect("the code reads");
     let keys = key.keys().expect("the keys");
     let mut deaf = Link::to(server).await;
+
     deaf.say(ToServer::Room {
         version: PROTOCOL_VERSION,
         room: keys.room,
@@ -1901,6 +2097,7 @@ async fn a_party_handed_to_someone_who_never_takes_it_stays_the_hosts() {
         host.shown().handing == Some(PartyHanding::NotTaken(device(9)))
     })
     .await;
+
     assert!(host.shown().hosting);
     assert_eq!(host.shown().reach, PartyReach::Here);
 }
@@ -1922,11 +2119,13 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
         moves: Arc::default(),
     });
     let code = host.shown().code;
+
     let mut hosted = Going::begin(host, host_seat, Arc::new(HeldOnly(3))).expect("the host's seat");
 
     let ada_settings = party_settings(server, "Ada");
     let ada_now = Arc::clone(&ada_settings.now_nanos);
     let told = Told::default();
+
     let ada_seat = FakeSeat {
         began: ada_now(),
         now_nanos: ada_now,
@@ -1937,8 +2136,10 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
         moves: Arc::default(),
     };
     let ada = Party::join(ada_settings, &code).expect("Ada joins");
+
     let mut going = Going::begin(ada, ada_seat, Arc::new(HeldOnly(3))).expect("Ada's seat");
     let bo = Party::join(party_settings(server, "Bo"), &code).expect("Bo joins");
+
     until("Ada to stand in step", || {
         going.followed().standing == Standing::InStep
     })
@@ -1969,6 +2170,7 @@ async fn a_guest_taking_the_party_over_plays_on_under_the_rows_everyone_already_
     })
     .await;
     going.leave();
+
     assert!(
         !told.put_back.load(Ordering::Acquire),
         "a host keeps the queue it plays"
@@ -1984,6 +2186,7 @@ fn as_ntp(at: Duration) -> [u8; 8] {
     let fraction =
         u32::try_from((u64::from(at.subsec_nanos()) << 32) / 1_000_000_000).unwrap_or(u32::MAX);
     let mut stamp = [0; 8];
+
     stamp[..4].copy_from_slice(&seconds.to_be_bytes());
     stamp[4..].copy_from_slice(&fraction.to_be_bytes());
     stamp
@@ -1994,22 +2197,26 @@ async fn a_time_server_running_ahead_by(ahead: Duration) -> SocketAddr {
         .await
         .expect("a time server");
     let address = socket.local_addr().expect("an address");
+
     tokio::spawn(async move {
         let mut asked = [0; 48];
         while let Ok((read, from)) = socket.recv_from(&mut asked).await {
             if read < 48 {
                 continue;
             }
+
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 + ahead;
             let mut answer = [0; 48];
+
             answer[0] = 0b0010_0100;
             answer[1] = 1;
             answer[24..32].copy_from_slice(&asked[40..48]);
             answer[32..40].copy_from_slice(&as_ntp(now));
             answer[40..48].copy_from_slice(&as_ntp(now));
+
             let _ = socket.send_to(&answer, from).await;
         }
     });
@@ -2028,6 +2235,7 @@ fn timed_by(server: SocketAddr, name: &str, time: SocketAddr) -> PartySettings {
 async fn two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_hearing() {
     let server = hosted(Limits::default()).await;
     let time = a_time_server_running_ahead_by(Duration::ZERO).await;
+
     let host = Party::host(timed_by(server, "Ada", time)).expect("hosted");
     let guest = Party::join(timed_by(server, "Bo", time), &host.shown().code).expect("joined");
 
@@ -2035,6 +2243,7 @@ async fn two_seats_asking_one_time_server_are_shown_apart_by_nothing_worth_heari
         guest.shown().apart.is_some()
     })
     .await;
+
     let apart = guest.shown().apart.expect("weighed");
 
     assert!(
@@ -2052,12 +2261,14 @@ async fn a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past
     let server = hosted(Limits::default()).await;
     let hosts_time = a_time_server_running_ahead_by(Duration::ZERO).await;
     let guests_time = a_time_server_running_ahead_by(THE_GUESTS_TIME_SERVER_RUNS_AHEAD_BY).await;
+
     let host = Party::host(timed_by(server, "Ada", hosts_time)).expect("hosted");
     let guest =
         Party::join(timed_by(server, "Bo", guests_time), &host.shown().code).expect("joined");
 
     let gap = i64::try_from(THE_GUESTS_TIME_SERVER_RUNS_AHEAD_BY.as_nanos()).expect("a gap");
     let tight_enough = gap.unsigned_abs() / 2;
+
     until(
         "the guest weighing the host's time over round trips shorter than the gap",
         || {
@@ -2068,6 +2279,7 @@ async fn a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past
         },
     )
     .await;
+
     let apart = guest.shown().apart.expect("weighed");
     let here = 1_000_000_000;
 
@@ -2088,6 +2300,7 @@ async fn a_guest_whose_time_server_runs_late_is_shown_the_gap_and_not_moved_past
 async fn a_party_with_no_time_server_weighs_nothing() {
     let server = hosted(Limits::default()).await;
     let host = Party::host(party_settings(server, "Ada")).expect("hosted");
+
     let guest = Party::join(party_settings(server, "Bo"), &host.shown().code).expect("joined");
 
     until("the guest arriving", || {

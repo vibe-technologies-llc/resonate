@@ -13,6 +13,7 @@ static CONFIG: LazyLock<std::result::Result<Arc<ClientConfig>, rustls::Error>> =
     LazyLock::new(|| {
         let provider = Arc::new(ring::default_provider());
         let verifier = Arc::new(TheReceiversOwn(provider.signature_verification_algorithms));
+
         let config = ClientConfig::builder_with_provider(provider)
             .with_safe_default_protocol_versions()?
             .dangerous()

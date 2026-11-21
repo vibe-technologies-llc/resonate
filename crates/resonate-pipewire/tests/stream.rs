@@ -92,6 +92,7 @@ fn a_source_with_no_engine_behind_it_is_pulled_whole_frames_at_a_time() {
         SampleFormat::F32,
     );
     let pulled = Arc::new(Pulled::default());
+
     let source = Silence {
         bytes_per_frame: spec.bytes_per_frame().get() as usize,
         pulled: Arc::clone(&pulled),
@@ -100,9 +101,11 @@ fn a_source_with_no_engine_behind_it_is_pulled_whole_frames_at_a_time() {
     let stream = pipewire
         .open(&request(&sink, spec), Box::new(source))
         .expect("the daemon accepts a stereo float stream");
+
     stream.set_active(true).expect("the stream activates");
 
     let deadline = Instant::now() + PATIENCE;
+
     while pulled.frames.load(Ordering::Relaxed) == 0 && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }
@@ -117,6 +120,7 @@ fn a_source_with_no_engine_behind_it_is_pulled_whole_frames_at_a_time() {
         StreamEvent::FormatChanged { spec, .. } => Some(*spec),
         _ => None,
     });
+
     stream.close().expect("the stream closes");
     pipewire.shutdown().expect("the loop shuts down");
 
@@ -149,6 +153,7 @@ fn deactivating_a_stream_stops_the_graph_pulling_its_source() {
         SampleFormat::F32,
     );
     let pulled = Arc::new(Pulled::default());
+
     let source = Silence {
         bytes_per_frame: spec.bytes_per_frame().get() as usize,
         pulled: Arc::clone(&pulled),
@@ -157,9 +162,11 @@ fn deactivating_a_stream_stops_the_graph_pulling_its_source() {
     let stream = pipewire
         .open(&request(&sink, spec), Box::new(source))
         .expect("the daemon accepts a stereo float stream");
+
     stream.set_active(true).expect("the stream activates");
 
     let deadline = Instant::now() + PATIENCE;
+
     while pulled.calls.load(Ordering::Relaxed) == 0 && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }
@@ -167,7 +174,9 @@ fn deactivating_a_stream_stops_the_graph_pulling_its_source() {
     thread::sleep(Duration::from_millis(200));
 
     let settled = pulled.calls.load(Ordering::Relaxed);
+
     thread::sleep(Duration::from_millis(200));
+
     let after = pulled.calls.load(Ordering::Relaxed);
 
     stream.close().expect("the stream closes");
@@ -189,6 +198,7 @@ fn a_stream_asked_to_drain_reports_when_the_graph_has_played_it_out() {
         SampleFormat::F32,
     );
     let pulled = Arc::new(Pulled::default());
+
     let source = Silence {
         bytes_per_frame: spec.bytes_per_frame().get() as usize,
         pulled: Arc::clone(&pulled),
@@ -197,9 +207,11 @@ fn a_stream_asked_to_drain_reports_when_the_graph_has_played_it_out() {
     let stream = pipewire
         .open(&request(&sink, spec), Box::new(source))
         .expect("the daemon accepts a stereo float stream");
+
     stream.set_active(true).expect("the stream activates");
 
     let deadline = Instant::now() + PATIENCE;
+
     while pulled.calls.load(Ordering::Relaxed) == 0 && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
     }
@@ -207,6 +219,7 @@ fn a_stream_asked_to_drain_reports_when_the_graph_has_played_it_out() {
 
     let mut drained = false;
     let deadline = Instant::now() + PATIENCE;
+
     while !drained && Instant::now() < deadline {
         drained = stream
             .events()
@@ -224,6 +237,7 @@ fn a_stream_asked_to_drain_reports_when_the_graph_has_played_it_out() {
 fn measured_latency(pipewire: &PipeWire, sink: &SinkInfo, rate: SampleRate) -> Option<u64> {
     let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32);
     let pulled = Arc::new(Pulled::default());
+
     let source = Silence {
         bytes_per_frame: spec.bytes_per_frame().get() as usize,
         pulled: Arc::clone(&pulled),
@@ -236,10 +250,12 @@ fn measured_latency(pipewire: &PipeWire, sink: &SinkInfo, rate: SampleRate) -> O
     let stream = pipewire
         .open(&asked, Box::new(source))
         .expect("the daemon accepts a stereo float stream");
+
     stream.set_active(true).expect("the stream activates");
 
     let deadline = Instant::now() + PATIENCE;
     let mut ahead = 0;
+
     while ahead == 0 && Instant::now() < deadline {
         thread::sleep(Duration::from_millis(10));
         ahead = stream.latency().get();
@@ -257,6 +273,7 @@ fn the_latency_a_stream_reports_is_counted_in_its_own_frames_not_the_graphs() {
 
     let doubled = measured_latency(&pipewire, &sink, SampleRate::HZ_96000);
     let base = measured_latency(&pipewire, &sink, SampleRate::HZ_48000);
+
     pipewire.shutdown().expect("the loop shuts down");
 
     let (Some(doubled), Some(base)) = (doubled, base) else {

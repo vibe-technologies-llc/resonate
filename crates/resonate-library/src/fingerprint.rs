@@ -94,6 +94,7 @@ impl Fingerprinters {
 
     pub fn recognise(&self, sounded: &Sounded) -> Recognition {
         let mut refused = false;
+
         for printer in self.printers.iter().filter(|printer| printer.answers()) {
             match printer.recognise(sounded) {
                 Ok(Printed::Recognised(found)) if !found.is_empty() => {
@@ -134,6 +135,7 @@ mod tests {
     #[test]
     fn the_stub_is_the_only_fingerprinter_until_one_is_registered_and_a_name_registers_once() {
         let none = Fingerprinters::none();
+
         assert!(!none.has_a_source());
         assert_eq!(
             none.names(),
@@ -143,6 +145,7 @@ mod tests {
         let registered = Fingerprinters::default()
             .and(Arc::new(NoFingerprints::default()))
             .and(Arc::new(NoFingerprints::default()));
+
         assert_eq!(registered.names().len(), 1);
         assert!(!registered.has_a_source());
     }

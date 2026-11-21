@@ -28,6 +28,7 @@ impl<S> Default for Seeks<S> {
 impl<S: PartialEq> Seeks<S> {
     pub fn seek(&self, seek: S) {
         let mut asked = self.0.lock();
+
         asked.retain(|held| *held != seek);
         asked.push(seek);
     }
@@ -54,6 +55,7 @@ impl<K: Clone + Eq + Hash, A> Default for Queue<K, A> {
 impl<K: Clone + Eq + Hash, A> Queue<K, A> {
     pub fn of(asks: impl IntoIterator<Item = (K, A)>) -> Self {
         let mut queue = Self::default();
+
         queue.extend(asks);
         queue
     }
@@ -132,6 +134,7 @@ pub fn walk<W: Walker>(
             return Ok(Step::Stop);
         }
         lift(walker, queue, seeks)?;
+
         let Some((key, ask)) = queue.next() else {
             return Ok(Step::On);
         };
@@ -151,6 +154,7 @@ fn lift<W: Walker>(
             if queue.is_spent(&key) {
                 continue;
             }
+
             let (ask, lifted) = match queue.taken_out(&key) {
                 Some(ask) => (ask, Lifted::Queued),
                 None => match walker.still_due(&key)? {
@@ -158,6 +162,7 @@ fn lift<W: Walker>(
                     None => continue,
                 },
             };
+
             walker.lifted(&key, lifted);
             queue.waiting.push_front((key, ask));
         }
@@ -204,6 +209,7 @@ impl<P: Send + 'static> Readers<P> {
         let (wanted, asked) = bounded::<P>(PICTURES_WAITING_AT_MOST);
         let waiting = Arc::new(AtomicU32::new(0));
         let living = Arc::new(AtomicUsize::new(count));
+
         let readers: Vec<JoinHandle<()>> = (0..count)
             .filter_map(|nth| {
                 let asked = asked.clone();
@@ -220,7 +226,9 @@ impl<P: Send + 'static> Readers<P> {
                             ended.waiting.fetch_sub(1, Ordering::AcqRel);
                             ended.reads.after();
                         }
+
                         let reads = Arc::clone(&ended.reads);
+
                         drop(ended);
                         reads.after();
                     })
@@ -243,6 +251,7 @@ impl<P: Send + 'static> Readers<P> {
         let Some(wanted) = &self.wanted else {
             return Some(picture);
         };
+
         self.waiting.fetch_add(1, Ordering::AcqRel);
         wanted.send(picture).err().map(|unsent| {
             self.waiting.fetch_sub(1, Ordering::AcqRel);
@@ -336,10 +345,12 @@ mod tests {
     #[test]
     fn what_was_sought_is_lifted_to_the_front_and_the_newest_leads() {
         let walker = Asked::of(&[]);
+
         walker.sought.seek(3);
         walker.sought.seek(8);
 
         let mut queue = queued(&[1, 2, 3, 7, 8]);
+
         let walked = walk(&walker, &mut queue, &walker.sought);
 
         assert_eq!(walked, Ok(Step::On));
@@ -353,10 +364,12 @@ mod tests {
     #[test]
     fn a_seek_naming_nothing_queued_is_brought_in_only_while_it_is_due() {
         let walker = Asked::of(&[50]);
+
         walker.sought.seek(99);
         walker.sought.seek(50);
 
         let mut queue = queued(&[1, 2]);
+
         walk(&walker, &mut queue, &walker.sought).expect("a walk that cannot fail");
 
         assert_eq!(*walker.asked.borrow(), [50, 1, 2]);
@@ -366,11 +379,13 @@ mod tests {
     #[test]
     fn a_seek_asked_for_twice_is_held_once() {
         let walker = Asked::of(&[]);
+
         walker.sought.seek(3);
         walker.sought.seek(2);
         walker.sought.seek(3);
 
         let mut queue = queued(&[1, 2, 3, 7, 8]);
+
         walk(&walker, &mut queue, &walker.sought).expect("a walk that cannot fail");
 
         assert_eq!(*walker.asked.borrow(), [3, 2, 1, 7, 8]);
@@ -384,6 +399,7 @@ mod tests {
         };
 
         let mut queue = queued(&[1, 2, 3, 2]);
+
         walk(&walker, &mut queue, &walker.sought).expect("a walk that cannot fail");
 
         assert_eq!(*walker.asked.borrow(), [1, 2, 3]);
@@ -414,10 +430,13 @@ mod tests {
         for picture in 0..200 {
             assert_eq!(readers.hand(picture), None);
         }
+
         let waiting = std::sync::Arc::clone(&readers.waiting);
+
         readers.rest();
 
         let mut heard = counted.heard.lock().clone();
+
         heard.sort_unstable();
 
         assert_eq!(counted.read.load(Ordering::Acquire), 200);

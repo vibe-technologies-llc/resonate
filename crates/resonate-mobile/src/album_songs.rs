@@ -96,6 +96,7 @@ pub(crate) fn keep_the_songs_of(
     connection
         .execute("DELETE FROM release_songs WHERE album_key = ?1", [key])
         .map_err(write_error)?;
+
     let mut keeping = connection
         .prepare(
             "INSERT INTO release_songs (album_key, disc, position, recording, title, artist,
@@ -103,6 +104,7 @@ pub(crate) fn keep_the_songs_of(
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
         )
         .map_err(write_error)?;
+
     for song in songs_of(release) {
         keeping
             .execute(params![
@@ -209,20 +211,24 @@ fn left_unpaired(songs: Vec<SearchSong>, held: &[HeldSong]) -> Vec<SearchSong> {
     let same_recording = |at: usize, file: &HeldSong| {
         !songs[at].recording.is_empty() && songs[at].recording == file.recording
     };
+
     let same_title_there = |at: usize, file: &HeldSong| {
         titles[at] == file.title && file.stands_at(&songs[at], one_medium)
     };
     let same_title = |at: usize, file: &HeldSong| titles[at] == file.title;
     let same_place = |at: usize, file: &HeldSong| file.stands_at(&songs[at], one_medium);
+
     let passes: [Pairing<'_>; 4] = [&same_recording, &same_title_there, &same_title, &same_place];
 
     let mut paired_song = vec![false; songs.len()];
     let mut paired_file = vec![false; held.len()];
+
     for pairs in passes {
         for (at, paired) in paired_song.iter_mut().enumerate() {
             if *paired {
                 continue;
             }
+
             let found = held
                 .iter()
                 .enumerate()
@@ -274,9 +280,11 @@ impl Catalog {
         let kept: bool = connection
             .query_row(ANY_SONG_KEPT, [key], |row| row.get(0))
             .map_err(read_error)?;
+
         if kept {
             return Ok(None);
         }
+
         let release: Option<String> = connection
             .query_row(RELEASE_OF_THE_ALBUM, [key], |row| row.get(0))
             .optional()
@@ -367,6 +375,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a song");
+
         catalog
             .0
             .lock()
@@ -403,6 +412,7 @@ mod tests {
     fn a_kept_release_lists_only_the_songs_the_album_does_not_hold_in_their_order() {
         let catalog = opened();
         let song = held(&catalog, "Two", None, Some(2));
+
         let key = key_of(&catalog, &song);
         let read = release(vec![medium(
             1,
@@ -416,6 +426,7 @@ mod tests {
         keep_the_songs_of(&catalog.0.lock(), &key, &read).expect("kept");
 
         let missing = catalog.album_songs_not_held(&key).expect("the rows");
+
         assert_eq!(titles(&missing), vec!["One", "Three"]);
         assert_eq!(missing[0].recording, FIRST);
         assert_eq!(missing[0].artist, "The band");
@@ -433,6 +444,7 @@ mod tests {
         let by_title = held(&catalog, "JÓGA", None, None);
         let by_place = held(&catalog, "Track 02", Some(1), Some(2));
         let by_recording = held(&catalog, "Renamed", None, None);
+
         catalog
             .0
             .lock()
@@ -441,6 +453,7 @@ mod tests {
                 params![SECOND, by_recording.id as i64],
             )
             .expect("a recording");
+
         let key = key_of(&catalog, &by_title);
         let read = release(vec![medium(
             1,
@@ -477,6 +490,7 @@ mod tests {
                 position: None,
             }],
         );
+
         assert_eq!(songs.len(), 1);
         assert_eq!(songs[0].disc, Some(2));
     }
@@ -485,11 +499,13 @@ mod tests {
     fn a_song_landed_under_another_album_is_held_by_its_recording() {
         let catalog = opened();
         let song = held(&catalog, "Two", None, Some(2));
+
         let key = key_of(&catalog, &song);
         let read = release(vec![medium(
             1,
             vec![track(1, "One", Some(FIRST)), track(2, "Two", None)],
         )]);
+
         keep_the_songs_of(&catalog.0.lock(), &key, &read).expect("kept");
 
         let elsewhere = catalog
@@ -502,6 +518,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a song");
+
         catalog
             .0
             .lock()
@@ -538,12 +555,14 @@ mod tests {
     fn an_album_with_a_release_is_asked_once_and_one_without_is_never_asked() {
         let catalog = opened();
         let song = held(&catalog, "Two", None, Some(2));
+
         let key = key_of(&catalog, &song);
         let answer = release(vec![medium(
             1,
             vec![track(1, "One", None), track(2, "Two", None)],
         )]);
         let mut asked = 0;
+
         let mut ask = |_: &Mbid| {
             asked += 1;
             Ok(Some(answer.clone()))
@@ -573,7 +592,9 @@ mod tests {
     fn a_release_read_from_the_songs_tags_answers_as_the_albums_own_does() {
         let catalog = opened();
         let song = held(&catalog, "Two", None, Some(2));
+
         let key = key_of(&catalog, &song);
+
         catalog
             .0
             .lock()

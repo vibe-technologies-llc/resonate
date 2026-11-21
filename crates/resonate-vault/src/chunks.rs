@@ -65,6 +65,7 @@ impl Layout {
 
     fn with_end(self, head: &[u8; 16], end: u64) -> Option<Vec<u8>> {
         let mut rewritten = head[..self.head_bytes() as usize].to_vec();
+
         match self {
             Self::Riff => {
                 rewritten[4..8].copy_from_slice(&u32::try_from(end - 8).ok()?.to_le_bytes());
@@ -135,6 +136,7 @@ pub(crate) fn shed(
     length: u64,
 ) -> Option<Shed> {
     let mut head = [0_u8; 16];
+
     stream.seek(SeekFrom::Start(at)).ok()?;
     stream.read_exact(&mut head).ok()?;
     if &head[..4] != layout.opening() || !layout.kinds_it_holds(&head) {
@@ -150,19 +152,25 @@ pub(crate) fn shed(
     let mut left_out = Vec::new();
     let mut shed_within = 0_u64;
     let mut walked = from;
+
     for _ in 0..CHUNKS_AT_MOST {
         if walked >= end {
             break;
         }
+
         let header_end = walked.checked_add(layout.chunk_header_bytes())?;
+
         if header_end > end {
             return None;
         }
+
         let mut header = [0_u8; 12];
+
         stream.seek(SeekFrom::Start(walked)).ok()?;
         stream
             .read_exact(&mut header[..layout.chunk_header_bytes() as usize])
             .ok()?;
+
         let id: [u8; 4] = header[..4].try_into().ok()?;
         let past = match layout.declared_size(&header)? {
             Declared::Bytes(size) => {
@@ -175,6 +183,7 @@ pub(crate) fn shed(
             }
             Declared::ToTheEnd => end,
         };
+
         if layout.sheds(&id) {
             left_out.push(walked..past);
             shed_within += past - walked;
@@ -241,6 +250,7 @@ impl<R: Read + Seek> Read for Passing<R> {
             return Ok(0);
         };
         let read = self.inner.read(within)?;
+
         self.at += read as u64;
         Ok(read)
     }
@@ -256,6 +266,7 @@ mod tests {
 
     fn chunk_le(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut held = id.to_vec();
+
         held.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         held.extend_from_slice(payload);
         if payload.len() % 2 == 1 {
@@ -266,6 +277,7 @@ mod tests {
 
     fn chunk_be(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut held = id.to_vec();
+
         held.extend_from_slice(&(payload.len() as u32).to_be_bytes());
         held.extend_from_slice(payload);
         if payload.len() % 2 == 1 {
@@ -276,6 +288,7 @@ mod tests {
 
     fn chunk_caf(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut held = id.to_vec();
+
         held.extend_from_slice(&(payload.len() as i64).to_be_bytes());
         held.extend_from_slice(payload);
         held
@@ -283,6 +296,7 @@ mod tests {
 
     fn chunk_dff(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut held = id.to_vec();
+
         held.extend_from_slice(&(payload.len() as u64).to_be_bytes());
         held.extend_from_slice(payload);
         if payload.len() % 2 == 1 {
@@ -294,6 +308,7 @@ mod tests {
     fn riff(chunks: &[Vec<u8>]) -> Vec<u8> {
         let body: Vec<u8> = chunks.concat();
         let mut whole = b"RIFF".to_vec();
+
         whole.extend_from_slice(&(body.len() as u32 + 4).to_le_bytes());
         whole.extend_from_slice(b"WAVE");
         whole.extend_from_slice(&body);
@@ -303,6 +318,7 @@ mod tests {
     fn aiff(chunks: &[Vec<u8>]) -> Vec<u8> {
         let body: Vec<u8> = chunks.concat();
         let mut whole = b"FORM".to_vec();
+
         whole.extend_from_slice(&(body.len() as u32 + 4).to_be_bytes());
         whole.extend_from_slice(b"AIFF");
         whole.extend_from_slice(&body);
@@ -311,6 +327,7 @@ mod tests {
 
     fn caf(chunks: &[Vec<u8>]) -> Vec<u8> {
         let mut whole = b"caff".to_vec();
+
         whole.extend_from_slice(&[0, 1, 0, 0]);
         whole.extend_from_slice(&chunks.concat());
         whole
@@ -319,6 +336,7 @@ mod tests {
     fn dsdiff(chunks: &[Vec<u8>]) -> Vec<u8> {
         let body: Vec<u8> = chunks.concat();
         let mut whole = b"FRM8".to_vec();
+
         whole.extend_from_slice(&(body.len() as u64 + 4).to_be_bytes());
         whole.extend_from_slice(b"DSD ");
         whole.extend_from_slice(&body);
@@ -328,9 +346,13 @@ mod tests {
     fn written(whole: Vec<u8>, layout: Layout) -> Option<Vec<u8>> {
         let length = whole.len() as u64;
         let mut stream: Box<dyn MediaStream> = Box::new(Reading::new(Cursor::new(whole)));
+
         let shed = shed(&mut stream, layout, 0, length)?;
+
         stream.seek(SeekFrom::Start(shed.from)).expect("a seek");
+
         let mut rest = Vec::new();
+
         Passing::over(&mut stream, shed.from, shed.left_out)
             .read_to_end(&mut rest)
             .expect("the rest");
@@ -341,6 +363,7 @@ mod tests {
     fn a_wave_sheds_its_list_and_id3_chunks_and_says_how_long_it_now_is() {
         let fmt = chunk_le(b"fmt ", &[1; 16]);
         let data = chunk_le(b"data", &[7; 9]);
+
         let whole = riff(&[
             fmt.clone(),
             chunk_le(b"LIST", b"INFOINAM\x05\0\0\0title"),
@@ -355,6 +378,7 @@ mod tests {
     fn an_aiff_sheds_its_text_chunks() {
         let comm = chunk_be(b"COMM", &[2; 18]);
         let ssnd = chunk_be(b"SSND", &[3; 21]);
+
         let whole = aiff(&[
             chunk_be(b"NAME", b"a name"),
             comm.clone(),
@@ -370,8 +394,10 @@ mod tests {
     fn a_caf_sheds_its_info_chunk_and_reads_a_data_chunk_to_the_end() {
         let desc = chunk_caf(b"desc", &[4; 32]);
         let mut data = b"data".to_vec();
+
         data.extend_from_slice(&(-1_i64).to_be_bytes());
         data.extend_from_slice(&[5; 13]);
+
         let whole = caf(&[
             desc.clone(),
             chunk_caf(b"info", b"\0\0\0\x01title\0x\0"),
@@ -386,6 +412,7 @@ mod tests {
         let fver = chunk_dff(b"FVER", &[1, 5, 0, 0]);
         let prop = chunk_dff(b"PROP", &[6; 30]);
         let dsd = chunk_dff(b"DSD ", &[0x69; 17]);
+
         let whole = dsdiff(&[
             fver.clone(),
             prop.clone(),
@@ -404,7 +431,9 @@ mod tests {
     fn bytes_past_the_declared_end_are_left_behind() {
         let fmt = chunk_le(b"fmt ", &[1; 16]);
         let data = chunk_le(b"data", &[7; 8]);
+
         let mut whole = riff(&[fmt.clone(), data.clone()]);
+
         whole.extend_from_slice(b"TAG and the rest of an id3v1 tag");
 
         assert_eq!(written(whole, Layout::Riff), Some(riff(&[fmt, data])));
@@ -414,14 +443,21 @@ mod tests {
     fn a_file_with_nothing_to_shed_or_a_chunk_that_runs_past_its_end_is_left_whole() {
         let fmt = chunk_le(b"fmt ", &[1; 16]);
         let data = chunk_le(b"data", &[7; 8]);
+
         assert_eq!(written(riff(&[fmt.clone(), data]), Layout::Riff), None);
 
         let mut broken = chunk_le(b"data", &[7; 8]);
+
         broken[4..8].copy_from_slice(&1000_u32.to_le_bytes());
+
         let mut whole = riff(&[fmt, broken]);
+
         whole.extend_from_slice(&chunk_le(b"LIST", b"INFO"));
+
         let declared = (whole.len() - 8) as u32;
+
         whole[4..8].copy_from_slice(&declared.to_le_bytes());
+
         assert_eq!(written(whole, Layout::Riff), None);
     }
 }

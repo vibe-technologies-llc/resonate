@@ -50,7 +50,7 @@ fn extended_by_one_of(path: &Path, extensions: &[&str]) -> bool {
         })
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SourceId(Arc<str>);
 
 static THE_LOCAL_SOURCE: OnceLock<Arc<str>> = OnceLock::new();
@@ -92,7 +92,7 @@ impl fmt::Display for SourceId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Locator {
     Path(PathBuf),
     Key(Box<str>),
@@ -123,7 +123,7 @@ impl fmt::Display for Locator {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MediaLocation {
     source: SourceId,
     locator: Locator,
@@ -210,6 +210,7 @@ impl MediaLocation {
             FrameSpan::starting(start)
         } else {
             let end = Frames(end.parse().ok()?);
+
             if end <= start {
                 return None;
             }
@@ -223,12 +224,14 @@ impl MediaLocation {
             without_prefix_in_any_case(uri, FILE_SCHEME_WITHOUT_AUTHORITY)
                 .filter(|rest| rest.starts_with(KEY_SEPARATOR))
         });
+
         if let Some(encoded) = local {
             let encoded = encoded
                 .split_once(PATH_ENDS)
                 .map_or(encoded, |(path, _)| path);
             let encoded = without_prefix_in_any_case(encoded, FILE_LOCALHOST).unwrap_or(encoded);
             let path = local_path_of(uri_unescaped(encoded)?)?;
+
             if path.contains(&NO_PATH_HOLDS) {
                 return None;
             }
@@ -284,6 +287,7 @@ fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
 
 pub fn uri_escaped(text: &[u8]) -> String {
     let mut escaped = String::with_capacity(text.len());
+
     for &byte in text {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' | b'/' => {
@@ -301,13 +305,16 @@ pub fn uri_escaped(text: &[u8]) -> String {
 pub fn uri_unescaped(encoded: &str) -> Option<Vec<u8>> {
     let mut decoded = Vec::with_capacity(encoded.len());
     let mut bytes = encoded.bytes();
+
     while let Some(byte) = bytes.next() {
         if byte != PERCENT {
             decoded.push(byte);
             continue;
         }
+
         let high = hex(bytes.next()?)?;
         let low = hex(bytes.next()?)?;
+
         decoded.push(high << 4 | low);
     }
     Some(decoded)
@@ -447,12 +454,14 @@ mod tests {
 
         for span in [None, Some(closed), Some(open)] {
             let uri = file.to_uri_within(span);
+
             assert_eq!(
                 MediaLocation::from_uri_within(&uri),
                 Some((file.clone(), span)),
                 "{uri}"
             );
         }
+
         assert_eq!(
             file.to_uri_within(Some(closed)),
             "file:///music/Meddle%20%231.flac#frames=588-44100"
@@ -515,6 +524,7 @@ mod tests {
         ] {
             assert_eq!(MediaLocation::from_uri(uri), echoes, "{uri}");
         }
+
         assert_eq!(
             MediaLocation::from_uri("Subsonic:track/1"),
             MediaLocation::from_uri("subsonic:track/1")
@@ -553,6 +563,7 @@ mod tests {
     #[test]
     fn a_file_uri_names_the_path_before_its_query_or_fragment() {
         let echoes = Some(MediaLocation::local("/music/Echoes.flac"));
+
         for uri in [
             "file:///music/Echoes.flac#t=10",
             "file:///music/Echoes.flac?at=10",
@@ -560,6 +571,7 @@ mod tests {
         ] {
             assert_eq!(MediaLocation::from_uri(uri), echoes, "{uri}");
         }
+
         assert_eq!(
             MediaLocation::from_uri("file:///music/100%23%3F.flac"),
             Some(MediaLocation::local("/music/100#?.flac"))

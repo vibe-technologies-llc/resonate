@@ -16,6 +16,7 @@ impl MobilePlayer {
         let shared = self.catalog.shared(id)?;
         let shared = if self.services.online.client().is_reaching() {
             let mut shared = shared;
+
             if !shared.goes_through_song_link()
                 && let Some(link) = (&self.services.online as &dyn Reference)
                     .streamed_at(&shared.asked())
@@ -97,6 +98,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a song");
+
         catalog
             .0
             .lock()

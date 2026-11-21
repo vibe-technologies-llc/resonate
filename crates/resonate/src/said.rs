@@ -33,10 +33,12 @@ macro_rules! told {
 
 pub fn complained(told: fmt::Arguments<'_>) {
     let mut text = String::new();
+
     if text.write_fmt(told).is_err() {
         return;
     }
     text.push('\n');
+
     let _ = io::stderr().lock().write_all(plain(&text).as_bytes());
 }
 
@@ -44,7 +46,9 @@ pub fn written(said: fmt::Arguments<'_>, ending: &str) {
     if NOBODY_IS_READING.load(Ordering::Relaxed) {
         return;
     }
+
     let mut text = String::new();
+
     if text.write_fmt(said).is_err() {
         return;
     }
@@ -65,6 +69,7 @@ pub fn raw(text: &str) {
     if NOBODY_IS_READING.load(Ordering::Relaxed) {
         return;
     }
+
     let wrote = io::stdout().lock().write_all(text.as_bytes());
     if let Err(error) = wrote {
         if error.kind() == io::ErrorKind::BrokenPipe {
@@ -119,6 +124,7 @@ mod tests {
         flushed();
 
         assert!(NOBODY_IS_READING.load(Ordering::Relaxed));
+
         NOBODY_IS_READING.store(false, Ordering::Relaxed);
     }
 }

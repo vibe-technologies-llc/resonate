@@ -111,7 +111,7 @@ const THE_GENRES_OF_EACH_DECADE: &str = "SELECT (a.year / ?1) * ?1 AS decade, t.
         AND t.genre IS NOT NULL AND trim(t.genre) <> ''
       GROUP BY decade, t.genre";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Reason {
     Decade(i32),
     GenreOfADecade(i32),
@@ -201,7 +201,7 @@ impl Reason {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Kind {
     ForYou,
     Rediscover,
@@ -322,12 +322,15 @@ struct Spelt {
 impl Spelt {
     fn taking(&mut self, spelling: &str, rows: u64) {
         self.rows = self.rows.saturating_add(rows);
+
         let held = self.spellings.entry(spelling.to_owned()).or_default();
+
         *held = held.saturating_add(rows);
     }
 
     fn the_spelling_most_rows_hold(&self) -> Option<&str> {
         let mut billed: Option<(u64, usize, &str)> = None;
+
         for (spelling, rows) in &self.spellings {
             let weighed = (*rows, store::marks_in(spelling), spelling.as_str());
             if billed.is_none_or(|held| weighed > held) {
@@ -358,6 +361,7 @@ impl Kinship {
             .filter(|(_, genres)| genres.contains(&sought))
             .map(|(name, _)| name.clone())
             .collect();
+
         matched.sort_by_key(|one| one.to_lowercase());
         matched
     }
@@ -442,14 +446,17 @@ pub fn artists_as_heard(mut heard: Vec<ArtistHeard>) -> Vec<ArtistHeard> {
 
 pub fn artists_heard_lately(heard: impl IntoIterator<Item = (String, u64)>) -> Vec<String> {
     let mut merged: AHashMap<String, (String, u64)> = AHashMap::new();
+
     for (name, time) in heard {
         let held = merged
             .entry(store::folded_letters(name.trim()))
             .or_insert_with(|| (name.trim().to_owned(), 0));
+
         held.1 = held.1.saturating_add(time);
     }
 
     let mut ranked: Vec<(String, u64)> = merged.into_values().collect();
+
     ranked.sort_by(|one, other| {
         other
             .1
@@ -499,6 +506,7 @@ pub(crate) fn suggestions(
 ) -> Result<Vec<Suggestion>> {
     let heard = the_artists_as_heard(inner)?;
     let (lately, played_most) = what_you_play(inner, now)?;
+
     let candidates = lists_to_offer(filing, &heard, &lately, &played_most, today, now);
 
     worth_offering(candidates, |query| -> Result<Weighed> {
@@ -539,12 +547,16 @@ pub fn worth_offering<E>(
 ) -> std::result::Result<Vec<(Candidate, Weighed)>, E> {
     let mut offered = Vec::with_capacity(candidates.len());
     let mut filled: AHashSet<(u32, Option<Duration>)> = AHashSet::new();
+
     for candidate in candidates {
         let weighed = weigh(&candidate.query)?;
+
         if weighed.rows < candidate.enough {
             continue;
         }
+
         let what_it_holds = (weighed.rows, weighed.length);
+
         if candidate.standing == Standing::GivesWayToTheSameRows && filled.contains(&what_it_holds)
         {
             continue;
@@ -560,6 +572,7 @@ fn taken_in_turn<T: Clone>(held: &[T], today: i64, most: usize) -> Vec<T> {
     if held.is_empty() {
         return Vec::new();
     }
+
     let from = usize::try_from(today.rem_euclid(held.len() as i64)).unwrap_or_default();
 
     held.iter()
@@ -592,10 +605,12 @@ fn decades_held(inner: &Inner) -> Result<Vec<(i32, u64)>> {
 
 fn decades_ranked_by(counted: impl IntoIterator<Item = (i32, u64)>) -> Vec<i32> {
     let mut held: AHashMap<i32, u64> = AHashMap::new();
+
     for (year, rows) in counted {
         if year >= YEARS_IN_A_DECADE {
             let decade = (year / YEARS_IN_A_DECADE) * YEARS_IN_A_DECADE;
             let total = held.entry(decade).or_default();
+
             *total = total.saturating_add(rows);
         }
     }
@@ -604,6 +619,7 @@ fn decades_ranked_by(counted: impl IntoIterator<Item = (i32, u64)>) -> Vec<i32> 
         .into_iter()
         .filter(|(_, rows)| *rows >= u64::from(ENOUGH_FOR_A_DECADE))
         .collect();
+
     ranked.sort_by(|(decade, rows), (other, held)| held.cmp(rows).then(other.cmp(decade)));
 
     ranked
@@ -674,10 +690,12 @@ fn genres_of_decades_ranked_by(
     counted: impl IntoIterator<Item = (i32, String, u64)>,
 ) -> Vec<(i32, String)> {
     let mut billed: AHashMap<(i32, String), Spelt> = AHashMap::new();
+
     for (year, listed, rows) in counted {
         if year < YEARS_IN_A_DECADE {
             continue;
         }
+
         let decade = (year / YEARS_IN_A_DECADE) * YEARS_IN_A_DECADE;
         for name in offerable_genres(&listed) {
             billed
@@ -698,6 +716,7 @@ fn genres_of_decades_ranked_by(
             ))
         })
         .collect();
+
     held.sort_by(|one, other| {
         other
             .0
@@ -747,6 +766,7 @@ fn genres(filing: &Filing, today: i64) -> Vec<Candidate> {
 fn genres_ranked(inner: &Inner, asked: [&str; 2]) -> Result<Vec<String>> {
     let counted = inner.read(|connection| {
         let mut counted = Vec::new();
+
         for sql in asked {
             counted.extend(named_and_counted(connection, sql, None)?);
         }
@@ -761,6 +781,7 @@ fn genres_ranked(inner: &Inner, asked: [&str; 2]) -> Result<Vec<String>> {
 
 pub fn genres_ranked_by(counted: impl IntoIterator<Item = (String, u64)>) -> Vec<String> {
     let mut billed: AHashMap<String, Spelt> = AHashMap::new();
+
     for (listed, rows) in counted {
         for name in offerable_genres(&listed) {
             billed
@@ -774,6 +795,7 @@ pub fn genres_ranked_by(counted: impl IntoIterator<Item = (String, u64)>) -> Vec
         .into_values()
         .filter_map(|spelt| Some((spelt.the_spelling_most_rows_hold()?.to_owned(), spelt.rows)))
         .collect();
+
     held.sort_by(|(name, rows), (other, held)| held.cmp(rows).then_with(|| name.cmp(other)));
 
     held.into_iter().map(|(name, _)| name).collect()
@@ -799,6 +821,7 @@ pub(crate) fn billed_as(name: &str) -> String {
 
     let mut billed = String::with_capacity(name.len());
     let mut leads = true;
+
     for letter in name.chars() {
         if leads {
             billed.extend(letter.to_uppercase());
@@ -912,6 +935,7 @@ pub fn lists_to_offer(
     now: SystemTime,
 ) -> Vec<Candidate> {
     let mut candidates: Vec<Candidate> = filing.decades.iter().copied().map(a_decade).collect();
+
     candidates.extend(genres(filing, today));
     candidates.extend(artist_mixes(heard, today));
     candidates.extend(the_shape_of_the_catalog());
@@ -1014,6 +1038,7 @@ fn listening_lists(
         .iter()
         .map(|name| store::folded_letters(name))
         .collect();
+
     for seed in taken_in_turn(lately, today, KINDRED_MIXES_IN_TURN) {
         let kindred = kindred_to(kin, &seed, &known);
         if !kindred.is_empty() {
@@ -1048,6 +1073,7 @@ fn names_read(
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let counted = statement
         .query_map(asked, name_and_count)
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -1074,11 +1100,14 @@ fn artists_and_who_shares_their_genres(
 ) -> (ArtistsFiled, AHashMap<String, u32>) {
     let mut filed: ArtistsFiled = AHashMap::new();
     let mut holders: AHashMap<String, u32> = AHashMap::new();
+
     for (artist, listed) in shelved {
         let name = artist.trim();
+
         if !fits_in_a_phrase(name) {
             continue;
         }
+
         let held = filed
             .entry(store::folded_letters(name))
             .or_insert_with(|| (name.to_owned(), AHashSet::new()));
@@ -1098,6 +1127,7 @@ fn kindred_to(kin: &Kinship, seed: &str, known: &AHashSet<String>) -> Vec<String
         holders,
     } = kin;
     let seed = store::folded_letters(seed);
+
     let Some((_, sought)) = filed.get(&seed) else {
         return Vec::new();
     };
@@ -1106,6 +1136,7 @@ fn kindred_to(kin: &Kinship, seed: &str, known: &AHashSet<String>) -> Vec<String
 
         1.0 / f64::from(held_by + 1).ln_1p()
     };
+
     let mut scored: Vec<(f64, &str)> = filed
         .iter()
         .filter(|(folded, _)| **folded != seed && !known.contains(*folded))
@@ -1115,6 +1146,7 @@ fn kindred_to(kin: &Kinship, seed: &str, known: &AHashSet<String>) -> Vec<String
             (shared > 0.0).then_some((shared, name.as_str()))
         })
         .collect();
+
     scored.sort_by(|one, other| other.0.total_cmp(&one.0).then_with(|| one.1.cmp(other.1)));
 
     scored
@@ -1392,6 +1424,7 @@ fn named_and_counted(
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held = match most {
         Some(most) => statement.query_map(params![most], name_and_count),
         None => statement.query_map([], name_and_count),
@@ -1458,6 +1491,7 @@ mod tests {
     #[test]
     fn a_genre_is_billed_under_the_spelling_most_rows_hold() {
         let mut spelt = Spelt::default();
+
         spelt.taking("rock", 3);
         spelt.taking("Rock", 9);
         spelt.taking("ROCK", 1);
@@ -1470,6 +1504,7 @@ mod tests {
     #[test]
     fn a_marked_spelling_wins_a_tie_against_a_plain_one() {
         let mut spelt = Spelt::default();
+
         spelt.taking("brutal death metal", 4);
         spelt.taking("brütal death metal", 4);
 
@@ -1687,6 +1722,7 @@ mod tests {
     #[test]
     fn a_list_holding_the_rows_of_one_before_it_gives_way_to_it() {
         let mut candidates = the_shape_of_the_catalog();
+
         candidates.truncate(1);
         candidates.extend(listening_lists(
             &Kinship::default(),
@@ -1696,6 +1732,7 @@ mod tests {
             0,
             SystemTime::now(),
         ));
+
         let every_list_alike = |_: &SavedQuery| -> std::result::Result<Weighed, ()> {
             Ok(Weighed {
                 rows: ENOUGH_TO_OFFER,
@@ -1795,6 +1832,7 @@ mod tests {
                                 |row| row.get(0),
                             )
                             .map_err(store_failed)?;
+
                         transaction
                             .execute(
                                 "INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
@@ -1809,6 +1847,7 @@ mod tests {
                             .map_err(store_failed)?;
                         for _ in 0..shelf.plays {
                             let Some(played) = played else { continue };
+
                             transaction
                                 .execute(
                                     "INSERT INTO listens (track_id, at, heard) VALUES (?1, ?2, ?3)",
@@ -1874,6 +1913,7 @@ mod tests {
     fn offered_on(day: i64) -> Vec<Suggestion> {
         let now = SystemTime::now();
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         stacked(&library, &a_listeners_shelves(), now);
 
         let filing = Filing::read(library.inner()).expect("the catalog is filed");

@@ -79,9 +79,11 @@ impl Keeping {
         let mut driven = Driven::open(cx, library);
         let asked = Arc::new(Mutex::new(Vec::new()));
         let released = Arc::new(AtomicBool::new(false));
+
         let (hearing, holding) = (Arc::clone(&asked), Arc::clone(&released));
         let path = music.path().to_path_buf();
         let model = driven.read(|root, _| root.library.clone());
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|global, _| {
                 global.online = online;
@@ -120,7 +122,9 @@ impl Keeping {
                 Arc::clone(&library.library)
             })
         });
+
         Driven::scanned(&catalog, &self.music);
+
         let playlist = catalog
             .start_playlist("Road trip", &[Cut::whole(MediaLocation::local(&opus))])
             .expect("a playlist holding the lossy song");
@@ -128,6 +132,7 @@ impl Keeping {
         let mut rows = catalog
             .songs_to_better_in(playlist)
             .expect("the lossy songs");
+
         rows[0].looked = Some(Looked::Offered {
             at: MediaLocation::new(by.clone(), "track/Echoes"),
             by,
@@ -140,6 +145,7 @@ impl Keeping {
     fn pressed(&mut self, song: &str) {
         let row = kept_row(song);
         let model = self.model.clone();
+
         self.driven
             .cx
             .update(|_, cx| model.update(cx, |library, cx| library.keep(&row, cx)));
@@ -147,12 +153,14 @@ impl Keeping {
 
     fn until_asked(&mut self, songs: usize) {
         let asked = Arc::clone(&self.asked);
+
         self.driven
             .until_ticking(KEEPS_LOOKED_AT_EVERY, |_, _| asked.lock().len() >= songs);
     }
 
     fn until_the_pass_ends(&mut self) {
         let model = self.model.clone();
+
         self.driven.until_ticking(KEEPS_LOOKED_AT_EVERY, |_, cx| {
             model.read(cx).keeps_left().is_none()
         });
@@ -203,8 +211,11 @@ fn a_song_pressed_while_a_pass_runs_waits_for_it_and_is_asked_by_the_next_pass(
     keeping.pressed("one");
     keeping.until_asked(1);
     keeping.pressed("two");
+
     let queued = keeping.model.clone();
+
     keeping.driven.until(|_, cx| queued.read(cx).keeps.owed);
+
     assert_eq!(keeping.queued(), 2);
     assert_eq!(
         keeping.asked.lock().clone(),
@@ -225,12 +236,15 @@ fn a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_i
     cx: &mut TestAppContext,
 ) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     let model = keeping.model.clone();
+
     keeping.driven.cx.update(|_, cx| {
         model.update(cx, |library, cx| {
             library.library.deliver_into(delivery_folder(cx));
             for title in ["one", "two"] {
                 let song = song_to_keep(kept_row(title).song().expect("a song"));
+
                 library
                     .library
                     .keep_song(song.expect("a song to keep"))
@@ -244,7 +258,9 @@ fn a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_i
         .driven
         .cx
         .update(|_, cx| model.update(cx, |library, cx| library.poll(cx)));
+
     let owing = keeping.model.clone();
+
     keeping
         .driven
         .until(|_, cx| owing.read(cx).running.poll_owed.is_some());
@@ -260,6 +276,7 @@ fn a_poll_asked_for_during_a_pass_goes_first_and_the_pass_is_begun_again_after_i
 #[gpui::test]
 fn a_pass_that_gave_way_owes_the_poll_it_gave_way_to_and_a_pass_after_it(cx: &mut TestAppContext) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     let model = keeping.model.clone();
 
     keeping.driven.cx.update(|_, cx| {
@@ -278,6 +295,7 @@ fn a_pass_that_gave_way_owes_the_poll_it_gave_way_to_and_a_pass_after_it(cx: &mu
         let library = model.read(cx);
         (library.keeps.owed, library.running.poll_owed.is_some())
     });
+
     assert!(owes_a_pass);
     assert!(owes_a_poll);
 }
@@ -285,10 +303,13 @@ fn a_pass_that_gave_way_owes_the_poll_it_gave_way_to_and_a_pass_after_it(cx: &mu
 #[gpui::test]
 fn a_pass_stopped_leaves_the_rest_queued_and_owes_nothing(cx: &mut TestAppContext) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     keeping.pressed("one");
     keeping.until_asked(1);
     keeping.pressed("two");
+
     let model = keeping.model.clone();
+
     keeping.driven.until(|_, cx| model.read(cx).keeps.owed);
 
     keeping
@@ -327,7 +348,9 @@ fn what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on(
         },
         true,
     );
+
     let left = off.model.clone();
+
     off.driven.cx.update(|_, cx| {
         left.update(cx, |library, cx| {
             library.library.deliver_into(delivery_folder(cx));
@@ -339,6 +362,7 @@ fn what_was_left_queued_is_taken_up_at_open_only_while_youtube_music_is_on(
         });
     });
     off.driven.settle();
+
     assert!(off.asked.lock().is_empty());
 
     off.driven.cx.update(|_, cx| {
@@ -364,9 +388,11 @@ fn a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_mu
         },
         true,
     );
+
     if !keeping.a_lossy_song_replaced_from_the_service() {
         return;
     }
+
     let model = keeping.model.clone();
 
     keeping.driven.cx.update(|_, cx| {
@@ -381,6 +407,7 @@ fn a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_mu
             .advance_clock(KEEPS_LOOKED_AT_EVERY);
         keeping.driven.settle();
     }
+
     let still_keeping = keeping.driven.cx.update(|_, cx| {
         model
             .read(cx)
@@ -389,6 +416,7 @@ fn a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_mu
             .as_ref()
             .is_some_and(|pass| !pass.stop.load(Ordering::Relaxed))
     });
+
     keeping.released.store(true, Ordering::Relaxed);
     keeping.until_the_pass_ends();
 
@@ -403,9 +431,11 @@ fn a_keep_replacing_a_lossy_song_is_taken_up_at_open_and_kept_on_with_youtube_mu
 fn the_roots_are_read_once_in_a_while_and_not_at_every_look() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
     let watching = Watching::default();
+
     assert!(watching.is_due_to_read_the_roots());
 
     let watching = watching.following(&library);
+
     assert!(!watching.is_due_to_read_the_roots());
 }
 
@@ -451,6 +481,7 @@ fn a_pass_stopped_names_the_song_and_says_what_to_do() {
             why,
             song: "Creep".to_owned(),
         });
+
         assert!(told.contains("Creep"), "{told}");
         assert!(told.contains(words), "{told}");
         told
@@ -464,6 +495,7 @@ fn a_pass_that_gave_way_is_told_with_the_pass_that_ends_and_loses_none_of_its_fa
     cx: &mut TestAppContext,
 ) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     let model = keeping.model.clone();
 
     let told_of_the_yield = keeping.driven.cx.update(|_, cx| {
@@ -480,6 +512,7 @@ fn a_pass_that_gave_way_is_told_with_the_pass_that_ends_and_loses_none_of_its_fa
         });
         toast::showing_text(cx)
     });
+
     assert_eq!(told_of_the_yield, None);
 
     let told_at_the_end = keeping.driven.cx.update(|_, cx| {
@@ -495,6 +528,7 @@ fn a_pass_that_gave_way_is_told_with_the_pass_that_ends_and_loses_none_of_its_fa
         });
         toast::showing_text(cx)
     });
+
     assert_eq!(
         told_at_the_end.as_deref(),
         Some("Kept 3 songs, 2 songs not")
@@ -505,7 +539,9 @@ fn the_pass_ends_once(keeping: &mut Keeping, turned: impl FnOnce(&mut Online)) {
     keeping.pressed("one");
     keeping.until_asked(1);
     keeping.pressed("two");
+
     let model = keeping.model.clone();
+
     keeping.driven.until(|_, cx| model.read(cx).keeps.owed);
 
     keeping.driven.cx.update(|_, cx| {
@@ -536,6 +572,7 @@ fn turning_online_off_ends_a_pass_and_leaves_the_rest_queued(cx: &mut TestAppCon
 #[gpui::test]
 fn a_stop_is_not_undone_by_a_pass_that_gave_way_or_was_turned_away(cx: &mut TestAppContext) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     let model = keeping.model.clone();
     let ended_stopped = |library: &mut LibraryModel,
                          ended: resonate_library::Result<KeepSummary>,
@@ -588,6 +625,7 @@ fn untitled_row() -> Row {
 #[gpui::test]
 fn a_song_with_no_title_is_told_it_cannot_be_kept(cx: &mut TestAppContext) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     let model = keeping.model.clone();
     let row = untitled_row();
 
@@ -597,13 +635,16 @@ fn a_song_with_no_title_is_told_it_cannot_be_kept(cx: &mut TestAppContext) {
         .update(|_, cx| model.update(cx, |library, cx| library.keep(&row, cx)));
 
     keeping.driven.until_said(|said| said.contains("no title"));
+
     assert_eq!(keeping.queued(), 0);
 }
 
 #[gpui::test]
 fn a_list_says_how_many_of_its_rows_were_left_out_for_want_of_a_title(cx: &mut TestAppContext) {
     let mut keeping = Keeping::open(cx, turned_on(), true);
+
     keeping.released.store(true, Ordering::Relaxed);
+
     let model = keeping.model.clone();
     let rows = [kept_row("one"), untitled_row()];
 
@@ -648,6 +689,7 @@ fn a_poll_that_moved_is_read_again_while_it_runs_and_a_landing_rereads_everythin
     for _ in 0..POLLS_PER_REREAD_WHILE_ASKING {
         rereads.push(followed.reread(landed));
     }
+
     let reread: Vec<Wanted> = rereads.into_iter().flatten().collect();
 
     assert_eq!(reread, [Wanted::ThePlaylists, Wanted::Everything]);
@@ -661,9 +703,11 @@ fn a_read_asked_for_while_another_runs_covers_what_both_would_have_read() {
         Wanted::ThePage,
         Wanted::ThePlaylists,
     ];
+
     for one in every {
         for other in every {
             let both = one.with(other);
+
             assert_eq!(both, other.with(one));
             for part in [one, other] {
                 assert!(!part.reads_the_listing() || both.reads_the_listing());
@@ -677,6 +721,7 @@ fn a_read_asked_for_while_another_runs_covers_what_both_would_have_read() {
             }
         }
     }
+
     assert_eq!(Wanted::ThePage.with(Wanted::ThePage), Wanted::ThePage);
     assert!(!Wanted::TheSearch.reads_what_stands());
     assert!(!Wanted::TheSearch.reads_the_wants());
@@ -696,6 +741,7 @@ fn the_roots_are_looked_at_every_second_while_seen_and_once_a_minute_while_unsee
 #[test]
 fn a_list_read_again_the_same_is_left_where_it_stood() {
     let mut held: std::sync::Arc<[u32]> = vec![1, 2, 3].into();
+
     let before = std::sync::Arc::clone(&held);
 
     assert!(!renewed(&mut held, vec![1, 2, 3]));
@@ -707,6 +753,7 @@ fn a_list_read_again_the_same_is_left_where_it_stood() {
 #[test]
 fn a_page_read_past_what_is_held_is_added_to_it_only_where_it_carries_on_from_the_last_row() {
     let mut held: Rows<u32> = vec![1, 2, 3].into();
+
     let before = held.clone();
 
     assert_eq!(
@@ -1117,6 +1164,7 @@ fn an_album_in_its_own_order_is_drawn_and_played_by_its_seats() {
     let missing = vec![((1, 2), ListedRow::Missing(0))];
 
     let rows = arranged(held, missing, BY_SEAT);
+
     assert_eq!(
         rows,
         vec![
@@ -1461,7 +1509,9 @@ fn a_choice_with_no_link_among_it_copies_nothing_and_says_so() {
 #[test]
 fn a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_ask_about() {
     let folder = std::env::temp_dir().join(format!("resonate-inbox-{}", std::process::id()));
+
     std::fs::create_dir_all(folder.join("nested")).expect("a writable temporary folder");
+
     let before = std::time::SystemTime::now() - std::time::Duration::from_secs(60);
     let after = std::time::SystemTime::now() + std::time::Duration::from_secs(60);
 
@@ -1469,12 +1519,14 @@ fn a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_a
         !landed_since(&folder, before),
         "a folder holding only a folder"
     );
+
     std::fs::write(folder.join("an-mbid.flac"), b"audio").expect("a file dropped in");
 
     assert!(landed_since(&folder, before));
     assert!(!landed_since(&folder, after));
 
     let kept_its_time = folder.join("an-isrc.flac");
+
     std::fs::write(&kept_its_time, b"audio").expect("a file copied in");
     std::fs::File::options()
         .write(true)
@@ -1482,11 +1534,13 @@ fn a_file_dropped_in_the_inbox_after_the_last_poll_is_what_the_window_opens_to_a
         .and_then(|file| file.set_modified(before - std::time::Duration::from_secs(3_600)))
         .expect("the copy keeps the time it had elsewhere");
     std::fs::remove_file(folder.join("an-mbid.flac")).expect("the first file goes");
+
     assert!(
         landed_since(&folder, before),
         "a file copied in with an old modification time was not seen landing"
     );
     assert!(!landed_since(&folder.join("gone"), before));
+
     std::fs::remove_dir_all(&folder).expect("the temporary folder goes away");
 }
 
@@ -1497,13 +1551,16 @@ fn a_preview_stands_until_what_it_read_moves_and_an_apply_leaves_none() {
 
     assert_eq!(Planned::after(Pass::Apply, false, read_at), Planned::Not);
     assert_eq!(Planned::after(Pass::Preview, true, read_at), Planned::Not);
+
     let shown = Planned::after(Pass::Preview, false, read_at);
+
     assert!(shown.is_shown());
     assert!(!shown.outdated_at(library.plans_stamp()));
 
     library
         .add_root(&std::env::temp_dir())
         .expect("the catalog takes a root");
+
     assert!(
         shown.outdated_at(library.plans_stamp()),
         "a root added under a preview left it standing"

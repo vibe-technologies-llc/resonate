@@ -53,9 +53,11 @@ impl Notes {
     fn read(text: &str) -> Option<Self> {
         let mut rest = text;
         let mut fields = Vec::new();
+
         while !rest.is_empty() {
             let (length, after) = rest.split_once(':')?;
             let length: usize = length.parse().ok()?;
+
             fields.push(after.get(..length)?);
             rest = &after[length..];
         }
@@ -104,6 +106,7 @@ impl Partials {
             tracing::warn!(%error, "the folder for partial downloads could not be made");
             return None;
         }
+
         let (data, notes) = self.paths(song);
         let locked = match Locked::resumed(&data) {
             Ok(locked) => locked,
@@ -117,6 +120,7 @@ impl Partials {
         };
         let bytes = locked.file().metadata().ok()?.len();
         let wanted = wanted_key(song);
+
         let held = fs::read(&notes)
             .ok()
             .and_then(|text| Notes::read(&String::from_utf8_lossy(&text)))
@@ -187,18 +191,23 @@ impl Partial {
         validator: Option<Validator>,
     ) -> io::Result<Self> {
         let kept = self.held.take().map_or(0, |held| held.bytes);
+
         if from > kept {
             return Err(io::ErrorKind::InvalidData.into());
         }
+
         let mut file = self.locked.file();
+
         file.set_len(from)?;
         file.seek(SeekFrom::Start(from))?;
+
         let notes = Notes {
             wanted: wanted_key(song),
             taken_from: taken_from.to_owned(),
             total,
             validator,
         };
+
         fs::write(&self.notes, notes.written())?;
         self.from = from;
         Ok(self)
@@ -220,17 +229,20 @@ impl Partial {
         use crate::{Error, error::DownloadOp};
 
         let mut file = self.locked.file();
+
         file.seek(SeekFrom::Start(0))
             .map_err(|source| Error::DownloadIo {
                 op: DownloadOp::Read,
                 source,
             })?;
+
         let mut buffer = vec![0_u8; REPLAY_CHUNK_BYTES];
         loop {
             let count = file.read(&mut buffer).map_err(|source| Error::DownloadIo {
                 op: DownloadOp::Read,
                 source,
             })?;
+
             if count == 0 {
                 return Ok(());
             }
@@ -287,6 +299,7 @@ mod tests {
             .expect("a claimed partial")
             .begun(&echoes(), TAKEN_FROM, from, Some(100), validator("\"v1\""))
             .expect("a begun partial");
+
         partial.append(chunk).expect("written");
         partial
     }
@@ -327,11 +340,14 @@ mod tests {
     fn what_a_stopped_download_wrote_is_held_for_the_same_offer_and_for_none_other() {
         let scratch = Scratch::new("same-offer");
         let partials = Partials::under(&scratch.0);
+
         drop(partial_of(&partials, 0, b"abcde"));
 
         let same = partials.claim(&echoes(), TAKEN_FROM).expect("a claim");
         let held = same.held();
+
         drop(same);
+
         let other = partials
             .claim(&echoes(), "monochrome:track/43")
             .expect("a claim");
@@ -356,7 +372,9 @@ mod tests {
         let second = partials.claim(&echoes(), TAKEN_FROM);
 
         assert!(second.is_none());
+
         drop(writing);
+
         assert!(partials.claim(&echoes(), TAKEN_FROM).is_some());
     }
 
@@ -364,6 +382,7 @@ mod tests {
     fn a_resumed_partial_is_cut_to_where_the_server_continues_and_replays_whole() {
         let scratch = Scratch::new("resumed");
         let partials = Partials::under(&scratch.0);
+
         drop(partial_of(&partials, 0, b"abcdef"));
 
         let resumed = partials
@@ -371,8 +390,11 @@ mod tests {
             .expect("a claim")
             .begun(&echoes(), TAKEN_FROM, 6, Some(9), validator("\"v1\""))
             .expect("resumed");
+
         resumed.append(b"ghi").expect("written");
+
         let mut replayed = Vec::new();
+
         resumed
             .replay(&mut |chunk| {
                 replayed.extend_from_slice(chunk);
@@ -388,6 +410,7 @@ mod tests {
     fn a_server_restarting_from_the_start_empties_the_partial() {
         let scratch = Scratch::new("restart");
         let partials = Partials::under(&scratch.0);
+
         drop(partial_of(&partials, 0, b"abcdef"));
 
         let restarted = partials
@@ -395,8 +418,11 @@ mod tests {
             .expect("a claim")
             .begun(&echoes(), TAKEN_FROM, 0, Some(3), validator("\"v2\""))
             .expect("restarted");
+
         restarted.append(b"xyz").expect("written");
+
         let mut replayed = Vec::new();
+
         restarted
             .replay(&mut |chunk| {
                 replayed.extend_from_slice(chunk);
@@ -411,6 +437,7 @@ mod tests {
     fn a_server_continuing_from_beyond_what_is_held_is_refused() {
         let scratch = Scratch::new("beyond");
         let partials = Partials::under(&scratch.0);
+
         drop(partial_of(&partials, 0, b"abc"));
 
         let refused = partials
@@ -446,11 +473,16 @@ mod tests {
         let writing = partial_of(&partials, 0, b"abc");
 
         partials.sweep(SystemTime::now());
+
         let young = fs::read_dir(&partials.folder).expect("the folder").count();
+
         partials.sweep(later);
+
         let held = fs::read_dir(&partials.folder).expect("the folder").count();
+
         drop(writing);
         partials.sweep(later);
+
         let left = fs::read_dir(&partials.folder).expect("the folder").count();
 
         assert_eq!((young, held, left), (2, 2, 0));
@@ -461,6 +493,7 @@ mod tests {
         let scratch = Scratch::new("orphan");
         let partials = Partials::under(&scratch.0);
         let (data, notes) = partials.paths(&echoes());
+
         fs::create_dir_all(&partials.folder).expect("a folder");
         fs::write(&notes, "left").expect("a note");
 

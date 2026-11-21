@@ -106,6 +106,7 @@ impl MobilePlayer {
         let Some(before) = self.retag(&song, &change)? else {
             return Ok(LyricsSaved::AlreadySaid);
         };
+
         self.tagging.keep(vec![Undone {
             uri: song.uri,
             before,
@@ -161,6 +162,7 @@ impl MobilePlayer {
                 unsaved(resonate_lyrics::Error::SidecarUnnamed { track: name.into() })
             })?;
         let named = format!("{stem}{}", sheet.ending());
+
         if named.len() > NAME_BYTES_AT_MOST {
             return Err(unsaved(resonate_lyrics::Error::SidecarNameTooLong {
                 track: name.into(),
@@ -173,9 +175,11 @@ impl MobilePlayer {
         .flatten()
         .ok_or(Error::LyricsCannotStandBeside)?;
         let mut listed = Listed::named_after(&stem);
+
         for document in standing_beside {
             listed.listed(&document.name, !document.within, document.uri);
         }
+
         let placing = listed.placing(sheet, standing, |uri: &String, body| {
             self.document_says(uri, body)
         })?;
@@ -201,6 +205,7 @@ impl MobilePlayer {
             source,
         };
         let mut held = Vec::new();
+
         self.sources
             .open(&location(uri)?)
             .map_err(|source| Error::LyricsDocumentUnread {
@@ -242,6 +247,7 @@ fn made_beside(beside: &dyn SheetsBeside, uri: &str, name: &str, body: &str) -> 
     let mut document = fresh_destination(made.descriptor)?;
 
     let written = written_into(&mut document, body);
+
     drop(document);
     if written.is_err()
         && !answered(Callback::SheetsBeside, || {
@@ -272,6 +278,7 @@ fn written_into(document: &mut File, body: &str) -> Result<()> {
         op: SheetOp::Written,
         source,
     };
+
     document.write_all(body.as_bytes()).map_err(failed)?;
     if let Err(error) = document.sync_all() {
         tracing::debug!(%error, "a lyric sheet could not be flushed to its provider");
@@ -317,12 +324,14 @@ mod tests {
     impl Folder {
         fn new(name: &str) -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let folder = std::env::temp_dir().join(format!(
                 "resonate-saving-lyrics-{name}-{}-{}",
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
             let _ = fs::remove_dir_all(&folder);
+
             fs::create_dir_all(&folder).expect("a folder");
             Self(folder)
         }
@@ -332,6 +341,7 @@ mod tests {
             let samples = vec![0i16; 4_410];
             let data = u32::try_from(samples.len() * 2).expect("a short wave");
             let mut bytes = Vec::new();
+
             bytes.extend_from_slice(b"RIFF");
             bytes.extend_from_slice(&(36 + data).to_le_bytes());
             bytes.extend_from_slice(b"WAVEfmt ");
@@ -347,7 +357,9 @@ mod tests {
             for sample in samples {
                 bytes.extend_from_slice(&sample.to_le_bytes());
             }
+
             let path = self.0.join("Echoes.wav");
+
             fs::write(&path, bytes).expect("a wave");
             path
         }
@@ -391,6 +403,7 @@ mod tests {
             if !self.reaches {
                 return None;
             }
+
             let listed = |path: &Path, within: bool| {
                 fs::read_dir(path)
                     .expect("a folder")
@@ -415,6 +428,7 @@ mod tests {
                         })
                 })
                 .collect();
+
             for folder in within {
                 found.extend(listed(&folder, true));
             }
@@ -428,6 +442,7 @@ mod tests {
                 .create_new(true)
                 .open(&path)
                 .ok()?;
+
             self.made.lock().push(name);
             Some(MadeBeside {
                 uri: self.folder.uri_of(&path),
@@ -482,6 +497,7 @@ mod tests {
                 offered: crate::offering::Offered::untold(),
                 releases: resonate_online::KeptRelease::in_folder(&folder.0.join("data")),
             };
+
             let track = player
                 .catalog
                 .upsert(Track {
@@ -530,6 +546,7 @@ mod tests {
                 reaches,
                 made: Mutex::new(Vec::new()),
             });
+
             *self.player.tagging.beside.lock() = Some(Arc::clone(&tree) as Arc<dyn SheetsBeside>);
             tree
         }
@@ -600,6 +617,7 @@ mod tests {
         assert_eq!(again, LyricsSaved::AlreadySaid);
 
         fs::write(saving.folder.0.join("Echoes.lrc"), THEIRS).expect("a sheet of their own");
+
         let stands = saving
             .player
             .save_lyrics_beside(saving.by_path(), LyricsStanding::LeftAlone)
@@ -629,6 +647,7 @@ mod tests {
         assert_eq!(*tree.made.lock(), vec!["Echoes.lrc".to_owned()]);
 
         fs::write(saving.folder.0.join("Echoes.lrc"), THEIRS).expect("a sheet of their own");
+
         let stands = saving
             .player
             .save_lyrics_beside(saving.by_document(), LyricsStanding::LeftAlone)
@@ -649,6 +668,7 @@ mod tests {
     #[test]
     fn a_sheet_in_a_lyrics_folder_or_a_richer_one_beside_a_document_is_never_hidden() {
         let saving = Saving::under("outranked").fetched();
+
         saving.tree(true);
         fs::create_dir_all(saving.folder.0.join("Lyrics")).expect("a lyrics folder");
         fs::write(saving.folder.0.join("Lyrics").join("echoes.LRC"), THEIRS)
@@ -667,6 +687,7 @@ mod tests {
             "lines: []\n",
         )
         .expect("a richer sheet");
+
         let outranked = saving
             .player
             .save_lyrics_beside(saving.by_document(), LyricsStanding::Replaced)
@@ -683,7 +704,9 @@ mod tests {
         let unregistered = saving
             .player
             .save_lyrics_beside(saving.by_document(), LyricsStanding::LeftAlone);
+
         saving.tree(false);
+
         let unreached = saving
             .player
             .save_lyrics_beside(saving.by_document(), LyricsStanding::LeftAlone);

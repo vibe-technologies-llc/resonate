@@ -120,6 +120,7 @@ pub fn read_ahead(
     let (frames_in, frames) = channel(READ_AHEAD_BYTES_AT_MOST / A_FRAME_WEIGHS_AT_LEAST);
     let budget = Budget::of(READ_AHEAD_BYTES_AT_MOST);
     let across_sessions: Arc<dyn Holds> = Arc::new(across_sessions);
+
     let reading = tokio::spawn(read_frames(recv, frames_in, most, budget, across_sessions));
 
     (frames, reading)
@@ -134,6 +135,7 @@ async fn read_frames(
 ) {
     loop {
         budget.has_room().await;
+
         let read = match recv.read_heard(most, &across_sessions).await {
             Ok(Some(Heard::Frame { payload, held })) => Read::Frame {
                 held: Some(Held {
@@ -173,11 +175,14 @@ mod tests {
         let first = budget.weigh(400).await.expect("weighed");
         let second = budget.weigh(400).await.expect("weighed");
         let room = timeout(PATIENCE, budget.has_room()).await;
+
         drop(first);
+
         let freed = timeout(PATIENCE, budget.has_room()).await;
 
         assert!(room.is_ok(), "200 bytes are still free");
         assert!(freed.is_ok());
+
         drop(second);
     }
 
@@ -188,7 +193,9 @@ mod tests {
 
         let huge = budget.weigh(32 * 1024 * 1024).await.expect("weighed");
         let blocked = timeout(PATIENCE, budget.has_room()).await;
+
         drop(huge);
+
         let freed = timeout(PATIENCE, budget.has_room()).await;
 
         assert!(blocked.is_err(), "no room while the frame is held");
@@ -202,14 +209,18 @@ mod tests {
         let first = shared.hold(600).expect("held");
         let refused = shared.hold(600);
         let small = shared.hold(1).expect("held");
+
         drop(first);
+
         let after = shared.hold(900);
         let huge = shared.hold(32 * 1024 * 1024);
 
         assert!(refused.is_none());
         assert!(after.is_some());
         assert!(huge.is_none());
+
         drop((small, after));
+
         assert!(shared.hold(32 * 1024 * 1024).is_some());
     }
 
@@ -219,6 +230,7 @@ mod tests {
 
         let held: Vec<_> = {
             let mut held = Vec::new();
+
             for _ in 0..4 {
                 held.push(budget.weigh(1).await.expect("weighed"));
             }
@@ -227,6 +239,7 @@ mod tests {
         let blocked = timeout(PATIENCE, budget.has_room()).await;
 
         assert!(blocked.is_err());
+
         drop(held);
     }
 }

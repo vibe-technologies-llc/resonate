@@ -19,8 +19,9 @@ impl LibraryModel {
             return;
         };
         let library = Arc::clone(&self.library);
+
         toast::tell(
-            Notice::Noted(words::models::uploading_file_to_catbox().to_owned()),
+            Notice::Noted(words::models::uploading_file_to_0x0().to_owned()),
             cx,
         );
         cx.spawn(async move |this, cx| {
@@ -30,9 +31,11 @@ impl LibraryModel {
                     let Some(track) = library.track(track)? else {
                         return Ok(None);
                     };
+
                     if track.span.is_some() {
                         return Ok(None);
                     }
+
                     let Some(path) = track
                         .location
                         .as_path()
@@ -47,15 +50,14 @@ impl LibraryModel {
                 let notice = match result {
                     Ok(Some(link)) => {
                         clipboard::copy(link, cx);
-                        Notice::Done(words::models::public_catbox_file_link_is_on_the().to_owned())
+                        Notice::Done(words::models::public_0x0_file_link_is_on_the().to_owned())
                     }
                     Ok(None) => Notice::Noted(
                         words::models::only_whole_local_files_can_be_uploaded().to_owned(),
                     ),
-                    Err(error) => {
-                        toast::could_not(words::models::upload_the_file_to_catbox(), &error)
-                    }
+                    Err(error) => toast::could_not(words::models::upload_the_file_to_0x0(), &error),
                 };
+
                 toast::tell(notice, cx);
                 cx.notify();
             });
@@ -93,6 +95,7 @@ impl LibraryModel {
 
             let outcome = this.update(cx, |_, cx| {
                 let Sharing { link, notice } = sharing_told(read);
+
                 if let Some(link) = link {
                     clipboard::copy(link, cx);
                 }

@@ -14,7 +14,7 @@ use crate::{
 const MAX_COVER_BYTES: usize = 24 * 1024 * 1024;
 const COVER_PREFIX: &[u8] = b"cover";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ImageFormat {
     Jpeg,
     Png,
@@ -96,10 +96,13 @@ pub fn probe_span(
     if let Some(info) = stood_in(sources, location, Some(span)) {
         return Ok(info);
     }
+
     let mut info = container::open_media(sources, location)?.media_info(location)?;
+
     let held = span.within(info.duration.unwrap_or(Frames(u64::MAX)));
 
     let cut = cue::cut_for(sources, location, &info);
+
     if let Some(track) = cut
         .as_ref()
         .and_then(|cut| cut.cut_at(held.start(), info.spec.rate))
@@ -156,6 +159,7 @@ pub(crate) fn probe_pictured_from(
     picturing: Picturing,
 ) -> Result<(MediaInfo, Pictured)> {
     let mut opened = container::open_media_from(sources, media, location)?;
+
     let info = opened.media_info(location)?;
     let pictured = match picturing {
         Picturing::Whether if carries_cover_art(opened.pictures_mut()) => Pictured::Carried,
@@ -168,7 +172,7 @@ pub(crate) fn probe_pictured_from(
     Ok((info, pictured))
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct PacketDigest(pub u64);
 
 #[derive(Clone, Debug, PartialEq)]
@@ -184,6 +188,7 @@ const FNV_PRIME: u64 = 0x0000_0100_0000_01b3;
 
 pub fn probe_scanned(sources: &Sources, location: &MediaLocation) -> Result<Scanned> {
     let mut opened = container::open_media_afresh(sources, location)?;
+
     let info = opened.media_info(location)?;
     let carries_a_picture = carries_cover_art(opened.pictures_mut());
     let packets = opened
@@ -205,6 +210,7 @@ fn digest_of_the_first_packets(
     let track = track.id;
     let mut digest = FNV_OFFSET_BASIS;
     let mut digested = 0;
+
     while digested < PACKETS_DIGESTED {
         let packet = match reader.next_packet() {
             Ok(Some(packet)) => packet,
@@ -214,6 +220,7 @@ fn digest_of_the_first_packets(
                 break;
             }
         };
+
         if packet.track_id != track {
             continue;
         }
@@ -250,6 +257,7 @@ fn picture<T>(pictures: Pictures<'_>, taken: &dyn Fn(ImageFormat, &[u8]) -> T) -
         Pictures::Read { reader, chunk } => (reader, chunk),
         Pictures::Held(visuals) => return choose(visuals, taken),
     };
+
     if let Some(art) = attached_cover(reader.attachments(), taken) {
         return Some(art);
     }
@@ -302,9 +310,11 @@ fn attached_cover<T>(
         let Attachment::File(file) = attachment else {
             return None;
         };
+
         if !named_as_a_cover(&file.name) {
             return None;
         }
+
         let format = from_magic(&file.data)
             .or_else(|| file.media_type.as_deref().and_then(from_media_type))?;
 
@@ -369,6 +379,7 @@ mod tests {
 
     fn visual(usage: Option<StandardVisualKey>, bytes: usize) -> Visual {
         let mut data = vec![0_u8; bytes];
+
         data.splice(..PNG_MAGIC.len(), PNG_MAGIC.iter().copied());
 
         Visual {

@@ -321,6 +321,7 @@ impl Library {
         {
             return Ok(Kept::AlreadyHeld(id));
         }
+
         let served = ServedKeep {
             catalog: offer.catalog,
             id: offer.song.id.to_string(),
@@ -347,17 +348,20 @@ impl Library {
     fn keep_one(&self, song: SongToKeep, served: Option<&ServedKeep>) -> Result<Kept> {
         self.a_folder_to_keep_into()?;
         refused_untitled(&song)?;
+
         let previously_landed = served
             .map(|_| self.exact_landing(&song))
             .transpose()?
             .flatten();
         let copy = self.copy_of(&song)?;
+
         if let Some(HeldCopy {
             track: Some(track), ..
         }) = copy
         {
             return Ok(Kept::AlreadyHeld(track));
         }
+
         let what_landed = match &copy {
             Some(copy) => {
                 self.root_of_an_unread_copy(copy)?;
@@ -365,6 +369,7 @@ impl Library {
             }
             None => WhatLanded::IsForgotten,
         };
+
         self.inner().write(|transaction| {
             queued_alone(
                 transaction,
@@ -387,6 +392,7 @@ impl Library {
                 .map_err(|source| Error::store(StoreOp::Query, source))?
                 .ok_or(Error::UnknownTrack(track))?;
             queued_alone(transaction, &song, WhatLanded::Stays, None, None)?;
+
             let keep: i64 = transaction
                 .query_row(
                     THE_KEEP_OF_A_SONG_ALONE,
@@ -409,6 +415,7 @@ impl Library {
     pub fn keep_playlist(&self, list: PlaylistToKeep) -> Result<KeptList> {
         self.a_folder_to_keep_into()?;
         list.songs.iter().try_for_each(refused_untitled)?;
+
         let name = self
             .inner()
             .read(|connection| playlist::name_a_list_may_hold(connection, &list.name))?;
@@ -422,10 +429,12 @@ impl Library {
         let mut kept = KeptList::default();
         let mut pressed = Vec::with_capacity(list.songs.len());
         let mut to_place = Vec::new();
+
         for (place, song) in list.songs.iter().enumerate() {
             if !seen.insert((song.source.as_str(), song.video.as_str())) {
                 continue;
             }
+
             let place = list.ordered.then_some(place as i64);
             let stands = standing
                 .get(&(song.source.as_str().to_owned(), song.video.clone()))
@@ -436,6 +445,7 @@ impl Library {
                 Some(Standing::Landed | Standing::GivenUp) | None => self.copy_of(song)?,
             };
             let mut what_landed = WhatLanded::Stays;
+
             match (stands, copy) {
                 (Some(Standing::Landed), None) if the_list_stands => kept.held += 1,
                 (_, Some(copy)) => {
@@ -466,6 +476,7 @@ impl Library {
                 .iter()
                 .map(|(_, cut, place)| (cut.clone(), *place))
                 .collect();
+
             self.placed(name, &cuts)?;
             self.inner().write(|transaction| {
                 to_place.iter().try_for_each(|(at, cut, _)| {
@@ -508,12 +519,14 @@ impl Library {
                         AND landed IS NULL AND gone = 0",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let rows = query
                 .query_map([], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
                 })
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
             let mut locations = std::collections::BTreeSet::new();
+
             for row in rows {
                 let (source, id) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
                 if let Some(location) = crate::explore::served_song_location(&source, &id) {
@@ -551,26 +564,32 @@ impl Library {
     ) -> Result<KeepSummary> {
         let _asking = self.asking_alone(PassKind::Poll)?;
         let _under_way = KeepUnderWay::of(self);
+
         organise::sweep_what_a_dead_writer_staged(self);
         self.read_what_landed_unread()?;
         self.picture_what_landed_bare(providers, cancelled)?;
 
         let queued = self.keeps_of(providers)?;
+
         if queued.is_empty() {
             return Ok(KeepSummary::default());
         }
+
         let into = self.a_folder_to_keep_into()?;
 
         let progress = PollProgress::default();
+
         if cancelled() {
             progress.cancel();
         }
+
         let over = AtomicBool::new(false);
         thread::scope(|scope| {
             thread::Builder::new()
                 .name("resonate-keep-heeding".to_owned())
                 .spawn_scoped(scope, || heeding(cancelled, &progress, &over))
                 .map_err(|source| Error::ThreadSpawn { source })?;
+
             let _heeded = Heeded(&over);
             let mut walking = Walking {
                 into: &into,
@@ -579,7 +598,9 @@ impl Library {
                 away: Away::default(),
                 unread: Vec::new(),
             };
+
             let walked = self.walked(queued, &mut walking);
+
             walking.unread.sort();
             walking.unread.dedup();
             for root in walking.unread {
@@ -597,6 +618,7 @@ impl Library {
         let offered = providers.names();
         let bare = self.inner().read(landed_bare)?;
         let mut roots = Vec::new();
+
         for landed in bare
             .iter()
             .filter(|landed| offered.contains(&landed.source))
@@ -604,6 +626,7 @@ impl Library {
             if cancelled() {
                 break;
             }
+
             let Some(address) = picture_heard_for(landed, providers) else {
                 continue;
             };
@@ -612,6 +635,7 @@ impl Library {
                 .filter(|_| !carries_a_picture(&landed.path))
                 .and_then(|address| fetched(&landed.source, &landed.video, address, providers))
                 .is_some_and(|picture| written_into(&landed.path, &picture));
+
             self.inner().write(|transaction| {
                 asked_for_its_picture(transaction, landed, address.as_deref())
             })?;
@@ -644,13 +668,16 @@ impl Library {
             return Ok(None);
         };
         let reached = self.root_reaching(path)?;
+
         if reached.is_some() {
             return Ok(reached);
         }
+
         let folder = self
             .delivering_into()
             .and_then(|into| into.path.canonicalize().ok())
             .filter(|folder| path.starts_with(folder));
+
         if let Some(folder) = &folder {
             self.root_stands(folder)?;
         }
@@ -660,6 +687,7 @@ impl Library {
     fn roots_owed_a_read(&self) -> Result<Vec<PathBuf>> {
         let unread = self.inner().read(landed_unread)?;
         let mut roots = Vec::new();
+
         for path in unread.iter().filter(|path| path.exists()) {
             roots.extend(self.root_reaching(path)?);
         }
@@ -668,6 +696,7 @@ impl Library {
 
     fn read_what_landed_unread(&self) -> Result<()> {
         let mut roots = self.roots_owed_a_read()?;
+
         roots.sort();
         roots.dedup();
         for root in roots {
@@ -699,8 +728,10 @@ impl Library {
         let gate = self.download_gate();
         let progress = walking.progress;
         let mut summary = KeepSummary::default();
+
         for row in queued {
             let yields = self.waited_on_the_meter(&gate, progress);
+
             if progress.is_cancelled() {
                 break;
             }
@@ -722,6 +753,7 @@ impl Library {
                 }
                 Turn::Stopped => {
                     let why = walking.away.why(&row.song.source).unwrap_or_default();
+
                     if why.says_nothing_of_the_song() {
                         self.moved_back(&row)?;
                     } else if self.tried_in_vain(&row)? {
@@ -781,10 +813,13 @@ impl Library {
             None
         };
         let sources = exact.as_ref().unwrap_or(walking.providers);
+
         let answer = asked(row, sources, progress, &mut walking.away);
+
         if answer.cancelled {
             return Ok(Turn::Over);
         }
+
         let Some(delivered) = answer.delivered else {
             return self.unanswered(row, &answer, &walking.away);
         };
@@ -792,17 +827,20 @@ impl Library {
         let gate = self.download_gate();
         let held_by_the_meter = gate.is_shut();
         let yields = self.waited_on_the_meter(&gate, progress);
+
         if progress.is_cancelled() {
             return Ok(Turn::Over);
         }
         if yields && held_by_the_meter {
             return Ok(Turn::Yielded);
         }
+
         let album = row.song.album();
         let picture = match row.for_a_song {
             true => self.picture_of_its_song(row),
             false => pictured(&row.song, sources),
         };
+
         let song = row.song.to_file(album.as_ref(), picture.as_ref());
         let drawn = supply::drawn(
             delivered.delivery,
@@ -830,6 +868,7 @@ impl Library {
             Drawn::Read(Ok(filed)) => {
                 let cut = Cut::whole(MediaLocation::local(&filed.path));
                 let settled = self.settled_turn(row, &cut);
+
                 self.root_stands(&filed.root)?;
                 if !synced::scanned_if_free(self, filed.root.clone()) {
                     walking.unread.push(filed.root);
@@ -956,6 +995,7 @@ impl Library {
         let (Some(lead), Some(length)) = (identity.lead_artist(), song.length) else {
             return Ok(None);
         };
+
         let copies = self
             .inner()
             .read(|connection| store::held_named_alike(connection, &song.title, lead, length))?;
@@ -992,6 +1032,7 @@ impl Library {
         if copies.is_empty() {
             return Ok(None);
         }
+
         let vault = self.vault().map(AsRef::as_ref);
         let away = self.inner().read(volumes::absent)?;
 
@@ -1019,10 +1060,12 @@ impl Library {
 
     fn settled_by(&self, row: &Queued, cut: &Cut) -> Result<()> {
         let path = playlist::local_path(&cut.location)?.into_owned();
+
         if let Some(list) = &row.playlist {
             let place = self
                 .inner()
                 .read(|connection| place_of(connection, row.id))?;
+
             self.placed(list, &[(cut.clone(), place)])?;
         }
         self.inner().write(|transaction| {
@@ -1145,6 +1188,7 @@ impl Library {
         };
         let plain: Vec<Cut> = cuts.iter().map(|(cut, _)| cut.clone()).collect();
         let filled = playlist::fill(self.inner(), list, &plain)?;
+
         for (cut, place) in cuts {
             if let Some(place) = place
                 && !already.contains(&playlist::Row::of(cut)?)
@@ -1171,6 +1215,7 @@ impl Library {
                 playlist::kept_in(connection, id)?.is_some(),
             ))
         })?;
+
         if kept_in_an_order {
             return Ok(());
         }
@@ -1179,12 +1224,14 @@ impl Library {
                 places.insert(playlist::Row::of(placing)?.path, *at);
             }
         }
+
         let Some(at) = rows.iter().position(|row| *row == wanted) else {
             return Ok(());
         };
         let ahead_of_it = rows[..at]
             .iter()
             .position(|row| places.get(&row.path).is_some_and(|other| *other > place));
+
         if let Some(to) = ahead_of_it {
             playlist::move_rows(
                 self.inner(),
@@ -1278,6 +1325,7 @@ fn landed_bare(connection: &Connection) -> Result<Vec<LandedBare>> {
               ORDER BY id",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], |row| {
             Ok((
@@ -1321,6 +1369,7 @@ fn carries_a_picture(path: &Path) -> bool {
 fn written_into(path: &Path, picture: &CoverArt) -> bool {
     let location = MediaLocation::local(path);
     let tags = FileTags::over(Sources::local());
+
     if !tags.writes(&location) {
         return false;
     }
@@ -1474,6 +1523,7 @@ fn keeps_queued(connection: &Connection) -> Result<Vec<Queued>> {
     let mut statement = connection
         .prepare_cached(KEEPS_QUEUED)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let read = statement
         .query_map([], queued_at)
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())

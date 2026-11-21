@@ -268,6 +268,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a song");
+
         player
             .catalog
             .0
@@ -292,6 +293,7 @@ mod tests {
     #[test]
     fn a_saved_search_answers_from_the_catalog_in_its_order_and_under_its_cap() {
         let player = player();
+
         song(&player, "Bravo", "Jazz", false);
         song(&player, "Alpha", "Jazz", true);
         song(&player, "Charlie", "Rock", false);
@@ -322,11 +324,13 @@ mod tests {
         assert_eq!(titles(&player, jazz), ["Delta", "Bravo"]);
         assert_eq!(titles(&player, loved)[0], "Alpha");
         assert_eq!(titles(&player, loved).len(), 4);
+
         let listed = player.playlists().expect("the playlists");
         let shown = listed
             .iter()
             .find(|playlist| playlist.id == jazz)
             .expect("the saved search");
+
         assert_eq!(shown.songs, 2);
         assert_eq!(
             shown.search.as_ref().map(|search| search.text.as_str()),
@@ -369,10 +373,12 @@ mod tests {
             .rename_playlist(id, 0, "Smooth".into())
             .expect("renamed");
         player.delete_playlist(id, 1).expect("deleted");
+
         assert!(player.playlists().expect("none").is_empty());
         assert!(player.undo_playlist().expect("restored"));
 
         let restored = player.playlists().expect("the playlists");
+
         assert_eq!(restored[0].name, "Smooth");
         assert_eq!(
             restored[0]
@@ -422,9 +428,11 @@ mod tests {
     #[test]
     fn a_saved_search_is_revised_in_text_order_cap_and_name_as_one_undoable_step() {
         let player = player();
+
         song(&player, "Bravo", "Jazz", false);
         song(&player, "Alpha", "Jazz", false);
         song(&player, "Charlie", "Rock", false);
+
         let id = player
             .save_search(
                 "Jazz".into(),
@@ -450,6 +458,7 @@ mod tests {
             .expect("revised");
 
         let after = listed(&player, id);
+
         assert_eq!(after.name, "Everything");
         assert_eq!(after.search, Some(revised));
         assert_eq!(after.songs, 2);
@@ -459,6 +468,7 @@ mod tests {
         assert!(player.undo_playlist().expect("undone"));
 
         let undone = listed(&player, id);
+
         assert_eq!(undone.name, "Jazz");
         assert_eq!(undone.search, before.search);
         assert_eq!(titles(&player, id), ["Alpha", "Bravo"]);
@@ -487,7 +497,9 @@ mod tests {
             )
             .expect("saved");
         let list = player.create_playlist("Mix".into()).expect("a list");
+
         player.add_to_playlist(list, vec![one]).expect("added");
+
         let revision = listed(&player, jazz).revision;
         let search = SavedSearch {
             text: "genre:blues".into(),
@@ -512,6 +524,7 @@ mod tests {
         ));
 
         let held = listed(&player, jazz);
+
         assert_eq!(held.revision, revision);
         assert_eq!(
             held.search.map(|search| search.text),
@@ -524,7 +537,9 @@ mod tests {
     #[test]
     fn a_list_kept_fills_itself_under_a_free_name_and_is_kept_once() {
         let player = player();
+
         song(&player, "One", "Jazz", false);
+
         let jazz = SavedSearch {
             text: "genre:jazz".into(),
             ..SavedSearch::default()
@@ -533,6 +548,7 @@ mod tests {
             text: "genre:rock".into(),
             ..SavedSearch::default()
         };
+
         player.create_playlist("Genres".into()).expect("a list");
 
         let nothing_yet = player.playlist_filling_from(jazz.clone()).expect("asked");
@@ -562,8 +578,10 @@ mod tests {
     #[test]
     fn a_cap_of_none_or_zero_asks_every_row() {
         let player = player();
+
         song(&player, "One", "Jazz", false);
         song(&player, "Two", "Jazz", false);
+
         let id = player
             .save_search(
                 "Jazz".into(),

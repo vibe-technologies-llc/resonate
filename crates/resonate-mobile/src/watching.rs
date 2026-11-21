@@ -75,6 +75,7 @@ impl MobilePlayer {
         rest: &Receiver<Event>,
     ) -> Result<()> {
         let mut events = vec![first];
+
         events.extend(rest.try_iter());
 
         let moved = events.iter().any(changes_what_is_shown);
@@ -106,6 +107,7 @@ pub(crate) fn keep(player: &Arc<MobilePlayer>, zone: ZoneId) {
         return;
     };
     let player = Arc::downgrade(player);
+
     let started = thread::Builder::new()
         .name("resonate-watch".into())
         .spawn(move || watch(&player, zone, &events));
@@ -122,6 +124,7 @@ pub(crate) fn watch(player: &Weak<MobilePlayer>, zone: ZoneId, events: &Receiver
         let Some(player) = player.upgrade() else {
             return;
         };
+
         let absorbed = match arrived {
             Ok(first) => player.absorbed(zone, first, events),
             Err(RecvTimeoutError::Timeout) => Ok(()),

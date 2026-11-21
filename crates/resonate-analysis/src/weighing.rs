@@ -153,13 +153,17 @@ impl Resampled {
                     .flat_map(|frame| &frame[..self.lanes])
                     .map(|sample| f64::from(*sample)),
             );
+
             let room = self.resampler.max_output_frames(FRAMES_AT_A_TIME);
+
             self.out.clear();
             self.out.resize(room * self.lanes, 0.0);
+
             let made = self
                 .resampler
                 .process(&self.widened, &mut self.out)
                 .frames_out;
+
             self.narrowed.clear();
             self.narrowed.extend(
                 self.out[..made * self.lanes]
@@ -216,6 +220,7 @@ impl Weighing {
 
     pub(crate) fn finished(self) -> Vec<Steps> {
         let mut steps = Vec::new();
+
         self.native.finished(&mut steps);
         for resampled in self.resampled {
             resampled.coded.finished(&mut steps);

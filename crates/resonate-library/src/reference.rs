@@ -318,7 +318,7 @@ pub struct LifeSpan {
     pub ended: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Genre {
     pub name: String,
     pub weight: u32,
@@ -432,7 +432,7 @@ pub struct ArtistMatch {
     pub aliases: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum LookupOp {
     Release,
     FindRelease,

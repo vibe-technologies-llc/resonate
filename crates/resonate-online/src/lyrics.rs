@@ -143,6 +143,7 @@ pub fn source_of(document: Option<&str>) -> SourceId {
 
 pub(crate) fn set_of(told: &LyricText) -> resonate_lyrics::Result<Option<Lyrics>> {
     let source = source_of(told.lyricsfile.as_deref());
+
     if let Some(document) = &told.lyricsfile {
         match read_document(source.clone(), document) {
             Ok(read) if read.lyrics.is_some() => return Ok(read.lyrics),
@@ -229,6 +230,7 @@ impl LyricProvider for OnlineLyrics {
         };
 
         let kept = self.remembered(wanted);
+
         if let Some(kept) = &kept
             && (!kept.is_due(SystemTime::now()) || !self.client.is_reaching())
         {
@@ -316,7 +318,9 @@ mod tests {
             Some(duet.clone())
         );
         assert_eq!(richer(Some(lines.clone()), None), Some(lines.clone()));
+
         let other = lined("[00:03.00]lo");
+
         assert_eq!(richer(Some(lines), Some(other.clone())), Some(other));
     }
 
@@ -329,6 +333,7 @@ mod tests {
         let lyrics = set_of(&documented(DUET))
             .expect("the document reads")
             .expect("its lines are there");
+
         assert_eq!(lyrics.source().as_str(), "betterlyrics");
         assert_eq!(lyrics.detail(), Detail::Words);
     }
@@ -339,9 +344,11 @@ mod tests {
             Arc::new(Client::new(crate::Identity::of_this_build())),
             None,
         );
+
         assert_eq!(provider.source().as_str(), ONLINE_LYRICS);
 
         let bare = Wanted::for_media(resonate_core::MediaLocation::local("/music/Echoes.flac"));
+
         assert!(provider.lyrics(&bare).expect("nothing was asked").is_none());
     }
 }

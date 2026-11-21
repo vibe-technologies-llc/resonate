@@ -141,6 +141,7 @@ pub fn library_path() -> Result<PathBuf> {
 
 pub fn private_data_dir() -> Result<PathBuf> {
     let dir = data_dir()?;
+
     fs::create_dir_all(&dir).map_err(|source| Error::CreateDir {
         path: dir.clone(),
         source,
@@ -160,6 +161,7 @@ fn entered_by_its_owner_alone(dir: &Path) -> Result<()> {
         })?
         .permissions()
         .mode();
+
     if standing & 0o777 == ENTERED_BY_ITS_OWNER_ALONE {
         return Ok(());
     }
@@ -202,7 +204,9 @@ pub fn private_store(store: &Path) -> Result<()> {
     private(store)?;
     for suffix in STORE_SIDE_FILES {
         let mut side = store.as_os_str().to_os_string();
+
         side.push(suffix);
+
         let side = PathBuf::from(side);
         if side.exists() {
             private(&side)?;
@@ -924,6 +928,7 @@ pub fn spoken_before_the_grammar(arguments: &[OsString]) -> Language {
 fn named_on_the_command_line(arguments: &[OsString]) -> Option<PathBuf> {
     let given = format!("{CONFIG_FLAG}=");
     let mut words = arguments.iter().skip(1).take_while(|word| *word != "--");
+
     while let Some(word) = words.next() {
         if *word == *CONFIG_FLAG {
             return words.next().map(PathBuf::from);
@@ -1043,9 +1048,11 @@ pub fn submitting_in(path: &Path) -> Result<Accounts> {
         Some(value) => At { path, key: online }.boolean(&value)?,
         None => true,
     };
+
     if !switched_on {
         return Ok(Accounts::default());
     }
+
     let read = |key: ConfigKey| -> Result<Option<String>> {
         match item_in(path, key)? {
             Some(value) => Ok(given(At { path, key }.string(&value)?)),
@@ -1129,6 +1136,7 @@ fn parse(path: &Path, text: &str, mut refused: impl FnMut(Error)) -> Result<Conf
 
     let mut config = Config::default();
     let mut retired = Vec::new();
+
     for (name, value) in document.iter() {
         let Some(key) = ConfigKey::parse(name) else {
             match Retired::spelt(name) {
@@ -1170,6 +1178,7 @@ impl Config {
             }
             Sorted::Valued(key) => key,
         };
+
         match key {
             Valued::Sink => config.sink = Some(NodeName::new(at.string(value)?)),
             Valued::Library => config.library = a_path(at.string(value)?),
@@ -1200,15 +1209,18 @@ impl Config {
             Valued::BluetoothWake => config.bluetooth_wake = Some(at.boolean(value)?),
             Valued::BluetoothLeadMs => {
                 let millis = at.within(value, &BLUETOOTH_LEAD_MS)?;
+
                 config.bluetooth_lead = Some(Duration::from_millis(millis));
             }
             Valued::BluetoothAwakeS => {
                 let seconds = at.within(value, &BLUETOOTH_AWAKE_S)?;
+
                 config.bluetooth_awake = Some(Duration::from_secs(seconds));
             }
             Valued::Volume => {
                 let position = at.float(value)?;
                 let volume = Volume::new(position as f32).map_err(|_| at.rejected())?;
+
                 config.volume = Some(volume);
             }
             Valued::Theme => config.theme = Some(at.one_of(value, Theme::parse)?),
@@ -1259,6 +1271,7 @@ impl Config {
             }
             Valued::ListenFor => {
                 let seconds = at.within(value, &LISTENS_FOR_SECONDS)?;
+
                 config.listen_for = Some(Duration::from_secs(seconds));
             }
             Valued::Inbox => config.inbox = a_path(at.string(value)?),
@@ -1275,11 +1288,13 @@ impl Config {
                             .ok_or_else(|| at.mistyped(ValueKind::Text))
                     })
                     .collect::<Result<Vec<_>>>()?;
+
                 config.music_extensions =
                     Some(MusicExtensions::parse(&extensions).ok_or_else(|| at.rejected())?);
             }
             Valued::MinimumLength => {
                 let seconds = at.within(value, &(0..=u64::from(MinimumLength::MAX_SECONDS)))?;
+
                 config.minimum_length = Some(
                     MinimumLength::new(u16::try_from(seconds).map_err(|_| at.rejected())?)
                         .ok_or_else(|| at.rejected())?,
@@ -1289,16 +1304,19 @@ impl Config {
             Valued::SpeakerAngle => {
                 let degrees = at.within(value, &SPEAKER_ANGLE_DEGREES)?;
                 let degrees = u8::try_from(degrees).map_err(|_| at.rejected())?;
+
                 config.speaker_angle =
                     Some(SpeakerAngle::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
             Valued::SpeakerElevation => {
                 let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+
                 config.speaker_elevation =
                     Some(SpeakerElevation::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
             Valued::HeadYaw => {
                 let degrees = i16::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+
                 config.head_yaw = Some(HeadYaw::from_degrees(degrees).map_err(|_| at.rejected())?);
             }
             Valued::Subsonic => config.subsonic = given(at.string(value)?),
@@ -1415,6 +1433,7 @@ impl Config {
                     .iter()
                     .map(|name| name.as_str().ok_or_else(|| at.mistyped(ValueKind::Text)))
                     .collect::<Result<Vec<_>>>()?;
+
                 config.sync_songs = Some(SyncedSongs::parse(&named).ok_or_else(|| at.rejected())?);
             }
             Valued::SyncControl => {
@@ -1425,6 +1444,7 @@ impl Config {
             }
             Valued::BufferMs => {
                 let millis = u64::try_from(at.integer(value)?).map_err(|_| at.rejected())?;
+
                 config.buffer = Some(Duration::from_millis(millis));
             }
         }
@@ -1504,6 +1524,7 @@ impl At<'_> {
                 .then_some(Some(Binding::Own))
                 .ok_or_else(|| self.rejected());
         }
+
         let Some(named) = given(self.string(value)?) else {
             return Ok(None);
         };
@@ -1565,6 +1586,7 @@ fn learnt(at: At<'_>, value: &Item) -> Result<Learnt> {
             continue;
         };
         let mut played = Vec::new();
+
         for spelling in spellings {
             match spelling.as_str().and_then(Trial::spelled) {
                 Some(trial) => played.push(trial),
@@ -1691,6 +1713,7 @@ impl Editing<'_> {
     ) -> Result<()> {
         let held = self.document.entry(key.as_str()).or_insert_with(|| {
             let mut fresh = Table::new();
+
             fresh.decor_mut().set_prefix("\n");
             Item::Table(fresh)
         });
@@ -1718,6 +1741,7 @@ impl Editing<'_> {
         else {
             return;
         };
+
         if table.remove(entry).is_none() {
             return;
         }
@@ -1730,6 +1754,7 @@ impl Editing<'_> {
 
 fn replaced_in_place(held: &mut Item, value: toml_edit::Value) {
     let decor = held.as_value().map(|was| was.decor().clone());
+
     *held = toml_edit::value(value);
     if let (Some(decor), Some(now)) = (decor, held.as_value_mut()) {
         *now.decor_mut() = decor;
@@ -1768,6 +1793,7 @@ pub fn clear_in_table(path: &Path, key: ConfigKey, entry: &str) -> Result<()> {
 
 pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> Result<()> {
     let target = followed(path);
+
     if let Some(parent) = target.parent() {
         fs::create_dir_all(parent).map_err(|source| Error::CreateDir {
             path: parent.to_path_buf(),
@@ -1777,11 +1803,13 @@ pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> 
 
     let _alone = held_alone(&target)?;
     let mut document = document(&target, &read_or_empty(&target)?)?;
+
     let mut editing = Editing {
         document: &mut document,
         target: &target,
         changed: false,
     };
+
     edits(&mut editing)?;
     if !editing.changed {
         return Ok(());
@@ -1791,13 +1819,16 @@ pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> 
 
 fn followed(path: &Path) -> PathBuf {
     let mut standing = path.to_path_buf();
+
     for _ in 0..LINKS_FOLLOWED_AT_MOST {
         if let Ok(resolved) = fs::canonicalize(&standing) {
             return resolved;
         }
+
         let Ok(link) = fs::read_link(&standing) else {
             return standing;
         };
+
         standing = match standing.parent() {
             Some(folder) => folder.join(link),
             None => link,
@@ -1812,7 +1843,9 @@ fn held_alone(target: &Path) -> Result<File> {
         source,
     };
     let folder = target.parent().unwrap_or_else(|| Path::new("."));
+
     let lock = writers_lock(target, folder).map_err(refused)?;
+
     lock.lock().map_err(refused)?;
     sweep_what_writers_left(target, folder);
     Ok(lock)
@@ -1855,9 +1888,11 @@ fn left_by_a_writer(name: &str, target: &str) -> bool {
     let Some(rest) = name.strip_prefix(target) else {
         return false;
     };
+
     if rest == LOCK_SUFFIX {
         return true;
     }
+
     let Some(staged) = rest
         .strip_prefix('.')
         .and_then(|staged| staged.strip_suffix(STAGING_SUFFIX))
@@ -1897,8 +1932,10 @@ fn staged_for_its_owner_alone(staged: &Path, target: &Path) -> io::Result<File> 
         .create_new(true)
         .mode(READ_BY_ITS_OWNER_ALONE)
         .open(staged)?;
+
     if let Ok(standing) = fs::metadata(target) {
         let owners = standing.permissions().mode() & ITS_OWNERS_BITS;
+
         file.set_permissions(fs::Permissions::from_mode(owners))?;
     }
     Ok(file)
@@ -1911,6 +1948,7 @@ fn staged_for_its_owner_alone(staged: &Path, _: &Path) -> io::Result<File> {
 
 fn beside(target: &Path, suffix: &str) -> PathBuf {
     let mut named = target.file_name().unwrap_or_default().to_os_string();
+
     named.push(suffix);
     target.with_file_name(named)
 }
@@ -1987,9 +2025,11 @@ fn tab(text: &str) -> Option<&'static str> {
 
 fn window_size(text: &str) -> Option<(u32, u32)> {
     let (width, height) = text.split_once('x')?;
+
     if height.contains('x') {
         return None;
     }
+
     let (width, height) = (width.parse::<u32>().ok()?, height.parse::<u32>().ok()?);
     (width >= 720 && height >= 520 && width <= 8192 && height <= 8192).then_some((width, height))
 }
@@ -2118,7 +2158,9 @@ mod tests {
             german.region(),
             RegionChoice::parse("de-DE").expect("a tag")
         );
+
         resonate_words::settle(&german.region().conventions());
+
         assert_eq!(resonate_words::grouped(12_345), "12.345");
         assert_eq!(
             resonate_words::day_month_and_year(2026, 11, 13),
@@ -2130,6 +2172,7 @@ mod tests {
             read("region = \"system\"").expect("the system's").region(),
             RegionChoice::System
         );
+
         for refused in ["region = \"de\"", "region = \"klingon\"", "region = \"C\""] {
             assert!(
                 matches!(
@@ -2142,6 +2185,7 @@ mod tests {
                 "{refused}"
             );
         }
+
         assert!(matches!(
             read("region = 49"),
             Err(Error::ConfigType {
@@ -2165,6 +2209,7 @@ mod tests {
 
     fn read(text: &str) -> Result<Config> {
         let mut refusals = Vec::new();
+
         let config = parse(Path::new("/config.toml"), text, |error| {
             refusals.push(error)
         })?;
@@ -2188,6 +2233,7 @@ mod tests {
     fn entry_of(key: &str) -> String {
         let opening = format!(".B {key}");
         let mut lines = CONFIG_MAN_PAGE.lines().skip_while(|line| *line != opening);
+
         lines.next();
         lines
             .take_while(|line| !line.starts_with(".TP") && !line.starts_with(".SH"))
@@ -2346,12 +2392,15 @@ mod tests {
 
         for pane in resonate_ui::Pane::ALL {
             let tab_named = pane.as_str();
+
             assert_eq!(tab(tab_named), Some(tab_named));
             assert!(
                 tabs.contains(tab_named),
                 "{tab_named} is not in the man page"
             );
+
             let text = format!("last-tab = \"{tab_named}\"\n");
+
             assert_eq!(read(&text).unwrap().last_tab.as_deref(), Some(tab_named));
         }
     }
@@ -2376,8 +2425,10 @@ mod tests {
         ] {
             let read = read(&format!("last-settings-category = \"{remembered}\""))
                 .unwrap_or_else(|error| panic!("{remembered} was refused: {error:?}"));
+
             assert_eq!(read.last_settings_category.as_deref(), Some(remembered));
         }
+
         assert!(settings_category("scrobble").is_none());
     }
 
@@ -2417,15 +2468,20 @@ mod tests {
             "resonate-youtube-music-settings-{}",
             std::process::id()
         ));
+
         fs::create_dir_all(&folder).expect("a folder");
+
         let file = folder.join("config.toml");
+
         store(&file, ConfigKey::YoutubeMusic, true).expect("the switch stored");
         store(&file, ConfigKey::YoutubeMusicCookies, "firefox").expect("the cookies stored");
         store(&file, ConfigKey::YtDlp, "/opt/yt-dlp").expect("the program stored");
         store(&file, ConfigKey::YoutubeMusicKeepOrder, false).expect("the order stored");
 
         let text = fs::read_to_string(&file).expect("the file written");
+
         fs::remove_dir_all(&folder).expect("the folder removed");
+
         let config = read(&text).expect("a well formed document");
 
         assert!(text.contains("youtube-music = true"), "{text}");
@@ -2500,7 +2556,9 @@ mod tests {
             config.sync_server_certificate.as_deref(),
             Some(Path::new("/etc/resonate/sync.pem"))
         );
+
         let songs = config.sync_songs.expect("songs followed");
+
         assert!(songs.favourites && songs.playlists && !songs.everything);
 
         assert!(
@@ -2510,11 +2568,17 @@ mod tests {
         );
         assert!(!read("sync = false\n").expect("read").syncs());
         assert!(!config.is_on(Switch::SyncNearbyOnly));
+
         let hosted = read("online = false\nsync-nearby-only = false\n").expect("read");
+
         assert!(!hosted.syncs() && !hosted.is_on(Switch::SyncNearbyOnly));
+
         let defaulted = read("online = false\n").expect("read");
+
         assert!(!defaulted.syncs() && !defaulted.is_on(Switch::SyncNearbyOnly));
+
         let nearby = read("online = false\nsync-nearby-only = true\n").expect("read");
+
         assert!(nearby.syncs() && nearby.is_on(Switch::SyncNearbyOnly));
         assert!(
             !read("sync = false\nsync-nearby-only = true\n")
@@ -2570,6 +2634,7 @@ mod tests {
     impl Scratch {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let path = env::temp_dir()
                 .join(format!(
                     "resonate-config-{}-{}",
@@ -2612,7 +2677,9 @@ mod tests {
             read("").expect("defaults").music_filters(),
             MusicFilters::default()
         );
+
         let selected = read("music-extensions = [\".MP3\", \"flac\", \".m4a\"]\nminimum-length-s = 600\nlast-settings-category = \"filters\"").expect("valid filters");
+
         assert_eq!(
             selected
                 .music_filters()
@@ -2622,6 +2689,7 @@ mod tests {
             ["flac", "m4a", "mp3"]
         );
         assert_eq!(selected.music_filters().minimum_length.seconds(), 600);
+
         for invalid in [
             "minimum-length-s = -1",
             "minimum-length-s = 601",
@@ -2654,6 +2722,7 @@ mod tests {
                 })
             ));
         }
+
         assert_eq!(
             read("music-extensions = []")
                 .expect("exclude all")
@@ -2753,6 +2822,7 @@ mod tests {
         ] {
             let config =
                 read(&format!("noise-shaping = \"{text}\"")).expect("a well formed document");
+
             assert_eq!(config.noise_shaping, Some(shaping), "{text}");
         }
     }
@@ -2760,9 +2830,11 @@ mod tests {
     #[test]
     fn an_inbox_is_read_as_a_folder_and_a_blank_one_is_none() {
         let config = read("inbox = \"/music/inbox\"").expect("a well formed document");
+
         assert_eq!(config.inbox.as_deref(), Some(Path::new("/music/inbox")));
 
         let config = read("inbox = \"  \"").expect("a well formed document");
+
         assert_eq!(config.inbox, None);
 
         assert_eq!(Config::default().inbox, None);
@@ -2771,12 +2843,14 @@ mod tests {
     #[test]
     fn a_music_folder_is_read_as_a_folder_and_a_blank_one_is_none() {
         let config = read("music-folder = \"/music/library\"").expect("a well formed document");
+
         assert_eq!(
             config.music_folder.as_deref(),
             Some(Path::new("/music/library"))
         );
 
         let config = read("music-folder = \"  \"").expect("a well formed document");
+
         assert_eq!(config.music_folder, None);
 
         assert_eq!(Config::default().music_folder, None);
@@ -2796,6 +2870,7 @@ mod tests {
     fn where_and_how_long_to_listen_are_read() {
         let config =
             read("listen-from = \"microphone\"\nlisten-for = 20").expect("a well formed document");
+
         assert_eq!(config.listen_from, Some(Listening::Microphone(None)));
         assert_eq!(config.listen_for, Some(Duration::from_secs(20)));
         assert!(read("listen-for = 0").is_err());
@@ -2805,13 +2880,16 @@ mod tests {
     #[cfg(feature = "online")]
     fn a_listenbrainz_token_is_submitted_to_only_while_online_is_on() {
         let config = read("listenbrainz-token = \" a token \"").expect("a well formed document");
+
         assert_eq!(config.listenbrainz_token.as_deref(), Some("a token"));
         assert_eq!(config.submits_to().listenbrainz.as_deref(), Some("a token"));
 
         let off = read("online = false\nlistenbrainz-token = \"a token\"").expect("well formed");
+
         assert_eq!(off.submits_to(), Accounts::default());
 
         let blank = read("listenbrainz-token = \"  \"").expect("well formed");
+
         assert_eq!(blank.listenbrainz_token, None);
         assert_eq!(Config::default().submits_to(), Accounts::default());
     }
@@ -2841,6 +2919,7 @@ mod tests {
     #[test]
     fn an_audd_token_is_read_and_a_blank_one_is_none() {
         let config = read("audd-token = \"a token\"").expect("a well formed document");
+
         assert_eq!(config.audd_token.as_deref(), Some("a token"));
         assert_eq!(
             read("audd-token = \"\"").expect("well formed").audd_token,
@@ -2925,9 +3004,11 @@ mod tests {
     fn an_acoustid_key_is_read_and_a_blank_one_is_none() {
         let config =
             read("acoustid-key = \"a key the user typed\"").expect("a well formed document");
+
         assert_eq!(config.acoustid_key.as_deref(), Some("a key the user typed"));
 
         let config = read("acoustid-key = \"  \"").expect("a well formed document");
+
         assert_eq!(config.acoustid_key, None);
 
         assert_eq!(Config::default().acoustid_key, None);
@@ -2936,9 +3017,11 @@ mod tests {
     #[test]
     fn an_equaliser_measurer_is_read_and_a_blank_one_is_none() {
         let config = read("equaliser-measurer = \" Rtings \"").expect("a well formed document");
+
         assert_eq!(config.equaliser_measurer(), Some("Rtings"));
 
         let config = read("equaliser-measurer = \"  \"").expect("a well formed document");
+
         assert_eq!(config.equaliser_measurer(), None);
 
         assert_eq!(Config::default().equaliser_measurer(), None);
@@ -3004,6 +3087,7 @@ mod tests {
         );
 
         let error = read("flac-above-96k-for = [7]").expect_err("a number is not a name");
+
         assert!(matches!(
             error,
             Error::ConfigType {
@@ -3061,6 +3145,7 @@ mod tests {
             learnt_written(&plays),
         )
         .expect("a writable file");
+
         let config = load(Some(&scratch.path)).expect("the file reads back");
 
         assert_eq!(
@@ -3092,6 +3177,7 @@ mod tests {
         assert!(Config::default().renderers_at().is_empty());
 
         let error = read("renderers-at = [7]").expect_err("a number is not an address");
+
         assert!(matches!(
             error,
             Error::ConfigType {
@@ -3113,7 +3199,9 @@ mod tests {
             .iter()
             .map(ToString::to_string)
             .collect::<Vec<_>>();
+
         held.sort();
+
         assert_eq!(
             held,
             [
@@ -3127,6 +3215,7 @@ mod tests {
         assert!(Config::default().cast_at().is_empty());
 
         let error = read("cast-at = [7]").expect_err("a number is not an address");
+
         assert!(matches!(
             error,
             Error::ConfigType {
@@ -3197,12 +3286,14 @@ mod tests {
     #[test]
     fn studies_lyrics_and_a_skip_under_repeat_default_on_and_are_turned_off_by_their_keys() {
         let config = read("").expect("empty is valid");
+
         assert!(config.is_on(Switch::Study));
         assert!(config.is_on(Switch::FetchLyrics));
         assert_eq!(config.skip_under_repeat(), SkipUnderRepeat::RepeatsTheQueue);
 
         let config = read("study = false\nskip-repeats-queue = false\nfetch-lyrics = false")
             .expect("a well formed document");
+
         assert!(!config.is_on(Switch::Study));
         assert!(!config.is_on(Switch::FetchLyrics));
         assert_eq!(
@@ -3214,12 +3305,14 @@ mod tests {
     #[test]
     fn a_smart_shuffle_spreading_everything_unless_the_file_says_otherwise() {
         let config = read("").expect("an empty document");
+
         assert_eq!(config.smart_shuffle(), SmartShuffle::default());
 
         let config = read(
             "shuffle-style = \"albums\"\nshuffle-spreads-artists = false\nshuffle-spreads-albums = false\nshuffle-fresh-first = false",
         )
         .expect("a well formed document");
+
         assert_eq!(
             config.smart_shuffle(),
             SmartShuffle {
@@ -3231,21 +3324,25 @@ mod tests {
         );
 
         let config = read("shuffle-style = \"random\"").expect("a well formed document");
+
         assert_eq!(config.smart_shuffle().style, ShuffleStyle::Random);
     }
 
     #[test]
     fn previous_restarts_by_default_and_is_turned_off_by_its_key() {
         let config = read("").expect("empty is valid");
+
         assert_eq!(
             config.previous_restarts(),
             PreviousRestarts::RestartsTheTrack
         );
 
         let config = read("previous-restarts = false").expect("a well formed document");
+
         assert_eq!(config.previous_restarts(), PreviousRestarts::AlwaysGoesBack);
 
         let config = read("previous-restarts = true").expect("a well formed document");
+
         assert_eq!(
             config.previous_restarts(),
             PreviousRestarts::RestartsTheTrack
@@ -3256,10 +3353,12 @@ mod tests {
     #[test]
     fn a_spotify_account_is_read_out_of_the_file_only_where_both_keys_are_given() {
         let scratch = Scratch::new().seed("spotify-client-id = \"registered\"\n");
+
         assert_eq!(spotify_in(&scratch.path).expect("it reads"), None);
 
         let scratch = scratch
             .seed("spotify-client-id = \" registered \"\nspotify-refresh-token = \"sesame\"\n");
+
         assert_eq!(
             spotify_in(&scratch.path).expect("it reads"),
             Some(("registered".to_owned(), "sesame".to_owned()))
@@ -3272,18 +3371,22 @@ mod tests {
     #[test]
     fn the_contact_alone_is_read_back_out_of_a_file_edited_by_hand() {
         let scratch = Scratch::new().seed("volume = \"loud\"\ncontact = \"  a contact  \"\n");
+
         assert_eq!(
             contact_in(&scratch.path).expect("the contact reads whatever else is wrong"),
             Some("a contact".to_owned())
         );
 
         let scratch = scratch.seed("contact = \" \"\n");
+
         assert_eq!(contact_in(&scratch.path).expect("it reads"), None);
 
         let scratch = scratch.seed("contact = 7\n");
+
         assert!(contact_in(&scratch.path).is_err());
 
         let _ = fs::remove_file(&scratch.path);
+
         assert_eq!(
             contact_in(&scratch.path).expect("no file is no contact"),
             None
@@ -3304,21 +3407,25 @@ mod tests {
     fn online_and_contact_are_read_and_an_empty_contact_is_none() {
         let config = read("online = false\ncontact = \"a contact the user typed\"")
             .expect("a well formed document");
+
         assert_eq!(config.switches.said(Switch::Online), Some(false));
         assert!(!config.is_on(Switch::Online));
         assert_eq!(config.contact.as_deref(), Some("a contact the user typed"));
 
         let config = read("online = true\ncontact = \"  \"").expect("a well formed document");
+
         assert_eq!(config.switches.said(Switch::Online), Some(true));
         assert!(config.is_on(Switch::Online));
         assert_eq!(config.contact, None);
 
         let config = read("").expect("empty is valid");
+
         assert!(config.is_on(Switch::Online));
         assert!(config.is_on(Switch::EnrichAfterScan));
         assert_eq!(config.contact, None);
 
         let config = read("enrich-after-scan = false").expect("a well formed document");
+
         assert_eq!(config.switches.said(Switch::EnrichAfterScan), Some(false));
         assert!(!config.is_on(Switch::EnrichAfterScan));
 
@@ -3327,10 +3434,12 @@ mod tests {
 
         let config = read("enrich-on-metered = true\ndownload-on-metered = false")
             .expect("a well formed document");
+
         assert!(config.is_on(Switch::EnrichOnMetered));
         assert!(!config.is_on(Switch::DownloadOnMetered));
 
         let error = read("online = \"yes\"").expect_err("a string is not a boolean");
+
         assert!(
             matches!(
                 error,
@@ -3429,6 +3538,7 @@ mod tests {
         )
         .expect("a well formed document")
         .spectral();
+
         assert_eq!(
             read_back,
             resonate_core::Spectral {
@@ -3507,6 +3617,7 @@ mod tests {
         );
 
         let error = read("maximise-button = \"no\"").expect_err("a string is not a boolean");
+
         assert!(
             matches!(
                 error,
@@ -3601,6 +3712,7 @@ mod tests {
             "text-size = \"enormous\"",
         ] {
             let error = read(text).expect_err("outside the domain");
+
             assert!(
                 matches!(error, Error::ConfigValue { .. }),
                 "{text}: {error:?}"
@@ -3619,6 +3731,7 @@ mod tests {
     #[test]
     fn a_setting_of_the_wrong_type_names_the_key_and_the_type_it_wanted() {
         let error = read("quality = 3").expect_err("an integer is not a quality");
+
         assert!(
             matches!(
                 error,
@@ -3644,6 +3757,7 @@ mod tests {
             "listen-for = 3",
         ] {
             let error = read(text).expect_err("outside the domain");
+
             assert!(
                 matches!(error, Error::ConfigValue { .. }),
                 "{text}: {error:?}"
@@ -3654,6 +3768,7 @@ mod tests {
     #[test]
     fn an_unknown_key_is_ignored_rather_than_refused() {
         let config = read("sink = \"auto_null\"\nvolume-boost = true").expect("unknown keys pass");
+
         assert_eq!(config.sink, Some(NodeName::new("auto_null")));
     }
 
@@ -3662,9 +3777,11 @@ mod tests {
         let scratch = Scratch::new().seed(
             "# my listening setup\nsink = \"auto_null\"\n\n# resampler\nquality = \"fast\"\n",
         );
+
         store(&scratch.path, ConfigKey::Quality, "high").expect("a writable file");
 
         let text = scratch.text();
+
         assert!(text.contains("# my listening setup"), "{text}");
         assert!(text.contains("# resampler"), "{text}");
         assert!(text.contains("quality = \"high\""), "{text}");
@@ -3677,6 +3794,7 @@ mod tests {
     #[test]
     fn storing_a_setting_creates_the_file_and_its_directory() {
         let scratch = Scratch::new();
+
         store(&scratch.path, ConfigKey::ReplayGain, "album").expect("a writable file");
 
         assert_eq!(
@@ -3690,10 +3808,12 @@ mod tests {
     #[test]
     fn storing_a_setting_twice_replaces_it_rather_than_repeating_it() {
         let scratch = Scratch::new();
+
         store(&scratch.path, ConfigKey::Dither, "none").expect("a writable file");
         store(&scratch.path, ConfigKey::Dither, "triangular").expect("a writable file");
 
         let text = scratch.text();
+
         assert_eq!(text.matches("dither").count(), 1, "{text}");
         assert_eq!(
             load(Some(&scratch.path)).expect("it reads back").dither,
@@ -3705,13 +3825,16 @@ mod tests {
     fn clearing_a_setting_drops_the_key_and_keeps_the_rest() {
         let scratch =
             Scratch::new().seed("sink = \"auto_null\"\n\n# resampler\nquality = \"high\"\n");
+
         clear(&scratch.path, ConfigKey::Sink).expect("a writable file");
 
         let text = scratch.text();
+
         assert!(text.contains("# resampler"), "{text}");
         assert!(!text.contains("sink"), "{text}");
 
         let config = load(Some(&scratch.path)).expect("it reads back");
+
         assert_eq!(config.sink, None);
         assert_eq!(config.quality, Some(Quality::High));
     }
@@ -3729,6 +3852,7 @@ mod tests {
     #[test]
     fn the_low_latency_level_is_spelt_the_way_its_flag_is() {
         let scratch = Scratch::new().seed("quality = \"high\"\n");
+
         store(&scratch.path, ConfigKey::Quality, "low-latency").expect("a writable file");
 
         assert!(scratch.text().contains("quality = \"low-latency\""));
@@ -3741,6 +3865,7 @@ mod tests {
     #[test]
     fn the_very_high_level_is_spelt_the_way_its_flag_is() {
         let scratch = Scratch::new().seed("quality = \"fast\"\n");
+
         store(&scratch.path, ConfigKey::Quality, "very-high").expect("a writable file");
 
         assert!(scratch.text().contains("quality = \"very-high\""));
@@ -3753,6 +3878,7 @@ mod tests {
     #[test]
     fn a_speaker_angle_is_read_in_whole_degrees_and_held_to_what_a_pair_of_speakers_can_be() {
         let config = read("speaker-angle = 45").expect("a known angle");
+
         assert_eq!(config.speaker_angle().degrees(), 45);
         assert_eq!(Config::default().speaker_angle(), SpeakerAngle::STANDARD);
 
@@ -3770,6 +3896,7 @@ mod tests {
     fn a_speaker_elevation_is_read_in_whole_degrees_above_or_below_the_ears_and_held_to_a_range() {
         let high = read("speaker-elevation = 30").expect("a known elevation");
         let low = read("speaker-elevation = -30").expect("a known elevation");
+
         assert_eq!(high.speaker_elevation().degrees(), 30);
         assert_eq!(low.speaker_elevation().degrees(), -30);
         assert_eq!(Config::default().speaker_elevation().degrees(), 0);
@@ -3789,6 +3916,7 @@ mod tests {
     fn a_head_yaw_is_read_in_whole_degrees_either_way_and_held_to_a_quarter_turn() {
         let left = read("head-yaw = 90").expect("a known yaw");
         let right = read("head-yaw = -90").expect("a known yaw");
+
         assert_eq!(left.head_yaw().degrees(), 90);
         assert_eq!(right.head_yaw().degrees(), -90);
         assert_eq!(Config::default().head_yaw(), HeadYaw::AHEAD);
@@ -3808,6 +3936,7 @@ mod tests {
     #[test]
     fn a_crossfeed_is_read_by_name() {
         let config = read("crossfeed = \"moderate\"").expect("a known crossfeed");
+
         assert_eq!(config.crossfeed, Some(Crossfeed::Moderate));
         assert!(read("crossfeed = \"magic\"").is_err());
     }
@@ -3815,6 +3944,7 @@ mod tests {
     #[test]
     fn a_lossy_restoration_is_read_by_name() {
         let config = read("restore-lossy = \"extend\"").expect("a known restoration");
+
         assert_eq!(config.restoration, Some(Restoration::Extend));
         assert!(read("restore-lossy = \"magic\"").is_err());
     }
@@ -3822,6 +3952,7 @@ mod tests {
     #[test]
     fn a_filter_phase_is_spelt_the_way_its_flag_is() {
         let config = read("filter-phase = \"minimum\"").expect("a known phase");
+
         assert_eq!(config.filter_phase, Some(FilterPhase::Minimum));
         assert!(read("filter-phase = \"mixed\"").is_err());
     }
@@ -3829,6 +3960,7 @@ mod tests {
     #[test]
     fn clearing_a_setting_the_file_never_had_leaves_it_alone() {
         let scratch = Scratch::new().seed("quality = \"fast\"\n");
+
         clear(&scratch.path, ConfigKey::Sink).expect("a writable file");
 
         assert_eq!(scratch.text(), "quality = \"fast\"\n");
@@ -3848,6 +3980,7 @@ mod tests {
         };
         let scratch = Scratch::new();
         let folder = scratch.path.parent().expect("a folder").to_path_buf();
+
         fs::create_dir_all(&folder).expect("a writable temporary directory");
 
         store(&scratch.path, ConfigKey::AuddToken, "a secret").expect("a writable file");
@@ -3867,6 +4000,7 @@ mod tests {
 
         let scratch = Scratch::new();
         let folder = scratch.path.parent().expect("a folder").join("data");
+
         fs::create_dir_all(&folder).expect("a writable temporary directory");
         fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).expect("a mode");
 
@@ -3877,6 +4011,7 @@ mod tests {
             .permissions()
             .mode()
             & 0o777;
+
         assert_eq!(mode, 0o700);
     }
 
@@ -3894,11 +4029,14 @@ mod tests {
         };
         let scratch = Scratch::new();
         let folder = scratch.path.parent().expect("a folder").join("stores");
+
         fs::create_dir_all(&folder).expect("a writable temporary directory");
+
         let fresh = folder.join("fresh.sqlite");
         let old = folder.join("old.sqlite");
         let old_wal = folder.join("old.sqlite-wal");
         let old_shm = folder.join("old.sqlite-shm");
+
         for existing in [&old, &old_wal, &old_shm] {
             fs::write(existing, b"rows").expect("a store file");
             fs::set_permissions(existing, fs::Permissions::from_mode(0o644)).expect("a mode");
@@ -3921,8 +4059,11 @@ mod tests {
 
         let scratch = Scratch::new();
         let folder = scratch.path.parent().expect("a folder").to_path_buf();
+
         fs::create_dir_all(&folder).expect("a folder");
+
         let kept = folder.join("dotfiles").join("config.toml");
+
         symlink("dotfiles/config.toml", &scratch.path).expect("a relative dangling link");
 
         store(&scratch.path, ConfigKey::Dither, "none").expect("a writable file");
@@ -3947,6 +4088,7 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let scratch = Scratch::new();
+
         fs::create_dir_all(scratch.path.parent().expect("a folder")).expect("a folder");
         symlink(&scratch.path, &scratch.path).expect("a link to itself");
 
@@ -3961,6 +4103,7 @@ mod tests {
         let scratch = Scratch::new().seed("quality = \"fast\"\n");
         let folder = scratch.path.parent().expect("a folder").to_path_buf();
         let kept = folder.join("dotfiles.toml");
+
         fs::rename(&scratch.path, &kept).expect("the seed moves");
         fs::set_permissions(&kept, fs::Permissions::from_mode(0o600)).expect("a mode");
         symlink(&kept, &scratch.path).expect("a link");
@@ -3987,6 +4130,7 @@ mod tests {
                 & 0o777,
             0o600
         );
+
         let staged: Vec<_> = fs::read_dir(&folder)
             .expect("the folder")
             .filter_map(|entry| entry.ok())
@@ -3997,6 +4141,7 @@ mod tests {
                     .ends_with(STAGING_SUFFIX)
             })
             .collect();
+
         assert!(staged.is_empty(), "a staging file was left behind");
     }
 
@@ -4013,6 +4158,7 @@ mod tests {
             folder.join("config.toml.9x-3.new"),
             folder.join("other.toml.1-1.new"),
         ];
+
         for path in left.iter().chain(&kept) {
             fs::write(path, "").expect("a writable folder");
         }
@@ -4025,6 +4171,7 @@ mod tests {
         for path in &kept {
             assert!(path.exists(), "{} was swept", path.display());
         }
+
         assert!(scratch.text().contains("dither"));
     }
 
@@ -4032,11 +4179,13 @@ mod tests {
     fn writers_at_once_each_keep_what_they_wrote() {
         const WRITERS: usize = 4;
         const EACH: usize = 25;
+
         let scratch = Scratch::new().seed("");
 
         std::thread::scope(|scope| {
             for writer in 0..WRITERS {
                 let path = &scratch.path;
+
                 scope.spawn(move || {
                     for entry in 0..EACH {
                         store_in_table(
@@ -4056,12 +4205,14 @@ mod tests {
             .get(ConfigKey::EqualiserFor.as_str())
             .and_then(Item::as_table_like)
             .map_or(0, |table| table.len());
+
         assert_eq!(held, WRITERS * EACH, "a write was lost to another");
     }
 
     #[test]
     fn clearing_a_setting_with_no_file_writes_nothing() {
         let scratch = Scratch::new();
+
         clear(&scratch.path, ConfigKey::Sink).expect("a missing file is nothing to clear");
 
         assert!(!scratch.path.exists());
@@ -4085,6 +4236,7 @@ mod tests {
         assert!(config.is_on(Switch::Equaliser));
 
         let bindings = config.equaliser_for.expect("a table");
+
         assert_eq!(bindings.fallback(), Some(&kept("Harman over-ear")));
         assert_eq!(
             bound(
@@ -4119,6 +4271,7 @@ mod tests {
         .expect("a well formed document");
 
         let bindings = config.equaliser_for.expect("a table");
+
         assert_eq!(
             bound(&bindings, Some(&NodeName::new("default"))),
             Some(&kept("Sennheiser HD 650")),
@@ -4147,6 +4300,7 @@ mod tests {
 
         for config in [profile_first, devices_first] {
             let bindings = config.equaliser_for.expect("a table");
+
             assert_eq!(bindings.fallback(), Some(&kept("Harman over-ear")));
             assert_eq!(
                 bound(&bindings, Some(&NodeName::new("alsa_output.one"))),
@@ -4201,6 +4355,7 @@ mod tests {
         .expect("a writable file");
 
         let text = scratch.text();
+
         assert!(text.contains("# my listening setup"), "{text}");
         assert!(text.contains("[equaliser-for]"), "{text}");
         assert!(
@@ -4210,6 +4365,7 @@ mod tests {
 
         let config = load(Some(&scratch.path)).expect("it reads back");
         let bindings = config.equaliser_for.expect("a table");
+
         assert_eq!(
             bound(&bindings, Some(&NodeName::new(sink))),
             Some(&kept("Sennheiser HD 650"))
@@ -4234,6 +4390,7 @@ mod tests {
         .expect("a writable file");
 
         let text = scratch.text();
+
         assert!(
             text.contains("quality = \"high\" # the laptop's fan"),
             "{text}"
@@ -4269,6 +4426,7 @@ mod tests {
 
         let bindings = config.equaliser_for.expect("a table");
         let headphones = NodeName::new("bluez_output.headphones");
+
         assert_eq!(
             bindings.for_sink(Some(&headphones)),
             Some((Some(&headphones), &Binding::Own))
@@ -4321,12 +4479,14 @@ mod tests {
         .expect("a writable file");
 
         let text = scratch.text();
+
         assert!(text.contains(&format!("\"{sink}\" = true")), "{text}");
 
         let bindings = load(Some(&scratch.path))
             .expect("it reads back")
             .equaliser_for
             .expect("a table");
+
         assert_eq!(
             bound(&bindings, Some(&NodeName::new(sink))),
             Some(&Binding::Own)
@@ -4337,10 +4497,12 @@ mod tests {
     #[test]
     fn clearing_the_last_binding_takes_the_table_away_with_it() {
         let scratch = Scratch::new();
+
         store_in_table(&scratch.path, ConfigKey::EqualiserFor, "one", "a").expect("writable");
         store_in_table(&scratch.path, ConfigKey::EqualiserFor, "two", "b").expect("writable");
 
         clear_in_table(&scratch.path, ConfigKey::EqualiserFor, "one").expect("writable");
+
         assert!(
             scratch.text().contains("[equaliser-for]"),
             "{}",
@@ -4348,6 +4510,7 @@ mod tests {
         );
 
         clear_in_table(&scratch.path, ConfigKey::EqualiserFor, "two").expect("writable");
+
         assert!(
             !scratch.text().contains("equaliser-for"),
             "an empty table was left behind: {}",
@@ -4378,6 +4541,7 @@ mod tests {
             "organise-as = \"\"",
         ] {
             let error = read(text).expect_err("a template the reader refuses");
+
             assert!(
                 matches!(
                     error,
@@ -4391,6 +4555,7 @@ mod tests {
         }
 
         let error = read("organise-as = 3").expect_err("an integer is not a template");
+
         assert!(
             matches!(
                 error,
@@ -4425,6 +4590,7 @@ mod tests {
     #[test]
     fn malformed_toml_is_reported_against_its_path() {
         let error = read("quality = ").expect_err("truncated");
+
         assert!(matches!(error, Error::ConfigSyntax { .. }), "{error:?}");
     }
 
@@ -4472,15 +4638,20 @@ mod tests {
     fn writing_or_forgetting_the_download_switch_takes_the_stall_spelling_out_of_the_file() {
         let folder = env::temp_dir().join(format!("resonate-config-retired-{}", process::id()));
         let path = folder.join("config.toml");
+
         fs::create_dir_all(&folder).expect("a temporary folder");
         fs::write(&path, "online = true\nstall-downloads-on-metered = true\n")
             .expect("an older file");
 
         let before = load(Some(&path)).expect("the older file reads");
+
         store(&path, ConfigKey::DownloadOnMetered, true).expect("written");
+
         let stored = fs::read_to_string(&path).expect("the file");
+
         fs::write(&path, "stall-downloads-on-metered = true\n").expect("an older file again");
         clear(&path, ConfigKey::DownloadOnMetered).expect("forgotten");
+
         let cleared = fs::read_to_string(&path).expect("the file");
         let after = load(Some(&path)).expect("the file reads");
         let _ = fs::remove_dir_all(&folder);

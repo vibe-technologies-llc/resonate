@@ -106,6 +106,7 @@ pub fn bytes(count: u64) -> String {
 
     let mut scaled = count as f64;
     let mut chosen = None;
+
     for unit in UNITS {
         if scaled < 1024.0 {
             break;
@@ -142,10 +143,12 @@ mod tests {
     #[test]
     fn a_count_drawn_is_grouped_the_way_the_region_settled_writes_it() {
         resonate_words::settle(&resonate_words::Conventions::from_tags(&["de-DE"]));
+
         assert_eq!(count(12_345_usize), "12.345");
         assert_eq!(count(999_u32), "999");
 
         resonate_words::settle(&resonate_words::Conventions::from_tags(&["en-IN"]));
+
         assert_eq!(count(1_234_567_u64), "12,34,567");
     }
 
@@ -205,6 +208,7 @@ mod tests {
                 left(position, length, rate)
             );
         }
+
         assert_eq!(left(Frames(44_100 * 209 + 40_000), length, rate), "0:01");
         assert_eq!(left(length, length, rate), "0:00");
     }

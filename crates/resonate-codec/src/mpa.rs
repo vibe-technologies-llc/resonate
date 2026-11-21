@@ -157,9 +157,11 @@ impl FrameHeader {
         let [sync, flags, rates, mode, ..] = *header else {
             return None;
         };
+
         if sync != MPEG_SYNC || flags & MPEG_SYNC_HIGH != MPEG_SYNC_HIGH {
             return None;
         }
+
         let version = match (flags >> 3) & 0b11 {
             0b00 => MpegVersion::TwoAndAHalf,
             0b10 => MpegVersion::Two,
@@ -173,9 +175,11 @@ impl FrameHeader {
             _ => return None,
         };
         let bitrate_index = rates >> 4;
+
         if bitrate_index == FREE_BITRATE || bitrate_index == BAD_BITRATE {
             return None;
         }
+
         let bitrates = match (version, layer) {
             (MpegVersion::One, MpegLayer::One) => &BITRATES_MPEG_ONE_LAYER_ONE,
             (MpegVersion::One, MpegLayer::Two) => &BITRATES_MPEG_ONE_LAYER_TWO,
@@ -197,6 +201,7 @@ impl FrameHeader {
             _ => return None,
         };
         let mono = mode >> 6 == MONO;
+
         if layer == MpegLayer::Two {
             let refused = if mono {
                 &LAYER_TWO_REFUSED_IN_MONO_KBPS
@@ -207,12 +212,14 @@ impl FrameHeader {
                 return None;
             }
         }
+
         let (slots_a_frame, bytes_a_slot) = match (layer, version) {
             (MpegLayer::One, _) => (12, 4),
             (MpegLayer::Two, _) | (MpegLayer::Three, MpegVersion::One) => (144, 1),
             (MpegLayer::Three, _) => (72, 1),
         };
         let padding = u32::from((rates >> 1) & 1);
+
         let slots = slots_a_frame * kbps * BITS_A_KILOBIT / rate + padding;
 
         Some(Self {
@@ -271,6 +278,7 @@ fn counted_within<S: Read + Seek + ?Sized>(source: &mut S, most_frames: u64) -> 
     let start = past_id3(source)?;
     let end = source.seek(SeekFrom::End(0)).ok()?;
     let first = header_at(source, start)?;
+
     header_at(source, first.next(start)).filter(|second| second.stream == first.stream)?;
 
     let audio_from = match opening_note(source, start, first) {
@@ -278,6 +286,7 @@ fn counted_within<S: Read + Seek + ?Sized>(source: &mut S, most_frames: u64) -> 
         Opening::Uncounted => first.next(start),
         Opening::Music => start,
     };
+
     if is_constant(source, audio_from, end, first) {
         return None;
     }
@@ -295,6 +304,7 @@ pub(crate) fn encoder_gain<S: Read + Seek + ?Sized>(source: &mut S) -> ReplayGai
         return ReplayGain::default();
     };
     let found = lame_gain(source).unwrap_or_default();
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("a LAME header read could not restore the stream position");
     }
@@ -304,12 +314,15 @@ pub(crate) fn encoder_gain<S: Read + Seek + ?Sized>(source: &mut S) -> ReplayGai
 fn lame_gain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<ReplayGain> {
     let start = past_id3(source)?;
     let first = header_at(source, start)?;
+
     let xing_at = start + first.xing_at()?;
     let note = bytes_at::<8, S>(source, xing_at)?;
     let (named, flags) = note.split_at(4);
+
     if named != XING && named != INFO {
         return None;
     }
+
     let flags = *flags.last()?;
     let fields: u64 = XING_FIELDS
         .iter()
@@ -317,6 +330,7 @@ fn lame_gain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<ReplayGain> {
         .map(|(_, bytes)| bytes)
         .sum();
     let lame = bytes_at::<LAME_TAG_BYTES, S>(source, xing_at + XING_NOTE_BYTES + fields)?;
+
     if !LAME_ENCODERS
         .iter()
         .any(|encoder| lame.starts_with(encoder))
@@ -329,6 +343,7 @@ fn lame_gain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<ReplayGain> {
         track_peak: (peak > 0).then(|| peak as f32 / LAME_PEAK_FULL_SCALE),
         ..ReplayGain::default()
     };
+
     for at in LAME_GAINS_AT {
         let field = u16::from_be_bytes(lame.get(at..at + 2)?.try_into().ok()?);
         match lame_gain_field(field) {
@@ -343,9 +358,11 @@ fn lame_gain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<ReplayGain> {
 fn lame_gain_field(field: u16) -> Option<(u16, Decibels)> {
     let name = field >> 13;
     let originator = (field >> 10) & 0b111;
+
     if name == 0 || originator == 0 {
         return None;
     }
+
     let tenths = f32::from(field & LAME_GAIN_TENTHS);
     let signed = if field & LAME_GAIN_NEGATIVE != 0 {
         -tenths
@@ -363,6 +380,7 @@ fn opening_note<S: Read + Seek + ?Sized>(
     if bytes_at::<4, S>(source, start + VBRI_AT).is_some_and(|named| &named == VBRI) {
         return Opening::Counted;
     }
+
     let Some(xing_at) = first.xing_at() else {
         return Opening::Music;
     };
@@ -370,6 +388,7 @@ fn opening_note<S: Read + Seek + ?Sized>(
         return Opening::Music;
     };
     let (named, flags) = note.split_at(4);
+
     if named != XING && named != INFO {
         return Opening::Music;
     }
@@ -386,11 +405,13 @@ fn is_constant<S: Read + Seek + ?Sized>(
     first: FrameHeader,
 ) -> bool {
     let mut at = from;
+
     for _ in 0..OPENING_FRAMES_WEIGHED {
         let Some(header) = header_at(source, at).filter(|header| header.stream == first.stream)
         else {
             break;
         };
+
         if header.kbps != first.kbps {
             return false;
         }
@@ -415,11 +436,13 @@ fn walked<S: Read + Seek + ?Sized>(
     let mut at = from;
     let mut counted = 0_u64;
     let mut steps = 0_u64;
+
     while at.saturating_add(HEADER_BYTES) <= end {
         steps += 1;
         if steps > most_frames {
             return None;
         }
+
         let header = match header_at(source, at).filter(|header| header.stream == stream) {
             Some(header) => header,
             None if is_a_trailer(source, at) => break,
@@ -431,6 +454,7 @@ fn walked<S: Read + Seek + ?Sized>(
                 None => break,
             },
         };
+
         counted = counted.saturating_add(header.samples());
         at = header.next(at);
     }
@@ -445,15 +469,20 @@ fn resynced<S: Read + Seek + ?Sized>(
     within: u64,
 ) -> Option<(u64, FrameHeader)> {
     let searched = usize::try_from(within.min(end.saturating_sub(from))).ok()?;
+
     source.seek(SeekFrom::Start(from)).ok()?;
+
     let mut held = vec![0_u8; searched];
+
     source.read_exact(&mut held).ok()?;
 
     (0..searched).find_map(|offset| {
         let header = FrameHeader::read(held.get(offset..)?)?;
+
         if header.stream != stream {
             return None;
         }
+
         let at = from + offset as u64;
         header_at(source, header.next(at))
             .filter(|next| next.stream == stream)
@@ -492,6 +521,7 @@ mod tests {
 
     fn frames(header: [u8; 4], length: usize, count: usize) -> Vec<u8> {
         let mut held = Vec::new();
+
         for _ in 0..count {
             held.extend_from_slice(&header);
             held.resize(held.len() + length - header.len(), 0);
@@ -506,6 +536,7 @@ mod tests {
     #[test]
     fn a_variable_rate_stream_with_no_header_naming_its_length_is_counted_frame_by_frame() {
         let mut file = frames(AT_32, AT_32_LENGTH, 40);
+
         file.extend(frames(AT_320, AT_320_LENGTH, 200));
         file.extend(frames(AT_128, AT_128_LENGTH, 100));
         file.extend_from_slice(b"TAG");
@@ -517,6 +548,7 @@ mod tests {
     #[test]
     fn junk_between_frames_is_stepped_over_and_counts_nothing() {
         let mut file = frames(AT_32, AT_32_LENGTH, 40);
+
         file.extend(frames(AT_320, AT_320_LENGTH, 20));
         file.extend_from_slice(&[0x12; 300]);
         file.extend(frames(AT_128, AT_128_LENGTH, 20));
@@ -527,6 +559,7 @@ mod tests {
     #[test]
     fn a_stream_of_more_frames_than_the_walk_will_read_is_left_to_the_reader() {
         let mut file = frames(AT_32, AT_32_LENGTH, 40);
+
         file.extend(frames(AT_320, AT_320_LENGTH, 60));
 
         assert_eq!(counted_within(&mut Cursor::new(file.clone()), 99), None);
@@ -544,14 +577,18 @@ mod tests {
     #[test]
     fn a_header_naming_its_frames_is_left_to_the_reader_and_one_naming_none_is_walked_past() {
         let mut named = frames(AT_32, AT_32_LENGTH, 1);
+
         named[36..40].copy_from_slice(XING);
         named[43] = XING_NAMES_ITS_FRAMES;
         named.extend(frames(AT_320, AT_320_LENGTH, 50));
+
         assert_eq!(counted(named.clone()), None);
 
         let mut unnamed = named;
+
         unnamed[43] = 0;
         unnamed.extend(frames(AT_32, AT_32_LENGTH, 40));
+
         assert_eq!(
             counted(unnamed),
             Some(Frames(90 * 1_152)),
@@ -562,21 +599,29 @@ mod tests {
     #[test]
     fn the_gains_a_lame_header_names_are_read_and_an_unset_one_is_not() {
         let mut file = frames(AT_128, AT_128_LENGTH, 3);
+
         file[36..40].copy_from_slice(INFO);
         file[43] = XING_NAMES_ITS_FRAMES;
+
         let lame = 36 + 8 + 4;
+
         file[lame..lame + 9].copy_from_slice(b"LAME3.100");
         file[lame + 11..lame + 15].copy_from_slice(&4_194_304_u32.to_be_bytes());
+
         let radio_by_the_model_minus_6_5_db: u16 = (0b001 << 13) | (0b011 << 10) | 0x200 | 65;
+
         file[lame + 15..lame + 17].copy_from_slice(&radio_by_the_model_minus_6_5_db.to_be_bytes());
 
         let gain = encoder_gain(&mut Cursor::new(file.clone()));
+
         assert_eq!(gain.track_gain.map(Decibels::get), Some(-6.5));
         assert_eq!(gain.track_peak, Some(0.5));
         assert_eq!(gain.album_gain, None, "an unset audiophile gain was read");
 
         let mut unnamed = file.clone();
+
         unnamed[lame..lame + 9].copy_from_slice(&[0x55; 9]);
+
         assert_eq!(
             encoder_gain(&mut Cursor::new(unnamed)),
             ReplayGain::default(),
@@ -584,6 +629,7 @@ mod tests {
         );
 
         file[lame + 15..lame + 17].copy_from_slice(&0_u16.to_be_bytes());
+
         assert_eq!(encoder_gain(&mut Cursor::new(file)).track_gain, None);
     }
 

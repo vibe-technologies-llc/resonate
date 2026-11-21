@@ -15,7 +15,7 @@ use crate::{
     sofa::Fault as SofaFault,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct StreamTrackId(pub u32);
 
 impl fmt::Display for StreamTrackId {
@@ -24,7 +24,7 @@ impl fmt::Display for StreamTrackId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum TrackProperty {
     SampleRate,
     ChannelLayout,
@@ -40,7 +40,7 @@ impl fmt::Display for TrackProperty {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum CodecOp {
     Probe,
     ReadPacket,
@@ -410,10 +410,12 @@ mod tests {
             CodecOp::Seek,
             &located(),
         );
+
         assert!(matches!(lifted, Error::NotSeekable { .. }));
 
         let lifted =
             Error::from_symphonia(errors::Error::ResetRequired, CodecOp::Decode, &located());
+
         assert!(matches!(lifted, Error::ResetRequired { .. }));
     }
 
@@ -444,6 +446,7 @@ mod tests {
             CodecOp::Decode,
             &located(),
         );
+
         assert!(matches!(
             lifted,
             Error::Symphonia {

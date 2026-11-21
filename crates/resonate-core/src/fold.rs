@@ -5,6 +5,7 @@ use unicode_normalization::{UnicodeNormalization, char::is_combining_mark};
 pub fn folded_letters(text: &str) -> String {
     let mut folded = String::with_capacity(text.len());
     let mut accented = false;
+
     for letter in text.to_lowercase().nfd() {
         if is_combining_mark(letter) {
             if !accented {

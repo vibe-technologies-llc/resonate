@@ -13,6 +13,7 @@ impl LastTold {
 
     pub(crate) fn let_go_by(&mut self, owner: u64) -> bool {
         let told_it_last = self.owner == Some(owner);
+
         if told_it_last {
             self.owner = None;
         }
@@ -27,6 +28,7 @@ mod tests {
     #[test]
     fn an_owner_that_told_last_lets_what_it_told_go() {
         let mut told = LastTold::new();
+
         told.told_by(1);
 
         let let_go = told.let_go_by(1);
@@ -39,6 +41,7 @@ mod tests {
     #[test]
     fn an_owner_dropped_after_another_told_since_leaves_what_the_other_told() {
         let mut told = LastTold::new();
+
         told.told_by(1);
         told.told_by(2);
 

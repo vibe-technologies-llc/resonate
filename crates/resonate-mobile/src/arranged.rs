@@ -67,8 +67,10 @@ impl<T> Arranged<T> {
                 }
                 continue;
             };
+
             if self.next.is_some_and(|next| next.holds(at)) {
                 let landed = rows.len();
+
                 next_kept = Some(next_kept.map_or(Span::one(landed), |kept| {
                     Span::between(kept.first(), landed)
                 }));
@@ -94,14 +96,18 @@ impl<T> Arranged<T> {
 impl Arranged<Resumable> {
     pub(crate) fn resumption(self, at: Frames) -> Resumption {
         let mut by_load: Vec<usize> = (0..self.rows.len()).collect();
+
         by_load.sort_by_key(|play| (self.rows[*play].loaded, *play));
 
         let mut order = vec![0; self.rows.len()];
+
         for (loaded, play) in by_load.iter().enumerate() {
             order[*play] = loaded;
         }
+
         let mut in_play_order: Vec<Option<Resumable>> =
             self.rows.into_iter().map(|laid| Some(laid.row)).collect();
+
         let rows = by_load
             .iter()
             .filter_map(|play| in_play_order[*play].take())

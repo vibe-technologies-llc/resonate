@@ -123,7 +123,7 @@ impl SectionKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum CommandKey {
     TogglePlayPause,
     Next,
@@ -488,6 +488,7 @@ fn add_playback_candidates(list: &mut Vec<Candidate>, root: &RootView, cx: &mut 
         RepeatMode::Queue => words::command_palette::state_repeat_queue(),
         RepeatMode::Track => words::command_palette::state_repeat_track(),
     };
+
     list.push(Candidate {
         section: SectionKind::Playback,
         leading: Leading::Icon(if state.repeat == RepeatMode::Track {
@@ -619,6 +620,7 @@ fn add_playback_candidates(list: &mut Vec<Candidate>, root: &RootView, cx: &mut 
 
     if playing_now.track.is_some() {
         let favoured = playing_now.favourite;
+
         list.push(Candidate {
             section: SectionKind::Playback,
             leading: Leading::Icon(if favoured {
@@ -763,6 +765,7 @@ fn add_navigation_candidates(list: &mut Vec<Candidate>, root: &RootView, cx: &Co
         if !pane.is_there(tabs, serving) {
             continue;
         }
+
         let shortcut = match pane {
             Pane::Queue => Some(key!(queue)),
             Pane::Settings => Some(key!(find_a_setting)),
@@ -777,6 +780,7 @@ fn add_navigation_candidates(list: &mut Vec<Candidate>, root: &RootView, cx: &Co
                 | Pane::Lyrics
                 | Pane::Settings
         );
+
         list.push(Candidate {
             section: SectionKind::Navigation,
             leading: Leading::Icon(pane.icon()),
@@ -858,6 +862,7 @@ fn add_audio_candidates(list: &mut Vec<Candidate>, root: &RootView, cx: &Context
     });
 
     let eq_on = root.equaliser.read(cx).bindings().enabled;
+
     list.push(Candidate {
         section: SectionKind::Audio,
         leading: Leading::Icon(Icon::Equaliser),
@@ -1080,12 +1085,14 @@ fn add_settings_candidates(list: &mut Vec<Candidate>, include_groups: bool) {
         if !group.is_offered() {
             continue;
         }
+
         let category = group.category();
         let page = group.page();
         let subtitle = match page {
             Some(page) => SharedString::from(format!("{} › {}", category.label(), page.title())),
             None => SharedString::new_static(category.label()),
         };
+
         list.push(Candidate {
             section: SectionKind::Settings,
             leading: Leading::Icon(page.map_or_else(|| category.icon(), Page::icon)),
@@ -1153,6 +1160,7 @@ fn add_library_hit_candidates(list: &mut Vec<Candidate>, hits: &LibraryHits) {
             Some(year) => year.to_string(),
             None => artist.to_owned(),
         };
+
         list.push(Candidate {
             section: SectionKind::Albums,
             leading: Leading::Icon(Icon::Albums),
@@ -1179,6 +1187,7 @@ fn add_library_hit_candidates(list: &mut Vec<Candidate>, hits: &LibraryHits) {
             (_, Some(clock)) => Some(SharedString::from(clock.to_owned())),
             _ => None,
         };
+
         list.push(Candidate {
             section: SectionKind::Tracks,
             leading: Leading::Icon(Icon::Tracks),
@@ -1276,6 +1285,7 @@ fn output_candidates(root: &RootView, cx: &Context<RootView>) -> Vec<Candidate> 
         } else {
             words::command_palette::state_virtual()
         };
+
         list.push(Candidate {
             section: SectionKind::Audio,
             leading: Leading::Icon(Icon::Volume),
@@ -1357,6 +1367,7 @@ fn equaliser_candidates(root: &RootView, cx: &Context<RootView>) -> Vec<Candidat
     let eq = root.equaliser.read(cx);
     let enabled = eq.bindings().enabled;
     let sink = root.player.read(cx).output_settings().sink.clone();
+
     let current = eq.bindings().named(sink.as_ref()).cloned();
 
     let mut list = vec![
@@ -1396,6 +1407,7 @@ fn equaliser_candidates(root: &RootView, cx: &Context<RootView>) -> Vec<Candidat
         let active = current
             .as_ref()
             .is_some_and(|bound| matches!(bound, Binding::Profile(name) if name == profile));
+
         list.push(Candidate {
             section: SectionKind::Audio,
             leading: Leading::Icon(Icon::Equaliser),
@@ -1422,6 +1434,7 @@ fn sleep_candidates(root: &RootView, cx: &Context<RootView>) -> Vec<Candidate> {
     for minutes in SLEEP_MINUTES {
         let duration = Duration::from_secs(minutes * SECONDS_A_MINUTE);
         let active = sleeping.is_some_and(|asleep| asleep.until == Until::After(duration));
+
         list.push(Candidate {
             section: SectionKind::Playback,
             leading: Leading::Icon(Icon::Sleep),

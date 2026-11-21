@@ -45,6 +45,7 @@ impl Switcher {
             .into_iter()
             .map(|(id, name)| Shown { id, name })
             .collect();
+
         shown.sort_by_key(|zone| zone.id);
 
         Self {
@@ -92,9 +93,11 @@ impl Switcher {
         if id.is_first() {
             return false;
         }
+
         let Some(at) = self.shown.iter().position(|zone| zone.id == id) else {
             return false;
         };
+
         self.shown.remove(at);
         if self.selected == id {
             self.selected = self
@@ -221,6 +224,7 @@ impl RootView {
         let id = zone.id;
         let player = Arc::clone(&zone.player);
         let model = cx.new(|cx| PlayerModel::new(player, cx));
+
         let watched = cx.observe(&model, move |this, player, cx| {
             this.zone_moved(id, &player, cx);
         });
@@ -240,6 +244,7 @@ impl RootView {
             .zones
             .iter()
             .any(|zone| zone.player.read(cx).state().playback == PlaybackState::Playing);
+
         self.library
             .update(cx, |library, _| library.heard_playing(playing));
         self.count_a_play(id, player, cx);
@@ -265,6 +270,7 @@ impl RootView {
         if !self.library.read(cx).resumes() {
             return;
         }
+
         let kept = {
             let model = player.read(cx);
             self.switcher.kept(
@@ -276,6 +282,7 @@ impl RootView {
         let Some(shown) = self.zones.iter_mut().find(|zone| zone.id == id) else {
             return;
         };
+
         if kept.is_none() || shown.kept == kept {
             return;
         }
@@ -296,6 +303,7 @@ impl RootView {
         else {
             return;
         };
+
         self.keep_the_volume(cx);
         self.rails.volume_settled = Task::ready(());
         self.switcher.select(id);
@@ -306,7 +314,9 @@ impl RootView {
         self.player.read(cx).listen_in(false);
         self.player = player;
         self.player.read(cx).listen_in(true);
+
         let shown = self.player.clone();
+
         self.visualiser
             .update(cx, |visualiser, cx| visualiser.follow(shown, cx));
         self.rails.volume_aimed = None;
@@ -329,7 +339,9 @@ impl RootView {
                 Ok(zone) => this.zone_added(&zone, cx),
                 Err(error) => {
                     tracing::warn!(%error, "a zone could not be added");
+
                     let said = refusal(&error, &this.switcher);
+
                     toast::tell(Notice::Trouble(said), cx);
                 }
             });
@@ -339,11 +351,14 @@ impl RootView {
 
     fn zone_added(&mut self, zone: &Zone, cx: &mut Context<Self>) {
         let shown = Self::watch_the_zone(zone, cx);
+
         self.zones.push(shown);
         self.zones.sort_by_key(|zone| zone.id);
         self.switcher.added(zone.id, zone.name.clone());
         self.show_zone(zone.id, cx);
+
         let player = self.player.clone();
+
         self.keep_the_zone(zone.id, &player, cx);
         toast::tell(
             Notice::Done(words::zones::zone_added(zone.name.as_str())),
@@ -354,6 +369,7 @@ impl RootView {
     pub(crate) fn remove_the_zone(&mut self, id: ZoneId, cx: &mut Context<Self>) {
         if self.switcher.selected() == id {
             let back = self.switcher.before(id);
+
             self.show_zone(back, cx);
         }
         if !self.switcher.removed(id) {
@@ -365,6 +381,7 @@ impl RootView {
 
         let zones = Self::zones(cx);
         let together = cx.global::<ResonateApp>().together.clone();
+
         cx.background_executor()
             .spawn(async move {
                 if let Some(together) = together {
@@ -381,6 +398,7 @@ impl RootView {
     pub(crate) fn move_playback_to(&mut self, to: ZoneId, cx: &mut Context<Self>) {
         let from = self.switcher.selected();
         let zones = Self::zones(cx);
+
         let handing = cx.background_executor().spawn(async move {
             zones
                 .hand_over(from, to)
@@ -411,6 +429,7 @@ impl RootView {
             .name_of(selected)
             .map(ToString::to_string)
             .unwrap_or_default();
+
         self.naming_the_zone = Some(selected);
         self.typed.zone_name.update(cx, |field, cx| {
             field.set_text(held, cx);
@@ -459,7 +478,9 @@ impl RootView {
             Ok(()) => self.store(&crate::Setting::Sink(sink), cx),
             Err(error) => {
                 tracing::warn!(%error, "a device was refused");
+
                 let said = refusal(&error, &self.switcher);
+
                 toast::tell(Notice::Trouble(said), cx);
             }
         }
@@ -480,6 +501,7 @@ impl RootView {
         let label = self.switcher.label();
         let saying = self.switcher.saying();
         let several = self.switcher.several();
+
         let control = div()
             .id(SWITCHER)
             .group(SWITCHER_GROUP)
@@ -526,6 +548,7 @@ impl RootView {
             control,
             |this, at, cx| {
                 let menu = this.zone_menu(at);
+
                 this.open_a_menu(menu, cx);
             },
             cx,
@@ -536,18 +559,21 @@ impl RootView {
 
     pub(crate) fn zone_menu(&self, at: Point<Pixels>) -> Menu {
         let mut menu = Menu::at(at);
+
         for zone in self.switcher.shown() {
             let id = zone.id;
             let icon = match id == self.switcher.selected() {
                 true => Icon::Check,
                 false => Icon::Volume,
             };
+
             menu = menu.does(icon, zone.name.to_string(), move |this, _, cx| {
                 this.show_zone(id, cx);
             });
         }
 
         let selected = self.switcher.selected();
+
         if self.switcher.several() {
             menu = menu.apart();
             for zone in self.switcher.elsewhere() {
@@ -555,6 +581,7 @@ impl RootView {
                 let Some(said) = self.switcher.moving_to(id) else {
                     continue;
                 };
+
                 menu = menu.does(Icon::Export, said, move |this, _, cx| {
                     this.move_playback_to(id, cx);
                 });
@@ -643,6 +670,7 @@ mod tests {
         let mut switcher = Switcher::of([(ZoneId::FIRST, named("Zone 1"))]);
 
         assert_eq!(switcher.label(), None);
+
         switcher.added(zone(2), ZoneName::first_given_to(zone(2)));
 
         assert_eq!(switcher.selected(), zone(2));
@@ -652,6 +680,7 @@ mod tests {
     #[test]
     fn removing_the_selected_zone_falls_back_to_the_one_before_and_the_first_is_never_removed() {
         let mut switcher = three();
+
         switcher.select(zone(3));
 
         assert_eq!(switcher.before(zone(3)), zone(2));
@@ -708,6 +737,7 @@ mod tests {
     #[test]
     fn playback_is_offered_to_every_zone_but_the_one_shown_and_a_failed_move_names_the_zone() {
         let mut switcher = three();
+
         switcher.select(zone(2));
 
         assert_eq!(

@@ -93,6 +93,7 @@ impl Biquad {
 
     fn run(&mut self, input: f64) -> f64 {
         let output = self.b0 * input + self.z1;
+
         self.z1 = self.b1 * input - self.a1 * output + self.z2;
         self.z2 = self.b2 * input - self.a2 * output;
         output
@@ -161,6 +162,7 @@ impl Metering {
             {
                 let sample = f64::from(*sample);
                 let weighted = weighting.high_pass.run(weighting.shelf.run(sample));
+
                 self.step_squares += weight * weighted * weighted;
                 block.squares += sample * sample;
                 block.peak = block.peak.max(sample.abs());
@@ -191,6 +193,7 @@ impl Metering {
 
     pub(crate) fn finished(mut self, true_peak: f64) -> Loudness {
         let no_whole_block = self.dr_closed.first().is_none_or(Vec::is_empty);
+
         if self.in_dr_block > 0 && no_whole_block {
             self.close_a_dr_block();
         }
@@ -252,6 +255,7 @@ fn weights_of(placements: &[Placement], channels: usize) -> Vec<f64> {
             Placement::Front | Placement::Rear | Placement::Raised => UNWEIGHTED,
         })
         .collect();
+
     weights.resize(channels, UNWEIGHTED);
     weights
 }
@@ -281,6 +285,7 @@ fn mean_of(blocks: &[f64]) -> f64 {
 
 fn integrated(momentary: &[f64]) -> Option<f32> {
     let blocks = audible(momentary);
+
     if blocks.is_empty() {
         return None;
     }
@@ -295,6 +300,7 @@ fn integrated(momentary: &[f64]) -> Option<f32> {
 
 fn range(short_term: &[f64]) -> Option<f32> {
     let blocks = audible(short_term);
+
     if blocks.is_empty() {
         return None;
     }
@@ -305,7 +311,9 @@ fn range(short_term: &[f64]) -> Option<f32> {
         .map(|block| loudness_of(*block))
         .filter(|loudness| *loudness > relative_gate)
         .collect();
+
     kept.sort_by(f64::total_cmp);
+
     let at = |share: f64| kept[((kept.len() - 1) as f64 * share).round() as usize];
     (!kept.is_empty()).then(|| (at(RANGE_HIGH_PERCENTILE) - at(RANGE_LOW_PERCENTILE)) as f32)
 }
@@ -322,6 +330,7 @@ fn dynamic_range(channels: &[Vec<DrBlock>]) -> Option<u8> {
         .iter()
         .filter_map(|blocks| dynamic_range_of(blocks))
         .collect();
+
     if readings.is_empty() {
         return None;
     }
@@ -335,12 +344,16 @@ fn dynamic_range_of(blocks: &[DrBlock]) -> Option<f64> {
         .iter()
         .map(|block| (DR_RMS_SCALE * block.squares).sqrt())
         .collect();
+
     rms.sort_by(|one, other| other.total_cmp(one));
+
     let loudest = ((rms.len() as f64 * DR_LOUDEST_SHARE) as usize).max(1);
     let top = (rms.iter().take(loudest).map(|rms| rms * rms).sum::<f64>() / loudest as f64).sqrt();
 
     let mut peaks: Vec<f64> = blocks.iter().map(|block| block.peak).collect();
+
     peaks.sort_by(|one, other| other.total_cmp(one));
+
     let peak = peaks.get(1).or_else(|| peaks.first()).copied()?;
 
     (top > 0.0 && peak > 0.0).then(|| 20.0 * (peak / top).log10())
@@ -369,6 +382,7 @@ mod tests {
             SampleRate::HZ_48000,
             NonZeroUsize::new(channels).expect("a channel"),
         );
+
         for block in interleaved.chunks(4_096 * channels) {
             peaking.note(block);
             metering.note(block);
@@ -379,6 +393,7 @@ mod tests {
     #[test]
     fn the_k_weighting_at_48_khz_is_the_one_the_recommendation_tabulates() {
         let shelf = Biquad::shelf(48_000.0);
+
         assert!((shelf.b0 - 1.535_124_859_586_97).abs() < 1e-9);
         assert!((shelf.b1 + 2.691_696_189_406_38).abs() < 1e-9);
         assert!((shelf.b2 - 1.198_392_810_852_85).abs() < 1e-9);
@@ -386,6 +401,7 @@ mod tests {
         assert!((shelf.a2 - 0.732_480_774_215_85).abs() < 1e-9);
 
         let high_pass = Biquad::high_pass(48_000.0);
+
         assert!((high_pass.a1 + 1.990_047_454_833_98).abs() < 1e-9);
         assert!((high_pass.a2 - 0.990_072_250_366_21).abs() < 1e-9);
     }
@@ -394,16 +410,19 @@ mod tests {
     fn a_full_scale_997_hz_sine_in_one_channel_reads_minus_three_lufs() {
         let mono = metered(1, &sine(1, 20, 1.0, 997.0));
         let integrated = mono.integrated.expect("a loudness");
+
         assert!((integrated + 3.01).abs() < 0.05, "{integrated}");
 
         let stereo = metered(2, &sine(2, 20, 1.0, 997.0));
         let integrated = stereo.integrated.expect("a loudness");
+
         assert!(integrated.abs() < 0.05, "{integrated}");
     }
 
     #[test]
     fn silence_has_no_loudness_and_no_dynamic_range() {
         let silent = metered(2, &vec![0.0; RATE as usize * 2 * 10]);
+
         assert_eq!(silent.integrated, None);
         assert_eq!(silent.range, None);
         assert_eq!(silent.momentary_max, None);
@@ -417,12 +436,14 @@ mod tests {
             .into_iter()
             .flat_map(|sample| [0.0, 0.0, 0.0, sample, 0.0, 0.0])
             .collect();
+
         assert_eq!(metered(6, &lfe_alone).integrated, None);
 
         let everywhere = metered(6, &sine(6, 20, 1.0, 997.0))
             .integrated
             .expect("a loudness");
         let expected = -3.01 + 10.0 * (3.0 + 2.0 * SURROUND_WEIGHT).log10();
+
         assert!(
             (f64::from(everywhere) - expected).abs() < 0.05,
             "{everywhere}"
@@ -433,9 +454,12 @@ mod tests {
     fn a_steady_tone_has_no_range_and_its_maxima_are_its_loudness() {
         let steady = metered(2, &sine(2, 30, 0.5, 997.0));
         let integrated = steady.integrated.expect("a loudness");
+
         assert!(steady.range.expect("a range") < 0.1);
+
         let momentary = steady.momentary_max.expect("a momentary maximum");
         let short_term = steady.short_term_max.expect("a short-term maximum");
+
         assert!((momentary - integrated).abs() < 0.05, "{momentary}");
         assert!((short_term - integrated).abs() < 0.05, "{short_term}");
     }
@@ -444,27 +468,33 @@ mod tests {
     fn two_levels_ten_decibels_apart_read_as_ten_loudness_units_of_range() {
         let loud = sine(1, 10, 0.5, 997.0);
         let quiet = sine(1, 10, 0.5 / 10_f32.sqrt(), 997.0);
+
         let alternating: Vec<f32> = (0..3)
             .flat_map(|_| loud.iter().chain(&quiet).copied())
             .collect();
 
         let range = metered(1, &alternating).range.expect("a range");
+
         assert!((range - 10.0).abs() < 0.2, "{range}");
     }
 
     #[test]
     fn a_steady_sine_has_no_dynamic_range_to_speak_of() {
         let steady = metered(2, &sine(2, 30, 0.5, 440.0));
+
         assert_eq!(steady.dynamic_range, Some(0));
     }
 
     #[test]
     fn transient_peaks_over_a_quiet_body_read_as_range() {
         let mut interleaved = sine(1, 30, 0.1, 440.0);
+
         for spike in interleaved.iter_mut().step_by(RATE as usize) {
             *spike = 1.0;
         }
+
         let dynamic = metered(1, &interleaved).dynamic_range.expect("a range");
+
         assert!((19..=21).contains(&dynamic), "{dynamic}");
     }
 }

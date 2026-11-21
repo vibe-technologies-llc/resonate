@@ -1,6 +1,6 @@
 use std::hash::{DefaultHasher, Hash, Hasher};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct QueueStamp(u64);
 
 impl QueueStamp {
@@ -27,12 +27,13 @@ impl QueueStamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct RowStamp(u64);
 
 impl RowStamp {
     pub fn of<Row: Hash>(row: Row, place: usize) -> Self {
         let mut hasher = DefaultHasher::new();
+
         place.hash(&mut hasher);
         row.hash(&mut hasher);
         Self(hasher.finish())

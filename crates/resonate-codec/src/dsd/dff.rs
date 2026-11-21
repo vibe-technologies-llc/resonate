@@ -31,9 +31,11 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     })?;
 
     let head = read_exact::<16, _>(bytes).ok_or_else(|| missing(location, DsdChunk::Format))?;
+
     if !head.starts_with(b"FRM8") || head.get(12..16) != Some(b"DSD ".as_slice()) {
         return Err(missing(location, DsdChunk::Format));
     }
+
     let form = u64::from_be_bytes(take8(&head, 4));
     let within = FORM_HEADER_BYTES.saturating_add(form.saturating_sub(FORM_TYPE_BYTES));
 
@@ -44,6 +46,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
         if at >= within {
             break;
         }
+
         let Some((id, size)) = header(bytes, at) else {
             break;
         };
@@ -99,6 +102,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     let held = bytes
         .byte_len()
         .map_or(declared, |len| declared.min(len.saturating_sub(data_at)));
+
     let data_bytes = held - held % lanes.max(1);
 
     Ok(Layout {
@@ -128,12 +132,14 @@ fn packed_layout(
     let channels = placed.channels;
     let lanes = u64::from(channels.count().get());
     let samples_a_frame = u64::from(rate.hz()) / dst::FRAMES_A_SECOND;
+
     if lanes as usize > dst::MOST_CHANNELS || !samples_a_frame.is_multiple_of(8) {
         return Err(Error::DsdCompressed {
             location: location.clone(),
             compression: *DST,
         });
     }
+
     let frames = packed
         .frames
         .ok_or_else(|| missing(location, DsdChunk::Data))?;
@@ -158,6 +164,7 @@ fn packed_layout(
 
 fn frame_count(bytes: &mut dyn MediaStream, body: u64, size: u64) -> Option<u64> {
     let (id, held) = header(bytes, body)?;
+
     if &id != b"FRTE" || held < FRAME_INFO_BYTES {
         return None;
     }
@@ -176,6 +183,7 @@ pub(crate) fn next_packed(
             return None;
         };
         let body = walk.at + CHUNK_HEADER_BYTES;
+
         walk.at = body.saturating_add(held).saturating_add(held % 2);
         if &id == b"DSTF" {
             return Some(dst::Packed {
@@ -207,6 +215,7 @@ fn read_edited(bytes: &mut dyn MediaStream, body: u64, size: u64, edited: &mut E
         if at >= within {
             break;
         }
+
         let Some((id, held)) = header(bytes, at) else {
             break;
         };
@@ -224,11 +233,15 @@ fn read_edited(bytes: &mut dyn MediaStream, body: u64, size: u64, edited: &mut E
 
 fn edited_text(bytes: &mut dyn MediaStream, held: u64) -> Option<String> {
     let count = read_exact::<4, _>(bytes).map(u32::from_be_bytes)?;
+
     if count > MAX_EDITED_TEXT_BYTES || u64::from(count) > held.saturating_sub(EDITED_COUNT_BYTES) {
         return None;
     }
+
     let mut text = vec![0; count as usize];
+
     bytes.read_exact(&mut text).ok()?;
+
     let (text, _) = decoded(&text);
     let text = text.trim_matches(char::from(0)).trim();
     (!text.is_empty()).then(|| text.to_owned())
@@ -244,9 +257,11 @@ fn read_property(
     if bytes.seek(SeekFrom::Start(body)).is_err() {
         return Ok(());
     }
+
     let Some(kind) = read_exact::<4, _>(bytes) else {
         return Ok(());
     };
+
     if &kind != b"SND " {
         return Ok(());
     }
@@ -258,6 +273,7 @@ fn read_property(
         if at >= within {
             break;
         }
+
         let Some((id, held)) = header(bytes, at) else {
             break;
         };
@@ -280,6 +296,7 @@ fn read_property(
                 let count = read_exact::<2, _>(bytes)
                     .map(u16::from_be_bytes)
                     .unwrap_or(0);
+
                 found.channels = (count > 0 && count <= MAX_DSD_CHANNELS).then_some(count.into());
                 found.positions = found.channels.and_then(|_| {
                     in_order((0..count).map_while(|_| {
@@ -320,6 +337,7 @@ fn position_of(id: &[u8; CHANNEL_ID_BYTES]) -> Option<Position> {
 
 fn header(bytes: &mut dyn MediaStream, at: u64) -> Option<([u8; 4], u64)> {
     bytes.seek(SeekFrom::Start(at)).ok()?;
+
     let held = read_exact::<12, _>(bytes)?;
     let id: [u8; 4] = held.get(..4)?.try_into().ok()?;
     Some((id, u64::from_be_bytes(take8(&held, 4))))
@@ -351,6 +369,7 @@ mod tests {
 
     fn chunk(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
         let mut held = id.to_vec();
+
         held.extend_from_slice(&(body.len() as u64).to_be_bytes());
         held.extend_from_slice(body);
         if body.len() % 2 == 1 {
@@ -361,18 +380,21 @@ mod tests {
 
     fn counted(text: &str) -> Vec<u8> {
         let mut held = (text.len() as u32).to_be_bytes().to_vec();
+
         held.extend_from_slice(text.as_bytes());
         held
     }
 
     fn id3_titled(title: &str) -> Vec<u8> {
         let mut frame = b"TIT2".to_vec();
+
         frame.extend_from_slice(&(title.len() as u32 + 1).to_be_bytes());
         frame.extend_from_slice(&[0, 0, 0]);
         frame.extend_from_slice(title.as_bytes());
 
         let size = frame.len() as u32;
         let mut tag = b"ID3\x03\x00\x00".to_vec();
+
         tag.extend_from_slice(&[
             ((size >> 21) & 0x7F) as u8,
             ((size >> 14) & 0x7F) as u8,
@@ -389,15 +411,19 @@ mod tests {
 
     fn dff_of(named: &[&[u8; 4]], trailing: &[Vec<u8>]) -> Vec<u8> {
         let mut channels = (named.len() as u16).to_be_bytes().to_vec();
+
         for id in named {
             channels.extend_from_slice(*id);
         }
+
         let mut sound = b"SND ".to_vec();
+
         sound.extend(chunk(b"FS  ", &DSD64.to_be_bytes()));
         sound.extend(chunk(b"CHNL", &channels));
         sound.extend(chunk(b"CMPR", b"DSD \x0enot compressed\x00"));
 
         let mut form = b"DSD ".to_vec();
+
         form.extend(chunk(b"FVER", &[1, 5, 0, 0]));
         form.extend(chunk(b"PROP", &sound));
         form.extend(chunk(b"DSD ", &[0x69; 64]));
@@ -409,6 +435,7 @@ mod tests {
 
     fn tags_of(bytes: Vec<u8>) -> crate::TagSet {
         let mut stream = Reading::new(Cursor::new(bytes));
+
         let layout = read(&mut stream, &MediaLocation::local("/music/a.dff")).expect("a dff reads");
         described(&mut stream, &layout).tags
     }
@@ -417,6 +444,7 @@ mod tests {
     fn the_channels_are_placed_where_their_ids_say_and_left_unplaced_out_of_order() {
         let placed = |named: &[&[u8; 4]]| {
             let mut stream = Reading::new(Cursor::new(dff_of(named, &[])));
+
             let layout =
                 read(&mut stream, &MediaLocation::local("/music/a.dff")).expect("a dff reads");
             (layout.channels, layout.speakers.is_named())
@@ -459,6 +487,7 @@ mod tests {
     #[test]
     fn the_edited_master_names_what_no_id3_chunk_does() {
         let mut edited = chunk(b"DIAR", &counted("The Artist"));
+
         edited.extend(chunk(b"DITI", &counted("The Title")));
 
         let tags = tags_of(dff(&[
@@ -473,6 +502,7 @@ mod tests {
     #[test]
     fn an_edited_text_longer_than_its_chunk_is_passed_over() {
         let mut lying = 4_000_u32.to_be_bytes().to_vec();
+
         lying.extend_from_slice(b"short");
 
         let tags = tags_of(dff(&[chunk(b"DIIN", &chunk(b"DITI", &lying))]));

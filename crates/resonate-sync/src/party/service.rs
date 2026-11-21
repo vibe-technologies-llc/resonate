@@ -117,6 +117,7 @@ pub struct RequestId {
 impl RequestId {
     pub fn to_bytes(self) -> [u8; REQUEST_ID_BYTES] {
         let mut bytes = [0; REQUEST_ID_BYTES];
+
         bytes[..16].copy_from_slice(&self.from.0);
         bytes[16..24].copy_from_slice(&self.row.to_be_bytes());
         bytes[24..].copy_from_slice(&self.digest.to_be_bytes());
@@ -139,6 +140,7 @@ impl PartyWantingASong {
     pub fn id(&self) -> RequestId {
         let mut hasher = DefaultHasher::new();
         let recording = &self.song.recording;
+
         recording.title.hash(&mut hasher);
         recording.artist.hash(&mut hasher);
         recording.album.hash(&mut hasher);
@@ -193,6 +195,7 @@ impl ChatPacing {
                 .back()
                 .is_some_and(|last| now.saturating_duration_since(*last) < LINES_COUNTED_OVER)
         });
+
         let at = match self.said.iter().position(|(said, _)| *said == member) {
             Some(at) => at,
             None => {
@@ -201,6 +204,7 @@ impl ChatPacing {
             }
         };
         let times = &mut self.said[at].1;
+
         while times
             .front()
             .is_some_and(|first| now.saturating_duration_since(*first) >= LINES_COUNTED_OVER)
@@ -309,6 +313,7 @@ impl Party {
         let me = DeviceId::minted()?;
         let hosted_elsewhere =
             (settings.server != crate::HOSTED_SERVER).then(|| settings.server.clone());
+
         let shown = Arc::new(RwLock::new(PartyShown {
             hosting: host.is_some(),
             code: key.code(),
@@ -327,6 +332,7 @@ impl Party {
         let clock = Arc::new(RwLock::new(ServerClock::default()));
         let (asked, hearing) = mpsc::unbounded_channel();
         let roots = trusted_roots(settings.trusted.as_deref())?;
+
         let running = Running {
             keys: key.keys()?,
             me,
@@ -399,6 +405,7 @@ impl Party {
 
     pub fn claim_a_request(&self, request: &PartyWantingASong) -> Option<RequestClaim<'_>> {
         let mut claimed = self.claimed.lock();
+
         if claimed.contains(request) {
             return None;
         }
@@ -412,6 +419,7 @@ impl Party {
 
     pub fn take_a_request(&self, request: PartyWantingASong) {
         taking_ask(&self.shown, &request);
+
         let _ = self.asked.send(Asked::TakeAsk(request));
     }
 
@@ -512,6 +520,7 @@ enum Ended {
 impl Running {
     async fn run(mut self, mut hearing: mpsc::UnboundedReceiver<Asked>) {
         let mut retry = FIRST_RETRY;
+
         if let Some(server) = self.time_server.clone() {
             tokio::spawn(keep_utc(
                 server,
@@ -522,6 +531,7 @@ impl Running {
 
         loop {
             let began = Instant::now();
+
             match self.session(&mut hearing).await {
                 Ok(Ended::Left) => return,
                 Ok(Ended::Over(reach)) => {
@@ -542,7 +552,9 @@ impl Running {
             if began.elapsed() > LAST_RETRY {
                 retry = FIRST_RETRY;
             }
+
             let until = sleep(retry);
+
             tokio::pin!(until);
             loop {
                 tokio::select! {
@@ -580,6 +592,7 @@ impl Running {
 
     fn hosted_line(&mut self, from: DeviceId, chat: PartyChat) {
         self.lines_minted = self.lines_minted.wrapping_add(1);
+
         let named = if from == self.me {
             self.name.as_str()
         } else {
@@ -618,6 +631,7 @@ impl Running {
             let from = shown.chat.len().saturating_sub(LINES_TOLD_AT_MOST);
             shown.chat[from..].to_vec()
         };
+
         if lines.is_empty() {
             return Ok(());
         }
@@ -654,10 +668,13 @@ impl Running {
         }
 
         let (address, host) = within(resolve(&self.server)).await?;
+
         if self.endpoint.is_none() {
             let any = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
+
             self.endpoint = Some(Endpoint::client(any).map_err(Error::QuicEndpoint)?);
         }
+
         let Some(endpoint) = self.endpoint.as_ref() else {
             return Err(Error::SharedStopped);
         };
@@ -742,6 +759,7 @@ impl Running {
         .await?;
 
         let first = within(recv.read()).await?;
+
         match first.as_deref().map(FromServer::decoded).transpose()? {
             Some(FromServer::RoomWelcome { members, host }) => {
                 self.members = members;
@@ -794,6 +812,7 @@ impl Running {
             let hello = PartySaid::Hello {
                 name: self.name.clone(),
             };
+
             self.say(&mut send, Some(host), &hello).await?;
         }
         self.send_what_waited(&mut send).await?;
@@ -865,6 +884,7 @@ impl Running {
                 }
             }
         };
+
         reading.abort();
         send.finish().await;
 
@@ -921,6 +941,7 @@ impl Running {
                     let hello = PartySaid::Hello {
                         name: self.name.clone(),
                     };
+
                     self.say(send, Some(host), &hello).await?;
                 }
             }
@@ -934,6 +955,7 @@ impl Running {
             FromServer::RoomPong { nonce, at_nanos } => {
                 let heard_at = (self.now_nanos)();
                 let mut clock = self.clock.write();
+
                 clock.answered(nonce, at_nanos, heard_at);
                 self.shown.write().round_trip = clock.round_trip();
             }
@@ -962,6 +984,7 @@ impl Running {
             FromServer::RoomEnded => return Ok(Some(Ended::Over(PartyReach::Ended))),
             FromServer::RoomHeard { from, sealed } => {
                 let plain = opened(&self.keys.sealer, self.room(), &sealed, LARGEST_SAID_OPENED)?;
+
                 return self
                     .said_to_me(from, PartySaid::decoded(&plain)?, send)
                     .await;
@@ -976,6 +999,7 @@ impl Running {
         let Some((member, at)) = self.handed else {
             return;
         };
+
         if at.elapsed() < HANDED_OVER_WITHIN {
             return;
         }
@@ -1004,6 +1028,7 @@ impl Running {
         {
             return Ok(());
         }
+
         let Some(timed) = self.timed_here() else {
             return Ok(());
         };
@@ -1020,6 +1045,7 @@ impl Running {
         if self.host.is_some() {
             return;
         }
+
         let apart = self
             .timed_here()
             .zip(self.hosts_time)
@@ -1053,6 +1079,7 @@ impl Running {
         self.pacing = ChatPacing::default();
 
         let mut shown = self.shown.write();
+
         shown.hosting = true;
         shown.asked_for.clear();
         shown.now = None;
@@ -1067,11 +1094,13 @@ impl Running {
         send: &mut Outgoing,
     ) -> Result<Option<Ended>> {
         let hosting = self.host.is_some();
+
         if !hosting && self.host_id != Some(from) {
             self.host_id = Some(from);
             self.forget_the_hosts_time();
             self.publish_people();
         }
+
         let from_the_host = !hosting;
 
         match said {
@@ -1152,6 +1181,7 @@ mod tests {
             members: Vec::new(),
             host: DeviceId([0; 16]),
         };
+
         if accepted.outgoing.send(&welcome.encoded()).await.is_err() {
             return;
         }
@@ -1164,11 +1194,14 @@ mod tests {
             let Ok(ToServer::RoomPing { nonce }) = ToServer::decoded(&frame) else {
                 continue;
             };
+
             sleep(answering_after).await;
+
             let pong = FromServer::RoomPong {
                 nonce,
                 at_nanos: nonce + uptime,
             };
+
             if accepted.outgoing.send(&pong.encoded()).await.is_err() {
                 return;
             }
@@ -1180,6 +1213,7 @@ mod tests {
         let Ok((first, _)) = listener.accept().await else {
             return;
         };
+
         a_session_served(
             first,
             AN_OLD_SERVERS_UPTIME,
@@ -1216,16 +1250,19 @@ mod tests {
         })
         .expect("a party");
         let deadline = Instant::now() + THE_RESTART_IS_READ_WITHIN;
+
         let read_the_new_clock = loop {
             let here = now();
             let read = party
                 .to_server(here)
                 .is_some_and(|there| there.abs_diff(here + A_NEW_SERVERS_UPTIME) < READ_WITHIN);
+
             if read || Instant::now() >= deadline {
                 break read;
             }
             sleep(Duration::from_millis(50)).await;
         };
+
         drop(party);
         serving.abort();
 
@@ -1304,11 +1341,13 @@ mod tests {
         assert_eq!(told.due(start), None);
 
         told.owe(a_line(1));
+
         assert_eq!(told.due(start), Some(vec![a_line(1)]));
         assert_eq!(told.due(start), Some(vec![a_line(1)]));
 
         told.told(1, start);
         told.owe(a_line(2));
+
         assert_eq!(told.due(start + Duration::from_millis(500)), None);
         assert_eq!(
             told.due(start + CHAT_TOLD_AT_MOST_EVERY),
@@ -1336,6 +1375,7 @@ mod tests {
 
         assert!(kept_line(&mut shown, a_line(1)));
         assert!(!kept_line(&mut shown, a_line(1)));
+
         for id in 2..=u64::try_from(CHAT_KEPT_AT_MOST).unwrap() + 1 {
             kept_line(&mut shown, a_line(id));
         }

@@ -76,6 +76,7 @@ impl Shared {
         let refused =
             || fdo::Error::NotSupported("that URI names no source this build can open".to_owned());
         let (location, span) = MediaLocation::from_uri_within(uri).ok_or_else(refused)?;
+
         if !self.host.sources().contains(location.source()) {
             return Err(refused());
         }
@@ -232,10 +233,13 @@ impl PlayerInterface {
         let Some(current) = self.shared.player.state().current else {
             return Ok(());
         };
+
         if !self.can_seek() {
             return Ok(());
         }
+
         let delta = micros_to_frames_signed(offset, current.source.rate.hz());
+
         if reaches_past_the_end(&current, delta) {
             return self.shared.settle(Command::Next);
         }
@@ -247,13 +251,16 @@ impl PlayerInterface {
         let Some(current) = state.current else {
             return Ok(());
         };
+
         if track_id.as_str() != track_path(current.id).as_str() || !self.can_seek() {
             return Ok(());
         }
+
         let Ok(position) = u64::try_from(position) else {
             return Ok(());
         };
         let wanted = frames(position, current.source.rate.hz());
+
         if current.duration.is_some_and(|duration| wanted > duration) {
             return Ok(());
         }
@@ -264,6 +271,7 @@ impl PlayerInterface {
         if self.shared.host.invited(uri) {
             return Ok(());
         }
+
         let (location, span) = self.shared.located(uri)?;
         match self.shared.host.open(&location, span) {
             Opened::Accepted => Ok(()),
@@ -327,6 +335,7 @@ impl PlayerInterface {
     pub(crate) fn metadata(&self) -> HashMap<String, OwnedVariant> {
         let state = self.shared.player.state();
         let digest = self.shared.player.digest();
+
         let art = self.shared.art(&state, digest.as_ref());
         let heard = self.shared.heard(&state, &self.shared.player.queue());
 
@@ -456,6 +465,7 @@ impl OwnInterface {
         let mut items = Vec::with_capacity(uris.len());
         let mut refused = None;
         let mut invited = false;
+
         for uri in &uris {
             if self.shared.host.invited(uri) {
                 invited = true;
@@ -468,6 +478,7 @@ impl OwnInterface {
                         .host
                         .held_as(&location, span)
                         .unwrap_or_else(|| unclaimed_id(queue.iter().map(Arc::as_ref)));
+
                     items.push(QueueItem { id, location, span });
                 }
                 Err(error) => {
@@ -525,6 +536,7 @@ impl OwnInterface {
             .iter()
             .map(|(from, to)| Ok((moved_location(from)?, moved_location(to)?)))
             .collect::<fdo::Result<Vec<_>>>()?;
+
         if moved.is_empty() {
             return Ok(());
         }

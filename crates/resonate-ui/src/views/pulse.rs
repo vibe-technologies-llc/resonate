@@ -25,8 +25,10 @@ impl Pulse {
         self.beating = Some(cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(every).await;
+
                 let kept = this.update(cx, |this, cx| {
                     let pulse = within(this);
+
                     if mem::take(&mut pulse.drawn) {
                         cx.emit(Beat);
                         return true;
@@ -82,6 +84,7 @@ mod tests {
             redrawn: 0,
         });
         let counting = beaten.clone();
+
         cx.update(|cx| {
             cx.subscribe(&beaten, move |_, _: &Beat, cx| {
                 counting.update(cx, |beaten, _| beaten.redrawn += 1);

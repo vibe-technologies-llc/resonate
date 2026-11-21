@@ -58,17 +58,21 @@ mod tests {
     #[test]
     fn a_watch_reads_back_how_far_the_pass_has_got_and_whether_it_was_stopped() {
         let watch = Watch::default();
+
         assert_eq!(watch.share(), None);
         assert!(!watch.stopped());
 
         watch.reached(Frames(250), Some(Frames(1_000)));
+
         assert_eq!(watch.share(), Some(0.25));
         assert_eq!(watch.done(), Frames(250));
 
         watch.reached(Frames(250), None);
+
         assert_eq!(watch.share(), None);
 
         watch.stop();
+
         assert!(watch.stopped());
     }
 

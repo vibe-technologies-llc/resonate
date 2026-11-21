@@ -64,9 +64,11 @@ impl Windows {
 
     pub(crate) fn block_of(self, packet: &[u8]) -> Option<u32> {
         let &first = packet.first()?;
+
         if first & AUDIO_PACKET_FLAG != 0 {
             return None;
         }
+
         let mode = u32::from(first >> 1) & ((1 << self.mode_bits) - 1);
         let long = self.long_modes.checked_shr(mode)? & 1 == 1;
 
@@ -85,13 +87,17 @@ impl Windows {
 
 fn xiph_laced(private: &[u8]) -> Option<[&[u8]; HEADERS]> {
     let (&more, mut rest) = private.split_first()?;
+
     if usize::from(more) + 1 != HEADERS {
         return None;
     }
+
     let mut sizes = [0_usize; HEADERS - 1];
+
     for size in &mut sizes {
         loop {
             let (&byte, after) = rest.split_first()?;
+
             rest = after;
             *size = size.checked_add(usize::from(byte))?;
             if byte != XIPH_LACE_CONTINUES {
@@ -99,6 +105,7 @@ fn xiph_laced(private: &[u8]) -> Option<[&[u8]; HEADERS]> {
             }
         }
     }
+
     let (identification, rest) = rest.split_at_checked(sizes[0])?;
     let (comment, setup) = rest.split_at_checked(sizes[1])?;
 
@@ -113,10 +120,12 @@ fn block_sizes(identification: &[u8]) -> Option<(u32, u32)> {
     if !headed(identification, IDENTIFICATION) {
         return None;
     }
+
     let &packed = identification.get(BLOCK_SIZES_AT)?;
     let (short, long) = (packed & LOW_NIBBLE, packed >> 4);
     let usable =
         |exponent: u8| (SMALLEST_BLOCK_EXPONENT..=LARGEST_BLOCK_EXPONENT).contains(&exponent);
+
     if !usable(short) || !usable(long) || short > long {
         return None;
     }
@@ -133,7 +142,9 @@ fn modes(setup: &[u8]) -> Option<Modes> {
     if !headed(setup, SETUP) {
         return None;
     }
+
     let mut backwards = Backwards::over(setup);
+
     loop {
         if backwards.left() <= LEAST_SETUP_BITS_LEFT {
             return None;
@@ -142,14 +153,17 @@ fn modes(setup: &[u8]) -> Option<Modes> {
             break;
         }
     }
+
     let framing = backwards.read;
 
     let mut count = None;
     let mut tried = 0;
+
     while backwards.left() >= LEAST_SETUP_BITS_LEFT {
         let mapping = backwards.bits(MAPPING_BITS)?;
         let transform = backwards.bits(TRANSFORM_BITS)?;
         let window = backwards.bits(WINDOW_BITS)?;
+
         if mapping > LARGEST_MAPPING || transform != 0 || window != 0 {
             break;
         }
@@ -158,16 +172,21 @@ fn modes(setup: &[u8]) -> Option<Modes> {
         if tried > MOST_MODES {
             break;
         }
+
         let after_the_modes = backwards.read;
+
         if backwards.bits(MODE_COUNT_BITS)? + 1 == tried {
             count = Some(tried);
         }
         backwards.read = after_the_modes;
     }
+
     let count = count?;
 
     backwards.read = framing;
+
     let mut flags = 0_u64;
+
     for mode in (0..count).rev() {
         backwards.skip(MODE_BITS);
         if backwards.bit()? {
@@ -207,6 +226,7 @@ impl<'a> Backwards<'a> {
             .len()
             .checked_sub(1 + usize::try_from(byte).ok()?)?;
         let shift = 7 - (self.read % 8);
+
         self.read += 1;
 
         Some((self.bytes[at] >> shift) & 1 == 1)
@@ -220,8 +240,10 @@ impl<'a> Backwards<'a> {
 pub(crate) fn setup_of_extra_data(extra: &[u8]) -> Option<&[u8]> {
     if extra.first() == Some(&((HEADERS - 1) as u8)) {
         let [_, _, setup] = xiph_laced(extra)?;
+
         return Some(setup);
     }
+
     let setup = extra.get(IDENTIFICATION_BYTES..)?;
     headed(setup, SETUP).then_some(setup)
 }
@@ -237,13 +259,16 @@ pub(crate) fn codewords_of(setup: &[u8]) -> Codewords {
     if !headed(setup, SETUP) {
         return Codewords::Unread;
     }
+
     let Some(packed) = setup.get(HEADER_PREAMBLE_BYTES..) else {
         return Codewords::Unread;
     };
     let mut forwards = Forwards::over(packed);
+
     let Some(books) = forwards.bits(8) else {
         return Codewords::Unread;
     };
+
     for _ in 0..=books {
         match codebook(&mut forwards) {
             Some(true) => {}
@@ -258,13 +283,16 @@ fn codebook(forwards: &mut Forwards<'_>) -> Option<bool> {
     if forwards.bits(24)? != CODEBOOK_SYNC {
         return None;
     }
+
     let dimensions = forwards.bits(16)?;
     let entries = forwards.bits(24)?;
+
     if forwards.bit()? {
         let mut length = forwards.bits(LENGTH_BITS)? + 1;
         let mut entry = 0_u32;
         while entry < entries {
             let taken = forwards.bits(bits_to_count(entries - entry + 1))?;
+
             if taken > 0 && length > LONGEST_CODEWORD {
                 return Some(false);
             }
@@ -287,8 +315,11 @@ fn codebook(forwards: &mut Forwards<'_>) -> Option<bool> {
         2 => u64::from(entries) * u64::from(dimensions),
         _ => return None,
     };
+
     forwards.skip(2 * u64::from(LOOKUP_BOUND_BITS))?;
+
     let width = forwards.bits(VALUE_BITS_BITS)? + 1;
+
     forwards.skip(1)?;
     forwards.skip(values.checked_mul(u64::from(width))?)?;
     Some(true)
@@ -298,12 +329,14 @@ fn lookup1_values(entries: u32, dimensions: u32) -> Option<u64> {
     if dimensions == 0 {
         return None;
     }
+
     let mut root = (f64::from(entries).powf(1.0 / f64::from(dimensions)).floor() as u64).max(1);
     let fits = |root: u64| {
         u128::from(root)
             .checked_pow(dimensions)
             .is_some_and(|held| held <= u128::from(entries))
     };
+
     while root > 1 && !fits(root) {
         root -= 1;
     }
@@ -325,6 +358,7 @@ impl<'a> Forwards<'a> {
 
     fn skip(&mut self, bits: u64) -> Option<()> {
         let read = self.read.checked_add(bits)?;
+
         if read > self.bytes.len() as u64 * 8 {
             return None;
         }
@@ -335,6 +369,7 @@ impl<'a> Forwards<'a> {
     fn bit(&mut self) -> Option<bool> {
         let byte = *self.bytes.get(usize::try_from(self.read / 8).ok()?)?;
         let held = (byte >> (self.read % 8)) & 1 == 1;
+
         self.read += 1;
         Some(held)
     }
@@ -380,6 +415,7 @@ impl RegisterableAudioDecoder for Vorbis {
         options: &AudioDecoderOptions,
     ) -> Result<Box<dyn AudioDecoder>> {
         let setup = params.extra_data.as_deref().and_then(setup_of_extra_data);
+
         if setup.map(codewords_of) == Some(Codewords::TooLong) {
             return decode_error("vorbis: a codebook names a codeword longer than 32 bits");
         }
@@ -413,7 +449,9 @@ mod tests {
                 if self.written.is_multiple_of(8) {
                     self.bytes.push(0);
                 }
+
                 let last = self.bytes.len() - 1;
+
                 self.bytes[last] |= (((value >> bit) & 1) as u8) << (self.written % 8);
                 self.written += 1;
             }
@@ -422,9 +460,12 @@ mod tests {
 
     fn setup(long_flags: &[bool], padding_bytes: usize) -> Vec<u8> {
         let mut packet = vec![SETUP];
+
         packet.extend_from_slice(MAGIC);
         packet.extend(std::iter::repeat_n(0xA5, padding_bytes));
+
         let mut modes = Forwards::new();
+
         modes.put(long_flags.len() as u32 - 1, MODE_COUNT_BITS);
         for (mapping, &long) in long_flags.iter().enumerate() {
             modes.put(u32::from(long), 1);
@@ -439,6 +480,7 @@ mod tests {
 
     fn identification(short: u8, long: u8) -> Vec<u8> {
         let mut packet = vec![IDENTIFICATION];
+
         packet.extend_from_slice(MAGIC);
         packet.resize(BLOCK_SIZES_AT, 0);
         packet.push(short | (long << 4));
@@ -448,8 +490,10 @@ mod tests {
 
     fn laced(headers: [&[u8]; HEADERS]) -> Vec<u8> {
         let mut private = vec![2];
+
         for header in &headers[..2] {
             let mut size = header.len();
+
             while size >= usize::from(XIPH_LACE_CONTINUES) {
                 private.push(XIPH_LACE_CONTINUES);
                 size -= usize::from(XIPH_LACE_CONTINUES);
@@ -514,12 +558,16 @@ mod tests {
     #[test]
     fn headers_that_are_not_vorbis_or_not_three_name_no_windows() {
         let good_setup = setup(&[false, true], 300);
+
         assert!(Windows::of_codec_private(&[]).is_none());
         assert!(
             Windows::of_codec_private(&laced([b"\x01opus", b"\x03vorbis", &good_setup])).is_none()
         );
+
         let mut two = laced([&identification(8, 11), b"\x03vorbis", &good_setup]);
+
         two[0] = 1;
+
         assert!(Windows::of_codec_private(&two).is_none());
         assert!(
             Windows::of_codec_private(&laced([&identification(12, 8), b"\x03vorbis", &good_setup]))
@@ -533,15 +581,20 @@ mod tests {
     fn ordered_codebook(first_length: u32, runs: &[u32]) -> Vec<u8> {
         let entries: u32 = runs.iter().sum();
         let mut packet = vec![SETUP];
+
         packet.extend_from_slice(MAGIC);
+
         let mut books = Forwards::new();
+
         books.put(0, 8);
         books.put(CODEBOOK_SYNC, 24);
         books.put(1, 16);
         books.put(entries, 24);
         books.put(1, 1);
         books.put(first_length - 1, LENGTH_BITS);
+
         let mut entry = 0;
+
         for &run in runs {
             books.put(run, bits_to_count(entries - entry + 1));
             entry += run;
@@ -566,10 +619,13 @@ mod tests {
         use symphonia::core::codecs::audio::well_known::CODEC_ID_VORBIS;
 
         let mut identification = identification(8, 11);
+
         identification[CHANNELS_AT] = 2;
         identification[RATE_AT..RATE_AT + 4].copy_from_slice(&44_100_u32.to_le_bytes());
+
         let setup = ordered_codebook(32, &[1, 1]);
         let mut params = AudioCodecParameters::new();
+
         params
             .for_codec(CODEC_ID_VORBIS)
             .with_extra_data(laced([&identification, b"", &setup]).into_boxed_slice());

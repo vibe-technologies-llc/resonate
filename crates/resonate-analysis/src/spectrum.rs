@@ -85,9 +85,11 @@ impl Spectrum {
     pub fn band_db(&self, from_hz: f32, to_hz: f32) -> Option<f32> {
         let first = (from_hz / self.bin_hz).ceil().max(0.0) as usize;
         let past = ((to_hz / self.bin_hz).ceil().max(0.0) as usize).min(self.levels.len());
+
         if first >= past {
             return None;
         }
+
         let power: f64 = self.levels[first..past]
             .iter()
             .map(|level| 10_f64.powf(f64::from(*level) / 10.0))
@@ -127,6 +129,7 @@ impl Transforming {
         let quarter = points as f64 / 4.0;
         let bin_hz = rate as f32 / points as f32;
         let bins = points / 2 + 1;
+
         let bands: Vec<(usize, usize)> = (0..)
             .map(|band| band as f32 * BAND_HZ)
             .take_while(|from| *from < rate as f32 / 2.0)
@@ -166,6 +169,7 @@ impl Transforming {
         while !rest.is_empty() {
             let room = whole - self.gathered.len();
             let (taken, left) = rest.split_at(room.min(rest.len()));
+
             self.gathered.extend_from_slice(taken);
             rest = left;
             if self.gathered.len() == whole {
@@ -184,12 +188,14 @@ impl Transforming {
             .map(|sample| f64::from(sample) * f64::from(sample))
             .sum();
         let weighed = (self.points * self.heard.len()) as f64;
+
         let loud = decibels(squares / weighed) >= SILENT_BELOW_DB;
 
         self.powers.fill(0.0);
         for pair in self.heard.chunks(2) {
             let first = pair[0];
             let second = pair.get(1).copied();
+
             for ((slot, frame), weight) in self
                 .buffer
                 .iter_mut()
@@ -197,6 +203,7 @@ impl Transforming {
                 .zip(&self.window)
             {
                 let beside = second.map_or(0.0, |channel| frame[channel] * weight);
+
                 *slot = Complex::new(frame[first] * weight, beside);
             }
             self.fft
@@ -205,8 +212,10 @@ impl Transforming {
         }
 
         let share = 1.0 / (self.heard.len() as f64 * self.full_scale_power);
+
         for (power, sum) in self.powers.iter_mut().zip(&mut self.sums) {
             let heard = f64::from(*power) * share;
+
             *power = heard as f32;
             if loud {
                 *sum += heard;
@@ -229,6 +238,7 @@ impl Transforming {
             };
             let power = held.iter().map(|power| f64::from(*power)).sum::<f64>() / held.len() as f64;
             let bucket = ((decibels(power) - FLOOR_DB) / DECIBELS_A_BUCKET) as usize;
+
             self.counted[band * BUCKETS + bucket.min(BUCKETS - 1)] += 1;
         }
     }
@@ -316,6 +326,7 @@ mod tests {
 
     fn transformed_over(interleaved: &[f32], placements: &[Placement]) -> Spectrum {
         let mut transforming = Transforming::new(RATE, placements);
+
         for block in interleaved.chunks(1_000 * placements.len()) {
             transforming.note(block, |_| {});
         }
@@ -407,12 +418,17 @@ mod tests {
     #[test]
     fn silence_is_left_out_of_the_average_and_heard_counts_only_what_was_loud() {
         let mut signal = vec![0.0; RATE as usize * 4];
+
         signal.extend(sine(1_000.0, 0.5, 2));
+
         let spectrum = transformed(&signal);
 
         let heard = spectrum.heard().as_secs_f32();
+
         assert!((1.5..=2.2).contains(&heard), "{heard}");
+
         let at_1k = spectrum.band_db(950.0, 1_050.0).expect("a band");
+
         assert!(at_1k > -30.0, "{at_1k}");
     }
 

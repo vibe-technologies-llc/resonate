@@ -104,6 +104,7 @@ enum Turn {
 impl Network {
     pub fn start(searching: Searching, first: FirstSearch) -> Result<Self> {
         let network = Self::resting(searching)?;
+
         network.look(first)?;
         Ok(network)
     }
@@ -139,19 +140,25 @@ impl Network {
         let _one_at_a_time = self.shared.round.lock();
         let previous = mem::replace(&mut *self.shared.vouched.lock(), vouched);
         let changes = self.shared.described_again_where_vouching_moved(&previous);
+
         self.shared.announce(&changes);
     }
 
     pub fn teach(&self, learnt: Learnt) {
         let _one_at_a_time = self.shared.round.lock();
+
         *self.shared.learnt.lock() = learnt;
+
         let changes = self.shared.taught_again();
+
         self.shared.announce(&changes);
     }
 
     pub fn learn(&self, sink: SinkId) -> Result<Learning> {
         let renderer = self.renderer(sink)?;
+
         self.start_server()?;
+
         let server = self
             .shared
             .server
@@ -160,11 +167,14 @@ impl Network {
             .ok_or(Error::NoSuchRenderer(sink))?;
         let learning = learning::learn(&renderer, sink, &server, &self.shared.holders)?;
         let _one_at_a_time = self.shared.round.lock();
+
         self.shared
             .learnt
             .lock()
             .insert(renderer.node_name(), learning.plays());
+
         let changes = self.shared.taught_again();
+
         self.shared.announce(&changes);
         Ok(learning)
     }
@@ -181,7 +191,9 @@ impl Network {
         if !self.shared.located.lock().remove(location) {
             return;
         }
+
         let gone = self.shared.known.lock().retire_unheard_at(location);
+
         self.shared.announce(&gone);
     }
 
@@ -191,6 +203,7 @@ impl Network {
 
     pub fn look(&self, first: FirstSearch) -> Result<()> {
         let mut looking = self.looking.lock();
+
         match looking.as_mut() {
             Some(Looking {
                 multicast: true, ..
@@ -211,6 +224,7 @@ impl Network {
 
     pub fn look_at_addresses(&self, first: FirstSearch) -> Result<()> {
         let mut looking = self.looking.lock();
+
         if looking.is_some() {
             return Ok(());
         }
@@ -222,9 +236,11 @@ impl Network {
 
     pub fn stop_multicasting(&self) {
         let mut looking = self.looking.lock();
+
         let Some(held) = looking.as_mut().filter(|held| held.multicast) else {
             return;
         };
+
         if self.shared.located.lock().is_empty() {
             drop(looking);
             self.rest();
@@ -233,8 +249,10 @@ impl Network {
         held.multicast = false;
         self.shared.multicasting.store(false, Ordering::Release);
         drop(looking);
+
         let _one_at_a_time = self.shared.round.lock();
         let gone = self.shared.retire_unlocated();
+
         self.shared.announce(&gone);
     }
 
@@ -242,11 +260,13 @@ impl Network {
         if self.looking.lock().take().is_none() {
             return;
         }
+
         let _one_at_a_time = self.shared.round.lock();
         let gone: Vec<SinkChange> = mem::take(&mut self.shared.known.lock().held)
             .into_keys()
             .map(SinkChange::Removed)
             .collect();
+
         self.shared.announce(&gone);
     }
 
@@ -263,6 +283,7 @@ impl Network {
 
     fn start_server(&self) -> Result<()> {
         let mut server = self.shared.server.lock();
+
         if server.is_none() {
             *server = Some(Server::start(self.shared.searching.serving_on)?);
         }
@@ -273,8 +294,10 @@ impl Network {
         if first == FirstSearch::Awaited {
             self.shared.round()?;
         }
+
         let (stop, stopped) = unbounded();
         let searched = Arc::clone(&self.shared);
+
         thread::Builder::new()
             .name("resonate-upnp-search".to_owned())
             .spawn(move || searched.search_until(&stopped, first))
@@ -322,6 +345,7 @@ impl Network {
 
     pub(crate) fn subscribe(&self) -> Receiver<SinkChange> {
         let (announce, changes) = unbounded();
+
         self.shared.listeners.lock().push(announce);
         changes
     }
@@ -443,14 +467,17 @@ impl Shared {
         let mut described_from_the_search = 0;
         let vouched = self.vouched.lock().clone();
         let by_address = addresses.iter().filter(|at| !heard.contains(at));
+
         for location in heard.iter().chain(by_address) {
             let sighted = heard.contains(location);
+
             if let Some(id) = self.known.lock().holding_at(location) {
                 seen.push((id, sighted));
                 continue;
             }
             if sighted {
                 let held = self.known.lock().held.len();
+
                 if !room_to_describe(held + reached.len(), described_from_the_search) {
                     tracing::debug!(%location, "a device answering the search was not described: the round has described enough");
                     continue;
@@ -466,10 +493,13 @@ impl Shared {
         }
 
         let mut known = self.known.lock();
+
         if found.is_none() {
             seen.extend(known.held.keys().map(|id| (*id, false)));
         }
+
         let changes = known.settle(reached, &seen, found.is_some());
+
         drop(known);
         self.announce(&changes);
         Ok(())
@@ -483,9 +513,11 @@ impl Shared {
         if self.known.lock().holding_at(location).is_some() {
             return Ok(());
         }
+
         let vouched = self.vouched.lock().clone();
         let renderer = self.described(location.clone(), &vouched)?;
         let change = self.known.lock().admit(renderer, false).1;
+
         self.announce(&change.into_iter().collect::<Vec<_>>());
         Ok(())
     }
@@ -504,10 +536,12 @@ impl Shared {
             .map(|(id, held)| (*id, held.renderer.location().clone(), held.heard))
             .collect();
         let mut changes = Vec::new();
+
         for (id, location, heard) in moved {
             match self.described(location.clone(), &vouched) {
                 Ok(renderer) => {
                     let (admitted, _) = self.known.lock().admit(renderer, heard);
+
                     changes.push(SinkChange::Reformatted(admitted));
                 }
                 Err(error) => {
@@ -528,8 +562,10 @@ impl Shared {
         let learnt = self.learnt.lock().clone();
         let mut known = self.known.lock();
         let mut changes = Vec::new();
+
         for (id, held) in &mut known.held {
             let plays = learnt.of([&held.renderer.node_name()]);
+
             if held.renderer.plays() == plays.filter(|plays| !plays.is_empty()) {
                 continue;
             }
@@ -542,6 +578,7 @@ impl Shared {
     fn retire_unlocated(&self) -> Vec<SinkChange> {
         let located = self.located();
         let mut known = self.known.lock();
+
         let gone: Vec<SinkId> = known
             .held
             .iter()
@@ -552,6 +589,7 @@ impl Shared {
             })
             .map(|(id, _)| *id)
             .collect();
+
         for id in &gone {
             known.held.remove(id);
         }
@@ -590,6 +628,7 @@ impl Known {
             match same.and_then(|id| self.held.remove(&id).map(|held| (id, held))) {
                 Some((id, held)) => {
                     let mut aliases = held.aliases;
+
                     if held.renderer.location() != renderer.location() {
                         aliases.insert(held.renderer.location().clone());
                     }
@@ -597,10 +636,12 @@ impl Known {
                 }
                 None => {
                     let id = SinkId::new(RENDERER_IDS_FROM.saturating_add(self.next));
+
                     self.next = self.next.saturating_add(1);
                     (id, Some(SinkChange::Added(id)), BTreeSet::new())
                 }
             };
+
         aliases.remove(renderer.location());
         self.held.insert(
             id,
@@ -622,6 +663,7 @@ impl Known {
     ) -> Vec<SinkChange> {
         let mut changes = Vec::new();
         let mut kept: Vec<SinkId> = seen.iter().map(|(id, _)| *id).collect();
+
         if searched {
             for (id, heard) in seen {
                 if let Some(held) = self.held.get_mut(id) {
@@ -631,6 +673,7 @@ impl Known {
         }
         for (renderer, heard) in reached {
             let (id, change) = self.admit(renderer, heard);
+
             changes.extend(change);
             kept.push(id);
         }
@@ -653,6 +696,7 @@ impl Known {
         let Some(id) = self.holding_at(location) else {
             return Vec::new();
         };
+
         if self.held.get(&id).is_some_and(|held| held.heard) {
             return Vec::new();
         }

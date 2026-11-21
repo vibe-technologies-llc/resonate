@@ -268,10 +268,12 @@ impl ListenModel {
 
     pub(crate) fn look_for_microphones(&mut self, cx: &mut Context<Self>) {
         self.looked_for_microphones = true;
+
         let listener = self.listens.listener.clone();
         let found = cx
             .background_executor()
             .spawn(async move { listener.microphones() });
+
         self.listing = cx.spawn(async move |this, cx| {
             let found = match found.await {
                 Ok(found) => found,
@@ -315,6 +317,7 @@ impl ListenModel {
         let listens = self.listens.clone();
         let hearing = Hearing::new();
         let from = self.from.clone();
+
         match purpose {
             Purpose::Naming { nth } => {
                 self.stage = Stage::Recording {
@@ -329,12 +332,15 @@ impl ListenModel {
                 };
             }
         }
+
         let length = self.length;
         let recognisers = Arc::clone(&listens.recognisers);
         let heard_through = Arc::clone(&hearing);
+
         let recorded = cx
             .background_executor()
             .spawn(async move { listens.listener.record(&from, length, &heard_through) });
+
         self.running = cx.spawn(async move |this, cx| {
             let clip = match recorded.await {
                 Ok(clip) => clip,
@@ -342,15 +348,18 @@ impl ListenModel {
                     let _ = this.update(cx, |this, cx| {
                         this.answered(purpose, Answer::Fell(error), cx);
                     });
+
                     return;
                 }
             };
+
             if matches!(purpose, Purpose::Naming { .. }) {
                 let _ = this.update(cx, |this, cx| {
                     this.stage = Stage::Asking;
                     cx.notify();
                 });
             }
+
             let recognition = cx
                 .background_executor()
                 .spawn(async move { recognisers.recognise(&clip) })
@@ -367,10 +376,12 @@ impl ListenModel {
         if let Answer::Fell(error) = &answer {
             noted(error);
         }
+
         let standing = match &self.stage {
             Stage::Found(found) => Some(Arc::clone(&found.heard)),
             _ => None,
         };
+
         match then(purpose, answer, standing.as_deref()) {
             Then::Tell(heard) => self.landed(heard, cx),
             Then::ListenAgain { nth } => {
@@ -395,6 +406,7 @@ impl ListenModel {
         self.following = Following::Waiting;
         self.running = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(wait).await;
+
             let _ = this.update(cx, |this, cx| {
                 if !this.keeps_listening || !online(cx) {
                     this.following = Following::Off;
@@ -432,9 +444,11 @@ impl ListenModel {
         self.ticking = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(PROGRESS_EVERY).await;
+
                 let moving = this.update(cx, |this, cx| {
                     let moving = matches!(this.stage, Stage::Recording { .. })
                         || matches!(this.following, Following::Listening { .. });
+
                     if moving {
                         cx.notify();
                     }
@@ -449,6 +463,7 @@ impl ListenModel {
 
     fn landed(&mut self, heard: Heard, cx: &mut Context<Self>) {
         (self.listens.tell)(&heard);
+
         let picture = heard.picture.as_ref().map(|picture| {
             let format = match picture.format {
                 PictureFormat::Jpeg => ImageFormat::Jpeg,
@@ -460,6 +475,7 @@ impl ListenModel {
             heard: Arc::new(heard),
             picture,
         };
+
         self.heard.insert(0, found.clone());
         self.heard.truncate(HEARD_KEPT);
         self.stage = Stage::Found(found);

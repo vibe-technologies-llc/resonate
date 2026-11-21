@@ -2,7 +2,7 @@ use std::fmt;
 
 use resonate_core::{ChannelLayout, Gain, SampleFormat, SampleRate, StreamSpec};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SinkId(u32);
 
 impl SinkId {
@@ -31,7 +31,7 @@ impl fmt::Display for SinkId {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ProfileIndex(u32);
 
 impl ProfileIndex {
@@ -54,7 +54,7 @@ pub const RENDERER_NODES: &str = "upnp:";
 
 pub const CAST_NODES: &str = "cast:";
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct NodeName(Box<str>);
 
 impl NodeName {
@@ -85,7 +85,7 @@ impl fmt::Display for NodeName {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Words {
     #[default]
     Whole,
@@ -135,7 +135,7 @@ impl SinkFormats {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Plugged {
     #[default]
     Unsaid,
@@ -143,7 +143,7 @@ pub enum Plugged {
     Yes,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum HardwareVolume {
     #[default]
     Unsaid,
@@ -259,6 +259,7 @@ impl SinkInfo {
         }
 
         let mut specs = Vec::new();
+
         for entry in &self.formats {
             for rate in entry
                 .rates
@@ -476,11 +477,13 @@ mod tests {
     #[test]
     fn a_rate_the_device_advertises_but_the_graph_forbids_is_not_support() {
         let mut sink = sink(&[SampleRate::HZ_48000], &[SampleFormat::S32]);
+
         sink.formats
             .first_mut()
             .expect("the fixture carries one entry")
             .rates
             .push(SampleRate::HZ_192000);
+
         let spec = stereo(SampleRate::HZ_192000, SampleFormat::S32);
 
         assert!(!sink.supports(spec));
@@ -504,6 +507,7 @@ mod tests {
             let chosen = sink
                 .best_spec_for(stereo(SampleRate::HZ_44100, source))
                 .expect("a sink with formats offers a candidate");
+
             assert_eq!(chosen.format, expected);
         }
     }
@@ -543,6 +547,7 @@ mod tests {
                     let chosen = sink
                         .best_spec_for(source)
                         .expect("a sink with formats offers a candidate");
+
                     assert!(
                         sink.supports(chosen),
                         "{source} was planned onto {chosen}, a pair the sink never advertised"
@@ -645,6 +650,7 @@ mod tests {
             ChannelLayout::Surround51,
             SampleFormat::S32,
         );
+
         let chosen = sink
             .best_spec_for(source)
             .expect("a sink with formats offers a candidate");
@@ -742,6 +748,7 @@ mod tests {
     #[test]
     fn a_sink_that_advertised_nothing_at_all_names_no_spec() {
         let sink = of(&[], Vec::new());
+
         assert_eq!(
             sink.best_spec_for(stereo(SampleRate::HZ_44100, SampleFormat::S24)),
             None

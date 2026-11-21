@@ -37,6 +37,7 @@ pub fn identical_among<T, R: Read>(
     opened: impl Fn(&T) -> Option<R>,
 ) -> Vec<Vec<T>> {
     let mut by_digest: BTreeMap<u64, Vec<T>> = BTreeMap::new();
+
     for member in sharing_a_size {
         if let Some(digest) = opened(&member).and_then(digest_of) {
             by_digest.entry(digest).or_default().push(member);
@@ -44,8 +45,10 @@ pub fn identical_among<T, R: Read>(
     }
 
     let mut classes = Vec::new();
+
     for sharing_a_digest in by_digest.into_values().filter(|members| members.len() > 1) {
         let mut confirmed: Vec<Vec<T>> = Vec::new();
+
         for member in sharing_a_digest {
             let class =
                 confirmed
@@ -85,6 +88,7 @@ pub(crate) fn same_bytes(mut one: impl Read, mut other: impl Read) -> bool {
         else {
             return false;
         };
+
         if read != again || held[..read] != copied[..again] {
             return false;
         }
@@ -96,6 +100,7 @@ pub(crate) fn same_bytes(mut one: impl Read, mut other: impl Read) -> bool {
 
 fn filled(stream: &mut impl Read, into: &mut [u8]) -> io::Result<usize> {
     let mut held = 0;
+
     while held < into.len() {
         match stream.read(&mut into[held..]) {
             Ok(0) => break,
@@ -151,11 +156,13 @@ mod tests {
     #[test]
     fn bytes_compared_past_a_chunk_still_tell_a_late_difference() {
         let mut one = vec![7_u8; COMPARED_AT_ONCE + 10];
+
         let other = one.clone();
 
         assert!(same_bytes(one.as_slice(), other.as_slice()));
 
         one[COMPARED_AT_ONCE + 5] = 8;
+
         assert!(!same_bytes(one.as_slice(), other.as_slice()));
     }
 }

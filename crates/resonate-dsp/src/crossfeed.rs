@@ -8,7 +8,7 @@ const DELAY_SECONDS: f64 = 0.000_3;
 const DENORMAL_FLOOR: f64 = 1e-30;
 const CHANNELS: usize = 2;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Crossfeed {
     #[default]
     Off,
@@ -124,11 +124,14 @@ impl Processor for Crossfeeder {
         }
         if let Some(feed) = self.crossfeed.feed() {
             let cross_over_direct = 10_f64.powf(-feed.level_db / 20.0);
+
             self.direct = 1.0 / (1.0 + cross_over_direct);
             self.cross = cross_over_direct / (1.0 + cross_over_direct);
             self.smoothing = 1.0 - (-TAU * feed.cutoff_hz / f64::from(spec.rate.hz())).exp();
         }
+
         let delay = Self::delay_frames_at(spec.rate);
+
         self.sides = [Side::silent(delay), Side::silent(delay)];
         self.head = 0;
         Ok(max_frames_in)
@@ -152,12 +155,15 @@ impl Processor for Crossfeeder {
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let (heard, _) = input.as_chunks::<CHANNELS>();
         let (written, _) = output.as_chunks_mut::<CHANNELS>();
+
         let frames = heard.len().min(written.len());
         let [left_side, right_side] = &mut self.sides;
         let delay = left_side.line.len();
+
         for (&[left, right], out) in heard.iter().zip(written.iter_mut()) {
             let late_left = swapped(&mut left_side.line, self.head, left);
             let late_right = swapped(&mut right_side.line, self.head, right);
+
             left_side.low = lowpassed(left_side.low, late_right, self.smoothing);
             right_side.low = lowpassed(right_side.low, late_left, self.smoothing);
             self.head = if self.head + 1 >= delay {
@@ -210,9 +216,13 @@ mod tests {
 
     fn fed(crossfeed: Crossfeed, input: &[f64]) -> Vec<f64> {
         let mut stage = Crossfeeder::new(crossfeed);
+
         stage.prepare(stereo(), input.len()).expect("a stage");
+
         let mut out = vec![0.0; input.len()];
+
         let counted = stage.process(input, &mut out);
+
         assert_eq!(counted.frames_out * 2, input.len());
         out
     }
@@ -238,11 +248,13 @@ mod tests {
     #[test]
     fn a_hard_panned_left_reaches_the_right_delayed() {
         let mut input = vec![0.0; 400];
+
         input[0] = 1.0;
 
         let out = fed(Crossfeed::Moderate, &input);
 
         let delay = Crossfeeder::delay_frames_at(RATE);
+
         assert!(
             out[..delay * 2]
                 .as_chunks::<2>()
@@ -297,6 +309,7 @@ mod tests {
     #[test]
     fn nothing_the_stage_makes_passes_the_largest_sample_it_was_given() {
         let mut seed = 0x5eed_u64;
+
         let input: Vec<f64> = (0..40_000)
             .map(|_| {
                 seed ^= seed << 13;
@@ -308,6 +321,7 @@ mod tests {
 
         for crossfeed in [Crossfeed::Light, Crossfeed::Moderate, Crossfeed::Strong] {
             let out = fed(crossfeed, &input);
+
             assert!(out.iter().all(|sample| sample.abs() <= 1.0 + 1e-12));
         }
     }
@@ -334,9 +348,11 @@ mod tests {
     fn a_sample_that_is_not_a_number_or_infinite_does_not_poison_what_is_fed_across() {
         for corrupt in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
             let mut stage = Crossfeeder::new(Crossfeed::Moderate);
+
             stage.prepare(stereo(), 1_000).expect("a stage");
 
             let mut out = vec![0.0; 2_000];
+
             stage.process(&[corrupt; 2_000], &mut out);
             stage.process(&tone(100.0, 1_000, [1.0, 0.5]), &mut out);
 
@@ -350,12 +366,17 @@ mod tests {
     #[test]
     fn reset_forgets_what_was_heard() {
         let mut stage = Crossfeeder::new(Crossfeed::Strong);
+
         stage.prepare(stereo(), 1_000).expect("a stage");
+
         let mut out = vec![0.0; 2_000];
+
         stage.process(&tone(100.0, 1_000, [1.0, 0.0]), &mut out);
 
         stage.reset();
+
         let mut quiet = vec![1.0; 2_000];
+
         stage.process(&[0.0; 2_000], &mut quiet);
 
         assert!(quiet.iter().all(|sample| *sample == 0.0));

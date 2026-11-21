@@ -18,6 +18,7 @@ const PATIENCE: Duration = Duration::from_secs(120);
 
 fn gated() -> bool {
     let open = env::var_os(GATE).is_some();
+
     if !open {
         eprintln!("skipped: set {GATE} to reach YouTube Music through yt-dlp");
     }
@@ -45,6 +46,7 @@ fn head_of(tier: Tier, tool: &Tool, video: &VideoId) -> Vec<u8> {
         panic!("the song is gone from YouTube Music");
     };
     let mut head = vec![0; HEAD_BYTES];
+
     reader
         .read_exact(&mut head)
         .expect("the stream delivers its head");
@@ -56,6 +58,7 @@ fn a_real_album_song_is_listed_and_its_best_tier_arrives_as_the_stream_it_names(
     if !gated() {
         return;
     }
+
     let tool = tool();
     let video = song();
 
@@ -72,6 +75,7 @@ fn a_real_album_song_is_listed_and_its_best_tier_arrives_as_the_stream_it_names(
         ),
         other => panic!("a tier with an extension nothing reads: {other}"),
     }
+
     assert!(formats.length.is_some_and(|length| length > 0));
 }
 
@@ -80,6 +84,7 @@ fn the_account_is_told_as_it_is_and_the_song_reads_as_a_song() {
     if !gated() {
         return;
     }
+
     let music = YtMusic::new(tool());
 
     let connection = music.check();
@@ -98,6 +103,7 @@ fn a_playlist_of_the_account_lists_its_songs() {
     if !gated() {
         return;
     }
+
     let Ok(named) = env::var(PLAYLIST) else {
         eprintln!("skipped: set {PLAYLIST} to a playlist id to list");
         return;

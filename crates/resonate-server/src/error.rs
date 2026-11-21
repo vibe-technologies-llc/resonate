@@ -2,7 +2,7 @@ use std::{io, path::PathBuf, result};
 
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StoreOp {
     Open,
     Migrate,
@@ -10,20 +10,20 @@ pub enum StoreOp {
     Write,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum CacheOp {
     Create,
     List,
     Inspect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PemOp {
     Certificate,
     Key,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ConfigField {
     AndroidCertificates,
     Hifi,

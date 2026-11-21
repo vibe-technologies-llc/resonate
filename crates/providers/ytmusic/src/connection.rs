@@ -36,6 +36,7 @@ impl YtMusic {
                 return Connection::CouldNotCheck;
             }
         };
+
         if !self.tool.holds_cookies() {
             return Connection::NotSignedIn;
         }

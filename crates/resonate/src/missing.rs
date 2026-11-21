@@ -26,6 +26,7 @@ use crate::{
 
 pub(crate) fn wants(library: &Library) -> Result<()> {
     let wanted = library.wants()?;
+
     if wanted.is_empty() {
         said!("{}", words::main::nothing_wanted());
         return Ok(());
@@ -42,6 +43,7 @@ pub(crate) fn wants(library: &Library) -> Result<()> {
         columns::links(),
     ]);
     let now = SystemTime::now();
+
     for want in &wanted {
         table.push(vec![
             want.title.clone(),
@@ -66,6 +68,7 @@ pub(crate) fn standing_of(want: &Want, now: SystemTime) -> String {
     if want.gave_up() {
         return words::main::gave_up(TRIES_BEFORE_GIVING_UP);
     }
+
     let due = want
         .due_at()
         .and_then(|at| at.duration_since(now).ok())
@@ -94,6 +97,7 @@ fn lasting_for(left: Duration) -> String {
 
 fn linked_through(want: &Want) -> String {
     let mut named: Vec<&str> = Vec::with_capacity(want.links.len());
+
     for link in &want.links {
         let name = link.service.name();
         if !named.contains(&name) {
@@ -117,6 +121,7 @@ pub(crate) fn read_the_rest_of(
 ) -> Result<()> {
     let reference = online::reference_asked_for(config, Asking::ForTheListener)?;
     let read = library.read_the_rest_of(artist, reference.as_ref())?;
+
     said!("{}", words::main::read_the_rest(named, read));
     Ok(())
 }
@@ -135,6 +140,7 @@ pub(crate) fn brought_back(brought: Missing) -> String {
 pub(crate) fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
     let mut tracks = library.missing_tracks(None, None)?;
     let mut releases = library.unheld_releases(None, None)?;
+
     let (tracks_missing, releases_unheld) = match artist {
         None => {
             let counted = library.missing_counted(None)?;
@@ -142,6 +148,7 @@ pub(crate) fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
         }
         Some(named) => {
             let wanted = folded_name(named);
+
             tracks.retain(|track| {
                 track
                     .owner
@@ -166,6 +173,7 @@ pub(crate) fn missing(library: &Library, artist: Option<&str>) -> Result<()> {
         None => library.dismissed()?,
         Some(_) => Missing::default(),
     };
+
     said!(
         "{}{}",
         words::main::missing_across(discs_of.len(), releases_unheld, tracks_missing),
@@ -206,6 +214,7 @@ pub(crate) fn folded_name(name: &str) -> String {
 
 fn discs_per_album(tracks: &[MissingTrack]) -> BTreeMap<AlbumId, BTreeSet<u32>> {
     let mut discs: BTreeMap<AlbumId, BTreeSet<u32>> = BTreeMap::new();
+
     for track in tracks {
         discs.entry(track.album).or_default().insert(track.disc);
     }
@@ -225,10 +234,12 @@ fn missing_tracks_table(
         columns::length(),
         columns::wanted(),
     ]);
+
     for track in tracks {
         let on_several_discs = discs_of
             .get(&track.album)
             .is_some_and(|discs| discs.len() > 1);
+
         table.push(vec![
             track.album_title.clone(),
             track
@@ -267,6 +278,7 @@ fn unheld_releases_table(releases: &[UnheldRelease]) -> Table {
         columns::kind(),
         columns::first_released(),
     ]);
+
     for release in releases {
         table.push(vec![
             release.artist_name.clone(),
@@ -290,6 +302,7 @@ pub(crate) fn poll(
     if !providers.has_a_source() {
         said!("{}", words::main::no_provider());
     }
+
     let options = if again {
         PollOptions::ASKING_EVERY_WANT
     } else {
@@ -297,6 +310,7 @@ pub(crate) fn poll(
     };
     let summary = until_told(library.poll(Arc::new(providers), options)?)?;
     let stats = summary.stats;
+
     said!(
         "{}",
         words::main::polled(

@@ -62,8 +62,10 @@ fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
     let reshaping = Mutex::new(reshaping);
     Box::new(move |asked, source| {
         let mut reshaping = reshaping.lock();
+
         let handing = Arc::clone(&reshaping.handing);
         let mut handing = handing.lock();
+
         handing.let_go_of_the_spent();
         if let Some(because) = refusal_of(&reshaping.open, asked) {
             return Reshaped::Refused { source, because };
@@ -74,9 +76,11 @@ fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
                 because: Unreshapable::StillHandingOver,
             };
         }
+
         let order = Order::Reshaped {
             realtime: asked.realtime,
         };
+
         if orders.send(order).is_err() {
             return Reshaped::Refused {
                 source,
@@ -123,6 +127,7 @@ where
     let handing = Arc::new(Mutex::new(handing));
     let letting_go = Arc::clone(&handing);
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
+
     let feeding = Feeding {
         fed,
         clock: Arc::clone(&clock),
@@ -135,15 +140,19 @@ where
                 Ok(hardware) => hardware,
                 Err(refused) => {
                     let _ = ready.send(Err(refused));
+
                     return;
                 }
             };
+
             hardware.prioritise(realtime);
+
             let _ = announced.send(StreamEvent::FormatChanged {
                 spec,
                 words: words_of(spec.format),
             });
             let _ = ready.send(Ok(()));
+
             serve(
                 &mut hardware,
                 &Serving {
@@ -153,6 +162,7 @@ where
                 },
             );
             drop(hardware);
+
             let _ = disposed.send(());
         })
         .map_err(|source| Error::Backend {
@@ -255,6 +265,7 @@ fn serve<H: Hardware>(hardware: &mut H, serving: &Serving<'_>) {
         if standing.state != StreamState::Streaming {
             continue;
         }
+
         let turned = match hardware.wait_for_room() {
             Woken::Asked => hardware.cycle().map(Some),
             Woken::TimedOut => hardware.probe().map(|()| None),
@@ -263,6 +274,7 @@ fn serve<H: Hardware>(hardware: &mut H, serving: &Serving<'_>) {
             Ok(Some(cycled)) => {
                 if standing.draining && cycled.has_played_out() {
                     standing.draining = false;
+
                     let _ = serving.announced.send(StreamEvent::Drained);
                 }
             }
@@ -270,10 +282,12 @@ fn serve<H: Hardware>(hardware: &mut H, serving: &Serving<'_>) {
             Err(error) => {
                 tracing::warn!(%error, "a WASAPI stream failed");
                 hardware.stop();
+
                 let _ = serving.announced.send(StreamEvent::StateChanged {
                     from: standing.state,
                     to: StreamState::Failed,
                 });
+
                 return;
             }
         }
@@ -326,10 +340,12 @@ fn handled<H: Hardware>(
                 (Ok(()), true) => StreamState::Streaming,
                 (Ok(()), false) => StreamState::Paused,
             };
+
             standing.state = to;
             if !active {
                 standing.draining = false;
             }
+
             let _ = serving
                 .announced
                 .send(StreamEvent::StateChanged { from, to });
@@ -417,6 +433,7 @@ mod tests {
     impl AudioSource for Lasting {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             let filled = dst.len().min(self.bytes_left);
+
             self.bytes_left -= filled;
             filled
         }
@@ -477,8 +494,11 @@ mod tests {
 
         fn cycle(&mut self) -> Result<Cycled, Refused> {
             self.answer(Call::Cycle)?;
+
             let mut bytes = [0_u8; FRAMES_A_CYCLE * FRAME_BYTES];
+
             let heard = self.fed.source().fill(&mut bytes) / FRAME_BYTES;
+
             if heard > 0 {
                 self.heard_until = self.written + heard as u64;
                 *self.seen.heard_last.lock() = bytes.to_vec();
@@ -593,6 +613,7 @@ mod tests {
         let started = Instant::now();
         while !holds() {
             assert!(started.elapsed() < WAIT, "the stream never got there");
+
             thread::sleep(Duration::from_millis(2));
         }
     }
@@ -608,7 +629,9 @@ mod tests {
                 words: Words::Padded,
             }
         );
+
         quiet(&opened);
+
         assert_eq!(opened.seen.calls_but_cycles(), [Call::Prioritise(true)]);
     }
 
@@ -639,10 +662,13 @@ mod tests {
     #[test]
     fn a_paused_stream_cycles_no_more() {
         let opened = streaming(Box::new(Silent));
+
         opened.stream.set_active(false).expect("paused");
+
         let _ = event(&opened);
 
         let cycles = opened.seen.calls.lock().len();
+
         thread::sleep(SHORT);
 
         assert_eq!(opened.seen.calls.lock().len(), cycles);
@@ -662,6 +688,7 @@ mod tests {
         opened.seen.played.store(12, Ordering::Release);
 
         assert_eq!(event(&opened), StreamEvent::Drained);
+
         quiet(&opened);
     }
 
@@ -671,9 +698,12 @@ mod tests {
 
         opened.stream.drain().expect("asked to drain");
         opened.stream.set_active(false).expect("paused");
+
         let _ = event(&opened);
+
         opened.seen.played.store(u64::MAX, Ordering::Release);
         opened.stream.set_active(true).expect("started");
+
         let _ = event(&opened);
 
         quiet(&opened);
@@ -683,7 +713,9 @@ mod tests {
     fn a_stream_asked_for_the_shape_it_holds_takes_the_new_source_its_priority_and_calls_off_a_drain()
      {
         let opened = streaming(Box::new(Silent));
+
         opened.stream.drain().expect("asked to drain");
+
         let lowered = StreamRequest {
             realtime: false,
             ..request(SampleFormat::F32)
@@ -692,9 +724,11 @@ mod tests {
         let reshaped = opened.stream.reshape(&lowered, Box::new(Marked(0x5A)));
 
         assert!(matches!(reshaped, Reshaped::Kept));
+
         wait_until(|| *opened.seen.heard_last.lock() == [0x5A; FRAMES_A_CYCLE * FRAME_BYTES]);
         opened.seen.played.store(u64::MAX, Ordering::Release);
         quiet(&opened);
+
         assert_eq!(
             opened.seen.calls_but_cycles(),
             [Call::Prioritise(true), Call::Start, Call::Prioritise(false)]
@@ -711,6 +745,7 @@ mod tests {
             .reshape(&request(SampleFormat::F32), Box::new(Marked(0x5A)));
 
         assert!(matches!(reshaped, Reshaped::Kept));
+
         wait_until(|| dropped.load(Ordering::Acquire) == 1);
     }
 
@@ -747,6 +782,7 @@ mod tests {
     fn a_refused_start_fails_the_stream_and_lets_the_hardware_go() {
         let opened = opened();
         let _ = event(&opened);
+
         *opened.seen.refusing.lock() = Some(Call::Start);
 
         opened.stream.set_active(true).expect("asked");
@@ -758,7 +794,9 @@ mod tests {
                 to: StreamState::Failed
             }
         );
+
         wait_until(|| opened.seen.let_go());
+
         assert!(matches!(
             opened.stream.set_active(true),
             Err(Error::LoopStopped)
@@ -787,7 +825,9 @@ mod tests {
                 to: StreamState::Failed
             }
         );
+
         quiet(&opened);
+
         assert!(opened.seen.let_go());
         assert_eq!(opened.seen.calls_but_cycles().last(), Some(&Call::Stop));
     }
@@ -808,7 +848,9 @@ mod tests {
                 to: StreamState::Failed
             }
         );
+
         quiet(&opened);
+
         assert!(opened.seen.let_go());
         assert_eq!(opened.seen.calls_but_cycles().last(), Some(&Call::Stop));
     }
@@ -839,12 +881,16 @@ mod tests {
     fn closing_a_stream_that_already_failed_returns_at_once() {
         let opened = opened();
         let _ = event(&opened);
+
         *opened.seen.refusing.lock() = Some(Call::Start);
         opened.stream.set_active(true).expect("asked");
+
         let _ = event(&opened);
+
         wait_until(|| opened.seen.let_go());
 
         let seen = opened.seen.clone();
+
         opened.stream.close().expect("closed");
 
         assert!(seen.let_go());
@@ -858,6 +904,7 @@ mod tests {
         drop(opened);
 
         wait_until(|| seen.let_go());
+
         assert_eq!(seen.calls_but_cycles().last(), Some(&Call::Stop));
     }
 
@@ -869,6 +916,7 @@ mod tests {
         drop(opened);
 
         wait_until(|| seen.let_go());
+
         assert_eq!(seen.calls_but_cycles().last(), Some(&Call::Stop));
     }
 
@@ -891,6 +939,7 @@ mod tests {
         );
 
         assert!(matches!(made, Err(Error::OpenUnanswered)));
+
         release.send(()).expect("the opening thread is waiting");
         wait_until(|| seen.let_go());
     }

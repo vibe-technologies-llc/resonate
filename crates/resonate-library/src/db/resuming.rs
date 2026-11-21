@@ -43,6 +43,7 @@ impl Library {
                      FROM resume_rows WHERE zone = ?1 ORDER BY position",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let kept = statement
                 .query_map([zone], |read| {
                     Ok((
@@ -57,6 +58,7 @@ impl Library {
                 .prepare("SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2")
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
             let mut rows = Vec::with_capacity(kept.len());
+
             for (uri, span) in kept {
                 let Some(location) = MediaLocation::from_uri(&uri) else {
                     tracing::warn!(
@@ -76,6 +78,7 @@ impl Library {
                         .and_then(|id| TrackId::new(id as u64).ok()),
                     _ => None,
                 };
+
                 rows.push(Some(Resumable {
                     location,
                     span,
@@ -86,6 +89,7 @@ impl Library {
             let mut statement = connection
                 .prepare("SELECT loaded_at FROM resume_order WHERE zone = ?1 ORDER BY position")
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let order = statement
                 .query_map([zone], |read| Ok(read.get::<_, i64>(0)?.max(0) as usize))
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -114,6 +118,7 @@ impl Library {
 
             for (position, row) in resumption.rows.iter().enumerate() {
                 let (start, frames) = store::span_columns(row.span);
+
                 store::cached(
                     transaction,
                     "INSERT INTO resume_rows (zone, position, uri, span_start, span_frames)
@@ -181,6 +186,7 @@ impl Library {
             let mut statement = connection
                 .prepare("SELECT id, name, device, volume FROM zones ORDER BY id")
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let rows = statement
                 .query_map([], |read| {
                     Ok((

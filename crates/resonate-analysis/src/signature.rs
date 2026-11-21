@@ -98,6 +98,7 @@ pub fn signature_of(mono: &[f32], rate: SampleRate) -> Result<Signature> {
     let resampled = at_sixteen_kilohertz(mono, rate)?;
     let kept = middle_of(&resampled);
     let mut signing = Signing::new();
+
     for hop in kept.as_chunks::<HOP>().0 {
         signing.hear(hop);
     }
@@ -107,8 +108,10 @@ pub fn signature_of(mono: &[f32], rate: SampleRate) -> Result<Signature> {
 fn at_sixteen_kilohertz(mono: &[f32], rate: SampleRate) -> Result<Vec<f64>> {
     let mut samples: Vec<f64> = mono.iter().map(|sample| f64::from(*sample)).collect();
     let mut at = rate;
+
     while at != SIGNED_AT {
         let to = next_stage_from(at);
+
         samples = resampled(&samples, at, to).map_err(|source| Error::Signing {
             from: rate,
             source: Box::new(source),
@@ -140,12 +143,17 @@ fn resampled(
     })?;
     let mut resampled = Vec::with_capacity(samples.len() / 2);
     let mut scratch = vec![0.0; resampler.max_output_frames(RESAMPLED_IN_BLOCKS)];
+
     for block in samples.chunks(RESAMPLED_IN_BLOCKS) {
         let made = resampler.process(block, &mut scratch).frames_out;
+
         resampled.extend_from_slice(scratch.get(..made).unwrap_or_default());
     }
+
     let mut tail = vec![0.0; resampler.max_flush_frames()];
+
     let drained = resampler.flush(&mut tail);
+
     resampled.extend_from_slice(tail.get(..drained).unwrap_or_default());
     Ok(resampled)
 }
@@ -221,9 +229,11 @@ impl Signing {
                 .get((self.held_at + offset) % WINDOW)
                 .copied()
                 .unwrap_or_default();
+
             *bin = Complex::new(sample * weight, 0.0);
         }
         self.fft.process(&mut self.spectrum);
+
         let slot = self.slot(0);
         if let Some(powers) = self.powers.get_mut(slot) {
             for (power, bin) in powers.iter_mut().zip(&self.spectrum) {
@@ -235,6 +245,7 @@ impl Signing {
     fn spread_the_latest(&mut self) {
         let slot = self.slot(0);
         let mut spread = self.powers.get(slot).cloned().unwrap_or_default();
+
         for bin in 0..BINS.saturating_sub(2) {
             let widest = spread
                 .get(bin..bin + 3)
@@ -263,6 +274,7 @@ impl Signing {
     fn look_for_peaks(&mut self) {
         let examined = self.slot(-(EXAMINED_FRAMES_AGO as isize));
         let spread_examined = self.slot(-(SPREAD_EXAMINED_FRAMES_AGO as isize));
+
         let (Some(powers), Some(spread)) =
             (self.powers.get(examined), self.spread.get(spread_examined))
         else {
@@ -274,17 +286,21 @@ impl Signing {
         for bin in FIRST_EXAMINED_BIN..=LAST_EXAMINED_BIN {
             let power = powers.get(bin).copied().unwrap_or_default();
             let below = spread.get(bin - 1).copied().unwrap_or_default();
+
             if power < QUIETEST_PEAK || power < below {
                 continue;
             }
+
             let loudest_near = NEIGHBOURING_BINS
                 .iter()
                 .filter_map(|offset| spread.get(bin.checked_add_signed(*offset)?))
                 .copied()
                 .fold(0.0, f64::max);
+
             if power <= loudest_near {
                 continue;
             }
+
             let loudest_around = NEIGHBOURING_FRAMES
                 .iter()
                 .filter_map(|offset| {
@@ -293,6 +309,7 @@ impl Signing {
                 })
                 .copied()
                 .fold(0.0, f64::max);
+
             if power <= loudest_around {
                 continue;
             }
@@ -320,6 +337,7 @@ fn logged(power: f64) -> f64 {
 fn peak_at(powers: &[f64], bin: usize, frame: u32) -> Peak {
     let at = |bin: usize| logged(powers.get(bin).copied().unwrap_or(QUIETEST_POWER));
     let (before, peak, after) = (at(bin - 1), at(bin), at(bin + 1));
+
     let curvature = peak * 2.0 - before - after;
     let variation = if curvature == 0.0 {
         0.0
@@ -335,12 +353,15 @@ fn peak_at(powers: &[f64], bin: usize, frame: u32) -> Peak {
 
 fn serialised(bands: &[Vec<Peak>; 4], samples: u32) -> Signature {
     let mut contents = Vec::new();
+
     for (band, peaks) in bands.iter().enumerate() {
         if peaks.is_empty() {
             continue;
         }
+
         let mut written = Vec::new();
         let mut last = 0_u32;
+
         for peak in peaks {
             if peak.frame - last >= u32::from(FRAME_DELTA_ESCAPE) {
                 written.push(FRAME_DELTA_ESCAPE);
@@ -354,13 +375,16 @@ fn serialised(bands: &[Vec<Peak>; 4], samples: u32) -> Signature {
         }
         contents.extend_from_slice(&(FIRST_BAND_TAG + band as u32).to_le_bytes());
         contents.extend_from_slice(&(written.len() as u32).to_le_bytes());
+
         let padding = (4 - written.len() % 4) % 4;
+
         contents.extend_from_slice(&written);
         contents.extend(std::iter::repeat_n(0, padding));
     }
 
     let size_minus_header = (contents.len() + 8) as u32;
     let mut bytes = Vec::with_capacity(HEADER_BYTES + contents.len() + 8);
+
     for word in [
         HEADER_MAGIC,
         0,
@@ -380,7 +404,9 @@ fn serialised(bands: &[Vec<Peak>; 4], samples: u32) -> Signature {
         bytes.extend_from_slice(&word.to_le_bytes());
     }
     bytes.extend_from_slice(&contents);
+
     let checksum = crc32(bytes.get(CHECKED_FROM..).unwrap_or_default());
+
     if let Some(slot) = bytes.get_mut(4..8) {
         slot.copy_from_slice(&checksum.to_le_bytes());
     }
@@ -395,10 +421,12 @@ const CRC32_POLYNOMIAL: u32 = 0xedb8_8320;
 
 fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = !0_u32;
+
     for byte in bytes {
         crc ^= u32::from(*byte);
         for _ in 0..8 {
             let low = crc & 1;
+
             crc >>= 1;
             if low == 1 {
                 crc ^= CRC32_POLYNOMIAL;
@@ -449,19 +477,23 @@ mod tests {
         let bytes = signature.bytes();
         let mut at = HEADER_BYTES + 8;
         let mut bands = Vec::new();
+
         while at < bytes.len() {
             let tag = word(bytes, at);
             let length = word(bytes, at + 4) as usize;
             let mut peaks = Vec::new();
             let (mut read, mut frame) = (at + 8, 0_u32);
+
             while read < at + 8 + length {
                 if bytes[read] == FRAME_DELTA_ESCAPE {
                     frame = word(bytes, read + 1);
                     read += 5;
                 }
                 frame += u32::from(bytes[read]);
+
                 let magnitude = u16::from_le_bytes([bytes[read + 1], bytes[read + 2]]);
                 let bin = u16::from_le_bytes([bytes[read + 3], bytes[read + 4]]);
+
                 peaks.push(Peak {
                     frame,
                     magnitude,
@@ -483,6 +515,7 @@ mod tests {
         )
         .expect("a signature");
         let bytes = signature.bytes();
+
         assert_eq!(word(bytes, 0), HEADER_MAGIC);
         assert_eq!(word(bytes, 4), crc32(&bytes[8..]));
         assert_eq!(word(bytes, 8) as usize, bytes.len() - HEADER_BYTES);
@@ -504,6 +537,7 @@ mod tests {
         .expect("a signature");
         let bands = bands_of(&signature);
         let tags: Vec<u32> = bands.iter().map(|(tag, _)| *tag - FIRST_BAND_TAG).collect();
+
         assert!(
             tags.contains(&0),
             "440 Hz left nothing in the lowest band: {tags:?}"
@@ -512,21 +546,27 @@ mod tests {
             tags.contains(&2),
             "2 kHz left nothing in the third band: {tags:?}"
         );
+
         for (tag, peaks) in &bands {
             let (from, to) = BANDS_HZ[(*tag - FIRST_BAND_TAG) as usize];
+
             for peak in peaks {
                 let hertz = f64::from(peak.bin) * 16_000.0 / 2.0 / 1_024.0 / SUB_BINS;
+
                 assert!(
                     (from..to).contains(&hertz),
                     "{hertz} Hz filed under {from}..{to}"
                 );
             }
+
             assert!(peaks.windows(2).all(|pair| pair[0].frame <= pair[1].frame));
         }
+
         let near_440 = bands[0].1.iter().any(|peak| {
             let hertz = f64::from(peak.bin) * 16_000.0 / 2.0 / 1_024.0 / SUB_BINS;
             (hertz - 440.0).abs() < 10.0
         });
+
         assert!(near_440, "no peak landed near 440 Hz");
     }
 
@@ -535,7 +575,9 @@ mod tests {
         let rate = SampleRate::HZ_48000;
         let steady = signature_of(&tone(&[440.0], rate, 12.0), rate).expect("a signature");
         let mut clicked = vec![0.0; 12 * rate.hz() as usize];
+
         clicked[6 * rate.hz() as usize] = 0.9;
+
         let clicked = signature_of(&clicked, rate).expect("a signature");
         let played =
             signature_of(&notes(&[440.0, 2_000.0], rate, 12.0), rate).expect("a signature");
@@ -594,6 +636,7 @@ mod tests {
     #[test]
     fn the_uri_is_standard_base64_with_its_padding() {
         use crate::print::standard_base64;
+
         assert_eq!(standard_base64(b"Man"), "TWFu");
         assert_eq!(standard_base64(b"Ma"), "TWE=");
         assert_eq!(standard_base64(b"M"), "TQ==");

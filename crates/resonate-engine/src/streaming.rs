@@ -31,6 +31,7 @@ impl Asked {
             source,
             kept,
         } = self;
+
         let source = match kept {
             Some(stream) => match reshaped(*stream, &request, source) {
                 Ok((stream, heard_while_kept)) => {
@@ -139,6 +140,7 @@ impl Streaming {
         let Some(asks) = self.asks.as_ref() else {
             return Err(asked);
         };
+
         asks.try_send(asked)
             .map_err(|refused| refused.into_inner())?;
         self.in_flight = true;
@@ -240,6 +242,7 @@ mod tests {
     fn stream(commands: &Arc<Commands>) -> (SinkStream, Sender<StreamEvent>) {
         let (events, heard) = unbounded();
         let commands = Arc::clone(commands);
+
         let stream = SinkStream::new(
             heard,
             Arc::new(StreamClock::behind_by(Frames(0))),
@@ -276,6 +279,7 @@ mod tests {
             _source: Box<dyn AudioSource>,
         ) -> SinkResult<SinkStream> {
             self.0.opens.fetch_add(1, Ordering::Relaxed);
+
             let _ = self.0.entered.send(());
             let _ = self.0.released.recv();
             Ok(stream(&self.0.commands).0)
@@ -303,6 +307,7 @@ mod tests {
         let commands = Arc::new(Commands::default());
         let (entered, entering) = unbounded();
         let (release, released) = unbounded();
+
         let opener = Arc::new(HeldOpen(Arc::new(Held {
             commands: Arc::clone(&commands),
             entered,
@@ -312,10 +317,13 @@ mod tests {
         let mut streaming = Streaming::start(opener).expect("a worker");
 
         assert!(streaming.ask(asked(None)).is_ok());
+
         entering.recv().expect("the open began");
+
         let releasing = thread::spawn(move || {
             let _ = release.send(());
         });
+
         streaming.stop();
         releasing.join().expect("released");
 
@@ -336,6 +344,7 @@ mod tests {
             Streaming::start(Arc::clone(&opener) as Arc<dyn Opener>).expect("a worker");
 
         assert!(streaming.ask(asked(None)).is_ok());
+
         streaming.stop();
 
         assert_eq!(opener.opens.load(Ordering::Relaxed), 1);
@@ -352,6 +361,7 @@ mod tests {
         let mut streaming = Streaming::start(opener).expect("a worker");
 
         assert!(streaming.ask(asked(None)).is_ok());
+
         drop(streaming);
 
         assert_eq!(commands.closes(), 1);
@@ -367,6 +377,7 @@ mod tests {
         let mut streaming = Streaming::start(opener).expect("a worker");
 
         assert!(streaming.ask(asked(None)).is_ok());
+
         let in_flight = streaming.is_in_flight();
         let (made, opened) = loop {
             if let Some(streamed) = streaming.answered() {
@@ -380,7 +391,9 @@ mod tests {
         assert!(!streaming.is_in_flight());
         assert_eq!(made, 7);
         assert_eq!(came, Came::Opened);
+
         close_unwanted(landed);
+
         assert_eq!(commands.closes(), 1);
     }
 
@@ -393,6 +406,7 @@ mod tests {
         };
         let kept_commands = Arc::new(Commands::default());
         let (kept, events) = stream(&kept_commands);
+
         events
             .send(StreamEvent::StateChanged {
                 from: StreamState::Streaming,
@@ -419,6 +433,7 @@ mod tests {
         let kept_commands = Arc::new(Commands::default());
         let (kept, events) = stream(&kept_commands);
         let kept = kept.reshaped_by(Box::new(|_, _| Reshaped::Kept));
+
         events
             .send(StreamEvent::Drained)
             .expect("the event is held");

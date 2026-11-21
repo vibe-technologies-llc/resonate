@@ -49,6 +49,7 @@ pub(crate) fn lossy_songs(library: &Library, name: &str, most: usize) -> Result<
     let found = catalog::playlist_called(library, name)?;
     let songs = library.songs_to_better_in(found.id)?;
     let mut titles = AlbumTitles::over(library);
+
     let listed = songs
         .iter()
         .take(most)
@@ -65,6 +66,7 @@ pub(crate) fn lossy_songs(library: &Library, name: &str, most: usize) -> Result<
 
 fn lossy_song(titles: &mut AlbumTitles<'_>, song: &Replaceable) -> Result<Value> {
     let mut written = titles.track(&song.track)?;
+
     if let Value::Object(fields) = &mut written {
         fields.insert("codec".to_owned(), Value::from(song.track.codec.as_str()));
         fields.insert(
@@ -100,12 +102,14 @@ fn only_the_chosen(
         return Ok(songs);
     };
     let held: BTreeSet<TrackId> = songs.iter().map(|song| song.track.id).collect();
+
     if let Some(track) = chosen.iter().find(|track| !held.contains(track)) {
         return Err(Error::NotALossySong {
             playlist: PlaylistName::new(playlist),
             track: *track,
         });
     }
+
     let wanted: BTreeSet<TrackId> = chosen.iter().copied().collect();
     Ok(songs
         .into_iter()
@@ -130,6 +134,7 @@ pub(crate) fn replace_lossy_songs(
         true => Replacing::default(),
         false => library.replace(&chosen)?,
     };
+
     let left = songs.len() - chosen.len() - waiting;
     let held = catalog::playlist_called(library, &found.name)?;
 

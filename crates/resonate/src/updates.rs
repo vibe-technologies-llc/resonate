@@ -21,6 +21,7 @@ fn kept() -> Result<KeptRelease> {
 
 pub fn run(config: &Config) -> Result<()> {
     let latest = online::latest_release(config, Asking::ForTheListener)?;
+
     if let Ok(kept) = kept() {
         kept.heard_now(latest.clone(), SystemTime::now());
     }

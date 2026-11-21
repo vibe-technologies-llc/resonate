@@ -120,6 +120,7 @@ fn icon_images() -> Vec<(u32, Vec<u8>)> {
             let length = u32::from_le_bytes(bytes[entry + 8..entry + 12].try_into().unwrap());
             let offset = u32::from_le_bytes(bytes[entry + 12..entry + 16].try_into().unwrap());
             let start = usize::try_from(offset).unwrap();
+
             let end = start + usize::try_from(length).unwrap();
 
             (side, bytes[start..end].to_vec())
@@ -245,6 +246,7 @@ fn the_build_script_compiles_one_installer_per_architecture_beside_its_archive()
         "build.ps1 does not install each archive's architecture alone"
     );
     assert!(build.contains("$name-setup") && build.contains("resonate.iss"));
+
     for definition in BUILD_DEFINITIONS {
         assert!(
             build.contains(&format!("/D{definition}=")),
@@ -255,6 +257,7 @@ fn the_build_script_compiles_one_installer_per_architecture_beside_its_archive()
             "resonate.iss does not read {definition}"
         );
     }
+
     assert!(script.contains("ArchitecturesAllowed={#InstallArchitecture}"));
     assert!(holds_the_line(&script, "AppPublisher=Resonate"));
 }
@@ -294,6 +297,7 @@ fn the_release_workflow_signs_only_with_the_secrets_the_script_reads() {
             "sign.ps1 does not read {variable}"
         );
     }
+
     assert!(
         signing.contains("IsNullOrEmpty") && signing.contains("return"),
         "sign.ps1 must leave the files unsigned, not fail, where no certificate exists"

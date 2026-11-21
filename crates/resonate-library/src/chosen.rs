@@ -139,6 +139,7 @@ pub(crate) fn every(connection: &Connection) -> Result<Vec<ChosenVersion>> {
     let mut statement = connection
         .prepare_cached(EVERY_VERSION_CHOSEN)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], chosen_row)
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -153,6 +154,7 @@ pub(crate) fn among(
     at_once: usize,
 ) -> Result<Vec<ChosenVersion>> {
     let mut chosen = Vec::new();
+
     for batch in tracks.chunks(at_once) {
         let held = vec!["?"; batch.len()].join(",");
         let mut statement = connection
@@ -160,6 +162,7 @@ pub(crate) fn among(
                 "SELECT track, held FROM versions_chosen WHERE held IS NOT NULL AND track IN ({held})"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let rows = statement
             .query_map(
                 params_from_iter(batch.iter().map(|track| track.get() as i64)),
@@ -167,6 +170,7 @@ pub(crate) fn among(
             )
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         chosen.extend(rows.into_iter().filter_map(chosen_version));
     }
     Ok(chosen)
@@ -211,6 +215,7 @@ pub(crate) fn held_for(connection: &Connection, song: TrackId) -> Result<Vec<Tra
     let mut statement = connection
         .prepare_cached(THE_VERSIONS_HELD_FOR_A_SONG)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let copies = statement
         .query_map(params![song.get() as i64], |row| row.get::<_, i64>(0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -223,6 +228,7 @@ pub(crate) fn varied(connection: &Connection) -> Result<Vec<TrackId>> {
     let mut statement = connection
         .prepare_cached(EVERY_TRACK_WITH_VERSIONS)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let tracks = statement
         .query_map([], |row| row.get::<_, i64>(0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())

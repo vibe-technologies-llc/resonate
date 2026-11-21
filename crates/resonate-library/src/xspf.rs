@@ -166,7 +166,9 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
         match token {
             Token::Opens(tag) => {
                 written.clear();
+
                 let inner = inherited(&bases, tag);
+
                 bases.push(inner);
 
                 let element = element_of(tag);
@@ -211,6 +213,7 @@ pub fn write(name: &str, rows: &[SheetRow<'_>], beside: &Path) -> Result<String>
         "{DECLARATION}\n<{PLAYLIST} version=\"{XSPF_VERSION}\" xmlns=\"{NAMESPACE}\" \
          xmlns:vlc=\"{VLC_NAMESPACE}\">\n"
     );
+
     text.push_str(&element(
         UNDER_THE_PLAYLIST,
         TITLE,
@@ -247,6 +250,7 @@ pub fn write(name: &str, rows: &[SheetRow<'_>], beside: &Path) -> Result<String>
 
 fn options(timed: Timed) -> String {
     let mut written = format!("      <{EXTENSION} application=\"{VLC_APPLICATION}\">\n");
+
     for (option, at) in [
         (sheet::START_TIME, timed.from),
         (sheet::STOP_TIME, timed.to),
@@ -280,8 +284,10 @@ impl<'a> Iterator for Tokens<'a> {
             if self.rest.is_empty() {
                 return None;
             }
+
             let ends = self.rest.find('<').unwrap_or(self.rest.len());
             let (run, rest) = self.rest.split_at(ends);
+
             self.rest = rest;
             return Some(Token::Text(run));
         };
@@ -292,12 +298,14 @@ impl<'a> Iterator for Tokens<'a> {
         }
         if let Some(character_data) = inside.strip_prefix(CDATA_OPENS) {
             let ends = character_data.find(CDATA_CLOSES)?;
+
             self.rest = &character_data[ends + CDATA_CLOSES.len()..];
             return Some(Token::Text(&character_data[..ends]));
         }
 
         let ends = tag_ends(inside)?;
         let tag = &inside[..ends];
+
         self.rest = &inside[ends + 1..];
 
         if tag.starts_with([INSTRUCTION, MARKUP_DECLARATION]) {
@@ -329,6 +337,7 @@ impl<'a> Iterator for Attributes<'a> {
         let name = before.trim_end().rsplit(WHITESPACE).next()?;
         let rest = rest.trim_start();
         let quote = rest.chars().next().filter(|first| QUOTES.contains(first))?;
+
         let (value, rest) = rest[quote.len_utf8()..].split_once(quote)?;
 
         self.rest = rest;
@@ -367,6 +376,7 @@ fn inherited(bases: &[Base], tag: &str) -> Base {
 
 fn closed(bases: &mut Vec<Base>) -> Base {
     let base = current(bases);
+
     if bases.len() > THE_SHEETS_OWN_FOLDER {
         bases.pop();
     }
@@ -393,6 +403,7 @@ fn past<'a>(text: &'a str, closing: &str) -> &'a str {
 
 fn referenced(reference: &str, base: &Base) -> Option<MediaLocation> {
     let reference = reference.trim();
+
     if reference.is_empty() {
         return None;
     }
@@ -408,6 +419,7 @@ fn referenced(reference: &str, base: &Base) -> Option<MediaLocation> {
 
 fn uri(named: &Path) -> Result<String> {
     let escaped = sheet::escaped(named);
+
     if named.is_absolute() {
         return Ok(format!("file://{escaped}"));
     }
@@ -495,6 +507,7 @@ fn entity(named: &str) -> Option<char> {
             Some(hexadecimal) => u32::from_str_radix(hexadecimal, 16).ok()?,
             None => numbered.parse().ok()?,
         };
+
         return char::from_u32(code);
     }
 

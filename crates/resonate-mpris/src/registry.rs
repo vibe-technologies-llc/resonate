@@ -78,6 +78,7 @@ pub(crate) struct Claim {
 impl Claim {
     pub(crate) fn make(folder: &Path, player: &str) -> io::Result<Self> {
         fs::create_dir_all(folder)?;
+
         let path = folder.join(player);
         let held = Held::taken_over(&path)?;
 
@@ -91,6 +92,7 @@ impl Claim {
 impl Drop for Claim {
     fn drop(&mut self) {
         drop(self.held.take());
+
         let _ = fs::remove_file(&self.path);
     }
 }
@@ -103,11 +105,13 @@ pub(crate) fn listed(folder: &Path) -> io::Result<Vec<String>> {
     };
 
     let mut living = Vec::new();
+
     for entry in entries {
         let path = entry?.path();
         let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
             continue;
         };
+
         if !names_this_build(name) {
             continue;
         }
@@ -167,6 +171,7 @@ mod tests {
             listed(&folder.0).expect("the folder lists"),
             vec![BUS_NAME.to_owned()]
         );
+
         drop(first);
     }
 
@@ -175,6 +180,7 @@ mod tests {
         let folder = Folder::new("released");
 
         let first = Claim::make(&folder.0, BUS_NAME).expect("the first claim");
+
         drop(first);
 
         assert_eq!(
@@ -191,22 +197,29 @@ mod tests {
 
         let second = Claim::make(&folder.0, &zone(2)).expect("a claim");
         let first = Claim::make(&folder.0, BUS_NAME).expect("a claim");
+
         fs::write(folder.0.join("org.mpris.MediaPlayer2.vlc"), b"").expect("a stranger");
 
         assert_eq!(
             listed(&folder.0).expect("the folder lists"),
             vec![BUS_NAME.to_owned(), zone(2)]
         );
+
         drop((first, second));
     }
 
     #[test]
     fn a_player_that_died_holding_its_name_is_swept_once_its_entry_has_aged() {
         let folder = Folder::new("dead");
+
         fs::create_dir_all(&folder.0).expect("a folder");
+
         let path = folder.0.join(BUS_NAME);
+
         fs::write(&path, b"").expect("what a dead player left");
+
         let long_ago = SystemTime::now() - UNHELD_AND_UNTOUCHED_FOR * 2;
+
         fs::File::options()
             .write(true)
             .open(&path)

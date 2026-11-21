@@ -26,6 +26,7 @@ pub(crate) struct Heard {
 impl Heard {
     pub(crate) fn on_a_thread_of_its_own(self) -> Option<UnboundedReceiver<Told>> {
         let (told, heard) = unbounded();
+
         thread::Builder::new()
             .name(HEARD_BY.to_owned())
             .spawn(move || self.pass_on(&told))
@@ -39,6 +40,7 @@ impl Heard {
 
     fn pass_on(self, told: &UnboundedSender<Told>) {
         let mut waiting = Select::new();
+
         let quit = waiting.recv(&self.quit);
         let raise = waiting.recv(&self.raise);
         let followed = waiting.recv(&self.followed);
@@ -48,6 +50,7 @@ impl Heard {
         while open > 0 {
             let ready = waiting.select();
             let at = ready.index();
+
             let heard: Result<Told, RecvError> = match at {
                 _ if at == quit => ready.recv(&self.quit).map(|()| Told::Quit),
                 _ if at == raise => ready.recv(&self.raise).map(|()| Told::Raise),
@@ -96,6 +99,7 @@ mod tests {
                 Err(error) if error.is_closed() => return None,
                 Err(_) => {
                     assert!(began.elapsed() < WAITED_AT_MOST, "nothing was passed on");
+
                     thread::yield_now();
                 }
             }
@@ -108,6 +112,7 @@ mod tests {
         let (raise, raise_heard) = unbounded();
         let (followed, followed_heard) = unbounded();
         let (desktop, desktop_heard) = unbounded();
+
         let mut heard = Heard {
             quit: quit_heard,
             raise: raise_heard,
@@ -118,17 +123,26 @@ mod tests {
         .expect("a thread to hear on");
 
         raise.send(()).expect("raised");
+
         let raised = next(&mut heard);
+
         desktop.send(DesktopLook::default()).expect("a look");
+
         let looked = next(&mut heard);
+
         followed
             .send(Followed::PartyOffered("resonate://party/ABCDE".to_owned()))
             .expect("followed");
+
         let follows = next(&mut heard);
+
         drop((raise, desktop, followed));
         quit.send(()).expect("quit");
+
         let quits = next(&mut heard);
+
         drop(quit);
+
         let ended = next(&mut heard);
 
         assert_eq!(raised, Some(Told::Raise));

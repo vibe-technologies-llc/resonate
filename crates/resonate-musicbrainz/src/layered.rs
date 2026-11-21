@@ -148,10 +148,12 @@ impl Layered {
         if let Some((_, answer)) = self.answered(&asked) {
             return Ok(answer);
         }
+
         let Some(fallback) = &self.fallback else {
             return Ok(miss);
         };
         let answer = online(fallback.as_ref())?;
+
         if !answer.is_a_miss() {
             self.kept_here(&asked, &answer);
         }

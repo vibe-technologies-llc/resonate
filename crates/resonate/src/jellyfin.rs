@@ -31,6 +31,7 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let server = config
         .jellyfin
         .as_deref()
@@ -38,10 +39,13 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
         .filter(|server| !server.is_empty())
         .ok_or(Error::NoJellyfinServer)?;
     let asking = QuickConnect::at(server);
+
     if !asking.offered()? {
         return Err(Error::QuickConnectOff);
     }
+
     let approving = asking.begun()?;
+
     said!("{}", words::jellyfin::approve(approving.code.as_str()));
 
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -50,6 +54,7 @@ pub fn sign_in(config: &Config, settings: &Path, forgetting: bool) -> Result<()>
     let Some(signed) = asking.approved(&approving, &|| cancelled.load(Ordering::Relaxed))? else {
         return Err(Error::JellyfinSignInCancelled);
     };
+
     keep(settings, &signed)?;
     said!(
         "{}",
@@ -92,8 +97,11 @@ mod tests {
     fn a_settings_file(name: &str, text: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-jellyfin-{}-{name}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
+
         let settings = folder.join("config.toml");
+
         fs::write(&settings, text).expect("the settings");
         settings
     }
@@ -119,6 +127,7 @@ mod tests {
         keep(&settings, &signed()).expect("kept");
 
         let written = fs::read_to_string(&settings).expect("the settings");
+
         assert!(
             written.contains("jellyfin-token = \"token-1\""),
             "{written}"
@@ -139,7 +148,9 @@ mod tests {
         );
 
         forget(&settings).expect("forgotten");
+
         let forgotten = fs::read_to_string(&settings).expect("the settings");
+
         assert!(
             !forgotten.contains("token-1") && !forgotten.contains("device-1"),
             "{forgotten}"

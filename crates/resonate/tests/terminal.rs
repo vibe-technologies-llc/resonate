@@ -29,6 +29,7 @@ struct Home(PathBuf);
 impl Home {
     fn new(name: &str) -> Self {
         let path = env::temp_dir().join(format!("resonate-{name}-{}", std::process::id()));
+
         fs::create_dir_all(path.join("graph")).expect("a temporary home");
         Self(path)
     }
@@ -36,6 +37,7 @@ impl Home {
     fn silence(&self) -> PathBuf {
         let data = RATE * SECONDS * 4;
         let mut wav = b"RIFF".to_vec();
+
         wav.extend_from_slice(&(36 + data).to_le_bytes());
         wav.extend_from_slice(b"WAVEfmt ");
         wav.extend_from_slice(&16_u32.to_le_bytes());
@@ -50,6 +52,7 @@ impl Home {
         wav.resize(wav.len() + data as usize, 0);
 
         let path = self.0.join("silence.wav");
+
         fs::write(&path, wav).expect("a silent file to play");
         path
     }
@@ -68,8 +71,10 @@ struct Terminal {
 impl Terminal {
     fn open() -> Option<(Self, File)> {
         let controller = openpt(OpenptFlags::RDWR | OpenptFlags::NOCTTY).ok()?;
+
         grantpt(&controller).ok()?;
         unlockpt(&controller).ok()?;
+
         let named = ptsname(&controller, Vec::new()).ok()?;
         let seat = OpenOptions::new()
             .read(true)
@@ -120,6 +125,7 @@ fn playing(home: &Home, terminal: &Terminal) -> Child {
 
 fn until(mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if done() {
             return true;
@@ -131,12 +137,14 @@ fn until(mut done: impl FnMut() -> bool) -> bool {
 
 fn left(child: &mut Child) -> ExitStatus {
     let mut status = None;
+
     until(|| {
         status = child.try_wait().expect("the child to be waited on");
         status.is_some()
     });
     status.unwrap_or_else(|| {
         let _ = child.kill();
+
         panic!("play did not leave within {PATIENCE:?} of the signal");
     })
 }
@@ -147,6 +155,7 @@ fn signalled(child: &Child, signal: &str) {
         .arg(child.id().to_string())
         .status()
         .expect("kill to run");
+
     assert!(sent.success(), "kill -{signal} failed");
 }
 
@@ -160,23 +169,30 @@ fn told_to_leave_by(signal: &str) {
         eprintln!("skipped: no setsid to give play a terminal of its own");
         return;
     }
+
     let Some((terminal, controller)) = Terminal::open() else {
         eprintln!("skipped: no pseudo-terminal to give play");
         return;
     };
     let home = Home::new(&format!("terminal-{signal}"));
     let before = terminal.modes();
+
     assert!(before.contains(KEPT_BY_A_LINE_AT_A_TIME));
 
     drained(controller);
+
     let mut child = playing(&home, &terminal);
     let keyed = until(|| !terminal.modes().contains(LocalModes::ICANON));
+
     thread::sleep(SETTLED_FOR);
+
     let still_playing = child
         .try_wait()
         .expect("the child to be waited on")
         .is_none();
+
     signalled(&child, signal);
+
     let status = left(&mut child);
     let after = terminal.modes();
 

@@ -30,6 +30,7 @@ pub(crate) fn event_path(service: Service) -> String {
 
 pub(crate) fn device(udn: &Udn, name: &str) -> String {
     let mut services = String::new();
+
     for service in Service::ALL {
         let _ = write!(
             services,
@@ -232,8 +233,10 @@ pub(crate) fn service(service: Service) -> String {
          xmlns=\"urn:schemas-upnp-org:service-1-0\"><specVersion><major>1</major><minor>0\
          </minor></specVersion><actionList>",
     );
+
     for (action, arguments) in actions {
         let _ = write!(written, "<action><name>{action}</name><argumentList>");
+
         for argument in *arguments {
             let _ = write!(
                 written,
@@ -255,6 +258,7 @@ pub(crate) fn service(service: Service) -> String {
             variable.name,
             variable.kind,
         );
+
         if !variable.allowed.is_empty() {
             written.push_str("<allowedValueList>");
             for allowed in variable.allowed {

@@ -102,6 +102,7 @@ pub fn asking_to_resume(
     let Some(held) = held.filter(|held| held.can_be_checked()) else {
         return request;
     };
+
     let request = request.header(RANGE, format!("bytes={}-", held.bytes));
     match held
         .validator
@@ -153,6 +154,7 @@ fn asked(
     expecting: Expecting<'_>,
 ) -> Result<Answered, Unfetched> {
     let mut request = agent.get(url).header(ACCEPT_ENCODING, UNCODED);
+
     if let Some(bearer) = bearer {
         request = request.header(AUTHORIZATION, bearer);
     }
@@ -162,6 +164,7 @@ fn asked(
             request = request.header(IF_RANGE, validator.as_str());
         }
     }
+
     let response = request
         .call()
         .map_err(|error| Unfetched::Io(as_io(error)))?;
@@ -173,6 +176,7 @@ fn asked(
     let resumed_at = content_range.and_then(starts_at);
     let length = response.body().content_length();
     let validator = validator_of(&response);
+
     let (skipped, total) = match status {
         PARTIAL if from > 0 && resumed_at == Some(from) => (0, content_range.and_then(total_of)),
         WHOLE => (from, length),
@@ -184,6 +188,7 @@ fn asked(
         }
         status => return Err(Unfetched::Refused(status)),
     };
+
     if from > 0
         && (expecting.total_differs(total)
             || expecting.validator_differs(validator.as_ref(), status == PARTIAL))
@@ -192,6 +197,7 @@ fn asked(
     }
 
     let mut reader = response.into_body().into_reader();
+
     if skipped > 0 {
         let passed =
             io::copy(&mut (&mut reader).take(skipped), &mut io::sink()).map_err(Unfetched::Io)?;
@@ -265,6 +271,7 @@ impl Ranged {
                     .get(CONTENT_RANGE)
                     .and_then(|range| range.to_str().ok())?;
                 let total = total_of(range);
+
                 let unchanged = starts_at(range) == Some(held.bytes)
                     && (held.total.is_none() || total == held.total);
                 unchanged.then(|| Self {
@@ -311,14 +318,17 @@ impl Ranged {
             total: known.total,
         };
         let mut tried = 0;
+
         let answered = loop {
             match asked(&agent, &url, from, bearer.as_deref(), expecting) {
                 Ok(answered) => break answered,
                 Err(Unfetched::AskedLater { asked_for, .. }) if tried < RESUMES_AT_MOST => {
                     tried += 1;
+
                     let wait = asked_for
                         .unwrap_or_else(|| waited_before(tried, resumed_after))
                         .min(LONGEST_WAIT);
+
                     tracing::debug!(
                         ?wait,
                         "a download was asked for again later, as its host asked"
@@ -386,14 +396,17 @@ impl Ranged {
     fn resumed_after(&mut self, broken_off: io::Error) -> io::Result<()> {
         let mut last = broken_off;
         let mut asked_for = None;
+
         while self.broken < RESUMES_AT_MOST {
             let wait = asked_for
                 .take()
                 .unwrap_or_else(|| waited_before(self.broken, self.resumed_after))
                 .min(LONGEST_WAIT);
+
             self.broken += 1;
             tracing::debug!(error = %last, read = self.read, ?wait, "a download broke off and is asked for again from where it stopped");
             thread::sleep(wait);
+
             let expecting = Expecting {
                 validator: self.validator.as_ref(),
                 total: self.total,
@@ -479,6 +492,7 @@ mod tests {
         let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
             .build()
             .new_agent();
+
         let mut ranged = Ranged::opened_from(agent, url, OPENED_PART_WAY, Duration::ZERO)
             .expect("the first partial answer");
         let mut read = Vec::new();
@@ -487,6 +501,7 @@ mod tests {
 
         assert_eq!(read, &WHOLE_BODY[OPENED_PART_WAY as usize..]);
         assert_eq!(ranged.read_so_far(), WHOLE_BODY.len() as u64);
+
         let asked_from: Vec<String> = heads
             .lock()
             .iter()
@@ -496,6 +511,7 @@ mod tests {
                     .find_map(|line| line.strip_prefix("range: ").map(str::to_owned))
             })
             .collect();
+
         assert_eq!(
             asked_from,
             ["bytes=10-", "bytes=30-", "bytes=50-", "bytes=70-"]
@@ -506,11 +522,14 @@ mod tests {
     fn a_server_answering_nothing_more_under_the_total_ends_in_an_error_after_a_bounded_number_of_asks()
      {
         let mut answers: Vec<Answer> = vec![Box::new(|head| capped_partial(head, CAPPED_AT))];
+
         answers.extend((0..RESUMES_AT_MOST + 2).map(|_| Box::new(emptied_partial) as Answer));
+
         let (url, heads) = serving(answers);
         let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
             .build()
             .new_agent();
+
         let mut ranged = Ranged::opened_from(agent, url, OPENED_PART_WAY, Duration::ZERO)
             .expect("the first partial answer");
         let mut read = Vec::new();
@@ -536,7 +555,9 @@ mod tests {
         ranged.read_to_end(&mut read).expect("the whole is read");
 
         assert_eq!(read, WHOLE_BODY);
+
         let asked = lower(&heads.lock()[1]);
+
         assert!(
             asked.contains(&format!("range: bytes={CUT_AT}-")),
             "{asked}"
@@ -588,6 +609,7 @@ mod tests {
         let error = opened(&url)
             .read_to_end(&mut Vec::new())
             .expect_err("the change is refused");
+
         assert_eq!(error.kind(), ErrorKind::InvalidData);
 
         let (url, heads) = serving(vec![
@@ -595,9 +617,11 @@ mod tests {
             Box::new(|_| answering("200 OK", &[], WHOLE_BODY, WHOLE_BODY.len())),
         ]);
         let mut read = Vec::new();
+
         opened(&url)
             .read_to_end(&mut read)
             .expect("the whole is read");
+
         assert_eq!(read, WHOLE_BODY);
         assert!(!lower(&heads.lock()[1]).contains("if-range"));
     }
@@ -613,6 +637,7 @@ mod tests {
         let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
             .build()
             .new_agent();
+
         let mut ranged =
             Ranged::opened_from(agent, url, 0, Duration::ZERO).expect("the first answer");
         let mut read = Vec::new();

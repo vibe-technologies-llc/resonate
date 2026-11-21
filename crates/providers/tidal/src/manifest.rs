@@ -99,6 +99,7 @@ fn is_flac(codecs: &str) -> bool {
 
 fn bts(bytes: &[u8]) -> Result<Manifest, Unread> {
     let bts: Bts = serde_json::from_slice(bytes).map_err(|_| Unread::NotTheDocument)?;
+
     if bts
         .encryption_type
         .as_deref()
@@ -109,11 +110,13 @@ fn bts(bytes: &[u8]) -> Result<Manifest, Unread> {
     if !is_flac(&bts.codecs) {
         return Ok(Manifest::Withheld(Withheld::Lossy));
     }
+
     let container = match bts.mime_type.trim().to_ascii_lowercase().as_str() {
         FLAC_TYPE => Container::Flac,
         MP4_TYPE => Container::Mp4,
         _ => return Err(Unread::UnknownType),
     };
+
     if bts.urls.is_empty() {
         return Err(Unread::NoMedia);
     }
@@ -151,6 +154,7 @@ fn padded_width(format: Option<&str>) -> Result<usize, Unread> {
     let Some(digits) = format.and_then(|format| format.strip_prefix('0')?.strip_suffix('d')) else {
         return Ok(0);
     };
+
     if digits.is_empty() || !digits.bytes().all(|digit| digit.is_ascii_digit()) {
         return Ok(0);
     }
@@ -164,13 +168,16 @@ fn padded_width(format: Option<&str>) -> Result<usize, Unread> {
 fn filled(template: &str, named: &Named<'_>) -> Result<String, Unread> {
     let mut written = String::with_capacity(template.len());
     let mut rest = template;
+
     while let Some(at) = rest.find('$') {
         written.push_str(&rest[..at]);
+
         let after = &rest[at + 1..];
         let Some(end) = after.find('$') else {
             written.push_str(&rest[at..]);
             return Ok(written);
         };
+
         let identifier = &after[..end];
         let (name, format) = identifier
             .split_once('%')
@@ -183,9 +190,11 @@ fn filled(template: &str, named: &Named<'_>) -> Result<String, Unread> {
             "Time" => Some(named.time.to_string()),
             _ => None,
         };
+
         match value {
             Some(value) => {
                 let width = padded_width(format)?;
+
                 written.push_str(&format!("{value:0>width$}"));
             }
             None => written.push_str(&rest[at..at + end + 2]),
@@ -203,6 +212,7 @@ fn segment_url(
     hosts: &MediaHosts,
 ) -> Result<String, Unread> {
     let url = resolved(base, filled(template, named)?)?;
+
     if url.len() > URL_BYTES_AT_MOST {
         return Err(Unread::UrlTooLong);
     }
@@ -216,12 +226,14 @@ fn resolved(base: Option<&str>, url: String) -> Result<String, Unread> {
     if url.contains("://") {
         return Ok(url);
     }
+
     let (scheme, rest) = base
         .map(str::trim)
         .and_then(|base| base.split_once("://"))
         .ok_or(Unread::NoMedia)?;
     let rest = rest.split(['?', '#']).next().unwrap_or_default();
     let (authority, path) = rest.split_once('/').unwrap_or((rest, ""));
+
     if let Some(elsewhere) = url.strip_prefix("//") {
         return Ok(format!("{scheme}://{elsewhere}"));
     }
@@ -243,6 +255,7 @@ fn base_of(representation: Node<'_, '_>) -> Option<String> {
                 .and_then(|base| base.text())
         })
         .collect();
+
     named.reverse();
     named.into_iter().fold(None, |base, url| {
         resolved(base.as_deref(), url.trim().to_owned())
@@ -254,6 +267,7 @@ fn base_of(representation: Node<'_, '_>) -> Option<String> {
 fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
     let text = std::str::from_utf8(bytes).map_err(|_| Unread::NotTheDocument)?;
     let document = Document::parse(text).map_err(|_| Unread::NotTheDocument)?;
+
     if first(&document, "ContentProtection").is_some() {
         return Ok(Manifest::Withheld(Withheld::Encrypted));
     }
@@ -294,6 +308,7 @@ fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
     let representation_id = representation.attribute("id").unwrap_or_default();
     let bandwidth = representation.attribute("bandwidth").unwrap_or_default();
     let base = base_of(representation);
+
     let named = |number, time| Named {
         representation: representation_id,
         bandwidth,
@@ -301,12 +316,14 @@ fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
         time,
     };
     let initial = segment_url(base.as_deref(), initialization, &named(start, 0), hosts)?;
+
     segment_url(base.as_deref(), media, &named(start, 0), hosts)?;
 
     let mut segments = 0_u64;
     let mut ticks = 0_u64;
     let mut at = 0_u64;
     let mut starts = Vec::new();
+
     for step in template
         .descendants()
         .filter(|node| node.tag_name().name() == "S")
@@ -314,9 +331,11 @@ fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
         if let Some(stated) = numbered(step.attribute("t"))? {
             at = stated;
         }
+
         let lasting = numbered(step.attribute("d"))?.ok_or(Unread::NotTheDocument)?;
         let repeated = numbered(step.attribute("r"))?.unwrap_or(0);
         let count = repeated.checked_add(1).ok_or(Unread::TooManySegments)?;
+
         segments = segments
             .checked_add(count)
             .filter(|segments| *segments <= SEGMENTS_AT_MOST)
@@ -335,6 +354,7 @@ fn dash(bytes: &[u8], hosts: &MediaHosts) -> Result<Manifest, Unread> {
     }
 
     let mut urls = Vec::with_capacity(starts.len() + 1);
+
     urls.push(initial);
     start
         .checked_add(segments)
@@ -459,6 +479,7 @@ mod tests {
             r#"startNumber="1""#,
             &format!(r#"startNumber="{}""#, u64::MAX - 1),
         );
+
         assert_ne!(numbered, DASHED);
 
         assert!(matches!(

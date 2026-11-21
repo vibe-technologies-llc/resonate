@@ -85,6 +85,7 @@ impl Shelves {
         let revision = self.library.catalog_revision();
         let (counted, at) = {
             let mut cursors = self.cursors.lock();
+
             if cursors.revision != revision {
                 *cursors = Cursors {
                     revision,
@@ -93,17 +94,20 @@ impl Shelves {
             }
             (cursors.total, cursors.at.get(&page.from).copied())
         };
+
         let total = match counted {
             Some(total) => total,
             None => {
                 let total = self.library.tracks_counted(&query(0, 0))?;
                 let mut cursors = self.cursors.lock();
+
                 if cursors.revision == revision {
                     cursors.total = Some(total);
                 }
                 total
             }
         };
+
         if page.most == 0 || page.from >= total {
             return Ok(Shelved {
                 held: Vec::new(),
@@ -116,6 +120,7 @@ impl Shelves {
             Some(at) => self.library.tracks_from(&read_one_past, at)?,
             None => self.library.tracks(&read_one_past)?,
         };
+
         if rows.len() > page.most as usize {
             let next = rows.split_off(page.most as usize);
             if let Some(next) = next.first() {
@@ -136,8 +141,10 @@ impl Shelves {
 
     fn songs_of(&self, rows: &[Track]) -> Result<Vec<Entry>, LibraryError> {
         let mut albums: Vec<AlbumId> = rows.iter().filter_map(|track| track.album_id).collect();
+
         albums.sort_unstable();
         albums.dedup();
+
         let titled: HashMap<AlbumId, String> =
             self.library.album_titles(&albums)?.into_iter().collect();
         Ok(rows
@@ -154,6 +161,7 @@ impl Shelves {
         let library = &self.library;
         let total = library.artists_counted(&query)?;
         let mut held = Vec::new();
+
         if page.most > 0 {
             for artist in library.artists(&ArtistQuery {
                 offset: page.from as usize,
@@ -174,12 +182,14 @@ impl Shelves {
 
     fn songs_in(&self, query: TrackQuery, page: Page) -> Result<Shelved, LibraryError> {
         let total = self.library.tracks_counted(&query)?;
+
         if page.most == 0 || page.from >= total {
             return Ok(Shelved {
                 held: Vec::new(),
                 total,
             });
         }
+
         let rows = self.library.tracks(&TrackQuery {
             offset: page.from as usize,
             limit: Some(page.most as usize),
@@ -195,6 +205,7 @@ impl Shelves {
         let library = &self.library;
         let total = library.playlist_count(named)?;
         let mut held = Vec::new();
+
         if page.most > 0 {
             for playlist in library.playlists_within(
                 PlaylistOrder::Name,
@@ -206,6 +217,7 @@ impl Shelves {
                 let children = self
                     .listed(playlist.id)?
                     .map_or(0, |listed| u32::try_from(listed.len()).unwrap_or(u32::MAX));
+
                 held.push(Entry::Shelf(Held {
                     shelf: Shelf::Playlist(playlist.id),
                     title: playlist.name,
@@ -253,6 +265,7 @@ impl Shelves {
                 total: 0,
             }));
         }
+
         let matching: Vec<Track> = self
             .library
             .playlist_entries(id, text)?
@@ -284,12 +297,14 @@ impl Shelves {
 
     fn albums(&self, query: AlbumQuery, page: Page) -> Result<Shelved, LibraryError> {
         let total = self.library.albums_counted(&query)?;
+
         if page.most == 0 {
             return Ok(Shelved {
                 held: Vec::new(),
                 total,
             });
         }
+
         let held = self
             .library
             .albums(&AlbumQuery {
@@ -305,8 +320,10 @@ impl Shelves {
 
     fn listed(&self, id: PlaylistId) -> Result<Option<Arc<Vec<TrackId>>>, LibraryError> {
         let revision = self.library.catalog_revision();
+
         {
             let mut lists = self.lists.lock();
+
             if lists.revision != revision {
                 *lists = Lists {
                     revision,
@@ -320,6 +337,7 @@ impl Shelves {
         if self.library.playlist(id)?.is_none() {
             return Ok(None);
         }
+
         let songs: Arc<Vec<TrackId>> = Arc::new(
             self.library
                 .playlist_entries(id, None)?
@@ -330,6 +348,7 @@ impl Shelves {
                 .collect(),
         );
         let mut lists = self.lists.lock();
+
         if lists.revision == revision {
             if lists.kept.len() >= LISTS_KEPT_AT_MOST {
                 lists.kept.clear();
@@ -355,6 +374,7 @@ impl Shelves {
             .into_iter()
             .map(|track| (track.id, track))
             .collect();
+
         let rows: Vec<Track> = wanted
             .iter()
             .filter_map(|id| read.get(id).cloned())
@@ -390,7 +410,9 @@ impl Decoding {
         span: FrameSpan,
     ) -> Result<Self, CodecError> {
         let (mut decoder, info) = Decoder::open_span(&sources, &location, span)?;
+
         decoder.set_output_format(info.spec.format);
+
         let spec = StreamSpec {
             format: info.spec.format,
             ..decoder.sounding()
@@ -607,6 +629,7 @@ impl Catalog for Shelves {
                         ..query
                     })?
                 };
+
                 let held = rows
                     .iter()
                     .filter_map(|track| song_of(track, Some(&album.title)))
@@ -676,9 +699,11 @@ impl Catalog for Shelves {
         let Some(path) = local_file(&track) else {
             return Ok(None);
         };
+
         if let Some(span) = track.span {
             return Ok(self.cut_opened(&track, span));
         }
+
         let Some(kind) = kind_of(path) else {
             return Ok(None);
         };
@@ -818,6 +843,7 @@ fn formula(
             match test {
                 Test::Is | Test::IsNot => {
                     let denied = *test == Test::IsNot;
+
                     if (denied && refuses_denials) || !has_letters(text) {
                         return None;
                     }
@@ -826,9 +852,11 @@ fn formula(
                 Test::Contains | Test::Lacks => {
                     let denied = *test == Test::Lacks;
                     let words = begun_words(text);
+
                     if (denied && refuses_denials) || words.is_empty() {
                         return None;
                     }
+
                     let atoms = words
                         .into_iter()
                         .map(|word| atom(column, word, Reach::Begins, denied))
@@ -849,6 +877,7 @@ fn clauses(formula: &Formula) -> Option<Vec<Vec<Atom>>> {
         Formula::Atom(atom) => Some(vec![vec![atom.clone()]]),
         Formula::All(all) => {
             let mut held = Vec::new();
+
             for one in all {
                 held.extend(clauses(one)?);
                 if held.len() > CLAUSES_AT_MOST {
@@ -859,9 +888,11 @@ fn clauses(formula: &Formula) -> Option<Vec<Vec<Atom>>> {
         }
         Formula::Any(any) => {
             let mut held: Vec<Vec<Atom>> = vec![Vec::new()];
+
             for one in any {
                 let either = clauses(one)?;
                 let mut crossed = Vec::new();
+
                 for before in &held {
                     for clause in &either {
                         if before.len() + clause.len() > ALTERNATIVES_AT_MOST {
@@ -886,12 +917,14 @@ fn searched_as(
     denials: Denials,
 ) -> Option<Option<String>> {
     let clauses = clauses(&formula(query, column_of, denials)?)?;
+
     if clauses.iter().any(Vec::is_empty) {
         return None;
     }
     if clauses.is_empty() {
         return Some(None);
     }
+
     let search = Search {
         clauses: clauses
             .into_iter()
@@ -946,13 +979,16 @@ fn by_the_artist(id: ArtistId) -> AlbumQuery {
 
 pub(crate) fn kept_udn(folder: &Path) -> Udn {
     let kept_in = folder.join(UDN_KEPT_IN);
+
     if let Some(kept) = fs::read_to_string(&kept_in)
         .ok()
         .and_then(|text| Udn::read(&text))
     {
         return kept;
     }
+
     let minted = Udn::minted();
+
     if let Err(error) = fs::write(&kept_in, minted.as_str()) {
         tracing::warn!(%error, path = %kept_in.display(), "the media server's name on the network could not be kept, so it changes next run");
     }
@@ -993,6 +1029,7 @@ impl Offered {
                 ..Offer::default()
             })),
         });
+
         if config.is_on(Switch::ShareCatalogOnNetwork) {
             offered.share(true);
         }
@@ -1001,6 +1038,7 @@ impl Offered {
 
     pub(crate) fn share(&self, on: bool) {
         let mut state = self.state.lock();
+
         state.wanted = on;
         if !on {
             if let Some(stopping) = state.server.take() {
@@ -1035,6 +1073,7 @@ impl Offered {
     pub(crate) fn rename(&self, typed: &str) {
         let name = ServerName::new(typed);
         let mut state = self.state.lock();
+
         if state.name == name {
             return;
         }
@@ -1042,9 +1081,11 @@ impl Offered {
         if state.restarting {
             return;
         }
+
         let Some(stopping) = state.server.take() else {
             return;
         };
+
         self.restart_after(&mut state, stopping, "resonate-offer-rename");
     }
 
@@ -1055,11 +1096,14 @@ impl Offered {
         let library = Arc::clone(&self.library);
         let kept_in = self.kept_in.clone();
         let offering = self.offering.clone();
+
         let spawned = thread::Builder::new()
             .name(thread_name.to_owned())
             .spawn(move || {
                 drop(stopping);
+
                 let mut state = held.lock();
+
                 state.restarting = false;
                 if state.wanted {
                     state.server =
@@ -1074,6 +1118,7 @@ impl Offered {
 
     pub(crate) fn leave(&self) {
         let mut state = self.state.lock();
+
         state.wanted = false;
         drop(state.server.take());
     }
@@ -1158,6 +1203,7 @@ mod tests {
                 .expect("the shelf");
             let total = page.total;
             let returned = page.held.len() as u32;
+
             titles.extend(page.held.into_iter().filter_map(|entry| match entry {
                 Entry::Song(song) => Some(song.title),
                 Entry::Shelf(_) => None,
@@ -1172,6 +1218,7 @@ mod tests {
     #[test]
     fn the_shelves_page_every_song_by_key_and_a_sheets_cuts_among_them() {
         let root = scratch("offered");
+
         for (file, title) in [("c.wav", "Charlie"), ("a.wav", "Alpha"), ("b.wav", "Bravo")] {
             fs::write(
                 root.join(file),
@@ -1181,6 +1228,7 @@ mod tests {
         }
         fs::write(root.join("whole.wav"), silent_wave(20)).expect("a sheet's file");
         fs::write(root.join("whole.cue"), CUT).expect("a sheet");
+
         let library = Arc::new(scanned(&root));
         let rows = library.tracks(&TrackQuery::default()).expect("the rows");
         let shelves = Shelves::over(Arc::clone(&library));
@@ -1196,6 +1244,7 @@ mod tests {
             .find(|track| track.title == "Alpha")
             .expect("a song");
         let mut bytes = Vec::new();
+
         shelves
             .bytes_of(first.id)
             .expect("read")
@@ -1203,6 +1252,7 @@ mod tests {
             .bytes
             .read_to_end(&mut bytes)
             .expect("the file");
+
         let _ = fs::remove_dir_all(&root);
 
         assert_eq!(total, 5);
@@ -1248,12 +1298,16 @@ mod tests {
 
     fn asked(port: u16, request: &str) -> (String, Vec<u8>) {
         let mut stream = TcpStream::connect(SocketAddr::new(LOOPBACK, port)).expect("connects");
+
         stream
             .set_read_timeout(Some(ASKED_WITHIN))
             .expect("a read timeout");
         stream.write_all(request.as_bytes()).expect("asks");
+
         let mut answer = Vec::new();
+
         stream.read_to_end(&mut answer).expect("an answer");
+
         let ends = answer
             .windows(4)
             .position(|window| window == b"\r\n\r\n")
@@ -1286,6 +1340,7 @@ mod tests {
                 body.len()
             ),
         );
+
         assert!(head.starts_with("HTTP/1.1 200"), "{head}");
         String::from_utf8(answer).expect("text")
     }
@@ -1296,6 +1351,7 @@ mod tests {
                 .expect("the cut decodes");
         let mut block = AudioBuffer::empty(info.spec);
         let mut bytes = Vec::new();
+
         while decoder.next_block(&mut block).expect("a block") == DecodeStatus::Decoded {
             bytes.extend_from_slice(block.as_bytes());
         }
@@ -1314,8 +1370,10 @@ mod tests {
     fn a_cut_is_served_as_a_wave_of_its_decode_and_a_range_answers_its_frames() {
         let root = scratch("offered-cut");
         let sheet_file = sounding_wave(20);
+
         fs::write(root.join("whole.wav"), &sheet_file).expect("a sheet's file");
         fs::write(root.join("whole.cue"), CUT).expect("a sheet");
+
         let library = Arc::new(scanned(&root));
         let mut cuts: Vec<Track> = library
             .tracks(&TrackQuery::default())
@@ -1323,7 +1381,9 @@ mod tests {
             .into_iter()
             .filter(|track| track.span.is_some())
             .collect();
+
         cuts.sort_by_key(|track| track.span.map(FrameSpan::start));
+
         let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
         let server = MediaServer::start(
             Arc::new(Shelves::over(Arc::clone(&library))),
@@ -1341,6 +1401,7 @@ mod tests {
         let source = &sheet_file[WAVE_HEADER_BYTES..];
 
         let mut served = Vec::new();
+
         for cut in &cuts {
             let decode = decoded(&library, cut);
             let path = format!("/resonate/song-{}.wav", cut.id);
@@ -1356,6 +1417,7 @@ mod tests {
                     WAVE_HEADER_BYTES + 3 * STEREO_S16_FRAME_BYTES + 1
                 )),
             );
+
             served.push((
                 cut.span.map(FrameSpan::start),
                 decode,
@@ -1369,6 +1431,7 @@ mod tests {
             ));
         }
         drop(server);
+
         let _ = fs::remove_dir_all(&root);
 
         assert_eq!(served.len(), 2);
@@ -1461,8 +1524,10 @@ mod tests {
     #[test]
     fn a_cut_that_decodes_otherwise_than_its_row_says_is_not_served() {
         let root = scratch("offered-reformatted");
+
         fs::write(root.join("whole.wav"), sounding_wave(20)).expect("a sheet's file");
         fs::write(root.join("whole.cue"), CUT).expect("a sheet");
+
         let library = Arc::new(scanned(&root));
         let cut = library
             .tracks(&TrackQuery::default())
@@ -1474,10 +1539,12 @@ mod tests {
 
         let served_as_scanned = shelves.bytes_of(cut.id).expect("read").is_some();
         let mut retold = sounding_wave(20);
+
         retold[RATE_FIELD..RATE_FIELD + 4].copy_from_slice(&ANOTHER_RATE.to_le_bytes());
         retold[BYTE_RATE_FIELD..BYTE_RATE_FIELD + 4]
             .copy_from_slice(&(ANOTHER_RATE * STEREO_S16_FRAME_BYTES as u32).to_le_bytes());
         fs::write(root.join("whole.wav"), retold).expect("the file rewritten");
+
         let decoded = Decoding::open(
             Arc::new(library.sources()),
             cut.location.clone(),
@@ -1513,9 +1580,11 @@ mod tests {
     #[test]
     fn a_search_under_artists_or_albums_finds_a_sheets_cuts_on_their_album_and_by_their_band() {
         let root = scratch("offered-nested-cuts");
+
         fs::write(root.join("whole.wav"), sounding_wave(20)).expect("a sheet's file");
         fs::write(root.join("whole.cue"), SHEET_BY_A_BAND).expect("a sheet");
         fs::write(root.join("loose.wav"), tagged_wave(&[(TITLE, "Loose")])).expect("a song");
+
         let shelves = Shelves::over(Arc::new(scanned(&root)));
         let _ = fs::remove_dir_all(&root);
         let every = Page::first(10);
@@ -1561,6 +1630,7 @@ mod tests {
     #[test]
     fn a_search_from_the_network_is_read_through_the_librarys_own_folded_search() {
         let root = scratch("offered-search");
+
         for (file, title, artist, album, genre) in [
             ("a.wav", "Human Behaviour", "Björk", "Debut", "Pop"),
             ("b.wav", "Army of Me", "Bjork", "Post", "Electronic"),
@@ -1577,6 +1647,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let library = Arc::new(scanned(&root));
         let shelves = Shelves::over(Arc::clone(&library));
         let every = Page::first(10);
@@ -1680,6 +1751,7 @@ mod tests {
     #[test]
     fn a_search_under_an_artist_an_album_or_a_playlist_answers_what_it_holds_in_its_order() {
         let root = scratch("offered-within");
+
         for (file, title, artist, album, number) in [
             ("a.wav", "Human Behaviour", "Björk", "Debut", "1"),
             ("b.wav", "Venus as a Boy", "Björk", "Debut", "2"),
@@ -1697,6 +1769,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let library = Arc::new(scanned(&root));
         let shelves = Shelves::over(Arc::clone(&library));
 
@@ -1711,12 +1784,14 @@ mod tests {
         let other = artist_of("Hyperballad");
         let debut = row("Human Behaviour").album_id.expect("an album");
         let mix = library.create_playlist("Mix").expect("a playlist");
+
         library
             .add_to_playlist(
                 mix,
                 &["Hyperballad", "Army of Me", "Human Behaviour"].map(|title| Cut::of(row(title))),
             )
             .expect("listed");
+
         let every = Page::first(10);
         let army = text(Field::Title, Test::Contains, "army");
         let by_bjork = text(Field::Artist, Test::Is, "björk");
@@ -1871,6 +1946,7 @@ mod tests {
     #[test]
     fn a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose() {
         let root = scratch("offered-nested");
+
         for (file, tags) in [
             (
                 "a.wav",
@@ -1890,6 +1966,7 @@ mod tests {
         ] {
             fs::write(root.join(file), tagged_wave(tags)).expect("a song");
         }
+
         let library = Arc::new(scanned(&root));
         let shelves = Shelves::over(Arc::clone(&library));
         let every = Page::first(10);
@@ -1995,6 +2072,7 @@ mod tests {
             assert_eq!(Search::read(&written).to_string(), written, "{query:?}");
             assert!(!written.contains("\"\""), "{written}");
         }
+
         let many = Query::Any(
             (0..ALTERNATIVES_AT_MOST + 1)
                 .map(|at| text(Field::Title, Test::Is, &format!("word{at}")))
@@ -2011,6 +2089,7 @@ mod tests {
     #[test]
     fn a_playlist_that_names_a_song_twice_pages_every_row_it_counts() {
         let root = scratch("offered-repeat");
+
         for (file, title) in [("a.wav", "Alpha"), ("b.wav", "Bravo")] {
             fs::write(
                 root.join(file),
@@ -2018,6 +2097,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let library = Arc::new(scanned(&root));
         let shelves = Shelves::over(Arc::clone(&library));
 
@@ -2028,6 +2108,7 @@ mod tests {
                 .expect("a song")
         };
         let mix = library.create_playlist("Twice").expect("a playlist");
+
         library
             .add_to_playlist(
                 mix,
@@ -2075,8 +2156,10 @@ mod tests {
 
         fn announcements_until_quiet(told: &UdpSocket) -> Vec<String> {
             told.set_read_timeout(Some(QUIET_AFTER)).expect("a timeout");
+
             let mut heard = Vec::new();
             let mut buffer = [0_u8; 2048];
+
             while let Ok(length) = told.recv(&mut buffer) {
                 let datagram = String::from_utf8_lossy(&buffer[..length]);
                 if let Some(line) = datagram.lines().find_map(|line| line.strip_prefix("NTS: ")) {
@@ -2093,6 +2176,7 @@ mod tests {
             let folder = scratch("offered-restart-udn");
             let library = Arc::new(scanned(&root));
             let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
+
             let offered = Offered {
                 library,
                 kept_in: Some(folder.clone()),
@@ -2109,15 +2193,20 @@ mod tests {
             offered.share(true);
             offered.share(false);
             offered.share(true);
+
             let started_at_once = offered.state.lock().server.is_some();
             let waiting_since = Instant::now();
+
             while offered.state.lock().server.is_none()
                 && waiting_since.elapsed() < ANNOUNCED_WITHIN
             {
                 thread::sleep(Duration::from_millis(10));
             }
+
             let running = offered.state.lock().server.is_some();
+
             offered.leave();
+
             let heard = announcements_until_quiet(&told);
             let _ = fs::remove_dir_all(&root);
             let _ = fs::remove_dir_all(&folder);
@@ -2143,7 +2232,9 @@ mod tests {
 
         let first = kept_udn_within(&folder).expect("a writable folder");
         let again = kept_udn_within(&folder).expect("a writable folder");
+
         fs::write(folder.join(UDN_KEPT_IN), "not a udn").expect("written");
+
         let replaced = kept_udn_within(&folder).expect("a writable folder");
         let _ = fs::remove_dir_all(&folder);
 

@@ -53,6 +53,7 @@ pub(crate) fn frequency_marks(nyquist_hz: u32) -> Vec<Mark> {
     if nyquist_hz == 0 {
         return Vec::new();
     }
+
     let step = FREQUENCY_STEPS_HZ
         .into_iter()
         .find(|step| nyquist_hz / step <= FREQUENCY_MARKS_AT_MOST)
@@ -69,9 +70,11 @@ pub(crate) fn frequency_marks(nyquist_hz: u32) -> Vec<Mark> {
 
 pub(crate) fn time_marks(length: Duration) -> Vec<Mark> {
     let seconds = length.as_secs();
+
     if seconds == 0 {
         return Vec::new();
     }
+
     let step = TIME_STEPS_SECONDS
         .into_iter()
         .find(|step| seconds / step <= TIME_MARKS_AT_MOST)
@@ -128,6 +131,7 @@ mod tests {
     #[test]
     fn frequencies_are_marked_at_round_steps_below_the_top() {
         let cd = frequency_marks(22_050);
+
         assert_eq!(
             cd.iter()
                 .map(|mark| mark.label.as_str())
@@ -137,6 +141,7 @@ mod tests {
         assert!((cd[1].share - 10_000.0 / 22_050.0).abs() < 1e-6);
 
         let hi_res = frequency_marks(96_000);
+
         assert!(hi_res.len() <= FREQUENCY_MARKS_AT_MOST as usize);
         assert_eq!(hi_res[0].label, "20k");
         assert!(frequency_marks(0).is_empty());
@@ -145,6 +150,7 @@ mod tests {
     #[test]
     fn time_is_marked_in_minutes_and_seconds() {
         let marks = time_marks(Duration::from_secs(215));
+
         assert_eq!(marks[0].label, "0:30");
         assert_eq!(marks.last().map(|mark| mark.label.as_str()), Some("3:30"));
         assert!(marks.iter().all(|mark| mark.share < 1.0));
@@ -156,11 +162,14 @@ mod tests {
     fn a_track_of_many_hours_is_marked_in_hours() {
         for hours in [5_u64, 12, 30, 200] {
             let marks = time_marks(Duration::from_secs(hours * SECONDS_AN_HOUR));
+
             assert!(!marks.is_empty(), "{hours} hours");
             assert!(marks.len() <= TIME_MARKS_AT_MOST as usize, "{hours} hours");
             assert!(marks.iter().all(|mark| mark.share < 1.0));
         }
+
         let marks = time_marks(Duration::from_secs(5 * SECONDS_AN_HOUR));
+
         assert_eq!(marks[0].label, "1:00:00");
         assert_eq!(marks[1].label, "2:00:00");
     }

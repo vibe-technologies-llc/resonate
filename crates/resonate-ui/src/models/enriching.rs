@@ -56,6 +56,7 @@ impl LibraryModel {
             pace: Pace::Background,
             breadth: Breadth::TheLibrary,
         };
+
         self.enrich_with(asked, Prompted::ByHand, cx);
     }
 
@@ -69,6 +70,7 @@ impl LibraryModel {
             pace: Pace::Background,
             breadth: Breadth::TheLibrary,
         };
+
         self.enrich_with(asked, Prompted::OnItsOwn, cx);
     }
 
@@ -88,6 +90,7 @@ impl LibraryModel {
                     pace: Pace::Hurried,
                     breadth: Breadth::TheLibrary,
                 };
+
                 self.enrich_with(asked, Prompted::ByHand, cx);
             }
         }
@@ -125,6 +128,7 @@ impl LibraryModel {
 
     pub fn look_up_the_song(&mut self, track: TrackId, title: String, cx: &mut Context<Self>) {
         let song = SongAsked { track, title };
+
         if !self.can_enrich() {
             toast::tell(
                 Notice::Noted(words::models::song_not_looked_up_offline(&song.title)),
@@ -161,6 +165,7 @@ impl LibraryModel {
             pace: Pace::Hurried,
             breadth: Breadth::TheSong(song.track),
         };
+
         toast::tell(Notice::Noted(said), cx);
         self.enrichment.song = Some(song);
         self.enrich_with(asked, Prompted::ByHand, cx);
@@ -175,6 +180,7 @@ impl LibraryModel {
         if self.enrichment.running.is_some() || !self.choices.online {
             return;
         }
+
         let Some(reference) = self.for_the_pass.reference.clone() else {
             return;
         };
@@ -209,6 +215,7 @@ impl LibraryModel {
 
         self.enrichment._task = cx.spawn(async move |this, cx| {
             let mut polled = 0;
+
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
                 polled += 1;
@@ -228,9 +235,11 @@ impl LibraryModel {
             let finished = this.update(cx, |this, cx| {
                 this.enrichment.running = None;
                 this.enrichment.asked = None;
+
                 let owed = mem::take(&mut this.enrichment.owed);
                 let song = this.enrichment.song.take();
                 let mut finished = false;
+
                 match (handle.join(), &song) {
                     (Ok(summary), Some(song)) => {
                         finished = !summary.cancelled && summary.stopped_by.is_none();
@@ -274,6 +283,7 @@ impl LibraryModel {
         if !self.can_enrich() {
             return;
         }
+
         let left = match self.library.unfinished_enrichment() {
             Ok(left) => left,
             Err(error) => {
@@ -297,9 +307,11 @@ impl LibraryModel {
     pub fn stop_enrich(&mut self, cx: &mut Context<Self>) {
         self.enrichment.owed = false;
         self.enrichment.song_owed = None;
+
         let Some(progress) = self.enrichment.running.as_ref() else {
             return;
         };
+
         progress.cancel();
         cx.notify();
     }
@@ -308,6 +320,7 @@ impl LibraryModel {
         let Some(progress) = self.running.work.scanning() else {
             return;
         };
+
         progress.cancel();
         cx.notify();
     }

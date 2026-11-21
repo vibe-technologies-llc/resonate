@@ -244,6 +244,7 @@ fn playing_entry(queued: &Queued, loaded: usize, entries: &[PlaylistEntry]) -> O
         .filter(|(_, entry)| is_the_cut(entry.location(), entry.span()))
         .map(|(index, entry)| (entry.position, index))
         .collect();
+
     same.sort_unstable();
     same.get(heard_before)
         .or_else(|| same.last())
@@ -278,6 +279,7 @@ impl RootView {
         let saved = self.library.read(cx).saved_playlists();
         let playing = self.playing_playlist(cx);
         let narrowed = self.library.read(cx).narrowing().is_some();
+
         let heading = self.playlists_heading(narrowed || !saved.is_empty(), cx);
 
         let listed = if saved.is_empty() {
@@ -308,10 +310,12 @@ impl RootView {
                             cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 let now = this.drawn_at();
                                 let mut rows = Vec::new();
+
                                 for index in range {
                                     let Some(playlist) = saved.get(index) else {
                                         continue;
                                     };
+
                                     rows.push(this.playlist_row(
                                         playlist,
                                         index,
@@ -372,6 +376,7 @@ impl RootView {
     ) -> AnyElement {
         let columns = self.grid_columns();
         let held = saved.len();
+
         let rows = held.div_ceil(columns.max(1));
         let measured = self.rooms.grid_width.clone();
         let laid_out = self.rooms.grid_width.get() > px(0.0);
@@ -572,6 +577,7 @@ impl RootView {
         };
 
         let mut caps = kit::segmented();
+
         for (index, held) in CAPS.into_iter().enumerate() {
             caps = caps.child(self.in_the_pane_ring(
                 kit::segment(("search-cap", index), capped(held), held == cap),
@@ -579,6 +585,7 @@ impl RootView {
                 cx,
             ));
         }
+
         let ordered_as = format!("{} · {}", sort.named(), sort.read(reading));
 
         div()
@@ -637,6 +644,7 @@ impl RootView {
         let library = self.library.read(cx);
         let entries = library.entries();
         let narrowed = library.narrowing().is_some();
+
         let rows = library
             .opened_playlist()
             .map_or(Rows::InHand, |held| Rows::of(held, narrowed));
@@ -653,15 +661,18 @@ impl RootView {
         } else {
             let held = Arc::clone(&entries);
             let scroll = self.scrolls(cx).playlist_rows.clone();
+
             let listing = uniform_list(
                 "playlist-entries",
                 entries.len(),
                 cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                     let mut listed = Vec::new();
+
                     for index in range {
                         let Some(entry) = held.get(index) else {
                             continue;
                         };
+
                         listed.push(this.entry_row(
                             Placing {
                                 playlist: opened,
@@ -781,6 +792,7 @@ impl RootView {
         let narrowed = library.narrowing().is_some();
         let reads = library.search().reads();
         let naming = self.naming.filter(|naming| !naming.is_a_search());
+
         let rows = named
             .as_ref()
             .map_or(Rows::InHand, |held| Rows::of(held, narrowed));
@@ -797,12 +809,14 @@ impl RootView {
             |named| named.name.clone(),
         );
         let name = SharedString::from(playlist_name.clone());
+
         let under = named.as_ref().map_or_else(String::new, |named| {
             let mut parts: format::Parts<String> = smallvec![if narrowed {
                 shown_of(shown, named).to_string()
             } else {
                 counted(named).to_string()
             }];
+
             match rows {
                 Rows::Matched => parts.push(words::playlists::fills_itself().to_owned()),
                 Rows::Kept => parts.push(words::playlists::kept_in_order().to_owned()),
@@ -1006,6 +1020,7 @@ impl RootView {
                         let offers: Rc<Offers> = Rc::new(move |this, at, cx| {
                             playlist_menu(this, at, opened, pinned, cx)
                         });
+
                         this.open_what_is_offered(offers, at, None, cx);
                     },
                     cx,
@@ -1119,6 +1134,7 @@ impl RootView {
             (orders.keeping, orders.row_order, orders.row_reading)
         };
         let mut keeps = kit::segmented().w_full();
+
         for (index, (label, wanted, saying)) in keeping_choices().into_iter().enumerate() {
             keeps = keeps.child(
                 self.in_the_pane_ring(
@@ -1192,6 +1208,7 @@ impl RootView {
             rows,
             narrowed,
         } = placing;
+
         let current = playing == Some(index);
         let drawn = match entry.track.clone() {
             Some(track) => {
@@ -1216,6 +1233,7 @@ impl RootView {
         );
         let shift = Shift::Playlist(opened);
         let reaches = rows.are_reached();
+
         let reached = reaches && self.reaches(shift, index, cx);
         let acting_on = if reaches {
             self.acting_on_chosen(shift, index, cx)
@@ -1224,6 +1242,7 @@ impl RootView {
         };
         let acts_on_one = acting_on.count() == 1;
         let position = entry.position;
+
         let dropping = if reaches {
             acting_on.clone()
         } else {
@@ -1261,6 +1280,7 @@ impl RootView {
         let artist = drawn.artist.clone();
         let fitted = self.rooms.columns_fit.shown();
         let entry_id = listing::keyed_by("entry", &(&entry.cut, index));
+
         let listed = row(current)
             .id(entry_id)
             .debug_selector(move || format!("entry-{index}"))
@@ -1378,6 +1398,7 @@ impl RootView {
         } else {
             None
         };
+
         let listed = menu::opens_a_reachable_menu(
             listed,
             reach,
@@ -1447,6 +1468,7 @@ impl RootView {
         if !rows.are_edited() {
             return listed;
         }
+
         let cursor_only = reaches && self.stands_unchosen_on(shift, index, cx);
         let listed = if rows.are_moved() {
             reorder::movable(listed, index, carried, reached, cx)
@@ -1580,6 +1602,7 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
+
                     let reported = this.update(cx, |this, cx| {
                         this.report(
                             Notice::Trouble(words::playlists::no_file_picker().to_owned()),
@@ -1587,6 +1610,7 @@ impl RootView {
                         );
                     });
                     let _ = reported;
+
                     return;
                 }
             };
@@ -1612,6 +1636,7 @@ impl RootView {
             .cloned()
             .or_else(env::home_dir)
             .unwrap_or_else(|| PathBuf::from(LAST_RESORT_FOLDER));
+
         let picked = cx.prompt_for_new_path(&beside, Some(&suggested));
 
         cx.spawn(async move |this, cx| {
@@ -1620,6 +1645,7 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
+
                     let reported = this.update(cx, |this, cx| {
                         this.report(
                             Notice::Trouble(words::playlists::no_file_picker().to_owned()),
@@ -1627,6 +1653,7 @@ impl RootView {
                         );
                     });
                     let _ = reported;
+
                     return;
                 }
             };
@@ -1675,8 +1702,10 @@ impl RootView {
             kit::icon_button(id, icon, saying),
             move |this, _, cx| {
                 cx.stop_propagation();
+
                 let chosen = this.acting_on_chosen(shift, row, cx);
                 let tracks = this.tracks_chosen(shift, &chosen, cx);
+
                 this.queue(&listed(&tracks), at, cx);
             },
             cx,
@@ -1917,6 +1946,7 @@ impl RootView {
         let searched = playlist.query.is_some();
         let reached = self.reaches(Shift::Listing(Listed::Playlists), at, cx);
         let albums = self.library.read(cx).pictured(id);
+
         let art = self.playlist_art(&playlist.name, searched, &albums, side, cx);
         let cell_id = ElementId::from(("playlist-cell", id.get() as usize));
         let pointed = pointed::is_pointed_at(&cell_id);
@@ -2124,6 +2154,7 @@ impl RootView {
         let Some(id) = self.adding_songs_to.take() else {
             return;
         };
+
         self.show_playlist(Some(id), cx);
         self.set_pane(Pane::Playlists, cx);
     }
@@ -2168,8 +2199,10 @@ fn playlist_menu_among_the_chosen(
     cx: &App,
 ) -> Menu {
     let chosen = this.acting_on_chosen(Shift::Listing(Listed::Playlists), row, cx);
+
     if chosen.count() > 1 {
         let playlists = this.library.read(cx).playlists_at(chosen.rows());
+
         return chosen_playlists_menu(at, playlists);
     }
     playlist_menu(this, at, id, pinned, cx)
@@ -2313,12 +2346,15 @@ fn synced_entries(menu: Menu, id: PlaylistId, this: &RootView, cx: &App) -> Menu
     };
     let kept = synced.kept;
     let mut menu = menu.apart();
+
     for device in synced.fetched_from {
         let fetching = Arc::clone(&syncing);
         let label = words::playlists::fetch_missing(device.as_str(), synced.missing);
+
         menu = menu.does(Icon::Download, label, move |this, _, cx| {
             let fetching = Arc::clone(&fetching);
             let from = device.clone();
+
             cx.background_spawn(async move { fetching.fetch_missing(id, &from) })
                 .detach();
             this.report(
@@ -2327,6 +2363,7 @@ fn synced_entries(menu: Menu, id: PlaylistId, this: &RootView, cx: &App) -> Menu
             );
         });
     }
+
     let label = if kept {
         words::playlists::stop_keeping_its_songs()
     } else {
@@ -2334,13 +2371,16 @@ fn synced_entries(menu: Menu, id: PlaylistId, this: &RootView, cx: &App) -> Menu
     };
     menu.does(Icon::Download, label, move |this, _, cx| {
         let keeping = Arc::clone(&syncing);
+
         cx.background_spawn(async move { keeping.keep_songs_of(id, !kept) })
             .detach();
+
         let said = if kept {
             words::playlists::songs_no_longer_fetched()
         } else {
             words::playlists::songs_fetched()
         };
+
         this.report(Notice::Done(said.to_owned()), cx);
     })
 }
@@ -2478,6 +2518,7 @@ fn picked(root: &RootView, playlist: &Playlist, cx: &mut Context<RootView>) -> A
             let Some(holding) = this.adding.take() else {
                 return;
             };
+
             this.library.update(cx, |library, cx| {
                 library.add_to_playlist(id, holding.rows.to_vec(), cx);
             });
@@ -2597,18 +2638,23 @@ mod tests {
             .filter(|entry| entry.position % 2 == 1)
             .cloned()
             .collect();
+
         assert_eq!(super::playing_entry(&queued, 3, &narrowed), Some(1));
         assert_eq!(super::playing_entry(&queued, 2, &narrowed), None);
 
         let reversed: Vec<PlaylistEntry> = entries.iter().rev().cloned().collect();
+
         assert_eq!(super::playing_entry(&queued, 3, &reversed), Some(1));
 
         let mut moved = entries.clone();
+
         let taken = moved.remove(3);
+
         moved.insert(0, taken);
         for (position, entry) in moved.iter_mut().enumerate() {
             entry.position = position;
         }
+
         assert_eq!(super::playing_entry(&queued, 3, &moved), Some(0));
     }
 
@@ -2671,6 +2717,7 @@ mod tests {
     fn rows_chosen_apart_are_read_off_the_list_in_order() {
         let entries = listed(8);
         let apart = Chosen::of(Span::one(5)).united(Span::one(1));
+
         let reaching = Reaching::of(&entries, apart.clone());
 
         assert_eq!(

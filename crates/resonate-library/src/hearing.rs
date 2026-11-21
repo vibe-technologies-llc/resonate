@@ -52,7 +52,9 @@ impl Refusing {
     fn refused(&self, op: LookupOp, counted: impl FnOnce()) -> Result<()> {
         self.refusals.set(self.refusals.get().saturating_add(1));
         counted();
+
         let refusals = self.in_a_row.get().saturating_add(1);
+
         self.in_a_row.set(refusals);
         if refusals >= REFUSALS_THAT_END_A_PASS {
             return Err(Error::RefusedInARow { op, refusals });
@@ -83,6 +85,7 @@ pub fn either_way<T, W, E>(
         Reply::Answered(found) => weigh(found)?,
         Reply::Refused => return Ok(Reply::Refused),
     };
+
     if landed(&phrased) {
         return Ok(Reply::Answered(phrased));
     }
@@ -121,7 +124,9 @@ mod tests {
                 Reply::Refused
             );
         }
+
         assert_eq!(refusing.heard(Ok(()), || {}).unwrap(), Reply::Answered(()));
+
         for _ in 1..REFUSALS_THAT_END_A_PASS {
             refusing.heard(refused(), || {}).unwrap();
         }
@@ -155,11 +160,15 @@ mod tests {
     #[test]
     fn an_ask_is_fruitless_by_refusal_only_where_a_refusal_came_after_it_began() {
         let refusing = Refusing::default();
+
         refusing.heard(refused(), || {}).unwrap();
+
         let since = refusing.since();
 
         assert_eq!(refusing.fruitlessly(since), Fruitless::Missed);
+
         refusing.heard(refused(), || {}).unwrap();
+
         assert_eq!(refusing.fruitlessly(since), Fruitless::Refused);
     }
 
@@ -168,6 +177,7 @@ mod tests {
         let asked = Cell::new(Vec::new());
         let ask = |wording| {
             let mut so_far = asked.take();
+
             so_far.push(wording);
             asked.set(so_far);
             Ok::<_, ()>(Reply::Answered(vec![wording == Wording::Words]))

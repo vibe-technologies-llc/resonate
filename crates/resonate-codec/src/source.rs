@@ -20,7 +20,7 @@ pub trait MediaStream: Read + Seek + Send + Sync {
     fn byte_len(&self) -> Option<u64>;
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum FormatHint {
     Extension(Box<str>),
     MediaType(Box<str>),
@@ -60,6 +60,7 @@ impl<R: Read + Seek> Reading<R> {
 fn measure<R: Seek>(reader: &mut R) -> Option<u64> {
     let here = reader.stream_position().ok()?;
     let end = reader.seek(SeekFrom::End(0)).ok()?;
+
     reader.seek(SeekFrom::Start(here)).ok()?;
     Some(end)
 }
@@ -103,6 +104,7 @@ impl Read for Replaying {
         let Some(replaying) = self.head.get(self.at..) else {
             return self.inner.read(buf);
         };
+
         if replaying.is_empty() {
             return self.inner.read(buf);
         }
@@ -111,6 +113,7 @@ impl Read for Replaying {
         let (Some(from), Some(into)) = (replaying.get(..taken), buf.get_mut(..taken)) else {
             return Ok(0);
         };
+
         into.copy_from_slice(from);
         self.at = self.at.saturating_add(taken);
         Ok(taken)
@@ -308,9 +311,11 @@ impl Sources {
                 location: location.clone(),
             });
         };
+
         if provider.source() == &SourceId::local() {
             return provider.open(location);
         }
+
         let Media { stream, hint } =
             opened_within(Arc::clone(provider), location, self.opened_within)?;
         Ok(Media {
@@ -353,15 +358,18 @@ impl Deadlined {
         let (answer, answers) = mpsc::channel();
         let handed = Arc::new(Mutex::new(Some(inner)));
         let taken = Arc::clone(&handed);
+
         let spawned = thread::Builder::new()
             .name("resonate-read".to_owned())
             .spawn(move || {
                 let Some(mut inner) = taken.lock().take() else {
                     return;
                 };
+
                 drop(taken);
                 serve_the_reads(inner.as_mut(), &asked, &answer);
             });
+
         if let Err(error) = spawned {
             tracing::warn!(%error, "no thread could be started to read a stream, so it is read here");
             if let Some(inner) = handed.lock().take() {
@@ -387,6 +395,7 @@ impl Deadlined {
             self.stalled = true;
             return Err(stalled());
         }
+
         let answered = self.answers.lock().recv_timeout(self.within);
         answered.map_err(|_| {
             self.stalled = true;
@@ -411,6 +420,7 @@ fn serve_the_reads(
         let answered = match asked {
             Asked::Read { mut buffer, len } => {
                 buffer.resize(len, 0);
+
                 let read = inner.read(&mut buffer);
                 Answered::Read { buffer, read }
             }
@@ -427,6 +437,7 @@ impl Read for Deadlined {
         if buf.is_empty() {
             return Ok(0);
         }
+
         let asked = Asked::Read {
             buffer: mem::take(&mut self.spare),
             len: buf.len().min(LARGEST_READ_ASKED),
@@ -434,6 +445,7 @@ impl Read for Deadlined {
         match self.ask(asked)? {
             Answered::Read { buffer, read } => {
                 let taken = min(read?, buf.len());
+
                 buf[..taken].copy_from_slice(&buffer[..taken]);
                 self.spare = buffer;
                 Ok(taken)
@@ -470,6 +482,7 @@ fn opened_within(
     let (answer, answered) = mpsc::sync_channel(1);
     let asked = location.clone();
     let inline = Arc::clone(&provider);
+
     let spawned = thread::Builder::new()
         .name("resonate-open".to_owned())
         .spawn(move || {
@@ -478,6 +491,7 @@ fn opened_within(
                 tracing::debug!(location = %asked, "a provider answered after it was given up on");
             }
         });
+
     if let Err(error) = spawned {
         tracing::warn!(%error, "no thread could be started to wait on a provider, so it is asked here");
         return inline.open(location);
@@ -551,6 +565,7 @@ mod tests {
 
         let mut media = sources.open(&location).expect("the provider answers");
         let mut held = String::new();
+
         media.stream.read_to_string(&mut held).expect("it reads");
 
         assert_eq!(held, "held");
@@ -603,6 +618,7 @@ mod tests {
         let source = SourceId::new("elsewhere").expect("a nameable source");
         let location = MediaLocation::new(source.clone(), "a track");
         let within = Duration::from_millis(50);
+
         let slow = Sources::local()
             .opening_within(within)
             .and(Arc::new(Stalled {
@@ -611,6 +627,7 @@ mod tests {
             }));
 
         let asked = std::time::Instant::now();
+
         assert!(matches!(
             slow.open(&location),
             Err(Error::OpenTookTooLong { waited, .. }) if waited == within
@@ -626,6 +643,7 @@ mod tests {
                 source,
                 for_as_long_as: Duration::ZERO,
             }));
+
         assert!(quick.open(&location).is_ok());
     }
 
@@ -637,6 +655,7 @@ mod tests {
     impl Read for StallsAfter {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             let read = self.head.read(buf)?;
+
             if read == 0 {
                 thread::sleep(self.then_for);
             }
@@ -679,15 +698,20 @@ mod tests {
             .and(Arc::new(Trickles { source }));
 
         let mut media = sources.open(&location).expect("the provider answers");
+
         assert!(media.stream.is_seekable());
         assert_eq!(media.stream.byte_len(), Some(4));
+
         let mut held = [0_u8; 4];
+
         media
             .stream
             .read_exact(&mut held)
             .expect("the head arrives");
+
         assert_eq!(&held, b"held");
         assert_eq!(media.stream.seek(SeekFrom::Start(1)).ok(), Some(1));
+
         media
             .stream
             .seek(SeekFrom::End(0))
@@ -695,6 +719,7 @@ mod tests {
 
         let asked = std::time::Instant::now();
         let stalled = media.stream.read(&mut held);
+
         assert!(matches!(stalled, Err(error) if error.kind() == io::ErrorKind::TimedOut));
         assert!(
             asked.elapsed() < Duration::from_secs(1),
@@ -735,6 +760,7 @@ mod tests {
 
     fn a_variable_rate_stream() -> Vec<u8> {
         let mut file = Vec::new();
+
         for (header, length, count) in [
             ([0xff, 0xfb, 0x10, 0x00], 104, 40),
             ([0xff, 0xfb, 0xe0, 0x00], 1_044, 60),
@@ -797,6 +823,7 @@ mod tests {
         let source = named("elsewhere");
         let location = MediaLocation::new(source.clone(), "a track");
         let bytes = noise((LARGEST_READ_ASKED * 5) / 2 + 7);
+
         let sources = Sources::local().and(Arc::new(Bytes {
             source,
             bytes: bytes.clone(),
@@ -807,25 +834,35 @@ mod tests {
         let mut sizes = [3_usize, 4096, LARGEST_READ_ASKED + 5, 1, 70_000]
             .into_iter()
             .cycle();
+
         while served.len() < bytes.len() {
             let mut buffer = vec![0xAA_u8; sizes.next().expect("cycled")];
+
             let read = media.stream.read(&mut buffer).expect("it reads");
+
             assert!(read > 0);
             assert!(read <= buffer.len());
+
             served.extend_from_slice(&buffer[..read]);
         }
+
         assert_eq!(served, bytes);
 
         media
             .stream
             .seek(SeekFrom::Start(1000))
             .expect("it seeks back");
+
         let mut again = vec![0_u8; 20_000];
+
         media.stream.read_exact(&mut again).expect("it reads again");
+
         assert_eq!(again, bytes[1000..21_000]);
 
         let mut rest = Vec::new();
+
         media.stream.read_to_end(&mut rest).expect("it reads on");
+
         assert_eq!(rest, bytes[21_000..]);
     }
 }

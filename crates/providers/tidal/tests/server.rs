@@ -93,11 +93,13 @@ impl Fake {
         let noted = Arc::clone(&heard);
         let answering: Arc<Answering> = Arc::new(answering);
         let own = url.clone();
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else {
                     return;
                 };
+
                 answer(stream, &noted, answering.as_ref(), &own);
             }
         });
@@ -170,21 +172,26 @@ impl Fake {
 fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, own: &str) {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
+
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
+
     let mut authorization = None;
     let mut range = None;
     let mut origin = None;
     let mut referer = None;
     let mut length = 0;
+
     loop {
         let mut header = String::new();
+
         match reader.read_line(&mut header) {
             Ok(0) | Err(_) => return,
             Ok(_) if header == "\r\n" => break,
             Ok(_) => {}
         }
+
         let Some((name, value)) = header.split_once(':') else {
             continue;
         };
@@ -198,14 +205,19 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
             _ => {}
         }
     }
+
     let mut body = vec![0_u8; length];
+
     if reader.read_exact(&mut body).is_err() {
         return;
     }
+
     let mut parts = request_line.split(' ');
+
     let method = parts.next().unwrap_or_default().to_owned();
     let target = parts.next().unwrap_or_default();
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
     let asked = Asked {
         method,
         path: path.to_owned(),
@@ -217,7 +229,9 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
         body: String::from_utf8_lossy(&body).into_owned(),
     };
     let before = heard.lock().clone();
+
     let canned = answering(&asked, &before, own);
+
     heard.lock().push(asked);
 
     let mut written = format!(
@@ -225,11 +239,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
         canned.status,
         canned.body.len()
     );
+
     for (name, value) in &canned.headers {
         written.push_str(&format!("{name}: {value}\r\n"));
     }
     written.push_str("\r\n");
+
     let mut stream = reader.into_inner();
+
     let _ = stream.write_all(written.as_bytes());
     let sent = canned.cut_after.unwrap_or(canned.body.len());
     let _ = stream.write_all(&canned.body[..sent]);
@@ -238,8 +255,10 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering, o
 fn boxes(file: &[u8]) -> Vec<(&[u8], &[u8])> {
     let mut found = Vec::new();
     let mut at = 0;
+
     while at + 8 <= file.len() {
         let size = u32::from_be_bytes(file[at..at + 4].try_into().expect("four bytes")) as usize;
+
         found.push((&file[at + 4..at + 8], &file[at..at + size]));
         at += size;
     }
@@ -249,6 +268,7 @@ fn boxes(file: &[u8]) -> Vec<(&[u8], &[u8])> {
 fn segmented() -> Vec<Vec<u8>> {
     let mut segments = vec![Vec::new()];
     let mut opened = false;
+
     for (kind, whole) in boxes(TONE) {
         if matches!(kind, b"styp" | b"sidx" | b"moof") && !opened {
             segments.push(Vec::new());
@@ -391,6 +411,7 @@ fn streamed(obtained: Obtained) -> Option<(String, String, Vec<u8>)> {
         }) => {
             let mut reader = opened(opening);
             let mut bytes = Vec::new();
+
             reader.read_to_end(&mut bytes).expect("the stream reads");
             Some((key.into_string(), extension.to_string(), bytes))
         }
@@ -415,15 +436,19 @@ fn a_wanted_track_is_found_by_its_isrc_and_delivered_as_native_flac() {
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
+
     assert_native_flac(&bytes);
 
     let heard = fake.heard();
     let signed_in = &heard[0];
+
     assert_eq!(signed_in.method, "POST");
     assert!(signed_in.body.contains("grant_type=refresh_token"));
     assert!(signed_in.body.contains("refresh_token=sesame"));
     assert!(signed_in.body.contains("client_secret=hush"));
+
     let searched = &heard[1];
+
     assert_eq!(searched.path, "/openapi/tracks");
     assert!(searched.query.contains("countryCode=GB"));
     assert!(
@@ -454,12 +479,14 @@ fn every_code_of_the_want_is_asked_for_until_one_names_the_track() {
         streamed(fake.tidal().find(&two_codes).expect("an answer")).expect("a delivery");
 
     assert_eq!(key, format!("track/{TRACK}"));
+
     let searched: Vec<String> = fake
         .heard()
         .into_iter()
         .filter(|asked| asked.path == "/openapi/tracks")
         .map(|asked| asked.query)
         .collect();
+
     assert_eq!(searched.len(), 2);
     assert!(searched[0].contains("filter%5Bisrc%5D=USSM12409270"));
     assert!(searched[1].contains(&format!("filter%5Bisrc%5D={ECHOES_ISRC}")));
@@ -489,9 +516,11 @@ fn a_want_with_no_code_is_searched_by_its_name_and_only_the_track_named_alike_is
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
+
     assert_native_flac(&bytes);
 
     let searched = text_searches(&fake);
+
     assert_eq!(searched.len(), 1);
     assert_eq!(
         searched[0].path,
@@ -523,6 +552,7 @@ fn a_want_whose_code_tidal_lists_nothing_under_is_searched_by_its_name() {
     let (key, ..) = streamed(fake.tidal().find(&reissued).expect("an answer")).expect("a delivery");
 
     assert_eq!(key, format!("track/{TRACK}"));
+
     let paths = fake.paths();
     let coded = paths
         .iter()
@@ -532,6 +562,7 @@ fn a_want_whose_code_tidal_lists_nothing_under_is_searched_by_its_name() {
         .iter()
         .position(|path| is_a_text_search(path))
         .expect("the name was asked after");
+
     assert!(coded < named);
 }
 
@@ -619,11 +650,13 @@ fn a_search_is_answered_without_the_download_being_asked_for() {
     };
     let fetched_before_opening = fake.paths().iter().any(|path| segment(path).is_some());
     let mut bytes = Vec::new();
+
     opened(opening)
         .read_to_end(&mut bytes)
         .expect("the stream reads");
 
     assert!(!fetched_before_opening, "{:?}", fake.paths());
+
     assert_native_flac(&bytes);
 }
 
@@ -641,6 +674,7 @@ fn a_track_musicbrainz_links_to_tidal_is_taken_without_a_search() {
     let delivered = streamed(fake.tidal().find(&linked).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
+
     assert!(!fake.paths().iter().any(|path| path == "/openapi/tracks"));
 }
 
@@ -707,24 +741,31 @@ fn a_dash_stream_is_fetched_segments_ahead_and_read_in_order() {
     };
     let mut reader = opened(opening);
     let began = std::time::Instant::now();
+
     while !(1..=ahead).all(|nth| fake.paths().iter().any(|path| segment(path) == Some(nth))) {
         assert!(
             began.elapsed() < Duration::from_secs(5),
             "the segments ahead of the reader were never asked for: {:?}",
             fake.paths()
         );
+
         thread::sleep(Duration::from_millis(5));
     }
+
     let mut bytes = Vec::new();
+
     reader.read_to_end(&mut bytes).expect("the stream reads");
 
     assert_native_flac(&bytes);
+
     let mut asked: Vec<usize> = fake
         .paths()
         .iter()
         .filter_map(|path| segment(path))
         .collect();
+
     asked.sort_unstable();
+
     assert_eq!(asked, (0..=last).collect::<Vec<_>>());
 }
 
@@ -738,13 +779,17 @@ fn a_dash_song_played_in_place_is_read_onward_as_native_flac_and_never_seeks() {
     )
     .expect("a stream");
     let mut bytes = Vec::new();
+
     streamed.read_to_end(&mut bytes).expect("the stream reads");
+
     let refused = streamed.seek(SeekFrom::Start(0));
 
     assert!(!streamed.is_seekable());
     assert_eq!(streamed.length(), None);
     assert_eq!(streamed.media_type.as_deref(), Some("audio/flac"));
+
     assert_native_flac(&bytes);
+
     assert!(refused.is_err());
 }
 
@@ -781,11 +826,13 @@ fn a_segment_that_breaks_off_is_asked_for_again_from_where_it_stopped() {
     let delivered = streamed(fake.tidal().find(&by_isrc()).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
+
     let resumed = fake
         .heard()
         .into_iter()
         .filter(|asked| segment(&asked.path) == Some(2))
         .collect::<Vec<_>>();
+
     assert_eq!(resumed.len(), 2);
     assert_eq!(
         resumed[1].range.as_deref(),
@@ -809,12 +856,14 @@ fn a_segment_the_cdn_asks_to_be_asked_for_later_is_asked_for_again() {
     let delivered = streamed(fake.tidal().find(&by_isrc()).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
+
     let asked_for: Vec<usize> = fake
         .paths()
         .iter()
         .filter_map(|path| segment(path))
         .filter(|nth| [0, 2].contains(nth))
         .collect();
+
     assert_eq!(asked_for.len(), 4);
 }
 
@@ -833,6 +882,7 @@ fn a_refresh_token_turned_away_is_the_account_and_not_the_want() {
     let Err(error) = refused else {
         panic!("a refused sign-in delivered");
     };
+
     assert!(matches!(
         error,
         Error::Unwelcome {
@@ -946,6 +996,7 @@ fn a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_the
     });
     let told = Arc::new(Mutex::new(Vec::new()));
     let noted = Arc::clone(&told);
+
     let tidal = fake
         .tidal()
         .telling(move |renewed| noted.lock().push(renewed.into_string()));
@@ -957,6 +1008,7 @@ fn a_refresh_token_tidal_rotates_is_handed_back_once_and_signed_in_with_from_the
         .into_iter()
         .filter(|asked| asked.path == "/auth/token")
         .collect::<Vec<_>>();
+
     assert_eq!(signed_in.len(), 2);
     assert!(signed_in[0].body.contains("refresh_token=sesame"));
     assert!(signed_in[1].body.contains("refresh_token=rotated"));
@@ -975,6 +1027,7 @@ fn a_refresh_token_another_process_rotated_is_signed_in_with_instead_of_the_one_
     });
     let told = Arc::new(Mutex::new(Vec::new()));
     let noted = Arc::clone(&told);
+
     let tidal = fake
         .tidal()
         .following(|| Some("elsewhere".to_owned()))
@@ -987,6 +1040,7 @@ fn a_refresh_token_another_process_rotated_is_signed_in_with_instead_of_the_one_
         .into_iter()
         .find(|asked| asked.path == "/auth/token")
         .expect("a sign-in");
+
     assert!(signed_in.body.contains("refresh_token=elsewhere"));
     assert!(!signed_in.body.contains("sesame"));
     assert_eq!(*told.lock(), vec!["later".to_owned()]);
@@ -1011,6 +1065,7 @@ fn a_blank_token_heard_from_elsewhere_leaves_the_one_held() {
         .into_iter()
         .find(|asked| asked.path == "/auth/token")
         .expect("a sign-in");
+
     assert!(signed_in.body.contains("refresh_token=sesame"));
 }
 
@@ -1026,6 +1081,7 @@ fn a_refresh_token_tidal_keeps_is_never_handed_back() {
     });
     let told = Arc::new(Mutex::new(Vec::new()));
     let noted = Arc::clone(&told);
+
     let tidal = fake
         .tidal()
         .telling(move |renewed| noted.lock().push(renewed.into_string()));
@@ -1083,7 +1139,9 @@ fn a_device_sign_in_waits_while_it_is_pending_and_answers_the_refresh_token() {
     assert_eq!(authorizing.user_code, "ABCDE");
     assert_eq!(authorizing.verify_at, "https://link.tidal.com/ABCDE");
     assert_eq!(token.into_string(), "fresh-refresh");
+
     let heard = fake.heard();
+
     assert!(heard[0].body.contains("client_id=client"));
     assert!(heard[0].body.contains("scope=r_usr"));
     assert_eq!(heard.len(), 4);
@@ -1137,6 +1195,7 @@ fn a_device_sign_in_turned_down_or_left_to_lapse_says_which() {
     for (fake, lapses) in [(denied, false), (lapsed, true)] {
         let signing_in = fake.signing_in();
         let authorizing = signing_in.authorizing(&client()).expect("a device code");
+
         let answer = signing_in.authorized(&client(), &authorizing, &never);
         match answer {
             Err(Error::AuthorizationLapsed { .. }) => assert!(lapses),
@@ -1185,6 +1244,7 @@ fn token_polls_when_told_to_slow_down(slowing: fn() -> Canned) -> usize {
 
     let answer = signing_in.authorized(&client(), &authorizing, &|| {
         let mut slowed_at = slowed_at.lock();
+
         if slowed_at.is_none() && fake.paths().iter().any(|path| path == "/auth/token") {
             *slowed_at = Some(Instant::now());
         }
@@ -1313,9 +1373,11 @@ fn a_hifi_api_server_is_asked_by_the_isrc_and_its_track_delivered_as_native_flac
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
+
     assert_native_flac(&bytes);
 
     let heard = fake.heard();
+
     assert_eq!(heard[0].path, "/search/");
     assert_eq!(heard[0].query, format!("i={ECHOES_ISRC}&limit=25"));
     assert_eq!(heard[1].path, "/track/");
@@ -1365,12 +1427,14 @@ fn a_hifi_api_request_held_in_its_queue_is_waited_for() {
     let delivered = streamed(fake.hifi().find(&by_isrc()).expect("an answer"));
 
     assert_native_flac(&delivered.expect("a delivery").2);
+
     let looked: Vec<_> = fake
         .heard()
         .into_iter()
         .filter(|asked| asked.path.starts_with("/playback/requests/"))
         .map(|asked| asked.method)
         .collect();
+
     assert_eq!(looked, vec!["GET".to_owned(), "GET".to_owned()]);
 }
 
@@ -1389,6 +1453,7 @@ fn a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_count
     let Err(error) = answer else {
         panic!("a queue never reached is an error");
     };
+
     assert!(matches!(
         error,
         Error::StillQueued {
@@ -1406,6 +1471,7 @@ fn a_hifi_api_request_queued_past_its_patience_is_withdrawn_and_the_server_count
 #[test]
 fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_unwelcome() {
     let missing = hifi_server(|_, _, _| Canned::refused(404, r#"{"detail":"Upstream API error"}"#));
+
     assert!(matches!(
         missing.hifi().find(&by_isrc()),
         Ok(Obtained::Nothing)
@@ -1415,6 +1481,7 @@ fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_un
     let Err(error) = refused.hifi().find(&by_isrc()) else {
         panic!("a server turned away is an error");
     };
+
     assert!(matches!(
         error,
         Error::Unwelcome {
@@ -1429,6 +1496,7 @@ fn a_hifi_api_track_the_server_cannot_play_is_nothing_and_a_refused_server_is_un
 #[test]
 fn the_hosted_hifi_service_downloads_ncs_heroes_tonight_by_isrc() {
     const GATE: &str = "RESONATE_HIFI_LIVE_TESTS";
+
     if env::var_os(GATE).is_none() {
         eprintln!("skipped: set {GATE} to reach the hosted hifi service");
         return;
@@ -1471,6 +1539,7 @@ fn hosted_server() -> Fake {
         if let Some(nth) = segment(&asked.path) {
             return Canned::media(&segmented()[nth]);
         }
+
         let token = |bearer: &str| {
             Canned::json(&format!(
                 r#"{{"access_token":"{}","expires_in":3600}}"#,
@@ -1509,10 +1578,12 @@ fn the_hosted_hifi_service_is_searched_and_its_track_delivered_through_two_token
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(extension, "flac");
+
     assert_native_flac(&bytes);
 
     let heard = fake.heard();
     let paths: Vec<_> = heard.iter().map(|asked| asked.path.as_str()).collect();
+
     assert_eq!(
         &paths[..5],
         [
@@ -1523,7 +1594,9 @@ fn the_hosted_hifi_service_is_searched_and_its_track_delivered_through_two_token
             "/manifest/document"
         ]
     );
+
     let search = &heard[1];
+
     assert!(search.query.starts_with("query="), "{}", search.query);
     assert!(search.query.contains("limit=25"), "{}", search.query);
     assert_eq!(
@@ -1543,6 +1616,7 @@ fn the_hosted_hifi_service_is_asked_in_this_builds_name_alone_and_each_token_onc
     }
 
     let heard = fake.heard();
+
     assert!(
         heard
             .iter()
@@ -1584,6 +1658,7 @@ fn a_hosted_service_turning_the_token_away_is_unwelcome_and_one_with_no_such_tra
     let Err(error) = turned_away.hosted(on_loopback()).find(&by_isrc()) else {
         panic!("a token turned away is an error");
     };
+
     assert!(matches!(
         error,
         Error::Unwelcome {
@@ -1599,6 +1674,7 @@ fn a_hosted_service_turning_the_token_away_is_unwelcome_and_one_with_no_such_tra
         "/v1/search/tracks" => Canned::json(r#"{"items":[]}"#),
         _ => Canned::refused(404, "{}"),
     });
+
     assert!(matches!(
         unlisted.hosted(on_loopback()).find(&by_isrc()),
         Ok(Obtained::Nothing)
@@ -1622,6 +1698,7 @@ fn a_keyed_hifi_api_has_the_server_download_the_track_and_sends_its_secret_to_it
 
     let heard = fake.heard();
     let paths: Vec<_> = heard.iter().map(|asked| asked.path.as_str()).collect();
+
     assert_eq!(paths, ["/search/", "/file/"]);
     assert_eq!(heard[1].query, format!("id={TRACK}"));
     assert!(
@@ -1653,11 +1730,13 @@ fn a_keyed_server_answering_a_plain_ask_as_partial_content_is_read_and_asked_onc
     let (_, _, bytes) = streamed(keyed.find(&by_isrc()).expect("an answer")).expect("a delivery");
 
     assert_eq!(bytes, served);
+
     let files = fake
         .heard()
         .into_iter()
         .filter(|asked| asked.path == "/file/")
         .count();
+
     assert_eq!(files, 1);
 }
 
@@ -1694,11 +1773,13 @@ fn a_keyed_download_cut_off_part_way_is_asked_of_the_server_again_from_where_it_
     let (_, _, bytes) = streamed(keyed.find(&by_isrc()).expect("an answer")).expect("a delivery");
 
     assert_eq!(bytes, song);
+
     let heard = fake.heard();
     let files: Vec<_> = heard
         .iter()
         .filter(|asked| asked.path == "/file/")
         .collect();
+
     assert_eq!(files.len(), 2);
     assert_eq!(files[1].range.as_deref(), Some("bytes=12-"));
     assert!(
@@ -1751,6 +1832,7 @@ fn a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on() {
         panic!("the download opens");
     };
     let mut rest = Vec::new();
+
     resumed
         .reader
         .read_to_end(&mut rest)
@@ -1759,11 +1841,13 @@ fn a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on() {
     assert_eq!(resumed.from, 20);
     assert_eq!(resumed.length, Some(song.len() as u64));
     assert_eq!(rest, &song[20..]);
+
     let heard = fake.heard();
     let files: Vec<_> = heard
         .iter()
         .filter(|asked| asked.path == "/file/")
         .collect();
+
     assert_eq!(files.len(), 1);
     assert_eq!(files[0].range.as_deref(), Some("bytes=20-"));
 }
@@ -1796,6 +1880,7 @@ fn a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_star
         panic!("the download opens");
     };
     let mut bytes = Vec::new();
+
     resumed
         .reader
         .read_to_end(&mut bytes)
@@ -1803,12 +1888,14 @@ fn a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_star
 
     assert_eq!(resumed.from, 0);
     assert_eq!(bytes, song);
+
     let heard = fake.heard();
     let ranges: Vec<_> = heard
         .iter()
         .filter(|asked| asked.path == "/file/")
         .map(|asked| asked.range.clone())
         .collect();
+
     assert_eq!(ranges, [Some("bytes=20-".to_owned()), None]);
 }
 
@@ -1848,13 +1935,16 @@ fn a_keyed_server_that_stays_busy_is_the_wants_to_wait_on_and_never_the_provider
     let Err(error) = busy else {
         panic!("the server never freed");
     };
+
     assert!(matches!(error, Error::Busy { .. }), "{error:?}");
     assert!(!error.is_the_provider_away());
+
     let asked = fake
         .heard()
         .iter()
         .filter(|asked| asked.path == "/file/")
         .count();
+
     assert_eq!(asked, 1 + RESUMES_AT_MOST as usize);
 }
 
@@ -1882,6 +1972,7 @@ fn a_linked_track_found_gone_is_not_offered_again_and_the_codes_are_asked_instea
         )],
         ..by_isrc()
     };
+
     let told = Identity {
         gone: vec![MediaLocation::new(keyed.source().clone(), "track/999")],
         ..linked.clone()
@@ -1968,7 +2059,9 @@ fn a_want_with_no_code_is_searched_by_its_name_and_a_listing_with_a_code_is_aske
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(bytes, b"fLaC-by-name");
+
     let heard = fake.heard();
+
     assert_eq!(heard[0].path, "/search/");
     assert!(heard[0].query.starts_with("s=Echoes"), "{}", heard[0].query);
     assert_eq!(heard[1].query, format!("id={TRACK}"));
@@ -1994,7 +2087,9 @@ fn a_want_whose_codes_the_server_lists_nothing_under_is_searched_by_its_name() {
 
     assert_eq!(key, format!("track/{TRACK}"));
     assert_eq!(bytes, b"fLaC-by-name");
+
     let heard = fake.heard();
+
     assert!(
         heard[0].query.starts_with("i=USXYZ1234567"),
         "{}",

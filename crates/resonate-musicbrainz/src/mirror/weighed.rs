@@ -10,6 +10,7 @@ fn heaviness(weight: u64) -> u64 {
     if weight < STEPS_AN_OCTAVE {
         return weight;
     }
+
     let octave = u64::from(weight.ilog2());
     let step = (weight >> (octave - u64::from(STEP_BITS))) & (STEPS_AN_OCTAVE - 1);
     (STEPS_AN_OCTAVE * (octave - 1) + step).min(LIGHTEST)
@@ -19,6 +20,7 @@ pub(crate) fn placed_by_weight(kind: Entity, ordinal: i64, weight: u64) -> Resul
     if !(0..ORDINALS_PLACED).contains(&ordinal) {
         return Err(Error::OrdinalPastWeighing { kind, ordinal });
     }
+
     let lighter_by = i64::try_from(LIGHTEST - heaviness(weight)).unwrap_or(0);
     Ok((lighter_by << ORDINAL_BITS) | ordinal)
 }

@@ -62,6 +62,7 @@ fn deezer_names_where_a_track_streams_by_its_isrc_and_by_its_names() {
         })
         .expect("deezer answered")
         .expect("deezer holds the track under its isrc");
+
     assert_eq!(by_code.service, Service::Deezer);
     assert_eq!(by_code.url, "https://www.deezer.com/track/677241");
 
@@ -74,6 +75,7 @@ fn deezer_names_where_a_track_streams_by_its_isrc_and_by_its_names() {
         })
         .expect("deezer answered")
         .expect("deezer holds echoes");
+
     assert!(by_name.url.starts_with("https://www.deezer.com/track/"));
 }
 
@@ -107,6 +109,7 @@ fn a_title_by_an_artist_is_found_however_the_title_is_spelt() {
 #[test]
 fn a_song_musicbrainz_lists_a_hundred_times_over_finds_its_albums_recording_first() {
     const TEARDROP_ON_MEZZANINE: &str = "f3bba4cd-8018-468b-902e-bc8f029593e5";
+
     let Some(client) = reached() else {
         return;
     };
@@ -172,6 +175,7 @@ fn a_title_holding_by_or_typed_without_its_apostrophe_finds_the_song_first() {
             &asked,
             online.find_songs(&asked).expect("musicbrainz answered"),
         );
+
         let found = library
             .unheld_among(answered, Some(&asked))
             .expect("the catalog read");
@@ -206,6 +210,7 @@ fn a_title_many_artists_recorded_and_a_typo_of_one_find_the_original_first() {
             &asked,
             online.find_songs(&asked).expect("musicbrainz answered"),
         );
+
         let found = library
             .unheld_among(answered, Some(&asked))
             .expect("the catalog read");
@@ -240,12 +245,14 @@ fn popular_collaborations_and_a_mistyped_title_find_the_original_before_variants
             &asked,
             online.find_songs(&asked).expect("musicbrainz answered"),
         );
+
         let found = library
             .unheld_among(answered, Some(&asked))
             .expect("the catalog read");
         let first = found
             .first()
             .unwrap_or_else(|| panic!("{query} found nothing"));
+
         assert_eq!(first.title, title, "{query}: {found:?}");
         assert!(first.artist.starts_with(artist), "{query}: {found:?}");
     }
@@ -290,6 +297,7 @@ fn a_link_to_an_album_names_a_barcode_musicbrainz_files_the_release_group_under(
         .expect("the services answered")
         .expect("the link named an album");
     let mut groups = Vec::new();
+
     for barcode in &named.barcodes {
         groups.extend(
             online
@@ -320,6 +328,7 @@ fn a_recording_says_what_kind_of_release_each_of_its_releases_is_and_an_isrc_is_
         .recording(&mbid(ONE_OF_THESE_DAYS))
         .expect("musicbrainz answered")
         .expect("the recording is one it holds");
+
     assert!(
         recording
             .releases
@@ -332,6 +341,7 @@ fn a_recording_says_what_kind_of_release_each_of_its_releases_is_and_an_isrc_is_
     let takes = online
         .recordings_of_isrc(&Isrc::new(ECHOES_ISRC).expect("a well-formed isrc"))
         .expect("musicbrainz answered the isrc");
+
     assert!(!takes.is_empty());
 }
 
@@ -346,6 +356,7 @@ fn the_reference_answers_meddle_with_its_six_tracks_and_a_cover() {
         .release(&mbid(MEDDLE))
         .expect("musicbrainz answered")
         .expect("meddle is a release it holds");
+
     assert_eq!(release.title, "Meddle");
     assert_eq!(release.credited_as(), "Pink Floyd");
     assert_eq!(release.track_count(), 6);
@@ -368,6 +379,7 @@ fn the_reference_answers_meddle_with_its_six_tracks_and_a_cover() {
         .cover(&release.id, release.group.as_ref())
         .expect("the archive answered")
         .expect("meddle has a front cover");
+
     assert!(cover.bytes.len() > 1024);
 
     let found = online
@@ -380,6 +392,7 @@ fn the_reference_answers_meddle_with_its_six_tracks_and_a_cover() {
             wording: Wording::Phrase,
         })
         .expect("musicbrainz answered");
+
     assert!(!found.is_empty());
     assert!(found.iter().all(|found| found.title == "Meddle"));
 }
@@ -395,6 +408,7 @@ fn the_reference_answers_pink_floyd_with_a_profile_and_a_portrait() {
         .artist(&mbid(PINK_FLOYD))
         .expect("musicbrainz answered")
         .expect("pink floyd is an artist it holds");
+
     assert_eq!(profile.name, "Pink Floyd");
     assert_eq!(profile.kind.as_deref(), Some("Group"));
     assert_eq!(profile.span.begin.as_deref(), Some("1965"));
@@ -405,11 +419,13 @@ fn the_reference_answers_pink_floyd_with_a_profile_and_a_portrait() {
         .portrait(&profile.links)
         .expect("commons answered")
         .expect("the profile names a portrait");
+
     assert!(portrait.bytes.len() > 1024);
 
     let found = online
         .find_artist("Pink Floyd")
         .expect("musicbrainz answered");
+
     assert!(found.iter().any(|found| found.mbid.as_str() == PINK_FLOYD));
 }
 
@@ -433,6 +449,7 @@ fn an_artist_linked_only_to_spotify_or_soundcloud_is_pictured_by_the_page_it_is_
             .portrait(&links)
             .expect("the page answered")
             .unwrap_or_else(|| panic!("{url} named no picture of the artist"));
+
         assert!(portrait.bytes.len() > 1024);
     }
 }
@@ -448,6 +465,7 @@ fn the_reference_answers_pink_floyd_with_every_album_and_ep_it_is_credited_on() 
         .release_groups_of(&mbid(PINK_FLOYD), 0)
         .expect("musicbrainz answered")
         .releases;
+
     assert!(
         groups.len() >= 100,
         "the browse answered only {} groups",
@@ -554,11 +572,13 @@ fn a_link_to_a_tidal_playlist_names_its_songs_off_the_public_embed_page() {
         song,
         ListedSong::Named(names) if names.title.is_some() && names.artist.is_some()
     )));
+
     let coded = playlist
         .songs
         .iter()
         .filter(|song| matches!(song, ListedSong::Named(names) if !names.isrcs.is_empty()))
         .count();
+
     assert!(
         coded * 2 > playlist.songs.len(),
         "{coded} of {} songs name a code",
@@ -618,6 +638,7 @@ fn autoeq_answers_with_its_whole_index_and_one_measured_correction() {
     let source = AutoEq::new(client, None);
 
     let catalogue = source.catalogue().expect("autoeq answered");
+
     assert!(
         catalogue.len() > 8_000,
         "the index named only {} devices",
@@ -626,6 +647,7 @@ fn autoeq_answers_with_its_whole_index_and_one_measured_correction() {
 
     for device in catalogue.devices() {
         let tail = device.id.as_str().rsplit('/').next().unwrap_or_default();
+
         assert_eq!(tail, device.label, "a row names two devices");
     }
 
@@ -634,6 +656,7 @@ fn autoeq_answers_with_its_whole_index_and_one_measured_correction() {
             .and_then(|found| catalogue.device(found))
             .map(|device| device.label.clone())
     };
+
     assert_eq!(
         named("Sony WH-1000XM4 Analog Stereo").as_deref(),
         Some("Sony WH-1000XM4")
@@ -668,6 +691,7 @@ fn shazam_answers_a_clip_it_does_not_know_with_nothing_rather_than_a_refusal() {
                 as f32
         })
         .collect();
+
     let clip = Clip {
         rate,
         channels: 1,
@@ -676,6 +700,7 @@ fn shazam_answers_a_clip_it_does_not_know_with_nothing_rather_than_a_refusal() {
     let heard = Shazam::new(client)
         .recognise(&clip)
         .expect("the service answers this build's own user agent");
+
     assert_eq!(heard, None, "a run of synthetic notes was named");
 }
 
@@ -817,6 +842,7 @@ fn a_signed_in_spotify_account_names_its_playlists_and_its_liked_songs_with_thei
         eprintln!("skipped: set {SPOTIFY_CLIENT_ID} and {SPOTIFY_TOKEN_FILE} to read an account");
         return;
     };
+
     let online = Online::with_client(client).with_spotify(Arc::new(SpotifyAccount::new(Arc::new(
         TokenInAFile {
             client_id: client_id.to_string_lossy().into_owned(),
@@ -828,6 +854,7 @@ fn a_signed_in_spotify_account_names_its_playlists_and_its_liked_songs_with_thei
         .profile_linked(&ProfileLink::SpotifyAccount)
         .expect("Spotify answered")
         .expect("the account is signed in");
+
     assert_eq!(profile.playlists[0].link, PlaylistLink::SpotifyLiked);
 
     let liked = online
@@ -839,7 +866,9 @@ fn a_signed_in_spotify_account_names_its_playlists_and_its_liked_songs_with_thei
         .iter()
         .filter(|song| matches!(song, ListedSong::Named(names) if !names.isrcs.is_empty()))
         .count();
+
     eprintln!("{} liked songs, {coded} with an ISRC", liked.songs.len());
+
     assert!(
         liked.songs.is_empty() || coded > 0,
         "the Web API names each song's code"
@@ -849,6 +878,7 @@ fn a_signed_in_spotify_account_names_its_playlists_and_its_liked_songs_with_thei
         let read = online
             .playlist_linked(&listed.link)
             .expect("Spotify answered");
+
         eprintln!(
             "{}: {:?} songs",
             listed.title,

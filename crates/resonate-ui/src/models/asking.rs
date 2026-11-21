@@ -22,8 +22,10 @@ impl LibraryModel {
                     &PageLearning { told },
                 )
             });
+
             while let Ok(songs) = heard.recv().await {
                 let mut landed = songs;
+
                 while let Ok(more) = heard.try_recv() {
                     landed += more;
                 }
@@ -58,6 +60,7 @@ impl LibraryModel {
         let Selection::Artist(artist) = self.selection else {
             return;
         };
+
         for album in albums_of(&self.browse.scoped).iter().rev() {
             self.enrichment.sought.album(*album);
         }

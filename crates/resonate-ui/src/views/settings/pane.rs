@@ -136,6 +136,7 @@ impl SettingsPane {
                 scroll: ScrollHandle::new(),
             },
         };
+
         pane.look_for_a_newer_release(cx);
         pane
     }

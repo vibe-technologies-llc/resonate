@@ -86,6 +86,7 @@ impl Listener {
             let stream = pipewire
                 .open(&request, Box::new(playing))
                 .map_err(|source| Error::capture(CaptureOp::Play, source))?;
+
             stream.set_active(true).map_err(|source| Error::Output {
                 source: Box::new(source),
             })?;
@@ -116,6 +117,7 @@ impl Listener {
             spec: sitting.spec,
             media_name: words::listener::listening().to_owned(),
         };
+
         let opened = pipewire
             .capture(
                 &request,
@@ -128,6 +130,7 @@ impl Listener {
             Err(error) => {
                 let _ = opened.stop();
                 let _ = pipewire.shutdown();
+
                 return Err(error);
             }
         };
@@ -142,7 +145,9 @@ impl Listener {
             .map(CaptureStream::stop)
             .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
+
         drop(accompanying);
+
         let _ = pipewire.shutdown();
 
         finished(
@@ -187,6 +192,7 @@ mod tests {
         ] {
             assert_eq!(Listening::named(&listening.written()), listening);
         }
+
         assert_eq!(Listening::named(""), Listening::Desktop);
     }
 
@@ -197,6 +203,7 @@ mod tests {
         crossbeam_channel::Sender<StreamEvent>,
     ) {
         let (sender, receiver) = crossbeam_channel::unbounded();
+
         for event in events {
             sender.send(event.clone()).expect("an open channel");
         }
@@ -231,9 +238,11 @@ mod tests {
     #[test]
     fn a_stream_whose_channel_closed_is_lost() {
         let (events, kept_open) = events_after(&[]);
+
         assert!(!was_lost(&events));
 
         drop(kept_open);
+
         assert!(was_lost(&events));
     }
 }

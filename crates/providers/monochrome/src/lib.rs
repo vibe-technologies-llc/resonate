@@ -66,7 +66,7 @@ struct Searched {
     tracks: Vec<Listing>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct Listing {
     #[serde(default, deserialize_with = "id_spelt")]
@@ -105,6 +105,7 @@ impl Listing {
         if self.playable == Some(false) {
             return;
         }
+
         let Some(track) = self.track() else {
             return;
         };
@@ -116,6 +117,7 @@ impl Listing {
             length: self.duration.map(Duration::from_millis),
             stated: Rating::flagged(self.explicit),
         };
+
         choosing.weigh(identity, &listed, track);
     }
 
@@ -184,17 +186,22 @@ impl Monochrome {
         let mut retried = 0;
         loop {
             self.pacing.paced();
+
             let response = asking_to_resume(agent.get(url), held)
                 .call()
                 .map_err(|error| self.unreachable(op, error))?;
+
             if response.status().is_success() {
                 return Ok(response);
             }
+
             let status = response.status().as_u16();
+
             if retried < RETRIES_AT_MOST && ASKED_LATER.contains(&status) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
+
                 tracing::debug!(
                     status,
                     ?wait,
@@ -256,6 +263,7 @@ impl Monochrome {
     fn searched(&self, words: &str) -> Result<Vec<Listing>> {
         let op = ProviderOp::Search;
         let response = self.called(&self.asking, op, &self.search_url(words))?;
+
         let bytes = response
             .into_body()
             .with_config()
@@ -268,6 +276,7 @@ impl Monochrome {
     fn found(&self, identity: &Identity) -> Result<Option<TrackId>> {
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
+
         for words in &wordings {
             for listing in self.searched(words)? {
                 listing.weigh(identity, &mut choosing);
@@ -276,6 +285,7 @@ impl Monochrome {
                 break;
             }
         }
+
         let seen = choosing.seen();
         match choosing.chosen() {
             Some((track, taken)) => {
@@ -298,6 +308,7 @@ impl Monochrome {
         let op = ProviderOp::Download;
         let url = self.track_url(track);
         let held = held.filter(Held::can_be_checked);
+
         let response = match self.called_holding(&self.downloading, op, &url, held.as_ref()) {
             Err(Error::Refused { status, .. }) if GONE_FROM_THE_SERVER.contains(&status) => {
                 return Ok(Reopened::Gone);
@@ -309,11 +320,14 @@ impl Monochrome {
             }
             called => called?,
         };
+
         if is_a_document(response.body().mime_type()) {
             return Err(self.unreadable(op));
         }
+
         let agent = self.downloading.clone();
         let resumed_after = self.patience.resumed_after;
+
         let ranged = match &held {
             Some(held) => {
                 match Ranged::continuing_held(agent, url, response, held, resumed_after) {
@@ -336,6 +350,7 @@ impl Provider for Monochrome {
         if !identity.may_be_listed() {
             return Ok(Obtained::Nothing);
         }
+
         let Some(track) = self.found(identity)? else {
             return Ok(Obtained::Nothing);
         };
@@ -353,6 +368,7 @@ impl Listing {
         if self.playable == Some(false) {
             return None;
         }
+
         let track = self.track()?;
         Some(Song {
             title: self.title.clone().unwrap_or_default(),
@@ -406,11 +422,14 @@ impl PlaysInPlace for Monochrome {
         let op = ProviderOp::Stream;
         let track = TrackId::read(song.as_str()).ok_or_else(|| self.unreadable(op))?;
         let url = self.track_url(&track);
+
         let response = self.called(&self.downloading, op, &url)?;
         let media_type = response.body().mime_type().map(str::to_owned);
+
         if is_a_document(media_type.as_deref()) {
             return Err(self.unreadable(op));
         }
+
         let reader = Seeking::continuing(
             self.downloading.clone(),
             url,
@@ -445,6 +464,7 @@ mod tests {
 
     fn the_one_asked_for(identity: &Identity, listings: &[Listing]) -> Option<(TrackId, Taken)> {
         let mut choosing = Choosing::default();
+
         for listing in listings {
             listing.weigh(identity, &mut choosing);
         }
@@ -529,7 +549,9 @@ mod tests {
         let listings = Monochrome::hosted()
             .read(SEARCHED.as_bytes())
             .expect("a search answer");
+
         assert_eq!(listings.len(), 3);
+
         let echoes = Identity {
             isrcs: vec![
                 resonate_core::Isrc::new("USSM12409299").expect("an isrc"),
@@ -617,6 +639,7 @@ mod tests {
         let none = Monochrome::hosted()
             .read(br#"{"tracks": null}"#)
             .expect("a search answer");
+
         assert_eq!(
             the_one_asked_for(&coded(ECHOES_ISRC), &read),
             Some((TrackId("154140652551016448".to_owned()), Taken::ByItsCode))

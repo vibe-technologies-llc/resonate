@@ -238,6 +238,7 @@ impl RootView {
             return;
         };
         let delta = seconds.saturating_mul(i64::from(track.source.rate.hz()));
+
         self.send(Command::SeekBy(delta), cx);
     }
 
@@ -251,6 +252,7 @@ impl RootView {
         else {
             return;
         };
+
         self.player
             .update(cx, |player, cx| player.seek(along(duration, fraction), cx));
     }
@@ -260,6 +262,7 @@ impl RootView {
             return;
         };
         let wanted = Frames::from_duration(at, track.source.rate);
+
         let landing = match track.duration {
             Some(duration) => wanted.min(duration),
             None => wanted,
@@ -290,6 +293,7 @@ impl RootView {
         let state = model.state().clone();
         let shown_position = model.shown_position();
         let digest = model.digest();
+
         let sink = state
             .output
             .and_then(|output| model.sinks().iter().find(|sink| sink.id == output.sink))
@@ -449,6 +453,7 @@ impl RootView {
                 if window.modifiers().shift {
                     let menu = shuffle_menu(window.mouse_position(), shuffle, smart)
                         .opened_on(Some(ElementId::from("shuffle")));
+
                     this.open_a_menu(menu, cx);
                     return;
                 }
@@ -525,11 +530,13 @@ impl RootView {
     ) -> Stateful<Div> {
         let playing = self.playing(state, digest, cx);
         let now = Instant::now();
+
         let cover = self.now_playing_cover(&playing.cover, now, cx);
         let idle = state.current.is_none() && !between_songs(state);
         let signal = self.held_signal(state);
         let (serial, leaving) = {
             let mut handovers = self.handovers.borrow_mut();
+
             handovers
                 .song
                 .show(ShownSong::of(&playing), (Rc::clone(&playing), idle), now);
@@ -622,6 +629,7 @@ impl RootView {
 
     fn held_signal(&self, state: &PlayerState) -> Option<Signal> {
         let mut handovers = self.handovers.borrow_mut();
+
         match state.current {
             Some(track) => {
                 handovers.signal = Some(Signal {
@@ -763,6 +771,7 @@ impl RootView {
     ) -> Div {
         let size = px(theme::text_sm());
         let font = theme::ui(FontWeight::NORMAL);
+
         let line = div()
             .flex()
             .items_center()
@@ -790,6 +799,7 @@ impl RootView {
             + kit::width_of(BY_LINE_SEPARATOR, &font, size, cx)
             + px(BY_LINE_SEPARATOR_PADDING * 2.0);
         let album_room = room - taken;
+
         if album_room <= px(0.0) {
             return line;
         }
@@ -870,6 +880,7 @@ impl RootView {
             (None, Some(quality)) => (measured(quality, FontWeight::NORMAL), None),
             (None, None) => (0.0, None),
         };
+
         let kept = signal_kept(
             f32::from(self.rooms.playing.get()),
             SignalWidths {
@@ -890,6 +901,7 @@ impl RootView {
                     .map(|offer| words::transport::suggested_from(offer.service.as_str()))
             })
             .flatten();
+
         if let Some(suggested) = explored_service {
             path = path.child(
                 kit::figure(suggested)
@@ -916,6 +928,7 @@ impl RootView {
         let model = self.player.read(cx);
         let state = model.state().clone();
         let digest = model.digest();
+
         let playing = self.playing(&state, digest.as_deref(), cx);
         let pictured = playing.cover.pictured()?;
 
@@ -940,9 +953,11 @@ impl RootView {
         let expected = cover
             .pictured()
             .is_some_and(|pictured| !self.is_pictureless(pictured, Drawn::NowPlaying, cx));
+
         let drawn = self.held_through_a_change(drawn, expected);
         let (serial, leaving) = {
             let mut handovers = self.handovers.borrow_mut();
+
             handovers.cover.show(
                 drawn.as_ref().map(|(_, magnified)| magnified.clone()),
                 drawn.clone(),
@@ -957,6 +972,7 @@ impl RootView {
             )
         };
         let handing = leaving.is_some();
+
         let faces = |frame: Div| {
             frame
                 .when_some(leaving, |frame, left| {
@@ -1000,6 +1016,7 @@ impl RootView {
         expected: bool,
     ) -> Option<(Picture, Magnified)> {
         let mut shown = self.shown_cover.borrow_mut();
+
         if let Some((art, magnified)) = drawn {
             *shown = Some(ShownCover {
                 art: art.clone(),
@@ -1012,8 +1029,10 @@ impl RootView {
             *shown = None;
             return None;
         }
+
         let held = shown.as_mut()?;
         let waiting_since = *held.waiting_since.get_or_insert_with(Instant::now);
+
         if waiting_since.elapsed() < COVER_HELD_FOR {
             return Some((held.art.clone(), held.magnified.clone()));
         }
@@ -1025,6 +1044,7 @@ impl RootView {
         let model = self.player.read(cx);
         let state = model.state().clone();
         let digest = model.digest();
+
         let playing = self.playing(&state, digest.as_deref(), cx);
 
         PlayingNow {
@@ -1039,6 +1059,7 @@ impl RootView {
         let model = self.player.read(cx);
         let state = model.state().clone();
         let digest = model.digest();
+
         let playing = self.playing(&state, digest.as_deref(), cx);
         let row = self.queued_row(&state, cx)?;
 
@@ -1055,9 +1076,11 @@ impl RootView {
     pub(crate) fn name_the_window(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let model = self.player.read(cx);
         let state = model.state().clone();
+
         if between_songs(&state) {
             return;
         }
+
         let digest = model.digest();
         let title = match state.current {
             Some(_) => {
@@ -1103,6 +1126,7 @@ impl RootView {
             None => None,
         };
         let named = self.named_stamp(state, cx);
+
         if let Some(named) = named
             && moved == Some(named)
             && let Some(resolved) = self.resolved.borrow_mut().as_mut()
@@ -1112,6 +1136,7 @@ impl RootView {
         }
 
         let playing = Rc::new(self.resolve(state, digest, cx));
+
         *self.resolved.borrow_mut() = Some(Resolved {
             at,
             named,
@@ -1154,6 +1179,7 @@ impl RootView {
                 played: track.played,
                 added: track.added,
             });
+
             return Playing {
                 track: Some(track.id),
                 favourite: track.favourite,
@@ -1217,6 +1243,7 @@ impl RootView {
         let level = self.grabbed_fraction(Handle::Volume).unwrap_or(level);
         let wheeled = cx.global::<ResonateApp>().scroll_volume;
         let muted = self.is_muted(cx);
+
         let hint = match (muted, wheeled) {
             (true, _) => words::transport::unmute_hint(key!(louder), key!(mute)),
             (false, true) => {
@@ -1606,6 +1633,7 @@ fn shuffled_as(style: ShuffleStyle) -> &'static str {
 
 fn sleep_menu(at: Point<Pixels>, sleeping: Option<Asleep>) -> Menu {
     let mut menu = Menu::at(at);
+
     for minutes in SLEEP_MINUTES {
         menu = menu.does(
             Icon::Sleep,
@@ -1761,6 +1789,7 @@ fn what_plays_menu(
         favourite,
     } = root.playing_now(cx);
     let file = root.playing_file(cx);
+
     let explored = track
         .is_none()
         .then(|| {
@@ -1848,6 +1877,7 @@ mod tests {
             cx,
             Arc::new(Library::open_in_memory().expect("a catalog in memory")),
         );
+
         let root = driven.root.clone();
 
         let spoken = driven.cx.update(|_, cx| {
@@ -1886,6 +1916,7 @@ mod tests {
             .iter()
             .map(|node| {
                 let node = node.as_ref().expect("every bar control is a node");
+
                 assert_eq!(node.role(), Role::Button);
                 node.label().map(str::to_owned)
             })
@@ -1934,6 +1965,7 @@ mod tests {
             assert_eq!(along(duration, -0.5), Frames::ZERO);
             assert!(along(duration, 0.999_999_94) <= duration);
         }
+
         assert_eq!(along(Frames(1_000), 0.5), Frames(500));
     }
 }

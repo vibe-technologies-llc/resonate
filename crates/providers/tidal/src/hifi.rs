@@ -305,11 +305,13 @@ fn relayed_download(
     let op = ProviderOp::Download;
     let held = held.filter(Held::can_be_checked);
     let mut asked_again = 0;
+
     let response = loop {
         let response = asking_to_resume(agent.get(url), held.as_ref())
             .header(AUTHORIZATION, bearer)
             .call()
             .map_err(|error| unreached(provider.clone(), op, error))?;
+
         if response.status().as_u16() != SERVICE_UNAVAILABLE {
             break response;
         }
@@ -320,9 +322,11 @@ fn relayed_download(
             });
         }
         asked_again += 1;
+
         let wait = retry_after_of(&response)
             .unwrap_or(BUSY_ASKED_AGAIN_AFTER_UNSAID)
             .min(BUSY_ASKED_AGAIN_AFTER_AT_MOST);
+
         tracing::debug!(
             ?wait,
             "the server is busy with another download and is asked again"
@@ -388,6 +392,7 @@ fn carries_secret(server: &str) -> bool {
     let Some(authority) = uri.authority() else {
         return false;
     };
+
     if authority.as_str().contains('@') {
         return false;
     }
@@ -507,6 +512,7 @@ impl HifiApi {
             .filter(|token| token.until > now)
             .map(|token| token.bearer.clone())
         };
+
         if let Some(bearer) = cached {
             return Ok(bearer);
         }
@@ -525,6 +531,7 @@ impl HifiApi {
             .expires_in
             .map_or(TOKEN_LASTS_WHEN_UNSAID, Duration::from_secs)
             .saturating_sub(RENEWED_BEFORE);
+
         let token = AccessToken {
             bearer: format!("Bearer {}", granted.access_token),
             until: Instant::now()
@@ -533,6 +540,7 @@ impl HifiApi {
         };
         let bearer = token.bearer.clone();
         let mut tokens = self.tokens.lock();
+
         match service {
             TokenService::Tidal => tokens.tidal = Some(token),
             TokenService::Hifi => tokens.hifi = Some(token),
@@ -543,6 +551,7 @@ impl HifiApi {
     fn hosted_tracks_for(&self, hosting: &Hosting, identity: &Identity) -> Result<Vec<TrackId>> {
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
+
         for words in &wordings {
             for listing in self.hosted_listings(hosting, words)? {
                 choosing.weigh(identity, &listing.weighed(), TrackId(listing.id));
@@ -551,6 +560,7 @@ impl HifiApi {
                 break;
             }
         }
+
         let seen = choosing.seen();
         let ranked: Vec<TrackId> = choosing
             .ranked()
@@ -561,6 +571,7 @@ impl HifiApi {
             })
             .take(TRACKS_TRIED_AT_MOST)
             .collect();
+
         if ranked.is_empty() {
             tracing::debug!(
                 title = identity.title,
@@ -580,6 +591,7 @@ impl HifiApi {
             hosting.tidal_api,
             escaped(words)
         );
+
         let sent = self.asker.sent(op, || {
             self.asker
                 .agent
@@ -614,6 +626,7 @@ impl HifiApi {
             "{}/manifests?id={}&quality={ASKED_QUALITY}",
             self.server, track.0
         );
+
         let sent = self.asker.sent(op, || {
             self.asker
                 .agent
@@ -634,6 +647,7 @@ impl HifiApi {
             .attributes()
             .ok_or_else(|| self.asker.unreadable(op))?;
         let uri = attributes.uri.ok_or_else(|| self.asker.unreadable(op))?;
+
         if !hosting.manifests.holds(&uri) {
             tracing::warn!(track = track.0, provider = %self.asker.source, "a manifest URL was outside TIDAL's manifest hosts");
             return Err(Error::OffItsHosts {
@@ -641,6 +655,7 @@ impl HifiApi {
                 op,
             });
         }
+
         let response = match self.asker.sent(op, || self.media.get(&uri).call())? {
             Sent::Answered(response) => response,
             Sent::Refused {
@@ -707,6 +722,7 @@ impl HifiApi {
                 .call(),
             None => request.call(),
         };
+
         if let Err(error) = withdrawn {
             tracing::debug!(%error, "a queued hifi-api request could not be withdrawn");
         }
@@ -750,7 +766,9 @@ impl Finds for HifiApi {
         if identity.isrcs.is_empty() {
             return self.tracks_named(identity);
         }
+
         let mut tracks: Vec<TrackId> = Vec::new();
+
         for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {
             for track in self.tracks_coded(isrc)? {
                 if !tracks.contains(&track) {
@@ -769,6 +787,7 @@ impl Finds for HifiApi {
         if let Some(keyed) = &self.secret {
             return self.relayed(keyed, track).map(Some);
         }
+
         let media = self.media(track)?;
         self.player().delivered_media(track, media)
     }
@@ -779,11 +798,13 @@ impl HifiApi {
         if let Some(hosting) = &self.hosted {
             return self.hosted_media(hosting, track);
         }
+
         let op = ProviderOp::Playback;
         let url = format!(
             "{}/track/?id={}&quality={ASKED_QUALITY}",
             self.server, track.0
         );
+
         let asked = self.asked(op, &url)?;
         let Some(bytes) = self.waited_out(op, asked)? else {
             return Ok(None);
@@ -798,7 +819,9 @@ impl HifiApi {
         if !identity.may_be_listed() {
             return Ok(Vec::new());
         }
+
         let mut choosing = Choosing::default();
+
         for words in identity.wordings() {
             for listing in self.listed_by_words(&words)? {
                 choosing.weigh(identity, &listing.weighed(), TrackId(listing.id));
@@ -807,6 +830,7 @@ impl HifiApi {
                 break;
             }
         }
+
         let seen = choosing.seen();
         let ranked: Vec<TrackId> = choosing
             .ranked()
@@ -821,6 +845,7 @@ impl HifiApi {
             })
             .take(TRACKS_TRIED_AT_MOST)
             .collect();
+
         if ranked.is_empty() {
             tracing::debug!(
                 title = identity.title,
@@ -838,6 +863,7 @@ impl HifiApi {
             self.server,
             escaped(words)
         );
+
         let Answered::Ready(bytes) = self.asked(op, &url)? else {
             return Ok(Vec::new());
         };
@@ -870,6 +896,7 @@ impl HifiApi {
             self.server,
             isrc.as_str()
         );
+
         let Answered::Ready(bytes) = self.asked(op, &url)? else {
             return Ok(Vec::new());
         };
@@ -1032,20 +1059,24 @@ mod tests {
             let (stream, _) = listener.accept().expect("a connection");
             let mut reader = BufReader::new(stream);
             let mut head = String::new();
+
             loop {
                 let mut line = String::new();
+
                 reader.read_line(&mut line).expect("a request");
                 if line == "\r\n" {
                     break;
                 }
                 head.push_str(&line.to_ascii_lowercase());
             }
+
             let body = r#"{"access_token":"granted","expires_in":3600}"#;
             let answer = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\
                  Connection: close\r\n\r\n{body}",
                 body.len()
             );
+
             reader
                 .into_inner()
                 .write_all(answer.as_bytes())

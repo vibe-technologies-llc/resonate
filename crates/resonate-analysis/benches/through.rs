@@ -40,9 +40,11 @@ fn profile() -> Arc<Profile> {
 fn fastest<T>(mut run: impl FnMut() -> T) -> (Duration, T) {
     let mut fastest = Duration::MAX;
     let mut last = None;
+
     for _ in 0..RUNS {
         let started = Instant::now();
         let made = black_box(run());
+
         fastest = fastest.min(started.elapsed());
         last = Some(made);
     }
@@ -55,11 +57,14 @@ fn main() {
         .expect("a folder")
         .map(|entry| entry.expect("an entry").path())
         .collect();
+
     songs.sort();
+
     let sources = Sources::local();
     let watch = Watch::default();
     let applied = Applied::from(profile());
     let mut kept = String::new();
+
     for song in &songs {
         let location = MediaLocation::local(song);
         let (peak_time, peak) =
@@ -77,6 +82,7 @@ fn main() {
             )
             .expect("excerpt")
         });
+
         println!(
             "{}: peak_through {:6.1} ms, print {:6.1} ms, excerpt {:6.1} ms",
             song.file_name().expect("a name").to_string_lossy(),
@@ -94,6 +100,7 @@ fn main() {
                 .wrapping_add(u64::from(sample.to_bits()))))
         ));
     }
+
     let cuts: Vec<Cut> = songs
         .iter()
         .cycle()
@@ -105,6 +112,7 @@ fn main() {
         .collect();
     let (time, loudest) =
         fastest(|| loudest_through(&sources, &cuts, &applied, &watch).expect("loudest"));
+
     println!(
         "loudest_through of {} cuts: {:7.1} ms",
         cuts.len(),

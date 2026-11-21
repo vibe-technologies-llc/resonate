@@ -96,6 +96,7 @@ impl Playing {
             "playerState": self.state,
             "currentTime": self.heard().as_secs_f64(),
         });
+
         if let Some(idle) = self.idle {
             entry["idleReason"] = json!(idle);
         }
@@ -180,6 +181,7 @@ impl Heard {
             playing.state = "IDLE";
             playing.idle = Some("FINISHED");
         }
+
         let status: Vec<Value> = self.playing.iter().map(Playing::entry).collect();
         json!({"type": "MEDIA_STATUS", "requestId": request, "status": status})
     }
@@ -206,10 +208,12 @@ impl Fake {
         let config = tls_config();
 
         let asked = Arc::clone(&heard);
+
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 let asked = Arc::clone(&asked);
                 let config = Arc::clone(&config);
+
                 thread::spawn(move || answer(stream, config, &asked));
             }
         });
@@ -245,6 +249,7 @@ impl Fake {
                 since.elapsed() < WAITED_AT_MOST,
                 "waited too long for {what}"
             );
+
             thread::sleep(LOOKS_EVERY);
         }
     }
@@ -269,6 +274,7 @@ fn tls_config() -> Arc<ServerConfig> {
 
 fn framed(source: &str, destination: &str, namespace: &str, payload: &str) -> Vec<u8> {
     let mut body = vec![0x08, 0x00];
+
     for (key, text) in [
         (0x12, source),
         (0x1A, destination),
@@ -281,7 +287,9 @@ fn framed(source: &str, destination: &str, namespace: &str, payload: &str) -> Ve
             body.push(0);
             continue;
         }
+
         let mut length = text.len();
+
         while length > 0x7F {
             body.push((length & 0x7F) as u8 | 0x80);
             length >>= 7;
@@ -289,7 +297,9 @@ fn framed(source: &str, destination: &str, namespace: &str, payload: &str) -> Ve
         body.push(length as u8);
         body.extend_from_slice(text.as_bytes());
     }
+
     let mut framed = (body.len() as u32).to_be_bytes().to_vec();
+
     framed.extend_from_slice(&body);
     framed
 }
@@ -299,6 +309,7 @@ fn varint(body: &[u8], at: &mut usize) -> u64 {
     let mut shift = 0;
     loop {
         let byte = body[*at];
+
         *at += 1;
         value |= u64::from(byte & 0x7F) << shift;
         if byte & 0x80 == 0 {
@@ -323,14 +334,18 @@ fn unframed(body: &[u8]) -> Received {
         payload: String::new(),
     };
     let mut at = 0;
+
     while at < body.len() {
         let key = varint(body, &mut at);
+
         if key & 7 == 0 {
             varint(body, &mut at);
             continue;
         }
+
         let length = varint(body, &mut at) as usize;
         let text = String::from_utf8(body[at..at + length].to_vec()).expect("UTF-8");
+
         at += length;
         match key >> 3 {
             2 => received.source = text,
@@ -349,8 +364,10 @@ fn answer(stream: TcpStream, config: Arc<ServerConfig>, heard: &Arc<Mutex<Heard>
     stream
         .set_read_timeout(Some(READS_WAKE_EVERY))
         .expect("a read timeout");
+
     let connection = ServerConnection::new(config).expect("a TLS connection");
     let mut tls: Tls = StreamOwned::new(connection, stream);
+
     heard.lock().connections += 1;
 
     let mut pinged = false;
@@ -359,6 +376,7 @@ fn answer(stream: TcpStream, config: Arc<ServerConfig>, heard: &Arc<Mutex<Heard>
     loop {
         if !pinged && !tls.conn.is_handshaking() {
             pinged = true;
+
             let ping = framed("receiver-0", "sender-0", HEARTBEAT, r#"{"type":"PING"}"#);
             if tls.write_all(&ping).and_then(|()| tls.flush()).is_err() {
                 return;
@@ -379,11 +397,15 @@ fn answer(stream: TcpStream, config: Arc<ServerConfig>, heard: &Arc<Mutex<Heard>
         }
         while held.len() >= 4 {
             let length = u32::from_be_bytes([held[0], held[1], held[2], held[3]]) as usize;
+
             if held.len() < 4 + length {
                 break;
             }
+
             let received = unframed(&held[4..4 + length]);
+
             held.drain(..4 + length);
+
             let replies = replied(&received, heard);
             for (namespace, reply) in replies {
                 let reply = framed(
@@ -419,6 +441,7 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
     };
 
     let mut heard_now = heard.lock();
+
     heard_now.asked.push(Asked {
         namespace,
         kind: kind.clone(),
@@ -429,6 +452,7 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
         (RECEIVER, "GET_STATUS") => vec![(RECEIVER, heard_now.receiver_status(&request))],
         (RECEIVER, "LAUNCH") => {
             assert_eq!(said["appId"], MEDIA_RECEIVER);
+
             heard_now.launched = true;
             vec![(RECEIVER, heard_now.receiver_status(&request))]
         }
@@ -443,13 +467,16 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
         }
         (MEDIA, "LOAD") => {
             assert_eq!(received.destination, TRANSPORT);
+
             if heard_now.profile.refuses_loads {
                 return vec![(MEDIA, json!({"type": "LOAD_FAILED", "requestId": request}))];
             }
+
             let offered = said["media"]["contentId"]
                 .as_str()
                 .expect("an address")
                 .to_owned();
+
             heard_now.sessions += 1;
             heard_now.playing = Some(Playing {
                 session: heard_now.sessions,
@@ -464,6 +491,7 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
             heard_now.fetch_ended = false;
             drop(heard_now);
             fetch(heard, offered);
+
             let status = heard.lock().media_status(&request);
             vec![(MEDIA, status)]
         }
@@ -473,6 +501,7 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
                 .playing
                 .as_ref()
                 .is_some_and(|playing| Some(playing.session) == session);
+
             if !ours {
                 return vec![(
                     MEDIA,
@@ -507,22 +536,27 @@ fn replied(received: &Received, heard: &Arc<Mutex<Heard>>) -> Vec<(&'static str,
 
 fn fetch(heard: &Arc<Mutex<Heard>>, offered: String) {
     let heard = Arc::clone(heard);
+
     thread::spawn(move || {
         let rest = offered.strip_prefix("http://").expect("an http address");
         let (authority, path) = rest.split_at(rest.find('/').expect("a path"));
         let mut stream = TcpStream::connect(authority).expect("the stream server answers");
+
         stream
             .write_all(format!("GET {path} HTTP/1.1\r\nHost: {authority}\r\n\r\n").as_bytes())
             .expect("the fetch is asked");
+
         let mut held = Vec::new();
         let mut buffer = [0; 4096];
         let mut head_ended = false;
+
         loop {
             let read = match stream.read(&mut buffer) {
                 Ok(0) | Err(_) => break,
                 Ok(read) => read,
             };
             let mut heard = heard.lock();
+
             if heard.fetching.as_ref() != Some(&offered) {
                 return;
             }
@@ -542,12 +576,15 @@ fn fetch(heard: &Arc<Mutex<Heard>>, offered: String) {
             held.extend_from_slice(&buffer[..read]);
             if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
                 let head = String::from_utf8_lossy(&held[..at]).into_owned();
+
                 assert!(head.starts_with("HTTP/1.1 200 OK\r\n"), "{head}");
                 assert!(head.contains("Content-Type: audio/flac"), "{head}");
+
                 head_ended = true;
                 heard.fetched.extend_from_slice(&held[at + 4..]);
             }
         }
+
         let mut heard = heard.lock();
         if heard.fetching.as_ref() == Some(&offered) {
             heard.fetch_ended = true;
@@ -620,6 +657,7 @@ impl AudioSource for Poured {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         let left = self.pcm.get(self.at..).unwrap_or_default();
         let filled = dst.len().min(left.len());
+
         dst[..filled].copy_from_slice(&left[..filled]);
         self.at += filled;
         filled
@@ -636,6 +674,7 @@ fn stereo_sixteen() -> StreamSpec {
 
 fn the_receiver(casting: &Casting) -> SinkInfo {
     let sinks = casting.sinks();
+
     assert_eq!(
         sinks.len(),
         1,
@@ -651,17 +690,20 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-cast-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self { root }
     }
 
     fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, bytes).expect("a writable temporary file");
         path
     }
@@ -675,6 +717,7 @@ impl Drop for Tree {
 
 fn wave_file(pcm: &[u8]) -> Vec<u8> {
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(36 + pcm.len() as u32).to_le_bytes());
     file.extend_from_slice(b"WAVEfmt ");
     file.extend_from_slice(&16_u32.to_le_bytes());
@@ -692,9 +735,11 @@ fn wave_file(pcm: &[u8]) -> Vec<u8> {
 
 fn music(frames: usize) -> Vec<u8> {
     let mut pcm = Vec::with_capacity(frames * STRIDE);
+
     for frame in 0..frames {
         let left = 1_000 + (frame * 37 % 20_000) as i16;
         let right = -1_000 - (frame * 53 % 20_000) as i16;
+
         pcm.extend_from_slice(&left.to_le_bytes());
         pcm.extend_from_slice(&right.to_le_bytes());
     }
@@ -705,13 +750,16 @@ fn decoded(tree: &Tree, flac: &[u8]) -> Vec<u8> {
     let path = tree.write("fetched.flac", flac);
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a FLAC stream");
+
     decoder.set_output_format(SampleFormat::S16);
+
     let mut block = AudioBuffer::empty(StreamSpec::new(
         info.spec.rate,
         info.spec.channels,
         SampleFormat::S16,
     ));
     let mut samples = Vec::new();
+
     while decoder.next_block(&mut block).expect("a decoded block") != DecodeStatus::EndOfStream {
         samples.extend_from_slice(block.as_bytes());
     }
@@ -772,12 +820,14 @@ fn finished(player: &Player) {
             }
             Ok(_) | Err(_) => {}
         }
+
         assert!(since.elapsed() < WAITED_AT_MOST, "the song never finished");
     }
 }
 
 fn waited_for(events: &Receiver<StreamEvent>, wanted: impl Fn(&StreamEvent) -> bool) -> bool {
     let since = Instant::now();
+
     while since.elapsed() < WAITED_AT_MOST {
         if let Ok(event) = events.recv_timeout(LOOKS_EVERY)
             && wanted(&event)
@@ -828,12 +878,17 @@ fn a_receiver_listed_is_reached_and_offered_as_a_sink() {
         ChannelLayout::Surround51,
         SampleFormat::S16
     )));
+
     let port = sink.port.expect("a receiver names where it is");
+
     assert_eq!(port.hardware_volume, HardwareVolume::Always);
+
     let volume = Volume::heard_at(port.volume.expect("the receiver's volume was read"));
+
     assert!((volume.get() - 0.4).abs() < 1e-4);
 
     let heard = fake.heard.lock();
+
     assert_eq!(heard.kinds(), ["GET_STATUS"]);
     assert_eq!(
         heard.said("CONNECT").expect("a connect")["userAgent"],
@@ -862,10 +917,13 @@ fn a_stream_to_a_receiver_launches_it_loads_flac_by_address_and_is_paused_draine
             }),
         )
         .expect("the receiver takes the stream");
+
     stream.set_active(true).expect("plays");
     fake.until("the stream to be loaded", |heard| heard.count("LOAD") == 1);
     stream.drain().expect("drains");
+
     let drained = waited_for(stream.events(), |event| *event == StreamEvent::Drained);
+
     fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
     stream.set_active(false).expect("pauses");
     fake.until("the receiver to be paused", |heard| {
@@ -887,6 +945,7 @@ fn a_stream_to_a_receiver_launches_it_loads_flac_by_address_and_is_paused_draine
     });
 
     let heard = fake.heard.lock();
+
     assert!(drained, "the drain was never told");
     assert_eq!(
         heard.kinds(),
@@ -910,8 +969,10 @@ fn a_stream_to_a_receiver_launches_it_loads_flac_by_address_and_is_paused_draine
         4,
         "a connection each to reach, to stream, to the media receiver and to turn"
     );
+
     let load = heard.said("LOAD").expect("a load");
     let offered = load["media"]["contentId"].as_str().expect("an address");
+
     assert!(
         offered.starts_with("http://127.0.0.1:") && offered.ends_with(".flac"),
         "offered {offered}"
@@ -945,6 +1006,7 @@ fn a_load_the_receiver_refuses_is_told_as_refused() {
             }),
         )
         .expect("the receiver is reached");
+
     stream.set_active(true).expect("plays");
 
     assert!(waited_for(stream.events(), |event| matches!(
@@ -987,6 +1049,7 @@ fn a_song_played_through_the_engine_to_a_receiver_reaches_it_bit_for_bit() {
         Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3 / 4);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&casting);
 
@@ -996,6 +1059,7 @@ fn a_song_played_through_the_engine_to_a_receiver_reaches_it_bit_for_bit() {
 
     let heard = fake.heard.lock();
     let samples = decoded(&tree, &heard.fetched);
+
     assert!(within(&samples, &pcm), "the decoded stream lacks the song");
     assert_eq!(heard.count("LAUNCH"), 1);
     assert_eq!(heard.count("LOAD"), 1);
@@ -1008,6 +1072,7 @@ fn a_pause_and_a_volume_change_reach_a_receiver_at_once_and_the_song_resumes_bit
         Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3 / 2);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&casting);
 
@@ -1018,25 +1083,32 @@ fn a_pause_and_a_volume_change_reach_a_receiver_at_once_and_the_song_resumes_bit
             .as_ref()
             .is_some_and(|playing| playing.heard() >= Duration::from_millis(500))
     });
+
     let paused_at = Instant::now();
+
     player.send(Command::Pause).expect("pauses");
     fake.until("the receiver to be paused", |heard| {
         heard.count("PAUSE") == 1
     });
+
     let pausing_took = paused_at.elapsed();
     let turned_at = Instant::now();
+
     player
         .send(Command::SetVolume(Volume::new(0.5).expect("a volume")))
         .expect("turns");
     fake.until("the receiver to be turned", |heard| {
         (heard.level - 0.5).abs() < 1e-6
     });
+
     let turning_took = turned_at.elapsed();
+
     player.send(Command::Play).expect("plays on");
     finished(&player);
     fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
 
     let heard = fake.heard.lock();
+
     assert!(
         pausing_took < SOONER_THAN,
         "the pause took {pausing_took:?} to reach the receiver"
@@ -1046,9 +1118,11 @@ fn a_pause_and_a_volume_change_reach_a_receiver_at_once_and_the_song_resumes_bit
         "the volume took {turning_took:?} to reach the receiver"
     );
     assert_eq!(heard.offers.len(), 1, "a pause asked for a new address");
+
     let kinds = heard.kinds();
     let paused = kinds.iter().position(|kind| *kind == "PAUSE");
     let played_again = kinds.iter().rposition(|kind| *kind == "PLAY");
+
     assert!(paused < played_again, "{kinds:?}");
     assert!(
         within(&decoded(&tree, &heard.fetched), &pcm),
@@ -1063,6 +1137,7 @@ fn a_seek_on_a_receiver_loads_a_fresh_address_starting_where_it_landed() {
         Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
     let tree = Tree::new();
     let pcm = music(RATE as usize * 3);
+
     let path = tree.write("song.wav", &wave_file(&pcm));
     let player = playing_on(&casting);
     let lands_at = Duration::from_secs(2);
@@ -1074,7 +1149,9 @@ fn a_seek_on_a_receiver_loads_a_fresh_address_starting_where_it_landed() {
             .as_ref()
             .is_some_and(|playing| playing.heard() >= Duration::from_millis(250))
     });
+
     let sought_at = Instant::now();
+
     player
         .send(Command::Seek(Frames::from_duration(
             lands_at,
@@ -1084,21 +1161,26 @@ fn a_seek_on_a_receiver_loads_a_fresh_address_starting_where_it_landed() {
     fake.until("a second address to be loaded", |heard| {
         heard.offers.len() >= 2
     });
+
     let seeking_took = sought_at.elapsed();
+
     finished(&player);
     fake.until("the fresh fetch to end once drained", |heard| {
         heard.fetch_ended && heard.fetching == heard.offers.last().cloned()
     });
 
     let heard = fake.heard.lock();
+
     assert!(
         seeking_took < SOONER_THAN,
         "the seek took {seeking_took:?} to reach the receiver"
     );
     assert_ne!(heard.offers[0], heard.offers[1]);
     assert_eq!(heard.count("LAUNCH"), 1, "{:?}", heard.kinds());
+
     let samples = decoded(&tree, &heard.fetched);
     let rest = &pcm[pcm_bytes(lands_at + PAST_THE_FADE_IN)..];
+
     assert!(
         within(&samples, rest),
         "the fresh address lacks where it landed"
@@ -1116,12 +1198,14 @@ fn multicast_answers(daemon: &ServiceDaemon) -> bool {
         return false;
     };
     let since = Instant::now();
+
     while let Some(left) = WAITED_AT_MOST.checked_sub(since.elapsed()) {
         match browsing.recv_timeout(left) {
             Ok(ServiceEvent::ServiceResolved(resolved))
                 if resolved.get_fullname().starts_with(ADVERTISED_AS) =>
             {
                 let _ = daemon.stop_browse(CAST_SERVICE);
+
                 return true;
             }
             Ok(_) => {}
@@ -1153,10 +1237,13 @@ fn a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn() {
     )
     .expect("a record");
     let fullname = record.get_fullname().to_owned();
+
     advertiser.register(record).expect("advertises");
     if !multicast_answers(&advertiser) {
         eprintln!("skipped: no multicast answers here");
+
         let _ = advertiser.shutdown();
+
         return;
     }
 
@@ -1171,13 +1258,18 @@ fn a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn() {
     .expect("browses");
     let changes = casting.subscribe();
     let since = Instant::now();
+
     while casting.sinks().is_empty() && since.elapsed() < WAITED_AT_MOST {
         thread::sleep(LOOKS_EVERY);
     }
+
     let sink = the_receiver(&casting);
+
     advertiser.unregister(&fullname).expect("withdraws");
+
     let removed = waited_for_change(&changes, |change| *change == SinkChange::Removed(sink.id));
     let _ = advertiser.shutdown();
+
     casting.rest();
 
     assert_eq!(sink.name, NodeName::new(format!("cast:{ID}")));
@@ -1188,6 +1280,7 @@ fn a_receiver_advertised_over_mdns_is_found_and_gone_once_withdrawn() {
 
 fn waited_for_change(changes: &Receiver<SinkChange>, wanted: impl Fn(&SinkChange) -> bool) -> bool {
     let since = Instant::now();
+
     while since.elapsed() < WAITED_AT_MOST {
         if let Ok(change) = changes.recv_timeout(LOOKS_EVERY)
             && wanted(&change)
@@ -1210,12 +1303,15 @@ fn nothing_listed() -> Searching {
 fn a_receiver_given_by_address_is_reached_without_a_browse_and_named_by_where_it_is() {
     let fake = Fake::start();
     let casting = Casting::resting(nothing_listed()).expect("rests");
+
     casting.locate(fake.at).expect("holds the address");
+
     assert!(casting.sinks().is_empty());
 
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     let sink = the_receiver(&casting);
 
     assert_eq!(
@@ -1236,6 +1332,7 @@ fn an_address_given_to_a_receiver_already_listed_makes_no_second_sink() {
     casting.locate(fake.at).expect("already held");
 
     let sink = the_receiver(&casting);
+
     assert_eq!(sink.name, NodeName::new(format!("cast:{ID}")));
     assert_eq!(
         sink.aliases,
@@ -1247,13 +1344,17 @@ fn an_address_given_to_a_receiver_already_listed_makes_no_second_sink() {
 fn an_address_given_to_a_reaching_casting_lists_the_receiver_and_forgetting_it_removes_it() {
     let fake = Fake::start();
     let casting = Casting::resting(nothing_listed()).expect("rests");
+
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     let changes = Neighbours::subscribe(&casting);
 
     casting.locate(fake.at).expect("the receiver is reached");
+
     let sink = the_receiver(&casting);
+
     casting.unlocate(fake.at);
 
     assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink.id)));
@@ -1267,14 +1368,18 @@ fn a_casting_that_stops_browsing_keeps_the_receivers_given_by_address_and_drops_
     let browsed = Fake::start();
     let given = Fake::start();
     let casting = Casting::start(browsed.searching(), FirstSearch::Awaited).expect("reaches");
+
     casting.locate(given.at).expect("the receiver is reached");
+
     assert_eq!(casting.sinks().len(), 2);
 
     casting.stop_browsing();
 
     assert!(!casting.is_looking());
     assert!(casting.is_reaching());
+
     let sink = the_receiver(&casting);
+
     assert_eq!(
         sink.name,
         NodeName::new(format!("cast:{}", CastId::at(given.at)))
@@ -1301,10 +1406,12 @@ fn a_casting_reaching_addresses_alone_that_is_asked_to_look_browses_too() {
         ..nothing_listed()
     };
     let casting = Casting::resting(searching).expect("rests");
+
     casting.locate(fake.at).expect("holds the address");
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     assert_eq!(casting.sinks().len(), 1);
 
     casting.look(FirstSearch::Awaited).expect("looks");
@@ -1324,6 +1431,7 @@ fn waited_for_receivers(casting: &Casting, count: usize) {
             since.elapsed() < WAITED_AT_MOST,
             "waited too long for {count} receivers"
         );
+
         thread::sleep(LOOKS_EVERY);
     }
 }
@@ -1332,14 +1440,17 @@ fn waited_for_receivers(casting: &Casting, count: usize) {
 fn a_receiver_given_by_host_name_is_resolved_reached_and_named_by_where_it_is() {
     let fake = Fake::start();
     let casting = Casting::resting(nothing_listed()).expect("rests");
+
     casting
         .locate(named_given(&fake))
         .expect("holds the host name");
+
     assert!(casting.sinks().is_empty());
 
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     let sink = the_receiver(&casting);
 
     assert_eq!(
@@ -1355,16 +1466,20 @@ fn a_host_name_given_to_a_reaching_casting_is_resolved_off_the_callers_thread_an
  {
     let fake = Fake::start();
     let casting = Casting::resting(nothing_listed()).expect("rests");
+
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     let changes = Neighbours::subscribe(&casting);
 
     casting
         .locate(named_given(&fake))
         .expect("the name is handed to a thread");
     waited_for_receivers(&casting, 1);
+
     let sink = the_receiver(&casting);
+
     casting.unlocate(named_given(&fake));
 
     assert_eq!(changes.try_recv(), Ok(SinkChange::Added(sink.id)));
@@ -1377,6 +1492,7 @@ fn a_host_name_given_to_a_reaching_casting_is_resolved_off_the_callers_thread_an
 fn a_host_name_nothing_resolves_lists_no_receiver_and_is_kept_to_try_again() {
     let casting = Casting::resting(nothing_listed()).expect("rests");
     let unresolved = Given::parse("no-such-receiver.invalid").expect("a host name");
+
     casting.locate(unresolved.clone()).expect("held");
 
     casting
@@ -1393,16 +1509,21 @@ fn a_receiver_given_by_address_and_then_heard_by_the_browse_is_named_by_its_mdns
     let fake = Fake::start();
     let searching = fake.searching();
     let casting = Casting::resting(searching).expect("rests");
+
     casting.locate(fake.at).expect("holds the address");
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
+
     let before = the_receiver(&casting);
     let by_address = NodeName::new(format!("cast:{}", CastId::at(fake.at)));
+
     assert_eq!(before.name, by_address);
+
     let changes = Neighbours::subscribe(&casting);
 
     casting.look(FirstSearch::Awaited).expect("browses");
+
     let after = the_receiver(&casting);
 
     assert_eq!(after.id, before.id);
@@ -1424,16 +1545,19 @@ fn a_receiver_named_by_its_mdns_id_while_its_address_is_held_stays_listed_when_t
  {
     let fake = Fake::start();
     let casting = Casting::resting(fake.searching()).expect("rests");
+
     casting.locate(fake.at).expect("holds the address");
     casting
         .look_at_addresses(FirstSearch::Awaited)
         .expect("reaches");
     casting.look(FirstSearch::Awaited).expect("browses");
+
     let named = the_receiver(&casting);
 
     casting.unlocate(fake.at);
 
     let kept = the_receiver(&casting);
+
     assert_eq!(kept.id, named.id);
     assert_eq!(kept.name, NodeName::new(format!("cast:{ID}")));
     assert!(kept.aliases.is_empty());
@@ -1443,11 +1567,13 @@ fn a_receiver_named_by_its_mdns_id_while_its_address_is_held_stays_listed_when_t
 fn a_receiver_named_by_its_mdns_id_keeps_that_name_when_browsing_stops_with_its_address_held() {
     let fake = Fake::start();
     let casting = Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches");
+
     casting.locate(fake.at).expect("already held");
 
     casting.stop_browsing();
 
     let sink = the_receiver(&casting);
+
     assert_eq!(sink.name, NodeName::new(format!("cast:{ID}")));
     assert_eq!(
         sink.aliases,
@@ -1469,9 +1595,11 @@ fn surround(layout: ChannelLayout) -> StreamSpec {
 
 fn twenty_four_bit_pattern(channels: u32, frames: u32) -> Vec<u8> {
     let mut words = Vec::new();
+
     for frame in 0..frames {
         for channel in 0..channels {
             let word = ((frame * 131 + channel * 100_003) % 8_000_000) as i32 - 4_000_000;
+
             words.extend_from_slice(&word.to_le_bytes());
         }
     }
@@ -1482,13 +1610,16 @@ fn decoded_at_twenty_four_bits(tree: &Tree, flac: &[u8]) -> Vec<u8> {
     let path = tree.write("fetched-24.flac", flac);
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a FLAC stream");
+
     decoder.set_output_format(SampleFormat::S24);
+
     let mut block = AudioBuffer::empty(StreamSpec::new(
         info.spec.rate,
         info.spec.channels,
         SampleFormat::S24,
     ));
     let mut samples = Vec::new();
+
     while decoder.next_block(&mut block).expect("a decoded block") != DecodeStatus::EndOfStream {
         samples.extend_from_slice(block.as_bytes());
     }
@@ -1507,6 +1638,7 @@ fn poured_whole(fake: &Fake, backend: &Beside, sink: &SinkInfo, spec: StreamSpec
             }),
         )
         .expect("the receiver takes the stream");
+
     stream.set_active(true).expect("plays");
     fake.until("the stream to be loaded", |heard| {
         heard.count("LOAD") == loads + 1
@@ -1524,6 +1656,7 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
         Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
     let changes = casting.subscribe();
     let before = the_receiver(&casting);
+
     assert!(!before.supports(high_flac()));
     assert!(!before.supports(surround(ChannelLayout::Surround51)));
 
@@ -1534,7 +1667,9 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
         Trial::ALL.map(|trial| (trial, TrialVerdict::Played))
     );
     assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(before.id)));
+
     let learnt = the_receiver(&casting);
+
     for spec in [
         high_flac(),
         StreamSpec::new(
@@ -1572,6 +1707,7 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
     }
     {
         let heard = fake.heard.lock();
+
         assert_eq!(heard.count("LOAD"), 8);
         assert_eq!(heard.count("STOP"), 8, "each trial is stopped");
         assert_eq!(heard.count("LAUNCH"), 1);
@@ -1580,7 +1716,9 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
     let backend = Beside::over(Box::new(NoGraph::new()), Arc::<Casting>::clone(&casting));
     let tree = Tree::new();
     let pcm = twenty_four_bit_pattern(2, 192_000 / 4);
+
     poured_whole(&fake, &backend, &learnt, high_flac(), &pcm);
+
     assert_eq!(
         decoded_at_twenty_four_bits(&tree, &fake.heard.lock().fetched),
         pcm,
@@ -1588,6 +1726,7 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
     );
 
     let pcm = twenty_four_bit_pattern(6, 48_000 / 2);
+
     poured_whole(
         &fake,
         &backend,
@@ -1595,6 +1734,7 @@ fn learning_what_a_receiver_plays_offers_exactly_what_played_and_it_is_then_sent
         surround(ChannelLayout::Surround51),
         &pcm,
     );
+
     assert_eq!(
         decoded_at_twenty_four_bits(&tree, &fake.heard.lock().fetched),
         pcm,
@@ -1661,6 +1801,7 @@ fn a_receiver_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it
         Arc::new(Casting::start(fake.searching(), FirstSearch::Awaited).expect("reaches"));
     let sink = the_receiver(&casting);
     let backend = Beside::over(Box::new(NoGraph::new()), Arc::<Casting>::clone(&casting));
+
     let stream = backend
         .opener()
         .open(
@@ -1678,6 +1819,7 @@ fn a_receiver_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it
     ));
 
     stream.close().expect("closes");
+
     let changes = casting.subscribe();
     let learnt: Learnt = [(sink.name.clone(), Plays::from_iter([Trial::SixChannels]))]
         .into_iter()

@@ -47,6 +47,7 @@ impl Stage {
             op: RewriteOp::CopiedAside,
             source,
         };
+
         fs::create_dir_all(&staging).map_err(refused)?;
         sweep(&staging);
 
@@ -55,11 +56,14 @@ impl Stage {
             process::id(),
             STAGED.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir(&folder).map_err(refused)?;
+
         let held = match Held::made(&folder.join(HELD)) {
             Ok(held) => held,
             Err(source) => {
                 let _ = fs::remove_dir(&folder);
+
                 return Err(refused(source));
             }
         };
@@ -68,6 +72,7 @@ impl Stage {
             leaf: leaf_of(name),
             _held: held,
         };
+
         fs::create_dir(stage.folder.join(ORIGINAL)).map_err(refused)?;
         fs::create_dir(stage.folder.join(WORKING)).map_err(refused)?;
         Ok(stage)
@@ -87,12 +92,15 @@ impl Stage {
             op: RewriteOp::PutBack,
             source,
         };
+
         fs::create_dir_all(&unrestored).map_err(refused)?;
+
         let kept = unrestored.join(naming::named_within(
             "",
             self.leaf.as_os_str(),
             format!(".{}", self.folder_name()),
         ));
+
         fs::rename(self.original(), &kept).map_err(refused)?;
         Ok(kept)
     }
@@ -140,6 +148,7 @@ fn sweep(staging: &Path) {
             continue;
         };
         let folder = entry.path();
+
         if writer::writer_of(&folder.join(HELD), stamped) == Writer::Living {
             continue;
         }
@@ -168,6 +177,7 @@ pub(crate) fn put_back(rewriting: &dyn DocumentRewriting, uri: &str, from: &Path
         source,
     };
     let mut source = File::open(from).map_err(failed)?;
+
     io::copy(&mut source, &mut document).map_err(failed)?;
     if let Err(error) = document.sync_all() {
         tracing::debug!(%error, "a rewritten song could not be flushed to its provider");
@@ -208,6 +218,7 @@ mod tests {
     fn under(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-rewriting-{name}-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -216,6 +227,7 @@ mod tests {
     fn a_stage_a_dead_writer_left_is_swept_and_a_living_one_is_not() {
         let data = under("sweep");
         let dead = data.join(STAGING).join(format!("{NEVER_A_PROCESS}-0"));
+
         fs::create_dir_all(dead.join(ORIGINAL)).expect("a dead stage");
         fs::write(dead.join(HELD), b"").expect("its held file");
         fs::write(dead.join(ORIGINAL).join("song.flac"), b"bytes").expect("its copy");
@@ -226,7 +238,9 @@ mod tests {
         assert!(!dead.exists());
         assert!(living.folder.exists());
         assert!(beside.folder.exists());
+
         drop((living, beside));
+
         let _ = fs::remove_dir_all(&data);
     }
 
@@ -239,8 +253,11 @@ mod tests {
 
         assert_eq!(stage.working().file_name(), Some(OsStr::new("Echoes.FLAC")));
         assert_ne!(stage.working(), stage.original());
+
         drop(stage);
+
         assert!(!folder.exists());
+
         let _ = fs::remove_dir_all(&data);
     }
 

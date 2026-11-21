@@ -72,6 +72,7 @@ impl Way {
 impl Offers {
     pub(crate) fn of(device: i32, formats: &[OutputFormat]) -> Self {
         let mut bit_perfect = Vec::new();
+
         for spec in formats.iter().filter_map(|format| format.spec()) {
             if !bit_perfect.contains(&spec) {
                 bit_perfect.push(spec);
@@ -86,6 +87,7 @@ impl Offers {
 
     pub(crate) fn offered(&self, follows: bool) -> Vec<StreamSpec> {
         let mut specs = vec![MIXED];
+
         if !follows {
             return specs;
         }
@@ -124,6 +126,7 @@ pub(crate) fn sink_formats(specs: &[StreamSpec]) -> (Vec<SinkFormats>, Vec<Sampl
         })
         .collect();
     let mut rates: Vec<SampleRate> = specs.iter().map(|spec| spec.rate).collect();
+
     rates.sort_by_key(|rate| rate.hz());
     rates.dedup();
     (formats, rates)
@@ -185,8 +188,10 @@ mod tests {
             format(48_000, OutputEncoding::Float, 1),
         ] {
             let spec = format.spec().expect("a spec");
+
             assert_eq!(OutputFormat::of(spec), Some(format));
         }
+
         assert_eq!(OutputFormat::of(STUDIO), None);
     }
 
@@ -208,6 +213,7 @@ mod tests {
     #[test]
     fn without_following_the_song_only_the_shared_mixer_is_offered_and_every_stream_is_mixed() {
         let mut offers = Offers::of(7, &[format(44_100, OutputEncoding::Pcm16, 2)]);
+
         offers.exclusive = Some(MIXED);
 
         assert_eq!(offers.offered(false), vec![MIXED]);
@@ -223,6 +229,7 @@ mod tests {
             SampleFormat::S32,
         );
         let mut offers = Offers::of(7, &[format(44_100, OutputEncoding::Pcm16, 2)]);
+
         offers.exclusive = Some(exclusive);
 
         assert_eq!(offers.offered(true), vec![MIXED, CD, exclusive]);
@@ -240,9 +247,11 @@ mod tests {
         let offered = Offers::of(7, &[format(44_100, OutputEncoding::Pcm16, 2)]);
 
         let following = sink_offering(&offered.offered(true));
+
         assert_eq!(following.best_spec_for(CD), Some(CD));
 
         let mixed = sink_offering(&offered.offered(false));
+
         assert_eq!(mixed.best_spec_for(CD), Some(MIXED));
     }
 
@@ -258,6 +267,7 @@ mod tests {
         let sink = sink_offering(&offered.offered(true));
 
         let chosen = sink.best_spec_for(STUDIO).expect("a spec");
+
         assert_eq!(chosen.rate, SampleRate::HZ_96000);
         assert_eq!(chosen.format, SampleFormat::S32);
         assert!(chosen.losslessly_holds(STUDIO));

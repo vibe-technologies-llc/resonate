@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::ConfigKey;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum WindowKind {
     Main,
 }

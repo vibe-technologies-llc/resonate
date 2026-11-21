@@ -68,17 +68,20 @@ impl RootView {
             return;
         };
         let address = app.online.jellyfin.trim().to_owned();
+
         if !offers_quick_connect(&address) {
             return;
         }
 
         let asked_at = address.clone();
         let stopped = Arc::new(AtomicBool::new(false));
+
         self.settings_pane.update(cx, |pane, _| {
             pane.accounts.jellyfin_quick.stopped = Arc::clone(&stopped);
             pane.accounts.jellyfin_quick.shown = Shown::Asking;
         });
         cx.notify();
+
         let task = cx.spawn(async move |this, cx| {
             let beginning = Arc::clone(&signs_in);
             let begun = cx
@@ -101,6 +104,7 @@ impl RootView {
                         cx.notify();
                     });
                     let _ = told;
+
                     return;
                 }
             };
@@ -111,9 +115,11 @@ impl RootView {
                 });
                 cx.notify();
             });
+
             if shown.is_err() {
                 return;
             }
+
             let answered = cx
                 .background_executor()
                 .spawn(async move { signs_in.approved(&waiting_on, &stopped) })
@@ -122,7 +128,9 @@ impl RootView {
                 this.settings_pane.update(cx, |pane, _| {
                     pane.accounts.jellyfin_quick.shown = Shown::Idle;
                 });
+
                 let moved = cx.global::<ResonateApp>().online.jellyfin.trim() != asked_at;
+
                 if !moved {
                     this.quick_connected(answered, cx);
                 }
@@ -130,6 +138,7 @@ impl RootView {
             });
             let _ = told;
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts.jellyfin_quick.task = task);
     }
@@ -152,6 +161,7 @@ impl RootView {
         let said = match answered {
             JellyfinSignIn::SignedIn(session) => {
                 let said = words::settings_jellyfin::signed_in_as(session.name.as_str());
+
                 self.keep_the_jellyfin_session(session, cx);
                 Notice::Done(said)
             }
@@ -164,11 +174,13 @@ impl RootView {
             }
             JellyfinSignIn::Stopped => return,
         };
+
         self.report(said, cx);
     }
 
     fn keep_the_jellyfin_session(&mut self, session: JellyfinSession, cx: &mut Context<Self>) {
         let name = session.name.clone();
+
         self.settings_fields.read(cx).jellyfin[1]
             .clone()
             .clone()
@@ -179,6 +191,7 @@ impl RootView {
             .update(cx, |field, cx| field.hold(String::new(), cx));
         cx.update_global::<ResonateApp, _>(|global, _| {
             let online = &mut global.online;
+
             online.jellyfin_user.clone_from(&name);
             online.jellyfin_password.clear();
             online.jellyfin_token.clone_from(&session.token);
@@ -206,11 +219,13 @@ impl RootView {
         ]
         .iter()
         .any(|held| !held.is_empty());
+
         if !held {
             return;
         }
         cx.update_global::<ResonateApp, _>(|global, _| {
             let online = &mut global.online;
+
             online.jellyfin_token.clear();
             online.jellyfin_user_id.clear();
             online.jellyfin_device.clear();
@@ -226,9 +241,11 @@ impl RootView {
 
     pub(super) fn quick_connect_row(&self, cx: &mut Context<Self>) -> Div {
         let app = cx.global::<ResonateApp>();
+
         if app.signs_in_to_jellyfin.is_none() || !offers_quick_connect(&app.online.jellyfin) {
             return div();
         }
+
         let reachable = app.online.enabled;
         match self
             .settings_pane

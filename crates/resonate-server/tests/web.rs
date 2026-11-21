@@ -47,6 +47,7 @@ fn scratch(name: &str) -> PathBuf {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos())
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder
 }
@@ -64,6 +65,7 @@ fn hosted(limits: Limits, forwarded_by: Option<&str>) -> Hosted {
         .expect("listening");
     let address = listener.local_addr().expect("an address");
     let server = Server::new(Store::in_memory().expect("a store"), limits);
+
     runtime.spawn(server.serve_web(listener, forwarded_by.map(str::to_owned)));
     Hosted {
         address,
@@ -105,6 +107,7 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + SETTLES_WITHIN;
     while !done() {
         assert!(Instant::now() < deadline, "{what} never happened");
+
         thread::sleep(Duration::from_millis(100));
     }
 }
@@ -116,6 +119,7 @@ fn two_devices_share_a_playlist_through_the_server_over_a_web_socket() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Summer", &["A", "B"]);
     desk_shelf.favour_here("A", true);
 
@@ -132,12 +136,15 @@ fn two_devices_share_a_playlist_through_the_server_over_a_web_socket() {
             .iter()
             .any(|seen| seen.name == "Desk" && seen.online)
     });
+
     assert_eq!(phone.shown().standing, Standing::Connected);
+
     eventually("the favourite arriving", || {
         phone_shelf.favourite_titles() == ["A"]
     });
 
     let (on_phone, _) = phone_shelf.playlist_named("Summer").expect("held");
+
     phone_shelf.rename_playlist(on_phone, "Summer days");
     eventually("the rename reaching the desk", || {
         desk_shelf.playlist_named("Summer days").is_some()
@@ -145,6 +152,7 @@ fn two_devices_share_a_playlist_through_the_server_over_a_web_socket() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -162,6 +170,7 @@ fn a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward()
     });
 
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -181,9 +190,11 @@ fn an_address_that_makes_more_spaces_than_it_is_allowed_in_a_day_is_turned_away(
     let shelf = Arc::new(Shelf::holding(&["A"]));
 
     let allowed = device(&hosted, &folder, &first, "First", Arc::clone(&shelf));
+
     eventually("the first space being made", || {
         allowed.shown().standing == Standing::Connected
     });
+
     let refused = device(&hosted, &folder, &second, "Second", shelf);
 
     eventually("the second space being refused", || {
@@ -192,6 +203,7 @@ fn an_address_that_makes_more_spaces_than_it_is_allowed_in_a_day_is_turned_away(
 
     drop(refused);
     drop(allowed);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -219,6 +231,7 @@ fn a_known_space_is_not_counted_against_the_spaces_an_address_may_make() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -229,9 +242,11 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_query("Recent", "added:<30d");
 
     let desk = device(&hosted, &folder, &key, "Desk", desk_shelf);
+
     eventually("the desk telling the server", || {
         let shown = desk.shown();
         shown.standing == Standing::Connected && shown.owed == 0
@@ -242,10 +257,13 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
         .enable_all()
         .build()
         .expect("a runtime");
+
     runtime.block_on(async {
         let address = web_address(&format!("ws://{}/", hosted.address)).expect("an address");
         let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+
         let (mut outgoing, mut incoming) = connect(&address, &tls).await.expect("connected");
+
         outgoing
             .send(
                 &ToServer::Hello {
@@ -259,6 +277,7 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
             )
             .await
             .expect("said hello");
+
         let head = loop {
             let heard = incoming.read().await.expect("read").expect("a frame");
             if let FromServer::Welcome { head, .. } = FromServer::decoded(&heard).expect("a frame")
@@ -268,6 +287,7 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
         };
         let without_queries =
             sealed(&derived.sealer, derived.space, &encoded_bundle(&[])).expect("sealed");
+
         outgoing
             .send(
                 &ToServer::Compact {
@@ -290,6 +310,7 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
     });
 
     let phone = device(&hosted, &folder, &key, "Phone", Arc::clone(&phone_shelf));
+
     eventually(
         "the query reaching a device that joined from the server alone",
         || phone_shelf.query_named("Recent").is_some(),
@@ -297,6 +318,7 @@ fn saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_a
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -315,7 +337,9 @@ fn hello(key: &SyncKey) -> Vec<u8> {
 async fn welcomed_over_the_web(hosted: &Hosted, key: &SyncKey) -> (Outgoing, Incoming) {
     let address = web_address(&format!("ws://{}/", hosted.address)).expect("an address");
     let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+
     let (mut outgoing, mut incoming) = connect(&address, &tls).await.expect("connected");
+
     outgoing.send(&hello(key)).await.expect("said hello");
     loop {
         let heard = incoming.read().await.expect("read").expect("a frame");
@@ -339,12 +363,14 @@ async fn refused_over_the_web(incoming: &mut Incoming) -> Option<Refusal> {
 
 fn framed_by_hand(payload: &[u8]) -> Vec<u8> {
     let mut framed = announced_by_hand(payload.len());
+
     framed.extend_from_slice(payload);
     framed
 }
 
 fn announced_by_hand(length: usize) -> Vec<u8> {
     let mut header = vec![BINARY_AND_FINAL, MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES];
+
     header.extend_from_slice(&u64::try_from(length).expect("a length").to_be_bytes());
     header.extend_from_slice(&UNMASKING_KEY);
     header
@@ -352,6 +378,7 @@ fn announced_by_hand(length: usize) -> Vec<u8> {
 
 async fn upgraded_by_hand(hosted: &Hosted) -> TcpStream {
     let mut stream = TcpStream::connect(hosted.address).await.expect("connected");
+
     stream
         .write_all(
             format!(
@@ -363,8 +390,10 @@ async fn upgraded_by_hand(hosted: &Hosted) -> TcpStream {
         )
         .await
         .expect("asked to upgrade");
+
     let mut answer = Vec::new();
     let mut byte = [0; 1];
+
     while !answer.ends_with(b"\r\n\r\n") {
         stream.read_exact(&mut byte).await.expect("an answer");
         answer.push(byte[0]);
@@ -380,6 +409,7 @@ struct Holding {
 impl Holding {
     async fn part_of_a_message(hosted: &Hosted, key: &SyncKey) -> Self {
         let mut stream = upgraded_by_hand(hosted).await;
+
         stream
             .write_all(&framed_by_hand(&hello(key)))
             .await
@@ -401,6 +431,7 @@ impl Holding {
 
     fn turned_away(&mut self) -> bool {
         let mut chunk = [0; 4 * KIBIBYTE];
+
         loop {
             match self.stream.try_read(&mut chunk) {
                 Ok(0) => return true,
@@ -421,6 +452,7 @@ impl Holding {
 
 fn framed_by_the_server(mut heard: &[u8]) -> Vec<(u8, &[u8])> {
     let mut frames = Vec::new();
+
     while let [first, second, rest @ ..] = heard {
         let (length, rest) = match second & UNMASKED_LENGTH {
             MEDIUM_LENGTH => match rest.split_first_chunk::<2>() {
@@ -436,9 +468,11 @@ fn framed_by_the_server(mut heard: &[u8]) -> Vec<(u8, &[u8])> {
             },
             short => (usize::from(short), rest),
         };
+
         let Some((payload, after)) = rest.split_at_checked(length) else {
             break;
         };
+
         frames.push((first & OPCODE, payload));
         heard = after;
     }
@@ -468,14 +502,17 @@ fn a_message_still_arriving_on_one_web_socket_holds_its_bytes_from_every_other_s
         let deadline = Instant::now() + SETTLES_WITHIN;
         loop {
             let (mut outgoing, mut incoming) = welcomed_over_the_web(&hosted, &asker).await;
+
             outgoing
                 .send(&vec![0; 64 * KIBIBYTE])
                 .await
                 .expect("sent a frame");
+
             let refused = timeout(REFUSED_WITHIN, refused_over_the_web(&mut incoming))
                 .await
                 .ok()
                 .flatten();
+
             if refused.is_some() || Instant::now() >= deadline {
                 drop(holding);
                 break refused;
@@ -507,6 +544,7 @@ fn a_ping_counts_toward_the_frames_a_web_socket_may_send_in_a_minute() {
 
     let refused = runtime.block_on(async {
         let (mut outgoing, mut incoming) = welcomed_over_the_web(&hosted, &key).await;
+
         for _ in 0..10 {
             outgoing.keep_alive().await.expect("pinged");
         }
@@ -554,6 +592,7 @@ fn a_compaction_refused_for_a_full_space_backs_off_and_keeps_the_session() {
     let shelf = Arc::new(Shelf::holding(&["A"]));
 
     let desk = device_reaching(scripted.address, &folder, &key, "Desk", shelf);
+
     eventually("a compaction asked", || {
         scripted
             .heard()
@@ -561,6 +600,7 @@ fn a_compaction_refused_for_a_full_space_backs_off_and_keeps_the_session() {
             .any(|heard| matches!(heard, ToServer::Compact { .. }))
     });
     thread::sleep(A_SESSION_KEPT_FOR);
+
     let heard = scripted.heard();
     let hellos = heard
         .iter()
@@ -576,5 +616,6 @@ fn a_compaction_refused_for_a_full_space_backs_off_and_keeps_the_session() {
     assert_eq!(compactions, 1);
 
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }

@@ -64,6 +64,7 @@ pub(crate) fn entity(url: &str) -> Option<String> {
         .next()?;
 
     let mut letters = named.chars();
+
     let numbered = letters.next() == Some('Q') && letters.clone().count() > 0;
 
     (numbered && letters.all(|letter| letter.is_ascii_digit())).then(|| named.to_owned())

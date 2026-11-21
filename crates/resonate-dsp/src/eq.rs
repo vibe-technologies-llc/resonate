@@ -36,6 +36,7 @@ impl Blend {
 
     fn over(&mut self, over: NonZeroUsize) {
         let was_wet = self.wet_for == self.over.get();
+
         self.over = over;
         self.wet_for = if was_wet {
             over.get()
@@ -116,6 +117,7 @@ impl Preamping {
 
     fn toward(self, to: f64, over: NonZeroUsize) -> Self {
         let from = self.at(0);
+
         if from.to_bits() == to.to_bits() {
             return Self::steady(to);
         }
@@ -129,6 +131,7 @@ impl Preamping {
 
     fn at(&self, offset: usize) -> f64 {
         let reached = self.done.saturating_add(offset);
+
         if reached >= self.over {
             return self.to;
         }
@@ -209,6 +212,7 @@ impl Group {
 
 fn biquad(filter: Biquad, sample: f64, history: [f64; 4]) -> f64 {
     let [behind_in, further_behind_in, behind_out, further_behind_out] = history;
+
     let fed_forward = multiply_add(
         filter.b2,
         further_behind_in,
@@ -246,8 +250,10 @@ impl<const WIDTH: usize> Lanes<WIDTH> {
 
     fn scattered(self) -> [Section; WIDTH] {
         let mut sections = [Section::default(); WIDTH];
+
         for (section, history) in sections.iter_mut().zip(self.histories()) {
             let [behind_in, further_behind_in, behind_out, further_behind_out] = history;
+
             *section = Section {
                 behind_in,
                 further_behind_in,
@@ -272,6 +278,7 @@ impl<const WIDTH: usize> Lanes<WIDTH> {
 
     fn run(&mut self, filters: &[Biquad; WIDTH], entering: [f64; WIDTH]) -> [f64; WIDTH] {
         let mut leaving = entering;
+
         for ((sample, history), filter) in leaving.iter_mut().zip(self.histories()).zip(filters) {
             *sample = biquad(*filter, *sample, history);
         }
@@ -289,6 +296,7 @@ fn run_staggered<const WIDTH: usize, const SECTIONS: usize>(
     frames: &mut [[f64; WIDTH]],
 ) {
     let mut held = kept.map(Lanes::gathered);
+
     for leading in 0..frames.len() + SECTIONS - 1 {
         for (behind, (filter, lanes)) in filters.iter().zip(held.iter_mut()).enumerate() {
             if let Some(frame) = frames.get_mut(leading.wrapping_sub(behind)) {
@@ -310,6 +318,7 @@ fn take_staggered<'a, 'b, const WIDTH: usize, const SECTIONS: usize>(
     let Some((held, kept)) = kept.split_first_chunk_mut::<SECTIONS>() else {
         return (&[], &mut []);
     };
+
     run_staggered(taken, held, frames);
     (filters, kept)
 }
@@ -321,10 +330,13 @@ fn cascade<const WIDTH: usize>(
 ) {
     let mut filters = coefficients.as_chunks::<WIDTH>().0;
     let mut kept = state.as_chunks_mut::<WIDTH>().0;
+
     while filters.len() >= SECTIONS_STAGGERED {
         (filters, kept) = take_staggered::<WIDTH, SECTIONS_STAGGERED>(filters, kept, frames);
     }
+
     let (filters, kept) = take_staggered::<WIDTH, 2>(filters, kept, frames);
+
     take_staggered::<WIDTH, 1>(filters, kept, frames);
 }
 
@@ -382,6 +394,7 @@ impl Piece<'_> {
         widened: &mut [f64],
     ) {
         let frames = widened.as_chunks_mut::<WIDTH>().0;
+
         if self.channels == WIDTH && self.preamp.is_steady() {
             widen(self.taken, frames.as_flattened_mut(), self.preamp.to);
         } else {
@@ -450,6 +463,7 @@ impl Equaliser {
             widened: Widened::holding(0),
             blend: Blend::settled_wet(),
         };
+
         stage.blend.over(eased_over(rate));
         stage.take_the_profile();
         stage.preamp = Preamping::steady(stage.profile.preamp().amplitude());
@@ -474,6 +488,7 @@ impl Equaliser {
             .bands()
             .get(..MAX_BANDS)
             .unwrap_or(self.profile.bands());
+
         self.bands = bands.len();
         self.coefficients.clear();
 
@@ -498,6 +513,7 @@ impl Equaliser {
             let Some((kept, rest)) = state.split_at_mut_checked(group.width() * MAX_BANDS) else {
                 return;
             };
+
             for section in kept.iter_mut().skip(group.width() * reached) {
                 *section = Section::default();
             }
@@ -516,6 +532,7 @@ impl Processor for Equaliser {
         }
 
         let channels = usize::from(spec.channel_count().get());
+
         self.channels = NonZeroUsize::new(channels).unwrap_or(NonZeroUsize::MIN);
         self.layout = spec.channels;
         self.state.clear();
@@ -523,9 +540,11 @@ impl Processor for Equaliser {
             .resize(self.channels.get() * MAX_BANDS, Section::default());
         self.coefficients = Vec::with_capacity(self.channels.get() * MAX_BANDS);
         self.frames_a_piece = NonZeroUsize::new(max_frames_in).unwrap_or(NonZeroUsize::MIN);
+
         let room = Group::splitting(channels)
             .map(|group| line_padded(group.width().saturating_mul(self.frames_a_piece.get())))
             .fold(0, usize::saturating_add);
+
         self.widened = Widened::holding(room);
         self.take_the_profile();
         self.preamp = Preamping::steady(self.profile.preamp().amplitude());
@@ -558,6 +577,7 @@ impl Processor for Equaliser {
     fn set_equalisation(&mut self, profile: &Arc<Profile>) {
         let replaced =
             bands_apart(self.profile.bands(), profile.bands()) > BANDS_A_RETUNE_MOVES_AT_MOST;
+
         self.profile = Arc::clone(profile);
         self.take_the_profile();
         if replaced {
@@ -588,6 +608,7 @@ impl Processor for Equaliser {
                 first_channel: 0,
                 preamp: self.preamp,
             };
+
             for group in Group::splitting(channels) {
                 let width = group.width();
                 let (Some((kept, more_kept)), Some((room, more_room))) = (
@@ -596,12 +617,14 @@ impl Processor for Equaliser {
                 ) else {
                     break;
                 };
+
                 let Some(block) = room.get_mut(..width * whole) else {
                     break;
                 };
                 let Some((ours, theirs)) = coefficients.split_at_checked(width * bands) else {
                     break;
                 };
+
                 match group {
                     Group::One => {
                         piece.equalise::<{ Group::One.width() }>(ours, kept, block);
@@ -625,6 +648,7 @@ impl Processor for Equaliser {
             }
             if !self.blend.is_settled_wet() {
                 let reached = whole * channels;
+
                 self.blend.mixed(
                     taken.get(..reached).unwrap_or_default(),
                     piece.made.get_mut(..reached).unwrap_or_default(),
@@ -679,6 +703,7 @@ mod tests {
 
     fn prepared(profile: &Arc<Profile>, rate: SampleRate) -> Equaliser {
         let mut stage = Equaliser::new(Arc::clone(profile), rate);
+
         stage
             .prepare(spec(rate), BLOCK)
             .expect("the stage takes the rate it was built for");
@@ -700,8 +725,10 @@ mod tests {
         let settling = SETTLING_BLOCKS + (cycles_a_block.ceil() as usize) * SETTLING_BLOCKS;
         let mut output = vec![0.0; BLOCK * 2];
         let mut highest = 0.0_f64;
+
         for block in 0..=settling {
             let input = tone(hertz, rate, block * BLOCK, BLOCK);
+
             stage.process(&input, &mut output);
             if block >= settling.saturating_sub(4) {
                 highest = output
@@ -735,8 +762,10 @@ mod tests {
         let mut dry = Vec::new();
         let mut wet = Vec::new();
         let mut output = vec![0.0; BLOCK * 2];
+
         for block in 0..blocks {
             let input = tone(997.0, rate, from + block * BLOCK, BLOCK);
+
             stage.process(&input, &mut output);
             dry.extend_from_slice(&input);
             wet.extend_from_slice(&output);
@@ -759,21 +788,26 @@ mod tests {
         let over = eased_over(rate).get();
         let blocks = over / BLOCK + 2;
         let at_the_crest = 12;
+
         let before = tone(997.0, rate, at_the_crest - 1, 1);
         let mut plain = prepared(&wanted, rate);
         let mut entering = prepared(&wanted, rate);
+
         entering.ease_equalisation(Easing::Entering);
 
         assert!(entering.is_ramping());
+
         let (dry, eased) = played_from(&mut entering, rate, at_the_crest, blocks);
         let (_, wet) = played_from(&mut plain, rate, at_the_crest, blocks);
 
         assert!(!entering.is_ramping(), "the easing outlived its length");
         assert_eq!(eased[..2], dry[..2], "the first frame was not the dry one");
         assert_eq!(eased[over * 2..], wet[over * 2..]);
+
         let heard = largest_step(&[before.as_slice(), &dry].concat());
         let eased_in = largest_step(&[before.as_slice(), &eased].concat());
         let switched = largest_step(&[before.as_slice(), &wet].concat());
+
         assert!(
             eased_in <= heard * 1.05,
             "an eased entrance stepped {eased_in} where the tone steps {heard}"
@@ -793,20 +827,26 @@ mod tests {
             Profile::new(Preamp::from_decibels(-12.0).expect("in range"), Vec::new())
                 .expect("a profile in range"),
         );
+
         let mut stage = prepared(&flat, rate);
         let steady = vec![0.5; BLOCK * 2];
         let mut output = vec![0.0; BLOCK * 2];
+
         stage.process(&steady, &mut output);
 
         stage.set_equalisation(&quieter);
+
         assert!(stage.is_ramping());
+
         let mut heard = Vec::new();
+
         for _ in 0..over / BLOCK + 2 {
             stage.process(&steady, &mut output);
             heard.extend_from_slice(&output);
         }
 
         let whole_step = 0.5 * (1.0 - quieter.preamp().amplitude());
+
         assert!(
             !stage.is_ramping(),
             "the preamp's easing outlived its length"
@@ -827,10 +867,13 @@ mod tests {
         let rate = SampleRate::HZ_44100;
         let over = eased_over(rate).get();
         let mut stage = prepared(&loud_and_attenuated(), rate);
+
         played(&mut stage, rate, 4);
 
         stage.ease_equalisation(Easing::Leaving);
+
         assert!(stage.is_ramping());
+
         let (dry, eased) = played(&mut stage, rate, over / BLOCK + 2);
 
         assert!(!stage.is_ramping(), "the easing outlived its length");
@@ -843,8 +886,10 @@ mod tests {
         let rate = SampleRate::HZ_44100;
         let over = eased_over(rate).get();
         let wanted = loud_and_attenuated();
+
         let mut plain = prepared(&wanted, rate);
         let mut stage = prepared(&wanted, rate);
+
         played(&mut plain, rate, 1);
         played(&mut stage, rate, 1);
 
@@ -852,6 +897,7 @@ mod tests {
         played(&mut plain, rate, 1);
         played(&mut stage, rate, 1);
         stage.ease_equalisation(Easing::Returning);
+
         let blocks = over / BLOCK + 2;
         let (_, wet) = played(&mut plain, rate, blocks);
         let (_, returned) = played(&mut stage, rate, blocks);
@@ -864,8 +910,10 @@ mod tests {
     fn a_settled_stage_asked_to_return_is_left_alone() {
         let rate = SampleRate::HZ_44100;
         let wanted = loud_and_attenuated();
+
         let mut plain = prepared(&wanted, rate);
         let mut stage = prepared(&wanted, rate);
+
         stage.ease_equalisation(Easing::Returning);
 
         assert!(!stage.is_ramping());
@@ -880,14 +928,18 @@ mod tests {
                     let wanted = profile(vec![band(kind, at, 6.0, 1.2)]);
                     let modelled = wanted.magnitude_db(at, rate);
                     let mut stage = prepared(&wanted, rate);
+
                     let measured = measured_db(&mut stage, at, rate);
+
                     if modelled < NULL_BELOW_DB {
                         assert!(
                             measured < NULL_BELOW_DB,
                             "{kind} at {at} Hz, {rate}: {measured}"
                         );
+
                         continue;
                     }
+
                     assert!(
                         (measured - modelled).abs() < 0.05,
                         "{kind} at {at} Hz, {rate}: modelled {modelled} dB, measured {measured} dB"
@@ -901,10 +953,12 @@ mod tests {
     fn a_low_frequency_high_q_shelf_at_the_highest_rate_holds_its_gain() {
         let rate = SampleRate::HZ_192000;
         let wanted = profile(vec![band(BandKind::LowShelf, 20.0, 12.0, 4.0)]);
+
         let mut stage = prepared(&wanted, rate);
 
         let modelled = wanted.magnitude_db(20.0, rate);
         let measured = measured_db(&mut stage, 20.0, rate);
+
         assert!(
             (measured - modelled).abs() < 0.05,
             "modelled {modelled} dB, measured {measured} dB"
@@ -915,9 +969,11 @@ mod tests {
     fn a_profile_with_no_bands_leaves_the_stage_transparent_so_the_chain_drops_it() {
         let rate = SampleRate::HZ_48000;
         let empty = Arc::new(Profile::flat());
+
         assert!(Equaliser::new(empty, rate).is_transparent());
 
         let flat = profile(vec![band(BandKind::Peaking, 1_000.0, 0.0, 1.0)]);
+
         assert!(
             !Equaliser::new(flat, rate).is_transparent(),
             "a profile holding a band keeps its stage so a later change reaches it"
@@ -931,10 +987,12 @@ mod tests {
             band(BandKind::Peaking, 100.0, 0.0, 1.0),
             band(BandKind::Peaking, 1_000.0, 0.0, 1.0),
         ]);
+
         let mut stage = prepared(&flat, rate);
 
         let input = tone(440.0, rate, 0, BLOCK);
         let mut output = vec![0.0; BLOCK * 2];
+
         stage.process(&input, &mut output);
 
         for (made, taken) in output.iter().zip(input.iter()) {
@@ -949,15 +1007,18 @@ mod tests {
             channels: resonate_core::eq::ChannelSet::of(&[0]).expect("the left channel"),
             ..band(BandKind::Peaking, 200.0, 12.0, 4.0)
         };
+
         let mut stage = prepared(&profile(vec![left_only]), rate);
 
         let input: Vec<f64> = (0..BLOCK * 2)
             .map(|at| if at / 2 == 0 { 1.0 } else { 0.0 })
             .collect();
         let mut output = vec![0.0; BLOCK * 2];
+
         stage.process(&input, &mut output);
 
         let frames = output.as_chunks::<2>().0;
+
         assert_eq!(
             frames[0][1], 1.0,
             "the right channel was shaped by a left band"
@@ -973,9 +1034,11 @@ mod tests {
     fn every_channel_keeps_a_history_of_its_own() {
         let rate = SampleRate::HZ_48000;
         let wanted = profile(vec![band(BandKind::Peaking, 200.0, 12.0, 4.0)]);
+
         let mut stage = prepared(&wanted, rate);
 
         let mut input = vec![0.0_f64; BLOCK * 2];
+
         for frame in 0..BLOCK {
             if let Some(slot) = input.get_mut(frame * 2) {
                 *slot = if frame == 0 { 1.0 } else { 0.0 };
@@ -983,6 +1046,7 @@ mod tests {
         }
 
         let mut output = vec![0.0; BLOCK * 2];
+
         stage.process(&input, &mut output);
 
         let right_moved = output
@@ -990,6 +1054,7 @@ mod tests {
             .0
             .iter()
             .any(|frame| frame[1] != 0.0);
+
         assert!(!right_moved, "a transient on the left reached the right");
         assert!(
             output
@@ -1004,22 +1069,29 @@ mod tests {
     fn retuning_a_band_carries_the_history_rather_than_clicking() {
         let rate = SampleRate::HZ_48000;
         let before = profile(vec![band(BandKind::Peaking, 200.0, 3.0, 1.0)]);
+
         let mut stage = prepared(&before, rate);
 
         let mut output = vec![0.0; BLOCK * 2];
         let mut widest_within = 0.0_f64;
+
         for block in 0..8 {
             let input = tone(200.0, rate, block * BLOCK, BLOCK);
+
             stage.process(&input, &mut output);
             for pair in output.as_chunks::<2>().0.windows(2) {
                 widest_within = widest_within.max((pair[1][0] - pair[0][0]).abs());
             }
         }
+
         let last = output.get(output.len() - 2).copied().unwrap_or_default();
 
         stage.set_equalisation(&profile(vec![band(BandKind::Peaking, 200.0, 4.0, 1.0)]));
+
         let input = tone(200.0, rate, 8 * BLOCK, BLOCK);
+
         stage.process(&input, &mut output);
+
         let first = output.first().copied().unwrap_or_default();
 
         assert!(
@@ -1033,6 +1105,7 @@ mod tests {
     fn a_profile_selected_in_place_of_another_leaves_the_old_filters_ringing_nowhere() {
         let rate = SampleRate::HZ_48000;
         let loud = |at: f64| band(BandKind::Peaking, at, 18.0, 2.0);
+
         let mut stage = prepared(
             &profile(vec![loud(300.0), loud(1_000.0), loud(3_000.0)]),
             rate,
@@ -1047,6 +1120,7 @@ mod tests {
         let carried = output
             .iter()
             .fold(0.0_f64, |peak, sample| peak.max(sample.abs()));
+
         assert!(carried == 0.0, "the old filters rang on at {carried}");
     }
 
@@ -1055,6 +1129,7 @@ mod tests {
         let rate = SampleRate::HZ_48000;
         let one = band(BandKind::Peaking, 100.0, 3.0, 1.0);
         let other = band(BandKind::Peaking, 900.0, -3.0, 1.0);
+
         let mut stage = prepared(&profile(vec![one; 4]), rate);
 
         let held = stage.coefficients.capacity();
@@ -1070,6 +1145,7 @@ mod tests {
     fn changing_the_band_count_while_it_runs_allocates_nothing() {
         let rate = SampleRate::HZ_48000;
         let one = band(BandKind::Peaking, 100.0, 3.0, 1.0);
+
         let mut stage = prepared(&profile(vec![one; 3]), rate);
 
         let held = stage.coefficients.capacity();
@@ -1078,6 +1154,7 @@ mod tests {
 
         for count in [5, 2, MAX_BANDS, 1] {
             stage.set_equalisation(&profile(vec![one; count]));
+
             assert_eq!(stage.sections(), count);
             assert_eq!(stage.coefficients.capacity(), held);
             assert_eq!(stage.state.len(), lanes);
@@ -1089,6 +1166,7 @@ mod tests {
     fn a_band_that_is_no_longer_reached_leaves_no_history_behind_it() {
         let rate = SampleRate::HZ_48000;
         let loud = band(BandKind::Peaking, 1_000.0, 18.0, 2.0);
+
         let mut stage = prepared(&profile(vec![loud; 4]), rate);
         let quiet = vec![0.0_f64; BLOCK * 2];
         let mut output = vec![0.0; BLOCK * 2];
@@ -1105,6 +1183,7 @@ mod tests {
         let carried = output
             .iter()
             .fold(0.0_f64, |peak, sample| peak.max(sample.abs()));
+
         assert!(carried == 0.0, "a vacated lane thumped at {carried}");
     }
 
@@ -1112,19 +1191,23 @@ mod tests {
     fn a_tail_that_has_decayed_is_flushed_rather_than_left_denormal() {
         let rate = SampleRate::HZ_48000;
         let wanted = profile(vec![band(BandKind::Peaking, 1_000.0, 12.0, 1.0)]);
+
         let mut stage = prepared(&wanted, rate);
 
         let mut output = vec![0.0; BLOCK * 2];
         let mut kick = vec![0.0_f64; BLOCK * 2];
+
         if let Some(slot) = kick.first_mut() {
             *slot = 1.0;
         }
         stage.process(&kick, &mut output);
 
         let quiet = vec![0.0_f64; BLOCK * 2];
+
         for _ in 0..8 {
             stage.process(&quiet, &mut output);
         }
+
         assert!(
             stage.state.iter().all(|section| section.behind_out == 0.0),
             "a decayed tail was left as a denormal"
@@ -1135,9 +1218,11 @@ mod tests {
     fn a_sample_that_is_not_a_number_does_not_poison_the_history() {
         let rate = SampleRate::HZ_48000;
         let wanted = profile(vec![band(BandKind::Peaking, 200.0, 6.0, 2.0)]);
+
         let mut stage = prepared(&wanted, rate);
 
         let mut output = vec![0.0; BLOCK * 2];
+
         stage.process(&vec![f64::NAN; BLOCK * 2], &mut output);
         stage.process(&tone(200.0, rate, 0, BLOCK), &mut output);
 
@@ -1157,13 +1242,17 @@ mod tests {
             )
             .expect("one band"),
         );
+
         let mut stage = prepared(&wanted, rate);
 
         let at_centre = measured_db(&mut stage, 1_000.0, rate);
+
         assert!(at_centre.abs() < 0.05, "{at_centre} dB at the centre");
 
         let mut stage = prepared(&wanted, rate);
+
         let well_away = measured_db(&mut stage, 60.0, rate);
+
         assert!((well_away + 6.0).abs() < 0.1, "{well_away} dB well away");
     }
 
@@ -1173,6 +1262,7 @@ mod tests {
         let mut stage = Equaliser::new(wanted, SampleRate::HZ_44100);
 
         let refused = stage.prepare(spec(SampleRate::HZ_88200), BLOCK);
+
         assert!(matches!(
             refused,
             Err(Error::InputRateMismatch {
@@ -1186,10 +1276,13 @@ mod tests {
     fn equalising_changes_no_frame_count_and_adds_no_latency() {
         let rate = SampleRate::HZ_48000;
         let wanted = profile(vec![band(BandKind::Peaking, 1_000.0, 3.0, 1.0)]);
+
         let mut stage = prepared(&wanted, rate);
 
         let mut output = vec![0.0; BLOCK * 2];
+
         let count = stage.process(&tone(440.0, rate, 0, BLOCK), &mut output);
+
         assert_eq!(count.frames_in, BLOCK);
         assert_eq!(count.frames_out, BLOCK);
         assert_eq!(stage.latency_frames(), 0.0);
@@ -1197,7 +1290,9 @@ mod tests {
         assert_eq!(stage.flush(&mut output), 0);
 
         let mut short = vec![0.0; 64 * 2];
+
         let count = stage.process(&tone(440.0, rate, 0, BLOCK), &mut short);
+
         assert_eq!(count.frames_out, 64);
     }
 
@@ -1220,6 +1315,7 @@ mod tests {
                 histories: vec![[0.0; 4]; channels * MAX_BANDS],
                 bands: Vec::new(),
             };
+
             cascade.retune(profile);
             cascade
         }
@@ -1233,6 +1329,7 @@ mod tests {
                 .preamp
                 .toward(profile.preamp().amplitude(), eased_over(self.rate));
             self.coefficients = profile.designed(self.rate).collect();
+
             let reached = self.coefficients.len();
             for lane in self.histories.as_chunks_mut::<MAX_BANDS>().0 {
                 for history in lane.iter_mut().skip(reached) {
@@ -1248,11 +1345,13 @@ mod tests {
 
         fn process(&mut self, input: &[f64], output: &mut [f64]) -> usize {
             let frames = (input.len() / self.channels).min(output.len() / self.channels);
+
             for (taken, made) in input
                 .chunks_exact(self.channels)
                 .zip(output.chunks_exact_mut(self.channels))
             {
                 let preamp = self.preamp.at(0);
+
                 self.preamp = self.preamp.advanced(1);
                 for ((sample, slot), lane) in taken
                     .iter()
@@ -1260,14 +1359,17 @@ mod tests {
                     .zip(self.histories.as_chunks_mut::<MAX_BANDS>().0)
                 {
                     let mut carried = usable(*sample * preamp);
+
                     for (filter, history) in self.coefficients.iter().zip(lane.iter_mut()) {
                         let [behind_in, further_behind_in, behind_out, further_behind_out] =
                             *history;
+
                         let out = biquad(
                             *filter,
                             carried,
                             [behind_in, further_behind_in, behind_out, further_behind_out],
                         );
+
                         *history = [carried, behind_in, out, behind_out];
                         carried = out;
                     }
@@ -1302,6 +1404,7 @@ mod tests {
             .map(|index| {
                 let at = (from + index / channels) as f64;
                 let channel = (index % channels) as f64;
+
                 let hiss = ((at * 12.9898 + channel * 78.233).sin() * 43_758.545).fract();
                 0.45 * (at * (0.031 + 0.007 * channel)).sin()
                     + 0.3 * (at * (0.57 + 0.05 * channel)).sin()
@@ -1324,17 +1427,21 @@ mod tests {
             let mut expected = vec![f64::NAN; room];
             let count = self.stage.process(input, &mut made);
             let frames = self.cascade.process(input, &mut expected);
+
             assert_eq!(count.frames_in, frames, "{}, {step}", self.named);
             assert_eq!(count.frames_out, frames, "{}, {step}", self.named);
+
             let parted = made
                 .iter()
                 .zip(&expected)
                 .position(|(made, expected)| made.to_bits() != expected.to_bits());
+
             assert_eq!(parted, None, "{}, {step}: the samples part", self.named);
         }
 
         fn play(&mut self, frames: usize, step: &str) {
             let input = music(self.channels, self.played, frames);
+
             self.played += frames;
             self.feed(&input, input.len(), step);
         }
@@ -1349,12 +1456,14 @@ mod tests {
         let channels = usize::from(layout.count().get());
         let first = of_every_kind(bands, 0, -2.5);
         let mut stage = Equaliser::new(Arc::clone(&first), rate);
+
         stage
             .prepare(
                 StreamSpec::new(rate, layout, SampleFormat::F32),
                 PREPARED_FRAMES,
             )
             .expect("the stage takes the rate it was built for");
+
         let mut twins = Twins {
             stage,
             cascade: FrameMajor::new(&first, rate, channels),
@@ -1366,14 +1475,19 @@ mod tests {
         for frames in [PREPARED_FRAMES, 37, 1, 0, PREPARED_FRAMES * 3 + 5] {
             twins.play(frames, &format!("a block of {frames} frames"));
         }
+
         let longer = music(channels, twins.played, PREPARED_FRAMES);
+
         twins.feed(&longer, 100 * channels, "an output shorter than the input");
+
         let mut ragged = music(channels, twins.played, PREPARED_FRAMES);
+
         ragged.push(0.5);
         twins.feed(&ragged, ragged.len() + 3, "a partial frame at the end");
 
         let mut corrupt = music(channels, twins.played, PREPARED_FRAMES);
         let wild = [f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e-310, -1.7e308];
+
         for (slot, value) in corrupt.iter_mut().step_by(17).zip(wild.iter().cycle()) {
             *slot = *value;
         }
@@ -1385,6 +1499,7 @@ mod tests {
         twins.play(PREPARED_FRAMES, "music after the burst");
 
         let quiet = vec![0.0; DECAYING_FRAMES * channels];
+
         twins.feed(&quiet, quiet.len(), "a tail decaying through silence");
 
         twins.retune(&of_every_kind(bands, 1, 1.5));

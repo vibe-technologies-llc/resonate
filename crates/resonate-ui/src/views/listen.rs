@@ -524,6 +524,7 @@ impl RootView {
 
     fn listen_now(&mut self, cx: &mut Context<Self>) {
         let online = cx.global::<ResonateApp>().online.enabled;
+
         self.listen
             .update(cx, |listen, cx| listen.listen(online, cx));
     }
@@ -545,6 +546,7 @@ impl RootView {
     fn keep_listening(&mut self, cx: &mut Context<Self>) {
         self.listen.update(cx, |listen, cx| {
             let keeps = !listen.keeps_listening();
+
             listen.keep_listening(keeps, cx);
         });
     }
@@ -561,6 +563,7 @@ impl RootView {
             Some(artist) => format!("{} {artist}", heard.title),
             None => heard.title.clone(),
         };
+
         self.close_the_listener(cx);
         self.search_instead(asked, window, cx);
         self.choose_pane(Pane::Tracks, cx);
@@ -578,6 +581,7 @@ impl RootView {
         let from = listen.from().clone();
         let length = listen.length();
         let microphones = listen.microphones().to_vec();
+
         let unheard = from.is_a_microphone() && listen.hears_no_microphone();
         let shown_above = usize::from(matches!(stage, Stage::Found(_)));
         let earlier: Vec<Found> = listen.heard().iter().skip(shown_above).cloned().collect();
@@ -805,6 +809,7 @@ impl RootView {
             words::listen::microphone_hint(),
             from.is_a_microphone(),
         );
+
         let sources = kit::segmented()
             .children(desktop_is_heard().then(|| match pressable {
                 true => self.in_the_pane_ring(
@@ -1102,6 +1107,7 @@ mod tests {
                 );
             }
         }
+
         assert!(ending_of(&Stage::Asking, &Listening::Desktop).is_none());
     }
 
@@ -1136,8 +1142,11 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.click("listen");
+
         let listen = driven.read(|root, _| root.listen.clone());
+
         driven.cx.update(|_, cx| {
             listen.update(cx, |listen, cx| {
                 listen.recording_without_a_device();
@@ -1166,11 +1175,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         let listen = driven.read(|root, _| root.listen.clone());
         let heard_from =
             |driven: &mut Driven| driven.read(|root, cx| root.listen.read(cx).from().clone());
         let hearing = |driven: &mut Driven, microphones: Vec<(String, String)>| {
             let listen = listen.clone();
+
             driven.cx.update(|_, cx| {
                 listen.update(cx, |listen, cx| {
                     listen.hearing_of(microphones);
@@ -1192,13 +1203,18 @@ mod tests {
                 ("alsa_input.headset".to_owned(), "Headset".to_owned()),
             ],
         );
+
         assert!(driven.cx.debug_bounds("listen-no-microphone").is_none());
+
         driven.click("listen-microphone-choice-0");
+
         assert_eq!(
             heard_from(&mut driven),
             Listening::Microphone(Some(NodeName::new("alsa_input.desk")))
         );
+
         driven.click("listen-microphone-default");
+
         assert_eq!(heard_from(&mut driven), Listening::Microphone(None));
     }
 
@@ -1209,7 +1225,9 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
 
         driven.click("listen");
+
         assert!(matches!(stage(&mut driven), Stage::Offline));
+
         driven.click("listen-settings");
 
         assert!(!driven.read(|root, _| root.listening_open));
@@ -1225,9 +1243,11 @@ mod tests {
         let mut driven = Driven::open(cx, catalog());
 
         driven.click("listen");
+
         assert!(matches!(stage(&mut driven), Stage::Offline));
 
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.close_the_listener(cx);
@@ -1236,6 +1256,7 @@ mod tests {
             });
         });
         driven.settle();
+
         assert!(matches!(stage(&mut driven), Stage::NoService));
     }
 }

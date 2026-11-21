@@ -135,8 +135,11 @@ mod tests {
     #[test]
     fn every_span_is_named_both_ways_and_no_two_read_alike() {
         let mut brief: Vec<String> = REACHES.iter().map(|reach| (reach.briefly)(1)).collect();
+
         brief.sort_unstable();
+
         let held = brief.len();
+
         brief.dedup();
 
         assert_eq!(brief.len(), held, "two spans answer to one short name");

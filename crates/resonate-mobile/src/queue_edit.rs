@@ -38,6 +38,7 @@ impl MobilePlayer {
             let rows = queued.rows.len();
             let moved = row_within(from, rows, rows)?;
             let before = row_within(to, rows + 1, rows)?;
+
             let landing = landing_before(moved, before);
 
             Ok((landing != moved).then_some(Command::Move {
@@ -60,7 +61,9 @@ impl MobilePlayer {
             if items.is_empty() {
                 return Ok(None);
             }
+
             let items = self.as_chosen(items)?;
+
             if queued.rows.is_empty() {
                 return Ok(Some(Command::Resume(paused_on_the_first(items))));
             }
@@ -162,6 +165,7 @@ mod tests {
     #[test]
     fn play_next_lands_after_the_playing_row_and_add_appends_under_a_row_of_its_own() {
         let harness = Harness::new();
+
         harness.resumed("abc", 1, 400);
 
         harness
@@ -176,6 +180,7 @@ mod tests {
             .player
             .add_to_queue(harness.ids("a"))
             .expect("an append");
+
         let ids = harness.queue_ids();
 
         assert_eq!(harness.queued(), "abdca");
@@ -186,7 +191,9 @@ mod tests {
     #[test]
     fn the_playing_song_names_its_queue_row_as_the_queue_does() {
         let harness = Harness::new();
+
         harness.resumed("abca", 0, 400);
+
         let ids = harness.queue_ids();
 
         let resumed = harness.settled(|snapshot| snapshot.current.is_some());
@@ -197,6 +204,7 @@ mod tests {
         );
 
         harness.player.next().expect("a skip");
+
         let skipped = harness.settled(|snapshot| {
             snapshot
                 .current
@@ -213,6 +221,7 @@ mod tests {
     #[test]
     fn a_row_still_opening_is_the_song_a_snapshot_names() {
         let harness = Harness::new();
+
         harness.resumed("abc", 0, 0);
         harness.settled(|snapshot| snapshot.current.is_some());
 
@@ -256,6 +265,7 @@ mod tests {
     #[test]
     fn a_seek_in_a_row_still_opening_is_sent_and_one_with_nothing_to_play_is_not() {
         let harness = Harness::new();
+
         harness.resumed("abc", 0, 0);
         harness.settled(|snapshot| snapshot.current.is_some());
 
@@ -284,6 +294,7 @@ mod tests {
     #[test]
     fn a_save_waits_for_the_row_opening_to_publish_its_place() {
         let harness = Harness::new();
+
         harness.resumed("abc", 0, 0);
         harness.settled(|snapshot| snapshot.current.is_some());
 
@@ -317,6 +328,7 @@ mod tests {
     fn songs_whose_files_hold_the_same_bytes_are_found_and_one_alike_in_size_alone_is_not() {
         let harness = Harness::new();
         let mut differing = silence();
+
         if let Some(last) = differing.last_mut() {
             *last ^= 1;
         }
@@ -342,8 +354,10 @@ mod tests {
     #[test]
     fn one_file_named_by_two_rows_is_never_offered_as_a_copy_of_itself() {
         let harness = Harness::new();
+
         for (name, flipped) in [("b", 1), ("c", 2), ("d", 3)] {
             let mut differing = silence();
+
             if let Some(last) = differing.last_mut() {
                 *last ^= flipped;
             }
@@ -368,6 +382,7 @@ mod tests {
     fn a_second_row_naming_a_file_leaves_its_true_copies_offered_and_the_row_kept_out() {
         let harness = Harness::new();
         let mut differing = silence();
+
         if let Some(last) = differing.last_mut() {
             *last ^= 1;
         }
@@ -403,14 +418,17 @@ mod tests {
             .player
             .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
             .expect("a second row naming the same file");
+
         harness
             .player
             .favourite(alias.id, true)
             .expect("the second row favoured");
+
         let playlist = harness
             .player
             .create_playlist("Kept".into())
             .expect("a playlist");
+
         harness
             .player
             .add_to_playlist(playlist, vec![alias.id])
@@ -472,6 +490,7 @@ mod tests {
             .player
             .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
             .expect("a second row naming the same file");
+
         harness
             .player
             .load(vec![alias.id, harness.song('b').id], 1, false)
@@ -491,6 +510,7 @@ mod tests {
     #[test]
     fn the_copy_playing_is_the_one_kept() {
         let harness = Harness::new();
+
         harness.resumed("ab", 1, 0);
 
         let found = harness
@@ -506,11 +526,14 @@ mod tests {
     fn folding_a_copy_hands_its_favourite_and_playlist_rows_to_the_one_kept() {
         let harness = Harness::new();
         let [kept, copy] = [harness.song('a').id, harness.song('b').id];
+
         harness.player.favourite(copy, true).expect("a favourite");
+
         let playlist = harness
             .player
             .create_playlist("Evening".into())
             .expect("a playlist");
+
         harness
             .player
             .add_to_playlist(playlist, vec![copy])
@@ -549,13 +572,18 @@ mod tests {
     #[test]
     fn a_deleted_song_leaves_the_catalog_the_queue_and_its_playlists() {
         let harness = Harness::new();
+
         harness.resumed("abc", 0, 0);
+
         let gone = harness.song('b').id;
+
         std::fs::remove_file(harness.folder.join("b.wav")).expect("deleted by the front end");
+
         let playlist = harness
             .player
             .create_playlist("Evening".into())
             .expect("a playlist");
+
         harness
             .player
             .add_to_playlist(playlist, vec![gone, harness.song('c').id])
@@ -590,8 +618,11 @@ mod tests {
     {
         let harness = Harness::new();
         let apart = "bc".repeat(70);
+
         harness.resumed(&format!("d{apart}"), 0, 0);
+
         let gone = harness.song('b').id;
+
         std::fs::remove_file(harness.folder.join("b.wav")).expect("deleted by the front end");
 
         let forgotten = harness
@@ -613,6 +644,7 @@ mod tests {
             .player
             .play_next(harness.ids("ba"))
             .expect("a play next");
+
         let snapshot = harness.settled(|snapshot| snapshot.current.is_some());
 
         assert_eq!(harness.queued(), "ba");
@@ -630,7 +662,9 @@ mod tests {
     #[test]
     fn removing_a_row_keeps_the_playing_one_and_removing_the_playing_one_moves_on() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 2, 400);
+
         let ids = harness.queue_ids();
 
         harness.player.remove_from_queue(ids[0]).expect("a removal");
@@ -642,6 +676,7 @@ mod tests {
             .player
             .remove_from_queue(ids[2])
             .expect("the playing row's removal");
+
         let snapshot = harness.settled(|snapshot| {
             snapshot
                 .current
@@ -661,7 +696,9 @@ mod tests {
     #[test]
     fn a_removed_song_goes_back_to_the_row_it_left_and_past_the_end_it_is_appended() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 3, 400);
+
         let ids = harness.queue_ids();
 
         harness.player.remove_from_queue(ids[1]).expect("a removal");
@@ -684,6 +721,7 @@ mod tests {
     #[test]
     fn songs_whose_files_are_gone_leave_the_queue_and_the_playing_one_stays() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 2, 400);
         for name in ["b", "d"] {
             fs::remove_file(harness.folder.join(format!("{name}.wav"))).expect("a deletion");
@@ -703,10 +741,12 @@ mod tests {
     #[test]
     fn a_document_the_listing_shows_is_not_opened_and_the_rest_are() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 2, 400);
         for name in ["b", "d"] {
             fs::remove_file(harness.folder.join(format!("{name}.wav"))).expect("a deletion");
         }
+
         let listed = ['a', 'b', 'c']
             .map(|name| harness.song(name).uri.clone())
             .into_iter()
@@ -727,8 +767,11 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
 
         let harness = Harness::new();
+
         harness.resumed("abcd", 2, 400);
+
         let refused = harness.folder.join("b.wav");
+
         fs::set_permissions(&refused, fs::Permissions::from_mode(0o000)).expect("a mode");
 
         let changed = harness
@@ -737,6 +780,7 @@ mod tests {
             .expect("a pass");
 
         fs::set_permissions(&refused, fs::Permissions::from_mode(0o644)).expect("a mode");
+
         assert_eq!(changed.hidden, 0);
         assert_eq!(changed.left_the_queue, 0);
         assert_eq!(harness.queued(), "abcd");
@@ -745,6 +789,7 @@ mod tests {
     #[test]
     fn a_folder_removed_hides_its_songs_though_every_file_is_still_there() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 2, 400);
 
         let changed = harness
@@ -769,6 +814,7 @@ mod tests {
     #[test]
     fn a_move_names_the_row_it_lands_before_as_swiftui_does_in_both_directions() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 1, 400);
 
         harness.player.move_in_queue(0, 3).expect("a move down");
@@ -809,6 +855,7 @@ mod tests {
     #[test]
     fn clearing_keeps_the_playing_row_alone() {
         let harness = Harness::new();
+
         harness.resumed("abcd", 2, 400);
 
         harness.player.clear_queue().expect("a clear");
@@ -820,6 +867,7 @@ mod tests {
     #[test]
     fn a_save_after_an_edit_keeps_the_edited_queue() {
         let harness = Harness::new();
+
         harness.resumed("abc", 1, 400);
         harness.player.save().expect("a first save");
 
@@ -840,6 +888,7 @@ mod tests {
     #[test]
     fn a_closed_player_refuses_every_edit() {
         let harness = Harness::new();
+
         harness.resumed("ab", 0, 0);
         if let Some(zones) = harness.player.playing.take() {
             crate::zoning::shut_down(zones).expect("a shutdown");
@@ -868,11 +917,14 @@ mod tests {
     fn a_document_scanned_unchanged_is_not_read_again_and_a_changed_one_is() {
         let harness = Harness::new();
         let uri = format!("{FOLDER}a.wav");
+
         harness
             .player
             .scan_document(uri.clone(), "a.wav".into(), 100, 5)
             .expect("a first scan");
+
         let settled = harness.player.catalog.revision();
+
         fs::remove_file(harness.folder.join("a.wav")).expect("a file removed");
 
         let again = harness
@@ -894,10 +946,12 @@ mod tests {
     fn a_hidden_document_is_indexed_again_though_its_stamp_matches() {
         let harness = Harness::new();
         let uri = format!("{FOLDER}b.wav");
+
         let song = harness
             .player
             .scan_document(uri.clone(), "b.wav".into(), 100, 5)
             .expect("a first scan");
+
         harness
             .player
             .catalog
@@ -910,6 +964,7 @@ mod tests {
             .expect("a second scan");
 
         let shown = harness.player.catalog.tracks("", 0, 10).expect("listed");
+
         assert!(shown.iter().any(|track| track.id == song.id));
     }
 
@@ -917,6 +972,7 @@ mod tests {
     fn a_snapshot_says_there_is_no_device_to_play_through_until_the_transport_stops() {
         let harness = Harness::new();
         let told = "No speakers or headphones to play through — playing on once one is there";
+
         harness.resumed("ab", 0, 0);
 
         *harness
@@ -926,9 +982,12 @@ mod tests {
             .expect("the first zone")
             .waiting
             .lock() = Some(told.to_owned());
+
         let paused = harness.player.snapshot().expect("a snapshot");
         let again = harness.player.snapshot().expect("a snapshot");
+
         harness.player.stop().expect("a stop sent");
+
         let stopped = harness.settled(|snapshot| matches!(snapshot.transport, Transport::Stopped));
         let after = harness.player.snapshot().expect("a snapshot");
 
@@ -941,10 +1000,12 @@ mod tests {
     #[test]
     fn a_snapshot_keeps_the_playing_song_until_the_catalog_moves() {
         let harness = Harness::new();
+
         harness.resumed("ab", 0, 0);
 
         let before = harness.player.snapshot().expect("a snapshot");
         let again = harness.player.snapshot().expect("a snapshot");
+
         harness
             .player
             .catalog
@@ -953,6 +1014,7 @@ mod tests {
                 ..harness.song('a').clone()
             })
             .expect("a retag");
+
         let after = harness.player.snapshot().expect("a snapshot");
 
         assert_eq!(
@@ -968,9 +1030,11 @@ mod tests {
     #[test]
     fn a_saved_queue_resumes_in_its_order_at_its_row() {
         let harness = Harness::new();
+
         harness.resumed("cab", 1, 0);
 
         harness.player.save().expect("a save");
+
         let (ids, row, _) = harness.player.catalog.resume().expect("a saved queue");
 
         assert_eq!(ids, harness.ids("cab"));
@@ -980,14 +1044,19 @@ mod tests {
     #[test]
     fn a_snapshot_waiting_on_the_catalog_does_not_hold_up_the_transport() {
         let harness = Harness::new();
+
         harness.resumed("ab", 0, 0);
+
         let held_for = Duration::from_millis(1500);
         let transport_within = Duration::from_millis(1000);
         let player = &harness.player;
+
         let asked = std::thread::scope(|scope| {
             let (held, holding) = std::sync::mpsc::channel();
+
             scope.spawn(move || {
                 let _connection = player.catalog.0.lock();
+
                 held.send(()).expect("a signal");
                 std::thread::sleep(held_for);
             });
@@ -996,6 +1065,7 @@ mod tests {
             std::thread::sleep(Duration::from_millis(200));
 
             let began = std::time::Instant::now();
+
             player.seek(0).expect("a seek");
             began.elapsed()
         });
@@ -1015,10 +1085,13 @@ mod tests {
     fn engine_events_that_change_what_is_shown_tell_the_watch_once_however_many_arrive() {
         let harness = Harness::new();
         let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
         harness
             .player
             .watch_player(Box::new(Told(Arc::clone(&told))));
+
         let (sends, arrives) = unbounded();
+
         sends.send(Event::QueueFinished).expect("an event sent");
         sends
             .send(Event::TrackStarted(TrackId::new(1).expect("an id")))
@@ -1037,9 +1110,11 @@ mod tests {
     fn an_underrun_alone_does_not_wake_the_watch() {
         let harness = Harness::new();
         let told = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+
         harness
             .player
             .watch_player(Box::new(Told(Arc::clone(&told))));
+
         let (_sends, arrives) = unbounded();
 
         harness
@@ -1057,6 +1132,7 @@ mod tests {
     #[test]
     fn a_watch_over_a_player_no_longer_held_ends() {
         let (sends, arrives) = unbounded();
+
         sends.send(Event::QueueFinished).expect("an event sent");
 
         crate::watching::watch(&std::sync::Weak::new(), ZoneId::FIRST, &arrives);
@@ -1067,6 +1143,7 @@ mod tests {
     #[test]
     fn counting_what_is_heard_reads_the_engine_and_answers_its_transport() {
         let harness = Harness::new();
+
         harness.resumed("ab", 0, 0);
 
         let playback = harness

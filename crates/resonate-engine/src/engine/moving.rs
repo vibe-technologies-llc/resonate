@@ -15,6 +15,7 @@ impl Engine {
         let Some(playing) = self.queue.cursor() else {
             return self.remove(Span::between(0, last));
         };
+
         if playing < last {
             self.remove(Span::between(playing + 1, last))?;
         }
@@ -51,27 +52,33 @@ impl Engine {
             self.finish_the_queue();
             return Ok(());
         }
+
         let started = self.start(Frames::ZERO);
         self.past_what_will_not_open(started)
     }
 
     pub(super) fn follow_the_moves(&mut self, moved: &[(MediaLocation, MediaLocation)]) {
         let rows = self.queue.stamps_moved_by(moved);
+
         self.published.moves.tell(&Relocated {
             moved: moved.into(),
             rows: rows.into(),
         });
         self.queue.relocate(moved);
+
         let leaving = self
             .boundaries
             .iter_mut()
             .map(|boundary| &mut boundary.leaving);
+
         for track in self.track.iter_mut().chain(leaving) {
             if let Some(to) = landed_at(&track.location, moved) {
                 track.relocate(to);
             }
         }
+
         let sources = &self.sources;
+
         self.opening = self
             .opening
             .take()
@@ -122,6 +129,7 @@ impl Engine {
         if natural && let Some(id) = self.track.as_ref().map(|track| track.id) {
             self.emit(Event::TrackFinished(id));
         }
+
         let wraps = self.queue.wraps_next();
         let leaving = self.queue.current().map(|item| item.id);
 
@@ -144,6 +152,7 @@ impl Engine {
     pub(super) fn next(&mut self) -> Result<()> {
         self.failures = 0;
         self.skipped_by_hand();
+
         let skipped = self.skip(false);
         self.past_what_will_not_open(skipped)
     }

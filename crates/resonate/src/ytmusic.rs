@@ -51,12 +51,14 @@ fn named_in<'a>(query: &'a str, name: &str) -> Option<&'a str> {
 
 pub fn keep_of(link: &str) -> Keeping {
     let link = link.trim();
+
     if !matches!(
         Service::of_url(link),
         Service::YoutubeMusic | Service::Youtube
     ) {
         return Keeping::Elsewhere;
     }
+
     let Some((_, reached)) = link.split_once(AFTER_THE_SCHEME) else {
         return Keeping::Elsewhere;
     };
@@ -68,6 +70,7 @@ pub fn keep_of(link: &str) -> Keeping {
     if host.eq_ignore_ascii_case(SHORT_LINKS_ARE_ON) {
         let names_a_video =
             VideoId::read(path).is_some() && ![A_SONGS_PATH, A_PLAYLISTS_PATH].contains(&path);
+
         return if names_a_video {
             Keeping::Song(path.to_owned())
         } else {
@@ -120,6 +123,7 @@ fn queue_the_song(music: &YtMusic, video: &VideoId, library: &Library) -> Result
         video: video.as_str().to_owned(),
     })?;
     let title = song.title.clone();
+
     match library.keep_song(to_keep(music.scheme(), song))? {
         KeptSong::Queued => said!("{}", words::ytmusic::queued(&title)),
         KeptSong::AlreadyHeld(_) => said!("{}", words::ytmusic::already_held(&title)),
@@ -135,11 +139,13 @@ fn queue_the_playlist(music: &YtMusic, list: &Id, ordered: bool, library: &Libra
         .into_iter()
         .map(|song| to_keep(music.scheme(), song))
         .partition(|song| !song.title.trim().is_empty());
+
     let kept = library.keep_playlist(PlaylistToKeep {
         name: name.clone(),
         ordered,
         songs,
     })?;
+
     said!("{}", list_kept(&name, kept, untitled.len()));
     Ok(())
 }
@@ -154,6 +160,7 @@ fn list_kept(name: &str, kept: KeptList, left_out: usize) -> String {
 
 fn queue(asked: &Asked, music: &YtMusic, ordered: bool, library: &Library) -> Result<()> {
     library.has_a_folder_to_keep_into()?;
+
     let _leaving = signals::leave_when_told();
     match asked {
         Asked::Song(video) => queue_the_song(music, video, library),
@@ -177,6 +184,7 @@ fn walked_until_told(library: &Library, music: Arc<YtMusic>) -> Result<()> {
     let told = Arc::clone(&stopping);
     let _interrupting = signals::cancel_when_told(move || told.store(true, Ordering::Relaxed));
     let summary = walked(library, music, &stopping)?;
+
     said!(
         "{}",
         words::ytmusic::walked(summary.gone, summary.landed, summary.unkept)
@@ -215,6 +223,7 @@ fn keep(
     let asked = asked_of(link)?;
     let music = account(config, settings)?;
     let library = library()?;
+
     queue(
         &asked,
         &music,
@@ -238,6 +247,7 @@ fn connection_said(connection: Connection) -> &'static str {
 fn check(config: &Config, settings: Option<PathBuf>) -> Result<()> {
     let music = account(config, settings)?;
     let _leaving = signals::leave_when_told();
+
     said!("{}", connection_said(music.check()));
     Ok(())
 }
@@ -254,9 +264,11 @@ fn signed_in_with(
     if !config.is_on(Switch::YoutubeMusic) {
         return Err(Error::YoutubeMusicOff);
     }
+
     let program = program.ok_or(Error::NoSignInProgram)?;
     let settings = settings.ok_or(Error::NoConfigDir)?;
     let named = kept.jar_named()?;
+
     said!("{}", words::ytmusic::window_open());
     signing_in::sign_in(&program, kept)?;
     config::store(settings, ConfigKey::YoutubeMusicCookies, named.as_str())?;
@@ -272,21 +284,26 @@ fn sign_in(config: &Config, settings: Option<PathBuf>) -> Result<()> {
         signing_in::the_program(),
         &kept,
     )?;
+
     said!("{}", words::ytmusic::signed_in());
+
     let checked = Config {
         youtube_music_cookies: Some(named),
         ..config.clone()
     };
+
     said!("{}", connection_said(account(&checked, settings)?.check()));
     Ok(())
 }
 
 fn signed_out_with(config: &Config, settings: Option<&Path>, kept: &Kept) -> Result<bool> {
     signing_in::sign_out(kept)?;
+
     let ours = config
         .youtube_music_cookies
         .as_deref()
         .is_some_and(|cookies| signing_in::names_the_jar(cookies, kept));
+
     if ours {
         config::clear(
             settings.ok_or(Error::NoConfigDir)?,
@@ -298,6 +315,7 @@ fn signed_out_with(config: &Config, settings: Option<&Path>, kept: &Kept) -> Res
 
 fn sign_out(config: &Config, settings: Option<PathBuf>) -> Result<()> {
     let kept = Kept::in_the_data_folder()?;
+
     if signed_out_with(config, settings.as_deref(), &kept)? {
         said!("{}", words::ytmusic::signed_out());
     } else {
@@ -361,6 +379,7 @@ mod tests {
             (WhyAway::NotAnswering, "stopped answering"),
         ] {
             let said = told(why);
+
             assert!(said.contains(words), "{said}");
             assert!(said.contains("Creep"), "{said}");
             assert!(said.contains('3'), "{said}");
@@ -428,13 +447,17 @@ mod tests {
             std::process::id()
         ));
         let _ = std::fs::remove_dir_all(&folder);
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let settings = folder.join("config.toml");
+
         std::fs::write(
             &settings,
             "youtube-music = true\nyoutube-music-cookies = \"firefox\"\n",
         )
         .expect("the settings");
+
         let kept = Kept::under(&folder.join("data"));
         SigningIn {
             folder,
@@ -449,6 +472,7 @@ mod tests {
         use std::{io::ErrorKind, os::unix::fs::PermissionsExt as _, process::Command};
 
         let program = folder.join(format!("resonate-signin-{}", says.len()));
+
         std::fs::write(
             &program,
             format!("#!/bin/sh\n[ \"$1\" = --runs ] && exit 0\n{says}\n"),
@@ -512,6 +536,7 @@ mod tests {
 
         for says in ["exit 3", "exit 1 # failed"] {
             let program = a_sign_in_program(&folder, says);
+
             assert!(signed_in_with(&turned_on(), Some(&settings), Some(program), &kept).is_err());
             assert_eq!(
                 std::fs::read_to_string(&settings).expect("the settings"),
@@ -535,6 +560,7 @@ mod tests {
             signed_in_with(&turned_on(), Some(&settings), Some(program), &kept).expect("signed in");
 
         let written = std::fs::read_to_string(&settings).expect("the settings");
+
         assert_eq!(named, kept.jar.display().to_string());
         assert!(
             written.contains(&format!("youtube-music-cookies = \"{named}\"")),
@@ -552,9 +578,11 @@ mod tests {
             _interrupting,
         } = a_sign_in_folder("out");
         let own = folder.join("cookies.txt");
+
         std::fs::write(&own, "the listener's").expect("their cookies");
         std::fs::create_dir_all(&kept.profile).expect("a profile");
         std::fs::write(&kept.jar, "jar").expect("a jar");
+
         let theirs = Config {
             youtube_music_cookies: Some(own.display().to_string()),
             ..turned_on()
@@ -574,7 +602,9 @@ mod tests {
             youtube_music_cookies: Some(kept.jar.display().to_string()),
             ..turned_on()
         };
+
         signed_out_with(&ours, Some(&settings), &kept).expect("signed out");
+
         assert!(
             !std::fs::read_to_string(&settings)
                 .expect("the settings")
@@ -708,6 +738,7 @@ mod tests {
                 match Command::new(program).arg(ASKED_IF_IT_RUNS).status() {
                     Err(error) if error.kind() == ErrorKind::ExecutableFileBusy => {
                         assert!(began.elapsed() < FORKS_HOLDING_THE_SCRIPT_OPEN_END_WITHIN);
+
                         thread::yield_now();
                     }
                     answered => {
@@ -721,6 +752,7 @@ mod tests {
         fn a_second_of_silence() -> Vec<u8> {
             let data = SAMPLES_A_SECOND * 2;
             let mut wave = Vec::new();
+
             wave.extend_from_slice(b"RIFF");
             wave.extend_from_slice(&(36 + data).to_le_bytes());
             wave.extend_from_slice(b"WAVEfmt ");
@@ -749,8 +781,11 @@ mod tests {
                     process::id(),
                     MADE.fetch_add(1, Ordering::Relaxed)
                 ));
+
                 fs::create_dir_all(folder.join("music")).expect("a folder");
+
                 let program = folder.join("yt-dlp");
+
                 fs::write(
                     &program,
                     format!(
@@ -804,11 +839,14 @@ mod tests {
                 r#"echo '{"track":"Creep","artist":"Radiohead","duration":238,"formats":[]}'"#,
             );
             let library = Library::open_in_memory().expect("a catalog");
+
             delivering_into(&library, &folder);
+
             let music = folder.music();
             let asked = asked_of(A_SONG).expect("a song");
 
             queue(&asked, &music, true, &library).expect("the song queued");
+
             assert_eq!(library.keeps_pending().expect("a count"), 1);
             assert_eq!(folder.asked().len(), 1);
 
@@ -824,7 +862,9 @@ mod tests {
         fn a_link_to_a_video_gone_is_said_to_be_gone_and_nothing_is_queued() {
             let folder = Folder::holding_a_tool("echo 'ERROR: Video unavailable' >&2\nexit 1");
             let library = Library::open_in_memory().expect("a catalog");
+
             delivering_into(&library, &folder);
+
             let asked = asked_of(A_SONG).expect("a song");
 
             assert!(matches!(
@@ -853,7 +893,9 @@ mod tests {
                 r#"echo '{"title":"Road trip","entries":[{"id":"one","title":"One","channel":"Ada"},{"id":"blank","title":" "}]}'"#,
             );
             let library = Library::open_in_memory().expect("a catalog");
+
             delivering_into(&library, &folder);
+
             let asked = asked_of("https://music.youtube.com/playlist?list=PLx").expect("a list");
 
             queue(&asked, &folder.music(), true, &library).expect("the list queued");
@@ -867,6 +909,7 @@ mod tests {
             let catalog = folder.path().join("library.db");
             let walking = Library::open(&catalog).expect("a catalog");
             let waiting = Library::open(&catalog).expect("the catalog again");
+
             delivering_into(&walking, &folder);
             delivering_into(&waiting, &folder);
             walking
@@ -880,13 +923,16 @@ mod tests {
                     cover: None,
                 })
                 .expect("the song queued");
+
             let stopping = Arc::new(AtomicBool::new(false));
 
             thread::scope(|scope| {
                 let told = Arc::clone(&stopping);
                 let music = folder.music();
+
                 let first = scope.spawn(move || walked(&walking, music, &told));
                 let began = Instant::now();
+
                 while folder.asked().is_empty() && began.elapsed() < THE_TOOL_IS_REACHED_WITHIN {
                     thread::sleep(LOOKED_AT_EVERY);
                 }
@@ -894,9 +940,12 @@ mod tests {
                 let second = walked(&waiting, folder.music(), &AtomicBool::new(false));
 
                 stopping.store(true, Ordering::Relaxed);
+
                 assert!(matches!(second, Err(Error::KeepWaitsItsTurn)));
+
                 first.join().expect("the first pass").expect("its summary");
             });
+
             assert_eq!(waiting.keeps_pending().expect("a count"), 1);
         }
 
@@ -909,8 +958,11 @@ mod tests {
     *) cat "$(dirname "$0")/song" ;;
 esac"#,
             );
+
             fs::write(folder.path().join("song"), a_second_of_silence()).expect("the song");
+
             let library = Library::open_in_memory().expect("a catalog");
+
             library.deliver_into(Some(DeliveryFolder {
                 path: folder.path().join("music"),
                 layout: Layout::default(),
@@ -925,6 +977,7 @@ esac"#,
                     length: None,
                     cover: None,
                 };
+
                 library.keep_song(song).expect("queued");
             }
 

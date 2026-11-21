@@ -73,6 +73,7 @@ fn client(config: &Config) -> Arc<Client> {
             Client::introduced(introduction(config).clone()).gated_by(metered::for_lookups(config)),
         )
     });
+
     client.reach(REACHING.load(Ordering::Relaxed));
     Arc::clone(client)
 }
@@ -116,8 +117,10 @@ impl Followed {
         let stamp = fs::metadata(&self.path)
             .and_then(|held| held.modified())
             .ok();
+
         {
             let mut seen = self.seen.lock();
+
             if *seen == stamp {
                 return None;
             }
@@ -201,6 +204,7 @@ impl SpotifyGrants for KeptInTheSettings {
             return read.1.clone();
         };
         let moved = fs::metadata(settings).and_then(|file| file.modified()).ok();
+
         if moved != read.0 {
             match config::spotify_in(settings) {
                 Ok(given) => {
@@ -294,6 +298,7 @@ pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let client_id = config
         .spotify_client_id
         .as_deref()
@@ -303,6 +308,7 @@ pub fn signed_in_to_spotify(config: &Config) -> Result<String> {
 
     let signs_in = SpotifySignIn::new(client_for(config, Asking::ForTheListener));
     let authorizing = signs_in.authorizing(client_id)?;
+
     said!(
         "{}",
         crate::words::spotify::open_to_sign_in(resonate_online::SPOTIFY_REDIRECT)
@@ -333,6 +339,7 @@ pub fn latest_release(config: &Config, asking: Asking) -> Result<Option<Release>
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let repository = Repository::of_this_build().ok_or(Error::NoReleasesNamed)?;
     Releases::of(client_for(config, asking), repository)
         .latest()
@@ -363,9 +370,11 @@ pub fn fingerprinters(
     asking: Asking,
 ) -> Fingerprinters {
     let local = Fingerprinters::none();
+
     if !config.is_on(Switch::Online) {
         return local;
     }
+
     let printed = match config.acoustid_key.clone() {
         Some(key) => local.and(Arc::new(AcoustId::new(client_for(config, asking), key))),
         None => local,
@@ -388,6 +397,7 @@ pub fn history(
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let named = user.map(str::trim).filter(|user| !user.is_empty());
     match service {
         ListeningService::ListenBrainz => {
@@ -407,6 +417,7 @@ pub fn history(
             else {
                 return Err(Error::NoLastfmApplication);
             };
+
             let application = Application { key, secret };
             let user = match (named, config.lastfm_session.clone()) {
                 (Some(user), _) => user.to_owned(),
@@ -550,8 +561,10 @@ pub fn recognisers(config: &Config) -> Recognisers {
     if !config.is_on(Switch::Online) {
         return Recognisers::none();
     }
+
     let client = client(config);
     let mut recognisers = Recognisers::none().and(Arc::new(Shazam::new(Arc::clone(&client))));
+
     if let Some(token) = config.audd_token.clone() {
         recognisers = recognisers.and(Arc::new(Audd::new(client, token)));
     }
@@ -566,6 +579,7 @@ pub fn recognisers(_config: &Config) -> Recognisers {
 #[cfg(feature = "online")]
 pub fn corrections(config: &Config, library: Option<Arc<Library>>) -> Corrected {
     let local = Corrected::uncorrected();
+
     if !config.is_on(Switch::Online) {
         return local;
     }
@@ -588,6 +602,7 @@ pub fn lyricists(
     by_the_locale: &Arc<AtomicBool>,
 ) -> Lyricists {
     let local = Lyricists::local_choosing_by_the_locale(Arc::clone(by_the_locale));
+
     if !config.is_on(Switch::Online) {
         return local;
     }

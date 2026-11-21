@@ -205,6 +205,7 @@ pub(crate) fn open_song(library: &Library, path: &Path) -> Result<Option<OpenedS
             }
         };
     }
+
     let Ok(file) = File::open(path) else {
         return Ok(None);
     };
@@ -234,6 +235,7 @@ pub(crate) fn playlists(inner: &Inner) -> Result<Vec<SyncedPlaylist>> {
                   ORDER BY p.id",
             )
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let listed = statement
             .query_map([], |row| {
                 Ok((
@@ -268,6 +270,7 @@ pub(crate) fn queries(inner: &Inner) -> Result<Vec<SyncedQuery>> {
                   ORDER BY p.id",
             )
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let listed = statement
             .query_map([], |row| {
                 Ok((
@@ -346,6 +349,7 @@ pub(crate) fn write_query(
             None => made(transaction, &body.name)?,
         };
         let name = named(transaction, id, &body.name)?;
+
         transaction
             .execute(
                 "DELETE FROM playlist_queries WHERE playlist_id = ?1",
@@ -353,6 +357,7 @@ pub(crate) fn write_query(
             )
             .map_err(|source| Error::store(StoreOp::Delete, source))?;
         playlist::write_query(transaction, id, &query)?;
+
         let created: i64 = transaction
             .query_row(
                 "SELECT created FROM playlists WHERE id = ?1",
@@ -369,6 +374,7 @@ pub(crate) fn write_query(
             },
         })
     })?;
+
     undo::overtaken(
         inner,
         &[written.id],
@@ -389,6 +395,7 @@ fn named(transaction: &Transaction<'_>, id: PlaylistId, wanted: &str) -> Result<
         )
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     let now = store::to_nanos(SystemTime::now()).max(modified.saturating_add(1));
+
     transaction
         .execute(
             "UPDATE playlists SET name = ?2, folded = ?3, modified = ?4 WHERE id = ?1",
@@ -508,6 +515,7 @@ pub(crate) fn flag_playlist_shared(
                 |row| row.get(0),
             )
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         if !held {
             return Ok(false);
         }
@@ -515,6 +523,7 @@ pub(crate) fn flag_playlist_shared(
 
         Ok(true)
     })?;
+
     inner.playlists_changed();
     inner.arrived();
 
@@ -562,6 +571,7 @@ pub(crate) fn shared_as(inner: &Inner) -> Result<Vec<(PlaylistId, bool)>> {
                    JOIN playlists p ON p.id = s.playlist_id AND p.created = s.created",
             )
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, bool>(1)?))
@@ -601,11 +611,13 @@ fn written_with(
 ) -> Result<SyncedPlaylist> {
     let written = inner.write(|transaction| {
         let mut rows = Vec::with_capacity(entries.len());
+
         for entry in entries {
             if let Some(cut) = resolved(transaction, entry)? {
                 rows.push(Row::of(&cut)?);
             }
         }
+
         let held = at.filter(|(id, created)| {
             transaction
                 .query_row(
@@ -624,6 +636,7 @@ fn written_with(
             None => made(transaction, name)?,
         };
         let name = named(transaction, id, name)?;
+
         transaction
             .execute(
                 "DELETE FROM playlist_entries WHERE playlist_id = ?1",
@@ -641,6 +654,7 @@ fn written_with(
         if let Some(kept) = playlist::kept_in(transaction, id)? {
             playlist::in_order(transaction, id, kept)?;
         }
+
         let created: i64 = transaction
             .query_row(
                 "SELECT created FROM playlists WHERE id = ?1",
@@ -648,6 +662,7 @@ fn written_with(
                 |row| row.get(0),
             )
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         if let Some(editable) = shared {
             flagged_in(transaction, id, created, editable)?;
         }
@@ -658,6 +673,7 @@ fn written_with(
             name,
         })
     })?;
+
     undo::overtaken(inner, &[written.id], &[playlist::folded(&written.name)]);
     inner.playlists_changed();
     inner.arrived();
@@ -667,13 +683,16 @@ fn written_with(
 fn made(transaction: &Transaction<'_>, name: &str) -> Result<PlaylistId> {
     let now = store::to_nanos(SystemTime::now());
     let name = a_free_name(transaction, name, None)?;
+
     transaction
         .execute(
             "INSERT INTO playlists (name, folded, created, modified) VALUES (?1, ?2, ?3, ?3)",
             params![name, playlist::folded(&name), now],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
     let id = PlaylistId::new(transaction.last_insert_rowid().cast_unsigned())?;
+
     transaction
         .execute(
             "DELETE FROM playlist_plays WHERE playlist_id = ?1",
@@ -709,6 +728,7 @@ fn a_free_name(
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         if holder.is_none_or(|holder| {
             keeping.is_some_and(|keeping| holder.cast_unsigned() == keeping.get())
         }) {
@@ -728,6 +748,7 @@ pub(crate) fn remove_playlist(inner: &Inner, id: PlaylistId, created: i64) -> Re
             .map(|removed| removed > 0)
             .map_err(|source| Error::store(StoreOp::Delete, source))
     })?;
+
     if removed {
         if inner
             .playing()
@@ -788,9 +809,11 @@ fn named_alike(
     among: Among,
 ) -> Result<Vec<(Cut, Option<String>)>> {
     let words = resonate_core::title_words(&recording.title);
+
     if words.is_empty() {
         return Ok(Vec::new());
     }
+
     let mut statement = connection
         .prepare_cached(&format!(
             "SELECT t.path, t.span_start, t.span_frames, t.vault_path, {RECORDING_COLUMNS}
@@ -800,6 +823,7 @@ fn named_alike(
             among.clause()
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let candidates = statement
         .query_map(params![words], |row| {
             Ok((
@@ -860,16 +884,20 @@ pub(crate) fn every_row_holding(
     let key = recording.key();
     let named = recording.named_key();
     let mut rows = Vec::new();
+
     if let Some(mbid) = &recording.mbid {
         let mut statement = connection
             .prepare_cached("SELECT path, vault_path FROM tracks WHERE mbid = ?1")
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let held = statement
             .query_map(params![mbid.as_str()], HeldRow::read)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         rows.extend(held);
     }
+
     let mut statement = connection
         .prepare_cached(
             "SELECT s.path, t.vault_path
@@ -877,10 +905,12 @@ pub(crate) fn every_row_holding(
               WHERE s.recording IN (?1, ?2)",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let received = statement
         .query_map(params![key.as_str(), named.as_str()], HeldRow::read)
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     rows.extend(received);
     for (cut, within) in named_alike(connection, recording, Among::HiddenToo)? {
         if let Some(path) = cut.location.as_path() {
@@ -896,12 +926,14 @@ pub(crate) fn every_row_holding(
 pub(crate) fn holds(inner: &Inner, vault: Option<&Vault>, recording: &Recording) -> Result<bool> {
     inner.read(|connection| {
         let rows = every_row_holding(connection, recording)?;
+
         if rows.iter().any(|row| row.stands(vault)) {
             return Ok(true);
         }
         if rows.is_empty() {
             return Ok(false);
         }
+
         let away = volumes::absent(connection)?;
         Ok(rows
             .iter()
@@ -915,6 +947,7 @@ pub(crate) fn recordings_at(tx: &Transaction<'_>, path: &str) -> Result<Vec<Reco
             "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS} WHERE t.path = ?1"
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let named = statement
         .query_map(params![path], |row| recording_at(row, 0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -932,10 +965,12 @@ pub(crate) fn keys_deleted_with(tx: &Transaction<'_>, path: &str) -> Result<Vec<
     let mut received = tx
         .prepare_cached("SELECT recording FROM songs_received WHERE path = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let sent = received
         .query_map(params![path], |row| row.get::<_, String>(0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     keys.extend(sent);
     keys.sort_unstable();
     keys.dedup();
@@ -1179,6 +1214,7 @@ pub(crate) fn favourites(inner: &Inner) -> Result<Vec<Recording>> {
                   WHERE t.favourite IS NOT NULL ORDER BY t.favourite"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let favoured = statement
             .query_map([], |row| recording_at(row, 0))
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -1206,6 +1242,7 @@ pub(crate) fn favour(inner: &Inner, recording: &Recording, favoured: bool) -> Re
             .map(|changed| Some(changed > 0))
             .map_err(|source| Error::store(StoreOp::Update, source))
     })?;
+
     if changed == Some(true) {
         inner.arrived();
     }
@@ -1234,6 +1271,7 @@ pub(crate) fn listens_after(
                   ORDER BY l.id LIMIT ?2"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let rows = statement
             .query_map(
                 params![mark.cast_signed(), i64::try_from(most).unwrap_or(i64::MAX)],
@@ -1250,6 +1288,7 @@ pub(crate) fn listens_after(
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
         let mut listens = Vec::with_capacity(rows.len());
+
         for (id, began, heard, at, recording) in rows {
             if at.max(began.saturating_add(heard)) > settled_before {
                 break;
@@ -1292,12 +1331,14 @@ pub(crate) fn credit(
             return Ok(Credited::NotHere);
         };
         let heard = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
+
         let inserted = transaction
             .execute(
                 "INSERT OR IGNORE INTO listens (track_id, at, began, heard, elsewhere, origin_device, origin_id) VALUES (?1, ?2, ?2, ?3, 1, ?4, ?5)",
                 params![track, at, heard, origin, listen.cast_signed()],
             )
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
         if inserted == 0 {
             return Ok(Credited::Already);
         }
@@ -1309,6 +1350,7 @@ pub(crate) fn credit(
             .map_err(|source| Error::store(StoreOp::Update, source))?;
         Ok(Credited::Newly)
     })?;
+
     if credited == Credited::Newly {
         inner.arrived();
     }
@@ -1332,6 +1374,7 @@ pub(crate) fn holdings(inner: &Inner) -> Result<Vec<HeldSong>> {
                          OR (t.vault_key IS NOT NULL AND t.root_id IS NULL))"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -1370,14 +1413,18 @@ pub enum SongFiled {
 fn tag_received(path: &Path, recording: &Recording, passed: &HeldTags) {
     let location = MediaLocation::local(path);
     let sink = FileTags::over(Sources::local());
+
     if !sink.writes(&location) {
         return;
     }
+
     let Ok(tagged) = sink.read(&location, Picturing::Whether) else {
         return;
     };
     let mut tags = tagged.tags;
+
     passed.fill(&mut tags);
+
     let values = [
         (
             TagField::Compilation,
@@ -1451,6 +1498,7 @@ pub(crate) fn recover_received(
     if record.span.is_some() {
         return Ok(());
     }
+
     let spelling = connection
         .query_row(
             "SELECT title, artist, album FROM songs_received
@@ -1466,6 +1514,7 @@ pub(crate) fn recover_received(
         )
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if let Some((title, artist, album)) = spelling {
         if !title.trim().is_empty() && (record.named_by_its_stem || record.tags.title.is_none()) {
             record.tags.title = Some(title);
@@ -1474,15 +1523,18 @@ pub(crate) fn recover_received(
         fill_gap(&mut record.tags.artist, &artist);
         fill_gap(&mut record.tags.album, &album);
     }
+
     let mut query = connection
         .prepare("SELECT recording FROM songs_received WHERE path = ?1 ORDER BY recording")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let keys = query
         .query_map([store::path_text(&record.path)], |row| {
             row.get::<_, String>(0)
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     for key in keys {
         if let Some(mbid) = key.strip_prefix("mbid:").and_then(|id| Mbid::new(id).ok()) {
             fill_gap(
@@ -1521,6 +1573,7 @@ pub(crate) fn file_song(
     if library.vault().is_some() {
         return vaulted(library, recording, tags, extension, reader);
     }
+
     let Some(into) = library.delivering_into() else {
         return Ok(SongFiled::Nowhere);
     };
@@ -1550,6 +1603,7 @@ pub(crate) fn file_song(
         track: None,
         extension: Some(extension.as_str()),
     };
+
     let Some(relative) = into.layout.render(&named, Naming::of(&folder)) else {
         return Ok(SongFiled::Refused);
     };
@@ -1565,6 +1619,7 @@ pub(crate) fn file_song(
                 Some(file) => library.same_file_held(file, &path)?,
                 None => None,
             };
+
             if let Some(held) = held {
                 if let Err(error) = fs::remove_file(&path) {
                     tracing::warn!(%error, path = %path.display(), "a song from another device already held could not be taken away again");
@@ -1615,16 +1670,19 @@ fn vaulted(
             return Ok(SongFiled::Refused);
         }
     };
+
     if let Some(held) = library.vaulted_already(&kept)? {
         library.note_song_received_at(recording, &held, ReceivedAt::AlreadyHeld)?;
         return Ok(SongFiled::Vaulted(kept.path));
     }
     tags.fill(&mut kept.declared);
+
     let taken_from = format!("{DEVICES}:{}", recording.key());
     let at = match library.note_received(recording, &kept, &taken_from)? {
         Some(_) => ReceivedAt::NewlyPlaced,
         None => ReceivedAt::AlreadyHeld,
     };
+
     library.note_song_received_at(recording, &kept.path, at)?;
 
     Ok(SongFiled::Vaulted(kept.path))
@@ -1704,6 +1762,7 @@ mod tests {
         fn new(named: &str) -> Self {
             let path = env::temp_dir().join(format!("resonate-synced-{}-{named}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(&path).expect("a writable temporary directory");
             Self {
                 path: path.canonicalize().expect("a canonical path"),
@@ -1732,6 +1791,7 @@ mod tests {
 
     fn named_wav(title: &str) -> Vec<u8> {
         let mut format = Vec::new();
+
         format.extend_from_slice(&1_u16.to_le_bytes());
         format.extend_from_slice(&1_u16.to_le_bytes());
         format.extend_from_slice(&RATE.to_le_bytes());
@@ -1740,22 +1800,26 @@ mod tests {
         format.extend_from_slice(&16_u16.to_le_bytes());
 
         let mut info = b"INFO".to_vec();
+
         for (id, value) in [
             (b"INAM", title),
             (b"IART", "Pink Floyd"),
             (b"IPRD", "Meddle"),
         ] {
             let mut text = value.as_bytes().to_vec();
+
             text.push(0);
             chunk(&mut info, id, &text);
         }
 
         let mut body = b"WAVE".to_vec();
+
         chunk(&mut body, b"fmt ", &format);
         chunk(&mut body, b"LIST", &info);
         chunk(&mut body, b"data", &vec![0; RATE as usize * 2]);
 
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&u32::try_from(body.len()).unwrap_or(u32::MAX).to_le_bytes());
         file.extend_from_slice(&body);
         file
@@ -1775,11 +1839,14 @@ mod tests {
     fn a_received_identity_is_written_into_a_bare_file_and_declared_tags_win() {
         let scratch = Scratch::new("received-tags");
         let path = scratch.path.join("song.wav");
+
         fs::write(&path, named_wav("File title")).expect("a wave");
+
         let recording = Recording {
             mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an id")),
             ..song("Sender title")
         };
+
         tag_received(
             &path,
             &recording,
@@ -1788,10 +1855,12 @@ mod tests {
                 ..HeldTags::default()
             },
         );
+
         let tags = FileTags::over(Sources::local())
             .read(&MediaLocation::local(&path), Picturing::Whether)
             .expect("tags")
             .tags;
+
         assert_eq!(tags.title.as_deref(), Some("File title"));
         assert_eq!(
             tags.musicbrainz_track_id,
@@ -1805,26 +1874,34 @@ mod tests {
         let scratch = Scratch::new("recover-received");
         let path = scratch.path.join("12345.wav");
         let mut bytes = named_wav("unused");
+
         let list = bytes
             .windows(4)
             .position(|part| part == b"LIST")
             .expect("list");
         let length =
             u32::from_le_bytes(bytes[list + 4..list + 8].try_into().expect("length")) as usize;
+
         bytes.drain(list..list + 8 + length);
+
         let size = (bytes.len() - 8) as u32;
+
         bytes[4..8].copy_from_slice(&size.to_le_bytes());
         fs::write(&path, bytes).expect("bare wave");
+
         let library = Library::open_in_memory().expect("library");
+
         library
             .scan(scanning(scratch.path.clone()))
             .expect("scan")
             .join()
             .expect("scanned");
+
         let recording = Recording {
             mbid: Some(Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("id")),
             ..song("Echoes")
         };
+
         library
             .note_song_received_at(&recording, &path, ReceivedAt::AlreadyHeld)
             .expect("receipt");
@@ -1841,6 +1918,7 @@ mod tests {
                         Ok((row.get(0)?, row.get(1)?, row.get(2)?))
                     })
                     .expect("track");
+
                 assert_eq!(recovered.0, "Echoes");
                 assert_eq!(recovered.1.as_deref(), Some("Pink Floyd"));
                 assert_eq!(recovered.2, recording.mbid.map(|id| id.to_string()));
@@ -1853,15 +1931,20 @@ mod tests {
     fn a_song_filed_but_not_yet_catalogued_is_held_while_its_file_stands() {
         let scratch = Scratch::new("filed-unscanned");
         let path = scratch.path.join("San Tropez.wav");
+
         fs::write(&path, named_wav("San Tropez")).expect("a written song");
+
         let library = Library::open_in_memory().expect("a catalog");
         let asked = song("San Tropez (2011 Remaster)");
 
         library
             .note_song_received_at(&asked, &path, ReceivedAt::NewlyPlaced)
             .expect("noted");
+
         let held = library.holds_recording(&asked).expect("asked");
+
         fs::remove_file(&path).expect("the song goes");
+
         let gone = library.holds_recording(&asked).expect("asked");
 
         assert!(held);
@@ -1872,9 +1955,12 @@ mod tests {
     fn a_song_on_a_volume_that_is_away_is_still_held() {
         let scratch = Scratch::new("volume-away");
         let drive = scratch.path.join("drive");
+
         fs::create_dir_all(&drive).expect("a folder");
         fs::write(drive.join("echoes.wav"), named_wav("Echoes")).expect("a written song");
+
         let library = Library::open_in_memory().expect("a catalog");
+
         library
             .scan(ScanOptions {
                 roots: vec![drive.clone()],
@@ -1885,11 +1971,15 @@ mod tests {
             })
             .and_then(PassHandle::join)
             .expect("a scan");
+
         let echoes = song("Echoes");
+
         assert!(library.holds_recording(&echoes).expect("asked"));
 
         fs::rename(&drive, scratch.path.join("elsewhere")).expect("the drive goes");
+
         let unremembered = library.holds_recording(&echoes).expect("asked");
+
         library
             .inner()
             .write(|transaction| {
@@ -1902,6 +1992,7 @@ mod tests {
                     .map_err(|source| Error::store(StoreOp::Insert, source))
             })
             .expect("a remembered volume");
+
         let remembered = library.holds_recording(&echoes).expect("asked");
 
         assert!(!unremembered);

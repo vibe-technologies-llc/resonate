@@ -76,8 +76,10 @@ pub fn read_sidecar(source: SourceId, bytes: &[u8], wanted: &Wanted) -> Result<O
             op: crate::LyricOp::Parse,
         });
     }
+
     let (text, _) = resonate_core::text::decoded(bytes);
     let sheet = lrc::read(source, &text)?;
+
     if sheet.declared.names_another_track(wanted) {
         return Ok(None);
     }
@@ -339,6 +341,7 @@ mod tests {
             .find(&wanted())
             .expect("nothing failed")
             .expect("a provider answered");
+
         assert_eq!(found.source(), &named("lines"));
         assert_eq!(found.detail(), Detail::Lines);
 
@@ -352,6 +355,7 @@ mod tests {
             .find(&wanted())
             .expect("an answer outranks a refusal")
             .expect("a provider answered");
+
         assert_eq!(found.source(), &named("words"));
         assert_eq!(found.detail(), Detail::Words);
     }

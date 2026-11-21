@@ -92,6 +92,7 @@ impl Library {
                 )
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
+
             if known.is_none() {
                 return Err(Error::UnknownReleaseTrack(release_track));
             }
@@ -233,6 +234,7 @@ impl Library {
                     ],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+
             if changed == 0 {
                 return Err(Error::UnknownWant(id));
             }

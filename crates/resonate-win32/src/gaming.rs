@@ -83,6 +83,7 @@ mod real {
 
         fn register(&self) -> Raw<*mut c_void> {
             let mut handle = ptr::null_mut();
+
             unsafe {
                 PowerRegisterForEffectivePowerModeNotifications(
                     EFFECTIVE_POWER_MODE_V2,
@@ -193,8 +194,11 @@ mod tests {
         let watch = Watching::start(Fake::default()).expect("a watch");
 
         changed(GAME_MODE);
+
         let during = watch.active();
+
         changed(2);
+
         let after = watch.active();
 
         assert!(during);

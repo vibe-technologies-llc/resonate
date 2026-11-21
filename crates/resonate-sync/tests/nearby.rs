@@ -33,6 +33,7 @@ fn scratch(name: &str) -> PathBuf {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos())
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder
 }
@@ -220,6 +221,7 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + SETTLES_WITHIN;
     while !done() {
         assert!(Instant::now() < deadline, "{what} never happened");
+
         thread::sleep(Duration::from_millis(100));
     }
 }
@@ -254,6 +256,7 @@ fn two_devices_of_one_key_on_one_network_sync_without_a_server() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Summer", &["A", "B"]);
     phone_shelf.make_playlist("Commute", &["A"]);
     desk_shelf.favour_here("B", true);
@@ -279,6 +282,7 @@ fn two_devices_of_one_key_on_one_network_sync_without_a_server() {
             .iter()
             .any(|seen| seen.name == "Phone" && seen.nearby && seen.online)
     });
+
     assert_ne!(phone.shown().standing, Standing::Connected);
 
     phone.fetch(vec![song("B")], desk.device());
@@ -293,6 +297,7 @@ fn two_devices_of_one_key_on_one_network_sync_without_a_server() {
     });
 
     let (on_phone, _) = phone_shelf.playlist_named("Summer").expect("held");
+
     phone_shelf.rename_playlist(on_phone, "Summer days");
     eventually("the rename reaching the desk", || {
         desk_shelf.playlist_named("Summer days").is_some()
@@ -300,6 +305,7 @@ fn two_devices_of_one_key_on_one_network_sync_without_a_server() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -312,6 +318,7 @@ fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_sta
     let picture = vec![0xff, 0xd8, 0xff, 0xe0, 7, 7, 7];
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf
         .inside
         .lock()
@@ -331,6 +338,7 @@ fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_sta
     eventually("the cover reaching the phone", || {
         phone_shelf.inside.lock().covers.get(held.as_str()) == Some(&picture)
     });
+
     assert!(
         !phone_shelf
             .inside
@@ -348,6 +356,7 @@ fn a_cover_one_device_holds_reaches_another_lacking_it_and_one_neither_holds_sta
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -393,13 +402,17 @@ impl Consultable for Consulted {
 
     fn take_kept(&self, device: DeviceId, answers: Vec<KeptAnswer>, mark: u64) {
         let mut kept = self.kept.lock();
+
         for answer in answers {
             if !kept.iter().any(|held| held.key == answer.key) {
                 let seq = kept.len() as u64 + 1;
+
                 kept.push(KeptAnswer { seq, ..answer });
             }
         }
+
         let mut marks = self.marks.lock();
+
         marks.retain(|(held, _)| *held != device);
         marks.push((device, mark));
     }
@@ -428,7 +441,9 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
     let bytes = copy_of_the_export(300 * 1024);
     let dump = "20261111-002335".to_owned();
     let desk_answers = Arc::new(Consulted::default());
+
     *desk_answers.copy.lock() = Some((dump.clone(), bytes.clone()));
+
     let desk = device(
         &folder,
         &key,
@@ -436,7 +451,9 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
         Arc::new(Shelf::holding(&["A"])),
         None,
     );
+
     desk.consult_with(Arc::clone(&desk_answers) as Arc<dyn Consultable>);
+
     let phone = device(
         &folder,
         &key,
@@ -444,9 +461,12 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
         Arc::new(Shelf::holding(&["A"])),
         Some(&desk),
     );
+
     phone.consult_with(Arc::new(Consulted::default()) as Arc<dyn Consultable>);
+
     let staged = folder.join("phone-musicbrainz.sqlite.part");
     let noted = folder.join("phone-musicbrainz.sqlite.from");
+
     let wanted = |held: Option<ExportHeld>| ExportWanted {
         part: ExportPart::Copy,
         held,
@@ -466,6 +486,7 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
             .iter()
             .any(|device| device.online && !device.this)
     });
+
     let whole = phone
         .ask_for_export(desk.device(), wanted(None), Arc::clone(&receiving))
         .answer();
@@ -483,6 +504,7 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
         format!("{} {} 0 {dump}", desk.device(), bytes.len()),
     )
     .expect("its note");
+
     let resumed = phone
         .ask_for_export(desk.device(), wanted(None), Arc::clone(&receiving))
         .answer();
@@ -497,6 +519,7 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
         format!("{} {} 0 20260901-000000", desk.device(), bytes.len()),
     )
     .expect("its note");
+
     let started_over = phone
         .ask_for_export(desk.device(), wanted(None), Arc::clone(&receiving))
         .answer();
@@ -517,6 +540,7 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -525,6 +549,7 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
     let folder = scratch("consulted");
     let key = SyncKey::minted().expect("a key");
     let desk_answers = Arc::new(Consulted::default());
+
     desk_answers
         .answers
         .lock()
@@ -543,6 +568,7 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
             packed: b"two".to_vec(),
         },
     ]);
+
     let phone_answers = Arc::new(Consulted::default());
 
     let desk = device(
@@ -552,7 +578,9 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
         Arc::new(Shelf::holding(&["A"])),
         None,
     );
+
     desk.consult_with(Arc::clone(&desk_answers) as Arc<dyn Consultable>);
+
     let phone = device(
         &folder,
         &key,
@@ -560,11 +588,13 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
         Arc::new(Shelf::holding(&["A"])),
         Some(&desk),
     );
+
     phone.consult_with(Arc::clone(&phone_answers) as Arc<dyn Consultable>);
 
     eventually("the desk's kept answers reaching the phone", || {
         phone_answers.kept.lock().len() == 2
     });
+
     let answered = phone
         .ask_to_consult(desk.device(), b"who sang creep".to_vec())
         .answer(SETTLES_WITHIN);
@@ -589,6 +619,7 @@ fn a_lookup_is_answered_by_a_device_that_can_and_the_answers_a_device_kept_reach
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -605,6 +636,7 @@ fn a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_hold
     };
     let desk_shelf = Arc::new(Shelf::holding(&["Echoes", "Time"]));
     let phone_shelf = Arc::new(Shelf::holding(&["Echoes", "Time"]));
+
     desk_shelf
         .inside
         .lock()
@@ -629,6 +661,7 @@ fn a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_hold
             .iter()
             .any(|(recording, told)| recording.title == held.title && *told == lyricsfile)
     });
+
     assert!(
         !phone_shelf
             .inside
@@ -641,6 +674,7 @@ fn a_lyricsfile_one_device_holds_reaches_another_lacking_it_and_one_neither_hold
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -670,6 +704,7 @@ fn a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_o
     };
     let desk_shelf = Arc::new(Shelf::holding(&["Echoes"]));
     let phone_shelf = Arc::new(Shelf::holding(&["Echoes"]));
+
     desk_shelf.inside.lock().prints.push((held, print.clone()));
     phone_shelf.inside.lock().lacking_prints = vec![held, lacking];
 
@@ -690,6 +725,7 @@ fn a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_o
             .iter()
             .any(|(file, told)| *file == held && *told == print)
     });
+
     assert!(
         !phone_shelf
             .inside
@@ -702,6 +738,7 @@ fn a_print_and_its_recognition_one_device_holds_reach_another_lacking_them_and_o
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -712,6 +749,7 @@ fn a_run_stopped_while_held_elsewhere_is_over_when_the_stop_returns() {
 
     let folder = scratch("stopped");
     let key = SyncKey::minted().expect("a key");
+
     let desk = Arc::new(device_through(
         &folder,
         &key,
@@ -725,6 +763,7 @@ fn a_run_stopped_while_held_elsewhere_is_over_when_the_stop_returns() {
     let stranger = DeviceId::minted().expect("a device");
 
     desk.stop();
+
     let asked_at = Instant::now();
     let answered = elsewhere
         .ask_to_consult(stranger, Vec::new())
@@ -733,7 +772,9 @@ fn a_run_stopped_while_held_elsewhere_is_over_when_the_stop_returns() {
 
     drop(elsewhere);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
+
     assert!(matches!(answered, Consulting::Unanswered));
     assert!(
         waited < OVER_AT_ONCE,
@@ -747,6 +788,7 @@ fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Summer", &["A", "B"]);
     phone_shelf.make_playlist("Commute", &["A"]);
 
@@ -771,6 +813,7 @@ fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have
 
     assert_eq!(desk.shown().standing, Standing::Nearby);
     assert_eq!(phone.shown().standing, Standing::Nearby);
+
     eventually("the desk's playlist reaching the phone", || {
         phone_shelf.playlist_named("Summer").is_some()
     });
@@ -780,9 +823,11 @@ fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have
     eventually("both owing nothing once told", || {
         desk.shown().owed == 0 && phone.shown().owed == 0 && desk.shown().settled
     });
+
     assert_eq!(desk.shown().standing, Standing::Nearby);
 
     let (on_phone, _) = phone_shelf.playlist_named("Summer").expect("held");
+
     phone_shelf.rename_playlist(on_phone, "Summer days");
     eventually("the rename reaching the desk", || {
         desk_shelf.playlist_named("Summer days").is_some()
@@ -790,6 +835,7 @@ fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -798,6 +844,7 @@ fn a_device_of_another_key_on_the_network_meets_nobody() {
     let folder = scratch("strangers");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let stranger_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Private", &["A"]);
 
     let desk = device(
@@ -814,6 +861,7 @@ fn a_device_of_another_key_on_the_network_meets_nobody() {
         Arc::clone(&stranger_shelf),
         Some(&desk),
     );
+
     thread::sleep(Duration::from_secs(2));
 
     assert!(stranger_shelf.playlist_named("Private").is_none());
@@ -822,6 +870,7 @@ fn a_device_of_another_key_on_the_network_meets_nobody() {
 
     drop(stranger);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -830,10 +879,12 @@ fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
     if !on_a_network() {
         return;
     }
+
     let folder = scratch("platform");
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.make_playlist("Evening", &["A"]);
 
     let desk = started(
@@ -852,6 +903,7 @@ fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
     );
     let desk_record = desk.nearby_record().expect("a record of the desk");
     let phone_record = phone.nearby_record().expect("a record of the phone");
+
     phone.nearby_heard(&desk_record);
     desk.nearby_heard(&phone_record);
 
@@ -864,6 +916,7 @@ fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -872,10 +925,12 @@ fn a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first() {
     if !on_a_network() {
         return;
     }
+
     let folder = scratch("one-way");
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.make_playlist("Morning", &["A"]);
 
     let desk = started(
@@ -893,6 +948,7 @@ fn a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first() {
         Nearby::told_by_the_platform(),
     );
     let desk_record = desk.nearby_record().expect("a record of the desk");
+
     phone.nearby_heard(&desk_record);
 
     eventually(
@@ -905,6 +961,7 @@ fn a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -914,6 +971,7 @@ fn a_favourite_learned_after_meeting_is_fetched_without_a_restart() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
 
     let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
@@ -939,6 +997,7 @@ fn a_favourite_learned_after_meeting_is_fetched_without_a_restart() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -971,6 +1030,7 @@ fn a_record_of_another_code_is_passed_over() {
 
     drop(stranger);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -979,11 +1039,14 @@ fn two_devices_advertising_over_bonjour_find_each_other() {
     if !on_a_network() {
         return;
     }
+
     let folder = scratch("bonjour");
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.make_playlist("Night", &["A"]);
+
     let bonjour = Nearby {
         broadcast: None,
         bonjour: true,
@@ -1007,6 +1070,7 @@ fn two_devices_advertising_over_bonjour_find_each_other() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1015,10 +1079,12 @@ fn two_devices_told_of_each_other_over_ipv6_alone_meet_and_sync() {
     if !ipv6_loopback_here() {
         return;
     }
+
     let folder = scratch("ipv6");
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Summer", &["A", "B"]);
 
     let desk = device_over_ipv6(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
@@ -1044,6 +1110,7 @@ fn two_devices_told_of_each_other_over_ipv6_alone_meet_and_sync() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1053,6 +1120,7 @@ fn a_device_is_followed_by_one_run_at_a_time_however_many_records_arrive_meanwhi
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
     desk_shelf.opening.shut();
 
@@ -1065,6 +1133,7 @@ fn a_device_is_followed_by_one_run_at_a_time_however_many_records_arrive_meanwhi
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the phone asking the desk for the favoured song", || {
         desk_shelf.inside.lock().opened > 0
     });
@@ -1075,16 +1144,20 @@ fn a_device_is_followed_by_one_run_at_a_time_however_many_records_arrive_meanwhi
         });
     }
     thread::sleep(Duration::from_millis(1500));
+
     let listed_meanwhile = desk_shelf.inside.lock().listed;
+
     desk_shelf.opening.open();
 
     assert_eq!(listed_meanwhile, 1);
+
     eventually("the favoured song reaching the phone", || {
         holds_title(&phone_shelf, "A")
     });
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1095,6 +1168,7 @@ fn a_song_another_device_landed_meanwhile_leaves_no_row_for_the_device_that_sent
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
     desk_shelf.favour_here("B", true);
     desk_shelf.opening.shut();
@@ -1109,9 +1183,11 @@ fn a_song_another_device_landed_meanwhile_leaves_no_row_for_the_device_that_sent
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the phone asking the desk for the favoured song", || {
         desk_shelf.inside.lock().opened > 0
     });
+
     let laptop = device_told(
         &folder,
         &key,
@@ -1120,6 +1196,7 @@ fn a_song_another_device_landed_meanwhile_leaves_no_row_for_the_device_that_sent
         &[&desk, &phone],
         Follow::default(),
     );
+
     eventually("the phone asking what the laptop holds", || {
         laptop_shelf.inside.lock().listed > 0
     });
@@ -1144,6 +1221,7 @@ fn a_song_another_device_landed_meanwhile_leaves_no_row_for_the_device_that_sent
     drop(laptop);
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1154,6 +1232,7 @@ fn a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_f
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.opening.shut();
 
     let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
@@ -1164,6 +1243,7 @@ fn a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_f
         Arc::clone(&laptop_shelf),
         Some(&desk),
     );
+
     let phone = device_told(
         &folder,
         &key,
@@ -1172,6 +1252,7 @@ fn a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_f
         &[&desk, &laptop],
         Follow::default(),
     );
+
     eventually("the phone meeting both", || {
         nearby_of(&phone, "Desk") && nearby_of(&phone, "Laptop")
     });
@@ -1190,11 +1271,13 @@ fn a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_f
         "the song passed over reaching the phone from the laptop",
         || holds_title(&phone_shelf, "A"),
     );
+
     assert!(rows_from(&phone, laptop.device()).contains(&("A".to_owned(), TransferState::Landed)));
 
     drop(phone);
     drop(laptop);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1204,6 +1287,7 @@ fn a_song_deleted_from_the_app_is_not_followed_and_sync_now_clears_the_mark() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
     phone_shelf.inside.lock().deleted_here = vec!["A".into()];
 
@@ -1216,6 +1300,7 @@ fn a_song_deleted_from_the_app_is_not_followed_and_sync_now_clears_the_mark() {
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the phone meeting the desk", || {
         phone
             .shown()
@@ -1233,10 +1318,12 @@ fn a_song_deleted_from_the_app_is_not_followed_and_sync_now_clears_the_mark() {
     eventually("the song fetched once the mark is cleared", || {
         holds_title(&phone_shelf, "A")
     });
+
     assert!(phone_shelf.inside.lock().deleted_here.is_empty());
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1246,6 +1333,7 @@ fn a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
     phone_shelf.inside.lock().deleted_after_the_first_look = vec!["A".into()];
 
@@ -1258,6 +1346,7 @@ fn a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back() {
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the phone meeting the desk", || {
         phone
             .shown()
@@ -1279,6 +1368,7 @@ fn a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1289,6 +1379,7 @@ fn a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_e
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.favour_here("A", true);
     desk_shelf.favour_here("B", true);
     desk_shelf.inside.lock().refuses_deletions = true;
@@ -1303,6 +1394,7 @@ fn a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_e
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the other favourite followed", || {
         holds_title(&phone_shelf, "B")
     });
@@ -1317,6 +1409,7 @@ fn a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_e
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1326,6 +1419,7 @@ fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
     phone_shelf.inside.lock().refuses_landing = true;
 
@@ -1338,10 +1432,12 @@ fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the landing refused", || {
         rows_from(&phone, desk.device()) == [("A".to_owned(), TransferState::Failed)]
     });
     drop(phone);
+
     let (opened, listed) = {
         let inside = desk_shelf.inside.lock();
         (inside.opened, inside.listed)
@@ -1355,6 +1451,7 @@ fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
         Some(&desk),
         following_favourites(),
     );
+
     eventually("the phone following the desk again", || {
         desk_shelf.inside.lock().listed > listed
     });
@@ -1365,6 +1462,7 @@ fn a_song_refused_at_landing_is_not_fetched_again_after_a_restart() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1444,7 +1542,9 @@ impl Controlled for Stage {
 impl Stage {
     fn applied(&self, command: RemoteCommand) -> Result<(), Uncontrolled> {
         self.told.lock().push(command);
+
         let mut held = self.zone.lock();
+
         match command {
             RemoteCommand::Play => held.playback = RemotePlayback::Playing,
             RemoteCommand::Volume(volume) => held.volume = volume,
@@ -1470,10 +1570,12 @@ fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue
         Arc::new(Shelf::holding(&["A"])),
         None,
     );
+
     desk.control_with(
         Arc::clone(&stage) as Arc<dyn Controlled>,
         RemoteTrust::Everything,
     );
+
     let phone = device(
         &folder,
         &key,
@@ -1481,6 +1583,7 @@ fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue
         Arc::new(Shelf::holding(&["A"])),
         Some(&desk),
     );
+
     eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
     phone.watch(desk.device());
     eventually("the desk's queue revision mirrored on the phone", || {
@@ -1491,7 +1594,9 @@ fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue
 
     let played = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Play);
     let jumped = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Jump(1));
+
     *stage.queue_now.lock() += 1;
+
     let removed_after_an_edit_there =
         phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Remove(1));
 
@@ -1508,12 +1613,14 @@ fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue
     );
 
     let edited_since = MIRRORED_REVISION + 1;
+
     stage.zone.lock().queue_revision = Some(edited_since);
     eventually("the edited queue's revision mirrored on the phone", || {
         phone.watched(desk.device()).mirror().is_some_and(|mirror| {
             mirror.zones.first().and_then(|zone| zone.queue_revision) == Some(edited_since)
         })
     });
+
     let removed_as_drawn_before_the_mirror_landed = phone
         .ask_to_control(
             desk.device(),
@@ -1535,6 +1642,7 @@ fn an_edit_by_row_names_the_queue_it_was_aimed_at_and_is_refused_once_that_queue
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -1547,10 +1655,12 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
     let stage = Arc::new(Stage::paused());
 
     let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+
     desk.control_with(
         Arc::clone(&stage) as Arc<dyn Controlled>,
         RemoteTrust::Everything,
     );
+
     let phone = device(
         &folder,
         &key,
@@ -1558,6 +1668,7 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
         Arc::clone(&phone_shelf),
         Some(&desk),
     );
+
     eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
 
     phone.watch(desk.device());
@@ -1584,6 +1695,7 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
     assert_eq!(quieter, Controlling::Done);
     assert_eq!(elsewhere, Controlling::NoSuchZone);
     assert_eq!(past_the_end, Controlling::NoSuchRow);
+
     eventually("the change mirrored back to the phone", || {
         phone.watched(desk.device()).mirror().is_some_and(|mirror| {
             mirror.zones[0].playback == RemotePlayback::Playing
@@ -1592,6 +1704,7 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
     });
 
     desk.trust(RemoteTrust::Transport);
+
     let removed = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Remove(1));
     let skipped = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Next);
 
@@ -1599,9 +1712,11 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
     assert_eq!(skipped, Controlling::Done);
 
     desk.trust(RemoteTrust::Nothing);
+
     let paused = phone.control(desk.device(), ZoneId::FIRST, RemoteCommand::Pause);
 
     assert_eq!(paused, Controlling::Untrusted);
+
     eventually("the watch refused once nothing is trusted", || {
         phone.watched(desk.device()) == Watched::Refused(Controlling::Untrusted)
     });
@@ -1621,5 +1736,6 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }

@@ -14,7 +14,7 @@ const DAYS_PER_FIVE_MONTHS: i64 = 153;
 const MARCH: i64 = 3;
 const MONTHS_PER_YEAR: i64 = 12;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CivilDate {
     pub year: i64,
     pub month: i64,
@@ -30,9 +30,11 @@ impl CivilDate {
             + day_of_era / DAYS_PER_CENTURY
             - day_of_era / LAST_DAY_OF_AN_ERA)
             / DAYS_PER_COMMON_YEAR;
+
         let day_of_year =
             day_of_era - (DAYS_PER_COMMON_YEAR * year_of_era + year_of_era / 4 - year_of_era / 100);
         let months_from_march = (5 * day_of_year + 2) / DAYS_PER_FIVE_MONTHS;
+
         let day = day_of_year - (DAYS_PER_FIVE_MONTHS * months_from_march + 2) / 5 + 1;
         let month = months_from_march + MARCH;
         let month = if month > MONTHS_PER_YEAR {
@@ -48,9 +50,11 @@ impl CivilDate {
     pub fn day_since_the_epoch(self) -> i64 {
         let year = self.year - i64::from(self.month <= 2);
         let era = year.div_euclid(YEARS_PER_ERA);
+
         let year_of_era = year - era * YEARS_PER_ERA;
         let months_from_march = (self.month + MONTHS_PER_YEAR - MARCH) % MONTHS_PER_YEAR;
         let day_of_year = (DAYS_PER_FIVE_MONTHS * months_from_march + 2) / 5 + self.day - 1;
+
         let day_of_era =
             year_of_era * DAYS_PER_COMMON_YEAR + year_of_era / 4 - year_of_era / 100 + day_of_year;
 

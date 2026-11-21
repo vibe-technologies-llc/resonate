@@ -34,6 +34,7 @@ pub(crate) struct Declared {
 
 pub(crate) fn of_a_flac(path: &Path) -> Option<Declared> {
     let mut head = [0_u8; FLAC_HEAD_BYTES];
+
     File::open(path).ok()?.read_exact(&mut head).ok()?;
     if head[..FLAC_MAGIC.len()] != FLAC_MAGIC || head[FLAC_MAGIC.len()] & BLOCK_KIND != STREAM_INFO
     {
@@ -56,21 +57,26 @@ pub(crate) fn of_a_flac(path: &Path) -> Option<Declared> {
 
 pub(crate) fn of_a_packed_wave(path: &Path) -> Option<Declared> {
     let mut head = [0_u8; WAVE_HEAD_BYTES];
+
     Unpacking::open(path).ok()?.read_exact(&mut head).ok()?;
+
     let little = |at: usize| u16::from_le_bytes([head[at], head[at + 1]]);
     let long = |at: usize| u32::from_le_bytes(head[at..at + 4].try_into().unwrap_or_default());
 
     let format_ends = FORMAT_AT + long(FORMAT_LENGTH_AT) as usize;
     let data_named = head.get(format_ends..format_ends + DATA.len())?;
+
     if data_named != DATA {
         return None;
     }
+
     let data_bytes = u64::from(u32::from_le_bytes(
         head.get(format_ends + DATA.len()..format_ends + CHUNK_HEADER_BYTES)?
             .try_into()
             .ok()?,
     ));
     let block_align = u64::from(little(BLOCK_ALIGN_AT));
+
     if block_align == 0 {
         return None;
     }

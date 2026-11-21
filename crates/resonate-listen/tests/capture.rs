@@ -24,6 +24,7 @@ impl AudioSource for Tone {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         for frame in dst.as_chunks_mut::<8>().0 {
             let sample = (0.3 * (TAU * TONE_HZ * self.at as f64 / 48_000.0).sin()) as f32;
+
             for word in frame.as_chunks_mut::<4>().0 {
                 *word = sample.to_le_bytes();
             }
@@ -50,6 +51,7 @@ impl Output {
             ])
             .output()
             .ok()?;
+
         if !output.status.success() {
             return None;
         }
@@ -75,6 +77,7 @@ fn daemon(name: &str) -> Option<(PipeWire, SinkInfo, Output)> {
     };
     let pipewire = PipeWire::start("resonate-listen-tests")
         .expect("the isolated output has a PipeWire daemon");
+
     for _ in 0..20 {
         if let Some(sink) = pipewire
             .enumerate_sinks(DISCOVERY)
@@ -93,6 +96,7 @@ fn level_at(clip: &Clip, hertz: f64) -> f64 {
     let mono = clip.mono();
     let step = TAU * hertz / f64::from(clip.rate.hz());
     let (mut real, mut imaginary) = (0.0, 0.0);
+
     for (n, sample) in mono.iter().enumerate() {
         real += f64::from(*sample) * (step * n as f64).cos();
         imaginary += f64::from(*sample) * (step * n as f64).sin();
@@ -112,6 +116,7 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
         ChannelLayout::Stereo,
         SampleFormat::F32,
     );
+
     let stream = pipewire
         .open(
             &StreamRequest {
@@ -127,6 +132,7 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
             Box::new(Tone { at: 0 }),
         )
         .expect("the daemon accepts a tone");
+
     stream.set_active(true).expect("the tone plays");
     thread::sleep(SETTLES_FOR);
 
@@ -134,12 +140,16 @@ fn what_the_desktop_plays_is_heard_through_its_monitor() {
         .with_monitor(output.name.clone())
         .record(&Listening::Desktop, HEARD_FOR, &Hearing::new())
         .expect("the desktop is heard");
+
     drop(stream);
+
     let _ = pipewire.shutdown();
 
     assert!(!clip.is_silent(), "the monitor heard nothing");
+
     let tone = level_at(&clip, TONE_HZ);
     let elsewhere = level_at(&clip, ELSEWHERE_HZ);
+
     assert!(
         tone - elsewhere > TONE_STANDS_OVER_DB,
         "the tone reads {tone:.1} dB against {elsewhere:.1} dB elsewhere"
@@ -179,6 +189,7 @@ fn a_sweep_played_to_the_desktop_is_heard_through_its_monitor_and_deconvolves_to
                 .total_cmp(&(b.hertz - 1_000.0).abs())
         })
         .expect("a point near a kilohertz");
+
     assert!(
         (-12.0..6.0).contains(&at_a_kilohertz.decibels),
         "the monitor reads {:.1} dB at a kilohertz",

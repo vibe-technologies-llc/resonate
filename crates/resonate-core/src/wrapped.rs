@@ -81,6 +81,7 @@ impl FormatShares {
 
         for format in heard {
             let listened = format.listened.as_millis();
+
             whole += listened;
             if format.lossless {
                 lossless += listened;
@@ -143,6 +144,7 @@ impl Rhythm {
         for quarter in quarters {
             let day = calendar.day_of(quarter.at);
             let date = CivilDate::of_day(day);
+
             if !counted(date) || quarter.listened.is_zero() {
                 continue;
             }
@@ -150,6 +152,7 @@ impl Rhythm {
             let month = usize::try_from(date.month - 1).unwrap_or(0);
             let hour = usize::try_from(calendar.minute_of_the_day(quarter.at) / MINUTES_IN_AN_HOUR)
                 .unwrap_or(0);
+
             if let Some(held) = rhythm.months.get_mut(month) {
                 *held += quarter.listened;
             }
@@ -211,6 +214,7 @@ fn longest_run(days: impl IntoIterator<Item = i64>) -> Option<Streak> {
             Some((from, last)) if last + 1 == day => (from, day),
             _ => (day, day),
         };
+
         running = Some((from, day));
 
         let length = u32::try_from(day - from + 1).unwrap_or(u32::MAX);
@@ -246,12 +250,14 @@ pub fn genres_tallied(
                     plays: 0,
                     listened: Duration::ZERO,
                 });
+
             held.plays += plays;
             held.listened += listened;
         }
     }
 
     let mut ranked: Vec<Ranked> = tally.into_values().collect();
+
     ranked.sort_by(|one, other| {
         other
             .listened
@@ -403,6 +409,7 @@ impl YearReview {
         }
 
         let mut slides = vec![self.whole()];
+
         slides.extend(self.top_of(
             SlideKind::Songs,
             &self.top_songs,
@@ -449,6 +456,7 @@ impl YearReview {
                 words::wrapped::albums(self.albums),
             ),
         ];
+
         if let Some(song) = self.top_songs.first() {
             lines.push(words::wrapped::top_song(named_with_its_artist(song)));
         }
@@ -953,6 +961,7 @@ mod tests {
             listened: AN_HOUR * 3,
             ..YearReview::default()
         };
+
         review.rhythm.months[2] = AN_HOUR * 2;
         review.rhythm.months[3] = AN_HOUR;
 

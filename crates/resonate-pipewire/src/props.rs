@@ -25,6 +25,7 @@ impl StreamLevels {
         let Value::Object(object) = value else {
             return None;
         };
+
         for property in &object.properties {
             match (property.key, &property.value) {
                 (sys::SPA_PROP_volume, Value::Float(volume)) => self.volume = Some(*volume),

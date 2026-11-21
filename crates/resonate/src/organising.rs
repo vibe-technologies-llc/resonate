@@ -63,6 +63,7 @@ fn tell_the_players_where_files_went(summary: &OrganiseSummary) {
         .flat_map(|planned| planned.files())
         .map(|(from, to)| (MediaLocation::local(from), MediaLocation::local(to)))
         .collect();
+
     if moved.is_empty() {
         return;
     }
@@ -94,13 +95,16 @@ pub(crate) fn filed_from(roots: &[PathBuf]) -> Vec<PathBuf> {
 
 fn organised(summary: &OrganiseSummary, roots: &[PathBuf], apply: bool) -> String {
     let plan = &summary.plan;
+
     if plan.moves.is_empty() && plan.refused.is_empty() {
         return format!("{}\n", words::main::nothing_to_organise());
     }
 
     let mut told = String::new();
+
     if !plan.moves.is_empty() {
         let mut table = Table::new(vec![columns::from(), columns::to()]);
+
         for (from, to) in plan.moves.iter().flat_map(Move::files) {
             table.push(vec![under_its_root(from, roots), under_its_root(to, roots)]);
         }

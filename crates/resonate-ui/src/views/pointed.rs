@@ -29,6 +29,7 @@ fn point_at(id: &ElementId, hovered: bool, window: &mut Window) {
 
 fn moves(pointed: &mut Vec<ElementId>, id: &ElementId, hovered: bool) -> bool {
     let held = pointed.contains(id);
+
     match (hovered, held) {
         (true, false) => pointed.push(id.clone()),
         (false, true) => pointed.retain(|other| other != id),

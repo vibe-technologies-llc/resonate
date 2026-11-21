@@ -40,6 +40,7 @@ impl Sitting {
         let spec = heard_spec();
         let channels = usize::from(spec.channel_count().get());
         let frames = frames_in(length);
+
         hearing.wanted.store(frames as u64, Ordering::Relaxed);
         hearing.heard.store(0, Ordering::Relaxed);
         Self {
@@ -61,6 +62,7 @@ impl Sitting {
         let mut stream = Some(opened);
         let mut lost_since = None;
         let mut filled_at_reopen = None;
+
         while !self.recording.is_full() && !hearing.stopped() && started.elapsed() < deadline {
             thread::sleep(LOOKS_EVERY);
             hearing.heard.store(
@@ -79,6 +81,7 @@ impl Sitting {
             }
             if stream.is_none() {
                 let since = lost_since.unwrap_or_else(Instant::now);
+
                 stream = self.reopened(since, &mut again);
                 if stream.is_some() {
                     lost_since = None;
@@ -96,6 +99,7 @@ impl Sitting {
     ) -> Option<S> {
         let (recorder, admitting) = Recorder::held_back(Arc::clone(&self.recording));
         let stream = again(recorder)?;
+
         self.recording
             .silence_for(frames_in(lost_since.elapsed()), self.channels);
         admitting.store(true, Ordering::Release);
@@ -122,8 +126,10 @@ impl AudioSource for Played {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         let whole = dst.len() / BYTES_PER_FRAME * BYTES_PER_FRAME;
         let frames = dst.get_mut(..whole).unwrap_or_default();
+
         for frame in frames.as_chunks_mut::<BYTES_PER_FRAME>().0 {
             let sample = self.mono.get(self.at).copied().unwrap_or(0.0);
+
             self.at = self.at.saturating_add(1);
             for word in frame.as_chunks_mut::<BYTES_PER_SAMPLE>().0 {
                 *word = sample.to_le_bytes();
@@ -221,6 +227,7 @@ mod tests {
         let filled = played.fill(&mut block);
 
         assert_eq!(filled, 3 * BYTES_PER_FRAME);
+
         let words: Vec<f32> = block
             .get(..filled)
             .unwrap_or_default()
@@ -229,6 +236,7 @@ mod tests {
             .iter()
             .map(|word| f32::from_le_bytes(*word))
             .collect();
+
         assert_eq!(words, vec![0.5, 0.5, -0.25, -0.25, 0.0, 0.0]);
     }
 
@@ -253,6 +261,7 @@ mod tests {
     #[test]
     fn beginning_sizes_the_recording_to_the_length_and_resets_the_count() {
         let hearing = Hearing::new();
+
         hearing.heard.store(9, Ordering::Relaxed);
 
         let sitting = Sitting::begin(Duration::from_millis(500), &hearing);

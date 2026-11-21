@@ -20,7 +20,9 @@ use crate::{Result, cli::Cli, config::Config};
 #[cfg(feature = "mcp")]
 pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
     let library = crate::open_library(cli, config)?;
+
     library.offer_edits_as_a_model();
+
     let sources = library.sources();
     let server = Server::new(library, OnTheBus::named(player.map(PlayerName::new)))
         .looking_up_with(Lookups {
@@ -39,6 +41,7 @@ pub fn serve(cli: &Cli, config: &Config, player: Option<&str>) -> Result<()> {
             lyrics: config.is_on(Switch::FetchLyrics),
             after_a_scan: config.is_on(Switch::EnrichAfterScan),
         });
+
     tracing::debug!("serving the Model Context Protocol on stdin and stdout");
 
     let (stop, stoppable) = stoppable();

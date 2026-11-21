@@ -99,35 +99,41 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-mpris-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self { root }
     }
 
     fn wav(&self, name: &str) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, wav()).expect("a writable temporary file");
         path
     }
 
     fn linked(&self, name: &str, to: &Path) -> PathBuf {
         let path = self.root.join(name);
+
         fs::hard_link(to, &path).expect("a hard link inside the temporary folder");
         path
     }
 
     fn untitled(&self, name: &str) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, wav_naming(&[])).expect("a writable temporary file");
         path
     }
 
     fn pictured(&self, name: &str) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, [id3(&png()), wav()].concat()).expect("a writable temporary file");
         path
     }
@@ -150,12 +156,14 @@ fn wav() -> Vec<u8> {
 fn wav_naming(names: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let frames = RATE as usize * SECONDS;
     let mut data = Vec::with_capacity(frames * usize::from(CHANNELS) * 2);
+
     for n in 0..frames * usize::from(CHANNELS) {
         data.extend_from_slice(&((n % 30_000) as i16).to_le_bytes());
     }
 
     let align = CHANNELS * 2;
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&1_u16.to_le_bytes());
     fmt.extend_from_slice(&CHANNELS.to_le_bytes());
     fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -164,11 +172,13 @@ fn wav_naming(names: &[(&[u8; 4], &str)]) -> Vec<u8> {
     fmt.extend_from_slice(&16_u16.to_le_bytes());
 
     let mut info = b"INFO".to_vec();
+
     for (id, value) in names {
         chunk(&mut info, id, &[value.as_bytes(), b"\0"].concat());
     }
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &fmt);
     if !names.is_empty() {
         chunk(&mut body, b"LIST", &info);
@@ -176,6 +186,7 @@ fn wav_naming(names: &[(&[u8; 4], &str)]) -> Vec<u8> {
     chunk(&mut body, b"data", &data);
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -183,23 +194,27 @@ fn wav_naming(names: &[(&[u8; 4], &str)]) -> Vec<u8> {
 
 fn png() -> Vec<u8> {
     let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+
     bytes.extend((0..512).map(|n| n as u8));
     bytes
 }
 
 fn id3(picture: &[u8]) -> Vec<u8> {
     let mut body = vec![UTF8];
+
     body.extend_from_slice(b"image/png\0");
     body.push(FRONT_COVER);
     body.push(0);
     body.extend_from_slice(picture);
 
     let mut frames = b"APIC".to_vec();
+
     frames.extend_from_slice(&synchsafe(body.len() as u32));
     frames.extend_from_slice(&[0, 0]);
     frames.extend_from_slice(&body);
 
     let mut tag = b"ID3\x04\x00\x00".to_vec();
+
     tag.extend_from_slice(&synchsafe(frames.len() as u32));
     tag.extend_from_slice(&frames);
     tag
@@ -237,6 +252,7 @@ struct RealtimeSink {
 impl RealtimeSink {
     fn new() -> Self {
         let (announce, changes) = unbounded();
+
         drop(announce);
         Self {
             sinks: vec![SinkInfo {
@@ -286,6 +302,7 @@ impl Opener for Pulled {
 
         let active = Arc::new(AtomicBool::new(false));
         let closed = Arc::new(AtomicBool::new(false));
+
         self.0.lock().push(Pulling {
             active: Arc::clone(&active),
             closed: Arc::clone(&closed),
@@ -294,6 +311,7 @@ impl Opener for Pulled {
         {
             let active = Arc::clone(&active);
             let closed = Arc::clone(&closed);
+
             thread::Builder::new()
                 .name("fake-graph".to_owned())
                 .spawn(move || {
@@ -409,6 +427,7 @@ impl Host for Desktop {
 
     fn invited(&self, uri: &str) -> bool {
         let invitation = uri.starts_with(SHARED_LINK) || uri.contains(SHARED_PAGE);
+
         if invitation {
             self.invited.lock().push(uri.to_owned());
         }
@@ -497,6 +516,7 @@ impl Playlists for Shelf {
         most: Option<usize>,
     ) -> Vec<PlaylistInfo> {
         let mut rows = self.rows.lock().clone();
+
         if order == PlaylistOrder::Alphabetical {
             rows.sort_by(|left, right| left.name.cmp(&right.name));
         }
@@ -524,6 +544,7 @@ impl Playlists for Shelf {
         else {
             return Opened::Refused;
         };
+
         self.activated.lock().push(playlist);
         *self.playing.lock() = Some(found);
         Opened::Accepted
@@ -585,6 +606,7 @@ impl Harness {
         let tuned = Arc::new(Mutex::new(Vec::new()));
         let reloaded = Arc::new(Mutex::new(Vec::new()));
         let catalog: Catalog = Arc::new(Mutex::new(Vec::new()));
+
         let host = Desktop {
             quit: Arc::clone(&quit),
             raised: Arc::clone(&raised),
@@ -596,6 +618,7 @@ impl Harness {
             headsets,
         };
         let shelf = Arc::new(Shelf::new());
+
         let mpris = Mpris::start(
             ZoneId::FIRST,
             Arc::clone(&player),
@@ -625,6 +648,7 @@ impl Harness {
     fn remember(&self, path: &Path, span: Option<FrameSpan>, heard: Heard) {
         let location = MediaLocation::local(path);
         let mut catalog = self.catalog.lock();
+
         catalog.retain(|(held, cut, _)| *held != location || *cut != span);
         catalog.push((location, span, heard));
     }
@@ -639,6 +663,7 @@ impl Harness {
                 span: Some(*span),
             })
             .collect();
+
         self.player
             .send(Command::Load {
                 items,
@@ -682,6 +707,7 @@ impl Harness {
                 span: None,
             })
             .collect();
+
         self.player
             .send(Command::Load {
                 items,
@@ -700,6 +726,7 @@ impl Harness {
                 span: None,
             })
             .collect();
+
         self.player
             .send(Command::Load {
                 items,
@@ -728,6 +755,7 @@ impl Harness {
             .expect("the served object announces its property changes");
 
         let (announced, heard) = unbounded();
+
         thread::spawn(move || {
             for message in signals {
                 let Ok((_, mut changed, _)) =
@@ -755,6 +783,7 @@ impl Harness {
             .expect("the served object announces its property changes");
 
         let (announced, heard) = unbounded();
+
         thread::spawn(move || {
             for message in signals {
                 let Ok((_, _, invalidated)) =
@@ -780,6 +809,7 @@ impl Harness {
             .expect("the served object announces its changes");
 
         let (announced, heard) = unbounded();
+
         thread::spawn(move || {
             for message in signals {
                 let name = message
@@ -803,6 +833,7 @@ impl Harness {
 
     fn wait_for(&self, mut ready: impl FnMut(&Self) -> bool, what: &str) {
         let deadline = Instant::now() + PATIENCE;
+
         while Instant::now() < deadline {
             if ready(self) {
                 return;
@@ -890,6 +921,7 @@ impl Drop for Harness {
 
 fn announced(signals: &Receiver<String>, wanted: &str) {
     let deadline = Instant::now() + PATIENCE;
+
     while let Ok(name) = signals.recv_deadline(deadline) {
         if name == wanted {
             return;
@@ -950,6 +982,7 @@ fn the_root_interface_names_the_player_the_way_a_desktop_expects() {
     );
 
     root.call::<_, _, ()>("Quit", &()).expect("Quit is served");
+
     assert!(harness.quit.load(Ordering::Acquire));
 }
 
@@ -959,6 +992,7 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
 
     harness.wait_for(Harness::sounding, "playback to start");
@@ -968,6 +1002,7 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
     );
 
     let fields = harness.metadata();
+
     assert_eq!(text(&fields, "xesam:title").as_deref(), Some("Echoes"));
     assert_eq!(
         strings(&fields, "xesam:artist").as_deref(),
@@ -991,6 +1026,7 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
     );
 
     let player = harness.proxy(PLAYER);
+
     assert!(player.get_property::<bool>("CanSeek").expect("CanSeek"));
     assert!(player.get_property::<bool>("CanPause").expect("CanPause"));
     assert!(player.get_property::<bool>("CanPlay").expect("CanPlay"));
@@ -1000,6 +1036,7 @@ fn a_playing_track_is_described_by_its_metadata_and_its_position() {
     );
 
     let first = harness.position();
+
     harness.wait_for(|harness| harness.position() > first, "the position to move");
 }
 
@@ -1009,6 +1046,7 @@ fn a_playing_track_whose_file_names_no_title_is_titled_by_its_file() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.untitled("Shine On.wav"));
 
     harness.wait_for(Harness::sounding, "playback to start");
@@ -1029,10 +1067,12 @@ fn the_transport_methods_a_media_key_sends_reach_the_engine() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
+
     player
         .call::<_, _, ()>("PlayPause", &())
         .expect("PlayPause is served");
@@ -1055,10 +1095,12 @@ fn the_writable_properties_are_pushed_back_into_the_engine() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
+
     player
         .set_property("LoopStatus", "Track")
         .expect("LoopStatus is writable");
@@ -1066,6 +1108,7 @@ fn the_writable_properties_are_pushed_back_into_the_engine() {
         |harness| harness.player.state().repeat == RepeatMode::Track,
         "the loop status to reach the engine",
     );
+
     assert_eq!(
         player
             .get_property::<String>("LoopStatus")
@@ -1101,6 +1144,7 @@ fn the_writable_properties_are_pushed_back_into_the_engine() {
         |harness| harness.status() == "Paused",
         "a rate of nothing to pause the transport",
     );
+
     assert_eq!(player.get_property::<f64>("Rate").expect("Rate"), 1.0);
 }
 
@@ -1119,6 +1163,7 @@ fn a_property_that_was_set_announces_the_value_it_was_set_to() {
     let told = announced
         .recv_timeout(PATIENCE)
         .expect("a Shuffle change reaches the bus");
+
     assert!(
         bool::try_from(told).expect("Shuffle is announced as a boolean"),
         "the change announced the shuffle the player was set away from"
@@ -1132,11 +1177,13 @@ fn a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it() {
     };
     let tree = Tree::new();
     let paths: Vec<PathBuf> = (0..24).map(|n| tree.wav(&format!("row-{n}.wav"))).collect();
+
     harness.load_all(&paths);
     harness.wait_for(
         |harness| harness.tracks().len() == paths.len(),
         "the queue to reach the track list",
     );
+
     let listed = harness.tracks();
     let signals = harness.tracklist_signals();
 
@@ -1157,6 +1204,7 @@ fn a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it() {
     );
 
     unannounced(&signals, "TrackListReplaced", SETTLE);
+
     assert_eq!(harness.tracks(), listed, "a shuffle moved the track list");
 
     let played_in: Vec<OwnedObjectPath> = harness
@@ -1169,6 +1217,7 @@ fn a_shuffle_leaves_the_track_list_as_it_stood_and_announces_nothing_of_it() {
         .iter()
         .map(|item| format!("/org/resonate/track/{}", item.id.get()))
         .collect();
+
     assert_eq!(
         played_in
             .iter()
@@ -1195,6 +1244,7 @@ fn settings_handed_over_the_bus_reach_the_host_and_one_it_refuses_is_an_error() 
             (Tunable::BitPerfect, "true".to_owned()),
         ])
         .expect("the host takes the settings");
+
     let refused = running.tune(&[(Tunable::Dither, UNTUNABLE.to_owned())]);
 
     assert_eq!(
@@ -1219,6 +1269,7 @@ fn a_reload_handed_over_the_bus_reaches_the_host_and_one_it_refuses_is_an_error(
     running
         .reload(Reloadable::Equaliser, Path::new("/home/a/config.toml"))
         .expect("the host takes the reload");
+
     let refused = running.reload(Reloadable::Equaliser, Path::new(ELSEWHERE));
 
     assert_eq!(
@@ -1234,16 +1285,19 @@ fn set_position_seeks_the_track_it_names_and_ignores_any_other() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
     let track = harness.playing_track();
     let stale = OwnedObjectPath::try_from("/org/resonate/track/99").expect("a valid path");
+
     player
         .call::<_, _, ()>("SetPosition", &(&stale, 20_000_000_i64))
         .expect("SetPosition is served");
     thread::sleep(Duration::from_millis(300));
+
     assert!(
         harness.position() < 10_000_000,
         "a stale track id moved the position"
@@ -1264,6 +1318,7 @@ fn the_picture_a_track_carries_is_named_by_a_uri_the_desktop_can_open() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.pictured("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -1284,6 +1339,7 @@ fn a_track_carrying_no_picture_names_none_rather_than_an_empty_one() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("bare.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -1292,6 +1348,7 @@ fn a_track_carrying_no_picture_names_none_rather_than_an_empty_one() {
     );
 
     thread::sleep(SETTLE);
+
     assert!(text(&harness.metadata(), "mpris:artUrl").is_none());
 }
 
@@ -1301,11 +1358,13 @@ fn set_position_before_the_start_of_a_track_is_ignored_rather_than_seeking_to_it
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
     let track = harness.playing_track();
+
     player
         .call::<_, _, ()>("SetPosition", &(&track, 20_000_000_i64))
         .expect("SetPosition is served");
@@ -1318,6 +1377,7 @@ fn set_position_before_the_start_of_a_track_is_ignored_rather_than_seeking_to_it
         .call::<_, _, ()>("SetPosition", &(&track, -5_000_000_i64))
         .expect("SetPosition is served");
     thread::sleep(SETTLE);
+
     assert!(
         harness.position() >= 19_000_000,
         "a position before the start of the track was seeked to"
@@ -1330,11 +1390,13 @@ fn a_seek_further_back_than_an_offset_can_name_lands_on_the_start() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
     let player = harness.proxy(PLAYER);
     let track = harness.playing_track();
+
     player
         .call::<_, _, ()>("SetPosition", &(&track, 20_000_000_i64))
         .expect("SetPosition is served");
@@ -1358,6 +1420,7 @@ fn a_seek_past_the_end_of_a_track_acts_like_next_the_way_the_spec_says() {
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[tree.wav("first.wav"), tree.wav("second.wav")]);
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -1394,6 +1457,7 @@ fn next_and_previous_do_nothing_where_the_bus_was_told_they_could_not() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(Harness::sounding, "playback to start");
 
@@ -1402,12 +1466,15 @@ fn next_and_previous_do_nothing_where_the_bus_was_told_they_could_not() {
             .proxy(PLAYER)
             .get_property(able)
             .expect("the property is served");
+
         assert!(!can, "{able} said a lone track could be left");
+
         harness
             .proxy(PLAYER)
             .call::<_, _, ()>(method, &())
             .expect("the method is served");
         thread::sleep(Duration::from_millis(300));
+
         assert_eq!(harness.status(), "Playing", "{method} stopped the queue");
         assert!(
             harness
@@ -1425,6 +1492,7 @@ fn a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
@@ -1433,13 +1501,17 @@ fn a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id() {
 
     let held = tree.wav("held.wav");
     let loose = tree.wav("loose.wav");
+
     harness
         .catalog
         .lock()
         .push((MediaLocation::local(&held), None, Heard::default()));
+
     let list = harness.proxy(TRACK_LIST);
+
     for file in [&loose, &held] {
         let tail = harness.tracks().last().cloned().expect("the loaded row");
+
         list.call::<_, _, ()>(
             "AddTrack",
             &(MediaLocation::local(file).to_uri(), &tail, false),
@@ -1458,6 +1530,7 @@ fn a_file_the_catalog_holds_is_queued_under_the_catalogs_own_id() {
             .find(|item| item.location == MediaLocation::local(file))
             .map(|item| item.id.get())
     };
+
     assert_eq!(id_of(&held), Some(HELD_IDS_FROM));
     assert!(
         id_of(&loose).is_some_and(|id| id != HELD_IDS_FROM),
@@ -1471,6 +1544,7 @@ fn a_cut_added_by_its_frames_is_queued_as_that_cut_and_named_by_them_again() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("echoes.wav"));
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
@@ -1479,9 +1553,11 @@ fn a_cut_added_by_its_frames_is_queued_as_that_cut_and_named_by_them_again() {
 
     let file = tree.wav("side.wav");
     let span = FrameSpan::between(Frames(441), Frames(4_410));
+
     let uri = MediaLocation::local(&file).to_uri_within(Some(span));
     let list = harness.proxy(TRACK_LIST);
     let tail = harness.tracks().last().cloned().expect("the loaded row");
+
     list.call::<_, _, ()>("AddTrack", &(&uri, &tail, false))
         .expect("AddTrack is served");
     harness.wait_for(
@@ -1495,6 +1571,7 @@ fn a_cut_added_by_its_frames_is_queued_as_that_cut_and_named_by_them_again() {
         .get(1)
         .cloned()
         .expect("the added row");
+
     assert_eq!(added.location, MediaLocation::local(&file));
     assert_eq!(
         added.span,
@@ -1506,6 +1583,7 @@ fn a_cut_added_by_its_frames_is_queued_as_that_cut_and_named_by_them_again() {
     let described = list
         .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
+
     assert_eq!(
         described
             .get(1)
@@ -1522,6 +1600,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     };
     let tree = Tree::new();
     let queued = [tree.wav("first.wav"), tree.wav("second.wav")];
+
     harness.load_all(&queued);
 
     harness.wait_for(Harness::sounding, "playback to start");
@@ -1535,6 +1614,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     );
 
     let list = harness.proxy(TRACK_LIST);
+
     assert!(
         list.get_property::<bool>("CanEditTracks")
             .expect("CanEditTracks")
@@ -1544,13 +1624,16 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     let described = list
         .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
+
     assert_eq!(described.len(), 2);
     assert_eq!(
         text(described.first().expect("the playing row"), "xesam:title").as_deref(),
         Some("Echoes"),
         "the playing row did not carry the tags the engine decoded"
     );
+
     let queued = described.get(1).expect("the queued row");
+
     assert_eq!(
         text(queued, "xesam:title").as_deref(),
         Some("Echoes"),
@@ -1568,6 +1651,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
 
     let signals = harness.tracklist_signals();
     let invalidated = harness.invalidated("Tracks");
+
     thread::sleep(SETTLE);
     signals.try_iter().for_each(drop);
     invalidated.try_iter().for_each(drop);
@@ -1575,6 +1659,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     let added = tree.wav("added.wav");
     let uri = format!("file://{}", added.display());
     let head = OwnedObjectPath::try_from(NO_TRACK).expect("a valid path");
+
     list.call::<_, _, ()>("AddTrack", &(&uri, &head, false))
         .expect("AddTrack is served");
     announced(&signals, "TrackAdded");
@@ -1585,6 +1670,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
         |harness| harness.tracks().len() == 3,
         "the added row to reach the track list",
     );
+
     assert_eq!(
         harness
             .player
@@ -1601,6 +1687,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     );
 
     let last = harness.tracks().last().cloned().expect("a third row");
+
     list.call::<_, _, ()>("GoTo", &&last)
         .expect("GoTo is served");
     harness.wait_for(
@@ -1609,6 +1696,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
     );
 
     let head = harness.tracks().first().cloned().expect("the added row");
+
     list.call::<_, _, ()>("RemoveTrack", &&head)
         .expect("RemoveTrack is served");
     announced(&signals, "TrackRemoved");
@@ -1616,6 +1704,7 @@ fn the_track_list_carries_the_queue_and_takes_edits_back() {
         |harness| harness.tracks().len() == 2,
         "the removed row to leave the track list",
     );
+
     assert_eq!(
         harness.player.state().queue_position,
         Some(1),
@@ -1631,26 +1720,31 @@ fn one_file_queued_twice_is_two_rows_the_track_list_can_tell_apart() {
     };
     let tree = Tree::new();
     let twice = tree.wav("twice.wav");
+
     harness.load_alike(&twice, 2);
 
     harness.wait_for(
         |harness| harness.tracks().len() == 2,
         "the track list to publish",
     );
+
     let rows = harness.tracks();
     let (first, second) = (rows[0].clone(), rows[1].clone());
+
     assert_ne!(
         first, second,
         "one file queued twice published one path for both rows"
     );
 
     let list = harness.proxy(TRACK_LIST);
+
     list.call::<_, _, ()>("RemoveTrack", &&second)
         .expect("RemoveTrack is served");
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
         "the removed row to leave the track list",
     );
+
     assert_eq!(
         harness.tracks().first(),
         Some(&first),
@@ -1676,6 +1770,7 @@ fn files_queued_onto_a_running_player_land_after_what_waits_and_before_the_rest(
     let tree = Tree::new();
     let playing = tree.wav("playing.wav");
     let rest = tree.wav("rest.wav");
+
     harness.load_all(&[playing.clone(), rest.clone()]);
     harness.wait_for(
         |harness| harness.tracks().len() == 2,
@@ -1686,6 +1781,7 @@ fn files_queued_onto_a_running_player_land_after_what_waits_and_before_the_rest(
     let first = tree.wav("first.wav");
     let second = tree.wav("second.wav");
     let third = tree.wav("third.wav");
+
     let rows = [
         (MediaLocation::local(&first), None),
         (MediaLocation::local(&second), None),
@@ -1715,6 +1811,7 @@ fn files_queued_onto_a_running_player_land_after_what_waits_and_before_the_rest(
             .expect("the running player takes the rows"),
         2
     );
+
     harness.wait_for(
         |harness| harness.tracks().len() == 4,
         "the queued rows to reach the track list",
@@ -1733,6 +1830,7 @@ fn files_queued_onto_a_running_player_land_after_what_waits_and_before_the_rest(
         |harness| harness.tracks().len() == 5,
         "the last queued row to reach the track list",
     );
+
     assert_eq!(
         queued_rows(&harness),
         vec![
@@ -1762,6 +1860,7 @@ fn a_running_player_told_where_files_went_follows_its_queued_rows_there() {
     let playing = tree.wav("playing.wav");
     let rest = tree.wav("rest.wav");
     let filed = tree.root.join("filed.wav");
+
     harness.load_all(&[playing.clone(), rest.clone()]);
     harness.wait_for(
         |harness| harness.tracks().len() == 2,
@@ -1777,6 +1876,7 @@ fn a_running_player_told_where_files_went_follows_its_queued_rows_there() {
         |harness| queued_rows(harness)[1] == MediaLocation::local(&filed),
         "the moved row to follow its file",
     );
+
     assert_eq!(queued_rows(&harness)[0], MediaLocation::local(&playing));
 }
 
@@ -1787,6 +1887,7 @@ fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_t
     };
     let tree = Tree::new();
     let paths: Vec<PathBuf> = (0..3).map(|n| tree.wav(&format!("{n}.wav"))).collect();
+
     harness.load_all(&paths);
     harness.wait_for(
         |harness| harness.tracks().len() == 3,
@@ -1795,6 +1896,7 @@ fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_t
 
     let running = listed_as(&harness);
     let next = tree.wav("next.wav");
+
     running
         .queue(
             &[(MediaLocation::local(&next), None)],
@@ -1809,6 +1911,7 @@ fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_t
         |harness| harness.tracks().len() == 4,
         "the queued row to reach the track list",
     );
+
     assert_eq!(
         queued_rows(&harness).get(1),
         Some(&MediaLocation::local(&next)),
@@ -1821,6 +1924,7 @@ fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_t
     );
 
     let heard = tree.wav("heard.wav");
+
     running
         .queue(
             &[(MediaLocation::local(&heard), None)],
@@ -1835,6 +1939,7 @@ fn a_file_queued_next_lands_after_the_row_being_played_and_is_heard_when_it_is_t
         |harness| harness.player.state().queue_position == Some(1),
         "the row queued to be heard now to be the one playing",
     );
+
     assert_eq!(
         queued_rows(&harness).get(1),
         Some(&MediaLocation::local(&heard))
@@ -1881,6 +1986,7 @@ fn a_run_with_an_entry_no_source_opens_still_queues_the_files_beside_it() {
         SourceId::new("nowhere").expect("a lowercase name"),
         "nowhere/song.flac",
     );
+
     let rows = [
         (MediaLocation::local(&first), None),
         (nowhere.clone(), None),
@@ -1895,6 +2001,7 @@ fn a_run_with_an_entry_no_source_opens_still_queues_the_files_beside_it() {
         running
             .queue(&rows, queued)
             .expect("the running player takes the rows it can open");
+
         assert!(
             running.queue(&[(nowhere.clone(), None)], queued).is_err(),
             "a run of nothing the player can open was taken"
@@ -1905,6 +2012,7 @@ fn a_run_with_an_entry_no_source_opens_still_queues_the_files_beside_it() {
         |harness| harness.player.queue().len() == 4,
         "the files beside the refused entry to be queued",
     );
+
     assert_eq!(
         queued_rows(&harness),
         [&first, &second, &first, &second].map(MediaLocation::local),
@@ -1919,6 +2027,7 @@ fn a_run_of_files_queued_at_a_row_lands_on_it_in_the_order_they_were_named() {
     };
     let tree = Tree::new();
     let paths: Vec<PathBuf> = (0..3).map(|n| tree.wav(&format!("{n}.wav"))).collect();
+
     harness.load_all(&paths);
     harness.wait_for(
         |harness| harness.tracks().len() == 3,
@@ -1928,6 +2037,7 @@ fn a_run_of_files_queued_at_a_row_lands_on_it_in_the_order_they_were_named() {
     let running = listed_as(&harness);
     let first = tree.wav("at-first.wav");
     let second = tree.wav("at-second.wav");
+
     running
         .queue(
             &[
@@ -1945,7 +2055,9 @@ fn a_run_of_files_queued_at_a_row_lands_on_it_in_the_order_they_were_named() {
         |harness| harness.tracks().len() == 5,
         "the queued rows to reach the track list",
     );
+
     let rows = queued_rows(&harness);
+
     assert_eq!(rows.get(2), Some(&MediaLocation::local(&first)));
     assert_eq!(rows.get(3), Some(&MediaLocation::local(&second)));
     assert_eq!(
@@ -1962,6 +2074,7 @@ fn a_run_longer_than_one_call_takes_lands_whole_and_in_order() {
     };
     let tree = Tree::new();
     let playing = tree.wav("playing.wav");
+
     harness.load_all(std::slice::from_ref(&playing));
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
@@ -1990,10 +2103,12 @@ fn a_run_longer_than_one_call_takes_lands_whole_and_in_order() {
         .expect("the running player takes every chunk");
 
     assert_eq!(landed, rows.len());
+
     harness.wait_for(
         |harness| harness.tracks().len() == 1 + rows.len(),
         "every chunk to reach the track list",
     );
+
     assert_eq!(queued_rows(&harness)[1..], wanted[..]);
 }
 
@@ -2032,7 +2147,9 @@ fn piped(harness: &Harness) -> Running {
         Some(Arc::clone(&harness.shelf) as Arc<dyn Playlists>),
     );
     let (near, far) = connected_pair();
+
     thread::spawn(move || answering.serve(far));
+
     let name = WellKnownName::try_from("org.mpris.MediaPlayer2.resonate.zone2")
         .expect("a well known name");
 
@@ -2048,13 +2165,16 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.wav(&format!("piped-{n}.wav")))
         .collect();
+
     harness.load_all(&paths);
     harness.wait_for(Harness::sounding, "playback to start");
 
     let running = piped(&harness);
 
     assert!(running.can_raise().expect("CanRaise is served"));
+
     running.raise().expect("Raise is served");
+
     assert!(harness.raised.load(Ordering::Acquire));
     assert_eq!(running.zone_number(), ZoneId::new(2));
     assert!(!running.zone().expect("the zone is named").is_empty());
@@ -2064,10 +2184,12 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
         |harness| harness.status() == "Paused",
         "the pause to reach the transport",
     );
+
     assert_eq!(
         running.playback().expect("the status is read"),
         Some(PlaybackStatus::Paused)
     );
+
     running.play_pause().expect("PlayPause is served");
     harness.wait_for(Harness::sounding, "the toggle to reach the transport");
     running.next().expect("Next is served");
@@ -2082,11 +2204,13 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
     );
 
     let half = Volume::new(0.5).expect("a volume between zero and one");
+
     running.set_volume(half).expect("Volume is writable");
     harness.wait_for(
         |_| running.volume().is_ok_and(|volume| volume == half),
         "the volume to settle",
     );
+
     assert!(!running.shuffle().expect("Shuffle is readable"));
 
     harness.wait_for(
@@ -2097,10 +2221,12 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
         },
         "the tags of the track being played to reach the metadata",
     );
+
     let playing = running
         .metadata()
         .expect("Metadata is readable")
         .expect("a track is playing");
+
     assert_eq!(playing.location, Some(MediaLocation::local(&paths[0])));
     assert_eq!(playing.title.as_deref(), Some("Echoes"));
     assert_eq!(playing.artist.as_deref(), Some("Pink Floyd"));
@@ -2156,7 +2282,9 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
         },
         "the tags of every queued row to be read",
     );
+
     let rows = running.rows().expect("the track list answers");
+
     assert_eq!(
         rows.iter()
             .map(|row| row.location.clone())
@@ -2178,13 +2306,16 @@ fn a_player_over_a_pipe_answers_the_transport_calls_and_reads_the_queue_a_client
             .any(|playlist| playlist.name == "Evening"),
         "the collection the player was served with was not listed"
     );
+
     let standing = running.standing().expect("the player says how it stands");
+
     assert_eq!(standing.queued, 3);
     assert_eq!(standing.title.as_deref(), Some("Echoes"));
 
     running
         .remove_track(rows[1].track)
         .expect("RemoveTrack is served");
+
     assert_eq!(
         queued_rows(&harness),
         vec![
@@ -2210,12 +2341,14 @@ fn files_queued_over_a_pipe_land_where_they_would_over_the_bus() {
     let tree = Tree::new();
     let playing = tree.wav("playing.wav");
     let rest = tree.wav("rest.wav");
+
     harness.load_all(&[playing.clone(), rest.clone()]);
     harness.wait_for(Harness::sounding, "playback to start");
 
     let running = piped(&harness);
     let first = tree.wav("first.wav");
     let second = tree.wav("second.wav");
+
     let rows = [
         (MediaLocation::local(&first), None),
         (MediaLocation::local(&second), None),
@@ -2289,10 +2422,13 @@ fn settings_and_reloads_handed_over_a_pipe_reach_the_host_and_a_refusal_is_named
             (Tunable::BitPerfect, "true".to_owned()),
         ])
         .expect("the host takes the settings");
+
     let untuned = running.tune(&[(Tunable::Dither, UNTUNABLE.to_owned())]);
+
     running
         .reload(Reloadable::Equaliser, Path::new("/home/a/config.toml"))
         .expect("the host takes the reload");
+
     let unloaded = running.reload(Reloadable::Equaliser, Path::new(ELSEWHERE));
     let unmoved = running.hand_over(ZoneId::new(2).expect("a second zone"));
 
@@ -2340,9 +2476,12 @@ fn one_session_serves_every_call_that_looks_for_a_player() {
         let named = Running::named_in(&session, &instance)
             .expect("the bus lists the names it holds")
             .expect("the player is named");
+
         assert_eq!(named.name().as_str(), name);
+
         named.playback().expect("the player answers on the session");
     }
+
     assert!(
         Running::found_in(&session)
             .expect("the bus lists the names it holds")
@@ -2364,6 +2503,7 @@ fn a_window_on_the_bus_says_it_can_be_raised_and_answers_a_raise() {
     let running = listed_as(&harness);
 
     assert!(running.can_raise().expect("CanRaise is served"));
+
     running.raise().expect("Raise is served");
     harness.wait_for(
         |harness| harness.raised.load(Ordering::Acquire),
@@ -2377,6 +2517,7 @@ fn a_player_of_this_build_is_listed_with_what_it_is_playing() {
         return;
     };
     let tree = Tree::new();
+
     harness.load(&tree.wav("listed.wav"));
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
@@ -2384,6 +2525,7 @@ fn a_player_of_this_build_is_listed_with_what_it_is_playing() {
     );
 
     let running = listed_as(&harness);
+
     harness.wait_for(
         |_| {
             running
@@ -2394,6 +2536,7 @@ fn a_player_of_this_build_is_listed_with_what_it_is_playing() {
     );
 
     let standing = running.standing().expect("the player answers about itself");
+
     assert!(
         harness
             .names()
@@ -2416,12 +2559,14 @@ fn a_player_is_named_by_its_whole_bus_name_or_by_the_instance_under_it() {
     let whole = Running::named(&PlayerName::new(claimed.as_str()))
         .expect("the bus lists the names it holds")
         .expect("the player answers to the name it claimed");
+
     assert_eq!(whole.name().as_str(), claimed);
 
     if let Some(instance) = claimed.strip_prefix(BUS_NAME_PREFIX) {
         let under = Running::named(&PlayerName::new(instance))
             .expect("the bus lists the names it holds")
             .expect("the player answers to the instance alone");
+
         assert_eq!(under.name().as_str(), claimed);
     }
 
@@ -2463,6 +2608,7 @@ fn the_playlists_interface_lists_what_the_collection_holds() {
     let alphabetical = playlists
         .call::<_, _, Vec<Listed>>("GetPlaylists", &(0_u32, 10_u32, "Alphabetical", false))
         .expect("GetPlaylists is served");
+
     assert_eq!(
         names(&alphabetical),
         vec!["Anything Loud".to_owned(), "Evening".to_owned()]
@@ -2471,16 +2617,19 @@ fn the_playlists_interface_lists_what_the_collection_holds() {
     let reversed = playlists
         .call::<_, _, Vec<Listed>>("GetPlaylists", &(0_u32, 1_u32, "Alphabetical", true))
         .expect("GetPlaylists is served");
+
     assert_eq!(names(&reversed), vec!["Evening".to_owned()]);
 
     let paged = playlists
         .call::<_, _, Vec<Listed>>("GetPlaylists", &(1_u32, 10_u32, "Alphabetical", false))
         .expect("GetPlaylists is served");
+
     assert_eq!(names(&paged), vec!["Evening".to_owned()]);
 
     let by_last_play = playlists
         .call::<_, _, Vec<Listed>>("GetPlaylists", &(0_u32, 10_u32, "LastPlayDate", false))
         .expect("an advertised ordering is served");
+
     assert_eq!(by_last_play.len(), 2);
 
     assert!(
@@ -2493,6 +2642,7 @@ fn the_playlists_interface_lists_what_the_collection_holds() {
     let (valid, _) = playlists
         .get_property::<(bool, Listed)>("ActivePlaylist")
         .expect("ActivePlaylist");
+
     assert!(!valid, "a playlist was active before one was activated");
 }
 
@@ -2503,12 +2653,15 @@ fn activating_a_playlist_reaches_the_collection_and_is_announced() {
     };
     let playlists = harness.proxy(PLAYLISTS);
     let signals = harness.playlist_signals();
+
     thread::sleep(SETTLE);
 
     let evening = OwnedObjectPath::try_from("/org/resonate/playlist/1").expect("a valid path");
+
     playlists
         .call::<_, _, ()>("ActivatePlaylist", &&evening)
         .expect("ActivatePlaylist is served");
+
     assert_eq!(
         harness.shelf.activated.lock().first().map(|id| id.get()),
         Some(1)
@@ -2517,6 +2670,7 @@ fn activating_a_playlist_reaches_the_collection_and_is_announced() {
     let (valid, active) = playlists
         .get_property::<(bool, Listed)>("ActivePlaylist")
         .expect("ActivePlaylist");
+
     assert!(valid, "the activated playlist is not reported as active");
     assert_eq!(active.0, evening);
     assert_eq!(active.1, "Evening");
@@ -2526,6 +2680,7 @@ fn activating_a_playlist_reaches_the_collection_and_is_announced() {
     announced(&signals, "PlaylistChanged");
 
     let gone = OwnedObjectPath::try_from(NO_PLAYLIST).expect("a valid path");
+
     assert!(
         playlists
             .call::<_, _, ()>("ActivatePlaylist", &&gone)
@@ -2548,6 +2703,7 @@ fn open_uri_hands_a_local_file_to_the_front_end_and_refuses_the_rest() {
     player
         .call::<_, _, ()>("OpenUri", &"file:///music/Pink%20Floyd/Echoes.flac")
         .expect("OpenUri is served");
+
     assert_eq!(
         harness.opened.lock().first().cloned(),
         Some(MediaLocation::local("/music/Pink Floyd/Echoes.flac"))
@@ -2567,6 +2723,7 @@ fn a_seek_is_announced_from_the_count_the_engine_publishes_and_nothing_else_is()
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[tree.wav("first.wav"), tree.wav("second.wav")]);
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -2581,10 +2738,12 @@ fn a_seek_is_announced_from_the_count_the_engine_publishes_and_nothing_else_is()
     );
 
     let signals = harness.player_signals();
+
     thread::sleep(SETTLE);
 
     let track = harness.playing_track();
     let a_quarter_of_a_second_on = harness.position() + 250_000;
+
     harness
         .proxy(PLAYER)
         .call::<_, _, ()>("SetPosition", &(&track, a_quarter_of_a_second_on))
@@ -2620,6 +2779,7 @@ fn every_id_a_client_asks_about_is_answered_in_the_order_it_asked() {
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[tree.wav("first.wav"), tree.wav("second.wav")]);
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -2634,6 +2794,7 @@ fn every_id_a_client_asks_about_is_answered_in_the_order_it_asked() {
     let rows = harness.tracks();
     let unheld = OwnedObjectPath::try_from("/org/resonate/track/99").expect("a valid path");
     let nothing = OwnedObjectPath::try_from(NO_TRACK).expect("a valid path");
+
     let asked = vec![unheld, rows[1].clone(), nothing, rows[0].clone()];
 
     let described = harness
@@ -2646,6 +2807,7 @@ fn every_id_a_client_asks_about_is_answered_in_the_order_it_asked() {
         asked.len(),
         "the reply did not line up with the ids it was asked about"
     );
+
     for (entry, id) in described.iter().zip(&asked) {
         assert_eq!(
             path_of(entry).as_ref(),
@@ -2653,6 +2815,7 @@ fn every_id_a_client_asks_about_is_answered_in_the_order_it_asked() {
             "an entry named a row other than the one asked about"
         );
     }
+
     assert_eq!(
         described[0].len(),
         1,
@@ -2676,6 +2839,7 @@ fn a_play_counted_while_the_track_plays_is_announced_without_a_track_change() {
     };
     let tree = Tree::new();
     let counted = tree.wav("counted.wav");
+
     harness.remember(
         &counted,
         None,
@@ -2693,6 +2857,7 @@ fn a_play_counted_while_the_track_plays_is_announced_without_a_track_change() {
     );
 
     let announced = harness.changed("Metadata");
+
     thread::sleep(SETTLE);
     harness.remember(
         &counted,
@@ -2758,6 +2923,7 @@ fn what_the_catalog_has_counted_reaches_the_bus_as_a_use_count_and_a_date() {
     );
 
     let playing = harness.metadata();
+
     assert_eq!(
         count(&playing, "xesam:useCount"),
         Some(12),
@@ -2774,6 +2940,7 @@ fn what_the_catalog_has_counted_reaches_the_bus_as_a_use_count_and_a_date() {
         .proxy(TRACK_LIST)
         .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
+
     assert_eq!(described.len(), 3);
 
     assert_eq!(count(&described[0], "xesam:useCount"), Some(12));
@@ -2870,6 +3037,7 @@ impl MediaProvider for Held {
                 location: location.clone(),
             });
         }
+
         let _ = self.opened.send(());
         let _ = self.may_serve.lock().recv();
 
@@ -2902,6 +3070,7 @@ impl MediaProvider for Refuses {
 fn a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever() {
     let named = SourceId::new("refuses").expect("a lowercase name");
     let (opened, has_opened) = unbounded();
+
     let sources = Sources::local().and(Arc::new(Refuses {
         source: named.clone(),
         opened,
@@ -2939,6 +3108,7 @@ fn a_row_whose_read_answered_nothing_is_told_so_rather_than_owed_for_ever() {
         !described[0].contains_key("mpris:length"),
         "a row the source refused answered with a length"
     );
+
     has_opened
         .recv_timeout(PATIENCE)
         .expect("the tag reader opens the row");
@@ -2951,6 +3121,7 @@ fn a_row_the_call_could_not_read_in_time_is_announced_when_its_tags_land() {
     let named = SourceId::new("held").expect("a lowercase name");
     let (opened, has_opened) = unbounded();
     let (may_serve, serve) = unbounded();
+
     let sources = Sources::local().and(Arc::new(Held {
         source: named.clone(),
         key: "held/1.wav".to_owned(),
@@ -2991,6 +3162,7 @@ fn a_row_the_call_could_not_read_in_time_is_announced_when_its_tags_land() {
         !described[0].contains_key("mpris:length"),
         "a row whose tags had not been read answered with a length"
     );
+
     has_opened
         .recv_timeout(PATIENCE)
         .expect("the tag reader opens the row");
@@ -3001,6 +3173,7 @@ fn a_row_the_call_could_not_read_in_time_is_announced_when_its_tags_land() {
         .proxy(TRACK_LIST)
         .call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
         .expect("GetTracksMetadata is served");
+
     assert!(
         described[0].contains_key("mpris:length"),
         "the row that was announced still answered without its tags"
@@ -3028,6 +3201,7 @@ fn the_sleep_timer_is_read_back_as_it_was_set_over_the_bus() {
     };
 
     let announced = harness.changed(SLEEP);
+
     set_sleep(&harness, "after", 900);
     announced
         .recv_deadline(Instant::now() + PATIENCE)
@@ -3037,7 +3211,9 @@ fn the_sleep_timer_is_read_back_as_it_was_set_over_the_bus() {
         |harness| sleep_reads(harness).0 == "after",
         "the sleep timer to reach the bus",
     );
+
     let (_, seconds) = sleep_reads(&harness);
+
     assert!(
         (880..=900).contains(&seconds),
         "a timer set for 900 seconds read back with {seconds} left"
@@ -3049,6 +3225,7 @@ fn the_sleep_timer_is_read_back_as_it_was_set_over_the_bus() {
             |harness| sleep_reads(harness).0 == mode,
             "the sleep timer to reach the bus",
         );
+
         assert_eq!(sleep_reads(&harness), (mode.to_owned(), 0));
     }
 }
@@ -3072,6 +3249,7 @@ fn a_sleep_timer_set_to_nothing_reads_as_off() {
         |harness| sleep_reads(harness).0 == "off",
         "the sleep timer to be taken off",
     );
+
     assert_eq!(sleep_reads(&harness), ("off".to_owned(), 0));
 }
 
@@ -3092,6 +3270,7 @@ fn an_unknown_sleep_mode_is_refused_by_name() {
     let zbus::fdo::Error::InvalidArgs(said) = refusal.as_ref() else {
         panic!("an unknown sleep mode was refused as {refusal}");
     };
+
     assert!(
         said.contains("tomorrow"),
         "the refusal did not name the mode it was given: {said:?}"
@@ -3108,6 +3287,7 @@ fn a_running_player_answers_the_transport_calls_a_client_makes() {
     let paths: Vec<PathBuf> = (0..2)
         .map(|n| tree.wav(&format!("heard-{n}.wav")))
         .collect();
+
     harness.load_all(&paths);
     harness.wait_for(Harness::sounding, "playback to start");
 
@@ -3133,6 +3313,7 @@ fn a_running_player_answers_the_transport_calls_a_client_makes() {
     );
 
     let half = Volume::new(0.5).expect("a volume between zero and one");
+
     running.set_volume(half).expect("Volume is writable");
     harness.wait_for(
         |_| running.volume().is_ok_and(|volume| volume == half),
@@ -3147,10 +3328,12 @@ fn a_running_player_answers_the_transport_calls_a_client_makes() {
         },
         "the tags of the track being played to reach the metadata",
     );
+
     let playing = running
         .metadata()
         .expect("Metadata is readable")
         .expect("a track is playing");
+
     assert_eq!(playing.location, Some(MediaLocation::local(&paths[0])));
     assert_eq!(playing.title.as_deref(), Some("Echoes"));
     assert_eq!(playing.artist.as_deref(), Some("Pink Floyd"));
@@ -3212,6 +3395,7 @@ fn a_running_player_reads_the_queue_back_through_its_client() {
     };
     let tree = Tree::new();
     let paths: Vec<PathBuf> = (0..3).map(|n| tree.wav(&format!("row-{n}.wav"))).collect();
+
     harness.load_all(&paths);
     harness.wait_for(
         |harness| harness.tracks().len() == 3,
@@ -3219,6 +3403,7 @@ fn a_running_player_reads_the_queue_back_through_its_client() {
     );
 
     let running = listed_as(&harness);
+
     assert!(
         running
             .playlists(PlaylistOrder::Alphabetical, false, 0, None)
@@ -3237,7 +3422,9 @@ fn a_running_player_reads_the_queue_back_through_its_client() {
         },
         "the tags of every queued row to reach the track list",
     );
+
     let rows = running.rows().expect("the track list answers");
+
     assert_eq!(
         rows.iter()
             .map(|row| row.location.clone())
@@ -3255,6 +3442,7 @@ fn a_running_player_reads_the_queue_back_through_its_client() {
         |harness| harness.tracks().len() == 2,
         "the row to leave the track list",
     );
+
     assert_eq!(
         running
             .rows()
@@ -3276,14 +3464,17 @@ fn a_transport_call_answers_once_the_engine_has_applied_it() {
     };
     let tree = Tree::new();
     let paths: Vec<PathBuf> = (0..3).map(|n| tree.wav(&format!("row-{n}.wav"))).collect();
+
     harness.load_all(&paths);
     harness.wait_for(
         |harness| harness.player.state().queue_position == Some(0),
         "the first row to be the one playing",
     );
+
     let running = listed_as(&harness);
 
     running.next().expect("Next is served");
+
     assert_eq!(harness.player.state().queue_position, Some(1));
     assert_eq!(
         running
@@ -3294,6 +3485,7 @@ fn a_transport_call_answers_once_the_engine_has_applied_it() {
     );
 
     running.pause().expect("Pause is served");
+
     assert_eq!(
         running.playback().expect("PlaybackStatus is readable"),
         Some(PlaybackStatus::Paused)
@@ -3302,6 +3494,7 @@ fn a_transport_call_answers_once_the_engine_has_applied_it() {
     running
         .seek(Seeking::Forward(Duration::from_secs(10)))
         .expect("Seek is served");
+
     assert!(
         running
             .position()
@@ -3310,10 +3503,13 @@ fn a_transport_call_answers_once_the_engine_has_applied_it() {
     );
 
     let queued = running.queued().expect("the track list answers");
+
     assert_eq!(queued.len(), 3);
+
     running
         .remove_track(queued[2])
         .expect("RemoveTrack is served");
+
     assert_eq!(
         running.queued().expect("the track list answers"),
         queued[..2]
@@ -3335,12 +3531,15 @@ fn two_rows_added_between_two_polls_are_announced_as_two_additions() {
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[tree.wav("first.wav")]);
     harness.wait_for(
         |harness| harness.tracks().len() == 1,
         "the track list to publish",
     );
+
     let signals = harness.tracklist_signals();
+
     thread::sleep(SETTLE);
     signals.try_iter().for_each(drop);
 
@@ -3349,6 +3548,7 @@ fn two_rows_added_between_two_polls_are_announced_as_two_additions() {
     let uris: Vec<String> = ["one.wav", "two.wav"]
         .map(|name| format!("file://{}", tree.wav(name).display()))
         .into();
+
     for uri in &uris {
         list.call::<_, _, ()>("AddTrack", &(uri, &head, false))
             .expect("AddTrack is served");
@@ -3357,6 +3557,7 @@ fn two_rows_added_between_two_polls_are_announced_as_two_additions() {
     announced(&signals, "TrackAdded");
     announced(&signals, "TrackAdded");
     unannounced(&signals, "TrackListReplaced", SETTLE);
+
     assert_eq!(harness.tracks().len(), 3);
 }
 
@@ -3366,6 +3567,7 @@ fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[
         tree.wav("one.wav"),
         tree.wav("two.wav"),
@@ -3375,8 +3577,10 @@ fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
         |harness| harness.tracks().len() == 3,
         "the track list to publish",
     );
+
     let before = harness.tracks();
     let signals = harness.tracklist_signals();
+
     thread::sleep(SETTLE);
     signals.try_iter().for_each(drop);
 
@@ -3391,6 +3595,7 @@ fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
     announced(&signals, "TrackRemoved");
     announced(&signals, "TrackAdded");
     unannounced(&signals, "TrackListReplaced", SETTLE);
+
     assert_eq!(
         harness.tracks(),
         vec![before[2].clone(), before[0].clone(), before[1].clone()]
@@ -3477,7 +3682,9 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
 
     let tree = Tree::new();
     let config = tree.root.join("session.conf");
+
     fs::write(&config, A_BUS_WITH_NOTHING_TO_ACTIVATE).expect("a writable bus configuration");
+
     let started = Process::new("dbus-run-session")
         .arg(format!("--config-file={}", config.display()))
         .args(["--", "sh", "-c", SYSTEM_BUS_TOO, "sh"])
@@ -3494,16 +3701,19 @@ fn on_a_bus_of_its_own(test: &str) -> bool {
     };
 
     let deadline = Instant::now() + PATIENCE * 4;
+
     loop {
         if let Some(status) = running
             .try_wait()
             .expect("the run on its own bus is watched")
         {
             assert!(status.success(), "{test} failed on a bus of its own");
+
             break;
         }
         if Instant::now() > deadline {
             let _ = running.kill();
+
             panic!("{test} did not finish on a bus of its own");
         }
         thread::sleep(Duration::from_millis(50));
@@ -3516,6 +3726,7 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
     if !on_a_bus_of_its_own("a_press_on_a_notification_button_reaches_the_transport") {
         return;
     }
+
     let (raised, notifications) = unbounded();
     let server = connection::Builder::session()
         .and_then(|builder| builder.name(NOTIFICATIONS))
@@ -3526,6 +3737,7 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[
         tree.wav("one.wav"),
         tree.wav("two.wav"),
@@ -3535,6 +3747,7 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
     let offered = notifications
         .recv_timeout(PATIENCE)
         .expect("the track playing was told to the desktop");
+
     assert_eq!(
         offered,
         [
@@ -3546,6 +3759,7 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
             "Next"
         ]
     );
+
     thread::sleep(SETTLE);
 
     let press = |notification: u32, key: &str| {
@@ -3559,8 +3773,10 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
             )
             .expect("a press is sent");
     };
+
     press(RAISED + 1, "next");
     thread::sleep(SETTLE);
+
     assert_eq!(harness.player.state().queue_position, Some(0));
 
     press(RAISED, "next");
@@ -3582,6 +3798,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
     ) {
         return;
     }
+
     let (registered, registrations) = unbounded();
     let bluez = connection::Builder::system()
         .and_then(|builder| builder.name(BLUEZ))
@@ -3604,6 +3821,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
     let first = registrations
         .recv_timeout(PATIENCE)
         .expect("the player was registered with the adapter standing");
+
     assert_eq!(first.adapter, FIRST_ADAPTER);
     assert_eq!(first.player.as_str(), OBJECT_PATH);
     assert_eq!(flag(&first.properties, "CanControl"), Some(true));
@@ -3620,9 +3838,11 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
         .object_server()
         .at(PLUGGED_IN_LATER, Adapter { registered })
         .expect("a second adapter is served");
+
     let later = registrations
         .recv_timeout(PATIENCE)
         .expect("an adapter plugged in later was registered with too");
+
     assert_eq!(later.adapter, PLUGGED_IN_LATER);
 
     let told = Proxy::new(&bluez, first.sender.as_str(), OBJECT_PATH, PROPERTIES)
@@ -3630,6 +3850,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
         .receive_signal("PropertiesChanged")
         .expect("the registered player announces its property changes");
     let (statuses, heard) = unbounded();
+
     thread::spawn(move || {
         for message in told {
             let Ok((_, mut changed, _)) =
@@ -3652,6 +3873,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
     });
     harness.load_all(&[tree.wav("one.wav"), tree.wav("two.wav")]);
     harness.wait_for(Harness::sounding, "playback to start");
+
     assert_eq!(
         heard.recv_timeout(PATIENCE).as_deref(),
         Ok("Playing"),
@@ -3660,6 +3882,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
 
     let pressed = Proxy::new(&bluez, first.sender.as_str(), OBJECT_PATH, PLAYER)
         .expect("BlueZ reaches the registered player");
+
     pressed
         .call_method("Pause", &())
         .expect("a press on the headset is answered");
@@ -3667,6 +3890,7 @@ fn a_headsets_press_reaches_the_transport_through_the_player_registered_with_blu
         |harness| harness.player.state().playback == PlaybackState::Paused,
         "a headset's pause to reach the transport",
     );
+
     assert_eq!(
         heard.recv_timeout(PATIENCE).as_deref(),
         Ok("Paused"),
@@ -3688,6 +3912,7 @@ fn a_queued_row_carrying_a_picture_is_described_with_a_cover_the_desktop_can_ope
         return;
     };
     let tree = Tree::new();
+
     harness.load_all(&[tree.wav("bare.wav"), tree.pictured("next.wav")]);
     harness.wait_for(Harness::sounding, "playback to start");
     harness.wait_for(
@@ -3697,10 +3922,12 @@ fn a_queued_row_carrying_a_picture_is_described_with_a_cover_the_desktop_can_ope
 
     let list = harness.proxy(TRACK_LIST);
     let rows = harness.tracks();
+
     let described = || {
         list.call::<_, _, Vec<HashMap<String, OwnedVariant>>>("GetTracksMetadata", &rows)
             .expect("GetTracksMetadata is served")
     };
+
     harness.wait_for(
         |_| {
             described()
@@ -3765,6 +3992,7 @@ fn manager_says(manager: &Connection, changed: Option<u32>, invalidated: &[&str]
         .map(|value| ("Metered".to_owned(), OwnedVariant::from(value)))
         .into_iter()
         .collect();
+
     manager
         .emit_signal(
             None::<&str>,
@@ -3784,6 +4012,7 @@ fn becomes(metering: &Metering, wanted: Meter) {
             "the connection stayed {:?}, not {wanted:?}",
             metering.meter()
         );
+
         thread::sleep(Duration::from_millis(20));
     }
 }
@@ -3793,10 +4022,12 @@ fn the_meter_follows_what_network_manager_says_of_the_connection() {
     if !on_a_bus_of_its_own("the_meter_follows_what_network_manager_says_of_the_connection") {
         return;
     }
+
     let (manager, metered) = network_manager_on_the_bus(1);
     let metering = Metering::new();
 
     watch_the_meter(metering.clone()).expect("the system bus is reached");
+
     assert_eq!(metering.meter(), Meter::Metered);
 
     metered.store(2, Ordering::SeqCst);
@@ -3821,6 +4052,7 @@ fn a_connection_is_not_metered_where_no_network_manager_answers() {
     if !on_a_bus_of_its_own("a_connection_is_not_metered_where_no_network_manager_answers") {
         return;
     }
+
     let metering = Metering::new();
 
     watch_the_meter(metering.clone()).expect("the system bus is reached");

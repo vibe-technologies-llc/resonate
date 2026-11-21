@@ -51,6 +51,7 @@ pub(crate) fn gather_the_loose(
     weighed: Weighed,
 ) -> Result<u64> {
     let mut gathered = 0;
+
     for root in roots {
         for run in same_titled(tx, *root, weighed)? {
             if !one_record(&run) {
@@ -61,6 +62,7 @@ pub(crate) fn gather_the_loose(
                 );
                 continue;
             }
+
             let Some((survivor, rest)) = run.split_first() else {
                 continue;
             };
@@ -107,8 +109,10 @@ fn same_titled(tx: &Transaction<'_>, root: i64, weighed: Weighed) -> Result<Vec<
 
     let mut by_title: AHashMap<String, Vec<Loose>> = AHashMap::new();
     let mut order = Vec::new();
+
     for (title, album) in held {
         let title = title.to_lowercase();
+
         if !by_title.contains_key(&title) {
             order.push(title.clone());
         }
@@ -116,10 +120,12 @@ fn same_titled(tx: &Transaction<'_>, root: i64, weighed: Weighed) -> Result<Vec<
     }
 
     let mut runs = Vec::new();
+
     for title in order {
         let Some(mut run) = by_title.remove(&title).filter(|albums| albums.len() > 1) else {
             continue;
         };
+
         for album in &mut run {
             album.seats = seats_of(tx, album.id)?;
         }
@@ -146,6 +152,7 @@ fn seats_of(tx: &Transaction<'_>, album: i64) -> Result<Vec<Option<(u32, u32)>>>
 
 fn one_record(run: &[Loose]) -> bool {
     let mut taken = AHashSet::new();
+
     let every_seat_is_its_own = run
         .iter()
         .flat_map(|album| &album.seats)
@@ -162,6 +169,7 @@ fn one_record(run: &[Loose]) -> bool {
 
 fn agree(values: impl Iterator<Item = Option<i64>>) -> bool {
     let mut stated = values.flatten();
+
     let Some(first) = stated.next() else {
         return true;
     };

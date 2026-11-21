@@ -57,6 +57,7 @@ fn echoes() -> Recording {
 fn scratch(name: &str) -> PathBuf {
     let folder = std::env::temp_dir().join(format!("resonate-kept-{name}-{}", std::process::id()));
     let _ = fs::remove_dir_all(&folder);
+
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder
 }
@@ -93,6 +94,7 @@ fn every_lookup_and_answer_reads_back_as_itself_and_a_cut_one_is_refused() {
     for asked in asked {
         assert_eq!(Asked::decoded(&asked.encoded()).expect("decoded"), asked);
     }
+
     assert_eq!(Answer::decoded(&encoded).expect("decoded"), answer);
     assert!(Answer::decoded(&encoded[..encoded.len() - 1]).is_err());
     assert!(Answer::decoded(&[encoded.as_slice(), &[0]].concat()).is_err());
@@ -175,8 +177,10 @@ fn a_thinner_copy_held_inside_another_answer_never_answers_a_lookup_by_its_id() 
 fn a_kept_answer_older_than_a_month_is_not_served() {
     let kept = Kept::in_memory().expect("a kept store");
     let asked = Asked::Recording(mbid(ECHOES));
+
     kept.keep(&asked, &Answer::Recording(Some(echoes())))
         .expect("kept");
+
     let later = resonate_musicbrainz_now() + KEPT_FRESH_FOR.as_secs() + 1;
 
     assert!(kept.answer(&asked).expect("read").is_some());
@@ -190,8 +194,10 @@ fn an_answer_a_device_stamped_in_the_future_is_kept_as_of_now_and_ages_as_any_ot
     let desk = Kept::in_memory().expect("a kept store");
     let phone = Kept::in_memory().expect("a kept store");
     let asked = Asked::Recording(mbid(ECHOES));
+
     desk.keep(&asked, &Answer::Recording(Some(echoes())))
         .expect("kept");
+
     let ahead = KeptAnswer {
         at: resonate_musicbrainz_now() + 365 * A_DAY,
         ..desk.after(0, 512, "phone").expect("listed")[0].clone()
@@ -211,6 +217,7 @@ fn an_answer_stamped_in_the_future_before_this_build_is_brought_back_to_now_as_t
     let folder = scratch("ahead");
     let path = folder.join("kept.sqlite");
     let (asked, answer) = recorded(ECHOES);
+
     Kept::open(&path)
         .expect("laid out")
         .keep(&asked, &answer)
@@ -227,6 +234,7 @@ fn an_answer_stamped_in_the_future_before_this_build_is_brought_back_to_now_as_t
     let told = kept.after(0, 512, "phone").expect("listed");
 
     assert!(told[0].at <= resonate_musicbrainz_now());
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -241,8 +249,10 @@ fn answers_taken_from_a_device_are_marked_and_never_told_back_to_it() {
     let desk = Kept::in_memory().expect("a kept store");
     let phone = Kept::in_memory().expect("a kept store");
     let asked = Asked::Recording(mbid(ECHOES));
+
     desk.keep(&asked, &Answer::Recording(Some(echoes())))
         .expect("kept");
+
     let told = desk.after(0, 512, "phone").expect("listed");
     let forged = KeptAnswer {
         key: Asked::Recording(mbid(MEDDLE)).key(),
@@ -283,10 +293,13 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
     let folder = scratch("numbered");
     let path = folder.join("kept.sqlite");
     let desk = Kept::open(&path).expect("laid out");
+
     for id in [ECHOES, TIME] {
         let (asked, answer) = recorded(id);
+
         desk.keep(&asked, &answer).expect("kept");
     }
+
     let mark = desk
         .after(0, 512, "phone")
         .expect("listed")
@@ -294,6 +307,7 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
         .map(|told| told.seq)
         .max()
         .expect("answers told");
+
     drop(desk);
     rusqlite::Connection::open(&path)
         .expect("opened")
@@ -302,7 +316,9 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
 
     let desk = Kept::open(&path).expect("opened again, sweeping the newest");
     let (asked, answer) = recorded(BREATHE);
+
     desk.keep(&asked, &answer).expect("kept");
+
     let told = desk.after(mark, 512, "phone").expect("listed");
 
     assert_eq!(desk.counted().expect("counted"), 2);
@@ -313,6 +329,7 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
     );
     assert_eq!(told[0].key, asked.key());
     assert!(told[0].seq > mark);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -320,13 +337,16 @@ fn an_answers_number_never_goes_back_when_the_newest_is_swept_so_a_device_past_i
 fn a_device_holding_a_mark_past_every_number_here_is_told_what_is_kept_next() {
     let desk = Kept::in_memory().expect("a kept store");
     let (echoes_asked, echoes_answer) = recorded(ECHOES);
+
     desk.keep(&echoes_asked, &echoes_answer).expect("kept");
 
     let beyond = desk.after(u64::MAX, 512, "laptop").expect("listed");
     let unmoved = desk.last_seq().expect("read");
     let passed = desk.after(7, 512, "phone").expect("listed");
     let (asked, answer) = recorded(TIME);
+
     desk.keep(&asked, &answer).expect("kept");
+
     let told = desk.after(7, 512, "phone").expect("listed");
 
     assert!(beyond.is_empty());
@@ -348,19 +368,24 @@ fn a_device_holding_a_mark_past_every_number_here_is_told_what_is_kept_next() {
 fn kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again() {
     let folder = scratch("versions");
     let path = folder.join("kept.sqlite");
+
     {
         let kept = Kept::open(&path).expect("laid out");
+
         kept.keep(
             &Asked::Recording(mbid(ECHOES)),
             &Answer::Recording(Some(echoes())),
         )
         .expect("kept");
     }
+
     let again = Kept::open(&path).expect("opened again");
     let held = again.counted().expect("counted");
+
     drop(again);
     {
         let connection = rusqlite::Connection::open(&path).expect("opened");
+
         connection
             .pragma_update(None, "user_version", 99)
             .expect("stamped");
@@ -371,6 +396,7 @@ fn kept_answers_laid_out_by_a_later_build_are_refused_and_this_builds_open_again
         Kept::open(&path),
         Err(Error::KeptVersion { found: 99 })
     ));
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -528,6 +554,7 @@ fn a_device_holding_the_answer_is_asked_before_the_network_and_what_either_answe
         holds: true,
         ..Desk::default()
     });
+
     let layered = Layered::new()
         .keeping(Some(Arc::clone(&kept)))
         .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>))
@@ -551,6 +578,7 @@ fn an_answer_consulted_from_a_device_keeps_its_age_and_the_device_and_is_never_t
         kept_since: Some(kept_since),
         ..Desk::default()
     });
+
     let layered = Layered::new()
         .keeping(Some(Arc::clone(&kept)))
         .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>));
@@ -573,6 +601,7 @@ fn the_network_is_asked_only_where_nothing_nearer_answers_and_its_answer_is_kept
     let kept = Arc::new(Kept::in_memory().expect("a kept store"));
     let online = Arc::new(Online::default());
     let desk = Arc::new(Desk::default());
+
     let layered = Layered::new()
         .keeping(Some(Arc::clone(&kept)))
         .consulting(Some(Arc::clone(&desk) as Arc<dyn Peers>))

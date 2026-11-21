@@ -47,13 +47,16 @@ fn number_before(citation: &str) -> Option<usize> {
     let lead = citation.trim_end_matches(|letter: char| {
         letter.is_whitespace() || matches!(letter, '(' | ',' | ':')
     });
+
     if let Some(named) = lead
         .strip_suffix("step")
         .or_else(|| lead.strip_suffix("Step"))
     {
         let word = named.trim_end().rsplit(' ').next()?;
+
         return (1..=step_names().len()).find(|number| ordinal(*number) == word.to_lowercase());
     }
+
     let digits_start = lead.rfind(|letter: char| !letter.is_ascii_digit())? + 1;
     let digits = &lead[digits_start..];
     let before_digits = lead[..digits_start].trim_end();
@@ -64,6 +67,7 @@ fn number_before(citation: &str) -> Option<usize> {
 fn wrong_citations(rule: &str, names: &[&str]) -> Vec<String> {
     let flat = rule.split_whitespace().collect::<Vec<_>>().join(" ");
     let mut wrong = Vec::new();
+
     for (index, name) in names.iter().enumerate() {
         let quoted = format!("`{name}`");
         for (at, _) in flat.match_indices(&quoted) {
@@ -107,6 +111,7 @@ fn every_step_the_rules_number_stands_where_the_chain_puts_it() {
     let names = step_names();
 
     let mut wrong = Vec::new();
+
     for (file, text) in rule_texts() {
         for citation in wrong_citations(&text, &names) {
             wrong.push(format!("{file}: {citation}"));

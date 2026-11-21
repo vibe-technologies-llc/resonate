@@ -94,7 +94,7 @@ const THE_TRACK_BILLED: &str = concat!(
       WHERE t.path = ?1 AND t.span_start = ?2"
 );
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ListeningService {
     ListenBrainz,
     LastFm,
@@ -292,6 +292,7 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
     let service = scrobbler.service();
     let Some(through) = mark(inner, service)? else {
         let last = inner.read(last_listen)?;
+
         mark_through(inner, service, last)?;
         return Ok(Submitted {
             started: true,
@@ -300,9 +301,11 @@ pub(crate) fn submit(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Submitt
     };
 
     let mut submitted = Submitted::default();
+
     told_in_batches(inner, scrobbler, through, Cursor::Since, &mut submitted)?;
     if let Some((through, until)) = earlier_mark(inner, service)? {
         let since = submitted.submitted;
+
         told_in_batches(
             inner,
             scrobbler,
@@ -321,6 +324,7 @@ pub(crate) fn tell_earlier(inner: &Inner, service: ListeningService) -> Result<(
         Some(began) => began,
         None => {
             let last = inner.read(last_listen)?;
+
             mark_through(inner, service, last)?;
             last
         }
@@ -353,10 +357,13 @@ fn told_in_batches(
     loop {
         let pending =
             inner.read(|connection| listens_after(connection, through, cursor.until()))?;
+
         if pending.is_empty() {
             return Ok(());
         }
+
         let at_once = scrobbler.at_once().get().min(SUBMITTED_AT_ONCE);
+
         for chunk in pending.chunks(at_once) {
             told_chunk(scrobbler, chunk, &marked, submitted)
                 .map_err(|halted| halted.into_error(|error| error))?;
@@ -381,6 +388,7 @@ pub fn told_chunk<E>(
         .iter()
         .filter_map(|pending| pending.scrobble.clone())
         .collect();
+
     submitted.unnamed += chunk.len() - named.len();
 
     match submitted_whole(scrobbler, &named) {
@@ -417,6 +425,7 @@ pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Lov
             recordings(connection, THE_LOVES_TOLD, &[service.name()])?,
         ))
     })?;
+
     let owed: Vec<(&Mbid, Love)> = loved
         .difference(&told)
         .map(|recording| (recording, Love::Loved))
@@ -441,8 +450,10 @@ pub(crate) fn tell_loves(inner: &Inner, scrobbler: &dyn Scrobbler) -> Result<Lov
     })?;
 
     let mut said = LovesTold::default();
+
     for (loved, love) in &owed {
         let (recording, love) = (&loved.recording, *love);
+
         match scrobbler.love(loved, love) {
             Ok(()) => match love {
                 Love::Loved => said.loved += 1,
@@ -480,6 +491,7 @@ fn recordings(connection: &Connection, sql: &str, binds: &[&str]) -> Result<BTre
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held = statement
         .query_map(rusqlite::params_from_iter(binds), |row| {
             row.get::<_, String>(0)
@@ -601,6 +613,7 @@ pub(crate) fn stop_telling(inner: &Inner, service: ListeningService) -> Result<b
             .query_row(STILL_MARKED, params![service.name()], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
+
     if !marked {
         return Ok(false);
     }
@@ -634,6 +647,7 @@ fn listens_after(connection: &Connection, through: u64, until: u64) -> Result<Ve
     let mut statement = connection
         .prepare(THE_LISTENS_AFTER)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(
             params![

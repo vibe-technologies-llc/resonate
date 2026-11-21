@@ -203,6 +203,7 @@ impl Told {
 
     fn wake(&self) {
         let mut waking = self.waking.lock();
+
         *waking = waking.wrapping_add(1);
         self.woken.notify_all();
     }
@@ -284,6 +285,7 @@ impl MobilePlayer {
         if !self.services.online.client().is_reaching() {
             return false;
         }
+
         let told = Arc::new(Told::default());
         let yielding = Arc::new(
             self.services
@@ -294,6 +296,7 @@ impl MobilePlayer {
         );
         let key = options.acoustid_key.trim().to_owned();
         let asking = Asking::over(Arc::clone(&yielding)).layered_by(self.syncing.layered_lookups());
+
         let asking = if key.is_empty() {
             asking
         } else {
@@ -348,7 +351,9 @@ impl MobilePlayer {
         if !asking.is_reaching() {
             return false;
         }
+
         let mut running = self.enriching.running.lock();
+
         if running
             .as_ref()
             .is_some_and(|running| !running.pass.is_finished())
@@ -364,6 +369,7 @@ impl MobilePlayer {
         let tally = Arc::clone(&self.enriching.tally);
         let catalog = Arc::clone(&self.catalog);
         let sources = Arc::clone(&self.sources);
+
         tally.began();
 
         let pass = thread::Builder::new()
@@ -390,6 +396,7 @@ impl MobilePlayer {
         let Some(running) = self.enriching.running.lock().take() else {
             return;
         };
+
         running.told.cancel(leaving);
         if running.pass.join().is_err() {
             tracing::warn!("the enrichment pass ended in a panic");
@@ -400,9 +407,11 @@ impl MobilePlayer {
         let told = Told::default();
         let tally = Tally::default();
         let pictures = Readers::none();
+
         let pass = Pass::new(&self.catalog, asking, &told, &tally, &pictures);
 
         let asked = pass.one(id);
+
         if let Err(error) = sing(&self.catalog, asking, &told, &tally, id, &Cell::new(0)) {
             tracing::debug!(
                 ?error,
@@ -438,7 +447,7 @@ impl From<Error> for Ended {
 
 type Asked<T> = std::result::Result<T, Ended>;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 enum Ask {
     Album(String),
     Track(u64),
@@ -462,6 +471,7 @@ fn run(
         }
     };
     let at_most = options.at_most.map(|at_most| at_most as usize);
+
     told.hurried.store(options.hurried, Ordering::Release);
 
     let workers_before = told.finished_workers.load(Ordering::Acquire);
@@ -474,6 +484,7 @@ fn run(
             let tally = Arc::clone(tally);
             move || {
                 let _wake = WakeWhenDone(&told);
+
                 sing_the_due(&catalog, &asking, &told, &tally, due, at_most);
             }
         });
@@ -485,6 +496,7 @@ fn run(
         let tally = Arc::clone(tally);
         move || {
             let _wake = WakeWhenDone(&told);
+
             hear_the_due(&catalog, &sources, &asking, &told, &tally, due, at_most);
         }
     });
@@ -504,10 +516,13 @@ fn run(
         let mut queue = Queue::default();
         loop {
             let observed = *told.waking.lock();
+
             pass.walk(&mut queue, due)?;
+
             let workers = u32::from(hearing.is_ok()) + u32::from(lyrics.is_ok());
             let workers_done =
                 told.finished_workers.load(Ordering::Acquire) >= workers_before + workers;
+
             if workers_done && pictures.waiting() == 0 {
                 return Ok(());
             }
@@ -515,6 +530,7 @@ fn run(
         }
     });
     let cancelled_by_caller = told.is_cancelled();
+
     if ended.is_err() && !cancelled_by_caller {
         told.cancel(Leaving::ForNow);
     }
@@ -559,6 +575,7 @@ fn run(
     };
     let finished = stop == EnrichmentStop::Finished
         || (stop == EnrichmentStop::Cancelled && !told.keeps_the_mark());
+
     if finished && let Err(error) = catalog.note_finished() {
         tracing::warn!(%error, "the next pass may carry on one that already finished");
     }
@@ -701,6 +718,7 @@ impl Walker for Walking<'_, '_> {
 
     fn ask(&self, ask: Ask, (): ()) -> Asked<Step> {
         let pass = self.pass;
+
         pass.pictured_at_once
             .set(pass.first.borrow_mut().remove(&ask));
         Tally::count(&pass.tally.asked, 1);
@@ -769,18 +787,21 @@ impl<'a> Pass<'a> {
                 .map(Ask::Track)
                 .collect(),
         );
+
         let queue: VecDeque<Ask> = albums.into_iter().chain(tracks).collect();
         let mut queue = Queue::of(
             self.downloads_first(queue)?
                 .into_iter()
                 .map(|ask| (ask, ())),
         );
+
         Tally::count(&self.tally.due, queue.len());
 
         self.walk(&mut queue, due)?;
         self.look_again_for_covers(due.now)?;
         loop {
             self.catalog.take_in_artists()?;
+
             let artists = capped(
                 self.catalog
                     .artists_due(due, Value::Null)?
@@ -789,6 +810,7 @@ impl<'a> Pass<'a> {
                     .filter(|artist| !queue.is_spent(artist))
                     .collect(),
             );
+
             if artists.is_empty() {
                 return Ok(());
             }
@@ -805,6 +827,7 @@ impl<'a> Pass<'a> {
         let due: BTreeSet<&Ask> = queue.iter().collect();
         let mut first = Vec::new();
         let mut taken = BTreeSet::new();
+
         for (track, album) in self.catalog.downloaded()? {
             for ask in [album.map(Ask::Album), Some(Ask::Track(track))]
                 .into_iter()
@@ -893,6 +916,7 @@ impl<'a> Pass<'a> {
         asked: impl FnOnce(&dyn Reference) -> resonate_library::Result<T>,
     ) -> Asked<Reply<T>> {
         self.go_on()?;
+
         let answered = asked(&*self.asking.reference);
         match self
             .refusing
@@ -937,12 +961,14 @@ impl<'a> Pass<'a> {
                 Reply::Refused => return self.album_missed(&held, since),
             }
         }
+
         let found = self.either_way(
             LookupOp::FindRelease,
             |reference, wording| reference.find_release(&release_asked(album, wording)),
             |found| top_release(found, album),
             |identified| *identified != Identified::Nothing,
         )?;
+
         match found {
             Reply::Answered(Identified::Found(release)) => {
                 return self.land_release(&held, &release, since);
@@ -962,6 +988,7 @@ impl<'a> Pass<'a> {
                 Reply::Refused => return self.album_missed(&held, since),
             }
         }
+
         let grouped = self.either_way(
             LookupOp::FindReleaseGroup,
             |reference, wording| reference.find_release_group(&group_asked(album, wording)),
@@ -1072,10 +1099,12 @@ impl<'a> Pass<'a> {
     fn look_again_for_covers(&self, now: SystemTime) -> Asked<()> {
         for picture in self.catalog.covers_due(now)? {
             self.go_on()?;
+
             let (Picture::Cover { album, .. } | Picture::GroupCover { album, .. }) = &picture
             else {
                 continue;
             };
+
             if self.covered.borrow().contains(album) || self.catalog.covered_well(album)? {
                 continue;
             }
@@ -1083,6 +1112,7 @@ impl<'a> Pass<'a> {
         }
         for picture in self.catalog.albums_owed_a_larger_cover()? {
             self.go_on()?;
+
             let (Picture::Cover { album, .. } | Picture::GroupCover { album, .. }) = &picture
             else {
                 continue;
@@ -1146,6 +1176,7 @@ impl<'a> Pass<'a> {
         if recording_asked(track, Wording::Phrase).is_none() {
             return Ok(None);
         }
+
         let found = self.either_way(
             LookupOp::FindRecording,
             |reference, wording| match recording_asked(track, wording) {
@@ -1228,6 +1259,7 @@ impl<'a> Pass<'a> {
         match self.ask(LookupOp::Artist, |reference| reference.artist(&id))? {
             Reply::Answered(Some(profile)) => {
                 let now = SystemTime::now();
+
                 self.catalog
                     .keep_artist(mbid, &information_of(&profile), now)?;
                 if profile.may_be_pictured()
@@ -1295,6 +1327,7 @@ fn measure_the_unmeasured(
             return;
         }
     };
+
     if let Some(at_most) = at_most {
         owed.truncate(at_most);
     }
@@ -1303,6 +1336,7 @@ fn measure_the_unmeasured(
         if told.is_cancelled() {
             return;
         }
+
         let at = match location(&uri) {
             Ok(at) => at,
             Err(error) => {
@@ -1341,7 +1375,9 @@ fn hear_the_due(
     let Some(printer) = asking.printer.as_deref() else {
         return;
     };
+
     measure_the_unmeasured(catalog, sources, told, at_most, due.refresh);
+
     let mut tracks = match catalog.tracks_to_hear(due.refresh) {
         Ok(tracks) => tracks,
         Err(error) => {
@@ -1349,6 +1385,7 @@ fn hear_the_due(
             return;
         }
     };
+
     if let Some(at_most) = at_most {
         tracks.truncate(at_most);
     }
@@ -1400,6 +1437,7 @@ impl Hearer<'_> {
         if let Some(held) = self.asking.held_back() {
             return Err(held);
         }
+
         let held = match self.catalog.track(track) {
             Ok(held) => held,
             Err(Error::UnknownTrack) => return Ok(()),
@@ -1427,8 +1465,10 @@ impl Hearer<'_> {
                 return Ok(());
             }
         };
+
         self.catalog.keep_studied(track, &study)?;
         self.keep_identity(track, &held.uri);
+
         let Some(print) = study.print else {
             self.catalog.keep_agreement(track, Agreement::Unheard)?;
             return Ok(());
@@ -1465,7 +1505,9 @@ impl Hearer<'_> {
             resonate_library::Error::Refused { .. }
             | resonate_library::Error::Unreadable { .. } => {
                 Tally::count(&self.tally.refused, 1);
+
                 let refused = self.refused_in_a_row.get().saturating_add(1);
+
                 self.refused_in_a_row.set(refused);
                 if refused >= RECOGNITIONS_REFUSED_BEFORE_GIVING_UP {
                     return Err(Ended::Refused);
@@ -1494,6 +1536,7 @@ fn sing_the_due(
         }
     };
     let mut tracks = VecDeque::from(tracks);
+
     if let Some(at_most) = at_most {
         tracks.truncate(at_most);
     }
@@ -1508,6 +1551,7 @@ fn sing_the_due(
         refused_in_a_row: Cell::new(0),
     };
     let mut queue = Queue::of(tracks.into_iter().map(|track| (track, ())));
+
     let Ok(_) = walk(&singing, &mut queue, &told.sung_first);
 }
 
@@ -1594,6 +1638,7 @@ fn sing(
     if let Some(held) = asking.held_back() {
         return Err(held);
     }
+
     let held = catalog.track(track)?;
     let Some(asked) = lyrics_asked(&held) else {
         return Ok(());
@@ -1634,11 +1679,13 @@ fn sing(
             lyricsfile: document,
         })
     });
+
     let richer = KeptLyrics {
         sung: held_text,
         taken: SystemTime::now(),
     }
     .richer_of(Some(told_text.clone()));
+
     if richer.as_ref() == Some(&told_text) {
         catalog.keep_lyrics(
             track,
@@ -1662,6 +1709,7 @@ pub(crate) fn is_synced(text: &str) -> bool {
 
 fn lyrics_asked(track: &Track) -> Option<LyricsAsked> {
     let artist = track.artist.trim();
+
     if artist.is_empty() || track.title.trim().is_empty() || track.title == track.name {
         return None;
     }
@@ -1760,6 +1808,7 @@ impl Catalog {
                 now,
             },
         };
+
         connection
             .execute(
                 "INSERT INTO enrichment (id, started, refresh) VALUES (1, ?1, ?2)
@@ -1942,6 +1991,7 @@ impl Catalog {
 
     fn bill(&self, credit: &[resonate_library::Credit]) -> Result<()> {
         let connection = self.0.lock();
+
         for credited in credit {
             if let Some(mbid) = &credited.mbid {
                 connection
@@ -1977,6 +2027,7 @@ impl Catalog {
                  FROM documents WHERE album_key = ?1 ORDER BY id",
             )
             .map_err(read_error)?;
+
         let rows = query
             .query_map([key], |row| {
                 Ok(AlbumRow {
@@ -2000,6 +2051,7 @@ impl Catalog {
             )
             .optional()
             .map_err(read_error)?;
+
         drop(query);
         drop(connection);
 
@@ -2009,6 +2061,7 @@ impl Catalog {
         let (landed_release, landed_group, answered) = landed.unwrap_or_default();
         let owner = unblank(&first.album_artist).or_else(|| unblank(&first.artist));
         let mut performers: Vec<String> = Vec::new();
+
         for row in &rows {
             if performers.len() < usize::from(PERFORMERS_WEIGHED_AT_MOST)
                 && !row.artist.trim().is_empty()
@@ -2017,6 +2070,7 @@ impl Catalog {
                 performers.push(row.artist.clone());
             }
         }
+
         let tagged = |pick: fn(&AlbumRow) -> Option<&String>| {
             rows.iter().find_map(pick).and_then(|id| Mbid::new(id).ok())
         };
@@ -2062,6 +2116,7 @@ impl Catalog {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(read_error)?;
+
         let album_id: Option<i64> = match &album {
             Some(key) => connection
                 .query_row(
@@ -2084,6 +2139,7 @@ impl Catalog {
                 .unwrap_or(false),
             None => false,
         };
+
         drop(connection);
 
         let untagged = track.title == track.name;
@@ -2122,6 +2178,7 @@ impl Catalog {
 
     fn stamp_album_asked(&self, key: &str, why: Fruitless, now: SystemTime) -> Result<()> {
         let (asks, refused) = fruitless_columns(why);
+
         self.0
             .lock()
             .execute(
@@ -2136,6 +2193,7 @@ impl Catalog {
 
     fn stamp_track_asked(&self, id: u64, why: Fruitless, now: SystemTime) -> Result<()> {
         let (asks, refused) = fruitless_columns(why);
+
         self.0
             .lock()
             .execute(
@@ -2160,6 +2218,7 @@ impl Catalog {
 
     fn stamp_artist_asked(&self, mbid: &str, why: Fruitless, now: SystemTime) -> Result<()> {
         let (asks, refused) = fruitless_columns(why);
+
         self.0
             .lock()
             .execute(
@@ -2173,8 +2232,10 @@ impl Catalog {
 
     fn land_album_release(&self, key: &str, release: &Release, now: SystemTime) -> Result<()> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let group = release.group.as_ref().map(Mbid::as_str);
+
         transaction
             .execute(
                 "INSERT INTO album_art (album_key, release, release_group, asked, answered)
@@ -2198,7 +2259,9 @@ impl Catalog {
 
     fn land_album_group(&self, key: &str, group: &Mbid, now: SystemTime) -> Result<()> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
+
         transaction
             .execute(
                 "INSERT INTO album_art (album_key, release_group, asked, answered)
@@ -2258,9 +2321,11 @@ impl Catalog {
                 |row| row.get(0),
             )
             .map_err(read_error)?;
+
         if !owed {
             return Ok(Vec::new());
         }
+
         let fetched = self.covers_asked_of(
             "SELECT album_key, release, release_group FROM album_art
              WHERE picture IS NOT NULL AND (release IS NOT NULL OR release_group IS NOT NULL)
@@ -2268,6 +2333,7 @@ impl Catalog {
             [],
         )?;
         let mut small = Vec::new();
+
         for picture in fetched {
             let (Picture::Cover { album, .. } | Picture::GroupCover { album, .. }) = &picture
             else {
@@ -2290,6 +2356,7 @@ impl Catalog {
     fn covers_asked_of(&self, sql: &str, bound: impl rusqlite::Params) -> Result<Vec<Picture>> {
         let connection = self.0.lock();
         let mut query = connection.prepare(sql).map_err(read_error)?;
+
         let due = query
             .query_map(bound, |row| {
                 let named = |at| {
@@ -2317,8 +2384,10 @@ impl Catalog {
 
     fn land_cover(&self, key: &str, found: Option<&CoverArt>, covers: &AtomicU32) -> Result<()> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let now = nanos(SystemTime::now());
+
         match found {
             Some(found) => {
                 let picture = kept_picture(&transaction, &found.bytes).map_err(write_error)?;
@@ -2331,6 +2400,7 @@ impl Catalog {
                     .optional()
                     .map_err(write_error)?
                     .flatten();
+
                 transaction
                     .execute(
                         "INSERT INTO album_art (album_key, picture, origin, cover_asked) VALUES (?1, ?2, ?3, ?4)
@@ -2405,6 +2475,7 @@ impl Catalog {
     ) -> Result<()> {
         let listed = |values: &[String]| values.join(&LISTED_APART.to_string());
         let asked_now = nanos(now);
+
         self.0
             .lock()
             .execute(
@@ -2480,6 +2551,7 @@ impl Catalog {
 
     fn ask_again_for_covers(&self) -> Result<u32> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let cleared = transaction
             .execute(
@@ -2497,6 +2569,7 @@ impl Catalog {
                 [],
             )
             .map_err(write_error)?;
+
         transaction.commit().map_err(write_error)?;
         Ok(u32::try_from(cleared + unmatched).unwrap_or(u32::MAX))
     }
@@ -2513,6 +2586,7 @@ impl Catalog {
         let mut query = connection
             .prepare("SELECT id FROM documents WHERE art_changed > ?1 ORDER BY art_changed")
             .map_err(read_error)?;
+
         let tracks = query
             .query_map([i64::try_from(revision).unwrap_or(i64::MAX)], |row| {
                 row.get::<_, i64>(0).map(|id| id as u64)
@@ -2558,16 +2632,19 @@ impl Catalog {
         if let Some(chosen) = self.2.lock().get(&(own, album)) {
             return Ok(*chosen);
         }
+
         let (Some(held), Some(candidate)) =
             (self.picture(own as u64)?, self.picture(album as u64)?)
         else {
             return Ok(own);
         };
+
         let chosen = if album_betters_own(held, candidate) {
             album
         } else {
             own
         };
+
         self.2.lock().insert((own, album), chosen);
         Ok(chosen)
     }
@@ -2799,6 +2876,7 @@ mod tests {
             _group: Option<&Mbid>,
         ) -> resonate_library::Result<Option<CoverArt>> {
             self.covers.fetch_add(1, Ordering::SeqCst);
+
             let bytes = match self.covers_drawn_at.load(Ordering::SeqCst) {
                 0 => COVER.to_vec(),
                 side => drawn_png(side),
@@ -2923,6 +3001,7 @@ mod tests {
         told: &Arc<Told>,
     ) -> EnrichmentStatus {
         let tally = Arc::new(Tally::default());
+
         tally.began();
 
         run(
@@ -3039,6 +3118,7 @@ mod tests {
             .expect("landed");
 
         let songs = catalog.album_songs_not_held("the album").expect("the rows");
+
         assert_eq!(songs.len(), 1);
         assert_eq!(songs[0].title, "Echoes");
         assert_eq!(songs[0].release, RELEASE);
@@ -3051,7 +3131,9 @@ mod tests {
         let fake = Arc::new(Fake::default());
 
         albums_of_one_song(&catalog, &["Older", "Old"]);
+
         let fetched = albums_of_one_song(&catalog, &["Fetched", "Newest"]);
+
         albums_of_one_song(&catalog, &["Scanned after"]);
         for track in &fetched {
             catalog.note_downloaded(*track).expect("a download noted");
@@ -3064,18 +3146,22 @@ mod tests {
                 [fetched[0] as i64],
             )
             .expect("an earlier download");
+
         let status = passed(&catalog, &fake);
 
         assert_eq!(status.stopped, Some(EnrichmentStop::Finished));
         assert_eq!(fake.first_asked("album ").as_deref(), Some("Newest"));
         assert_eq!(fake.first_asked("words ").as_deref(), Some("Newest song"));
+
         let mut albums: Vec<String> = fake
             .asked
             .lock()
             .iter()
             .filter_map(|asked| asked.strip_prefix("album ").map(str::to_owned))
             .collect();
+
         albums.dedup();
+
         assert_eq!(albums.iter().position(|album| album == "Fetched"), Some(1));
     }
 
@@ -3086,7 +3172,9 @@ mod tests {
         let told = Arc::new(Told::default());
 
         let tracks = albums_of_one_song(&catalog, &["First", "Second", "Sought"]);
+
         told.seek(tracks[2]);
+
         let status = passed_as_told(&catalog, &fake, &told);
 
         assert_eq!(status.stopped, Some(EnrichmentStop::Finished));
@@ -3103,6 +3191,7 @@ mod tests {
                 failing: Some(failing),
                 ..Fake::default()
             });
+
             songs(&catalog, "Unknown", 1);
             passed_as_told(&catalog, &fake, &Arc::new(Told::default())).stopped
         });
@@ -3122,6 +3211,7 @@ mod tests {
         let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
         let fake = Arc::new(Fake::default());
         let metering = Metering::new();
+
         let asking = Asking {
             client: Arc::new(
                 Client::new(Identity::of_this_build()).gated_by(Gate::new(metering.clone(), true)),
@@ -3131,6 +3221,7 @@ mod tests {
 
         songs(&catalog, "Unknown", 1);
         metering.report(Meter::Metered);
+
         let status = passed_asking(&catalog, &asking, &Arc::new(Told::default()));
 
         assert_eq!(status.stopped, Some(EnrichmentStop::Metered));
@@ -3145,7 +3236,9 @@ mod tests {
             ..Fake::default()
         });
         let told = Arc::new(Told::default());
+
         songs(&catalog, "Unknown", 1);
+
         let status = passed_as_told(&catalog, &fake, &told);
 
         assert_eq!(status.stopped, Some(EnrichmentStop::Unreachable));
@@ -3161,14 +3254,21 @@ mod tests {
             each_takes: Duration::from_millis(100),
             ..Fake::default()
         });
+
         songs(&player.catalog, "Unknown", 1);
+
         assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+
         let until = Instant::now();
+
         while player.enrichment_status().asked == 0 && until.elapsed() < Duration::from_secs(2) {
             thread::sleep(Duration::from_millis(5));
         }
+
         let status = player.enrichment_status();
+
         player.stop_enrichment();
+
         assert!(status.running);
         assert!(status.due > 0);
         assert!(status.asked > 0);
@@ -3179,30 +3279,42 @@ mod tests {
         let player = player();
         let (began, waiting) = bounded(1);
         let (release, held) = bounded(1);
+
         let fake = Arc::new(Fake {
             lyrics_gate: Mutex::new(Some((began, held))),
             ..Fake::default()
         });
+
         songs(&player.catalog, "Unknown", 1);
+
         assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+
         waiting
             .recv_timeout(Duration::from_secs(5))
             .expect("lyrics waiting");
+
         let until = Instant::now();
+
         while player.enrichment_status().asked < 2 && until.elapsed() < Duration::from_secs(5) {
             thread::sleep(Duration::from_millis(5));
         }
+
         let track = songs(&player.catalog, "Album", 10)[0];
+
         player
             .catalog
             .note_downloaded(track)
             .expect("download noted");
         player.seek_enrichment(track);
+
         let until = Instant::now();
+
         while fake.covers.load(Ordering::SeqCst) == 0 && until.elapsed() < Duration::from_secs(5) {
             thread::sleep(Duration::from_millis(5));
         }
+
         let covered_before_lyrics_finished = fake.covers.load(Ordering::SeqCst) > 0;
+
         release.send(()).expect("lyrics released");
         player.stop_enrichment();
 
@@ -3220,14 +3332,18 @@ mod tests {
         let tracks = songs(&catalog, "Unknown", 3);
 
         passed(&catalog, &fake);
+
         let first = fake.calls.swap(0, Ordering::SeqCst);
+
         passed(&catalog, &fake);
+
         let again = fake.calls.swap(0, Ordering::SeqCst);
 
         assert!(first > 0);
         assert_eq!(again, 0);
 
         let over_a_day_ago = nanos(SystemTime::now() - Duration::from_secs(25 * 60 * 60));
+
         catalog
             .0
             .lock()
@@ -3243,6 +3359,7 @@ mod tests {
 
     fn drawn_png(side: u32) -> Vec<u8> {
         let mut written = std::io::Cursor::new(Vec::new());
+
         image::RgbImage::from_pixel(side, side, image::Rgb([200, 40, 40]))
             .write_to(&mut written, image::ImageFormat::Png)
             .expect("a picture drawn in memory");
@@ -3262,11 +3379,15 @@ mod tests {
     fn a_cover_fetched_small_before_the_step_is_asked_once_for_a_larger_one() {
         let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
         let fake = Arc::new(Fake::default());
+
         fake.covers_drawn_at.store(500, Ordering::SeqCst);
+
         let tracks = songs(&catalog, "Album", 10);
 
         passed(&catalog, &fake);
+
         let fetched_small = side_shown(&catalog, tracks[0]);
+
         catalog
             .0
             .lock()
@@ -3274,7 +3395,9 @@ mod tests {
             .expect("the step owes the larger covers again");
         fake.covers_drawn_at.store(1200, Ordering::SeqCst);
         passed(&catalog, &fake);
+
         let asked_by_then = fake.covers.load(Ordering::SeqCst);
+
         passed(&catalog, &fake);
 
         assert_eq!(fetched_small, Some(500));
@@ -3288,6 +3411,7 @@ mod tests {
             "a cover the step owed was asked for again once the walk had passed"
         );
         assert_eq!(side_shown(&catalog, tracks[0]), Some(1200));
+
         let owed: bool = catalog
             .0
             .lock()
@@ -3297,6 +3421,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("the schema reads back");
+
         assert!(!owed, "the walk left the larger covers owed");
     }
 
@@ -3304,15 +3429,18 @@ mod tests {
     fn looking_again_for_covers_asks_again_about_an_album_nothing_matched() {
         let catalog = Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog"));
         let fake = Arc::new(Fake::default());
+
         songs(&catalog, "Unknown", 3);
 
         passed(&catalog, &fake);
         fake.calls.swap(0, Ordering::SeqCst);
         passed(&catalog, &fake);
+
         let waiting = fake.calls.swap(0, Ordering::SeqCst);
         let asked_again = catalog
             .ask_again_for_covers()
             .expect("the covers are asked again");
+
         passed(&catalog, &fake);
 
         assert_eq!(waiting, 0);
@@ -3327,16 +3455,22 @@ mod tests {
             each_takes: Duration::from_millis(20),
             ..Fake::default()
         });
+
         songs(&player.catalog, "", 200);
 
         assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
         assert!(!player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+
         let waited = Instant::now();
+
         while fake.calls.load(Ordering::SeqCst) == 0 && waited.elapsed() < Duration::from_secs(5) {
             thread::sleep(Duration::from_millis(5));
         }
+
         let stopping = Instant::now();
+
         player.stop_enrichment();
+
         let status = player.enrichment_status();
 
         assert!(stopping.elapsed() < Duration::from_secs(2));
@@ -3353,6 +3487,7 @@ mod tests {
             each_takes: Duration::from_millis(20),
             ..Fake::default()
         });
+
         songs(&player.catalog, "", 50);
 
         assert!(player.start_enriching(
@@ -3362,7 +3497,9 @@ mod tests {
                 ..EnrichmentOptions::default()
             }
         ));
+
         player.pause_enrichment();
+
         let carried = player
             .catalog
             .carried_on(false, SystemTime::now())
@@ -3379,6 +3516,7 @@ mod tests {
             each_takes: Duration::from_millis(20),
             ..Fake::default()
         });
+
         songs(&player.catalog, "", 200);
 
         assert!(player.start_enriching(
@@ -3388,12 +3526,17 @@ mod tests {
                 ..EnrichmentOptions::default()
             }
         ));
+
         let waited = Instant::now();
+
         while fake.calls.load(Ordering::SeqCst) == 0 && waited.elapsed() < Duration::from_secs(5) {
             thread::sleep(Duration::from_millis(5));
         }
+
         let pausing = Instant::now();
+
         player.pause_enrichment();
+
         let paused = player.enrichment_status();
         let asked_by_then = fake.calls.load(Ordering::SeqCst);
 
@@ -3408,7 +3551,9 @@ mod tests {
         assert_eq!(marks(&player.catalog), 1);
 
         assert!(player.start_enriching(asking(&fake), EnrichmentOptions::default()));
+
         player.pause_enrichment();
+
         let carried = player
             .catalog
             .carried_on(false, SystemTime::now())
@@ -3421,11 +3566,13 @@ mod tests {
     fn a_song_with_no_picture_of_its_own_shows_its_albums() {
         let player = player();
         let track = songs(&player.catalog, "Album", 1)[0];
+
         let key = player
             .catalog
             .album_key_of(track)
             .expect("a key")
             .expect("an album");
+
         player
             .catalog
             .land_cover(
@@ -3550,12 +3697,14 @@ mod tests {
 
             fn recognise(&self, _sounded: &Sounded) -> resonate_library::Result<Printed> {
                 self.calls.fetch_add(1, Ordering::SeqCst);
+
                 let refused = self
                     .refusals_left
                     .try_update(Ordering::SeqCst, Ordering::SeqCst, |left| {
                         left.checked_sub(1)
                     })
                     .is_ok();
+
                 if refused {
                     return Err(resonate_library::Error::Refused {
                         op: LookupOp::Recognise,
@@ -3581,15 +3730,19 @@ mod tests {
         fn tones() -> Vec<u8> {
             let frames = RATE * SECONDS_A_SONG;
             let mut data = Vec::new();
+
             for frame in 0..frames {
                 let at = f64::from(frame) / f64::from(RATE);
                 let pitch = 220.0 * (1.0 + (at * 0.7).sin().abs() * 3.0);
+
                 let sample = ((at * pitch * std::f64::consts::TAU).sin() * 12_000.0) as i16;
+
                 data.extend_from_slice(&sample.to_le_bytes());
                 data.extend_from_slice(&sample.to_le_bytes());
             }
 
             let mut format = Vec::new();
+
             format.extend_from_slice(&1_u16.to_le_bytes());
             format.extend_from_slice(&2_u16.to_le_bytes());
             format.extend_from_slice(&RATE.to_le_bytes());
@@ -3598,6 +3751,7 @@ mod tests {
             format.extend_from_slice(&16_u16.to_le_bytes());
 
             let mut body = b"WAVE".to_vec();
+
             for (id, payload) in [(b"fmt ", &format), (b"data", &data)] {
                 body.extend_from_slice(id);
                 body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
@@ -3605,6 +3759,7 @@ mod tests {
             }
 
             let mut file = b"RIFF".to_vec();
+
             file.extend_from_slice(&(body.len() as u32).to_le_bytes());
             file.extend_from_slice(&body);
             file
@@ -3612,6 +3767,7 @@ mod tests {
 
         fn sounding_library() -> Harness {
             let harness = Harness::new();
+
             for name in ["a", "b", "c", "d"] {
                 fs::write(harness.folder.join(format!("{name}.wav")), tones()).expect("a song");
             }
@@ -3649,6 +3805,7 @@ mod tests {
             options: EnrichmentOptions,
         ) -> EnrichmentStatus {
             let tally = Arc::new(Tally::default());
+
             tally.began();
 
             run(
@@ -3679,6 +3836,7 @@ mod tests {
                 .into_iter()
                 .map(|track| track.title)
                 .collect();
+
             titles.sort();
             titles
         }
@@ -3730,6 +3888,7 @@ mod tests {
             let printer = Printer::hearing("Time");
 
             hearing(&harness, &printer);
+
             let count = |sql: &str| -> i64 {
                 harness
                     .player
@@ -3762,11 +3921,13 @@ mod tests {
 
             hearing(&harness, &printer);
             hearing(&harness, &printer);
+
             let asked_twice = printer.calls();
 
             let fake = Arc::new(Fake::default());
             let asking =
                 asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
+
             passed_by(
                 &harness,
                 &asking,
@@ -3854,9 +4015,11 @@ mod tests {
         #[test]
         fn a_pass_without_a_recognition_key_leaves_unmeasured_audio_alone() {
             let harness = sounding_library();
+
             studied_before_the_bands(&harness, "ab");
 
             let fake = Arc::new(Fake::default());
+
             passed_by(
                 &harness,
                 &asking(&fake),
@@ -3868,6 +4031,7 @@ mod tests {
             assert_eq!(bands_of(&harness, 'b'), None);
             assert_eq!(studies(&harness), 2);
             assert_eq!(measured(&harness), 0);
+
             let figures: (String, f64) = harness
                 .player
                 .catalog
@@ -3879,20 +4043,25 @@ mod tests {
                     |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .expect("the figures");
+
             assert_eq!(figures, ("genuine".to_owned(), 0.6));
         }
 
         #[test]
         fn a_song_measured_for_its_bands_is_no_longer_owed_a_decode_when_the_preamp_is_fitted() {
             let harness = sounding_library();
+
             studied_before_the_bands(&harness, "a");
+
             let cuts = vec![resonate_analysis::Cut {
                 location: location(&harness.song('a').uri).expect("a location"),
                 span: None,
             }];
 
             let before = harness.player.catalog.unmeasured(&cuts).expect("a read");
+
             measuring_bands(&harness, &Arc::new(Told::default()));
+
             let after = harness.player.catalog.unmeasured(&cuts).expect("a read");
 
             assert_eq!(before.len(), 1);
@@ -3902,6 +4071,7 @@ mod tests {
         #[test]
         fn bands_already_kept_are_not_measured_again_and_a_song_without_a_study_gains_none() {
             let harness = sounding_library();
+
             studied_before_the_bands(&harness, "a");
             harness
                 .player
@@ -3930,6 +4100,7 @@ mod tests {
         #[test]
         fn a_study_kept_with_its_levels_but_not_its_peaks_is_measured_for_both() {
             let harness = sounding_library();
+
             studied_before_the_bands(&harness, "a");
             harness
                 .player
@@ -3952,12 +4123,17 @@ mod tests {
         #[test]
         fn a_failed_band_measurement_is_skipped_until_refresh() {
             let harness = sounding_library();
+
             studied_before_the_bands(&harness, "a");
+
             let path = harness.folder.join("a.wav");
             let original = fs::read(&path).expect("the original audio");
+
             fs::write(&path, b"damaged").expect("a damaged copy");
             measuring_bands(&harness, &Arc::new(Told::default()));
+
             let catalog = &harness.player.catalog;
+
             assert!(
                 catalog
                     .bands_to_measure(false)
@@ -3971,6 +4147,7 @@ mod tests {
                     .len(),
                 1
             );
+
             fs::write(&path, original).expect("the copy is repaired");
             measure_the_unmeasured(
                 catalog,
@@ -3979,24 +4156,32 @@ mod tests {
                 None,
                 true,
             );
+
             assert_eq!(measured(&harness), 1);
+
             let failed: i64 = catalog
                 .0
                 .lock()
                 .query_row("SELECT count(*) FROM unstudied", [], |row| row.get(0))
                 .expect("the failure marks read");
+
             assert_eq!(failed, 0);
         }
 
         #[test]
         fn a_stopped_band_measurement_decodes_nothing_and_a_file_that_will_not_open_stays_owed() {
             let harness = sounding_library();
+
             studied_before_the_bands(&harness, "ab");
+
             let told = Arc::new(Told::default());
+
             told.cancel(Leaving::Listener);
 
             measuring_bands(&harness, &told);
+
             let stopped = measured(&harness);
+
             fs::remove_file(harness.folder.join("a.wav")).expect("a file gone");
             measuring_bands(&harness, &Arc::new(Told::default()));
 
@@ -4011,7 +4196,9 @@ mod tests {
             let printer = Printer::refusing("Time", 2);
 
             hearing(&harness, &printer);
+
             let after_refusals = misnamed(&harness);
+
             hearing(&harness, &printer);
 
             assert_eq!(printer.calls(), 6);
@@ -4025,6 +4212,7 @@ mod tests {
         #[test]
         fn recognition_is_given_up_after_a_run_of_refusals_while_the_pass_goes_on() {
             let harness = sounding_library();
+
             for name in ["e", "f", "g", "h"] {
                 fs::write(harness.folder.join(format!("{name}.wav")), tones()).expect("a song");
                 harness
@@ -4032,6 +4220,7 @@ mod tests {
                     .index_document(format!("{FOLDER}{name}.wav"), format!("{name}.wav"))
                     .expect("an indexed song");
             }
+
             let printer = Printer::refusing("Time", u32::MAX);
 
             let status = hearing(&harness, &printer);
@@ -4046,7 +4235,9 @@ mod tests {
             let harness = sounding_library();
             let printer = Printer::hearing("Time");
             let told = Arc::new(Told::default());
+
             told.cancel(Leaving::Listener);
+
             let fake = Arc::new(Fake::default());
             let asking =
                 asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
@@ -4078,6 +4269,7 @@ mod tests {
 
         fn broken_then_stamped(harness: &Harness) -> u64 {
             let song = harness.song('a').id;
+
             fs::write(harness.folder.join("a.wav"), b"not a song").expect("a broken file");
             harness
                 .player
@@ -4115,10 +4307,12 @@ mod tests {
             let song = broken_then_stamped(&harness);
 
             hearing(&harness, &printer);
+
             let after_failing = (studies(&harness), unstudied(&harness));
 
             mended(&harness);
             hearing(&harness, &printer);
+
             let after_mending_unseen = (studies(&harness), unstudied(&harness));
 
             harness
@@ -4147,12 +4341,15 @@ mod tests {
             let song = broken_then_stamped(&harness);
 
             hearing(&harness, &printer);
+
             let marked = unstudied(&harness);
 
             mended(&harness);
+
             let fake = Arc::new(Fake::default());
             let asking =
                 asking(&fake).hearing_through(Arc::clone(&printer) as Arc<dyn Fingerprints>);
+
             passed_by(
                 &harness,
                 &asking,
@@ -4199,7 +4396,9 @@ mod tests {
             let song = broken_then_stamped(&harness);
 
             hearing(&harness, &printer);
+
             let marked = unstudied(&harness);
+
             fs::remove_file(harness.folder.join("a.wav")).expect("deleted by the front end");
             harness
                 .player
@@ -4216,7 +4415,9 @@ mod tests {
             let printer = Printer::hearing("Time");
 
             hearing(&harness, &printer);
+
             let once = studies(&harness);
+
             hearing(&harness, &printer);
 
             assert_eq!(once, 4);
@@ -4233,7 +4434,9 @@ mod tests {
                 Chromaprint::new("AQADtEmSJEmSJEmS", Duration::from_secs(2)).expect("a print");
 
             hearing(&harness, &printer);
+
             let unprinted = printer.calls();
+
             harness
                 .player
                 .catalog
@@ -4251,6 +4454,7 @@ mod tests {
                 .expect("a named song");
             fs::remove_file(harness.folder.join("a.wav")).expect("a song out of reach");
             hearing(&harness, &printer);
+
             let heard: (Option<String>, Option<String>, bool) = harness
                 .player
                 .catalog
@@ -4263,6 +4467,7 @@ mod tests {
                     |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
                 )
                 .expect("a study");
+
             hearing(&harness, &printer);
 
             assert_eq!(unprinted, 0);

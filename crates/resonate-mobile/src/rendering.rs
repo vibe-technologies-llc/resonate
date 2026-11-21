@@ -51,6 +51,7 @@ impl Rendering {
         let Some(kinds) = &self.0 else {
             return;
         };
+
         if let Err(error) = kinds.upnp.look(FirstSearch::Behind) {
             tracing::warn!(%error, "the network could not be searched for renderers");
         }
@@ -77,6 +78,7 @@ impl Rendering {
                 aliases: Vec::new(),
             });
         let sinks = kinds.cast.sinks();
+
         let receivers = kinds
             .cast
             .receivers()
@@ -163,11 +165,13 @@ pub struct NetworkRenderer {
 impl MobilePlayer {
     pub fn look_for_renderers(&self, on: bool) -> Result<()> {
         let kinds = self.rendering.kinds().ok_or(Error::RenderersUnreachable)?;
+
         if !on {
             kinds.upnp.stop_multicasting();
             kinds.cast.stop_browsing();
             return Ok(());
         }
+
         let renderers =
             kinds
                 .upnp
@@ -190,7 +194,9 @@ impl MobilePlayer {
             .upnp;
         let located = Located::parse(&address).map_err(renderer_address)?;
         let reaching = network.is_reaching();
+
         let located = network.locate(located);
+
         if !reaching {
             network
                 .look_at_addresses(FirstSearch::Behind)
@@ -207,6 +213,7 @@ impl MobilePlayer {
             .kinds()
             .ok_or(Error::RenderersUnreachable)?
             .upnp;
+
         network.unlocate(&Located::parse(&address).map_err(renderer_address)?);
         if network.located().is_empty() && !network.is_looking() {
             network.rest();
@@ -233,7 +240,9 @@ impl MobilePlayer {
             .cast;
         let given = receiver_given(&address)?;
         let reaching = casting.is_reaching();
+
         let located = casting.locate(given);
+
         if !reaching {
             casting
                 .look_at_addresses(FirstSearch::Behind)
@@ -248,6 +257,7 @@ impl MobilePlayer {
             .kinds()
             .ok_or(Error::RenderersUnreachable)?
             .cast;
+
         casting.unlocate(receiver_given(&address)?);
         if casting.located().is_empty() && !casting.is_looking() {
             casting.rest();
@@ -349,11 +359,15 @@ mod tests {
 
             let searched = Arc::new(AtomicUsize::new(0));
             let counted = Arc::clone(&searched);
+
             thread::spawn(move || answer_searches(&ssdp, described_at, &counted));
+
             let heard = Arc::clone(&actions);
+
             thread::spawn(move || {
                 for stream in http.incoming().flatten() {
                     let heard = Arc::clone(&heard);
+
                     thread::spawn(move || answer(stream, &heard));
                 }
             });
@@ -399,6 +413,7 @@ mod tests {
                     "the renderer never heard {action}: {:?}",
                     self.actions.lock()
                 );
+
                 thread::sleep(LOOKED_AGAIN_AFTER);
             }
         }
@@ -408,10 +423,12 @@ mod tests {
         let mut buffer = [0; 2048];
         while let Ok((read, from)) = ssdp.recv_from(&mut buffer) {
             let asked = String::from_utf8_lossy(&buffer[..read]).into_owned();
+
             if !asked.starts_with("M-SEARCH") {
                 continue;
             }
             searched.fetch_add(1, Ordering::SeqCst);
+
             let answer = format!(
                 "HTTP/1.1 200 OK\r\nLOCATION: http://{described_at}/description.xml\r\nST: \
                  urn:schemas-upnp-org:device:MediaRenderer:1\r\nUSN: {UDN}\r\n\r\n"
@@ -423,6 +440,7 @@ mod tests {
     fn answer(mut stream: TcpStream, actions: &Mutex<Vec<String>>) {
         let mut held = Vec::new();
         let mut buffer = [0; 4096];
+
         let head_ends = loop {
             if let Some(at) = held.windows(4).position(|window| window == b"\r\n\r\n") {
                 break at + 4;
@@ -446,6 +464,7 @@ mod tests {
             .and_then(|length| length.parse().ok())
             .unwrap_or(0);
         let mut body = held.len() - head_ends;
+
         while body < length {
             match stream.read(&mut buffer) {
                 Ok(0) | Err(_) => return,
@@ -466,6 +485,7 @@ mod tests {
                         .map(|(_, action)| action.to_owned())
                 })
                 .unwrap_or_default();
+
             actions.lock().push(action.clone());
             format!(
                 "<?xml version=\"1.0\"?><s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\"><s:Body><u:{action}Response xmlns:u=\"urn:schemas-upnp-org:service:AVTransport:1\"></u:{action}Response></s:Body></s:Envelope>"
@@ -486,10 +506,12 @@ mod tests {
             if let Some(renderer) = harness.player.renderers().into_iter().next() {
                 return renderer;
             }
+
             assert!(
                 began.elapsed() < SETTLED_WITHIN,
                 "the renderer on the loopback was never found"
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
     }
@@ -509,7 +531,9 @@ mod tests {
     fn what_a_renderer_was_tried_with_is_kept_listed_and_forgotten() {
         let fake = Fake::start();
         let harness = Harness::beside_renderers(fake.searching());
+
         harness.player.look_for_renderers(true).expect("looking");
+
         let renderer = found(&harness);
 
         let unknown = harness
@@ -559,6 +583,7 @@ mod tests {
         let unlisted = harness.player.renderers();
 
         harness.player.look_for_renderers(true).expect("looking");
+
         let renderer = found(&harness);
 
         assert!(!resting);
@@ -582,6 +607,7 @@ mod tests {
         harness.player.play().expect("played");
         fake.until_heard("SetAVTransportURI", 1);
         fake.until_heard("Play", 1);
+
         let zone = harness.player.zones().remove(0);
 
         assert_eq!(zone.renderer.as_deref(), Some(renderer.node.as_str()));
@@ -636,6 +662,7 @@ mod tests {
             .player
             .add_renderer_address(fake.description_address())
             .expect("the address is reached");
+
         let renderer = found(&harness);
 
         assert_eq!(
@@ -666,12 +693,14 @@ mod tests {
     fn turning_the_search_off_keeps_the_renderer_given_by_address() {
         let fake = Fake::start();
         let harness = Harness::beside_renderers(fake.searching());
+
         harness
             .player
             .add_renderer_address(fake.description_address())
             .expect("the address is reached");
         harness.player.look_for_renderers(true).expect("looking");
         found(&harness);
+
         assert!(harness.player.looking_for_renderers());
 
         harness.player.look_for_renderers(false).expect("stopped");
@@ -684,6 +713,7 @@ mod tests {
     fn nothing_listening() -> String {
         let closed = TcpListener::bind("127.0.0.1:0").expect("a loopback listener");
         let at = closed.local_addr().expect("the address");
+
         drop(closed);
         at.to_string()
     }
@@ -699,10 +729,15 @@ mod tests {
 
         assert!(first.is_ok());
         assert!(matches!(reaching, Err(Error::ReceiverUnreached { .. })));
+
         let mut held = harness.player.receiver_addresses();
+
         held.sort();
+
         let mut given = vec![silent.clone(), also_silent.clone()];
+
         given.sort();
+
         assert_eq!(held, given);
         assert!(harness.player.renderers().is_empty());
         assert!(!harness.player.looking_for_renderers());
@@ -738,6 +773,7 @@ mod tests {
                 "{refused:?} was taken for a receiver"
             );
         }
+
         assert!(harness.player.receiver_addresses().is_empty());
 
         harness
@@ -757,6 +793,7 @@ mod tests {
         let harness = Harness::beside_renderers(fake.searching());
         let _ = harness.player.add_receiver_address(nothing_listening());
         let casting = harness.player.rendering.kinds().expect("both kinds").cast;
+
         assert!(!casting.is_looking());
 
         harness.player.look_for_renderers(true).expect("looking");

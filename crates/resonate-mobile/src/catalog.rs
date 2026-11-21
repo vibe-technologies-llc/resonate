@@ -740,6 +740,7 @@ impl Catalog {
     pub(crate) fn open(path: &Path) -> Result<Self> {
         let mut connection =
             Connection::open(path).map_err(|source| Error::store(StoreOp::Open, source))?;
+
         connection
             .busy_timeout(Duration::from_secs(5))
             .map_err(|source| Error::store(StoreOp::Open, source))?;
@@ -751,6 +752,7 @@ impl Catalog {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .map_err(|source| Error::store(StoreOp::Open, source))?;
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::LayOut, source))?;
@@ -758,6 +760,7 @@ impl Catalog {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let laid = usize::try_from(version).unwrap_or(usize::MAX);
+
         if laid > MIGRATIONS.len() {
             return Err(Error::CatalogVersion { found: version });
         }
@@ -781,8 +784,10 @@ impl Catalog {
                 "PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
             )
             .map_err(|source| Error::store(StoreOp::Open, source))?;
+
         let revision = Arc::new(AtomicU64::new(0));
         let written = Arc::clone(&revision);
+
         connection
             .update_hook(Some(
                 move |action: Action, _database: &str, table: &str, _row: i64| {
@@ -842,6 +847,7 @@ impl Catalog {
 
     pub(crate) fn upsert_named(&self, track: Track, by_the_file: NamedByTheFile) -> Result<Track> {
         let connection = self.0.lock();
+
         connection
             .execute(
                 "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec)
@@ -878,6 +884,7 @@ impl Catalog {
             ORDER BY title COLLATE NOCASE, id LIMIT ?2 OFFSET ?3",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let found = query
             .query_map(params![text, limit.min(500), offset], read)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -891,6 +898,7 @@ impl Catalog {
         let mut query = connection
             .prepare("SELECT uri FROM documents ORDER BY id")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let found = query
             .query_map([], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -920,13 +928,16 @@ impl Catalog {
     pub(crate) fn kept_track_uri(&self, uri: &str) -> Result<Track> {
         let revision = self.revision();
         let mut kept = self.3.lock();
+
         if let Some(kept) = kept
             .as_ref()
             .filter(|kept| kept.revision == revision && kept.uri == uri)
         {
             return Ok(kept.track.clone());
         }
+
         let track = self.track_uri(uri)?;
+
         *kept = Some(KeptTrack {
             uri: uri.to_owned(),
             revision,
@@ -984,6 +995,7 @@ impl Catalog {
         mut asked: impl FnMut(&mut CachedStatement<'_>, &Key) -> rusqlite::Result<Row>,
     ) -> Result<Vec<Option<Row>>> {
         let mut rows = Vec::with_capacity(keys.len());
+
         for held in keys.chunks(ROWS_READ_PER_HOLD) {
             let connection = self.0.lock();
             let mut query = connection
@@ -1049,9 +1061,11 @@ impl Catalog {
     ) -> Result<()> {
         let kept = QueueKept::of(zone);
         let mut connection = self.0.lock();
+
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         transaction
             .execute(kept.cleared, [zone.get()])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -1060,6 +1074,7 @@ impl Catalog {
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         for (position, laid) in arranged.rows.iter().enumerate() {
             let loaded = laid.loaded as i64;
+
             match &laid.row {
                 KeptRow::Document(id) => transaction.execute(
                     kept.row,
@@ -1145,9 +1160,11 @@ impl Catalog {
     pub(crate) fn resume_rows_of(&self, zone: ZoneId) -> Result<(Arranged<KeptRow>, u64)> {
         let kept = QueueKept::of(zone);
         let connection = self.0.lock();
+
         let mut query = connection
             .prepare(kept.rows)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let mut rows: Vec<(i64, Laid<KeptRow>)> = query
             .query_map([zone.get()], |row| {
                 Ok((
@@ -1167,6 +1184,7 @@ impl Catalog {
                  FROM served_rows WHERE zone = ?1",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         rows.extend(
             served
                 .query_map([zone.get()], |row| {
@@ -1198,6 +1216,7 @@ impl Catalog {
                 .map_err(|source| Error::store(StoreOp::Read, source))?,
         );
         rows.sort_by_key(|(position, _)| *position);
+
         let place = connection
             .query_row(kept.read_arranged, [zone.get()], |row| {
                 Ok(KeptPlace {
@@ -1241,10 +1260,12 @@ impl KeptPlace {
         let (Some(first), Some(last)) = (self.next_first, self.next_last) else {
             return None;
         };
+
         let mut held = positions
             .enumerate()
             .filter(|(_, position)| (first..=last).contains(position))
             .map(|(at, _)| at);
+
         let opening = held.next()?;
         Some(Span::between(opening, held.last().unwrap_or(opening)))
     }
@@ -1428,6 +1449,7 @@ impl ExploreStore for Catalog {
                  WHERE artist_id = ?1
                  ORDER BY position",
             )?;
+
             let rows = query.query_map(params![artist_id], |row| {
                 Ok((
                     row.get::<_, String>(0)?,
@@ -1444,6 +1466,7 @@ impl ExploreStore for Catalog {
                 ))
             })?;
             let mut songs = Vec::new();
+
             for row in rows {
                 let (
                     song_id,
@@ -1461,6 +1484,7 @@ impl ExploreStore for Catalog {
                 let Some(id) = Id::new(&song_id) else {
                     continue;
                 };
+
                 songs.push(Song {
                     id,
                     title,
@@ -1490,9 +1514,11 @@ impl ExploreStore for Catalog {
 
     fn keep_cached(&self, catalog: &str, scheme: &str, artist_key: &str, day: i64, songs: &[Song]) {
         let mut connection = self.0.lock();
+
         let written = (|| -> rusqlite::Result<()> {
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
             transaction.execute(
                 "DELETE FROM explore_artists
                  WHERE catalog = ?1 AND scheme = ?2 AND artist_key = ?3",
@@ -1503,7 +1529,9 @@ impl ExploreStore for Catalog {
                  VALUES (?1, ?2, ?3, ?4)",
                 params![catalog, scheme, artist_key, day],
             )?;
+
             let artist_id = transaction.last_insert_rowid();
+
             {
                 let mut insert = transaction.prepare_cached(
                     "INSERT INTO explore_songs
@@ -1515,6 +1543,7 @@ impl ExploreStore for Catalog {
                     let length_ms = song
                         .length
                         .and_then(|length| i64::try_from(length.as_millis()).ok());
+
                     insert.execute(params![
                         artist_id,
                         position as i64,
@@ -1541,9 +1570,11 @@ impl ExploreStore for Catalog {
 
     fn forget_before(&self, earliest_day: i64, latest_day: i64) {
         let mut connection = self.0.lock();
+
         let pruned = (|| -> rusqlite::Result<()> {
             let transaction =
                 connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+
             transaction.execute(
                 "DELETE FROM explore_artists WHERE day < ?1 OR day > ?2",
                 params![earliest_day, latest_day],
@@ -1624,15 +1655,19 @@ mod tests {
                 ..Track::default()
             })
             .expect("an indexed document");
+
         catalog.favourite(first.id, true).expect("a favourite");
+
         let rescanned = catalog
             .upsert(Track {
                 title: "Renamed".into(),
                 ..first.clone()
             })
             .expect("a rescan");
+
         assert_eq!(first.id, rescanned.id);
         assert!(rescanned.favourite);
+
         catalog
             .save_queue(&[first.id], 0, 1500)
             .expect("a saved queue");
@@ -1640,7 +1675,9 @@ mod tests {
             .save_place(0, 2000)
             .expect("a moved place keeps the queue");
         drop(catalog);
+
         let reopened = Catalog::open(&path).expect("an existing catalog");
+
         assert_eq!(
             reopened.resume().expect("a saved place"),
             (vec![first.id], 0, 2000)
@@ -1656,7 +1693,9 @@ mod tests {
                 .len(),
             0
         );
+
         drop(reopened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -1672,6 +1711,7 @@ mod tests {
                  INSERT INTO listens (track, began, heard_ms) VALUES (NULL, 3, 1000);",
             )
             .expect("listens written and one deleted");
+
         let newest: i64 = connection
             .query_row("SELECT max(id) FROM listens", [], |row| row.get(0))
             .expect("the newest id");
@@ -1687,6 +1727,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-listens-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -1712,11 +1753,13 @@ mod tests {
 
         let opened = Catalog::open(&path).expect("carried forward");
         let held = opened.0.lock();
+
         held.execute(
             "INSERT INTO listens (track, began, heard_ms) VALUES (NULL, 3, 1000)",
             [],
         )
         .expect("a listen");
+
         let next: i64 = held
             .query_row("SELECT max(id) FROM listens", [], |row| row.get(0))
             .expect("the newest id");
@@ -1730,8 +1773,10 @@ mod tests {
 
         assert_eq!(next, 6);
         assert_eq!(kept, 2);
+
         drop(held);
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -1744,6 +1789,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-added-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -1771,6 +1817,7 @@ mod tests {
         drop(connection);
 
         let opened = Catalog::open(&path).expect("migrated");
+
         opened
             .upsert(Track {
                 uri: "content://music/new.flac".into(),
@@ -1779,6 +1826,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a new document");
+
         let held = opened.0.lock();
         let added = |uri: &str| -> Option<i64> {
             held.query_row("SELECT added FROM documents WHERE uri = ?1", [uri], |row| {
@@ -1800,6 +1848,7 @@ mod tests {
              SELECT id, 'genuine', 0.5, 0.1, 0.5, 0, 'disagrees' FROM documents WHERE name = 'old.flac'",
         )
         .expect("a hearing");
+
         let heard = || -> Option<String> {
             held.query_row(
                 "SELECT agreement FROM studies WHERE track = (SELECT id FROM documents WHERE name = 'old.flac')",
@@ -1808,20 +1857,26 @@ mod tests {
             )
             .expect("a study")
         };
+
         held.execute(
             "UPDATE documents SET title = 'Older' WHERE name = 'old.flac'",
             [],
         )
         .expect("a retitle");
+
         let after_retitle = heard();
+
         held.execute("UPDATE documents SET size = 11 WHERE name = 'old.flac'", [])
             .expect("a changed file");
+
         let after_change = heard();
 
         assert_eq!(after_retitle.as_deref(), Some("disagrees"));
         assert_eq!(after_change, None);
+
         drop(held);
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -1833,6 +1888,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-moments-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -1841,7 +1897,9 @@ mod tests {
                 |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
             )
             .expect("the fold");
+
         let before = laid_before(PEAKS_KEPT_AS_ONE_MOMENT_ARE_MEASURED_AGAIN);
+
         for step in &MIGRATIONS[..before] {
             connection.execute_batch(step).expect("an earlier version");
         }
@@ -1879,8 +1937,10 @@ mod tests {
 
         assert_eq!(peaks("one.flac"), None);
         assert_eq!(peaks("many.flac"), Some(472));
+
         drop(held);
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -1892,6 +1952,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-unstudied-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -1925,6 +1986,7 @@ mod tests {
             held.query_row("SELECT count(*) FROM unstudied", [], |row| row.get(0))
                 .expect("a count")
         };
+
         held.execute(
             "INSERT INTO unstudied (track, under) SELECT id, 2 FROM documents",
             [],
@@ -1932,15 +1994,20 @@ mod tests {
         .expect("a mark");
         held.execute("UPDATE documents SET title = 'Older'", [])
             .expect("a retitle");
+
         let after_retitle = marks();
+
         held.execute("UPDATE documents SET modified = 1700000000124", [])
             .expect("a touched file");
+
         let after_touch = marks();
 
         assert_eq!(after_retitle, 1);
         assert_eq!(after_touch, 0);
+
         drop(held);
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -1953,6 +2020,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-answers-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -1998,20 +2066,26 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("a count");
+
         held.execute("UPDATE documents SET packets = 7, frames = 44100", [])
             .expect("an identity");
         held.execute("UPDATE documents SET title = 'Older'", [])
             .expect("a retitle");
+
         let after_retitle = identified();
+
         held.execute("UPDATE documents SET modified = 1700000000124", [])
             .expect("a touched file");
+
         let after_touch = identified();
 
         assert_eq!(unjudged, 1);
         assert_eq!(after_retitle, 1);
         assert_eq!(after_touch, 0);
+
         drop(held);
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -2023,6 +2097,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-volumes-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2055,7 +2130,9 @@ mod tests {
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].volume, Volume::MAX);
         assert!(refused.is_err());
+
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -2067,6 +2144,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-shares-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2104,6 +2182,7 @@ mod tests {
             .expect("the flag's table");
 
         assert_eq!((kept, flagged), (1, 0));
+
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
@@ -2117,6 +2196,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-discographies-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2159,6 +2239,7 @@ mod tests {
         assert_eq!(count("artist_discographies"), 0);
         assert_eq!(count("group_songs"), 0);
         assert_eq!(count("groups_read"), 0);
+
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
@@ -2173,6 +2254,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-sleeves-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2212,6 +2294,7 @@ mod tests {
 
         assert_eq!(count("artist_releases"), 1);
         assert_eq!(count("unheld_covers"), 0);
+
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
@@ -2225,6 +2308,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-wrapped-years-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2263,6 +2347,7 @@ mod tests {
 
         assert_eq!(count("listens"), 1);
         assert_eq!(count("wrapped_years"), 0);
+
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
@@ -2276,6 +2361,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-versions-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2323,6 +2409,7 @@ mod tests {
             "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, NULL, NULL, 0)",
             [],
         );
+
         connection
             .execute(
                 "INSERT INTO versions_chosen (track, held, served, chosen) VALUES (1, 2, NULL, 0)",
@@ -2337,6 +2424,7 @@ mod tests {
         assert!(both.is_err());
         assert!(neither.is_err());
         assert_eq!(count("versions_chosen"), 0);
+
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
@@ -2350,6 +2438,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-lyrics-ahead-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2392,6 +2481,7 @@ mod tests {
             .expect("a move kept");
         let kept = opened.lyrics_ahead(2).expect("a read");
         let words = opened.lyric_text(2).expect("a read");
+
         opened
             .0
             .lock()
@@ -2402,6 +2492,7 @@ mod tests {
             .lock()
             .execute("DELETE FROM documents WHERE id = 2", [])
             .expect("the song forgotten");
+
         let left: i64 = opened
             .0
             .lock()
@@ -2413,6 +2504,7 @@ mod tests {
         assert_eq!(kept, moved);
         assert!(words.is_some_and(|(text, _, _)| text.as_deref() == Some("[00:01.00]la")));
         assert_eq!(left, 0);
+
         drop(opened);
         fs::remove_file(path).ok();
     }
@@ -2425,6 +2517,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-renderers-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2464,6 +2557,7 @@ mod tests {
 
         assert_eq!(count("documents"), 1);
         assert_eq!(count("renderers_learnt"), 0);
+
         drop(connection);
         drop(opened);
         fs::remove_file(path).ok();
@@ -2477,6 +2571,7 @@ mod tests {
             .as_nanos();
         let path = env::temp_dir().join(format!("resonate-mobile-listens-by-time-{unique}.sqlite"));
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2515,6 +2610,7 @@ mod tests {
                 |row| row.get(3),
             )
             .expect("a plan");
+
         drop(connection);
         drop(opened);
         std::fs::remove_file(&path).ok();
@@ -2527,9 +2623,12 @@ mod tests {
     fn a_catalog_of_before_songs_were_found_by_their_isrc_keeps_its_rows_and_answers_by_it() {
         let folder =
             std::env::temp_dir().join(format!("resonate-isrc-step-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let path = folder.join("documents.sqlite");
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2570,6 +2669,7 @@ mod tests {
 
         assert_eq!(indexed, 1);
         assert_eq!(opened.tracks("One", 0, 10).expect("the rows").len(), 1);
+
         let _ = std::fs::remove_dir_all(&folder);
     }
 
@@ -2583,6 +2683,7 @@ mod tests {
         let path = env::temp_dir().join(format!("resonate-mobile-release-songs-{unique}.sqlite"));
         let release = "11111111-1111-4111-8111-111111111111";
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2601,6 +2702,7 @@ mod tests {
                 [],
             )
             .expect("a song of before");
+
         let key: String = connection
             .query_row(
                 "SELECT album_key FROM documents WHERE uri = 'content://music/one.flac'",
@@ -2608,6 +2710,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("its album");
+
         connection
             .execute(
                 "INSERT INTO album_art (album_key, release) VALUES (?1, ?2)",
@@ -2637,7 +2740,9 @@ mod tests {
             opened.release_not_yet_read(&key).expect("a release owed"),
             resonate_core::Mbid::new(release).ok()
         );
+
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
@@ -2701,6 +2806,7 @@ mod tests {
         let path = env::temp_dir().join(format!("resonate-mobile-arranged-{unique}.sqlite"));
         let step = laid_before(QUEUES_KEEP_THEIR_SHUFFLE_LIST_ORDER_AND_ROWS_PLAYED_NEXT);
         let connection = Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2730,6 +2836,7 @@ mod tests {
             .pragma_update(None, "user_version", u32::try_from(step).expect("a count"))
             .expect("its stamp");
         drop(connection);
+
         let kitchen = ZoneId::new(2).expect("a zone");
 
         let opened = Catalog::open(&path).expect("migrated");
@@ -2783,12 +2890,14 @@ mod tests {
             shuffle: true,
             next: Some(Span::one(2)),
         };
+
         opened
             .save_rows_of(kitchen, &shuffled, 1200)
             .expect("a shuffled queue saved");
         opened
             .save_place_of(kitchen, 2, 300)
             .expect("a later place");
+
         let (kept, at) = opened.resume_rows_of(kitchen).expect("the shuffled queue");
 
         assert_eq!(kept_rows(&kept), kept_rows(&shuffled));
@@ -2796,13 +2905,16 @@ mod tests {
             (kept.row, kept.shuffle, kept.next, at),
             (2, true, Some(Span::one(2)), 300)
         );
+
         drop(opened);
+
         let _ = fs::remove_file(path);
     }
 
     #[test]
     fn rows_played_next_follow_the_rows_left_when_a_kept_row_is_gone() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+
         catalog
             .0
             .lock()

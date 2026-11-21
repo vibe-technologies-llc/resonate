@@ -2,7 +2,7 @@ use resonate_core::{AlbumId, ArtistId};
 
 use crate::{Album, Artist, Track};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SortOrder {
     #[default]
     Relevance,
@@ -96,7 +96,7 @@ impl SortOrder {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum AlbumOrder {
     #[default]
     Relevance,
@@ -127,7 +127,7 @@ impl AlbumOrder {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum ArtistOrder {
     #[default]
     Relevance,
@@ -154,7 +154,7 @@ impl ArtistOrder {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct SavedQuery {
     pub text: Option<String>,
     pub sort: SortOrder,
@@ -178,7 +178,7 @@ impl From<&SavedQuery> for TrackQuery {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum PlaylistOrder {
     #[default]
     Name,
@@ -209,7 +209,7 @@ impl PlaylistOrder {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum RowOrder {
     #[default]
     Album,
@@ -233,13 +233,13 @@ impl RowOrder {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Kept {
     pub order: RowOrder,
     pub reading: Direction,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Direction {
     #[default]
     Ascending,

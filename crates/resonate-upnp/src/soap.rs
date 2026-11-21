@@ -34,6 +34,7 @@ pub(crate) fn call_within(
     let asked = Asked::Action(action);
     let envelope = envelope(&service.kind, action, arguments);
     let soap_action = format!("\"{}#{}\"", service.kind, action.name());
+
     let answer = http::exchange_before(
         &Asking {
             method: "POST",
@@ -61,6 +62,7 @@ pub(crate) fn call_within(
 
 pub(crate) fn escaped(text: &str) -> String {
     let mut escaped = String::with_capacity(text.len());
+
     for letter in text.chars() {
         match letter {
             '&' => escaped.push_str("&amp;"),
@@ -76,6 +78,7 @@ pub(crate) fn escaped(text: &str) -> String {
 
 fn envelope(kind: &str, action: Action, arguments: &[(&str, &str)]) -> String {
     let mut body = String::new();
+
     for (name, value) in arguments {
         body.push_str(&format!("<{name}>{}</{name}>", escaped(value)));
     }
@@ -92,6 +95,7 @@ fn envelope(kind: &str, action: Action, arguments: &[(&str, &str)]) -> String {
 pub(crate) fn answered(text: &str, action: Action) -> Result<Answered> {
     let document = document(text, Asked::Action(action))?;
     let response = format!("{}Response", action.name());
+
     let answer = document
         .descendants()
         .find(|node| node.tag_name().name() == response)

@@ -100,6 +100,7 @@ impl OnTheBus {
 
     fn within<T>(&self, reach: impl Fn(&Session) -> Result<T>) -> Result<T> {
         let kept = self.session.borrow().clone();
+
         if let Some(session) = kept {
             match reach(&session) {
                 Err(Error::Mpris(_)) => {
@@ -111,6 +112,7 @@ impl OnTheBus {
 
         let session = Session::open()?;
         let reached = reach(&session);
+
         if !matches!(reached, Err(Error::Mpris(_))) {
             *self.session.borrow_mut() = Some(session);
         }

@@ -284,6 +284,7 @@ impl Menu {
         fill: impl FnOnce(Self) -> Self,
     ) -> Self {
         let filled = fill(Self::at(self.at)).without_a_last_line();
+
         if filled.offers_anything() {
             self.entries.push(Entry {
                 icon: Some(icon),
@@ -374,6 +375,7 @@ impl Menu {
             let moved = self
                 .entries_beneath(at)
                 .and_then(|entries| stepped(entries, Some(reached), step));
+
             self.beneath = Some(Beneath { at, reached: moved });
             return;
         }
@@ -388,15 +390,19 @@ impl Menu {
         {
             return false;
         }
+
         let Some(at) = self.reached else {
             return false;
         };
+
         if !self.opens_beneath(at) {
             return false;
         }
+
         let first = self
             .entries_beneath(at)
             .and_then(|entries| stepped(entries, None, 1));
+
         self.beneath = Some(Beneath { at, reached: first });
         true
     }
@@ -405,6 +411,7 @@ impl Menu {
         let Some(beneath) = self.beneath.take() else {
             return false;
         };
+
         self.reached = Some(beneath.at);
         true
     }
@@ -496,6 +503,7 @@ impl RootView {
 
     pub(crate) fn close_the_menu(&mut self, cx: &mut Context<Self>) -> bool {
         let opened = self.menu.take().is_some();
+
         if opened {
             self.beneath_closes = Task::ready(());
             cx.notify();
@@ -505,6 +513,7 @@ impl RootView {
 
     pub(crate) fn back_out_of_the_menu(&mut self, cx: &mut Context<Self>) -> bool {
         let stepped_out = self.menu.as_mut().is_some_and(Menu::steps_out);
+
         if stepped_out {
             cx.notify();
         }
@@ -513,6 +522,7 @@ impl RootView {
 
     pub(crate) fn step_into_the_menu(&mut self, cx: &mut Context<Self>) -> bool {
         let stepped_in = self.menu.as_mut().is_some_and(Menu::steps_in);
+
         if stepped_in {
             cx.notify();
         }
@@ -542,6 +552,7 @@ impl RootView {
             cx.background_executor()
                 .timer(STAYS_OPEN_FOR_THE_POINTER_CROSSING)
                 .await;
+
             let closed = this.update(cx, |this, cx| {
                 if let Some(menu) = this.menu.as_mut() {
                     menu.beneath = None;
@@ -556,6 +567,7 @@ impl RootView {
         let Some(menu) = self.menu.as_mut() else {
             return false;
         };
+
         menu.steps(step);
         cx.notify();
         true
@@ -565,12 +577,14 @@ impl RootView {
         if self.step_into_the_menu(cx) {
             return true;
         }
+
         let Some(menu) = self.menu.as_ref() else {
             return false;
         };
         let Some(does) = menu.reached() else {
             return self.close_the_menu(cx);
         };
+
         self.menu = None;
         does(self, window, cx);
         cx.notify();
@@ -591,6 +605,7 @@ impl RootView {
         let mut panel = menu_panel("menu").track_focus(&self.menu_focus);
 
         let mut offered = 0;
+
         for (at, entry) in menu.entries.iter().enumerate() {
             panel = panel.child(if entry.is_apart() {
                 apart().into_any_element()
@@ -659,6 +674,7 @@ impl RootView {
             }));
 
         let mut placed = 0;
+
         for (under, entry) in entries.iter().enumerate() {
             panel = panel.child(if entry.is_apart() {
                 apart().into_any_element()
@@ -825,6 +841,7 @@ impl Row {
 fn beside_its_row(row: Bounds<Pixels>, room: Size<Pixels>) -> Point<Pixels> {
     let wide = px(theme::menu_width());
     let gap = px(BESIDE_ITS_ROW);
+
     let x = if row.right() + gap + wide <= room.width {
         row.right() + gap
     } else {
@@ -887,8 +904,11 @@ pub(crate) fn offered_at_the_reach(
         drawn.left() + px(OPENED_IN_FROM_THE_ROWS_EDGE),
         drawn.center().y,
     );
+
     this.forget_what_menus_read(cx);
+
     let mut menu = offers(this, at, cx);
+
     if let Some(awaited) = menu.awaited() {
         this.open_once_read(awaited, offers, at, None, 1, cx);
         return None;
@@ -927,6 +947,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.forget_what_menus_read(cx);
+
         let menu = offers(self, at, cx).opened_on(owner.clone());
         match menu.awaited() {
             Some(awaited) => self.open_once_read(awaited, offers, at, owner, 0, cx),
@@ -964,9 +985,11 @@ impl RootView {
         let pressed = self.press_a_lookup();
         let library = self.library.read(cx).catalog();
         let syncing = cx.global::<ResonateApp>().syncing.clone();
+
         let reading = cx
             .background_executor()
             .spawn(async move { awaited.read(&library, syncing.as_deref()) });
+
         cx.spawn(async move |this, cx| {
             let read = reading.await;
             let _ = this.update(cx, |this, cx| {
@@ -974,7 +997,9 @@ impl RootView {
                 if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
+
                 let mut menu = offers(this, at, cx).opened_on(owner);
+
                 if steps != 0 {
                     menu.steps(steps);
                 }
@@ -1081,6 +1106,7 @@ impl Menu {
             move |mut menu| {
                 for sought in better::offered_for(&track) {
                     let track = track.clone();
+
                     menu = menu.does(
                         Icon::Search,
                         better::sought_label(sought),
@@ -1119,7 +1145,7 @@ impl Menu {
             })
             .does(
                 Icon::Share,
-                words::menu::upload_to_catbox(),
+                words::menu::upload_to_0x0(),
                 move |this, _, cx| {
                     this.library
                         .update(cx, |library, cx| library.share_file(track, cx));
@@ -1132,6 +1158,7 @@ impl Menu {
         if tracks.is_empty() {
             return self;
         }
+
         let over = tracks.clone();
         let tagged = tracks.clone();
 
@@ -1175,6 +1202,7 @@ impl Menu {
             move |mut menu| {
                 for (copy, label) in copies.into_iter().zip(labels) {
                     let playing: Arc<[Track]> = Arc::from([copy]);
+
                     menu = menu.does(Icon::Play, label, move |this, _, cx| {
                         this.play(&playing, 0, cx);
                     });
@@ -1392,6 +1420,7 @@ mod tests {
     #[test]
     fn nothing_moves_the_keyboard_focus_while_no_reader_listens() {
         let mut menu = two_entries();
+
         menu.steps(1);
 
         assert_eq!(Handing::of(false, Some(&menu), false), Handing::Stays);
@@ -1412,9 +1441,12 @@ mod tests {
         let mut menu = a_menu_with_a_menu_beneath();
 
         menu.steps(1);
+
         assert!(!menu.steps_in(), "Play opens nothing");
+
         menu.steps(1);
         menu.steps(1);
+
         assert_eq!(menu.reached, Some(3));
         assert!(menu.reached().is_none(), "a row that opens presses nothing");
 
@@ -1429,6 +1461,7 @@ mod tests {
         assert!(menu.reached().is_some());
 
         menu.steps(1);
+
         assert_eq!(
             menu.beneath,
             Some(Beneath {
@@ -1440,7 +1473,9 @@ mod tests {
             !menu.steps_in(),
             "enter on a row beneath presses it rather than going back to the first"
         );
+
         menu.steps(1);
+
         assert_eq!(
             menu.beneath,
             Some(Beneath {
@@ -1537,6 +1572,7 @@ mod tests {
         );
 
         let labels = copy_labels(&own, std::slice::from_ref(&other));
+
         assert_eq!(labels, vec![format!("Play the {} copy", kind_of(&other))]);
     }
 
@@ -1548,6 +1584,7 @@ mod tests {
         let lossy_again = copy(4, "/music/d/06 Echoes.mp3", Codec::Mp3, SampleFormat::F32);
 
         let labels = copy_labels(&own, &[twin.clone(), lossy.clone(), lossy_again.clone()]);
+
         assert_eq!(
             labels,
             vec![

@@ -24,6 +24,7 @@ impl Answer {
             tracing::debug!(score = self.score, "better lyrics matched another song");
             return None;
         }
+
         let read = read_ttml(source(), &self.ttml)
             .map_err(|unread| {
                 tracing::debug!(
@@ -32,10 +33,12 @@ impl Answer {
                 )
             })
             .ok()?;
+
         if read.declares_another_length_than(asked.length) {
             tracing::debug!("better lyrics answered for a song of another length");
             return None;
         }
+
         let lyrics = read.lyrics?;
 
         Some(LyricText {
@@ -52,6 +55,7 @@ pub(crate) fn source() -> SourceId {
 
 fn lrc_of(lyrics: &Lyrics) -> String {
     let mut sheet = String::new();
+
     for line in lyrics.lines() {
         if let Some(at) = line.at {
             let hundredths = at.as_millis() / 10;
@@ -94,6 +98,7 @@ pub(crate) fn told(client: &Client, asked: &LyricsAsked) -> Result<Option<LyricT
         answered => answered.map_err(|error| Failed::new(source(), LyricOp::Fetch, error))?,
     };
     let told = answered.and_then(|answer| answer.told(asked));
+
     tracing::debug!(
         title = asked.title,
         artist = asked.artist,
@@ -140,6 +145,7 @@ mod tests {
             told.text
                 .starts_with("[00:12.74]I used to rule the world\n")
         );
+
         let document = told
             .lyricsfile
             .expect("the document says more than its lines");
@@ -147,6 +153,7 @@ mod tests {
             .expect("the document reads back")
             .lyrics
             .expect("its lines are there");
+
         assert_eq!(lyrics.detail(), Detail::Words);
     }
 
@@ -157,9 +164,11 @@ mod tests {
             .expect("the answer carries words");
 
         assert!(told.text.starts_with("[00:03.43][v2: Ooh, ooh]\n"));
+
         let sheet = resonate_lyrics::read_lyrics(source(), &told.text)
             .expect("the sheet reads")
             .expect("the sheet holds lines");
+
         assert_eq!(sheet.lines()[0].voice, Voice::Two);
         assert_eq!(sheet.lines()[0].text, "Ooh, ooh");
     }
@@ -173,11 +182,14 @@ mod tests {
             score: Some(0.2),
             ..answer(WORDED)
         };
+
         assert!(guessed.told(&asked(None)).is_none());
+
         let matched = Answer {
             score: Some(0.95),
             ..answer(WORDED)
         };
+
         assert!(matched.told(&asked(None)).is_some());
     }
 }

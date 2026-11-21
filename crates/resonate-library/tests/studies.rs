@@ -48,11 +48,13 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-studies-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self {
             root: root.canonicalize().expect("a canonical path"),
@@ -61,6 +63,7 @@ impl Tree {
 
     fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, bytes).expect("a writable temporary file");
         path
     }
@@ -88,11 +91,13 @@ fn synchsafe(value: u32) -> [u8; 4] {
 fn frame(into: &mut Vec<u8>, id: &[u8; 4], value: &str) {
     let mut body = if id == RECORDING_ID {
         let mut owned = MUSICBRAINZ_OWNER.as_bytes().to_vec();
+
         owned.push(0);
         owned
     } else {
         vec![UTF8]
     };
+
     body.extend_from_slice(value.as_bytes());
     into.extend_from_slice(id);
     into.extend_from_slice(&synchsafe(body.len() as u32));
@@ -110,19 +115,24 @@ fn noise_up_to(ceiling_hz: f32, seed: u32) -> Vec<f32> {
     let bin_hz = RATE as f32 / PERIOD as f32;
     let mut state = seed;
     let mut spectrum = vec![Complex::<f32>::default(); PERIOD];
+
     for bin in 1..PERIOD / 2 {
         let hz = bin as f32 * bin_hz;
+
         if hz > ceiling_hz {
             break;
         }
         state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+
         let phase = (state >> 8) as f32 / (1 << 24) as f32 * std::f32::consts::TAU;
+
         spectrum[bin] = Complex::from_polar(1.0 / hz.sqrt(), phase);
         spectrum[PERIOD - bin] = spectrum[bin].conj();
     }
     FftPlanner::new()
         .plan_fft_inverse(PERIOD)
         .process(&mut spectrum);
+
     let peak = spectrum
         .iter()
         .map(|sample| sample.re.abs())
@@ -177,6 +187,7 @@ fn silence(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
 
 fn wave(sampled: Sampled, period: &[f32], tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let mut data = Vec::new();
+
     for frame in 0..(RATE * SECONDS) as usize {
         sampled.write(&mut data, period[frame % PERIOD]);
         sampled.write(&mut data, period[(frame + PERIOD / 3) % PERIOD]);
@@ -184,6 +195,7 @@ fn wave(sampled: Sampled, period: &[f32], tags: &[(&[u8; 4], &str)]) -> Vec<u8> 
 
     let block = 2 * sampled.bytes();
     let mut format = Vec::new();
+
     format.extend_from_slice(&sampled.format_tag().to_le_bytes());
     format.extend_from_slice(&2_u16.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
@@ -192,15 +204,19 @@ fn wave(sampled: Sampled, period: &[f32], tags: &[(&[u8; 4], &str)]) -> Vec<u8> 
     format.extend_from_slice(&(8 * sampled.bytes()).to_le_bytes());
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut id3 = Vec::new();
+
     for (id, value) in tags {
         frame(&mut id3, id, value);
     }
+
     let mut file = Vec::new();
+
     if !id3.is_empty() {
         file.extend_from_slice(b"ID3\x04\x00\x00");
         file.extend_from_slice(&synchsafe(id3.len() as u32));
@@ -359,7 +375,9 @@ impl Fingerprints for ByEar {
 
     fn recognise(&self, sounded: &Sounded) -> Result<Printed> {
         self.asked.fetch_add(1, Ordering::Relaxed);
+
         assert!(!sounded.print.encoded().is_empty());
+
         let name = sounded
             .location
             .as_path()
@@ -407,6 +425,7 @@ fn scanned(tree: &Tree) -> Result<Library> {
             workers: NonZeroUsize::MIN,
         })?
         .join()?;
+
     assert!(!summary.cancelled);
     Ok(library)
 }
@@ -439,6 +458,7 @@ fn enriched(
             },
         )?
         .join()?;
+
     assert!(!summary.cancelled);
     Ok(summary)
 }
@@ -467,6 +487,7 @@ fn a_studied_track_is_hinted_the_gain_its_loudness_and_its_albums_ask_for() -> R
             &[(TITLE, "One"), (ARTIST, "Ada"), (ALBUM, "Orbits")],
         ),
     );
+
     tree.write(
         "2.wav",
         &song(
@@ -475,7 +496,9 @@ fn a_studied_track_is_hinted_the_gain_its_loudness_and_its_albums_ask_for() -> R
             &[(TITLE, "Two"), (ARTIST, "Ada"), (ALBUM, "Orbits")],
         ),
     );
+
     let library = scanned(&tree)?;
+
     enriched(&library, Silent::new(), Fingerprinters::none())?;
 
     let (_, studied) = library
@@ -484,11 +507,14 @@ fn a_studied_track_is_hinted_the_gain_its_loudness_and_its_albums_ask_for() -> R
     let loudness = studied.loudness.expect("a measured loudness");
     let hints = library.hinting().hints(&MediaLocation::local(&first), None);
     let track = hints.measured.track.expect("a measured track gain").get();
+
     assert!(
         (track - (REPLAY_GAIN_REFERENCE_LUFS - loudness)).abs() < 1e-3,
         "a track measured at {loudness} LUFS was hinted {track} dB"
     );
+
     let album = hints.measured.album.expect("a measured album gain").get();
+
     assert!(
         (album - track).abs() < 1.0,
         "two tracks of one loudness were hinted an album gain of {album} dB against {track} dB"
@@ -503,6 +529,7 @@ fn a_studied_track_is_hinted_the_gain_its_loudness_and_its_albums_ask_for() -> R
         ),
     );
     rescanned(&library, &tree)?;
+
     assert_eq!(
         library
             .hinting()
@@ -531,6 +558,7 @@ fn a_silent_track_studied_leaves_its_album_the_gain_the_others_ask_for() -> Resu
         &silence(&[(TITLE, "Spacer"), (ARTIST, "Ada"), (ALBUM, "Orbits")]),
     );
     let library = scanned(&tree)?;
+
     enriched(&library, Silent::new(), Fingerprinters::none())?;
 
     let (_, silent) = library
@@ -555,10 +583,12 @@ fn a_silent_track_studied_leaves_its_album_the_gain_the_others_ask_for() -> Resu
 #[test]
 fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "genuine.wav",
         &song(21_700.0, 1, &[(TITLE, "Genuine"), (ARTIST, "Ada")]),
     );
+
     let fake = tree.write(
         "transcoded.wav",
         &song(16_000.0, 2, &[(TITLE, "Transcoded"), (ARTIST, "Ada")]),
@@ -566,6 +596,7 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
     let library = scanned(&tree)?;
 
     let summary = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(summary.stats.studied, 2);
     assert_eq!(summary.stats.fakes, 1);
     assert_eq!(summary.stats.recognised, 0);
@@ -574,27 +605,34 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
         fakes: true,
         ..StudyFilter::default()
     })?;
+
     assert_eq!(fakes.len(), 1);
     assert_eq!(fakes[0].title, "Transcoded");
+
     let cutoff = fakes[0].studied.cutoff.expect("a wall");
+
     assert!((15_700..=16_300).contains(&cutoff.hz), "{}", cutoff.hz);
     assert!(fakes[0].studied.print.is_some());
 
     let (_, studied) = library
         .study_of(&MediaLocation::local(&fake), None)?
         .expect("a study");
+
     assert_eq!(studied.verdict, Verdict::Fake);
     assert_eq!(studied.recognised, None);
     assert_eq!(library.studies(StudyFilter::default())?.len(), 2);
 
     let hints = library.hinting().hints(&MediaLocation::local(&fake), None);
     let true_peak = hints.true_peak.expect("a measured true peak").get();
+
     assert!(
         true_peak >= studied.peak && true_peak > 0.0,
         "the true peak {true_peak} reads under the sample peak {}",
         studied.peak
     );
+
     let lowpass = hints.lowpass.expect("the wall as a hint").centihertz() / 100;
+
     assert!((15_700..=16_300).contains(&lowpass), "{lowpass}");
     assert_eq!(
         library
@@ -607,6 +645,7 @@ fn every_track_is_studied_as_the_pass_runs_and_a_transcode_is_found_fake() -> Re
     assert_eq!(matched(&library, "-is:fake")?, vec!["Genuine"]);
 
     let again = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(
         again.stats.studied, 0,
         "a study already held is not taken again"
@@ -636,7 +675,9 @@ impl Fingerprints for Refusing {
 #[test]
 fn a_service_refusing_every_print_is_given_up_on_before_the_whole_pool_is_asked() -> Result<()> {
     const TRACKS: u32 = 24;
+
     let tree = Tree::new();
+
     for seed in 0..TRACKS {
         tree.write(
             &format!("track {seed}.wav"),
@@ -647,6 +688,7 @@ fn a_service_refusing_every_print_is_given_up_on_before_the_whole_pool_is_asked(
             ),
         );
     }
+
     let library = scanned(&tree)?;
     let refusing = Arc::new(Refusing {
         source: SourceId::new("refusing").expect("a nameable source"),
@@ -661,7 +703,9 @@ fn a_service_refusing_every_print_is_given_up_on_before_the_whole_pool_is_asked(
 
     assert_eq!(summary.stats.studied, u64::from(TRACKS));
     assert_eq!(summary.stats.recognised, 0);
+
     let asked = refusing.asked.load(Ordering::Relaxed);
+
     assert!(
         asked < u64::from(TRACKS),
         "{asked} of {TRACKS} tracks were asked of a service that refused every one"
@@ -672,10 +716,12 @@ fn a_service_refusing_every_print_is_given_up_on_before_the_whole_pool_is_asked(
 #[test]
 fn a_track_whose_audio_is_another_song_is_misnamed_and_one_that_agrees_is_not() -> Result<()> {
     let tree = Tree::new();
+
     tree.write(
         "right.wav",
         &song(21_700.0, 3, &[(TITLE, "Tuesday"), (ARTIST, "Ada")]),
     );
+
     let renamed = tree.write(
         "renamed.wav",
         &song(21_700.0, 4, &[(TITLE, "Tuesday Again"), (ARTIST, "Ada")]),
@@ -691,6 +737,7 @@ fn a_track_whose_audio_is_another_song_is_misnamed_and_one_that_agrees_is_not() 
         Silent::new(),
         Fingerprinters::none().and(Arc::clone(&ear) as Arc<dyn Fingerprints>),
     )?;
+
     assert_eq!(summary.stats.studied, 2);
     assert_eq!(summary.stats.recognised, 2);
     assert_eq!(summary.stats.misnamed, 1);
@@ -703,17 +750,22 @@ fn a_track_whose_audio_is_another_song_is_misnamed_and_one_that_agrees_is_not() 
     let (_, studied) = library
         .study_of(&MediaLocation::local(&renamed), None)?
         .expect("a study");
+
     assert_eq!(studied.agreement, Some(Agreement::Disagrees));
+
     let heard = studied.heard_as.expect("what it was heard as");
+
     assert_eq!(heard.title, "Wednesday");
     assert_eq!(heard.artist.as_deref(), Some("Grace"));
     assert_eq!(heard.score, 96);
 
     assert_eq!(matched(&library, "is:misnamed")?, vec!["Tuesday Again"]);
+
     let misnamed = library.studies(StudyFilter {
         misnamed: true,
         ..StudyFilter::default()
     })?;
+
     assert_eq!(misnamed.len(), 1);
 
     let again = enriched(
@@ -721,6 +773,7 @@ fn a_track_whose_audio_is_another_song_is_misnamed_and_one_that_agrees_is_not() 
         Silent::new(),
         Fingerprinters::none().and(Arc::clone(&ear) as Arc<dyn Fingerprints>),
     )?;
+
     assert_eq!(again.stats.recognised, 0);
     assert_eq!(
         ear.asked.load(Ordering::Relaxed),
@@ -743,11 +796,13 @@ fn a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through
         "renamed.wav",
         heard_as(HEARD, "Wednesday", "Grace", 96),
     )]));
+
     enriched(
         &library,
         Silent::new(),
         Fingerprinters::none().and(Arc::clone(&ear) as Arc<dyn Fingerprints>),
     )?;
+
     let track = library
         .track_at(&renamed, None)?
         .expect("the scanned track")
@@ -756,13 +811,16 @@ fn a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through
     let taken = library
         .take_what_was_heard(track)?
         .expect("what the audio was heard as");
+
     assert_eq!(taken.title, "Wednesday");
     assert_eq!(taken.artist.as_deref(), Some("Grace"));
     assert_eq!(taken.recording.as_str(), HEARD);
 
     let named = library.track(track)?.expect("the renamed track");
+
     assert_eq!(named.title, "Wednesday");
     assert_eq!(named.artist.as_deref(), Some("Grace"));
+
     let recorded = |library: &Library| {
         library
             .shareable(track)
@@ -771,10 +829,13 @@ fn a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through
             .and_then(|shared| shared.recording)
             .map(|recording| recording.as_str().to_owned())
     };
+
     assert_eq!(recorded(&library).as_deref(), Some(HEARD));
+
     let (_, studied) = library
         .study_of(&MediaLocation::local(&renamed), None)?
         .expect("a study");
+
     assert_eq!(studied.agreement, Some(Agreement::Agrees));
     assert!(matched(&library, "is:misnamed")?.is_empty());
     assert_eq!(matched(&library, "wednesday grace")?, vec!["Wednesday"]);
@@ -788,7 +849,9 @@ fn a_track_heard_as_another_song_takes_that_name_when_asked_and_keeps_it_through
             workers: NonZeroUsize::MIN,
         })?
         .join()?;
+
     let rescanned = library.track(track)?.expect("the rescanned track");
+
     assert_eq!(rescanned.title, "Wednesday");
     assert_eq!(recorded(&library).as_deref(), Some(HEARD));
     Ok(())
@@ -874,15 +937,18 @@ fn heard_in_a_week(tree: &Tree, rows: Vec<ReleaseTrack>) -> Result<(Library, Tra
         "renamed.wav",
         heard_as(HEARD, "Wednesday", "Grace", 96),
     )]));
+
     enriched(
         &library,
         Silent::new(),
         Fingerprinters::none().and(ear as Arc<dyn Fingerprints>),
     )?;
+
     let track = library
         .track_at(&renamed, None)?
         .expect("the scanned track");
     let album = track.album_id.expect("the track's album");
+
     library.land_release(album, &week(rows))?;
     library.rematch(album)?;
     Ok((library, track))
@@ -909,6 +975,7 @@ fn a_name_taken_from_the_audio_moves_the_track_to_the_row_of_the_album_that_song
             week_row(3, "Wednesday", HEARD),
         ],
     )?;
+
     assert_eq!(paired_to(&library, &track)?, vec!["Tuesday Again"]);
 
     library
@@ -916,7 +983,9 @@ fn a_name_taken_from_the_audio_moves_the_track_to_the_row_of_the_album_that_song
         .expect("a name to take");
 
     assert_eq!(paired_to(&library, &track)?, vec!["Wednesday"]);
+
     let seated = library.track(track.id)?.expect("the track");
+
     assert_eq!(seated.track_number, Some(3));
     assert_eq!(seated.disc_number, Some(1));
     Ok(())
@@ -933,6 +1002,7 @@ fn a_name_taken_from_the_audio_lets_go_of_what_the_file_said_it_was_through_a_re
             week_row(2, "Thursday", THURSDAY),
         ],
     )?;
+
     assert_eq!(paired_to(&library, &track)?, vec!["Tuesday Again"]);
     assert!(
         !library.tracks_to_ask(WAITS, false)?.contains(&track.id),
@@ -945,10 +1015,14 @@ fn a_name_taken_from_the_audio_lets_go_of_what_the_file_said_it_was_through_a_re
 
     let unseated = |library: &Library| -> Result<()> {
         assert!(paired_to(library, &track)?.is_empty());
+
         let held = library.track(track.id)?.expect("the track");
+
         assert_eq!(held.title, "Wednesday");
         assert_eq!(held.track_number, None);
+
         let shared = library.shareable(track.id)?.expect("a share");
+
         assert_eq!(
             shared.recording.as_ref().map(Mbid::as_str),
             Some(HEARD),
@@ -960,6 +1034,7 @@ fn a_name_taken_from_the_audio_lets_go_of_what_the_file_said_it_was_through_a_re
         );
         Ok(())
     };
+
     unseated(&library)?;
 
     library.rematch(track.album_id.expect("the track's album"))?;
@@ -987,6 +1062,7 @@ fn a_track_heard_as_nothing_has_nothing_to_take() -> Result<()> {
         &song(21_700.0, 6, &[(TITLE, "Tuesday"), (ARTIST, "Ada")]),
     );
     let library = scanned(&tree)?;
+
     let track = library.track_at(&quiet, None)?.expect("the scanned track");
 
     assert_eq!(library.take_what_was_heard(track.id)?, None);
@@ -1020,8 +1096,11 @@ fn a_track_that_names_nothing_is_named_by_what_its_audio_was_heard_as() -> Resul
     let (id, studied) = library
         .study_of(&MediaLocation::local(&unnamed), None)?
         .expect("a study");
+
     assert_eq!(studied.agreement, Some(Agreement::Unnamed));
+
     let track = library.track(id)?.expect("the track");
+
     assert_eq!(track.title, "Found by Ear");
     assert_eq!(ear.asked.load(Ordering::Relaxed), 1);
     Ok(())
@@ -1035,8 +1114,11 @@ fn a_file_that_changed_forgets_its_study_and_is_studied_again() -> Result<()> {
         &song(21_700.0, 6, &[(TITLE, "Changing"), (ARTIST, "Ada")]),
     );
     let library = scanned(&tree)?;
+
     enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     let location = MediaLocation::local(&path);
+
     assert_eq!(
         library
             .study_of(&location, None)?
@@ -1045,6 +1127,7 @@ fn a_file_that_changed_forgets_its_study_and_is_studied_again() -> Result<()> {
     );
 
     rescanned(&library, &tree)?;
+
     assert!(
         library.study_of(&location, None)?.is_some(),
         "an unchanged file keeps its study"
@@ -1059,9 +1142,11 @@ fn a_file_that_changed_forgets_its_study_and_is_studied_again() -> Result<()> {
         ),
     );
     rescanned(&library, &tree)?;
+
     assert!(library.study_of(&location, None)?.is_none());
 
     let summary = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(summary.stats.studied, 1);
     assert_eq!(
         library
@@ -1077,11 +1162,13 @@ fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_aske
 -> Result<()> {
     let tree = Tree::new();
     let sound = song(21_700.0, 6, &[(TITLE, "Broken"), (ARTIST, "Ada")]);
+
     let path = tree.write("broken.wav", &sound);
     let library = scanned(&tree)?;
     let stamped = fs::metadata(&path)
         .and_then(|held| held.modified())
         .expect("the file's mtime");
+
     let laid_down = |bytes: &[u8]| {
         fs::write(&path, bytes).expect("a writable temporary file");
         fs::File::options()
@@ -1093,12 +1180,16 @@ fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_aske
     let location = MediaLocation::local(&path);
 
     laid_down(&vec![0; sound.len()]);
+
     let failed = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(failed.stats.studied, 0);
     assert!(library.study_of(&location, None)?.is_none());
 
     laid_down(&sound);
+
     let again = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(
         again.stats.studied, 0,
         "a track that would not decode was decoded again"
@@ -1115,6 +1206,7 @@ fn a_track_that_will_not_decode_is_not_decoded_again_until_it_changes_or_is_aske
             },
         )?
         .join()?;
+
     assert_eq!(
         refreshed.stats.studied, 1,
         "asking again did not study it again"
@@ -1133,6 +1225,7 @@ impl OutOfReach {
 
         fs::set_permissions(path, fs::Permissions::from_mode(0o000))
             .expect("the file's mode changes");
+
         let held = Self(path.to_path_buf());
         fs::File::open(path).is_err().then_some(held)
     }
@@ -1182,11 +1275,15 @@ fn a_track_whose_file_was_out_of_reach_is_studied_once_it_is_back() -> Result<()
         return Ok(());
     };
     let away = enriched(&library, Silent::new(), Fingerprinters::none());
+
     drop(out_of_reach);
+
     let away = away?;
+
     assert_eq!(away.stats.studied, 0);
 
     let back = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(
         back.stats.studied, 1,
         "a file out of reach for one pass was taken as one that will not decode"
@@ -1209,7 +1306,9 @@ fn a_vaulted_row_whose_file_has_gone_is_studied_out_of_its_object() -> Result<()
     );
     let vault = Arc::new(Vault::make(held.path()).expect("a writable vault"));
     let library = Library::open_in_memory_with_vault(vault)?;
+
     rescanned(&library, &tree)?;
+
     let imported = library
         .import(
             Arc::new(Sources::local()),
@@ -1219,16 +1318,21 @@ fn a_vaulted_row_whose_file_has_gone_is_studied_out_of_its_object() -> Result<()
             },
         )?
         .join()?;
+
     assert_eq!(imported.stats.vaulted, 1);
+
     let packed = fs::read_dir(held.path().join("audio"))
         .expect("an audio folder")
         .flat_map(|fan| fs::read_dir(fan.expect("a fan-out").path()).expect("a fan-out folder"))
         .filter_map(|object| object.ok())
         .any(|object| object.file_name().to_string_lossy().ends_with(".wav.zst"));
+
     assert!(packed, "a float source is kept as a packed WAVE");
+
     fs::remove_file(&path).expect("the original goes");
 
     let summary = enriched(&library, Silent::new(), Fingerprinters::none())?;
+
     assert_eq!(summary.stats.studied, 1);
     assert_eq!(
         library
@@ -1258,6 +1362,7 @@ fn a_lookup_with_studies_off_decodes_nothing() -> Result<()> {
             },
         )?
         .join()?;
+
     assert_eq!(summary.stats.studied, 0);
     assert!(
         library

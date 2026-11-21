@@ -136,11 +136,13 @@ impl LibraryModel {
             }
             return false;
         }
+
         let asking = match prompted {
             Prompted::ByTheInbox => Asking::TheInboxAlone,
             Prompted::ByHand | Prompted::OnItsOwn => Asking::EveryProvider,
         };
         let providers = Arc::new(self.providers_asking(asking, cx));
+
         if prompted != Prompted::ByHand {
             self.ask_whether_a_want_is_due(providers, prompted, asking, options, cx);
             return true;
@@ -165,7 +167,9 @@ impl LibraryModel {
         }
         self.running.checking_the_wants = true;
         self.library.deliver_into(delivery_folder(cx));
+
         let library = Arc::clone(&self.library);
+
         self.running._due = cx.spawn(async move |this, cx| {
             let due = cx
                 .background_executor()
@@ -173,10 +177,12 @@ impl LibraryModel {
                 .await;
             let _ = this.update(cx, |this, cx| {
                 this.running.checking_the_wants = false;
+
                 let due = due.unwrap_or_else(|error| {
                     tracing::warn!(%error, "the wants could not be read");
                     false
                 });
+
                 if due && this.running.work.is_busy() {
                     this.owe_a_poll(options);
                 } else if due {
@@ -196,6 +202,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) -> bool {
         self.library.deliver_into(delivery_folder(cx));
+
         let handle = match self.library.poll(providers, options) {
             Ok(handle) => handle,
             Err(resonate_library::Error::AlreadyAsking { .. }) if self.keeps.pass.is_some() => {
@@ -232,8 +239,10 @@ impl LibraryModel {
 
         self.running._poll = cx.spawn(async move |this, cx| {
             let mut followed = Followed::default();
+
             while !handle.is_finished() {
                 cx.background_executor().timer(SCAN_POLL).await;
+
                 let reread = followed.reread(handle.progress().snapshot());
                 let ticked = this.update(cx, |this, cx| {
                     if let Some(wanted) = reread {
@@ -253,7 +262,9 @@ impl LibraryModel {
                 }
                 this.take_up_what_waited(cx);
                 this.keep_what_is_owed(cx);
+
                 let joined = handle.join();
+
                 if let Some(notice) = this.sourcing.unkept_notice() {
                     toast::tell(notice, cx);
                 }
@@ -272,6 +283,7 @@ impl LibraryModel {
                                     0
                                 };
                         }
+
                         let told_by_the_downloads =
                             prompted == Prompted::OnItsOwn && !this.delivered.downloads.is_empty();
                         if let Some(notice) =

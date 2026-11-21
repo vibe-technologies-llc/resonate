@@ -78,7 +78,7 @@ const VORBIS_COMMENT_ONLY: [&str; 32] = [
     "ALBUMSORT",
 ];
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TagName(Box<str>);
 
 impl TagName {
@@ -233,10 +233,12 @@ pub struct TagSet {
 impl TagSet {
     pub fn heard_gain(&self) -> ReplayGain {
         let declared = self.replay_gain;
+
         if declared.names_a_gain() {
             let toward_ours = self
                 .replay_gain_reference
                 .map_or(0.0, |reference| REPLAY_GAIN_REFERENCE_DB - reference.get());
+
             return declared.raised_by(toward_ours);
         }
         [self.sound_check, self.encoder_gain]
@@ -271,12 +273,14 @@ struct TrackTags {
 impl Revisions {
     pub(crate) fn read(reader: &mut dyn FormatReader, chunk: Option<&MetadataRevision>) -> Self {
         let mut held = Self::of(reader.metadata());
+
         held.0.extend(chunk.map(Revision::of));
         held
     }
 
     fn of(mut metadata: Metadata<'_>) -> Self {
         let mut held = Vec::new();
+
         while let Some(earlier) = metadata.pop() {
             held.push(Revision::taken(earlier));
         }
@@ -368,6 +372,7 @@ pub(crate) fn read_raw(revisions: &Revisions, track: u32, prescan: &Prescan) -> 
 
 pub(crate) fn read_cue_sheet(revisions: &Revisions, track: u32) -> Option<String> {
     let mut newest = None;
+
     for set in revisions.sets(track) {
         for tag in set {
             if !tag.raw.key.as_str().eq_ignore_ascii_case(CUE_SHEET) {
@@ -383,6 +388,7 @@ pub(crate) fn read_cue_sheet(revisions: &Revisions, track: u32) -> Option<String
 
 pub(crate) fn itunes_gapless_note(revisions: &Revisions, track: u32) -> Option<String> {
     let mut newest = None;
+
     for set in revisions.sets(track) {
         for tag in set {
             if !described_as(tag, ITUNES_GAPLESS_NOTE) {
@@ -470,6 +476,7 @@ fn value_of(value: &RawValue) -> TagValue {
 pub(crate) fn from_revision(revision: &MetadataRevision) -> TagSet {
     let held = Revision::of(revision);
     let mut builder = Builder::default();
+
     builder.absorb(&held.media.iter().collect::<Vec<_>>());
     builder.finish()
 }
@@ -485,12 +492,14 @@ pub(crate) fn read(
         mpeg,
         ..Builder::default()
     };
+
     builder.absorb_info(&prescan.riff.info);
     for set in revisions.sets(track) {
         builder.absorb(&set);
     }
 
     let mut tags = builder.finish();
+
     if segment_title_names_the_track {
         tags.title = tags.title.or_else(|| prescan.segment.title.clone());
     }
@@ -512,9 +521,11 @@ struct DayAndMonth {
 impl DayAndMonth {
     fn read(text: &str) -> Option<Self> {
         let text = text.trim();
+
         if text.len() != 4 || !text.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
+
         let day: u8 = text[..2].parse().ok()?;
         let month: u8 = text[2..].parse().ok()?;
         ((1..=31).contains(&day) && (1..=12).contains(&month)).then_some(Self { day, month })
@@ -536,12 +547,14 @@ impl Id3DatePart {
 
     fn of(tag: &Tag) -> Option<Self> {
         let key = tag.raw.key.as_str();
+
         if Self::CLOCK.contains(&key) {
             return Some(Self::Clock);
         }
         if !Self::DAY_AND_MONTH.contains(&key) {
             return None;
         }
+
         let RawValue::String(text) = &tag.raw.value else {
             return Some(Self::Clock);
         };
@@ -607,6 +620,7 @@ impl Builder {
     fn absorb(&mut self, tags: &[&Tag]) {
         self.listed_in_this_revision = 0;
         self.synced_in_this_revision = false;
+
         let naming = Naming::of(tags);
         for tag in tags {
             if let Some(explicit) = content_advisory(tag) {
@@ -754,10 +768,13 @@ impl Builder {
 
     fn listed(&mut self, which: Listed, value: &str) {
         let value = value.trim();
+
         if value.is_empty() {
             return;
         }
+
         let first_here = self.listed_in_this_revision & which.bit() == 0;
+
         self.listed_in_this_revision |= which.bit();
 
         let credits = &mut self.tags.credits;
@@ -786,6 +803,7 @@ impl Builder {
 
     fn date(&mut self, rank: DateRank, value: &str) {
         let value = value.trim();
+
         if value.is_empty() {
             return;
         }
@@ -856,6 +874,7 @@ fn id3_list(tag: &Tag) -> Vec<StandardTag> {
     let (None, RawValue::StringList(values)) = (&tag.std, &tag.raw.value) else {
         return Vec::new();
     };
+
     if tag.raw.key.as_str() == MUSICIAN_CREDITS {
         return values
             .as_chunks::<2>()
@@ -865,6 +884,7 @@ fn id3_list(tag: &Tag) -> Vec<StandardTag> {
             .map(|[_, name]| StandardTag::Performer(Arc::new(name.clone())))
             .collect();
     }
+
     let listed: fn(Arc<String>) -> StandardTag = match tag.raw.key.as_str() {
         "TPE1" => StandardTag::Artist,
         "TPE2" => StandardTag::AlbumArtist,
@@ -896,6 +916,7 @@ fn musicbrainz_identifier(tag: &Tag) -> Option<StandardTag> {
         return None;
     };
     let recording = str::from_utf8(identifier).ok()?.trim();
+
     if recording.is_empty() {
         return None;
     }
@@ -907,12 +928,14 @@ fn musicbrainz_identifier(tag: &Tag) -> Option<StandardTag> {
 
 fn synchronised_lyrics(tag: &Tag, mpeg: Option<FrameClock>) -> Option<String> {
     let name = scoped_name(tag.raw.key.as_str());
+
     if !sylt::FRAME_IDS
         .iter()
         .any(|id| id.eq_ignore_ascii_case(name))
     {
         return None;
     }
+
     let RawValue::Binary(frame) = &tag.raw.value else {
         return None;
     };
@@ -922,9 +945,11 @@ fn synchronised_lyrics(tag: &Tag, mpeg: Option<FrameClock>) -> Option<String> {
 fn loudness_gain(tag: &Tag) -> Option<StandardTag> {
     let name = scoped_name(tag.raw.key.as_str());
     let album = name.eq_ignore_ascii_case(R128_ALBUM_GAIN);
+
     if !album && !name.eq_ignore_ascii_case(R128_TRACK_GAIN) {
         return None;
     }
+
     let RawValue::String(value) = &tag.raw.value else {
         return None;
     };
@@ -1005,6 +1030,7 @@ impl Uppercased {
     pub(crate) fn of(name: &str) -> Option<Self> {
         let bytes = name.as_bytes();
         let mut held = [0_u8; LONGEST_NAME_MATCHED];
+
         held.get_mut(..bytes.len())?.copy_from_slice(bytes);
         held.make_ascii_uppercase();
 
@@ -1149,6 +1175,7 @@ pub(crate) fn decibels(value: &str) -> Option<Decibels> {
         tracing::debug!(value, "discarding an unparseable ReplayGain gain");
         return None;
     };
+
     if !PLAUSIBLE_GAIN_DB.contains(&db) {
         tracing::debug!(value, "discarding a ReplayGain gain no tagger would write");
         return None;
@@ -1168,7 +1195,9 @@ fn reference_loudness(value: &str) -> Option<Decibels> {
         ),
         None => (strip_db(value), 0.0),
     };
+
     let db = gain_number(number.trim())? + below;
+
     if !PLAUSIBLE_REFERENCE_DB.contains(&db) {
         tracing::debug!(
             value,
@@ -1184,13 +1213,17 @@ pub(crate) fn sound_check(value: &str) -> Option<ReplayGain> {
         .split_ascii_whitespace()
         .map(|field| u32::from_str_radix(field, 16).ok())
         .collect::<Option<_>>()?;
+
     if fields.len() < SOUND_CHECK_FIELDS {
         return None;
     }
+
     let loudest = (*fields.get(LEFT_GAIN)?).max(*fields.get(RIGHT_GAIN)?);
+
     if loudest == 0 {
         return None;
     }
+
     let gain = -10.0 * (loudest as f32 / SOUND_CHECK_UNITY).log10();
     let peak = (*fields.get(LEFT_PEAK)?).max(*fields.get(RIGHT_PEAK)?);
 
@@ -1213,6 +1246,7 @@ fn gain_number(text: &str) -> Option<f32> {
     if let Ok(number) = text.parse::<f32>() {
         return Some(number);
     }
+
     let written_with_a_decimal_comma =
         !text.contains('.') && text.matches(DECIMAL_COMMA).count() == 1;
     written_with_a_decimal_comma
@@ -1276,6 +1310,7 @@ mod tests {
 
     fn absorb(tags: &[Tag]) -> TagSet {
         let mut builder = Builder::default();
+
         builder.absorb(&tags.iter().collect::<Vec<_>>());
         builder.finish()
     }
@@ -1294,6 +1329,7 @@ mod tests {
         ] {
             assert_eq!(absorb(&[keyed(key, value)]).explicit, expected);
         }
+
         use symphonia::core::meta::ContentAdvisory;
 
         assert_eq!(
@@ -1315,6 +1351,7 @@ mod tests {
 
     fn absorb_info(entries: &[InfoTag]) -> TagSet {
         let mut builder = Builder::default();
+
         builder.absorb_info(entries);
         builder.finish()
     }
@@ -1349,6 +1386,7 @@ mod tests {
             tag(StandardTag::RecordingDate(text("1971"))),
             tag(StandardTag::RecordingDate(text("2011"))),
         ]);
+
         assert_eq!(set.date.as_deref(), Some("2011"));
 
         let retagged = logged(vec![
@@ -1363,6 +1401,7 @@ mod tests {
                 StandardTag::RecordingDate(text("2011")),
             )]),
         ]);
+
         assert_eq!(set_of(&retagged).date.as_deref(), Some("2011"));
     }
 
@@ -1389,6 +1428,7 @@ mod tests {
             tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
             tag(StandardTag::ReplayGainReferenceLoudness(text("83.0 dB"))),
         ]);
+
         assert_eq!(
             older.replay_gain.track_gain.map(Decibels::get),
             Some(-7.0),
@@ -1402,18 +1442,21 @@ mod tests {
                 "-14.00 LUFS",
             ))),
         ]);
+
         assert_eq!(heard_track_gain(&louder), Some(-11.0));
 
         let ours = absorb(&[
             tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
             tag(StandardTag::ReplayGainReferenceLoudness(text("-18 LUFS"))),
         ]);
+
         assert_eq!(heard_track_gain(&ours), Some(-7.0));
 
         let nonsense = absorb(&[
             tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
             tag(StandardTag::ReplayGainReferenceLoudness(text("3 dB"))),
         ]);
+
         assert_eq!(nonsense.replay_gain_reference, None);
         assert_eq!(heard_track_gain(&nonsense), Some(-7.0));
     }
@@ -1441,6 +1484,7 @@ mod tests {
             described(ITUNES_SOUND_CHECK, SOUND_CHECK_AT_2500),
             tag(StandardTag::ReplayGainTrackGain(text("-7.00 dB"))),
         ]);
+
         assert_eq!(heard_track_gain(&tagged), Some(-7.0));
 
         assert_eq!(sound_check("00000000 00000000"), None);
@@ -1459,12 +1503,14 @@ mod tests {
             },
             ..TagSet::default()
         };
+
         assert_eq!(heard_track_gain(&set), Some(-2.0));
 
         let checked = TagSet {
             sound_check: sound_check(SOUND_CHECK_AT_2500).expect("a Sound Check note"),
             ..set
         };
+
         assert_eq!(heard_track_gain(&checked), Some(-3.98));
     }
 
@@ -1480,12 +1526,15 @@ mod tests {
             described("iTunSMPB", " 00000000 00000210"),
             described("iTunes_CDDB_1", "9F0B2C0C+180000"),
         ])]);
+
         assert_eq!(set_of(&noted).comment.as_deref(), Some("ripped from vinyl"));
 
         let alone = logged(vec![revision(vec![described("iTunNORM", " 00000A2B")])]);
+
         assert_eq!(set_of(&alone).comment, None);
 
         let named = logged(vec![revision(vec![described("Liner", "pressed in 1971")])]);
+
         assert_eq!(set_of(&named).comment.as_deref(), Some("pressed in 1971"));
     }
 
@@ -1514,12 +1563,14 @@ mod tests {
             mapped("TDAT", "3010", StandardTag::RecordingDate(text("3010"))),
             mapped("TIME", "1230", StandardTag::RecordingTime(text("1230"))),
         ])]);
+
         assert_eq!(set_of(&joined).date.as_deref(), Some("1971-10-30"));
 
         let clocked = logged(vec![revision(vec![
             mapped("TIME", "1230", StandardTag::RecordingTime(text("1230"))),
             mapped("TYER", "1971", StandardTag::RecordingYear(1971)),
         ])]);
+
         assert_eq!(set_of(&clocked).date.as_deref(), Some("1971"));
 
         let alone = logged(vec![revision(vec![mapped(
@@ -1527,6 +1578,7 @@ mod tests {
             "0503",
             StandardTag::RecordingDate(text("0503")),
         )])]);
+
         assert_eq!(set_of(&alone).date, None);
 
         let full = logged(vec![revision(vec![
@@ -1537,11 +1589,13 @@ mod tests {
             ),
             mapped("TDAT", "0101", StandardTag::RecordingDate(text("0101"))),
         ])]);
+
         assert_eq!(set_of(&full).date.as_deref(), Some("1971-10-30"));
     }
 
     fn revision(tags: Vec<Tag>) -> MetadataRevision {
         let mut builder = MetadataBuilder::new(TEST_METADATA);
+
         for tag in tags {
             builder.add_tag(tag);
         }
@@ -1550,16 +1604,20 @@ mod tests {
 
     fn for_track(track: u64, tags: Vec<Tag>) -> MetadataRevision {
         let mut per_track = PerTrackMetadataBuilder::new(track);
+
         for tag in tags {
             per_track.add_tag(tag);
         }
+
         let mut builder = MetadataBuilder::new(TEST_METADATA);
+
         builder.add_track(per_track.build());
         builder.build()
     }
 
     fn logged(revisions: Vec<MetadataRevision>) -> Revisions {
         let mut log = MetadataLog::default();
+
         for revision in revisions {
             log.push(revision);
         }
@@ -1616,6 +1674,7 @@ mod tests {
             keyed("TRACK", "3/14"),
             keyed("DISC", "2 / 3"),
         ]);
+
         assert_eq!(
             (
                 vorbis.track_number,
@@ -1627,11 +1686,15 @@ mod tests {
         );
 
         let mut builder = Builder::default();
+
         builder.absorb_info(&[info("ITRK", "3/12")]);
+
         let riff = builder.finish();
+
         assert_eq!((riff.track_number, riff.track_total), (Some(3), Some(12)));
 
         let bare = absorb(&[keyed("TOTALTRACKS", "12"), keyed("TRACK", "3")]);
+
         assert_eq!(bare.track_total, Some(12));
     }
 
@@ -1922,12 +1985,15 @@ mod tests {
         const RECORDING: &str = "83d91898-7763-47d7-b03b-b92132375c47";
 
         let tagged = absorb(&[identified(MUSICBRAINZ_OWNER, RECORDING.as_bytes())]);
+
         assert_eq!(tagged.musicbrainz_track_id.as_deref(), Some(RECORDING));
 
         let elsewhere = absorb(&[identified("http://www.cddb.com", RECORDING.as_bytes())]);
+
         assert_eq!(elsewhere.musicbrainz_track_id, None);
 
         let empty = absorb(&[identified(MUSICBRAINZ_OWNER, b"  ")]);
+
         assert_eq!(empty.musicbrainz_track_id, None);
     }
 
@@ -2029,17 +2095,20 @@ mod tests {
             tag(StandardTag::Artist(text("   "))),
             tag(StandardTag::Composer(text("\t\n"))),
         ]);
+
         assert_eq!(blank.title, None);
         assert_eq!(blank.artist, None);
         assert_eq!(blank.credits.composer, None);
 
         let padded = absorb(&[tag(StandardTag::TrackTitle(text("  Echoes \n")))]);
+
         assert_eq!(padded.title.as_deref(), Some("Echoes"));
 
         let blanked_after = absorb(&[
             tag(StandardTag::TrackTitle(text("Echoes"))),
             tag(StandardTag::TrackTitle(text(" "))),
         ]);
+
         assert_eq!(blanked_after.title.as_deref(), Some("Echoes"));
 
         let named_after = absorb(&[
@@ -2047,6 +2116,7 @@ mod tests {
             tag(StandardTag::TrackTitle(text("Echoes"))),
             tag(StandardTag::TrackTitle(text("Fearless"))),
         ]);
+
         assert_eq!(named_after.title.as_deref(), Some("Fearless"));
     }
 
@@ -2063,6 +2133,7 @@ mod tests {
             tag(StandardTag::TrackTitle(text("Get Lucky"))),
             tag(StandardTag::TrackTitle(text("Get Lucky (Radio Edit)"))),
         ]);
+
         assert_eq!(
             listed.artist.as_deref(),
             Some("Daft Punk; Pharrell Williams")
@@ -2082,8 +2153,10 @@ mod tests {
         let newer = [tag(StandardTag::Artist(text(
             "Daft Punk feat. Pharrell Williams",
         )))];
+
         builder.absorb(&older.iter().collect::<Vec<_>>());
         builder.absorb(&newer.iter().collect::<Vec<_>>());
+
         assert_eq!(
             builder.finish().artist.as_deref(),
             Some("Daft Punk feat. Pharrell Williams")
@@ -2149,8 +2222,10 @@ mod tests {
     #[test]
     fn a_synchronised_frame_outranks_the_plain_words_beside_it_as_a_timed_sheet() {
         let mut frame = vec![3, b'e', b'n', b'g', 2, 1, 0];
+
         frame.extend_from_slice(b"all that you touch\0");
         frame.extend_from_slice(&1_500_u32.to_be_bytes());
+
         let synced = Tag::new(RawTag::new("SYLT", frame.as_slice()));
 
         let set = absorb(&[synced, tag(StandardTag::Lyrics(text("all that you touch")))]);
@@ -2165,6 +2240,7 @@ mod tests {
     fn the_first_timed_lyrics_frame_of_a_tag_is_the_sheet_whatever_follows_it() {
         let synced = |language: &[u8; 3], words: &str| {
             let mut frame = vec![3];
+
             frame.extend_from_slice(language);
             frame.extend_from_slice(&[2, 1, 0]);
             frame.extend_from_slice(words.as_bytes());

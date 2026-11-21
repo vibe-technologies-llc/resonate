@@ -14,7 +14,7 @@ use crate::{
     written::{self, compact, percent, seconds},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Action {
     Play,
@@ -80,6 +80,7 @@ pub(crate) fn zones(players: &dyn Reach) -> Result<Value> {
             }
         })
         .collect();
+
     read.sort_by_key(|(number, _)| *number);
 
     Ok(json!({
@@ -99,6 +100,7 @@ fn zone_standing(zone: &dyn Controlling) -> Result<Value> {
         "track": zone.metadata()?.as_ref().map(written::row),
         "rows": zone.queued()?.len(),
     }));
+
     if let (Value::Object(fields), Value::Object(read)) = (&mut standing, reading) {
         fields.extend(read);
     }
@@ -123,6 +125,7 @@ pub(crate) fn move_playback(
     let target = taking
         .zone_number()
         .ok_or_else(|| Error::NoSuchZone { zone: to.clone() })?;
+
     if leaving.name() == taking.name() {
         return Err(Error::MovedToItself { zone: target });
     }
@@ -223,11 +226,13 @@ pub(crate) fn queue(player: &dyn Controlling, most: usize) -> Result<Value> {
     } else {
         HashMap::new()
     };
+
     let listed: Vec<Value> = player
         .described(&queued[..most.min(queued.len())])?
         .iter()
         .map(|described| {
             let mut row = written::row(described);
+
             if let Value::Object(fields) = &mut row {
                 if Some(described.track) == playing {
                     fields.insert("playing".to_owned(), Value::Bool(true));
@@ -317,6 +322,7 @@ pub(crate) fn remove(player: &dyn Controlling, track: TrackId) -> Result<Value> 
 pub(crate) fn play_playlist(player: &dyn Controlling, name: &str) -> Result<Value> {
     let offered = player.playlists()?;
     let wanted = name.trim().to_lowercase();
+
     let found = offered
         .iter()
         .find(|playlist| playlist.name == name)
@@ -326,6 +332,7 @@ pub(crate) fn play_playlist(player: &dyn Controlling, name: &str) -> Result<Valu
                 .find(|playlist| playlist.name.to_lowercase() == wanted)
         })
         .ok_or_else(|| Error::PlaylistNotOffered(PlaylistName::new(name)))?;
+
     player.activate_playlist(found.id)?;
 
     Ok(json!({ "player": player.name(), "playing": found.name }))

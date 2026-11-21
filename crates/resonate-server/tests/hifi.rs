@@ -58,21 +58,27 @@ async fn upstream(
     let address = listener.local_addr().expect("an address");
     let asked = Arc::new(Mutex::new(Vec::new()));
     let kept = Arc::clone(&asked);
+
     tokio::spawn(async move {
         loop {
             let Ok((mut stream, _)) = listener.accept().await else {
                 return;
             };
             let kept = Arc::clone(&kept);
+
             tokio::spawn(async move {
                 let mut request = vec![0; 4096];
+
                 let read = stream.read(&mut request).await.unwrap_or(0);
+
                 kept.lock()
                     .push(String::from_utf8_lossy(&request[..read]).into_owned());
+
                 let reply = format!(
                     "HTTP/1.0 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{answer}",
                     answer.len()
                 );
+
                 stream.write_all(reply.as_bytes()).await.ok();
             });
         }
@@ -103,6 +109,7 @@ async fn kept_through(
         .and_then(|params| params.self_signed(&signing))
         .expect("a certificate");
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
+
     let acceptor = gateway_tls(vec![certificate.der().clone()], key).expect("an acceptor");
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
     let address = listener.local_addr().expect("an address");
@@ -111,15 +118,19 @@ async fn kept_through(
         Some(hifi) => Gateway::through_keeping(keys, upstream, hifi, keeping),
         None => Gateway::keeping(keys, upstream, keeping),
     };
+
     tokio::spawn(gateway.serve(listener, acceptor));
 
     let mut roots = RootCertStore::empty();
+
     roots.add(certificate.der().clone()).expect("a root");
+
     let mut client = ClientConfig::builder_with_provider(Arc::new(default_provider()))
         .with_protocol_versions(&[&TLS13])
         .expect("versions")
         .with_root_certificates(roots)
         .with_no_client_auth();
+
     client.alpn_protocols = vec![b"http/1.1".to_vec()];
     Gatewayed {
         address,
@@ -154,9 +165,13 @@ impl Gatewayed {
             .unwrap_or_default();
         let request =
             format!("{method} {target} HTTP/1.1\r\nHost: localhost\r\n{authorization}{range}\r\n");
+
         tls.write_all(request.as_bytes()).await.expect("written");
+
         let mut read = Vec::new();
+
         tls.read_to_end(&mut read).await.ok();
+
         let text = String::from_utf8_lossy(&read).into_owned();
         let (head, body) = text.split_once("\r\n\r\n").expect("a whole answer");
         let status = head
@@ -191,6 +206,7 @@ impl Gatewayed {
 async fn a_request_with_the_listed_secret_is_asked_of_the_hifi_api_and_answered_without_the_secret()
 {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = gatewayed(upstream, Arc::clone(&asked)).await;
 
     let reply = gateway
@@ -205,7 +221,9 @@ async fn a_request_with_the_listed_secret_is_asked_of_the_hifi_api_and_answered_
             .to_ascii_lowercase()
             .contains("content-type: application/json")
     );
+
     let asked = gateway.asked.lock();
+
     assert_eq!(asked.len(), 1);
     assert!(asked[0].starts_with("GET /search/?i=GBN9Y1100089&limit=25 HTTP/1.0\r\n"));
     assert!(!asked[0].to_ascii_lowercase().contains("authorization"));
@@ -215,6 +233,7 @@ async fn a_request_with_the_listed_secret_is_asked_of_the_hifi_api_and_answered_
 #[tokio::test]
 async fn a_request_without_a_secret_or_with_one_not_listed_is_turned_away_and_never_forwarded() {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = gatewayed(upstream, asked).await;
 
     let none = gateway.send("GET", "/search/?i=X", None).await;
@@ -233,12 +252,14 @@ async fn a_request_without_a_secret_or_with_one_not_listed_is_turned_away_and_ne
         assert!(reply.head.contains("WWW-Authenticate: Bearer"));
         assert!(reply.body.is_empty());
     }
+
     assert!(gateway.asked.lock().is_empty());
 }
 
 #[tokio::test]
 async fn a_listed_secret_reaches_only_the_hifi_routes_and_methods() {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = gatewayed(upstream, asked).await;
 
     let elsewhere = gateway.bearing("GET", "/docs").await;
@@ -262,6 +283,7 @@ async fn a_listed_secret_reaches_only_the_hifi_routes_and_methods() {
 #[tokio::test]
 async fn a_queued_request_is_looked_at_and_withdrawn_through_the_gateway() {
     let (upstream, asked) = upstream(r#"{"requestId":"f1b5-c0de"}"#, "202 Accepted").await;
+
     let gateway = gatewayed(upstream, asked).await;
 
     let looked = gateway.bearing("GET", "/playback/requests/f1b5-c0de").await;
@@ -271,7 +293,9 @@ async fn a_queued_request_is_looked_at_and_withdrawn_through_the_gateway() {
 
     assert_eq!(looked.status, 202);
     assert_eq!(withdrawn.status, 202);
+
     let asked = gateway.asked.lock();
+
     assert!(asked[0].starts_with("GET /playback/requests/f1b5-c0de HTTP/1.0"));
     assert!(asked[1].starts_with("DELETE /playback/requests/f1b5-c0de HTTP/1.0"));
 }
@@ -279,9 +303,11 @@ async fn a_queued_request_is_looked_at_and_withdrawn_through_the_gateway() {
 #[tokio::test]
 async fn a_hifi_api_that_is_not_listening_is_a_bad_gateway() {
     let held_unlistened = TcpSocket::new_v4().expect("a socket");
+
     held_unlistened
         .bind(SocketAddr::from((Ipv4Addr::LOCALHOST, 0)))
         .expect("a port held");
+
     let closed = held_unlistened.local_addr().expect("an address");
     let gateway = gatewayed(closed, Arc::default()).await;
 
@@ -324,6 +350,7 @@ async fn hifi_serving_after(
     let playback = format!(
         r#"{{"data":{{"trackId":{TRACK},"assetPresentation":"FULL","manifestMimeType":"application/vnd.tidal.bts","manifest":"{manifest}"}}}}"#
     );
+
     tokio::spawn(async move {
         loop {
             let Ok((mut stream, _)) = listener.accept().await else {
@@ -331,11 +358,15 @@ async fn hifi_serving_after(
             };
             let kept = Arc::clone(&kept);
             let playback = playback.clone();
+
             tokio::spawn(async move {
                 let mut request = vec![0; 4096];
+
                 let read = stream.read(&mut request).await.unwrap_or(0);
                 let text = String::from_utf8_lossy(&request[..read]).into_owned();
+
                 kept.lock().push(text.clone());
+
                 let target = text.split_whitespace().nth(1).unwrap_or_default();
                 let (status, body): (&str, Vec<u8>) =
                     if target.starts_with(&format!("/track/?id={TRACK}")) {
@@ -350,11 +381,13 @@ async fn hifi_serving_after(
                     "HTTP/1.0 {status}\r\nContent-Length: {}\r\n\r\n",
                     body.len()
                 );
+
                 stream.write_all(head.as_bytes()).await.ok();
                 stream.write_all(&body).await.ok();
             });
         }
     });
+
     let hifi = HifiApi::fetching_from(
         &format!("http://{address}"),
         MediaHosts {
@@ -382,7 +415,9 @@ async fn a_track_is_downloaded_by_the_server_through_the_hifi_api_and_sent_to_a_
             .contains("content-type: audio/flac")
     );
     assert_eq!(reply.body.as_bytes(), AUDIO);
+
     let asked = asked.lock();
+
     assert!(asked[0].starts_with(&format!("GET /track/?id={TRACK}&quality=HI_RES_LOSSLESS")));
     assert!(asked.iter().all(|request| !request.contains(SECRET)));
 }
@@ -399,9 +434,11 @@ async fn a_second_download_asked_for_while_one_runs_is_told_to_come_back_and_is_
         let target = target.clone();
         async move { gateway.bearing("GET", &target).await }
     });
+
     while downloads_asked(&asked) == 0 {
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
+
     let turned_back = gateway.bearing("GET", &target).await;
     let first = running.await.expect("the first download");
     let after = gateway.bearing("GET", &target).await;
@@ -524,6 +561,7 @@ async fn a_range_is_answered_partially_whether_the_track_is_downloaded_or_cached
         );
         assert_eq!(header_of(reply, "accept-ranges").as_deref(), Some("bytes"));
     }
+
     assert_eq!(middle.status, 206);
     assert_eq!(middle.body.as_bytes(), &AUDIO[2..=6]);
     assert_eq!(
@@ -554,6 +592,7 @@ async fn a_range_past_the_end_is_unsatisfiable_and_one_not_understood_is_the_who
     let scratch = Scratch::new("unsatisfiable");
     let (gateway, _) = hifi_with_a_track_kept(cached(&scratch)).await;
     let target = format!("/file/?id={TRACK}");
+
     gateway.bearing("GET", &target).await;
 
     let past = gateway
@@ -618,6 +657,7 @@ fn searched(minutes: u64) -> Keeping {
 #[tokio::test]
 async fn a_search_asked_twice_is_asked_of_the_hifi_api_once() {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = kept_through(upstream, Arc::clone(&asked), None, searched(10)).await;
 
     let first = gateway.bearing("GET", "/search/?i=GBN9Y1100089").await;
@@ -640,6 +680,7 @@ async fn a_search_asked_twice_is_asked_of_the_hifi_api_once() {
 #[tokio::test]
 async fn a_search_is_asked_every_time_where_none_is_remembered() {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = kept_through(upstream, Arc::clone(&asked), None, searched(0)).await;
 
     gateway.bearing("GET", "/search/?i=GBN9Y1100089").await;
@@ -651,6 +692,7 @@ async fn a_search_is_asked_every_time_where_none_is_remembered() {
 #[tokio::test]
 async fn a_search_the_hifi_api_failed_is_not_remembered_and_a_request_in_the_queue_never_is() {
     let (upstream, asked) = upstream("{}", "404 Not Found").await;
+
     let gateway = kept_through(upstream, Arc::clone(&asked), None, searched(10)).await;
 
     gateway.bearing("GET", "/search/?i=GBN9Y1100089").await;
@@ -674,6 +716,7 @@ fn crowded(seats: usize, strangers: usize) -> Keeping {
 
 async fn silent_strangers(gateway: &Gatewayed, count: usize) -> Vec<TcpStream> {
     let mut held = Vec::new();
+
     for _ in 0..count {
         held.push(
             TcpStream::connect(gateway.address)
@@ -689,6 +732,7 @@ async fn silent_strangers(gateway: &Gatewayed, count: usize) -> Vec<TcpStream> {
 #[tokio::test]
 async fn strangers_who_say_nothing_hold_no_seat_a_listed_key_is_served_from() {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = kept_through(upstream, asked, None, crowded(1, 8)).await;
 
     let silent = silent_strangers(&gateway, 4).await;
@@ -697,12 +741,14 @@ async fn strangers_who_say_nothing_hold_no_seat_a_listed_key_is_served_from() {
 
     assert_eq!(turned_away.status, 401);
     assert_eq!(served.status, 200);
+
     drop(silent);
 }
 
 #[tokio::test]
 async fn a_request_with_a_listed_key_finding_every_seat_taken_is_told_to_come_back() {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = kept_through(upstream, asked, None, crowded(0, 8)).await;
 
     let turned_back = gateway.bearing("GET", "/search/?i=X").await;
@@ -717,6 +763,7 @@ async fn a_request_with_a_listed_key_finding_every_seat_taken_is_told_to_come_ba
 async fn strangers_past_the_number_the_gateway_waits_on_are_dropped_unread_and_make_room_on_leaving()
  {
     let (upstream, asked) = upstream(SEARCH_ANSWER, "200 OK").await;
+
     let gateway = kept_through(upstream, asked, None, crowded(4, 2)).await;
 
     let silent = silent_strangers(&gateway, 2).await;
@@ -724,11 +771,14 @@ async fn strangers_past_the_number_the_gateway_waits_on_are_dropped_unread_and_m
         .await
         .expect("connected");
     let mut heard = [0; 1];
+
     let dropped = tokio::time::timeout(Duration::from_secs(5), over.read(&mut heard))
         .await
         .expect("the gateway closed it");
+
     drop(silent);
     tokio::time::sleep(Duration::from_millis(200)).await;
+
     let served = gateway.bearing("GET", "/search/?i=X").await;
 
     assert!(matches!(dropped, Ok(0) | Err(_)));

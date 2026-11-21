@@ -40,6 +40,7 @@ fn every_step_a_release_shipped_is_laid_as_it_shipped() {
 fn a_store_counted_at_any_released_step_opens_and_is_carried_to_the_last() {
     for counted in 1..=STEPS_RELEASED.len() {
         let connection = Connection::open_in_memory().expect("a store in memory");
+
         for step in &MIGRATIONS[..counted] {
             connection.execute_batch(step).expect("a released step");
         }
@@ -57,6 +58,7 @@ fn a_store_counted_at_any_released_step_opens_and_is_carried_to_the_last() {
             .connection
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("the count read");
+
         assert_eq!(usize::try_from(version).expect("a count"), MIGRATIONS.len());
     }
 }

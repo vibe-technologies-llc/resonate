@@ -167,7 +167,9 @@ impl Unwrapped {
             Some(span) => Decoder::open_span(sources, &item.location, span)?,
             None => Decoder::open(sources, &item.location)?,
         };
+
         decoder.follow_format_changes();
+
         let layout = decoder.layout().cloned();
         Ok(Self {
             decoder,
@@ -208,11 +210,13 @@ impl Opening {
         let (landing, landed) = crossbeam_channel::bounded(1);
         let sources = Arc::clone(sources);
         let opened = item.clone();
+
         let spawned = thread::Builder::new()
             .name("resonate-track-open".into())
             .spawn(move || {
                 let _ = landing.send(Unwrapped::open(&opened, &sources));
             });
+
         if let Err(error) = spawned {
             tracing::warn!(%error, "no thread could be started to open a track");
         }
@@ -302,6 +306,7 @@ impl Ahead {
 
     fn relocated(mut self, to: MediaLocation, sources: &Arc<Sources>) -> Self {
         self.look();
+
         let Self {
             opening,
             came,
@@ -363,6 +368,7 @@ impl Track {
             hints,
             layout,
         } = unwrapped;
+
         let replay_gain = levelled(config, &info, hints);
         let mut track = Self {
             id: item.id,
@@ -385,6 +391,7 @@ impl Track {
             published: None,
             ended: false,
         };
+
         track.measure_where_wanted(sources, config);
         track
     }
@@ -422,6 +429,7 @@ impl Track {
             self.peak = Peak::Unmeasurable;
             return false;
         };
+
         self.peak = Peak::Unasked;
         self.hints.true_peak = Some(peak);
         self.replay_gain = levelled(config, &self.info, self.hints);
@@ -461,11 +469,13 @@ impl Track {
         let track = self.id;
         let Some(decoder) = self.decoding.home() else {
             let location = self.location.clone();
+
             return Err(Error::Decode {
                 track,
                 source: resonate_codec::Error::NotSeekable { location },
             });
         };
+
         self.ended = false;
         decoder
             .seek(to)
@@ -489,6 +499,7 @@ impl Track {
         let Some(packet) = self.decoding.last_packet() else {
             return;
         };
+
         if self.sampled == Some(packet.at) {
             return;
         }
@@ -642,6 +653,7 @@ struct Heard {
 impl Heard {
     fn registered<'a>(&'a self, commands: &'a Receiver<Request>) -> Select<'a> {
         let mut select = Select::new();
+
         select.recv(commands);
         if let Some(changes) = self.changes.as_ref() {
             select.recv(changes);
@@ -724,8 +736,10 @@ impl Engine {
         let surveyor = backend.surveyor();
         let found = surveyor.enumerate_sinks(SINK_TIMEOUT);
         let stale_sinks = found.is_err();
+
         *published.sinks.write() = found.unwrap_or_default().into();
         published.first_survey.answered();
+
         let surveying = Surveying::start(Arc::clone(&surveyor), SINK_TIMEOUT);
         let opener = backend.opener();
         let streaming = Streaming::start(Arc::clone(&opener));
@@ -805,6 +819,7 @@ impl Engine {
 
             loop {
                 let _ = parked.ready_timeout(self.budget());
+
                 if !self.take_commands() {
                     break 'running;
                 }
@@ -894,6 +909,7 @@ impl Engine {
         if self.kin.is_some() {
             return;
         }
+
         let Some(kinship) = self.config.kinship.kinship() else {
             return;
         };
@@ -915,6 +931,7 @@ impl Engine {
             }
         };
         let respread_at = asking.respread_at;
+
         self.kin = None;
 
         if !self.queue.know_kin(landed.epoch, landed.kin) {
@@ -928,6 +945,7 @@ impl Engine {
 
     fn listening(&self) -> Option<&SinkStream> {
         let output = self.output.as_ref()?;
+
         if output.deaf {
             return None;
         }
@@ -938,6 +956,7 @@ impl Engine {
         if self.fill_owed {
             return Duration::ZERO;
         }
+
         let budget = if self.at_rest() {
             AT_REST_TICK
         } else {
@@ -1079,6 +1098,7 @@ mod tests {
                 (published, count)
             }
         });
+
         assert!(republished.1 < 1_500, "{} publications", republished.1);
     }
 
@@ -1111,6 +1131,7 @@ mod tests {
         const UPSAMPLED_BLOCK: usize = 24_577;
 
         let held = ring_capacity(Duration::from_millis(100), spec(), UPSAMPLED_BLOCK);
+
         assert_eq!(held, Frames(UPSAMPLED_BLOCK as u64 * BLOCKS_A_RING_HOLDS));
     }
 
@@ -1149,6 +1170,7 @@ mod tests {
         let (announce, changes) = unbounded::<SinkChange>();
         let (answer, surveyed) = unbounded::<Surveyed>();
         let (report, events) = unbounded::<StreamEvent>();
+
         let heard = Heard {
             changes: Some(changes.clone()),
             surveyed: Some(surveyed.clone()),
@@ -1169,17 +1191,23 @@ mod tests {
         announce
             .send(SinkChange::DefaultChanged)
             .expect("the announcement lands");
+
         assert_eq!(parked.ready_timeout(SHORTEST_TICK), Ok(1));
+
         changes.try_recv().expect("the announcement is read back");
 
         answer
             .send(Ok(Vec::new()))
             .expect("the survey's answer lands");
+
         assert_eq!(parked.ready_timeout(SHORTEST_TICK), Ok(2));
+
         let _ = surveyed.try_recv().expect("the answer is read back");
 
         report.send(StreamEvent::Drained).expect("the event lands");
+
         assert_eq!(parked.ready_timeout(SHORTEST_TICK), Ok(3));
+
         events.try_recv().expect("the event is read back");
 
         assert!(parked.ready_timeout(SHORTEST_TICK).is_err());
@@ -1198,11 +1226,13 @@ mod tests {
             streamed: None,
             kin: None,
         };
+
         let mut parked = heard.registered(&commands);
 
         assert!(parked.ready_timeout(SHORTEST_TICK).is_err());
 
         drop(orders);
+
         assert_eq!(
             parked.ready_timeout(SHORTEST_TICK),
             Ok(0),

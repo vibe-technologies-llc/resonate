@@ -38,11 +38,13 @@ impl Desk {
         let connection = &self.connection;
         let notifier = Notifier::start(connection, shared.host.as_ref());
         let mut awake = Awake::start(connection, shared.host.as_ref());
+
         if let Some(notifier) = notifier.as_ref() {
             notifier.listen(shared);
         }
 
         let mut gripping = Gripping::default();
+
         for errand in errands {
             match (errand, notifier.as_ref()) {
                 (Errand::Show(shown), Some(notifier)) => notifier.show(&shown),
@@ -65,6 +67,7 @@ impl Desk {
         if let Some(notifier) = notifier.as_ref() {
             notifier.hush();
         }
+
         let _ = connection.close();
     }
 }

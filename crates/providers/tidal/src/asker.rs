@@ -90,26 +90,33 @@ impl Asker {
         let mut retried = 0;
         loop {
             self.pacing.paced();
+
             let response = send().map_err(|error| self.unreachable(op, error))?;
+
             if response.status().is_success() {
                 return Ok(Sent::Answered(response));
             }
+
             let status = response.status().as_u16();
+
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
+
                 tracing::debug!(status, ?wait, ?op, provider = %self.source, "a provider's server asked to be asked later");
                 self.pacing.cool_for(wait);
                 retried += 1;
                 continue;
             }
+
             let complaint = self
                 .read_whole(op, response)
                 .ok()
                 .and_then(|bytes| serde_json::from_slice::<Complaint>(&bytes).ok())
                 .and_then(|complaint| complaint.sub_status)
                 .and_then(|code| u16::try_from(code).ok());
+
             return Ok(Sent::Refused { status, complaint });
         }
     }

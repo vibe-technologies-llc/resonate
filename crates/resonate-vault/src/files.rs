@@ -44,6 +44,7 @@ impl MediaProvider for VaultFiles {
                 location: location.clone(),
                 source,
             })?;
+
             return Ok(Media {
                 stream: Box::new(Reading::new(unpacking)),
                 hint: inner_hint(location),

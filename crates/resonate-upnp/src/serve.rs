@@ -45,7 +45,7 @@ const SHIPPED: Limits = Limits {
     head_ends_within: HEAD_ENDS_WITHIN,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Token(u64);
 
 pub struct Server {
@@ -84,6 +84,7 @@ impl Server {
             #[cfg(test)]
             polls: AtomicUsize::new(0),
         });
+
         doorway.open(Arc::downgrade(&server), limits, "resonate-upnp-serve")?;
         Ok(server)
     }
@@ -91,6 +92,7 @@ impl Server {
     pub fn offer(&self, feed: Arc<Feed>) -> Token {
         let count = self.minted.fetch_add(1, Ordering::Relaxed);
         let token = Token(self.keys.hash_one(count));
+
         self.feeds.lock().insert(token, feed);
         token
     }
@@ -125,6 +127,7 @@ pub(crate) fn host_toward(serving_on: IpAddr, toward: SocketAddr) -> Result<Stri
             source,
         };
         let probe = UdpSocket::bind(SocketAddr::new(serving_on, 0)).map_err(route)?;
+
         probe.connect(toward).map_err(route)?;
         probe.local_addr().map_err(route)?.ip()
     } else {
@@ -175,10 +178,12 @@ fn token_in(path: &str) -> Option<Token> {
     let path = path.split(['?', '#']).next()?;
     let named = path.strip_prefix(STREAMS_UNDER)?;
     let (token, extension) = named.split_once('.')?;
+
     let well_formed = token.len() == TOKEN_DIGITS
         && token.bytes().all(|byte| byte.is_ascii_hexdigit())
         && !extension.is_empty()
         && extension.bytes().all(|byte| byte.is_ascii_alphanumeric());
+
     if !well_formed {
         return None;
     }
@@ -193,11 +198,14 @@ enum Asked<'a> {
 
 fn asked_in(held: &[u8]) -> Asked<'_> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut request = httparse::Request::new(&mut headers);
+
     match request.parse(held) {
         Ok(httparse::Status::Complete(_)) => {}
         Ok(httparse::Status::Partial) | Err(_) => return Asked::Unreadable,
     }
+
     let head_only = match request.method.unwrap_or_default() {
         "GET" => false,
         "HEAD" => true,
@@ -241,6 +249,7 @@ mod tests {
 
     fn connected(server: &Server) -> TcpStream {
         let stream = TcpStream::connect(SocketAddr::new(LOOPBACK, server.port)).expect("connects");
+
         stream
             .set_read_timeout(Some(HEARD_WITHIN))
             .expect("a read timeout");
@@ -249,6 +258,7 @@ mod tests {
 
     fn asking(server: &Server, path: &str) -> TcpStream {
         let mut stream = connected(server);
+
         stream
             .write_all(format!("GET {path} HTTP/1.1\r\nHost: x\r\n\r\n").as_bytes())
             .expect("asks");
@@ -257,6 +267,7 @@ mod tests {
 
     fn status_of(stream: &mut TcpStream) -> String {
         let mut answer = [0; 12];
+
         stream.read_exact(&mut answer).expect("a status line");
         String::from_utf8_lossy(&answer).into_owned()
     }
@@ -300,6 +311,7 @@ mod tests {
     fn a_connection_that_never_finishes_its_head_is_let_go_at_the_deadline() {
         let server = limited(4, 8, Duration::from_millis(200));
         let mut slow = connected(&server);
+
         slow.write_all(b"GET /resonate/").expect("starts a head");
 
         assert!(is_closed(&mut slow));
@@ -330,15 +342,19 @@ mod tests {
         let server = limited(1, 8, Duration::from_secs(30));
         let first = feed();
         let second = feed();
+
         let first_token = server.offer(Arc::clone(&first));
         let second_token = server.offer(Arc::clone(&second));
         let path = |token: Token| format!("{STREAMS_UNDER}{:016x}.wav", token.0);
 
         let mut held = asking(&server, &path(first_token));
+
         assert!(status_of(&mut held).contains("200"));
+
         let mut turned_away = asking(&server, &path(second_token));
 
         assert!(status_of(&mut turned_away).contains("503"));
+
         first.close();
         second.close();
     }
@@ -347,15 +363,19 @@ mod tests {
     fn a_server_waiting_on_a_slow_head_wakes_for_nothing_until_it_moves_or_its_deadline_comes() {
         let server = limited(4, 8, Duration::from_secs(30));
         let mut slow = connected(&server);
+
         slow.write_all(b"GET /resonate/").expect("starts a head");
         thread::sleep(AN_ADMISSION);
+
         let before = server.polls.load(Ordering::Relaxed);
 
         thread::sleep(AN_IDLE_WHILE);
 
         assert_eq!(server.polls.load(Ordering::Relaxed), before);
+
         slow.write_all(b"0000000000000001.wav HTTP/1.1\r\n\r\n")
             .expect("goes on");
+
         assert!(status_of(&mut slow).contains("404"));
     }
 
@@ -367,9 +387,11 @@ mod tests {
         drop(server);
 
         let deadline = Instant::now() + HEARD_WITHIN;
+
         while TcpStream::connect(address).is_ok() && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(5));
         }
+
         assert!(TcpStream::connect(address).is_err());
     }
 }

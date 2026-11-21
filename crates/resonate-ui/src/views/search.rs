@@ -61,6 +61,7 @@ fn playlist_told(
         Some(FilledFromTheLink { added, .. }) => words::search::added_to(added, name),
         None => words::search::nothing_held_yet(name),
     };
+
     if wanted > 0 {
         told = words::search::downloading_more(wanted, told);
     }
@@ -125,6 +126,7 @@ impl TopRun {
 
     pub(crate) fn at(self, row: usize) -> Option<TopEntry> {
         let mut before = 0;
+
         for (rows, entry) in self.runs() {
             if row < before + rows {
                 return Some(entry(row - before));
@@ -149,6 +151,7 @@ impl TopRun {
 
     fn line_of(self, row: usize) -> Line {
         let mut before = 0;
+
         for ((rows, _), strip) in self.runs().into_iter().zip(STRIP_RUNS) {
             if row < before + rows {
                 return match strip {
@@ -447,6 +450,7 @@ impl Matched {
             SearchShows::Artists => (self.artists, self.artists_found),
         };
         let asking = matches!(self.elsewhere, Some(Beyond::Asking | Beyond::Refining(_)));
+
         let count = held + found;
 
         let reading = format::count(count);
@@ -473,6 +477,7 @@ fn counts<const KINDS: usize>(kinds: [(usize, SaysTheCount); KINDS]) -> String {
 impl RootView {
     pub(crate) fn matches_said(&self, cx: &App) -> Option<SharedString> {
         self.search_in_front(cx)?;
+
         let matched = Matched::read(self, cx);
 
         Some(SharedString::from(matched.in_the_library()))
@@ -505,6 +510,7 @@ impl RootView {
             return;
         };
         let told = Told::of(&link);
+
         toast::tell(Notice::Noted(told.looking.to_owned()), cx);
 
         cx.spawn_in(window, async move |this, cx| {
@@ -623,6 +629,7 @@ impl RootView {
             unnamed,
         } = followed;
         let wanted = found.len();
+
         for found in found {
             self.library
                 .update(cx, |library, cx| library.want_found(found, cx));
@@ -636,6 +643,7 @@ impl RootView {
         }
 
         let library = self.library.read(cx).catalog();
+
         cx.spawn(async move |this, cx| {
             let filling = name.clone();
             let filled = cx
@@ -687,6 +695,7 @@ impl RootView {
         };
         let kept = followed.playlists.len();
         let mut wanted = 0;
+
         for read in followed.playlists {
             for found in read.found {
                 wanted += 1;
@@ -719,6 +728,7 @@ impl RootView {
             Upkeep::Once => match followed {
                 Ok(Some(moved)) => {
                     let kept = moved.playlists.len();
+
                     self.library
                         .update(cx, |library, cx| library.reload_playlists(cx));
                     self.set_pane(Pane::Playlists, cx);
@@ -861,6 +871,7 @@ impl RootView {
             .flex_wrap()
             .items_end()
             .gap_5();
+
         for tab in SearchShows::ALL {
             tabs = tabs.child(self.search_tab(tab, tab == shows, matched.counted(tab), cx));
         }
@@ -967,6 +978,7 @@ impl RootView {
                     cx,
                 ),
             };
+
             return pane.child(nothing).into_any_element();
         }
 
@@ -982,9 +994,11 @@ impl RootView {
 
         if !tracks.is_empty() {
             let mut rows = div().flex().flex_col();
+
             for (index, track) in tracks.iter().enumerate().take(SONGS_AT_THE_TOP) {
                 let row = run.row_of(TopEntry::Song(index));
                 let shift = Shift::Listing(Listed::Top);
+
                 let reached = self.reaches(shift, row, cx);
                 let listed = self.track_row(
                     &tracks,
@@ -998,6 +1012,7 @@ impl RootView {
                     },
                     cx,
                 );
+
                 rows = rows.child(
                     self.marked_where_reached(shift, row, listed, cx)
                         .when(reached, |row| row.child(self.brought_into_view(None, cx))),
@@ -1015,9 +1030,11 @@ impl RootView {
                 Beyond::Unreached(_) => words::search::unreached(),
             };
             let mut rows = div().flex().flex_col();
+
             for (index, song) in found.iter().enumerate().take(FOUND_AT_THE_TOP) {
                 let row = run.row_of(TopEntry::Found(index));
                 let reached = self.reaches(Shift::Listing(Listed::Top), row, cx);
+
                 rows = rows.child(
                     reorder::marked(self.found_row(index, song, cx), reached)
                         .when(reached, |row| row.child(self.brought_into_view(None, cx))),
@@ -1043,6 +1060,7 @@ impl RootView {
                     )
                 })
                 .collect();
+
             sections = sections
                 .child(self.section_heading(Section::Artists, matched.artists, None, cx))
                 .child(self.strip("search-artist-strip", cells, cx));
@@ -1067,6 +1085,7 @@ impl RootView {
                     )
                 })
                 .collect();
+
             sections = sections
                 .child(self.section_heading(Section::Albums, matched.albums, None, cx))
                 .child(self.strip("search-album-strip", cells, cx));
@@ -1140,6 +1159,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         const STRIP: &str = "search-artists-found-strip";
+
         let cells = found
             .iter()
             .enumerate()
@@ -1167,6 +1187,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         const STRIP: &str = "search-albums-found-strip";
+
         let cells = found
             .iter()
             .enumerate()

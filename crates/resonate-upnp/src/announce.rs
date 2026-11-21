@@ -61,13 +61,17 @@ impl Announcer {
         let failed = |source| Error::Announce { source };
 
         let socket = bound(announcing.heard_on).map_err(failed)?;
+
         socket
             .set_read_timeout(Some(STOP_HEARD_WITHIN))
             .map_err(failed)?;
+
         let heard_at = socket.local_addr().map_err(failed)?;
+
         if announcing.told.ip().is_multicast() {
             join_the_group(&socket, announcing.told.ip());
         }
+
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = Arc::clone(&stop);
         let thread = thread::Builder::new()
@@ -114,9 +118,12 @@ fn bound_at(heard_on: SocketAddr) -> io::Result<UdpSocket> {
         Domain::IPV6
     };
     let socket = Socket::new(domain, Type::DGRAM, Some(Protocol::UDP))?;
+
     socket.set_reuse_address(true)?;
     socket.bind(&heard_on.into())?;
+
     let socket = UdpSocket::from(socket);
+
     if heard_on.is_ipv4() {
         socket.set_multicast_ttl_v4(HOPS)?;
     }
@@ -128,6 +135,7 @@ fn join_the_group(socket: &UdpSocket, group: IpAddr) {
         return;
     };
     let mut joined = false;
+
     for interface in interfaces() {
         match socket.join_multicast_v4(&group, &interface) {
             Ok(()) => joined = true,
@@ -155,6 +163,7 @@ fn interfaces() -> Vec<Ipv4Addr> {
             _ => None,
         })
         .collect();
+
     addresses.sort_unstable();
     addresses.dedup();
     addresses
@@ -204,14 +213,18 @@ fn announce(socket: &UdpSocket, announcing: &Announcing, stop: &AtomicBool) {
         began: Instant::now(),
         sent: 0,
     };
+
     tell(socket, announcing, Nts::Alive);
+
     let mut told_at = Instant::now();
     let mut failing = false;
+
     while !stop.load(Ordering::Acquire) {
         if told_at.elapsed() >= announcing.every {
             tell(socket, announcing, Nts::Alive);
             told_at = Instant::now();
         }
+
         let (read, sender) = match socket.recv_from(&mut buffer) {
             Ok(heard) => {
                 failing = false;
@@ -233,16 +246,20 @@ fn announce(socket: &UdpSocket, announcing: &Announcing, stop: &AtomicBool) {
                 }
             },
         };
+
         if !neighbours::is_a_neighbour(sender.ip()) {
             continue;
         }
+
         let Some(asked) = buffer.get(..read).and_then(searched_for) else {
             continue;
         };
         let answers = answers_to(&asked, &announcing.udn);
+
         if answers.is_empty() || !answering.room_for(answers.len() as u32) {
             continue;
         }
+
         let Ok(host) = host_toward(announcing.serving_on, sender) else {
             continue;
         };
@@ -324,7 +341,9 @@ fn notified(udn: &Udn) -> [(String, String); 5] {
 
 pub(crate) fn searched_for(asked: &[u8]) -> Option<String> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut request = httparse::Request::new(&mut headers);
+
     match request.parse(asked) {
         Ok(httparse::Status::Complete(_)) => {}
         Ok(httparse::Status::Partial) | Err(_) => return None,
@@ -332,6 +351,7 @@ pub(crate) fn searched_for(asked: &[u8]) -> Option<String> {
     if request.method != Some("M-SEARCH") || request.path != Some("*") {
         return None;
     }
+
     let named = |name: &str| {
         request
             .headers
@@ -340,6 +360,7 @@ pub(crate) fn searched_for(asked: &[u8]) -> Option<String> {
             .and_then(|header| std::str::from_utf8(header.value).ok())
             .map(str::trim)
     };
+
     if named("MAN") != Some(DISCOVER) {
         return None;
     }
@@ -348,6 +369,7 @@ pub(crate) fn searched_for(asked: &[u8]) -> Option<String> {
 
 pub(crate) fn answers_to(searched: &str, udn: &Udn) -> Vec<(String, String)> {
     let notified = notified(udn);
+
     if searched == EVERYTHING {
         return notified.to_vec();
     }

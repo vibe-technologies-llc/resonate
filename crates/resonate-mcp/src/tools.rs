@@ -37,7 +37,7 @@ const GRAMMAR: &str = "Words match the title, artist and album. `artist:`, `albu
                        `is:lossy` and `is:favourite` narrow. A leading `-` denies a token, `or` \
                        offers an alternative, and quotes make a phrase.";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Tool {
     Search,
     Playlists,
@@ -1094,6 +1094,7 @@ impl Tool {
             tool: self,
             field: Field("seconds"),
         };
+
         let span = Duration::try_from_secs_f64(asked.seconds.abs()).map_err(|_| out_of_range())?;
 
         Ok(if asked.seconds.is_sign_negative() {
@@ -1109,6 +1110,7 @@ impl Tool {
             tool: self,
             field: Field("percent"),
         };
+
         if !(0.0..=WHOLE).contains(&asked.percent) {
             return Err(out_of_range());
         }
@@ -1201,6 +1203,7 @@ impl Tool {
                     .map(|id| Favoured::Artist(ArtistId::of(id))),
             )
             .collect();
+
         if favoured.is_empty() {
             return Err(Refusal::AtLeastOneOf {
                 tool: self,
@@ -1243,6 +1246,7 @@ impl Tool {
         let dropping = match (asked.row, asked.through_row, asked.matching) {
             (Some(row), through, None) => {
                 let through = through.unwrap_or(row);
+
                 if through < row {
                     return Err(Refusal::OutOfRange {
                         tool: self,

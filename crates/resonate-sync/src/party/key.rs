@@ -72,6 +72,7 @@ impl PartyKey {
                 let bytes = read_spelled::<COMMITTED_KEY_BYTES>(code)?;
                 let mut secret = [0; SYNC_KEY_BYTES];
                 let mut commitment = [0; COMMITMENT_BYTES];
+
                 secret.copy_from_slice(&bytes[..SYNC_KEY_BYTES]);
                 commitment.copy_from_slice(&bytes[SYNC_KEY_BYTES..]);
 
@@ -89,6 +90,7 @@ impl PartyKey {
             Self::FirstToClaim(key) => key.code(),
             Self::Committed { secret, commitment } => {
                 let mut bytes = [0; COMMITTED_KEY_BYTES];
+
                 bytes[..SYNC_KEY_BYTES].copy_from_slice(secret.bytes());
                 bytes[SYNC_KEY_BYTES..].copy_from_slice(commitment);
                 spelled(&bytes)
@@ -113,14 +115,18 @@ impl PartyKey {
             Self::FirstToClaim(key) => (DERIVATION_SALT, key),
             Self::Committed { secret, .. } => (COMMITTED_SALT, secret),
         };
+
         let prk = Salt::new(HKDF_SHA256, salt).extract(secret.bytes());
         let mut token = [0; 32];
         let mut sealer = [0; AES_256_KEY_BYTES];
+
         expand(&prk, TOKEN_INFO, &mut token)?;
         expand(&prk, SEALER_INFO, &mut sealer)?;
+
         let room = match self {
             Self::FirstToClaim(_) => {
                 let mut room = [0; 16];
+
                 expand(&prk, ROOM_INFO, &mut room)?;
                 SpaceId(room)
             }

@@ -66,6 +66,7 @@ fn kept_for(timeout: Option<&str>) -> Duration {
             .get(..SECONDS.len())
             .filter(|named| named.eq_ignore_ascii_case(SECONDS))
             .and_then(|_| timeout.get(SECONDS.len()..))?;
+
         if seconds.eq_ignore_ascii_case(FOREVER) {
             return Some(KEPT_AT_MOST);
         }
@@ -96,11 +97,14 @@ fn callback_for(callbacks: &str, peer: IpAddr) -> Option<Located> {
 
 pub(crate) fn subscribing(held: &[u8], method: Method, peer: IpAddr) -> Subscribing {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut request = httparse::Request::new(&mut headers);
+
     match request.parse(held) {
         Ok(httparse::Status::Complete(_)) => {}
         Ok(httparse::Status::Partial) | Err(_) => return Subscribing::Malformed,
     }
+
     let named = |name: &str| {
         request
             .headers
@@ -192,11 +196,14 @@ impl Subscribers {
     ) -> Option<String> {
         let now = Instant::now();
         let mut held = self.held.lock();
+
         held.retain(|_, subscription| subscription.until > now);
         if held.len() >= SUBSCRIBERS_AT_MOST {
             return None;
         }
+
         let sid = Udn::minted().as_str().to_owned();
+
         held.insert(
             sid.clone(),
             Subscription {
@@ -233,6 +240,7 @@ impl Subscribers {
 
     pub(crate) fn end(&self, service: Service, sid: &str) -> bool {
         let mut held = self.held.lock();
+
         if held
             .get(sid)
             .is_some_and(|subscription| subscription.service == service)
@@ -265,6 +273,7 @@ impl Subscribers {
         if changed.is_empty() {
             return;
         }
+
         let mut held = self.held.lock();
         for subscription in held
             .values_mut()
@@ -286,6 +295,7 @@ impl Subscribers {
     pub(crate) fn due(&self, revision: u32) -> Vec<Telling> {
         let now = Instant::now();
         let mut held = self.held.lock();
+
         held.retain(|_, subscription| subscription.until > now);
         held.iter()
             .filter(|(_, subscription)| subscription.awaits(revision))
@@ -306,6 +316,7 @@ impl Subscribers {
 
     pub(crate) fn settle(&self, telling: &Telling, told: bool) {
         let mut held = self.held.lock();
+
         if !told {
             held.remove(&telling.sid);
             return;
@@ -328,6 +339,7 @@ pub(crate) fn property_set(
     let properties: Vec<(&str, String)> = match service {
         Service::ContentDirectory => {
             let mut properties = vec![("SystemUpdateID", revision.to_string())];
+
             if initial || !containers.is_empty() {
                 properties.push(("ContainerUpdateIDs", container_update_ids(containers)));
             }
@@ -343,6 +355,7 @@ pub(crate) fn property_set(
         ],
     };
     let mut written = PROPERTY_SET_OPENS.to_owned();
+
     for (name, value) in properties {
         let _ = write!(
             written,
@@ -503,13 +516,17 @@ mod tests {
             .collect();
         let refused = subscribers.subscribe(Service::ContentDirectory, callback, KEPT_AT_LEAST);
         let unanswered = subscribers.due(3);
+
         for sid in &sids {
             subscribers.answered(sid);
         }
+
         let first = subscribers.due(3);
+
         for telling in &first {
             subscribers.settle(telling, telling.sid != sids[0]);
         }
+
         let again = subscribers.due(3);
         let changed_at_once = subscribers.due(4);
 

@@ -225,6 +225,7 @@ impl Test {
             Verdict::Right => words::abx::right(),
             Verdict::Wrong => words::abx::wrong(),
         };
+
         if self.is_finished() {
             return said.to_owned();
         }
@@ -233,11 +234,13 @@ impl Test {
 
     fn conclusion(&self) -> Vec<String> {
         let score = self.session.score();
+
         if score.answered == 0 {
             return vec![words::abx::none_answered().to_owned()];
         }
 
         let mut lines = vec![scored(score)];
+
         if !self.is_finished() {
             lines.push(words::abx::stopped_after(
                 score.answered,
@@ -305,6 +308,7 @@ fn the_test(
         .find(|sink| sink.id == status.sink)
         .ok_or(Error::AbxNoOutput)?;
     let sink = info.name.clone();
+
     let chain = equalisation
         .for_sink(info)
         .ok_or_else(|| Error::AbxNothingBound { sink: sink.clone() })?;
@@ -322,6 +326,7 @@ fn the_setting_test(player: &Player, contest: Contest, trials: usize) -> Result<
             .lowered()?
     };
     let test = Test::of_a_setting(trials, clock_seed(), contest, lowered)?;
+
     player
         .request(Command::Audition(Some(Audition {
             contest,
@@ -340,9 +345,11 @@ pub fn run(
     asked: AbxArgs,
 ) -> Result<()> {
     let mut named = crate::arguments::queue_items(std::slice::from_ref(file));
+
     if named.len() > 1 {
         return Err(Error::AbxSeveralSongs { named: named.len() });
     }
+
     let song = named.pop().ok_or(Error::NothingPlayableNamed)?;
 
     let engine = crate::engine_settings::engine_config(cli, config);
@@ -352,6 +359,7 @@ pub fn run(
         engine,
         Arc::new(resonate_codec::Sources::local()),
     )?);
+
     crate::sinks::confirm_sink(&player, crate::sinks::wanted_sink(cli, config).as_ref());
 
     player.send(Command::SetRepeat(RepeatMode::Track))?;
@@ -363,6 +371,7 @@ pub fn run(
 
     let (asked_to_quit, quitting) = bounded(1);
     let silenced = Arc::clone(&player);
+
     signals::quit_when_told(
         asked_to_quit,
         signals::silencing(move || vec![Arc::clone(&silenced)]),
@@ -385,6 +394,7 @@ pub fn run(
     said!("{}", test.opening());
 
     let mut played = Ok(());
+
     loop {
         select! {
             recv(events) -> event => {
@@ -547,7 +557,9 @@ mod tests {
         assert!(test.is_finished());
         assert!(test.hearing(Hear::X).is_none());
         assert_eq!(test.answered(Arm::A), None);
+
         let lines = test.conclusion();
+
         assert!(lines[0].starts_with("8 of 8 right"));
         assert!(lines[0].contains("p = 0.0039"));
         assert!(
@@ -560,7 +572,9 @@ mod tests {
     #[test]
     fn a_test_left_early_says_how_far_it_got_and_that_a_guess_shows_nothing() {
         let mut test = begun(16);
+
         let x = test.session.x().expect("a trial is due");
+
         test.answered(x.other());
 
         let lines = test.conclusion();
@@ -577,6 +591,7 @@ mod tests {
     #[test]
     fn the_verdict_after_an_answer_does_not_name_x_and_counts_on() {
         let mut test = begun(3);
+
         let x = test.session.x().expect("a trial is due");
         let verdict = test.answered(x).expect("answered");
 
@@ -589,6 +604,7 @@ mod tests {
     #[test]
     fn the_last_verdict_is_told_alone_for_the_conclusion_to_carry_the_score() {
         let mut test = begun(1);
+
         let x = test.session.x().expect("a trial is due");
         let verdict = test.answered(x.other()).expect("answered");
 
@@ -624,10 +640,12 @@ mod tests {
         else {
             panic!("abx beside --trials was refused: {parsed:?}");
         };
+
         assert_eq!(file, OsString::from("song.flac"));
         assert_eq!(trials, 24);
 
         let by_default = Cli::try_parse_from(["resonate", "abx", "song.flac"]);
+
         assert!(matches!(
             by_default,
             Ok(Cli {
@@ -640,6 +658,7 @@ mod tests {
 
     fn asked(against: &[&str]) -> AbxArgs {
         let mut words = vec!["resonate", "abx", "song.mp3"];
+
         words.extend_from_slice(against);
         match Cli::try_parse_from(words) {
             Ok(Cli {
@@ -750,6 +769,7 @@ mod tests {
                 Some(Command::Audition(Some(Audition { heard, .. }))) if heard == arm
             ));
         }
+
         assert!(matches!(
             test.putting_back(&Arc::new(Equalisation::default())),
             Command::Audition(None)

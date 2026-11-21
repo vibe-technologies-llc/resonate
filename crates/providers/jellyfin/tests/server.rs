@@ -99,6 +99,7 @@ fn unescaped(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut out = Vec::new();
     let mut at = 0;
+
     while at < bytes.len() {
         if bytes[at] == b'%'
             && let Some(byte) = text
@@ -129,11 +130,13 @@ impl Fake {
         let heard = Arc::new(Mutex::new(Vec::new()));
         let noted = Arc::clone(&heard);
         let answering: Arc<Answering> = Arc::new(answering);
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else {
                     return;
                 };
+
                 answer(stream, &noted, answering.as_ref());
             }
         });
@@ -186,9 +189,11 @@ impl Fake {
 fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
+
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
+
     let mut asked = Asked {
         method: request_line
             .split(' ')
@@ -204,13 +209,16 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     };
     let target = request_line.split(' ').nth(1).unwrap_or_default();
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
     asked.path = path.to_owned();
     asked.query = query
         .split('&')
         .filter_map(|pair| pair.split_once('='))
         .map(|(key, value)| (key.to_owned(), unescaped(value)))
         .collect();
+
     let mut length = 0;
+
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -235,13 +243,17 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
             }
         }
     }
+
     let mut body = vec![0; length];
+
     if reader.read_exact(&mut body).is_err() {
         return;
     }
     asked.body = String::from_utf8_lossy(&body).into_owned();
+
     let nth = heard.lock().len();
     let canned = answering(&asked, nth);
+
     heard.lock().push(asked);
 
     let mut written = format!(
@@ -249,11 +261,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
         canned.status,
         canned.body.len()
     );
+
     for (name, value) in &canned.headers {
         written.push_str(&format!("{name}: {value}\r\n"));
     }
     written.push_str("\r\n");
+
     let mut stream = reader.into_inner();
+
     let _ = stream.write_all(written.as_bytes());
     let _ = stream.write_all(&canned.body);
 }
@@ -276,6 +291,7 @@ fn id(id: &str) -> Id {
 
 fn library(asked: &Asked, _: usize) -> Canned {
     let user = format!("/Users/{USER_ID}/Items");
+
     if asked.is("POST", "/Users/AuthenticateByName") {
         return signed_in();
     }
@@ -429,6 +445,7 @@ fn a_page_of_artists_is_followed_by_the_next_until_the_total_is_read() {
         if asked.is("POST", "/Users/AuthenticateByName") {
             return signed_in();
         }
+
         let entries: Vec<String> = (0..500)
             .map(|each| format!(r#"{{"Id":"a-{nth}-{each}","Name":"Artist"}}"#))
             .collect();
@@ -606,6 +623,7 @@ fn an_emby_server_that_lacks_the_plain_route_is_signed_in_to_under_its_own() {
     let fake = Fake::serving(|asked, nth| match asked.path.strip_prefix("/emby") {
         Some(path) => {
             let mut under = asked.clone();
+
             under.path = path.to_owned();
             library(&under, nth)
         }
@@ -640,6 +658,7 @@ fn an_address_that_names_the_emby_route_is_signed_in_to_there_alone() {
     let fake = Fake::serving(|asked, nth| match asked.path.strip_prefix("/emby") {
         Some(path) => {
             let mut under = asked.clone();
+
             under.path = path.to_owned();
             library(&under, nth)
         }
@@ -698,12 +717,14 @@ fn a_server_asking_to_be_asked_later_is_asked_again_and_then_answers() {
 fn a_server_that_never_answers_is_given_up_within_the_patience() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
     let url = format!("http://{}", listener.local_addr().expect("an address"));
+
     thread::spawn(move || {
         for stream in listener.incoming().flatten() {
             thread::sleep(Duration::from_secs(10));
             drop(stream);
         }
     });
+
     let jellyfin = Jellyfin::at(Server {
         url,
         user: "listener".to_owned(),
@@ -731,14 +752,18 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
 
     streamed.read_to_end(&mut whole).expect("the whole file");
     streamed.seek(SeekFrom::Start(5)).expect("a seek");
+
     let mut rest = Vec::new();
+
     streamed.read_to_end(&mut rest).expect("the rest");
 
     assert_eq!(whole, AUDIO);
     assert_eq!(rest, &AUDIO[5..]);
     assert_eq!(streamed.length(), Some(AUDIO.len() as u64));
     assert_eq!(streamed.media_type.as_deref(), Some("audio/flac"));
+
     let asked = fake.heard_at("/Audio/so-1/stream");
+
     assert_eq!(asked[0].parameter("static"), Some("true"));
     assert_eq!(asked[0].parameter("api_key"), Some(TOKEN));
     assert_eq!(asked[1].range, Some(5));
@@ -774,7 +799,9 @@ fn a_cover_is_asked_for_by_the_name_the_server_gives_it_at_a_size() {
 
     assert_eq!(named, id("al-1"));
     assert_eq!(bytes, b"\xff\xd8 a cover");
+
     let asked = &fake.heard_at("/Items/al-1/Images/Primary")[0];
+
     assert_eq!(asked.parameter("maxWidth"), Some("300"));
     assert_eq!(asked.parameter("maxHeight"), Some("300"));
     assert_eq!(
@@ -807,6 +834,7 @@ fn a_song_is_marked_a_favourite_and_taken_out_through_the_users_own_favourites()
 
     let path = format!("/Users/{USER_ID}/FavoriteItems/so-1");
     let asked = fake.heard_at(&path);
+
     assert_eq!(
         asked
             .iter()
@@ -874,6 +902,7 @@ fn quick_connect(approved_after: usize) -> (Fake, Arc<Mutex<usize>>) {
         }
         if asked.is("GET", "/QuickConnect/Connect") && asked.parameter("secret") == Some(SECRET) {
             let mut polled = counted.lock();
+
             *polled += 1;
             return connected(*polled > approved_after);
         }
@@ -895,6 +924,7 @@ fn a_code_approved_elsewhere_signs_in_and_yields_the_session_the_device_was_issu
     let asking = asking(&fake);
 
     assert!(asking.offered().expect("asked whether it is offered"));
+
     let approving = asking.begun().expect("a code");
     let signed = asking
         .approved(&approving, &|| false)
@@ -906,16 +936,20 @@ fn a_code_approved_elsewhere_signs_in_and_yields_the_session_the_device_was_issu
     assert_eq!(signed.session.token, TOKEN);
     assert_eq!(signed.session.user, USER_ID);
     assert_eq!(*polled.lock(), 3);
+
     let initiated = fake.heard_at("/QuickConnect/Initiate");
     let named = initiated[0]
         .authorization
         .clone()
         .expect("an authorization");
+
     assert!(
         named.contains(&format!(r#"DeviceId="{}""#, signed.session.device)),
         "{named}"
     );
+
     let authenticated = fake.heard_at("/Users/AuthenticateWithQuickConnect");
+
     assert!(
         authenticated[0].body.contains(SECRET),
         "{}",
@@ -947,6 +981,7 @@ fn a_code_never_approved_lapses_and_keeps_nothing() {
     });
     let asked_again = asking(&forgotten);
     let approving = asked_again.begun().expect("a code");
+
     assert!(matches!(
         asked_again.approved(&approving, &|| false),
         Err(Error::AuthorizationLapsed { .. })
@@ -973,12 +1008,16 @@ fn a_cancel_ends_the_wait_and_keeps_nothing() {
 fn quick_connect_is_not_offered_by_emby_or_a_server_with_it_off_or_one_answering_a_page() {
     for answer in ["false", "<html><body>Sign in</body></html>", "null"] {
         let fake = Fake::serving(move |_, _| Canned::json(answer));
+
         assert!(!asking(&fake).offered().expect("asked"), "{answer}");
     }
+
     let missing = Fake::serving(|_, _| Canned::status(404));
+
     assert!(!asking(&missing).offered().expect("asked"));
 
     let emby = Fake::serving(|_, _| Canned::json("true"));
+
     assert!(
         !QuickConnect::at(&format!("{}/emby", emby.url))
             .offered()
@@ -1000,7 +1039,9 @@ fn an_older_server_is_begun_with_get() {
     let approving = asking(&fake).begun().expect("a code");
 
     assert_eq!(approving.code, CODE);
+
     let asked = fake.heard_at("/QuickConnect/Initiate");
+
     assert_eq!(asked.len(), 2);
     assert!(asked[1].authorization.is_some());
 }
@@ -1008,6 +1049,7 @@ fn an_older_server_is_begun_with_get() {
 #[test]
 fn a_code_refused_by_the_server_is_denied_and_the_secret_never_reaches_debug() {
     let refusing = Fake::serving(|_, _| Canned::status(401));
+
     assert!(matches!(
         asking(&refusing).begun(),
         Err(Error::AuthorizationDenied { .. })
@@ -1016,6 +1058,7 @@ fn a_code_refused_by_the_server_is_denied_and_the_secret_never_reaches_debug() {
     let (fake, _) = quick_connect(0);
     let approving = asking(&fake).begun().expect("a code");
     let shown = format!("{approving:?}");
+
     assert!(!shown.contains(SECRET), "{shown}");
     assert!(shown.contains(CODE), "{shown}");
 }

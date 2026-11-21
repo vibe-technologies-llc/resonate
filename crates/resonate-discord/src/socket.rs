@@ -37,6 +37,7 @@ const READ_AT_ONCE: usize = 4096;
 
 pub(crate) fn candidates(runtime: Option<&Path>, temporary: Option<&Path>) -> Vec<PathBuf> {
     let mut folders: Vec<&Path> = Vec::new();
+
     for folder in [runtime, temporary, Some(Path::new(SHARED_TEMPORARY))]
         .into_iter()
         .flatten()
@@ -47,6 +48,7 @@ pub(crate) fn candidates(runtime: Option<&Path>, temporary: Option<&Path>) -> Ve
     }
 
     let mut paths = Vec::new();
+
     for folder in folders {
         for sandbox in SANDBOXES {
             let within = folder.join(sandbox);
@@ -90,8 +92,10 @@ impl Wire for Socket {
 
     fn poll(&mut self, into: &mut Vec<u8>) -> Result<()> {
         reconfigured(self.0.set_nonblocking(true))?;
+
         let received = self.read_some(into);
         let restored = reconfigured(self.0.set_nonblocking(false));
+
         received?;
         restored
     }
@@ -135,6 +139,7 @@ impl Session {
 
     fn find_among(app: AppId, paths: impl IntoIterator<Item = PathBuf>) -> Result<(Self, PathBuf)> {
         let mut answered = None;
+
         for path in paths {
             match Self::open(&path, app) {
                 Ok(session) => {
@@ -157,6 +162,7 @@ impl Session {
 
     pub(crate) fn open(path: &Path, app: AppId) -> Result<Self> {
         ours(path)?;
+
         let stream = UnixStream::connect(path).map_err(|source| Error::Socket {
             op: IpcOp::Connect,
             source,
@@ -165,6 +171,7 @@ impl Session {
             op: IpcOp::Credentials,
             source,
         })?;
+
         if !peer_is_ours(peer, rustix::process::getuid().as_raw()) {
             return Err(Error::NotOurs {
                 path: path.to_path_buf(),
@@ -266,6 +273,7 @@ mod tests {
                 process::id(),
                 FOLDERS.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&path).expect("a folder");
             Self(path)
         }
@@ -329,8 +337,11 @@ mod tests {
 
         let discord = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
+
             read_frame(&mut stream).expect("a handshake");
+
             let mut wire = Vec::new();
+
             write_frame(
                 &mut wire,
                 Opcode::Frame,
@@ -345,7 +356,9 @@ mod tests {
         });
 
         let mut session = Session::open(&path, app()).expect("a session");
+
         session.set(None).expect("set");
+
         let set = discord.join().expect("the fake Discord");
 
         assert_eq!(body(&set)["cmd"], "SET_ACTIVITY");
@@ -359,11 +372,15 @@ mod tests {
 
         let (halfway, heard_half) = mpsc::channel();
         let (go_on, told_to_go_on) = mpsc::channel::<()>();
+
         let discord = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
+
             read_frame(&mut stream).expect("a handshake");
             ready(&mut stream);
+
             let mut wire = Vec::new();
+
             write_frame(
                 &mut wire,
                 Opcode::Frame,
@@ -371,7 +388,9 @@ mod tests {
                     .expect("json"),
             )
             .expect("framed");
+
             let (first, second) = wire.split_at(wire.len() / 2);
+
             stream.write_all(first).expect("written");
             halfway.send(()).expect("told");
             told_to_go_on.recv().expect("told");
@@ -380,10 +399,14 @@ mod tests {
         });
 
         let mut session = Session::open(&path, app()).expect("a session");
+
         heard_half.recv().expect("half sent");
         thread::sleep(Duration::from_millis(50));
+
         let at_half = session.drain();
+
         go_on.send(()).expect("told");
+
         let deadline = Instant::now() + Duration::from_secs(5);
         let refused = loop {
             match session.drain() {
@@ -391,6 +414,7 @@ mod tests {
                 other => break other,
             }
         };
+
         drop(discord.join().expect("the fake Discord"));
 
         assert!(at_half.is_ok());
@@ -414,11 +438,17 @@ mod tests {
         let discord = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
             let handshake = read_frame(&mut stream).expect("a handshake");
+
             ready(&mut stream);
+
             let set = read_frame(&mut stream).expect("an activity");
+
             send(&mut stream, Opcode::Ping, &json!({ "beat": 1 }));
+
             let pong = read_frame(&mut stream).expect("a pong");
+
             ponged.send(()).expect("told");
+
             let cleared = read_frame(&mut stream).expect("a clear");
             (handshake, set, pong, cleared)
         });
@@ -439,23 +469,31 @@ mod tests {
             duration: None,
             paused: false,
         };
+
         let activity = Activity::of(&presence, &playing, SystemTime::now()).expect("shown");
 
         let mut session = Session::open(&path, app()).expect("a session");
+
         session.set(Some(&activity)).expect("set");
+
         let deadline = Instant::now() + Duration::from_secs(5);
+
         while heard_the_pong.try_recv().is_err() {
             assert!(Instant::now() < deadline, "the ping was never answered");
+
             session.drain().expect("drained");
             thread::sleep(Duration::from_millis(10));
         }
         session.set(None).expect("cleared");
+
         let (handshake, set, pong, cleared) = discord.join().expect("the fake Discord");
 
         assert_eq!(handshake.opcode, Opcode::Handshake);
         assert_eq!(body(&handshake), json!({ "v": 1, "client_id": APP }));
         assert_eq!(set.opcode, Opcode::Frame);
+
         let set = body(&set);
+
         assert_eq!(set["cmd"], "SET_ACTIVITY");
         assert_eq!(set["args"]["pid"], process::id());
         assert_eq!(set["args"]["activity"]["type"], 2);
@@ -475,6 +513,7 @@ mod tests {
 
         let discord = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
+
             read_frame(&mut stream).expect("a handshake");
             send(
                 &mut stream,
@@ -484,6 +523,7 @@ mod tests {
         });
 
         let refused = Session::open(&path, app());
+
         discord.join().expect("the fake Discord");
 
         assert!(matches!(&refused, Err(error) if error.names_no_application()));
@@ -497,6 +537,7 @@ mod tests {
 
         let discord = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
+
             read_frame(&mut stream).expect("a handshake");
             ready(&mut stream);
             read_frame(&mut stream).expect("an activity");
@@ -509,7 +550,9 @@ mod tests {
         });
 
         let mut session = Session::open(&path, app()).expect("a session");
+
         session.set(None).expect("set");
+
         let stream = discord.join().expect("the fake Discord");
 
         let deadline = Instant::now() + Duration::from_secs(5);
@@ -519,6 +562,7 @@ mod tests {
                 other => break other,
             }
         };
+
         drop(stream);
 
         assert!(matches!(refused, Err(Error::Refused { code: 4002 })));
@@ -531,8 +575,10 @@ mod tests {
         let listener = UnixListener::bind(path).expect("bound");
         thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
+
             read_frame(&mut stream).expect("a handshake");
             answer(&mut stream);
+
             let _ = read_frame(&mut stream);
         })
     }
@@ -574,6 +620,7 @@ mod tests {
             drop(session);
             path
         });
+
         for fake in [closed, erred, took] {
             fake.join().expect("a fake Discord");
         }
@@ -598,6 +645,7 @@ mod tests {
         });
 
         let found = Session::find_among(app(), [refusing, folder.0.join("discord-ipc-1")]);
+
         refused.join().expect("a fake Discord");
 
         assert!(matches!(&found, Err(error) if error.names_no_application()));
@@ -608,6 +656,7 @@ mod tests {
         let folder = Folder::new();
 
         let refused = Session::open(&folder.0.join("discord-ipc-0"), app());
+
         assert!(matches!(
             refused,
             Err(Error::Socket {
@@ -682,7 +731,9 @@ mod tests {
     #[test]
     fn a_socket_shut_both_ways_is_read_as_gone_whether_waited_on_or_polled() {
         let (ours, theirs) = UnixStream::pair().expect("a pair");
+
         theirs.shutdown(Shutdown::Both).expect("shut");
+
         let mut socket = Socket(ours);
         let mut into = Vec::new();
 
@@ -704,6 +755,7 @@ mod tests {
     fn a_file_that_is_no_socket_is_not_connected_to_and_the_search_goes_on() {
         let folder = Folder::new();
         let plain = folder.0.join("discord-ipc-0");
+
         fs::write(&plain, b"").expect("a file");
 
         let refused = Session::open(&plain, app());

@@ -31,6 +31,7 @@ impl TypeAhead {
 
     pub(crate) fn cleared(&mut self) -> bool {
         let live = self.is_live();
+
         self.letters.clear();
         self.added_at = None;
         self.found = false;
@@ -57,15 +58,18 @@ impl TypeAhead {
 
 pub(crate) fn jumped(folded: &[impl AsRef<str>], from: usize, typed: &str) -> Option<usize> {
     let wanted = folded_letters(typed);
+
     if wanted.is_empty() || folded.is_empty() {
         return None;
     }
 
     let start = from % folded.len();
     let mut holding = None;
+
     for step in 0..folded.len() {
         let at = (start + step) % folded.len();
         let row = folded[at].as_ref();
+
         if row.starts_with(&wanted) {
             return Some(at);
         }
@@ -178,6 +182,7 @@ mod tests {
     fn a_letter_added_puts_the_wait_back_to_its_whole_length() {
         let first = Instant::now();
         let mut ahead = TypeAhead::default();
+
         ahead.took("e", first);
         ahead.took("c", first + HELD_FOR);
 
@@ -189,6 +194,7 @@ mod tests {
     fn a_backspace_drops_the_last_letter_and_says_whether_there_was_one() {
         let at = Instant::now();
         let mut ahead = TypeAhead::default();
+
         ahead.took("e", at);
         ahead.took("c", at);
 

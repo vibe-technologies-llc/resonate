@@ -23,6 +23,7 @@ impl Engine {
             Some(ahead) if ahead.opening.item == item && !ahead.lost => ahead.opening_at(at),
             Some(_) | None => Opening::begin(item, at, &self.sources),
         };
+
         self.opening = Some(opening);
         self.openings_begun = self.openings_begun.wrapping_add(1);
         self.transport = TransportState::Loading;
@@ -36,17 +37,21 @@ impl Engine {
         let Some(Opening { item, at, .. }) = self.opening.take() else {
             return;
         };
+
         let started = landed.and_then(|unwrapped| {
             let at = at.on_the_clock(unwrapped.info.spec.rate);
             self.started(&item, unwrapped, at)
         });
+
         if !self.deferred.is_empty() {
             self.answer_for_the_opening(started);
             return;
         }
+
         let Err(error) = started else {
             return;
         };
+
         if self.playing {
             self.fail(error);
             return;
@@ -61,6 +66,7 @@ impl Engine {
     fn answer_for_the_opening(&mut self, started: Result<()>) {
         let outcome = self.past_what_will_not_open(started);
         let outcome = self.carried_on_past_a_stranded_row(outcome);
+
         if outcome.is_ok() && self.opening.is_some() {
             return;
         }
@@ -82,10 +88,12 @@ impl Engine {
             .duration
             .filter(|duration| at > *duration)
             .map_or(at, |_| Frames::ZERO);
+
         self.track = Some(track);
         self.unbound = (!self.playing).then_some(at);
 
         let bound = self.rebind(Some(at), None);
+
         self.renegotiations = 0;
         self.emit(Event::TrackStarted(item.id));
         bound

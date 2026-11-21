@@ -43,7 +43,7 @@ const SAYS_EXPLICIT: &[&str] = &[
     "dirtyversion",
 ];
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Rating {
     Explicit,
     #[default]
@@ -94,6 +94,7 @@ pub fn rating_in_the_title(title: &str) -> Rating {
         let bracketed = BRACKETS.iter().find_map(|(opening, closing)| {
             let inside = kept.strip_suffix(*closing)?;
             let opened = inside.rfind(*opening)?;
+
             let before = inside[..opened].trim_end();
 
             (!before.is_empty()).then(|| (before, &inside[opened + opening.len_utf8()..]))
@@ -106,10 +107,12 @@ pub fn rating_in_the_title(title: &str) -> Rating {
                 (!before.is_empty()).then_some((before, suffix))
             })
         };
+
         let Some((before, qualifier)) = bracketed.or_else(dashed) else {
             return Rating::Unmarked;
         };
         let rating = says(qualifier);
+
         if rating != Rating::Unmarked {
             return rating;
         }
@@ -167,9 +170,11 @@ fn without_a_bracket_that<'a>(
         let Some(opened) = inside.rfind(*opening) else {
             continue;
         };
+
         if !qualifies(&inside[opened + opening.len_utf8()..]) {
             continue;
         }
+
         let kept = inside[..opened].trim_end();
         if !kept.is_empty() {
             return Some(kept);
@@ -181,6 +186,7 @@ fn without_a_bracket_that<'a>(
 
 pub fn without_brackets_that(title: &str, qualifies: impl Fn(&str) -> bool) -> &str {
     let mut kept = title.trim_end();
+
     while let Some(shorter) = without_a_bracket_that(kept, &qualifies) {
         kept = shorter;
     }
@@ -210,6 +216,7 @@ pub fn bare(title: &str) -> &str {
             is_a_version_qualifier(inside) || names_a_guest(inside)
         });
         let shorter = without_a_qualifying_suffix(shorter).unwrap_or(shorter);
+
         if shorter.len() == kept.len() {
             return kept;
         }
@@ -268,6 +275,7 @@ mod tests {
             without_guests("Promiscuous (feat. Timbaland)"),
             "Promiscuous"
         );
+
         for title in [
             "Promiscuous (Radio Edit)",
             "Promiscuous (Remix)",
@@ -275,6 +283,7 @@ mod tests {
         ] {
             assert_eq!(without_guests(title), title);
         }
+
         assert_eq!(
             without_guests("Promiscuous (Radio Edit) (feat. Timbaland)"),
             "Promiscuous (Radio Edit)"

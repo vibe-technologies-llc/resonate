@@ -20,6 +20,7 @@ impl Global for Drawer {}
 impl Drawer {
     pub(crate) fn new() -> Self {
         let (jobs, waiting) = unbounded::<Job>();
+
         for _ in 0..DRAWING_THREADS {
             let taken = waiting.clone();
             let spawned = thread::Builder::new()
@@ -42,6 +43,7 @@ impl Drawer {
         let job: Job = Box::new(move || {
             let _ = drawn.send(work());
         });
+
         if let Err(SendError(job)) = self.jobs.send(job) {
             job();
         }

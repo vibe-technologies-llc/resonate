@@ -68,6 +68,7 @@ impl Seeking {
             )
             .map_err(Unfetched::into_io)?,
         };
+
         self.known.validator = self
             .known
             .validator
@@ -99,7 +100,9 @@ impl Read for Seeking {
         if buf.is_empty() || self.length.is_some_and(|length| self.at >= length) {
             return Ok(0);
         }
+
         let read = self.reading()?.read(buf)?;
+
         self.at += read as u64;
         Ok(read)
     }
@@ -116,12 +119,15 @@ impl Seek for Seeking {
                 .checked_add_signed(by),
         }
         .ok_or_else(|| io::Error::from(ErrorKind::InvalidInput))?;
+
         if target == self.at {
             return Ok(target);
         }
+
         let ahead = target.checked_sub(self.at);
         let within_reach = ahead.is_some_and(|ahead| ahead <= SKIPPED_RATHER_THAN_ASKED);
         let still_reading = self.length.is_none_or(|length| target <= length);
+
         if within_reach && still_reading && self.passed_over(ahead.unwrap_or_default())? {
             return Ok(target);
         }
@@ -175,13 +181,17 @@ mod tests {
             }),
         ]);
         let mut seeking = seeking_over(&url);
+
         read_then_seek_back(&mut seeking);
+
         let mut read = Vec::new();
 
         seeking.read_to_end(&mut read).expect("the rest is read");
 
         assert_eq!(read, &WHOLE_BODY[SOUGHT_BACK_TO as usize..]);
+
         let asked = lower(&heads.lock()[1]);
+
         assert!(
             asked.contains(&format!("range: bytes={SOUGHT_BACK_TO}-")),
             "{asked}"
@@ -196,6 +206,7 @@ mod tests {
             Box::new(|_| whole_with(&["ETag: \"v2\""])),
         ]);
         let mut seeking = seeking_over(&url);
+
         read_then_seek_back(&mut seeking);
 
         let error = seeking
@@ -212,6 +223,7 @@ mod tests {
             Box::new(|_| partial_from(SOUGHT_BACK_TO as usize, WHOLE_BODY.len() + 50, &[])),
         ]);
         let mut seeking = seeking_over(&url);
+
         read_then_seek_back(&mut seeking);
 
         let error = seeking
@@ -231,6 +243,7 @@ mod tests {
             }),
         ]);
         let mut seeking = seeking_over(&url);
+
         seeking
             .read_exact(&mut [0; SOUGHT_BACK_TO as usize])
             .expect("the first part");
@@ -240,12 +253,15 @@ mod tests {
             .expect_err("the skip is refused");
         let stayed_at = seeking.stream_position().expect("the place");
         let mut read = Vec::new();
+
         seeking.read_to_end(&mut read).expect("the rest is read");
 
         assert_eq!(failed.kind(), ErrorKind::PermissionDenied);
         assert_eq!(stayed_at, SOUGHT_BACK_TO);
         assert_eq!(read, &WHOLE_BODY[SOUGHT_BACK_TO as usize..]);
+
         let asked = lower(&heads.lock()[2]);
+
         assert!(
             asked.contains(&format!("range: bytes={SOUGHT_BACK_TO}-")),
             "{asked}"

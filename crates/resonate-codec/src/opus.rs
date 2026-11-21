@@ -117,6 +117,7 @@ pub(crate) fn channels_of(params: &AudioCodecParameters) -> Option<Channels> {
             .as_deref()
             .and_then(Head::read)
             .is_some_and(|head| head.family == VORBIS_FAMILY);
+
     let order = usize::from(count)
         .checked_sub(1)
         .and_then(|at| VORBIS_ORDER.get(at))
@@ -139,6 +140,7 @@ pub(crate) fn samples_in_a_packet(packet: &[u8]) -> Option<u64> {
         FIRST_HYBRID_CONFIG..FIRST_CELT_CONFIG => HYBRID_FRAME_SAMPLES[usize::from(config & 0b1)],
         FIRST_CELT_CONFIG.. => CELT_FRAME_SAMPLES[usize::from(config & 0b11)],
     };
+
     let frames = match toc & FRAME_CODE_MASK {
         ONE_FRAME => 1,
         ARBITRARY_FRAMES => u64::from(rest.first()? & FRAME_COUNT_MASK),
@@ -161,11 +163,14 @@ pub(crate) struct Head {
 impl Head {
     pub(crate) fn read(bytes: &[u8]) -> Option<Self> {
         let fixed = bytes.get(..HEAD_BYTES)?;
+
         if fixed[..HEAD_MAGIC.len()] != *HEAD_MAGIC {
             return None;
         }
+
         let big_endian = fixed[VERSION_AT] == ISO_BMFF_VERSION;
         let pair = |at: usize| [fixed[at], fixed[at + 1]];
+
         let (pre_skip, gain) = if big_endian {
             (
                 u16::from_be_bytes(pair(PRE_SKIP_AT)),
@@ -186,6 +191,7 @@ impl Head {
                     .filter(routes_only_what_it_decodes)?,
             ),
         };
+
         if channels == 0 || (table.is_none() && channels > 2) {
             return None;
         }
@@ -254,14 +260,17 @@ impl Streams {
                 let carried = packet
                     .first()
                     .map_or(channels, |toc| if toc & STEREO_FLAG == 0 { 1 } else { 2 });
+
                 if carried == channels {
                     return decoder.decode(packet, LONGEST_PACKET_FRAMES, out);
                 }
+
                 let other = match other {
                     Some(other) => other,
                     None => other.insert(Box::new(OpusDecoder::new(OPUS_RATE as i32, carried)?)),
                 };
                 let frames = other.decode(packet, LONGEST_PACKET_FRAMES, scratch)?;
+
                 fold_to(carried, channels, &scratch[..frames * carried], out);
                 Ok(frames)
             }
@@ -275,6 +284,7 @@ fn fold_to(carried: usize, channels: usize, from: &[f32], into: &mut [f32]) {
         .zip(into.chunks_exact_mut(channels))
     {
         let mean = frame.iter().sum::<f32>() / carried as f32;
+
         to.fill(mean);
     }
 }
@@ -309,6 +319,7 @@ impl Opus {
             },
         };
         let count = usize::from(head.channels);
+
         if count != channels.count() || count > MOST_CHANNELS || count == 0 {
             return unsupported_error("opus: the header and the track disagree about the channels");
         }
@@ -336,6 +347,7 @@ fn planes_of(channels: &Channels, count: usize) -> [usize; MOST_CHANNELS] {
         return planes;
     };
     let order = VORBIS_ORDER[count - 1];
+
     if order.iter().any(|position| !held.contains(*position)) {
         return planes;
     }
@@ -382,8 +394,10 @@ impl AudioDecoder for Opus {
 
         self.buffer.clear();
         self.buffer.render_uninit(Some(frames));
+
         let decoded = &self.interleaved[..frames * channels];
         let amplitude = self.amplitude.unwrap_or(1.0);
+
         for (channel, plane_at) in self.planes[..channels].iter().enumerate() {
             let Some(plane) = self.buffer.plane_mut(*plane_at) else {
                 continue;
@@ -431,6 +445,7 @@ mod tests {
 
     fn head(version: u8, channels: u8, pre_skip: [u8; 2], gain: [u8; 2], family: u8) -> Vec<u8> {
         let mut bytes = HEAD_MAGIC.to_vec();
+
         bytes.extend_from_slice(&[version, channels]);
         bytes.extend_from_slice(&pre_skip);
         bytes.extend_from_slice(&48_000_u32.to_le_bytes());
@@ -458,6 +473,7 @@ mod tests {
 
         for read in [ogg, mp4] {
             let read = read.expect("a well-formed head");
+
             assert_eq!(read.pre_skip, 312);
             assert_eq!(read.gain, -256);
             assert_eq!(read.table, None);
@@ -471,6 +487,7 @@ mod tests {
         let plain = Head::read(&head(1, 1, [0, 0], [0, 0], 0)).expect("a well-formed head");
 
         let amplitude = quieter.amplitude().expect("a gain to apply");
+
         assert!((amplitude - 10_f32.powf(-6.0 / 20.0)).abs() < 1e-6);
         assert_eq!(plain.amplitude(), None);
     }
@@ -478,19 +495,27 @@ mod tests {
     #[test]
     fn a_surround_head_carries_its_mapping_table_and_a_wide_plain_one_is_refused() {
         let mut surround = head(1, 6, [0, 0], [0, 0], 1);
+
         surround.extend_from_slice(&[4, 2, 0, 4, 1, 2, 3, 5]);
 
         let read = Head::read(&surround).expect("a surround head");
         let table = read.table.expect("a mapping table");
+
         assert_eq!((table.stream_count, table.coupled_count), (4, 2));
         assert_eq!(table.mapping, vec![0, 4, 1, 2, 3, 5]);
 
         assert_eq!(Head::read(&head(1, 6, [0, 0], [0, 0], 0)), None);
+
         let mut past_what_is_decoded = surround.clone();
+
         past_what_is_decoded[HEAD_BYTES + 2] = 6;
+
         assert_eq!(Head::read(&past_what_is_decoded), None);
+
         let mut more_coupled_than_streams = surround.clone();
+
         more_coupled_than_streams[HEAD_BYTES + 1] = 5;
+
         assert_eq!(Head::read(&more_coupled_than_streams), None);
         assert_eq!(Head::read(&surround[..HEAD_BYTES + 3]), None);
         assert_eq!(Head::read(b"OpusTags"), None);
@@ -520,6 +545,7 @@ mod tests {
 
     fn opus_params(channels: Channels, extra: Vec<u8>) -> AudioCodecParameters {
         let mut params = AudioCodecParameters::new();
+
         params
             .for_codec(CODEC_ID_OPUS)
             .with_channels(channels)
@@ -530,6 +556,7 @@ mod tests {
     #[test]
     fn a_vorbis_ordered_stream_the_container_left_unplaced_is_placed_in_vorbis_order() {
         let mut surround = head(1, 6, [0, 0], [0, 0], VORBIS_FAMILY);
+
         surround.extend_from_slice(&[4, 2, 0, 4, 1, 2, 3, 5]);
 
         let placed = channels_of(&opus_params(Channels::Discrete(6), surround));
@@ -550,13 +577,16 @@ mod tests {
     #[test]
     fn a_stream_of_undefined_order_or_one_the_container_placed_is_left_as_it_is() {
         let mut undefined = head(1, 6, [0, 0], [0, 0], 255);
+
         undefined.extend_from_slice(&[4, 2, 0, 4, 1, 2, 3, 5]);
+
         assert_eq!(
             channels_of(&opus_params(Channels::Discrete(6), undefined)),
             Some(Channels::Discrete(6))
         );
 
         let placed = Channels::Positioned(Position::FRONT_LEFT | Position::FRONT_RIGHT);
+
         assert_eq!(
             channels_of(&opus_params(placed.clone(), head(1, 2, [0, 0], [0, 0], 0))),
             Some(placed)
@@ -590,11 +620,15 @@ mod tests {
     #[test]
     fn a_packet_carrying_fewer_channels_than_the_stream_is_heard_on_all_of_them() {
         let mut stereo = [0.0; 4];
+
         fold_to(1, 2, &[0.5, -0.25], &mut stereo);
+
         assert_eq!(stereo, [0.5, 0.5, -0.25, -0.25]);
 
         let mut mono = [0.0; 2];
+
         fold_to(2, 1, &[0.5, 0.25, -1.0, 0.0], &mut mono);
+
         assert_eq!(mono, [0.375, -0.5]);
     }
 }

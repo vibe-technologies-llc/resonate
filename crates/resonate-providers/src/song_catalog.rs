@@ -96,13 +96,16 @@ impl Read for ExactBytes {
         let Some(remaining) = &mut self.remaining else {
             return self.streamed.read(buffer);
         };
+
         if *remaining == 0 || buffer.is_empty() {
             return Ok(0);
         }
+
         let limit = usize::try_from(*remaining)
             .unwrap_or(usize::MAX)
             .min(buffer.len());
         let read = self.streamed.read(&mut buffer[..limit])?;
+
         if read == 0 {
             return Err(io::Error::from(io::ErrorKind::UnexpectedEof));
         }

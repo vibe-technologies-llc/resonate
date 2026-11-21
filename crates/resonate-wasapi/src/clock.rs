@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::num::NonZeroU64;
@@ -55,10 +55,12 @@ impl ClockReading {
         if self.counter_in_hundred_nanoseconds == 0 {
             return None;
         }
+
         let clock_now = now.nanos();
         let read_at = self
             .counter_in_hundred_nanoseconds
             .saturating_mul(NANOS_A_HUNDRED_NANOSECOND_TICK);
+
         if clock_now.abs_diff(read_at) > READING_TRUSTED_WITHIN_NANOS {
             return None;
         }

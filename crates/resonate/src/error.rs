@@ -9,7 +9,7 @@ use thiserror::Error;
 
 use crate::{cli::AbxOfArg, sleep::Spoken, suggest::SuggestionName};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ArtistName(Box<str>);
 
 impl ArtistName {
@@ -24,7 +24,7 @@ impl fmt::Display for ArtistName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Given(Box<str>);
 
 impl Given {
@@ -39,7 +39,7 @@ impl fmt::Display for Given {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Named {
     Track,
     Album,
@@ -60,7 +60,7 @@ impl fmt::Display for Named {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ValueKind {
     Text,
     Boolean,
@@ -84,7 +84,7 @@ impl fmt::Display for ValueKind {
 }
 
 #[cfg(all(feature = "ui", unix, not(target_os = "macos")))]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum IconOp {
     Read,
     Stage,
@@ -92,7 +92,7 @@ pub enum IconOp {
 }
 
 #[cfg(feature = "online")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum SignOutOp {
     Jar,
     Profile,

@@ -124,9 +124,11 @@ pub(crate) struct KeptSheets(Mutex<Vec<(u64, Kept)>>);
 impl KeptSheets {
     fn read(&self, id: u64) -> Option<Kept> {
         let mut held = self.0.lock();
+
         let at = held.iter().position(|(kept, _)| *kept == id)?;
         let read = held.remove(at);
         let kept = read.1.clone();
+
         held.push(read);
 
         Some(kept)
@@ -145,6 +147,7 @@ impl KeptSheets {
 
     fn keep(&self, id: u64, kept: Kept) {
         let mut held = self.0.lock();
+
         held.retain(|(held, _)| *held != id);
         if held.len() >= SHEETS_KEPT {
             held.remove(0);
@@ -157,7 +160,9 @@ impl KeptSheets {
 impl MobilePlayer {
     pub fn keep_lyric_text(&self, id: u64, text: String) -> Result<()> {
         refuse_oversized_lyrics(text.len())?;
+
         let parsed = read_lyrics(SourceId::new("embedded")?, &text)?;
+
         if let Some(parsed) = parsed {
             let previous = self.cached_lyrics(id)?;
             if previous
@@ -174,8 +179,10 @@ impl MobilePlayer {
 
     pub fn keep_sidecar_lyrics(&self, id: u64, bytes: Vec<u8>) -> Result<()> {
         refuse_oversized_lyrics(bytes.len())?;
+
         let track = self.catalog.track(id)?;
         let mut wanted = resonate_lyrics::Wanted::for_media(location(&track.uri)?);
+
         wanted.title = Some(track.title);
         wanted.artist = Some(track.artist);
         wanted.duration =
@@ -203,6 +210,7 @@ impl MobilePlayer {
     pub fn lyrics(&self, id: u64, refresh: bool) -> Result<LyricSheet> {
         let track = self.catalog.track(id)?;
         let cached = self.cached_lyrics(id)?;
+
         if self.services.online.client().is_reaching()
             && (refresh || self.catalog.lyric_text(id)?.is_none())
         {
@@ -243,6 +251,7 @@ impl MobilePlayer {
                 Err(error) => tracing::debug!(%error, "cached lyrics cover a refused lookup"),
             }
         }
+
         let held = self.cached_lyrics(id)?;
 
         Ok(sheet_of(id, held.as_ref()))
@@ -254,7 +263,9 @@ impl MobilePlayer {
             LyricNudge::Later => ahead.later(),
             LyricNudge::AsWritten => LyricsAhead::ZERO,
         })?;
+
         self.services.lyrics.moved(id, ahead);
+
         let held = self.cached_lyrics(id)?;
 
         Ok(sheet_of(id, held.as_ref()))
@@ -315,6 +326,7 @@ impl MobilePlayer {
             None => None,
         };
         let kept = held.clone().map_or(Kept::Wordless, Kept::Sheet);
+
         self.services.lyrics.keep(id, kept);
 
         Ok(held)
@@ -336,6 +348,7 @@ fn parse_lyrics(text: &str, document: Option<&str>, origin: &str) -> Result<Opti
     } else {
         SourceId::new(origin)?
     };
+
     if let Some(document) = document
         && let Ok(read) = read_document(source.clone(), document)
         && read.lyrics.is_some()
@@ -381,12 +394,14 @@ fn sheet_of(id: u64, held: Option<&Held>) -> LyricSheet {
     };
     let ahead = *ahead;
     let mut written = 0;
+
     let lines: Vec<LyricRow> = lyrics
         .lines()
         .iter()
         .enumerate()
         .map(|(index, line)| {
             let ordinal = written;
+
             if !line.is_blank() {
                 written += 1;
             }
@@ -450,10 +465,12 @@ fn unlit() -> LyricFrame {
 fn frame_of(held: &Held, heard: Duration) -> LyricFrame {
     let lyrics = &held.lyrics;
     let position = held.ahead.read(heard);
+
     let line = lyrics.line_at(position);
     let lit = lyrics.voices_in_play(position);
     let waiting = lyrics.waiting_at(position);
     let ended = lyrics.has_ended(position).then_some(lyrics.lines().len());
+
     let read_at = waiting.map(|waiting| waiting.next).or(ended).or(line);
     let reads = if lyrics.timing() == Timing::Unsynced {
         LyricReads::Evenly
@@ -576,6 +593,7 @@ mod tests {
             }),
         );
         sheets.keep(8, Kept::Wordless);
+
         let held = kept_frame(&sheets, 7, 1_500).expect("a held sheet's frame");
 
         assert_eq!(held.read_at, Some(0));
@@ -601,16 +619,19 @@ mod tests {
         let player = player();
         let id = song(&player, "unread");
         let unreadable = "[00:01.00]la\n".repeat(60_000);
+
         player
             .catalog
             .keep_lyrics(id, Some(&unreadable), None, "embedded")
             .expect("a stored text");
 
         let refused = player.lyric_frame(id, 1_500);
+
         player
             .catalog
             .keep_lyrics(id, Some("[00:01.00]la"), None, "embedded")
             .expect("a stored text");
+
         let again = player.lyric_frame(id, 1_500);
 
         assert_eq!(refused, unlit());
@@ -625,6 +646,7 @@ mod tests {
 
     fn sung(player: &MobilePlayer, sheet: &str) -> u64 {
         let id = song(player, "sung");
+
         player
             .keep_lyric_text(id, sheet.into())
             .expect("a readable sheet");
@@ -819,7 +841,9 @@ mod tests {
                 .remember_lyrics(id, Some(sheet(&["a line"])))
                 .expect("a sheet remembered");
         }
+
         let read = player.lyric_frame(1, 500);
+
         player
             .remember_lyrics(17, Some(sheet(&["another line"])))
             .expect("a sheet remembered");
@@ -846,6 +870,7 @@ mod tests {
                 .remember_lyrics(other, Some(sheet(&["a line"])))
                 .expect("a sheet remembered");
         }
+
         let forgotten = player.services.lyrics.read(id).is_none();
         let frame = player.lyric_frame(id, 1_500);
 
@@ -877,11 +902,13 @@ mod tests {
         let id = sung(&player, "[00:01.00]one\n[00:05.00]two\n[00:30.00]three");
 
         let before = player.lyric_frame(id, 4_200);
+
         for _ in 0..10 {
             player
                 .nudge_lyrics(id, LyricNudge::Earlier)
                 .expect("a nudge kept");
         }
+
         let sheet = player.lyrics(id, false).expect("the kept sheet");
         let moved = player.lyric_frame(id, 4_200);
         let kept = player.kept_lyric_frame(id, 4_200).expect("a held sheet");
@@ -907,6 +934,7 @@ mod tests {
         let player = player();
         let id = sung(&player, "[00:01.00]one\n[00:05.00]two\n[00:30.00]three");
         let other = song(&player, "other");
+
         player
             .keep_lyric_text(
                 other,
@@ -917,7 +945,9 @@ mod tests {
         let later = player
             .nudge_lyrics(id, LyricNudge::Later)
             .expect("a nudge kept");
+
         player.services.lyrics.forget(id);
+
         let read_again = player.lyric_frame(id, 5_050);
         let elsewhere = player.lyric_frame(other, 5_050);
         let put_back = player
@@ -963,9 +993,11 @@ mod tests {
         let id = song(&player, "late");
 
         let before = player.lyric_frame(id, 1_500);
+
         player
             .keep_lyric_text(id, "[00:01.00]one\n[00:30.00]two".into())
             .expect("a readable sheet");
+
         let after = player.lyric_frame(id, 1_500);
 
         assert_eq!(before, unlit());

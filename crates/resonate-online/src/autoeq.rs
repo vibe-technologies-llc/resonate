@@ -162,6 +162,7 @@ impl AutoEq {
                 op: EqOp::Index,
             });
         };
+
         self.keep_index(&text);
         Ok(text)
     }
@@ -175,6 +176,7 @@ impl AutoEq {
         let told = self
             .text_of(LookupOp::Correction, &path, LARGEST_PROFILE)
             .map_err(|error| self.refused(error, EqOp::Fetch))?;
+
         if told
             .as_deref()
             .is_some_and(|text| !reads_as_a_correction(text))
@@ -216,6 +218,7 @@ impl Corrections for AutoEq {
         let text = settled(self.remembered_index(), || self.fetch_index())?;
 
         let catalogue = Arc::new(Catalogue::read(&text));
+
         *self.read.lock() = Some(Arc::clone(&catalogue));
         Ok(catalogue)
     }
@@ -266,11 +269,13 @@ mod tests {
         let catalogue = Catalogue::read(INDEX);
 
         assert!(catalogue.len() >= 3);
+
         let hd650 = catalogue
             .devices()
             .iter()
             .find(|device| device.label == "Sennheiser HD 650")
             .expect("the index names it");
+
         assert_eq!(hd650.measured_by, "oratory1990");
     }
 
@@ -384,15 +389,18 @@ mod tests {
         let base = format!("http://{}", listener.local_addr().expect("an address"));
         let served = thread::spawn(move || {
             let mut asked = Vec::new();
+
             for _ in 0..requests {
                 let (mut stream, _) = listener.accept().expect("a connection");
                 let mut head = Vec::new();
                 let mut byte = [0u8; 1];
+
                 while !head.ends_with(b"\r\n\r\n")
                     && stream.read(&mut byte).expect("a request") == 1
                 {
                     head.push(byte[0]);
                 }
+
                 let head = String::from_utf8(head).expect("a head in ASCII");
                 let path = head
                     .lines()
@@ -424,6 +432,7 @@ mod tests {
                     }
                 };
                 let _ = stream.write_all(response.as_bytes());
+
                 asked.push(Asked { path, user_agent });
             }
             asked
@@ -443,6 +452,7 @@ mod tests {
     #[test]
     fn the_whole_index_is_asked_for_once_and_lists_every_measurer_of_a_model_beside_the_others() {
         const INDEX_PATH: &str = "/results/INDEX.md";
+
         let ananda_by_crinacle =
             DeviceId::new("crinacle/GRAS 43AG-7 over-ear/HIFIMAN Ananda").expect("a path");
         let ananda_by_oratory =
@@ -460,6 +470,7 @@ mod tests {
         let first = source.catalogue().expect("the index is read");
         let second = source.catalogue().expect("the index is kept for the run");
         let sought = search(&first, "ananda");
+
         let measurers: Vec<&str> = sought
             .iter()
             .filter_map(|found| first.device(*found))
@@ -482,7 +493,9 @@ mod tests {
         assert_eq!(asked.len(), 3);
         assert!(matches!(&fetched[0].profile, Ok(Some(profile)) if profile.bands().len() == 10));
         assert!(matches!(fetched[1].profile, Ok(None)));
+
         let named = format!("resonate/{}", env!("CARGO_PKG_VERSION"));
+
         assert!(
             asked.iter().all(|asked| asked.user_agent == named),
             "a request said more than what this build is: {:?}",

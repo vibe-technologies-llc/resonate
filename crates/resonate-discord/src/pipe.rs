@@ -53,6 +53,7 @@ impl Pipe {
         let stream = Arc::new(stream);
         let (sender, chunks) = unbounded();
         let reading = Arc::clone(&stream);
+
         thread::Builder::new()
             .name(READER_THREAD.into())
             .spawn(move || {
@@ -141,6 +142,7 @@ impl Session {
 
     fn find_among(app: AppId, paths: impl IntoIterator<Item = PathBuf>) -> Result<(Self, PathBuf)> {
         let mut answered = None;
+
         for path in paths {
             match Self::open(&path, app) {
                 Ok(session) => {

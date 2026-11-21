@@ -107,8 +107,10 @@ impl CommandPalette {
             self.selected = 0;
             return;
         }
+
         let current = self.selected.min(total - 1) as isize;
         let next = (current + delta).rem_euclid(total as isize) as usize;
+
         self.selected = next;
         self.reached_unseen.set(true);
     }
@@ -118,7 +120,9 @@ impl CommandPalette {
             self.selected = 0;
             return;
         }
+
         let current = self.selected.min(total - 1);
+
         self.selected = if down {
             (current + PAGE_STEP).min(total - 1)
         } else {
@@ -174,7 +178,9 @@ impl RootView {
             palette.mode = Mode::Root;
             palette.reset_selection();
             palette.clear_hits();
+
             let field = palette.query.clone();
+
             field.update(cx, |field, cx| {
                 field.clear(cx);
                 field.take_focus(window, cx);
@@ -183,6 +189,7 @@ impl RootView {
             field
         });
         let _ = query;
+
         cx.notify();
     }
 
@@ -251,6 +258,7 @@ impl RootView {
             let (parsed, tail) = Scope::parse(text);
             (parsed, tail.to_owned())
         };
+
         let next = if current_scope == scope {
             rest
         } else if rest.is_empty() {
@@ -275,6 +283,7 @@ impl RootView {
         if !self.command_palette.read(cx).is_open() {
             return;
         }
+
         let (mode, raw) = {
             let palette = self.command_palette.read(cx);
             (palette.mode, palette.query.read(cx).text().to_owned())
@@ -292,7 +301,9 @@ impl RootView {
         }
 
         let (scope, trimmed) = Scope::parse(&raw);
+
         let wants_library = matches!(scope, Scope::All | Scope::Music) && !trimmed.is_empty();
+
         if !wants_library {
             self.command_palette
                 .update(cx, |palette, _| palette.clear_hits());
@@ -301,18 +312,22 @@ impl RootView {
         }
 
         let wanted = trimmed.to_owned();
+
         if self.command_palette.read(cx).hits.query == wanted {
             cx.notify();
             return;
         }
 
         let catalog = self.library.read(cx).catalog();
+
         self.command_palette.update(cx, |palette, cx| {
             let ticket = palette.asked.moved();
+
             palette.hits.query = wanted.clone();
             palette.hits.loading = true;
             palette._search_task = cx.spawn(async move |this, cx| {
                 cx.background_executor().timer(LIBRARY_SEARCH_SETTLE).await;
+
                 let query_text = wanted.clone();
                 let found = cx
                     .background_executor()
@@ -368,7 +383,9 @@ impl RootView {
         if !self.command_palette.read(cx).is_open() {
             return;
         }
+
         let total = self.command_palette_entries(cx).len();
+
         self.command_palette.update(cx, |palette, cx| {
             palette.step(delta, total);
             cx.notify();
@@ -380,7 +397,9 @@ impl RootView {
         if !self.command_palette.read(cx).is_open() {
             return;
         }
+
         let total = self.command_palette_entries(cx).len();
+
         self.command_palette.update(cx, |palette, cx| {
             palette.step_page(down, total);
             cx.notify();
@@ -405,11 +424,14 @@ impl RootView {
         if !self.command_palette.read(cx).is_open() {
             return;
         }
+
         let entries = self.command_palette_entries(cx);
         let selected = self.command_palette.read(cx).selected;
+
         let Some(entry) = entries.get(selected).or_else(|| entries.first()) else {
             return;
         };
+
         self.execute_palette_action(entry.action.clone(), entry.mru_key, window, cx);
     }
 
@@ -441,6 +463,7 @@ impl RootView {
             PaletteAction::Stop => self.send(Command::Stop, cx),
             PaletteAction::ToggleShuffle => {
                 let shuffle = self.player.read(cx).state().shuffle;
+
                 self.send(Command::SetShuffle(!shuffle), cx);
             }
             PaletteAction::CycleRepeat => {
@@ -449,6 +472,7 @@ impl RootView {
                     RepeatMode::Queue => RepeatMode::Track,
                     RepeatMode::Track => RepeatMode::Off,
                 };
+
                 self.send(Command::SetRepeat(repeat), cx);
             }
             PaletteAction::ToggleMute => self.toggle_mute(cx),
@@ -482,11 +506,13 @@ impl RootView {
             PaletteAction::AddZone => self.add_a_zone(cx),
             PaletteAction::ToggleEqualiser => {
                 let on = self.equaliser.read(cx).bindings().enabled;
+
                 self.switch_the_equaliser(!on, cx);
             }
             PaletteAction::SelectEqProfile(profile) => {
                 let sink = self.player.read(cx).output_settings().sink.clone();
                 let binding = profile.map(Binding::Profile);
+
                 self.bind_a_curve(sink, binding, cx);
             }
             PaletteAction::SetSleep(until) => self.send(Command::SleepUntil(until), cx),
@@ -500,6 +526,7 @@ impl RootView {
                     },
                     ..kept
                 };
+
                 self.wear(wearing, &Setting::Theme(palette), cx);
                 self.store(&Setting::FollowDesktopScheme(false), cx);
             }
@@ -508,10 +535,12 @@ impl RootView {
                     accent,
                     ..theme::chosen()
                 };
+
                 self.wear(dressed, &Setting::Accent(accent), cx);
             }
             PaletteAction::ToggleReducedMotion => {
                 let reduced = cx.global::<ResonateApp>().reduced_motion;
+
                 self.reduce_motion(!reduced, cx);
             }
             PaletteAction::ToggleFullScreen => window.toggle_fullscreen(),
@@ -559,6 +588,7 @@ impl RootView {
                 palette.hits.loading,
             )
         };
+
         let (active_scope, _) = if mode == Mode::Root {
             Scope::parse(&raw_query)
         } else {
@@ -813,9 +843,11 @@ impl RootView {
             .gap_0p5();
 
         let mut last_section: Option<SectionKind> = None;
+
         for (index, entry) in entries.iter().enumerate() {
             if last_section != Some(entry.section) {
                 let top_pad = last_section.is_some();
+
                 last_section = Some(entry.section);
                 content = content.child(
                     div()
@@ -829,6 +861,7 @@ impl RootView {
             }
 
             let is_selected = index == selected;
+
             content = content.child(self.palette_row(
                 entry,
                 index,
@@ -982,12 +1015,14 @@ impl RootView {
 
     fn palette_footer(&self, mode: Mode, active_scope: Scope, cx: &mut Context<Self>) -> Div {
         let mut scopes = div().flex().items_center().gap_1();
+
         if mode == Mode::Root {
             for scope in Scope::FILTERS {
                 let prefix = scope.prefix().unwrap_or('>');
                 let label = scope_label(scope);
                 let chosen = active_scope == scope;
                 let hint = words::command_palette::scope_hint(label);
+
                 scopes = scopes.child(
                     div()
                         .id(("palette-scope", prefix as usize))
@@ -1226,6 +1261,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("secondary-k");
         driven.settle();
+
         assert!(driven.read(|root, cx| root.command_palette.read(cx).is_open()));
 
         driven.cx.simulate_input("lyrics");
@@ -1245,16 +1281,19 @@ mod tests {
 
         driven.cx.simulate_keystrokes("secondary-k");
         driven.settle();
+
         assert!(driven.read(|root, cx| root.command_palette.read(cx).is_open()));
 
         driven.cx.simulate_keystrokes("secondary-k");
         driven.settle();
+
         assert!(driven.read(|root, cx| !root.command_palette.read(cx).is_open()));
 
         driven.cx.simulate_keystrokes("secondary-k");
         driven.settle();
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
+
         assert!(driven.read(|root, cx| !root.command_palette.read(cx).is_open()));
     }
 
@@ -1277,6 +1316,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("backspace");
         driven.settle();
+
         assert!(driven.read(|root, cx| {
             root.command_palette.read(cx).is_open()
                 && root.command_palette.read(cx).mode() == super::Mode::Root
@@ -1317,6 +1357,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("secondary-k");
         driven.settle();
+
         assert_eq!(
             driven.read(|root, cx| root.command_palette.read(cx).selected),
             0
@@ -1324,6 +1365,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("down");
         driven.settle();
+
         assert_eq!(
             driven.read(|root, cx| root.command_palette.read(cx).selected),
             1
@@ -1331,6 +1373,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("up");
         driven.settle();
+
         assert_eq!(
             driven.read(|root, cx| root.command_palette.read(cx).selected),
             0
@@ -1338,12 +1381,14 @@ mod tests {
 
         driven.cx.simulate_keystrokes("up");
         driven.settle();
+
         assert!(driven.read(|root, cx| root.command_palette.read(cx).selected) > 0);
     }
 
     #[gpui::test]
     fn command_palette_finds_and_opens_an_artist_from_the_library(cx: &mut TestAppContext) {
         let folder = crate::driven::Folder::new();
+
         folder.tagged(
             "echoes.wav",
             1,
@@ -1353,8 +1398,11 @@ mod tests {
                 (b"IPRD", "Meddle"),
             ],
         );
+
         let library = Arc::new(Library::open_in_memory().expect("an in-memory catalog"));
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::open(cx, library);
 
         driven.cx.simulate_keystrokes("secondary-k");

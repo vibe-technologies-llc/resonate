@@ -90,8 +90,10 @@ fn disagree(declared: Option<&str>, wanted: Option<&str>) -> bool {
     let (Some(declared), Some(wanted)) = (declared, wanted) else {
         return false;
     };
+
     let (declared_text, wanted_text) = (declared, wanted);
     let (declared, wanted) = (folded(declared), folded(wanted));
+
     if declared.is_empty() || wanted.is_empty() || transliterated(&declared, &wanted) {
         return false;
     }
@@ -157,6 +159,7 @@ pub(crate) fn read(source: SourceId, text: &str) -> Result<Sheet> {
     }
 
     let mut reading = Reading::new(source);
+
     for line in lines_of(text) {
         reading.absorb(line)?;
     }
@@ -170,8 +173,10 @@ pub(crate) fn lines_of(text: &str) -> impl Iterator<Item = &str> {
         let Some(end) = current.find(['\n', '\r']) else {
             return Some(current);
         };
+
         let after = &current[end..];
         let ending = if after.starts_with("\r\n") { 2 } else { 1 };
+
         rest = Some(&after[ending..]);
         Some(&current[..end])
     })
@@ -198,11 +203,15 @@ impl Stamped {
         let mut sung_from: Option<Duration> = None;
         let mut stamped = false;
         let mut rest = line;
+
         while let Some(opens) = rest.find('<') {
             let (before, after) = rest.split_at(opens);
+
             gathering.push_str(before);
+
             let opened = &after[1..];
             let reach = opened.floor_char_boundary(LONGEST_WORD_STAMP + 1);
+
             let stamp = opened[..reach].find('>').and_then(|closes| {
                 let inside = &opened[..closes];
                 let tail = &opened[closes + 1..];
@@ -213,8 +222,11 @@ impl Stamped {
                 rest = &after[1..];
                 continue;
             };
+
             stamped = true;
+
             let word = std::mem::take(&mut gathering);
+
             match sung_from {
                 Some(from) if !word.is_empty() => words.push((from, word)),
                 Some(_) => {}
@@ -227,7 +239,9 @@ impl Stamped {
             return None;
         }
         gathering.push_str(rest);
+
         let mut ends = None;
+
         match sung_from {
             Some(from) if !gathering.trim().is_empty() => words.push((from, gathering)),
             Some(at) => ends = Some(at),
@@ -239,12 +253,14 @@ impl Stamped {
         for at in 1..words.len() {
             if words[at - 1].1.ends_with(char::is_whitespace) {
                 let spaced = words[at].1.trim_start().to_owned();
+
                 words[at].1 = spaced;
             }
         }
         if let Some((_, last)) = words.last_mut() {
             last.truncate(last.trim_end().len());
         }
+
         let text = if words.is_empty() {
             lead.trim().to_owned()
         } else {
@@ -300,7 +316,9 @@ impl Reading {
 
     fn hold(&mut self, text: &str) -> Result<()> {
         self.held = self.held.saturating_add(text.len());
+
         let lines = self.timed.len() + self.plain.len();
+
         if self.held > LARGEST_SET || lines >= MOST_LINES {
             return Err(beyond_what_a_sheet_holds(self.source.clone()));
         }
@@ -331,6 +349,7 @@ impl Reading {
 
         let (voice, sung) = voiced_text(rest.trim());
         let headed;
+
         let text = if heading.is_empty() {
             sung
         } else {
@@ -342,6 +361,7 @@ impl Reading {
             headed.as_str()
         };
         let stamped = Stamped::read(text);
+
         if moments.is_empty()
             && let Some(first) = stamped.as_ref().and_then(Stamped::first_sung)
         {
@@ -352,8 +372,10 @@ impl Reading {
             let text = stamped
                 .as_ref()
                 .map_or(text, |stamped| stamped.text.as_str());
+
             for at in moments {
                 self.hold(text)?;
+
                 let (words, ends) = match &stamped {
                     Some(stamped) => (
                         stamped
@@ -365,6 +387,7 @@ impl Reading {
                     ),
                     None => (Vec::new(), None),
                 };
+
                 self.timed.push(Timed {
                     at,
                     text: text.to_owned(),
@@ -375,7 +398,9 @@ impl Reading {
             }
             return Ok(());
         }
+
         let text = rest.trim();
+
         if !identified && !text.is_empty() {
             self.hold(text)?;
             self.plain.push((self.timed.len(), text.to_owned()));
@@ -386,6 +411,7 @@ impl Reading {
 
     fn identify(&mut self, tag: Identified, value: &str) {
         let value = value.trim();
+
         if value.is_empty() {
             return;
         }
@@ -423,13 +449,16 @@ impl Reading {
 
         if timed.is_empty() {
             let plain = plain.into_iter().map(|(_, text)| text);
+
             return Ok(Sheet {
                 declared,
                 lyrics: worth_drawing(Lyrics::plain(source, plain).credited(credits)),
             });
         }
+
         let mut asides = plain.into_iter().peekable();
         let mut lines = Vec::new();
+
         for (index, timed) in timed.into_iter().enumerate() {
             while let Some((_, text)) = asides.next_if(|(after, _)| *after <= index) {
                 lines.push(LyricLine::untimed(text));
@@ -505,6 +534,7 @@ impl<'a> Bracket<'a> {
         if let Some(at) = moment(inside).or_else(|| span(inside)) {
             return Self::Moment(at);
         }
+
         let Some((name, value)) = inside.split_once(':') else {
             return Self::Text;
         };
@@ -535,9 +565,11 @@ fn brackets(line: &str) -> Option<(&str, &str)> {
 fn span(text: &str) -> Option<Duration> {
     let text = text.trim();
     let colons = text.bytes().filter(|byte| *byte == b':').count();
+
     if colons < COLONS_WHEN_HOURS_ARE_WRITTEN {
         return moment(text);
     }
+
     let (hours, rest) = text.split_once(':')?;
     let hours = whole(hours)?
         .checked_mul(MINUTES_PER_HOUR)?
@@ -1203,6 +1235,7 @@ mod tests {
     #[test]
     fn a_name_written_in_another_script_or_without_its_marks_still_agrees() {
         let romanised = sheet("[ti:Kukla]\n[ar:Marcin Przybylowicz]\n[00:01.00]la");
+
         assert!(
             !romanised
                 .declared
@@ -1210,6 +1243,7 @@ mod tests {
         );
 
         let marked = sheet("[ti:Kıskanç]\n[00:01.00]la");
+
         assert!(
             !marked
                 .declared
@@ -1217,6 +1251,7 @@ mod tests {
         );
 
         let cyrillic = sheet("[ti:Кукла]\n[00:01.00]la");
+
         assert!(
             cyrillic
                 .declared
@@ -1246,6 +1281,7 @@ mod tests {
         );
 
         let apostrophe = sheet("[ti:Dont Stop]\n[00:01.00]la");
+
         assert!(
             !apostrophe
                 .declared
@@ -1253,6 +1289,7 @@ mod tests {
         );
 
         let glued = sheet("[ti:ACDC]\n[00:01.00]la");
+
         assert!(
             !glued
                 .declared

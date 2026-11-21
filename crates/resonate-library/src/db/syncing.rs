@@ -147,6 +147,7 @@ impl Library {
             bytes: picture.to_vec(),
         };
         let mut landed = false;
+
         for album in answers::albums_uncovered(&self.inner, release)? {
             landed |= self.land_archive_cover(album, &art)?;
         }

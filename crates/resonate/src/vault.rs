@@ -42,6 +42,7 @@ fn release(library: &Library, args: &VaultArgs) -> Result<()> {
     } else {
         library.vault_release_foretold(&roots)?
     };
+
     said!(
         "{}",
         if args.apply {
@@ -115,14 +116,18 @@ fn standing(library: &Library, vault: &Arc<Vault>) -> Result<()> {
         words::vault::sources(),
         words::vault::saved(),
     ]);
+
     for form in Form::ALL {
         let of_this_form: Vec<&VaultObject> =
             objects.iter().filter(|held| held.form == form).collect();
+
         if of_this_form.is_empty() {
             continue;
         }
+
         let bytes: u64 = of_this_form.iter().map(|held| held.bytes).sum();
         let was: u64 = of_this_form.iter().map(|held| held.was_bytes).sum();
+
         table.push(vec![
             form.as_str().to_owned(),
             of_this_form.len().to_string(),
@@ -168,6 +173,7 @@ fn import(library: &Library, args: &VaultArgs) -> Result<()> {
 
     said_on!("{}", imported(&summary, args.apply));
     finished(PassKind::Import, summary.cancelled)?;
+
     let unread = summary
         .plan
         .passed
@@ -198,6 +204,7 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
                 words::vault::was(),
                 words::vault::now(),
             ]);
+
             for held in plan.vaulted.iter().take(WRITES_SHOWN) {
                 table.push(vec![
                     named(&held.wanted.from),
@@ -225,6 +232,7 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
             words::vault::size(),
             words::vault::would_be_kept_as(),
         ]);
+
         for wanted in plan.wanted.iter().take(WRITES_SHOWN) {
             table.push(vec![
                 named(&wanted.from),
@@ -265,6 +273,7 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
         }
     } else {
         let renewing = plan.wanted.iter().filter(|wanted| wanted.renewing).count();
+
         told.push_str(&words::vault::would_keep(renewing, stats.walked));
         told.push('\n');
         told.push_str(words::vault::nothing_written());
@@ -275,6 +284,7 @@ fn imported(summary: &ImportSummary, apply: bool) -> String {
 
 fn verify(library: &Library, mending: bool) -> Result<()> {
     let weighed = until_told(library.weigh_the_vault(mending)?)?;
+
     if weighed.held_nothing() {
         said!("{}", words::vault::nothing_to_weigh());
         return Ok(());
@@ -314,6 +324,7 @@ fn verify(library: &Library, mending: bool) -> Result<()> {
 
     let failing = weighed.failing();
     let unreached = weighed.unreached.len() as u64;
+
     if let Some(mended) = weighed.mended {
         said!(
             "{}",
@@ -344,10 +355,12 @@ fn told_reframing(weighed: &VaultWeighing, mending: bool) {
     if weighed.unframed.is_empty() {
         return;
     }
+
     let Some(reframed) = weighed.reframed.as_ref().filter(|_| mending) else {
         said!("{}", words::vault::unframed(weighed.unframed.len()));
         return;
     };
+
     for path in &reframed.not_held {
         said!(
             "{}",
@@ -366,6 +379,7 @@ fn prune(library: &Library, args: &VaultArgs) -> Result<()> {
     } else {
         library.vault_prune_foretold()?
     };
+
     said!(
         "{}",
         if args.apply {

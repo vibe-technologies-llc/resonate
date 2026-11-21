@@ -4,9 +4,11 @@ use ureq::tls::{Certificate, RootCerts, TlsConfig};
 
 static SYSTEM_AND_BUILT_IN: LazyLock<RootCerts> = LazyLock::new(|| {
     let system = rustls_native_certs::load_native_certs();
+
     for error in &system.errors {
         tracing::debug!(%error, "a certificate in the system's store could not be read");
     }
+
     let built_in = webpki_root_certs::TLS_SERVER_ROOT_CERTS
         .iter()
         .map(|der| Certificate::from_der(der.as_ref()));

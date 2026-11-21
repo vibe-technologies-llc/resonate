@@ -60,6 +60,7 @@ mod tests {
     #[test]
     fn a_device_that_left_is_forgotten() {
         let mut remembered = Remembered::default();
+
         remembered.read_or_recalled("dac", Some(offered()));
         remembered.read_or_recalled("speakers", Some(offered()));
 

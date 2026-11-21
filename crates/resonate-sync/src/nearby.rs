@@ -77,6 +77,7 @@ pub fn bound(broadcast: &Broadcast) -> Result<UdpSocket> {
         }
         Err(error) => return Err(Error::BeaconBind(error)),
     };
+
     socket.set_nonblocking(true).map_err(Error::BeaconBind)?;
     if let Err(error) = socket.set_broadcast(true) {
         tracing::debug!(%error, "beacons cannot be broadcast");
@@ -99,6 +100,7 @@ pub fn bound_v6(broadcast: &Broadcast, shared_port: u16) -> Option<UdpSocket> {
     let anywhere = |port| SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     let bound_on = |port| {
         let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
+
         socket.set_only_v6(true)?;
         socket.bind(&anywhere(port).into())?;
         socket.set_nonblocking(true)?;
@@ -112,10 +114,12 @@ pub fn bound_v6(broadcast: &Broadcast, shared_port: u16) -> Option<UdpSocket> {
         .inspect_err(|error| tracing::debug!(%error, "beacons cannot be heard over IPv6"))
         .ok()?;
     let interfaces = ipv6_interfaces_here();
+
     for told in &broadcast.told {
         let IpAddr::V6(group) = told.ip() else {
             continue;
         };
+
         if !group.is_multicast() {
             continue;
         }
@@ -140,6 +144,7 @@ pub fn ipv6_interfaces_here() -> Vec<u32> {
         .filter(|interface| interface.ip().is_ipv6())
         .filter_map(|interface| interface.index)
         .collect::<Vec<_>>();
+
     indexes.sort_unstable();
     indexes.dedup();
     indexes
@@ -149,6 +154,7 @@ pub fn told_over_ipv6(told: SocketAddr) -> Vec<SocketAddr> {
     let SocketAddr::V6(address) = told else {
         return Vec::new();
     };
+
     if !address.ip().is_multicast() {
         return vec![told];
     }
@@ -167,6 +173,7 @@ pub fn told_over_ipv6(told: SocketAddr) -> Vec<SocketAddr> {
 
 pub fn beacon_addresses_here() -> Vec<IpAddr> {
     let mut addresses = addresses_here();
+
     addresses.extend(
         global_addresses_here()
             .into_iter()
@@ -191,6 +198,7 @@ pub fn addresses_here() -> Vec<IpAddr> {
         .map(|interface| interface.ip())
         .filter(IpAddr::is_ipv4)
         .collect::<Vec<_>>();
+
     addresses.sort();
     addresses.dedup();
     addresses.truncate(ADDRESSES_BEACONED_AT_MOST);
@@ -213,6 +221,7 @@ pub fn global_addresses_here() -> Vec<IpAddr> {
         .map(|interface| interface.ip())
         .filter(is_reachable_over_ipv6)
         .collect::<Vec<_>>();
+
     addresses.sort();
     addresses.dedup();
     addresses.truncate(GLOBAL_ADDRESSES_OFFERED_AT_MOST);
@@ -242,6 +251,7 @@ pub fn datagram_of(derived: &Derived, beacon: &Beacon, sent_at: u64) -> Result<V
         beacon: beacon.clone(),
     };
     let mut bytes = DATAGRAM_MAGIC.to_vec();
+
     bytes.extend(sealed(&derived.sealer, derived.space, &sent.encoded())?);
     Ok(bytes)
 }
@@ -257,6 +267,7 @@ pub fn heard_in(
         .and_then(|blob| opened(&derived.sealer, derived.space, blob, LARGEST_DATAGRAM).ok())
         .and_then(|plain| SentBeacon::decoded(&plain).ok())
         .ok_or(Unheard::Unsealed)?;
+
     heard
         .admit(bytes, sent.sent_at, now)
         .map_err(Unheard::Unfresh)?;
@@ -269,6 +280,7 @@ fn recorded_bytes(derived: &Derived, beacon: &Beacon, sealed_at: u64) -> Result<
         beacon: beacon.clone(),
     };
     let mut bytes = RECORD_MAGIC.to_vec();
+
     bytes.extend(sealed(&derived.sealer, derived.space, &sent.encoded())?);
     Ok(bytes)
 }
@@ -300,6 +312,7 @@ fn fresh_record(
     let sent = from_symbols(record, LARGEST_BEACON)
         .and_then(|bytes| recorded_beacon(derived, &bytes))
         .ok_or(Unheard::Unsealed)?;
+
     if now.abs_diff(sent.sent_at) > BEACON_SENT_WITHIN.as_secs() {
         return Err(Unheard::Unfresh(Unfresh::OutsideTheWindow {
             sealed_at: sent.sent_at,
@@ -364,6 +377,7 @@ impl Bonjour {
         if self.advertised.as_deref() == Some(record) {
             return;
         }
+
         let host = format!("{}.local.", self.instance);
         let info = ServiceInfo::new(
             BONJOUR_SERVICE,
@@ -386,6 +400,7 @@ impl Bonjour {
         if self.advertised.take().is_none() {
             return;
         }
+
         let fullname = format!("{}.{BONJOUR_SERVICE}", self.instance);
         if let Err(error) = self.daemon.unregister(&fullname) {
             tracing::debug!(%error, "this device's Bonjour record could not be withdrawn");
@@ -466,6 +481,7 @@ mod tests {
             .derived()
             .expect("derived");
         let beacon = beacon(2);
+
         let record = recorded_bytes(&here, &beacon, NOW).expect("sealed");
 
         let bytes = datagram_of(&here, &beacon, NOW).expect("sealed");
@@ -496,6 +512,7 @@ mod tests {
             .expect("derived");
         let beacon = beacon(1);
         let mut heard = fresh();
+
         let genuine = datagram_of(&here, &beacon, NOW).expect("sealed");
         let long_ago =
             datagram_of(&here, &beacon, NOW - BEACON_SENT_WITHIN.as_secs() - 1).expect("sealed");
@@ -559,6 +576,7 @@ mod tests {
             .expect("derived");
         let beacon = beacon(1);
         let mut resolved = fresh();
+
         let genuine = record_of(&here, &beacon, NOW).expect("recorded");
         let resealed = record_of(&here, &beacon, NOW + 60).expect("recorded");
         let long_ago =
@@ -617,6 +635,7 @@ mod tests {
         ]
         .map(|octets| IpAddr::V4(Ipv4Addr::from(octets)))
         .to_vec();
+
         addresses.extend([
             IpAddr::V6(Ipv6Addr::new(
                 0x2a02, 0x8f1c, 0x5e71, 0x93aa, 0x1f0d, 0xc4e2, 0x7b19, 0xd05e,
@@ -625,6 +644,7 @@ mod tests {
                 0x2a02, 0x9d27, 0x6ab8, 0x93ab, 0x4a84, 0xc4d3, 0x7b1a, 0xd54f,
             )),
         ]);
+
         let fullest = Beacon {
             addresses,
             ..beacon(0)
@@ -655,6 +675,7 @@ mod tests {
             .derived()
             .expect("derived");
         let beacon = beacon(1);
+
         let bytes = datagram_of(&here, &beacon, NOW).expect("sealed");
         let to = SocketAddr::new(
             IpAddr::V6(Ipv6Addr::LOCALHOST),
@@ -662,8 +683,10 @@ mod tests {
         );
 
         sender.send_to(&bytes, to).expect("sent");
+
         let mut heard = vec![0; LARGEST_BEACON];
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
+
         let (length, from) = loop {
             match listener.recv_from(&mut heard) {
                 Ok(received) => break received,

@@ -58,6 +58,7 @@ impl Matching {
 
     fn answered(&mut self, track: TrackId, asked: Serial, likely: Likely) -> bool {
         let current = self.track == track && self.asked == Some(asked);
+
         if current {
             self.likely = likely;
         }
@@ -70,11 +71,14 @@ pub(crate) fn matching_fields(
     cx: &mut Context<RootView>,
 ) -> (Entity<Field>, Entity<Field>) {
     let words = cx.new(|cx| Field::new(words::matching::words_placeholder, window, cx));
+
     cx.subscribe_in(&words, window, |this, _, _: &Submitted, _, cx| {
         this.look_for_likely_recordings(cx);
     })
     .detach();
+
     let isrc = cx.new(|cx| Field::new(words::matching::isrc_placeholder, window, cx));
+
     cx.subscribe_in(&isrc, window, |this, _, _: &Submitted, window, cx| {
         this.isrc_given(window, cx);
     })
@@ -144,9 +148,12 @@ impl RootView {
         let Some(matching) = self.matching.as_mut() else {
             return;
         };
+
         matching.asking(asked);
+
         let track = matching.track;
         let words = self.typed.words.read(cx).text().trim().to_owned();
+
         let asking = self
             .library
             .update(cx, |library, cx| library.recordings_like(track, words, cx));
@@ -157,6 +164,7 @@ impl RootView {
             cx.notify();
             return;
         };
+
         cx.notify();
 
         cx.spawn(async move |this, cx| {
@@ -189,6 +197,7 @@ impl RootView {
         let Some(track) = self.matching.as_ref().map(|matching| matching.track) else {
             return;
         };
+
         self.library.update(cx, |library, cx| {
             library.take_recording(track, recording, cx)
         });
@@ -207,6 +216,7 @@ impl RootView {
             );
             return;
         };
+
         self.library
             .update(cx, |library, cx| library.give_an_isrc(track, isrc, cx));
         self.leave_the_matching(window, cx);
@@ -412,10 +422,12 @@ mod tests {
 
         let mut earlier = Matching::opened_on(track);
         let first = asks.moved();
+
         earlier.asking(first);
 
         let mut later = Matching::opened_on(track);
         let second = asks.moved();
+
         later.asking(second);
 
         assert!(!later.answered(track, first, Likely::Unreached));
@@ -431,8 +443,11 @@ mod tests {
         let mut matching = Matching::opened_on(track);
 
         let first = asks.moved();
+
         matching.asking(first);
+
         let second = asks.moved();
+
         matching.asking(second);
 
         assert!(!matching.answered(track, first, Likely::Unreached));

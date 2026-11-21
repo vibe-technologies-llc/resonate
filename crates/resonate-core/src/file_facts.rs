@@ -131,9 +131,11 @@ pub fn volume_of(path: &Path) -> Option<u64> {
     use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 
     fs::metadata(path).ok()?;
+
     let real = fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
 
     let mut hasher = DefaultHasher::new();
+
     volume_name_of(&real).hash(&mut hasher);
     Some(hasher.finish())
 }
@@ -159,6 +161,7 @@ fn volume_mounted_at(folder: &Path) -> Option<std::path::PathBuf> {
     const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
 
     let attributes = fs::symlink_metadata(folder).ok()?.file_attributes();
+
     if attributes & FILE_ATTRIBUTE_REPARSE_POINT == 0 {
         return None;
     }
@@ -210,12 +213,14 @@ pub fn write_atomically(
         source,
     };
     let file = opened(staged).map_err(unstaged)?;
+
     let written = filled(file, bytes).map_err(unstaged).and_then(|()| {
         placed(target, staged).map_err(|source| Unwritten {
             step: WriteStep::Place,
             source,
         })
     });
+
     if written.is_err() {
         let _ = fs::remove_file(staged);
     }
@@ -244,6 +249,7 @@ mod tests {
     fn scratch(name: &str) -> std::path::PathBuf {
         let folder = env::temp_dir().join(format!("resonate-facts-{}-{name}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -254,12 +260,16 @@ mod tests {
         let file = folder.join("a");
 
         fs::write(&file, b"one").expect("a file");
+
         let before = FileStamp::at(&file).expect("a stamp");
+
         fs::write(&file, b"three").expect("a longer file");
+
         let after = FileStamp::at(&file).expect("a stamp");
 
         assert_ne!(before, after);
         assert_eq!(after.length(), 5);
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -267,12 +277,14 @@ mod tests {
     fn a_file_is_the_same_entry_as_itself_and_not_as_another() {
         let folder = scratch("entry");
         let (one, other) = (folder.join("one"), folder.join("other"));
+
         fs::write(&one, b"x").expect("a file");
         fs::write(&other, b"x").expect("a file");
 
         assert!(is_the_same_entry(&one, &one));
         assert!(!is_the_same_entry(&one, &other));
         assert!(is_the_same_folder(&folder, &folder));
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -283,6 +295,7 @@ mod tests {
         assert!(volume_of(&folder).is_some());
         assert_eq!(volume_of(&folder.join("missing")), None);
         assert!(sync_directory(&folder).is_ok());
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -290,11 +303,13 @@ mod tests {
     fn a_file_has_a_change_time() {
         let folder = scratch("changed");
         let file = folder.join("a");
+
         fs::write(&file, b"x").expect("a file");
 
         let metadata = fs::metadata(&file).expect("metadata");
 
         assert!(changed_at(&metadata).is_some());
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -304,6 +319,7 @@ mod tests {
             .flatten()
             .map(|entry| entry.file_name())
             .collect();
+
         left.sort();
         left
     }
@@ -313,6 +329,7 @@ mod tests {
         let folder = scratch("whole");
         let target = folder.join("kept");
         let staged = folder.join("kept.staged");
+
         fs::write(&target, b"before").expect("a file standing");
 
         let written = write_atomically(&target, &staged, b"after", |staged| File::create(staged));
@@ -320,6 +337,7 @@ mod tests {
         assert!(written.is_ok());
         assert_eq!(fs::read(&target).expect("the file reads"), b"after");
         assert_eq!(left_in(&folder), vec![std::ffi::OsString::from("kept")]);
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -328,6 +346,7 @@ mod tests {
         let folder = scratch("unplaced");
         let target = folder.join("kept");
         let staged = folder.join("kept.staged");
+
         fs::create_dir_all(target.join("in the way")).expect("a folder in the way");
 
         let written = write_atomically(&target, &staged, b"after", |staged| File::create(staged));
@@ -337,6 +356,7 @@ mod tests {
             Some(WriteStep::Place)
         );
         assert_eq!(left_in(&folder), vec![std::ffi::OsString::from("kept")]);
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -345,6 +365,7 @@ mod tests {
         let folder = scratch("unstaged");
         let target = folder.join("kept");
         let staged = folder.join("kept.staged");
+
         fs::write(&target, b"before").expect("a file standing");
         fs::write(&staged, b"another's").expect("a stage already taken");
 
@@ -358,6 +379,7 @@ mod tests {
         );
         assert_eq!(fs::read(&target).expect("the file reads"), b"before");
         assert_eq!(fs::read(&staged).expect("the stage reads"), b"another's");
+
         let _ = fs::remove_dir_all(&folder);
     }
 }

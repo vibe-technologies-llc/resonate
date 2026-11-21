@@ -91,13 +91,16 @@ fn lettered(mark: Icon, name: &str, side: f32) -> Div {
 
 fn tiled(drawn: &[Picture], side: f32) -> Div {
     let mut grid = div().flex().flex_wrap().size(px(side));
+
     for at in 0..TILES {
         let corner = Corner::of_tile(at);
         let (wide, high) = (
             tile_span(side, at % TILES_A_SIDE),
             tile_span(side, at / TILES_A_SIDE),
         );
+
         let cell = corner.round(div().w(px(wide)).h(px(high)).overflow_hidden());
+
         grid = grid.child(match drawn.get(at) {
             Some(art) => cell.child(
                 corner.round(

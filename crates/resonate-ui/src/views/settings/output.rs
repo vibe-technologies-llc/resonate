@@ -93,11 +93,13 @@ fn volume_of(sink: &SinkInfo) -> Option<String> {
 
 fn depths_of(sink: &SinkInfo) -> Option<String> {
     let mut offered: Vec<SampleFormat> = Vec::new();
+
     for entry in &sink.formats {
         if !offered.contains(&entry.format) {
             offered.push(entry.format);
         }
     }
+
     let widest: Vec<&str> = offered.iter().copied().map(format::depth).collect();
 
     (!widest.is_empty()).then(|| widest.join(OR))
@@ -343,6 +345,7 @@ impl RootView {
                         cx,
                         move |this, lead: LeadIn, cx| {
                             let wake = this.player.read(cx).output_settings().bluetooth;
+
                             this.send(
                                 Command::SetBluetoothWake(BluetoothWake {
                                     lead: lead.0,
@@ -362,6 +365,7 @@ impl RootView {
                         cx,
                         move |this, awake: KeptAwake, cx| {
                             let wake = this.player.read(cx).output_settings().bluetooth;
+
                             this.send(
                                 Command::SetBluetoothWake(BluetoothWake {
                                     awake_for: awake.0,
@@ -388,12 +392,14 @@ impl RootView {
         let mut listed =
             kit::rows().child(self.default_device(wanted.is_none(), routes_to(&sinks), cx));
         let held = Self::zones(cx).holding(self.switcher.selected());
+
         for sink in &sinks {
             let held_by = held
                 .iter()
                 .find(|held| held.sink == sink.id)
                 .and_then(|held| self.switcher.name_of(held.by))
                 .map(|zone| SharedString::from(zone.to_string()));
+
             listed = listed.child(self.device(
                 sink,
                 wanted.as_ref() == Some(&sink.name),
@@ -457,8 +463,10 @@ impl RootView {
             .collect();
 
         let mut body = kit::rows();
+
         for (name, description) in listed {
             let vouched = named.contains(&name);
+
             body = body.child(self.vouching_row(name, description, vouched, cx));
         }
         for name in away {
@@ -510,6 +518,7 @@ impl RootView {
 
     pub(crate) fn vouch_for(&mut self, renderer: NodeName, vouched: bool, cx: &mut Context<Self>) {
         let mut named = cx.global::<ResonateApp>().flac_above_96k_for.clone();
+
         if vouched {
             named.insert(renderer);
         } else {
@@ -578,6 +587,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.name_the_offer(typed, cx);
         window.focus(&self.focus, cx);
         cx.notify();
@@ -585,15 +595,18 @@ impl RootView {
 
     pub(crate) fn leave_offer_name(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let field = self.settings_fields.read(cx).offer_name.clone();
+
         if !field.read(cx).is_focused(window) {
             return;
         }
+
         let held = cx
             .global::<ResonateApp>()
             .catalog_shared
             .as_ref()
             .map(|shared| shared.name())
             .unwrap_or_default();
+
         if field.read(cx).text().trim() != held {
             self.offer_name_given(window, cx);
             return;
@@ -606,9 +619,11 @@ impl RootView {
         let Some(shared) = cx.global::<ResonateApp>().catalog_shared.clone() else {
             return;
         };
+
         shared.rename(&typed);
 
         let kept = shared.name();
+
         self.settings_fields
             .read(cx)
             .offer_name
@@ -915,6 +930,7 @@ impl RootView {
         let none_listed = listed.is_empty();
 
         let mut body = kit::rows();
+
         for (name, description) in listed {
             body = body.child(self.learning_row(name, description, true, cx));
         }
@@ -1036,6 +1052,7 @@ impl RootView {
                 .await;
             let _ = this.update(cx, |this, cx| this.heard_what_it_plays(asked, heard, cx));
         });
+
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.heard = None;
             pane.shown.trying = Some((device, tried));
@@ -1053,6 +1070,7 @@ impl RootView {
             .update(cx, |pane, _| pane.shown.trying = None);
         if let Ok(learning) = &heard {
             let plays = learning.plays();
+
             cx.update_global::<ResonateApp, _>(|global, _| {
                 global
                     .formats_learnt_for
@@ -1120,6 +1138,7 @@ fn plays_said(plays: Option<&Plays>) -> String {
     let Some(plays) = plays else {
         return words::settings_output::not_tried_yet().to_owned();
     };
+
     if plays.is_empty() {
         return words::settings_output::played_none_of_them().to_owned();
     }

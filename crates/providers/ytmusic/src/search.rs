@@ -66,6 +66,7 @@ fn client_version_in(data: &str) -> Option<&str> {
 
 fn length_read(clock: &str) -> Option<Duration> {
     let parts: Vec<&str> = clock.split(':').collect();
+
     if !(2..=CLOCK_PARTS_AT_MOST).contains(&parts.len()) {
         return None;
     }
@@ -121,10 +122,13 @@ impl Row {
             .map(str::trim)
             .filter(|part| !part.is_empty())
             .collect();
+
         let length = parts.last().copied().and_then(length_read);
+
         if length.is_some() {
             parts.pop();
         }
+
         let artist = (!parts.is_empty()).then(|| parts.remove(0).to_owned());
 
         Some(Self {
@@ -140,6 +144,7 @@ impl Row {
 
     fn artists(&self) -> Vec<&str> {
         let mut artists: Vec<&str> = self.artist.as_deref().into_iter().collect();
+
         for apart in ARTISTS_APART {
             artists = artists
                 .into_iter()
@@ -157,6 +162,7 @@ impl Row {
             stated: Rating::flagged(Some(self.explicit)),
             ..Listed::default()
         };
+
         choosing.weigh(identity, &listed, self.clone());
     }
 }
@@ -169,6 +175,7 @@ impl YtMusic {
         let op = ProviderOp::Search;
         let response = response.map_err(|error| self.unreachable(op, error))?;
         let status = response.status();
+
         if !status.is_success() {
             return Err(Error::Refused {
                 provider: self.source.clone(),
@@ -205,10 +212,12 @@ impl YtMusic {
 
     fn client_version(&self, agent: &Agent) -> Result<String> {
         let mut held = self.client_version.lock();
+
         if let Some(version) = &*held {
             return Ok(version.clone());
         }
         self.pacing.paced();
+
         let data = self.answered(
             agent
                 .get(format!("{}{CLIENT_DATA_AT}", self.music))
@@ -219,6 +228,7 @@ impl YtMusic {
         let version = client_version_in(&data)
             .ok_or_else(|| self.not_the_service())?
             .to_owned();
+
         *held = Some(version.clone());
         Ok(version)
     }
@@ -234,7 +244,9 @@ impl YtMusic {
             "query": words,
             "params": THE_SONGS_FILTER,
         });
+
         self.pacing.paced();
+
         let answer = self.answered(
             agent
                 .post(format!("{}{SEARCHED_AT}", self.music))
@@ -285,10 +297,12 @@ mod tests {
 
     fn fixture_with(change: impl FnOnce(&mut Vec<Value>)) -> Vec<u8> {
         let mut document: Value = serde_json::from_slice(SONGS).expect("a document");
+
         let rows = document
             .pointer_mut(&format!("{SECTIONS}/0{A_SHELFS_ROWS}"))
             .and_then(Value::as_array_mut)
             .expect("the rows");
+
         change(rows);
         document.to_string().into_bytes()
     }
@@ -349,6 +363,7 @@ mod tests {
     fn no_more_rows_are_read_than_a_search_lists() {
         let answer = fixture_with(|rows| {
             let first = rows[0].clone();
+
             rows.extend(std::iter::repeat_n(first, LISTED_AT_MOST));
         });
 
@@ -387,9 +402,11 @@ mod tests {
     fn a_clock_is_read_only_as_minutes_and_seconds_or_hours_with_them() {
         assert_eq!(length_read("3:59"), Some(Duration::from_secs(239)));
         assert_eq!(length_read("1:00:00"), Some(Duration::from_secs(3_600)));
+
         for not_a_clock in ["239", "", ":", "1:2:3:4", "a:bc", "-1:00", "+1:00"] {
             assert_eq!(length_read(not_a_clock), None, "{not_a_clock:?}");
         }
+
         assert_eq!(length_read("99999999999999999999:00"), None);
         assert_eq!(length_read("18446744073709551615:59:59"), None);
     }

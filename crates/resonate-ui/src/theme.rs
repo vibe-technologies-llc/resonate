@@ -176,6 +176,7 @@ const INK_CHROMA: f32 = 0.34;
 fn hsl(hue: f32, saturation: f32, lightness: f32) -> u32 {
     let chroma = (1.0 - (2.0f32.mul_add(lightness, -1.0)).abs()) * saturation;
     let sector = hue.rem_euclid(1.0) * 6.0;
+
     let second = chroma * (1.0 - (sector % 2.0 - 1.0).abs());
     let (red, green, blue) = match sector as u32 {
         0 => (chroma, second, 0.0),
@@ -716,12 +717,14 @@ mod wearing {
 
     pub(crate) fn alongside() -> Alongside {
         let guard = WEARING.read();
+
         held(1);
         Alongside { _guard: guard }
     }
 
     pub(crate) fn alone() -> Alone {
         let guard = WEARING.write();
+
         held(1);
         Alone { _guard: guard }
     }
@@ -762,11 +765,13 @@ fn worn_write() -> parking_lot::RwLockWriteGuard<'static, Worn> {
 
 pub fn wear(chosen: Appearance) {
     let mut worn = worn_write();
+
     *worn = Worn::of(chosen, worn.look);
 }
 
 pub fn hear_the_desktop(look: DesktopLook) {
     let mut worn = worn_write();
+
     *worn = Worn::of(worn.chosen, look);
 }
 
@@ -1038,6 +1043,7 @@ pub(crate) fn lifted(colour: u32, toward_white: f32) -> u32 {
 
 pub(crate) fn contrast(over: u32, under: u32) -> f32 {
     let (over, under) = (luminance(over), luminance(under));
+
     let (lit, dim) = if over > under {
         (over, under)
     } else {
@@ -1507,8 +1513,10 @@ mod tests {
     fn every_theme_is_dark_or_light_enough_to_read_its_own_text_on() {
         for theme in Theme::ALL {
             let flavour = flavour(theme);
+
             for pane in [flavour.background, flavour.surface] {
                 let read = contrast(flavour.text, pane);
+
                 assert!(
                     read >= READS_AT_REST,
                     "{theme}: text on {pane:06x} reads at {read:.1}"
@@ -1516,6 +1524,7 @@ mod tests {
             }
             for lifted in [flavour.raised, flavour.hover] {
                 let read = contrast(flavour.text, lifted);
+
                 assert!(
                     read >= READS_AS_BODY,
                     "{theme}: text on {lifted:06x} reads at {read:.1}"
@@ -1524,6 +1533,7 @@ mod tests {
 
             for under in [flavour.background, flavour.surface, flavour.raised] {
                 let read = contrast(flavour.muted, under);
+
                 assert!(
                     read >= READS_AS_BODY,
                     "{theme}: muted text on {under:06x} reads at {read:.2}"
@@ -1531,6 +1541,7 @@ mod tests {
             }
             for pane in [flavour.background, flavour.surface] {
                 let read = contrast(flavour.faint, pane);
+
                 assert!(
                     read >= READS_AS_BODY,
                     "{theme}: faint text on {pane:06x} reads at {read:.2}"
@@ -1584,15 +1595,18 @@ mod tests {
             let accent = flavour.accent(appearance.accent);
             let named = appearance.accent.unwrap_or(flavour.native);
             let theme = appearance.theme;
+
             let ink = reads_better_on(accent, flavour.pitch, flavour.paper);
 
             let written = contrast(accent, ink);
+
             assert!(
                 written >= READS_AS_BODY,
                 "{theme}/{named}: what is written on the accent reads at {written:.1}"
             );
 
             let stands = contrast(accent, flavour.background);
+
             assert!(
                 stands >= STANDS_APART,
                 "{theme}/{named}: the accent reads at {stands:.1} against the panes"
@@ -1648,6 +1662,7 @@ mod tests {
                     .into_iter()
                     .filter(|other| accents.pick(*other) == accents.pick(accent))
                     .count();
+
                 assert_eq!(sharing, 1, "{theme} draws {accent} as another accent");
             }
         }
@@ -1685,6 +1700,7 @@ mod tests {
     fn each_ramped_palette_lights_the_accents_its_own_way() {
         let rows = [&*MIDNIGHT, &*GRAPHITE, &*PLUM]
             .map(|flavour| Accent::ALL.map(|accent| flavour.accent(Some(accent))));
+
         assert_ne!(rows[0], rows[1]);
         assert_ne!(rows[1], rows[2]);
         assert_ne!(rows[0], rows[2]);
@@ -1693,6 +1709,7 @@ mod tests {
     #[test]
     fn a_ramped_palette_reads_back_the_lightness_it_was_asked_for() {
         let grey = hsl(0.0, 0.0, 0.5);
+
         assert_eq!(grey, 0x808080);
 
         assert_eq!(hsl(0.0, 0.0, 0.0), 0x000000);
@@ -1717,6 +1734,7 @@ mod tests {
         }
 
         wear(Appearance::DEFAULT);
+
         assert_eq!(worn(), Appearance::DEFAULT);
     }
 
@@ -1748,6 +1766,7 @@ mod tests {
 
         let medium = read(TextSize::Medium);
         let largest = read(TextSize::Largest);
+
         for (middling, doubled) in medium.iter().zip(&largest) {
             assert_eq!(
                 middling.1 * 2.0,
@@ -1756,6 +1775,7 @@ mod tests {
                 middling.0
             );
         }
+
         assert_eq!(medium[2].1, TEXT_BASE);
 
         wear(Appearance::DEFAULT);
@@ -1768,6 +1788,7 @@ mod tests {
         for theme in Theme::ALL {
             let flavour = flavour(theme);
             let knob = reads_better_on(flavour.outline, flavour.pitch, flavour.paper);
+
             let read = contrast(knob, flavour.outline);
             if read < RING_STANDS_APART {
                 failures.push(format!(
@@ -1804,8 +1825,10 @@ mod tests {
             let flavour = flavour(theme);
             let soft = soft_edge_of(flavour);
             let strong = matches!(theme, Theme::HighContrast | Theme::HighContrastLight);
+
             for (name, pane) in resting_panes_of(flavour) {
                 let read = contrast(soft, pane);
+
                 if strong && read < FOUR_AND_A_HALF {
                     failures.push(format!(
                         "{theme}: the soft edge on {name} reads at {read:.2}"
@@ -1832,7 +1855,9 @@ mod tests {
         for theme in Theme::ALL {
             let flavour = flavour(theme);
             let pressed = pressed_of(flavour);
+
             let read = contrast(flavour.text, pressed);
+
             if pressed == flavour.hover {
                 failures.push(format!("{theme}: a press looks as the hover does"));
             }
@@ -2000,12 +2025,14 @@ mod tests {
             }
             for (hue, colour) in colours_of(flavour) {
                 let read = contrast(colour, pane);
+
                 if read < SEVEN_TO_ONE {
                     failures.push(format!("{hue} on {name} reads at {read:.2}"));
                 }
                 if name == "hover" {
                     continue;
                 }
+
                 let washed = mixed(colour, WASH_ALPHA, pane);
                 let read = contrast(colour, washed);
                 if read < SEVEN_TO_ONE {
@@ -2016,11 +2043,13 @@ mod tests {
                 if name == "hover" {
                     continue;
                 }
+
                 let read = contrast(colour, pane);
                 if read < FOUR_AND_A_HALF {
                     failures.push(format!("{edge} on {name} reads at {read:.2}"));
                 }
             }
+
             let ring = contrast(ring_of(flavour, flavour.accent(None)), pane);
             if ring < SEVEN_TO_ONE {
                 failures.push(format!("the focus ring on {name} reads at {ring:.2}"));
@@ -2083,11 +2112,14 @@ mod tests {
         let _worn = alone();
 
         wear(Appearance::DEFAULT);
+
         let on_dark = shadow(0.5).a;
+
         wear(Appearance {
             theme: Theme::Light,
             ..Appearance::DEFAULT
         });
+
         let on_light = shadow(0.5).a;
 
         assert_eq!(on_dark, 0.5);
@@ -2113,6 +2145,7 @@ mod tests {
         assert_eq!(text_base(), TEXT_BASE * TextSize::Larger.scale());
 
         hear_the_desktop(DesktopLook::default());
+
         assert_eq!(worn(), Appearance::DEFAULT);
     }
 
@@ -2147,6 +2180,7 @@ mod tests {
 
         for appearance in every_appearance() {
             wear(appearance);
+
             let fill = accent();
             let ring = focus_ring_over(fill);
 
@@ -2171,6 +2205,7 @@ mod tests {
             .expect("the views folder is readable")
             .map(|entry| entry.expect("a readable directory entry").path())
             .collect();
+
         entries.sort();
 
         for path in entries {
@@ -2182,6 +2217,7 @@ mod tests {
                     .expect("a file has a name")
                     .to_string_lossy()
                     .into_owned();
+
                 read.push((
                     name,
                     fs::read_to_string(&path).expect("a readable source file"),
@@ -2207,6 +2243,7 @@ mod tests {
                     let hairline = digits
                         .parse::<f32>()
                         .is_ok_and(|value| HAIRLINES.contains(&value));
+
                     if drawn && !hairline {
                         found.push(format!("{call}{digits}))"));
                     }
@@ -2221,6 +2258,7 @@ mod tests {
     #[test]
     fn a_view_draws_no_height_in_a_bare_number_of_pixels_unless_it_is_fixed_by_design() {
         let mut read = Vec::new();
+
         view_sources(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("src")
@@ -2228,6 +2266,7 @@ mod tests {
                 .as_path(),
             &mut read,
         );
+
         assert!(
             read.len() > 10,
             "the walk found {} view files, so it is not reading the views at all",
@@ -2236,6 +2275,7 @@ mod tests {
 
         let mut unlisted = Vec::new();
         let mut used: Vec<(&str, String)> = Vec::new();
+
         for (name, source) in &read {
             for height in literal_heights(source) {
                 if FIXED_BY_DESIGN
@@ -2267,6 +2307,7 @@ mod tests {
     #[test]
     fn a_shadow_is_cast_by_the_kit_and_no_view_builds_its_own() {
         let mut read = Vec::new();
+
         view_sources(
             Path::new(env!("CARGO_MANIFEST_DIR"))
                 .join("src")

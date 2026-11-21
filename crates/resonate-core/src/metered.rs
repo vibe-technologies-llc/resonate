@@ -48,6 +48,7 @@ impl Metering {
 
     pub fn report(&self, meter: Meter) {
         let mut standing = self.standing.meter.lock();
+
         if *standing == meter {
             return;
         }
@@ -90,8 +91,10 @@ impl Gate {
 
     pub fn shut_while_metered(&self, shut: bool) {
         self.shut_while_metered.store(shut, Ordering::Relaxed);
+
         let standing = &self.metering.standing;
         let _held = standing.meter.lock();
+
         standing.changed.notify_all();
     }
 
@@ -107,6 +110,7 @@ impl Gate {
         let deadline = Instant::now() + at_most;
         let standing = &self.metering.standing;
         let mut meter = standing.meter.lock();
+
         while self.is_shut_at(*meter) {
             if standing
                 .changed
@@ -149,13 +153,16 @@ mod tests {
         let metering = Metering::new();
 
         metering.report(Meter::Metered);
+
         assert!(metering.is_metered());
 
         metering.report(Meter::Unknown);
+
         assert!(!metering.is_metered());
 
         metering.report(Meter::reported(true));
         metering.report(Meter::reported(false));
+
         assert_eq!(metering.meter(), Meter::Unmetered);
     }
 
@@ -165,15 +172,19 @@ mod tests {
         let gate = Gate::new(metering.clone(), false);
 
         metering.report(Meter::Metered);
+
         assert!(!gate.is_shut());
 
         gate.shut_while_metered(true);
+
         assert!(gate.is_shut());
 
         metering.report(Meter::Unmetered);
+
         assert!(!gate.is_shut());
 
         metering.report(Meter::Unknown);
+
         assert!(!gate.is_shut());
     }
 
@@ -185,17 +196,21 @@ mod tests {
         let clone = downloads.clone();
 
         metering.report(Meter::Metered);
+
         assert!(downloads.is_shut());
         assert!(!lookups.is_shut());
 
         clone.shut_while_metered(false);
+
         assert!(!downloads.is_shut());
     }
 
     #[test]
     fn a_waiter_is_woken_by_a_report_that_changes_the_connection() {
         let metering = Metering::new();
+
         metering.report(Meter::Metered);
+
         let gate = Gate::new(metering.clone(), true);
 
         let reporter = {
@@ -207,6 +222,7 @@ mod tests {
         };
         let began = Instant::now();
         let still_shut = gate.wait_while_shut(LONG_ENOUGH);
+
         reporter.join().unwrap();
 
         assert!(!still_shut);
@@ -216,7 +232,9 @@ mod tests {
     #[test]
     fn a_waiter_is_woken_by_the_setting_being_turned_off() {
         let metering = Metering::new();
+
         metering.report(Meter::Metered);
+
         let gate = Gate::new(metering, true);
 
         let turner = {
@@ -228,6 +246,7 @@ mod tests {
         };
         let began = Instant::now();
         let still_shut = gate.wait_while_shut(LONG_ENOUGH);
+
         turner.join().unwrap();
 
         assert!(!still_shut);
@@ -237,7 +256,9 @@ mod tests {
     #[test]
     fn a_gate_that_stays_shut_says_so_when_the_wait_runs_out() {
         let metering = Metering::new();
+
         metering.report(Meter::Metered);
+
         let gate = Gate::new(metering, true);
 
         assert!(gate.wait_while_shut(Duration::from_millis(20)));

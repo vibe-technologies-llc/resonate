@@ -32,6 +32,7 @@ impl Kinds {
                 tracing::warn!(%error, "UPnP renderers on the network cannot be played to");
             })
             .ok()?;
+
         upnp.vouch(config.renderers_vouched_for());
         upnp.teach(config.formats_learnt_for().clone());
         for address in config.renderers_at() {
@@ -39,11 +40,13 @@ impl Kinds {
                 tracing::warn!(%error, %address, "a renderer given by address could not be held");
             }
         }
+
         let cast = Casting::resting(CastSearching::on_the_network())
             .inspect_err(|error| {
                 tracing::warn!(%error, "Cast receivers on the network cannot be played to");
             })
             .ok()?;
+
         cast.teach(config.formats_learnt_for().clone());
         for address in config.cast_at() {
             if let Err(error) = cast.locate(address.clone()) {
@@ -61,6 +64,7 @@ impl Kinds {
             let cast = scope.spawn(|| self.cast.look(first));
             (self.upnp.look(first), cast.join())
         });
+
         if let Err(error) = upnp {
             tracing::warn!(%error, "the network could not be searched for UPnP renderers");
         }
@@ -78,6 +82,7 @@ impl Kinds {
             let cast = scope.spawn(|| self.cast.look_at_addresses(first));
             (self.upnp.look_at_addresses(first), cast.join())
         });
+
         if let Err(error) = upnp {
             tracing::warn!(%error, "the renderers given by address could not be reached");
         }
@@ -104,6 +109,7 @@ impl Kinds {
                     sink: sink.name.clone(),
                     source: Box::new(source),
                 })?;
+
             return Ok(Heard { sink, learning });
         }
         if let Some(sink) = self
@@ -119,6 +125,7 @@ impl Kinds {
                     sink: sink.name.clone(),
                     source: Box::new(source),
                 })?;
+
             return Ok(Heard { sink, learning });
         }
         Err(Error::NotANetworkDevice(wanted.clone()))
@@ -143,15 +150,18 @@ impl Rendering {
         let names_one = wanted.is_some_and(names_a_renderer);
         let searches = asked == Asked::Network || names_one || config.is_on(Switch::Renderers);
         let reaches = asked == Asked::Addresses || config.holds_receiver_addresses();
+
         if !(searches || reaches) {
             return Self(None);
         }
+
         let first = if asked != Asked::Nothing || names_one {
             FirstSearch::Awaited
         } else {
             FirstSearch::Behind
         };
         let kinds = Kinds::resting(config);
+
         if let Some(kinds) = &kinds {
             if searches {
                 kinds.look(first);
@@ -166,6 +176,7 @@ impl Rendering {
     pub(crate) fn for_the_window(config: &Config, wanted: Option<&NodeName>) -> Self {
         let names_one = wanted.is_some_and(names_a_renderer);
         let kinds = Kinds::resting(config);
+
         if let Some(kinds) = &kinds {
             let first = if names_one {
                 FirstSearch::Awaited
@@ -198,6 +209,7 @@ impl Rendering {
     pub(crate) fn sinks(&self) -> Vec<SinkInfo> {
         self.0.as_ref().map_or_else(Vec::new, |kinds| {
             let mut sinks = kinds.upnp.sinks();
+
             sinks.extend(kinds.cast.sinks());
             sinks
         })
@@ -251,6 +263,7 @@ impl resonate_ui::Renderers for Switched {
     fn vouch(&self, renderers: &BTreeSet<NodeName>) {
         let vouched = Vouched::flac_at_any_rate(renderers.iter().filter_map(Udn::from_node));
         let upnp = Arc::clone(&self.0.upnp);
+
         thread::spawn(move || upnp.vouch(vouched));
     }
 
@@ -268,6 +281,7 @@ impl resonate_ui::Renderers for Switched {
         let upnp = Arc::clone(&self.0.upnp);
         let cast = Arc::clone(&self.0.cast);
         let learnt = learnt.clone();
+
         thread::spawn(move || {
             upnp.teach(learnt.clone());
             cast.teach(learnt);

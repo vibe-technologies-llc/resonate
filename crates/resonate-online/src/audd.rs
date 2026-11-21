@@ -96,9 +96,11 @@ impl Audd {
 
     fn picture(&self, url: &str) -> Option<Picture> {
         let served = on_host(url, PICTURES_SERVED_BY).is_some();
+
         if !served {
             return None;
         }
+
         let bytes = self
             .client
             .bytes(Host::AppleArtwork, LookupOp::Cover, url, LARGEST_PICTURE)
@@ -117,11 +119,13 @@ impl Recogniser for Audd {
 
     fn recognise(&self, clip: &Clip) -> resonate_listen::Result<Option<Heard>> {
         let wave = wave_of(clip);
+
         if wave.len() > LARGEST_CLIP {
             return Err(resonate_listen::Error::TooLarge {
                 service: self.service.clone(),
             });
         }
+
         let boundary = format!("resonate-{}", Uuid::new_v4().simple());
         let body = form(&boundary, &self.token, &wave);
         let answer: Option<Answer> = self
@@ -149,6 +153,7 @@ impl Recogniser for Audd {
                 });
             }
         };
+
         heard.picture = artwork.and_then(|url| self.picture(&url));
         Ok(Some(heard))
     }
@@ -161,9 +166,11 @@ fn heard_in(
     let Some(answer) = answer else {
         return Ok(None);
     };
+
     if answer.status != ANSWERED {
         return Err(answer.error.map_or(0, |refusal| refusal.error_code));
     }
+
     let Some(found) = answer.result else {
         return Ok(None);
     };
@@ -206,6 +213,7 @@ fn wave_of(clip: &Clip) -> Vec<u8> {
     let data = (mono.len() * 2) as u32;
     let rate = clip.rate.hz();
     let mut wave = Vec::with_capacity(data as usize + 44);
+
     wave.extend_from_slice(b"RIFF");
     wave.extend_from_slice(&(WAVE_HEADER_BYTES + data).to_le_bytes());
     wave.extend_from_slice(b"WAVEfmt ");
@@ -222,6 +230,7 @@ fn wave_of(clip: &Clip) -> Vec<u8> {
         let word = (sample * SIXTEEN_BIT_SCALE)
             .round()
             .clamp(f32::from(i16::MIN), f32::from(i16::MAX)) as i16;
+
         wave.extend_from_slice(&word.to_le_bytes());
     }
     wave
@@ -229,6 +238,7 @@ fn wave_of(clip: &Clip) -> Vec<u8> {
 
 fn form(boundary: &str, token: &str, wave: &[u8]) -> Vec<u8> {
     let mut body = Vec::with_capacity(wave.len() + 512);
+
     for (name, value) in [("api_token", token), ("return", ASKED_FOR)] {
         body.extend_from_slice(
             format!(
@@ -272,6 +282,7 @@ mod tests {
     #[test]
     fn a_recognition_names_the_song_its_recording_and_where_its_artwork_is() {
         let (heard, artwork) = answered(RECOGNISED).expect("an answer").expect("a song");
+
         assert_eq!(heard.title, "Warriors");
         assert_eq!(heard.artist.as_deref(), Some("Imagine Dragons"));
         assert_eq!(heard.album.as_deref(), Some("Warriors"));
@@ -282,7 +293,9 @@ mod tests {
         );
         assert!(heard.recording.is_some());
         assert_eq!(heard.link.as_deref(), Some("https://lis.tn/Warriors"));
+
         let artwork = artwork.expect("artwork");
+
         assert!(artwork.ends_with("600x600bb.jpg"), "{artwork}");
     }
 
@@ -308,6 +321,7 @@ mod tests {
             samples: vec![0.5, -0.5, 1.0, 1.0],
         };
         let wave = wave_of(&clip);
+
         assert_eq!(&wave[..4], b"RIFF");
         assert_eq!(wave.len(), 44 + 4);
         assert_eq!(i16::from_le_bytes([wave[44], wave[45]]), 0);
@@ -315,6 +329,7 @@ mod tests {
 
         let body = form("edge", "token", &wave);
         let text = String::from_utf8_lossy(&body);
+
         assert!(text.starts_with("--edge\r\nContent-Disposition: form-data; name=\"api_token\""));
         assert!(text.contains("name=\"return\"\r\n\r\napple_music,musicbrainz\r\n"));
         assert!(text.ends_with("\r\n--edge--\r\n"));

@@ -48,6 +48,7 @@ impl Catalog {
         let mut statement = connection
             .prepare(KEPT)
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -102,6 +103,7 @@ fn plays_read(written: &str) -> Plays {
         .filter(|spelling| !spelling.is_empty())
         .filter_map(|spelling| {
             let trial = Trial::spelled(spelling);
+
             if trial.is_none() {
                 tracing::warn!(spelling, "a trial kept by a later build was passed over");
             }
@@ -202,6 +204,7 @@ impl Kinds {
         {
             return self.upnp.learn(sink.id).map_err(renderer_unlearnt);
         }
+
         let sink = self
             .cast
             .sinks()
@@ -232,7 +235,9 @@ impl MobilePlayer {
         let kinds = self.rendering.kinds().ok_or(Error::RenderersUnreachable)?;
         let listed = self.rendering.named(&node).ok_or(Error::UnknownRenderer)?;
         let node = NodeName::new(listed.node.as_str());
+
         let learning = kinds.learn(&node)?;
+
         self.catalog
             .keep_what_was_learnt(&node, &listed.name, &learning.plays())?;
         self.rendering.taught_from(&self.catalog)?;

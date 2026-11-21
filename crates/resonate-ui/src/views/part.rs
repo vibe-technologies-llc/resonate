@@ -127,6 +127,7 @@ impl Parts {
 
 fn cached(part: &Entity<Part>, region: Region) -> AnyElement {
     let holds_caption = cfg!(windows) && region == Region::Header;
+
     if !spoken::listening() && !holds_caption {
         return AnyView::from(part.clone())
             .cached(region.laid_out())
@@ -134,6 +135,7 @@ fn cached(part: &Entity<Part>, region: Region) -> AnyElement {
     }
 
     let mut drawn_whole = div();
+
     *drawn_whole.style() = region.laid_out();
     drawn_whole.child(part.clone()).into_any_element()
 }

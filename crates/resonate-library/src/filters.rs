@@ -15,11 +15,13 @@ impl Default for MusicExtensions {
 impl MusicExtensions {
     pub fn parse(extensions: &[&str]) -> Option<Self> {
         let mut selected = Self(0);
+
         for extension in extensions {
             let extension = extension.trim().trim_start_matches('.');
             let index = AUDIO_EXTENSIONS
                 .iter()
                 .position(|held| held.eq_ignore_ascii_case(extension))?;
+
             selected.0 |= 1 << index;
         }
         Some(selected)
@@ -70,6 +72,7 @@ pub struct MusicFilters {
 impl MusicFilters {
     pub(crate) fn predicate(self, track: &str) -> Option<String> {
         let mut conditions = Vec::new();
+
         if self.extensions != MusicExtensions::default() {
             let extensions: Vec<String> = self
                 .extensions
@@ -81,6 +84,7 @@ impl MusicFilters {
                     )
                 })
                 .collect();
+
             conditions.push(if extensions.is_empty() {
                 "0".to_owned()
             } else {
@@ -105,6 +109,7 @@ mod tests {
     fn extension_choices_are_supported_case_insensitive_and_accept_a_dot() {
         let extensions =
             MusicExtensions::parse(&[".MP3", "flac", ".mp3"]).expect("supported extensions");
+
         assert_eq!(extensions.selected().collect::<Vec<_>>(), ["flac", "mp3"]);
         assert!(MusicExtensions::parse(&[".exe"]).is_none());
         assert_eq!(

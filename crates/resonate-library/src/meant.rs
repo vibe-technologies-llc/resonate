@@ -17,7 +17,7 @@ pub struct Meant {
     pub artist: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ByArtist {
     pub title: String,
     pub artist: String,
@@ -30,9 +30,11 @@ impl ByArtist {
             !token.contains(MARKS_OF_THE_GRAMMAR)
                 && (DASHES.contains(token) || !token.starts_with(DENIED))
         });
+
         if !plain {
             return None;
         }
+
         let joined = |words: &[&str]| words.join(" ");
         let split = |at: usize| (at > 0 && at + 1 < tokens.len()).then_some(at);
 
@@ -72,6 +74,7 @@ impl ByArtist {
     fn titles(&self, matched: &RecordingMatch) -> bool {
         let titled = words_of_a_name(&matched.title);
         let typed = words_of_a_name(&self.title);
+
         let every_word_answers = typed.iter().all(|word| {
             titled
                 .iter()
@@ -88,6 +91,7 @@ impl ByArtist {
         if artist.contains('"') {
             return None;
         }
+
         let mut searched: Vec<String> = self
             .title
             .split_whitespace()
@@ -100,6 +104,7 @@ impl ByArtist {
                 .to_string()
             })
             .collect();
+
         searched.push(
             Word {
                 column: Some(Column::Artist),

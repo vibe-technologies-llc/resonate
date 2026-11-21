@@ -43,7 +43,7 @@ const TOLD_AT_MOST: usize = 64;
 
 const READ_AT_ONCE: usize = 16 * 1024;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Namespace {
     Connection,
     Heartbeat,
@@ -100,6 +100,7 @@ impl Link {
 
         let socket =
             TcpStream::connect_timeout(&at, CONNECTED_WITHIN).map_err(failed(LinkOp::Connect))?;
+
         socket.set_nodelay(true).map_err(failed(LinkOp::Connect))?;
         socket
             .set_read_timeout(Some(ANSWERED_WITHIN))
@@ -107,6 +108,7 @@ impl Link {
         socket
             .set_write_timeout(Some(ANSWERED_WITHIN))
             .map_err(failed(LinkOp::Connect))?;
+
         let connection =
             ClientConnection::new(tls::config()?, ServerName::IpAddress(at.ip().into())).map_err(
                 |source| Error::Tls {
@@ -114,6 +116,7 @@ impl Link {
                 },
             )?;
         let mut tls = StreamOwned::new(connection, socket);
+
         while tls.conn.is_handshaking() {
             tls.conn
                 .complete_io(&mut tls.sock)
@@ -127,6 +130,7 @@ impl Link {
         let (tell, told) = bounded(TOLD_AT_MOST);
         let waiting = Waiting::default();
         let alive = Arc::new(AtomicBool::new(true));
+
         let link = Self {
             outgoing,
             waiting: Arc::clone(&waiting),
@@ -142,6 +146,7 @@ impl Link {
             tell,
             alive,
         };
+
         thread::Builder::new()
             .name("resonate-cast-link".to_owned())
             .spawn(move || carried.run())
@@ -186,6 +191,7 @@ impl Link {
     ) -> Result<Json> {
         let id = self.minted.fetch_add(1, Ordering::Relaxed);
         let (answer, answered) = bounded(1);
+
         self.waiting.lock().insert(id, answer);
         if !self.is_alive() {
             self.waiting.lock().remove(&id);
@@ -198,6 +204,7 @@ impl Link {
             said.with("type", Json::text(asked.name()))
                 .with("requestId", id.into()),
         );
+
         let reply = match answered.recv_timeout(within) {
             Ok(reply) => reply,
             Err(RecvTimeoutError::Timeout) => {
@@ -248,7 +255,9 @@ impl Carried {
                 Ok(Carrying::On) => {}
                 Ok(Carrying::Ended) => {
                     self.tls.conn.send_close_notify();
+
                     let _ = self.tls.flush();
+
                     break;
                 }
                 Err(error) => {
@@ -322,6 +331,7 @@ impl Carried {
             };
             let end = LENGTH_BYTES + length;
             let read = Message::read(held.get(LENGTH_BYTES..end).unwrap_or_default());
+
             held.drain(..end);
             match read {
                 Ok(message) => {
@@ -366,8 +376,10 @@ impl Carried {
             .and_then(Json::as_number)
             .filter(|id| *id >= 1.0 && *id <= f64::from(u32::MAX))
             .map(|id| id as u32);
+
         if let Some(waiter) = request.and_then(|id| self.waiting.lock().remove(&id)) {
             let _ = waiter.send(said);
+
             return true;
         }
         match self.tell.try_send(Told {

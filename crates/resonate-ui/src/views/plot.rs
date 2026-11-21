@@ -14,7 +14,9 @@ pub(crate) fn stroke(
         let [from, to] = pair else {
             continue;
         };
+
         let (left, right) = widened(from.x.min(to.x), from.x.max(to.x), px(width));
+
         window.paint_quad(fill(
             Bounds::from_corners(
                 point(left, from.y.min(to.y) - half),
@@ -36,7 +38,9 @@ pub(crate) fn wash(
         let [from, to] = pair else {
             continue;
         };
+
         let reached = (from.y + to.y) * HALF;
+
         if reached == level {
             continue;
         }
@@ -61,9 +65,11 @@ pub(crate) fn between(
         let ([over_from, over_to], [under_from, under_to]) = (over, under) else {
             continue;
         };
+
         let top = over_from.y.min(over_to.y);
         let bottom = under_from.y.max(under_to.y);
         let (left, right) = widened(over_from.x, over_to.x, px(1.0));
+
         window.paint_quad(fill(
             Bounds::from_corners(point(left, top.min(bottom)), point(right, top.max(bottom))),
             colour,
@@ -73,9 +79,11 @@ pub(crate) fn between(
 
 fn widened(left: Pixels, right: Pixels, at_least: Pixels) -> (Pixels, Pixels) {
     let short = at_least - (right - left);
+
     if short <= px(0.0) {
         return (left, right);
     }
+
     let each = short * HALF;
     (left - each, right + each)
 }

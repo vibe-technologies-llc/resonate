@@ -139,6 +139,7 @@ impl Inbox {
 
     fn read(&self, folder: Stamp) -> Result<Listing> {
         let mut files = Vec::new();
+
         for entry in fs::read_dir(&self.folder).map_err(|source| self.refused(source))? {
             let path = entry.map_err(|source| self.refused(source))?.path();
             if let Some(stem) = names_audio(&path).then(|| stem_of(&path)).flatten() {
@@ -160,12 +161,15 @@ impl Inbox {
             .map(|metadata| Stamp::of(&metadata))
             .map_err(|source| self.refused(source))?;
         let mut held = self.listed.lock();
+
         let still_true = held.as_ref().is_some_and(|listing| {
             listing.folder == folder && listing.read_at.elapsed() < self.listing_trusted_for
         });
+
         if !still_true {
             *held = Some(self.read(folder)?);
         }
+
         let files = held.as_ref().map_or(&[][..], |listing| &listing.files[..]);
 
         Ok(keys
@@ -188,6 +192,7 @@ impl Inbox {
             }
             Err(error) => return Err(self.refused(error)),
         };
+
         if !metadata.is_file() {
             return Ok(None);
         }
@@ -196,7 +201,9 @@ impl Inbox {
         let now = SystemTime::now();
         let sighting = {
             let mut sighted = self.sighted.lock();
+
             let sighting = Sighting::of(&metadata, stamp, sighted.get(&file).copied());
+
             sighted.insert(file.clone(), sighting);
             sighting
         };
@@ -204,6 +211,7 @@ impl Inbox {
         let quiet = !stamp.touched_within(self.settles_for, now);
         let unchanged_since_sighted = sighting.since.elapsed() >= self.settles_for;
         let quiet_long_enough_alone = !stamp.touched_within(self.settled_alone_after, now);
+
         if quiet && (unchanged_since_sighted || quiet_long_enough_alone) {
             self.sighted.lock().remove(&file);
             return Ok(Some(file));
@@ -238,6 +246,7 @@ impl Provider for Inbox {
 
     fn find(&self, identity: &Identity) -> Result<Obtained> {
         let keys = keys_most_exact_first(identity);
+
         if keys.is_empty() {
             return Ok(Obtained::Nothing);
         }
@@ -283,6 +292,7 @@ mod tests {
                 process::id(),
                 FOLDERS.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&path).expect("a scratch folder");
             Self(path)
         }
@@ -359,6 +369,7 @@ mod tests {
         let inbox = settled_at(&folder);
 
         let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+
         assert_eq!(
             found,
             Some(
@@ -373,6 +384,7 @@ mod tests {
             ..echoes()
         };
         let found = delivered(inbox.find(&without_recording).expect("a readable inbox"));
+
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES_TRACK}.flac"))));
 
         let isrc_alone = Identity {
@@ -381,6 +393,7 @@ mod tests {
             ..echoes()
         };
         let found = delivered(inbox.find(&isrc_alone).expect("a readable inbox"));
+
         assert_eq!(
             found,
             Some(
@@ -406,14 +419,17 @@ mod tests {
                 .find(&echoes())
                 .expect("a readable inbox"),
         );
+
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.WAV"))));
 
         fs::remove_file(folder.0.join(format!("{ECHOES}.WAV"))).expect("a scratch file");
+
         let found = delivered(
             settled_at(&folder)
                 .find(&echoes())
                 .expect("a readable inbox"),
         );
+
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.m4a"))));
     }
 
@@ -438,12 +454,15 @@ mod tests {
 
         let first = delivered(inbox.find(&echoes()).expect("a readable inbox"));
         let read_at = listed_at(&inbox);
+
         for nth in 0..WANTS_IN_A_POLL {
             let answered = inbox
                 .find(&recording_numbered(nth))
                 .expect("a readable inbox");
+
             assert!(delivered(answered).is_none());
         }
+
         let last = delivered(inbox.find(&echoes()).expect("a readable inbox"));
 
         assert!(first.is_some());
@@ -458,8 +477,10 @@ mod tests {
         let inbox = settled_at(&folder);
 
         let before = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+
         a_tick_of_the_file_clock_after_the_folder_was_written(&folder.0);
         fs::write(folder.0.join(format!("{ECHOES}.flac")), b"audio").expect("a scratch file");
+
         let after = delivered(inbox.find(&echoes()).expect("a readable inbox"));
 
         assert!(before.is_none());
@@ -513,11 +534,13 @@ mod tests {
     #[cfg(unix)]
     fn a_copy_that_kept_its_old_modification_time_is_still_arriving_by_its_change_time() {
         let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+
         fs::File::options()
             .write(true)
             .open(folder.0.join(format!("{ECHOES}.flac")))
             .and_then(|file| file.set_modified(SystemTime::now() - AN_HOUR * 24))
             .expect("an old modification time");
+
         let inbox = Inbox {
             settles_for: AN_HOUR,
             ..Inbox::at(&folder.0)
@@ -539,13 +562,16 @@ mod tests {
         };
 
         thread::sleep(A_MOMENT * 3);
+
         assert!(matches!(
             inbox.find(&echoes()),
             Err(Error::StillArriving { .. })
         ));
 
         thread::sleep(A_MOMENT * 2);
+
         let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
+
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.flac"))));
     }
 
@@ -555,15 +581,20 @@ mod tests {
         let path = folder.0.join(format!("{ECHOES}.flac"));
         let first = fs::metadata(&path).expect("the file");
         let stamp = Stamp::of(&first);
+
         let earlier = Sighting::of(&first, stamp, None);
 
         thread::sleep(A_MOMENT);
+
         let unchanged = Sighting::of(&first, stamp, Some(earlier));
+
         assert_eq!(unchanged.since, earlier.since);
 
         fs::write(&path, b"more audio than before").expect("a longer file");
+
         let grown = fs::metadata(&path).expect("the file");
         let seen_again = Sighting::of(&grown, stamp, Some(earlier));
+
         assert!(seen_again.since > earlier.since);
         assert_eq!(seen_again.size, grown.len());
     }
@@ -578,6 +609,7 @@ mod tests {
         };
 
         thread::sleep(A_MOMENT * 3);
+
         let found = delivered(inbox.find(&echoes()).expect("a readable inbox"));
 
         assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.flac"))));
@@ -652,6 +684,7 @@ mod tests {
     #[test]
     fn a_folder_nested_in_the_inbox_is_not_walked() {
         let folder = Folder::new();
+
         fs::create_dir_all(folder.0.join("deeper")).expect("a nested folder");
         fs::create_dir_all(folder.0.join(format!("{ECHOES}.flac"))).expect("a folder named so");
         fs::write(
@@ -694,6 +727,7 @@ mod tests {
             .expect("a readable inbox");
 
         let after = fs::read(folder.0.join(format!("{ECHOES}.flac"))).expect("the file");
+
         assert_eq!(before, after);
         assert_eq!(fs::read_dir(&folder.0).expect("the inbox").count(), 1);
     }

@@ -105,10 +105,12 @@ impl Dlna {
         {
             return Ok(kept.listing.clone());
         }
+
         let server = self.server(&object.server, ProviderOp::Browse)?;
         let listing = server
             .children(&object.id)
             .map_err(self.failed(ProviderOp::Browse))?;
+
         *self.kept.lock() = Some(Kept {
             server: object.server.clone(),
             container: object.id.clone(),
@@ -290,6 +292,7 @@ impl PlaysInPlace for Dlna {
             .into_iter()
             .next()
             .ok_or_else(|| self.unreadable(ProviderOp::Browse))?;
+
         let album = Self::album_from(&object.server, container)
             .ok_or_else(|| self.unreadable(ProviderOp::Browse))?;
         let held = self.children(&object)?;
@@ -315,10 +318,12 @@ impl PlaysInPlace for Dlna {
             held
         };
         let mut found = Found::default();
+
         for server in servers {
             match server.songs_named(words) {
                 Ok(listing) => {
                     let udn = server.udn().clone();
+
                     found.albums.extend(Self::albums_of(
                         &udn,
                         Listing {
@@ -347,6 +352,7 @@ impl PlaysInPlace for Dlna {
         let played = item
             .played_from()
             .ok_or_else(|| self.unreadable(ProviderOp::Stream))?;
+
         let fetched = server
             .fetched(&played.at)
             .map_err(self.failed(ProviderOp::Stream))?;

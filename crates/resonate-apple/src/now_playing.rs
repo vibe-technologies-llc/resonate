@@ -176,6 +176,7 @@ fn answered(
         guarded(|| answer(event), || Answer::Failed).status()
     });
     let token = unsafe { command.addTargetWithHandler(&handler) };
+
     ADDED.with_borrow_mut(|added| added.add(owner, Added { command, token }));
 }
 
@@ -254,6 +255,7 @@ fn shown(shown: &Shown) {
     let keys = Keys::of_the_system();
     let center = info_center();
     let info = Info::new();
+
     named(&info, keys.title, &shown.title);
     named(&info, keys.artist, &shown.artist);
     named(&info, keys.album, &shown.album);
@@ -281,6 +283,7 @@ fn timed(clock: Option<Clock>) {
         return;
     };
     let info: Retained<Info> = standing.mutableCopy();
+
     for key in keys.of_the_clock() {
         info.removeObjectForKey(key);
     }
@@ -305,15 +308,20 @@ impl NowPlaying {
     pub fn answered_by(asked: impl Fn(Asked) -> Answer + Send + Sync + 'static) -> Self {
         let asked: Asking = Arc::new(asked);
         let owner = NEXT_OWNER.fetch_add(1, Ordering::Relaxed);
+
         on_the_main_queue(move || {
             let center = commands();
+
             for pressed in Pressed::EVERY {
                 let asked = Arc::clone(&asked);
+
                 answered(owner, pressed.command(&center), move |_| {
                     asked(pressed.asked())
                 });
             }
+
             let seek = unsafe { center.changePlaybackPositionCommand() };
+
             answered(
                 owner,
                 seek.into_super(),
@@ -329,6 +337,7 @@ impl NowPlaying {
     pub fn show(&self, song: Option<&Shown>) {
         let song = song.cloned();
         let owner = self.owner;
+
         on_the_main_queue(move || {
             told_by(owner);
             match song {
@@ -344,13 +353,16 @@ impl NowPlaying {
 
     pub fn playback(&self, playback: Playback) {
         let owner = self.owner;
+
         on_the_main_queue(move || {
             told_by(owner);
+
             let state = match playback {
                 Playback::Playing => MPNowPlayingPlaybackState::Playing,
                 Playback::Paused => MPNowPlayingPlaybackState::Paused,
                 Playback::Stopped => MPNowPlayingPlaybackState::Stopped,
             };
+
             unsafe { info_center().setPlaybackState(state) };
         });
     }
@@ -358,11 +370,15 @@ impl NowPlaying {
     pub fn offer(&self, offered: Offered) {
         on_the_main_queue(move || {
             let center = commands();
+
             for pressed in Pressed::EVERY {
                 let command = pressed.command(&center);
+
                 unsafe { command.setEnabled(pressed.is_offered(offered)) };
             }
+
             let seek = unsafe { center.changePlaybackPositionCommand() };
+
             unsafe { seek.setEnabled(offered.seek) };
         });
     }
@@ -371,12 +387,15 @@ impl NowPlaying {
 impl Drop for NowPlaying {
     fn drop(&mut self) {
         let owner = self.owner;
+
         on_the_main_queue(move || {
             released(owner);
             if !TOLD.with_borrow_mut(|told| told.let_go_by(owner)) {
                 return;
             }
+
             let info = info_center();
+
             unsafe { info.setNowPlayingInfo(None) };
             unsafe { info.setPlaybackState(MPNowPlayingPlaybackState::Stopped) };
         });

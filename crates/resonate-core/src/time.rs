@@ -5,7 +5,7 @@ use crate::SampleRate;
 const NANOS_PER_SECOND: u128 = 1_000_000_000;
 const HALF_A_SECOND_IN_NANOS: u128 = NANOS_PER_SECOND / 2;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frames(pub u64);
 
 impl Frames {
@@ -41,6 +41,7 @@ impl Frames {
         if from == to {
             return self;
         }
+
         let scaled = u128::from(self.0) * u128::from(to.hz()) / u128::from(from.hz());
         Self(u64::try_from(scaled).unwrap_or(u64::MAX))
     }
@@ -48,6 +49,7 @@ impl Frames {
     pub fn from_duration(duration: Duration, rate: SampleRate) -> Self {
         let hz = u128::from(rate.hz());
         let nanos = duration.as_nanos();
+
         let rounded = (nanos * hz + HALF_A_SECOND_IN_NANOS) / NANOS_PER_SECOND;
         Self(u64::try_from(rounded).unwrap_or(u64::MAX))
     }
@@ -59,7 +61,7 @@ impl fmt::Display for Frames {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct FrameSpan {
     start: Frames,
     frames: Option<Frames>,
@@ -161,6 +163,7 @@ mod tests {
     fn frames_round_trip_through_duration_at_cd_rate() {
         let frames = Frames(44_100 * 3);
         let duration = frames.to_duration(SampleRate::HZ_44100);
+
         assert_eq!(duration, Duration::from_secs(3));
         assert_eq!(
             Frames::from_duration(duration, SampleRate::HZ_44100),
@@ -231,6 +234,7 @@ mod tests {
     #[test]
     fn sub_second_positions_keep_nanosecond_precision() {
         let one = Frames(1).to_duration(SampleRate::HZ_44100);
+
         assert_eq!(one.as_nanos(), 22_675);
     }
 

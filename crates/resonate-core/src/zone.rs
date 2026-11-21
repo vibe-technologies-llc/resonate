@@ -2,7 +2,7 @@ use std::{fmt, num::NonZeroU32};
 
 use crate::{Volume, words};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ZoneId(NonZeroU32);
 
 impl ZoneId {
@@ -39,15 +39,17 @@ impl fmt::Display for ZoneId {
 
 pub const LONGEST_ZONE_NAME: usize = 64;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ZoneName(Box<str>);
 
 impl ZoneName {
     pub fn given(name: &str) -> Option<Self> {
         let trimmed = name.trim();
+
         if trimmed.is_empty() {
             return None;
         }
+
         let kept: String = trimmed
             .chars()
             .filter(|letter| !letter.is_control())
@@ -80,7 +82,7 @@ pub struct KeptZone {
     pub volume: Option<Volume>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum RemoteTrust {
     #[default]
     Everything,

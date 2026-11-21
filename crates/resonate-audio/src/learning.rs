@@ -4,7 +4,7 @@ use resonate_core::{ChannelLayout, SampleFormat, SampleRate, StreamSpec};
 
 use crate::NodeName;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Trial {
     FlacAt192kHz,
     FlacAt176kHz,
@@ -94,7 +94,7 @@ impl Trial {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Unplayed {
     Refused,
     NeverFetched,
@@ -104,14 +104,14 @@ pub enum Unplayed {
     ClockStill,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum TrialVerdict {
     Played,
     Unplayed(Unplayed),
     Untried,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Plays(BTreeSet<Trial>);
 
 impl Plays {
@@ -135,6 +135,7 @@ impl Plays {
 
     pub fn surround(&self) -> Vec<(ChannelLayout, SampleRate)> {
         let mut highest: Vec<(ChannelLayout, SampleRate)> = Vec::new();
+
         for trial in self.trials().filter(|trial| !trial.is_a_rate()) {
             match highest
                 .iter_mut()
@@ -213,7 +214,7 @@ impl Learning {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Unlearnt {
     NotListed,
     InUse,
@@ -229,6 +230,7 @@ mod tests {
         for trial in Trial::ALL {
             assert_eq!(Trial::spelled(trial.spelling()), Some(trial));
         }
+
         assert_eq!(Trial::spelled(" channels-6 "), Some(Trial::SixChannels));
         assert_eq!(Trial::spelled("flac-768000"), None);
     }
@@ -236,6 +238,7 @@ mod tests {
     #[test]
     fn a_learning_plays_only_what_played() {
         let mut learning = Learning::default();
+
         learning.heard(Trial::FlacAt192kHz, TrialVerdict::Played);
         learning.heard(
             Trial::FlacAt176kHz,
@@ -264,6 +267,7 @@ mod tests {
     #[test]
     fn a_trial_beyond_another_waits_for_it_to_play() {
         let mut learning = Learning::default();
+
         learning.heard(Trial::FlacAt192kHz, TrialVerdict::Played);
         learning.heard(
             Trial::FlacAt176kHz,

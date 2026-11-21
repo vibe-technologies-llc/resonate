@@ -64,17 +64,23 @@ struct Shot {
 impl Shot {
     fn read(path: &Path) -> Self {
         let mut decoder = Decoder::new(BufReader::new(File::open(path).expect("the screenshot")));
+
         decoder.set_transformations(Transformations::EXPAND);
+
         let mut reader = decoder.read_info().expect("a PNG header");
+
         let mut bytes = vec![0; reader.output_buffer_size().expect("a bounded PNG")];
+
         let info = reader.next_frame(&mut bytes).expect("a PNG frame");
 
         assert_eq!(info.bit_depth, BitDepth::Eight, "{}", path.display());
+
         let channels = match info.color_type {
             ColorType::Rgb => 3,
             ColorType::Rgba => 4,
             other => panic!("{} is {other:?}, not colour", path.display()),
         };
+
         bytes.truncate(info.buffer_size());
 
         Self {
@@ -133,6 +139,7 @@ impl Output {
     fn new() -> Self {
         let path = env::temp_dir().join(format!("resonate-drag-{}", std::process::id()));
         let _ = fs::remove_dir_all(&path);
+
         fs::create_dir_all(&path).expect("a folder for the drag's logs and screenshots");
         Self(path)
     }
@@ -176,6 +183,7 @@ fn a_file_dragged_from_another_client_onto_a_hosted_kwin_is_copied_into_the_musi
         eprintln!("skipped: no GTK 4 in python3 to offer the file with");
         return;
     }
+
     let output = Output::new();
 
     let ran = Command::new("timeout")
@@ -191,6 +199,7 @@ fn a_file_dragged_from_another_client_onto_a_hosted_kwin_is_copied_into_the_musi
         String::from_utf8_lossy(&ran.stderr),
         output.0.display()
     );
+
     assert!(ran.status.success(), "{said}");
     assert!(
         fs::read_to_string(output.file("source.log"))
@@ -221,6 +230,7 @@ fn a_file_dragged_from_another_client_onto_a_hosted_kwin_is_copied_into_the_musi
     let spread = before
         .drawn(DRAWN_AT_LEAST)
         .expect("the window drew something before the drag");
+
     assert!(
         spread.width() >= WIDEST_BEFORE_THE_DRAG_AT_LEAST,
         "the window was not up before the drag: {said}"
@@ -229,13 +239,16 @@ fn a_file_dragged_from_another_client_onto_a_hosted_kwin_is_copied_into_the_musi
     let card = over
         .drawn(SCRIM_LEAVES_AT_MOST)
         .expect("something drawn over the scrim");
+
     assert!(
         card.width() <= CARD_WIDEST && card.height() <= CARD_TALLEST,
         "the scrim did not cover the window mid-drag, {}x{} still drawn: {said}",
         card.width(),
         card.height()
     );
+
     let (column, row) = card.centre();
+
     assert!(
         column.abs_diff(DROP_POINT.0) <= CARD_CENTRE_WITHIN
             && row.abs_diff(DROP_POINT.1) <= CARD_CENTRE_WITHIN,
@@ -244,9 +257,11 @@ fn a_file_dragged_from_another_client_onto_a_hosted_kwin_is_copied_into_the_musi
 
     let border = over.coloured(&card);
     let quiet = before.coloured(&card);
+
     assert!(
         border >= COLOURED_PIXELS_FOR_A_BORDER && border >= quiet * COLOURED_TIMES_THE_QUIET_CARD,
         "no tinted border drawn, {border} coloured pixels against {quiet} before: {said}"
     );
+
     let _ = fs::remove_dir_all(&output.0);
 }

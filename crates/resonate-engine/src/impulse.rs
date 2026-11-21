@@ -61,10 +61,12 @@ pub fn binaural_wave(impulse: &Impulse) -> Result<Vec<u8>, PairedReadError> {
     let channels = u16::try_from(taps.len()).unwrap_or(u16::MAX);
     let frames = impulse.frames();
     let block_align = channels * (FLOAT_BITS / 8);
+
     let data_bytes = u32::try_from(frames * usize::from(block_align)).unwrap_or(u32::MAX);
     let rate = impulse.rate().hz();
 
     let mut file = Vec::with_capacity(68 + data_bytes as usize);
+
     file.extend_from_slice(b"RIFF");
     file.extend_from_slice(&(60 + data_bytes).to_le_bytes());
     file.extend_from_slice(b"WAVEfmt ");
@@ -84,6 +86,7 @@ pub fn binaural_wave(impulse: &Impulse) -> Result<Vec<u8>, PairedReadError> {
     for frame in 0..frames {
         for channel in taps.iter() {
             let tap = channel.get(frame).copied().unwrap_or(0.0);
+
             file.extend_from_slice(&(tap as f32).to_le_bytes());
         }
     }
@@ -100,7 +103,9 @@ fn read_unscaled(
     }
 
     let (mut decoder, info) = Decoder::open(sources, location)?;
+
     decoder.set_output_format(SampleFormat::F32);
+
     let rate = info.spec.rate;
     let channels = usize::from(info.spec.channel_count().get());
     let most = usize::try_from(Frames::from_duration(LONGEST_IMPULSE, rate).get()).unwrap_or(0);
@@ -112,6 +117,7 @@ fn read_unscaled(
         if decoder.next_block(&mut block)? == DecodeStatus::EndOfStream {
             break;
         }
+
         let SampleData::F32(samples) = block.data() else {
             continue;
         };
@@ -148,6 +154,7 @@ mod tests {
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
         file.extend_from_slice(b"WAVEfmt ");
         file.extend_from_slice(&16_u32.to_le_bytes());
@@ -166,6 +173,7 @@ mod tests {
     #[test]
     fn a_response_is_read_out_of_a_file_as_the_taps_it_holds() {
         let path = env::temp_dir().join(format!("resonate-impulse-{}.wav", process::id()));
+
         fs::write(&path, wave(48_000, &[16_384, 0, -8_192])).expect("a scratch response");
 
         let read = read_impulse(
@@ -188,6 +196,7 @@ mod tests {
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
         file.extend_from_slice(b"WAVEfmt ");
         file.extend_from_slice(&16_u32.to_le_bytes());
@@ -206,6 +215,7 @@ mod tests {
     #[test]
     fn a_four_channel_file_is_read_as_a_two_by_two_response() {
         let path = env::temp_dir().join(format!("resonate-binaural-{}.wav", process::id()));
+
         fs::write(
             &path,
             wave_of(4, 48_000, &[16_384, 0, 0, 16_384, 8_192, 0, 0, 8_192]),
@@ -228,6 +238,7 @@ mod tests {
 
     fn scratch(name: &str, channels: u16, rate: u32, samples: &[i16]) -> std::path::PathBuf {
         let path = env::temp_dir().join(format!("resonate-{name}-{}.wav", process::id()));
+
         fs::write(&path, wave_of(channels, rate, samples)).expect("a scratch response");
         path
     }
@@ -264,6 +275,7 @@ mod tests {
         let rates = read_binaural_pair(&sources, &at(&left), &at(&slower), Speakers::STANDARD);
         let lengths = read_binaural_pair(&sources, &at(&left), &at(&longer), Speakers::STANDARD);
         let channels = read_binaural_pair(&sources, &at(&left), &at(&mono), Speakers::STANDARD);
+
         for path in [&left, &slower, &longer, &mono] {
             let _ = fs::remove_file(path);
         }
@@ -296,6 +308,7 @@ mod tests {
         let left = scratch("wave-left", 2, 48_000, &[16_384, 8_192, 0, 4_096]);
         let right = scratch("wave-right", 2, 48_000, &[4_096, 16_384, 2_048, 0]);
         let sources = Sources::local();
+
         let pair = read_binaural_pair(
             &sources,
             &MediaLocation::local(&left),
@@ -307,7 +320,9 @@ mod tests {
         let _ = fs::remove_file(&right);
 
         let written = env::temp_dir().join(format!("resonate-wave-both-{}.wav", process::id()));
+
         fs::write(&written, binaural_wave(&pair).expect("a wave")).expect("a scratch file");
+
         let read = read_impulse(
             &sources,
             &MediaLocation::local(&written),
@@ -319,6 +334,7 @@ mod tests {
 
         assert!(read.is_crossed());
         assert_eq!(read.frames(), pair.frames());
+
         let before = pair.at(pair.rate()).expect("taps");
         let after = read.at(read.rate()).expect("taps");
         for (a, b) in before.iter().flatten().zip(after.iter().flatten()) {
@@ -329,6 +345,7 @@ mod tests {
     #[test]
     fn a_response_boosting_past_unity_is_read_with_the_headroom_it_needs() {
         let path = env::temp_dir().join(format!("resonate-boosting-{}.wav", process::id()));
+
         fs::write(&path, wave(48_000, &[16_384, 16_384, 16_384])).expect("a scratch response");
 
         let read = read_impulse(
@@ -358,6 +375,7 @@ mod tests {
             }
         };
         let mut impulses = Vec::new();
+
         for measurement in 0..3 {
             for ear in 0..2 {
                 for frame in 0..SOFA_FRAMES {
@@ -365,6 +383,7 @@ mod tests {
                 }
             }
         }
+
         let positions = [0.0, 0.0, 1.0, 30.0, 0.0, 1.0, 330.0, 0.0, 1.0];
         Hdf5Builder::new()
             .dataset(
@@ -388,6 +407,7 @@ mod tests {
     #[test]
     fn a_set_of_head_related_responses_is_read_as_the_two_by_two_response_of_the_speakers() {
         let path = env::temp_dir().join(format!("resonate-hrir-{}.sofa", process::id()));
+
         fs::write(&path, sofa_set(44_100.0)).expect("a scratch set");
 
         let read = read_impulse(
@@ -403,6 +423,7 @@ mod tests {
         assert_eq!(read.channels(), 4);
         assert_eq!(read.frames(), SOFA_FRAMES);
         assert_eq!(read.rate().hz(), 44_100);
+
         let taps = read.at(read.rate()).expect("taps");
         let firsts: Vec<f64> = taps.iter().map(|channel| channel[0]).collect();
         for (heard, wanted) in firsts.iter().zip([0.3, 0.4, 0.5, 0.6]) {
@@ -413,7 +434,9 @@ mod tests {
     #[test]
     fn a_speaker_angle_the_listener_sets_moves_the_measurements_a_set_is_read_at() {
         let path = env::temp_dir().join(format!("resonate-hrir-angle-{}.sofa", process::id()));
+
         fs::write(&path, sofa_set(48_000.0)).expect("a scratch set");
+
         let narrow = Speakers::at(resonate_core::SpeakerAngle::from_degrees(5).expect("an angle"));
 
         let read = read_impulse(&Sources::local(), &MediaLocation::local(&path), narrow)
@@ -434,6 +457,7 @@ mod tests {
     #[test]
     fn a_set_is_redrawn_at_the_rate_of_the_stream_like_any_other_response() {
         let path = env::temp_dir().join(format!("resonate-hrir-rate-{}.sofa", process::id()));
+
         fs::write(&path, sofa_set(44_100.0)).expect("a scratch set");
 
         let read = read_impulse(
@@ -446,7 +470,9 @@ mod tests {
         let _ = fs::remove_file(&path);
 
         let at_stream = read.at(SampleRate::HZ_96000).expect("taps");
+
         assert_eq!(at_stream.len(), 4);
+
         let expected = SOFA_FRAMES as f64 * 96_000.0 / 44_100.0;
         for channel in at_stream.iter() {
             assert!(
@@ -460,7 +486,9 @@ mod tests {
     #[test]
     fn a_set_is_not_one_of_the_two_stereo_files_of_a_pair() {
         let path = env::temp_dir().join(format!("resonate-hrir-pair-{}.sofa", process::id()));
+
         fs::write(&path, sofa_set(48_000.0)).expect("a scratch set");
+
         let stereo = scratch("hrir-pair-right", 2, 48_000, &[4_096, 16_384, 0, 0]);
 
         let refused = read_binaural_pair(

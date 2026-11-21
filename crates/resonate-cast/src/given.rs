@@ -18,16 +18,18 @@ const BROWSE_RESOLVES_WITHIN: Duration = Duration::from_secs(3);
 
 const BROWSE_ANSWER_SLACK: Duration = Duration::from_millis(500);
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Host(Box<str>);
 
 impl Host {
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
         let text = text.strip_suffix('.').unwrap_or(text);
+
         if text.is_empty() || text.len() > HOST_BYTES_AT_MOST {
             return None;
         }
+
         let labels: Vec<&str> = text.split('.').collect();
         let spelled = labels.iter().all(|label| {
             !label.is_empty()
@@ -64,6 +66,7 @@ impl Host {
             },
             Err(source) => source,
         };
+
         if through_mdns
             && self.is_local()
             && let Some(ip) = self.through_the_browse()
@@ -79,6 +82,7 @@ impl Host {
     fn through_the_browse(&self) -> Option<IpAddr> {
         let daemon = ServiceDaemon::new().ok()?;
         let found = self.heard_from(&daemon);
+
         if let Err(error) = daemon.shutdown() {
             tracing::debug!(%error, "resolving a .local name did not stop cleanly");
         }
@@ -95,6 +99,7 @@ impl Host {
                 Ok(HostnameResolutionEvent::AddressesFound(_, addresses)) => {
                     let mut addresses: Vec<IpAddr> =
                         addresses.iter().map(ScopedIp::to_ip_addr).collect();
+
                     addresses.sort();
                     return addresses
                         .iter()
@@ -115,7 +120,7 @@ impl fmt::Display for Host {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Given {
     Address(SocketAddr),
     Named { host: Host, port: u16 },
@@ -124,12 +129,14 @@ pub enum Given {
 impl Given {
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
+
         if let Ok(at) = text.parse::<SocketAddr>() {
             return Some(Self::Address(at));
         }
         if let Ok(ip) = text.trim_matches(['[', ']']).parse::<IpAddr>() {
             return Some(Self::Address(SocketAddr::new(ip, CAST_PORT)));
         }
+
         let (host, port) = match text.rsplit_once(':') {
             Some((host, port)) => (host, port.parse::<u16>().ok().filter(|port| *port != 0)?),
             None => (text, CAST_PORT),
@@ -169,6 +176,7 @@ impl fmt::Display for Given {
 
 fn preferred(addresses: impl Iterator<Item = SocketAddr>) -> Option<SocketAddr> {
     let mut first = None;
+
     for at in addresses {
         if at.is_ipv4() {
             return Some(at);
@@ -256,6 +264,7 @@ mod tests {
         ] {
             assert_eq!(Given::parse(refused), None, "{refused}");
         }
+
         assert_eq!(Given::parse(&"a".repeat(64)), None);
         assert!(Given::parse(&"a".repeat(63)).is_some());
         assert_eq!(Given::parse(&format!("{}.com", "a.".repeat(130))), None);
@@ -283,6 +292,7 @@ mod tests {
         assert_eq!(Given::Address(at).resolve(false).ok(), Some(at));
 
         let loopback = named("localhost", 8123).resolve(false).expect("localhost");
+
         assert!(loopback.ip().is_loopback());
         assert_eq!(loopback.port(), 8123);
     }

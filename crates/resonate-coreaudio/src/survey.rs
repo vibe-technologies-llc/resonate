@@ -44,9 +44,11 @@ impl Seen {
     fn shared(&self, is_default: bool) -> Option<SinkInfo> {
         let nominal = self.nominal?;
         let formats = shared_formats(nominal, self.channels);
+
         if formats.is_empty() {
             return None;
         }
+
         let name = node_of(Way::Shared, &self.uid);
         Some(SinkInfo {
             id: sink_id_of(&name),
@@ -65,15 +67,19 @@ impl Seen {
 
     fn hogged(&self) -> Option<SinkInfo> {
         let formats = hog_formats(&self.offered);
+
         if !self.can_be_hogged || formats.is_empty() {
             return None;
         }
+
         let mut allowed_rates: Vec<SampleRate> = formats
             .iter()
             .flat_map(|offered| offered.rates.iter().copied())
             .collect();
+
         allowed_rates.sort_unstable();
         allowed_rates.dedup();
+
         let name = node_of(Way::Hog, &self.uid);
         Some(SinkInfo {
             id: sink_id_of(&name),

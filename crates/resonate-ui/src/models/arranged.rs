@@ -96,6 +96,7 @@ pub(super) struct Reaching {
 pub(super) fn kept_before_the_rest(kept: &[Found], rest: &[Found]) -> Vec<Found> {
     let named = |found: &Found| (folded_letters(&found.title), folded_letters(&found.artist));
     let coded = |found: &Found| !found.isrcs.is_empty();
+
     let in_place: Vec<Found> = kept
         .iter()
         .map(|song| {
@@ -146,6 +147,7 @@ pub(super) fn albums_kept_before_the_rest(
 
 pub(super) fn beyond_the_listing(reaching: Reaching) -> Vec<ListedRow> {
     let Reaching { held, whole, found } = reaching;
+
     if !whole || found == 0 {
         return Vec::new();
     }
@@ -268,6 +270,7 @@ pub(super) fn arranged(
     }
 
     let mut rows = held;
+
     rows.append(&mut missing);
     rows.sort_by_key(|(place, _)| *place);
     if arranging.reading == Direction::Descending {
@@ -278,12 +281,14 @@ pub(super) fn arranged(
 
 pub(super) fn headed_by_disc(rows: Vec<((u32, u32), ListedRow)>) -> Vec<ListedRow> {
     let discs: AHashSet<u32> = rows.iter().map(|((disc, _), _)| *disc).collect();
+
     if discs.len() < 2 {
         return rows.into_iter().map(|(_, row)| row).collect();
     }
 
     let mut listed = Vec::with_capacity(rows.len() + discs.len());
     let mut heading = None;
+
     for ((disc, _), row) in rows {
         if heading != Some(disc) {
             listed.push(ListedRow::Disc(disc));
@@ -297,12 +302,14 @@ pub(super) fn headed_by_disc(rows: Vec<((u32, u32), ListedRow)>) -> Vec<ListedRo
 
 pub(crate) fn missing_track_rows(albums: impl Iterator<Item = (AlbumId, u32)>) -> Vec<MissingRow> {
     let mut listed = Vec::new();
+
     headed_by_album_and_disc(albums, &mut listed);
     listed
 }
 
 pub(crate) fn unheld_release_rows(artists: impl Iterator<Item = ArtistId>) -> Vec<MissingRow> {
     let mut listed = Vec::new();
+
     headed_by_run(
         artists,
         MissingRow::Artist,
@@ -368,6 +375,7 @@ pub(super) fn read_in(imported: Imported) -> String {
         imported.format.name(),
         &imported.name,
     )];
+
     if imported.already > 0 {
         said.push(words::models::already_in_it(imported.already));
     }

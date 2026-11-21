@@ -53,6 +53,7 @@ pub(super) const fn listed(columns: &str) -> usize {
     let bytes = columns.as_bytes();
     let mut counted = 1;
     let mut at = 0;
+
     while at < bytes.len() {
         if bytes[at] == b',' {
             counted += 1;

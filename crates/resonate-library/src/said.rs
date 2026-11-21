@@ -36,8 +36,10 @@ fn every_word_the_library_says_is_said_through_its_catalog() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
 
     let mut unmoved = Vec::new();
+
     for file in SAYS_WORDS {
         let source = fs::read_to_string(root.join(file)).expect("a file that says words is read");
+
         unmoved.extend(
             resonate_words_build::prose_of(&source)
                 .into_iter()

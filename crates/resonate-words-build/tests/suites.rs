@@ -19,6 +19,7 @@ fn crates_under(folder: &Path, found: &mut Vec<PathBuf>) {
         found.push(folder.to_owned());
         return;
     }
+
     let Ok(entries) = fs::read_dir(folder) else {
         return;
     };
@@ -39,6 +40,7 @@ fn integration_files(krate: &Path) -> Vec<String> {
         .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "rs"))
         .filter_map(|path| Some(path.file_stem()?.to_str()?.to_owned()))
         .collect();
+
     stems.sort();
     stems
 }
@@ -49,6 +51,7 @@ fn modules_named_by(suite: &str) -> Vec<String> {
         .filter_map(|line| line.strip_prefix("mod ")?.strip_suffix(';'))
         .map(str::to_owned)
         .collect();
+
     named.sort();
     named
 }
@@ -56,6 +59,7 @@ fn modules_named_by(suite: &str) -> Vec<String> {
 fn what_is_wrong_with(krate: &Path) -> Option<String> {
     let files = integration_files(krate);
     let gathered = files.iter().any(|stem| stem == SUITE);
+
     if files.len() < 2 && !gathered {
         return None;
     }
@@ -70,6 +74,7 @@ fn what_is_wrong_with(krate: &Path) -> Option<String> {
     let manifest = fs::read_to_string(krate.join("Cargo.toml"))
         .expect("the manifest is readable")
         .replace("\r\n", "\n");
+
     if !manifest.contains(NO_INFERRED_TESTS) || !manifest.contains(DECLARED_SUITE) {
         return Some("holds a suite its manifest does not declare as its one test".to_owned());
     }
@@ -97,6 +102,7 @@ fn what_is_wrong_with(krate: &Path) -> Option<String> {
 fn every_crate_links_its_integration_tests_into_one_suite_that_names_each_file() {
     let root = workspace();
     let mut crates = Vec::new();
+
     crates_under(&root.join("crates"), &mut crates);
     crates.sort();
 

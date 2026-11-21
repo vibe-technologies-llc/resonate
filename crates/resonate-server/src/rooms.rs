@@ -78,7 +78,9 @@ impl Rooms {
         may_host: impl FnOnce() -> bool,
     ) -> Result<JoinedRoom, Refusal> {
         let mut held = self.held.lock();
+
         held.sessions += 1;
+
         let session = held.sessions;
         let rooms_held = held.rooms.len();
 
@@ -88,6 +90,7 @@ impl Rooms {
                 let Some(host_token) = asked.host_token else {
                     return Err(Refusal::NoSuchRoom);
                 };
+
                 if !asked.room.may_be_made_by(host_token) {
                     return Err(Refusal::Token);
                 }
@@ -112,12 +115,14 @@ impl Rooms {
         if room.token != *asked.token {
             return Err(Refusal::Token);
         }
+
         let hosting = match asked.host_token {
             Some(host_token) if room.host_token == *host_token => true,
             Some(_) => return Err(Refusal::Token),
             None if asked.member == room.host => return Err(Refusal::Token),
             None => false,
         };
+
         if !hosting {
             match (room.seats.get(&asked.member), asked.seat) {
                 (Some(bound), Some(given)) if bound == given => {}
@@ -140,6 +145,7 @@ impl Rooms {
 
         let (notices, received) = unbounded_channel();
         let backlog = Arc::new(AtomicUsize::new(0));
+
         if let Some(replaced) = room.members.insert(
             asked.member,
             Member {
@@ -155,12 +161,14 @@ impl Rooms {
             room.host_session = Some(session);
             room.host_away = None;
         }
+
         let members: Vec<DeviceId> = room
             .members
             .keys()
             .copied()
             .filter(|member| *member != asked.member)
             .collect();
+
         for other in &members {
             if let Some(other) = room.members.get(other) {
                 let _ = other.notices.send(RoomNotice::Arrived(asked.member));
@@ -178,9 +186,11 @@ impl Rooms {
 
     pub fn leave(&self, room: SpaceId, member: DeviceId, session: u64) -> Leaving {
         let mut held = self.held.lock();
+
         let Some(found) = held.rooms.get_mut(&room) else {
             return Leaving::Plainly;
         };
+
         if found
             .members
             .get(&member)
@@ -193,7 +203,9 @@ impl Rooms {
         for other in found.members.values() {
             let _ = other.notices.send(RoomNotice::Left(member));
         }
+
         let host_left = found.host_session == Some(session);
+
         if host_left {
             found.host_session = None;
             found.host_away = Some(Absence(session));
@@ -212,9 +224,11 @@ impl Rooms {
 
     pub fn end_unless_the_host_came_back(&self, room: SpaceId, absence: Absence) -> bool {
         let mut held = self.held.lock();
+
         let Some(found) = held.rooms.get(&room) else {
             return false;
         };
+
         if found.host_away != Some(absence) {
             return false;
         }
@@ -229,9 +243,11 @@ impl Rooms {
 
     pub fn end(&self, room: SpaceId, session: u64) {
         let mut held = self.held.lock();
+
         let Some(found) = held.rooms.get(&room) else {
             return;
         };
+
         if found.host_session != Some(session) {
             return;
         }
@@ -280,6 +296,7 @@ impl Rooms {
         let Some(found) = held.rooms.get(&room) else {
             return false;
         };
+
         if found.host_session != Some(session) || member == found.host {
             return false;
         }
@@ -302,11 +319,13 @@ pub enum Leaving {
 
 fn told(member: &Member, from: DeviceId, sealed: &[u8]) {
     let held = member.backlog.load(Ordering::Relaxed);
+
     if held + sealed.len() > ROOM_BACKLOG_BYTES_AT_MOST {
         return;
     }
 
     member.backlog.fetch_add(sealed.len(), Ordering::Relaxed);
+
     let sent = member
         .notices
         .send(RoomNotice::Heard {
@@ -454,6 +473,7 @@ mod tests {
         let rooms = Rooms::default();
         let _hosting = host(&rooms);
         let first = seated(&rooms, GUEST, Some(&[10; 32])).expect("a guest joins");
+
         rooms.leave(ROOM, GUEST, first.session);
 
         let stranger = seated(&rooms, GUEST, Some(&[11; 32]));
@@ -480,6 +500,7 @@ mod tests {
         let _hosting = host(&rooms);
 
         let first = guest(&rooms, GUEST).expect("a guest joins");
+
         rooms.leave(ROOM, GUEST, first.session);
 
         assert!(guest(&rooms, GUEST).is_ok());
@@ -524,9 +545,12 @@ mod tests {
             rooms: 2,
             members: 3,
         };
+
         let join = |index: u32| {
             let mut member = [0; 16];
+
             member[..4].copy_from_slice(&index.to_be_bytes());
+
             let joined = rooms.join(
                 &Asked {
                     room: ROOM,
@@ -538,6 +562,7 @@ mod tests {
                 &big,
                 || true,
             );
+
             if let Ok(joined) = &joined {
                 rooms.leave(ROOM, DeviceId(member), joined.session);
             }
@@ -557,6 +582,7 @@ mod tests {
         let mut hosting = host(&rooms);
         let mut one = guest(&rooms, GUEST).expect("joined");
         let mut other = guest(&rooms, OTHER).expect("joined");
+
         while hosting.notices.try_recv().is_ok() {}
         while one.notices.try_recv().is_ok() {}
 
@@ -598,17 +624,21 @@ mod tests {
         };
 
         let back = host(&rooms);
+
         assert!(!rooms.end_unless_the_host_came_back(ROOM, first));
 
         let Leaving::TheHostLeft(second) = rooms.leave(ROOM, HOST, back.session) else {
             panic!("the host's leaving was not told");
         };
+
         assert!(rooms.end_unless_the_host_came_back(ROOM, second));
 
         let mut ended = false;
+
         while let Ok(notice) = one.notices.try_recv() {
             ended |= notice == RoomNotice::Ended;
         }
+
         assert!(ended);
         assert!(matches!(guest(&rooms, GUEST), Err(Refusal::NoSuchRoom)));
     }
@@ -656,7 +686,9 @@ mod tests {
         let Leaving::TheHostLeft(absence) = rooms.leave(committed, HOST, hosting.session) else {
             panic!("the host's leaving was not told");
         };
+
         assert!(rooms.end_unless_the_host_came_back(committed, absence));
+
         let stranger_after = rooms.join(&knocking(GUEST, Some(&TOKEN)), &LIMITS, || true);
         let host_back = rooms.join(&knocking(HOST, Some(&HOST_TOKEN)), &LIMITS, || true);
 
@@ -696,6 +728,7 @@ mod tests {
             &full,
             || true,
         );
+
         assert!(matches!(another, Err(Refusal::Busy)));
     }
 
@@ -711,9 +744,11 @@ mod tests {
         assert!(rooms.kick(ROOM, hosting.session, OTHER));
 
         let mut ended = false;
+
         while let Ok(notice) = other.notices.try_recv() {
             ended |= notice == RoomNotice::Ended;
         }
+
         assert!(ended);
     }
 

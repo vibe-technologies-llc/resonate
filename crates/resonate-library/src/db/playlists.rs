@@ -234,6 +234,7 @@ impl Library {
 
     pub fn import_playlist(&self, path: &Path, name: Option<&str>) -> Result<Imported> {
         let imported = playlist::import(&self.inner, path, name)?;
+
         self.inner.restate_the_statistics();
         Ok(imported)
     }

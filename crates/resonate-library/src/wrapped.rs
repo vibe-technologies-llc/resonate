@@ -128,6 +128,7 @@ const THE_FIRST_SONG_OF_THE_YEAR: &str = "SELECT t.title, coalesce(t.artist, '')
 
 pub(crate) fn years_heard(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>> {
     let mut years = years_listened(inner, calendar)?;
+
     years.extend(inner.read(years_kept)?);
     years.sort_unstable_by(|one, other| other.cmp(one));
     years.dedup();
@@ -162,8 +163,10 @@ fn years_listened(inner: &Inner, calendar: &Calendar) -> Result<Vec<i64>> {
         let first = calendar.date_at(store::from_nanos(first)).year;
         let last = calendar.date_at(store::from_nanos(last)).year;
         let mut years = Vec::new();
+
         for year in first..=last {
             let (from, to) = bounds_of(calendar, year);
+
             let held = connection
                 .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
                     row.get::<_, bool>(0)
@@ -242,11 +245,13 @@ pub(crate) fn year_review(
 ) -> Result<YearReview> {
     let kept = inner.read(|connection| kept_year(connection, year))?;
     let of_a_later_build = matches!(kept, Kept::OfALaterBuild);
+
     if let Kept::Review(review) = kept {
         return Ok(*review);
     }
 
     let review = year_review_afresh(inner, year, calendar, history)?;
+
     if year < calendar.date_at(now).year && review.holds_anything() && !of_a_later_build {
         keep_year(inner, &review, now)?;
     }
@@ -320,6 +325,7 @@ fn songs_new(
     let first_ever: Option<i64> = connection
         .query_row(THE_FIRST_LISTEN_EVER, [], |row| row.get(0))
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if first_ever.is_none_or(|first| first >= from) {
         return Ok(None);
     }
@@ -356,6 +362,7 @@ pub(crate) fn genres(connection: &Connection, from: i64, to: i64) -> Result<Vec<
     let mut statement = connection
         .prepare(THE_GENRES_OF_THE_YEAR)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let listed = statement
         .query_map(params![from, to, GENRE_ROWS_RANKED_AT_MOST], |row| {
             Ok((
@@ -380,6 +387,7 @@ fn rhythm(
     let mut statement = connection
         .prepare(THE_QUARTERS_OF_THE_YEAR)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let quarters = statement
         .query_map(params![from, to, NANOS_PER_QUARTER_HOUR], |row| {
             let quarter: i64 = row.get(0)?;
@@ -417,6 +425,7 @@ pub(crate) fn formats(connection: &Connection, from: i64, to: i64) -> Result<Opt
     let mut statement = connection
         .prepare(THE_FORMATS_OF_THE_YEAR)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let heard = statement
         .query_map(params![from, to], |row| {
             let rate: i64 = row.get(1)?;
@@ -492,6 +501,7 @@ mod tests {
                         [],
                     )
                     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
                 let path = format!("/music/{}.flac", song.title);
                 let track: i64 = transaction
                     .query_row(
@@ -513,6 +523,7 @@ mod tests {
                         |row| row.get(0),
                     )
                     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
                 transaction
                     .execute(
                         "INSERT INTO listens (track_id, at, heard) VALUES (?1, ?2, ?3)",
@@ -570,6 +581,7 @@ mod tests {
     #[test]
     fn a_year_counts_what_was_heard_inside_it_and_nothing_either_side() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Before", -1, 30));
         heard(&library, &a_song("Within", 0, 10));
         heard(&library, &a_song("Within", 1, 10));
@@ -592,6 +604,7 @@ mod tests {
     #[test]
     fn passes_are_listening_time_but_never_a_play_or_a_rank() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Kept", 3, 10));
         library
             .inner()
@@ -618,6 +631,7 @@ mod tests {
     #[test]
     fn new_songs_are_counted_only_where_history_reaches_before_the_year_and_was_kept_whole() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Old", -30, 5));
         heard(&library, &a_song("Old", 2, 5));
         heard(&library, &a_song("New", 3, 5));
@@ -632,6 +646,7 @@ mod tests {
         assert_eq!(aged.songs_new, None);
 
         let begun_this_year = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&begun_this_year, &a_song("New", 3, 5));
 
         assert_eq!(
@@ -644,6 +659,7 @@ mod tests {
     #[test]
     fn the_sound_is_shared_out_by_time_heard_and_genres_listed_apart_are_counted_apart() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(
             &library,
             &Heard {
@@ -686,6 +702,7 @@ mod tests {
     #[test]
     fn the_years_heard_are_listed_newest_first_and_a_year_with_nothing_is_left_out() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         assert_eq!(
             library
                 .years_heard(&Calendar::utc())
@@ -707,6 +724,7 @@ mod tests {
     #[test]
     fn a_year_holding_a_song_makes_slides_of_it_and_one_holding_nothing_says_so() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Within", 0, 90));
 
         let kinds: Vec<SlideKind> = review_of_2025(&library, HistoryKept::Forever)
@@ -726,9 +744,11 @@ mod tests {
     fn a_year_over_is_frozen_when_first_shown_and_later_listening_or_forgetting_leaves_it_as_it_was()
      {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Within", 0, 90));
 
         let first = review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+
         assert_eq!(years_kept_in(&library), [2025]);
 
         heard(&library, &a_song("Within", 1, 60));
@@ -755,11 +775,15 @@ mod tests {
     #[test]
     fn a_year_still_running_is_read_afresh_and_a_year_with_nothing_in_it_is_never_kept() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Within", 0, 30));
 
         let before = review_of_2025(&library, HistoryKept::Forever);
+
         heard(&library, &a_song("Within", 1, 30));
+
         let after = review_of_2025(&library, HistoryKept::Forever);
+
         review_at(&library, 1999, HistoryKept::Forever, when_2025_is_over());
 
         assert_eq!(before.plays, 1);
@@ -770,7 +794,9 @@ mod tests {
     #[test]
     fn a_year_kept_by_a_later_build_is_shown_afresh_and_left_and_a_damaged_one_is_kept_again() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Within", 0, 30));
+
         let keep = |bytes: &[u8]| {
             library
                 .inner()
@@ -794,13 +820,17 @@ mod tests {
         };
 
         let later = [FROZEN_LAYOUT + 1, 9, 9];
+
         keep(&later);
+
         let fresh = review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+
         assert_eq!(fresh.plays, 1);
         assert_eq!(kept(), later);
 
         keep(&[FROZEN_LAYOUT, 1]);
         review_at(&library, 2025, HistoryKept::Forever, when_2025_is_over());
+
         assert_eq!(
             YearReview::unfrozen(&kept()).map(|review| review.plays),
             Ok(1)
@@ -811,8 +841,10 @@ mod tests {
     fn ageing_the_history_freezes_the_years_over_first_so_forgetting_listens_does_not_shrink_them()
     {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         heard(&library, &a_song("Early", 100, 60));
         heard(&library, &a_song("Early", 101, 60));
+
         let a_year = HistoryKept::for_days(365).expect("a span is a span");
 
         let aged = library.age_the_history(a_year).expect("the history ages");

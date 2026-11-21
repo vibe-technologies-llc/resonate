@@ -142,6 +142,7 @@ impl Udn {
         let high = keys.hash_one(0_u8).to_be_bytes();
         let low = keys.hash_one(1_u8).to_be_bytes();
         let mut bytes = [0; 16];
+
         bytes[..8].copy_from_slice(&high);
         bytes[8..].copy_from_slice(&low);
         bytes[6] = (bytes[6] & 0x0f) | 0x40;
@@ -150,6 +151,7 @@ impl Udn {
         let hex: String = bytes.iter().map(|byte| format!("{byte:02x}")).collect();
         let mut written = String::from(UUID_PREFIX);
         let mut at = 0;
+
         for (group, length) in UUID_GROUPS.into_iter().enumerate() {
             if group > 0 {
                 written.push('-');
@@ -191,6 +193,7 @@ impl<C: Catalog> MediaServer<C> {
             told,
         });
         let evented = Arc::downgrade(&shared);
+
         thread::Builder::new()
             .name("resonate-upnp-events".to_owned())
             .spawn(move || tell_each_change(&evented, &heard))
@@ -198,11 +201,14 @@ impl<C: Catalog> MediaServer<C> {
                 op: ServeOp::Listen,
                 source,
             })?;
+
         let hall = Arc::new(Hall {
             shared,
             waker: opened.waker,
         });
+
         doorway.open(Arc::downgrade(&hall), SHIPPED, "resonate-upnp-offer")?;
+
         let announcer = Announcer::start(Announcing {
             heard_on: offering.heard_on,
             told: offering.told,
@@ -264,9 +270,11 @@ fn tell_each_change<C: Catalog>(shared: &Weak<Shared<C>>, heard: &Receiver<()>) 
             Ok(()) | Err(RecvTimeoutError::Timeout) => {}
             Err(RecvTimeoutError::Disconnected) => return,
         }
+
         let Some(shared) = shared.upgrade() else {
             return;
         };
+
         if shared.stopped.load(Ordering::Acquire) {
             return;
         }
@@ -279,6 +287,7 @@ fn tell_each_change<C: Catalog>(shared: &Weak<Shared<C>>, heard: &Receiver<()>) 
         }
         if shared.subscribers.awaits_a_change(revision) {
             let changed = shared.watched.changed(shared.catalog.as_ref(), revision);
+
             shared.subscribers.note(&changed);
         }
         for telling in shared.subscribers.due(revision) {
@@ -331,11 +340,14 @@ pub(crate) enum Routed {
 
 pub(crate) fn routed(held: &[u8]) -> Routed {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut request = httparse::Request::new(&mut headers);
+
     match request.parse(held) {
         Ok(httparse::Status::Complete(_)) => {}
         Ok(httparse::Status::Partial) | Err(_) => return Routed::Unreadable,
     }
+
     let method = match request.method.unwrap_or_default() {
         "GET" => Method::Get,
         "HEAD" => Method::Head,
@@ -347,6 +359,7 @@ pub(crate) fn routed(held: &[u8]) -> Routed {
     let Some(route) = request.path.and_then(route_of) else {
         return Routed::NotHere;
     };
+
     let allowed = match route {
         Route::Control(_) => method == Method::Post,
         Route::Event(_) => matches!(method, Method::Subscribe | Method::Unsubscribe),
@@ -354,6 +367,7 @@ pub(crate) fn routed(held: &[u8]) -> Routed {
             matches!(method, Method::Get | Method::Head)
         }
     };
+
     if !allowed {
         return Routed::NotAllowed;
     }
@@ -362,6 +376,7 @@ pub(crate) fn routed(held: &[u8]) -> Routed {
 
 pub(crate) fn route_of(path: &str) -> Option<Route> {
     let path = path.split(['?', '#']).next()?;
+
     if path == presented::DESCRIBED_AT {
         return Some(Route::Description);
     }
@@ -380,6 +395,7 @@ pub(crate) fn route_of(path: &str) -> Option<Route> {
         let (song, extension) = named.split_once('.')?;
         let well_formed =
             !extension.is_empty() && extension.bytes().all(|byte| byte.is_ascii_alphanumeric());
+
         return match (well_formed, Object::read(song)?) {
             (true, Object::Song(id)) => Some(Route::Song(id)),
             _ => None,
@@ -422,6 +438,7 @@ impl<C: Catalog> Door for Hall<C> {
     fn answer(task: Task<C>, mut stream: TcpStream, held: Vec<u8>) -> io::Result<()> {
         let head_only = task.method == Method::Head;
         let shared = &task.shared;
+
         stream.set_write_timeout(Some(WRITTEN_WITHIN))?;
         match task.route {
             Route::Description => {
@@ -473,7 +490,9 @@ impl<C: Catalog> Door for Hall<C> {
 
 fn header_in(held: &[u8], name: &str) -> Option<String> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut request = httparse::Request::new(&mut headers);
+
     request.parse(held).ok()?;
     request
         .headers
@@ -495,6 +514,7 @@ fn said(
          {SERVED_AS}\r\nEXT:\r\nConnection: close\r\n\r\n",
         body.len()
     );
+
     stream.write_all(head.as_bytes())?;
     if head_only {
         return Ok(());
@@ -515,6 +535,7 @@ fn subscribed<C: Catalog>(
     };
     let peer = stream.peer_addr()?.ip();
     let subscribers = &shared.subscribers;
+
     let (sid, kept) = match events::subscribing(held, method, peer) {
         Subscribing::Malformed => return stream.write_all(MALFORMED),
         Subscribing::Unmet => return stream.write_all(UNMET),
@@ -535,8 +556,11 @@ fn subscribed<C: Catalog>(
             }
         }
     };
+
     let answered = write_subscribed(&mut stream, &sid, kept);
+
     subscribers.answered(&sid);
+
     let _ = shared.told.try_send(());
     answered
 }
@@ -547,6 +571,7 @@ fn write_subscribed(stream: &mut TcpStream, sid: &str, kept: Duration) -> io::Re
          Content-Length: 0\r\nConnection: close\r\n\r\n",
         kept.as_secs()
     );
+
     stream.write_all(head.as_bytes())?;
     stream.flush()
 }
@@ -561,16 +586,20 @@ fn controlled<C: Catalog>(
     else {
         return stream.write_all(LENGTH_WANTED);
     };
+
     if length > BODY_BYTES_AT_MOST {
         return stream.write_all(TOO_LARGE);
     }
+
     let Some(head_ends) = http::head_end(&held) else {
         return stream.write_all(FAILED);
     };
     let mut body = held.get(head_ends..).unwrap_or_default().to_vec();
     let deadline = Instant::now() + BODY_READ_WITHIN;
+
     while body.len() < length {
         let left = deadline.saturating_duration_since(Instant::now());
+
         if left.is_zero() {
             return Err(io::ErrorKind::TimedOut.into());
         }
@@ -632,6 +661,7 @@ pub(crate) fn wanted(range: Option<&str>, length: u64) -> Wanted {
     };
     let read = |figure: &str| -> Option<Option<u64>> {
         let figure = figure.trim();
+
         if figure.is_empty() {
             return Some(None);
         }
@@ -641,6 +671,7 @@ pub(crate) fn wanted(range: Option<&str>, length: u64) -> Wanted {
             .then(|| figure.parse().ok().map(Some))
             .flatten()
     };
+
     let (Some(from), Some(to)) = (read(from), read(to)) else {
         return Wanted::Whole;
     };
@@ -682,6 +713,7 @@ fn poured(
                 "HTTP/1.1 416 Range Not Satisfiable\r\nContent-Range: bytes */{length}\r\n\
                  Content-Length: 0\r\nConnection: close\r\n\r\n"
             );
+
             return stream.write_all(refusal.as_bytes());
         }
     };
@@ -692,6 +724,7 @@ fn poured(
          Accept-Ranges: bytes\r\ncontentFeatures.dlna.org: {features}\r\n\
          transferMode.dlna.org: Streaming\r\nServer: {SERVED_AS}\r\nConnection: close\r\n"
     );
+
     if let (Wanted::Part { .. }, Some(to)) = (wanted(range, length), to) {
         let _ = write!(head, "Content-Range: bytes {from}-{to}/{length}\r\n");
     }
@@ -703,14 +736,18 @@ fn poured(
 
     stream.set_write_timeout(Some(A_LISTENER_WAITS_AT_MOST))?;
     bytes.seek(SeekFrom::Start(from))?;
+
     let mut left = carried;
     let mut buffer = vec![0; COPIED_IN];
+
     while left > 0 {
         if stopped.load(Ordering::Acquire) {
             return Err(io::ErrorKind::ConnectionAborted.into());
         }
+
         let wanted_now = usize::try_from(left).unwrap_or(usize::MAX).min(COPIED_IN);
         let read = bytes.read(&mut buffer[..wanted_now])?;
+
         if read == 0 {
             return Err(io::ErrorKind::UnexpectedEof.into());
         }

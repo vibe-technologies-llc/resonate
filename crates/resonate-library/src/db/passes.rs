@@ -28,6 +28,7 @@ impl Library {
     pub fn wind_down(&self, patience: Duration) -> bool {
         let deadline = Instant::now() + patience;
         let mut held = self.inner.walking_pass.lock();
+
         if let Some(pass) = held.as_ref() {
             pass.cancel();
         }
@@ -208,7 +209,9 @@ impl Library {
         totals: &ReleaseTotals,
     ) -> Result<Vec<TrackToTag>> {
         let mut binds = rooted(roots)?;
+
         let sql = paged_under_roots(TRACKS_TO_TAG, binds.len(), after.is_some());
+
         if let Some(after) = after {
             binds.push(Value::Text(store::path_text(after).into_owned()));
         }

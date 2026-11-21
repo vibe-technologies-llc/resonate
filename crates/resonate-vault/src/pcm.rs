@@ -59,11 +59,14 @@ impl Narrowing {
 
     pub(crate) fn narrowed(self, samples: &mut [i32]) -> bool {
         let dropped = u32::from(self.dropped_bits());
+
         if dropped == 0 {
             return true;
         }
+
         let below = (1_i32 << dropped) - 1;
         let mut lost = 0;
+
         for sample in samples {
             lost |= *sample & below;
             *sample >>= dropped;
@@ -74,6 +77,7 @@ impl Narrowing {
 
 pub(crate) fn packed(samples: &[i32], format: SampleFormat, into: &mut Vec<u8>) {
     into.clear();
+
     let width = match format {
         SampleFormat::S16 => 2,
         SampleFormat::S24 => 3,
@@ -143,6 +147,7 @@ mod tests {
     #[test]
     fn a_twenty_four_bit_sample_is_written_as_the_three_bytes_flac_hashes() {
         let mut block = AudioBuffer::empty(stereo(SampleFormat::S24));
+
         block.set_frames(1);
         if let SampleData::S24(samples) = block.data_mut() {
             samples[0] = -1;
@@ -150,6 +155,7 @@ mod tests {
         }
 
         let mut bytes = Vec::new();
+
         little_endian(&block, &mut bytes);
 
         assert_eq!(bytes, vec![0xff, 0xff, 0xff, 0x78, 0x56, 0x34]);
@@ -159,6 +165,7 @@ mod tests {
     fn the_same_run_of_bytes_settles_on_the_same_key_twice_running() {
         let mut one = Digest::default();
         let mut other = Digest::default();
+
         one.note(b"the same bytes");
         other.note(b"the same ");
         other.note(b"bytes");

@@ -3235,7 +3235,7 @@ Watches are released when the device, sync service or window goes away.
 
 A song is rated explicit by its file content advisory, provider rating or title qualifier; a clean advisory overrides a title qualifier and an unmarked title is never assumed clean. No row draws the rating. A held track menu offers clean and explicit version searches using the title without its rating qualifier and the artist. These searches change no files; results still need the listener to choose a recording.
 
-A song row nests Share into song.link and Upload file to Catbox (public). The upload runs on the background executor and copies the returned public URL, with progress and failure toasts. Only whole local files are uploaded; cue spans and remote sources are refused rather than exposing an entire backing file.
+A song row nests Share into song.link and Upload file to 0x0.st (public). The upload runs on the background executor and copies the returned public URL, with progress and failure toasts. Only whole local files are uploaded; cue spans and remote sources are refused rather than exposing an entire backing file.
 
 ### Explore in Suggestions
 

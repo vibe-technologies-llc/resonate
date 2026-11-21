@@ -167,6 +167,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
     if !config.syncs() {
         return Ok(None);
     }
+
     let folder = config::private_data_dir()?;
     let alone = folder.join(SHARED_ALONE);
     let file = File::options()
@@ -178,11 +179,13 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
             path: alone.clone(),
             source,
         })?;
+
     if file.try_lock().is_err() {
         return Ok(None);
     }
 
     let store = folder.join(SHARED_STORE);
+
     config::private_store(&store)?;
 
     let settings = SharedSettings {
@@ -194,7 +197,9 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
     let catalog = Arc::new(Listed {
         library: Arc::clone(library),
     });
+
     let shared = Arc::new(Shared::start(settings, catalog).map_err(Error::Sync)?);
+
     *RUNNING.lock() = Some(Arc::clone(&shared));
     *HOME_SERVER.lock() = server_of(config).address();
 
@@ -503,6 +508,7 @@ pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
         .iter()
         .filter(|argument| {
             let text = argument.to_string_lossy();
+
             if invitation_in(&text).is_none() {
                 return true;
             }
@@ -524,6 +530,7 @@ pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
     let Some(invitation) = invitation_in(text) else {
         return false;
     };
+
     if invitation.to == Invited::Party {
         #[cfg(feature = "ui")]
         return match arrival {
@@ -572,9 +579,11 @@ fn another_server_named(invitation: &Invitation) -> Option<&str> {
 
 fn settled(shared: &Shared) {
     let deadline = Instant::now() + SETTLES_WITHIN;
+
     shared.force();
     while Instant::now() < deadline {
         let lists = shared.shown();
+
         if lists
             .iter()
             .all(|list| list.owed == 0 && !matches!(list.standing, SharedStanding::Waiting))
@@ -670,6 +679,7 @@ pub(crate) fn run(
             id: playlist.id.get().cast_signed(),
             created: library.playlist_stamp(playlist.id)?,
         };
+
         shared.share(at).map_err(Error::Sync)?;
         settled(shared);
         told_invites(&listed_as(&library, shared, name)?);
@@ -680,8 +690,11 @@ pub(crate) fn run(
             .map_or((link.as_str(), None), |invitation| {
                 (invitation.code.as_str(), invitation.server.clone())
             });
+
         let space = shared.join(code, server).map_err(Error::Sync)?;
+
         settled(shared);
+
         let list = shared.shown().into_iter().find(|list| list.space == space);
         match list {
             Some(list) if list.may_edit => said!("{}", words::together::may_edit(&list.name)),
@@ -690,6 +703,7 @@ pub(crate) fn run(
         }
     } else if let Some(name) = &args.leave {
         let list = listed_as(&library, shared, name)?;
+
         shared.leave(list.space).map_err(Error::Sync)?;
         settled(shared);
         said!("{}", words::together::left(&list.name));
@@ -697,19 +711,23 @@ pub(crate) fn run(
         let name = args.from.as_deref().ok_or(Error::SharedNeedsAList)?;
         let list = listed_as(&library, shared, name)?;
         let removing = person_named(&list, person)?;
+
         shared
             .reset(list.space, Some(removing.member))
             .map_err(Error::Sync)?;
         settled(shared);
+
         let called = if removing.name.is_empty() {
             person.as_str()
         } else {
             removing.name.as_str()
         };
+
         said!("{}", words::together::removed(name, called));
         told_invites(&listed_as(&library, shared, name)?);
     } else if let Some(name) = &args.reset {
         let list = listed_as(&library, shared, name)?;
+
         shared.reset(list.space, None).map_err(Error::Sync)?;
         settled(shared);
         said!("{}", words::together::reset(name));
@@ -724,6 +742,7 @@ pub(crate) fn run(
 
 fn person_named<'list>(list: &'list SharedShown, person: &str) -> Result<&'list PersonShown> {
     let others = || list.people.iter().filter(|held| !held.me);
+
     if let Some(by_id) = others().find(|held| held.member.to_string().eq_ignore_ascii_case(person))
     {
         return Ok(by_id);
@@ -755,6 +774,7 @@ fn print_every_list(lists: &[SharedShown]) {
         words::together::not_held_here(),
         words::together::standing(),
     ]);
+
     for list in lists {
         table.push(vec![
             list.name.clone(),
@@ -832,6 +852,7 @@ mod tests {
     #[test]
     fn a_link_names_another_server_only_where_it_is_not_the_one_this_device_uses() {
         *HOME_SERVER.lock() = None;
+
         let stranger = naming(Some("wss://stranger.example/"));
 
         assert_eq!(another_server_named(&naming(None)), None);

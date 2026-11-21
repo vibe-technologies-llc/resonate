@@ -74,11 +74,13 @@ impl Shaping {
     fn prepared(applied: &Applied, spec: StreamSpec) -> Result<Self> {
         let rate = spec.rate;
         let mut stage = Equaliser::new(without_the_preamp(applied.profile(), rate), rate);
+
         stage
             .prepare(spec, FRAMES_AT_A_TIME)
             .map_err(|source| Error::Equalising {
                 source: Box::new(source),
             })?;
+
         let convolver = applied
             .correction()
             .map(|impulse| {
@@ -105,16 +107,21 @@ impl Shaping {
         self.widened.clear();
         self.widened
             .extend(heard.iter().map(|sample| f64::from(*sample)));
+
         let Some(convolver) = self.convolver.as_mut() else {
             let widened = std::mem::take(&mut self.widened);
+
             self.equalise(&widened, onward);
             self.widened = widened;
             return;
         };
+
         self.corrected.clear();
         self.corrected.resize(self.widened.len(), 0.0);
         convolver.process(&self.widened, &mut self.corrected);
+
         let corrected = std::mem::take(&mut self.corrected);
+
         self.equalise(&corrected, onward);
         self.corrected = corrected;
     }
@@ -124,14 +131,19 @@ impl Shaping {
             let Some(convolver) = self.convolver.as_mut() else {
                 return;
             };
+
             self.corrected.clear();
             self.corrected.resize(FRAMES_AT_A_TIME * channels, 0.0);
+
             let flushed = convolver.flush(&mut self.corrected);
+
             if flushed == 0 {
                 return;
             }
             self.corrected.truncate(flushed * channels);
+
             let corrected = std::mem::take(&mut self.corrected);
+
             self.equalise(&corrected, onward);
             self.corrected = corrected;
         }
@@ -158,7 +170,9 @@ pub fn peak_through(
 ) -> Result<f64> {
     let (mut decoder, info) = opened(sources, location, span)?;
     let codec = Codec::from_id(info.codec);
+
     let format = native_format(&info, codec);
+
     decoder.set_output_format(format);
     decoder.follow_format_changes();
 
@@ -180,6 +194,7 @@ pub fn peak_through(
         let mut shaping = shaping;
         let mut meter = meter;
         let at_the_end = &walked_to_the_end;
+
         let chain = scope.spawn(move || {
             from_decode.each(|piece| shaping.shape(piece, &mut |shaped| to_meter.feed(shaped)));
             if at_the_end.load(Ordering::Acquire) {
@@ -201,10 +216,12 @@ pub fn peak_through(
                 Err(error) => break Err(error),
             }
         };
+
         walked_to_the_end.store(walked.is_ok(), Ordering::Release);
         drop(to_chain);
 
         joined(chain);
+
         let peak = joined(metering);
         walked.map(|()| peak)
     })
@@ -244,6 +261,7 @@ fn measure_the_cuts(
     next: &AtomicUsize,
 ) -> Result<Loudest> {
     let mut loudest = Loudest::default();
+
     while let Some(cut) = cuts.get(next.fetch_add(1, Ordering::Relaxed)) {
         match peak_through(sources, &cut.location, cut.span, applied, watch) {
             Ok(peak) => {
@@ -262,6 +280,7 @@ fn measure_the_cuts(
 
 fn without_the_preamp(profile: &Arc<Profile>, rate: SampleRate) -> Arc<Profile> {
     let mut bare = Arc::unwrap_or_clone(profile.at_rate(rate));
+
     bare.set_preamp(Preamp::NONE);
     Arc::new(bare)
 }

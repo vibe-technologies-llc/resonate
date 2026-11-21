@@ -58,6 +58,7 @@ impl HResult {
 impl fmt::Display for HResult {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(formatter, "{:#010X}", self.0.cast_unsigned())?;
+
         let explanation = self.explanation();
         match explanation.trim() {
             "" => Ok(()),

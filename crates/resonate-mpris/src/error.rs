@@ -5,7 +5,7 @@ use zbus::names::OwnedWellKnownName;
 
 use crate::wire::{Call, Fault, WireFault};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum BusOp {
     Connect,
     Find,
@@ -25,7 +25,7 @@ pub enum BusOp {
     Shutdown,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PipeOp {
     Connect,
     Read,
@@ -39,7 +39,7 @@ pub enum PipeOp {
 }
 
 #[cfg(windows)]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum WindowsOp {
     Enter,
     Profile,

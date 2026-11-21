@@ -38,6 +38,7 @@ impl<'f> Lease<'f> {
         }
 
         let lease = Self { file };
+
         set(file, libc::F_SETOWN, NO_OWNER).map_err(|source| Error::Fcntl {
             op: LeaseOp::Disown,
             source,
@@ -80,6 +81,7 @@ mod tests {
     impl Scratch {
         fn named(name: &str) -> Self {
             let path = env::temp_dir().join(format!("resonate-lease-{}-{name}", process::id()));
+
             fs::write(&path, b"held").expect("a scratch file");
             Self(path)
         }
@@ -113,7 +115,9 @@ mod tests {
 
         let lease = Lease::taken(&writing).expect("a lease on a file nobody else opens");
         let while_leased = file.opened_without_waiting().map(drop);
+
         drop(lease);
+
         let once_released = file.opened_without_waiting().map(drop);
 
         assert_eq!(
@@ -130,6 +134,7 @@ mod tests {
         let reader = File::open(&file.0).expect("a reader");
 
         let leased = Lease::taken(&writing);
+
         drop(reader);
 
         assert!(matches!(leased, Err(Error::OpenElsewhere)));

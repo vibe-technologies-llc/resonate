@@ -103,6 +103,7 @@ impl Typing {
             .map(|letter| letter.len_utf8() as u8)
             .collect();
         let mut run = Node::new(Role::TextRun);
+
         run.set_value(self.text.to_string());
         run.set_character_lengths(lengths);
         run
@@ -138,6 +139,7 @@ impl Typing {
 
     fn write(&self, built: &mut A11ySubtreeBuilder) {
         let run = built.synthetic_node_id(THE_RUN);
+
         built.push_child(run, self.run());
         self.describe(run, built.parent_node());
     }
@@ -196,6 +198,7 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         if !listening() {
             return self;
         }
+
         let named = named_by(saying);
         let spoken = self
             .role(role)
@@ -213,6 +216,7 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         if label.is_empty() {
             return self.said_as(role, saying);
         }
+
         let spoken = self
             .role(role)
             .aria_label(SharedString::from(label.to_owned()));
@@ -262,6 +266,7 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         if !listening() {
             return self;
         }
+
         let live = urgency.live();
         self.role(urgency.role())
             .aria_label(said)
@@ -313,6 +318,7 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         if !listening() {
             return self;
         }
+
         let described = saying();
         self.named_as(Role::Image, label, &described)
     }
@@ -321,6 +327,7 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         if !listening() {
             return self;
         }
+
         let described = saying();
         self.named_as(Role::RadioButton, label, &described)
             .thrown(chosen)
@@ -337,6 +344,7 @@ pub(crate) trait Spoken: StatefulInteractiveElement + Sized {
         if !listening() {
             return self;
         }
+
         let typing = typing();
         self.a11y_synthetic_children(move |built| typing.write(built))
     }
@@ -366,6 +374,7 @@ impl<E: StatefulInteractiveElement> Spoken for E {}
 #[cfg(test)]
 pub(crate) fn node_of(element: &impl gpui::Element) -> Option<gpui::accesskit::Node> {
     let mut node = gpui::accesskit::Node::new(element.a11y_role()?);
+
     element.write_a11y_info(&mut node);
     Some(node)
 }
@@ -700,6 +709,7 @@ mod tests {
             refused: true,
         };
         let mut node = Node::new(Role::TextInput);
+
         refused.describe(NodeId(1), &mut node);
 
         assert_eq!(node.invalid(), Some(Invalid::True));

@@ -313,6 +313,7 @@ impl EventEmitter<Beat> for PartyPane {}
 impl PartyPane {
     pub(crate) fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         let chat = cx.new(|cx| Field::new(words::party::say_something, window, cx));
+
         cx.subscribe_in(&chat, window, |this, _, _: &Submitted, window, cx| {
             this.say_in_the_party(window, cx);
         })
@@ -344,6 +345,7 @@ impl PartyPane {
 
     fn say_what_was_typed(&mut self, cx: &mut Context<Self>) {
         let typed = self.chat.read(cx).text().trim().to_owned();
+
         if typed.is_empty() {
             return;
         }
@@ -379,6 +381,7 @@ impl PartyPane {
 impl RootView {
     pub(crate) fn party_pane(&mut self, cx: &mut Context<Self>) -> Div {
         self.party.update(cx, |party, cx| party.keep_redrawing(cx));
+
         let together = cx.global::<ResonateApp>().together.clone();
         let seen = together.as_ref().and_then(|together| together.party());
         let heading = self.party_heading(seen.as_ref(), cx);
@@ -610,6 +613,7 @@ impl RootView {
             .find(|zone| zone.id == seen.zone)
             .is_some_and(|zone| zone.player.entity_id() == self.player.entity_id());
         let heard_here = seen.hosting || seen.standing == PartyStanding::InStep;
+
         let art = (shown_is_the_partys && heard_here && seen.song.is_some())
             .then(|| self.art_of_what_plays(COVER_SIDE, cx))
             .flatten()
@@ -749,6 +753,7 @@ impl RootView {
     fn party_people(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
         let handing_armed = self.party.read(cx).handing_armed;
         let mut people = div().flex().flex_col().gap_1().p_2();
+
         for (at, person) in seen.people.iter().enumerate() {
             let id = person.id;
             let name = person_said(person);
@@ -835,6 +840,7 @@ impl RootView {
             })
             .children(seen.chat[shown_from..].iter().map(chat_line));
         let mut reactions = div().flex().flex_wrap().gap_1p5();
+
         for (at, reaction) in PartyReaction::ALL.into_iter().enumerate() {
             reactions = reactions.child(self.in_the_pane_ring(
                 kit::button(
@@ -850,6 +856,7 @@ impl RootView {
                 cx,
             ));
         }
+
         let typing = div()
             .flex()
             .items_center()
@@ -889,8 +896,10 @@ impl RootView {
 
     fn party_requests(&self, seen: &PartySeen, cx: &mut Context<Self>) -> Div {
         let mut asked = div().flex().flex_col().gap_1().p_2();
+
         for (at, request) in seen.asked_for.iter().enumerate() {
             let id = request.id;
+
             asked = asked.child(
                 div()
                     .flex()
@@ -938,6 +947,7 @@ impl RootView {
         else {
             return;
         };
+
         let running = cx.background_spawn(async move { together.begin_party(zone) });
 
         cx.spawn(async move |this, cx| {

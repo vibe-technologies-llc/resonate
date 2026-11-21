@@ -56,15 +56,20 @@ const fn tree() -> [Node; NODES] {
         halves: None,
     }; NODES];
     let mut pending = [(0, 0, 0); NODES];
+
     pending[0] = (WHOLE, 0, BANDS);
+
     let mut waiting = 1;
+
     while waiting > 0 {
         waiting -= 1;
+
         let (index, from, to) = pending[waiting];
         if to - from > 1 {
             let middle = (from + to) / 2;
             let lower = index + 1;
             let upper = index + 2 * (middle - from);
+
             nodes[index] = Node {
                 from,
                 to,
@@ -105,9 +110,11 @@ impl Moment {
             .filter(|height| height.is_finite())
             .fold(0.0, f64::max);
         let code = code_above(loudest);
+
         if code == SILENT_PEAK {
             return Self::SILENT;
         }
+
         let loudest_db = decibels_of(code);
         Self {
             loudest: code,
@@ -119,6 +126,7 @@ impl Moment {
         if self.loudest == SILENT_PEAK {
             return [0.0; NODES];
         }
+
         let loudest_db = decibels_of(self.loudest);
         self.steps.map(|step| {
             if step == SILENT_STEP {
@@ -138,6 +146,7 @@ fn step_below(loudest_db: f64, height: f64) -> u8 {
     if !height.is_finite() || height <= 0.0 {
         return SILENT_STEP;
     }
+
     let steps = ((loudest_db - 20.0 * height.log10()) * STEPS_BELOW_A_DECIBEL).floor();
     steps.clamp(0.0, f64::from(DEEPEST_STEP)) as u8
 }
@@ -146,6 +155,7 @@ fn code_above(peak: f64) -> u16 {
     if !peak.is_finite() || peak <= 0.0 {
         return SILENT_PEAK;
     }
+
     let steps = ((20.0 * peak.log10() + PEAK_CODE_ZERO_DB) * PEAK_STEPS_A_DECIBEL).ceil();
     steps.clamp(1.0, f64::from(u16::MAX)) as u16
 }
@@ -173,9 +183,11 @@ impl Together {
             .filter(|figure| figure.is_finite())
             .fold(0.0, f64::max);
         let code = code_above(loudest);
+
         if code == SILENT_PEAK {
             return Self::NOTHING;
         }
+
         let loudest_db = decibels_of(code);
         Self {
             loudest: code,
@@ -183,6 +195,7 @@ impl Together {
                 if !figure.is_finite() || figure <= 0.0 {
                     return SILENT_STEP;
                 }
+
                 let steps =
                     ((loudest_db - 20.0 * figure.log10()) * TOGETHER_STEPS_A_DECIBEL).floor();
                 steps.clamp(0.0, f64::from(DEEPEST_STEP)) as u8
@@ -194,6 +207,7 @@ impl Together {
         if self.loudest == SILENT_PEAK {
             return None;
         }
+
         let loudest_db = decibels_of(self.loudest);
         Some(self.steps.map(|step| {
             if step == SILENT_STEP {
@@ -219,10 +233,13 @@ impl BandPeaks {
 
     pub fn at_once(bands: impl IntoIterator<Item = f64>) -> Self {
         let mut leaves = [0.0; BANDS];
+
         for (leaf, peak) in leaves.iter_mut().zip(bands) {
             *leaf = peak.max(0.0);
         }
+
         let mut heights = [0.0; NODES];
+
         for (index, node) in TREE.iter().enumerate() {
             heights[index] = leaves[node.from..node.to].iter().sum();
         }
@@ -231,8 +248,11 @@ impl BandPeaks {
 
     pub(crate) fn of_moments(moments: &[Heights]) -> Self {
         let mut kept: Vec<Moment> = moments.iter().map(Moment::of).collect();
+
         kept.sort_by_key(|moment| std::cmp::Reverse(moment.loudest));
+
         let mut peaks = Self::SILENT;
+
         for (slot, moment) in peaks.moments.iter_mut().zip(kept) {
             *slot = moment;
         }
@@ -252,9 +272,11 @@ impl BandPeaks {
         if bytes.len() != BAND_PEAKS_BYTES {
             return None;
         }
+
         let (moments, together) = bytes.split_at(MOMENTS_BYTES);
         let (loudest, steps) = together.split_first_chunk::<2>()?;
         let mut peaks = Self::of_moments_kept(moments)?;
+
         peaks.together = Together {
             loudest: u16::from_le_bytes(*loudest),
             steps: steps.try_into().ok()?,
@@ -274,12 +296,16 @@ impl BandPeaks {
 
     fn of_moments_kept(bytes: &[u8]) -> Option<Self> {
         let (moments, rest) = bytes.as_chunks::<MOMENT_BYTES>();
+
         if !rest.is_empty() || moments.len() != MOMENTS_KEPT {
             return None;
         }
+
         let mut peaks = Self::SILENT;
+
         for (slot, bytes) in peaks.moments.iter_mut().zip(moments) {
             let (loudest, steps) = bytes.split_first_chunk::<2>()?;
+
             *slot = Moment {
                 loudest: u16::from_le_bytes(*loudest),
                 steps: steps.try_into().ok()?,
@@ -293,8 +319,10 @@ impl BandPeaks {
 
     pub fn to_bytes(&self) -> [u8; BAND_PEAKS_BYTES] {
         let mut bytes = [0; BAND_PEAKS_BYTES];
+
         let (moments, together) = bytes.split_at_mut(MOMENTS_BYTES);
         let (loudest, steps) = together.split_at_mut(2);
+
         loudest.copy_from_slice(&self.together.loudest.to_le_bytes());
         steps.copy_from_slice(&self.together.steps);
         for (slot, moment) in moments
@@ -304,6 +332,7 @@ impl BandPeaks {
             .zip(&self.moments)
         {
             let (loudest, steps) = slot.split_at_mut(2);
+
             loudest.copy_from_slice(&moment.loudest.to_le_bytes());
             steps.copy_from_slice(&moment.steps);
         }
@@ -324,27 +353,34 @@ impl BandPeaks {
 
 pub(crate) fn grouped(tiles: &[Heights]) -> BandPeaks {
     let mut reached = reaching_their_neighbours(tiles);
+
     while reached.len() > GROUPED_FROM_AT_MOST {
         reached = reached
             .chunks(2)
             .map(|pair| louder_of_each(pair[0], *pair.last().unwrap_or(&pair[0])))
             .collect();
     }
+
     let loudest = reached
         .iter()
         .map(|heights| heights[WHOLE])
         .fold(0.0, f64::max);
+
     if loudest <= 0.0 {
         return BandPeaks::of_moments(&reached.iter().copied().take(1).collect::<Vec<_>>());
     }
 
     let mut order: Vec<usize> = (0..reached.len()).collect();
+
     order.sort_by(|one, other| reached[*other][WHOLE].total_cmp(&reached[*one][WHOLE]));
+
     let floor = loudest * QUIETEST_WEIGHED;
 
     let mut narrowest = 0.0;
     let mut widest = WIDEST_TOLERANCE;
+
     let mut best = gathered(&reached, &order, widest, loudest, floor).unwrap_or_default();
+
     for _ in 0..TOLERANCE_HALVINGS {
         let tolerance = (narrowest + widest) / 2.0;
         match gathered(&reached, &order, tolerance, loudest, floor) {
@@ -384,6 +420,7 @@ fn gathered(
     floor: f64,
 ) -> Option<Vec<Heights>> {
     let mut moments: Vec<Heights> = Vec::with_capacity(MOMENTS_KEPT);
+
     for tile in order {
         let heights = &reached[*tile];
         let nearest = moments
@@ -417,11 +454,14 @@ mod tests {
 
     fn heights_of(whole: f64, leaves: &[(usize, f64)]) -> Heights {
         let mut bands = [0.0; BANDS];
+
         for (band, peak) in leaves {
             bands[*band] = *peak;
         }
+
         let mut heights: Heights =
             std::array::from_fn(|node| bands[TREE[node].from..TREE[node].to].iter().sum());
+
         heights[WHOLE] = whole;
         heights
     }
@@ -436,6 +476,7 @@ mod tests {
                 halves: TREE[WHOLE].halves
             }
         );
+
         let mut leaves: Vec<usize> = TREE
             .iter()
             .filter(|node| node.halves.is_none())
@@ -444,7 +485,9 @@ mod tests {
                 node.from
             })
             .collect();
+
         leaves.sort_unstable();
+
         assert_eq!(leaves, (0..BANDS).collect::<Vec<_>>());
         for (index, node) in TREE.iter().enumerate() {
             if let Some((lower, upper)) = node.halves {
@@ -466,10 +509,14 @@ mod tests {
         for (height, held) in heights.iter().zip(read) {
             if *height <= 0.0 {
                 assert_eq!(held, 0.0);
+
                 continue;
             }
+
             assert!(held >= *height, "{held} under {height}");
+
             let floor = 0.9 * 10_f64.powf(-f64::from(DEEPEST_STEP) / STEPS_BELOW_A_DECIBEL / 20.0);
+
             assert!(
                 held <= (height * 10_f64.powf(0.25 / 20.0)).max(floor * 1.01),
                 "{held} over {height}"
@@ -493,6 +540,7 @@ mod tests {
                 "{held} over {figure}"
             );
         }
+
         assert_eq!(BandPeaks::SILENT.together(), None);
     }
 
@@ -520,6 +568,7 @@ mod tests {
         let hat = heights_of(0.5, &[(25, 0.45)]);
         let hush = heights_of(0.01, &[(10, 0.01)]);
         let mut tiles = Vec::new();
+
         for beat in 0..40 {
             tiles.push(if beat % 8 == 0 { kick } else { hush });
             tiles.push(hush);
@@ -532,10 +581,13 @@ mod tests {
         let peaks = grouped(&tiles);
 
         let moments: Vec<Heights> = peaks.moments().collect();
+
         assert!(moments.len() <= MOMENTS_KEPT);
+
         let both_loud = moments
             .iter()
             .any(|moment| moment[leaf_of(2)] > 0.5 && moment[leaf_of(25)] > 0.3);
+
         assert!(!both_loud, "{moments:?}");
         for tile in &tiles {
             assert!(
@@ -572,6 +624,7 @@ mod tests {
             } else {
                 0.0
             };
+
             assert!(
                 (moment[index] - expected).abs() <= expected * 0.03,
                 "{index}"

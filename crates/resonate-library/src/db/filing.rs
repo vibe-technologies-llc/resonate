@@ -33,7 +33,9 @@ impl Library {
         let sql = and_roots(TRACKS_TO_VAULT, named.len());
         let this_build = Value::Integer(i64::from(Encoding::OF_THIS_BUILD.get()));
         let keyed_by_the_sound = Value::Integer(i64::from(Encoding::KEYED_BY_THE_SOUND.get()));
+
         let mut asked = vec![keyed_by_the_sound, this_build.clone(), this_build];
+
         asked.extend(named);
 
         self.inner.read(|connection| {
@@ -63,15 +65,18 @@ impl Library {
             let mut statement = connection
                 .prepare(&sql)
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let mut held = statement
                 .query(params_from_iter(named))
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
+
             while let Some(row) = held
                 .next()
                 .map_err(|source| Error::store(StoreOp::Query, source))?
             {
                 let (path, root, album, disc) =
                     read_filing(row).map_err(|source| Error::store(StoreOp::Query, source))?;
+
                 each(Filing {
                     path: store::path_of(&path),
                     root: store::path_of(&root),
@@ -95,17 +100,20 @@ impl Library {
 
         for chunk in paths.chunks(PATHS_ASKED_AT_ONCE) {
             let mut binds = named.clone();
+
             binds.extend(
                 chunk
                     .iter()
                     .map(|path| Value::Text(store::path_text(path).into_owned())),
             );
+
             let sql = tracks_among(named.len(), chunk.len());
             let found = self.inner.read(|connection| {
                 rows(connection, &sql, binds, |row| {
                     row.get::<_, String>(0).map(Ok)
                 })
             })?;
+
             tracked.extend(found.iter().map(|path| store::path_of(path)));
         }
 
@@ -120,7 +128,9 @@ impl Library {
         discs: &AHashMap<i64, u32>,
     ) -> Result<Vec<TrackToFile>> {
         let mut binds = rooted(roots)?;
+
         let sql = paged_under_roots(TRACKS_TO_FILE, binds.len(), after.is_some());
+
         if let Some(after) = after {
             binds.push(Value::Text(store::path_text(after).into_owned()));
         }
@@ -137,8 +147,10 @@ impl Library {
         if files.is_empty() {
             return Ok(Vec::new());
         }
+
         let mut binds = rooted(roots)?;
         let mut clauses = Vec::with_capacity(2);
+
         if !binds.is_empty() {
             clauses.push(format!(
                 "roots.path IN ({})",
@@ -152,6 +164,7 @@ impl Library {
         for file in files {
             binds.push(Value::Text(store::path_text(file).into_owned()));
         }
+
         let sql = format!(
             "{TRACKS_TO_FILE} WHERE {}{FILED_IN_ORDER}",
             clauses.join(" AND ")

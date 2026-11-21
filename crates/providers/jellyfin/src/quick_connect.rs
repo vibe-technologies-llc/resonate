@@ -102,11 +102,14 @@ impl QuickConnect {
 
     pub fn offered(&self) -> Result<bool> {
         let root = self.root();
+
         if flavour_of(&root) == Flavour::Emby {
             return Ok(false);
         }
+
         let op = ProviderOp::SignIn;
         let url = format!("{root}/QuickConnect/Enabled");
+
         let response =
             match self
                 .jellyfin
@@ -126,6 +129,7 @@ impl QuickConnect {
         let op = ProviderOp::SignIn;
         let url = format!("{}/QuickConnect/Initiate", self.root());
         let agent = &self.jellyfin.asking;
+
         let response = match self.jellyfin.called_within(
             agent,
             op,
@@ -170,6 +174,7 @@ impl QuickConnect {
                 Ok(true) if cancelled() => return Ok(None),
                 Ok(true) => {
                     let signed = Self::signed_in(&asking, approving)?;
+
                     return Ok((!cancelled()).then_some(signed));
                 }
                 Ok(false) => {}
@@ -195,6 +200,7 @@ impl QuickConnect {
             escaped(&approving.secret)
         );
         let deadline = Instant::now() + A_POLL_ANSWERED_WITHIN;
+
         let response =
             asking.called_within(&asking.asking, op, &Call::Get, &url, Some(deadline))?;
         let bytes = asking.read_whole(op, response)?;
@@ -206,6 +212,7 @@ impl QuickConnect {
         let op = ProviderOp::SignIn;
         let url = format!("{}/Users/AuthenticateWithQuickConnect", asking.roots().0);
         let body = serde_json::json!({ "Secret": approving.secret }).to_string();
+
         let response =
             asking.called_within(&asking.asking, op, &Call::SigningIn(&body), &url, None)?;
         let bytes = asking.read_whole(op, response)?;
@@ -245,7 +252,9 @@ fn waited(every: Duration, until: Instant, cancelled: &dyn Fn() -> bool) -> bool
         if cancelled() {
             return false;
         }
+
         let left = end.saturating_duration_since(Instant::now());
+
         if left.is_zero() {
             return true;
         }

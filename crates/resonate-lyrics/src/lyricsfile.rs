@@ -88,19 +88,23 @@ pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unrea
     if text.len() > LARGEST_LYRICSFILE {
         return Err(Unread::TooLarge);
     }
+
     let document: Document =
         serde_saphyr::from_str_with_options(text, options()).map_err(|error| {
             tracing::debug!(%error, "a lyricsfile did not parse");
             Unread::NotADocument
         })?;
+
     if document.version != VERSION {
         return Err(Unread::AnotherVersion);
     }
+
     let declared = document
         .metadata
         .as_ref()
         .map(Metadata::declared)
         .unwrap_or_default();
+
     if document
         .metadata
         .as_ref()
@@ -115,6 +119,7 @@ pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unrea
     }
 
     let mut lines = document.lines.unwrap_or_default();
+
     if lines.len() > MOST_LINES
         || lines
             .iter()
@@ -125,6 +130,7 @@ pub fn read_lyricsfile(source: SourceId, text: &str) -> Result<Lyricsfile, Unrea
         return Err(Unread::TooMany);
     }
     lines.sort_by_key(|line| line.start_ms);
+
     let says_more_than_its_lines = says_more(&lines);
     let synced = Lyrics::synced(source.clone(), voiced(lines))
         .ok()
@@ -154,10 +160,13 @@ impl Metadata {
 
 fn options() -> Options {
     let mut budget = Budget::default();
+
     budget.max_documents = 1;
     budget.max_nodes = MOST_NODES;
     budget.max_depth = DEEPEST;
+
     let mut options = Options::default();
+
     options.budget = Some(budget);
     options.with_snippet = false;
     options
@@ -194,9 +203,11 @@ fn voiced(lines: Vec<Line>) -> Vec<LyricLine> {
                     .max()
             });
             let lyric = lyric_of(line);
+
             if lyric.is_blank() {
                 return lyric;
             }
+
             let free = |voice: usize| sung_until[voice].is_none_or(|until| until <= starts);
             let voice = if free(0) {
                 Voice::One
@@ -205,6 +216,7 @@ fn voiced(lines: Vec<Line>) -> Vec<LyricLine> {
             } else {
                 Voice::One
             };
+
             sung_until[voice.index()] = Some(ends.unwrap_or(starts).max(starts));
 
             lyric.voiced(voice)
@@ -216,6 +228,7 @@ fn lyric_of(line: Line) -> LyricLine {
     let at = moment(line.start_ms);
     let text = line.text.unwrap_or_default();
     let words = line.words.unwrap_or_default();
+
     let lyric = if words.is_empty() {
         LyricLine::sung(at, text)
     } else {
@@ -253,6 +266,7 @@ fn worded(text: &str, words: Vec<Word>) -> Vec<SungWord> {
 fn laid_over(text: &str, words: &[Word]) -> Option<Vec<String>> {
     let mut starts = Vec::with_capacity(words.len());
     let mut cursor = 0;
+
     for word in words {
         let needle = word.text.as_deref().unwrap_or_default().trim();
         let found = if needle.is_empty() {
@@ -260,6 +274,7 @@ fn laid_over(text: &str, words: &[Word]) -> Option<Vec<String>> {
         } else {
             cursor + text.get(cursor..)?.find(needle)?
         };
+
         starts.push(found);
         cursor = found + needle.len();
     }
@@ -307,7 +322,9 @@ mod tests {
 
         assert!(read.says_more_than_its_lines);
         assert_eq!(lyrics.detail(), Detail::Words);
+
         let line = &lyrics.lines()[0];
+
         assert_eq!(line.text, "Stay until the morning");
         assert_eq!(line.at, Some(moment(4_200)));
         assert_eq!(line.until, Some(moment(6_800)));
@@ -383,6 +400,7 @@ lines:
         let instrumental = read_whole(
             "version: '1.0'\nmetadata:\n  title: Quiet\n  artist: E\n  instrumental: true\nplain: |\n  la\n",
         );
+
         assert!(instrumental.lyrics.is_none());
 
         let plain = read_whole(
@@ -390,12 +408,14 @@ lines:
         )
         .lyrics
         .expect("the plain words are read");
+
         assert_eq!(plain.timing(), Timing::Unsynced);
         assert_eq!(plain.lines().len(), 2);
 
         let blank = read_whole(
             "version: '1.0'\nmetadata: {title: M, artist: E}\nlines:\n  - {text: '', start_ms: 10}\nplain: 'only this'\n",
         );
+
         assert_eq!(
             blank.lyrics.map(|lyrics| lyrics.timing()),
             Some(Timing::Unsynced)
@@ -428,10 +448,12 @@ lines:
             read(source(), &" ".repeat(LARGEST_LYRICSFILE + 1)).err(),
             Some(Unread::TooLarge)
         );
+
         let crowded = format!(
             "version: '1.0'\nlines:\n{}",
             "  - {text: la, start_ms: 1}\n".repeat(MOST_LINES + 1)
         );
+
         assert_eq!(read(source(), &crowded).err(), Some(Unread::TooMany));
     }
 }

@@ -43,7 +43,9 @@ impl Engine {
             }
             None if self.output.is_none() => {
                 self.stale_sinks = false;
+
                 let found = self.surveyor.enumerate_sinks(SINK_TIMEOUT);
+
                 self.take_the_survey(found);
             }
             None => {}
@@ -87,6 +89,7 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+
         output.status.device_turned = attenuator == Attenuator::Device;
         output.status.device_muted = attenuator.hears_the_mute_of(&sink);
         if output.attenuator == attenuator {
@@ -102,6 +105,7 @@ impl Engine {
         let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
             return;
         };
+
         self.config.volume = Volume::heard_at(heard);
         self.muted = false;
     }
@@ -126,18 +130,23 @@ impl Engine {
             .output
             .as_ref()
             .is_some_and(|output| output.attenuator == Attenuator::Device);
+
         if !turned_here {
             return;
         }
+
         let Some(sink) = self.bound_sink() else {
             return;
         };
+
         if let Some(output) = self.output.as_mut() {
             output.status.device_muted = output.attenuator.hears_the_mute_of(&sink);
         }
+
         let Some(heard) = sink.port.as_ref().and_then(|port| port.volume) else {
             return;
         };
+
         if self.turned.echo(heard, self.heard_volume().to_gain()) {
             return;
         }
@@ -155,6 +164,7 @@ impl Engine {
             return;
         };
         let gain = self.heard_volume().to_gain();
+
         if let Err(error) = self.backend.set_device_volume(output.sink, gain) {
             tracing::warn!(%error, "the device's volume could not be turned");
             return;
@@ -181,6 +191,7 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+
         if output.bound.name == current.name && output.bound.aliases == current.aliases {
             return;
         }
@@ -188,6 +199,7 @@ impl Engine {
         let equaliser = &self.config.equaliser;
         let heard_before = equaliser.for_sink(&output.bound).map(Arc::as_ptr);
         let heard_now = equaliser.for_sink(&current).map(Arc::as_ptr);
+
         output.bound.name = current.name;
         output.bound.aliases = current.aliases;
         if heard_before == heard_now {
@@ -204,6 +216,7 @@ impl Engine {
         };
         let chosen = chosen_sink(&self.published.sinks.read(), self.config.sink.as_ref())
             .map(|sink| sink.id);
+
         if chosen.is_none_or(|chosen| chosen == bound) {
             return;
         }
@@ -212,6 +225,7 @@ impl Engine {
             from = %bound,
             "the device this build would play on moved; the stream follows it"
         );
+
         let at = self.position();
         if let Err(error) = self.rebind(Some(at), None) {
             self.fail(error);
@@ -267,7 +281,9 @@ impl Engine {
 
     pub(super) fn wait_for_the_survey(&mut self, at: Option<Frames>) {
         tracing::debug!("the sink list is known wrong; the row is bound once the survey answers");
+
         let at = at.unwrap_or_else(|| self.position());
+
         self.unbound = Some(at);
         self.transport = if self.playing {
             TransportState::Loading

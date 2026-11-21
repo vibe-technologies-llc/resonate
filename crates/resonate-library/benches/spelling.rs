@@ -45,6 +45,7 @@ fn words(noise: &mut Noise) -> Vec<String> {
             let mut word: String = (0..syllables)
                 .map(|_| SYLLABLES[noise.below(SYLLABLES.len())])
                 .collect();
+
             if let Some(first) = word.get_mut(..1) {
                 first.make_ascii_uppercase();
             }
@@ -63,12 +64,14 @@ fn name(noise: &mut Noise, words: &[String], most: usize) -> String {
 
 fn catalog() -> (Spellings, Vec<String>, Vec<String>) {
     let mut noise = Noise(SEED);
+
     let words = words(&mut noise);
     let artists: Vec<String> = (0..ARTISTS).map(|_| name(&mut noise, &words, 3)).collect();
     let albums: Vec<String> = (0..ALBUMS).map(|_| name(&mut noise, &words, 4)).collect();
     let genres: Vec<String> = (0..GENRES).map(|_| name(&mut noise, &words, 2)).collect();
 
     let mut spellings = Spellings::default();
+
     for _ in 0..TRACKS {
         spellings.taking(Column::Title, &name(&mut noise, &words, 6));
         spellings.taking(Column::Artist, &artists[noise.skewed(ARTISTS)]);
@@ -85,8 +88,10 @@ fn catalog() -> (Spellings, Vec<String>, Vec<String>) {
 
 fn timed(what: &str, mut run: impl FnMut()) {
     let mut best = Duration::MAX;
+
     for _ in 0..RUNS {
         let started = Instant::now();
+
         run();
         best = best.min(started.elapsed());
     }
@@ -95,6 +100,7 @@ fn timed(what: &str, mut run: impl FnMut()) {
 
 fn misspelt(word: &str) -> String {
     let mut letters: Vec<char> = word.to_lowercase().chars().collect();
+
     if letters.len() > 3 {
         letters.swap(1, 2);
     }
@@ -104,6 +110,7 @@ fn misspelt(word: &str) -> String {
 fn main() {
     let started = Instant::now();
     let (spellings, words, artists) = catalog();
+
     println!(
         "{:<48} {:>10.3} ms",
         "building the vocabulary of 500k tracks",
@@ -111,6 +118,7 @@ fn main() {
     );
 
     let started = Instant::now();
+
     black_box(spellings.did_you_mean(&misspelt(&words[9])));
     println!(
         "{:<48} {:>10.3} ms",
@@ -128,6 +136,7 @@ fn main() {
         words[1], words[2], words[3], words[4], words[5], words[6]
     )
     .to_lowercase();
+
     let queries = [
         ("did you mean: a word the catalog holds", common.clone()),
         ("did you mean: a rare word it holds", rare),
@@ -140,6 +149,7 @@ fn main() {
             "qwxzqwxz vbnmvbnm".to_owned(),
         ),
     ];
+
     for (what, query) in &queries {
         timed(what, || {
             black_box(spellings.did_you_mean(black_box(query)));
@@ -157,6 +167,7 @@ fn main() {
         ),
         ("completing: an artist's first word and a half", {
             let mut typed = artist.clone();
+
             typed.truncate(typed.len().saturating_sub(2));
             typed
         }),

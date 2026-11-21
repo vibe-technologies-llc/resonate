@@ -138,6 +138,7 @@ pub fn gateway_tls(
         .with_no_client_auth()
         .with_single_cert(chain, key)
         .map_err(|source| Error::Tls(Box::new(source)))?;
+
     tls.alpn_protocols = vec![HTTP_ALPN.to_vec()];
     Ok(TlsAcceptor::from(Arc::new(tls)))
 }
@@ -191,6 +192,7 @@ impl Gateway {
             };
             let gateway = Arc::clone(&self);
             let acceptor = acceptor.clone();
+
             tokio::spawn(async move {
                 let served = gateway.served(stream, acceptor, unproven).await;
                 if let Err(error) = served {
@@ -222,6 +224,7 @@ impl Gateway {
     ) -> io::Result<()> {
         let arrived = timeout(REQUEST_WITHIN, async {
             let mut tls = acceptor.accept(stream).await?;
+
             let head = read_head(&mut tls).await?;
             Ok::<_, io::Error>((tls, head))
         })
@@ -263,7 +266,9 @@ impl Gateway {
             }
             Err(Refused::Route) => return reply(&mut stream, 404, &[], b"").await,
         };
+
         drop(unproven);
+
         let Ok(_seat) = Arc::clone(&self.seats).try_acquire_owned() else {
             return busy(&mut stream).await;
         };
@@ -272,6 +277,7 @@ impl Gateway {
             Admitted::Forward(verb, target) => match self.relayed(verb, &target).await {
                 Ok(answer) => {
                     let mut headers = Vec::new();
+
                     if let Some(kind) = answer.content_type {
                         headers.push(("Content-Type", kind));
                     }
@@ -290,18 +296,22 @@ impl Gateway {
 
     fn admitted(&self, head: &Head) -> std::result::Result<Admitted, Refused> {
         let secret = head.bearer.as_deref().ok_or(Refused::Unwelcome)?;
+
         if !self.keys.admits(secret.as_bytes()) {
             return Err(Refused::Unwelcome);
         }
+
         let verb = match head.method.as_str() {
             "GET" => Verb::Get,
             "DELETE" => Verb::Delete,
             _ => return Err(Refused::Method),
         };
+
         if verb == Verb::Get
             && let Some(id) = file_of(&head.target)
         {
             let wanted = head.range.as_deref().and_then(Wanted::parse);
+
             return Ok(Admitted::File { id, wanted });
         }
         routed(verb, &head.target)
@@ -318,13 +328,16 @@ impl Gateway {
         if let Some(hit) = self.kept(id) {
             return from_the_cache(stream, id, hit, wanted).await;
         }
+
         let Ok(turn) = Arc::clone(&self.downloads).try_acquire_owned() else {
             return busy(stream).await;
         };
+
         if let Some(hit) = self.kept(id) {
             drop(turn);
             return from_the_cache(stream, id, hit, wanted).await;
         }
+
         let hifi = Arc::clone(&self.hifi);
         let opened = spawn_blocking(move || (opened_track(&hifi, id), turn)).await;
         match opened {
@@ -333,7 +346,9 @@ impl Gateway {
                     .tracks
                     .as_ref()
                     .and_then(|tracks| tracks.fill(id, length));
+
                 tracing::info!(track = id, cached = fill.is_some(), "a track is being sent");
+
                 let source = Source {
                     reader,
                     length,
@@ -361,6 +376,7 @@ impl Gateway {
 
     async fn relayed(&self, verb: Verb, target: &str) -> std::result::Result<Answer, Unreached> {
         let searching = verb == Verb::Get && is_search(target);
+
         if searching && let Some(recalled) = self.searches.recalled(target) {
             return Ok(Answer {
                 status: 200,
@@ -369,7 +385,9 @@ impl Gateway {
                 body: recalled.body,
             });
         }
+
         let answer = self.forwarded(verb, target).await?;
+
         if searching && answer.status == 200 {
             self.searches
                 .remember(target, answer.content_type.as_deref(), &answer.body);
@@ -390,11 +408,14 @@ impl Gateway {
                 "{method} {target} HTTP/1.0\r\nHost: {}\r\nAccept: application/json\r\n\r\n",
                 self.upstream
             );
+
             stream
                 .write_all(request.as_bytes())
                 .await
                 .map_err(|_| Unreached::Connect)?;
+
             let mut read = Vec::new();
+
             (&mut stream)
                 .take(ANSWER_BYTES_AT_MOST as u64 + 1)
                 .read_to_end(&mut read)
@@ -419,7 +440,9 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Opti
     let mut buffer = Vec::with_capacity(1024);
     loop {
         let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
         let mut request = httparse::Request::new(&mut headers);
+
         match request.parse(&buffer) {
             Ok(httparse::Status::Complete(_)) => {
                 let named = |name: &str| {
@@ -436,6 +459,7 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Opti
                         .then(|| value[BEARER.len()..].trim().to_owned())
                 });
                 let range = named("range").map(str::to_owned);
+
                 return Ok(Some(Head {
                     method: request.method.unwrap_or_default().to_owned(),
                     target: request.path.unwrap_or_default().to_owned(),
@@ -446,8 +470,11 @@ async fn read_head<S: AsyncRead + Unpin>(stream: &mut S) -> std::io::Result<Opti
             Ok(httparse::Status::Partial) if buffer.len() < HEAD_BYTES_AT_MOST => {}
             Ok(httparse::Status::Partial) | Err(_) => return Ok(None),
         }
+
         let mut chunk = [0; 1024];
+
         let read = stream.read(&mut chunk).await?;
+
         if read == 0 {
             return Ok(None);
         }
@@ -462,6 +489,7 @@ pub(crate) fn read_a_head(request: &[u8], total: u64) {
     use tokio::runtime::{Builder, Runtime};
 
     static RUNTIME: OnceLock<Runtime> = OnceLock::new();
+
     let runtime = RUNTIME.get_or_init(|| {
         Builder::new_current_thread()
             .build()
@@ -469,14 +497,17 @@ pub(crate) fn read_a_head(request: &[u8], total: u64) {
     });
 
     let mut request = request;
+
     let Ok(Some(head)) = runtime.block_on(read_head(&mut request)) else {
         return;
     };
+
     for verb in [Verb::Get, Verb::Delete] {
         if let Some(target) = routed(verb, &head.target) {
             assert!(target.bytes().all(|byte| byte.is_ascii_graphic()));
         }
     }
+
     let _ = is_search(&head.target);
     let _ = file_of(&head.target);
     let wanted = head.range.as_deref().and_then(Wanted::parse);
@@ -514,8 +545,11 @@ fn answered(read: &[u8]) -> std::result::Result<Answer, Unreached> {
     if read.len() > ANSWER_BYTES_AT_MOST {
         return Err(Unreached::TooLarge);
     }
+
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut response = httparse::Response::new(&mut headers);
+
     let httparse::Status::Complete(head) =
         response.parse(read).map_err(|_| Unreached::Unreadable)?
     else {
@@ -532,6 +566,7 @@ fn answered(read: &[u8]) -> std::result::Result<Answer, Unreached> {
     };
     let body = read[head..].to_vec();
     let promised = named("content-length").and_then(|length| length.parse::<usize>().ok());
+
     if promised.is_some_and(|length| length != body.len()) {
         return Err(Unreached::Unreadable);
     }
@@ -577,6 +612,7 @@ async fn reply<S: AsyncWrite + Unpin>(
         reason(status),
         body.len()
     );
+
     for (name, value) in headers {
         head.push_str(&format!("{name}: {value}\r\n"));
     }
@@ -600,6 +636,7 @@ fn opened_track(hifi: &HifiApi, id: u64) -> resonate_providers::Result<Option<Op
 
 fn file_of(target: &str) -> Option<u64> {
     let (path, query) = target.split_once('?')?;
+
     if path != FILE_ROUTE {
         return None;
     }
@@ -622,8 +659,10 @@ async fn from_the_cache<S: AsyncWrite + Unpin>(
         Err(Unsatisfiable) => return unsatisfiable(stream, bytes).await,
     };
     let begins_at = span.map_or(0, |span| span.first);
+
     file.seek(SeekFrom::Start(begins_at))?;
     tracing::info!(track = id, "a track is being sent from the cache");
+
     let source = Source {
         reader: Box::new(file),
         length: Some(bytes),
@@ -653,9 +692,11 @@ fn pump_source(mut source: Source, window: Span, sender: &mpsc::Sender<io::Resul
     let mut attached = true;
     loop {
         let nothing_more_to_send = !attached || at > window.last;
+
         if nothing_more_to_send && source.fill.is_none() {
             break;
         }
+
         let mut chunk = vec![0; FILE_CHUNK_BYTES];
         match source.reader.read(&mut chunk) {
             Ok(0) => {
@@ -666,7 +707,9 @@ fn pump_source(mut source: Source, window: Span, sender: &mpsc::Sender<io::Resul
             }
             Ok(read) => {
                 chunk.truncate(read);
+
                 let end = at + read as u64;
+
                 if end > FILE_BYTES_AT_MOST {
                     if attached {
                         let _ =
@@ -753,6 +796,7 @@ async fn send_file<S: AsyncWrite + Unpin>(
         None => length,
     };
     let (sender, mut receiver) = mpsc::channel::<io::Result<Vec<u8>>>(FILE_CHUNKS_AHEAD);
+
     spawn_blocking(move || pump(source, window, sender));
 
     let status = match span {
@@ -774,11 +818,14 @@ async fn send_file<S: AsyncWrite + Unpin>(
     let head = format!(
         "HTTP/1.1 {status}\r\nContent-Type: {FILE_TYPE}\r\n{framing}\r\n{ranges}Connection: close\r\nCache-Control: no-store\r\n\r\n"
     );
+
     written(stream, head.as_bytes()).await?;
 
     let mut total = 0_u64;
+
     while let Some(chunk) = receiver.recv().await {
         let chunk = chunk?;
+
         total += chunk.len() as u64;
         if promised.is_none() {
             written(stream, format!("{:x}\r\n", chunk.len()).as_bytes()).await?;
@@ -834,6 +881,7 @@ mod tests {
             let Some(next) = self.0.pop_front() else {
                 return Ok(0);
             };
+
             into[..next.len()].copy_from_slice(next);
             Ok(next.len())
         }
@@ -858,6 +906,7 @@ mod tests {
         };
 
         pump_source(source, whole, &sender);
+
         let kept = cache.hit(5).is_some();
 
         let _ = std::fs::remove_dir_all(&directory);
@@ -887,7 +936,9 @@ mod tests {
         let second = gateway.unproven(ONE_ADDRESS);
         let over = gateway.unproven(ONE_ADDRESS);
         let elsewhere = gateway.unproven(ANOTHER);
+
         drop(first);
+
         let after = gateway.unproven(ONE_ADDRESS);
 
         assert!(second.is_some());

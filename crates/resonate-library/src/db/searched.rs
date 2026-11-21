@@ -55,6 +55,7 @@ impl Matching {
 
     pub(super) fn grouped(&self, column: &str, onto: &str) -> String {
         let mut filters = self.filters.clone();
+
         filters.push(format!("tracks.{column} IS NOT NULL"));
 
         format!(
@@ -88,6 +89,7 @@ pub(crate) fn tracks_from(inner: &Inner, query: &TrackQuery, at: TrackId) -> Res
     let Some(matching) = matching_tracks(query, None, filters) else {
         return Ok(Vec::new());
     };
+
     if !is_read_by_key(query, &matching) {
         return tracks(inner, query, None);
     }
@@ -148,6 +150,7 @@ fn read_from(
         };
 
         let mut read = Vec::new();
+
         for seek in keyed::seeks(&terms, &key) {
             let wanted = match query.limit {
                 Some(limit) => match limit.checked_sub(read.len()) {
@@ -160,10 +163,12 @@ fn read_from(
             let mut statement = reading
                 .prepare(&sql)
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let rows = statement
                 .query_map(params_from_iter(binds), RawTrack::read)
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
+
             read.extend(rows);
         }
         Ok(read)
@@ -186,8 +191,11 @@ pub(super) fn sought(
     wanted: Option<usize>,
 ) -> (String, Vec<Value>) {
     let mut conditions = matching.filters.clone();
+
     conditions.extend(seek.conditions);
+
     let mut binds = matching.binds.clone();
+
     binds.extend(seek.binds);
     binds.push(Value::Integer(limit(wanted)));
 
@@ -232,6 +240,7 @@ pub(crate) fn measured_narrowed(
         return Ok(Measured::default());
     };
     let whole = query.limit.is_none() && query.offset == 0;
+
     let (sql, binds) = match whole {
         true => (
             format!(
@@ -260,6 +269,7 @@ pub(crate) fn measured_narrowed(
         true => format!("{sql}\u{0}{binds:?}\u{0}{}", inner.heard()),
         false => format!("{sql}\u{0}{binds:?}"),
     };
+
     if keepable && let Some(kept) = inner.measurement_kept(stamp, filters, &key) {
         return Ok(kept);
     }
@@ -275,6 +285,7 @@ pub(crate) fn measured_narrowed(
             })
             .map_err(|source| Error::store(StoreOp::Query, source))
     })?;
+
     if keepable {
         inner.keep_measurement(stamp, filters, key, measured);
     }
@@ -312,6 +323,7 @@ pub(crate) fn pictured_by(
           LIMIT ?"
     );
     let mut binds = scoped.binds;
+
     binds.push(Value::Integer(
         at_most.saturating_mul(PICTURES_WEIGHED_PER_TILE) as i64,
     ));
@@ -334,8 +346,10 @@ pub(crate) fn pictures_of_albums(
     if albums.is_empty() {
         return Ok(Vec::new());
     }
+
     let held: AHashMap<i64, Option<String>> = inner.read(|connection| {
         let mut held = AHashMap::with_capacity(albums.len());
+
         for batch in albums.chunks(IDS_READ_AT_ONCE) {
             let sql = format!(
                 "SELECT a.id, {} FROM albums a
@@ -347,6 +361,7 @@ pub(crate) fn pictures_of_albums(
                 .iter()
                 .map(|album| Value::Integer(album.get() as i64))
                 .collect();
+
             held.extend(rows(connection, &sql, binds, |row| {
                 Ok(Ok((
                     row.get::<_, i64>(0)?,
@@ -374,8 +389,10 @@ pub(crate) fn distinct_pictures(
     let mut seen = AHashSet::new();
     let mut looked_like: Vec<Likeness> = Vec::with_capacity(at_most);
     let mut pictured = Vec::with_capacity(at_most);
+
     for (album, picture) in weighed {
         let album = AlbumId::new(album as u64)?;
+
         if let Some(picture) = picture {
             if !seen.insert(picture.clone()) {
                 continue;
@@ -485,7 +502,9 @@ impl Infix {
     ) -> Result<String> {
         let (mut indexed, unindexed): (Vec<&String>, Vec<&String>) =
             pieces.iter().partition(|piece| Self::is_indexed(piece));
+
         indexed.sort_by_key(|piece| Reverse(piece.chars().count()));
+
         let (looked_up, scanned) = match self.is_any_looked_up(connection, &indexed)? {
             true => (indexed, unindexed),
             false => (Vec::new(), [indexed, unindexed].concat()),
@@ -498,6 +517,7 @@ impl Infix {
                 .map(|piece| Self::like(self.indexed_column, piece, binds))
                 .collect::<Vec<String>>()
                 .join(" AND ");
+
             held.push(format!(
                 "{} IN (SELECT rowid FROM {} WHERE {every})",
                 self.owner, self.index
@@ -526,7 +546,9 @@ impl Infix {
         if !Self::is_indexed(folded) {
             return Ok(false);
         }
+
         let rows = self.rows(connection)?;
+
         for trigram in trigrams_of(folded) {
             let documents = self.documents_holding(connection, &trigram)?;
             if documents == 0 || documents.saturating_mul(Self::SCANNED_FROM_ONE_ROW_IN) < rows {
@@ -568,6 +590,7 @@ impl Infix {
             true => " ESCAPE '\\'",
             false => "",
         };
+
         binds.push(Value::Text(pattern));
         format!("{column} LIKE ?{escape}")
     }
@@ -592,6 +615,7 @@ fn trigrams_of(folded: &str) -> Vec<String> {
         .windows(Infix::FEWEST_LETTERS_INDEXED)
         .map(|trigram| trigram.iter().collect::<String>())
         .collect::<Vec<String>>();
+
     trigrams.sort_unstable();
     trigrams.dedup();
     trigrams
@@ -603,6 +627,7 @@ pub(super) fn unheld_holding(
 ) -> Result<(String, Vec<Value>)> {
     let mut held = String::new();
     let mut binds = Vec::new();
+
     for word in playlist::words_of(narrowing) {
         held.push_str(" AND ");
         held.push_str(&Infix::held_by_a_release_or_its_artist(
@@ -625,6 +650,7 @@ pub(super) fn scoped_albums(
 
     if let Some(artist) = query.artist {
         let owned_or_played_on = artist.get() as i64;
+
         conditions.push(BY_OR_HOLDING_THE_ARTIST.to_owned());
         scoped.binds.push(Value::Integer(owned_or_played_on));
         scoped.binds.push(Value::Integer(owned_or_played_on));
@@ -661,6 +687,7 @@ pub(super) fn scoped_artists(
 ) -> Option<Scoped> {
     let mut scoped = narrowed_onto(query.text.as_deref(), "artist_id", "r.id", filters)?;
     let mut conditions: Vec<String> = only.map(str::to_owned).into_iter().collect();
+
     if filters != MusicFilters::default() {
         conditions.push(format!("{} > 0", artist_tracks(filters)));
     }
@@ -676,7 +703,9 @@ fn narrowed_onto(
     filters: MusicFilters,
 ) -> Option<Scoped> {
     let mut matching = matching(&[text])?;
+
     let ranked = matching.ranked;
+
     if !matching.narrows() {
         return Some(Scoped {
             from: String::new(),
@@ -720,7 +749,9 @@ pub(super) fn matching_tracks(
     if narrowing.is_some_and(asks_for_nothing_it_can_read) {
         return None;
     }
+
     let mut matching = matching(&[query.text.as_deref(), narrowing])?;
+
     matching.filters.extend(filters.predicate("tracks"));
     matching.filters.push(THE_BEST_COPY.to_owned());
     if !matching.insists_on_hidden {
@@ -757,12 +788,14 @@ pub(super) fn matching(texts: &[Option<&str>]) -> Option<Matching> {
         .map(|text| Search::read(text))
         .filter(|search| !search.is_empty())
         .collect();
+
     if asking.is_empty() {
         return Some(Matching::default());
     }
 
     let mut ranked: Vec<&Word> = Vec::new();
     let mut narrowing: Vec<Narrowing> = Vec::new();
+
     for clause in asking.iter().flat_map(|search| &search.clauses) {
         match clause.lone_word() {
             Some(word) if word.reach != search::Reach::Whole => ranked.push(word),
@@ -771,6 +804,7 @@ pub(super) fn matching(texts: &[Option<&str>]) -> Option<Matching> {
     }
 
     let indexed = indexed(&ranked);
+
     if indexed.is_none() && narrowing.is_empty() {
         return None;
     }
@@ -782,6 +816,7 @@ pub(super) fn matching(texts: &[Option<&str>]) -> Option<Matching> {
             .any(|clause| clause.insists_on(Shape::Hidden)),
         ..Matching::default()
     };
+
     if let Some(query) = indexed {
         matching.ranked = true;
         matching.join = INDEX_JOIN;
@@ -810,9 +845,11 @@ pub(crate) fn cuts_matching(text: &str, row: &str) -> Narrowed {
     if asks_for_nothing_it_can_read(text) {
         return Narrowed::Nothing;
     }
+
     let Some(matching) = matching(&[Some(text)]) else {
         return Narrowed::Nothing;
     };
+
     if !matching.narrows() {
         return Narrowed::Unasked;
     }
@@ -831,10 +868,12 @@ pub(crate) fn cuts_matching(text: &str, row: &str) -> Narrowed {
 fn any_of(clause: &Clause) -> Option<Narrowing> {
     let mut held = Vec::with_capacity(clause.any.len());
     let mut binds = Vec::new();
+
     for asked in &clause.any {
         let Some(narrowed) = all_of(asked) else {
             continue;
         };
+
         held.push(narrowed.sql);
         binds.extend(narrowed.binds);
     }
@@ -845,8 +884,10 @@ fn any_of(clause: &Clause) -> Option<Narrowing> {
 fn all_of(asked: &Asked) -> Option<Narrowing> {
     let mut held = Vec::with_capacity(asked.all.len());
     let mut binds = Vec::new();
+
     for condition in &asked.all {
         let narrowed = narrowed(condition)?;
+
         held.push(narrowed.sql);
         binds.extend(narrowed.binds);
     }
@@ -870,6 +911,7 @@ pub(super) fn narrowed(condition: &Condition) -> Option<Narrowing> {
         }),
         Condition::Term(term) => {
             let mut binds = Vec::new();
+
             let sql = filtered(*term, &mut binds);
             Some(Narrowing { sql, binds })
         }
@@ -933,6 +975,7 @@ pub(super) fn indexed(words: &[&Word]) -> Option<String> {
 
     for word in words {
         let pieces = search::pieces_of(word);
+
         if pieces.is_empty() {
             continue;
         }
@@ -941,6 +984,7 @@ pub(super) fn indexed(words: &[&Word]) -> Option<String> {
             Some(column) => format!("{} : ", column.name()),
             None => format!("{{{}}} : ", *WHAT_A_BARE_WORD_REACHES),
         };
+
         if word.reach.is_phrased() {
             matched.push(format!("{scoped}\"{}\"", pieces.join(" ")));
             continue;
@@ -983,6 +1027,7 @@ fn filtered(term: Term, binds: &mut Vec<Value>) -> String {
                 }
                 None => "tracks.plays",
             };
+
             binds.push(Value::Integer(i64::from(plays)));
             format!("{counted} {} ?", compare.operator())
         }
@@ -1029,6 +1074,7 @@ fn lengths(
 ) -> String {
     let from = length.as_secs_f64();
     let past = from + grain.span().as_secs_f64();
+
     let bounds: &[(&str, f64)] = match compare {
         Compare::Below => &[("<", from)],
         Compare::AtMost => &[("<", past)],
@@ -1038,6 +1084,7 @@ fn lengths(
     };
 
     let mut sql = "(tracks.duration IS NOT NULL".to_owned();
+
     for (operator, bound) in bounds {
         sql.push_str(&format!(" AND {SECONDS_LONG} {operator} ?"));
         binds.push(Value::Real(*bound));
@@ -1100,6 +1147,7 @@ pub(super) const fn holds(compare: Compare, held: u8, wanted: u8) -> bool {
 
 pub(super) fn coded(column: &str, codes: impl Iterator<Item = i64>) -> String {
     let listed: Vec<String> = codes.map(|code| code.to_string()).collect();
+
     if listed.is_empty() {
         return NOTHING_MATCHES.to_owned();
     }

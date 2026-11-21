@@ -28,6 +28,7 @@ const JOINS: &[&str] = &[
 pub fn members_of(credit: &str) -> Vec<&str> {
     let mut members = Vec::new();
     let mut rest = credit;
+
     while let Some((at, join)) = next_join(rest) {
         members.push(rest[..at].trim());
         rest = &rest[at + join.len()..];
@@ -68,9 +69,11 @@ pub(crate) fn credit_the_members(tx: &Transaction<'_>) -> Result<()> {
             [_, _, ..] => each_value_named(tx, &credit)?,
             _ => {
                 let members = members_of(&credit);
+
                 if members.len() < 2 {
                     continue;
                 }
+
                 let Some(artists) = every_member_held(tx, &credit, &members)? else {
                     continue;
                 };
@@ -110,6 +113,7 @@ fn hand_each_list_to_its_lead(tx: &Transaction<'_>) -> Result<()> {
 
 fn each_value_named(tx: &Transaction<'_>, credit: &str) -> Result<Vec<i64>> {
     let mut artists: Vec<i64> = Vec::new();
+
     for value in listed(credit) {
         let members = members_of(value);
         let named = match every_member_held(tx, value, &members)? {
@@ -142,11 +146,14 @@ fn every_member_held(
 ) -> Result<Option<Vec<i64>>> {
     let whole = folded_letters(credit);
     let mut artists: Vec<i64> = Vec::with_capacity(members.len());
+
     for member in members {
         let key = folded_letters(member);
+
         if key.is_empty() || key == whole {
             return Ok(None);
         }
+
         let Some(artist) = artist_keyed(tx, &key)? else {
             return Ok(None);
         };
@@ -176,6 +183,7 @@ fn credit_each(tx: &Transaction<'_>, credit: &str, artists: &[i64]) -> Result<()
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
     }
+
     let lead = artists[0];
     tx.execute(
         "UPDATE tracks SET artist_id = ?2
@@ -218,6 +226,7 @@ mod tests {
     #[test]
     fn the_tracks_of_a_credit_are_found_by_an_index_and_not_by_a_scan() {
         let connection = Connection::open_in_memory().expect("an in-memory catalog");
+
         crate::schema::lay_out(&connection).expect("the schema applies");
 
         for statement in [

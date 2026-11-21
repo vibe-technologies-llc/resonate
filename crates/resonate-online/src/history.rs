@@ -38,9 +38,11 @@ impl Edge {
         if asked_before != Some(self.second + 1) || second != self.second {
             return false;
         }
+
         let Some(seen) = self.heard.iter().position(|seen| seen == heard) else {
             return false;
         };
+
         self.heard.swap_remove(seen);
         true
     }
@@ -411,7 +413,9 @@ mod tests {
         let mut first = (1..LISTENS_A_PAGE - 1)
             .map(|later| listen(EDGE + later as u64, "Earlier on the page"))
             .collect::<Vec<_>>();
+
         first.extend([listen(EDGE, "Words"), listen(EDGE, "Lullaby")]);
+
         let second = vec![
             listen(EDGE, "Words"),
             listen(EDGE, "Lullaby"),

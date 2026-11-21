@@ -36,11 +36,14 @@ impl HeardOnce {
 
     pub fn admit(&mut self, sealed: &[u8], sealed_at: u64, now: u64) -> Result<(), Unfresh> {
         let within = self.within.as_secs();
+
         if now.abs_diff(sealed_at) > within {
             return Err(Unfresh::OutsideTheWindow { sealed_at, now });
         }
         self.heard.retain(|_, at| now.abs_diff(*at) <= within);
+
         let mut sealed_digest = [0; SHA256_OUTPUT_LEN];
+
         sealed_digest.copy_from_slice(digest(&SHA256, sealed).as_ref());
         if self.heard.contains_key(&sealed_digest) {
             return Err(Unfresh::HeardAlready);

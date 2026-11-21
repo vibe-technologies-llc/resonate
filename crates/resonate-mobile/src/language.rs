@@ -1,6 +1,7 @@
 #[uniffi::export]
 pub fn speak_languages(tags: Vec<String>) -> String {
     let language = resonate_words::negotiated(&tags);
+
     resonate_words::speak(language);
     resonate_words::settle(&resonate_words::Conventions::from_tags(&tags));
 
@@ -42,12 +43,14 @@ mod tests {
 
     fn reads_as_sql(text: &str) -> bool {
         let mut rest = text.trim_start();
+
         while let Some(after) = rest.strip_prefix('{') {
             rest = after
                 .split_once('}')
                 .map_or("", |(_, after)| after)
                 .trim_start();
         }
+
         let first = rest.split_whitespace().next().unwrap_or_default();
 
         SQL_OPENINGS.contains(&first)
@@ -87,6 +90,7 @@ mod tests {
         speak_languages(vec!["en-GB".into(), "en-US".into()]);
 
         let settled = resonate_words::settled_conventions();
+
         assert_eq!(
             settled.dates_region().map(|region| region.to_string()),
             Some("GB".to_owned())

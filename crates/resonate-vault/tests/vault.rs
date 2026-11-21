@@ -36,12 +36,14 @@ impl Tree {
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a scratch tree");
         Self { root }
     }
 
     fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, bytes).expect("a written fixture");
         path
     }
@@ -88,6 +90,7 @@ impl Read for Dropping {
                 "the share went away",
             ));
         }
+
         let within = (self.drops_past - self.held.position()) as usize;
         let reach = into.len().min(within);
         self.held.read(&mut into[..reach])
@@ -207,10 +210,13 @@ impl MediaProvider for FlipsOnOpen {
 fn signal(frames: usize) -> Vec<i32> {
     let mut held = Vec::with_capacity(frames * usize::from(CHANNELS));
     let mut state = 0x1234_5678_u32;
+
     for at in 0..frames {
         state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+
         let noise = ((state >> 16) & 0x7ff) as i32 - 0x400;
         let tone = ((at as f64 * 0.05).sin() * 6000.0) as i32;
+
         held.push(tone + noise);
         held.push(tone - noise);
     }
@@ -229,6 +235,7 @@ fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
 fn wave(bits: u16, float: bool, data: &[u8], extra: Option<&[u8]>) -> Vec<u8> {
     let block_align = CHANNELS * (bits / 8);
     let mut format = Vec::new();
+
     format.extend_from_slice(&(if float { 3_u16 } else { 1_u16 }).to_le_bytes());
     format.extend_from_slice(&CHANNELS.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
@@ -237,6 +244,7 @@ fn wave(bits: u16, float: bool, data: &[u8], extra: Option<&[u8]>) -> Vec<u8> {
     format.extend_from_slice(&bits.to_le_bytes());
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     if let Some(extra) = extra {
@@ -245,6 +253,7 @@ fn wave(bits: u16, float: bool, data: &[u8], extra: Option<&[u8]>) -> Vec<u8> {
     chunk(&mut body, b"data", data);
 
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -254,23 +263,27 @@ fn wave(bits: u16, float: bool, data: &[u8], extra: Option<&[u8]>) -> Vec<u8> {
 fn pcm_wave(samples: &[i16], rate: u32, channels: u16) -> Vec<u8> {
     let block_align = channels * 2;
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
     format.extend_from_slice(&rate.to_le_bytes());
     format.extend_from_slice(&(rate * u32::from(block_align)).to_le_bytes());
     format.extend_from_slice(&block_align.to_le_bytes());
     format.extend_from_slice(&16_u16.to_le_bytes());
+
     let data: Vec<u8> = samples
         .iter()
         .flat_map(|sample| sample.to_le_bytes())
         .collect();
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -279,6 +292,7 @@ fn pcm_wave(samples: &[i16], rate: u32, channels: u16) -> Vec<u8> {
 
 fn metaflac_digest(path: &Path) -> VaultKey {
     const DIGEST_AT: usize = 26;
+
     let held = fs::read(path).expect("a FLAC object");
     let digest: [u8; 16] = held[DIGEST_AT..DIGEST_AT + 16]
         .try_into()
@@ -333,11 +347,14 @@ fn sixty_four_bit_float(samples: &[f64]) -> Vec<u8> {
 fn heard_in_full(path: &Path) -> Vec<f64> {
     let sources = Sources::local();
     let location = MediaLocation::local(path);
+
     let (mut decoder, info) = Decoder::open(&sources, &location).expect("a readable object");
+
     decoder.hear_in_full();
 
     let mut block = AudioBuffer::empty(info.spec);
     let mut held = Vec::new();
+
     while decoder.next_block(&mut block).expect("a decoded block") == DecodeStatus::Decoded {
         held.extend_from_slice(decoder.heard_in_full());
     }
@@ -351,11 +368,13 @@ fn decoded(path: &Path, format: SampleFormat) -> Vec<i32> {
 fn decoded_through(sources: &Sources, path: &Path, format: SampleFormat) -> Vec<i32> {
     let location = MediaLocation::local(path);
     let (mut decoder, info) = Decoder::open(sources, &location).expect("a readable object");
+
     decoder.set_output_format(format);
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
     let mut block = AudioBuffer::empty(spec);
     let mut held = Vec::new();
+
     while decoder.next_block(&mut block).expect("a decoded block") == DecodeStatus::Decoded {
         match block.data() {
             SampleData::S16(samples) => held.extend(samples.iter().map(|s| i32::from(*s))),
@@ -388,6 +407,7 @@ fn kept(vault: &Vault, sources: &Sources, location: &MediaLocation) -> Kept {
 
 fn picture(width: u32, height: u32) -> CoverArt {
     let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+
     for y in 0..height {
         for x in 0..width {
             pixels.extend_from_slice(&[
@@ -398,8 +418,10 @@ fn picture(width: u32, height: u32) -> CoverArt {
             ]);
         }
     }
+
     let drawn = image::RgbaImage::from_raw(width, height, pixels).expect("a drawn picture");
     let mut written = Cursor::new(Vec::new());
+
     image::DynamicImage::ImageRgba8(drawn)
         .write_to(&mut written, image::ImageFormat::Png)
         .expect("a written picture");
@@ -414,6 +436,7 @@ fn picture(width: u32, height: u32) -> CoverArt {
 fn a_sixteen_bit_source_is_kept_as_flac_and_decodes_back_sample_for_sample() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let path = tree.write("sixteen.wav", &sixteen_bit(&samples, None));
     let vault = tree.vault();
 
@@ -461,6 +484,7 @@ fn a_renewal_under_another_key_is_weighed_against_the_object_it_would_replace() 
     let samples = signal(FRAMES);
     let sources = Sources::local();
     let vault = tree.vault();
+
     let location = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
     let first = kept(&vault, &sources, &location);
     let renewed = |replacing: Replacing| {
@@ -511,6 +535,7 @@ fn a_renewal_off_a_key_of_the_samples_alone_lands_under_the_sound_at_the_same_we
     let samples = signal(FRAMES);
     let sources = Sources::local();
     let vault = tree.vault();
+
     let location = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
     let first = kept(&vault, &sources, &location);
     let pcm_alone = metaflac_digest(&first.path);
@@ -535,6 +560,7 @@ fn a_renewal_off_a_key_of_the_samples_alone_lands_under_the_sound_at_the_same_we
     let Keeping::Kept(renewed) = renewed else {
         panic!("a renewal off a key of the samples alone was refused: {renewed:?}");
     };
+
     assert_eq!(renewed.key, first.key);
     assert_ne!(renewed.key, pcm_alone);
 }
@@ -545,6 +571,7 @@ fn the_same_samples_at_another_rate_or_count_land_as_objects_of_their_own() {
     let sources = Sources::local();
     let vault = tree.vault();
     let silence = vec![0_i16; FRAMES * usize::from(CHANNELS)];
+
     let stereo = tree.write("stereo.wav", &pcm_wave(&silence, RATE, CHANNELS));
     let faster = tree.write("faster.wav", &pcm_wave(&silence, RATE * 2, CHANNELS));
     let mono = tree.write("mono.wav", &pcm_wave(&silence, RATE, 1));
@@ -585,10 +612,12 @@ fn an_object_under_the_key_that_holds_something_else_is_not_taken_for_it() {
     let samples = signal(FRAMES);
     let sources = Sources::local();
     let vault = tree.vault();
+
     let location = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
     let first = kept(&vault, &sources, &location);
     let other = tree.write("other.wav", &sixteen_bit(&signal(FRAMES / 2), None));
     let other = kept(&vault, &sources, &MediaLocation::local(&other));
+
     fs::copy(&other.path, &first.path).expect("an object put where another stood");
 
     let again = kept(&vault, &sources, &location);
@@ -626,6 +655,7 @@ fn a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging() {
 
         assert!(matches!(keeping, Err(Error::Halted)), "{name}: {keeping:?}");
     }
+
     assert_eq!(
         fs::read_dir(vault.root().join("staging"))
             .expect("the staging folder")
@@ -644,6 +674,7 @@ fn a_keep_halted_mid_encode_lands_nothing_and_leaves_nothing_in_staging() {
 fn a_twenty_four_bit_source_is_kept_as_flac_and_decodes_back_sample_for_sample() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let path = tree.write("twentyfour.wav", &twenty_four_bit(&samples));
     let vault = tree.vault();
 
@@ -664,11 +695,13 @@ fn an_object_the_vault_wrote_carries_no_tags_and_no_picture() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
     let named = b"INFOINAM\x08\x00\x00\x00A title\0".to_vec();
+
     let path = tree.write("tagged.wav", &sixteen_bit(&samples, Some(&named)));
     let vault = tree.vault();
 
     let sources = Sources::local();
     let before = probe(&sources, &MediaLocation::local(&path)).expect("a readable source");
+
     assert_eq!(before.tags.title.as_deref(), Some("A title"));
 
     let held = kept(&vault, &sources, &MediaLocation::local(&path));
@@ -686,6 +719,7 @@ fn an_object_the_vault_wrote_carries_no_tags_and_no_picture() {
 fn the_same_audio_in_two_containers_settles_on_one_object() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let plain = tree.write("plain.wav", &sixteen_bit(&samples, None));
     let listed = tree.write(
         "listed.wav",
@@ -709,6 +743,7 @@ fn the_same_audio_in_two_containers_settles_on_one_object() {
 fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let path = tree.write("floating.wav", &floating(&samples));
     let vault = tree.vault();
 
@@ -726,11 +761,13 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
     let through = Sources::local().and(Arc::new(VaultFiles::over(&vault)));
     let (mut decoder, info) =
         Decoder::open(&through, &MediaLocation::local(&held.path)).expect("a readable object");
+
     decoder.set_output_format(SampleFormat::F32);
 
     let spec = StreamSpec::new(info.spec.rate, info.spec.channels, SampleFormat::F32);
     let mut block = AudioBuffer::empty(spec);
     let mut read = Vec::new();
+
     while decoder.next_block(&mut block).expect("a decoded block") == DecodeStatus::Decoded {
         if let SampleData::F32(held) = block.data() {
             read.extend_from_slice(held);
@@ -741,6 +778,7 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
         .iter()
         .map(|sample| f32::from(*sample as i16) / 32_768.0)
         .collect();
+
     assert_eq!(read, wanted);
 }
 
@@ -748,6 +786,7 @@ fn a_float_source_is_kept_as_a_compressed_wave_and_reads_back_bit_for_bit() {
 fn a_sixty_four_bit_float_master_is_kept_as_it_came_with_every_bit_of_every_sample() {
     let tree = Tree::new();
     let samples = double_precision(&signal(FRAMES));
+
     let path = tree.write("doubled.wav", &sixty_four_bit_float(&samples));
     let vault = tree.vault();
 
@@ -769,7 +808,9 @@ fn a_sixty_four_bit_float_copy_differing_past_a_single_float_is_refused() {
     let vault = tree.vault();
 
     let mut first = double_precision(&signal(FRAMES));
+
     let mut later = first.clone();
+
     first[FRAMES] = 0.5 + PAST_A_SINGLE_FLOAT;
     later[FRAMES] = 0.5 + PAST_A_SINGLE_FLOAT / 2.0;
 
@@ -803,14 +844,17 @@ fn a_sixty_four_bit_float_copy_differing_past_a_single_float_is_refused() {
 fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let first = tree.write("first.wav", &floating(&samples));
     let second = tree.write("second.wav", &floating(&samples));
     let vault = tree.vault();
     let staging = vault.root().join("staging");
 
     let landed = kept(&vault, &Sources::local(), &MediaLocation::local(&first));
+
     fs::remove_dir_all(&staging).expect("the staging folder goes");
     fs::write(&staging, b"").expect("a file where the staging folder stood");
+
     let again = vault.keep(&Taking {
         sources: &Sources::local(),
         location: &MediaLocation::local(&second),
@@ -824,6 +868,7 @@ fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
     let Ok(Keeping::Kept(again)) = again else {
         panic!("{again:?}");
     };
+
     assert!(again.deduped);
     assert_eq!(again.key, landed.key);
     assert_eq!(again.path, landed.path);
@@ -837,6 +882,7 @@ fn a_wave_whose_source_changes_between_being_weighed_and_being_packed_is_refused
     let vault = tree.vault();
     let source = SourceId::new("share").expect("a lowercase name");
     let location = MediaLocation::new(source.clone(), "changing/one");
+
     let sources = Sources::local().and(Arc::new(Changing {
         source,
         first: floating(&samples),
@@ -891,13 +937,16 @@ fn a_location_served_out_of_memory_is_kept_like_any_other() {
 fn photographed(width: u32, height: u32) -> CoverArt {
     let mut state = 0x9e37_79b9_u32;
     let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+
     for _ in 0..width * height * 3 {
         state ^= state << 13;
         state ^= state >> 17;
         state ^= state << 5;
         pixels.push((state >> 24) as u8);
     }
+
     let mut written = Vec::new();
+
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut written, 60)
         .encode(&pixels, width, height, image::ExtendedColorType::Rgb8)
         .expect("a written photograph");
@@ -915,12 +964,16 @@ fn a_cover_reads_back_until_its_bytes_are_damaged_whichever_way_it_was_kept() {
 
     for art in [photographed(96, 64), picture(33, 21)] {
         let held = vault.keep_cover(&art).expect("a kept cover");
+
         assert!(vault.verify_cover(&held.path).expect("a readable cover"));
 
         let mut bytes = fs::read(&held.path).expect("the kept cover");
+
         let middle = bytes.len() / 2;
+
         bytes.truncate(middle);
         fs::write(&held.path, &bytes).expect("a writable cover");
+
         assert!(
             !vault.verify_cover(&held.path).expect("a readable file"),
             "a cut cover read back: {}",
@@ -936,17 +989,20 @@ fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
     let art = photographed(16, 16);
 
     let held = vault.keep_cover(&art).expect("a kept cover");
+
     assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jpg"));
     assert_eq!(held.bytes, art.bytes.len() as u64);
     assert_eq!((held.width, held.height), (16, 16));
 
     let drawn = vault.picture(&held.path).expect("a drawable cover");
+
     assert_eq!(
         drawn, art,
         "the picture came back otherwise than it went in"
     );
 
     let again = vault.keep_cover(&art).expect("a kept cover");
+
     assert!(again.deduped);
     assert_eq!((again.width, again.height), (16, 16));
     assert_eq!(vault.holding().expect("a counted vault").covers, 1);
@@ -955,14 +1011,17 @@ fn a_cover_smaller_as_it_came_than_as_lossless_pixels_is_kept_as_it_came() {
 fn landscape(width: u32, height: u32, quality: u8) -> CoverArt {
     let mut state = 0x9e37_79b9_u32;
     let mut pixels = Vec::with_capacity((width * height * 3) as usize);
+
     for y in 0..height {
         for x in 0..width {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
+
             let grain = (state >> 24) as f32 / 255.0 - 0.5;
             let (fx, fy) = (x as f32 / width as f32, y as f32 / height as f32);
             let sky = 0.55 + 0.35 * (fy * 3.1).cos();
+
             let hill = 0.5 + 0.4 * ((fx * 5.0).sin() * (fy * 4.0).cos());
             for sample in [
                 sky * 0.9 + grain * 0.12,
@@ -973,7 +1032,9 @@ fn landscape(width: u32, height: u32, quality: u8) -> CoverArt {
             }
         }
     }
+
     let mut written = Vec::new();
+
     image::codecs::jpeg::JpegEncoder::new_with_quality(&mut written, quality)
         .encode(&pixels, width, height, image::ExtendedColorType::Rgb8)
         .expect("a written landscape");
@@ -986,8 +1047,10 @@ fn landscape(width: u32, height: u32, quality: u8) -> CoverArt {
 
 fn commented(art: &CoverArt) -> CoverArt {
     const BEHIND_THE_FIRST_SEGMENT: usize = 2 + 2 + 16;
+
     let comment = b"a cover comment";
     let mut bytes = art.bytes[..BEHIND_THE_FIRST_SEGMENT].to_vec();
+
     bytes.extend_from_slice(&[0xff, 0xfe]);
     bytes.extend_from_slice(&((comment.len() + 2) as u16).to_be_bytes());
     bytes.extend_from_slice(comment);
@@ -1006,17 +1069,22 @@ fn a_jpeg_cover_is_kept_as_a_jxl_smaller_than_it_that_hands_back_the_very_jpeg()
     let art = landscape(320, 240, 85);
 
     let held = vault.keep_cover(&art).expect("a kept cover");
+
     assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
     assert!(held.bytes < art.bytes.len() as u64);
     assert_eq!((held.width, held.height), (320, 240));
     assert!(!held.deduped);
 
     let drawn = vault.picture(&held.path).expect("a drawable cover");
+
     assert_eq!(drawn, art, "the JPEG came back otherwise than it went in");
+
     let again = vault.picture(&held.path).expect("a drawable cover");
+
     assert_eq!(again, art);
 
     let repeated = vault.keep_cover(&art).expect("a kept cover");
+
     assert!(repeated.deduped);
     assert_eq!((repeated.width, repeated.height), (320, 240));
     assert_eq!(repeated.path, held.path);
@@ -1029,14 +1097,18 @@ fn a_transcoded_cover_with_one_bit_flipped_or_cut_short_no_longer_reads_back() {
     let tree = Tree::new();
     let vault = tree.vault();
     let art = landscape(200, 150, 80);
+
     let held = vault.keep_cover(&art).expect("a kept cover");
     let whole = fs::read(&held.path).expect("the kept cover");
+
     assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
 
     for at in [whole.len() / 5, whole.len() / 2, whole.len() - 3] {
         let mut flipped = whole.clone();
+
         flipped[at] ^= 0x10;
         fs::write(&held.path, &flipped).expect("a writable cover");
+
         assert!(
             !vault.verify_cover(&held.path).expect("a readable file"),
             "a cover with a bit flipped at {at} read back"
@@ -1045,9 +1117,11 @@ fn a_transcoded_cover_with_one_bit_flipped_or_cut_short_no_longer_reads_back() {
     }
 
     fs::write(&held.path, &whole[..whole.len() / 2]).expect("a writable cover");
+
     assert!(!vault.verify_cover(&held.path).expect("a readable file"));
 
     fs::write(&held.path, &whole).expect("a writable cover");
+
     assert!(vault.verify_cover(&held.path).expect("a readable file"));
     assert_eq!(vault.picture(&held.path).expect("a cover"), art);
 }
@@ -1078,12 +1152,14 @@ fn a_cover_read_back_out_of_the_vault_is_the_picture_that_went_in() {
     let art = picture(61, 47);
 
     let held = vault.keep_cover(&art).expect("a kept cover");
+
     assert_eq!(held.width, 61);
     assert_eq!(held.height, 47);
     assert!(!held.deduped);
     assert_eq!(held.path.extension().and_then(|e| e.to_str()), Some("jxl"));
 
     let drawn = vault.picture(&held.path).expect("a drawable cover");
+
     assert_eq!(drawn.format, ImageFormat::Png);
 
     let went_in = image::load_from_memory(&art.bytes)
@@ -1092,9 +1168,11 @@ fn a_cover_read_back_out_of_the_vault_is_the_picture_that_went_in() {
     let came_out = image::load_from_memory(&drawn.bytes)
         .expect("a picture")
         .to_rgba8();
+
     assert_eq!(went_in, came_out);
 
     let again = vault.keep_cover(&art).expect("a kept cover");
+
     assert!(again.deduped);
     assert_eq!(vault.holding().expect("a counted vault").covers, 1);
 }
@@ -1127,17 +1205,20 @@ fn an_animated_cover_is_kept_as_it_came_with_every_frame() {
     let tree = Tree::new();
     let vault = tree.vault();
     let mut animated = Vec::new();
+
     {
         let mut encoder = image::codecs::gif::GifEncoder::new(&mut animated);
         for shade in [10_u8, 120, 240] {
             let frame = image::RgbaImage::from_fn(40, 30, |x, y| {
                 image::Rgba([shade, (x * 6) as u8, (y * 8) as u8, 255])
             });
+
             encoder
                 .encode_frame(image::Frame::new(frame))
                 .expect("a written frame");
         }
     }
+
     let art = CoverArt {
         format: ImageFormat::Gif,
         bytes: animated,
@@ -1163,9 +1244,11 @@ fn a_sixteen_bit_cover_lands_as_a_jxl_holding_every_bit() {
         ])
     }));
     let mut written = Cursor::new(Vec::new());
+
     picture
         .write_to(&mut written, image::ImageFormat::Png)
         .expect("a written picture");
+
     let art = CoverArt {
         format: ImageFormat::Png,
         bytes: written.into_inner(),
@@ -1185,8 +1268,11 @@ fn a_cover_is_drawn_once_and_a_forgotten_one_is_not_drawn_again_from_memory() {
     let held = vault.keep_cover(&picture(33, 21)).expect("a kept cover");
 
     let first = vault.picture(&held.path).expect("a drawable cover");
+
     std::fs::write(&held.path, b"no longer a picture").expect("a meddled cover");
+
     let second = vault.picture(&held.path).expect("the drawn cover held");
+
     assert_eq!(first, second);
 
     assert!(vault.forget(&held.path).expect("a forgotten cover"));
@@ -1197,10 +1283,12 @@ fn a_cover_is_drawn_once_and_a_forgotten_one_is_not_drawn_again_from_memory() {
 fn a_renewal_replaces_the_object_standing_under_its_key_only_where_it_comes_out_smaller() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let path = tree.write("renewed.wav", &sixteen_bit(&samples, None));
     let vault = tree.vault();
     let location = MediaLocation::local(&path);
     let sources = Sources::local();
+
     let renewed = || match vault
         .keep(&Taking {
             sources: &sources,
@@ -1219,15 +1307,18 @@ fn a_renewal_replaces_the_object_standing_under_its_key_only_where_it_comes_out_
 
     let first = kept(&vault, &sources, &location);
     let again = renewed();
+
     assert!(again.deduped);
     assert!(!again.replaced);
     assert_eq!(again.path, first.path);
 
     let mut padded = fs::read(&first.path).expect("a standing object");
+
     padded.extend_from_slice(&[0; 4096]);
     fs::write(&first.path, &padded).expect("a heavier standing object");
 
     let smaller = renewed();
+
     assert!(smaller.replaced);
     assert!(!smaller.deduped);
     assert_eq!(smaller.path, first.path);
@@ -1239,10 +1330,12 @@ fn a_renewal_replaces_the_object_standing_under_its_key_only_where_it_comes_out_
 fn an_object_that_has_been_meddled_with_is_not_verified() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let path = tree.write("meddled.wav", &sixteen_bit(&samples, None));
     let vault = tree.vault();
 
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
     assert!(
         vault
             .verify(&held.path, Form::Flac)
@@ -1250,16 +1343,20 @@ fn an_object_that_has_been_meddled_with_is_not_verified() {
     );
 
     let mut bytes = fs::read(&held.path).expect("an object");
+
     let at = bytes.len() / 2;
+
     bytes[at] ^= 0xff;
     fs::write(&held.path, &bytes).expect("a meddled object");
 
     assert!(!vault.verify(&held.path, Form::Flac).unwrap_or(false));
 
     fs::remove_file(&held.path).expect("an object taken away");
+
     let gone = vault
         .verify(&held.path, Form::Flac)
         .expect_err("an object that is not there was weighed");
+
     assert!(
         vault.failed_itself(&gone),
         "an object the vault lost was blamed on what went in: {gone}"
@@ -1273,6 +1370,7 @@ fn a_packed_wave_that_has_been_meddled_with_is_not_verified() {
     let vault = tree.vault();
 
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
+
     assert_eq!(held.form, Form::Wave);
     assert!(
         vault
@@ -1281,7 +1379,9 @@ fn a_packed_wave_that_has_been_meddled_with_is_not_verified() {
     );
 
     let mut bytes = fs::read(&held.path).expect("an object");
+
     let at = bytes.len() / 2;
+
     bytes[at] ^= 0xff;
     fs::write(&held.path, &bytes).expect("a meddled object");
 
@@ -1293,9 +1393,11 @@ fn a_wave_packed_before_the_frames_is_repacked_in_frames_and_reads_back_the_same
     let tree = Tree::new();
     let path = tree.write("unframed.wav", &floating(&signal(FRAMES)));
     let vault = tree.vault();
+
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
     let unpacked = zstd::decode_all(fs::read(&held.path).expect("an object").as_slice())
         .expect("an object that unpacks");
+
     fs::write(
         &held.path,
         zstd::encode_all(unpacked.as_slice(), 3).expect("packed as one frame"),
@@ -1343,20 +1445,25 @@ fn past_what_a_wave_holds() -> Vec<u8> {
     let block_align = CHANNELS * 2;
     let data = vec![0_u8; FRAMES * usize::from(block_align)];
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&CHANNELS.to_le_bytes());
     format.extend_from_slice(&FAST.to_le_bytes());
     format.extend_from_slice(&(FAST * u32::from(block_align)).to_le_bytes());
     format.extend_from_slice(&block_align.to_le_bytes());
     format.extend_from_slice(&16_u16.to_le_bytes());
+
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     body.extend_from_slice(b"data");
     body.extend_from_slice(&DECLARED_BYTES.to_le_bytes());
     body.extend_from_slice(&data);
+
     let declared_body = body.len() as u32 - data.len() as u32 + DECLARED_BYTES;
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&declared_body.to_le_bytes());
     whole.extend_from_slice(&body);
@@ -1391,6 +1498,7 @@ fn a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault() {
         let sources = Sources::local().and(Arc::clone(&provider) as Arc<dyn MediaProvider>);
         (provider, sources)
     };
+
     let taken = |sources: &Sources| {
         vault.keep(&Taking {
             sources,
@@ -1405,6 +1513,7 @@ fn a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault() {
 
     let (whole, sources) = dropping(u32::MAX);
     let held = taken(&sources).expect("a source that never drops is kept");
+
     assert!(matches!(
         held,
         Keeping::Kept(Kept {
@@ -1412,14 +1521,17 @@ fn a_source_that_drops_partway_is_neither_refused_nor_blamed_on_the_vault() {
             ..
         })
     ));
+
     let opened_to_keep = whole.opened.load(Ordering::Relaxed);
 
     let (_, sources) = dropping(0);
     let mid_decode = taken(&sources).expect_err("a source dropping while decoded is not refused");
+
     assert!(!vault.failed_itself(&mid_decode), "{mid_decode}");
 
     let (_, sources) = dropping(opened_to_keep - 1);
     let mid_copy = taken(&sources).expect_err("a source dropping while copied is not kept");
+
     assert!(
         matches!(&mid_copy, resonate_vault::Error::Source { location: named, .. } if *named == location),
         "{mid_copy:?}"
@@ -1434,8 +1546,10 @@ fn a_cancel_is_heard_while_a_source_is_decoded_for_its_digest_and_while_it_is_co
     let source = SourceId::new("share").expect("a lowercase name");
     let location = MediaLocation::new(source.clone(), "long/one");
     let flag = Arc::new(AtomicBool::new(false));
+
     let flipping = |flips_from: u32| {
         flag.store(false, Ordering::Relaxed);
+
         let provider = Arc::new(FlipsOnOpen {
             source: source.clone(),
             bytes: past_what_a_wave_holds(),
@@ -1459,15 +1573,19 @@ fn a_cancel_is_heard_while_a_source_is_decoded_for_its_digest_and_while_it_is_co
     };
 
     let (never, sources) = flipping(u32::MAX);
+
     assert!(matches!(taken(&sources), Ok(Keeping::Kept(_))));
+
     let opened_to_keep = never.opened.load(Ordering::Relaxed);
 
     let (_, sources) = flipping(0);
     let mid_decode = taken(&sources);
+
     assert!(matches!(mid_decode, Err(Error::Halted)), "{mid_decode:?}");
 
     let (_, sources) = flipping(opened_to_keep - 1);
     let mid_copy = taken(&sources);
+
     assert!(matches!(mid_copy, Err(Error::Halted)), "{mid_copy:?}");
 
     assert_eq!(
@@ -1483,6 +1601,7 @@ fn the_file_the_vault_read_is_left_exactly_as_it_was() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
     let bytes = sixteen_bit(&samples, Some(b"INFOINAM\x06\x00\x00\x00Named\0"));
+
     let path = tree.write("untouched.wav", &bytes);
     let before = fs::metadata(&path).expect("a source file");
     let vault = tree.vault();
@@ -1520,6 +1639,7 @@ fn reference_tools() -> bool {
         .arg("--version")
         .output()
         .is_ok_and(|answered| answered.status.success());
+
     if !found {
         eprintln!("skipped: no flac to weigh what this build wrote");
     }
@@ -1534,6 +1654,7 @@ fn the_reference_decoder_reads_what_this_build_wrote_without_a_complaint() {
 
     let tree = Tree::new();
     let samples = signal(FRAMES);
+
     let path = tree.write("weighed.wav", &sixteen_bit(&samples, None));
     let vault = tree.vault();
 
@@ -1544,6 +1665,7 @@ fn the_reference_decoder_reads_what_this_build_wrote_without_a_complaint() {
         .arg(&held.path)
         .output()
         .expect("a reference decoder");
+
     assert!(
         tested.status.success(),
         "{}",
@@ -1557,10 +1679,12 @@ fn the_reference_decoder_reads_what_this_build_wrote_without_a_complaint() {
         .arg(&path)
         .output()
         .expect("a reference encoder");
+
     assert!(encoded.status.success());
 
     let ours = fs::metadata(&held.path).expect("an object").len();
     let reference = fs::metadata(&theirs).expect("a reference object").len();
+
     assert!(
         ours <= reference,
         "this build wrote {ours} bytes where flac -8 wrote {reference}"
@@ -1570,6 +1694,7 @@ fn the_reference_decoder_reads_what_this_build_wrote_without_a_complaint() {
 fn noise(frames: usize) -> Vec<i32> {
     let mut held = Vec::with_capacity(frames * usize::from(CHANNELS));
     let mut state = 0x9e37_79b9_u32;
+
     for _ in 0..frames * usize::from(CHANNELS) {
         state ^= state << 13;
         state ^= state >> 17;
@@ -1591,6 +1716,7 @@ fn raw_twenty_four_bit(samples: &[i32]) -> Vec<u8> {
 fn an_object_is_never_larger_than_the_file_it_came_from() {
     let tree = Tree::new();
     let bytes = raw_twenty_four_bit(&noise(FRAMES));
+
     let path = tree.write("incompressible.wav", &bytes);
     let vault = tree.vault();
 
@@ -1618,6 +1744,7 @@ fn surround(channels: u16, mask: u32, rate: u32, frames: usize) -> Vec<u8> {
 
     let block_align = channels * (BITS / 8);
     let mut format = Vec::new();
+
     format.extend_from_slice(&EXTENSIBLE.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
     format.extend_from_slice(&rate.to_le_bytes());
@@ -1630,19 +1757,23 @@ fn surround(channels: u16, mask: u32, rate: u32, frames: usize) -> Vec<u8> {
     format.extend_from_slice(&PCM_SUBFORMAT);
 
     let mut data = Vec::with_capacity(frames * usize::from(block_align));
+
     for at in 0..frames {
         for lane in 0..channels {
             let tone = ((at as f64 * 0.01 * f64::from(lane + 1)).sin() * 4000.0) as i16;
+
             data.extend_from_slice(&tone.to_le_bytes());
         }
     }
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -1662,6 +1793,7 @@ fn thirty_two_bits_declaring_twenty_four(samples: &[i32]) -> Vec<u8> {
 
     let block_align = CHANNELS * (BITS / 8);
     let mut format = Vec::new();
+
     format.extend_from_slice(&EXTENSIBLE.to_le_bytes());
     format.extend_from_slice(&CHANNELS.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
@@ -1672,17 +1804,20 @@ fn thirty_two_bits_declaring_twenty_four(samples: &[i32]) -> Vec<u8> {
     format.extend_from_slice(&VALID_BITS.to_le_bytes());
     format.extend_from_slice(&STEREO.to_le_bytes());
     format.extend_from_slice(&PCM_SUBFORMAT);
+
     let data: Vec<u8> = samples
         .iter()
         .flat_map(|sample| sample.to_le_bytes())
         .collect();
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -1698,9 +1833,11 @@ fn a_wider_source_declaring_fewer_bits_is_narrowed_only_where_every_bit_dropped_
 
     let padded: Vec<i32> = signal(FRAMES).iter().map(|sample| sample << 16).collect();
     let mut live = padded.clone();
+
     for sample in live.iter_mut().step_by(LIVE_EVERY) {
         *sample |= 1;
     }
+
     let padded_at = tree.write(
         "padded.wav",
         &thirty_two_bits_declaring_twenty_four(&padded),
@@ -1749,18 +1886,22 @@ fn an_object_an_older_build_narrowed_past_live_bits_is_renewed_whole_while_its_s
     let vault = tree.vault();
 
     let mut state = 0x9e37_79b9_u32;
+
     let mut grain = || {
         state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
         (state >> 24) as i32
     };
+
     let padded: Vec<i32> = signal(FRAMES)
         .iter()
         .map(|sample| ((sample << 8) | grain()) << 8)
         .collect();
     let mut live = padded.clone();
+
     for sample in live.iter_mut().step_by(LIVE_EVERY) {
         *sample |= 1;
     }
+
     let as_an_older_build_narrowed_it = tree.write(
         "narrowed.wav",
         &thirty_two_bits_declaring_twenty_four(&padded),
@@ -1850,17 +1991,20 @@ fn a_surround_source_is_kept_with_the_speakers_it_names() {
         let went_in = probe(&sources, &location).expect("a readable source");
 
         let held = kept(&vault, &sources, &location);
+
         assert_eq!(
             held.form == Form::Flac,
             carried_by_flac,
             "{name} was kept as {:?}",
             held.form
         );
+
         let came_out = probe(
             &Sources::local().and(Arc::new(VaultFiles::over(&vault))),
             &MediaLocation::local(&held.path),
         )
         .expect("a readable object");
+
         assert_eq!(
             came_out.speakers, went_in.speakers,
             "{name} came back with other speakers than it went in with"
@@ -1876,6 +2020,7 @@ fn a_source_wider_than_flac_holds_is_kept_as_it_stands_and_heard_through_the_cop
 
     let tree = Tree::new();
     let file = surround(TEN_CHANNELS, TEN_SPEAKERS, RATE, FRAMES);
+
     let path = tree.write("ten.wav", &file);
     let vault = tree.vault();
 
@@ -1897,6 +2042,7 @@ fn a_wave_that_would_come_out_no_smaller_is_given_up_on_and_the_source_kept() {
 
     let tree = Tree::new();
     let mut state = 0x9e37_79b9_u32;
+
     let noise: Vec<i32> = (0..FRAMES * usize::from(CHANNELS))
         .map(|_| {
             state ^= state << 13;
@@ -1906,8 +2052,10 @@ fn a_wave_that_would_come_out_no_smaller_is_given_up_on_and_the_source_kept() {
         })
         .collect();
     let mut file = sixteen_bit(&noise, None);
+
     file[RATE_AT].copy_from_slice(&HIGH_RATE.to_le_bytes());
     file[BYTES_A_SECOND_AT].copy_from_slice(&(HIGH_RATE * u32::from(CHANNELS) * 2).to_le_bytes());
+
     let path = tree.write("noise.wav", &file);
     let vault = tree.vault();
 
@@ -1942,6 +2090,7 @@ fn a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample() {
 
     let tree = Tree::new();
     let mut state = 0x2545_f491_u32;
+
     let noise: Vec<i32> = (0..FRAMES * usize::from(CHANNELS))
         .map(|_| {
             state ^= state << 13;
@@ -1951,15 +2100,21 @@ fn a_kept_wave_sheds_the_tags_its_chunks_carry_and_keeps_every_sample() {
         })
         .collect();
     let mut file = sixteen_bit(&noise, None);
+
     file[RATE_AT].copy_from_slice(&HIGH_RATE.to_le_bytes());
     file[BYTES_A_SECOND_AT].copy_from_slice(&(HIGH_RATE * u32::from(CHANNELS) * 2).to_le_bytes());
+
     let bare = file.clone();
     let info = b"INFOINAM\x07\0\0\0Echoes\0";
+
     file.extend_from_slice(b"LIST");
     file.extend_from_slice(&(info.len() as u32).to_le_bytes());
     file.extend_from_slice(info);
+
     let declared = (file.len() - 8) as u32;
+
     file[RIFF_SIZE_AT].copy_from_slice(&declared.to_le_bytes());
+
     let path = tree.write("tagged.wav", &file);
     let vault = tree.vault();
 
@@ -1990,6 +2145,7 @@ fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
 
 fn frame_at(stream: &[u8], nth: usize) -> Option<usize> {
     let mut at = 0;
+
     for _ in 0..nth {
         at += mpeg_frame_length(stream.get(at..at + 4)?)?;
     }
@@ -2003,6 +2159,7 @@ fn a_source_with_a_packet_that_will_not_decode_is_not_kept() {
     let tree = Tree::new();
     let source = tree.write("tone.wav", &sixteen_bit(&signal(FRAMES), None));
     let path = tree.root.join("spoiled.mp3");
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -2010,20 +2167,26 @@ fn a_source_with_a_packet_that_will_not_decode_is_not_kept() {
         .args(["-write_xing", "0", "-id3v2_version", "0"])
         .arg(&path)
         .status();
+
     if !encoded.is_ok_and(|status| status.success()) {
         eprintln!("skipped: no ffmpeg with libmp3lame to write an MP3");
         return;
     }
+
     let mut bytes = fs::read(&path).expect("the encoded file");
+
     let Some(header) = frame_at(&bytes, SPOILED) else {
         eprintln!("skipped: ffmpeg wrote frames this walk does not read");
         return;
     };
     let protected = bytes[header + 1] & 1 == 0;
+
     let side = header + SIDE_INFO_AFTER + if protected { 2 } else { 0 };
+
     bytes[side + 4] = BIG_VALUES_PAST_THE_GREATEST;
     bytes[side + 5] |= 0x80;
     fs::write(&path, &bytes).expect("a writable temporary file");
+
     let vault = tree.vault();
 
     let keeping = vault.keep(&Taking {
@@ -2053,6 +2216,7 @@ fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
     let tree = Tree::new();
     let source = tree.write("tone.wav", &sixteen_bit(&signal(FRAMES), None));
     let path = tree.root.join("tagged.mp3");
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -2065,18 +2229,23 @@ fn a_kept_mp3_sheds_its_tags_and_keeps_every_frame_it_decodes_to() {
         ])
         .arg(&path)
         .status();
+
     if !encoded.is_ok_and(|status| status.success()) {
         eprintln!("skipped: no ffmpeg with libmp3lame to write a tagged MP3");
         return;
     }
+
     let before = fs::read(&path).expect("the tagged file");
+
     assert!(before.starts_with(b"ID3"));
     assert!(before[before.len() - ID3V1_BYTES..].starts_with(b"TAG"));
+
     let vault = tree.vault();
 
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
 
     let object = fs::read(&held.path).expect("an object");
+
     assert_eq!(held.form, Form::Kept);
     assert!(!object.starts_with(b"ID3"), "the leading tag was kept");
     assert!(
@@ -2102,6 +2271,7 @@ fn a_tagged_ogg(tree: &Tree, codec: &str, named: &str) -> Option<PathBuf> {
     let source = tree.write("tone.wav", &sixteen_bit(&signal(FRAMES), None));
     let path = tree.root.join(named);
     let told = format!("comment={}", "a long note ".repeat(9_000));
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-i"])
         .arg(&source)
@@ -2120,8 +2290,10 @@ fn a_tagged_ogg(tree: &Tree, codec: &str, named: &str) -> Option<PathBuf> {
 
 fn ogg_checksum(page: &[u8]) -> u32 {
     let mut held = 0_u32;
+
     for (at, byte) in page.iter().enumerate() {
         let byte = if (22..26).contains(&at) { 0 } else { *byte };
+
         held ^= u32::from(byte) << 24;
         for _ in 0..8 {
             held = if held & 0x8000_0000 == 0 {
@@ -2137,20 +2309,25 @@ fn ogg_checksum(page: &[u8]) -> u32 {
 fn ogg_sequences_and_checksums_hold(bytes: &[u8]) -> bool {
     let mut at = 0;
     let mut next = 0_u32;
+
     while at < bytes.len() {
         let Some(header) = bytes.get(at..at + 27) else {
             return false;
         };
+
         if !header.starts_with(b"OggS") {
             return false;
         }
+
         let segments = usize::from(header[26]);
         let Some(lacing) = bytes.get(at + 27..at + 27 + segments) else {
             return false;
         };
+
         let length = 27 + segments + lacing.iter().map(|lace| usize::from(*lace)).sum::<usize>();
         let sequence = u32::from_le_bytes(header[18..22].try_into().expect("four bytes"));
         let stamped = u32::from_le_bytes(header[22..26].try_into().expect("four bytes"));
+
         if sequence != next || ogg_checksum(&bytes[at..at + length]) != stamped {
             return false;
         }
@@ -2172,6 +2349,7 @@ fn sheds_its_comments_and_decodes_alike(codec: &str, named: &str) {
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
 
     let object = fs::read(&held.path).expect("an object");
+
     assert_eq!(held.form, Form::Kept);
     assert!(
         object.len() + 90_000 < before.len(),
@@ -2189,8 +2367,10 @@ fn sheds_its_comments_and_decodes_alike(codec: &str, named: &str) {
         decoded(&path, SampleFormat::F32)
     );
     assert_eq!(fs::read(&path).expect("the tagged file"), before);
+
     let probed =
         probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
+
     assert!(probed.tags.title.is_none());
     assert!(probed.tags.artist.is_none());
 }
@@ -2224,16 +2404,19 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
         .arg(format!("comment={}", "a long note ".repeat(4_000)))
         .arg(&path)
         .status();
+
     if !encoded.is_ok_and(|status| status.success()) {
         eprintln!("skipped: no ffmpeg with {codec} to write a tagged {named}");
         return;
     }
+
     let before = fs::read(&path).expect("the tagged file");
     let vault = tree.vault();
 
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
 
     let object = fs::read(&held.path).expect("an object");
+
     assert_eq!(held.form, Form::Kept);
     assert!(object.len() <= before.len());
     assert!(
@@ -2253,8 +2436,10 @@ fn blanks_its_tags_and_decodes_alike(codec: &str, named: &str) {
         decoded(&path, SampleFormat::F32)
     );
     assert_eq!(fs::read(&path).expect("the tagged file"), before);
+
     let probed =
         probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
+
     assert!(probed.tags.title.is_none());
     assert!(probed.tags.artist.is_none());
 }
@@ -2274,6 +2459,7 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
     let tree = Tree::new();
     let path = tree.root.join("tagged.oga");
     let told = format!("comment={}", "a long note ".repeat(9_000));
+
     let encoded = Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i"])
         .arg("sine=frequency=997:sample_rate=192000:duration=1")
@@ -2284,16 +2470,19 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
         .args(["-metadata", "title=Echoes", "-metadata", &told])
         .arg(&path)
         .status();
+
     if !encoded.is_ok_and(|status| status.success()) {
         eprintln!("skipped: no ffmpeg to write a tagged Ogg FLAC stream");
         return;
     }
+
     let before = fs::read(&path).expect("the tagged file");
     let vault = tree.vault();
 
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
 
     let object = fs::read(&held.path).expect("an object");
+
     assert_eq!(held.form, Form::Kept);
     assert!(
         object.len() + 100_000 < before.len(),
@@ -2311,8 +2500,10 @@ fn a_kept_ogg_flac_sheds_its_comment_and_keeps_every_frame_it_decodes_to() {
         decoded(&path, SampleFormat::S32)
     );
     assert_eq!(fs::read(&path).expect("the tagged file"), before);
+
     let probed =
         probe(&Sources::local(), &MediaLocation::local(&held.path)).expect("a probe of the object");
+
     assert!(probed.tags.title.is_none());
 }
 
@@ -2381,7 +2572,9 @@ fn raced_to_the_same_key(bytes: &[u8], form: Form) {
     });
 
     assert_eq!(kept[0].form, form);
+
     let landed = landed_once(kept);
+
     assert_eq!(vault.objects().expect("objects").len(), 1);
     assert_eq!(stagings(&vault), 0);
     assert!(vault.verify(&landed.path, form).expect("a verified object"));
@@ -2410,6 +2603,7 @@ fn dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_swee
     let tree = Tree::new();
     let vault = tree.vault();
     let locations = racing_copies(&tree, &sixteen_bit(&signal(FRAMES), None));
+
     let standing = kept(&vault, &Sources::local(), &locations[0]);
     let barrier = std::sync::Barrier::new(RACERS + 1);
 
@@ -2418,6 +2612,7 @@ fn dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_swee
             barrier.wait();
             for _ in 0..SWEEPS_WHILE_KEEPING {
                 vault.sweep_the_staging().expect("a sweep");
+
                 assert!(standing.path.is_file());
             }
         });
@@ -2435,6 +2630,7 @@ fn dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_swee
                 })
             })
             .collect();
+
         sweeper.join().expect("a sweeper");
         racers
             .into_iter()
@@ -2455,9 +2651,11 @@ const STEREO_AT_DAT_RATE: (u32, &str) = (48_000, "pan=stereo|c0=c0|c1=c0");
 
 fn turning_ogg(tree: &Tree, name: &str, codec: &[&str]) -> Option<PathBuf> {
     let mut whole = Vec::new();
+
     for (index, (rate, filter)) in [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE].iter().enumerate() {
         let part = tree.root.join(format!("{index}-{name}"));
         let tone = format!("sine=frequency=997:sample_rate={rate}:duration=1");
+
         let made = Command::new("ffmpeg")
             .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tone])
             .args(["-af", filter])
@@ -2465,6 +2663,7 @@ fn turning_ogg(tree: &Tree, name: &str, codec: &[&str]) -> Option<PathBuf> {
             .arg(&part)
             .status()
             .is_ok_and(|status| status.success());
+
         if !made {
             eprintln!("skipped: no ffmpeg to write a link of {name}");
             return None;
@@ -2477,6 +2676,7 @@ fn turning_ogg(tree: &Tree, name: &str, codec: &[&str]) -> Option<PathBuf> {
 fn heard_across_turns(path: &Path) -> Vec<(u32, u8, Vec<i32>)> {
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(path)).expect("a readable stream");
+
     decoder.follow_format_changes();
     decoder.set_output_format(SampleFormat::S16);
 
@@ -2517,6 +2717,7 @@ fn a_turning_stream_is_kept_as_it_came(codec: &[&str], named: &str) {
     let held = kept(&vault, &Sources::local(), &MediaLocation::local(&path));
 
     let object = heard_across_turns(&held.path);
+
     assert_eq!(held.form, Form::Kept);
     assert_eq!(
         object
@@ -2545,6 +2746,7 @@ fn a_lossless_stream_that_turns_is_kept_as_it_came_where_one_flac_cannot_hold_it
 fn kept_as_an_older_build_kept_it(vault: &Vault, art: &CoverArt) -> PathBuf {
     let held = vault.keep_cover(art).expect("a kept cover");
     let older = held.path.with_extension("jpg");
+
     if held.path != older {
         fs::remove_file(&held.path).expect("the newer form taken away");
         fs::write(&older, &art.bytes).expect("the JPEG an older build kept");
@@ -2572,35 +2774,44 @@ fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_that_hand_b
     let tree = Tree::new();
     let vault = tree.vault();
     let small = photographed(16, 16);
+
     let kept_small = kept_as_an_older_build_kept_it(&vault, &small);
     let older = jpegs_an_older_build_kept(&vault);
     let before = vault.holding().expect("a counted vault");
+
     assert_eq!(before.covers, 4);
 
     let mut foretold = 0;
+
     for (_, path) in &older {
         match vault.foretell_compacting(path).expect("a foretold swap") {
             Compacting::Foretold { was, now } => {
                 assert!(now < was);
+
                 foretold += was - now;
             }
             other => panic!("a photographic JPEG was not foretold a smaller form: {other:?}"),
         }
+
         assert!(path.is_file(), "a foretelling took the JPEG away");
         assert!(!path.with_extension("jxl").exists(), "a foretelling landed");
     }
+
     assert_eq!(vault.holding().expect("a counted vault"), before);
 
     let mut saved = 0;
+
     for (art, path) in &older {
         let Compacting::Beside { jxl, was, now } =
             vault.compact_cover(path).expect("a compacted cover")
         else {
             panic!("a photographic JPEG was not compacted");
         };
+
         assert_eq!(jxl, path.with_extension("jxl"));
         assert_eq!(was, art.bytes.len() as u64);
         assert!(now < was);
+
         saved += was - now;
 
         assert_eq!(&vault.picture(&jxl).expect("the new form"), art);
@@ -2612,9 +2823,11 @@ fn the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_that_hand_b
         );
         assert_eq!(&vault.picture(&jxl).expect("the new form"), art);
     }
+
     assert_eq!(saved, foretold);
 
     let after = vault.holding().expect("a counted vault");
+
     assert_eq!(after.covers, 4);
     assert_eq!(after.cover_bytes, before.cover_bytes - saved);
     assert_eq!(
@@ -2640,12 +2853,14 @@ fn a_swap_stopped_after_the_smaller_form_landed_leaves_both_forms_reading_and_th
     let tree = Tree::new();
     let vault = tree.vault();
     let art = landscape(320, 240, 85);
+
     let older = kept_as_an_older_build_kept_it(&vault, &art);
 
     let Compacting::Beside { jxl, .. } = vault.compact_cover(&older).expect("a compacted cover")
     else {
         panic!("a photographic JPEG was not compacted");
     };
+
     assert_eq!(vault.picture(&older).expect("the JPEG"), art);
     assert_eq!(vault.picture(&jxl).expect("the new form"), art);
     assert!(vault.verify_cover(&older).expect("a readable cover"));
@@ -2654,6 +2869,7 @@ fn a_swap_stopped_after_the_smaller_form_landed_leaves_both_forms_reading_and_th
 
     let landed = fs::read(&jxl).expect("the landed form");
     let again = vault.compact_cover(&older).expect("a compacted cover");
+
     assert!(matches!(&again, Compacting::Beside { jxl: standing, .. } if *standing == jxl));
     assert_eq!(fs::read(&jxl).expect("the landed form"), landed);
     assert_eq!(
@@ -2677,6 +2893,7 @@ fn a_smaller_form_that_does_not_give_the_jpeg_back_is_replaced_and_never_left_st
     let tree = Tree::new();
     let vault = tree.vault();
     let art = landscape(320, 240, 85);
+
     let older = kept_as_an_older_build_kept_it(&vault, &art);
     let Compacting::Beside { jxl, .. } = vault.compact_cover(&older).expect("a compacted cover")
     else {
@@ -2685,8 +2902,10 @@ fn a_smaller_form_that_does_not_give_the_jpeg_back_is_replaced_and_never_left_st
 
     let whole = fs::read(&jxl).expect("the landed form");
     let mut flipped = whole.clone();
+
     flipped[whole.len() / 2] ^= 0x10;
     fs::write(&jxl, &flipped).expect("a damaged form");
+
     assert!(!vault.verify_cover(&jxl).expect("a readable cover"));
 
     let Compacting::Beside { jxl: mended, .. } =
@@ -2694,6 +2913,7 @@ fn a_smaller_form_that_does_not_give_the_jpeg_back_is_replaced_and_never_left_st
     else {
         panic!("a damaged form was not replaced");
     };
+
     assert_eq!(mended, jxl);
     assert_eq!(fs::read(&jxl).expect("the mended form"), whole);
     assert!(vault.verify_cover(&jxl).expect("a readable cover"));
@@ -2704,10 +2924,13 @@ fn a_jpeg_cover_whose_bytes_are_not_its_name_or_which_no_transcode_beats_is_left
     let tree = Tree::new();
     let vault = tree.vault();
     let art = landscape(320, 240, 85);
+
     let older = kept_as_an_older_build_kept_it(&vault, &art);
 
     let other = landscape(320, 240, 60);
+
     fs::write(&older, &other.bytes).expect("a JPEG under another's name");
+
     assert_eq!(
         vault.compact_cover(&older).expect("a weighed cover"),
         Compacting::NotHeld
@@ -2717,12 +2940,14 @@ fn a_jpeg_cover_whose_bytes_are_not_its_name_or_which_no_transcode_beats_is_left
 
     let png = picture(40, 40);
     let kept = vault.keep_cover(&png).expect("a kept cover");
+
     assert_eq!(
         vault.compact_cover(&kept.path).expect("a weighed cover"),
         Compacting::NotHeld
     );
 
     let outside = tree.write("outside.jpg", &art.bytes);
+
     assert!(matches!(
         vault.compact_cover(&outside),
         Err(Error::OutsideTheVault { .. })

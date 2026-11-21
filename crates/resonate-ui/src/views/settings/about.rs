@@ -65,9 +65,11 @@ impl RootView {
             move |this, _, cx| this.check_for_updates(!checks, cx),
             cx,
         ));
+
         if let Some(newer) = self.settings_pane.read(cx).shown.newer.clone() {
             let page = newer.page.clone();
             let version = newer.version.clone();
+
             rows = rows.child(kit::row(
                 words::settings_about::newer_is_out(newer.version.to_string()),
                 words::settings_about::this_build_is(VERSION),
@@ -208,10 +210,12 @@ impl SettingsPane {
             loop {
                 let reaching = cx.update(|cx| cx.global::<ResonateApp>().online.enabled);
                 let asking = Arc::clone(&updates);
+
                 let newer = cx
                     .background_executor()
                     .spawn(async move { asking.newer(reaching) })
                     .await;
+
                 if this
                     .update(cx, |this, cx| this.heard_of_a_release(newer, cx))
                     .is_err()
@@ -226,10 +230,12 @@ impl SettingsPane {
     fn heard_of_a_release(&mut self, newer: Option<Newer>, cx: &mut Context<Self>) {
         let app = cx.global::<ResonateApp>();
         let dismissed = app.update_dismissed.clone();
+
         let newer = newer
             .filter(|_| app.check_for_updates)
             .filter(|newer| dismissed.as_deref() != Some(newer.version.as_str()));
         let told_already = newer == self.shown.newer;
+
         self.shown.newer = newer;
 
         if let Some(newer) = self.shown.newer.as_ref().filter(|_| !told_already) {
@@ -262,6 +268,7 @@ mod tests {
     impl Updates for Released {
         fn newer(&self, reaching: bool) -> Option<Newer> {
             assert!(reaching, "asked while the window was offline");
+
             self.asked.fetch_add(1, Ordering::Relaxed);
             Some(Newer {
                 version: "99.0.0".to_owned(),
@@ -286,6 +293,7 @@ mod tests {
 
     fn look(driven: &mut Driven) {
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.settings_pane
@@ -303,7 +311,9 @@ mod tests {
 
         look(&mut driven);
         driven.until(|root, cx| root.settings_pane.read(cx).shown.newer.is_some());
+
         let told = driven.read(|_, cx| toast::showing_text(cx));
+
         assert_eq!(
             told.as_deref(),
             Some("Resonate 99.0.0 is out · Settings, About has it")
@@ -313,7 +323,9 @@ mod tests {
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("updates");
         driven.settle();
+
         assert!(driven.cx.debug_bounds("open-the-release").is_some());
+
         driven.click("dismiss-the-release");
         driven.settle();
 
@@ -322,9 +334,11 @@ mod tests {
             driven.read(|_, cx| cx.global::<ResonateApp>().update_dismissed.clone()),
             Some("99.0.0".to_owned())
         );
+
         look(&mut driven);
         driven.until(|_, _| released.asked.load(Ordering::Relaxed) == 2);
         driven.settle();
+
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).shown.newer.is_none()));
     }
 
@@ -335,7 +349,9 @@ mod tests {
 
         look(&mut driven);
         driven.until(|root, cx| root.settings_pane.read(cx).shown.newer.is_some());
+
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.check_for_updates(false, cx)));

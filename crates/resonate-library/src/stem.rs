@@ -24,11 +24,13 @@ pub(crate) fn read(stem: &str) -> Option<Named> {
     let (artist, title) = split_at_a_separator(rest);
 
     let title = title.trim();
+
     if title.is_empty() {
         return None;
     }
 
     let artist = artist.map(str::trim).filter(|artist| !artist.is_empty());
+
     if artist.is_some_and(only_digits) {
         return None;
     }
@@ -53,17 +55,21 @@ fn leading_number(stem: &str) -> (Option<u32>, &str) {
         .take(DIGITS_AT_MOST + 1)
         .take_while(u8::is_ascii_digit)
         .count();
+
     if digits == 0 || digits > DIGITS_AT_MOST {
         return (None, stem);
     }
 
     let after = &stem[digits..];
     let rest = after.trim_start_matches(a_boundary);
+
     if rest.len() == after.len() || rest.is_empty() {
         return (None, stem);
     }
+
     let punctuated = after[..after.len() - rest.len()].contains(AFTER_A_NUMBER);
     let padded = digits > 1 && stem.starts_with(PADDED_WITH);
+
     if !punctuated && !padded {
         return (None, stem);
     }

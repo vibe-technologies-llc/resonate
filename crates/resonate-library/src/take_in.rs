@@ -38,7 +38,7 @@ const CANDIDATE_NAMES: u32 = 999;
 const STAGED_SUFFIX: &str = "resonate-part";
 const STAGED_BY_AND_COUNTED: char = '-';
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Looks {
     Audio,
     Sheet,
@@ -93,6 +93,7 @@ fn is_named_after(path: &Path, audio: &Path) -> bool {
     let (Some(name), Some(stem)) = (path.file_name(), audio.file_stem()) else {
         return false;
     };
+
     let (name, stem) = (name.as_encoded_bytes(), stem.as_encoded_bytes());
     name.len() > stem.len() && name.starts_with(stem) && name[stem.len()] == b'.'
 }
@@ -148,7 +149,7 @@ pub struct TakeInOptions {
     pub into: PathBuf,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Passing {
     SourceGone,
     Unreadable,
@@ -357,6 +358,7 @@ impl Content {
         match self {
             Self::Whole(source) => {
                 let bytes = fs::copy(source, staged).map_err(|error| refused_copy(&error))?;
+
                 verified(source, staged).map_err(|_| Passing::Unverified)?;
                 Ok(bytes)
             }
@@ -384,6 +386,7 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
         .unwrap_or_else(|_| options.into.clone());
 
     let mut items = gather(&options.paths, &mut summary.passed);
+
     items.sort_by_key(|item| item.role != Role::Audio);
     progress.found.store(items.len() as u64, Ordering::Relaxed);
     progress
@@ -395,6 +398,7 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
 
     let mut renames = Renames::default();
     let mut swept = AHashSet::new();
+
     for item in items {
         if progress.is_cancelled() {
             summary.cancelled = true;
@@ -440,6 +444,7 @@ fn run(options: &TakeInOptions, progress: &TakeInProgress) -> TakeInSummary {
 
 fn aimed(item: &Item, renamed: &[Renamed]) -> (PathBuf, Content) {
     let whole = Content::Whole(item.from.clone());
+
     if item.role == Role::Audio || renamed.is_empty() {
         return (item.relative.clone(), whole);
     }
@@ -478,6 +483,7 @@ fn following_its_audio(relative: &Path, renamed: &[Renamed]) -> PathBuf {
 fn sheet_naming(sheet: &Path, renamed: &[Renamed]) -> Option<Vec<u8>> {
     let held = fs::read(sheet).ok()?;
     let mut rewritten = None;
+
     for renamed in renamed {
         let (Some(from), Some(to)) = (renamed.from.to_str(), renamed.to.to_str()) else {
             continue;
@@ -500,6 +506,7 @@ fn gather(paths: &[PathBuf], passed: &mut Vec<Passed>) -> Vec<Item> {
             Looks::Other => Some(Passing::NotAudio),
             _ => None,
         };
+
         if let Some(why) = why {
             passed.push(Passed { from: path, why });
             continue;
@@ -565,12 +572,14 @@ fn walked_whole(
     seen: &mut AHashSet<PathBuf>,
 ) -> bool {
     let mut found = Vec::new();
+
     walk(folder, name, 0, &mut found);
     if !found.iter().any(|item| item.role != Role::Companion) {
         return false;
     }
 
     let before = items.len();
+
     for item in found {
         keep(item, items, seen);
     }
@@ -581,19 +590,24 @@ fn walk(folder: &Path, relative: &Path, depth: usize, found: &mut Vec<Item>) {
     if depth >= DEEPEST_FOLDER {
         return;
     }
+
     let Ok(entries) = fs::read_dir(folder) else {
         return;
     };
 
     let mut entries: Vec<_> = entries.flatten().collect();
+
     entries.sort_by_key(fs::DirEntry::file_name);
 
     let mut files = Vec::new();
+
     for entry in entries {
         let name = entry.file_name();
+
         if name.to_string_lossy().starts_with('.') {
             continue;
         }
+
         let Ok(kind) = entry.file_type() else {
             continue;
         };
@@ -626,6 +640,7 @@ fn walk(folder: &Path, relative: &Path, depth: usize, found: &mut Vec<Item>) {
         } else {
             continue;
         };
+
         found.push(Item {
             from: path,
             relative,
@@ -643,9 +658,11 @@ fn land(
     swept: &mut AHashSet<PathBuf>,
 ) -> std::result::Result<Stood, Passing> {
     let source = item.from.canonicalize().map_err(|_| Passing::SourceGone)?;
+
     if source.starts_with(into) {
         return Err(Passing::AlreadyThere);
     }
+
     let content = match content {
         Content::Whole(_) => &Content::Whole(source),
         rewritten @ Content::Rewritten(_) => rewritten,
@@ -653,6 +670,7 @@ fn land(
 
     let whole = into.join(relative);
     let folder = whole.parent().unwrap_or(into);
+
     fs::create_dir_all(folder).map_err(|error| unwritable(&error))?;
     if swept.insert(folder.to_path_buf()) {
         sweep_what_a_dead_drop_in_staged(folder);
@@ -660,11 +678,13 @@ fn land(
 
     let staged = staged_beside(&whole);
     let held = Held::made(&staged).map_err(|error| unwritable(&error))?;
+
     let outcome = content.staged_at(&staged, &held).and_then(|bytes| {
         file_facts::sync_file(&staged).map_err(|_| Passing::Unverified)?;
         place(&staged, content, &whole).map(|stood| (stood, bytes))
     });
     let _ = fs::remove_file(&staged);
+
     drop(held);
 
     outcome.map(|(stood, bytes)| match stood {
@@ -727,6 +747,7 @@ fn sweep_what_a_dead_drop_in_staged(folder: &Path) {
             continue;
         };
         let path = entry.path();
+
         if writer::writer_of(&path, stamp) != Writer::Gone {
             continue;
         }
@@ -748,6 +769,7 @@ pub(crate) fn candidates(whole: &Path) -> impl Iterator<Item = PathBuf> {
 
     std::iter::once(original.clone()).chain((2..=CANDIDATE_NAMES).map(move |count| {
         let mut after = OsString::from(format!(" ({count})"));
+
         if let Some(extension) = &extension {
             after.push(".");
             after.push(extension);
@@ -764,6 +786,7 @@ enum Placed {
 fn place(staged: &Path, content: &Content, whole: &Path) -> std::result::Result<Placed, Passing> {
     for (count, candidate) in candidates(whole).enumerate() {
         let renamed = count > 0;
+
         if fs::symlink_metadata(&candidate).is_ok() {
             if content.is_at(&candidate) {
                 return Ok(Placed::Held(candidate));
@@ -818,12 +841,14 @@ mod tests {
             let root =
                 std::env::temp_dir().join(format!("resonate-take-in-{name}-{}", process::id()));
             let _ = fs::remove_dir_all(&root);
+
             fs::create_dir_all(&root).expect("a writable temporary directory");
             Self(root)
         }
 
         fn folder(&self, name: &str) -> PathBuf {
             let folder = self.0.join(name);
+
             fs::create_dir_all(&folder).expect("a writable temporary directory");
             folder
         }
@@ -837,6 +862,7 @@ mod tests {
 
     fn written(folder: &Path, name: &str, bytes: &[u8]) -> PathBuf {
         let path = folder.join(name);
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).expect("a writable temporary directory");
         }
@@ -857,6 +883,7 @@ mod tests {
     #[test]
     fn what_a_dead_drop_in_staged_is_taken_away_by_the_next_and_a_living_ones_is_left() {
         const NEVER_A_PROCESS: u32 = 999_999_999;
+
         let scratch = Scratch::new("dead-staged");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
         let song = written(&from, "song.flac", b"song");
@@ -865,7 +892,9 @@ mod tests {
             &format!(".old.flac.{NEVER_A_PROCESS}.{STAGED_SUFFIX}"),
             b"half",
         );
+
         left_long_ago(&dead);
+
         let living = written(&into, &format!(".new.flac.7.{STAGED_SUFFIX}"), b"half");
         let held = Held::taken_over(&living).expect("a living writer holds its file");
 
@@ -880,6 +909,7 @@ mod tests {
         assert_eq!(stamp_of_staged(".a.b.flac.42.resonate-part"), Some(42));
         assert_eq!(stamp_of_staged(".a.b.flac.42-7.resonate-part"), Some(42));
         assert_eq!(stamp_of_staged(".a.flac.resonate-part"), None);
+
         drop(held);
     }
 
@@ -900,6 +930,7 @@ mod tests {
             stamp_of_staged(&first.file_name().expect("a name").to_string_lossy()),
             Some(process::id())
         );
+
         drop(held);
     }
 
@@ -928,6 +959,7 @@ mod tests {
     fn a_folder_keeps_its_name_and_shape_and_only_what_the_library_reads() {
         let scratch = Scratch::new("folder");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+
         written(&from, "Album/01.flac", b"one");
         written(&from, "Album/Disc 2/02.mp3", b"two");
         written(&from, "Album/Album.cue", b"sheet");
@@ -949,6 +981,7 @@ mod tests {
         let scratch = Scratch::new("collide");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
         let song = written(&from, "song.flac", b"this one");
+
         written(&into, "song.flac", b"this one");
 
         let held = taken_in(vec![song.clone()], &into);
@@ -958,6 +991,7 @@ mod tests {
         assert_eq!(held.passed[0].why, Passing::AlreadyHeld);
 
         fs::write(into.join("song.flac"), b"another song").expect("writable");
+
         let beside = taken_in(vec![song], &into);
 
         assert_eq!(beside.stats.copied, 1);
@@ -974,15 +1008,20 @@ mod tests {
         let scratch = Scratch::new("longest");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
         let name = format!("{}.flac", "ü".repeat(125));
+
         assert_eq!(name.len(), 255);
+
         let song = written(&from, &name, b"this one");
+
         written(&into, &name, b"another song");
 
         let summary = taken_in(vec![song], &into);
 
         assert_eq!(summary.stats.copied, 1, "{:?}", summary.passed);
+
         let landed = &summary.landed[0].to;
         let landed_name = landed.file_name().expect("a named file");
+
         assert!(landed_name.len() <= 255);
         assert!(
             landed_name
@@ -1016,6 +1055,7 @@ mod tests {
         let summary = taken_in(vec![text, empty, from.join("gone.flac")], &into);
 
         let why: Vec<_> = summary.passed.iter().map(|passed| passed.why).collect();
+
         assert_eq!(
             why,
             [
@@ -1035,6 +1075,7 @@ mod tests {
         let song = written(&from, "song.wav", b"riff");
 
         taken_in(vec![song.clone()], &into);
+
         let names: Vec<_> = fs::read_dir(&into)
             .expect("there")
             .flatten()
@@ -1056,6 +1097,7 @@ mod tests {
     fn a_folders_covers_lyrics_and_named_sidecars_come_with_its_audio() {
         let scratch = Scratch::new("companions");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+
         written(&from, "Album/CD1/01.flac", b"one");
         written(&from, "Album/CD1/01.lrc", b"[00:01.00]words");
         written(&from, "Album/CD1/01.txt", b"words");
@@ -1068,6 +1110,7 @@ mod tests {
         let summary = taken_in(vec![from.join("Album"), from.join("Pictures")], &into);
 
         assert_eq!(summary.stats.copied, 5);
+
         for landed in [
             "Album/CD1/01.flac",
             "Album/CD1/01.lrc",
@@ -1077,6 +1120,7 @@ mod tests {
         ] {
             assert!(into.join(landed).is_file(), "{landed} was left behind");
         }
+
         assert!(!into.join("Album/Album.log").exists());
         assert!(!into.join("Album/notes.txt").exists());
         assert!(!into.join("Pictures").exists());
@@ -1087,6 +1131,7 @@ mod tests {
     fn what_travels_with_audio_that_landed_under_a_new_name_follows_that_name() {
         let scratch = Scratch::new("follow");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+
         written(&from, "Album/Album.flac", b"this rip");
         written(
             &from,
@@ -1123,6 +1168,7 @@ mod tests {
     fn a_lyric_in_a_lyrics_folder_follows_the_name_its_track_landed_under() {
         let scratch = Scratch::new("lyrics-folder");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+
         written(&from, "Album/01 Song.flac", b"this song");
         written(&from, "Album/lyrics/01 Song.lrc", b"[00:01.00]words");
         written(&from, "Album/other/01 Song.lrc", b"[00:01.00]elsewhere");
@@ -1147,6 +1193,7 @@ mod tests {
     fn a_sheet_naming_audio_already_held_under_a_new_name_is_written_naming_that_name() {
         let scratch = Scratch::new("held-follow");
         let (from, into) = (scratch.folder("from"), scratch.folder("music"));
+
         written(&from, "Album/CDImage.wav", b"this rip");
         written(&from, "Album/Rip.cue", b"FILE \"CDImage.wav\" WAVE\n");
         written(&into, "Album/CDImage.wav", b"another rip");
@@ -1202,6 +1249,7 @@ mod tests {
     fn a_drag_is_weighed_by_what_each_path_looks_like() {
         let scratch = Scratch::new("weigh");
         let from = scratch.folder("from");
+
         let looks: Vec<_> = weigh(&[
             written(&from, "a.FLAC", b"x"),
             written(&from, "b.cue", b"x"),

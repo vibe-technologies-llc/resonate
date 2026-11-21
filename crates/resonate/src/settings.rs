@@ -46,6 +46,7 @@ impl File {
     #[cfg(feature = "online")]
     fn reread(&self) -> Config {
         let mut held = self.held.lock();
+
         match config::load(Some(&self.path)) {
             Ok(read) => *held = read,
             Err(error) => {
@@ -120,6 +121,7 @@ impl Settings for File {
             return Ok(());
         };
         let mut refused = None;
+
         let written = config::edit(&self.path, |editing| {
             for change in changes {
                 let applied = match change {
@@ -135,6 +137,7 @@ impl Settings for File {
             }
             Ok(())
         });
+
         if let Err(error) = written {
             tracing::error!(%error, "the settings file could not be written");
             return Err(resonate_ui::Error::SettingNotStored { key: first.key() });
@@ -477,14 +480,18 @@ mod tests {
     fn a_file_that_will_not_read_again_leaves_the_last_read_standing_rather_than_the_defaults() {
         let folder = env::temp_dir().join(format!("resonate-settings-reread-{}", process::id()));
         let path = folder.join("config.toml");
+
         fs::create_dir_all(&folder).expect("a folder");
         fs::write(&path, "musicbrainz-mirror = true\n").expect("a file");
+
         let file = File::at(path.clone(), Config::default());
 
         let read = file.reread();
+
         assert!(read.is_on(Switch::MusicbrainzMirror));
 
         fs::write(&path, "musicbrainz-mirror = [\n").expect("a broken file");
+
         let again = file.reread();
         let _ = fs::remove_dir_all(&folder);
 
@@ -504,28 +511,33 @@ mod tests {
                 .expect("supported extensions"),
             minimum_length: resonate_library::MinimumLength::new(600).expect("ten minutes"),
         };
+
         file.apply(&[
             SettingChange::Store(Setting::MusicExtensions(filters.extensions)),
             SettingChange::Store(Setting::MinimumLength(filters.minimum_length)),
         ])
         .expect("a writable config");
+
         assert_eq!(
             config::load(Some(&path))
                 .expect("the config reads")
                 .music_filters(),
             filters
         );
+
         file.apply(&[
             SettingChange::Forget(ConfigKey::MusicExtensions),
             SettingChange::Forget(ConfigKey::MinimumLength),
         ])
         .expect("resetting the filters");
+
         assert_eq!(
             config::load(Some(&path))
                 .expect("the config reads")
                 .music_filters(),
             resonate_library::MusicFilters::default()
         );
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -550,6 +562,7 @@ mod tests {
         ] {
             file.apply(&[SettingChange::Store(Setting::NoiseShaping(shaping))])
                 .expect("a writable temporary directory");
+
             assert_eq!(
                 config::load(Some(&path))
                     .expect("the file reads back")
@@ -557,6 +570,7 @@ mod tests {
                 Some(shaping)
             );
         }
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -573,12 +587,15 @@ mod tests {
             SettingChange::Store(Setting::Switched(Switch::YoutubeMusicKeepOrder, false)),
         ])
         .expect("a writable temporary directory");
+
         let written = config::load(Some(&path)).expect("the file reads back");
+
         file.apply(&[
             SettingChange::Store(Setting::YoutubeMusicCookies(String::new())),
             SettingChange::Store(Setting::YtDlp(String::new())),
         ])
         .expect("a writable temporary directory");
+
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -605,6 +622,7 @@ mod tests {
             .expect("a writable temporary directory");
         file.apply(&[SettingChange::Store(Setting::Untagged(lowered))])
             .expect("a writable temporary directory");
+
         let read = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -633,6 +651,7 @@ mod tests {
             .expect("the file reads back")
             .equaliser_for
             .expect("a table");
+
         assert_eq!(
             bindings.for_sink(Some(&sink)),
             Some((Some(&sink), &Binding::Own))
@@ -644,10 +663,12 @@ mod tests {
             binding: None,
         })])
         .expect("a writable temporary directory");
+
         let bindings = config::load(Some(&path))
             .expect("the file reads back")
             .equaliser_for
             .expect("the fallback is still there");
+
         assert_eq!(bindings.for_sink(Some(&sink)), Some((None, &Binding::Own)));
 
         let _ = fs::remove_dir_all(folder);
@@ -662,10 +683,12 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::SpeakerAngle(wide))])
             .expect("a writable temporary directory");
+
         let chosen = config::load(Some(&path)).expect("the file reads back");
 
         file.apply(&[SettingChange::Forget(ConfigKey::SpeakerAngle)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -682,10 +705,12 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::SpeakerElevation(lowered))])
             .expect("a writable temporary directory");
+
         let chosen = config::load(Some(&path)).expect("the file reads back");
 
         file.apply(&[SettingChange::Forget(ConfigKey::SpeakerElevation)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -702,10 +727,12 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::HeadYaw(turned))])
             .expect("a writable temporary directory");
+
         let chosen = config::load(Some(&path)).expect("the file reads back");
 
         file.apply(&[SettingChange::Forget(ConfigKey::HeadYaw)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -723,10 +750,12 @@ mod tests {
             "Rtings".to_owned(),
         )))])
         .expect("a writable temporary directory");
+
         let preferred = config::load(Some(&path)).expect("the file reads back");
 
         file.apply(&[SettingChange::Forget(ConfigKey::EqualiserMeasurer)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -751,6 +780,7 @@ mod tests {
             }),
         ])
         .expect("a writable temporary directory");
+
         let preferred = config::load(Some(&path)).expect("the file reads back");
 
         file.apply(&[SettingChange::Store(Setting::EqualiserMeasurerFor {
@@ -758,6 +788,7 @@ mod tests {
             measurer: None,
         })])
         .expect("a writable temporary directory");
+
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let text = fs::read_to_string(&path).expect("the file is there");
         let _ = fs::remove_dir_all(folder);
@@ -786,6 +817,7 @@ mod tests {
             plays: Some(plays.clone()),
         })])
         .expect("a writable temporary directory");
+
         let learnt = config::load(Some(&path)).expect("the file reads back");
 
         file.apply(&[SettingChange::Store(Setting::FormatsLearntFor {
@@ -793,6 +825,7 @@ mod tests {
             plays: None,
         })])
         .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let text = fs::read_to_string(&path).expect("the file is there");
         let _ = fs::remove_dir_all(folder);
@@ -811,11 +844,14 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::Inbox(inbox.clone()))])
             .expect("a writable temporary directory");
+
         let named = config::load(Some(&path))
             .expect("the file reads back")
             .inbox;
+
         file.apply(&[SettingChange::Forget(ConfigKey::Inbox)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path))
             .expect("the file reads back")
             .inbox;
@@ -841,6 +877,7 @@ mod tests {
         }
         file.apply(&[SettingChange::Forget(ConfigKey::SyncControl)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -862,12 +899,15 @@ mod tests {
             SettingChange::Store(Setting::Switched(Switch::DownloadOnMetered, false)),
         ])
         .expect("a writable temporary directory");
+
         let allowed = config::load(Some(&path)).expect("the file reads back");
+
         file.apply(&[
             SettingChange::Forget(ConfigKey::EnrichOnMetered),
             SettingChange::Forget(ConfigKey::DownloadOnMetered),
         ])
         .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -894,11 +934,14 @@ mod tests {
             named.clone(),
         ))])
         .expect("a writable temporary directory");
+
         let read = config::load(Some(&path)).expect("the file reads back");
+
         file.apply(&[SettingChange::Store(Setting::FlacAbove96kFor(
             BTreeSet::new(),
         ))])
         .expect("a writable temporary directory");
+
         let emptied = fs::read_to_string(&path).expect("the file");
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
@@ -917,6 +960,7 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::Vault(vault.clone()))])
             .expect("a writable temporary directory");
+
         let named = config::load(Some(&path))
             .expect("the file reads back")
             .vault;
@@ -934,11 +978,14 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::MusicFolder(music.clone()))])
             .expect("a writable temporary directory");
+
         let named = config::load(Some(&path))
             .expect("the file reads back")
             .music_folder;
+
         file.apply(&[SettingChange::Forget(ConfigKey::MusicFolder)])
             .expect("a writable temporary directory");
+
         let forgotten = config::load(Some(&path))
             .expect("the file reads back")
             .music_folder;
@@ -1013,11 +1060,14 @@ mod tests {
             file.apply(&[SettingChange::Store(setting)])
                 .expect("a writable temporary directory");
         }
+
         let read = config::load(Some(&path))
             .expect("the file reads back")
             .presence();
+
         file.apply(&[SettingChange::Store(Setting::DiscordApp(None))])
             .expect("a writable temporary directory");
+
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -1034,9 +1084,12 @@ mod tests {
 
         file.apply(&[SettingChange::Store(Setting::OfferName("Study".to_owned()))])
             .expect("a writable temporary directory");
+
         let named = config::load(Some(&path)).expect("the file reads back");
+
         file.apply(&[SettingChange::Store(Setting::OfferName(String::new()))])
             .expect("a writable temporary directory");
+
         let cleared = config::load(Some(&path)).expect("the file reads back");
         let _ = fs::remove_dir_all(folder);
 
@@ -1059,6 +1112,7 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.as_str() == key.as_str())
                 .count();
+
             assert_eq!(sharing, 1, "{key} is written under a name another claims");
         }
     }

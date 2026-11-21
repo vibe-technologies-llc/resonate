@@ -57,7 +57,9 @@ impl<'l> AlbumTitles<'l> {
         if let Some(title) = self.held.get(&id) {
             return Ok(title.clone());
         }
+
         let title = self.library.album(id)?.map(|album| album.title);
+
         self.held.insert(id, title.clone());
         Ok(title)
     }

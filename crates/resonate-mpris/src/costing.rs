@@ -42,6 +42,7 @@ fn following(metering: &Metering) -> Result<(Apartment, i64)> {
     });
     let registration = NetworkInformation::NetworkStatusChanged(&handler)
         .map_err(|source| Error::windows(WindowsOp::Watch, source))?;
+
     report(metering);
 
     Ok((apartment, registration))

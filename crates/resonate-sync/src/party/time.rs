@@ -53,6 +53,7 @@ impl UtcClock {
         let Some(there_took) = replied.checked_sub(received) else {
             return;
         };
+
         let Some(round_trip) = u128::from(here_took).checked_sub(there_took) else {
             return;
         };
@@ -66,6 +67,7 @@ impl UtcClock {
 
         let utc_ahead_by =
             ((received - i128::from(sent_at)) + (replied - i128::from(heard_at))) / 2;
+
         if self.samples.len() == SAMPLES_KEPT {
             self.samples.pop_front();
         }
@@ -127,6 +129,7 @@ impl PartyApart {
             .server_round_trip
             .saturating_add(hosts.server_round_trip))
             / 2;
+
         let doubt = path_doubt.saturating_add(utc_doubt);
         let both_tight = mine.utc_round_trip <= tight && hosts.utc_round_trip <= tight;
         let plausible = nanos.unsigned_abs() <= doubt;
@@ -149,6 +152,7 @@ impl PartyApart {
 
 fn asked(nonce: [u8; 8]) -> [u8; PACKET_BYTES] {
     let mut packet = [0; PACKET_BYTES];
+
     packet[0] = ASKED_AS_A_CLIENT_OF_VERSION_FOUR;
     packet[40..48].copy_from_slice(&nonce);
     packet
@@ -166,9 +170,11 @@ fn answered(packet: &[u8], nonce: [u8; 8]) -> Option<(u128, u128)> {
     if packet.len() < PACKET_BYTES {
         return None;
     }
+
     let leap = packet[0] >> 6;
     let mode = packet[0] & 0b111;
     let stratum = packet[1];
+
     if leap == UNSYNCHRONISED || mode != ANSWERED_AS_A_SERVER || !(1..16).contains(&stratum) {
         return None;
     }
@@ -198,6 +204,7 @@ async fn asked_once(
 ) -> Option<(u64, u128, u128, u64)> {
     let nonce: [u8; 8] = random_bytes().ok()?;
     let sent_at = now_nanos();
+
     socket.send(&asked(nonce)).await.ok()?;
 
     let mut heard = [0; PACKET_BYTES * 2];
@@ -299,6 +306,7 @@ mod tests {
         utc.answered(0, 0, 0, MS);
         for at in 1..=u64::try_from(SAMPLES_KEPT).unwrap() {
             let sent = at * 1_000 * MS;
+
             utc.answered(sent, u128::from(sent), u128::from(sent), sent + 10 * MS);
         }
 
@@ -350,10 +358,13 @@ mod tests {
 
     fn answer(first: u8, stratum: u8, origin: [u8; 8]) -> [u8; PACKET_BYTES] {
         let mut packet = [0; PACKET_BYTES];
+
         packet[0] = first;
         packet[1] = stratum;
         packet[24..32].copy_from_slice(&origin);
+
         let seconds = u32::try_from(SECONDS_FROM_1900_TO_1970 + 10).unwrap();
+
         packet[32..36].copy_from_slice(&seconds.to_be_bytes());
         packet[36..40].copy_from_slice(&(1_u32 << 31).to_be_bytes());
         packet[40..44].copy_from_slice(&seconds.to_be_bytes());

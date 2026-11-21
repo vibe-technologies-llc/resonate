@@ -123,7 +123,7 @@ impl Default for EnrichOptions {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Seek {
     Album(AlbumId),
     Artist(ArtistId),
@@ -372,12 +372,14 @@ fn run(
     progress: &Arc<EnrichProgress>,
 ) -> Result<EnrichSummary> {
     let whole = options.breadth == Breadth::TheLibrary;
+
     if whole {
         note_began(library, options.refresh);
     }
     if options.pace == Pace::Hurried {
         progress.hurry();
     }
+
     let pictures = read_pictures(library, reference, progress);
     let claims = Arc::new(Claims::default());
     let studies = Studies::start(
@@ -388,6 +390,7 @@ fn run(
         to_be_studied(library, options),
     );
     let verses = Verses::start(library, reference, progress, to_be_sung(library, options));
+
     let pass = Pass {
         library,
         reference: reference.as_ref(),
@@ -434,6 +437,7 @@ fn run(
             return Err(other);
         }
     };
+
     pictures.rest();
     studies.rest();
     verses.rest();
@@ -462,6 +466,7 @@ fn to_be_studied(library: &Library, options: &EnrichOptions) -> Vec<ToStudy> {
     if !options.studies {
         return Vec::new();
     }
+
     let mut asked = match library.to_study(options.refresh) {
         Ok(asked) => asked,
         Err(error) => {
@@ -469,6 +474,7 @@ fn to_be_studied(library: &Library, options: &EnrichOptions) -> Vec<ToStudy> {
             Vec::new()
         }
     };
+
     if let Breadth::TheSong(song) = options.breadth {
         asked.retain(|study| study.id == song);
     }
@@ -485,6 +491,7 @@ fn to_be_sung(library: &Library, options: &EnrichOptions) -> Vec<TrackId> {
     if let Breadth::TheSong(song) = options.breadth {
         return vec![song];
     }
+
     let mut asked = match library.lyrics_to_ask(options.refresh) {
         Ok(asked) => asked,
         Err(error) => {
@@ -492,6 +499,7 @@ fn to_be_sung(library: &Library, options: &EnrichOptions) -> Vec<TrackId> {
             Vec::new()
         }
     };
+
     if let Some(at_most) = options.at_most {
         asked.truncate(at_most.get());
     }
@@ -512,9 +520,11 @@ impl Verses {
         if asked.is_empty() {
             return Self { reader: None };
         }
+
         let library = library.shared();
         let reference = Arc::clone(reference);
         let progress = Arc::clone(progress);
+
         let reader = thread::Builder::new()
             .name("resonate-lyrics".to_owned())
             .spawn(move || {
@@ -524,6 +534,7 @@ impl Verses {
                     progress: &progress,
                 };
                 let mut queue = Queue::of(asked.into_iter().map(|track| (track, ())));
+
                 let Ok(_) = walk(&singing, &mut queue, &Seeks::default());
             })
             .map_err(|error| {
@@ -627,6 +638,7 @@ fn sing(
             return Sang::Asked;
         }
     };
+
     if told.is_none() {
         EnrichProgress::count(&progress.lyrics_missing);
     }
@@ -734,6 +746,7 @@ fn fetch(
                 Some(pressing) => reference.cover(pressing, Some(&group)),
                 None => reference.group_cover(&group),
             };
+
             land_unheld_cover(library, progress, &group, found);
         }
         Picture::Portrait { artist, links } => {
@@ -1014,6 +1027,7 @@ fn a_year(text: &str) -> bool {
 
 fn same_name(found: Option<&str>, named: &str) -> Option<Spelling> {
     let found = found?;
+
     if folded_title(found) == folded_title(named) {
         return Some(Spelling::Marked);
     }
@@ -1043,9 +1057,11 @@ fn same_credit(credit: &[Credit], named: &str, named_mbid: Option<&Mbid>) -> Opt
     let by_id = credit
         .iter()
         .any(|credit| credit.mbid.is_some() && credit.mbid.as_ref() == named_mbid);
+
     if by_id {
         return Some(Spelling::ById);
     }
+
     let as_billed = same_name(billed(credit).as_deref(), named);
     let singly = credit
         .iter()
@@ -1160,6 +1176,7 @@ pub fn top_release(found: Vec<ReleaseMatch>, album: &AlbumToAsk) -> Identified {
     let Some(top) = top_of(found, |found| weighed_release(found, album)) else {
         return Identified::Nothing;
     };
+
     if matches_strictly(&top, album).is_some() {
         return Identified::Found(top.release);
     }
@@ -1192,6 +1209,7 @@ pub fn top_group(found: Vec<GroupMatch>, album: &AlbumToAsk) -> Option<Mbid> {
     let top = top_of(found, |found| {
         (matches_as_a_group(found, album), found.score)
     })?;
+
     if matches_as_a_group(&top, album).is_some() {
         return Some(top.group);
     }
@@ -1252,14 +1270,18 @@ pub fn closest_release<'a>(
     if let Some(exact) = earliest_of(counted(group, declared_count(album))) {
         return Some((exact, Fit::Exact));
     }
+
     let held = album.track_count;
+
     if let Some(smallest_wider) = widths(group).filter(|count| *count > held).min() {
         let fit = match album.tagged_tracks.is_none() && every_pressing_agrees_on_its_discs(group) {
             true => Fit::WiderAndAgreed,
             false => Fit::Wider,
         };
+
         return earliest_of(counted(group, smallest_wider)).map(|wider| (wider, fit));
     }
+
     let widest_narrower = widths(group).filter(|count| *count <= held).max()?;
 
     earliest_of(counted(group, widest_narrower)).map(|narrower| (narrower, Fit::Narrower))
@@ -1348,6 +1370,7 @@ pub fn group_asked(album: &AlbumToAsk, wording: Wording) -> GroupAsked {
 pub fn recording_asked(track: &TrackToAsk, wording: Wording) -> Option<RecordingAsked> {
     let asked_with = asked_with(track);
     let titled = track.tagged_title.is_some() || named_enough_by_its_file(track);
+
     if !titled || (asked_with.is_none() && track.album_title.is_none()) {
         return None;
     }
@@ -1372,6 +1395,7 @@ pub fn the_strict_recording(
     let top = top_of(found, |found| {
         (matches_a_recording(found, track), found.score)
     })?;
+
     if matches_a_recording(&top, track).is_none() {
         tracing::debug!(
             track = %track.id,
@@ -1409,10 +1433,12 @@ fn matches_a_recording_named(found: &RecordingMatch, named: &NamedAs<'_>) -> Opt
     if !Accepted::Strict.scored(found.score) || !lengths_agree(found.length, named.length) {
         return None;
     }
+
     let titled = same_name(Some(&found.title), named.title)?;
     let Some((artist, artist_mbid)) = named.artist else {
         return Some(titled);
     };
+
     let credited = same_credit(&found.credit, artist, artist_mbid)?;
 
     Some(titled.min(credited))
@@ -1425,6 +1451,7 @@ pub(crate) fn the_recording_named(
     let top = top_of(found, |found| {
         (matches_a_recording_named(found, named), found.score)
     })?;
+
     if matches_a_recording_named(&top, named).is_none() {
         tracing::debug!(
             title = named.title,
@@ -1485,8 +1512,10 @@ pub fn best_recording(
 ) -> Option<(Recording, Certainty)> {
     if let [only] = recordings.as_slice() {
         let certainty = the_only_take(only, track)?;
+
         return recordings.into_iter().next().map(|only| (only, certainty));
     }
+
     let length = track.length?;
 
     recordings
@@ -1506,6 +1535,7 @@ pub(crate) fn recordings_to_place_on(
     if let Some(mbid) = &track.mbid {
         return Ok(reference.recording(mbid)?.into_iter().collect());
     }
+
     let taken = match &track.isrc {
         Some(isrc) => takes_of_the_code(reference.recordings_of_isrc(isrc)?, track),
         None => Vec::new(),
@@ -1532,6 +1562,7 @@ pub(crate) fn recordings_like(
     let typed = words.trim();
     let named_as_the_track = typed.is_empty() || typed == track.title;
     let asked_with = named_as_the_track.then(|| asked_with(track)).flatten();
+
     let asked = RecordingAsked {
         title: if typed.is_empty() {
             track.title.clone()
@@ -1546,6 +1577,7 @@ pub(crate) fn recordings_like(
     };
 
     let mut found = reference.find_recording(&asked)?;
+
     found.sort_by_key(|found| std::cmp::Reverse(found.score));
     found.truncate(LIKELY_RECORDINGS_OFFERED);
 
@@ -1562,6 +1594,7 @@ fn takes_of_the_code(recordings: Vec<Recording>, track: &TrackToAsk) -> Vec<Reco
             None => Vec::new(),
         };
     }
+
     let Some(length) = track.length else {
         return Vec::new();
     };
@@ -1573,6 +1606,7 @@ fn takes_of_the_code(recordings: Vec<Recording>, track: &TrackToAsk) -> Vec<Reco
             (difference <= RECORDING_MAY_DIFFER_BY).then_some((difference, recording))
         })
         .collect();
+
     near.sort_by_key(|(difference, _)| *difference);
     near.into_iter().map(|(_, recording)| recording).collect()
 }
@@ -1609,6 +1643,7 @@ pub fn agreement(found: &[RecordingMatch], track: &TrackToAsk) -> Agreement {
         .iter()
         .filter(|found| found.score >= HEARD_AT_LEAST)
         .collect();
+
     if heard.is_empty() {
         return Agreement::Unheard;
     }
@@ -1636,6 +1671,7 @@ pub fn agreement(found: &[RecordingMatch], track: &TrackToAsk) -> Agreement {
 
 fn recognised(found: Vec<RecordingMatch>) -> Option<RecordingMatch> {
     let top = top_of(found, |found| found.score)?;
+
     if Accepted::Strict.scored(top.score) {
         return Some(top);
     }
@@ -1677,6 +1713,7 @@ pub fn best_release<'a>(
 
 pub(crate) fn top_artist(found: Vec<ArtistMatch>, name: &str) -> Option<Mbid> {
     let top = top_of(found, |found| (matches_exactly(found, name), found.score))?;
+
     if matches_exactly(&top, name).is_some() {
         return Some(top.mbid);
     }
@@ -1705,6 +1742,7 @@ impl Walker for Walking<'_, '_> {
 
     fn goes_on(&self) -> Result<Step> {
         let progress = self.pass.progress;
+
         resonate_core::gaming::wait(&|| progress.is_cancelled());
         Ok(if progress.is_cancelled() {
             Step::Stop
@@ -1727,6 +1765,7 @@ impl Walker for Walking<'_, '_> {
             Ask::Track(track) => self.pass.track(*track),
             Ask::Artist(artist) => self.pass.artist(*artist),
         };
+
         passed_over_if_gone(answered)?;
         Ok(Step::On)
     }
@@ -1786,27 +1825,33 @@ impl Pass<'_> {
         if let Breadth::TheSong(song) = options.breadth {
             return self.the_song(song);
         }
+
         let albums = self.library.albums_to_ask(WAITS, options.refresh)?;
         let (mut due, rematch_only): (Vec<AlbumToAsk>, Vec<AlbumToAsk>) =
             albums.into_iter().partition(|album| !album.rematch_only);
+
         if let Some(at_most) = options.at_most {
             due.truncate(at_most.get());
         }
 
         let rematching: Vec<AlbumId> = rematch_only.iter().map(|album| album.id).collect();
+
         for batch in rematching.chunks(ALBUMS_REMATCHED_PER_TRANSACTION) {
             let matched = self.library.rematch_each(batch)?;
+
             self.progress
                 .matched
                 .fetch_add(u64::from(matched), Ordering::Relaxed);
         }
 
         let mut tracks = self.library.tracks_to_ask(WAITS, options.refresh)?;
+
         if let Some(at_most) = options.at_most {
             tracks.truncate(at_most.get());
         }
 
         let mut artists = self.library.artists_to_ask(WAITS, options.refresh)?;
+
         if let Some(at_most) = options.at_most {
             artists.truncate(at_most.get());
         }
@@ -1823,11 +1868,14 @@ impl Pass<'_> {
             pass: self,
             refresh: options.refresh,
         };
+
         loop {
             if walk(&walking, &mut queue, &options.sought.asked)? == Step::Stop {
                 return Ok(());
             }
+
             let born = self.artists_born_in_the_pass(options, &queue)?;
+
             if born.is_empty() {
                 break;
             }
@@ -1907,7 +1955,9 @@ impl Pass<'_> {
             if !learning.may_go_on() {
                 return Ok(());
             }
+
             let due = self.library.songs_due_for(artist, SystemTime::now())?;
+
             learning::learn_the_songs_of(self.library, self.reference, &due, &learning)?;
         }
         Ok(())
@@ -1960,6 +2010,7 @@ impl Pass<'_> {
 
     fn rematch(&self, album: AlbumId) -> Result<()> {
         let matched = self.library.rematch(album)?;
+
         self.progress
             .matched
             .fetch_add(u64::from(matched), Ordering::Relaxed);
@@ -1968,7 +2019,9 @@ impl Pass<'_> {
 
     fn album(&self, album: &AlbumToAsk) -> Result<()> {
         self.progress.albums.fetch_add(1, Ordering::Relaxed);
+
         let since = self.refusals();
+
         if let Some(mbid) = &album.mbid {
             match self.heard(self.reference.release(mbid))? {
                 Reply::Answered(Some(release)) => {
@@ -2182,6 +2235,7 @@ impl Pass<'_> {
 
     fn cover(&self, album: &AlbumToAsk, release: &Release) {
         self.covered.borrow_mut().insert(album.id);
+
         let picture = match (release.has_front_cover, &release.group) {
             (true, group) => Picture::Cover {
                 album: album.id,
@@ -2201,6 +2255,7 @@ impl Pass<'_> {
                 return;
             }
         };
+
         self.want(picture);
     }
 
@@ -2227,9 +2282,11 @@ impl Pass<'_> {
         let Some(track) = self.library.track_to_ask(id)? else {
             return Ok(());
         };
+
         self.progress.tracks.fetch_add(1, Ordering::Relaxed);
 
         let since = self.refusals();
+
         for route in Route::ALL {
             resonate_core::gaming::wait(&|| self.progress.is_cancelled());
             if self.progress.is_cancelled() {
@@ -2245,7 +2302,9 @@ impl Pass<'_> {
                 return self.take_recording(&track, &recording, certainty, since);
             }
         }
+
         let fruitlessly = self.fruitlessly(since);
+
         if fruitlessly == Fruitless::Missed {
             EnrichProgress::count(&self.progress.tracks_unmatched);
         }
@@ -2298,6 +2357,7 @@ impl Pass<'_> {
         if recording_asked(track, Wording::Phrase).is_none() {
             return Ok(None);
         }
+
         let found = self.found_either_way(
             Looking::for_a_track(track),
             |wording| match recording_asked(track, wording) {
@@ -2317,6 +2377,7 @@ impl Pass<'_> {
         if !self.fingerprinters.has_a_source() {
             return Ok(None);
         }
+
         let Some(found) = self.heard_as(track) else {
             return Ok(None);
         };
@@ -2331,9 +2392,11 @@ impl Pass<'_> {
 
     fn heard_as(&self, track: &TrackToAsk) -> Option<Vec<RecordingMatch>> {
         let claim = self.claims.claim(track.id);
+
         if claim.is_none() {
             self.claims.wait_for(track.id);
         }
+
         let held = match self.library.study_of(&track.location, track.span) {
             Ok(held) => held.map(|(_, studied)| studied),
             Err(error) => {
@@ -2341,6 +2404,7 @@ impl Pass<'_> {
                 None
             }
         };
+
         if let Some(studied) = &held
             && studied.recognised.is_some()
         {
@@ -2369,6 +2433,7 @@ impl Pass<'_> {
                 tracing::warn!(%error, track = %track.id, "whether a track would study could not be read");
             }
         }
+
         let study = match resonate_analysis::study(
             &self.library.sources(),
             &track.location,
@@ -2387,6 +2452,7 @@ impl Pass<'_> {
                 return None;
             }
         };
+
         match self.library.note_study(track.id, &study) {
             Ok(()) => self.progress.note_studied(study.judgement.verdict),
             Err(error) => tracing::warn!(%error, track = %track.id, "a study was not kept"),
@@ -2425,6 +2491,7 @@ impl Pass<'_> {
     ) -> Result<()> {
         let album = self.album_under(track)?;
         let release = best_release(recording, album.as_ref());
+
         if self
             .library
             .land_recording(track.id, recording, certainty, release)?
@@ -2452,16 +2519,21 @@ impl Pass<'_> {
         let Some(artist) = self.library.artist_to_ask(id)? else {
             return Ok(());
         };
+
         self.progress.artists.fetch_add(1, Ordering::Relaxed);
+
         let since = self.refusals();
         let Some(profile) = self.profile_of(&artist)? else {
             self.bill_the_members(&artist)?;
+
             let fruitlessly = self.fruitlessly(since);
+
             if fruitlessly == Fruitless::Missed {
                 EnrichProgress::count(&self.progress.artists_unmatched);
             }
             return self.library.stamp_artist_asked(id, fruitlessly);
         };
+
         self.library.land_artist(artist.id, &profile)?;
         EnrichProgress::count(&self.progress.profiles);
         if let ReleasesRead::Refused = self.discography(artist.id, &profile.mbid)? {
@@ -2475,6 +2547,7 @@ impl Pass<'_> {
 
     fn bill_the_members(&self, artist: &ArtistToAsk) -> Result<()> {
         let members = credits::members_of(&artist.name);
+
         if members.len() < 2 {
             return Ok(());
         }
@@ -2486,6 +2559,7 @@ impl Pass<'_> {
             if self.library.artist_named(member)?.is_some() {
                 continue;
             }
+
             let found = match self.heard(self.reference.find_artist(member))? {
                 Reply::Answered(found) => top_artist(found, member),
                 Reply::Refused => return Ok(()),
@@ -2508,9 +2582,11 @@ impl Pass<'_> {
             }
         };
         let kept: Vec<ArtistRelease> = held.releases.into_iter().filter(worth_keeping).collect();
+
         let written =
             self.library
                 .land_artist_releases(artist, &kept, (held.unread, held.read_to))?;
+
         self.progress
             .releases_found
             .fetch_add(written as u64, Ordering::Relaxed);
@@ -2529,6 +2605,7 @@ impl Pass<'_> {
                 Reply::Refused => return Ok(None),
             }
         }
+
         let Some(mbid) = self.find_artist(artist)? else {
             return Ok(None);
         };
@@ -2789,6 +2866,7 @@ mod tests {
     #[test]
     fn a_release_is_taken_on_the_score_the_count_and_the_folded_owner_together() {
         let owned = album(Some("The Orbiters"));
+
         assert!(matches_strictly(&release(100, Some("The Orbiters"), Some(3)), &owned).is_some());
         assert!(matches_strictly(&release(95, Some("the orbiters!"), Some(3)), &owned).is_some());
         assert!(matches_strictly(&release(94, Some("The Orbiters"), Some(3)), &owned).is_none());
@@ -2801,6 +2879,7 @@ mod tests {
     #[test]
     fn an_album_with_no_owner_is_taken_on_the_score_and_the_count_alone() {
         let various = album(None);
+
         assert!(
             matches_strictly(&release(95, Some("Various Artists"), Some(3)), &various).is_some()
         );
@@ -2922,6 +3001,7 @@ mod tests {
             &["Marcin Przybylowicz", "Marcin Przybyłowicz"],
             ORBITS,
         );
+
         assert_eq!(
             matches_exactly(&both_ways, "Marcin Przybyłowicz"),
             Some(Spelling::AliasMarked)
@@ -2929,6 +3009,7 @@ mod tests {
 
         let stripped = known_as("Nothing Alike", &["Marcin Przybylowicz"], ORBITS);
         let marked = known_as("Nothing At All Alike", &["Marcin Przybyłowicz"], PORTAL);
+
         assert_eq!(
             matches_exactly(&stripped, "Marcin Przybyłowicz"),
             Some(Spelling::AliasStripped)
@@ -2947,6 +3028,7 @@ mod tests {
             artist(100, "third"),
         ];
         let top = top_of(found, |found| found.score).expect("a match was listed");
+
         assert_eq!(top.name, "second");
         assert!(top_of(Vec::<ArtistMatch>::new(), |found| found.score).is_none());
     }
@@ -2954,6 +3036,7 @@ mod tests {
     #[test]
     fn a_near_miss_names_nothing_and_a_strict_match_names_the_release() {
         let owned = album(Some("The Orbiters"));
+
         assert_eq!(
             top_release(vec![release(100, Some("The Orbiters"), Some(4))], &owned),
             Identified::Nothing
@@ -2974,6 +3057,7 @@ mod tests {
     #[test]
     fn a_release_group_is_taken_on_the_score_and_the_folded_owner_without_any_track_count() {
         let owned = album(Some("The Orbiters"));
+
         assert!(matches_as_a_group(&group_match(100, Some("The Orbiters")), &owned).is_some());
         assert!(matches_as_a_group(&group_match(95, Some("the orbiters!")), &owned).is_some());
         assert!(matches_as_a_group(&group_match(94, Some("The Orbiters")), &owned).is_none());
@@ -3004,6 +3088,7 @@ mod tests {
             group_release(REMASTER, Some("2011-06-01"), Some(3)),
             group_release(ORBITS, Some("1971"), Some(3)),
         ]);
+
         assert_eq!(
             fitted_from(&group, &owned),
             Some((ORBITS.to_owned(), Fit::Exact))
@@ -3013,12 +3098,14 @@ mod tests {
             tagged_tracks: Some(4),
             ..album(Some("The Orbiters"))
         };
+
         assert_eq!(
             fitted_from(&group, &declared),
             Some((PORTAL.to_owned(), Fit::Exact))
         );
 
         let counting_nothing = group_of(vec![group_release(REMASTER, Some("2011-06-01"), None)]);
+
         assert_eq!(taken_from(&counting_nothing, &owned), None);
         assert_eq!(taken_from(&group_of(Vec::new()), &owned), None);
     }
@@ -3031,6 +3118,7 @@ mod tests {
             group_release(REMASTER, Some("2011-06-01"), Some(4)),
             group_release(ORBITS, Some("1971"), Some(4)),
         ]);
+
         assert_eq!(
             fitted_from(&wider, &owned),
             Some((ORBITS.to_owned(), Fit::Wider))
@@ -3040,6 +3128,7 @@ mod tests {
             group_release(PORTAL, Some("1971-10-30"), Some(2)),
             group_release(REMASTER, Some("2011-06-01"), Some(1)),
         ]);
+
         assert_eq!(
             fitted_from(&narrower, &owned),
             Some((PORTAL.to_owned(), Fit::Narrower))
@@ -3049,12 +3138,14 @@ mod tests {
             tagged_tracks: Some(5),
             ..album(Some("The Orbiters"))
         };
+
         assert_eq!(
             fitted_from(&wider, &declared_wider),
             Some((ORBITS.to_owned(), Fit::Wider))
         );
 
         let as_wide_as_the_rip = group_of(vec![group_release(ORBITS, Some("1971"), Some(3))]);
+
         assert_eq!(
             fitted_from(&as_wide_as_the_rip, &declared_wider),
             Some((ORBITS.to_owned(), Fit::Narrower))
@@ -3068,6 +3159,7 @@ mod tests {
             laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[6]),
             laid_out(group_release(ORBITS, Some("1971"), None), &[6]),
         ]);
+
         assert_eq!(
             fitted_from(&alike, &owned),
             Some((ORBITS.to_owned(), Fit::WiderAndAgreed))
@@ -3077,6 +3169,7 @@ mod tests {
             laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[3, 3]),
             laid_out(group_release(ORBITS, Some("1971"), None), &[6]),
         ]);
+
         assert_eq!(
             fitted_from(&split_differently, &owned),
             Some((ORBITS.to_owned(), Fit::Wider))
@@ -3086,6 +3179,7 @@ mod tests {
             laid_out(group_release(PORTAL, Some("1971-10-30"), None), &[6]),
             group_release(ORBITS, Some("1971"), Some(6)),
         ]);
+
         assert_eq!(
             fitted_from(&one_unlaid, &owned),
             Some((ORBITS.to_owned(), Fit::Wider))
@@ -3095,6 +3189,7 @@ mod tests {
             tagged_tracks: Some(5),
             ..album(Some("The Orbiters"))
         };
+
         assert_eq!(
             fitted_from(&alike, &declared),
             Some((ORBITS.to_owned(), Fit::Wider))
@@ -3132,6 +3227,7 @@ mod tests {
             credit_of("JENNIE", " & ", None),
             credit_of("Lily-Rose Depp", "", None),
         ];
+
         assert_eq!(
             same_credit(&together, "The Weeknd", None),
             Some(Spelling::Marked)
@@ -3147,11 +3243,14 @@ mod tests {
         assert_eq!(same_credit(&together, "Vince Staples", None), None);
 
         let portal = Mbid::new(PORTAL).expect("a well-formed mbid");
+
         assert_eq!(
             same_credit(&together, "Nobody At All", Some(&portal)),
             Some(Spelling::ById)
         );
+
         let orbits = Mbid::new(ORBITS).expect("a well-formed mbid");
+
         assert_eq!(
             same_credit(&together, "The Weeknd", Some(&orbits)),
             Some(Spelling::Marked)
@@ -3160,6 +3259,7 @@ mod tests {
         assert_eq!(as_an_alias(Spelling::ById), Spelling::ById);
 
         let unidentified = vec![credit_of("The Weeknd", "", None)];
+
         assert_eq!(
             same_credit(&unidentified, "The Weeknd", None),
             Some(Spelling::Marked)
@@ -3177,6 +3277,7 @@ mod tests {
             credit: vec![credit_of("Orbiters", "", Some(PORTAL))],
             ..release(100, None, Some(3))
         };
+
         assert_eq!(matches_strictly(&by_id, &identified), Some(Spelling::ById));
         assert_eq!(
             matches_strictly(&release(100, Some("The Orbiters"), Some(3)), &identified),
@@ -3208,6 +3309,7 @@ mod tests {
             year: Some(1971),
             ..album(Some("The Orbiters"))
         };
+
         assert_eq!(
             top_release(
                 vec![
@@ -3285,6 +3387,7 @@ mod tests {
             group: Some(Mbid::new(PORTAL).expect("a well-formed mbid")),
             ..release(100, Some("The Orbiters"), Some(4))
         };
+
         assert_eq!(
             top_release(vec![another_pressing.clone()], &owned),
             Identified::Group(Mbid::new(PORTAL).expect("a well-formed mbid"))
@@ -3313,10 +3416,12 @@ mod tests {
             top_release(vec![release(100, Some("The Orbiters"), Some(4))], &owned),
             Identified::Nothing
         );
+
         let declared = AlbumToAsk {
             tagged_tracks: Some(4),
             ..album(Some("The Orbiters"))
         };
+
         assert_eq!(
             top_release(vec![release(100, Some("The Orbiters"), Some(4))], &declared),
             Identified::Found(Mbid::new(ORBITS).expect("a well-formed mbid"))
@@ -3330,12 +3435,14 @@ mod tests {
             group_release(PORTAL, None, Some(3)),
             group_release(ORBITS, Some("2011-06-01"), Some(3)),
         ]);
+
         assert_eq!(taken_from(&undated_first, &owned).as_deref(), Some(ORBITS));
 
         let undated_alone = group_of(vec![
             group_release(PORTAL, None, Some(3)),
             group_release(REMASTER, None, Some(3)),
         ]);
+
         assert_eq!(taken_from(&undated_alone, &owned).as_deref(), Some(PORTAL));
     }
 
@@ -3425,6 +3532,7 @@ mod tests {
     fn a_recording_is_asked_after_again_where_its_releases_say_nothing_to_choose_between() {
         const FIRST: &str = "1a2b3c4d-5e6f-4a1b-8c2d-3e4f5a6b7c8d";
         const SECOND: &str = "2b3c4d5e-6f7a-4b2c-9d3e-4f5a6b7c8d9e";
+
         let unkinded = |id| recording_release(id, "Meddle", Some("1971"));
         let kinded = |id| RecordingRelease {
             issued: crate::Issued {
@@ -3514,6 +3622,7 @@ mod tests {
         assert!(matches_a_recording(&found_recording(100, HEARD, None, long), &played).is_none());
 
         let unnamed = heard(None, None);
+
         assert_eq!(
             matches_a_recording(&found_recording(100, HEARD, None, long), &unnamed),
             Some(Spelling::Marked)
@@ -3526,6 +3635,7 @@ mod tests {
             owner: Some("The Orbiters".to_owned()),
             ..heard(None, None)
         };
+
         assert_eq!(
             matches_a_recording(
                 &found_recording(100, HEARD, Some("The Orbiters"), None),
@@ -3549,6 +3659,7 @@ mod tests {
             credit: vec![credit_of("Orbiters", "", Some(PORTAL))],
             ..found_recording(100, HEARD, None, None)
         };
+
         assert_eq!(
             matches_a_recording(&credited_by_id, &by_id),
             Some(Spelling::Marked)
@@ -3558,6 +3669,7 @@ mod tests {
             artist: Some("Ada".to_owned()),
             ..by_id
         };
+
         assert_eq!(matches_a_recording(&credited_by_id, &named_itself), None);
         assert_eq!(
             asked_with(&named_itself).map(|(artist, mbid)| (artist, mbid.is_some())),
@@ -3576,6 +3688,7 @@ mod tests {
             ],
             ..found_recording(100, HEARD, None, None)
         };
+
         assert_eq!(
             matches_a_recording(&together, &played),
             Some(Spelling::Marked)
@@ -3621,6 +3734,7 @@ mod tests {
             Some("System of a Down"),
             None,
         );
+
         assert_eq!(
             matches_a_recording(&plainly, &qualified),
             Some(Spelling::Dequalified)
@@ -3634,6 +3748,7 @@ mod tests {
             (matches_a_recording(found, &qualified), found.score)
         })
         .expect("a match was listed");
+
         assert_eq!(top.title, "DDevil (Album Version)");
     }
 
@@ -3695,6 +3810,7 @@ mod tests {
             length: Some(Duration::from_secs(350)),
             ..titled("DDevil (Album Version)", Some("System of a Down"))
         };
+
         assert!(
             matches_a_recording(
                 &found_recording(
@@ -3758,24 +3874,28 @@ mod tests {
     fn an_isrc_that_names_two_takes_answers_the_one_the_file_is_as_long_as_and_none_for_a_file_of_no_length()
      {
         let longer = heard(None, Some(Duration::from_millis(355_500)));
+
         assert_eq!(
             named_by(best_recording(two_takes(), &longer).as_ref()),
             Some(PORTAL)
         );
 
         let shorter = heard(None, Some(Duration::from_millis(350_000)));
+
         assert_eq!(
             named_by(best_recording(two_takes(), &shorter).as_ref()),
             Some(ORBITS)
         );
 
         let unmeasured = heard(None, None);
+
         assert_eq!(best_recording(two_takes(), &unmeasured), None);
     }
 
     #[test]
     fn an_isrc_whose_takes_are_all_the_wrong_length_identifies_nothing() {
         let neither = heard(None, Some(Duration::from_millis(300_000)));
+
         assert_eq!(best_recording(two_takes(), &neither), None);
         assert_eq!(best_recording(Vec::new(), &neither), None);
     }
@@ -3788,6 +3908,7 @@ mod tests {
             Some(Duration::from_millis(500_000)),
             Vec::new(),
         )];
+
         assert_eq!(
             best_recording(remastered.clone(), &neither).map(|(_, certainty)| certainty),
             Some(Certainty::Nearly)
@@ -3805,12 +3926,14 @@ mod tests {
             title: "A Pillow of Winds".to_owned(),
             ..take(ORBITS, Some(Duration::from_millis(500_000)), Vec::new())
         }];
+
         assert_eq!(best_recording(another_title, &neither), None);
     }
 
     #[test]
     fn an_isrc_naming_one_take_identifies_it_even_where_no_length_is_declared() {
         let measured = heard(None, Some(Duration::from_millis(300_000)));
+
         assert_eq!(
             named_by(best_recording(vec![take(ORBITS, None, Vec::new())], &measured).as_ref()),
             Some(ORBITS)
@@ -3857,12 +3980,14 @@ mod tests {
             mbid: Some(Mbid::new(REMASTER).expect("a well-formed mbid")),
             ..album(Some("The Orbiters"))
         };
+
         assert_eq!(
             chosen(best_release(&recording, Some(&identified))),
             Some(REMASTER)
         );
 
         let titled = album(Some("The Orbiters"));
+
         assert_eq!(
             chosen(best_release(&recording, Some(&titled))),
             Some(ORBITS)
@@ -3877,6 +4002,7 @@ mod tests {
                 recording_release(REMASTER, "Orbits (2011 Remaster)", None),
             ],
         );
+
         assert_eq!(chosen(best_release(&undated, None)), Some(PORTAL));
         assert_eq!(
             chosen(best_release(&take(ORBITS, None, Vec::new()), None)),

@@ -76,6 +76,7 @@ impl Renamed {
         else {
             return;
         };
+
         if self.held.len() >= RENAMED_HELD_AT_MOST
             && let Some(lost) = self.held.pop_front()
         {
@@ -93,8 +94,10 @@ impl Renamed {
         {
             return NamesMoved::Everything;
         }
+
         let mut retitled = AHashSet::new();
         let mut added = false;
+
         for moved in self.held.iter().filter(|moved| moved.at > then.named) {
             retitled.insert(moved.track);
             added |= moved.added;
@@ -118,6 +121,7 @@ mod tests {
     #[test]
     fn only_the_rows_retitled_since_a_stamp_are_named_as_moved() {
         let mut renamed = Renamed::default();
+
         renamed.note(1, 7, false);
         renamed.note(3, 8, false);
         renamed.note(4, 9, true);
@@ -134,6 +138,7 @@ mod tests {
     #[test]
     fn a_row_unknown_to_the_catalog_is_read_again_only_where_a_row_was_added() {
         let mut renamed = Renamed::default();
+
         renamed.note(2, 7, false);
 
         let moved = renamed.since(stamp(1), stamp(2));
@@ -145,6 +150,7 @@ mod tests {
     #[test]
     fn a_journal_that_let_go_of_what_moved_since_a_stamp_names_everything() {
         let mut renamed = Renamed::default();
+
         for at in 1..=RENAMED_HELD_AT_MOST as u64 + 1 {
             renamed.note(at, at as i64, false);
         }

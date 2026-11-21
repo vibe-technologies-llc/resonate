@@ -12,10 +12,13 @@ use crate::{
 impl Engine {
     pub(super) fn retune_for(&mut self, retuning: Retuning) -> Result<()> {
         self.weigh_whose_volume_it_is();
+
         let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_mut()) else {
             return Ok(());
         };
+
         output.settles_into = None;
+
         let replay_gain = track.replay_gain;
         let decoded_packing = track.decoded().packing;
         let packs = self
@@ -33,9 +36,11 @@ impl Engine {
                     replay_gain,
                 )
             });
+
         if packs {
             return self.rebind_where_it_stands();
         }
+
         let planned_for = self
             .published
             .sinks
@@ -63,6 +68,7 @@ impl Engine {
             );
             heard_amplitude(&plan, self.muted)
         };
+
         match self.boundaries.front() {
             Some(front) => {
                 let leaving = heard_as_planned(&front.leaving);
@@ -78,12 +84,14 @@ impl Engine {
                     )
                     .map(|(boundary, heard)| (boundary.turned, heard))
                     .collect();
+
                 output.producer.hear_across(leaving, &after);
             }
             None => output.producer.hear_at(entering),
         }
 
         let auditioned = output.arms.is_some();
+
         if retuning == Retuning::Equaliser
             && !auditioned
             && wanted.equalisation != output.plan.equalisation
@@ -97,12 +105,15 @@ impl Engine {
                 Splicing::Unspliceable => {}
             }
         }
+
         let Some(output) = self.output.as_mut() else {
             return Ok(());
         };
+
         if wanted.same_shape_as(&output.plan) {
             let volume = output.attenuator.leaves(self.config.volume);
             let planned = replay_gain_as_planned(decoded_packing, &self.config, replay_gain);
+
             output.chain.set_gain(volume, planned);
             if let Some(arms) = output.arms.as_mut() {
                 arms.set_gain_of_the_other(volume, planned);
@@ -133,6 +144,7 @@ impl Engine {
         };
         let drops_the_equaliser =
             wanted.equalisation.is_none() && output.plan.equalisation.is_some();
+
         if drops_the_equaliser && self.playing {
             output.chain.ease_equalisation(Easing::Leaving);
         }
@@ -171,39 +183,49 @@ impl Engine {
         };
         let still_filling = output.draining.is_none() && !output.ended;
         let carries = output.plan.carries_the_front_into(&wanted);
+
         if still_filling && !output.has_room_for_what_the_chain_holds(carries) {
             output.settles_into = Some(wanted);
             return Ok(());
         }
+
         let front = carries.then(|| output.chain.take_the_front()).flatten();
+
         if still_filling {
             output.hand_on_what_the_chain_holds();
         }
+
         let source = track.source();
         let built = match front {
             Some(front) => wanted.build_chain_after(front, &self.config, CHAIN_BLOCK),
             None => wanted.build_chain(source, &self.config, CHAIN_BLOCK),
         };
+
         let mut chain = built.map_err(|error| Error::Convert {
             track: track.id,
             source_spec: source,
             sink_spec: wanted.stream,
             source: error,
         })?;
+
         if let Some(leaving_gain) = leaving_gain.filter(|_| carries) {
             let volume = output.attenuator.leaves(self.config.volume);
             let entering_gain =
                 replay_gain_as_planned(track.decoded().packing, &self.config, track.replay_gain);
+
             chain.set_gain(volume, leaving_gain);
             chain.set_gain_after_what_it_holds(volume, entering_gain);
         }
+
         let brings_the_equaliser =
             wanted.equalisation.is_some() && output.plan.equalisation.is_none();
+
         if brings_the_equaliser && self.playing {
             chain.ease_equalisation(Easing::Entering);
         }
 
         let delivery = wanted.delivery();
+
         track.decoding.deliver(delivery);
         track.decoded.retype(delivery.format);
         output
@@ -211,6 +233,7 @@ impl Engine {
             .resize(CHAIN_BLOCK * source.channel_count().get() as usize, 0.0);
 
         let status = output.take_chain(chain, wanted);
+
         output.note_the_rendered_level();
         self.emit(Event::OutputChanged(status));
         Ok(())

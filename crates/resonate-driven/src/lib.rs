@@ -116,8 +116,10 @@ impl Driven {
         let state = player.state();
         let queued = player.queued();
         let queue = queued.rows;
+
         let window = Resumed::window_around(state.queue_position.unwrap_or(0), queue.len());
         let first_row = window.start;
+
         let held: Vec<Arc<QueueItem>> = queue
             .iter()
             .skip(first_row)
@@ -218,8 +220,10 @@ impl Controlled for Driven {
         if !command.names_a_row() {
             return self.control(zone, command);
         }
+
         let player = self.player_of(zone)?;
         let command = command_for(&player, command)?;
+
         let answered = player
             .request_if_the_queue_is_still(revision, command)
             .and_then(|outcome| outcome.wait_for(AN_EDIT_BY_ROW_ANSWERED_WITHIN));

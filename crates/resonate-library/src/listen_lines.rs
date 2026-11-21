@@ -23,16 +23,20 @@ pub enum ListenFault {
 pub fn heard_in_lines(bytes: &[u8]) -> Result<Vec<HeardElsewhere>> {
     let bytes = bytes.strip_prefix(BYTE_ORDER_MARK).unwrap_or(bytes);
     let mut heard = Vec::new();
+
     for (index, raw) in bytes.split(|byte| *byte == b'\n').enumerate() {
         let refused = |fault| Error::ListenLine {
             line: index + 1,
             fault,
         };
         let text = str::from_utf8(raw).map_err(|_| refused(ListenFault::NotUtf8))?;
+
         if text.trim().is_empty() {
             continue;
         }
+
         let json = Json::read(text).ok_or(refused(ListenFault::NotJson))?;
+
         heard.extend(listen_in(&json).map_err(refused)?);
     }
     Ok(heard)
@@ -42,6 +46,7 @@ fn listen_in(json: &Json) -> std::result::Result<Option<HeardElsewhere>, ListenF
     if !json.is_object() {
         return Err(ListenFault::NotAnObject);
     }
+
     let moment = json
         .get("listened_at")
         .and_then(Json::as_whole)
@@ -85,6 +90,7 @@ fn listen_in(json: &Json) -> std::result::Result<Option<HeardElsewhere>, ListenF
 
 pub fn line_of(heard: &HeardOnce) -> String {
     let mut told = Object::default();
+
     if let Some(billed) = &heard.billed {
         told.text(
             "recording_mbid",
@@ -116,6 +122,7 @@ pub fn line_of(heard: &HeardOnce) -> String {
     told.text("submission_client_version", Some(env!("CARGO_PKG_VERSION")));
 
     let mut metadata = Object::default();
+
     if let Some(Billed {
         title,
         artist,
@@ -134,6 +141,7 @@ pub fn line_of(heard: &HeardOnce) -> String {
         .began
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs());
+
     listen.number("listened_at", Some(at));
     listen.raw("track_metadata", &metadata.closed());
     listen.closed()
@@ -170,6 +178,7 @@ impl Object {
 
 fn quoted(text: &str) -> String {
     let mut quoted = String::with_capacity(text.len() + 2);
+
     quoted.push('"');
     for letter in text.chars() {
         match letter {

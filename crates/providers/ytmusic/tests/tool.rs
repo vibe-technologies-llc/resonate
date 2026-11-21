@@ -93,6 +93,7 @@ fn an_id_that_would_leave_the_address_is_never_asked() {
     ] {
         assert_eq!(VideoId::read(refused), None, "{refused:?}");
     }
+
     assert_eq!(song().as_str(), SONG);
     assert_eq!(
         song().address(),
@@ -294,7 +295,9 @@ mod faked {
     fn the_bytes_read_are_exactly_what_the_tool_wrote_to_its_stdout() {
         let bytes: Vec<u8> = (0..=u8::MAX).cycle().take(300_000).collect();
         let fake = Fake::answering("cat \"$here/bytes\"");
+
         fs::write(fake.folder().join("bytes"), &bytes).expect("the bytes the tool sends");
+
         let mut read = Vec::new();
 
         opened(&fake.tool(Cookies::None), Tier::Opus774)
@@ -314,6 +317,7 @@ mod faked {
 
         let call = fake.calls().remove(0);
         let at = |flag: &str| call.iter().position(|argument| argument == flag);
+
         assert_eq!(call[at("-f").expect("a format") + 1], "141");
         assert_eq!(call[at("-o").expect("an output") + 1], "-");
         assert_eq!(
@@ -333,6 +337,7 @@ mod faked {
             .expect("a whole download");
 
         let calls = fake.calls();
+
         assert_eq!(calls.len(), 2);
         for call in calls {
             assert!(call.iter().any(|argument| argument == "--ignore-config"));
@@ -361,6 +366,7 @@ mod faked {
                 .iter()
                 .position(|argument| argument == "--cookies-from-browser")
                 .expect("the browser asked");
+
             assert_eq!(call[at + 1], "firefox:/home/a/zen (b)");
         }
     }
@@ -381,6 +387,7 @@ mod faked {
             .iter()
             .position(|argument| argument == "--cookies")
             .expect("the file named");
+
         assert_eq!(calls[0][at + 1], "/home/a/cookies file.txt");
         assert!(!calls[1].iter().any(|argument| argument.contains("cookies")));
     }
@@ -472,7 +479,9 @@ mod faked {
             "{:?}",
             began.elapsed()
         );
+
         drop(reader);
+
         assert!(!still_running(&fake));
     }
 
@@ -493,9 +502,11 @@ mod faked {
     fn a_reader_dropped_part_way_kills_the_tool() {
         let fake = Fake::answering("echo $$ > \"$here/pid\"\nexec yes resonate");
         let mut reader = opened(&fake.tool(Cookies::None), Tier::Opus774);
+
         reader.read_exact(&mut [0; 16]).expect("the first bytes");
 
         assert!(still_running(&fake));
+
         drop(reader);
 
         assert!(!still_running(&fake));
@@ -713,6 +724,7 @@ mod faked {
         opened(&tool, Tier::Opus251)
             .read_to_end(&mut read)
             .expect("the bytes asked for");
+
         let refused = tool.formats(&song()).expect_err("cookies heard lapsed");
 
         assert_eq!(read, b"bytes");

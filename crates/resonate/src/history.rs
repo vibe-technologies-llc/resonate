@@ -24,6 +24,7 @@ pub(crate) fn history(library: &Library, config: &Config, asked: &HistoryArgs) -
     if let Some(file) = &asked.import_file {
         return brought_in_from_file(library, file);
     }
+
     let Some(service) = asked.import else {
         return Ok(());
     };
@@ -38,13 +39,16 @@ fn exported(library: &Library, file: &Path) -> Result<()> {
     let mut written = BufWriter::new(File::create(file).map_err(failed)?);
 
     let mut listens = 0_u64;
+
     for line in history_lines(library) {
         writeln!(written, "{}", line?).map_err(failed)?;
         listens += 1;
     }
+
     let file_written = written
         .into_inner()
         .map_err(|error| failed(error.into_error()))?;
+
     file_written.sync_all().map_err(failed)?;
 
     said!(
@@ -126,6 +130,7 @@ mod tests {
 
     fn catalog_of_songs(name: &str) -> (PathBuf, Library) {
         let root = scratch(name);
+
         for (title, artist, album) in SONGS {
             fs::write(
                 root.join(format!("{title}.wav")),
@@ -133,6 +138,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let library = scanned(&root);
         (root, library)
     }
@@ -168,6 +174,7 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
+
         moments.sort_unstable();
         moments
     }
@@ -191,14 +198,18 @@ mod tests {
             heard_at(1, MOMENTS[2]),
             heard_at(1, MOMENTS[3]),
         ];
+
         source
             .bring_in(ListeningService::LastFm, &listens)
             .expect("listens to export");
+
         let file = source_root.join("history.jsonl");
 
         exported(&source, &file).expect("exported");
         brought_in_from_file(&target, &file).expect("imported");
+
         let first = moments_heard(&target);
+
         brought_in_from_file(&target, &file).expect("imported again");
 
         assert_eq!(first.len(), 4);
@@ -217,6 +228,7 @@ mod tests {
                 .count(),
             4
         );
+
         fs::remove_dir_all(source_root).expect("cleaned");
         fs::remove_dir_all(target_root).expect("cleaned");
     }
@@ -243,6 +255,7 @@ mod tests {
             }),
             location: "file:///gone.wav".to_owned(),
         });
+
         fs::write(&file, format!("{good}\n\nnot a listen\n")).expect("a history file");
 
         let refused = brought_in_from_file(&library, &file);
@@ -255,6 +268,7 @@ mod tests {
             }))
         ));
         assert!(moments_heard(&library).is_empty());
+
         fs::remove_dir_all(root).expect("cleaned");
     }
 
@@ -269,6 +283,7 @@ mod tests {
             refused,
             Err(Error::Library(resonate_library::Error::Io { path, .. })) if path == file
         ));
+
         fs::remove_dir_all(root).expect("cleaned");
     }
 

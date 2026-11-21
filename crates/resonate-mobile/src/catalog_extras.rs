@@ -117,9 +117,11 @@ fn seconds_of(moment: SystemTime) -> u64 {
 
 fn by_day(quarters: &[(i64, Heard)], calendar: &Calendar, shown: usize) -> Vec<ListenedOnDay> {
     let mut days: BTreeMap<i64, Heard> = BTreeMap::new();
+
     for (quarter, heard) in quarters {
         let day = calendar.day_of(moment(quarter.saturating_mul(SECONDS_A_QUARTER_HOUR)));
         let held = days.entry(day).or_default();
+
         held.plays = held.plays.saturating_add(heard.plays);
         held.listened_ms = held.listened_ms.saturating_add(heard.listened_ms);
     }
@@ -192,6 +194,7 @@ impl Catalog {
         stamp: Option<DocumentStamp>,
     ) -> Result<()> {
         let tags = &info.tags;
+
         self.0.lock().execute("UPDATE documents SET album_artist = coalesce(nullif(?2, ''), album_artist), genre = coalesce(nullif(?3, ''), genre), date = coalesce(nullif(?4, ''), date), track_number = ?5, disc_number = ?6, bits = ?7, channels = ?8, recording = coalesce(?9, recording), release = coalesce(?10, release), artist_mbid = coalesce(?11, artist_mbid), isrc = coalesce(?12, isrc), size = ?13, modified = ?14, indexed_by = ?15 WHERE id = ?1", params![id as i64, tags.album_artist, tags.genre, tags.date, tags.track_number, tags.disc_number, info.bits_per_coded_sample, info.spec.channels.count().get(), tags.musicbrainz_track_id, tags.musicbrainz_album_id, tags.musicbrainz_artist_id, tags.isrc, stamp.map(DocumentStamp::size_column), stamp.map(DocumentStamp::modified_column), stamp.map(|_| INDEXING_REVISION)]).map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(())
     }
@@ -227,12 +230,15 @@ impl Catalog {
         replace: bool,
     ) -> Result<()> {
         let mut connection = self.0.lock();
+
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         let write_error = |source| Error::store(StoreOp::Write, source);
+
         let picture = kept_picture(&transaction, bytes).map_err(write_error)?;
         let mut replaced = Vec::new();
+
         for id in ids {
             let before: Option<i64> = transaction
                 .query_row(
@@ -306,6 +312,7 @@ impl Catalog {
     ) -> Result<LyricsAhead> {
         let connection = self.0.lock();
         let ahead = nudged(held_ahead(&connection, id)?);
+
         let written = if ahead.is_zero() {
             connection.execute("DELETE FROM lyrics_ahead WHERE track = ?1", [id as i64])
         } else {
@@ -315,6 +322,7 @@ impl Catalog {
                 params![id as i64, i64::from(ahead.millis())],
             )
         };
+
         written.map_err(|source| Error::store(StoreOp::Write, source))?;
 
         Ok(ahead)
@@ -337,6 +345,7 @@ impl Catalog {
         let (songs, albums, artists, duration_ms) = connection.query_row("SELECT count(*), count(DISTINCT album_key), count(DISTINCT nullif(folded(artist), '')), coalesce(sum(duration_ms), 0) FROM documents WHERE missing = 0", [], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64, row.get::<_, i64>(2)? as u64, row.get::<_, i64>(3)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let (plays, listened_ms) = connection.query_row("SELECT count(*), coalesce(sum(l.heard_ms), 0) FROM listens l LEFT JOIN documents d ON d.id = l.track WHERE (d.missing = 0 OR l.served IS NOT NULL) AND l.counted = 1 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400)", [days], |row| Ok((row.get::<_, i64>(0)? as u64, row.get::<_, i64>(1)? as u64))).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut query = connection.prepare("SELECT d.* FROM documents d JOIN listens l ON l.track = d.id WHERE d.missing = 0 AND (?1 = 0 OR l.began >= unixepoch() - ?1 * 86400) AND l.counted = 1 GROUP BY d.id ORDER BY sum(l.heard_ms) DESC, count(*) DESC, d.title LIMIT 25").map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let top_tracks = query
             .query_map([days], read)
             .map_err(|source| Error::store(StoreOp::Read, source))?
@@ -361,6 +370,7 @@ impl Catalog {
     ) -> Result<ListeningDetail> {
         let connection = self.0.lock();
         let limit = limit.clamp(1, MOST_LISTENED_AT_MOST);
+
         let ranked = |sql: &str| -> Result<Vec<ListenedTo>> {
             let mut query = connection.prepare(sql).map_err(read_error)?;
             query
@@ -382,6 +392,7 @@ impl Catalog {
         let mut query = connection
             .prepare(LISTENING_BY_QUARTER_HOUR)
             .map_err(read_error)?;
+
         let quarters = query
             .query_map(params![days, SECONDS_A_QUARTER_HOUR], |row| {
                 Ok((
@@ -404,6 +415,7 @@ impl Catalog {
                 ))
             })
             .map_err(read_error)?;
+
         drop(query);
         drop(connection);
 
@@ -498,6 +510,7 @@ impl Catalog {
     fn keep_figures(&self, id: u64, figures: Figures<'_>) -> Result<()> {
         let measured = figures.measured.as_ref();
         let connection = self.0.lock();
+
         connection
             .execute(
                 STUDY_UPSERT,
@@ -561,6 +574,7 @@ impl Catalog {
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         connection
             .execute("DELETE FROM unstudied WHERE track = ?1", [id as i64])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -573,6 +587,7 @@ impl Catalog {
             .info
             .duration
             .map(|frames| frames.get().cast_signed());
+
         self.0
             .lock()
             .execute(
@@ -587,6 +602,7 @@ impl Catalog {
     pub(crate) fn bands_to_measure(&self, refresh: bool) -> Result<Vec<(u64, String)>> {
         let connection = self.0.lock();
         let read_error = |source| Error::store(StoreOp::Read, source);
+
         let mut statement = connection
             .prepare_cached(
                 "SELECT d.id, d.uri FROM documents d JOIN studies s ON s.track = d.id
@@ -609,6 +625,7 @@ impl Catalog {
 
     pub(crate) fn keep_bands(&self, id: u64, figures: &BandFigures) -> Result<()> {
         let connection = self.0.lock();
+
         connection
             .execute(
                 "UPDATE studies SET band_levels = ?2, band_peaks = ?3
@@ -664,12 +681,14 @@ impl Catalog {
     pub(crate) fn loudest_kept(&self, gains: &BandGains) -> Result<Loudest> {
         let connection = self.0.lock();
         let read_error = |source| Error::store(StoreOp::Read, source);
+
         let mut statement = connection
             .prepare_cached(
                 "SELECT s.band_peaks FROM studies s JOIN documents d ON d.id = s.track
                  WHERE d.missing = 0 AND length(s.band_peaks) IN (?1, ?2)",
             )
             .map_err(read_error)?;
+
         let rows = statement
             .query_map(
                 [
@@ -681,6 +700,7 @@ impl Catalog {
             .map_err(read_error)?;
 
         let mut loudest = Loudest::default();
+
         for row in rows {
             let kept = row.map_err(read_error)?;
             if let Some(peaks) = BandPeaks::from_kept(&kept) {
@@ -693,6 +713,7 @@ impl Catalog {
     pub(crate) fn unmeasured(&self, cuts: &[Cut]) -> Result<Vec<Cut>> {
         let connection = self.0.lock();
         let read_error = |source| Error::store(StoreOp::Read, source);
+
         let mut statement = connection
             .prepare_cached(
                 "SELECT EXISTS (SELECT 1 FROM studies s JOIN documents d ON d.id = s.track
@@ -702,6 +723,7 @@ impl Catalog {
             .map_err(read_error)?;
 
         let mut owed = Vec::new();
+
         for cut in cuts {
             let stored = cut
                 .span
@@ -816,6 +838,7 @@ pub(crate) fn kept_picture(transaction: &Transaction<'_>, bytes: &[u8]) -> rusql
             |row| row.get(0),
         )
         .optional()?;
+
     if let Some(held) = held {
         return Ok(held);
     }
@@ -873,6 +896,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a document");
+
         catalog
             .0
             .lock()
@@ -907,6 +931,7 @@ mod tests {
                     ..Track::default()
                 })
                 .expect("a song");
+
             catalog
                 .0
                 .lock()
@@ -951,17 +976,20 @@ mod tests {
         let bachelorette = song("bachelorette", "Bachelorette", "BJORK", "Homogenic");
         let sometimes = song("sometimes", "Sometimes", "Air", "Moon Safari");
         let hidden = song("hidden", "Hidden", "Air", "Moon Safari");
+
         catalog
             .0
             .lock()
             .execute("UPDATE documents SET missing = 1 WHERE id = ?1", [hidden])
             .expect("a missing song");
+
         let now: i64 = catalog
             .0
             .lock()
             .query_row("SELECT unixepoch()", [], |row| row.get(0))
             .expect("the time");
         let day = 86_400;
+
         for (track, began, heard, counted) in [
             (joga, now - 60, 200_000, 1),
             (bachelorette, now - 120, 100_000, 1),
@@ -1117,6 +1145,7 @@ mod tests {
             .lock()
             .query_row("SELECT unixepoch()", [], |row| row.get(0))
             .expect("the time");
+
         for back in 0..500 {
             catalog
                 .0
@@ -1175,6 +1204,7 @@ mod tests {
         let half_past_midnight = new_years_midnight + AN_HOUR / 2;
         let half_past_eleven_at_night = new_years_midnight + 23 * AN_HOUR + AN_HOUR / 2;
         let the_next_morning = new_years_midnight + 33 * AN_HOUR;
+
         listened_at(
             &catalog,
             &[
@@ -1214,6 +1244,7 @@ mod tests {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let ljubljana = the_listeners_calendar(LJUBLJANA, 0);
         let summer_midnight = THE_FIRST_OF_JULY_2024 * SECONDS_PER_DAY - 2 * AN_HOUR;
+
         listened_at(&catalog, &[summer_midnight + 60]);
 
         let detail = catalog
@@ -1264,11 +1295,14 @@ mod tests {
                 .expect("tags");
             id
         };
+
         tagged(song("a", "flac", 44_100), "Trip Hop", "1994-05-01");
         tagged(song("b", "FLAC", 96_000), "trip hop", "1998");
         tagged(song("c", "MP3", 44_100), "", "2003");
         tagged(song("d", "", 0), "Jazz", "unknown");
+
         let gone = tagged(song("e", "FLAC", 192_000), "Jazz", "1959");
+
         catalog
             .0
             .lock()
@@ -1313,6 +1347,7 @@ mod tests {
             album: "Selected album".into(),
             ..Track::default()
         };
+
         let saved = catalog
             .upsert(track.clone())
             .expect("selected delivery metadata");
@@ -1324,6 +1359,7 @@ mod tests {
                 ..track
             })
             .expect("an untagged rescan");
+
         assert_eq!(saved.id, rescanned.id);
         assert_eq!(saved.title, rescanned.title);
         assert_eq!(saved.artist, rescanned.artist);
@@ -1377,6 +1413,7 @@ mod tests {
     fn a_picture_nothing_shows_any_more_is_dropped() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let ids = songs(&catalog, 2);
+
         catalog
             .keep_artwork_of(&ids, &[1, 1, 1], "folder", false)
             .expect("a cover");
@@ -1409,16 +1446,19 @@ mod tests {
                 ..Track::default()
             })
             .expect("a track");
+
         catalog
             .keep_artwork(track.id, &[1], "folder", false)
             .expect("a folder cover");
         catalog
             .keep_artwork(track.id, &[2], "folder", false)
             .expect("a changed folder cover");
+
         assert_eq!(
             catalog.artwork(track.id).expect("the changed picture"),
             Some(vec![2])
         );
+
         catalog
             .keep_artwork(track.id, &[3], "embedded", true)
             .expect("an embedded cover");
@@ -1428,6 +1468,7 @@ mod tests {
         catalog
             .keep_artwork(track.id, &[5], "coverartarchive", false)
             .expect("a remote fallback");
+
         assert_eq!(
             catalog.artwork(track.id).expect("the embedded picture"),
             Some(vec![3])

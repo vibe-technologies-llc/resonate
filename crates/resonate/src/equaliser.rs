@@ -58,6 +58,7 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
 
     if let Some(text) = wanted.find.as_deref() {
         let sink = crate::sinks::wanted_sink(cli, config);
+
         return find(config, text, measurer_of(config, wanted, sink.as_ref()));
     }
     if wanted.suggest {
@@ -86,6 +87,7 @@ fn performed(cli: &Cli, config: &Config, wanted: &EqArgs, settings: &Path) -> Re
     }
     if wanted.measure {
         let through = crate::sinks::wanted_sink(cli, config);
+
         return measure(
             &store,
             settings,
@@ -155,6 +157,7 @@ fn curve_of(store: &Store, owner: Option<&NodeName>, binding: &Binding) -> Resul
 
 fn bind(store: &Store, settings: &Path, sink: Option<&NodeName>, name: &str) -> Result<()> {
     let name = named(name)?;
+
     if store.read(&name)?.is_none() {
         return Err(Error::Eq(resonate_eq::Error::NoSuchProfile));
     }
@@ -164,6 +167,7 @@ fn bind(store: &Store, settings: &Path, sink: Option<&NodeName>, name: &str) -> 
 
 fn bound_as(settings: &Path, sink: Option<&NodeName>, binding: &Binding) -> Result<()> {
     let written = config::written(binding);
+
     match sink {
         Some(sink) => {
             config::store_in_table(settings, ConfigKey::EqualiserFor, sink.as_str(), written)?;
@@ -201,6 +205,7 @@ fn import(
 ) -> Result<()> {
     if wanted.own {
         let kept = Store::read_in(from)?;
+
         store.keep_own_read(sink.map(NodeName::as_str), &kept)?;
         said!(
             "{}",
@@ -217,6 +222,7 @@ fn import(
     let called = wanted.profile.as_deref().map(named).transpose()?;
     let held = store.holds(&Store::name_for_import(from, called.as_ref()));
     let (name, kept) = store.import(from, called.as_ref())?;
+
     replaced_if(held, &name);
 
     if kept.converted {
@@ -304,6 +310,7 @@ fn keep_fitted(
         name,
     } = kept;
     let bands = fitted.profile.bands().len();
+
     let told = words::equaliser::fitted_toward(
         format!("{:.1}", fitted.off_by_db_after),
         bands,
@@ -322,6 +329,7 @@ fn keep_fitted(
     }
 
     let held = store.holds(name);
+
     store.keep(name, &fitted.profile)?;
     replaced_if(held, name);
     said!(
@@ -356,6 +364,7 @@ fn measure(
         Listening::Microphone(None) => words::equaliser::the_default_microphone().to_owned(),
         Listening::Microphone(Some(name)) => name.to_string(),
     };
+
     told!(
         "{}",
         words::equaliser::playing_a_sweep(
@@ -371,6 +380,7 @@ fn measure(
         Some(file) => measuring::calibrated(&heard, &Store::response_in(file)?.response)?,
         None => heard,
     };
+
     if let Some(to) = wanted.keep_measurement.as_deref() {
         std::fs::write(to, measuring::as_csv(&measured)).map_err(|source| {
             Error::WriteMeasurement {
@@ -409,6 +419,7 @@ fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
         .into_iter()
         .filter_map(|found| catalogue.device(found))
         .collect();
+
     if devices.is_empty() {
         said!("{}", words::equaliser::nothing_measured());
         return Ok(());
@@ -416,11 +427,13 @@ fn fetch_every(store: &Store, config: &Config, text: &str) -> Result<()> {
 
     let ids: Vec<DeviceId> = devices.iter().map(|device| device.id.clone()).collect();
     let mut kept = 0;
+
     for (device, fetched) in devices.into_iter().zip(corrections.profiles(&ids)) {
         match fetched.profile {
             Ok(Some(profile)) => {
                 let name = ProfileName::after(&named_by_measurer(device));
                 let held = store.holds(&name);
+
                 store.keep(&name, &profile)?;
                 replaced_if(held, &name);
                 said!(
@@ -518,11 +531,13 @@ fn export(
 
 fn forget(store: &Store, settings: &Path, config: &Config, name: &str) -> Result<()> {
     let name = named(name)?;
+
     if !store.forget(&name)? {
         return Err(Error::Eq(resonate_eq::Error::NoSuchProfile));
     }
 
     let forgotten = Binding::Profile(name.clone());
+
     if let Some(bindings) = config.equaliser_for.as_ref() {
         if bindings.fallback() == Some(&forgotten) {
             config::clear(settings, ConfigKey::EqualiserProfile)?;
@@ -546,6 +561,7 @@ fn forget_own(
 ) -> Result<()> {
     let held = store.forget_own(sink.map(NodeName::as_str))?;
     let bound = bound_to_its_own(config, sink);
+
     if !held && !bound {
         return Err(Error::Eq(resonate_eq::Error::NoOwnCurve));
     }
@@ -578,6 +594,7 @@ fn bound_to<'c>(
 fn list(store: &Store, config: &Config) -> Result<()> {
     let names = store.names()?;
     let owners = store.owners()?;
+
     if names.is_empty() && owners.is_empty() {
         said!(
             "{}",
@@ -605,6 +622,7 @@ fn own_curves(store: &Store, config: &Config, owners: &[Option<String>]) {
         words::equaliser::preamp_heading(),
         words::equaliser::bound_heading(),
     ]);
+
     for owner in owners {
         let owner = owner.as_deref().map(NodeName::new);
         let (bands, preamp) = counted(store.own(owner.as_ref().map(NodeName::as_str)).map(Some));
@@ -632,6 +650,7 @@ fn profiles(store: &Store, config: &Config, names: &[ProfileName]) {
         words::equaliser::preamp_heading(),
         words::equaliser::bound_to_heading(),
     ]);
+
     for name in names {
         let (bands, preamp) = counted(store.read(name));
         let binding = Binding::Profile(name.clone());
@@ -676,6 +695,7 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
                 words::equaliser::device_heading(),
                 words::equaliser::bound_to_heading(),
             ]);
+
             if let Some(fallback) = bindings.fallback() {
                 table.push(vec![
                     words::equaliser::every_other_device().to_owned(),
@@ -693,6 +713,7 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
     let Some((owner, binding)) = bound_to(config, sink) else {
         return Ok(());
     };
+
     let spoken = match (binding, owner) {
         (Binding::Own, None) if sink.is_some() => spoken_own(None),
         _ => spoken_binding(binding),
@@ -723,6 +744,7 @@ fn print(store: &Store, config: &Config, sink: Option<&NodeName>) -> Result<()> 
         "Q",
         "",
     ]);
+
     for (at, band) in profile.bands().iter().enumerate() {
         table.push(vec![
             (at + 1).to_string(),
@@ -773,6 +795,7 @@ pub fn measured_by(config: &Config) -> resonate_ui::Measurers {
 fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
     let (_, catalogue) = asked(config)?;
     let hits = search_preferring(&catalogue, text, measurer);
+
     if hits.is_empty() {
         said!("{}", words::equaliser::nothing_measured());
         return Ok(());
@@ -784,6 +807,7 @@ fn find(config: &Config, text: &str, measurer: Option<&str>) -> Result<()> {
         words::equaliser::rig_heading(),
         words::equaliser::path_heading(),
     ]);
+
     for device in hits.into_iter().filter_map(|found| catalogue.device(found)) {
         table.push(vec![
             device.label.clone(),
@@ -816,6 +840,7 @@ fn suggested(cli: &Cli, config: &Config, wanted: &EqArgs) -> Result<()> {
     let measurer = measurer_of(config, wanted, Some(&sink.name));
 
     let (_, catalogue) = asked(config)?;
+
     match suggest_preferring(&catalogue, &sink.description, measurer)
         .and_then(|found| catalogue.device(found))
     {
@@ -846,6 +871,7 @@ fn fetch(
 ) -> Result<()> {
     let (corrections, _) = asked(config)?;
     let id = DeviceId::new(device)?;
+
     let profile = corrections
         .profile(&id)?
         .ok_or(Error::Eq(resonate_eq::Error::NoSuchProfile))?;
@@ -864,6 +890,7 @@ fn fetch(
         None => ProfileName::after(id.as_str().rsplit('/').next().unwrap_or(device)),
     };
     let held = store.holds(&name);
+
     store.keep(&name, &profile)?;
     replaced_if(held, &name);
     said!(
@@ -968,11 +995,13 @@ mod tests {
     impl Scratch {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let folder = env::temp_dir().join(format!(
                 "resonate-equaliser-{}-{}",
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&folder).expect("a writable temporary directory");
             fs::write(folder.join("config.toml"), "").expect("a writable temporary directory");
             fs::write(folder.join("profile.txt"), PARAMETRIC)
@@ -1140,6 +1169,7 @@ mod tests {
             })
             .collect();
         let file = scratch.folder.join("dipped.csv");
+
         fs::write(&file, format!("frequency,raw\n{text}")).expect("a writable temporary directory");
         file
     }
@@ -1165,6 +1195,7 @@ mod tests {
                 "{refused:?} was taken"
             );
         }
+
         assert!(
             Cli::try_parse_from([
                 "resonate",
@@ -1297,6 +1328,7 @@ mod tests {
             .read(&name)
             .expect("it reads")
             .expect("it is kept");
+
         assert!(!kept.bands().is_empty());
         assert!(kept.bands().iter().any(|band| band.gain.decibels() > 2.0));
         assert_eq!(scratch.bound(Some(&device)), Some(Binding::Profile(name)));
@@ -1345,6 +1377,7 @@ mod tests {
         let target_text: String = (0..30)
             .map(|step| format!("{:.2},0\n", 20.0 * 1.3_f64.powi(step)))
             .collect();
+
         fs::write(&target, format!("frequency,raw\n{target_text}"))
             .expect("a writable temporary directory");
 
@@ -1356,8 +1389,10 @@ mod tests {
             "--profile",
             "by-file",
         ]);
+
         fit_measurement(&scratch.store, &scratch.settings(), None, &by_file, &from)
             .expect("fitted to the file");
+
         assert_eq!(scratch.store.names().expect("it walks").len(), 1);
 
         let missing = scratch.folder.join("missing.csv");
@@ -1369,6 +1404,7 @@ mod tests {
             "--profile",
             "by-missing",
         ]);
+
         assert!(matches!(
             fit_measurement(
                 &scratch.store,
@@ -1389,7 +1425,9 @@ mod tests {
             .map(|step| format!("{:.2} 0\n", 20.0 * 1.2_f64.powi(step)))
             .collect();
         let from = scratch.folder.join("flat.txt");
+
         fs::write(&from, text).expect("a writable temporary directory");
+
         let wanted = asked(&[
             "--fit-measurement",
             from.to_str().expect("a UTF-8 path"),
@@ -1421,6 +1459,7 @@ mod tests {
         let device = NodeName::new(DEVICE);
         let other = NodeName::new("alsa_output.pci");
         let flat = Profile::flat();
+
         scratch
             .store
             .keep_own(Some(DEVICE), &flat)
@@ -1464,6 +1503,7 @@ mod tests {
         let scratch = Scratch::new();
         let device = NodeName::new(DEVICE);
         let held = ProfileName::new("held").expect("a usable name");
+
         scratch
             .store
             .keep(&held, &Profile::flat())
@@ -1491,6 +1531,7 @@ mod tests {
         let scratch = Scratch::new();
         let held = ProfileName::new("held").expect("a usable name");
         let huge = ProfileName::new("huge").expect("a usable name");
+
         scratch
             .store
             .keep(&held, &Profile::flat())
@@ -1509,6 +1550,7 @@ mod tests {
             )
         );
         assert_eq!(counted(scratch.store.read(&held)).0, "0");
+
         profiles(&scratch.store, &scratch.config(), &[held, huge]);
     }
 }

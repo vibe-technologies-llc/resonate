@@ -23,7 +23,7 @@ const RATES_TAKEN: [SampleRate; 4] = [
     SampleRate::HZ_96000,
 ];
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CastId(Box<str>);
 
 impl CastId {
@@ -175,6 +175,7 @@ fn status_in(reply: &Json) -> Option<Status> {
     if reply.kind() != Some("RECEIVER_STATUS") {
         return None;
     }
+
     let status = reply.get("status")?;
     let volume = status
         .get("volume")
@@ -199,6 +200,7 @@ pub(crate) fn launched(link: &Link) -> Result<Session> {
     if let Some(session) = status(link)?.media {
         return Ok(session);
     }
+
     let reply = link.ask(
         Namespace::Receiver,
         RECEIVER,
@@ -276,6 +278,7 @@ mod tests {
     fn a_receiver_is_offered_what_it_was_heard_to_play_beside_what_every_receiver_takes() {
         let at = SocketAddr::from(([192, 168, 1, 20], 8009));
         let plays = Plays::from_iter([Trial::FlacAt192kHz, Trial::SixChannels]);
+
         let device = Device::held_unreached(Found::at(at)).taught(Some(&plays));
         let carriage = device.carriage();
 

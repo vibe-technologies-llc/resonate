@@ -2,31 +2,31 @@ use std::time::SystemTime;
 
 use resonate_core::{FrameSpan, MediaLocation, PlaylistId, SourceId, TrackId, ZoneId, ZoneName};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Opened {
     Accepted,
     Refused,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Tuned {
     Applied,
     Refused,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Reloaded {
     Applied,
     Refused,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum HandedOver {
     Moving,
     Refused,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Reloadable {
     Equaliser,
     Submission,
@@ -62,7 +62,7 @@ impl Reloadable {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Tunable {
     Sink,
     Quality,
@@ -98,7 +98,7 @@ impl Tunable {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Heard {
     pub plays: u32,
     pub played: Option<SystemTime>,
@@ -185,13 +185,13 @@ pub trait Host: Send + Sync + 'static {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PlaylistInfo {
     pub id: PlaylistId,
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum PlaylistOrder {
     #[default]
     Alphabetical,

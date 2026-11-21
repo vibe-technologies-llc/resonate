@@ -37,27 +37,34 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     })?;
 
     let head = read_exact::<28, _>(bytes).ok_or_else(|| missing(location, DsdChunk::Format))?;
+
     if !head.starts_with(b"DSD ") || u64::from_le_bytes(take8(&head, 4)) != DSD_HEADER_BYTES {
         return Err(missing(location, DsdChunk::Format));
     }
+
     let metadata_at = u64::from_le_bytes(take8(&head, 20));
 
     let fmt = read_exact::<64, _>(bytes).ok_or_else(|| missing(location, DsdChunk::Format))?;
+
     if !fmt.starts_with(b"fmt ") || u64::from_le_bytes(take8(&fmt, 4)) != FMT_BODY_BYTES {
         return Err(missing(location, DsdChunk::Format));
     }
 
     let version = u32::from_le_bytes(take4(&fmt, 12));
+
     if version != FORMAT_VERSION {
         return Err(unusable(location, DsdField::FormatVersion, version.into()));
     }
+
     let format_id = u32::from_le_bytes(take4(&fmt, 16));
+
     if format_id != FORMAT_ID_RAW {
         return Err(unusable(location, DsdField::FormatId, format_id.into()));
     }
 
     let kind = u32::from_le_bytes(take4(&fmt, 20));
     let declared_channels = u32::from_le_bytes(take4(&fmt, 24));
+
     let placed = placed(declared_channels, positions_of(kind), location)?;
     let channels = placed.channels;
 
@@ -76,6 +83,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
 
     let samples = u64::from_le_bytes(take8(&fmt, 36));
     let block = u64::from(u32::from_le_bytes(take4(&fmt, 44)));
+
     if block != BLOCK_BYTES {
         return Err(unusable(location, DsdField::BlockSize, block));
     }
@@ -83,6 +91,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     if !fmt.get(52..56).is_some_and(|id| id == b"data") {
         return Err(missing(location, DsdChunk::Data));
     }
+
     let declared = u64::from_le_bytes(take8(&fmt, 56));
     let data_at = DSD_HEADER_BYTES + FMT_BODY_BYTES + DATA_HEADER_BYTES;
     let payload = declared.saturating_sub(DATA_HEADER_BYTES);
@@ -91,6 +100,7 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
     let held = bytes
         .byte_len()
         .map_or(payload, |len| payload.min(len.saturating_sub(data_at)));
+
     let data_bytes = held - held % (BLOCK_BYTES * lanes).max(1);
 
     Ok(Layout {

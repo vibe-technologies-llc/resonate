@@ -10,7 +10,7 @@ use crate::{
 
 pub const KEPT_IN_STEP_EVERY: Duration = Duration::from_secs(6 * 60 * 60);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Upkeep {
     Once,
     InStep,
@@ -117,6 +117,7 @@ impl Library {
             return Ok(None);
         };
         let wanted_name = name.unwrap_or(&followed.name).to_owned();
+
         let filled = self.fill_from_the_link(link, &wanted_name, &followed.held, upkeep)?;
 
         Ok(Some(self.told(
@@ -173,6 +174,7 @@ impl Library {
             Upkeep::Once if filled.started => Remembering::OverWhatWasThere,
             Upkeep::Once => Remembering::WhereNoneWas,
         };
+
         self.remember_the_source(filled.playlist, link, upkeep, remembering)?;
 
         Ok(filled)
@@ -198,6 +200,7 @@ impl Library {
                 (mirrored.added, mirrored.removed)
             }
         };
+
         self.stamp_refreshed(playlist)?;
 
         followed.found = self.not_yet_wanted(followed.found)?;
@@ -236,6 +239,7 @@ impl Library {
                     params![playlist.get() as i64, upkeep.code()],
                 )
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+
             if changed == 0 && !has_a_source(transaction, playlist)? {
                 return Err(Error::NoPlaylistSource { playlist });
             }
@@ -273,6 +277,7 @@ impl Library {
                      WHERE s.kept = ?1 ORDER BY s.refreshed, s.playlist_id",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let rows = statement
                 .query_map(params![Upkeep::InStep.code()], |row| {
                     Ok((
@@ -286,6 +291,7 @@ impl Library {
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
 
             let mut kept = Vec::with_capacity(rows.len());
+
             for (id, link, upkeep, refreshed) in rows {
                 let id = PlaylistId::new(id as u64)?;
                 if let Some(source) = read(id, Some(link), Some(upkeep), Some(refreshed))? {
@@ -322,6 +328,7 @@ impl Library {
 
     fn not_yet_wanted(&self, found: Vec<Found>) -> Result<Vec<Found>> {
         let mut unwanted = Vec::with_capacity(found.len());
+
         for song in found {
             if !self.is_recording_wanted(&song.recording)? {
                 unwanted.push(song);
@@ -332,6 +339,7 @@ impl Library {
 
     fn cuts_of(&self, tracks: &[TrackId]) -> Result<Vec<Cut>> {
         let mut cuts = Vec::with_capacity(tracks.len());
+
         for track in tracks {
             if let Some(held) = self.track(*track)? {
                 cuts.push(Cut::of(&held));
@@ -469,6 +477,7 @@ impl Library {
 
         for listed in &profile.playlists {
             let page = listed.link.page();
+
             if upkeep == Upkeep::InStep
                 && known.contains(&page)
                 && self.playlist_kept_from(&listed.link)?.is_none()
@@ -476,12 +485,14 @@ impl Library {
                 followed.let_go += 1;
                 continue;
             }
+
             let Some(mut read) =
                 self.import_playlist_link(reference, &listed.link, Some(&listed.title), upkeep)?
             else {
                 followed.unread += 1;
                 continue;
             };
+
             read.found = self.not_yet_wanted(read.found)?;
             if upkeep == Upkeep::Once
                 && self
@@ -498,6 +509,7 @@ impl Library {
             .iter()
             .map(|listed| listed.link.page())
             .collect();
+
         for page in known.iter().filter(|page| !listed.contains(page)) {
             let Some(was) = PlaylistLink::read(page) else {
                 continue;
@@ -520,6 +532,7 @@ impl Library {
             let mut statement = connection
                 .prepare("SELECT link, refreshed FROM profile_sources ORDER BY refreshed, link")
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let rows = statement
                 .query_map([], |row| {
                     Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
@@ -562,6 +575,7 @@ impl Library {
 
     pub fn let_go_of_the_profile(&self, link: &ProfileLink) -> Result<usize> {
         let mut let_go = 0;
+
         for page in self.pages_of(link)? {
             let Some(was) = PlaylistLink::read(&page) else {
                 continue;

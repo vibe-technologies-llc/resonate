@@ -61,9 +61,11 @@ pub(crate) fn tally(decoder: &mut Decoder, spec: StreamSpec, halt: Halt<'_>) -> 
 
     loop {
         halt.heard()?;
+
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Read, source))?;
+
         if status == DecodeStatus::EndOfStream {
             break;
         }
@@ -106,6 +108,7 @@ impl Samples {
         while !bytes.is_empty() {
             let window = at / self.stride;
             let within = at % self.stride;
+
             let skipped = if within >= SLICE_BYTES as u64 {
                 self.stride - within
             } else {
@@ -121,19 +124,23 @@ impl Samples {
                     }
                 }
             };
+
             if skipped > 0 {
                 let skipped = usize::try_from(skipped)
                     .unwrap_or(usize::MAX)
                     .min(bytes.len());
+
                 at += skipped as u64;
                 bytes = &bytes[skipped..];
                 continue;
             }
+
             let Some((_, slice)) = self.held.last_mut() else {
                 return;
             };
             let room = SLICE_BYTES - within as usize;
             let taken = room.min(bytes.len());
+
             if slice.len() as u64 == within {
                 slice.extend_from_slice(&bytes[..taken]);
             }
@@ -160,16 +167,19 @@ impl Samples {
 
 pub(crate) fn hopeless(tallied: &Tallied, smaller_than: u64) -> bool {
     let length = tallied.pcm_bytes;
+
     if length < FORETOLD_FROM_BYTES {
         return false;
     }
 
     let mut sampled = 0_u64;
     let mut packed = 0_u64;
+
     for slice in tallied.samples.whole_slices() {
         let Ok(squeezed) = zstd::bulk::compress(slice, ARCHIVED_AT) else {
             return false;
         };
+
         sampled += SLICE_BYTES as u64;
         packed += squeezed.len() as u64;
     }
@@ -198,6 +208,7 @@ impl Pcm<'_> {
     fn refill(&mut self) -> std::io::Result<()> {
         self.pending.clear();
         self.taken = 0;
+
         let status = match self.decoder.next_block(&mut self.block) {
             Ok(status) => status,
             Err(source) => {
@@ -205,6 +216,7 @@ impl Pcm<'_> {
                 return Err(ErrorKind::Other.into());
             }
         };
+
         if status == DecodeStatus::EndOfStream {
             self.drained = true;
             if self.seen != self.tallied {
@@ -235,7 +247,9 @@ impl Read for Pcm<'_> {
             }
             self.refill()?;
         }
+
         let taken = into.len().min(self.pending.len() - self.taken);
+
         into[..taken].copy_from_slice(&self.pending[self.taken..self.taken + taken]);
         self.taken += taken;
         Ok(taken)
@@ -259,6 +273,7 @@ pub(crate) fn pack(decoder: &mut Decoder, packing: Packing<'_>, halt: Halt<'_>) 
         smaller_than,
     } = packing;
     let declared = u32::try_from(tallied.pcm_bytes).unwrap_or(u32::MAX);
+
     let header = header(spec, speakers, declared);
     let length = header.len() as u64 + tallied.pcm_bytes + tallied.pcm_bytes % 2;
 
@@ -273,6 +288,7 @@ pub(crate) fn pack(decoder: &mut Decoder, packing: Packing<'_>, halt: Halt<'_>) 
         differed: false,
         failure: None,
     };
+
     let packed = packed_in_frames(
         Unpacked {
             reading: &mut pcm,
@@ -309,6 +325,7 @@ struct Counted<W> {
 impl<W: Write> Write for Counted<W> {
     fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
         let wrote = self.inner.write(bytes)?;
+
         self.written += wrote as u64;
         Ok(wrote)
     }
@@ -328,6 +345,7 @@ pub(crate) fn compressed_in_frames(
 ) -> Result<Packed> {
     let read = |source| Error::io(VaultOp::Read, from, source);
     let source = File::open(from).map_err(read)?;
+
     let length = source.metadata().map_err(read)?.len();
     packed_in_frames(
         Unpacked {
@@ -372,16 +390,22 @@ pub(crate) fn packed_in_frames<R: Read>(
 
     let mut buffer = vec![0_u8; PACKED_A_READ_AT_A_TIME];
     let mut left = length;
+
     while left > 0 {
         let framed = left.min(frame_bytes);
         let mut encoder = zstd::Encoder::new(&mut counted, ARCHIVED_AT).map_err(written)?;
+
         encoder
             .set_pledged_src_size(Some(framed))
             .map_err(written)?;
+
         let mut owed = framed;
+
         while owed > 0 {
             halt.heard()?;
+
             let taken = usize::try_from(owed.min(buffer.len() as u64)).unwrap_or(buffer.len());
+
             reading.read_exact(&mut buffer[..taken]).map_err(read)?;
             encoder.write_all(&buffer[..taken]).map_err(written)?;
             owed -= taken as u64;
@@ -396,10 +420,12 @@ pub(crate) fn packed_in_frames<R: Read>(
     if outgrown(&counted) {
         return Ok(Packed::NoSmaller);
     }
+
     let file = counted
         .inner
         .into_inner()
         .map_err(|source| written(source.into_error()))?;
+
     file.sync_all()
         .map_err(|source| Error::io(VaultOp::Settle, into, source))?;
     Ok(Packed::Within)
@@ -410,6 +436,7 @@ fn header(spec: StreamSpec, speakers: Speakers, data_bytes: u32) -> Vec<u8> {
     let channels = u16::from(count);
     let rate = spec.rate.hz();
     let block_align = channels * (WAVE_BITS / 8);
+
     let byte_rate = rate * u32::from(block_align);
     let tag = match spec.format {
         SampleFormat::F32 => IEEE_FLOAT,
@@ -425,10 +452,13 @@ fn header(spec: StreamSpec, speakers: Speakers, data_bytes: u32) -> Vec<u8> {
     };
 
     let mut bytes = Vec::with_capacity(WIDEST_HEADER);
+
     bytes.extend_from_slice(b"RIFF");
+
     let riff = data_bytes + RIFF_AND_FORMAT_HEADERS as u32 - RIFF_HEADER
         + format_bytes
         + DATA_HEADER as u32;
+
     bytes.extend_from_slice(&riff.to_le_bytes());
     bytes.extend_from_slice(b"WAVE");
     bytes.extend_from_slice(b"fmt ");
@@ -463,10 +493,13 @@ mod tests {
         const CEILING: u64 = 64 << 10;
 
         let folder = env::temp_dir().join(format!("resonate-wave-ceiling-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let from = folder.join("noise.wav");
         let into = folder.join("noise.wav.zst");
         let mut state = 0x2545_f491_u32;
+
         let noise: Vec<u8> = (0..HELD)
             .map(|_| {
                 state ^= state << 13;
@@ -475,6 +508,7 @@ mod tests {
                 state as u8
             })
             .collect();
+
         fs::write(&from, &noise).expect("a noisy file");
 
         let packed =
@@ -482,16 +516,20 @@ mod tests {
                 .expect("a compression");
 
         assert_eq!(packed, Packed::NoSmaller);
+
         let written = fs::metadata(&into).map_or(0, |held| held.len());
+
         assert!(
             written < HELD as u64 / 4,
             "the whole of the file was compressed before it was given up on: {written} bytes"
         );
+
         let _ = fs::remove_dir_all(&folder);
     }
 
     fn tallied_over(bytes: &[u8]) -> Tallied {
         let mut samples = Samples::default();
+
         for (at, piece) in bytes.chunks(4096 * 8).enumerate() {
             samples.note((at * 4096 * 8) as u64, piece);
         }
@@ -533,9 +571,11 @@ mod tests {
         const WINDOWS: usize = 40;
 
         let mut pcm = Vec::new();
+
         for window in 0..WINDOWS {
             pcm.extend(std::iter::repeat_n(window as u8, SLICE_BYTES));
         }
+
         let tallied = tallied_over(&pcm);
 
         let firsts: Vec<u8> = tallied

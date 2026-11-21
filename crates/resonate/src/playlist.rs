@@ -34,6 +34,7 @@ pub(crate) fn list_playlists(
 ) -> Result<()> {
     let order = order.meaning();
     let reading = read_as(order.reads(), reverse);
+
     let listed = library.playlists(order, reading, named)?;
 
     let mut table = Table::new(vec![
@@ -46,6 +47,7 @@ pub(crate) fn list_playlists(
         columns::pinned(),
         columns::from(),
     ]);
+
     for playlist in listed {
         table.push(vec![
             playlist.name.clone(),
@@ -114,6 +116,7 @@ pub(crate) fn ago(played: Option<SystemTime>) -> String {
 pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Result<()> {
     let library = Arc::new(open_library(cli, config)?);
     let name = wanted.name.as_str();
+
     if let Some(text) = wanted.query.as_deref() {
         return save_query(&library, name, text, wanted);
     }
@@ -124,6 +127,7 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
     let found = library
         .playlist_named(name)?
         .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(name)))?;
+
     if let Some(into) = wanted.rename.as_deref() {
         library.rename_playlist(found.id, into)?;
         said!("{}", words::main::renamed(into, &found.name));
@@ -156,6 +160,7 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
     }
     if let Some(target) = wanted.export.as_deref() {
         let written = library.export_playlist(found.id, target)?;
+
         said!(
             "{}",
             words::main::exported(
@@ -175,11 +180,14 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
             order: order.meaning(),
             reading: read_as(Direction::Ascending, wanted.reverse),
         };
+
         if wanted.keep {
             let moved = library.keep_playlist_in_order(found.id, Some(kept))?;
+
             said!("{}", now_kept(moved, &found.name, kept));
             return Ok(());
         }
+
         let moved = library.sort_playlist(found.id, kept.order, kept.reading)?;
 
         said!("{}", reordered(moved, &found.name));
@@ -200,12 +208,14 @@ pub(crate) fn playlist(cli: &Cli, config: &Config, wanted: &PlaylistArgs) -> Res
     }
     if let Some(text) = wanted.matching.as_deref().filter(|_| wanted.drop) {
         let dropped = library.remove_matching(found.id, text)?;
+
         said!("{}", taken_out(dropped, &found.name, text));
         return Ok(());
     }
 
     let matching = wanted.matching.as_deref();
     let entries = library.playlist_entries(found.id, matching)?;
+
     if entries.is_empty() {
         said!("{}", words::main::holds_nothing(&found.name));
         return Ok(());
@@ -237,6 +247,7 @@ fn copy_into(
         None => library.create_playlist(target)?,
     };
     let copied = library.copy_playlist(found.id, into, matching)?;
+
     let held = library
         .playlist(into)?
         .map_or(copied as u32, |playlist| playlist.entries);
@@ -302,6 +313,7 @@ fn understood(text: Option<&str>) -> Option<String> {
 pub(crate) fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result<()> {
     let sources = Sources::local();
     let mut wanted = Vec::with_capacity(paths.len());
+
     for path in paths.iter().map(|path| local_path(path)) {
         let location =
             MediaLocation::local(
@@ -326,6 +338,7 @@ pub(crate) fn extend(library: &Library, name: &str, paths: &[PathBuf]) -> Result
         Some(found) => (found.id, library.add_to_playlist(found.id, &wanted)?),
         None => (library.start_playlist(name, &wanted)?, wanted.len()),
     };
+
     let held = library
         .playlist(id)?
         .map_or(added as u32, |playlist| playlist.entries);
@@ -357,6 +370,7 @@ pub(crate) fn import(
         if upkeep == Upkeep::InStep {
             return Err(Error::KeptInStepOnlyWithALink { file: file.clone() });
         }
+
         let read = library.import_playlist(file, name)?;
         let held = library
             .playlist(read.id)?
@@ -419,6 +433,7 @@ fn pinning(name: &str, pinned: bool) -> String {
 
 pub(crate) fn discarded(found: &Playlist) -> String {
     let name = &found.name;
+
     if found.query.is_some() {
         return words::main::discarded_search(name);
     }
@@ -506,6 +521,7 @@ mod tests {
         else {
             panic!("--import beside --for was refused: {parsed:?}");
         };
+
         assert_eq!(wanted.r#for.as_deref(), Some("alsa_output.usb"));
     }
 
@@ -566,15 +582,19 @@ mod tests {
     #[test]
     fn a_sheet_added_to_a_playlist_is_added_as_the_rows_it_cuts() {
         let folder = env::temp_dir().join(format!("resonate-extend-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
         fs::write(folder.join("whole.wav"), analyse::tests::silent_wave()).expect("a wave file");
+
         let sheet = folder.join("sheet.cue");
+
         fs::write(
             &sheet,
             "FILE \"whole.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n  TRACK 02 \
              AUDIO\n    INDEX 01 00:00:30\n",
         )
         .expect("a sheet");
+
         let library = Library::open(&folder.join("library.db")).expect("a catalog");
 
         extend(&library, "Mixtape", &[sheet]).expect("the sheet is added");
@@ -584,6 +604,7 @@ mod tests {
             .expect("a read")
             .expect("the playlist was started");
         let cuts = library.playlist_cuts(playlist.id).expect("a read");
+
         assert_eq!(cuts.len(), 2, "a sheet was stored as one row");
         assert!(cuts.iter().all(|cut| cut.span.is_some()
             && cut.location.as_path() == Some(from_here(&folder.join("whole.wav")).as_path())));
@@ -615,6 +636,7 @@ mod tests {
         ] {
             for flag in ["--lossy", "--replace-lossy"] {
                 let mut arguments = vec!["resonate", "playlist", "Road", flag];
+
                 arguments.extend_from_slice(other);
 
                 assert!(!taken(&arguments), "{arguments:?} was taken");

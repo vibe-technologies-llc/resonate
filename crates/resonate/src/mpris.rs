@@ -178,6 +178,7 @@ impl Host for Desktop {
         let sinks = self.player.sinks();
         let chosen = self.player.output_settings().sink.clone();
         let sounding = self.player.state().output.map(|output| output.sink);
+
         let found = match (sounding, &chosen) {
             (Some(id), _) => sinks.iter().find(|sink| sink.id == id),
             (None, Some(name)) => sinks.iter().find(|sink| sink.is_named(name)),
@@ -270,9 +271,11 @@ impl Host for Desktop {
                 span,
             }],
         };
+
         if items.is_empty() {
             return Opened::Refused;
         }
+
         let insert = Command::Insert {
             items,
             at: Placement::Next,
@@ -518,6 +521,7 @@ fn spelled<Choice: ValueEnum>(value: &str) -> Option<Choice> {
 #[cfg(feature = "ui")]
 pub(crate) fn tuning_of(cli: &crate::cli::Cli) -> Vec<(Tunable, String)> {
     let mut tuning = Vec::new();
+
     if let Some(sink) = &cli.sink {
         tuning.push((Tunable::Sink, sink.clone()));
     }
@@ -713,6 +717,7 @@ mod tests {
         for setting in Tunable::ALL {
             assert_eq!(Tunable::named(setting.name()), Some(setting));
         }
+
         assert_eq!(
             spelled::<QualityArg>("very-high"),
             Some(QualityArg::VeryHigh)
@@ -806,8 +811,10 @@ mod tests {
         let folder = crate::fixtures::scratch("mpris-settings");
         let settings = folder.join("config.toml");
         let other = folder.join("other.toml");
+
         fs::write(&settings, "").expect("a settings file");
         fs::write(&other, "").expect("another settings file");
+
         let roundabout = folder.join(".").join("config.toml");
 
         assert!(same_file(&settings, &roundabout));

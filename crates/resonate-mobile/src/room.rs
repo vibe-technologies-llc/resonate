@@ -165,6 +165,7 @@ impl Room {
             source,
         })?;
         let mut found = Vec::new();
+
         for entry in listed {
             let path = entry
                 .map_err(|source| Error::ImpulseFile {
@@ -210,10 +211,13 @@ impl Room {
 
     fn stage_as(&self, stem: &str, bytes: &[u8], extension: &str) -> Result<PathBuf> {
         let extension = admitted(extension)?;
+
         if bytes.len() > IMPULSE_BYTES_AT_MOST {
             return Err(Error::ImpulseTooLarge);
         }
+
         let path = self.folder.join(format!("{stem}.{extension}"));
+
         fs::write(&path, bytes).map_err(|source| Error::ImpulseFile {
             op: ImpulseOp::Keep,
             source,
@@ -229,14 +233,17 @@ impl Room {
     ) -> Result<Impulse> {
         self.drop_stemmed(LEFT_STEM)?;
         self.drop_stemmed(RIGHT_STEM)?;
+
         let left_path = self.stage_as(LEFT_STEM, left.bytes, left.extension)?;
         let right_path = match self.stage_as(RIGHT_STEM, right.bytes, right.extension) {
             Ok(path) => path,
             Err(error) => {
                 let _ = fs::remove_file(&left_path);
+
                 return Err(error);
             }
         };
+
         let paired = read_binaural_pair(
             sources,
             &MediaLocation::local(&left_path),
@@ -256,6 +263,7 @@ impl Room {
             .and_then(|extension| extension.to_str())
             .ok_or(Error::ImpulseExtension)?;
         let target = self.folder.join(format!("{KEPT_STEM}.{extension}"));
+
         fs::rename(candidate, &target).map_err(|source| Error::ImpulseFile {
             op: ImpulseOp::Keep,
             source,
@@ -283,22 +291,27 @@ impl Room {
             Ok(impulse) => impulse,
             Err(error) => {
                 let _ = fs::remove_file(candidate);
+
                 return Err(error);
             }
         };
+
         self.promote(candidate)?;
         Ok(impulse)
     }
 
     fn begin_staging(&self, extension: &str) -> Result<()> {
         let extension = admitted(extension)?;
+
         self.abandon_staging()?;
         self.drop_candidates()?;
+
         let path = self.folder.join(format!("{CANDIDATE_STEM}.{extension}"));
         let held = Held::made(&path).map_err(|source| Error::ImpulseFile {
             op: ImpulseOp::Keep,
             source,
         })?;
+
         *self.staging.lock() = Some(Staging {
             held,
             path,
@@ -310,8 +323,10 @@ impl Room {
 
     fn stage_chunk(&self, chunk: &[u8]) -> Result<()> {
         let mut staging = self.staging.lock();
+
         let open = staging.as_mut().ok_or(Error::ImpulseNotStaged)?;
         let written = open.written.saturating_add(chunk.len() as u64);
+
         let appended = if written > open.at_most {
             Err(Error::ImpulseTooLarge)
         } else {
@@ -338,12 +353,14 @@ impl Room {
     fn finish_staging(&self, sources: &Sources) -> Result<Impulse> {
         let staged = self.staging.lock().take().ok_or(Error::ImpulseNotStaged)?;
         let impulse = self.settle(&staged.path, sources)?;
+
         drop(staged);
         Ok(impulse)
     }
 
     fn abandon_staging(&self) -> Result<()> {
         let abandoned = self.staging.lock().take();
+
         if let Some(abandoned) = abandoned {
             fs::remove_file(&abandoned.path).map_err(|source| Error::ImpulseFile {
                 op: ImpulseOp::Remove,
@@ -375,12 +392,14 @@ impl MobilePlayer {
             (Some(_), Some(path)) => {
                 let impulse = Arc::new(read(&self.sources, &path, speakers)?);
                 let described = RoomCorrection::of(&impulse);
+
                 self.command(Command::SetConvolution(Some(impulse.clone())))?;
                 self.room.apply(Some(impulse));
                 Some(described)
             }
             _ => None,
         };
+
         self.room.speak_at(speakers);
         Ok(described)
     }
@@ -453,6 +472,7 @@ impl MobilePlayer {
             _ => None,
         };
         let described = impulse.as_deref().map(RoomCorrection::of);
+
         self.command(Command::SetConvolution(impulse.clone()))?;
         self.room.apply(impulse);
         Ok(described)
@@ -506,6 +526,7 @@ pub(crate) fn wave(samples: &[i16]) -> Vec<u8> {
     let rate: u32 = 48_000;
     let data = u32::try_from(samples.len() * 2).expect("a short wave");
     let mut bytes = Vec::new();
+
     bytes.extend_from_slice(b"RIFF");
     bytes.extend_from_slice(&(36 + data).to_le_bytes());
     bytes.extend_from_slice(b"WAVEfmt ");
@@ -535,6 +556,7 @@ mod tests {
         let folder =
             std::env::temp_dir().join(format!("resonate-room-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -548,7 +570,9 @@ mod tests {
         let older = room
             .stage(b"an older response", "flac")
             .expect("a first file");
+
         room.promote(&older).expect("an older response kept");
+
         let impulse = room
             .keep(&wave(&[i16::MAX, 0, 0, 0, 0, 0, 0, 0]), "WAV", &sources)
             .expect("a kept response");
@@ -569,6 +593,7 @@ mod tests {
     fn stereo_wave(frames: &[[i16; 2]], rate: u32) -> Vec<u8> {
         let data = u32::try_from(frames.len() * 4).expect("a short wave");
         let mut bytes = Vec::new();
+
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + data).to_le_bytes());
         bytes.extend_from_slice(b"WAVEfmt ");
@@ -614,12 +639,14 @@ mod tests {
         assert!(kept.is_crossed());
         assert_eq!(RoomCorrection::of(&kept).channels, 4);
         assert_eq!(fs::read_dir(&folder).expect("a listing").count(), 1);
+
         let again = read(
             &sources,
             &room.kept().expect("a listing").expect("a file"),
             room.speakers(),
         )
         .expect("read back");
+
         assert!(again.is_crossed());
     }
 
@@ -628,8 +655,10 @@ mod tests {
         let folder = folder("pair-refused");
         let room = Room::under(folder.clone());
         let sources = Sources::local();
+
         room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
             .expect("a kept response");
+
         let left = stereo_wave(&[[16_384, 4_096], [0, 0]], 48_000);
         let slower = stereo_wave(&[[2_048, 16_384], [0, 0]], 44_100);
         let longer = stereo_wave(&[[2_048, 16_384], [0, 0], [0, 0]], 48_000);
@@ -660,6 +689,7 @@ mod tests {
 
     fn head_related_set() -> Vec<u8> {
         let mut impulses = Vec::new();
+
         for measurement in 0..2 {
             for ear in 0..2 {
                 for frame in 0..8 {
@@ -714,6 +744,7 @@ mod tests {
     fn a_set_larger_than_a_whole_read_allows() -> Vec<u8> {
         let mut impulses = Vec::with_capacity(LARGE_SET_MEASUREMENTS * 2 * LARGE_SET_TAPS);
         let mut positions = Vec::with_capacity(LARGE_SET_MEASUREMENTS * 3);
+
         for measurement in 0..LARGE_SET_MEASUREMENTS {
             for ear in 0..2 {
                 for frame in 0..LARGE_SET_TAPS {
@@ -760,12 +791,14 @@ mod tests {
         let room = Room::under(folder.clone());
         let sources = Sources::local();
         let set = a_set_larger_than_a_whole_read_allows();
+
         assert!(set.len() > IMPULSE_BYTES_AT_MOST);
 
         room.begin_staging("SOFA").expect("staging begun");
         for chunk in set.chunks(IMPULSE_CHUNK_BYTES as usize) {
             room.stage_chunk(chunk).expect("a chunk staged");
         }
+
         let impulse = room.finish_staging(&sources).expect("a kept set");
 
         assert_eq!(
@@ -812,13 +845,18 @@ mod tests {
         let folder = folder("chunked-refused");
         let room = Room::under(folder.clone());
         let sources = Sources::local();
+
         room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
             .expect("a kept response");
+
         let chunk = vec![0; IMPULSE_CHUNK_BYTES as usize];
 
         let named = room.begin_staging("txt");
+
         room.begin_staging("wav").expect("staging begun");
+
         let mut refused = Ok(());
+
         for _ in 0..=IMPULSE_BYTES_AT_MOST / chunk.len() {
             refused = refused.and_then(|()| room.stage_chunk(&chunk));
         }
@@ -841,11 +879,13 @@ mod tests {
         let folder = folder("chunked-unreadable");
         let room = Room::under(folder.clone());
         let sources = Sources::local();
+
         room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
             .expect("a kept response");
 
         room.begin_staging("wav").expect("staging begun");
         room.stage_chunk(b"not a wave at all").expect("a chunk");
+
         let refused = room.finish_staging(&sources);
 
         assert!(refused.is_err());
@@ -875,6 +915,7 @@ mod tests {
         let folder = folder("angle");
         let room = Room::under(folder.clone());
         let sources = Sources::local();
+
         room.keep(&head_related_set(), "sofa", &sources)
             .expect("a kept set");
         room.speak_at(Speakers::at(
@@ -896,6 +937,7 @@ mod tests {
         let folder = folder("elevation");
         let room = Room::under(folder.clone());
         let sources = Sources::local();
+
         room.keep(&head_related_set(), "sofa", &sources)
             .expect("a kept set");
         room.speak_at(
@@ -925,6 +967,7 @@ mod tests {
         assert_eq!(limits.angle_standard_degrees, 30);
 
         let player_yaw = |degrees: i16| HeadYaw::from_degrees(degrees).is_ok();
+
         assert!(player_yaw(limits.yaw_least_degrees));
         assert!(player_yaw(limits.yaw_most_degrees));
         assert!(!player_yaw(limits.yaw_least_degrees - 1));
@@ -936,6 +979,7 @@ mod tests {
         let folder = folder("yaw");
         let room = Room::under(folder.clone());
         let sources = Sources::local();
+
         room.keep(&head_related_set(), "sofa", &sources)
             .expect("a kept set");
         room.speak_at(Speakers::STANDARD.turned_to(HeadYaw::from_degrees(90).expect("a yaw")));
@@ -967,6 +1011,7 @@ mod tests {
 
         room.keep(&wave(&[i16::MAX, 0, 0, 0]), "wav", &sources)
             .expect("a kept response");
+
         let refused = room.keep(b"not a wave at all", "wav", &sources);
 
         assert!(refused.is_err());

@@ -28,10 +28,12 @@ impl RootView {
             .extensions;
         let selected = extensions.selected().count();
         let mut choices = div().flex().flex_wrap().gap_x_1().gap_y_0p5();
+
         for extension in AUDIO_EXTENSIONS {
             let extension = *extension;
             let included = extensions.selected().any(|selected| selected == extension);
             let id = SharedString::from(format!("music-extension-{extension}"));
+
             choices = choices.child(
                 self.in_the_ring(
                     extension,
@@ -48,6 +50,7 @@ impl RootView {
                             .library
                             .music_filters()
                             .extensions;
+
                         this.set_music_extensions(extensions.toggled(extension), cx);
                     },
                     cx,
@@ -92,17 +95,20 @@ impl RootView {
 
     pub(super) fn hidden_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let hidden = self.library.read(cx).hidden();
+
         if hidden.counted == 0 {
             return kit::rows().child(note(words::settings_filters::nothing_hidden()));
         }
 
         let shown = hidden.tracks.len() as u64;
         let counted = hidden.counted;
+
         let mut listed = kit::rows().child(note(if shown < counted {
             words::settings_filters::songs_hidden_and_listed(counted, shown)
         } else {
             words::settings_filters::songs_hidden(counted)
         }));
+
         for track in &hidden.tracks {
             let id = track.id;
             let under = track.artist.clone().unwrap_or_default();
@@ -113,6 +119,7 @@ impl RootView {
                 words::settings_filters::show_in_the_library_again(&track.title),
                 kit::Tone::Ghost,
             );
+
             listed = listed.child(kit::row(
                 track.title.clone(),
                 under,
@@ -163,6 +170,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let library = &cx.global::<ResonateApp>().library;
+
         library.filter_music(MusicFilters {
             extensions,
             ..library.music_filters()
@@ -196,6 +204,7 @@ impl RootView {
         {
             return;
         }
+
         let held = cx
             .global::<ResonateApp>()
             .library
@@ -236,6 +245,7 @@ impl RootView {
             );
             return;
         };
+
         self.set_minimum_length(length, cx);
         window.focus(&self.focus, cx);
     }
@@ -246,6 +256,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let library = &cx.global::<ResonateApp>().library;
+
         library.filter_music(MusicFilters {
             minimum_length,
             ..library.music_filters()
@@ -281,19 +292,26 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         for title in ["Echoes", "Time", "Money"] {
             folder.tone(&format!("{title}.wav"), 1);
         }
+
         let library = Arc::new(Library::open_in_memory().expect("a catalog"));
+
         Driven::scanned(&library, &folder);
+
         let tracks = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks");
+
         for track in &tracks[..2] {
             library.hide_track(track.id, true).expect("a hide");
         }
+
         let first = library.hidden_tracks(10).expect("the hidden").tracks[0].id;
         let mut driven = Driven::open(cx, Arc::clone(&library));
+
         driven.click("tab-settings");
         driven.click("category-Filters");
         driven.until(|root, cx| root.library.read(cx).hidden().counted == 2);
@@ -302,6 +320,7 @@ mod tests {
             format!("show-hidden-{}", first.get()).into_boxed_str(),
         ));
         driven.until(|root, cx| root.library.read(cx).hidden().counted == 1);
+
         assert!(
             !library
                 .track(first)
@@ -312,6 +331,7 @@ mod tests {
 
         driven.click("show-every-hidden");
         driven.until(|root, cx| root.library.read(cx).hidden().counted == 0);
+
         assert_eq!(library.hidden_tracks(10).expect("the hidden").counted, 0);
     }
 
@@ -319,9 +339,11 @@ mod tests {
     fn filters_can_be_changed_reset_and_cancelled_from_settings(cx: &mut TestAppContext) {
         let library = Arc::new(Library::open_in_memory().expect("a catalog"));
         let mut driven = Driven::open(cx, Arc::clone(&library));
+
         driven.click("tab-settings");
         driven.click("category-Filters");
         driven.click("music-extension-aac");
+
         assert!(
             !library
                 .music_filters()
@@ -329,11 +351,15 @@ mod tests {
                 .selected()
                 .any(|extension| extension == "aac")
         );
+
         driven.click("music-extensions-clear");
+
         assert_eq!(library.music_filters().extensions.selected().count(), 0);
+
         driven.click("music-extension-mp3");
         driven.click("music-extension-flac");
         driven.click("music-extension-m4a");
+
         assert_eq!(
             library
                 .music_filters()
@@ -342,22 +368,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["flac", "m4a", "mp3"],
         );
+
         driven.click("music-extensions-all");
+
         assert_eq!(
             library.music_filters().extensions,
             MusicExtensions::default()
         );
+
         driven.click("music-extension-aac");
+
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.put_back(Group::MusicExtensions, cx)));
+
         assert_eq!(
             library.music_filters().extensions,
             MusicExtensions::default()
         );
+
         driven.focus_on(|root, cx| root.settings_fields.read(cx).minimum_length.clone());
+
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             let field = root
                 .read(cx)
@@ -366,10 +401,13 @@ mod tests {
                 .minimum_length
                 .clone()
                 .clone();
+
             field.update(cx, |field, cx| field.hold("600".to_owned(), cx));
         });
         driven.cx.simulate_keystrokes("enter");
+
         assert_eq!(library.music_filters().minimum_length.seconds(), 600);
+
         driven.focus_on(|root, cx| root.settings_fields.read(cx).minimum_length.clone());
         driven.cx.update(|_, cx| {
             let field = root
@@ -379,11 +417,15 @@ mod tests {
                 .minimum_length
                 .clone()
                 .clone();
+
             field.update(cx, |field, cx| field.hold("601".to_owned(), cx));
         });
         driven.cx.simulate_keystrokes("enter");
+
         assert_eq!(library.music_filters().minimum_length.seconds(), 600);
+
         driven.cx.simulate_keystrokes("escape");
+
         assert_eq!(
             driven.read(|root, cx| root
                 .settings_fields
@@ -394,9 +436,11 @@ mod tests {
                 .to_owned()),
             "600"
         );
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.put_back(Group::MinimumLength, cx)));
+
         assert_eq!(library.music_filters(), MusicFilters::default());
     }
 }

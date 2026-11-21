@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::{
@@ -62,6 +62,7 @@ struct StampSlot {
 impl StampSlot {
     fn write(&self, epoch: u64, stamp: RingStamp) {
         let sequence = self.sequence.load(Ordering::Relaxed);
+
         self.sequence
             .store(sequence.wrapping_add(1), Ordering::Relaxed);
         fence(Ordering::Release);
@@ -79,6 +80,7 @@ impl StampSlot {
     fn read(&self) -> Option<(u64, RingStamp)> {
         for _ in 0..STAMP_READ_TRIES {
             let before = self.sequence.load(Ordering::Acquire);
+
             if before == 0 {
                 return None;
             }
@@ -86,6 +88,7 @@ impl StampSlot {
                 std::hint::spin_loop();
                 continue;
             }
+
             let epoch = self.epoch.load(Ordering::Relaxed);
             let stamp = RingStamp {
                 taken: Moment::from_nanos(self.taken.load(Ordering::Relaxed)),
@@ -95,6 +98,7 @@ impl StampSlot {
                 pulled: self.pulled.load(Ordering::Relaxed),
                 flowing: self.flowing.load(Ordering::Relaxed),
             };
+
             fence(Ordering::Acquire);
             if self.sequence.load(Ordering::Relaxed) == before {
                 return Some((epoch, stamp));
@@ -191,7 +195,9 @@ pub fn ring(
     let splice = Splice::default();
     let hold = Hold::default();
     let fader = Fader::default();
+
     fader.over.store(fade.get().max(1), Ordering::Release);
+
     let prime = bytes / bytes_per_frame.get() as usize / 2;
     let fades = matches!(silence, Silence::Unmarked) && fade > Frames::ZERO;
     let faded = match entering {
@@ -200,6 +206,7 @@ pub fn ring(
     };
     let stamped = Arc::new(StampSlot::default());
     let lockstep = Lockstep::holding(entering == Entering::InStep);
+
     Moment::start_the_clock();
 
     (
@@ -506,7 +513,9 @@ impl RingProducer {
 
     pub fn turn_at(&mut self, rendered: f32, heard: f32, ahead: usize) -> Turned {
         self.turned = self.turned.wrapping_add(1);
+
         let turned = Turned(self.turned);
+
         self.hear_after(turned, heard);
         self.rendering = rendered;
         self.owed = Some(Rendered {
@@ -566,10 +575,12 @@ impl RingProducer {
         if self.is_discarding() {
             return 0;
         }
+
         let stride = self.bytes_per_frame.get() as usize;
         let Some(tail) = buffer.as_bytes().get(start.saturating_mul(stride)..) else {
             return 0;
         };
+
         let frames = (tail.len() / stride).min(self.free_frames());
         self.push(tail, frames)
     }
@@ -580,7 +591,9 @@ impl RingProducer {
             return 0;
         };
         let (pushed, _) = self.inner.push_partial_slice(whole);
+
         let frames = pushed.len() / stride;
+
         if let Some(laid) = whole.get(..frames * stride) {
             self.remember(laid);
         }
@@ -590,14 +603,17 @@ impl RingProducer {
 
     fn remember(&mut self, laid: &[u8]) {
         let room = self.mirror.len();
+
         if room == 0 {
             return;
         }
+
         let stride = self.bytes_per_frame.get() as usize;
         let mut at = (self.written.saturating_mul(stride as u64) % room as u64) as usize;
         let mut from = laid;
         while !from.is_empty() {
             let run = from.len().min(room - at);
+
             if let (Some(into), Some(taken)) = (self.mirror.get_mut(at..at + run), from.get(..run))
             {
                 into.copy_from_slice(taken);
@@ -648,8 +664,10 @@ impl RingProducer {
         if self.is_discarding() || self.is_splicing() {
             return None;
         }
+
         let read = self.written.saturating_sub(self.occupied_frames() as u64);
         let pulled = self.splice.pulled.load(Ordering::Relaxed).saturating_mul(2);
+
         let at = read.saturating_add(ahead.get().max(pulled));
         let mirrored = (self.mirror.len() / self.bytes_per_frame.get() as usize) as u64;
         let remembered = self.written.saturating_sub(mirrored);
@@ -671,17 +689,22 @@ impl RingProducer {
     pub fn widen_what_was_written(&self, at: u64, into: &mut [f64]) -> usize {
         let stride = self.bytes_per_frame.get() as usize;
         let room = self.mirror.len();
+
         let mirrored = (room / stride) as u64;
+
         if room == 0 || at < self.written.saturating_sub(mirrored) || at >= self.written {
             return 0;
         }
+
         let width = usize::from(self.format.bytes_per_sample().get());
         let samples_a_frame = (stride / width).max(1);
         let frames = (into.len() / samples_a_frame).min((self.written - at) as usize);
         let first = (at.saturating_mul(stride as u64) % room as u64) as usize;
+
         for (index, slot) in into.iter_mut().take(frames * samples_a_frame).enumerate() {
             let byte = (first + index * width) % room;
             let mut word = [0_u8; SampleFormat::MAX_BYTES];
+
             for (offset, held) in word.iter_mut().take(width).enumerate() {
                 *held = self
                     .mirror
@@ -696,14 +719,17 @@ impl RingProducer {
 
     pub fn write_spliced(&mut self, buffer: &AudioBuffer) -> usize {
         self.hand_over_what_is_owed();
+
         let stride = self.bytes_per_frame.get() as usize;
         let bytes = buffer.as_bytes();
+
         let frames = (bytes.len() / stride).min(self.room_frames());
         self.push(bytes, frames)
     }
 
     pub fn splice(&mut self, at: u64, to: u64) {
         let spliced = Spliced { at, to };
+
         self.splice.at.store(at, Ordering::Relaxed);
         self.splice.to.store(to, Ordering::Relaxed);
         self.splices_asked = self.splices_asked.wrapping_add(1);
@@ -762,6 +788,7 @@ impl RingConsumer {
 
     fn look_for_a_splice(&mut self) {
         let asked = self.splice.asked.load(Ordering::Acquire);
+
         if asked == self.splices_seen {
             return;
         }
@@ -776,11 +803,14 @@ impl RingConsumer {
         let Some(spliced) = self.pending else {
             return;
         };
+
         if self.read < spliced.at {
             return;
         }
+
         let stride = self.stride();
         let stale = (spliced.stale() as usize).min(self.inner.slots() / stride);
+
         if let Ok(passed) = self.inner.read_chunk(stale.saturating_mul(stride)) {
             passed.commit_all();
         }
@@ -802,20 +832,26 @@ impl RingConsumer {
         let mut filled = 0;
         loop {
             self.pass_over_what_was_spliced_away();
+
             let room = into.len().saturating_sub(filled) / stride;
             let frames = self.frames_before_the_splice(room);
+
             if frames == 0 {
                 return filled;
             }
+
             let Some(part) = into.get_mut(filled..filled.saturating_add(frames * stride)) else {
                 return filled;
             };
+
             if self.opening {
                 self.opening = false;
                 self.taken_from = Some(self.read);
             }
+
             let (popped, _) = self.inner.pop_partial_slice(part);
             let taken = popped.len();
+
             self.shape(popped, target);
             filled = filled.saturating_add(taken);
             if taken < frames * stride {
@@ -834,6 +870,7 @@ impl RingConsumer {
 
     fn apply_discard(&mut self) {
         let requested = self.discard.requested.load(Ordering::Acquire);
+
         if requested == self.seen {
             return;
         }
@@ -863,6 +900,7 @@ impl RingConsumer {
 
     fn held(&self, frames: usize) -> bool {
         let lead = self.hold.lead_in.load(Ordering::Acquire);
+
         if lead == 0 {
             return false;
         }
@@ -875,6 +913,7 @@ impl RingConsumer {
     fn hush(&mut self, dst: &mut [u8]) -> usize {
         if matches!(self.silence, Silence::Unmarked) {
             let whole = dst.len() / self.stride() * self.stride();
+
             if let Some(frames) = dst.get_mut(..whole) {
                 frames.fill(0);
             }
@@ -900,6 +939,7 @@ impl RingConsumer {
 
     fn pad(&mut self, gap: &mut [u8]) -> usize {
         let written = self.silence.write(gap, self.bytes_per_frame);
+
         self.padded |= written > 0;
         written
     }
@@ -926,6 +966,7 @@ impl RingConsumer {
         };
         let (head, tail) = waiting.as_slices();
         let mut sample = [0_u8; SampleFormat::MAX_BYTES];
+
         for (slot, byte) in sample.iter_mut().zip(head.iter().chain(tail)) {
             *slot = *byte;
         }
@@ -953,8 +994,11 @@ impl RingConsumer {
         let stride = self.stride();
         let frames = dst.len() / stride;
         let first = stamp.map(|stamp| stamp.first_heard(self.rate));
+
         let held_back = self.held_back_for_the_lockstep(frames, first);
+
         self.taken_from = None;
+
         let hushed = match dst.get_mut(..held_back.saturating_mul(stride)) {
             Some(gap) if held_back > 0 => self.hush(gap),
             Some(_) | None => 0,
@@ -968,6 +1012,7 @@ impl RingConsumer {
             self.fader.pulls.fetch_add(1, Ordering::Relaxed);
             hushed
         };
+
         if let Some(stamp) = stamp {
             self.note_when_it_is_heard(stamp, held_back, frames);
         }
@@ -987,6 +1032,7 @@ impl RingConsumer {
             pulled: frames as u64,
             flowing: self.taken_from.is_some(),
         };
+
         self.stamped.write(self.seen, stamp);
     }
 
@@ -994,19 +1040,25 @@ impl RingConsumer {
         if !self.lockstep.holding.load(Ordering::Acquire) {
             return 0;
         }
+
         let Some(first) = first else {
             self.lockstep.holding.store(false, Ordering::Release);
             return 0;
         };
+
         self.apply_discard();
         self.drop_what_the_lockstep_asks();
+
         let release = self.lockstep.release.load(Ordering::Acquire);
+
         if release == NOT_YET || self.lockstep.drops_pending() {
             return frames;
         }
+
         let ahead = (Moment::from_nanos(release).frames_since(first, self.rate)
             - A_MOMENT_ROUNDED_BY_FRAMES)
             .ceil();
+
         if ahead >= frames as f64 {
             return frames;
         }
@@ -1017,10 +1069,13 @@ impl RingConsumer {
     fn drop_what_the_lockstep_asks(&mut self) {
         let asked = self.lockstep.drops_asked.load(Ordering::Acquire);
         let done = self.lockstep.drops_done.load(Ordering::Acquire);
+
         let owed = asked.saturating_sub(done);
+
         if owed == 0 {
             return;
         }
+
         let stride = self.stride();
         let frames = owed.min(self.available_frames() as u64) as usize;
         if let Ok(dropped) = self.inner.read_chunk(frames.saturating_mul(stride)) {
@@ -1050,7 +1105,9 @@ impl RingConsumer {
         if self.refilling() {
             return self.pad(dst);
         }
+
         let silenced = self.fader.fading.read() != Fading::Open;
+
         if silenced && (!self.fades || self.level <= SILENT) {
             self.fader.fading.went_quiet();
             return self.hush(dst);
@@ -1068,17 +1125,23 @@ impl RingConsumer {
         } else {
             wanted
         };
+
         let frames = wanted.min(self.available_frames()).min(most);
         let Some(whole) = rest.get_mut(..frames.saturating_mul(stride)) else {
             return spliced;
         };
 
         let target = if silenced { SILENT } else { WHOLE };
+
         self.opening = spliced == 0;
+
         let popped = self.take_into(whole, target);
+
         self.opening = false;
+
         let taken = popped / stride;
         let filled = spliced.saturating_add(popped);
+
         if let Some(last) = popped
             .checked_sub(stride)
             .and_then(|from| whole.get(from..popped))
@@ -1125,10 +1188,12 @@ impl RingConsumer {
         let frames = (dst.len() / stride)
             .min(self.available_frames())
             .min(self.frames_until_silent());
+
         let faded = match dst.get_mut(..frames.saturating_mul(stride)) {
             Some(whole) => self.take_into(whole, SILENT),
             None => 0,
         };
+
         if self.level <= SILENT || self.available_frames() == 0 {
             self.apply_discard();
         }
@@ -1171,9 +1236,11 @@ impl RingConsumer {
 
     fn take_what_was_rendered(&mut self) -> bool {
         let mut stepped = false;
+
         while let Ok(next) = self.announced.peek() {
             let reached =
                 next.epoch < self.seen || (next.epoch == self.seen && next.from <= self.read);
+
             if !reached {
                 return stepped;
             }
@@ -1182,6 +1249,7 @@ impl RingConsumer {
                 self.step_to(heard);
                 stepped = true;
             }
+
             let _ = self.announced.pop();
         }
         stepped
@@ -1206,6 +1274,7 @@ impl RingConsumer {
         let stride = self.stride();
         let count = frames.len() / stride;
         let mut wanted = self.wanted();
+
         if !self.fades {
             self.read = self.read.saturating_add(count as u64);
             self.take_what_was_rendered();
@@ -1218,6 +1287,7 @@ impl RingConsumer {
             self.read = self.read.saturating_add(count as u64);
             return;
         }
+
         let step = self.step();
         for frame in frames.chunks_exact_mut(stride) {
             if self.take_what_was_rendered() {
@@ -1229,6 +1299,7 @@ impl RingConsumer {
             if self.level < WHOLE || target < WHOLE {
                 self.level = toward(self.level, target, step);
             }
+
             let factor = self.level * self.trim();
             if factor != WHOLE {
                 scale(frame, self.format, factor);
@@ -1262,6 +1333,7 @@ fn scale(frame: &mut [u8], format: SampleFormat, level: f64) {
         SampleFormat::S16 => {
             for sample in frame.as_chunks_mut::<2>().0 {
                 let scaled = (f64::from(i16::from_ne_bytes(*sample)) * level).round() as i16;
+
                 *sample = scaled.to_ne_bytes();
             }
         }
@@ -1270,18 +1342,21 @@ fn scale(frame: &mut [u8], format: SampleFormat, level: f64) {
                 let scaled = (f64::from(i32::from_ne_bytes(*sample)) * level)
                     .round()
                     .clamp(S24_LEAST, S24_GREATEST) as i32;
+
                 *sample = scaled.to_ne_bytes();
             }
         }
         SampleFormat::S32 => {
             for sample in frame.as_chunks_mut::<4>().0 {
                 let scaled = (f64::from(i32::from_ne_bytes(*sample)) * level).round() as i32;
+
                 *sample = scaled.to_ne_bytes();
             }
         }
         SampleFormat::F32 => {
             for sample in frame.as_chunks_mut::<4>().0 {
                 let scaled = (f64::from(f32::from_ne_bytes(*sample)) * level) as f32;
+
                 *sample = scaled.to_ne_bytes();
             }
         }
@@ -1341,6 +1416,7 @@ mod tests {
 
     fn steady_at(level: i16, frames: usize) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), frames);
+
         if let SampleData::S16(store) = buffer.data_mut() {
             store.fill(level);
         }
@@ -1365,6 +1441,7 @@ mod tests {
 
     fn ramp(format: SampleFormat, frames: usize) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(spec(format), frames);
+
         match buffer.data_mut() {
             SampleData::S16(store) => {
                 for (index, slot) in store.iter_mut().enumerate() {
@@ -1416,7 +1493,9 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         drop(consumer);
+
         assert!(producer.is_abandoned());
     }
 
@@ -1441,6 +1520,7 @@ mod tests {
             assert_eq!(producer.write(&source), 128);
 
             let mut sunk = vec![0_u8; source.as_bytes().len()];
+
             assert_eq!(consumer.fill(&mut sunk), sunk.len());
             assert_eq!(sunk, source.as_bytes(), "{format} did not survive the ring");
         }
@@ -1472,16 +1552,23 @@ mod tests {
             Entering::InStep,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S32, 200));
+
         let start = Moment::from_nanos(1_000_000_000);
         let mut held = vec![0xAA_u8; 32 * 8];
 
         consumer.fill_stamped(&mut held, stamped_at(start));
+
         let waiting = producer.stamp().expect("the held ring was stamped");
+
         producer.drop_ahead(10);
         producer.release_at(start.after_frames(37.0, rate));
+
         let mut released = vec![0xAA_u8; 32 * 8];
+
         consumer.fill_stamped(&mut released, stamped_at(start.after_frames(32.0, rate)));
+
         let sounding = producer.stamp().expect("the released ring was stamped");
         let lefts = lefts_of_32(&released);
 
@@ -1518,7 +1605,9 @@ mod tests {
             Entering::InStep,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S32, 64));
+
         let mut sunk = vec![0_u8; 16 * 8];
 
         consumer.fill(&mut sunk);
@@ -1539,11 +1628,14 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S32, 100));
+
         let start = Moment::from_nanos(5_000_000);
         let mut sunk = vec![0_u8; 16 * 8];
 
         assert_eq!(producer.stamp(), None);
+
         consumer.fill_stamped(&mut sunk, stamped_at(start));
         consumer.fill_stamped(
             &mut sunk,
@@ -1552,6 +1644,7 @@ mod tests {
                 ahead: Frames(44),
             },
         );
+
         let stamp = producer.stamp().expect("a stamped pull was stamped");
 
         assert!(stamp.flowing);
@@ -1569,6 +1662,7 @@ mod tests {
         );
 
         producer.discard_buffered();
+
         assert_eq!(producer.stamp(), None, "a stamp outlived the discard");
     }
 
@@ -1585,10 +1679,12 @@ mod tests {
         );
 
         let written = producer.write(&source);
+
         assert!(written < 100);
         assert_eq!(consumer.available_frames(), written);
 
         let mut sunk = vec![0_u8; written * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(sunk, &source.as_bytes()[..written * 4]);
     }
@@ -1607,9 +1703,12 @@ mod tests {
 
         let mut written = 0;
         let mut sunk = Vec::new();
+
         while written < 200 {
             written += producer.write_from(&source, written);
+
             let mut block = vec![0_u8; consumer.available_frames() * 8];
+
             consumer.fill(&mut block);
             sunk.extend_from_slice(&block);
         }
@@ -1627,9 +1726,11 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 10));
 
         let mut sunk = vec![0_u8; 32 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), 10 * 4);
 
         assert_eq!(faults.next_fault(), Some(RtFault::Underrun));
@@ -1647,9 +1748,11 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 32));
 
         let mut sunk = vec![0_u8; 32 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(faults.next_fault(), None);
@@ -1667,12 +1770,14 @@ mod tests {
         );
 
         let mut sunk = vec![0_u8; 4];
+
         for _ in 0..FAULT_SLOTS + 10 {
             consumer.fill(&mut sunk);
         }
 
         let mut seen = 0;
         let mut dropped = 0;
+
         while let Some(fault) = faults.next_fault() {
             match fault {
                 RtFault::Dropped { count } => dropped += count,
@@ -1699,10 +1804,13 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 10));
 
         let mut sunk = vec![0_u8; 32 * 4];
+
         consumer.fill(&mut sunk);
+
         assert_eq!(faults.went_without(), Frames(22));
         assert_eq!(
             faults.went_without(),
@@ -1713,6 +1821,7 @@ mod tests {
         producer.write(&ramp(SampleFormat::S16, 4));
         producer.finish();
         consumer.fill(&mut sunk);
+
         assert_eq!(
             faults.went_without(),
             Frames::ZERO,
@@ -1730,25 +1839,32 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 128));
 
         producer.discard_buffered();
+
         assert!(producer.is_discarding());
         assert_eq!(producer.write(&ramp(SampleFormat::S16, 8)), 0);
 
         let mut sunk = vec![0_u8; 32 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), 0);
         assert!(!producer.is_discarding());
 
         let fresh = ramp(SampleFormat::S16, 128);
+
         assert_eq!(producer.write(&fresh), 128);
+
         let mut sunk = vec![0_u8; 128 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(sunk, fresh.as_bytes());
     }
 
     fn counted(from: i16, frames: usize) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), frames);
+
         if let SampleData::S16(store) = buffer.data_mut() {
             for (index, frame) in store.as_chunks_mut::<2>().0.iter_mut().enumerate() {
                 frame.fill(from + index as i16);
@@ -1771,20 +1887,28 @@ mod tests {
     #[test]
     fn a_splice_plays_up_to_its_point_and_then_what_was_written_for_it_past_the_stale_frames() {
         let (mut producer, mut consumer, _) = whole_ring(64);
+
         producer.write(&counted(0, 48));
+
         let mut sunk = vec![0_u8; 10 * 4];
+
         consumer.fill(&mut sunk);
 
         let at = producer
             .splice_point(Frames(8), Frames(4))
             .expect("a full ring has room to splice ahead of the graph");
+
         assert_eq!(
             at, 30,
             "a splice was offered closer than two of the graph's pulls"
         );
+
         let stale = producer.written();
+
         assert_eq!(producer.write_spliced(&counted(1_000, 40)), 40);
+
         producer.splice(at, stale);
+
         assert!(producer.is_splicing());
         assert_eq!(producer.held_frames(), 20 + 40);
         assert!(
@@ -1793,11 +1917,14 @@ mod tests {
         );
 
         let mut sunk = vec![0_u8; 24 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(consumer.available_frames(), 36);
 
         let mut heard: Vec<i16> = (10..30).collect();
+
         heard.extend(1_000..1_004);
+
         assert_eq!(left_of(&sunk), heard);
         assert!(!producer.is_splicing());
         assert_eq!(producer.held_frames(), 36);
@@ -1807,31 +1934,44 @@ mod tests {
     #[test]
     fn a_splice_the_graph_reached_late_keeps_time_rather_than_playing_frames_again() {
         let (mut producer, mut consumer, _) = whole_ring(64);
+
         producer.write(&counted(0, 48));
+
         let mut sunk = vec![0_u8; 10 * 4];
+
         consumer.fill(&mut sunk);
 
         let stale = producer.written();
+
         producer.write_spliced(&counted(1_005, 43));
         producer.splice(5, stale);
 
         let mut sunk = vec![0_u8; 4 * 4];
+
         consumer.fill(&mut sunk);
+
         assert_eq!(left_of(&sunk), vec![1_010, 1_011, 1_012, 1_013]);
     }
 
     #[test]
     fn a_splice_published_before_its_frames_are_written_plays_them_from_its_point() {
         let (mut producer, mut consumer, _) = whole_ring(64);
+
         producer.write(&counted(0, 48));
+
         let mut sunk = vec![0_u8; 10 * 4];
+
         consumer.fill(&mut sunk);
 
         producer.splice(14, producer.written());
+
         let mut before = vec![0_u8; 4 * 4];
+
         consumer.fill(&mut before);
         producer.write_spliced(&counted(1_014, 20));
+
         let mut sunk = vec![0_u8; 8 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(left_of(&before), vec![10, 11, 12, 13]);
@@ -1845,14 +1985,19 @@ mod tests {
     #[test]
     fn a_discard_lets_go_of_a_splice_the_graph_had_not_reached() {
         let (mut producer, mut consumer, _) = whole_ring(64);
+
         producer.write(&counted(0, 48));
+
         let stale = producer.written();
+
         producer.write_spliced(&counted(1_000, 40));
         producer.splice(30, stale);
         producer.discard_buffered();
 
         let mut sunk = vec![0_u8; 4];
+
         consumer.fill(&mut sunk);
+
         assert!(!producer.is_splicing());
         assert!(!producer.is_discarding());
         assert_eq!(producer.held_frames(), 0);
@@ -1863,14 +2008,18 @@ mod tests {
     fn what_was_written_is_widened_back_from_where_a_splice_would_blend_it() {
         let (mut producer, mut consumer, _) = whole_ring(16);
         let mut sunk = vec![0_u8; 12 * 4];
+
         for _ in 0..3 {
             producer.write(&counted(100, 12));
             consumer.fill(&mut sunk);
         }
 
         let mut widened = vec![0.0; 2 * 3];
+
         assert_eq!(producer.widen_what_was_written(30, &mut widened), 3);
+
         let full_scale = f64::from(SampleFormat::S16.full_scale());
+
         assert_eq!(
             widened,
             [106.0, 106.0, 107.0, 107.0, 108.0, 108.0].map(|word| word / full_scale)
@@ -1888,13 +2037,16 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 200));
         producer.discard_buffered();
 
         let mut sunk = vec![0_u8; 32 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), 0);
 
         producer.write(&ramp(SampleFormat::S16, 127));
+
         assert_eq!(
             consumer.fill(&mut sunk),
             0,
@@ -1902,6 +2054,7 @@ mod tests {
         );
 
         producer.write(&ramp(SampleFormat::S16, 1));
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(faults.next_fault(), None);
     }
@@ -1916,10 +2069,12 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&steady(64));
         producer.fade_out(FADED_OVER);
 
         let mut sunk = vec![0xff_u8; 8 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(left_of(&sunk), vec![750, 500, 250, 0, 0, 0, 0, 0]);
         assert!(producer.is_quiet());
@@ -1930,6 +2085,7 @@ mod tests {
         assert_eq!(consumer.available_frames(), 60, "a quiet ring played on");
 
         producer.fade_in(FADED_OVER);
+
         assert!(!producer.is_quiet());
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(
@@ -1949,10 +2105,12 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&steady(64));
         producer.fade_out(FADED_OVER);
 
         let read_as_the_pull_began = consumer.fader.fading.read();
+
         producer.fade_in(FADED_OVER);
         consumer.fader.fading.went_quiet();
 
@@ -1964,6 +2122,7 @@ mod tests {
         assert!(!producer.is_fading_out());
 
         let mut sunk = vec![0_u8; 8 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert!(!producer.is_quiet());
         assert_eq!(left_of(&sunk).last().copied(), Some(1_000));
@@ -1979,10 +2138,12 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&steady(128));
         producer.discard_buffered();
 
         let mut sunk = vec![0xff_u8; 8 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(left_of(&sunk), vec![750, 500, 250, 0, 0, 0, 0, 0]);
         assert!(!producer.is_discarding());
@@ -2006,10 +2167,13 @@ mod tests {
                 entering,
                 Level::WHOLE,
             );
+
             producer.write(&steady(16));
 
             let mut sunk = vec![0_u8; 4 * 4];
+
             consumer.fill(&mut sunk);
+
             assert_eq!(left_of(&sunk).first().copied(), Some(opens_on));
         }
     }
@@ -2025,14 +2189,18 @@ mod tests {
             Level::WHOLE,
         );
         let carried = dop(16, 0);
+
         producer.write(&carried);
 
         let mut sunk = vec![0_u8; 8 * 8];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(sunk, carried.as_bytes()[..sunk.len()]);
 
         producer.fade_out(FADED_OVER);
+
         let mut hushed = vec![0_u8; 4 * 8];
+
         assert_eq!(consumer.fill(&mut hushed), hushed.len());
         assert!(producer.is_quiet());
         assert_eq!(
@@ -2056,13 +2224,18 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 64));
         producer.lead_in(Frames(48));
 
         let mut sunk = vec![0xff_u8; 32 * 4];
+
         consumer.fill(&mut sunk);
+
         assert!(sunk.iter().all(|byte| *byte == 0));
+
         consumer.fill(&mut sunk);
+
         assert!(sunk.iter().all(|byte| *byte == 0));
         assert_eq!(
             consumer.available_frames(),
@@ -2071,6 +2244,7 @@ mod tests {
         );
 
         consumer.fill(&mut sunk);
+
         assert_eq!(consumer.available_frames(), 32);
     }
 
@@ -2084,9 +2258,11 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.discard_buffered();
 
         let mut sunk = vec![0_u8; 32 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), 0);
 
         producer.write(&ramp(SampleFormat::S16, 8));
@@ -2105,19 +2281,24 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S24, 200));
         producer.discard_buffered();
 
         let mut sunk = vec![0_u8; 32 * 8];
+
         assert_eq!(
             consumer.fill(&mut sunk),
             sunk.len(),
             "the prime window handed the graph a gap rather than silence"
         );
+
         let lanes = usize::from(spec(SampleFormat::S24).channel_count().get());
+
         for (index, word) in sunk.as_chunks::<4>().0.iter().enumerate() {
             let frame = index / lanes;
             let wanted = if frame % 2 == 0 { 0x05 } else { 0xFA };
+
             assert_eq!(
                 word[2], wanted,
                 "word {index} left the marker a DAC locks onto"
@@ -2126,7 +2307,9 @@ mod tests {
         }
 
         producer.write(&ramp(SampleFormat::S24, 128));
+
         let fresh = ramp(SampleFormat::S24, 32);
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
         assert_eq!(
             sunk,
@@ -2150,10 +2333,12 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.discard_buffered();
 
         let mut first = vec![0_u8; 8];
         let mut second = vec![0_u8; 8];
+
         assert_eq!(consumer.fill(&mut first), first.len());
         assert_eq!(consumer.fill(&mut second), second.len());
 
@@ -2166,8 +2351,10 @@ mod tests {
 
     fn dop(frames: usize, from: u64) -> AudioBuffer {
         const HELD: u32 = 0x1234;
+
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S24), frames);
         let lanes = usize::from(spec(SampleFormat::S24).channel_count().get());
+
         if let SampleData::S24(store) = buffer.data_mut() {
             for (index, slot) in store.iter_mut().enumerate() {
                 let frame = from.saturating_add((index / lanes) as u64);
@@ -2176,6 +2363,7 @@ mod tests {
                 } else {
                     0xFA
                 };
+
                 *slot = (((marker << 16 | HELD) << 8) as i32) >> 8;
             }
         }
@@ -2216,9 +2404,11 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&dop(8, 0));
 
         let mut sunk = vec![0_u8; 16 * 8];
+
         assert_eq!(
             consumer.fill(&mut sunk),
             sunk.len(),
@@ -2243,10 +2433,12 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&dop(8, 0));
         producer.finish();
 
         let mut sunk = vec![0_u8; 16 * 8];
+
         assert_eq!(
             consumer.fill(&mut sunk),
             8 * 8,
@@ -2264,17 +2456,23 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&dop(8, 0));
 
         let mut first = vec![0_u8; 15 * 8];
+
         assert_eq!(consumer.fill(&mut first), first.len());
 
         producer.write(&dop(15, 8));
+
         let mut second = vec![0_u8; 15 * 8];
+
         assert_eq!(consumer.fill(&mut second), second.len());
 
         let mut heard = markers(&first);
+
         heard.extend(markers(&second));
+
         assert_eq!(
             heard,
             alternating(0x05, 30),
@@ -2298,9 +2496,11 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.write(&ramp(SampleFormat::S16, 8));
 
         let mut sunk = vec![0xAA_u8; 16 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), 8 * 4);
         assert!(
             sunk[8 * 4..].iter().all(|byte| *byte == 0xAA),
@@ -2318,9 +2518,11 @@ mod tests {
             Entering::Whole,
             Level::WHOLE,
         );
+
         producer.discard_buffered();
 
         let mut sunk = vec![0xAA_u8; 32 * 8];
+
         assert_eq!(consumer.fill(&mut sunk), 0);
         assert!(sunk.iter().all(|byte| *byte == 0xAA));
     }
@@ -2340,10 +2542,12 @@ mod tests {
     #[test]
     fn a_level_turned_down_is_heard_on_what_the_ring_already_holds() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(8));
         producer.hear_at(0.5);
 
         let mut sunk = vec![0_u8; 8 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(left_of(&sunk), vec![750, 500, 500, 500, 500, 500, 500, 500]);
@@ -2352,14 +2556,18 @@ mod tests {
     #[test]
     fn frames_rendered_at_the_level_heard_pass_through_untouched_once_the_held_ones_are_out() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(4));
         producer.hear_at(0.5);
         producer.render_at(0.5, 2);
         producer.write(&steady(2));
+
         let rendered = steady_at(500, 4);
+
         producer.write(&rendered);
 
         let mut sunk = vec![0_u8; 10 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(
@@ -2374,11 +2582,13 @@ mod tests {
         let (mut producer, mut consumer) = faded();
         let leaving = steady(4);
         let entering = steady_at(500, 8);
+
         producer.write(&leaving);
         producer.turn_at(0.5, 0.5, 0);
         producer.write(&entering);
 
         let mut sunk = vec![0_u8; 12 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(sunk[..4 * 4], leaving.as_bytes()[..]);
@@ -2388,6 +2598,7 @@ mod tests {
     #[test]
     fn turns_waiting_one_behind_another_each_step_to_the_level_of_their_own_row() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(4));
         producer.turn_at(0.5, 0.5, 0);
         producer.write(&steady_at(500, 4));
@@ -2395,6 +2606,7 @@ mod tests {
         producer.write(&steady_at(250, 8));
 
         let mut sunk = vec![0_u8; 16 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(
@@ -2408,17 +2620,24 @@ mod tests {
     #[test]
     fn a_level_asked_while_turns_wait_one_behind_another_reaches_each_row_at_its_own_gain() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(8));
+
         let first = producer.turn_at(0.5, 0.5, 0);
+
         producer.write(&steady_at(500, 16));
+
         let second = producer.turn_at(0.25, 0.25, 0);
+
         producer.write(&steady_at(250, 16));
         producer.hear_across(1.0, &[(first, 0.5), (second, 0.125)]);
 
         let mut sunk = vec![0_u8; 40 * 4];
+
         consumer.fill(&mut sunk);
 
         let left = left_of(&sunk);
+
         assert!(
             left[..24].iter().all(|sample| [1000, 500].contains(sample)),
             "{left:?}"
@@ -2432,12 +2651,14 @@ mod tests {
     #[test]
     fn a_level_asked_after_a_turn_was_announced_is_what_the_frames_past_it_are_heard_at() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(4));
         producer.turn_at(0.5, 0.5, 0);
         producer.write(&steady_at(500, 8));
         producer.hear_at(0.25);
 
         let mut sunk = vec![0_u8; 12 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(left_of(&sunk)[8..], [250, 250, 250, 250]);
@@ -2446,15 +2667,20 @@ mod tests {
     #[test]
     fn a_level_asked_while_a_turn_waits_is_heard_on_each_side_at_its_own_row_gain() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(8));
+
         let turned = producer.turn_at(0.5, 0.5, 0);
+
         producer.write(&steady_at(500, 16));
         producer.hear_across(0.5, &[(turned, 0.25)]);
 
         let mut sunk = vec![0_u8; 24 * 4];
+
         consumer.fill(&mut sunk);
 
         let left = left_of(&sunk);
+
         assert_eq!(left[..2], [750, 500]);
         assert!(left[2..8].iter().all(|sample| *sample == 500), "{left:?}");
         assert!(left[8..8 + 6].windows(2).all(|pair| pair[1] <= pair[0]));
@@ -2467,15 +2693,20 @@ mod tests {
     #[test]
     fn a_mute_asked_while_a_turn_waits_silences_the_leaving_tail_and_the_entering_row() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(8));
+
         let turned = producer.turn_at(0.5, 0.5, 0);
+
         producer.write(&steady_at(500, 16));
         producer.hear_across(0.0, &[(turned, 0.0)]);
 
         let mut sunk = vec![0_u8; 24 * 4];
+
         consumer.fill(&mut sunk);
 
         let left = left_of(&sunk);
+
         assert!(
             left[left.len() - 8..].iter().all(|sample| *sample == 0),
             "{left:?}"
@@ -2489,18 +2720,24 @@ mod tests {
     #[test]
     fn a_level_asked_after_the_turn_was_reached_is_what_the_entering_row_is_heard_at() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(4));
+
         let turned = producer.turn_at(0.5, 0.5, 0);
+
         producer.write(&steady_at(500, 16));
 
         let mut reached = vec![0_u8; 8 * 4];
+
         consumer.fill(&mut reached);
         producer.hear_across(0.25, &[(turned, 0.25)]);
 
         let mut sunk = vec![0_u8; 12 * 4];
+
         consumer.fill(&mut sunk);
 
         let left = left_of(&sunk);
+
         assert!(
             left[left.len() - 4..].iter().all(|sample| *sample == 250),
             "{left:?}"
@@ -2510,15 +2747,21 @@ mod tests {
     #[test]
     fn a_level_turned_back_up_raises_what_was_rendered_quieter() {
         let (mut producer, mut consumer) = faded();
+
         producer.hear_at(0.5);
         producer.render_at(0.5, 0);
         producer.write(&steady_at(500, 12));
+
         let mut settling = vec![0_u8; 4 * 4];
+
         consumer.fill(&mut settling);
+
         assert_eq!(left_of(&settling), vec![750, 500, 500, 500]);
+
         producer.hear_at(1.0);
 
         let mut sunk = vec![0_u8; 8 * 4];
+
         consumer.fill(&mut sunk);
 
         assert_eq!(
@@ -2553,9 +2796,11 @@ mod tests {
         producer.hear_at(target);
 
         let mut sunk = vec![0_u8; 40 * 4];
+
         consumer.fill(&mut sunk);
 
         let left = left_of(&sunk);
+
         assert!(left.iter().all(|sample| *sample <= 541), "{left:?}");
         assert!(left.windows(2).all(|pair| pair[1] >= pair[0]), "{left:?}");
         assert_eq!(sunk[24 * 4..], at_the_target.as_bytes()[..]);
@@ -2574,9 +2819,11 @@ mod tests {
                 heard: 0.0,
             },
         );
+
         producer.write(&steady(16));
 
         let mut sunk = vec![0xAA_u8; 8 * 4];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
 
         assert!(sunk.iter().all(|byte| *byte == 0));
@@ -2586,20 +2833,26 @@ mod tests {
     #[test]
     fn a_discard_counts_the_frames_again_from_the_level_rendered_last() {
         let (mut producer, mut consumer) = faded();
+
         producer.write(&steady(8));
         producer.hear_at(0.5);
         producer.render_at(0.25, 30);
         producer.discard_buffered();
 
         let mut fading = vec![0_u8; 8 * 4];
+
         consumer.fill(&mut fading);
+
         assert!(!producer.is_discarding());
+
         producer.write(&steady_at(250, 40));
 
         let mut sunk = vec![0_u8; 40 * 4];
+
         consumer.fill(&mut sunk);
 
         let left = left_of(&sunk);
+
         assert_eq!(left[..4], [125, 250, 375, 500]);
         assert!(left[4..].iter().all(|sample| *sample == 500), "{left:?}");
     }
@@ -2615,10 +2868,12 @@ mod tests {
             Level::WHOLE,
         );
         let carried = dop(16, 0);
+
         producer.write(&carried);
         producer.hear_at(0.0);
 
         let mut sunk = vec![0_u8; 8 * 8];
+
         assert_eq!(consumer.fill(&mut sunk), sunk.len());
 
         assert_eq!(
@@ -2626,6 +2881,7 @@ mod tests {
             8,
             "a muted marked ring stopped playing"
         );
+
         for frame in sunk.as_chunks::<8>().0 {
             assert_eq!(
                 frame[..2],
@@ -2633,14 +2889,18 @@ mod tests {
                 "a muted marked ring let its music through"
             );
         }
+
         assert!(
             markers(&sunk).windows(2).all(|pair| pair[0] != pair[1]),
             "the silence broke the markers' alternation"
         );
 
         producer.hear_at(1.0);
+
         let mut heard = vec![0_u8; 8 * 8];
+
         consumer.fill(&mut heard);
+
         assert!(
             heard
                 .as_chunks::<8>()
@@ -2666,6 +2926,7 @@ mod tests {
             .iter()
             .map(|word| i32::from_ne_bytes(*word))
             .collect();
+
         assert_eq!(words, vec![8_388_607, -8_388_608, 2_000]);
     }
 }

@@ -67,7 +67,9 @@ impl State {
         if self.addresses.len() >= ADDRESSES_AT_MOST {
             self.evict_least_recently_used();
         }
+
         let address = synthetic(self.free_number());
+
         self.addresses.insert(device, address);
         self.devices.insert(address, device);
         Some(address)
@@ -104,7 +106,9 @@ impl State {
 impl Relay {
     pub fn admit(&self, devices: impl IntoIterator<Item = DeviceId>) {
         let mut state = self.state.lock();
+
         state.admitted = devices.into_iter().collect();
+
         let dropped: Vec<DeviceId> = state
             .addresses
             .keys()
@@ -122,9 +126,13 @@ impl Relay {
 
     pub fn device_at(&self, address: SocketAddr) -> Option<DeviceId> {
         let mut state = self.state.lock();
+
         let device = state.devices.get(&canonical(address)).copied()?;
+
         state.uses += 1;
+
         let uses = state.uses;
+
         state.used.insert(device, uses);
         Some(device)
     }
@@ -135,6 +143,7 @@ impl Relay {
 
     pub fn detach(&self) {
         let mut state = self.state.lock();
+
         state.out = None;
         state.arrived.clear();
     }
@@ -156,6 +165,7 @@ impl Relay {
             if datagram.len() > LARGEST_DATAGRAM {
                 continue;
             }
+
             let frame = ToServer::Relay {
                 to: device,
                 datagram: datagram.to_vec(),
@@ -167,6 +177,7 @@ impl Relay {
     pub fn arrived(&self, from: DeviceId, datagram: Vec<u8>) {
         let waker = {
             let mut state = self.state.lock();
+
             if state.arrived.len() >= ARRIVED_AT_MOST {
                 return;
             }
@@ -190,6 +201,7 @@ impl Relay {
     ) -> usize {
         let mut state = self.state.lock();
         let mut filled = 0;
+
         while filled < bufs.len().min(meta.len()) {
             let Some((from, datagram)) = state.arrived.pop_front() else {
                 break;
@@ -198,13 +210,16 @@ impl Relay {
                 continue;
             };
             let length = datagram.len().min(bufs[filled].len());
+
             bufs[filled][..length].copy_from_slice(&datagram[..length]);
+
             let address = match address.ip() {
                 IpAddr::V4(ip) if local_is_ipv6 => {
                     SocketAddr::new(IpAddr::V6(ip.to_ipv6_mapped()), address.port())
                 }
                 _ => address,
             };
+
             meta[filled] = RecvMeta {
                 addr: address,
                 len: length,
@@ -242,6 +257,7 @@ mod tests {
     #[test]
     fn each_device_has_one_address_of_its_own_that_reads_back_as_the_device() {
         let relay = Relay::default();
+
         relay.admit([ONE, TWO]);
 
         let one = relay.address_of(ONE).expect("admitted");
@@ -257,11 +273,14 @@ mod tests {
     #[test]
     fn an_address_is_read_back_whether_it_is_plain_or_wrapped_in_six() {
         let relay = Relay::default();
+
         relay.admit([ONE]);
+
         let one = relay.address_of(ONE).expect("admitted");
         let IpAddr::V4(plain) = one.ip() else {
             panic!("a plain address");
         };
+
         let wrapped = SocketAddr::new(IpAddr::V6(plain.to_ipv6_mapped()), one.port());
 
         assert_eq!(relay.device_at(wrapped), Some(ONE));
@@ -274,7 +293,9 @@ mod tests {
     #[test]
     fn a_datagram_is_carried_as_a_frame_to_the_server_while_a_link_is_attached_and_dropped_after() {
         let relay = Relay::default();
+
         relay.admit([TWO]);
+
         let (out, mut carried) = tokio::sync::mpsc::channel(4);
         let transmit = Transmit {
             destination: relay.address_of(TWO).expect("admitted"),
@@ -292,6 +313,7 @@ mod tests {
 
         let first = carried.try_recv().expect("a frame");
         let second = carried.try_recv().expect("a frame");
+
         assert_eq!(
             ToServer::decoded(&first).expect("decoded"),
             ToServer::Relay {
@@ -312,9 +334,13 @@ mod tests {
     #[test]
     fn a_full_queue_drops_what_does_not_fit_instead_of_waiting() {
         let relay = Relay::default();
+
         relay.admit([ONE]);
+
         let (out, mut carried) = tokio::sync::mpsc::channel(1);
+
         relay.attach(out);
+
         let transmit = Transmit {
             destination: relay.address_of(ONE).expect("admitted"),
             ecn: None,
@@ -344,6 +370,7 @@ mod tests {
 
     fn pumped(from: DeviceId, to: Arc<Reflector>) -> Sender<Vec<u8>> {
         let (out, mut carried) = tokio::sync::mpsc::channel::<Vec<u8>>(256);
+
         tokio::spawn(async move {
             while let Some(frame) = carried.recv().await {
                 if let Ok(ToServer::Relay { datagram, .. }) = ToServer::decoded(&frame) {
@@ -364,6 +391,7 @@ mod tests {
         let identity = PeerIdentity::of(&derived).expect("an identity");
         let (desk, desk_reflector) = endpoint_over(&identity);
         let (phone, phone_reflector) = endpoint_over(&identity);
+
         desk_reflector.relay().admit([TWO]);
         phone_reflector.relay().admit([ONE]);
         desk_reflector
@@ -372,16 +400,20 @@ mod tests {
         phone_reflector
             .relay()
             .attach(pumped(TWO, Arc::clone(&desk_reflector)));
+
         let song = (0..3_000_000_u32).map(|at| at as u8).collect::<Vec<_>>();
         let sent = song.clone();
+
         tokio::spawn(async move {
             let incoming = phone.accept().await.expect("an incoming");
             let connection = incoming.await.expect("accepted");
             let (mut send, mut recv) = connection.accept_bi().await.expect("a stream");
             let mut asked = [0_u8; 4];
+
             recv.read_exact(&mut asked).await.expect("asked");
             send.write_all(&sent).await.expect("sent");
             send.finish().expect("finished");
+
             let _ = connection.closed().await;
         });
 
@@ -394,8 +426,10 @@ mod tests {
         .await
         .expect("reached through the relay");
         let (mut send, mut recv) = connection.open_bi().await.expect("a stream");
+
         send.write_all(b"song").await.expect("asked");
         send.finish().expect("finished");
+
         let received = timeout(Duration::from_secs(30), recv.read_to_end(10_000_000))
             .await
             .expect("in time")
@@ -414,10 +448,13 @@ mod tests {
         let identity = PeerIdentity::of(&derived).expect("an identity");
         let (served, _) = endpoint_over(&identity);
         let (dialling, _) = endpoint_over(&identity);
+
         if !served.local_addr().expect("an address").is_ipv6() {
             return;
         }
+
         let port = served.local_addr().expect("an address").port();
+
         tokio::spawn(async move {
             while let Some(incoming) = served.accept().await {
                 tokio::spawn(async move {
@@ -427,6 +464,7 @@ mod tests {
                 });
             }
         });
+
         let config = identity.dialling().expect("dialling");
 
         let over_six = dialled(
@@ -453,6 +491,7 @@ mod tests {
 
     fn device(number: u32) -> DeviceId {
         let mut id = [0; 16];
+
         id[..4].copy_from_slice(&number.to_be_bytes());
         DeviceId(id)
     }
@@ -460,6 +499,7 @@ mod tests {
     #[test]
     fn a_device_nobody_admitted_has_no_address_and_its_datagrams_are_dropped() {
         let relay = Relay::default();
+
         relay.admit([ONE]);
 
         relay.arrived(TWO, vec![1, 2, 3]);
@@ -472,7 +512,9 @@ mod tests {
     #[test]
     fn a_device_no_longer_admitted_loses_its_address() {
         let relay = Relay::default();
+
         relay.admit([ONE, TWO]);
+
         let two = relay.address_of(TWO).expect("admitted");
 
         relay.admit([ONE]);
@@ -487,6 +529,7 @@ mod tests {
         let crowd: Vec<DeviceId> = (0..ADDRESSES_AT_MOST + 300)
             .map(|number| device(u32::try_from(number).expect("a number") + 10))
             .collect();
+
         relay.admit(crowd.iter().copied());
 
         for one in &crowd[..ADDRESSES_AT_MOST] {
@@ -497,6 +540,7 @@ mod tests {
 
         {
             let state = relay.state.lock();
+
             assert!(state.addresses.contains_key(&crowd[0]));
             assert!(!state.addresses.contains_key(&crowd[1]));
         }
@@ -507,6 +551,7 @@ mod tests {
 
         let state = relay.state.lock();
         let mut numbers: Vec<SocketAddr> = state.addresses.values().copied().collect();
+
         numbers.sort();
         numbers.dedup();
 

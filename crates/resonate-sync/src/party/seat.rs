@@ -173,6 +173,7 @@ fn landed(stamp: u64, moved: &[(u64, u64)]) -> u64 {
 
 pub fn known_where_they_moved(known: &[u64], moved: &[(u64, u64)]) -> Vec<u64> {
     let mut known = known.to_vec();
+
     for stamp in known.clone() {
         let now = landed(stamp, moved);
         if !known.contains(&now) {
@@ -184,6 +185,7 @@ pub fn known_where_they_moved(known: &[u64], moved: &[(u64, u64)]) -> Vec<u64> {
 
 fn followed_the_moves<S: PartySeat>(seat: &S, rows: &mut [(u64, u64)], heard: &mut SeatHeard) {
     let moved = seat.moved();
+
     if moved.is_empty() {
         return;
     }
@@ -221,6 +223,7 @@ enum Guested<R> {
 fn inherit<F: PartyFinder>(finder: &Arc<F>, songs: Vec<PartySong>) -> Option<Inherited<F::Row>> {
     let (found_in, found) = mpsc::channel();
     let finder = Arc::clone(finder);
+
     let looking = thread::Builder::new()
         .name("resonate-party-find".to_owned())
         .spawn(move || {
@@ -230,6 +233,7 @@ fn inherit<F: PartyFinder>(finder: &Arc<F>, songs: Vec<PartySong>) -> Option<Inh
                 .collect();
             let _ = found_in.send(held);
         });
+
     if let Err(error) = looking {
         tracing::warn!(%error, "the songs a party had up next could not be looked for");
         return None;
@@ -250,6 +254,7 @@ fn hosted_after<S: PartySeat>(
             match inherited.recv_timeout(LOOK_EVERY) {
                 Ok(held) => {
                     let in_order: Vec<S::Row> = held.iter().map(|(_, row)| row.clone()).collect();
+
                     if seat.keep_ahead(&in_order) {
                         for (host, row) in &held {
                             let stamp = seat.stamp_of(row);
@@ -283,11 +288,14 @@ fn hosted<S: PartySeat>(party: &Party, seat: &S, stop: &AtomicBool, mut rows: Ve
         thread::sleep(LOOK_EVERY);
 
         let heard = seat.heard();
+
         named_as_first_told(&mut rows, &seat.moved());
+
         let Some(anchor) = party.to_server(heard.at_nanos) else {
             continue;
         };
         let (song, next) = seat.songs_up_next();
+
         let now = PartyNow {
             song: song.map(|song| as_the_party_knows(&rows, song)),
             next: next
@@ -358,8 +366,10 @@ where
         thread::sleep(LOOK_EVERY);
 
         let shown = party.shown();
+
         if shown.hosting {
             let inherited = followed_last.and_then(|now| inherit(finder, now.next));
+
             return Guested::TookOver { rows, inherited };
         }
         if matches!(
@@ -370,9 +380,12 @@ where
         }
 
         let mut heard = seat.heard();
+
         followed_the_moves(seat, &mut rows, &mut heard);
+
         let mut there = party.to_server(heard.at_nanos);
         let now = shown.now.clone();
+
         if now.is_some() {
             followed_last.clone_from(&now);
         }
@@ -412,6 +425,7 @@ where
             .as_ref()
             .map(|now| now.next.iter().map(|song| song.row).collect())
             .unwrap_or_default();
+
         let seen = Seen {
             now_nanos: heard.at_nanos,
             host_row: now
@@ -452,6 +466,7 @@ where
             let songs: Vec<PartySong> = now.next.iter().take(SONGS_FOUND_AHEAD).cloned().collect();
             let finder = Arc::clone(finder);
             let found_in = found_in.clone();
+
             let looking = thread::Builder::new()
                 .name("resonate-party-find".to_owned())
                 .spawn(move || {
@@ -475,6 +490,7 @@ where
                     let songs = songs_of(now);
                     let finder = Arc::clone(finder);
                     let found_in = found_in.clone();
+
                     let looking = thread::Builder::new()
                         .name("resonate-party-find".to_owned())
                         .spawn(move || {
@@ -562,6 +578,7 @@ fn added_here<S: PartySeat>(seat: &S, rows: &[(u64, u64)]) -> Vec<PartySong> {
     if rows.is_empty() {
         return Vec::new();
     }
+
     let known: Vec<u64> = rows.iter().map(|(stamp, _)| *stamp).collect();
 
     seat.added_here(&known)
@@ -589,6 +606,7 @@ fn taken_up<S: PartySeat>(
     songs: Vec<(u64, Option<S::Row>)>,
 ) -> bool {
     let held_first = songs.first().is_some_and(|(_, held)| held.is_some());
+
     follow.found(row, held_first);
     if !held_first {
         return false;
@@ -603,6 +621,7 @@ fn taken_up<S: PartySeat>(
         follow.cannot_start_mid_song(row);
         return false;
     };
+
     let cue = Cue {
         row,
         position_nanos: now.position_at(there),
@@ -727,11 +746,13 @@ mod tests {
         fn added_here(&self, known: &[u64]) -> Vec<PartySong> {
             let mut queue = self.queue.lock();
             let known = known_where_they_moved(known, &self.moves.lock());
+
             let added: Vec<u64> = queue
                 .iter()
                 .copied()
                 .filter(|stamp| !known.contains(stamp))
                 .collect();
+
             queue.retain(|stamp| known.contains(stamp));
             self.asked_for.lock().extend(&added);
 
@@ -746,6 +767,7 @@ mod tests {
             _sounding: bool,
         ) -> SeatTakenUp {
             let answer = *self.answer.lock();
+
             if answer != SeatTakenUp::Untouched {
                 *self.queue.lock() = rows.iter().map(|row| self.stamp_of(row)).collect();
             }
@@ -802,6 +824,7 @@ mod tests {
             mine_row,
             mine_position: None,
         };
+
         follow.step(&seen);
 
         follow.standing()
@@ -889,6 +912,7 @@ mod tests {
             held(&[1]),
             &cue(1)
         ));
+
         seat.queue.lock().push(9);
 
         let asked: Vec<u64> = added_here(&seat, &rows)
@@ -915,6 +939,7 @@ mod tests {
         ));
 
         let mut heard = seat.heard();
+
         seat.relocate(1_001, 5_001);
         seat.relocate(1_002, 5_002);
 

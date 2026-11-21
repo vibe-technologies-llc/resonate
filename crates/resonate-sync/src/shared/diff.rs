@@ -41,6 +41,7 @@ pub fn edits_seen(looking: &Looking<'_>, doing: &mut impl Resolving) -> Result<V
     let pairs = paired_with(&base, &named, doing)?;
 
     let mut ops = Vec::new();
+
     if !some_row_is_unnamed {
         for (row, pair) in base.iter().zip(&pairs) {
             if pair.is_none() {
@@ -53,11 +54,13 @@ pub fn edits_seen(looking: &Looking<'_>, doing: &mut impl Resolving) -> Result<V
     }
 
     let mut base_of_named: Vec<Option<usize>> = vec![None; named.len()];
+
     for (at, pair) in pairs.iter().enumerate() {
         if let Some(pair) = pair {
             base_of_named[*pair] = Some(at);
         }
     }
+
     let kept_in_order = longest_rising(&base_of_named);
 
     let moving: BTreeSet<EntryId> = base_of_named
@@ -74,16 +77,20 @@ pub fn edits_seen(looking: &Looking<'_>, doing: &mut impl Resolving) -> Result<V
         .filter(|(_, pair)| !some_row_is_unnamed && pair.is_none())
         .map(|(row, _)| row.entry)
         .collect();
+
     let mut standing: Vec<Place> = rows
         .iter()
         .filter(|row| !moving.contains(&row.entry) && !removed.contains(&row.entry))
         .map(|row| row.place.clone())
         .collect();
+
     standing.sort();
 
     let mut last: Option<Place> = None;
+
     for (at, (_, recording)) in named.iter().enumerate() {
         let base_at = base_of_named[at];
+
         if let Some(base_at) = base_at
             && kept_in_order.contains(&at)
         {
@@ -92,6 +99,7 @@ pub fn edits_seen(looking: &Looking<'_>, doing: &mut impl Resolving) -> Result<V
         }
 
         let place = placed_after(last.as_ref(), &standing);
+
         standing.push(place.clone());
         standing.sort();
         last = Some(place.clone());
@@ -147,6 +155,7 @@ fn paired_with(
         if pairs[at].is_some() || taken.iter().all(|taken| *taken) {
             continue;
         }
+
         let Some(own) = doing.held_as(&row.recording)? else {
             continue;
         };
@@ -170,6 +179,7 @@ fn longest_rising(sequence: &[Option<usize>]) -> BTreeSet<usize> {
             continue;
         };
         let spot = tails.partition_point(|tail| sequence[*tail].is_some_and(|held| held < value));
+
         before[at] = spot.checked_sub(1).map(|earlier| tails[earlier]);
         if spot == tails.len() {
             tails.push(at);
@@ -180,6 +190,7 @@ fn longest_rising(sequence: &[Option<usize>]) -> BTreeSet<usize> {
 
     let mut kept = BTreeSet::new();
     let mut walking = tails.last().copied();
+
     while let Some(at) = walking {
         kept.insert(at);
         walking = before[at];
@@ -199,6 +210,7 @@ pub fn written_order(
         .filter_map(|(at, row)| row.as_ref().map(|recording| (at, recording)))
         .collect();
     let base: Vec<&Listed> = rows.iter().collect();
+
     let pairs = paired_with(&base, &named, doing)?;
 
     let mut by_position: Vec<(usize, EntryId)> = pairs
@@ -206,6 +218,7 @@ pub fn written_order(
         .zip(rows)
         .filter_map(|(pair, row)| pair.map(|pair| (pair, row.entry)))
         .collect();
+
     by_position.sort_by_key(|(at, _)| *at);
 
     Ok(by_position.into_iter().map(|(_, entry)| entry).collect())
@@ -273,8 +286,10 @@ mod tests {
         let mut list = SharedList::default();
         let mut written = Vec::new();
         let mut place = Place::first();
+
         for (at, title) in titles.iter().enumerate() {
             let entry = EntryId([u8::try_from(at).expect("few") + 1; ENTRY_BYTES]);
+
             list.apply(&SharedOp::Added {
                 entry,
                 recording: song(title),
@@ -298,6 +313,7 @@ mod tests {
         listed: &[Option<Recording>],
     ) -> Vec<String> {
         let mut doing = Doing::new();
+
         let ops = edits_seen(
             &Looking {
                 list,
@@ -308,6 +324,7 @@ mod tests {
             &mut doing,
         )
         .expect("looked");
+
         for op in &ops {
             list.apply(op);
         }
@@ -344,12 +361,14 @@ mod tests {
     #[test]
     fn a_song_added_removed_or_moved_is_that_one_edit_and_no_more() {
         let (mut added, written) = a_list(&["A", "B", "C"]);
+
         assert_eq!(
             looked_at(&mut added, &written, &listed(&["A", "New", "B", "C"])),
             ["A", "New", "B", "C"]
         );
 
         let (mut removed, written) = a_list(&["A", "B", "C"]);
+
         assert_eq!(
             looked_at(&mut removed, &written, &listed(&["A", "C"])),
             ["A", "C"]
@@ -357,6 +376,7 @@ mod tests {
 
         let (mut moved, written) = a_list(&["A", "B", "C", "D"]);
         let mut doing = Doing::new();
+
         let ops = edits_seen(
             &Looking {
                 list: &moved,
@@ -367,10 +387,13 @@ mod tests {
             &mut doing,
         )
         .expect("looked");
+
         assert_eq!(ops.len(), 1, "one drag is one move");
+
         for op in &ops {
             moved.apply(op);
         }
+
         assert_eq!(
             moved
                 .rows()
@@ -419,6 +442,7 @@ mod tests {
         let (list, written) = a_list(&["Their spelling"]);
         let own = song("My spelling");
         let mut doing = Doing::new();
+
         doing.spelled.push((song("Their spelling"), own.clone()));
 
         let ops = edits_seen(

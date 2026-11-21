@@ -38,6 +38,7 @@ pub struct CoreAudio {
 
 fn surveyed(known: &Known, remembered: &Mutex<Remembered>) -> SinkResult<Vec<SinkInfo>> {
     let sinks = enumerate(remembered)?;
+
     *known.lock() = sinks
         .iter()
         .map(|sink| (sink.id, sink.name.clone()))
@@ -55,6 +56,7 @@ impl Watched {
         let Ok(present) = Device::all() else {
             return;
         };
+
         self.devices.retain(|device, _| present.contains(device));
         for device in present {
             self.devices.entry(device).or_insert_with(|| {
@@ -84,6 +86,7 @@ fn watching(
     if let Err(error) = notify_on_the_hals_own_thread() {
         tracing::debug!(%error, "Core Audio keeps its notifications on the main run loop");
     }
+
     let (nudge, nudged) = bounded(1);
     let _system: Vec<Listening> = TOLD_OF_THE_SYSTEM
         .into_iter()
@@ -96,12 +99,16 @@ fn watching(
         })
         .collect();
     let mut watched = Watched::default();
+
     watched.follow(&nudge);
+
     let survey = || {
         let sinks = surveyed(known, remembered).ok()?;
+
         watched.follow(&nudge);
         Some(sinks)
     };
+
     watch(first, survey, told, &nudged, stopped, Pace::ENDPOINTS);
 }
 
@@ -109,9 +116,11 @@ impl CoreAudio {
     pub fn start(_app_name: &str) -> SinkResult<Self> {
         let known = Known::default();
         let remembered = Arc::new(Mutex::new(Remembered::default()));
+
         let first = surveyed(&known, &remembered)?;
         let (told, changes) = unbounded();
         let (stopping, stopped) = bounded(1);
+
         let watcher = thread::Builder::new()
             .name("resonate-coreaudio-watch".into())
             .spawn({
@@ -198,6 +207,7 @@ impl Backend for CoreAudio {
 
     fn shutdown(mut self: Box<Self>) -> SinkResult<()> {
         let _ = self.stopping.send(());
+
         if let Some(watcher) = self.watcher.take() {
             let _ = watcher.join();
         }

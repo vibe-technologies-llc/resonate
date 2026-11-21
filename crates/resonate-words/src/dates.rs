@@ -57,9 +57,11 @@ impl Dates {
     fn locale_of(&self, language: Language) -> Locale {
         let mut identifier =
             LanguageIdentifier::try_from_str(language.tag()).unwrap_or(LanguageIdentifier::UNKNOWN);
+
         identifier.region = self.region;
 
         let mut locale = latin_digits(identifier);
+
         locale
             .extensions
             .unicode
@@ -221,6 +223,7 @@ mod tests {
                 .format(&iso(2024, 1, day).unwrap())
                 .to_string()
         };
+
         assert_eq!(say_day(&built.weekday_brief, 1), "Mon");
         assert_eq!(say_day(&built.weekday_full, 7), "Sunday");
     }

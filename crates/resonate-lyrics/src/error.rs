@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::SidecarOp;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum LyricOp {
     Search,
     Fetch,

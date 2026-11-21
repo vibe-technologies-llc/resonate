@@ -269,7 +269,7 @@ pub struct KeptCover {
     pub deduped: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Refusal {
     Empty,
     TooLarge,
@@ -321,6 +321,7 @@ pub struct Holdings {
 impl Vault {
     pub fn make(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
+
         fs::create_dir_all(&root)
             .map_err(|source| Error::io(VaultOp::MakeFolder, &root, source))?;
         Self::marked(&root)?;
@@ -344,15 +345,18 @@ impl Vault {
 
     pub fn open(root: impl Into<PathBuf>) -> Result<Self> {
         let root = root.into();
+
         if !root.is_dir() || !Self::is_a_vault(&root) {
             return Err(Error::NotThere { path: root });
         }
         Self::marked(&root)?;
         for folder in [AUDIO, COVERS, STAGING] {
             let made = root.join(folder);
+
             fs::create_dir_all(&made)
                 .map_err(|source| Error::io(VaultOp::MakeFolder, &made, source))?;
         }
+
         let root = root
             .canonicalize()
             .map_err(|source| Error::io(VaultOp::Resolve, &root, source))?;
@@ -361,6 +365,7 @@ impl Vault {
             drawings: Drawings::default(),
             landing: Mutex::new(()),
         };
+
         if let Err(error) = vault.swept(Sweeping::WhatCrashed, Sweep::Taking) {
             tracing::warn!(%error, "what a crashed import left in the vault's staging could not be swept");
         }
@@ -397,9 +402,11 @@ impl Vault {
 
     pub fn offer(&self, path: &Path) -> Result<Offered> {
         self.inside(path)?;
+
         let packed =
             path.extension().and_then(|extension| extension.to_str()) == Some(COMPRESSED_EXTENSION);
         let io = |source| Error::io(VaultOp::Read, path, source);
+
         if packed {
             let unpacking = Unpacking::open(path).map_err(io)?;
             let extension = path
@@ -409,12 +416,14 @@ impl Vault {
                 .and_then(|extension| extension.to_str())
                 .unwrap_or(UNNAMED_EXTENSION)
                 .to_owned();
+
             return Ok(Offered {
                 size: unpacking.len(),
                 extension,
                 stream: Offering::Unpacked(unpacking),
             });
         }
+
         let file = File::open(path).map_err(io)?;
         let size = file.metadata().map_err(io)?.len();
         let extension = path
@@ -489,16 +498,20 @@ impl Vault {
             });
         let discarded = self.discard(&staging);
         let kept = kept?;
+
         discarded?;
         Ok(kept)
     }
 
     fn staged_delivery(&self, reader: &mut dyn Read, staging: &Path, largest: u64) -> Result<bool> {
         self.inside(staging)?;
+
         let mut file =
             File::create(staging).map_err(|source| Error::io(VaultOp::Stage, staging, source))?;
+
         let copied = std::io::copy(&mut reader.take(largest.saturating_add(1)), &mut file)
             .map_err(|source| Error::io(VaultOp::Write, staging, source))?;
+
         file.sync_all()
             .map_err(|source| Error::io(VaultOp::Settle, staging, source))?;
         Ok(copied <= largest)
@@ -521,6 +534,7 @@ impl Vault {
             None => Decoder::open(taking.sources, taking.location),
         };
         let (mut decoder, info) = opened.map_err(|source| Error::codec(VaultOp::Read, source))?;
+
         decoder.refuse_holes();
 
         let codec = Codec::from_id(info.codec);
@@ -549,6 +563,7 @@ impl Vault {
             && info
                 .duration
                 .is_some_and(|frames| wave::outgrows_a_wave(frames, info.spec.channel_count()));
+
         let kept = match form {
             Form::Kept if !whole => return Ok(Keeping::Refused(Refusal::CutFromAnother)),
             Form::Kept => self.kept_whole(taking, codec, &info, Some(decoder))?,
@@ -580,6 +595,7 @@ impl Vault {
                         Foretold::Misdeclared => {
                             let (mut again, _) = Decoder::open(taking.sources, taking.location)
                                 .map_err(|source| Error::codec(VaultOp::Read, source))?;
+
                             again.refuse_holes();
                             self.kept_as_flac(weighing, &mut again, encoding, taking.halt)?
                         }
@@ -625,6 +641,7 @@ impl Vault {
             Some(span) => Decoder::open_span(taking.sources, taking.location, span),
             None => Decoder::open(taking.sources, taking.location),
         };
+
         let went_in = opened
             .map_err(|source| Error::codec(VaultOp::Read, source))
             .and_then(|(mut decoder, info)| {
@@ -651,12 +668,16 @@ impl Vault {
 
     pub fn keep_cover(&self, art: &CoverArt) -> Result<KeptCover> {
         let mut digest = Digest::default();
+
         digest.note(&art.bytes);
+
         let key = digest.settled();
 
         if let Some(target) = self.held_cover(key) {
             self.inside(&target)?;
+
             let (width, height) = cover::size_of_file(&target, kept_as_it_came(&target))?;
+
             return Ok(KeptCover {
                 key,
                 bytes: self.sized(&target)?,
@@ -674,17 +695,21 @@ impl Vault {
             cover::Drawing::Lossless(_) | cover::Drawing::AsItCame { .. } => None,
         };
         let transcoded = self.transcoded_cover(key, art, lossless.as_ref())?;
+
         if let Some(kept) = transcoded {
             return Ok(kept);
         }
+
         let Some(drawn) = lossless else {
             return self.kept_as_it_came(key, art, size);
         };
         let target = self.cover_path(key, COVER_EXTENSION);
         let staging = self.staged(COVER_EXTENSION)?;
+
         self.written_inside(&staging, &drawn.bytes)?;
 
         let written = self.read_inside(&staging)?;
+
         if !drawn.held_by(&written).unwrap_or(false) {
             self.discard(&staging)?;
             return Err(Error::PictureUnconfirmed {
@@ -713,6 +738,7 @@ impl Vault {
         if art.format_of_its_bytes() != ImageFormat::Jpeg {
             return Ok(None);
         }
+
         let Some(transcoded) = transcoded::of(&art.bytes).filter(|transcoded| {
             transcoded.bytes.len() < art.bytes.len()
                 && lossless.is_none_or(|drawn| transcoded.bytes.len() <= drawn.bytes.len())
@@ -722,9 +748,11 @@ impl Vault {
 
         let target = self.cover_path(key, COVER_EXTENSION);
         let staging = self.staged(COVER_EXTENSION)?;
+
         self.written_inside(&staging, &transcoded.bytes)?;
 
         let written = self.read_inside(&staging)?;
+
         if !transcoded::reconstructs(&written, &art.bytes) {
             tracing::warn!(
                 width = transcoded.width,
@@ -755,6 +783,7 @@ impl Vault {
         let extension = art.format_of_its_bytes().extension();
         let target = self.cover_path(key, extension);
         let staging = self.staged(extension)?;
+
         self.written_inside(&staging, &art.bytes)?;
         if self.read_inside(&staging)? != art.bytes {
             self.discard(&staging)?;
@@ -796,14 +825,18 @@ impl Vault {
 
     fn compacting(&self, path: &Path, placing: Placing) -> Result<Compacting> {
         self.inside(path)?;
+
         let Some(key) = named(path) else {
             return Ok(Compacting::NotHeld);
         };
+
         if kept_as_it_came(path) != Some(ImageFormat::Jpeg) || !path.is_file() {
             return Ok(Compacting::NotHeld);
         }
+
         let jpeg = self.read_inside(path)?;
         let mut digest = Digest::default();
+
         digest.note(&jpeg);
         if digest.settled() != key {
             return Ok(Compacting::NotHeld);
@@ -811,6 +844,7 @@ impl Vault {
 
         let was = jpeg.len() as u64;
         let target = self.cover_path(key, COVER_EXTENSION);
+
         if target.is_file() {
             let standing = self.read_inside(&target)?;
             if transcoded::reconstructs(&standing, &jpeg) {
@@ -826,6 +860,7 @@ impl Vault {
             return Ok(Compacting::Unproven);
         };
         let now = transcoded.bytes.len() as u64;
+
         if now >= was {
             return Ok(Compacting::NoSmaller);
         }
@@ -838,8 +873,11 @@ impl Vault {
         }
 
         let staging = self.staged(COVER_EXTENSION)?;
+
         self.written_inside(&staging, &transcoded.bytes)?;
+
         let written = self.read_inside(&staging)?;
+
         if !transcoded::reconstructs(&written, &jpeg) {
             tracing::warn!(
                 path = %path.display(),
@@ -859,21 +897,26 @@ impl Vault {
 
     pub fn picture(&self, path: &Path) -> Result<CoverArt> {
         self.inside(path)?;
+
         let standing_in_place = self.standing_in_place_of(path);
         let path = standing_in_place.as_deref().unwrap_or(path);
+
         if let Some(format) = kept_as_it_came(path) {
             return Ok(CoverArt {
                 format,
                 bytes: self.read_inside(path)?,
             });
         }
+
         let key = named(path);
+
         if let Some(drawn) = key.and_then(|key| self.drawings.drawn(key)) {
             return Ok(drawn);
         }
 
         let drawn_after = self.drawings.forgetting();
         let drawn = cover::drawable(&self.read_inside(path)?)?;
+
         if let Some(key) = key {
             self.drawings.note(key, &drawn, drawn_after);
         }
@@ -887,6 +930,7 @@ impl Vault {
                 path: path.to_owned(),
             });
         }
+
         let Some(key) = named(path) else {
             return Ok(false);
         };
@@ -897,10 +941,12 @@ impl Vault {
                 let mut file =
                     File::open(path).map_err(|source| Error::io(VaultOp::Verify, path, source))?;
                 let mut buffer = vec![0_u8; COPY_BYTES];
+
                 loop {
                     let read = file
                         .read(&mut buffer)
                         .map_err(|source| Error::io(VaultOp::Verify, path, source))?;
+
                     if read == 0 {
                         break;
                     }
@@ -922,6 +968,7 @@ impl Vault {
                 path: path.to_owned(),
             });
         }
+
         let Some(key) = named(path) else {
             return Ok(false);
         };
@@ -930,6 +977,7 @@ impl Vault {
         Ok(match kept_as_it_came(path) {
             Some(format) => {
                 let mut digest = Digest::default();
+
                 digest.note(&bytes);
                 digest.settled() == key && cover::size_of(&bytes, Some(format)).is_ok()
             }
@@ -944,6 +992,7 @@ impl Vault {
         match transcoded::reconstructed(bytes, &opened) {
             Ok(Some(jpeg)) => {
                 let mut digest = Digest::default();
+
                 digest.note(&jpeg);
                 digest.settled() == key
             }
@@ -963,6 +1012,7 @@ impl Vault {
         if !self.packed_before_the_frames(path)? {
             return Ok(Reframing::AlreadyFramed);
         }
+
         let Some(key) = named(path) else {
             return Ok(Reframing::NotHeld);
         };
@@ -970,6 +1020,7 @@ impl Vault {
             Unpacking::open(path).map_err(|source| Error::io(VaultOp::Read, path, source))?;
         let length = unpacking.len();
         let staging = self.staged(&compressed_name(WAVE_EXTENSION))?;
+
         wave::packed_in_frames(
             wave::Unpacked {
                 reading: unpacking,
@@ -1007,6 +1058,7 @@ impl Vault {
 
     pub fn walk(&self) -> Result<Vec<PathBuf>> {
         let mut held = Vec::new();
+
         for folder in [AUDIO, COVERS] {
             self.walked(&self.root.join(folder), &mut held)?;
         }
@@ -1016,6 +1068,7 @@ impl Vault {
 
     pub fn covers(&self) -> Result<Vec<HeldFile>> {
         let mut held = Vec::new();
+
         self.walked(&self.root.join(COVERS), &mut held)?;
         held.sort();
         Ok(held
@@ -1031,6 +1084,7 @@ impl Vault {
 
     pub fn objects(&self) -> Result<Vec<HeldFile>> {
         let mut held = Vec::new();
+
         self.walked(&self.root.join(AUDIO), &mut held)?;
         held.sort();
         Ok(held
@@ -1041,6 +1095,7 @@ impl Vault {
 
     pub fn holding(&self) -> Result<Holdings> {
         let mut holdings = Holdings::default();
+
         for path in self.walk()? {
             let bytes = self.sized(&path)?;
             if path.starts_with(self.root.join(COVERS)) {
@@ -1067,12 +1122,15 @@ impl Vault {
         let mut swept = 0;
         let reading =
             fs::read_dir(&folder).map_err(|source| Error::io(VaultOp::Walk, &folder, source))?;
+
         for entry in reading {
             let entry = entry.map_err(|source| Error::io(VaultOp::Walk, &folder, source))?;
             let path = entry.path();
+
             if !sweeping.takes(staged_by(&path)) {
                 continue;
             }
+
             let taken = match sweep {
                 Sweep::Taking => self.forget(&path)?,
                 Sweep::Counting => true,
@@ -1093,6 +1151,7 @@ impl Vault {
         bits: u8,
     ) -> Result<Foretold> {
         let (format, stored) = flac_depth(bits);
+
         if weighing.renewing || taking.span.is_some() {
             return Ok(Foretold::Unforetold);
         }
@@ -1109,22 +1168,27 @@ impl Vault {
         };
         let spec = StreamSpec::new(info.spec.rate, info.spec.channels, format);
         let sound = Sound::placed(spec, info.speakers, Form::Flac);
+
         let Some(foretold) = declared.map(|pcm| sound.keyed(pcm)).or(taking.foretold) else {
             return Ok(Foretold::Unforetold);
         };
         let target = self.object_path(foretold, FLAC_EXTENSION);
+
         if !target.is_file() {
             return Ok(Foretold::Unforetold);
         }
 
         let heard = pcm_of(decoder, info, Some(format), taking.halt)?;
+
         if heard.key(Form::Flac) != foretold {
             return Ok(Foretold::Misdeclared);
         }
+
         let Some(standing) = self.standing_holding(&target, Expected::Sound(Form::Flac, &heard))?
         else {
             return Ok(Foretold::Misdeclared);
         };
+
         if !weighing.fits(standing) {
             return Ok(Foretold::Settled(Keeping::Refused(Refusal::NoSmaller)));
         }
@@ -1159,7 +1223,9 @@ impl Vault {
         } = encoding;
         let (format, stored) = flac_depth(bits);
         let narrowing = Narrowing::between(SampleFormat::S32, format);
+
         decoder.set_output_format(narrowing.decoded_as());
+
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
         let staging = self.staged(FLAC_EXTENSION)?;
@@ -1172,6 +1238,7 @@ impl Vault {
             weighing.smaller_than,
             halt,
         );
+
         let encoded = match encoding {
             Ok(flac::Encode::Encoded(encoded)) => encoded,
             Ok(flac::Encode::Wider) => {
@@ -1188,6 +1255,7 @@ impl Vault {
             self.discard(&staging)?;
             return Ok(AtDepth::Kept(Keeping::Refused(Refusal::Empty)));
         }
+
         let went_in = Heard {
             pcm: encoded.key,
             frames: encoded.frames,
@@ -1196,15 +1264,19 @@ impl Vault {
         };
         let key = went_in.key(Form::Flac);
         let target = self.object_path(key, FLAC_EXTENSION);
+
         let standing = match encoded.outgrew || (!weighing.renewing && target.is_file()) {
             true => self.standing_holding(&target, Expected::Sound(Form::Flac, &went_in))?,
             false => None,
         };
+
         if encoded.outgrew || standing.is_some() {
             self.discard(&staging)?;
+
             let Some(standing) = standing else {
                 return Ok(AtDepth::Kept(Keeping::Refused(Refusal::NoSmaller)));
             };
+
             if !weighing.fits(standing) {
                 return Ok(AtDepth::Kept(Keeping::Refused(Refusal::NoSmaller)));
             }
@@ -1256,10 +1328,13 @@ impl Vault {
         } else {
             SampleFormat::S32
         };
+
         decoder.set_output_format(format);
+
         let spec = StreamSpec::new(spec.rate, spec.channels, format);
 
         let tallied = wave::tally(decoder, spec, taking.halt)?;
+
         if tallied.pcm_bytes > wave::LARGEST_PCM {
             return Ok(Keeping::Refused(Refusal::TooLarge));
         }
@@ -1275,10 +1350,12 @@ impl Vault {
         };
         let key = went_in.key(Form::Wave);
         let target = self.object_path(key, &compressed_name(WAVE_EXTENSION));
+
         let standing = match weighing.renewing {
             true => None,
             false => self.standing_holding(&target, Expected::Sound(Form::Wave, &went_in))?,
         };
+
         if let Some(bytes) = standing {
             if !weighing.fits(bytes) {
                 return Ok(Keeping::Refused(Refusal::NoSmaller));
@@ -1304,6 +1381,7 @@ impl Vault {
         {
             return Ok(Keeping::Refused(Refusal::NoSmaller));
         }
+
         let mut again = reopened(taking, format)?;
         let packed = self.staged(&compressed_name(WAVE_EXTENSION))?;
         let packing = wave::Packing {
@@ -1313,6 +1391,7 @@ impl Vault {
             into: &packed,
             smaller_than: weighing.smaller_than,
         };
+
         match wave::pack(&mut again, packing, taking.halt)? {
             wave::Packed::Within => {}
             wave::Packed::NoSmaller => return Ok(Keeping::Refused(Refusal::NoSmaller)),
@@ -1321,9 +1400,11 @@ impl Vault {
 
         let holds = held_unless_halted(self.read_back_packed(&packed, Some(format), taking.halt))?
             .is_some_and(|read| went_in.held_by(read));
+
         if !holds {
             return Ok(Keeping::Refused(Refusal::NotValidated));
         }
+
         let landing = self.landed_or_standing(
             &packed,
             &target,
@@ -1374,21 +1455,25 @@ impl Vault {
 
         let container = Container::from_id(info.container);
         let mut copied = self.copied(taking, Stripping::Bare(container), unnarrowed)?;
+
         if copied
             .as_ref()
             .is_some_and(|copied| copied.stripped && !copied.holds_what(went_in))
         {
             copied = self.copied(taking, Stripping::Whole, unnarrowed)?;
         }
+
         let Some(copied) = copied else {
             return Ok(Keeping::Refused(Refusal::Empty));
         };
+
         if !copied.holds_what(went_in) {
             return Ok(Keeping::Refused(Refusal::NotValidated));
         }
 
         let extension = named_extension(taking.location);
         let key = copied.key;
+
         let target = self.object_path(key, &extension);
         let landing = self.landed_or_standing(
             &copied.staging,
@@ -1451,6 +1536,7 @@ impl Vault {
             .stream
             .stream_position()
             .map_err(|source| Error::source(taking.location, source))?;
+
         if !head.is_empty() {
             digest.note(&head);
             file.write_all(&head)
@@ -1465,18 +1551,23 @@ impl Vault {
             }
             None => Box::new(&mut media.stream),
         };
+
         if let Some(renumbering) = renumbering {
             rest = Box::new(ogg::Renumbered::over(rest, renumbering));
         }
         if !blanks.is_empty() {
             rest = Box::new(blanks::Blanked::over(rest, start, blanks));
         }
+
         let mut buffer = vec![0_u8; COPY_BYTES];
+
         loop {
             taking.halt.heard()?;
+
             let read = rest
                 .read(&mut buffer)
                 .map_err(|source| Error::source(taking.location, source))?;
+
             if read == 0 {
                 break;
             }
@@ -1491,6 +1582,7 @@ impl Vault {
         if held == 0 {
             return Ok(None);
         }
+
         let came_out = held_unless_halted(read_back(&staging, Some(heard_at), taking.halt))?;
         Ok(Some(Copied {
             staging,
@@ -1517,6 +1609,7 @@ impl Vault {
         let frames = went_in.frames;
         let holds = held_unless_halted(read_back(staging, Some(format), halt))?
             .is_some_and(|read| went_in.held_by(read));
+
         if !holds {
             self.discard(staging)?;
             return Ok(Keeping::Refused(Refusal::NotValidated));
@@ -1575,6 +1668,7 @@ impl Vault {
         } else {
             Landing::NoSmaller
         };
+
         if !matches!(landing, Landing::Landed(_) | Landing::Replaced(_)) {
             self.discard(staging)?;
         }
@@ -1632,14 +1726,18 @@ impl Vault {
     fn landed(&self, staging: &Path, target: &Path) -> Result<u64> {
         self.inside(staging)?;
         self.inside(target)?;
+
         let folder = target.parent().ok_or_else(|| Error::OutsideTheVault {
             path: target.to_path_buf(),
         })?;
         let made = !folder.is_dir();
+
         fs::create_dir_all(folder)
             .map_err(|source| Error::io(VaultOp::MakeFolder, folder, source))?;
         fs::rename(staging, target).map_err(|source| Error::io(VaultOp::Settle, target, source))?;
+
         let landed = self.sized(target)?;
+
         settled_folder(folder);
         if made && let Some(above) = folder.parent() {
             settled_folder(above);
@@ -1678,8 +1776,10 @@ impl Vault {
             fs::create_dir_all(folder)
                 .map_err(|source| Error::io(VaultOp::MakeFolder, folder, source))?;
         }
+
         let mut file =
             File::create(path).map_err(|source| Error::io(VaultOp::Stage, path, source))?;
+
         file.write_all(bytes)
             .map_err(|source| Error::io(VaultOp::Write, path, source))?;
         file.sync_all()
@@ -1844,6 +1944,7 @@ fn reopened(taking: &Taking<'_>, format: SampleFormat) -> Result<Decoder> {
         None => Decoder::open(taking.sources, taking.location),
     };
     let (mut decoder, _) = opened.map_err(|source| Error::codec(VaultOp::Read, source))?;
+
     decoder.refuse_holes();
     decoder.set_output_format(format);
     Ok(decoder)
@@ -1874,11 +1975,13 @@ fn pcm_of(
         .bits_per_coded_sample
         .unwrap_or_else(|| info.spec.format.valid_bits());
     let format = format.unwrap_or(info.spec.format);
+
     let in_full = format.is_float() && Form::floats_wider_than_a_wave(info.spec, bits);
     let narrowing = match format.is_float() {
         true => Narrowing::between(format, format),
         false => Narrowing::between(SampleFormat::S32, format),
     };
+
     decoder.set_output_format(narrowing.decoded_as());
     decoder.refuse_holes();
     decoder.follow_format_changes();
@@ -1899,6 +2002,7 @@ fn pcm_of(
 
     loop {
         halt.heard()?;
+
         let status = decoder
             .next_block(&mut block)
             .map_err(|source| Error::codec(VaultOp::Verify, source))?;
@@ -1940,9 +2044,11 @@ fn share_of(taking: &Taking<'_>, span: FrameSpan) -> Option<u64> {
     let size = taking.location.as_path().and_then(sized_source)?;
     let whole = probe(taking.sources, taking.location).ok()?.duration?;
     let held = span.within(whole).frames()?;
+
     if whole == Frames::ZERO {
         return None;
     }
+
     let share = u128::from(size) * u128::from(held.get()) / u128::from(whole.get());
     u64::try_from(share).ok()
 }
@@ -2044,6 +2150,7 @@ mod tests {
                 .count(),
             0
         );
+
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2056,12 +2163,16 @@ mod tests {
         let vault = Vault::make(&root).expect("a vault");
         let target = vault.object_path(VaultKey::of([7; 16]), FLAC_EXTENSION);
         let folder = target.parent().expect("a fanout folder");
+
         fs::create_dir_all(folder).expect("the folder");
         fs::set_permissions(folder, fs::Permissions::from_mode(0o300)).expect("write only");
+
         let unreadable = File::open(folder).is_err();
 
         let staging = vault.staged(FLAC_EXTENSION).expect("a staging file");
+
         fs::write(&staging, b"an object").expect("a staged write");
+
         let landed = vault.landed(&staging, &target);
 
         fs::set_permissions(folder, fs::Permissions::from_mode(0o700)).expect("restored");
@@ -2069,6 +2180,7 @@ mod tests {
             assert_eq!(landed.expect("landed"), 9);
             assert_eq!(fs::read(&target).expect("the object"), b"an object");
         }
+
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2079,6 +2191,7 @@ mod tests {
 
         let failed: Result<()> = (|| {
             let staging = vault.staged(FLAC_EXTENSION)?;
+
             fs::write(&staging, b"half an object").expect("a staged write");
             Err(Error::io(
                 VaultOp::Write,
@@ -2094,6 +2207,7 @@ mod tests {
                 .count(),
             0
         );
+
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2103,11 +2217,14 @@ mod tests {
 
         let root = std::env::temp_dir().join(format!("resonate-vault-crashed-{}", process::id()));
         let _ = fs::remove_dir_all(&root);
+
         drop(Vault::make(&root).expect("a vault"));
+
         let staging = root.join(STAGING);
         let crashed = staging.join(format!("{PAST_EVERY_PID}-7.flac"));
         let living = staging.join(format!("{}-7.flac", process::id()));
         let unnamed = staging.join("stray.flac");
+
         for path in [&crashed, &living, &unnamed] {
             fs::write(path, b"half an object").expect("a staged write");
         }
@@ -2121,6 +2238,7 @@ mod tests {
                 )
             })
             .expect("a file left long ago");
+
         let sandboxed = staging.join(format!("{PAST_EVERY_PID}-8.flac"));
         let held = Held::made(&sandboxed).expect("a staged write another namespace holds");
 
@@ -2132,7 +2250,9 @@ mod tests {
         let pruned = vault.sweep_the_staging().expect("a sweep");
         let living_after_pruning = living.exists();
         let unnamed_after_pruning = unnamed.exists();
+
         drop(held);
+
         let _ = fs::remove_dir_all(&root);
 
         assert!(sandboxed_after_opening);
@@ -2149,15 +2269,19 @@ mod tests {
 
         let mut state = seed;
         let mut data = Vec::with_capacity(frames as usize * 4);
+
         for at in 0..frames {
             state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+
             let noise = ((state >> 16) & 0xff) as i32 - 0x80;
             let tone = ((f64::from(at) * 0.05).sin() * 6000.0) as i32;
             for sample in [tone + noise, tone - noise] {
                 data.extend_from_slice(&(sample as i16).to_le_bytes());
             }
         }
+
         let mut wave = b"RIFF".to_vec();
+
         wave.extend_from_slice(&(36 + data.len() as u32).to_le_bytes());
         wave.extend_from_slice(b"WAVEfmt ");
         wave.extend_from_slice(&16_u32.to_le_bytes());
@@ -2183,6 +2307,7 @@ mod tests {
         const DIGEST_AT: usize = FRAMES_AT - crate::key::KEY_BYTES;
 
         let mut copy = object[..FRAMES_AT].to_vec();
+
         copy[STREAM_INFO_AT] = 0;
         copy[DIGEST_AT..FRAMES_AT].copy_from_slice(digest.as_bytes());
         copy.push(PADDING_LAST);
@@ -2221,8 +2346,10 @@ mod tests {
         let vault = Vault::make(root.join("vault")).expect("a vault");
         let first = root.join("first.wav");
         let second = root.join("second.wav");
+
         fs::write(&first, toned(40_000, 0x1234_5678)).expect("a written source");
         fs::write(&second, toned(40_000, 0x0bad_f00d)).expect("a written source");
+
         let landed = kept_from(&vault, &first);
         let other = kept_from(&vault, &second);
         let object = fs::read(&landed.path).expect("the landed object");
@@ -2232,6 +2359,7 @@ mod tests {
         let samples_alone = crate::standing::of_a_flac(&landed.path)
             .and_then(|declared| declared.digest)
             .expect("the object's own digest");
+
         fs::write(&copy, padded_declaring(&object, samples_alone)).expect("a copy");
         fs::write(&lying, padded_declaring(&other_object, samples_alone)).expect("a lying copy");
 
@@ -2266,9 +2394,11 @@ mod tests {
         let first = root.join("first.wav");
         let again = root.join("again.wav");
         let other = root.join("other.wav");
+
         fs::write(&first, toned(40_000, 0x1234_5678)).expect("a written source");
         fs::write(&again, toned(40_000, 0x1234_5678)).expect("a written source");
         fs::write(&other, toned(40_000, 0x0bad_f00d)).expect("a written source");
+
         let landed = kept_from(&vault, &first);
         let foretold = |path: &Path| match vault
             .keep(&Taking {
@@ -2310,14 +2440,17 @@ mod tests {
         assert!(vault.at(Path::new("../elsewhere")).is_err());
         assert!(vault.at(Path::new("/etc/passwd")).is_err());
         assert!(vault.at(Path::new("")).is_err());
+
         let inside = vault
             .at(Path::new("covers/ab/ab.jxl"))
             .expect("a place inside");
+
         assert_eq!(
             vault.within(&inside).expect("a place inside"),
             Path::new("covers/ab/ab.jxl")
         );
         assert!(vault.within(Path::new("/elsewhere/covers/ab.jxl")).is_err());
+
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2326,7 +2459,9 @@ mod tests {
         let mount =
             std::env::temp_dir().join(format!("resonate-vault-unmounted-{}", process::id()));
         let _ = fs::remove_dir_all(&mount);
+
         fs::create_dir_all(&mount).expect("an empty mount point");
+
         let root = mount.join("vault");
 
         let opened = Vault::open(&root);
@@ -2382,6 +2517,7 @@ mod tests {
             channels: 1,
             bits: 1
         }));
+
         let _ = fs::remove_dir_all(&root);
     }
 
@@ -2398,6 +2534,7 @@ mod tests {
         assert!(!vault.holds(&deeper));
         assert!(vault.read_inside(&climbing).is_err());
         assert!(vault.holds(&root.join("audio").join("ab.flac")));
+
         let _ = fs::remove_dir_all(&root);
     }
 

@@ -99,6 +99,7 @@ fn typed_onto(named: &[&str], held: usize, typed: &str) -> Option<usize> {
     let folded: Vec<String> = named.iter().map(|name| folded_letters(name)).collect();
     let wanted = folded_letters(typed);
     let mut letters = wanted.chars();
+
     let first = letters.next()?;
 
     match letters.all(|letter| letter == first) {
@@ -109,6 +110,7 @@ fn typed_onto(named: &[&str], held: usize, typed: &str) -> Option<usize> {
 
 fn typed_letter(event: &KeyDownEvent) -> Option<&str> {
     let modifiers = &event.keystroke.modifiers;
+
     if modifiers.control || modifiers.platform || modifiers.alt {
         return None;
     }
@@ -136,6 +138,7 @@ fn order_stepped<A: Action, O: Ordering>(
 ) -> impl Fn(&A, &mut Window, &mut App) + 'static {
     cx.listener(move |this, _: &A, window, cx| {
         let at = stepped_to(held_at, O::EVERY.len(), step);
+
         this.hold_the_order_at(at, window, cx);
         order_by(this, O::EVERY[at], cx);
     })
@@ -161,9 +164,11 @@ fn order_typed<O: Ordering>(
         let Some(letter) = typed_letter(event) else {
             return;
         };
+
         cx.stop_propagation();
 
         let now = Instant::now();
+
         if this.orders(cx).ordering_typed.ran_out_by(now) {
             this.change_the_orders(cx, |orders| orders.ordering_typed.cleared());
         }
@@ -178,6 +183,7 @@ fn order_typed<O: Ordering>(
         else {
             return;
         };
+
         this.hold_the_order_at(at, window, cx);
         order_by(this, O::EVERY[at], cx);
     })
@@ -397,6 +403,7 @@ impl RootView {
         let Some(panel) = self.sheet_panels.handle(sheets::ORDER_PANEL) else {
             return;
         };
+
         if panel.is_focused(window) {
             return;
         }
@@ -712,6 +719,7 @@ pub(crate) fn tracks_sorted(this: &RootView, cx: &Context<RootView>) -> Sorted {
         saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = track_order(column);
+
             this.library.update(cx, |library, cx| {
                 if library.sorting().tracks == wanted {
                     library.read_tracks(library.sorting().tracks_read.flipped(), cx);
@@ -734,6 +742,7 @@ pub(crate) fn favourites_sorted(this: &RootView, cx: &Context<RootView>) -> Sort
         saying: words::sorting::column_hint(),
         press: |this, column, cx| {
             let wanted = track_order(column);
+
             this.library.update(cx, |library, cx| {
                 if library.sorting().favourites == wanted {
                     library.read_favourites(library.sorting().favourites_read.flipped(), cx);
@@ -779,6 +788,7 @@ pub(crate) fn queue_sorted(this: &RootView, cx: &App) -> Sorted {
         press: |this, column, cx| {
             let wanted = row_order(column);
             let (order, reading) = this.queue.read(cx).order();
+
             let reading = if order == wanted {
                 reading.flipped()
             } else {
@@ -808,6 +818,7 @@ mod tests {
         for order in O::EVERY {
             let up = order.read(Direction::Ascending);
             let down = order.read(Direction::Descending);
+
             assert_ne!(
                 up,
                 down,
@@ -879,7 +890,9 @@ mod tests {
     fn no_two_orders_in_one_pane_are_named_alike() {
         fn all_apart<O: Ordering>(kind: &str) {
             let mut named: Vec<&'static str> = O::EVERY.iter().map(|order| order.named()).collect();
+
             let offered = named.len();
+
             named.sort_unstable();
             named.dedup();
 

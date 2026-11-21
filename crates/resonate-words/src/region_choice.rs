@@ -7,7 +7,7 @@ use icu_locale_core::{
 
 use crate::{Conventions, locale::tagged};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct RegionTag {
     language: subtags::Language,
     script: Option<Script>,
@@ -35,6 +35,7 @@ impl RegionTag {
     pub const OFFERED: [Self; Self::COUNT] = {
         let mut offered = [NAMED[0].0; Self::COUNT];
         let mut at = 0;
+
         while at < Self::COUNT {
             offered[at] = NAMED[at].0;
             at += 1;
@@ -93,7 +94,7 @@ impl fmt::Display for RegionTag {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum RegionChoice {
     #[default]
     System,
@@ -106,6 +107,7 @@ impl RegionChoice {
     pub const ALL: [Self; 1 + RegionTag::COUNT] = {
         let mut all = [Self::System; 1 + RegionTag::COUNT];
         let mut at = 0;
+
         while at < RegionTag::COUNT {
             all[at + 1] = Self::Chosen(RegionTag::OFFERED[at]);
             at += 1;
@@ -183,13 +185,16 @@ mod tests {
     #[test]
     fn a_chosen_region_settles_its_own_grouping_and_date_order() {
         settle(&RegionChoice::parse("de-DE").unwrap().conventions());
+
         assert_eq!(grouped(1_234_567), "1.234.567");
         assert_eq!(day_month_and_year(2026, 11, 13), "13 Nov 2026");
 
         settle(&RegionChoice::parse("en-IN").unwrap().conventions());
+
         assert_eq!(grouped(1_234_567), "12,34,567");
 
         settle(&RegionChoice::parse("en-US").unwrap().conventions());
+
         assert_eq!(grouped(1_234_567), "1,234,567");
         assert_eq!(day_month_and_year(2026, 11, 13), "Nov 13, 2026");
     }

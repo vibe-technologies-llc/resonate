@@ -57,6 +57,7 @@ impl Library {
             )?;
 
             let mut wanting: Vec<PortraitWanted> = Vec::new();
+
             for (artist, link) in held {
                 match wanting.last_mut() {
                     Some(last) if last.artist.get() as i64 == artist => last.links.push(link),

@@ -128,6 +128,7 @@ impl<T: Terminal> Pseudo<T> {
     ) -> Result<(Self, PipeWriter, PipeReader)> {
         let (console_reads, typed) = piped(&terminal)?;
         let (shown, console_writes) = piped(&terminal)?;
+
         let console = terminal
             .create_pseudo_console(columns, rows, &console_reads, &console_writes)
             .map_err(refused(Op::OpenPseudoConsole))?;
@@ -169,6 +170,7 @@ impl<T: Terminal> Attributes<T> {
     fn for_console(terminal: &T, console: T::Console) -> Result<Self> {
         let bytes = terminal.attribute_list_bytes(ATTRIBUTES_HELD);
         let mut held = vec![0_usize; bytes.div_ceil(size_of::<usize>())];
+
         let list = terminal
             .initialize_attribute_list(&mut held, ATTRIBUTES_HELD, bytes)
             .map_err(refused(Op::MakeAttributes))?;
@@ -187,7 +189,9 @@ impl<T: Terminal> Attributes<T> {
 
 fn quoted_into(line: &mut Vec<u16>, argument: &OsStr) {
     line.push(QUOTE);
+
     let mut backslashes = 0_usize;
+
     for unit in units_of(argument) {
         match unit {
             BACKSLASH => {
@@ -206,6 +210,7 @@ fn quoted_into(line: &mut Vec<u16>, argument: &OsStr) {
 
 fn command_line(program: &OsStr, arguments: &[&OsStr]) -> Vec<u16> {
     let mut line = Vec::new();
+
     quoted_into(&mut line, program);
     for argument in arguments {
         line.push(SPACE);
@@ -222,16 +227,19 @@ fn environment_block(environment: &[(OsString, OsString)]) -> Vec<u16> {
         .filter_map(|(key, value)| {
             let key = units_of(key);
             let value = units_of(value);
+
             let whole = !key.is_empty() && !key.contains(&0) && !value.contains(&0);
             whole.then(|| key.into_iter().chain([EQUALS]).chain(value).collect())
         })
         .collect();
+
     entries.sort_by_key(|entry| String::from_utf16_lossy(entry).to_uppercase());
 
     let mut block: Vec<u16> = entries
         .into_iter()
         .flat_map(|entry| entry.into_iter().chain([0]))
         .collect();
+
     if block.is_empty() {
         block.push(0);
     }
@@ -270,9 +278,11 @@ impl<T: Terminal> Spawned<T> {
             .terminal
             .has_exited(self.handle)
             .map_err(refused(Op::WaitForProcess))?;
+
         if !exited {
             return Ok(None);
         }
+
         let code = self
             .terminal
             .exit_code(self.handle)
@@ -414,6 +424,7 @@ mod real {
 
         fn attribute_list_bytes(&self, count: u32) -> usize {
             let mut bytes = 0_usize;
+
             let _ = unsafe { InitializeProcThreadAttributeList(None, count, None, &raw mut bytes) };
             bytes
         }
@@ -426,6 +437,7 @@ mod real {
         ) -> Raw<LPPROC_THREAD_ATTRIBUTE_LIST> {
             let list = LPPROC_THREAD_ATTRIBUTE_LIST(storage.as_mut_ptr().cast());
             let mut bytes = bytes;
+
             unsafe { InitializeProcThreadAttributeList(Some(list), count, None, &raw mut bytes) }
                 .map_err(hresult)?;
             Ok(list)
@@ -462,6 +474,7 @@ mod real {
             attributes: LPPROC_THREAD_ATTRIBUTE_LIST,
         ) -> Raw<Started<usize>> {
             let mut startup = STARTUPINFOEXW::default();
+
             startup.StartupInfo.cb = u32::try_from(size_of::<STARTUPINFOEXW>()).unwrap_or(u32::MAX);
             startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
             startup.StartupInfo.hStdInput = INVALID_HANDLE_VALUE;
@@ -470,6 +483,7 @@ mod real {
             startup.lpAttributeList = attributes;
 
             let mut started = PROCESS_INFORMATION::default();
+
             unsafe {
                 CreateProcessW(
                     name_of(application),
@@ -508,6 +522,7 @@ mod real {
 
         fn exit_code(&self, process: usize) -> Raw<u32> {
             let mut code = 0_u32;
+
             unsafe { GetExitCodeProcess(handle_of(process), &raw mut code) }.map_err(hresult)?;
             Ok(code)
         }
@@ -529,6 +544,7 @@ mod real {
 
         fn console_mode(&self, input: &File) -> Raw<u32> {
             let mut mode = CONSOLE_MODE(0);
+
             unsafe { GetConsoleMode(HANDLE(input.as_raw_handle()), &raw mut mode) }
                 .map_err(hresult)?;
             Ok(mode.0)
@@ -640,7 +656,9 @@ mod tests {
 
         fn pipe(&self) -> io::Result<(PipeReader, PipeWriter)> {
             self.log(Call::Pipe);
+
             let mut made = self.pipes_made.lock();
+
             *made += 1;
             if self.pipe_fails_at == Some(*made) {
                 return Err(io::Error::other("no more pipes"));
@@ -761,6 +779,7 @@ mod tests {
 
     fn opened(fake: &Fake) -> Pseudo<Fake> {
         let (console, _typed, _shown) = Pseudo::open(fake.clone(), 200, 50).expect("opened");
+
         fake.calls.lock().clear();
         console
     }
@@ -931,6 +950,7 @@ mod tests {
         let fake = Fake::new();
         let console = opened(&fake);
         let process = console.spawn(Path::new("p"), &[], &[]).expect("spawned");
+
         fake.calls.lock().clear();
 
         drop(process);
@@ -1050,7 +1070,9 @@ mod tests {
                 ..Fake::refusing(what)
             };
             let console = opened(&Fake::new());
+
             drop(console);
+
             let process = Spawned::owning(
                 fake.clone(),
                 Started {
@@ -1086,6 +1108,7 @@ mod tests {
                 id: 1,
             },
         );
+
         fake.calls.lock().clear();
 
         process.end().expect("ended");

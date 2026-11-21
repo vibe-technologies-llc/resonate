@@ -120,6 +120,7 @@ pub(crate) fn has(object: u32, address: Address) -> bool {
 
 pub(crate) fn settable(object: u32, address: Address) -> bool {
     let mut settable = 0_u8;
+
     let status = unsafe {
         AudioObjectIsPropertySettable(
             object,
@@ -132,6 +133,7 @@ pub(crate) fn settable(object: u32, address: Address) -> bool {
 
 fn bytes_of(object: u32, address: Address, op: Op) -> Result<u32> {
     let mut bytes = 0_u32;
+
     let status = unsafe {
         AudioObjectGetPropertyDataSize(
             object,
@@ -147,6 +149,7 @@ fn bytes_of(object: u32, address: Address, op: Op) -> Result<u32> {
 pub(crate) fn read<T: Plain>(object: u32, address: Address, op: Op) -> Result<T> {
     let mut value = T::EMPTY;
     let mut bytes = size_of::<T>() as u32;
+
     let status = unsafe {
         AudioObjectGetPropertyData(
             object,
@@ -157,6 +160,7 @@ pub(crate) fn read<T: Plain>(object: u32, address: Address, op: Op) -> Result<T>
             NonNull::from(&mut value).cast::<c_void>(),
         )
     };
+
     checked(op, status)?;
     if bytes as usize == size_of::<T>() {
         Ok(value)
@@ -168,16 +172,21 @@ pub(crate) fn read<T: Plain>(object: u32, address: Address, op: Op) -> Result<T>
 pub(crate) fn read_all<T: Plain>(object: u32, address: Address, op: Op) -> Result<Vec<T>> {
     let each = size_of::<T>();
     let mut bytes = bytes_of(object, address, op)?;
+
     if !(bytes as usize).is_multiple_of(each) {
         return Err(Error::Missized { op, bytes });
     }
+
     let mut values = vec![T::EMPTY; bytes as usize / each];
+
     let Some(first) = NonNull::new(values.as_mut_ptr()) else {
         return Ok(values);
     };
+
     if values.is_empty() {
         return Ok(values);
     }
+
     let status = unsafe {
         AudioObjectGetPropertyData(
             object,
@@ -188,6 +197,7 @@ pub(crate) fn read_all<T: Plain>(object: u32, address: Address, op: Op) -> Resul
             first.cast::<c_void>(),
         )
     };
+
     checked(op, status)?;
     values.truncate(bytes as usize / each);
     Ok(values)
@@ -225,6 +235,7 @@ pub(crate) fn write_no_pointer(object: u32, address: Address, op: Op) -> Result<
 pub(crate) fn read_text(object: u32, address: Address, op: Op) -> Result<String> {
     let mut text: *mut CFString = ptr::null_mut();
     let mut bytes = size_of::<*mut CFString>() as u32;
+
     let status = unsafe {
         AudioObjectGetPropertyData(
             object,
@@ -235,7 +246,9 @@ pub(crate) fn read_text(object: u32, address: Address, op: Op) -> Result<String>
             NonNull::from(&mut text).cast::<c_void>(),
         )
     };
+
     checked(op, status)?;
+
     let Some(text) = NonNull::new(text) else {
         return Err(Error::Missized { op, bytes: 0 });
     };

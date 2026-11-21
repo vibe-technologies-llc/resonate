@@ -62,9 +62,11 @@ pub(crate) fn as_jxl(art: &CoverArt) -> Result<Drawing> {
 
     let layout = layout_of(pixels.color());
     let too_narrow = width < SMALLEST_JXL_SIDE || height < SMALLEST_JXL_SIDE;
+
     let Some((colorspace, depth)) = layout.filter(|_| !too_narrow) else {
         return Ok(Drawing::AsItCame { width, height });
     };
+
     if carries_more_than_pixels(art)? {
         return Ok(Drawing::AsItCame { width, height });
     }
@@ -72,6 +74,7 @@ pub(crate) fn as_jxl(art: &CoverArt) -> Result<Drawing> {
     let options = EncoderOptions::new(width as usize, height as usize, colorspace, depth)
         .set_effort(MOST_EFFORT);
     let mut bytes = Vec::new();
+
     JxlSimpleEncoder::new(pixels.as_bytes(), options)
         .encode(&mut bytes)
         .map_err(|source| Error::PictureWritten {
@@ -89,6 +92,7 @@ pub(crate) fn as_jxl(art: &CoverArt) -> Result<Drawing> {
 fn carries_more_than_pixels(art: &CoverArt) -> Result<bool> {
     let held = || Cursor::new(art.bytes.as_slice());
     let format = art.format_of_its_bytes();
+
     let animated = match format {
         ImageFormat::Png => PngDecoder::new(held()).and_then(|decoder| decoder.is_apng()),
         ImageFormat::Webp => WebPDecoder::new(held()).map(|decoder| decoder.has_animation()),
@@ -102,6 +106,7 @@ fn carries_more_than_pixels(art: &CoverArt) -> Result<bool> {
         ImageFormat::Jpeg | ImageFormat::Bmp => Ok(false),
     }
     .map_err(unread)?;
+
     if animated {
         return Ok(true);
     }
@@ -169,6 +174,7 @@ pub(crate) fn size_of_jxl(bytes: &[u8]) -> Result<(u32, u32)> {
         op: PictureOp::Open,
     };
     let mut reading = jxl_oxide::JxlImage::builder().build_uninit();
+
     reading.feed_bytes(bytes).map_err(|source| {
         tracing::warn!(%source, "a JXL picture's head could not be read");
         unopened()
@@ -187,6 +193,7 @@ pub(crate) fn size_of(bytes: &[u8], format: Option<ImageFormat>) -> Result<(u32,
         return size_of_jxl(bytes);
     };
     let mut reading = image::ImageReader::new(Cursor::new(bytes));
+
     reading.set_format(read_as(format));
     reading.into_dimensions().map_err(|source| Error::Picture {
         source: Box::new(source),
@@ -199,6 +206,7 @@ pub(crate) fn size_of_file(path: &Path, format: Option<ImageFormat>) -> Result<(
         return size_of_jxl_stream(path, opened);
     };
     let mut reading = image::ImageReader::new(BufReader::new(opened));
+
     reading.set_format(read_as(format));
     reading.into_dimensions().map_err(|source| Error::Picture {
         source: Box::new(source),
@@ -215,6 +223,7 @@ fn size_of_jxl_stream(path: &Path, mut file: File) -> Result<(u32, u32)> {
         let read = file
             .read(&mut chunk)
             .map_err(|source| Error::io(VaultOp::Read, path, source))?;
+
         if read == 0 {
             return Err(unopened());
         }
@@ -260,12 +269,15 @@ pub(crate) fn lossless_of(picture: &jxl_oxide::JxlImage) -> Result<DynamicImage>
     })?;
 
     let mut stream = render.stream();
+
     let (width, height) = (stream.width(), stream.height());
     let channels = stream.channels() as usize;
+
     let samples = width as usize * height as usize * channels;
 
     let drawn = if wide {
         let mut read = vec![0_u16; samples];
+
         stream.write_to_buffer(&mut read);
         match channels {
             1 => ImageBuffer::from_raw(width, height, read).map(DynamicImage::ImageLuma16),
@@ -276,6 +288,7 @@ pub(crate) fn lossless_of(picture: &jxl_oxide::JxlImage) -> Result<DynamicImage>
         }
     } else {
         let mut read = vec![0_u8; samples];
+
         stream.write_to_buffer(&mut read);
         match channels {
             1 => ImageBuffer::from_raw(width, height, read).map(DynamicImage::ImageLuma8),
@@ -290,6 +303,7 @@ pub(crate) fn lossless_of(picture: &jxl_oxide::JxlImage) -> Result<DynamicImage>
 
 pub(crate) fn drawable(bytes: &[u8]) -> Result<CoverArt> {
     let opened = opened_jxl(bytes)?;
+
     if let Some(jpeg) = transcoded::reconstructed(bytes, &opened)? {
         return Ok(CoverArt {
             format: ImageFormat::Jpeg,
@@ -299,6 +313,7 @@ pub(crate) fn drawable(bytes: &[u8]) -> Result<CoverArt> {
 
     let picture = lossless_of(&opened)?.into_rgba8();
     let mut written = Vec::new();
+
     PngEncoder::new_with_quality(&mut written, CompressionType::Fast, FilterType::Adaptive)
         .write_image(
             picture.as_raw(),
@@ -337,15 +352,20 @@ mod tests {
     fn noisy(width: u32, height: u32) -> CoverArt {
         let mut state = 0x2545_f491_u32;
         let mut pixels = Vec::with_capacity((width * height * 4) as usize);
+
         for _ in 0..width * height {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
+
             let [red, green, blue, _] = state.to_le_bytes();
+
             pixels.extend_from_slice(&[red, green, blue, u8::MAX]);
         }
+
         let drawn = image::RgbaImage::from_raw(width, height, pixels).expect("a drawn picture");
         let mut written = Cursor::new(Vec::new());
+
         DynamicImage::ImageRgba8(drawn)
             .write_to(&mut written, image::ImageFormat::Png)
             .expect("a written picture");
@@ -364,6 +384,7 @@ mod tests {
 
     fn written_png(picture: DynamicImage) -> Vec<u8> {
         let mut written = Cursor::new(Vec::new());
+
         picture
             .write_to(&mut written, image::ImageFormat::Png)
             .expect("a written picture");
@@ -372,6 +393,7 @@ mod tests {
 
     fn sixteen_bit(width: u32, height: u32) -> DynamicImage {
         let mut samples = Vec::with_capacity((width * height * 3) as usize);
+
         for at in 0..width * height * 3 {
             samples.push((at.wrapping_mul(2_654_435_761) >> 7) as u16);
         }
@@ -409,9 +431,11 @@ mod tests {
     #[test]
     fn a_grey_picture_with_a_seen_through_alpha_reads_back_as_it_went_in() {
         let mut samples = Vec::new();
+
         for at in 0..20_u32 * 12 {
             samples.extend_from_slice(&[(at * 7) as u8, (at * 13) as u8]);
         }
+
         let picture = DynamicImage::ImageLumaA8(
             ImageBuffer::from_raw(20, 12, samples).expect("a grey picture"),
         );
@@ -429,7 +453,9 @@ mod tests {
     fn a_picture_carrying_a_colour_profile_or_more_than_one_frame_is_kept_as_it_came() {
         let picture = DynamicImage::ImageRgb8(sixteen_bit(16, 16).to_rgb8());
         let mut profiled = Vec::new();
+
         let mut encoder = PngEncoder::new(&mut profiled);
+
         encoder
             .set_icc_profile(vec![0_u8; 132])
             .expect("a PNG that takes a profile");
@@ -438,19 +464,24 @@ mod tests {
             .expect("a profiled picture");
 
         let mut animated = Vec::new();
+
         {
             let mut encoder = image::codecs::gif::GifEncoder::new(&mut animated);
             for shade in [0_u8, 200] {
                 let frame = image::RgbaImage::from_pixel(8, 8, image::Rgba([shade, 0, 0, 255]));
+
                 encoder
                     .encode_frame(image::Frame::new(frame))
                     .expect("a written frame");
             }
         }
+
         let mut still = Vec::new();
+
         {
             let mut encoder = image::codecs::gif::GifEncoder::new(&mut still);
             let frame = image::RgbaImage::from_pixel(8, 8, image::Rgba([9, 0, 0, 255]));
+
             encoder
                 .encode_frame(image::Frame::new(frame))
                 .expect("a written frame");
@@ -462,6 +493,7 @@ mod tests {
                 Drawing::AsItCame { .. }
             ));
         }
+
         assert!(matches!(
             as_jxl(&CoverArt {
                 format: ImageFormat::Gif,
@@ -486,14 +518,18 @@ mod tests {
     fn a_standing_file_is_sized_off_its_head_in_chunks() {
         let folder =
             std::env::temp_dir().join(format!("resonate-cover-sized-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let art = noisy(160, 120);
         let drawn = lossless(&art);
+
         assert!(drawn.bytes.len() > 2 * HEAD_READ_AT_A_TIME);
 
         let jxl = folder.join("cover.jxl");
         let png = folder.join("cover.png");
         let empty = folder.join("empty.jxl");
+
         std::fs::write(&jxl, &drawn.bytes).expect("a written JXL");
         std::fs::write(&png, &art.bytes).expect("a written PNG");
         std::fs::write(&empty, []).expect("an empty file");
@@ -501,6 +537,7 @@ mod tests {
         let sized_jxl = size_of_file(&jxl, None);
         let sized_png = size_of_file(&png, Some(ImageFormat::Png));
         let sized_empty = size_of_file(&empty, None);
+
         std::fs::remove_dir_all(&folder).expect("a removed folder");
 
         assert_eq!(sized_jxl.expect("a JXL size"), (160, 120));

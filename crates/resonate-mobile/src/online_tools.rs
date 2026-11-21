@@ -133,6 +133,7 @@ impl MobilePlayer {
 
     pub fn artist_albums(&self, id: String, from: u32) -> Result<SearchDiscography> {
         self.require_online()?;
+
         let discography = self
             .services
             .online
@@ -176,6 +177,7 @@ impl MobilePlayer {
 
     pub fn release_songs(&self, id: String) -> Result<Vec<SearchSong>> {
         self.require_online()?;
+
         let Some(release) = self
             .services
             .online
@@ -189,6 +191,7 @@ impl MobilePlayer {
 
     pub fn search_auto_eq(&self, text: String) -> Result<Vec<AutoEqDevice>> {
         self.require_online()?;
+
         let catalogue = self.services.auto_eq.catalogue()?;
         Ok(resonate_eq::search(&catalogue, &text)
             .into_iter()
@@ -203,8 +206,10 @@ impl MobilePlayer {
 
     pub fn auto_eq_profile(&self, id: String) -> Result<Option<EqualiserImport>> {
         self.require_online()?;
+
         let id = resonate_eq::DeviceId::new(&id)?;
         let catalogue = self.services.auto_eq.catalogue()?;
+
         let name = catalogue
             .get(&id)
             .map_or_else(|| id.as_str().to_owned(), |device| device.label.clone());
@@ -238,9 +243,12 @@ impl MobilePlayer {
 
     pub fn authorize_lastfm(&self, key: String, secret: String) -> Result<String> {
         self.require_online()?;
+
         let signing = &self.services.lastfm_signing;
         let attempt = signing.attempts.fetch_add(1, Ordering::AcqRel) + 1;
+
         *signing.waiting.lock() = None;
+
         let approving = resonate_online::approval_asked(
             Arc::clone(self.services.online.client()),
             resonate_online::Application { key, secret },
@@ -248,6 +256,7 @@ impl MobilePlayer {
         .map_err(|source| Error::reference(LookupOp::Token, source))?;
         let address = approving.address().to_owned();
         let mut waiting = signing.waiting.lock();
+
         if signing.attempts.load(Ordering::Acquire) != attempt {
             return Err(Error::SignInCancelled);
         }
@@ -257,6 +266,7 @@ impl MobilePlayer {
 
     pub fn finish_lastfm_authorization(&self) -> Result<Option<LastfmSignedIn>> {
         self.require_online()?;
+
         let signing = &self.services.lastfm_signing;
         let Some((attempt, approving)) = signing.waiting.lock().take() else {
             return Ok(None);
@@ -276,14 +286,17 @@ impl MobilePlayer {
 
     pub fn cancel_lastfm_authorization(&self) {
         let signing = &self.services.lastfm_signing;
+
         signing.attempts.fetch_add(1, Ordering::AcqRel);
         *signing.waiting.lock() = None;
     }
 
     pub fn submit_scrobbles(&self, account: ScrobbleAccount, playing: Option<u64>) -> Result<u64> {
         self.require_online()?;
+
         let mut submitted = 0;
         let mut failure = None;
+
         for client in self.scrobblers(account) {
             let told = self.submit_to(client.as_ref(), playing);
             match told {
@@ -303,6 +316,7 @@ impl MobilePlayer {
 impl MobilePlayer {
     pub(crate) fn scrobblers(&self, account: ScrobbleAccount) -> Vec<Box<dyn Scrobbler>> {
         let mut clients: Vec<Box<dyn Scrobbler>> = Vec::new();
+
         if !account.listenbrainz_token.is_empty() {
             clients.push(Box::new(resonate_online::ListenBrainz::new(
                 Arc::clone(self.services.online.client()),
@@ -341,6 +355,7 @@ impl MobilePlayer {
         let mut submitted = Submitted::default();
         let at_once = client.at_once().get().min(SUBMITTED_AT_ONCE);
         let marked = |through: u64| self.mark_through(service, through);
+
         for chunk in pending.chunks(at_once) {
             told_chunk(client, chunk, &marked, &mut submitted).map_err(|halted| {
                 halted.into_error(|source| Error::reference(LookupOp::Submit, source))
@@ -369,6 +384,7 @@ impl MobilePlayer {
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let through = through.unwrap_or(i64::MAX);
         let mut query = connection.prepare("SELECT d.*, l.id AS listen_id, l.began AS listen_began FROM listens l JOIN documents d ON d.id = l.track WHERE l.counted = 1 AND l.elsewhere = 0 AND l.id > ?1 ORDER BY l.id LIMIT 100").map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let found = query
             .query_map([through], |row| {
                 Ok((
@@ -489,11 +505,13 @@ mod tests {
 
         fn submit(&self, listens: &[Scrobble]) -> resonate_library::Result<()> {
             self.refusal()?;
+
             let listens_of = |listen: &Scrobble| listen.listen.get();
             let refused = |status| LibraryError::Refused {
                 op: LookupOp::Submit,
                 status,
             };
+
             if listens
                 .iter()
                 .map(listens_of)
@@ -536,6 +554,7 @@ mod tests {
 
     fn listened(harness: &Harness, song: u64, counted: bool, elsewhere: bool, times: usize) {
         let connection = harness.player.catalog.0.lock();
+
         connection
             .execute(
                 "UPDATE documents SET artist = 'Someone' WHERE id = ?1 AND artist = ''",
@@ -571,23 +590,29 @@ mod tests {
     fn listens_go_a_hundred_at_a_time_in_order_and_the_mark_moves_with_each_batch() {
         let harness = Harness::new();
         let song = harness.song('a').id;
+
         listened(&harness, song, true, false, 150);
         harness
             .player
             .start_scrobbling(ScrobbleService::ListenBrainz, true)
             .expect("a mark begun");
+
         let client = Told::new(ListeningService::ListenBrainz);
 
         let first = harness.player.submit_to(&client, None).expect("a batch");
+
         assert_eq!(first, 100);
         assert_eq!(through(&harness, ScrobbleService::ListenBrainz), Some(100));
 
         let second = harness.player.submit_to(&client, None).expect("a batch");
+
         assert_eq!(second, 50);
         assert_eq!(through(&harness, ScrobbleService::ListenBrainz), Some(150));
 
         assert_eq!(harness.player.submit_to(&client, None).expect("none"), 0);
+
         let sent = client.submitted.lock().clone();
+
         assert_eq!(sent.len(), 2);
         assert_eq!(sent[0], (1..=100).collect::<Vec<u64>>());
         assert_eq!(sent[1], (101..=150).collect::<Vec<u64>>());
@@ -597,18 +622,22 @@ mod tests {
     fn a_refused_batch_leaves_the_mark_where_it_was_and_is_sent_again() {
         let harness = Harness::new();
         let song = harness.song('a').id;
+
         listened(&harness, song, true, false, 3);
         harness
             .player
             .start_scrobbling(ScrobbleService::LastFm, true)
             .expect("a mark begun");
+
         let client = Told::new(ListeningService::LastFm);
 
         client.failing(true);
+
         assert!(harness.player.submit_to(&client, None).is_err());
         assert_eq!(through(&harness, ScrobbleService::LastFm), Some(0));
 
         client.failing(false);
+
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 3);
         assert_eq!(through(&harness, ScrobbleService::LastFm), Some(3));
     }
@@ -617,9 +646,11 @@ mod tests {
     fn only_counted_listens_of_this_device_are_sent_and_history_only_where_asked_for() {
         let harness = Harness::new();
         let song = harness.song('b').id;
+
         listened(&harness, song, true, false, 2);
         listened(&harness, song, false, false, 2);
         listened(&harness, song, true, true, 2);
+
         let client = Told::new(ListeningService::ListenBrainz);
 
         assert_eq!(
@@ -632,16 +663,19 @@ mod tests {
             .player
             .start_scrobbling(ScrobbleService::ListenBrainz, false)
             .expect("a mark begun");
+
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 0);
 
         listened(&harness, song, true, false, 1);
         listened(&harness, song, true, true, 1);
+
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 1);
 
         harness
             .player
             .start_scrobbling(ScrobbleService::ListenBrainz, true)
             .expect("a mark begun");
+
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 3);
     }
 
@@ -649,6 +683,7 @@ mod tests {
     fn each_service_keeps_its_own_mark() {
         let harness = Harness::new();
         let song = harness.song('c').id;
+
         listened(&harness, song, true, false, 4);
         for service in [ScrobbleService::ListenBrainz, ScrobbleService::LastFm] {
             harness
@@ -656,11 +691,13 @@ mod tests {
                 .start_scrobbling(service, true)
                 .expect("a mark begun");
         }
+
         let brainz = Told::new(ListeningService::ListenBrainz);
         let last = Told::new(ListeningService::LastFm);
 
         brainz.failing(false);
         last.failing(true);
+
         assert_eq!(harness.player.submit_to(&brainz, None).expect("sent"), 4);
         assert!(harness.player.submit_to(&last, None).is_err());
 
@@ -672,11 +709,13 @@ mod tests {
     fn a_song_playing_now_is_told_after_the_listens_and_its_refusal_keeps_their_mark() {
         let harness = Harness::new();
         let song = harness.song('d').id;
+
         listened(&harness, song, true, false, 2);
         harness
             .player
             .start_scrobbling(ScrobbleService::ListenBrainz, true)
             .expect("a mark begun");
+
         let client = Told::new(ListeningService::ListenBrainz);
 
         assert_eq!(
@@ -690,6 +729,7 @@ mod tests {
 
         listened(&harness, song, true, false, 1);
         *client.refuses_playing.lock() = true;
+
         assert!(harness.player.submit_to(&client, Some(song)).is_err());
         assert_eq!(through(&harness, ScrobbleService::ListenBrainz), Some(3));
     }
@@ -711,16 +751,19 @@ mod tests {
     fn lastfm_is_told_fifty_listens_at_a_time_and_the_mark_follows_each_batch() {
         let harness = Harness::new();
         let song = harness.song('a').id;
+
         listened(&harness, song, true, false, 100);
         harness
             .player
             .start_scrobbling(ScrobbleService::LastFm, true)
             .expect("a mark begun");
+
         let client = Told::new(ListeningService::LastFm).in_batches_of(50);
 
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 100);
 
         let sent = client.submitted.lock().clone();
+
         assert_eq!(sent.len(), 2);
         assert_eq!(sent[0], (1..=50).collect::<Vec<u64>>());
         assert_eq!(sent[1], (51..=100).collect::<Vec<u64>>());
@@ -735,6 +778,7 @@ mod tests {
             harness.song('b').id,
             harness.song('c').id,
         );
+
         without_an_artist(&harness, nameless);
         harness
             .player
@@ -743,6 +787,7 @@ mod tests {
         listened(&harness, named, true, false, 1);
         listened(&harness, nameless, true, false, 1);
         listened(&harness, last, true, false, 1);
+
         let client = Told::new(ListeningService::ListenBrainz);
 
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 2);
@@ -755,12 +800,14 @@ mod tests {
     fn a_trailing_nameless_listen_still_moves_the_mark() {
         let harness = Harness::new();
         let nameless = harness.song('b').id;
+
         without_an_artist(&harness, nameless);
         harness
             .player
             .start_scrobbling(ScrobbleService::ListenBrainz, true)
             .expect("a mark begun");
         listened(&harness, nameless, true, false, 2);
+
         let client = Told::new(ListeningService::ListenBrainz);
 
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 0);
@@ -773,12 +820,15 @@ mod tests {
     fn a_batch_refused_as_malformed_is_sent_one_by_one_and_the_bad_listen_is_passed_over() {
         let harness = Harness::new();
         let song = harness.song('a').id;
+
         listened(&harness, song, true, false, 4);
         harness
             .player
             .start_scrobbling(ScrobbleService::LastFm, true)
             .expect("a mark begun");
+
         let client = Told::new(ListeningService::LastFm).in_batches_of(50);
+
         *client.malformed.lock() = vec![2];
 
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 3);
@@ -792,12 +842,15 @@ mod tests {
     fn a_failure_while_sending_one_by_one_keeps_the_mark_before_the_listen_it_stopped_at() {
         let harness = Harness::new();
         let song = harness.song('a').id;
+
         listened(&harness, song, true, false, 4);
         harness
             .player
             .start_scrobbling(ScrobbleService::LastFm, true)
             .expect("a mark begun");
+
         let client = Told::new(ListeningService::LastFm).in_batches_of(50);
+
         *client.malformed.lock() = vec![2];
         *client.down_on.lock() = Some(3);
 
@@ -805,6 +858,7 @@ mod tests {
         assert_eq!(through(&harness, ScrobbleService::LastFm), Some(2));
 
         *client.down_on.lock() = None;
+
         assert_eq!(harness.player.submit_to(&client, None).expect("sent"), 2);
         assert_eq!(through(&harness, ScrobbleService::LastFm), Some(4));
     }

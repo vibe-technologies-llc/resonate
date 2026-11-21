@@ -52,9 +52,11 @@ impl MobilePlayer {
             .find_map(|zone| {
                 let state = zone.player.state();
                 let transport = transport_of(state.playback);
+
                 if !transport.sounds() {
                     return None;
                 }
+
                 let heard = self.heard(&state, &zone.player.queued().rows);
                 Some(HeardElsewhere {
                     zone: zone.id.get(),
@@ -80,6 +82,7 @@ impl MobilePlayer {
 impl MobilePlayer {
     pub fn pause_sounding_zones(&self) -> Result<Vec<u32>> {
         let sounding = self.zones_where(Transport::sounds);
+
         for &zone in &sounding {
             self.playing.send_to(zone, Command::Pause)?;
         }
@@ -88,6 +91,7 @@ impl MobilePlayer {
 
     pub fn play_zones(&self, zones: Vec<u32>) -> Result<()> {
         let listed = self.playing.listed();
+
         for zone in zones.into_iter().filter_map(ZoneId::new) {
             if listed.iter().any(|open| open.id == zone) {
                 self.playing.send_to(zone, Command::Play)?;
@@ -131,13 +135,16 @@ mod tests {
                 "zone {zone} never {wanted:?}: {:?}",
                 transport_of_zone(harness, zone)
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
     }
 
     fn playing_in_the_kitchen_unseen() -> (Harness, ZoneId) {
         let harness = Harness::sounding();
+
         harness.resumed("ab", 0, 0);
+
         let kitchen = harness
             .player
             .zone_added("Kitchen", 0, String::new())
@@ -177,6 +184,7 @@ mod tests {
             .player
             .show_zone(kitchen.get())
             .expect("the kitchen shown");
+
         let kitchen_shown = harness.settled(|snapshot| snapshot.zone == kitchen.get());
 
         assert!(kitchen_shown.transport.sounds());
@@ -186,6 +194,7 @@ mod tests {
     #[test]
     fn the_zones_that_sound_are_paused_whichever_is_shown_and_named_so_they_play_again() {
         let (harness, kitchen) = playing_in_the_kitchen_unseen();
+
         harness.player.play().expect("the first zone playing");
         settled_at(&harness, ZoneId::FIRST, Transport::Playing);
 
@@ -193,6 +202,7 @@ mod tests {
             .player
             .pause_sounding_zones()
             .expect("the zones paused");
+
         settled_at(&harness, ZoneId::FIRST, Transport::Paused);
         settled_at(&harness, kitchen, Transport::Paused);
 

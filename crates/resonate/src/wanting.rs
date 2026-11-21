@@ -217,16 +217,19 @@ mod tests {
 
     fn library_missing_two_tracks() -> (PathBuf, Library) {
         let root = scratch("wanting");
+
         fs::write(
             root.join("a.wav"),
             tagged_wave(&[(TITLE, "Held"), (ARTIST, "Ada"), (ALBUM, "Orbits")]),
         )
         .expect("a song");
+
         let library = scanned(&root);
         let album = library
             .albums(&AlbumQuery::default())
             .expect("the albums")
             .remove(0);
+
         library
             .land_release(album.id, &release_of(&["Held", "San Tropez", "Seamus"]))
             .expect("a release");
@@ -257,18 +260,22 @@ mod tests {
         let (root, library) = library_missing_two_tracks();
 
         run(&library, &wants_asked(&["--add", "san tropez"])).expect("a want");
+
         let wanted = titles_wanted(&library);
+
         run(
             &library,
             &wants_asked(&["--remove", "San Tropez", "--album", "Orbits"]),
         )
         .expect("an unwant");
+
         let after = titles_wanted(&library);
         let held = run(&library, &wants_asked(&["--add", "Held"]));
         let elsewhere = run(
             &library,
             &wants_asked(&["--add", "Seamus", "--artist", "Nobody"]),
         );
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert_eq!(wanted, ["San Tropez"]);
@@ -288,10 +295,12 @@ mod tests {
         let (root, library) = library_missing_two_tracks();
 
         dismiss(&library, "Seamus", Narrowing::default()).expect("a dismissal");
+
         let left = titles_missing(&library);
         let again = dismiss(&library, "Seamus", Narrowing::default());
         let release = dismiss_release(&library, "Orbits", None);
         let unwanted = unwant(&library, "San Tropez", Narrowing::default());
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert_eq!(left, ["San Tropez"]);

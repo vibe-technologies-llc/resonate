@@ -116,6 +116,7 @@ pub(crate) fn small(id: i64) -> u32 {
 
 fn placed<T>(slots: &mut Vec<Option<T>>, id: i64, value: T) {
     let at = at(id);
+
     if slots.len() <= at {
         slots.resize_with(at + 1, || None);
     }
@@ -150,7 +151,9 @@ fn earliest(events: &mut HashMap<u32, Event>, row: &rusqlite::Row<'_>) -> rusqli
     let month: Option<i64> = row.get(2)?;
     let day: Option<i64> = row.get(3)?;
     let country: Option<i64> = row.get(4)?;
+
     let order = EventOrder::of(year, month, day, country);
+
     if events
         .get(&release)
         .is_none_or(|(held, _, _)| order < *held)
@@ -166,10 +169,12 @@ fn earliest(events: &mut HashMap<u32, Event>, row: &rusqlite::Row<'_>) -> rusqli
 fn named_in(staging: &Connection) -> Result<Named> {
     let failed = store_read(Store::Staging);
     let mut named = HashMap::new();
+
     for table in NAMED_TABLES {
         let mut statement = staging
             .prepare(&format!("SELECT id, name FROM {table}"))
             .map_err(&failed)?;
+
         let mut rows = statement.query([]).map_err(&failed)?;
         while let Some(row) = rows.next().map_err(&failed)? {
             let id: i64 = row.get(0).map_err(&failed)?;
@@ -179,10 +184,13 @@ fn named_in(staging: &Connection) -> Result<Named> {
             }
         }
     }
+
     let mut statement = staging
         .prepare("SELECT area, code FROM iso_3166_1")
         .map_err(&failed)?;
+
     let mut rows = statement.query([]).map_err(&failed)?;
+
     while let Some(row) = rows.next().map_err(&failed)? {
         let area: i64 = row.get(0).map_err(&failed)?;
         let code: Option<String> = row.get(1).map_err(&failed)?;
@@ -223,13 +231,16 @@ impl Shared {
     pub(crate) fn read(staging: &Connection, building: &Building) -> Result<Self> {
         let failed = store_read(Store::Staging);
         let named = named_in(staging)?;
+
         building.looked_at()?;
 
         let mut artists = Vec::new();
+
         {
             let mut statement = staging
                 .prepare("SELECT id, gid FROM artist")
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 let id: i64 = row.get(0).map_err(&failed)?;
@@ -242,6 +253,7 @@ impl Shared {
         building.looked_at()?;
 
         let mut credits: Vec<Option<Box<[CreditRow]>>> = Vec::new();
+
         {
             let mut statement = staging
                 .prepare(
@@ -249,8 +261,10 @@ impl Shared {
                      ORDER BY artist_credit, position",
                 )
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             let mut current: Option<(i64, Vec<CreditRow>)> = None;
+
             while let Some(row) = rows.next().map_err(&failed)? {
                 let credit: i64 = row.get(0).map_err(&failed)?;
                 let named = credit_row(row, 1).map_err(&failed)?;
@@ -271,12 +285,14 @@ impl Shared {
         building.looked_at()?;
 
         let mut secondary: HashMap<u32, Vec<u32>> = HashMap::new();
+
         {
             let mut statement = staging
                 .prepare(
                     "SELECT release_group, secondary_type FROM release_group_secondary_type_join",
                 )
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 secondary
@@ -285,11 +301,14 @@ impl Shared {
                     .push(small(row.get(1).map_err(&failed)?));
             }
         }
+
         let mut first_released: HashMap<u32, String> = HashMap::new();
+
         {
             let mut statement = staging
                 .prepare("SELECT id, y, m, d FROM release_group_meta")
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 if let Some(date) = dated(
@@ -301,11 +320,14 @@ impl Shared {
                 }
             }
         }
+
         let mut groups = Vec::new();
+
         {
             let mut statement = staging
                 .prepare("SELECT id, gid, name, type FROM release_group")
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 let id: i64 = row.get(0).map_err(&failed)?;
@@ -314,6 +336,7 @@ impl Shared {
                     continue;
                 };
                 let kind: Option<i64> = row.get(3).map_err(&failed)?;
+
                 placed(
                     &mut groups,
                     id,
@@ -337,21 +360,27 @@ impl Shared {
         building.looked_at()?;
 
         let mut events: HashMap<u32, Event> = HashMap::new();
+
         for query in EVENTS_OF_EVERY_RELEASE {
             let mut statement = staging.prepare(query).map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 earliest(&mut events, row).map_err(&failed)?;
             }
         }
+
         let mut discs: HashMap<u32, Vec<u32>> = HashMap::new();
+
         {
             let mut statement = staging
                 .prepare("SELECT release, track_count FROM medium ORDER BY release, position")
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 let count: Option<i64> = row.get(1).map_err(&failed)?;
+
                 discs
                     .entry(small(row.get(0).map_err(&failed)?))
                     .or_default()
@@ -359,11 +388,14 @@ impl Shared {
             }
         }
         building.looked_at()?;
+
         let mut releases = Vec::new();
+
         {
             let mut statement = staging
                 .prepare("SELECT id, gid, name, release_group, status FROM release")
                 .map_err(&failed)?;
+
             let mut rows = statement.query([]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 let id: i64 = row.get(0).map_err(&failed)?;
@@ -379,6 +411,7 @@ impl Shared {
                 let country = country
                     .and_then(|area| named.get(&("iso_3166_1", area)))
                     .cloned();
+
                 placed(
                     &mut releases,
                     id,
@@ -447,6 +480,7 @@ impl<'a> LookedUp<'a> {
                          WHERE artist_credit = ?1 ORDER BY position",
                     )
                     .map_err(&failed)?;
+
                 let rows = statement
                     .query_map([id], |row| credit_row(row, 0))
                     .map_err(&failed)?;
@@ -476,6 +510,7 @@ impl<'a> LookedUp<'a> {
     pub(crate) fn credit(&self, id: i64) -> Result<Vec<Credit>> {
         let rows = self.credit_rows(id)?;
         let mut credit = Vec::with_capacity(rows.len());
+
         for row in rows.iter() {
             credit.push(Credit {
                 name: row.name.to_string(),
@@ -489,6 +524,7 @@ impl<'a> LookedUp<'a> {
     pub(crate) fn credited_as(&self, id: i64) -> Result<String> {
         let rows = self.credit_rows(id)?;
         let mut credited = String::new();
+
         for row in rows.iter() {
             credited.push_str(&row.name);
             credited.push_str(&row.joined_by);
@@ -560,15 +596,18 @@ impl<'a> LookedUp<'a> {
             return Ok(None);
         };
         let mut events = HashMap::new();
+
         {
             let mut statement = tables
                 .prepare_cached(EVENTS_OF_A_RELEASE)
                 .map_err(&failed)?;
+
             let mut rows = statement.query([id]).map_err(&failed)?;
             while let Some(row) = rows.next().map_err(&failed)? {
                 earliest(&mut events, row).map_err(&failed)?;
             }
         }
+
         let (date, country) = events
             .remove(&small(id))
             .map(|(_, date, country)| (date, country))
@@ -579,6 +618,7 @@ impl<'a> LookedUp<'a> {
                     "SELECT track_count FROM medium WHERE release = ?1 ORDER BY position",
                 )
                 .map_err(&failed)?;
+
             let counts = statement
                 .query_map([id], |row| row.get::<_, Option<i64>>(0))
                 .map_err(&failed)?;
@@ -624,6 +664,7 @@ fn asked_group(tables: &Connection, id: u32) -> Result<Option<GroupInfo>> {
                  WHERE release_group = ?1",
             )
             .map_err(&failed)?;
+
         let kinds = statement
             .query_map([id], |row| row.get::<_, i64>(0))
             .map_err(&failed)?;

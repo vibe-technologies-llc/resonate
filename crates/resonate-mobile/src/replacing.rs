@@ -64,6 +64,7 @@ impl MobilePlayer {
         let services = self.services_to_ask();
         let mut refused = BTreeSet::new();
         let mut songs = Vec::new();
+
         for song in self.catalog.songs_listed_in(playlist)? {
             let pending = self.catalog.a_version_waits_for(song.id)?;
             let found = match self.best_copy_held_above(&song)? {
@@ -75,19 +76,24 @@ impl MobilePlayer {
                 None => {
                     let words = TheSong::words(&song.title, artist_of(&song));
                     let heard = TheSong::new(heard_of(&song));
+
                     let asked =
                         self.asked_for_versions(&services, &words, &heard, VersionSearch::Better);
+
                     refused.extend(asked.refused);
                     asked.found.into_iter().next()
                 }
             };
+
             if found.is_none() && is_lossless(&song) && !pending {
                 continue;
             }
+
             let chosen = match (&found, self.version_chosen(song.id)?) {
                 (Some(found), Some(chosen)) => found.version == chosen,
                 _ => false,
             };
+
             songs.push(HigherVersion {
                 song,
                 found,
@@ -95,6 +101,7 @@ impl MobilePlayer {
                 pending,
             });
         }
+
         let trouble = (!refused.is_empty()).then(|| {
             words::versions::could_not_ask(
                 refused.into_iter().collect::<Vec<_>>().join(NAMES_APART),
@@ -109,10 +116,12 @@ impl MobilePlayer {
     ) -> Result<HigherVersionsKept> {
         let mut kept = HigherVersionsKept::default();
         let mut weighed = BTreeSet::new();
+
         for picked in picked {
             if !weighed.insert(picked.song) {
                 continue;
             }
+
             let Ok(song) = self.catalog.track(picked.song) else {
                 kept.passed_over += 1;
                 continue;
@@ -162,6 +171,7 @@ impl MobilePlayer {
 
         let held = quality_of(song);
         let mut above: Vec<Track> = Vec::new();
+
         for copy in sharing.into_iter().chain(named_alike) {
             let fits = copy.id != song.id
                 && !above.iter().any(|kept| kept.id == copy.id)
@@ -179,6 +189,7 @@ impl MobilePlayer {
         if !self.catalog.a_lossless_copy_is_wanted(song)? {
             return Ok(());
         }
+
         let info = resonate_codec::probe(&self.sources, &location(uri)?)?;
         match resonate_codec::Codec::from_id(info.codec).is_lossless() {
             true => Ok(()),
@@ -193,6 +204,7 @@ impl Catalog {
         let mut query = connection
             .prepare(THE_PLAYLISTS_SONGS)
             .map_err(read_error)?;
+
         let listed = query
             .query_map([playlist as i64], read)
             .map_err(read_error)?
@@ -234,6 +246,7 @@ pub(crate) fn held_losslessly(connection: &Connection, recording: &str) -> Resul
     let mut query = connection
         .prepare_cached(THE_CODECS_OF_THE_RECORDING)
         .map_err(read_error)?;
+
     let codecs = query
         .query_map([recording], |row| row.get::<_, String>(0))
         .map_err(read_error)?
@@ -307,6 +320,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("an indexed song");
+
         catalog
             .0
             .lock()
@@ -333,6 +347,7 @@ mod tests {
             Some(24),
         );
         let alike = indexed_at(catalog, "Alarm Call.flac", "FLAC", None, Some(16));
+
         let playlist = harness
             .player
             .make_playlist(
@@ -489,6 +504,7 @@ mod tests {
         let block_align = 256_u16;
         let samples_a_block = 505_u16;
         let mut format = Vec::new();
+
         format.extend_from_slice(&0x11_u16.to_le_bytes());
         format.extend_from_slice(&1_u16.to_le_bytes());
         format.extend_from_slice(&crate::harness::RATE.to_le_bytes());
@@ -497,10 +513,12 @@ mod tests {
         format.extend_from_slice(&4_u16.to_le_bytes());
         format.extend_from_slice(&2_u16.to_le_bytes());
         format.extend_from_slice(&samples_a_block.to_le_bytes());
+
         let frames = u32::from(samples_a_block) * 8;
         let data = vec![0_u8; usize::from(block_align) * 8];
 
         let mut body = b"WAVE".to_vec();
+
         for (id, payload) in [
             (b"fmt ", format),
             (b"fact", frames.to_le_bytes().to_vec()),
@@ -510,7 +528,9 @@ mod tests {
             body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
             body.extend_from_slice(&payload);
         }
+
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
         file
@@ -527,7 +547,9 @@ mod tests {
             artist: "Björk".into(),
             ..SearchSong::default()
         };
+
         fs::write(harness.folder.join("adpcm.wav"), adpcm()).expect("a lossy file");
+
         let lossless = format!("{}a.wav", crate::harness::FOLDER);
         let adpcm = format!("{}adpcm.wav", crate::harness::FOLDER);
 
@@ -548,6 +570,7 @@ mod tests {
             served: Some("tidal:track/7".into()),
             ..wanted
         };
+
         player
             .catalog
             .want_a_version(lossy.id, &served)
@@ -585,6 +608,7 @@ mod tests {
         let reopened = Catalog::open(&path).expect("reopened");
 
         assert!(reopened.a_version_waits_for(lossy.id).expect("an answer"));
+
         drop(reopened);
         fs::remove_file(&path).ok();
     }
@@ -597,6 +621,7 @@ mod tests {
             .position(|laid| *laid == A_VERSION_IS_KEPT_BESIDE_ITS_SONG)
             .expect("a step of the chain");
         let connection = rusqlite::Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -660,6 +685,7 @@ mod tests {
 
         assert_eq!(count(&opened, "versions_held"), 0);
         assert_eq!(count(&opened, "versions_chosen"), 0);
+
         drop(opened);
         fs::remove_file(&path).ok();
     }

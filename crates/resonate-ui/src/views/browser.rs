@@ -72,6 +72,7 @@ fn caption_font() -> gpui::Font {
 fn artist_room_beside(side: f32, beside: &str, cx: &App) -> Pixels {
     let font = caption_font();
     let size = px(theme::text_xs());
+
     let taken = kit::width_of(CAPTION_DOT, &font, size, cx)
         + px(2.0 * CAPTION_DOT_PADDING)
         + kit::width_of(beside, &font, size, cx)
@@ -177,6 +178,7 @@ impl RootView {
                 let Some((drawn, start)) = self.library.read(cx).played_from_held(index) else {
                     return;
                 };
+
                 self.play_the_listing_from(&drawn, start, window, cx);
             }
         }
@@ -246,6 +248,7 @@ impl RootView {
         let counted = library.albums_counted() as usize;
         let listed = library.albums_listed();
         let beyond = self.albums_found_beyond(cx);
+
         let found_nothing = (nothing && beyond.is_none()).then(|| {
             self.nothing_beyond(cx).unwrap_or_else(|| {
                 self.nothing_matched(
@@ -273,6 +276,7 @@ impl RootView {
         let rows = listed.div_ceil(columns.max(1));
         let measured = self.rooms.grid_width.clone();
         let laid_out = self.rooms.grid_width.get() > px(0.0);
+
         if laid_out {
             self.land_where_it_was_left(rows, cx);
         }
@@ -319,7 +323,9 @@ impl RootView {
                                     cx.processor(
                                         move |this, range: std::ops::Range<usize>, _, cx| {
                                             this.reach_further(range.end * columns, held, cx);
+
                                             let mut drawn = Vec::new();
+
                                             for index in range {
                                                 let first = index * columns;
                                                 let cells = albums
@@ -330,6 +336,7 @@ impl RootView {
                                                     .map(|(at, album)| {
                                                         this.album_cell(album, at, cx)
                                                     });
+
                                                 drawn.push(
                                                     div()
                                                         .flex()
@@ -443,6 +450,7 @@ impl RootView {
                 Caption::Beside(artist) => album.artist_id != Some(artist),
             });
         let counted = words::browser::tracks_counted(album.track_count);
+
         let beside = match (caption, artist.is_some(), album.year) {
             (Caption::Beside(_), false, Some(year)) => {
                 Some(SharedString::from(format!("{year} · {counted}")))
@@ -455,6 +463,7 @@ impl RootView {
         let artist_room = beside
             .as_ref()
             .map(|beside| artist_room_beside(side, beside, cx));
+
         let under = div()
             .flex()
             .min_w(px(0.0))
@@ -591,6 +600,7 @@ impl RootView {
                     let chosen = this.acting_on_chosen(row.shift, row.row, cx);
                     if chosen.count() > 1 {
                         let albums = this.albums_chosen(row.shift, &chosen, cx);
+
                         return chosen_albums_menu(at, row.shift, albums, this, cx);
                     }
                 }
@@ -690,6 +700,7 @@ impl RootView {
         let held = artists.len();
         let listed = self.library.read(cx).artists_listed();
         let drawn = self.shows.artists;
+
         if drawn == ArtistsDrawn::List {
             self.land_where_it_was_left(listed, cx);
         }
@@ -756,7 +767,9 @@ impl RootView {
                             listed,
                             cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 this.reach_further(range.end, held, cx);
+
                                 let mut rows = Vec::new();
+
                                 for index in range {
                                     let Some(artist) = artists.get(index) else {
                                         rows.push(tall_row(false).id(("unread-artist", index)));
@@ -764,6 +777,7 @@ impl RootView {
                                     };
                                     let id = artist.id;
                                     let chosen = selected == Selection::Artist(id);
+
                                     let favourite = this
                                         .library
                                         .read(cx)
@@ -831,6 +845,7 @@ impl RootView {
                                         cx,
                                     );
                                     let reach = this.at_the_reach(shift, index, cx);
+
                                     rows.push(menu::opens_a_reachable_menu(
                                         listed,
                                         reach,
@@ -864,6 +879,7 @@ impl RootView {
         let tracks = self.library.read(cx).listing();
         let narrowed = self.library.read(cx).narrowing().is_some();
         let scoped = self.library.read(cx).selection() != Selection::Everything;
+
         if tracks.is_empty() && !narrowed && !scoped {
             return if self.library.read(cx).unreadable() {
                 kit::trouble(
@@ -881,10 +897,12 @@ impl RootView {
                 )
             };
         }
+
         let playing = self.playing_now(cx).track;
         let rows = self.library.read(cx).rows();
         let nothing = tracks.is_empty() && rows.is_empty();
         let unreadable = self.library.read(cx).unreadable();
+
         let found_nothing = nothing.then(|| {
             self.nothing_beyond(cx).unwrap_or_else(|| {
                 let said = if unreadable {
@@ -917,7 +935,9 @@ impl RootView {
             .into();
         let held = tracks.len();
         let listed = self.library.read(cx).listed_rows();
+
         self.land_where_it_was_left(listed, cx);
+
         let records = match self.library.read(cx).selection() {
             Selection::Artist(artist) => {
                 let library = self.library.read(cx);
@@ -966,7 +986,9 @@ impl RootView {
                             listed,
                             cx.processor(move |this, range: std::ops::Range<usize>, _, cx| {
                                 this.reach_further(range.end, held, cx);
+
                                 let mut drawn = Vec::new();
+
                                 for index in range.clone() {
                                     let listed_row = if rowed {
                                         rows.get(index).copied()
@@ -985,6 +1007,7 @@ impl RootView {
                                                 continue;
                                             };
                                             let shift = Shift::Listing(Listed::Tracks);
+
                                             let row = this.track_row(
                                                 &tracks,
                                                 held,
@@ -1002,6 +1025,7 @@ impl RootView {
                                                 },
                                                 cx,
                                             );
+
                                             drawn.push(
                                                 this.marked_where_reached(shift, index, row, cx)
                                                     .into_any_element(),
@@ -1013,6 +1037,7 @@ impl RootView {
                                             };
                                             let unheld =
                                                 Unheld::from(row).credited_as(credited.as_deref());
+
                                             drawn.push(
                                                 this.unheld_row(missing, unheld, cx)
                                                     .into_any_element(),
@@ -1028,6 +1053,7 @@ impl RootView {
                                             let Some(row) = found.get(at) else {
                                                 continue;
                                             };
+
                                             drawn.push(
                                                 this.found_row(at, row, cx).into_any_element(),
                                             );
@@ -1039,6 +1065,7 @@ impl RootView {
                                     let before =
                                         range.start.saturating_sub(COVERS_AHEAD)..range.start;
                                     let after = range.end..range.end + COVERS_AHEAD;
+
                                     let albums = after.chain(before.rev()).filter_map(|index| {
                                         let held = if rowed {
                                             match rows.get(index).copied()? {
@@ -1050,6 +1077,7 @@ impl RootView {
                                         };
                                         tracks.get(held)?.album_id
                                     });
+
                                     this.covers_ahead(albums, cx);
                                 }
                                 drawn
@@ -1225,6 +1253,7 @@ impl RootView {
             ),
             None => Lifted::tracks(tracks, Chosen::of(Span::one(index))),
         };
+
         let row = reorder::liftable(row, lifted);
 
         menu::opens_a_reachable_menu(
@@ -1235,9 +1264,11 @@ impl RootView {
                     let chosen = this.choosable(shift, this.acting_on_chosen(shift, row, cx), cx);
                     if chosen.count() > 1 {
                         let tracks = this.tracks_chosen(shift, &chosen, cx);
+
                         return chosen_tracks_menu(at, tracks, this, cx);
                     }
                 }
+
                 let Some(track) = menued.get(index) else {
                     return Menu::at(at);
                 };
@@ -1313,6 +1344,7 @@ impl RootView {
                                     words::browser::look_it_up(),
                                     move |this, _, cx| {
                                         let title = looked_up.clone();
+
                                         this.library.update(cx, |library, cx| {
                                             library.look_up_the_song(track, title, cx);
                                         });
@@ -1397,6 +1429,7 @@ impl RootView {
             length,
             beside,
         } = unheld;
+
         let download = match (&beside, &asks) {
             (Beside::AnAlbum, Asks::Row(release_track))
                 if self.library.read(cx).wanted(*release_track).is_none() =>
@@ -1649,6 +1682,7 @@ impl RootView {
             .on_click(cx.listener(move |this, _, _, cx| {
                 let wanted = fetched.clone();
                 let zone = this.zone_acted_on();
+
                 this.library
                     .update(cx, |library, cx| library.fetch_and_play(wanted, zone, cx));
             }))
@@ -1694,6 +1728,7 @@ impl RootView {
                     .read(cx)
                     .fetching_found(&found)
                     .filter(|fetching| !fetching.can_be_asked_again());
+
                 if let Some(fetching) = fetching {
                     return kit::mark_when(
                         Press::Greyed,
@@ -1703,6 +1738,7 @@ impl RootView {
                         ROW_GROUP,
                     );
                 }
+
                 let offered = Found::clone(&found);
                 let wanting = self.in_the_pane_ring(
                     kit::icon_button(
@@ -1712,7 +1748,9 @@ impl RootView {
                     ),
                     move |this, _, cx| {
                         cx.stop_propagation();
+
                         let wanted = Found::clone(&found);
+
                         this.library
                             .update(cx, |library, cx| library.want_found(wanted, cx));
                     },
@@ -1751,9 +1789,11 @@ impl RootView {
             .div_ceil(columns.max(1));
         let measured = self.rooms.grid_width.clone();
         let laid_out = self.rooms.grid_width.get() > px(0.0);
+
         if laid_out {
             self.land_where_it_was_left(rows, cx);
         }
+
         let selected = self.library.read(cx).selection();
 
         div()
@@ -1832,6 +1872,7 @@ impl RootView {
                 })
             })
             .flatten();
+
         let pictured = match portrait {
             Some(art) => portrait_frame(art, side).into_any_element(),
             None => {
@@ -1967,6 +2008,7 @@ impl RootView {
         if let Some(searched) = self.search_heading(cx) {
             return searched;
         }
+
         let heading = match self.library.read(cx).selection() {
             Selection::Everything => self.library_heading(cx),
             Selection::Album(id) => self.album_page_heading(id, cx),
@@ -1998,6 +2040,7 @@ impl RootView {
         let searching = !library.query().is_empty();
         let naming = self.naming.filter(|naming| naming.is_a_search());
         let adding_to = self.adding_songs_to;
+
         let target = adding_to.and_then(|id| library.saved_playlist(id));
         let title = target.map_or_else(
             || words::browser::all_tracks().to_owned(),
@@ -2079,6 +2122,7 @@ impl RootView {
         let under = summary(library.listed(), album.and_then(|album| album.year));
         let record = library.release().and_then(record_of);
         let findable = library.can_enrich() && !library.release().is_some_and(is_matched);
+
         let record = record.map(drop).or(findable.then_some(()));
         let favourite = library.favoured_album(id);
         let has_missing_tracks = album.is_some_and(|album| album.missing > 0);
@@ -2180,6 +2224,7 @@ impl RootView {
     fn artist_page_heading(&self, id: ArtistId, cx: &mut Context<Self>) -> Div {
         let library = self.library.read(cx);
         let around = self.around_the_rows(cx);
+
         let name = artist_named(library, around.artist.as_ref(), id);
         let under = held_by_the_artist(around.totals, self.drawn_at());
         let detail = around.artist.as_ref();
@@ -2418,8 +2463,10 @@ impl RootView {
                     if library.selection() != Selection::Album(album) {
                         return None;
                     }
+
                     let release = library.release();
                     let findable = library.can_enrich() && !release.is_some_and(is_matched);
+
                     let record = release
                         .and_then(record_of)
                         .or_else(|| findable.then(Record::bare))?;
@@ -2429,6 +2476,7 @@ impl RootView {
                     let current = release.and_then(|release| release.mbid.clone());
                     let pressings = self.pressings_of(album, cx).cloned();
                     let card = record_card(self, &record, cx);
+
                     let card = match (group, findable) {
                         (Some(group), _) => card.child(self.other_pressings(
                             album,
@@ -2456,12 +2504,14 @@ impl RootView {
                     if library.selection() != Selection::Artist(artist) {
                         return None;
                     }
+
                     let genres = self
                         .around_the_rows(cx)
                         .artist
                         .as_ref()
                         .map(|detail| genre_names(&detail.genres))
                         .unwrap_or_default();
+
                     if genres.is_empty() {
                         return None;
                     }
@@ -2495,6 +2545,7 @@ impl RootView {
                 words::browser::no_releases(),
             ),
         };
+
         let listed = match pressings {
             None => {
                 return div().child(self.in_the_pane_ring(
@@ -2511,6 +2562,7 @@ impl RootView {
                             Asking::Group(group) => library.pressings_asked(group, cx),
                             Asking::Search => library.releases_asked(album, cx),
                         });
+
                         this.ask_for_pressings(album, asked, cx);
                     },
                     cx,
@@ -2526,6 +2578,7 @@ impl RootView {
             .flex_col()
             .gap_0p5()
             .child(kit::eyebrow(words::browser::pressings(listed.len())));
+
         for (at, pressing) in listed.iter().take(PRESSINGS_SHOWN).enumerate() {
             let in_use = current.as_ref() == Some(&pressing.id);
             let chosen = pressing.id.clone();
@@ -2535,6 +2588,7 @@ impl RootView {
             } else {
                 words::browser::take_the_pressing_hint()
             };
+
             let row = div()
                 .id(("pressing", at))
                 .flex()
@@ -2549,6 +2603,7 @@ impl RootView {
                 .when(in_use, |row| {
                     row.child(kit::badge(words::browser::in_use(), theme::accent()))
                 });
+
             column = column.child(match in_use {
                 true => row.named_as(Role::ListItem, &line, hint).chosen(true),
                 false => self.in_the_pane_ring(
@@ -2557,10 +2612,12 @@ impl RootView {
                         .hover(|row| row.bg(rgb(theme::hover()))),
                     move |this, _, cx| {
                         this.record = None;
+
                         let taken = chosen.clone();
                         let took = this
                             .library
                             .update(cx, |library, cx| library.take_pressing(album, taken, cx));
+
                         if took {
                             this.let_go_of_the_pressings(cx);
                         }
@@ -2724,6 +2781,7 @@ impl RootView {
         let albums = Arc::clone(&self.around_the_rows(cx).records);
         let not_held = self.library.read(cx).albums_not_held();
         let mut cells = Vec::new();
+
         for album in albums.iter() {
             cells.push(
                 self.album_cell_captioned(
@@ -2793,6 +2851,7 @@ impl RootView {
     ) -> Stateful<Div> {
         let by = SharedString::from(album.artist.clone());
         let described = described(&album.kind, album.first_released.as_deref());
+
         let caption = match described.is_empty() {
             true => by.to_string(),
             false => format!("{by} · {described}"),
@@ -2836,6 +2895,7 @@ impl RootView {
             Some(art) => framed_cover(Some(art), side).opacity(UNHELD_COVER),
             None => unheld_cover(side),
         };
+
         let under = match fetching {
             Some(fetching) => div()
                 .text_color(rgb(fetching_colour(fetching)))
@@ -2888,6 +2948,7 @@ impl RootView {
                             .ends_in_an_ellipsis(),
                     ),
             );
+
         if !pressable {
             return cell;
         }
@@ -2904,6 +2965,7 @@ impl RootView {
         let landed = self
             .library
             .update(cx, |library, cx| library.land_album_not_held(group, cx));
+
         cx.spawn(async move |this, cx| {
             let Some(album) = landed.await else {
                 return;
@@ -2951,6 +3013,7 @@ impl RootView {
     ) -> Div {
         let scroll = self.browsing.read(cx).shelf(id);
         let mut cells = Vec::new();
+
         for (at, album) in albums.iter().take(SHELF_AT_MOST).enumerate() {
             let cell = self.album_cell_at(
                 album,
@@ -2958,6 +3021,7 @@ impl RootView {
                 Some(Chooses::among(listed, at)),
                 cx,
             );
+
             cells.push(self.slid_into_view(cell, listed, at, &scroll, cx));
         }
 
@@ -2974,6 +3038,7 @@ impl RootView {
     ) -> Div {
         let scroll = self.browsing.read(cx).shelf(id);
         let mut cells = Vec::new();
+
         for (at, artist) in artists.iter().take(SHELF_AT_MOST).enumerate() {
             let cell = self.artist_cell_at(
                 artist,
@@ -2981,6 +3046,7 @@ impl RootView {
                 Some(Chooses::among(listed, at)),
                 cx,
             );
+
             cells.push(self.slid_into_view(cell, listed, at, &scroll, cx));
         }
 
@@ -3308,8 +3374,10 @@ fn artist_menu_among(
     cx: &App,
 ) -> Menu {
     let chosen = this.acting_on_chosen(chooses.shift, chooses.row, cx);
+
     if chosen.count() > 1 {
         let artists = this.artists_chosen(chooses.shift, &chosen, cx);
+
         return chosen_artists_menu(at, chooses.shift, artists, this, cx);
     }
 
@@ -3477,6 +3545,7 @@ impl Unheld {
 
 fn pressing_line(pressing: &GroupRelease) -> String {
     let mut parts: Vec<String> = Vec::new();
+
     parts.push(
         pressing
             .date
@@ -3666,6 +3735,7 @@ pub(crate) fn run_heading(named: impl IntoElement) -> Div {
 
 fn pressings(media: &[HeldMedium]) -> Option<String> {
     let format = media.first()?.format.as_deref()?;
+
     if media
         .iter()
         .any(|medium| medium.format.as_deref() != Some(format))
@@ -3709,6 +3779,7 @@ impl MissingOnAnAlbum {
                     words::menu::download_and_play(),
                     move |this, _, cx| {
                         let zone = this.zone_acted_on();
+
                         this.library.update(cx, |library, cx| {
                             library.want_and_play(release_track, zone, cx);
                         });
@@ -3732,6 +3803,7 @@ fn found_menu(at: Point<Pixels>, found: &Found) -> Menu {
             move |this, _, cx| {
                 let wanted = played.clone();
                 let zone = this.zone_acted_on();
+
                 this.library
                     .update(cx, |library, cx| library.fetch_and_play(wanted, zone, cx));
             },
@@ -3742,6 +3814,7 @@ fn found_menu(at: Point<Pixels>, found: &Found) -> Menu {
             words::menu::download(),
             move |this, _, cx| {
                 let wanted = downloaded.clone();
+
                 this.library
                     .update(cx, |library, cx| library.want_found(wanted, cx));
             },
@@ -3762,8 +3835,10 @@ fn releases_offered(mut menu: Menu, found: &Found) -> Menu {
         .take(RELEASES_OFFERED)
     {
         let wanted = found.from(release);
+
         menu = menu.does(Icon::Disc, release_line(release), move |this, _, cx| {
             let wanted = wanted.clone();
+
             this.library
                 .update(cx, |library, cx| library.want_found(wanted, cx));
         });
@@ -3773,12 +3848,15 @@ fn releases_offered(mut menu: Menu, found: &Found) -> Menu {
 
 fn releases_to_place_on(at: Point<Pixels>, track: TrackId, recordings: Vec<Recording>) -> Menu {
     let mut menu = Menu::at(at);
+
     for (recording, release) in releases_beside_their_recordings(recordings) {
         let placed = release.id.clone();
         let line = release_line(&release);
+
         menu = menu.does(Icon::Disc, line, move |this, _, cx| {
             let placing = Arc::clone(&recording);
             let placed = placed.clone();
+
             this.library.update(cx, |library, cx| {
                 library.place_on(track, placing, placed, cx)
             });
@@ -3791,6 +3869,7 @@ fn releases_beside_their_recordings(
     recordings: Vec<Recording>,
 ) -> Vec<(Arc<Recording>, RecordingRelease)> {
     let mut offered: Vec<(Arc<Recording>, RecordingRelease)> = Vec::new();
+
     for recording in recordings.into_iter().map(Arc::new) {
         for release in in_the_order_worth_offering(&recording.releases) {
             if offered.len() == RELEASES_OFFERED {
@@ -3817,6 +3896,7 @@ impl RootView {
         }) else {
             return;
         };
+
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
             let _ = this.update(cx, |this, cx| {
@@ -3851,6 +3931,7 @@ impl RootView {
 
 fn release_line(release: &RecordingRelease) -> String {
     let mut line = release.title.clone();
+
     if let Some(year) = release.date.as_deref().and_then(|date| date.get(..4)) {
         line.push_str(" · ");
         line.push_str(year);
@@ -3864,6 +3945,7 @@ fn release_line(release: &RecordingRelease) -> String {
 
 fn record_of(release: &ReleaseDetail) -> Option<Record> {
     let mut facts = Vec::new();
+
     if let Some(date) = release.date.clone() {
         facts.push(Fact {
             label: words::browser::released(),
@@ -3906,11 +3988,13 @@ fn record_of(release: &ReleaseDetail) -> Option<Record> {
             value: kind,
         });
     }
+
     let note = release
         .disambiguation
         .clone()
         .filter(|note| !note.trim().is_empty());
     let on = service_names(&release.links);
+
     let record = Record {
         facts,
         note,
@@ -3997,6 +4081,7 @@ fn detail_card(title: &'static str) -> Stateful<Div> {
 
 fn record_card(root: &RootView, record: &Record, cx: &mut Context<RootView>) -> Stateful<Div> {
     let mut card = detail_card(words::browser::about_this_record());
+
     for fact in &record.facts {
         card = card.child(fact_row(fact));
     }
@@ -4016,6 +4101,7 @@ fn record_card(root: &RootView, record: &Record, cx: &mut Context<RootView>) -> 
 
 fn genre_card(genres: &[String]) -> Stateful<Div> {
     let mut tags = div().flex().flex_wrap().gap_1p5();
+
     for genre in genres {
         tags = tags.child(kit::tag(genre.clone()));
     }
@@ -4024,10 +4110,12 @@ fn genre_card(genres: &[String]) -> Stateful<Div> {
 
 fn service_names(links: &[Link]) -> Vec<HeardOn> {
     let mut named: Vec<HeardOn> = Vec::new();
+
     for link in links {
         if link.service == Service::Other {
             continue;
         }
+
         let name = link.service.title();
         if !named.iter().any(|held| held.name == name) {
             named.push(HeardOn {
@@ -4051,11 +4139,13 @@ fn heard_on(
     if services.is_empty() {
         return None;
     }
+
     let mut line = kit::wraps_within(room)
         .items_center()
         .text_size(px(theme::text_sm()))
         .text_color(rgb(theme::faint()))
         .child(words::browser::on_services());
+
     for (at, heard) in services.into_iter().take(SERVICES_SHOWN).enumerate() {
         if at > 0 {
             line = line.child(div().px_1().child("·"));
@@ -4102,6 +4192,7 @@ fn record_services(root: &RootView, services: &[HeardOn], cx: &mut Context<RootV
         .items_center()
         .gap_x_2()
         .gap_y_1();
+
     for (at, heard) in services.iter().cloned().enumerate() {
         links = links.child(service_link(
             root,
@@ -4159,6 +4250,7 @@ fn service_link(
 
 fn profile_line(detail: &ArtistDetail) -> Option<String> {
     let mut parts: format::Parts<String> = format::Parts::new();
+
     if let Some(kind) = detail.kind.as_deref() {
         parts.push(kind.to_owned());
     }
@@ -4174,6 +4266,7 @@ fn profile_line(detail: &ArtistDetail) -> Option<String> {
 
 fn genre_names(genres: &[Genre]) -> Vec<String> {
     let mut weighed: Vec<&Genre> = genres.iter().collect();
+
     weighed.sort_by_key(|genre| Reverse(genre.weight));
     weighed
         .into_iter()
@@ -4219,6 +4312,7 @@ fn held_by_the_artist(totals: ArtistTotals, now: SystemTime) -> String {
         words::browser::albums_counted(totals.albums),
         words::browser::tracks_counted(totals.tracks),
     ];
+
     if let Some(length) = totals.length {
         parts.push(format::spanned(length));
     }
@@ -4597,6 +4691,7 @@ mod tests {
         for width in [520.0_f32, 700.0, 861.0, 1_283.0, 1_921.0, 2_560.0] {
             let columns = columns_across(width) as f32;
             let side = side_across(width);
+
             let filled = columns * side + (columns - 1.0) * theme::grid_gap();
             let room = width - GRID_PADDING;
 
@@ -4649,6 +4744,7 @@ mod tests {
         assert!(record_of(&unreleased()).is_none());
 
         let mut release = unreleased();
+
         release.date = Some("1973-03-01".to_owned());
         release.country = Some("GB".to_owned());
         release.label = Some("Harvest".to_owned());
@@ -4740,6 +4836,7 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             folder.tagged(
                 "short.wav",
                 1,
@@ -4757,8 +4854,11 @@ mod tests {
                     (b"IPRD", "Another"),
                 ],
             );
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog"));
+
             Driven::scanned(&library, &folder);
+
             let mut driven = Driven::open(cx, Arc::clone(&library));
             let side = gpui::px(kit::hero_side());
 
@@ -4767,6 +4867,7 @@ mod tests {
                     .root
                     .update(&mut driven.cx, |root, cx| root.set_pane(Pane::Artists, cx));
                 driven.settle();
+
                 let artist = driven
                     .read(|root, cx| root.library.read(cx).artists().get(at).map(|held| held.id))
                     .expect("an artist held");
@@ -4775,8 +4876,11 @@ mod tests {
                     root.opened(Selection::Artist(artist), cx);
                 });
                 driven.cx.update(|window, cx| window.draw(cx).clear(cx));
+
                 let first = driven.cx.debug_bounds(kit::HERO_ART);
+
                 driven.settle();
+
                 let settled = driven.cx.debug_bounds(kit::HERO_ART);
 
                 assert_eq!(first.map(|drawn| drawn.size), Some(gpui::size(side, side)));
@@ -4815,6 +4919,7 @@ mod tests {
 
         fn ncs_cover() -> CoverArt {
             let mut bytes = Vec::new();
+
             image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 40, 40, 255]))
                 .write_to(
                     &mut std::io::Cursor::new(&mut bytes),
@@ -5171,9 +5276,11 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| {
                     library.set_query("Heroes Tonight".to_owned(), cx);
@@ -5199,7 +5306,9 @@ mod tests {
                 driven.read(|_, cx| !toast::is_showing(cx)),
                 "the download was told in a toast rather than the sidebar"
             );
+
             let wants = library.wants().expect("the wants read");
+
             assert_eq!(wants.len(), 1);
             assert_eq!(wants[0].artist.as_deref(), Some("Janji & Johnning"));
             assert_eq!(
@@ -5213,16 +5322,19 @@ mod tests {
                 artist: Some("Janji & Johnning".to_owned()),
             };
             let heard = asked.lock().clone();
+
             assert!(
                 heard.len() == 2 && heard.iter().all(|asked| *asked == expected),
                 "the providers were asked once from what the search found and once by the poll: {heard:?}"
             );
 
             let recording = mbid(HEROES_TONIGHT);
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.cancel_download(&recording, cx));
             });
             driven.until(|root, cx| root.library.read(cx).downloads().is_empty());
+
             assert!(library.wants().expect("the wants read").is_empty());
         }
 
@@ -5243,16 +5355,19 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
             let recording = mbid(HEROES_TONIGHT);
 
             typed(&mut driven, "Heroes Tonight");
             driven.until(|root, cx| !root.library.read(cx).found().is_empty());
             driven.right_click("unheld-title-0");
+
             assert!(
                 driven.read(|root, _| root.menu.is_some()),
                 "a right press on a found song opened no menu"
             );
+
             driven.click("menu-entry-2");
             driven.until(|_, _| !asked.lock().is_empty());
 
@@ -5291,6 +5406,7 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
             let recording = mbid(HEROES_TONIGHT);
             let found_now = |root: &crate::views::root::RootView, cx: &gpui::App| {
@@ -5312,6 +5428,7 @@ mod tests {
             );
 
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.ask_elsewhere_again(cx));
             });
@@ -5349,13 +5466,17 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             folder.tone(&format!("{HEROES_MISSPELT}.wav"), 1);
+
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let track = library
                 .tracks(&TrackQuery::default())
                 .expect("the tracks read")[0]
@@ -5363,17 +5484,21 @@ mod tests {
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             let root = driven.root.clone();
+
             driven.cx.update(|window, cx| {
                 root.update(cx, |root, cx| {
                     root.ask_to_match(track, HEROES_MISSPELT.into(), window, cx);
                 });
             });
+
             assert!(
                 driven.read(|root, _| root.matching.is_some()),
                 "the matching sheet did not open"
             );
+
             driven.settle();
             driven.click("likely-recording-0");
+
             assert!(
                 driven.read(|root, _| root.matching.is_none()),
                 "the sheet stayed open once a recording was chosen"
@@ -5386,9 +5511,11 @@ mod tests {
                     .first()
                     .is_some_and(|held| held.title == "Heroes Tonight")
             });
+
             let taken = &library
                 .tracks(&TrackQuery::default())
                 .expect("the tracks read")[0];
+
             assert_eq!(taken.artist.as_deref(), Some("Janji & Johnning"));
             assert_eq!(
                 library
@@ -5406,17 +5533,22 @@ mod tests {
             named: &str,
         ) -> (Driven, Arc<Library>, Track) {
             folder.tone(&format!("{named}.wav"), 1);
+
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, folder);
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), folder, reaching);
+
             driven.until(|root, cx| {
                 let library = root.library.read(cx);
                 !library.listing().is_empty() && !library.is_enriching()
             });
+
             let track = library
                 .tracks(&TrackQuery::default())
                 .expect("the tracks read")
@@ -5427,7 +5559,9 @@ mod tests {
 
         fn enrich_this_song_pressed(driven: &mut Driven, track: &Track) {
             let row: &'static str = Box::leak(format!("track-{}", track.id.get()).into_boxed_str());
+
             driven.right_click(row);
+
             let offered = driven
                 .read(|root, _| {
                     root.menu
@@ -5441,6 +5575,7 @@ mod tests {
             let nest: &'static str = Box::leak(format!("menu-entry-{at}").into_boxed_str());
             let entry: &'static str =
                 Box::leak(format!("menu-beneath-{at}-{under}").into_boxed_str());
+
             driven.click(nest);
             driven.click(entry);
         }
@@ -5459,15 +5594,18 @@ mod tests {
         fn enrich_this_song_finds_the_song_by_its_code_and_says_so(cx: &mut TestAppContext) {
             let folder = Folder::new();
             let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+
             library
                 .set_isrc(track.id, &Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc"))
                 .expect("the code is given");
 
             enrich_this_song_pressed(&mut driven, &track);
+
             assert_eq!(
                 told(&mut driven).as_deref(),
                 Some("Looking up Heroes Tonight on MusicBrainz")
             );
+
             told_in_turn(
                 &mut driven,
                 "Found Heroes Tonight on MusicBrainz and filled in what it says",
@@ -5502,6 +5640,7 @@ mod tests {
         ) {
             let folder = Folder::new();
             let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+
             driven.metering.report(resonate_core::Meter::Metered);
 
             enrich_this_song_pressed(&mut driven, &track);
@@ -5525,6 +5664,7 @@ mod tests {
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             typed(&mut driven, "Heroes Tonight");
@@ -5538,6 +5678,7 @@ mod tests {
                 .artist_named("Janji")
                 .expect("the artist read")
                 .expect("the artist landed");
+
             assert_eq!(
                 driven.read(|root, cx| root.library.read(cx).selection()),
                 Selection::Artist(janji)
@@ -5555,6 +5696,7 @@ mod tests {
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
             typed(&mut driven, "Heroes Tonight");
@@ -5593,8 +5735,10 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
             let music_folder = music.path().to_path_buf();
+
             driven.cx.update(|_, cx| {
                 gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
                     global.music_folder = Some(music_folder);
@@ -5607,6 +5751,7 @@ mod tests {
                 root.open_album_not_held(mbid(LIGHTS_GROUP), cx);
             });
             driven.until(|root, cx| root.library.read(cx).release_tracks().len() == 2);
+
             let opened = driven.read(|root, cx| root.library.read(cx).selection());
 
             driven.click("unheld-title-1");
@@ -5630,6 +5775,7 @@ mod tests {
                     library.rows().len(),
                 )
             });
+
             assert_eq!(
                 shown,
                 (opened, vec!["Skyline".to_owned()], 2),
@@ -5667,16 +5813,20 @@ mod tests {
 
             let stale = driven.root.update(&mut driven.cx, |root, cx| {
                 let pressed = root.press_a_lookup();
+
                 assert!(!root.window_has_moved_on_from(pressed, cx));
 
                 root.set_pane(Pane::Queue, cx);
+
                 let after_the_pane = root.window_has_moved_on_from(pressed, cx);
 
                 let pressed = root.press_a_lookup();
+
                 root.open_a_menu(
                     Menu::at(Point::default()).does(Icon::Play, "Play", |_, _, _| {}),
                     cx,
                 );
+
                 let after_a_menu = root.window_has_moved_on_from(pressed, cx);
 
                 let first = root.press_a_lookup();
@@ -5699,6 +5849,7 @@ mod tests {
             let file = folder.tone("delivered.wav", 1);
             let positions = Arc::new(Mutex::new(Vec::new()));
             let heard = Arc::clone(&positions);
+
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(move |_: &Supplying<'_>| {
@@ -5710,8 +5861,10 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
             let music_folder = music.path().to_path_buf();
+
             driven.cx.update(|_, cx| {
                 gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
                     global.music_folder = Some(music_folder);
@@ -5730,7 +5883,9 @@ mod tests {
                 driven.read(|root, cx| root.library.read(cx).listing().len()),
                 1
             );
+
             driven.until(|root, cx| root.player.read(cx).state().current.is_some());
+
             assert!(
                 driven.read(|root, cx| !root.library.read(cx).is_awaited(&mbid(HEROES_TONIGHT))),
                 "a song pressed and landed within half a minute plays once and is awaited no more"
@@ -5760,8 +5915,10 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
             let music_folder = music.path().to_path_buf();
+
             driven.cx.update(|_, cx| {
                 gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
                     global.music_folder = Some(music_folder);
@@ -5771,7 +5928,9 @@ mod tests {
                 .root
                 .update(&mut driven.cx, |root, cx| root.add_a_zone(cx));
             driven.until(|root, _| root.zones.len() == 2);
+
             let second = driven.read(|root, _| root.switcher.selected());
+
             driven.root.update(&mut driven.cx, |root, cx| {
                 root.show_zone(ZoneId::FIRST, cx);
             });
@@ -5788,6 +5947,7 @@ mod tests {
                     .cloned()
                     .expect("a song found on MusicBrainz");
                 let zone = root.zone_acted_on();
+
                 root.library
                     .update(cx, |library, cx| library.fetch_and_play(found, zone, cx));
                 root.show_zone(second, cx);
@@ -5806,6 +5966,7 @@ mod tests {
                         .map_or(0, |shown| shown.player.read(cx).queue().len())
                 })
             };
+
             assert_eq!(driven.read(|root, _| root.switcher.selected()), second);
             assert_eq!(queued_on(&mut driven, ZoneId::FIRST), 1);
             assert_eq!(
@@ -5818,6 +5979,7 @@ mod tests {
         #[gpui::test]
         fn a_title_by_an_artist_is_searched_as_that_title_by_that_artist(cx: &mut TestAppContext) {
             let folder = Folder::new();
+
             folder.tagged(
                 "1.wav",
                 1,
@@ -5828,8 +5990,11 @@ mod tests {
                 1,
                 &[(b"IART", "Somebody Else"), (b"INAM", "You F.O.")],
             );
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
@@ -5837,6 +6002,7 @@ mod tests {
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
             let search = driven.read(|root, _| root.typed.search.clone());
+
             driven.cx.update(|_, cx| {
                 search.update(cx, |search, cx| {
                     search.set_text("You F O by stela cole".to_owned(), cx);
@@ -5854,6 +6020,7 @@ mod tests {
                         .collect::<Vec<_>>()
                 })
             };
+
             assert_eq!(artists(&mut driven), ["Stela Cole"]);
 
             driven.click("search-as-typed");
@@ -5868,14 +6035,19 @@ mod tests {
         #[gpui::test]
         fn a_search_begun_on_any_pane_opens_the_top_results(cx: &mut TestAppContext) {
             let folder = Folder::new();
+
             folder.tagged(
                 "one.wav",
                 1,
                 &[(b"IART", "Janji"), (b"INAM", "Heroes"), (b"IPRD", "Album")],
             );
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let mut driven = Driven::opened_in(cx, library, &folder);
+
             let search = driven.read(|root, _| root.typed.search.clone());
 
             for sidebar in [
@@ -5892,6 +6064,7 @@ mod tests {
                 driven.until(|root, cx| root.search_in_front(cx).is_some());
 
                 let (pane, shows) = driven.read(|root, cx| (root.pane, root.search_in_front(cx)));
+
                 assert_eq!(shows, Some(SearchShows::Top), "searching from {sidebar}");
                 assert!(
                     matches!(pane, Pane::Albums | Pane::Artists | Pane::Tracks),
@@ -5910,16 +6083,21 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             for number in 0..40 {
                 let title = format!("Heroes {number}");
+
                 folder.tagged(
                     &format!("{number:02}.wav"),
                     1,
                     &[(b"IART", "Janji"), (b"INAM", title.as_str())],
                 );
             }
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
@@ -5927,6 +6105,7 @@ mod tests {
             let mut driven = Driven::reaching(cx, library, &folder, reaching);
 
             let search = driven.read(|root, _| root.typed.search.clone());
+
             driven.cx.update(|_, cx| {
                 search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
             });
@@ -5934,6 +6113,7 @@ mod tests {
                 let library = root.library.read(cx);
                 library.listing().len() == 40 && !library.found().is_empty()
             });
+
             let found = driven.bounds_of("found-0");
             let seen = driven.cx.update(|window, _| window.viewport_size());
 
@@ -5952,11 +6132,13 @@ mod tests {
                 driven.read(|root, cx| (root.pane, root.search_in_front(cx))),
                 (Pane::Tracks, Some(SearchShows::Songs))
             );
+
             let (held, found) = driven.read(|root, cx| {
                 let library = root.library.read(cx);
                 (library.listing().len(), library.found().len())
             });
             let rows = driven.read(|root, cx| root.library.read(cx).rows());
+
             assert_eq!(rows.len(), held + 1 + found);
             assert_eq!(rows[held], crate::ListedRow::NotHeld(found));
             assert!(
@@ -5980,6 +6162,7 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             folder.tagged(
                 "heroes.wav",
                 1,
@@ -5989,8 +6172,11 @@ mod tests {
                     (b"IPRD", "Heroes"),
                 ],
             );
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
@@ -6000,10 +6186,12 @@ mod tests {
                 Box::leak(format!("album-found-{HEROES_TONIGHT_GROUP}").into_boxed_str());
 
             let search = driven.read(|root, _| root.typed.search.clone());
+
             driven.cx.update(|_, cx| {
                 search.update(cx, |search, cx| search.set_text("heroes".to_owned(), cx));
             });
             driven.until(|root, cx| !root.library.read(cx).albums_found().is_empty());
+
             let seen = driven.cx.update(|window, _| window.viewport_size());
 
             assert!(driven.bounds_of(cell).bottom() <= seen.height);
@@ -6027,6 +6215,7 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             folder.tagged(
                 "other.wav",
                 1,
@@ -6036,6 +6225,7 @@ mod tests {
                     (b"IPRD", "Heroes Tonight"),
                 ],
             );
+
             let asked = Arc::new(Mutex::new(Vec::new()));
             let told = Arc::clone(&asked);
             let reaching = Reaching {
@@ -6048,6 +6238,7 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
             library
                 .enrich(
@@ -6058,6 +6249,7 @@ mod tests {
                 .expect("the enrichment starts")
                 .join()
                 .expect("the enrichment finishes");
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             let missing = library
@@ -6065,6 +6257,7 @@ mod tests {
                 .expect("the missing tracks read")
                 .remove(0);
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| {
                     library.select(Selection::Album(missing.album), cx);
@@ -6086,6 +6279,7 @@ mod tests {
                     .map(|download| (download.found.title.clone(), download.found.artist.clone()))
                     .collect::<Vec<_>>()
             });
+
             assert_eq!(
                 listed,
                 [("Heroes Tonight".to_owned(), "Janji & Johnning".to_owned())]
@@ -6107,6 +6301,7 @@ mod tests {
                     (b"IPRD", "Heroes Tonight"),
                 ],
             );
+
             let told = Arc::clone(asked);
             let reaching = Reaching {
                 reference: Arc::new(MusicBrainz::new()),
@@ -6118,6 +6313,7 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, folder);
             library
                 .enrich(
@@ -6128,6 +6324,7 @@ mod tests {
                 .expect("the enrichment starts")
                 .join()
                 .expect("the enrichment finishes");
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), folder, reaching);
 
             let missing = library
@@ -6135,6 +6332,7 @@ mod tests {
                 .expect("the missing tracks read")
                 .remove(0);
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| {
                     library.select(Selection::Album(missing.album), cx);
@@ -6161,10 +6359,12 @@ mod tests {
         ) {
             let folder = Folder::new();
             let asked = Arc::new(Mutex::new(Vec::new()));
+
             let (mut driven, library, _, title) = an_album_short_of_a_song(cx, &asked, &folder);
             let recording = mbid(HEROES_TONIGHT);
 
             driven.right_click(title);
+
             assert!(
                 driven.read(|root, _| root.menu.is_some()),
                 "a right press on a missing song opened no menu"
@@ -6177,6 +6377,7 @@ mod tests {
                     "Download".to_owned()
                 ])
             );
+
             driven.click("menu-entry-2");
             driven.until(|_, _| !asked.lock().is_empty());
 
@@ -6204,6 +6405,7 @@ mod tests {
         ) {
             let folder = Folder::new();
             let asked = Arc::new(Mutex::new(Vec::new()));
+
             let (mut driven, library, _, title) = an_album_short_of_a_song(cx, &asked, &folder);
             let recording = mbid(HEROES_TONIGHT);
 
@@ -6224,10 +6426,12 @@ mod tests {
         ) {
             let folder = Folder::new();
             let asked = Arc::new(Mutex::new(Vec::new()));
+
             let (mut driven, library, missing, title) =
                 an_album_short_of_a_song(cx, &asked, &folder);
 
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.want(missing.release_track, cx));
             });
@@ -6239,11 +6443,13 @@ mod tests {
             });
 
             driven.right_click(title);
+
             assert_eq!(
                 driven.read(|root, _| root.menu.as_ref().map(Menu::labels)),
                 Some(vec!["Stop wanting this track".to_owned()]),
                 "a want already asked for offered more than to stop it"
             );
+
             driven.click("menu-entry-0");
             driven.until(|root, cx| {
                 root.library
@@ -6294,11 +6500,13 @@ mod tests {
             let asked = Arc::new(Mutex::new(Vec::new()));
             let open = Arc::new(AtomicBool::new(true));
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             library
                 .want_found(&MusicBrainz::new(), &heroes_tonight_found())
                 .expect("the song is wanted");
 
             let mut driven = Driven::reaching(cx, library, &folder, shop_reaching(&asked, &open));
+
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
 
             let listed = driven.read(|root, cx| {
@@ -6314,6 +6522,7 @@ mod tests {
                     })
                     .collect::<Vec<_>>()
             });
+
             assert_eq!(listed, [("Heroes Tonight".to_owned(), true)]);
         }
 
@@ -6325,9 +6534,11 @@ mod tests {
             let asked = Arc::new(Mutex::new(Vec::new()));
             let open = Arc::new(AtomicBool::new(false));
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, library, &folder, shop_reaching(&asked, &open));
 
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| {
                     library.want_found(heroes_tonight_found(), cx);
@@ -6340,6 +6551,7 @@ mod tests {
                     .first()
                     .is_some_and(|download| library.fetching(download) == Fetching::NoProvider)
             });
+
             assert!(asked.lock().is_empty());
 
             open.store(true, Ordering::Relaxed);
@@ -6368,9 +6580,11 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             let search = driven.read(|root, _| root.typed.search.clone());
+
             driven.cx.update(|window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(format!(
                     "https://www.deezer.com/en/playlist/{NCS_PLAYLIST}"
@@ -6411,9 +6625,11 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             let search = driven.read(|root, _| root.typed.search.clone());
+
             driven.cx.update(|window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(
                     "https://open.spotify.com/track/4cOdK2wGLETKBW3PvgPWqT?si=a1".to_owned(),
@@ -6432,7 +6648,9 @@ mod tests {
                 1
             );
             assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+
             let wants = library.wants().expect("the wants read");
+
             assert_eq!(wants.len(), 1);
             assert_eq!(wants[0].title, "Heroes Tonight");
         }
@@ -6454,9 +6672,11 @@ mod tests {
                 }),
             };
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             let mut driven = Driven::reaching(cx, Arc::clone(&library), &folder, reaching);
 
             let search = driven.read(|root, _| root.typed.search.clone());
+
             driven.cx.update(|window, cx| {
                 cx.write_to_clipboard(ClipboardItem::new_string(format!(
                     "https://musicbrainz.org/release-group/{HEROES_TONIGHT_GROUP}"
@@ -6475,7 +6695,9 @@ mod tests {
                 1
             );
             assert_eq!(asked.lock()[0].recording, Some(mbid(HEROES_TONIGHT)));
+
             let wants = library.wants().expect("the wants read");
+
             assert_eq!(wants.len(), 1);
             assert_eq!(wants[0].album_title, "Heroes Tonight");
         }
@@ -6493,6 +6715,7 @@ mod tests {
 
         fn typed(driven: &mut Driven, query: &str) {
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.set_query(query.to_owned(), cx));
             });
@@ -6514,7 +6737,9 @@ mod tests {
             typed(&mut driven, "janji heroes");
             answered(&mut driven);
             typed(&mut driven, "heroes   TONIGHT");
+
             let at_once = driven.read(|root, cx| root.library.read(cx).found().len());
+
             answered(&mut driven);
 
             assert_eq!(at_once, 1, "an answer held in memory waited to be drawn");
@@ -6538,11 +6763,14 @@ mod tests {
             typed(&mut driven, "heroes");
             answered(&mut driven);
             typed(&mut driven, "heroes ton");
+
             let narrowed = driven.read(|root, cx| {
                 let library = root.library.read(cx);
                 (library.found().len(), library.is_asking_elsewhere())
             });
+
             typed(&mut driven, "radiohead");
+
             let unrelated = driven.read(|root, cx| root.library.read(cx).found().len());
 
             assert_eq!(narrowed, (1, true));
@@ -6554,7 +6782,9 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let musicbrainz = MusicBrainz::new();
+
             musicbrainz.refusing.store(true, Ordering::Relaxed);
+
             let mut driven = searching(&musicbrainz, cx);
 
             typed(&mut driven, "heroes tonight");
@@ -6572,6 +6802,7 @@ mod tests {
 
         fn asked_now(driven: &mut Driven) {
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.ask_elsewhere_now(cx));
             });
@@ -6582,15 +6813,19 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let musicbrainz = MusicBrainz::new();
+
             musicbrainz.refusing_albums.store(true, Ordering::Relaxed);
+
             let mut driven = searching(&musicbrainz, cx);
 
             typed(&mut driven, "heroes tonight");
             answered(&mut driven);
+
             let refused = driven.read(|root, cx| {
                 let library = root.library.read(cx);
                 (library.found().len(), library.albums_found().len())
             });
+
             musicbrainz.refusing_albums.store(false, Ordering::Relaxed);
             typed(&mut driven, "janji");
             answered(&mut driven);
@@ -6634,6 +6869,7 @@ mod tests {
             typed(&mut driven, "heroes tonight");
             answered(&mut driven);
             typed(&mut driven, "heroes tonigh");
+
             let while_asked = driven.read(|root, cx| {
                 let library = root.library.read(cx);
                 (library.albums_found().len(), library.is_asking_elsewhere())
@@ -6648,9 +6884,13 @@ mod tests {
         ) {
             let musicbrainz = MusicBrainz::new();
             let folder = Folder::new();
+
             folder.tone("Heroes Tonight.wav", 1);
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let reaching = Reaching {
                 reference: Arc::new(musicbrainz.sharing()),
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
@@ -6663,8 +6903,10 @@ mod tests {
                 let library = root.library.read(cx);
                 !library.listing().is_empty() && !library.found().is_empty()
             });
+
             let found = driven
                 .read(|root, cx| TopRun::of(root.library.read(cx)).row_of(TopEntry::Found(0)));
+
             driven.focus(|root| &root.typed.search);
             for _ in 0..=found {
                 driven.cx.simulate_keystrokes("down");
@@ -6672,6 +6914,7 @@ mod tests {
             driven.settle();
 
             assert!(driven.read(|root, cx| root.reaches(Shift::Listing(Listed::Top), found, cx)));
+
             driven.cx.simulate_keystrokes("enter");
             driven.until(|root, cx| !root.library.read(cx).downloads().is_empty());
         }
@@ -6681,6 +6924,7 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             folder.tagged(
                 "echoes.wav",
                 1,
@@ -6690,11 +6934,17 @@ mod tests {
                     (b"IPRD", "Echoes"),
                 ],
             );
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let mut driven = Driven::opened_in(cx, library, &folder);
+
             driven.click("tab-tracks");
+
             let model = driven.read(|root, _| root.library.clone());
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
             });
@@ -6704,19 +6954,24 @@ mod tests {
                     && !library.albums().is_empty()
                     && !library.artists().is_empty()
             });
+
             let run = driven.read(|root, cx| TopRun::of(root.library.read(cx)));
             let top = Shift::Listing(Listed::Top);
 
             assert_eq!(run.len(), 3);
+
             driven.focus(|root| &root.typed.search);
             driven.cx.simulate_keystrokes("down");
             driven.settle();
+
             assert!(
                 driven.read(|root, cx| root.reaches(top, 0, cx)),
                 "the song is not reached first"
             );
+
             driven.cx.simulate_keystrokes("down down");
             driven.settle();
+
             assert!(
                 driven.read(|root, cx| root.reaches(top, 2, cx)),
                 "the album is not reached last"
@@ -6724,6 +6979,7 @@ mod tests {
 
             driven.cx.simulate_keystrokes("enter");
             driven.settle();
+
             assert!(matches!(
                 driven.read(|_, cx| model.read(cx).selection()),
                 Selection::Album(_)
@@ -6735,6 +6991,7 @@ mod tests {
             cx: &mut TestAppContext,
         ) {
             let folder = Folder::new();
+
             folder.tagged(
                 "alpha.wav",
                 1,
@@ -6745,20 +7002,28 @@ mod tests {
                 1,
                 &[(b"INAM", "Zebra"), (b"IART", "Pink Floyd")],
             );
+
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let mut driven = Driven::opened_in(cx, library, &folder);
+
             driven.click("tab-tracks");
+
             let top = Shift::Listing(Listed::Top);
 
             driven.focus(|root| &root.typed.search);
             driven.cx.simulate_input("zebra");
+
             assert!(
                 driven.read(|root, cx| root.library.read(cx).is_reading_the_search()),
                 "the read had settled before enter was pressed"
             );
+
             driven.cx.simulate_keystrokes("enter");
             driven.until(|root, cx| root.reaches(top, 0, cx));
+
             let titles = driven.read(|root, cx| {
                 root.library
                     .read(cx)
@@ -6767,6 +7032,7 @@ mod tests {
                     .map(|track| track.title.to_string())
                     .collect::<Vec<_>>()
             });
+
             assert_eq!(titles, ["Zebra"]);
         }
 
@@ -6774,6 +7040,7 @@ mod tests {
         fn a_search_inside_an_artist_asks_musicbrainz_nothing(cx: &mut TestAppContext) {
             let musicbrainz = MusicBrainz::new();
             let mut driven = searching(&musicbrainz, cx);
+
             let model = driven.read(|root, _| root.library.clone());
             let artist = resonate_core::ArtistId::new(1).expect("a non-zero id");
 
@@ -6792,6 +7059,7 @@ mod tests {
         fn asked_to_delete(driven: &mut Driven, track: &Track) {
             let root = driven.root.clone();
             let deleting = Deleting::of(track);
+
             driven.cx.update(|_, cx| {
                 root.update(cx, |root, cx| root.ask_to_delete(deleting, cx));
             });
@@ -6806,7 +7074,9 @@ mod tests {
             let doomed = folder.tone("doomed.wav", 1);
             let kept = folder.tone("kept.wav", 1);
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
             let track = library
                 .tracks(&TrackQuery::default())
@@ -6822,7 +7092,9 @@ mod tests {
 
             asked_to_delete(&mut driven, &track);
             driven.click("keep-the-track");
+
             let kept_on_cancel = doomed.exists();
+
             asked_to_delete(&mut driven, &track);
             driven.click("delete-the-track");
             driven.until(|_, _| !doomed.exists());
@@ -6849,7 +7121,9 @@ mod tests {
             let folder = Folder::new();
             let doomed = folder.tone("doomed.wav", 1);
             let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
             Driven::scanned(&library, &folder);
+
             let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
             let track = library
                 .tracks(&TrackQuery::default())

@@ -61,6 +61,7 @@ pub struct Prose {
 pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Prose>>> {
     let mut found = BTreeMap::new();
     let mut waiting = vec![root.to_owned()];
+
     while let Some(folder) = waiting.pop() {
         for path in crate::listed(&folder)? {
             if path.is_dir() {
@@ -70,6 +71,7 @@ pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Pr
             if path.extension().and_then(|ending| ending.to_str()) != Some("rs") {
                 continue;
             }
+
             let source = fs::read_to_string(&path).map_err(|source| Error::Unreadable {
                 path: path.clone(),
                 source,
@@ -80,6 +82,7 @@ pub fn prose_in(root: &Path, proper: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Pr
                 .collect();
             if !prose.is_empty() {
                 let named = path.strip_prefix(root).unwrap_or(&path).to_owned();
+
                 found.insert(named, prose);
             }
         }
@@ -116,6 +119,7 @@ pub fn reads_as_prose(text: &str) -> bool {
             (Some(first), Some(second)) if first.is_uppercase() && second.is_lowercase()
         )
     });
+
     let spaced = bare.chars().any(char::is_whitespace) && !words.is_empty();
 
     capitalised || spaced
@@ -125,6 +129,7 @@ fn without_placeholders(text: &str) -> String {
     let mut bare = String::with_capacity(text.len());
     let mut depth = 0usize;
     let mut letters = text.chars().peekable();
+
     while let Some(letter) = letters.next() {
         match letter {
             '{' if letters.peek() == Some(&'{') => {
@@ -179,6 +184,7 @@ pub(crate) fn lexed(source: &str) -> Lexed {
         match letter {
             '/' if next == Some('/') => {
                 let from = at;
+
                 while at < letters.len() && letters[at] != '\n' {
                     at += 1;
                 }
@@ -188,6 +194,7 @@ pub(crate) fn lexed(source: &str) -> Lexed {
                 let from = at;
                 let started = line;
                 let mut depth = 0usize;
+
                 while at < letters.len() {
                     if letters[at] == '/' && letters.get(at + 1) == Some(&'*') {
                         depth += 1;
@@ -210,6 +217,7 @@ pub(crate) fn lexed(source: &str) -> Lexed {
             }
             '"' => {
                 let (text, end, lines) = quoted(&letters, at + 1);
+
                 literals.push(Literal { line, text });
                 code.push_str("\"\"");
                 push_lines(&mut code, lines);
@@ -237,6 +245,7 @@ pub(crate) fn lexed(source: &str) -> Lexed {
                     Some('r') => raw(&letters, at + 2).unwrap_or((String::new(), at + 2, 0)),
                     _ => (String::new(), character_end(&letters, at + 1), 0),
                 };
+
                 code.push_str("b\"\"");
                 push_lines(&mut code, end.2);
                 line += end.2;
@@ -244,6 +253,7 @@ pub(crate) fn lexed(source: &str) -> Lexed {
             }
             '\'' => {
                 let end = character_end(&letters, at);
+
                 for skipped in &letters[at..end] {
                     code.push(match skipped {
                         '\n' => '\n',
@@ -280,6 +290,7 @@ fn push_lines(code: &mut String, lines: usize) {
 fn quoted(letters: &[char], mut at: usize) -> (String, usize, usize) {
     let mut text = String::new();
     let mut lines = 0;
+
     while at < letters.len() {
         match letters[at] {
             '\\' => {
@@ -317,6 +328,7 @@ fn quoted(letters: &[char], mut at: usize) -> (String, usize, usize) {
 
 fn raw(letters: &[char], mut at: usize) -> Option<(String, usize, usize)> {
     let mut hashes = 0;
+
     while letters.get(at) == Some(&'#') {
         hashes += 1;
         at += 1;
@@ -325,8 +337,10 @@ fn raw(letters: &[char], mut at: usize) -> Option<(String, usize, usize)> {
         return None;
     }
     at += 1;
+
     let mut text = String::new();
     let mut lines = 0;
+
     while at < letters.len() {
         if letters[at] == '"' && (1..=hashes).all(|offset| letters.get(at + offset) == Some(&'#')) {
             return Some((text, at + 1 + hashes, lines));
@@ -344,6 +358,7 @@ fn character_end(letters: &[char], at: usize) -> usize {
     match (letters.get(at + 1), letters.get(at + 2)) {
         (Some('\\'), _) => {
             let mut end = at + 3;
+
             while end < letters.len() && letters[end] != '\'' {
                 end += 1;
             }
@@ -357,13 +372,16 @@ fn character_end(letters: &[char], at: usize) -> usize {
 fn lines_unread(code: &[String]) -> Vec<bool> {
     let mut unread = vec![false; code.len()];
     let mut line = 0;
+
     while line < code.len() {
         let trimmed = code[line].trim_start();
+
         if ONLY_UNDER_TEST
             .iter()
             .any(|attribute| trimmed.starts_with(attribute))
         {
             let end = item_end(code, line + 1);
+
             for skipped in unread.iter_mut().take(end + 1).skip(line) {
                 *skipped = true;
             }
@@ -376,6 +394,7 @@ fn lines_unread(code: &[String]) -> Vec<bool> {
             .min()
         {
             let end = closing_line(code, line, opened);
+
             for skipped in unread.iter_mut().take(end + 1).skip(line) {
                 *skipped = true;
             }
@@ -390,8 +409,10 @@ fn lines_unread(code: &[String]) -> Vec<bool> {
 fn item_end(code: &[String], from: usize) -> usize {
     let mut depth = 0i64;
     let mut opened = false;
+
     for (line, text) in code.iter().enumerate().skip(from) {
         let trimmed = text.trim_start();
+
         if !opened && trimmed.starts_with("#[") {
             continue;
         }
@@ -416,8 +437,10 @@ fn item_end(code: &[String], from: usize) -> usize {
 fn closing_line(code: &[String], from: usize, at: usize) -> usize {
     let mut depth = 0i64;
     let mut opened = false;
+
     for (line, text) in code.iter().enumerate().skip(from) {
         let start = if line == from { at } else { 0 };
+
         for letter in text.chars().skip(start) {
             match letter {
                 '(' | '[' => {

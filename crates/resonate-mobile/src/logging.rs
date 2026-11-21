@@ -149,6 +149,7 @@ mod tests {
         });
 
         let lines = kept.0.lock();
+
         assert_eq!(lines.len(), 1);
         assert_eq!(lines[0].0, LogLevel::Warn);
         assert!(lines[0].1.contains("the file would not open"));

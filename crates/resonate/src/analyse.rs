@@ -31,6 +31,7 @@ pub struct Analysed {
 impl Analysed {
     pub fn named(argument: &OsStr, track: Option<u32>, sources: &Sources) -> Result<Self> {
         let (location, span) = cut_of_argument(argument, sources)?;
+
         if span.is_some() {
             return match track {
                 Some(_) => Err(Error::TrackOutsideASheet { location }),
@@ -54,6 +55,7 @@ impl Analysed {
 
     fn cut_by(sources: &Sources, sheet: &Path, number: u32) -> Result<Self> {
         let cues = read_cue_media(sources, &MediaLocation::local(sheet))?;
+
         for file in &cues.files {
             let Some((index, _)) = file
                 .audio_tracks()
@@ -89,6 +91,7 @@ pub fn print(
     recognising: Option<Fingerprinters>,
 ) -> Result<()> {
     let Analysed { location, span } = analysed;
+
     let analysis = analyse(sources, location, *span, &Watch::default())?;
 
     heading(words::analyse::stream());
@@ -132,6 +135,7 @@ fn stream(analysis: &Analysis, span: Option<FrameSpan>) {
             words::analyse::cut_from_to(end, clock(span.start(), examined.rate)),
         )
     });
+
     pairs(
         cut.into_iter()
             .chain([
@@ -157,6 +161,7 @@ fn stream(analysis: &Analysis, span: Option<FrameSpan>) {
 
 fn verdict(analysis: &Analysis) {
     let judgement = &analysis.study.judgement;
+
     said!("  {}", judgement.verdict.told());
     for finding in &judgement.findings {
         said!("  · {}", finding.told());
@@ -194,6 +199,7 @@ fn decibels_of(level: f32) -> String {
 fn levels(analysis: &Analysis) {
     let study = &analysis.study;
     let levels = &study.levels;
+
     pairs(vec![
         (words::analyse::peak(), decibels_of(levels.peak)),
         (words::analyse::rms(), decibels_of(levels.rms)),
@@ -254,6 +260,7 @@ fn levels(analysis: &Analysis) {
 
 fn bars(series: &[f32], floor: f32, top: f32, label: impl Fn(f32) -> String) {
     let span = (top - floor).max(f32::EPSILON);
+
     for row in (0..PLOT_ROWS).rev() {
         let at = floor + span * (row as f32 + 0.5) / PLOT_ROWS as f32;
         let line: String = series
@@ -263,6 +270,7 @@ fn bars(series: &[f32], floor: f32, top: f32, label: impl Fn(f32) -> String) {
                 BLOCKS[(filled.clamp(0.0, 1.0) * 8.0).round() as usize]
             })
             .collect();
+
         said!("  {:>9} │{line}", label(at));
     }
     said!("  {:>9} └{}", "", "─".repeat(series.len()));
@@ -280,6 +288,7 @@ fn spectrum(spectrum: &Spectrum, cutoff_hz: Option<u32>) {
                 .max(SPECTRUM_FLOOR_DB)
         })
         .collect();
+
     bars(&series, SPECTRUM_FLOOR_DB, 0.0, |db| {
         words::analyse::decibels(format!("{db:.0}"))
     });
@@ -294,6 +303,7 @@ fn spectrum(spectrum: &Spectrum, cutoff_hz: Option<u32>) {
             }
         })
         .collect();
+
     said!("  {:>9}  {marked}", "");
     said!(
         "  {:>9}  {}{:>width$}",
@@ -323,6 +333,7 @@ fn waveform(envelope: &Envelope) {
             )
         })
         .collect();
+
     if columns.is_empty() || envelope.frames() == Frames::ZERO {
         said!("  {}", words::analyse::nothing_heard());
         return;
@@ -338,12 +349,14 @@ fn waveform(envelope: &Envelope) {
             ' '
         }
     };
+
     for row in (0..WAVEFORM_ROWS_A_SIDE).rev() {
         let at = (row as f32 + 0.5) / side;
         let line: String = columns
             .iter()
             .map(|(high, _, rms)| cell(*high, *rms, at))
             .collect();
+
         said!(
             "  {:>9} │{line}",
             format!("{:+.2}", (row + 1) as f32 / side)
@@ -356,6 +369,7 @@ fn waveform(envelope: &Envelope) {
             .iter()
             .map(|(_, low, rms)| cell(*low, *rms, at))
             .collect();
+
         said!(
             "  {:>9} │{line}",
             format!("{:+.2}", -((row + 1) as f32) / side)
@@ -380,6 +394,7 @@ fn printed(analysis: &Analysis) {
     } else {
         ""
     };
+
     pairs(vec![
         ("chromaprint", format!("{shown}{more}")),
         (words::analyse::characters(), encoded.len().to_string()),
@@ -395,6 +410,7 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
         said!("  {}", words::analyse::no_acoustid_key());
         return;
     }
+
     let Some(print) = analysis.study.print.clone() else {
         said!("  {}", words::analyse::no_print());
         return;
@@ -408,6 +424,7 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
         artist: None,
         print,
     });
+
     if recognition.refused && recognition.matches.is_empty() {
         said!("  {}", words::analyse::recognition_refused());
         return;
@@ -423,8 +440,10 @@ fn recognised(analysis: &Analysis, analysed: &Analysed, fingerprinters: &Fingerp
         words::analyse::artist(),
         words::analyse::recording(),
     ]);
+
     for found in &recognition.matches {
         let heard = HeardAs::of(found);
+
         table.push(vec![
             heard.score.to_string(),
             heard.title,
@@ -449,6 +468,7 @@ pub(crate) mod tests {
     pub(crate) fn silent_wave() -> Vec<u8> {
         let data = FRAMES * 2;
         let mut bytes = Vec::new();
+
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + data).to_le_bytes());
         bytes.extend_from_slice(b"WAVEfmt ");
@@ -467,6 +487,7 @@ pub(crate) mod tests {
 
     fn a_rip() -> PathBuf {
         let folder = std::env::temp_dir().join(format!("resonate-analyse-{}", std::process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
         fs::write(folder.join("whole.wav"), silent_wave()).expect("a wave file");
         fs::write(
@@ -487,6 +508,7 @@ pub(crate) mod tests {
         let sheet = folder.join("sheet.cue");
 
         let second = Analysed::named(sheet.as_os_str(), Some(2), &sources).expect("a cut");
+
         assert_eq!(
             second.span.map(FrameSpan::start),
             Some(Frames(u64::from(
@@ -508,6 +530,7 @@ pub(crate) mod tests {
         ));
 
         let whole = folder.join("whole.wav");
+
         assert!(matches!(
             Analysed::named(whole.as_os_str(), Some(1), &sources),
             Err(Error::TrackOutsideASheet { .. })
@@ -518,12 +541,14 @@ pub(crate) mod tests {
                 .to_uri_within(Some(FrameSpan::between(Frames(10), Frames(20)))),
         );
         let cut = Analysed::named(&uri, None, &sources).expect("a cut");
+
         assert_eq!(cut.span, Some(FrameSpan::between(Frames(10), Frames(20))));
 
         let backwards = OsString::from(format!(
             "{}#frames=100-50",
             MediaLocation::local(&whole).to_uri()
         ));
+
         assert!(
             matches!(
                 Analysed::named(&backwards, None, &sources),

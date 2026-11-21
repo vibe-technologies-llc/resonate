@@ -63,6 +63,7 @@ impl RootView {
             Landing::On(pane) => self.set_pane(pane, cx),
             Landing::Unscoped(pane) => {
                 let came_from = mem::take(&mut self.came_from);
+
                 self.show_everything(cx);
                 self.came_from = came_from;
                 self.set_pane(pane, cx);
@@ -80,6 +81,7 @@ impl RootView {
                 left_by: Leaving::ByATab,
                 ..leaving
             };
+
             Self::keep_wayback(&mut self.came_from, leaving);
             self.goes_forward.clear();
         }
@@ -104,6 +106,7 @@ impl RootView {
         } else {
             Pane::default()
         };
+
         if pane != Pane::Tracks {
             self.adding_songs_to = None;
         }
@@ -111,7 +114,9 @@ impl RootView {
         self.attention.moved();
         self.record = None;
         self.stop_typing(cx);
+
         let opens_the_queue = pane == Pane::Queue && self.pane != Pane::Queue;
+
         if self.pane != pane {
             self.change_the_orders(cx, |orders| orders.ordering = None);
             if let Some(shows) = SearchShows::in_place_of(pane) {
@@ -126,7 +131,9 @@ impl RootView {
         });
         if opens_the_queue {
             self.queue.update(cx, |queue, _| queue.follow_afresh());
+
             let player = self.player.clone();
+
             self.follow_the_playing_row(&player, cx);
         }
         self.landing_on = None;
@@ -145,12 +152,14 @@ impl RootView {
             Shift::Listing(_) => {}
             Shift::Queue => {
                 let drawn_at = self.player.read(cx).queued().revision;
+
                 self.browsing
                     .update(cx, |browsing, _| browsing.queue_moved_at(drawn_at));
                 self.send_by_position(Command::Move { rows, to }, cx);
             }
             Shift::Playlist(playlist) => self.library.update(cx, |library, cx| {
                 let drawn = library.playlist_as_drawn();
+
                 library.move_in_playlist(playlist, rows, to, drawn, cx);
             }),
         }
@@ -200,6 +209,7 @@ impl RootView {
             self.shift_rows(shift, rows, to, cx);
             return;
         }
+
         let Shift::Playlist(playlist) = shift else {
             return;
         };
@@ -207,8 +217,10 @@ impl RootView {
         let held = self.library.read(cx).entries().len();
         let landed = chosen.gathered_by(to, held);
         let runs = chosen.runs().to_vec();
+
         self.library.update(cx, |library, cx| {
             let drawn = library.playlist_as_drawn();
+
             library.gather_in_playlist(playlist, runs, to, drawn, cx);
         });
         if let Some(landed) = landed {
@@ -224,7 +236,9 @@ impl RootView {
     pub(super) fn step_pane(&mut self, step: Step, cx: &mut Context<Self>) {
         let tabs = cx.global::<ResonateApp>().tabs;
         let serving = self.server.read(cx).is_open();
+
         let stepped = stepped_pane(self.in_front(cx), step, tabs, serving);
+
         self.choose_pane(stepped, cx);
     }
 
@@ -242,9 +256,11 @@ impl RootView {
         let (left_a_page, moved) = self.settings_pane.update(cx, |pane, _| {
             let left_a_page = pane.shown.page.take().is_some();
             let moved = pane.shown.category != category;
+
             pane.shown.category = category;
             (left_a_page, moved)
         });
+
         if moved {
             self.remember_current_settings_category(cx);
         }

@@ -43,16 +43,20 @@ impl Transport {
     pub(crate) fn open(shared: &Arc<Shared>) -> Result<Self> {
         let player =
             MediaPlayer::new().map_err(|source| Error::windows(WindowsOp::Player, source))?;
+
         player
             .CommandManager()
             .and_then(|commands| commands.SetIsEnabled(false))
             .map_err(|source| Error::windows(WindowsOp::Player, source))?;
+
         let controls = player
             .SystemMediaTransportControls()
             .map_err(|source| Error::windows(WindowsOp::Controls, source))?;
+
         controls
             .SetIsEnabled(true)
             .map_err(|source| Error::windows(WindowsOp::Controls, source))?;
+
         let registrations = answer(&controls, shared)?;
 
         Ok(Self {
@@ -112,6 +116,7 @@ impl Transport {
         self.controls
             .SetShuffleEnabled(now.shuffle)
             .map_err(|source| Error::windows(WindowsOp::Controls, source))?;
+
         let Some(repeat) = now.repeat else {
             return Ok(());
         };
@@ -125,6 +130,7 @@ impl Transport {
             .controls
             .DisplayUpdater()
             .map_err(|source| Error::windows(WindowsOp::Display, source))?;
+
         updater
             .ClearAll()
             .map_err(|source| Error::windows(WindowsOp::Display, source))?;
@@ -133,9 +139,11 @@ impl Transport {
             updater
                 .SetType(MediaPlaybackType::Music)
                 .map_err(|source| Error::windows(WindowsOp::Display, source))?;
+
             let music = updater
                 .MusicProperties()
                 .map_err(|source| Error::windows(WindowsOp::Display, source))?;
+
             music
                 .SetTitle(&HSTRING::from(displayed.title.as_str()))
                 .and_then(|()| music.SetArtist(&HSTRING::from(displayed.artist.as_str())))
@@ -184,12 +192,14 @@ impl Transport {
     pub(crate) fn close(self) {
         let controls = &self.controls;
         let registrations = &self.registrations;
+
         let left = controls
             .RemoveButtonPressed(registrations.pressed)
             .and_then(|()| controls.RemovePlaybackPositionChangeRequested(registrations.moved))
             .and_then(|()| controls.RemoveShuffleEnabledChangeRequested(registrations.shuffled))
             .and_then(|()| controls.RemoveAutoRepeatModeChangeRequested(registrations.repeated))
             .map_err(|source| Error::windows(WindowsOp::Listen, source));
+
         report(left);
         report(self.status(Status::Closed));
         report(self.displayed(None));
@@ -216,6 +226,7 @@ fn answer(controls: &SystemMediaTransportControls, shared: &Arc<Shared>) -> Resu
                 .as_ref()
                 .and_then(|arguments| arguments.Button().ok())
                 .and_then(|button| Pressed::of(button.0));
+
             if let Some(pressed) = pressed {
                 refused(answered(&pressing, pressed));
             }
@@ -232,6 +243,7 @@ fn answer(controls: &SystemMediaTransportControls, shared: &Arc<Shared>) -> Resu
             let asked = arguments
                 .as_ref()
                 .and_then(|arguments| arguments.RequestedPlaybackPosition().ok());
+
             if let Some(asked) = asked {
                 refused(moved_to(&seeking, asked.Duration));
             }
@@ -248,6 +260,7 @@ fn answer(controls: &SystemMediaTransportControls, shared: &Arc<Shared>) -> Resu
             let asked = arguments
                 .as_ref()
                 .and_then(|arguments| arguments.RequestedShuffleEnabled().ok());
+
             if let Some(asked) = asked {
                 refused(shuffling.set_shuffle(asked));
             }
@@ -265,6 +278,7 @@ fn answer(controls: &SystemMediaTransportControls, shared: &Arc<Shared>) -> Resu
                 .as_ref()
                 .and_then(|arguments| arguments.RequestedAutoRepeatMode().ok())
                 .and_then(|mode| repeat_asked(mode.0));
+
             if let Some(repeat) = asked {
                 refused(repeating.set_loop_status(loop_status(repeat)));
             }

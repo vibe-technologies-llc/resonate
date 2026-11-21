@@ -70,6 +70,7 @@ impl Json {
 
     pub(crate) fn written(&self) -> String {
         let mut out = String::new();
+
         self.write_into(&mut out);
         out
     }
@@ -113,7 +114,9 @@ impl Json {
             bytes: text.as_bytes(),
             at: 0,
         };
+
         let value = reader.value(0)?;
+
         reader.blank();
         (reader.at == reader.bytes.len()).then_some(value)
     }
@@ -194,7 +197,9 @@ impl Reader<'_> {
 
     fn list(&mut self, depth: usize) -> Option<Json> {
         self.eat(b"[")?;
+
         let mut items = Vec::new();
+
         self.blank();
         if self.eat(b"]").is_some() {
             return Some(Json::List(items));
@@ -212,14 +217,18 @@ impl Reader<'_> {
 
     fn object(&mut self, depth: usize) -> Option<Json> {
         self.eat(b"{")?;
+
         let mut members = Vec::new();
+
         self.blank();
         if self.eat(b"}").is_some() {
             return Some(Json::Object(members));
         }
         loop {
             self.blank();
+
             let key = self.string()?;
+
             self.blank();
             self.eat(b":")?;
             members.push((key, self.value(depth + 1)?));
@@ -234,27 +243,33 @@ impl Reader<'_> {
 
     fn number(&mut self) -> Option<Json> {
         let from = self.at;
+
         while matches!(
             self.peek(),
             Some(b'0'..=b'9' | b'-' | b'+' | b'.' | b'e' | b'E')
         ) {
             self.at += 1;
         }
+
         let spelled = std::str::from_utf8(self.bytes.get(from..self.at)?).ok()?;
         spelled.parse().ok().map(Json::Number)
     }
 
     fn string(&mut self) -> Option<String> {
         self.eat(b"\"")?;
+
         let mut text = Vec::new();
         loop {
             let byte = self.peek()?;
+
             self.at += 1;
             match byte {
                 b'"' => return String::from_utf8(text).ok(),
                 b'\\' => {
                     let escaped = self.peek()?;
+
                     self.at += 1;
+
                     let letter = match escaped {
                         b'"' => '"',
                         b'\\' => '\\',
@@ -268,6 +283,7 @@ impl Reader<'_> {
                         _ => return None,
                     };
                     let mut encoded = [0; 4];
+
                     text.extend_from_slice(letter.encode_utf8(&mut encoded).as_bytes());
                 }
                 byte if byte < 0x20 => return None,
@@ -278,11 +294,14 @@ impl Reader<'_> {
 
     fn unicode(&mut self) -> Option<char> {
         let high = self.four_hex()?;
+
         if !(0xD800..0xDC00).contains(&high) {
             return char::from_u32(high);
         }
         self.eat(b"\\u")?;
+
         let low = self.four_hex()?;
+
         if !(0xDC00..0xE000).contains(&low) {
             return None;
         }
@@ -292,6 +311,7 @@ impl Reader<'_> {
     fn four_hex(&mut self) -> Option<u32> {
         let end = self.at.checked_add(4)?;
         let spelled = std::str::from_utf8(self.bytes.get(self.at..end)?).ok()?;
+
         self.at = end;
         u32::from_str_radix(spelled, 16).ok()
     }

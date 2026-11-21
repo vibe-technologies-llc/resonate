@@ -70,14 +70,18 @@ impl Library {
                 return Ok(held);
             }
         }
+
         let mut taken = None;
+
         for isrc in &song.isrcs {
             let takes = reference.recordings_of_isrc(isrc)?;
+
             taken = linked::the_take_linked(takes, song.length);
             if taken.is_some() {
                 break;
             }
         }
+
         let recording = match taken {
             Some(take) => reference.recording(&take.id)?.or(Some(take)),
             None => linked::the_song_searched_for(reference, song, footage)?,
@@ -89,6 +93,7 @@ impl Library {
         let Some(recording) = recording else {
             return Ok(Linked::Unnamed);
         };
+
         if let Some(held) = self
             .inner
             .read(|connection| linked::held_as(connection, HeldBy::Recording(&recording.id)))?
@@ -118,6 +123,7 @@ impl Library {
             found: Vec::new(),
             unnamed: 0,
         };
+
         for song in &linked.songs {
             let song = match song {
                 ListedSong::Recording(id) => self.follow_recording(reference, id)?,
@@ -144,6 +150,7 @@ impl Library {
 
     pub fn fill_playlist_named(&self, name: &str, tracks: &[TrackId]) -> Result<Filled> {
         let mut cuts = Vec::with_capacity(tracks.len());
+
         for track in tracks {
             if let Some(held) = self.track(*track)? {
                 cuts.push(Cut::of(&held));
@@ -156,6 +163,7 @@ impl Library {
         let Some(named) = linked::album_named(reference, link)? else {
             return Ok(Linked::Unnamed);
         };
+
         if let Some(held) = self
             .inner
             .read(|connection| linked::album_held(connection, &named))?
@@ -182,9 +190,11 @@ impl Library {
         if !matches!(link, ArtistLink::Deezer(_)) {
             return Ok(Linked::Unnamed);
         }
+
         let Some(name) = reference.artist_linked(link)? else {
             return Ok(Linked::Unnamed);
         };
+
         if let Some(held) = self
             .inner
             .read(|connection| linked::artist_held(connection, ArtistHeldBy::Name(&name)))?
@@ -214,6 +224,7 @@ impl Library {
 
     pub fn want_found(&self, reference: &dyn Reference, found: &Found) -> Result<WantId> {
         let Uncovered { wanted, covering } = self.want_found_uncovered(reference, found)?;
+
         if let Some(covering) = covering {
             self.cover_what_was_wanted(reference, &covering);
         }
@@ -255,6 +266,7 @@ impl Library {
             Ok(wanted) => return Ok(wanted),
             Err(error) => error,
         };
+
         for release in rest.iter().take(RELEASES_TRIED_AFTER_THE_FIRST) {
             if !matches!(
                 failed,
@@ -304,6 +316,7 @@ impl Library {
     ) -> Result<Vec<(Found, WantId)>> {
         let Uncovered { wanted, covering } =
             self.want_album_uncovered(reference, group, pressing)?;
+
         if let Some(covering) = covering {
             self.cover_what_was_wanted(reference, &covering);
         }
@@ -319,9 +332,11 @@ impl Library {
         let named = pressing
             .map(|release| Self::release_named(reference, release))
             .transpose()?;
+
         if let Some(named) = &named {
             self.land_songs_of(group, Some(named), SystemTime::now())?;
         }
+
         let songs = self.songs_read_for(reference, group)?;
         let release = Self::pressing_of_songs(&songs, group)?;
         let recordings: Vec<Mbid> = songs.iter().map(|song| song.recording.clone()).collect();
@@ -356,6 +371,7 @@ impl Library {
 
     fn songs_read_for(&self, reference: &dyn Reference, group: &Mbid) -> Result<Vec<Found>> {
         let songs = self.songs_of_group(group)?;
+
         if !songs.is_empty() {
             return Ok(songs);
         }
@@ -454,12 +470,14 @@ impl Library {
         let (wanted, album) = self.inner.write(|transaction| {
             let album = elsewhere::album_of_release(transaction, landed, now)?;
             let mut wanted = Vec::new();
+
             for recording in recordings {
                 let Some(row) = elsewhere::release_track_of(transaction, album, recording)? else {
                     tracing::debug!(%recording, %release, "a song is not on the release it was wanted from");
                     continue;
                 };
                 let coded: Vec<String> = codes.iter().map(|code| code.as_str().to_owned()).collect();
+
                 enriched::code(transaction, row.get() as i64, &coded)?;
                 wanted.push((recording.clone(), elsewhere::want_in(transaction, row, now)?));
             }
@@ -503,6 +521,7 @@ impl Library {
             told,
             landed: Cell::new(0),
         };
+
         learning::learn_the_songs_of(self, reference, &due, &page)?;
         Ok(page.landed.get())
     }
@@ -522,6 +541,7 @@ impl Library {
         now: SystemTime,
     ) -> Result<songs::SongsDue> {
         let mut binds = Self::songs_due_binds(now);
+
         binds.push(Value::Integer(artist.get() as i64));
 
         self.inner.read(|connection| {
@@ -543,6 +563,7 @@ impl Library {
 
     pub(crate) fn songs_still_due(&self, group: &Mbid, now: SystemTime) -> Result<bool> {
         let mut binds = Self::songs_due_binds(now);
+
         binds.push(Value::Text(group.as_str().to_owned()));
 
         self.inner.read(|connection| {
@@ -650,9 +671,11 @@ impl Library {
 
     pub fn albums_kept_for(&self, text: &str) -> Result<Vec<AlbumFound>> {
         let words = elsewhere::folded_words_asked(text);
+
         if words.is_empty() {
             return Ok(Vec::new());
         }
+
         let mut binds: Vec<Value> = elsewhere::ALBUM_KINDS
             .into_iter()
             .map(|kind| Value::Text(kind.to_owned()))
@@ -685,9 +708,11 @@ impl Library {
 
     pub fn songs_kept_for(&self, text: &str) -> Result<Vec<Found>> {
         let words = songs::sought_words(text);
+
         if words.is_empty() {
             return Ok(Vec::new());
         }
+
         let found = self.inner.read(|connection| {
             let (sql, binds) = songs_kept_holding(connection, &words)?;
             rows(connection, &sql, binds, |row| {
@@ -715,6 +740,7 @@ impl Library {
                 vec![id.clone()],
                 |row| songs::RawSong::read(row).map(songs::RawSong::into_found),
             )?;
+
             found.extend(rows(connection, &from_unheld, vec![id], |row| {
                 songs::RawSong::read(row).map(songs::RawSong::into_found)
             })?);
@@ -774,6 +800,7 @@ impl Library {
         self.inner.read(|connection| {
             let (held, mut binds) = unheld_holding(connection, narrowing)?;
             let sql = format!("{UNHELD_RELEASES}{held}{UNHELD_IN_ORDER}");
+
             binds.push(Value::Integer(limit(at_most)));
             rows(connection, &sql, binds, |row| {
                 RawUnheldRelease::read(row).map(RawUnheldRelease::into_unheld)
@@ -816,6 +843,7 @@ pub(super) fn songs_kept_holding(
     words: &[String],
 ) -> Result<(String, Vec<Value>)> {
     let mut binds = Vec::new();
+
     let sought = Infix::OF_A_KEPT_SONG.holding_every(connection, words, &mut binds)?;
     let sql = format!(
         "SELECT {} FROM discography_songs s WHERE {sought} AND {SONG_HELD_NOWHERE})
@@ -823,6 +851,7 @@ pub(super) fn songs_kept_holding(
            LIMIT ?",
         songs::SONG_COLUMNS
     );
+
     binds.push(Value::Integer(SONGS_SOUGHT_AT_MOST));
     Ok((sql, binds))
 }

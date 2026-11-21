@@ -23,6 +23,7 @@ impl Handoff {
         let mut from = 0;
         self.ends.iter().map(move |end| {
             let piece = &self.samples[from..*end];
+
             from = *end;
             piece
         })
@@ -99,6 +100,7 @@ impl Receiving {
             for piece in handoff.pieces() {
                 hear(piece);
             }
+
             let _ = self.spent.send(handoff.emptied());
         }
     }
@@ -125,6 +127,7 @@ mod tests {
             let hearing = scope.spawn(|| {
                 receiving.each(|piece| heard.push(piece.to_vec()));
             });
+
             for piece in pieces() {
                 sending.feed(&piece);
             }
@@ -138,6 +141,7 @@ mod tests {
     #[test]
     fn a_receiver_that_is_gone_does_not_hold_the_sender_back() {
         let (mut sending, receiving) = relay();
+
         drop(receiving);
 
         for piece in pieces() {

@@ -72,6 +72,7 @@ pub struct SongTags {
 impl SongTags {
     fn read(tags: &TagSet) -> Self {
         let mut read = Self::default();
+
         for field in EDITABLE {
             *read.slot(field) = Some(field.read(tags).unwrap_or_default());
         }
@@ -171,7 +172,9 @@ impl Tagging {
         if step.is_empty() {
             return;
         }
+
         let mut steps = self.steps.lock();
+
         steps.push(step);
         if steps.len() > UNDO_STEPS_KEPT {
             steps.remove(0);
@@ -204,6 +207,7 @@ impl MobilePlayer {
         let mut told = TagsWritten::default();
         let mut step = Vec::new();
         let change = Change::from(change);
+
         for song in &songs {
             match self.retag(song, &change) {
                 Ok(Some(before)) => {
@@ -239,6 +243,7 @@ impl MobilePlayer {
         };
         let mut told = TagsWritten::default();
         let mut unfinished = Vec::new();
+
         for undone in step {
             let Some(song) = songs.iter().find(|song| song.uri == undone.uri) else {
                 told.failed += 1;
@@ -292,11 +297,13 @@ impl MobilePlayer {
         let tags = FileTags::default();
         let stage = Stage::made(&self.tagging.folder, &track.name)?;
         let working = MediaLocation::local(stage.working());
+
         if !tags.writes(&working) {
             return Err(Error::TagsUnwritable);
         }
 
         self.copy_document(&at, &stage.working())?;
+
         let held = tags.read(&working, Picturing::Whether)?.tags;
         let Some(planned) = planned(&held, change)? else {
             return Ok(None);
@@ -306,6 +313,7 @@ impl MobilePlayer {
             op: RewriteOp::CopiedAside,
             source,
         })?;
+
         let original = crc_of_file(&stage.original())?;
         let written = write_planned(&tags, &working, &planned)?;
         let edited = crc_of_file(&stage.working())?;
@@ -324,6 +332,7 @@ impl MobilePlayer {
         };
         let mut media = self.sources.open(at)?;
         let mut file = File::create_new(into).map_err(copied)?;
+
         io::copy(&mut media.stream, &mut file).map_err(copied)?;
         Ok(())
     }
@@ -350,11 +359,13 @@ impl MobilePlayer {
 
         let restored = put_back(rewriting, uri, &stage.original()).is_ok()
             && self.whole_crc(uri) == Some(original);
+
         if restored {
             return Err(failure);
         }
 
         let kept = stage.keep_original(&self.tagging.folder)?;
+
         tracing::error!(path = %kept.display(), "a song could not be put back after a failed tag write");
         Err(Error::TagsUnrestored { kept })
     }
@@ -362,6 +373,7 @@ impl MobilePlayer {
 
 fn retag_at(local: &MediaLocation, change: &Change) -> Result<Option<Retagged>> {
     let tags = FileTags::default();
+
     if !tags.writes(local) {
         return Err(Error::TagsUnwritable);
     }
@@ -391,6 +403,7 @@ fn write_planned(tags: &FileTags, local: &MediaLocation, planned: &Planned) -> R
     )?;
 
     let written = tags.read(local, Picturing::Whether)?.tags;
+
     if !landed(&written, planned) {
         return Err(Error::TagsUnconfirmed);
     }
@@ -401,6 +414,7 @@ fn planned(held: &TagSet, change: &Change) -> Result<Option<Planned>> {
     let mut edits = Vec::new();
     let mut taken = Vec::new();
     let mut before = Change::default();
+
     for field in EDITABLE {
         let Some(wanted) = change.tags.wanted(field) else {
             continue;
@@ -413,6 +427,7 @@ fn planned(held: &TagSet, change: &Change) -> Result<Option<Planned>> {
     }
     if let Some(wanted) = &change.lyrics {
         let wanted = Some(wanted.trim()).filter(|wanted| !wanted.is_empty());
+
         before.lyrics = planned_field(
             held,
             TagField::Lyrics,
@@ -437,6 +452,7 @@ fn planned_field(
     taken: &mut Vec<TagField>,
 ) -> Option<String> {
     let current = field.read(held);
+
     match wanted {
         None if current.is_some() => taken.push(field),
         Some(value) if current.as_deref() != Some(value.as_str()) => {
@@ -449,6 +465,7 @@ fn planned_field(
 
 fn spelled(field: TagField, wanted: &str) -> Result<Option<String>> {
     let wanted = wanted.trim();
+
     if wanted.is_empty() {
         return Ok(None);
     }
@@ -458,6 +475,7 @@ fn spelled(field: TagField, wanted: &str) -> Result<Option<String>> {
             .ok()
             .filter(|number| *number > 0)
             .ok_or(Error::TagNumber)?;
+
         return Ok(Some(number.to_string()));
     }
     Ok(Some(wanted.to_owned()))
@@ -477,7 +495,9 @@ fn landed(written: &TagSet, planned: &Planned) -> bool {
 impl Catalog {
     fn retagged(&self, track: &Track, tags: &TagSet) -> Result<()> {
         let mut named = tags.clone();
+
         named_by_the_file(&track.name, &mut named);
+
         let title = named.title.unwrap_or_else(|| track.name.clone());
         self.0
             .lock()
@@ -545,11 +565,14 @@ mod tests {
         let folder =
             std::env::temp_dir().join(format!("resonate-tagging-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
+
         let rate: u32 = 44_100;
         let samples = vec![0i16; 4_410];
         let data = u32::try_from(samples.len() * 2).expect("a short wave");
         let mut bytes = Vec::new();
+
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + data).to_le_bytes());
         bytes.extend_from_slice(b"WAVEfmt ");
@@ -565,7 +588,9 @@ mod tests {
         for sample in samples {
             bytes.extend_from_slice(&sample.to_le_bytes());
         }
+
         let path = folder.join("song.wav");
+
         fs::write(&path, bytes).expect("a wave");
         path
     }
@@ -681,6 +706,7 @@ mod tests {
         player
             .edit_tags(vec![song.clone()], change)
             .expect("an edit");
+
         let skipped = player.undo_tags(Vec::new()).expect("an undo of nothing");
 
         assert_eq!(skipped.failed, 1);
@@ -698,7 +724,9 @@ mod tests {
     fn a_number_that_is_not_one_is_refused_and_the_file_is_left_alone() {
         let player = player();
         let path = wave("refused");
+
         held(&player);
+
         let before = fs::read(&path).expect("the wave");
 
         let refused = player
@@ -779,6 +807,7 @@ mod tests {
     impl DocumentRewriting for Rewrites {
         fn rewrite_document(&self, uri: String) -> i32 {
             self.0.asked.fetch_add(1, Ordering::Relaxed);
+
             let reply = self.0.script.lock().pop_front().unwrap_or(Reply::Real);
             match reply {
                 Reply::Real => OpenOptions::new()
@@ -814,11 +843,13 @@ mod tests {
             let data = folder.join("data");
             let directory = Directory::answering(&folder, script);
             let mut player = player();
+
             player.sources = Arc::new(Sources::local().and(Arc::new(
                 GrantedFiles::new(directory.clone(), "content").expect("a provider"),
             )));
             player.tagging = Tagging::under(data.clone());
             player.rewrite_documents_with(Box::new(Rewrites(directory.clone())));
+
             let track = held(&player);
             Self {
                 player,
@@ -998,6 +1029,7 @@ mod tests {
     #[test]
     fn a_document_is_not_written_where_the_front_end_gave_no_way_to() {
         let player = player();
+
         held(&player);
 
         let told = player

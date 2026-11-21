@@ -130,6 +130,7 @@ impl SpotifyAccount {
         if self.grants.grant().is_none() {
             return Ok(None);
         }
+
         let me = format!("{}/me", self.endpoints.api);
         let Some(me) = self.asked::<Me>(client, &me)? else {
             return Ok(None);
@@ -143,6 +144,7 @@ impl SpotifyAccount {
         }];
         let listed = format!("{}/me/playlists", self.endpoints.api);
         let mut read = 0;
+
         loop {
             let page = self
                 .asked::<Page<PlaylistListed>>(client, &paged(&listed, read))?
@@ -150,8 +152,11 @@ impl SpotifyAccount {
                     host: Host::SpotifyApi,
                     op: LookupOp::FollowLink,
                 })?;
+
             read += page.items.len();
+
             let last = page.next.is_none() || page.items.is_empty();
+
             playlists.extend(page.items.into_iter().flatten().filter_map(|listed| {
                 let id = listed.id.filter(|id| names_a_playlist(id))?;
                 Some(ProfilePlaylist {
@@ -171,6 +176,7 @@ impl SpotifyAccount {
         if self.grants.grant().is_none() {
             return Ok(None);
         }
+
         let saved = format!("{}/me/tracks", self.endpoints.api);
         let Some(songs) = self.songs::<Saved>(client, &saved)? else {
             return Ok(None);
@@ -190,6 +196,7 @@ impl SpotifyAccount {
         if self.grants.grant().is_none() || !names_a_playlist(playlist) {
             return Ok(None);
         }
+
         let items = format!("{}/playlists/{playlist}/items", self.endpoints.api);
         let songs = match self.songs::<Item>(client, &items) {
             Ok(songs) => songs,
@@ -235,8 +242,11 @@ impl SpotifyAccount {
                     op: LookupOp::FollowLink,
                 });
             };
+
             read += page.items.len();
+
             let last = page.next.is_none() || page.items.is_empty();
+
             songs.extend(
                 page.items
                     .into_iter()
@@ -271,6 +281,7 @@ impl SpotifyAccount {
                 ..
             }) => {
                 self.lapse(&token);
+
                 let Some(token) = self.access(client)? else {
                     return Ok(None);
                 };
@@ -303,6 +314,7 @@ impl SpotifyAccount {
             *session = None;
             return Ok(None);
         };
+
         if !session.as_ref().is_some_and(|held| held.holds(&grant)) {
             *session = Some(Session {
                 refresh_token: grant.refresh_token.clone(),
@@ -310,9 +322,11 @@ impl SpotifyAccount {
                 access: None,
             });
         }
+
         let Some(held) = session.as_mut() else {
             return Ok(None);
         };
+
         if let Some(access) = held
             .access
             .as_ref()
@@ -336,13 +350,16 @@ impl SpotifyAccount {
                 .with("client_id", &held.given.client_id),
         )?;
         let access = answer.access()?;
+
         if let Some(rotated) = answer.refresh_token.filter(|token| !token.is_empty())
             && rotated != held.refresh_token
         {
             self.grants.renewed(&held.given, &rotated);
             held.refresh_token = rotated;
         }
+
         let token = access.token.clone();
+
         held.access = Some(access);
 
         Ok(Some(token))
@@ -392,6 +409,7 @@ impl Tokens {
             .ok_or_else(unreadable)?;
         let lasts = Duration::from_secs(self.expires_in.ok_or_else(unreadable)?)
             .saturating_sub(RENEWED_BEFORE_IT_LAPSES);
+
         let until = Instant::now().checked_add(lasts).ok_or_else(unreadable)?;
 
         Ok(Access { token, until })
@@ -473,6 +491,7 @@ impl Track {
         if self.kind.as_deref().is_some_and(|kind| kind != A_TRACK) {
             return None;
         }
+
         let artists: Vec<String> = self
             .artists
             .into_iter()
@@ -583,13 +602,17 @@ impl SpotifySignIn {
     ) -> std::result::Result<SpotifyAuthorizing, SpotifySignInError> {
         let at = SocketAddr::from((Ipv4Addr::LOCALHOST, self.port));
         let no_place = |source| SpotifySignInError::NoPlaceToComeBack { at, source };
+
         let listener = TcpListener::bind(at).map_err(no_place)?;
+
         listener.set_nonblocking(true).map_err(no_place)?;
+
         let port = listener.local_addr().map_err(no_place)?.port();
 
         let redirect = format!("http://127.0.0.1:{port}{REDIRECT_PATH}");
         let verifier = a_verifier();
         let state = Uuid::new_v4().simple().to_string();
+
         let authorize_at = format!(
             "{}/authorize{}",
             self.endpoints.accounts,
@@ -658,7 +681,9 @@ impl SpotifySignIn {
                 return Err(SpotifySignInError::Lapsed);
             }
             arrived(&authorizing.listener, &mut asking);
+
             let mut waiting = VecDeque::with_capacity(asking.len());
+
             for mut request in asking {
                 match request.read_on() {
                     Reading::Whole => {
@@ -748,10 +773,12 @@ fn heard(request: Request, state: &str) -> std::result::Result<Option<String>, S
     let answerable = stream
         .set_nonblocking(false)
         .and_then(|()| stream.set_write_timeout(Some(A_REQUEST_ARRIVES_WITHIN)));
+
     if let Err(error) = answerable {
         tracing::debug!(%error, "a request to the sign-in's page was lost");
         return Ok(None);
     }
+
     let head = String::from_utf8_lossy(&head);
     let Some(query) = redirect_query(&head) else {
         answer(
@@ -761,6 +788,7 @@ fn heard(request: Request, state: &str) -> std::result::Result<Option<String>, S
         );
         return Ok(None);
     };
+
     if field_of(query, "state").as_deref() != Some(state) {
         answer(
             &mut stream,
@@ -784,9 +812,11 @@ fn heard(request: Request, state: &str) -> std::result::Result<Option<String>, S
 
 fn redirect_query(head: &str) -> Option<&str> {
     let mut asked = head.lines().next()?.split_ascii_whitespace();
+
     if asked.next()? != "GET" {
         return None;
     }
+
     let (path, query) = asked.next()?.split_once('?')?;
 
     (path == REDIRECT_PATH).then_some(query)
@@ -804,6 +834,7 @@ fn percent_decoded(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut at = 0;
+
     while at < bytes.len() {
         let hex = (bytes[at] == b'%')
             .then(|| text.get(at + 1..at + 3))
@@ -918,6 +949,7 @@ mod tests {
         let base = format!("http://{at}");
         let asked = Arc::new(Mutex::new(Vec::new()));
         let noted = Arc::clone(&asked);
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else {
@@ -926,7 +958,9 @@ mod tests {
                 let Some(request) = read_request(&mut stream) else {
                     continue;
                 };
+
                 noted.lock().push(request.clone());
+
                 let (status, body) = route(&request);
                 let _ = write!(
                     stream,
@@ -948,14 +982,17 @@ mod tests {
 
     fn read_request(stream: &mut TcpStream) -> Option<Asked> {
         stream.set_read_timeout(Some(Duration::from_secs(5))).ok()?;
+
         let mut held = Vec::new();
         let mut byte = [0_u8; 1];
+
         while !held.ends_with(b"\r\n\r\n") {
             if stream.read(&mut byte).ok()? != 1 {
                 return None;
             }
             held.push(byte[0]);
         }
+
         let head = String::from_utf8_lossy(&held).into_owned();
         let length = head
             .lines()
@@ -967,6 +1004,7 @@ mod tests {
             })
             .unwrap_or(0);
         let mut body = vec![0_u8; length];
+
         stream.read_exact(&mut body).ok()?;
 
         Some(Asked {
@@ -1088,12 +1126,15 @@ mod tests {
             .and_then(|rest| rest.split('/').next())
             .expect("a loopback address");
         let mut stream = TcpStream::connect(at).expect("the sign-in listens");
+
         write!(
             stream,
             "GET {REDIRECT_PATH}?{query} HTTP/1.1\r\nHost: {at}\r\n\r\n"
         )
         .expect("a request");
+
         let mut answer = String::new();
+
         stream.read_to_string(&mut answer).expect("an answer");
         answer
     }
@@ -1146,6 +1187,7 @@ mod tests {
 
         let form = format!("?{}", asked[0].body);
         let verifier = read_back(&form, "code_verifier").expect("a verifier");
+
         assert_eq!(
             read_back(&form, "grant_type").as_deref(),
             Some("authorization_code")
@@ -1205,6 +1247,7 @@ mod tests {
             waited < A_REQUEST_ARRIVES_WITHIN,
             "the redirect waited {waited:?} behind sockets that said nothing"
         );
+
         drop(silent);
     }
 
@@ -1229,15 +1272,18 @@ mod tests {
         let browser = thread::spawn(move || {
             browse_to(&redirect, &format!("error=access_denied&state={state}"))
         });
+
         assert!(matches!(
             signing.authorized(&authorizing, &|| false),
             Err(SpotifySignInError::Denied)
         ));
+
         browser.join().expect("a browser");
 
         let authorizing = signing
             .authorizing("registered")
             .expect("a place to listen");
+
         assert!(matches!(
             signing.authorized(&authorizing, &|| true),
             Ok(None)
@@ -1247,6 +1293,7 @@ mod tests {
         let authorizing = lapsing
             .authorizing("registered")
             .expect("a place to listen");
+
         assert!(matches!(
             lapsing.authorized(&authorizing, &|| false),
             Err(SpotifySignInError::Lapsed)
@@ -1259,6 +1306,7 @@ mod tests {
     fn a_port_already_taken_says_so_before_anything_is_asked() {
         let fake = serving(Box::new(|_| (200, TOKEN.to_owned())));
         let taken = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
+
         let signing = SpotifySignIn {
             port: taken.local_addr().expect("an address").port(),
             ..sign_in_over(&fake, Duration::from_secs(60))
@@ -1317,6 +1365,7 @@ mod tests {
             ListedSong::Named(names) => names,
             other => panic!("{other:?}"),
         });
+
         let first = songs.next().expect("a song");
         let local = songs.next().expect("a local file");
 
@@ -1338,11 +1387,13 @@ mod tests {
     fn every_page_of_a_long_list_is_read_past_what_the_embed_page_holds() {
         let fake = serving(Box::new(|asked| {
             let path = asked.path.as_str();
+
             if path.ends_with("/api/token") {
                 return (200, TOKEN.to_owned());
             }
             if let Some(offset) = path.split("offset=").nth(1) {
                 let from: usize = offset.parse().expect("an offset");
+
                 return (200, a_page_of(from, 50, from < 200));
             }
             (200, r#"{"name":"Long"}"#.to_owned())
@@ -1488,8 +1539,10 @@ mod tests {
         let held = Arc::clone(&refusals);
         let fake = serving(Box::new(move |asked| {
             let path = asked.path.as_str();
+
             if path.ends_with("/api/token") {
                 let renewed = asked.body.contains("refresh_token=rotated");
+
                 return (
                     200,
                     format!(
@@ -1505,11 +1558,13 @@ mod tests {
             }
         }));
         let grants = Given::signed_in();
+
         let online = online_over(&fake, Arc::clone(&grants));
 
         online
             .playlist_linked(&PlaylistLink::SpotifyLiked)
             .expect("an answer after a second token");
+
         let tokened: Vec<String> = fake
             .asked()
             .into_iter()
@@ -1533,6 +1588,7 @@ mod tests {
     fn an_access_token_is_used_until_it_lapses_and_settings_that_moved_start_afresh() {
         let fake = serving(account_route());
         let grants = Given::signed_in();
+
         let online = online_over(&fake, Arc::clone(&grants));
         let tokens_asked = |fake: &Fake| {
             fake.paths()
@@ -1547,6 +1603,7 @@ mod tests {
         online
             .playlist_linked(&PlaylistLink::SpotifyLiked)
             .expect("an answer");
+
         assert_eq!(tokens_asked(&fake), 1);
 
         *grants.grant.lock() = Some(SpotifyGrant {
@@ -1556,9 +1613,11 @@ mod tests {
         online
             .playlist_linked(&PlaylistLink::SpotifyLiked)
             .expect("an answer");
+
         assert_eq!(tokens_asked(&fake), 2);
 
         *grants.grant.lock() = None;
+
         assert_eq!(
             online
                 .playlist_linked(&PlaylistLink::SpotifyLiked)
@@ -1595,6 +1654,7 @@ mod tests {
             refresh_token: None,
             expires_in: Some(3600),
         };
+
         assert!(matches!(answer.access(), Err(Error::Unreadable { .. })));
 
         let forever = Tokens {
@@ -1602,6 +1662,7 @@ mod tests {
             refresh_token: None,
             expires_in: Some(u64::MAX),
         };
+
         assert!(matches!(forever.access(), Err(Error::Unreadable { .. })));
     }
 
@@ -1609,14 +1670,18 @@ mod tests {
     fn a_switch_off_or_a_metered_connection_sends_nothing() {
         let fake = serving(account_route());
         let client = plain_client();
+
         client.reach(false);
+
         let online = online_on(&fake, Given::signed_in(), Arc::clone(&client));
 
         assert!(online.playlist_linked(&PlaylistLink::SpotifyLiked).is_err());
         assert!(fake.asked().is_empty(), "online is off");
 
         let metering = Metering::new();
+
         metering.report(Meter::Metered);
+
         let gated = Arc::new(
             Client::on_clock(
                 crate::Introduction::as_(&crate::Identity::of_this_build()),
@@ -1639,6 +1704,7 @@ mod tests {
         online
             .playlist_linked(&PlaylistLink::SpotifyLiked)
             .expect("an answer");
+
         let said = format!("user-agent: resonate/{}", env!("CARGO_PKG_VERSION"));
 
         for asked in fake.asked() {
@@ -1648,6 +1714,7 @@ mod tests {
                 asked.head
             );
         }
+
         let printed = format!(
             "{:?} {:?}",
             SpotifyGrant {
@@ -1658,6 +1725,7 @@ mod tests {
                 refresh_token: "first-refresh".to_owned(),
             }
         );
+
         assert!(!printed.contains("first-refresh"), "{printed}");
     }
 

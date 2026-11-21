@@ -97,14 +97,17 @@ pub(crate) fn opened(path: &Path) -> Result<(Connection, KeptTables)> {
             path: path.to_path_buf(),
         });
     }
+
     let tables = Connection::open_with_flags(
         path,
         OpenFlags::SQLITE_OPEN_READ_WRITE | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(Error::store(Store::Tables, StoreOp::Open))?;
+
     tables
         .busy_timeout(WAITED_FOR_A_READER)
         .map_err(Error::store(Store::Tables, StoreOp::Configure))?;
+
     let kept: Option<(u32, String, i64, u32)> = tables
         .query_row(
             "SELECT format, dump, sequence, schema FROM kept",
@@ -119,6 +122,7 @@ pub(crate) fn opened(path: &Path) -> Result<(Connection, KeptTables)> {
             reads: TABLES_FORMAT,
         });
     };
+
     if format != TABLES_FORMAT {
         return Err(Error::TablesFormat {
             found: format,
@@ -181,6 +185,7 @@ fn removed(tables: &Connection, table: &Table, row: &[Value]) -> Result<()> {
 fn inserted(tables: &Connection, table: &Table, row: &[Value]) -> Result<()> {
     let columns: Vec<&str> = table.laid_names().collect();
     let placeholders: Vec<String> = (1..=columns.len()).map(|at| format!("?{at}")).collect();
+
     let sql = format!(
         "INSERT INTO {} ({}) VALUES ({})",
         table.name,
@@ -196,6 +201,7 @@ fn inserted(tables: &Connection, table: &Table, row: &[Value]) -> Result<()> {
 
 pub(crate) fn applied(tables: &Connection, change: &Change) -> Result<()> {
     let table = change.table;
+
     if let Some(old) = &change.old {
         removed(tables, table, old)?;
     }
@@ -215,8 +221,10 @@ mod tests {
 
     fn laid_out(names: &[&str]) -> Connection {
         let tables = Connection::open_in_memory().expect("a store");
+
         for name in names {
             let table = table_called(name).expect("a table");
+
             tables
                 .execute_batch(&format!("CREATE TABLE {} ({});", table.name, table.laid))
                 .expect("laid out");

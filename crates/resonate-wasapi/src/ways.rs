@@ -3,7 +3,7 @@ use resonate_audio::NodeName;
 const SHARED_PREFIX: &str = "wasapi:";
 const EXCLUSIVE_PREFIX: &str = "wasapi-exclusive:";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Way {
     Shared,
     Exclusive,

@@ -543,6 +543,7 @@ mod tests {
     fn domain_error_names_the_rejected_value() {
         let domain = resonate_core::Error::VolumeOutOfRange(1.5);
         let mobile = Error::from(domain);
+
         assert_eq!(mobile.to_string(), domain.to_string());
     }
 

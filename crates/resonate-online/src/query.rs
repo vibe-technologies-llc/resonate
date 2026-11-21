@@ -4,6 +4,7 @@ const HEX: &[u8; 16] = b"0123456789ABCDEF";
 
 pub(crate) fn escape_query(value: &str) -> String {
     let mut escaped = String::with_capacity(value.len());
+
     for byte in value.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
             escaped.push(char::from(byte));
@@ -26,6 +27,7 @@ pub(crate) fn escape_path(path: &str) -> String {
 
 pub(crate) fn lucene_quoted(term: &str) -> String {
     let mut quoted = String::with_capacity(term.len() + 2);
+
     quoted.push('"');
     for character in term.chars() {
         if matches!(character, '"' | '\\') {
@@ -47,6 +49,7 @@ impl Params {
 
     pub(crate) fn with(mut self, name: &str, value: &str) -> Self {
         self.0.push(if self.0.is_empty() { '?' } else { '&' });
+
         let _ = write!(self.0, "{name}={}", escape_query(value));
         self
     }

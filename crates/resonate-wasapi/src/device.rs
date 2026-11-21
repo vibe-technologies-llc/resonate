@@ -60,6 +60,7 @@ pub(crate) fn wave_of(format: SampleFormat, rate: SampleRate, layout: ChannelLay
 fn mix_of(client: &AudioClient) -> Option<(SampleFormat, SampleRate, ChannelLayout)> {
     let mix = client.get_mixformat().ok()?;
     let float = matches!(mix.get_subformat(), Ok(SampleType::Float));
+
     let wire = Wire {
         store_bits: usize::from(mix.get_bitspersample()),
         valid_bits: usize::from(mix.get_validbitspersample()),
@@ -73,6 +74,7 @@ fn mix_of(client: &AudioClient) -> Option<(SampleFormat, SampleRate, ChannelLayo
 
 pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
     enter_the_apartment();
+
     let enumerator = DeviceEnumerator::new().map_err(|e| backend_error(Operation::Connect, e))?;
     let default = enumerator
         .get_default_device(Direction::Render)
@@ -83,6 +85,7 @@ pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
         .map_err(|e| backend_error(Operation::Connect, e))?;
 
     let mut sinks = Vec::new();
+
     for device in &collection {
         let Ok(device) = device else {
             continue;
@@ -91,6 +94,7 @@ pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
             continue;
         };
         let is_default = default.as_deref() == Some(endpoint.as_str());
+
         let name = device
             .get_friendlyname()
             .unwrap_or_else(|_| endpoint.clone());
@@ -98,6 +102,7 @@ pub(crate) fn enumerate() -> SinkResult<Vec<SinkInfo>> {
             continue;
         };
         let port = port_of(&device, &endpoint);
+
         sinks.extend(shared_sink(
             &endpoint,
             &name,
@@ -168,6 +173,7 @@ fn exclusive_sink(
     port: Option<SinkPort>,
 ) -> Option<SinkInfo> {
     let mut held = false;
+
     let probed = formats_taken(|format, rate, layout| {
         if held {
             return false;
@@ -182,9 +188,11 @@ fn exclusive_sink(
         }
     });
     let formats = taken_while_free(endpoint, held, probed);
+
     if formats.is_empty() {
         return None;
     }
+
     let node = node_of(Way::Exclusive, endpoint);
     Some(SinkInfo {
         id: sink_id_of(&node),
@@ -203,6 +211,7 @@ fn exclusive_sink(
 
 fn taken_while_free(endpoint: &str, held: bool, probed: Vec<SinkFormats>) -> Vec<SinkFormats> {
     let mut remembered = TAKEN_WHILE_FREE.lock();
+
     if held {
         return remembered.get(endpoint).cloned().unwrap_or_default();
     }

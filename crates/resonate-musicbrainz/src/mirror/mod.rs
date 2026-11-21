@@ -205,6 +205,7 @@ pub struct Mirror {
 #[cfg(fuzzing)]
 pub(crate) fn read_a_copy_line(line: &[u8]) {
     let mut split = Vec::new();
+
     copy::fields(line, &mut split);
     for field in split {
         let _ = copy::unescaped(field);
@@ -235,32 +236,38 @@ impl Mirror {
                 path: path.to_path_buf(),
             });
         }
+
         let connection = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(Error::store(Store::Mirror, StoreOp::Open))?;
+
         connection
             .busy_timeout(Duration::from_secs(5))
             .map_err(Error::store(Store::Mirror, StoreOp::Configure))?;
         connection
             .execute_batch(&format!("PRAGMA cache_size = -{MIRROR_CACHE_KIB};"))
             .map_err(Error::store(Store::Mirror, StoreOp::Configure))?;
+
         let (format, dump, built): (u32, String, i64) = connection
             .query_row("SELECT format, dump, built FROM made", [], |row| {
                 Ok((row.get(0)?, row.get(1)?, row.get(2)?))
             })
             .map_err(Error::store(Store::Mirror, StoreOp::Read))?;
+
         if format != FORMAT {
             return Err(Error::MirrorFormat {
                 found: format,
                 reads: FORMAT,
             });
         }
+
         let dictionaries: Vec<(Entity, Vec<u8>)> = {
             let mut statement = connection
                 .prepare("SELECT kind, bytes FROM dictionaries")
                 .map_err(Error::store(Store::Mirror, StoreOp::Read))?;
+
             let rows = statement
                 .query_map([], |row| {
                     Ok((row.get::<_, u8>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -277,10 +284,13 @@ impl Mirror {
             source,
         };
         let mut unpackers = Vec::with_capacity(dictionaries.len());
+
         for (kind, dictionary) in &dictionaries {
             let unpacker = zstd::bulk::Decompressor::with_dictionary(dictionary).map_err(unpack)?;
+
             unpackers.push((*kind, Mutex::new(unpacker)));
         }
+
         let plain = Mutex::new(zstd::bulk::Decompressor::new().map_err(unpack)?);
         let amended = match path.parent() {
             Some(folder) => Amended::open(&folder.join(AMENDED_FILE), &dump).unwrap_or_else(|error| {
@@ -376,6 +386,7 @@ impl Mirror {
             isrc.as_str(),
         )?;
         let mut recordings = Vec::with_capacity(ids.len());
+
         for id in ids {
             if let Some(recording) = self.recording_at(id)? {
                 recordings.push(recording);
@@ -387,6 +398,7 @@ impl Mirror {
     pub fn releases_by_barcode(&self, barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
         let mut found = Vec::new();
         let mut seen = Vec::new();
+
         for spelt in barcode.spellings() {
             for id in self.coded(
                 Entity::Release,
@@ -399,6 +411,7 @@ impl Mirror {
                 seen.push(id);
                 if let Some(doc) = self.release_at(id)? {
                     let release = doc.release;
+
                     found.push(BarcodeMatch {
                         release: release.id,
                         group: release.group,
@@ -417,6 +430,7 @@ impl Mirror {
             return Ok(Vec::new());
         };
         let mut pressings = Vec::new();
+
         for release in &doc.group.releases {
             if pressings.len() == PRESSINGS_READ {
                 break;
@@ -436,6 +450,7 @@ impl Mirror {
         };
         let held = doc.groups.len();
         let start = usize::try_from(from).unwrap_or(usize::MAX).min(held);
+
         let end = start.saturating_add(GROUPS_AT_MOST).min(held);
         let read_to = u32::try_from(end).unwrap_or(u32::MAX);
         Ok(Discography {
@@ -454,6 +469,7 @@ impl Mirror {
             .min(credited.len());
         let mut pressings = Vec::new();
         let mut read_to = start;
+
         for id in &credited[start..] {
             if pressings.len() == ARTIST_PRESSINGS_PAGE {
                 break;
@@ -481,17 +497,21 @@ impl Mirror {
         {
             return Ok(Some(Arc::clone(&listed.credited)));
         }
+
         let Some(doc) = self.artist_doc(artist)? else {
             return Ok(None);
         };
         let mut credited = Vec::new();
+
         for group in &doc.groups {
             if let Some(group) = self.group_doc(&group.mbid)? {
                 credited.extend(group.group.releases.into_iter().map(|release| release.id));
             }
         }
+
         let credited: Arc<[Mbid]> = credited.into();
         let mut listed = self.listed.lock();
+
         if listed.len() == ARTISTS_KEPT_LISTED {
             listed.pop_front();
         }
@@ -570,6 +590,7 @@ impl Mirror {
             .into_iter()
             .map(At::Built)
             .collect();
+
         if let Some(amended) = &self.amended {
             found.extend(
                 amended
@@ -587,6 +608,7 @@ impl Mirror {
         let mut statement = connection
             .prepare_cached(query)
             .map_err(Error::store(Store::Mirror, StoreOp::Read))?;
+
         let rows = statement
             .query_map([value], |row| row.get(0))
             .map_err(Error::store(Store::Mirror, StoreOp::Read))?;
@@ -605,8 +627,10 @@ impl Mirror {
                 .into_iter()
                 .map(|placed| At::Built(ordinal_of(placed)))
                 .collect();
+
         if let Some(amended) = &self.amended {
             let amended = amended.lock();
+
             found.extend(
                 first_found(queries, |query| amended.matched(table, query, most))?
                     .into_iter()
@@ -619,9 +643,11 @@ impl Mirror {
     fn built_matched(&self, table: &str, query: &str, most: usize) -> Result<Vec<i64>> {
         let connection = self.connection.lock();
         let sql = format!("SELECT rowid FROM {table} WHERE {table} MATCH ?1 LIMIT ?2");
+
         let mut statement = connection
             .prepare_cached(&sql)
             .map_err(Error::store(Store::Mirror, StoreOp::Search))?;
+
         let rows = statement
             .query_map(
                 params![query, i64::try_from(most).unwrap_or(i64::MAX)],
@@ -643,6 +669,7 @@ impl Mirror {
                 let Some(found) = self.built_document(kind, at, read)? else {
                     return Ok(None);
                 };
+
                 if let Some(amended) = &self.amended
                     && amended.lock().supersedes(kind, found.mbid())?
                 {
@@ -657,12 +684,16 @@ impl Mirror {
                 let Some((held, packed)) = amended.lock().packed(at)? else {
                     return Ok(None);
                 };
+
                 if held != kind {
                     return Ok(None);
                 }
+
                 let bytes = self.unpack(kind, &packed, MOST_UNPACKED_BLOCK)?;
                 let mut reader = Reader::new(&bytes);
+
                 let read = read(&mut reader)?;
+
                 reader.done()?;
                 Ok(Some(read))
             }
@@ -680,12 +711,15 @@ impl Mirror {
             return Ok(None);
         };
         let mut reader = Reader::new(&block);
+
         while !reader.is_done() {
             let id = reader.signed()?;
             let bytes = reader.bytes(MOST_UNPACKED_BLOCK)?;
             if id == at {
                 let mut within = Reader::new(bytes);
+
                 let read = read(&mut within)?;
+
                 within.done()?;
                 return Ok(Some(read));
             }
@@ -696,6 +730,7 @@ impl Mirror {
     fn block(&self, kind: Entity, at: i64) -> Result<Option<Arc<[u8]>>> {
         let failed = store_read(Store::Mirror);
         let connection = self.connection.lock();
+
         let placed: Option<(i64, i64)> = connection
             .prepare_cached(
                 "SELECT id, first FROM blocks \
@@ -712,21 +747,26 @@ impl Mirror {
         let Some((block, first)) = placed else {
             return Ok(None);
         };
+
         if let Some(cached) = self.cached(kind, first) {
             return Ok(Some(cached));
         }
+
         let (unpacked, packed): (i64, Vec<u8>) = connection
             .prepare_cached("SELECT unpacked, packed FROM blocks WHERE id = ?1")
             .and_then(|mut statement| {
                 statement.query_row([block], |row| Ok((row.get(0)?, row.get(1)?)))
             })
             .map_err(&failed)?;
+
         drop(connection);
+
         let capacity = usize::try_from(unpacked)
             .unwrap_or(usize::MAX)
             .min(MOST_UNPACKED_BLOCK);
         let bytes: Arc<[u8]> = self.unpack(kind, &packed, capacity)?.into();
         let mut cache = self.unpacked.lock();
+
         if cache.len() == BLOCKS_KEPT_UNPACKED {
             cache.pop_front();
         }
@@ -740,11 +780,13 @@ impl Mirror {
 
     fn cached(&self, kind: Entity, first: i64) -> Option<Arc<[u8]>> {
         let mut cache = self.unpacked.lock();
+
         let at = cache
             .iter()
             .position(|cached| cached.kind == kind && cached.first == first)?;
         let hit = cache.remove(at)?;
         let bytes = Arc::clone(&hit.bytes);
+
         cache.push_back(hit);
         Some(bytes)
     }

@@ -143,6 +143,7 @@ impl<T: Toolbox> Sequenced<T> {
             clock: toolbox.host_clock(),
         }));
         let handed = rendered.0;
+
         let opened = Self {
             toolbox,
             unit,
@@ -174,6 +175,7 @@ impl<T: Toolbox> Sequenced<T> {
         let unit = Self::instance_of(&toolbox, shape.component)?;
         let frame = shape.format.frame_bytes();
         let scratch = frames_a_slice_at_most.get() as usize * frame.get() as usize;
+
         let hearing = Leaked::new(Box::new(Hearing {
             unit,
             scratch: vec![0; scratch].into_boxed_slice(),
@@ -425,6 +427,7 @@ mod tests {
     fn supply() -> (Box<Supply>, Held) {
         let dropped = Arc::new(AtomicUsize::new(0));
         let given = Arc::new(AtomicBool::new(false));
+
         let supply = Supply {
             dropped: Arc::clone(&dropped),
             given: Arc::clone(&given),
@@ -479,6 +482,7 @@ mod tests {
                 Call::Initialize
             ]
         );
+
         drop(unit);
     }
 
@@ -521,8 +525,10 @@ mod tests {
                 Call::Initialize
             ]
         );
+
         let hearing = fake.hearing.lock().expect("a hearing was handed over");
         let hearing = unsafe { hearing.as_ref() };
+
         assert_eq!(hearing.unit, 7);
         assert_eq!(hearing.frame.get(), 8);
         assert_eq!(hearing.channels, 2);
@@ -552,7 +558,9 @@ mod tests {
                 Some(-10_851),
                 "after {refused:?}"
             );
+
             let calls = fake.calls();
+
             assert_eq!(
                 calls[calls.len() - 3..],
                 [Call::Stop, Call::Uninitialize, Call::Dispose],
@@ -570,6 +578,7 @@ mod tests {
         let _unit = Sequenced::playing(fake.clone(), remote_io(44_100.0), render).expect("a unit");
 
         let format = fake.format.lock().expect("a format was set");
+
         assert_eq!(format.mSampleRate, 44_100.0);
         assert_eq!(format.mFormatID, kAudioFormatLinearPCM);
         assert_eq!(format.mFormatFlags, kAudioFormatFlagsNativeFloatPacked);
@@ -586,9 +595,11 @@ mod tests {
 
         let handed = fake.rendered.lock().expect("a render was handed over");
         let mut bytes = [0_u8; 8];
+
         unsafe { &mut *handed.as_ptr() }
             .render
             .render(&mut bytes, None);
+
         assert_eq!(bytes, [0xCD; 8]);
         assert!(held.given.load(Ordering::Acquire));
     }
@@ -644,7 +655,9 @@ mod tests {
             };
 
             assert_eq!(status_of(&error), Some((op, 561_145_187)));
+
             let calls = fake.calls();
+
             assert_eq!(
                 calls[calls.len() - 3..],
                 [Call::Stop, Call::Uninitialize, Call::Dispose],
@@ -659,7 +672,9 @@ mod tests {
     fn a_unit_dropped_is_stopped_uninitialised_and_disposed_and_frees_the_render_once() {
         let fake = Fake::new();
         let (render, held) = supply();
+
         let unit = Sequenced::playing(fake.clone(), remote_io(48_000.0), render).expect("a unit");
+
         assert_eq!(held.dropped.load(Ordering::Acquire), 0);
 
         drop(unit);
@@ -675,6 +690,7 @@ mod tests {
     fn a_unit_reformatted_is_stopped_uninitialised_set_and_initialised_again_at_the_new_rate() {
         let fake = Fake::new();
         let (render, _) = supply();
+
         let unit = Sequenced::playing(fake.clone(), remote_io(48_000.0), render).expect("a unit");
 
         assert_eq!(unit.reformatted(stereo_float(44_100.0)), Ok(()));
@@ -688,7 +704,9 @@ mod tests {
                 Call::Initialize
             ]
         );
+
         let format = fake.format.lock().expect("a format was set");
+
         assert_eq!(format.mSampleRate, 44_100.0);
         assert_eq!(format.mChannelsPerFrame, 2);
         assert_eq!(unit.device_rate().ok(), Some(44_100.0));
@@ -704,9 +722,12 @@ mod tests {
         ] {
             let fake = Fake::new();
             let (render, _) = supply();
+
             let mut unit =
                 Sequenced::playing(fake.clone(), remote_io(48_000.0), render).expect("a unit");
+
             unit.toolbox.refusing = Some((refused, 561_145_187));
+
             let before = fake.calls().len();
 
             assert_eq!(
@@ -724,6 +745,7 @@ mod tests {
     fn start_and_stop_reach_the_unit_and_hand_back_its_status() {
         let fake = Fake::refusing(Call::Start, 560_557_684);
         let (render, _) = supply();
+
         let unit = Sequenced::playing(fake.clone(), remote_io(48_000.0), render).expect("a unit");
 
         assert_eq!(unit.start().map_err(OsStatus::get), Err(560_557_684));

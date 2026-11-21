@@ -43,10 +43,12 @@ impl<T: Absorbs> Doubling<T> {
 
     fn halve(&mut self) {
         let held = mem::take(&mut self.held);
+
         self.held = held
             .chunks(2)
             .map(|pair| {
                 let mut first = pair[0].clone();
+
                 if let [_, second] = pair {
                     first.absorb(second);
                 }
@@ -83,9 +85,11 @@ mod tests {
     fn a_stream_of_any_length_is_held_in_no_more_than_the_cap_and_nothing_is_lost() {
         for units in [0_u64, 1, 7, 64, 65, 1_000, 10_007, 250_000] {
             let mut columns = Doubling::new(64);
+
             for _ in 0..units {
                 columns.push(Counted(1));
             }
+
             let per_column = columns.per_column();
             let held = columns.finished();
 

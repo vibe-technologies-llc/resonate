@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::convolve::Speaker;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct RatioLimits {
     pub min: Ratio,
     pub max: Ratio,

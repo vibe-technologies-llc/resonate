@@ -20,6 +20,7 @@ fn resumed_after() -> Duration {
 fn fetched_whole(agent: Agent, url: String) -> io::Result<Vec<u8>> {
     let piece = Ranged::opened(agent, url, resumed_after()).map_err(Unfetched::into_io)?;
     let mut whole = Vec::new();
+
     piece.take(LARGEST_SEGMENT + 1).read_to_end(&mut whole)?;
     if whole.len() as u64 > LARGEST_SEGMENT {
         return Err(io::Error::from(ErrorKind::FileTooLarge));
@@ -47,6 +48,7 @@ impl Fetched {
 
     pub(crate) fn opened(agent: Agent, urls: Vec<String>) -> Result<Self, Unfetched> {
         let mut left = urls.into_iter();
+
         let piece = left
             .next()
             .map(|url| Ranged::opened(agent.clone(), url, resumed_after()))
@@ -58,6 +60,7 @@ impl Fetched {
             ahead: VecDeque::new(),
             held: io::Cursor::new(Vec::new()),
         };
+
         fetched.read_ahead();
         Ok(fetched)
     }
@@ -78,8 +81,10 @@ impl Fetched {
                         let _ = told.send(fetched_whole(agent, url));
                     }
                 });
+
             if let Err(error) = fetching {
                 tracing::debug!(%error, "a Tidal segment is fetched in turn, no thread starting for it");
+
                 let _ = told.send(fetched_whole(self.agent.clone(), url));
             }
             self.ahead.push_back(ahead);
@@ -107,15 +112,18 @@ impl Read for Fetched {
         }
         loop {
             let read = self.held.read(buf)?;
+
             if read > 0 || buf.is_empty() {
                 return Ok(read);
             }
+
             let Some(ahead) = self.ahead.pop_front() else {
                 return Ok(0);
             };
             let segment = ahead
                 .recv()
                 .unwrap_or_else(|_| Err(io::Error::from(ErrorKind::BrokenPipe)))?;
+
             self.held = io::Cursor::new(segment);
             self.read_ahead();
         }

@@ -53,7 +53,9 @@ impl RootView {
         let Some(link) = self.social.party_offered.take() else {
             return;
         };
+
         cx.notify();
+
         let Some(together) = cx.global::<ResonateApp>().together.clone() else {
             self.report(
                 Notice::Trouble(words::party_offer::could_not_join().to_owned()),
@@ -62,6 +64,7 @@ impl RootView {
             return;
         };
         let zone = self.switcher.selected();
+
         let running = cx.background_spawn(async move { together.join_party(&link, zone) });
 
         cx.spawn(async move |this, cx| {

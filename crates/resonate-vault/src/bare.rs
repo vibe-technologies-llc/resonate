@@ -101,17 +101,25 @@ pub(crate) fn declared_digest(stream: &mut Box<dyn MediaStream>) -> Option<Vault
     let length = stream.seek(SeekFrom::End(0)).ok()?;
     let from = past_leading_tags(stream, length)?;
     let magic = read_at::<{ FLAC_MAGIC.len() }>(stream, from)?;
+
     if magic != FLAC_MAGIC {
         return None;
     }
+
     let mut header = [0_u8; METADATA_HEADER_BYTES];
+
     stream.read_exact(&mut header).ok()?;
+
     let length = u32::from_be_bytes([0, header[1], header[2], header[3]]);
+
     if header[0] & BLOCK_KIND != STREAM_INFO || (length as usize) < STREAM_INFO_BYTES {
         return None;
     }
+
     let mut held = [0_u8; STREAM_INFO_BYTES];
+
     stream.read_exact(&mut held).ok()?;
+
     let digest: [u8; KEY_BYTES] = held[STREAM_INFO_DIGEST_AT..].try_into().ok()?;
     (digest != [0; KEY_BYTES]).then(|| VaultKey::of(digest))
 }
@@ -121,7 +129,9 @@ fn blanked(
     walk: impl FnOnce(&mut dyn MediaStream) -> Walked,
 ) -> Option<Bare> {
     let walked = walk(stream.as_mut());
+
     stream.seek(SeekFrom::Start(0)).ok()?;
+
     let blanks = match walked {
         Ok(blanks) if blanks.is_empty() => return None,
         Ok(blanks) => blanks,
@@ -145,9 +155,11 @@ fn blanked(
 fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     let length = stream.seek(SeekFrom::End(0)).ok()?;
     let from = past_leading_tags(stream, length)?;
+
     stream.seek(SeekFrom::Start(from)).ok()?;
 
     let mut magic = [0_u8; FLAC_MAGIC.len()];
+
     stream.read_exact(&mut magic).ok()?;
     if magic != FLAC_MAGIC {
         return None;
@@ -158,7 +170,9 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
 
     loop {
         let mut header = [0_u8; METADATA_HEADER_BYTES];
+
         stream.read_exact(&mut header).ok()?;
+
         let last = header[0] & LAST_BLOCK != 0;
         let kind = header[0] & BLOCK_KIND;
         let length = u32::from_be_bytes([0, header[1], header[2], header[3]]);
@@ -170,6 +184,7 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
 
         if kind == STREAM_INFO {
             let mut held = vec![0_u8; length as usize];
+
             stream.read_exact(&mut held).ok()?;
             stream_info = Some(held);
         } else {
@@ -184,10 +199,12 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     let held = stream_info?;
     let frames = stream.stream_position().ok()?;
     let until = before_trailing_tags(stream, frames, length)?;
+
     stream.seek(SeekFrom::Start(frames)).ok()?;
 
     let declared = u32::try_from(held.len()).ok()?.to_be_bytes();
     let mut head = Vec::with_capacity(FLAC_MAGIC.len() + METADATA_HEADER_BYTES + held.len());
+
     head.extend_from_slice(&FLAC_MAGIC);
     head.push(LAST_BLOCK | STREAM_INFO);
     head.extend_from_slice(&declared[1..]);
@@ -204,7 +221,9 @@ fn bare_flac(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
 fn shed_chunks(stream: &mut Box<dyn MediaStream>, layout: Layout) -> Option<Bare> {
     let length = stream.seek(SeekFrom::End(0)).ok()?;
     let at = past_leading_tags(stream, length)?;
+
     let shed = chunks::shed(stream, layout, at, length)?;
+
     stream.seek(SeekFrom::Start(shed.from)).ok()?;
     Some(Bare {
         head: shed.head,
@@ -218,7 +237,9 @@ fn shed_chunks(stream: &mut Box<dyn MediaStream>, layout: Layout) -> Option<Bare
 fn untagged_frames(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     let length = stream.seek(SeekFrom::End(0)).ok()?;
     let from = past_leading_tags(stream, length)?;
+
     let until = before_trailing_tags(stream, from, length)?;
+
     if from == 0 && until == length {
         return None;
     }
@@ -238,6 +259,7 @@ fn untagged_frames(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
 
 fn past_leading_tags(stream: &mut Box<dyn MediaStream>, length: u64) -> Option<u64> {
     let mut at = 0_u64;
+
     for _ in 0..STACKED_TAGS_AT_MOST {
         let Some(header) = read_at::<10>(stream, at) else {
             break;
@@ -250,10 +272,12 @@ fn past_leading_tags(stream: &mut Box<dyn MediaStream>, length: u64) -> Option<u
         } else {
             0
         };
+
         let past = at
             .checked_add(ID3V2_HEADER_BYTES)?
             .checked_add(size)?
             .checked_add(footer)?;
+
         if past > length {
             return None;
         }
@@ -264,10 +288,12 @@ fn past_leading_tags(stream: &mut Box<dyn MediaStream>, length: u64) -> Option<u
 
 fn before_trailing_tags(stream: &mut Box<dyn MediaStream>, from: u64, length: u64) -> Option<u64> {
     let mut end = length;
+
     for _ in 0..STACKED_TAGS_AT_MOST {
         let Some(shed) = trailing_tag(stream, end) else {
             break;
         };
+
         end = end.checked_sub(shed).filter(|end| *end >= from)?;
     }
     Some(end)
@@ -294,6 +320,7 @@ fn trailing_tag(stream: &mut Box<dyn MediaStream>, end: u64) -> Option<u64> {
         } else {
             0
         };
+
         return u64::from(size)
             .checked_add(header)
             .filter(|shed| *shed >= APE_FOOTER_BYTES);
@@ -303,6 +330,7 @@ fn trailing_tag(stream: &mut Box<dyn MediaStream>, end: u64) -> Option<u64> {
         && trailer.ends_with(LYRICS3_MAGIC)
     {
         let digits = std::str::from_utf8(&trailer[..LYRICS3_SIZE_DIGITS]).ok()?;
+
         return digits
             .parse::<u64>()
             .ok()?
@@ -325,6 +353,7 @@ fn ends_in_id3v1(stream: &mut Box<dyn MediaStream>, end: u64) -> bool {
 
 fn id3v2_size(header: &[u8; 10], magic: &[u8; 3]) -> Option<u64> {
     let [a, b, c, major, minor, _, sizes @ ..] = *header;
+
     if [a, b, c] != *magic || major == 0xFF || minor == 0xFF {
         return None;
     }
@@ -335,16 +364,20 @@ fn id3v2_size(header: &[u8; 10], magic: &[u8; 3]) -> Option<u64> {
 
 fn bare_dsf(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
     let head = read_at::<DSF_HEAD_BYTES>(stream, 0)?;
+
     if !head.starts_with(DSF_MAGIC) {
         return None;
     }
+
     let length = stream.seek(SeekFrom::End(0)).ok()?;
     let metadata = u64::from_le_bytes(head[DSF_METADATA_AT..].try_into().ok()?);
+
     if metadata == 0 || metadata <= DSF_HEAD_BYTES as u64 || metadata > length {
         return None;
     }
 
     let mut bared = head.to_vec();
+
     bared[DSF_TOTAL_AT..DSF_METADATA_AT].copy_from_slice(&metadata.to_le_bytes());
     bared[DSF_METADATA_AT..].copy_from_slice(&0_u64.to_le_bytes());
     stream.seek(SeekFrom::Start(DSF_HEAD_BYTES as u64)).ok()?;
@@ -359,7 +392,9 @@ fn bare_dsf(stream: &mut Box<dyn MediaStream>) -> Option<Bare> {
 
 fn read_at<const N: usize>(stream: &mut Box<dyn MediaStream>, at: u64) -> Option<[u8; N]> {
     stream.seek(SeekFrom::Start(at)).ok()?;
+
     let mut bytes = [0_u8; N];
+
     stream.read_exact(&mut bytes).ok()?;
     Some(bytes)
 }
@@ -382,6 +417,7 @@ mod tests {
             (length >> 8) as u8,
             length as u8,
         ];
+
         held.extend_from_slice(payload);
         held
     }
@@ -393,11 +429,14 @@ mod tests {
     fn bared(bytes: Vec<u8>, container: Container) -> (Option<Bare>, Vec<u8>) {
         let mut stream = streamed(bytes);
         let location = MediaLocation::local(std::path::PathBuf::from("a.file"));
+
         let bare = bare(&mut stream, container, &location).expect("a readable stream");
         let mut rest = Vec::new();
+
         stream.read_to_end(&mut rest).expect("the rest");
         if let Some(until) = bare.as_ref().and_then(|bare| bare.until) {
             let at = stream.stream_position().expect("a position") - rest.len() as u64;
+
             rest.truncate((until - at) as usize);
         }
         (bare, rest)
@@ -413,6 +452,7 @@ mod tests {
         ];
         let flags = if footer { ID3V2_HAS_A_FOOTER } else { 0 };
         let mut tag = b"ID3\x04\x00".to_vec();
+
         tag.push(flags);
         tag.extend_from_slice(&syncsafe);
         tag.extend_from_slice(payload);
@@ -426,6 +466,7 @@ mod tests {
 
     fn id3v1() -> Vec<u8> {
         let mut tag = b"TAG".to_vec();
+
         tag.resize(ID3V1_BYTES as usize, b' ');
         tag
     }
@@ -433,6 +474,7 @@ mod tests {
     fn ape(items: &[u8], header: bool) -> Vec<u8> {
         let size = (items.len() as u32 + APE_FOOTER_BYTES as u32).to_le_bytes();
         let flags = if header { APE_HAS_A_HEADER } else { 0 }.to_le_bytes();
+
         let framing = |mut part: Vec<u8>| {
             part.extend_from_slice(&2_000_u32.to_le_bytes());
             part.extend_from_slice(&size);
@@ -442,6 +484,7 @@ mod tests {
             part
         };
         let mut tag = Vec::new();
+
         if header {
             tag.extend(framing(APE_MAGIC.to_vec()));
         }
@@ -452,8 +495,11 @@ mod tests {
 
     fn lyrics3(body: &[u8]) -> Vec<u8> {
         let mut tag = b"LYRICSBEGIN".to_vec();
+
         tag.extend_from_slice(body);
+
         let size = format!("{:06}", tag.len());
+
         tag.extend_from_slice(size.as_bytes());
         tag.extend_from_slice(LYRICS3_MAGIC);
         tag
@@ -464,6 +510,7 @@ mod tests {
         const PADDING: u8 = 1;
 
         let mut whole = FLAC_MAGIC.to_vec();
+
         whole.extend(block(STREAM_INFO, false, &[7_u8; 34]));
         whole.extend(block(PADDING, false, &[0_u8; 16]));
 
@@ -483,6 +530,7 @@ mod tests {
 
         let stream_info = vec![7_u8; 34];
         let mut whole = FLAC_MAGIC.to_vec();
+
         whole.extend(block(STREAM_INFO, false, &stream_info));
         whole.extend(block(VORBIS_COMMENT, false, b"a title nobody asked for"));
         whole.extend(block(PICTURE, true, &vec![9_u8; 4096]));
@@ -491,7 +539,9 @@ mod tests {
         let (bare, rest) = bared(whole, Container::Flac);
 
         let mut wanted = FLAC_MAGIC.to_vec();
+
         wanted.extend(block(STREAM_INFO, true, &stream_info));
+
         assert_eq!(bare.expect("a FLAC head").head, wanted);
         assert_eq!(rest, b"the frames that follow");
     }
@@ -500,11 +550,16 @@ mod tests {
     fn a_flac_behind_an_id3_tag_declares_the_digest_its_stream_info_carries() {
         let digest: [u8; KEY_BYTES] = std::array::from_fn(|at| at as u8 + 1);
         let mut stream_info = vec![7_u8; STREAM_INFO_DIGEST_AT];
+
         stream_info.extend_from_slice(&digest);
+
         let mut whole = id3v2(b"a tag stacked in front", false);
+
         whole.extend_from_slice(&FLAC_MAGIC);
         whole.extend(block(STREAM_INFO, true, &stream_info));
+
         let mut unsigned = FLAC_MAGIC.to_vec();
+
         unsigned.extend(block(STREAM_INFO, true, &[7_u8; STREAM_INFO_BYTES]));
         unsigned[FLAC_MAGIC.len() + METADATA_HEADER_BYTES + STREAM_INFO_DIGEST_AT..].fill(0);
 
@@ -520,6 +575,7 @@ mod tests {
     fn a_flac_behind_an_id3_tag_and_before_another_sheds_both() {
         let stream_info = vec![7_u8; 34];
         let mut whole = id3v2(&[0_u8; 300], false);
+
         whole.extend_from_slice(&FLAC_MAGIC);
         whole.extend(block(STREAM_INFO, true, &stream_info));
         whole.extend_from_slice(FRAMES);
@@ -528,7 +584,9 @@ mod tests {
         let (bare, rest) = bared(whole, Container::Flac);
 
         let mut wanted = FLAC_MAGIC.to_vec();
+
         wanted.extend(block(STREAM_INFO, true, &stream_info));
+
         assert_eq!(bare.expect("a FLAC head").head, wanted);
         assert_eq!(rest, FRAMES);
     }
@@ -544,6 +602,7 @@ mod tests {
     #[test]
     fn an_mpeg_stream_sheds_the_tags_in_front_of_it_and_behind_it() {
         let mut whole = id3v2(&[0_u8; 700], false);
+
         whole.extend(id3v2(b"a second tag stacked on the first", true));
         whole.extend_from_slice(FRAMES);
         whole.extend(ape(b"an item or two", true));
@@ -559,6 +618,7 @@ mod tests {
     #[test]
     fn an_ape_tag_with_no_header_and_an_id3v2_footer_are_shed_from_the_tail() {
         let mut whole = FRAMES.to_vec();
+
         whole.extend(ape(b"items", false));
         whole.extend(id3v2(b"appended", true));
 
@@ -578,6 +638,7 @@ mod tests {
     #[test]
     fn a_tag_that_claims_more_than_the_file_holds_leaves_the_file_whole() {
         let mut whole = id3v2(&[0_u8; 64], false);
+
         whole[9] = 0x7F;
         whole.extend_from_slice(FRAMES);
 
@@ -590,6 +651,7 @@ mod tests {
     #[test]
     fn tags_that_would_leave_no_frames_leave_the_file_whole() {
         let mut whole = id3v2(b"all there is", false);
+
         whole.extend(id3v1());
 
         let (bare, rest) = bared(whole.clone(), Container::Mpeg);
@@ -601,6 +663,7 @@ mod tests {
     fn dsf(metadata: u64, body: &[u8], tag: &[u8]) -> Vec<u8> {
         let total = DSF_HEAD_BYTES as u64 + body.len() as u64 + tag.len() as u64;
         let mut whole = DSF_MAGIC.to_vec();
+
         whole.extend_from_slice(&(DSF_HEAD_BYTES as u64).to_le_bytes());
         whole.extend_from_slice(&total.to_le_bytes());
         whole.extend_from_slice(&metadata.to_le_bytes());
@@ -613,14 +676,17 @@ mod tests {
     fn a_dsf_ends_where_its_metadata_began_and_says_it_has_none() {
         let body = b"fmt and data chunks";
         let metadata = (DSF_HEAD_BYTES + body.len()) as u64;
+
         let whole = dsf(metadata, body, &id3v2(b"a title", false));
 
         let (bare, rest) = bared(whole, Container::Dsf);
 
         let mut head = DSF_MAGIC.to_vec();
+
         head.extend_from_slice(&(DSF_HEAD_BYTES as u64).to_le_bytes());
         head.extend_from_slice(&metadata.to_le_bytes());
         head.extend_from_slice(&0_u64.to_le_bytes());
+
         assert_eq!(bare.expect("a metadata chunk to shed").head, head);
         assert_eq!(rest, body);
     }

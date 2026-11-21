@@ -4,7 +4,7 @@ const SCHEME_END: &str = "://";
 const SCHEMES: [&str; 2] = ["https", "http"];
 const BARE_WWW: &str = "www.";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Relation {
     Streaming,
     FreeStreaming,
@@ -62,7 +62,7 @@ impl Relation {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Service {
     Spotify,
     Tidal,
@@ -175,6 +175,7 @@ impl Service {
         let Some(host) = host_of(url) else {
             return Self::Other;
         };
+
         if let Some((_, service)) = Self::HOSTS.iter().find(|(named, _)| under(&host, named)) {
             return *service;
         }
@@ -191,23 +192,28 @@ impl Service {
 
 fn host_of(url: &str) -> Option<String> {
     let (scheme, after_scheme) = url.split_once(SCHEME_END)?;
+
     if !SCHEMES
         .iter()
         .any(|known| scheme.eq_ignore_ascii_case(known))
     {
         return None;
     }
+
     let authority = after_scheme
         .split(['/', '?', '#'])
         .next()
         .unwrap_or_default();
+
     if authority.contains('\\') {
         return None;
     }
+
     let host = authority
         .rsplit_once('@')
         .map_or(authority, |(_, host)| host);
     let host = host.split(':').next().unwrap_or_default();
+
     if host.is_empty() {
         return None;
     }
@@ -226,7 +232,7 @@ fn under(host: &str, named: &str) -> bool {
         .is_some_and(|before| before.is_empty() || before.ends_with('.'))
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Link {
     pub relation: Relation,
     pub service: Service,
@@ -336,13 +342,16 @@ mod tests {
             assert_eq!(*name, name.to_lowercase(), "{name}");
             assert!(!name.trim().is_empty());
         }
+
         assert_eq!(Service::AppleMusic.name(), "apple music");
         assert_eq!(Service::SevenDigital.name(), "7digital");
         assert_eq!(Service::WikimediaCommons.name(), "wikimedia commons");
 
         let mut distinct = named.clone();
+
         distinct.sort_unstable();
         distinct.dedup();
+
         assert_eq!(distinct.len(), 22);
     }
 
@@ -362,12 +371,15 @@ mod tests {
             assert_eq!(title.to_lowercase(), title.to_lowercase().trim());
             assert!(!title.trim().is_empty());
         }
+
         assert_eq!(Service::AppleMusic.title(), "Apple Music");
         assert_eq!(Service::Soundcloud.title(), "SoundCloud");
 
         let mut distinct = titled.clone();
+
         distinct.sort_unstable();
         distinct.dedup();
+
         assert_eq!(distinct.len(), 22);
     }
 

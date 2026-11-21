@@ -19,6 +19,7 @@ impl Icons {
         let started = thread::Builder::new()
             .name("resonate-icon".to_owned())
             .spawn(move || follow(&asked));
+
         if let Err(error) = started {
             tracing::warn!(%error, "the window's icon will not follow the accent");
         }

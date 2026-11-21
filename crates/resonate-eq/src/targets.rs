@@ -7,7 +7,7 @@ use crate::{
 const HARMAN_OVER_EAR_2018: &[u8] = include_bytes!("../targets/harman-over-ear-2018.csv");
 const HARMAN_IN_EAR_2019: &[u8] = include_bytes!("../targets/harman-in-ear-2019.csv");
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum BuiltIn {
     Flat,
     HarmanOverEar2018,
@@ -63,6 +63,7 @@ mod tests {
             assert_eq!(BuiltIn::parse(target.name()), Some(target));
             assert_eq!(BuiltIn::parse(&target.name().to_uppercase()), Some(target));
         }
+
         assert_eq!(BuiltIn::parse("a/file.csv"), None);
     }
 

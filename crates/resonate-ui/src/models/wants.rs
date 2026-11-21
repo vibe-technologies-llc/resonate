@@ -21,6 +21,7 @@ impl LibraryModel {
         let recording = self
             .recording_of(release_track)
             .map(|recording| (recording, zone));
+
         self.want_awaiting(release_track, recording, cx);
     }
 
@@ -45,6 +46,7 @@ impl LibraryModel {
             });
             let _ = landed;
         });
+
         wanting.detach();
         cx.notify();
     }
@@ -118,6 +120,7 @@ impl LibraryModel {
                     },
                 })
             });
+
             let found = Found {
                 recording: recording.clone(),
                 title: row.title.clone(),
@@ -128,6 +131,7 @@ impl LibraryModel {
                 performer: performer.clone(),
                 isrcs: Vec::new(),
             };
+
             self.delivered.downloads.landing(found, now);
             self.delivered
                 .downloads

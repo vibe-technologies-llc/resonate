@@ -125,6 +125,7 @@ mod tests {
         for below in i16::MIN..i16::MAX {
             let between = parts_of_a_step(SampleFormat::S16, 2 * i32::from(below) + 1, 2.0);
             let even = if below % 2 == 0 { below } else { below + 1 };
+
             assert_eq!(s16(between), even, "half a step above {below}");
         }
     }

@@ -60,6 +60,7 @@ impl MobilePlayer {
         utc_offset_seconds: i32,
     ) -> Result<AgedHistory> {
         let kept = HistoryKept::from(kept);
+
         *self.services.history_kept.lock() = kept;
 
         let now = SystemTime::now();
@@ -68,6 +69,7 @@ impl MobilePlayer {
         };
         let calendar = the_listeners_calendar(&time_zone, utc_offset_seconds);
         let mut connection = self.catalog.0.lock();
+
         freeze_the_finished_years(&connection, &calendar, kept, calendar.date_at(now))?;
         forgotten_before(&mut connection, seconds_since_the_epoch(before))
     }
@@ -76,12 +78,14 @@ impl MobilePlayer {
 fn forgotten_before(connection: &mut Connection, before: i64) -> Result<AgedHistory> {
     let store = |source| Error::store(StoreOp::Write, source);
     let transaction = connection.transaction().map_err(store)?;
+
     let listens = transaction
         .execute(FORGET_THE_LISTENS, [before])
         .map_err(store)?;
     let passes = transaction
         .execute(FORGET_THE_PASSES, [before])
         .map_err(store)?;
+
     transaction.commit().map_err(store)?;
 
     Ok(AgedHistory {
@@ -118,17 +122,20 @@ mod tests {
         let now = seconds_since_the_epoch(SystemTime::now());
         let old = now - 400 * A_DAY;
         let recent = now - 10 * A_DAY;
+
         heard_here(&phone, echoes, old, 200_000);
         passed_over(&phone, old + 60);
         heard_here(&phone, echoes, recent, 200_000);
         passed_over(&phone, recent + 60);
         heard_here(&phone, echoes, old + 120, 200_000);
+
         let owed_from: i64 = phone
             .catalog
             .0
             .lock()
             .query_row("SELECT max(id) FROM listens", [], |row| row.get(0))
             .expect("the newest");
+
         listened(
             &phone,
             "INSERT INTO submissions (service, through) VALUES ('lastfm', ?1)",
@@ -165,7 +172,9 @@ mod tests {
         let phone = player();
         let [echoes, _] = songs_held(&phone);
         let three_years_ago = seconds_since_the_epoch(SystemTime::now()) - 3 * 366 * A_DAY;
+
         heard_here(&phone, echoes, three_years_ago, 3_600_000);
+
         let year = Calendar::utc()
             .date_at(UNIX_EPOCH + Duration::from_secs(three_years_ago.cast_unsigned()))
             .year;
@@ -173,6 +182,7 @@ mod tests {
         phone
             .age_history(KeptHistory::Days { days: 182 }, "UTC".into(), 0)
             .expect("aged");
+
         let shown = phone
             .wrapped(Some(year), "UTC".into(), 0)
             .expect("the catalog answers")
@@ -188,9 +198,11 @@ mod tests {
 
         assert_eq!(offered.first(), Some(&KeptHistory::Forever));
         assert_eq!(offered.len(), HistoryKept::OFFERED.len());
+
         for kept in offered {
             assert_eq!(KeptHistory::from(HistoryKept::from(kept)), kept);
         }
+
         assert_eq!(
             HistoryKept::from(KeptHistory::Days { days: 0 }),
             HistoryKept::Forever

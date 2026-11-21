@@ -60,9 +60,11 @@ pub(crate) fn page(url: &str) -> Option<Page> {
         && language
             .chars()
             .all(|glyph| glyph.is_ascii_lowercase() || glyph == '-');
+
     if !usable {
         return None;
     }
+
     let title = path
         .strip_prefix("wiki/")?
         .split(['?', '#'])
@@ -78,12 +80,15 @@ pub(crate) fn page(url: &str) -> Option<Page> {
 fn unescaped(title: &str) -> Option<String> {
     let mut bytes = Vec::with_capacity(title.len());
     let mut rest = title.as_bytes();
+
     while let [first, tail @ ..] = rest {
         if *first == b'%' {
             let [high, low, after @ ..] = tail else {
                 return None;
             };
+
             let hex = std::str::from_utf8(&[*high, *low]).ok()?.to_owned();
+
             bytes.push(u8::from_str_radix(&hex, 16).ok()?);
             rest = after;
         } else {

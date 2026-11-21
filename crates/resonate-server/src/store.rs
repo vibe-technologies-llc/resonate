@@ -186,6 +186,7 @@ impl Store {
         connection
             .pragma_update(None, "foreign_keys", true)
             .map_err(|source| Error::store(StoreOp::Open, source))?;
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
@@ -193,6 +194,7 @@ impl Store {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
         let laid = usize::try_from(version).unwrap_or(usize::MAX);
+
         if laid > MIGRATIONS.len() {
             return Err(Error::StoreVersion { found: version });
         }
@@ -252,6 +254,7 @@ impl Store {
             None if !space.may_be_made_by(token) => Ok(Claim::Refused),
             None => {
                 let (spaces, bytes) = self.totals()?;
+
                 if spaces >= self.capacity.spaces || bytes >= self.capacity.bytes {
                     return Ok(Claim::Full);
                 }
@@ -306,6 +309,7 @@ impl Store {
 
     pub fn heads(&mut self, asked: &[SpaceAsked], now: i64) -> Result<Vec<SpaceHead>> {
         let mut heads = Vec::with_capacity(asked.len());
+
         for space in asked {
             let digest = space.token.digest();
             let found: Option<(i64, bool)> = self
@@ -344,11 +348,14 @@ impl Store {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if let Some(first) = closed {
             return Ok(Closing::Before(first));
         }
+
         let adding = u64::try_from(sealed.len()).unwrap_or(u64::MAX);
         let (_, stored) = totals_in(&transaction)?;
+
         if capacity.cannot_hold(bytes.cast_unsigned(), stored, adding, space_bytes) {
             return Ok(Closing::Full);
         }
@@ -420,11 +427,14 @@ impl Store {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if closed {
             return Ok(Appended::Closed);
         }
+
         let bytes = bytes.cast_unsigned();
         let mut seen = HashSet::with_capacity(blobs.len());
+
         let distinct: Vec<(Digest, &Vec<u8>)> = blobs
             .iter()
             .map(|blob| (digest(&SHA256, blob), blob))
@@ -432,6 +442,7 @@ impl Store {
             .collect();
         let distinct_bytes = summed(distinct.iter().map(|(_, blob)| blob.len()));
         let (_, stored) = totals_in(&transaction)?;
+
         if capacity.cannot_hold(
             bytes,
             stored,
@@ -440,12 +451,14 @@ impl Store {
         ) {
             return Ok(Appended::Full);
         }
+
         let mut statement = transaction
             .prepare_cached(
                 "SELECT 1 FROM records WHERE space = ?1 AND device = ?2 AND digest = ?3",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut fresh = Vec::with_capacity(distinct.len());
+
         for (known, blob) in distinct {
             let held = statement
                 .query_row(
@@ -460,12 +473,16 @@ impl Store {
             }
         }
         drop(statement);
+
         let adding = summed(fresh.iter().map(|(_, blob)| blob.len()));
+
         if capacity.cannot_hold(bytes, stored, adding, space_bytes) {
             return Ok(Appended::Full);
         }
+
         let adding = i64::try_from(adding).unwrap_or(i64::MAX);
         let mut seq = head;
+
         for (known, blob) in fresh {
             seq += 1;
             transaction
@@ -500,6 +517,7 @@ impl Store {
                 "SELECT seq, device, blob FROM records WHERE space = ?1 AND seq > ?2 ORDER BY seq LIMIT ?3",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map(
                 params![
@@ -518,8 +536,10 @@ impl Store {
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut stored = Vec::new();
         let mut total = 0;
+
         for row in rows {
             let (seq, device, blob) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             total += blob.len();
             stored.push(Stored {
                 seq: seq.cast_unsigned(),
@@ -542,10 +562,12 @@ impl Store {
         bytes: usize,
     ) -> Result<CaughtUp> {
         let (_, snapshot_through) = self.head(space)?;
+
         if after < snapshot_through {
             let from = reading
                 .filter(|reading| reading.through == snapshot_through)
                 .map_or(0, |reading| reading.next);
+
             return self
                 .snapshot_from(space, snapshot_through, from, SNAPSHOT_BYTES_A_FRAME)
                 .map(CaughtUp::Snapshot);
@@ -556,6 +578,7 @@ impl Store {
 
     pub fn snapshot(&self, space: SpaceId) -> Result<Option<Snapshot>> {
         let (_, through) = self.head(space)?;
+
         if through == 0 {
             return Ok(None);
         }
@@ -575,6 +598,7 @@ impl Store {
                 "SELECT part, blob FROM snapshots WHERE space = ?1 AND part >= ?2 ORDER BY part",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map(params![space.0.as_slice(), from.cast_signed()], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -583,10 +607,12 @@ impl Store {
         let mut parts = Vec::new();
         let mut total = 0_usize;
         let mut next = None;
+
         for row in rows {
             let (part, blob) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
             let fits =
                 parts.len() < BLOBS_A_FRAME_AT_MOST && total.saturating_add(blob.len()) <= bytes;
+
             if !parts.is_empty() && !fits {
                 next = Some(part.cast_unsigned());
                 break;
@@ -616,6 +642,7 @@ impl Store {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         transaction
             .execute(
                 "DELETE FROM stagings WHERE space = ?1",
@@ -651,6 +678,7 @@ impl Store {
         };
         let adding = summed(parts.iter().map(Vec::len));
         let (_, stored) = totals_in(&transaction)?;
+
         if capacity.cannot_hold(staged_bytes, stored, adding, space_bytes) {
             transaction
                 .execute(
@@ -671,7 +699,9 @@ impl Store {
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
+
         let part = staged_parts.saturating_add(u64::try_from(parts.len()).unwrap_or(u64::MAX));
+
         transaction
             .execute(
                 "UPDATE stagings SET bytes = bytes + ?2, parts = ?3, touched = ?4 WHERE space = ?1",
@@ -698,6 +728,7 @@ impl Store {
         space_bytes: u64,
     ) -> Result<Compacted> {
         let compacted = self.replaced(space, through, Some(id), parts, space_bytes)?;
+
         if compacted != Compacted::Through(through) {
             self.unstage(space, id)?;
         }
@@ -742,9 +773,11 @@ impl Store {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if closed {
             return Ok(Compacted::Closed);
         }
+
         let staged_parts = match staged {
             None => 0,
             Some(id) => match staging_in(&transaction, space, id)? {
@@ -753,6 +786,7 @@ impl Store {
             },
         };
         let through = through.cast_signed();
+
         if through <= snapshot_through || through > head {
             return Ok(Compacted::Stale);
         }
@@ -790,6 +824,7 @@ impl Store {
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
+
         let bytes: i64 = transaction
             .query_row(
                 "SELECT coalesce((SELECT sum(length(blob)) FROM records WHERE space = ?1), 0)
@@ -798,11 +833,14 @@ impl Store {
                 |row| row.get(0),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if bytes.cast_unsigned() > space_bytes {
             return Ok(Compacted::Full);
         }
+
         let growth = bytes.saturating_sub(held).max(0).cast_unsigned();
         let (_, stored) = totals_in(&transaction)?;
+
         if stored.saturating_add(growth) > self.capacity.bytes {
             return Ok(Compacted::Full);
         }
@@ -880,7 +918,9 @@ fn totals_in(connection: &rusqlite::Connection) -> Result<(u64, u64)> {
 
 fn device_from(bytes: &[u8]) -> DeviceId {
     let mut device = [0; 16];
+
     let length = bytes.len().min(device.len());
+
     device[..length].copy_from_slice(&bytes[..length]);
     DeviceId(device)
 }
@@ -894,6 +934,7 @@ mod tests {
 
     fn claimed() -> Store {
         let mut store = Store::in_memory().expect("a store");
+
         assert_eq!(
             store.claim(SPACE, &[3; 32], 1, || true).expect("claimed"),
             Claim::Made
@@ -953,6 +994,7 @@ mod tests {
             bytes: 100,
         });
         let other = SpaceId([9; 16]);
+
         store.claim(other, &[3; 32], 1, || true).expect("made");
         store
             .append(SPACE, DESK, &[vec![0; 40]], 1 << 20)
@@ -973,6 +1015,7 @@ mod tests {
     #[test]
     fn a_closing_word_kept_before_it_was_counted_is_counted_once_the_store_is_opened() {
         let connection = Connection::open_in_memory().expect("a connection");
+
         for step in &MIGRATIONS[..3] {
             connection.execute_batch(step).expect("an earlier store");
         }
@@ -1018,6 +1061,7 @@ mod tests {
     #[test]
     fn an_append_no_lookup_could_make_fit_is_refused_and_a_resend_within_the_cap_is_not() {
         let mut store = claimed();
+
         store
             .append(SPACE, DESK, &[vec![1; 40]], 100)
             .expect("appended");
@@ -1043,6 +1087,7 @@ mod tests {
                 .expect("appended"),
             Appended::Through(3)
         );
+
         let after = store.records_after(SPACE, 1, 10, 1 << 20).expect("read");
 
         assert_eq!(
@@ -1104,6 +1149,7 @@ mod tests {
     #[test]
     fn a_store_of_the_first_release_is_carried_forward_with_its_records() {
         let connection = Connection::open_in_memory().expect("a connection");
+
         connection
             .execute_batch(V1)
             .expect("the first release's store");
@@ -1124,6 +1170,7 @@ mod tests {
             .expect("stamped");
 
         let mut store = Store::over(connection).expect("carried forward");
+
         let appended = store
             .append(SPACE, DESK, &[vec![7; 3]], 1 << 20)
             .expect("appended");
@@ -1135,6 +1182,7 @@ mod tests {
     #[test]
     fn a_compaction_replaces_what_it_covers_and_refuses_a_stale_one() {
         let mut store = claimed();
+
         store
             .append(
                 SPACE,
@@ -1162,10 +1210,14 @@ mod tests {
                 .expect("ahead"),
             Compacted::Stale
         );
+
         let snapshot = store.snapshot(SPACE).expect("read").expect("a snapshot");
+
         assert_eq!(snapshot.through, 2);
         assert_eq!(snapshot.parts, [vec![9; 10]]);
+
         let left = store.records_after(SPACE, 0, 10, 1 << 20).expect("read");
+
         assert_eq!(
             left.iter().map(|record| record.seq).collect::<Vec<_>>(),
             [3]
@@ -1177,6 +1229,7 @@ mod tests {
 
     fn appended_three() -> Store {
         let mut store = claimed();
+
         store
             .append(
                 SPACE,
@@ -1211,6 +1264,7 @@ mod tests {
     #[test]
     fn a_compaction_staged_in_parts_replaces_the_log_only_once_its_last_part_is_taken() {
         let mut store = appended_three();
+
         store.stage(SPACE, STAGED, 1).expect("staged");
 
         let first = store
@@ -1228,9 +1282,11 @@ mod tests {
             .expect("refused");
 
         assert_eq!(first, Staged::Taken);
+
         let CaughtUp::Records(whole) = before else {
             panic!("the old log, whole");
         };
+
         assert_eq!(whole.len(), 3);
         assert_eq!(held_while_staging, 320);
         assert_eq!(compacted, Compacted::Through(2));
@@ -1244,12 +1300,14 @@ mod tests {
     #[test]
     fn a_staging_left_unfinished_leaves_the_log_whole_and_holds_nothing_once_unstaged_or_swept() {
         let mut store = appended_three();
+
         store.stage(SPACE, STAGED, 1).expect("staged");
         store
             .staged(SPACE, STAGED, &[vec![7; 50]], 1 << 20, 1)
             .expect("taken");
 
         store.unstage(SPACE, STAGED).expect("unstaged");
+
         let (_, held) = store.totals().expect("totals");
         let after_unstaging = store
             .staged(SPACE, STAGED, &[vec![7; 50]], 1 << 20, 2)
@@ -1257,10 +1315,12 @@ mod tests {
         let finished_after = store
             .compact_staged(SPACE, STAGED, 2, &[], 1 << 20)
             .expect("refused");
+
         store.stage(SPACE, STAGED_LATER, 5).expect("staged");
         store
             .staged(SPACE, STAGED_LATER, &[vec![7; 50]], 1 << 20, 6)
             .expect("taken");
+
         let kept_while_touched = store.sweep_staged(6).expect("swept");
         let swept_once_untouched = store.sweep_staged(7).expect("swept");
         let (_, held_after_the_sweep) = store.totals().expect("totals");
@@ -1278,12 +1338,14 @@ mod tests {
     #[test]
     fn a_later_staging_of_the_space_puts_the_earlier_aside() {
         let mut store = appended_three();
+
         store.stage(SPACE, STAGED, 1).expect("staged");
         store
             .staged(SPACE, STAGED, &[vec![7; 10]], 1 << 20, 1)
             .expect("taken");
 
         store.stage(SPACE, STAGED_LATER, 2).expect("staged");
+
         let earlier = store
             .staged(SPACE, STAGED, &[vec![7; 10]], 1 << 20, 2)
             .expect("unstaged");
@@ -1310,16 +1372,20 @@ mod tests {
             bytes: 500,
         });
         let other = SpaceId([9; 16]);
+
         store.claim(other, &[3; 32], 1, || true).expect("made");
 
         store.stage(SPACE, STAGED, 1).expect("staged");
+
         let past_the_space = store
             .staged(SPACE, STAGED, &[vec![7; 101]], 100, 1)
             .expect("weighed");
         let gone = store
             .staged(SPACE, STAGED, &[vec![7; 10]], 100, 1)
             .expect("unstaged");
+
         store.stage(SPACE, STAGED_LATER, 2).expect("staged");
+
         let within = store
             .staged(SPACE, STAGED_LATER, &[vec![7; 150]], 1 << 20, 2)
             .expect("taken");
@@ -1344,6 +1410,7 @@ mod tests {
     {
         let mut store = appended_three();
         let parts = vec![vec![5; 30]; BLOBS_A_FRAME_AT_MOST + 1];
+
         store.compact(SPACE, 2, &parts, 1 << 30).expect("compacted");
 
         let CaughtUp::Snapshot(first) = store.catch_up(SPACE, 0, None, 10, 1 << 20).expect("read")
@@ -1360,7 +1427,9 @@ mod tests {
         else {
             panic!("the snapshot's last frame");
         };
+
         store.compact(SPACE, 3, &parts, 1 << 30).expect("compacted");
+
         let CaughtUp::Snapshot(replaced) = store
             .catch_up(SPACE, 0, Some(reading), 10, 1 << 20)
             .expect("read")
@@ -1379,6 +1448,7 @@ mod tests {
     #[test]
     fn a_reader_behind_a_compaction_is_handed_the_snapshot_rather_than_what_is_left() {
         let mut store = claimed();
+
         store
             .append(
                 SPACE,
@@ -1398,9 +1468,11 @@ mod tests {
             behind,
             CaughtUp::Snapshot(Snapshot { through: 8, .. })
         ));
+
         let CaughtUp::Records(left) = level else {
             panic!("records past the snapshot");
         };
+
         assert_eq!(
             left.iter().map(|record| record.seq).collect::<Vec<_>>(),
             [9, 10]
@@ -1410,6 +1482,7 @@ mod tests {
     #[test]
     fn a_space_untouched_too_long_is_swept_away() {
         let mut store = claimed();
+
         store
             .append(SPACE, DESK, &[vec![1]], 1 << 20)
             .expect("appended");
@@ -1472,6 +1545,7 @@ mod tests {
             spaces: u64::MAX,
             bytes: 15,
         });
+
         store.claim(SPACE, &[3; 32], 1, || true).expect("made");
         store
             .claim(SpaceId([9; 16]), &[3; 32], 1, || true)
@@ -1497,6 +1571,7 @@ mod tests {
             spaces: u64::MAX,
             bytes: 30,
         });
+
         store.claim(SPACE, &[3; 32], 1, || true).expect("made");
         store
             .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20)
@@ -1521,6 +1596,7 @@ mod tests {
             spaces: u64::MAX,
             bytes: 20,
         });
+
         store.claim(SPACE, &[3; 32], 1, || true).expect("made");
         store
             .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20)
@@ -1538,7 +1614,9 @@ mod tests {
         let mut store = claimed();
 
         let before = store.is_shared(SPACE).expect("read");
+
         store.allow_viewers(SPACE, &[6; 32]).expect("allowed");
+
         let after = store.is_shared(SPACE).expect("read");
 
         assert!(!before);
@@ -1549,6 +1627,7 @@ mod tests {
     #[test]
     fn a_space_never_written_to_is_swept_once_old_enough_and_a_used_one_stays() {
         let mut store = claimed();
+
         store
             .claim(SpaceId([9; 16]), &[3; 32], 1, || true)
             .expect("made");

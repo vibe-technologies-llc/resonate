@@ -45,9 +45,11 @@ impl Walked {
 
     pub fn read(written: &str, size: u64) -> Option<Self> {
         let mut fields = written.split(' ');
+
         if fields.next()? != WRITTEN_AS {
             return None;
         }
+
         let mpeg_frames = number(fields.next()?)?.map(Frames);
         let counted = number(fields.next()?)?.map(Duration::from_nanos);
         let opus_samples = number(fields.next()?)?;

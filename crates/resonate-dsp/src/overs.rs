@@ -54,6 +54,7 @@ impl Processor for Overs {
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let channels = self.channels;
         let frames = (input.len() / channels).min(output.len() / channels);
+
         let samples = frames * channels;
         let (Some(taken), Some(made)) = (input.get(..samples), output.get_mut(..samples)) else {
             return ProcessCount {
@@ -84,6 +85,7 @@ mod tests {
 
     fn prepared() -> Overs {
         let mut stage = Overs::new();
+
         stage
             .prepare(
                 StreamSpec::new(
@@ -103,6 +105,7 @@ mod tests {
 
         let input = [0.5, -1.0, 1.0, 1.25, -2.0, 0.0];
         let mut output = [0.0; 6];
+
         let count = stage.process(&input, &mut output);
 
         assert_eq!(output, input);

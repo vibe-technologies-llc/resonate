@@ -62,10 +62,13 @@ impl Routing {
             return false;
         };
         let latency = latency_ms.max(0.0) * f64::from(rate.hz()) / MILLISECONDS_A_SECOND;
+
         if self.latency.swap(latency as u64, Ordering::Relaxed) != latency as u64 {
             let _ = self.latency_moved.try_send(());
         }
+
         let moved = self.rate.swap(rate.hz(), Ordering::Relaxed) != rate.hz();
+
         if moved {
             let _ = self.announce.send(SinkChange::Reformatted(self.sink));
         }
@@ -146,6 +149,7 @@ mod tests {
         assert!(!routing.route_changed(44_100, 0.0));
 
         let changes = changes_waiting(&routing);
+
         assert_eq!(changes.len(), 1);
         assert!(matches!(changes[0], SinkChange::Reformatted(id) if id == OUTPUT));
     }
@@ -167,9 +171,11 @@ mod tests {
         let routing = Routing::new();
 
         routing.route_changed(48_000, 20.0);
+
         assert_eq!(routing.latency(), Frames(960));
 
         routing.route_changed(44_100, 10.0);
+
         assert_eq!(routing.latency(), Frames(441));
     }
 
@@ -199,7 +205,9 @@ mod tests {
         let routing = Routing::new();
 
         routing.route_changed(48_000, 10.0);
+
         let _ = routing.latency_moves.try_recv();
+
         routing.route_changed(48_000, 10.0);
 
         assert!(routing.latency_moves.try_recv().is_err());
@@ -211,7 +219,9 @@ mod tests {
 
         assert!(!routing.follow_song_rate(true));
         assert!(!routing.offer(7, &[]));
+
         routing.watch_mixer(Arc::new(Unmixed));
+
         assert_eq!(routing.stream(), None);
         assert!(changes_waiting(&routing).is_empty());
     }

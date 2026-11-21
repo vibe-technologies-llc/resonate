@@ -32,6 +32,7 @@ fn main() -> io::Result<()> {
         .name("grammar".into())
         .stack_size(GRAMMAR_STACK_BYTES)
         .spawn(move || write_every_grammar(&out))?;
+
     writer
         .join()
         .unwrap_or_else(|panicked| panic::resume_unwind(panicked))?;
@@ -48,13 +49,16 @@ fn main() -> io::Result<()> {
 fn write_every_grammar(out: &Path) -> io::Result<()> {
     for language in Language::ALL {
         let folder = folder_for(out, language);
+
         fs::create_dir_all(&folder)?;
         resonate_words::speak(language);
         write_man_pages(&folder)?;
     }
 
     resonate_words::speak(Language::English);
+
     let mut command = resonate_cli::command();
+
     for shell in SHELLS {
         clap_complete::generate_to(shell, &mut command, env!("CARGO_PKG_NAME"), out)?;
     }
@@ -77,9 +81,11 @@ fn write_man_pages(folder: &Path) -> io::Result<()> {
 fn headed_in_the_language_spoken(folder: &Path) -> io::Result<()> {
     for entry in fs::read_dir(folder)? {
         let path = entry?.path();
+
         if path.extension().is_none_or(|ending| ending != MAN_ENDING) {
             continue;
         }
+
         let page = fs::read_to_string(&path)?;
         let headed: Vec<String> = page
             .lines()
@@ -92,6 +98,7 @@ fn headed_in_the_language_spoken(folder: &Path) -> io::Result<()> {
                     )
             })
             .collect();
+
         fs::write(&path, headed.join("\n") + "\n")?;
     }
     Ok(())

@@ -15,11 +15,13 @@ pub fn print(
     let calendar = Calendar::local();
     let years = library.years_heard(&calendar)?;
     let today = calendar.date_at(std::time::SystemTime::now());
+
     let Some(year) = year.or_else(|| year_worth_showing(&years, today)) else {
         return Err(Error::NothingHeardYet);
     };
 
     let review = library.year_review(year, &calendar, history)?;
+
     if summary {
         said!("{}", review.summary());
     } else {
@@ -40,12 +42,14 @@ fn told(review: &YearReview) -> String {
 
 fn told_slide(slide: &Slide) -> String {
     let mut told = format!("{}\n{}\n", slide.eyebrow.to_uppercase(), slide.headline);
+
     if let Some(detail) = &slide.detail {
         told.push_str(detail);
         told.push('\n');
     }
     if !slide.rows.is_empty() {
         let mut table = Table::new(vec!["", columns::by(), columns::listened()]);
+
         for row in &slide.rows {
             table.push(vec![
                 row.name.clone(),

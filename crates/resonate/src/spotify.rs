@@ -6,6 +6,7 @@ use crate::{Error, Result, config, config::Config, error::ConfigKey, followed, o
 
 pub fn sign_in(config: &Config, settings: &Path) -> Result<()> {
     let token = online::signed_in_to_spotify(config)?;
+
     config::store(settings, ConfigKey::SpotifyRefreshToken, token)?;
     said!(
         "{}",
@@ -24,7 +25,9 @@ pub fn follow(library: &Library, config: &Config, upkeep: Upkeep) -> Result<()> 
 
 pub fn sign_out(library: &Library, settings: &Path) -> Result<()> {
     config::clear(settings, ConfigKey::SpotifyRefreshToken)?;
+
     let let_go = library.let_go_of_the_profile(&ProfileLink::SpotifyAccount)?;
+
     said!("{}", words::spotify::signed_out(let_go));
     Ok(())
 }
@@ -55,6 +58,7 @@ mod tests {
                 spotify_client_id: blank,
                 ..Config::default()
             };
+
             assert!(matches!(
                 sign_in(&unregistered, &nowhere),
                 Err(Error::NoSpotifyClient)
@@ -76,6 +80,7 @@ mod tests {
             spotify_client_id: Some("registered".to_owned()),
             ..Config::default()
         };
+
         assert!(matches!(
             follow(&library, &client_alone, Upkeep::Once),
             Err(Error::NotSignedInToSpotify)

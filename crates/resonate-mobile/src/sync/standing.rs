@@ -54,6 +54,7 @@ pub(super) fn folders_filed_in(
         .unwrap_or_default();
     let spellings = spellings_of(tags, &waiting.received.song);
     let mut layouts: Vec<Layout> = Vec::new();
+
     for read in [layout]
         .into_iter()
         .chain(synced.iter().map(String::as_str))
@@ -66,6 +67,7 @@ pub(super) fn folders_filed_in(
     }
 
     let mut folders: Vec<Vec<String>> = Vec::new();
+
     for layout in layouts {
         for naming in NAMINGS {
             for spelled in &spellings {
@@ -99,6 +101,7 @@ pub(super) fn weighed<'a>(
                 || of_the_extension(&document.name, &waiting.received.extension)
         })
         .collect::<Vec<_>>();
+
     filed.sort_by_key(|document| !named_alike(name, &document.name));
     filed.truncate(FILED_COPIES_WEIGHED_AT_MOST);
     at_the_root.chain(filed).collect()
@@ -110,6 +113,7 @@ fn spellings_of(tags: TagSet, song: &SearchSong) -> Vec<Spelled> {
             .unwrap_or_else(|| sent.to_owned())
     };
     let disc = tags.disc_number.or(song.disc).and_then(NonZeroU32::new);
+
     let as_indexed = Spelled {
         album_artist: tags.album_artist.filter(|text| given(text).is_some()),
         artist: or_else(tags.artist, &song.artist),
@@ -123,9 +127,11 @@ fn spellings_of(tags: TagSet, song: &SearchSong) -> Vec<Spelled> {
             .max(disc.map_or(1, NonZeroU32::get)),
         track: tags.track_number.or(song.position),
     };
+
     if as_indexed.album_artist.is_some() {
         return vec![as_indexed];
     }
+
     let under_the_artist = Spelled {
         album_artist: Some(as_indexed.artist.clone()),
         ..as_indexed.clone()
@@ -201,11 +207,13 @@ mod tests {
         let mut standing = (0..100)
             .map(|nth| document(&format!("{nth:02} Song.WAV"), &homogenic))
             .collect::<Vec<_>>();
+
         standing.push(document("cover.jpg", &homogenic));
         standing.push(document(LANDING, &["Bjo\u{308}rk", "Homogenic"]));
         standing.push(document(LANDING, &["Björk", "Debut"]));
         standing.push(document("Björk - Hunter (1).wav", &[]));
         standing.push(document("01 Hunter.wav", &[]));
+
         let folders = vec![homogenic.map(str::to_owned).to_vec()];
 
         let weighed = weighed(&waiting(), &folders, &standing);

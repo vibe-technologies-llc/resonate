@@ -76,13 +76,17 @@ impl MediaHosts {
         let Some((scheme, rest)) = url.split_once("://") else {
             return false;
         };
+
         if !scheme.eq_ignore_ascii_case(&self.scheme) {
             return false;
         }
+
         let authority = rest.split(['/', '?', '#']).next().unwrap_or_default();
+
         if authority.contains(['@', '[', '\\']) {
             return false;
         }
+
         let host = authority
             .rsplit_once(':')
             .map_or(authority, |(host, _)| host)

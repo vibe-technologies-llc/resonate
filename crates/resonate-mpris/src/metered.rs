@@ -81,11 +81,13 @@ impl Following {
                 )),
             });
         }
+
         let properties = Proxy::new(connection, NETWORK_MANAGER, MANAGER_PATH, PROPERTIES)
             .map_err(|source| Error::bus(BusOp::Connect, source))?;
         let changes = properties
             .receive_signal(PROPERTIES_CHANGED)
             .map_err(|source| Error::bus(BusOp::Listen, source))?;
+
         metering.report(read(&properties)?);
 
         Ok(Self {
@@ -103,6 +105,7 @@ impl Following {
             else {
                 continue;
             };
+
             if interface != NETWORK_MANAGER {
                 continue;
             }

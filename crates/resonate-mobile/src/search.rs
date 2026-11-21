@@ -144,9 +144,11 @@ pub fn folded_text(text: String) -> String {
 #[uniffi::export]
 pub fn album_key(album: String, artist: String, album_artist: String) -> Option<String> {
     let filed_album = folded_letters(album.trim());
+
     if filed_album.is_empty() {
         return None;
     }
+
     let filed_album_artist = folded_letters(album_artist.trim());
     let grouping = if filed_album_artist.is_empty() {
         folded_letters(artist.trim())
@@ -234,6 +236,7 @@ fn positioned_page(index: &Index, found: &[usize], offset: usize, limit: usize) 
         .take(limit)
         .map(|(position, at)| {
             let mut track = index.rows[*at].track.clone();
+
             track.queue_id = Some(position as u64);
             track
         })
@@ -291,6 +294,7 @@ impl Searching {
         limit: u32,
     ) -> Result<LibrarySearch> {
         let search = Search::read(text);
+
         if search.is_empty() {
             return Ok(LibrarySearch::default());
         }
@@ -298,6 +302,7 @@ impl Searching {
         let index = self.index(catalog)?;
         let asking = self.asking(catalog, &search)?;
         let sung = self.sung_for(catalog, &asking)?;
+
         let found = index.ranked(&asking, sung.as_deref());
         let shown = limit.min(LISTED_AT_MOST) as usize;
 
@@ -338,6 +343,7 @@ impl Searching {
         limit: u32,
     ) -> Result<Vec<Track>> {
         let search = Search::read(text);
+
         if search.is_empty() {
             return Ok(Vec::new());
         }
@@ -406,6 +412,7 @@ impl Searching {
         let now = Instant::now();
         let held = {
             let mut walked = self.walked.lock();
+
             walked.retain(|pin| now.duration_since(pin.asked) < A_WALK_PINS_ITS_INDEX_FOR);
             pinned.and_then(|revision| {
                 walked
@@ -420,6 +427,7 @@ impl Searching {
         };
 
         let mut walked = self.walked.lock();
+
         match walked
             .iter_mut()
             .find(|pin| Arc::ptr_eq(&pin.index, &index))
@@ -537,8 +545,10 @@ impl Searching {
                     .map(|standing| (standing, at))
             })
             .collect();
+
         found.sort_unstable_by(|(one_standing, one), (other_standing, other)| {
             let (one, other) = (&index.rows[*one], &index.rows[*other]);
+
             let ordered = if ranked {
                 in_ranked_order((*one_standing, one), (*other_standing, other))
             } else {
@@ -552,6 +562,7 @@ impl Searching {
         });
 
         let mut found: Vec<usize> = found.into_iter().map(|(_, at)| at).collect();
+
         if let Some(rows) = query.limit {
             found.truncate(rows);
         }
@@ -576,6 +587,7 @@ impl Searching {
         let asking = (!filter.text.trim().is_empty())
             .then(|| self.asking(catalog, &Search::read(&filter.text)))
             .transpose()?;
+
         if asking.as_ref().is_some_and(Asking::asks_nothing) {
             return Ok(None);
         }
@@ -585,6 +597,7 @@ impl Searching {
             Some(asking) => self.sung_for(catalog, asking)?,
             None => None,
         };
+
         if let Some(ordered) = self.ordered.lock().as_ref()
             && ordered.answers(filter, &index, &sung, asking.as_ref())
         {
@@ -597,6 +610,7 @@ impl Searching {
             asking.as_ref(),
             sung.as_deref(),
         ));
+
         *self.ordered.lock() = Some(Ordered {
             filter: filter.clone(),
             index: Arc::clone(&index),
@@ -631,8 +645,10 @@ impl Searching {
             })
             .map(|(at, _)| at)
             .collect();
+
         found.sort_unstable_by(|one, other| {
             let (one, other) = (&index.rows[*one], &index.rows[*other]);
+
             let ordered = in_track_order(filter.order, one, other);
             let directed = if filter.descending {
                 ordered.reverse()
@@ -652,6 +668,7 @@ impl Searching {
     ) -> Result<Vec<AlbumHit>> {
         let index = self.index(catalog)?;
         let mut albums: Vec<&AlbumGroup> = index.albums.iter().collect();
+
         albums.sort_by(|one, other| album_order(order, one, other));
 
         Ok(albums.into_iter().map(AlbumGroup::hit).collect())
@@ -664,6 +681,7 @@ impl Searching {
     ) -> Result<Vec<ArtistHit>> {
         let index = self.index(catalog)?;
         let mut artists: Vec<&ArtistGroup> = index.artists.iter().collect();
+
         artists.sort_by(|one, other| artist_order(order, one, other));
 
         Ok(artists.into_iter().map(ArtistGroup::hit).collect())
@@ -690,6 +708,7 @@ impl Searching {
         };
 
         let mut rows = index.artists[*artist].rows.clone();
+
         rows.sort_by_key(|at| Reverse(index.rows[*at].plays()));
         rows.truncate(limit.min(LISTED_AT_MOST) as usize);
         Ok(index.tracks_at(&rows))
@@ -706,9 +725,12 @@ impl Searching {
             .iter()
             .filter_map(|at| index.rows[*at].album_group)
             .collect();
+
         held.sort_unstable();
         held.dedup();
+
         let mut albums: Vec<&AlbumGroup> = held.into_iter().map(|at| &index.albums[at]).collect();
+
         albums.sort_by(|one, other| album_order(CollectionOrder::Year, one, other));
 
         Ok(albums.into_iter().map(AlbumGroup::hit).collect())
@@ -740,13 +762,16 @@ impl Searching {
         }
 
         let _building = self.building.lock();
+
         if let Some(index) = self.current(catalog) {
             return Ok(index);
         }
 
         let revision = catalog.revision();
         let stored = Index::stored(catalog)?;
+
         let index = Arc::new(Index::gathered(Index::rows_of(stored), revision));
+
         *self.held.lock() = Some(Arc::clone(&index));
 
         Ok(index)
@@ -762,6 +787,7 @@ impl Searching {
 
     fn asking(&self, catalog: &Catalog, search: &Search) -> Result<Asking> {
         let mut asking = Asking::of(search, now());
+
         if asking.asks_of_studies {
             asking.studied = Some(self.studied_by(catalog)?);
         }
@@ -774,6 +800,7 @@ impl Searching {
         let stamp =
             Studied::stamp_of(&connection).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut held = self.studied.lock();
+
         if let Some(studied) = held.as_ref()
             && studied.stamp == stamp
         {
@@ -784,6 +811,7 @@ impl Searching {
             Studied::read(&connection, stamp)
                 .map_err(|source| Error::store(StoreOp::Read, source))?,
         );
+
         *held = Some(Arc::clone(&studied));
 
         Ok(studied)
@@ -798,6 +826,7 @@ impl Searching {
         let stamp =
             Sung::stamp_of(&connection).map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut held = self.sung.lock();
+
         if let Some(sung) = held.as_ref()
             && sung.stamp == stamp
         {
@@ -807,6 +836,7 @@ impl Searching {
         let sung = Arc::new(
             Sung::read(&connection, stamp).map_err(|source| Error::store(StoreOp::Read, source))?,
         );
+
         *held = Some(Arc::clone(&sung));
 
         Ok(Some(sung))
@@ -853,7 +883,9 @@ impl Name {
         if self.words.len() != sorted.len() {
             return false;
         }
+
         let mut words: Vec<&str> = self.words.iter().map(|word| &**word).collect();
+
         words.sort_unstable();
 
         words.into_iter().eq(sorted.iter().map(|piece| &**piece))
@@ -861,6 +893,7 @@ impl Name {
 
     fn fit_of(&self, piece: &str, inside: bool) -> Option<Fit> {
         let mut best = None;
+
         for word in &self.words {
             let fit = if **word == *piece {
                 return Some(Fit::WholeWord);
@@ -871,6 +904,7 @@ impl Name {
             } else {
                 continue;
             };
+
             best = best.max(Some(fit));
         }
 
@@ -991,17 +1025,20 @@ impl Worded {
                         }
                     })
                     .max();
+
                 if named.is_some() {
                     return named;
                 }
 
                 let mut worst: Option<(Fit, Field)> = None;
+
                 for piece in pieces {
                     let best = reached()
                         .filter_map(|(field, name)| {
                             name.fit_of(piece, self.inside).map(|fit| (fit, *field))
                         })
                         .max()?;
+
                     worst = Some(worst.map_or(best, |worst| worst.min(best)));
                 }
                 worst
@@ -1072,6 +1109,7 @@ impl Asking {
                         .collect(),
                 })
                 .collect();
+
             narrowing.push(alternatives);
         }
 
@@ -1085,6 +1123,7 @@ impl Asking {
                 .flat_map(|word| word.pieces.iter().cloned())
                 .collect();
             let mut sorted = ordered.clone();
+
             sorted.sort_unstable();
             Joined { ordered, sorted }
         });
@@ -1112,6 +1151,7 @@ impl Asking {
                 alternative.holds(&names, row, self.now, self.studied.as_deref())
             })
         });
+
         if !narrowed {
             return None;
         }
@@ -1119,13 +1159,17 @@ impl Asking {
         if self.ranked.is_empty() {
             return Some(UNRANKED);
         }
+
         let mut fit = Fit::WholeName;
         let mut weight = 0;
+
         for word in &self.ranked {
             let (fitted, field) = word.fit(&names)?;
+
             fit = fit.min(fitted);
             weight += field.weight();
         }
+
         let worded = Standing { fit, weight };
 
         Some(
@@ -1140,7 +1184,9 @@ impl Asking {
         if self.ranked.is_empty() {
             return None;
         }
+
         let mut fit = Fit::WholeName;
+
         for word in &self.ranked {
             fit = fit.min(word.fit(names)?.0);
         }
@@ -1401,9 +1447,11 @@ impl AlbumGroup {
     fn settle(&mut self, rows: &[Row]) {
         self.rows
             .sort_by(|one, other| in_album_order(&rows[*one], &rows[*other]));
+
         let held = || self.rows.iter().map(|at| &rows[*at]);
 
         let mut owners: Vec<&str> = held().map(|row| row.grouping_artist().1).collect();
+
         owners.sort_unstable();
         owners.dedup();
         if owners.len() > 1 {
@@ -1492,9 +1540,11 @@ impl ArtistGroup {
         self.name_words = Name::of(&self.name);
         self.rows
             .sort_by(|one, other| in_artist_order(&rows[*one], &rows[*other], albums));
+
         let held = || self.rows.iter().map(|at| &rows[*at]);
 
         let mut albums_held: Vec<usize> = held().filter_map(|row| row.album_group).collect();
+
         albums_held.sort_unstable();
         albums_held.dedup();
         self.albums = albums_held.len();
@@ -1528,6 +1578,7 @@ impl Index {
     fn stored(catalog: &Catalog) -> Result<Vec<Stored>> {
         let mut heard: HashMap<u64, Vec<i64>> = HashMap::new();
         let mut after = 0_i64;
+
         loop {
             let page = {
                 let connection = catalog.0.lock();
@@ -1549,6 +1600,7 @@ impl Index {
             let Some(&(last, _, _)) = page.last() else {
                 break;
             };
+
             after = last;
             for (_, track, began) in page {
                 heard.entry(track).or_default().push(began);
@@ -1557,6 +1609,7 @@ impl Index {
 
         let mut stored = Vec::new();
         let mut after = 0_i64;
+
         loop {
             let page = {
                 let connection = catalog.0.lock();
@@ -1574,6 +1627,7 @@ impl Index {
             let Some(last) = page.last().map(|(track, _)| track.id) else {
                 break;
             };
+
             after = last as i64;
             stored.extend(page.into_iter().map(|(track, added)| Stored {
                 heard: heard.remove(&track.id).unwrap_or_default(),
@@ -1593,6 +1647,7 @@ impl Index {
 
         let mut artists: Vec<ArtistGroup> = Vec::new();
         let mut artist_at: HashMap<String, usize> = HashMap::new();
+
         for (at, row) in rows.iter().enumerate() {
             let credits = [
                 Some((&row.filed_artist, &row.track.artist)),
@@ -1605,6 +1660,7 @@ impl Index {
                     artists.len() - 1
                 });
                 let artist = &mut artists[group];
+
                 artist.rows.push(at);
                 *artist.spellings.entry(spelling.clone()).or_default() += 1;
             }
@@ -1643,6 +1699,7 @@ impl Index {
 
     pub(crate) fn genres_of_artists(&self) -> Vec<(String, String)> {
         let mut shelved: HashSet<(&str, &str)> = HashSet::new();
+
         for row in &self.rows {
             let (artist, genre) = (row.track.artist.trim(), row.track.genre.trim());
             if !artist.is_empty() && !genre.is_empty() {
@@ -1658,6 +1715,7 @@ impl Index {
 
     pub(crate) fn years_held(&self) -> Vec<(i32, u64)> {
         let mut held: HashMap<i32, u64> = HashMap::new();
+
         for year in self.rows.iter().filter_map(|row| row.year) {
             *held.entry(year).or_default() += 1;
         }
@@ -1667,6 +1725,7 @@ impl Index {
 
     pub(crate) fn genres_held(&self) -> Vec<(String, u64)> {
         let mut held: HashMap<&str, u64> = HashMap::new();
+
         for row in &self.rows {
             let genre = row.track.genre.trim();
             if !genre.is_empty() {
@@ -1681,6 +1740,7 @@ impl Index {
 
     pub(crate) fn genres_of_years(&self) -> Vec<(i32, String, u64)> {
         let mut held: HashMap<(i32, &str), u64> = HashMap::new();
+
         for row in &self.rows {
             let genre = row.track.genre.trim();
             if let Some(year) = row.year
@@ -1697,6 +1757,7 @@ impl Index {
 
     pub(crate) fn genres_played(&self) -> Vec<(String, u64)> {
         let mut played: HashMap<&str, u64> = HashMap::new();
+
         for row in &self.rows {
             let genre = row.track.genre.trim();
             if !genre.is_empty() && row.plays() > 0 {
@@ -1713,8 +1774,10 @@ impl Index {
     fn spellings(&self) -> &Spellings {
         self.spellings.get_or_init(|| {
             let mut spellings = Spellings::default();
+
             for row in &self.rows {
                 let track = &row.track;
+
                 spellings.taking(Column::Title, &track.title);
                 spellings.taking(Column::Artist, &track.artist);
                 spellings.taking(Column::Artist, &track.album_artist);
@@ -1736,6 +1799,7 @@ impl Index {
                     .map(|standing| (standing, at))
             })
             .collect();
+
         found.sort_unstable_by(|(one_standing, one), (other_standing, other)| {
             let (one, other) = (&self.rows[*one], &self.rows[*other]);
             in_ranked_order((*one_standing, one), (*other_standing, other))
@@ -1747,10 +1811,12 @@ impl Index {
 
     fn pictured_among(&self, found: &[usize]) -> Vec<u64> {
         let mut pictured: Vec<usize> = Vec::new();
+
         for at in found.iter().copied().take(LISTED_AT_MOST as usize) {
             if pictured.len() == PICTURED_BY_AT_MOST {
                 break;
             }
+
             let Some(album) = self.rows[at].album_group else {
                 continue;
             };
@@ -1833,6 +1899,7 @@ impl Studied {
     fn read(connection: &Connection, stamp: StudiedStamp) -> rusqlite::Result<Self> {
         let mut query =
             connection.prepare("SELECT track, verdict FROM studies WHERE verdict IN (?1, ?2)")?;
+
         let judged = query
             .query_map(
                 params![Verdict::Fake.as_str(), Verdict::Suspect.as_str()],
@@ -1881,6 +1948,7 @@ impl Sung {
     fn read(connection: &Connection, stamp: SungStamp) -> rusqlite::Result<Self> {
         let mut query =
             connection.prepare("SELECT track, text FROM lyrics WHERE text IS NOT NULL")?;
+
         let words = query
             .query_map([], |row| {
                 Ok((
@@ -2095,6 +2163,7 @@ fn named_first(groups: Vec<usize>, most: usize, fit: impl Fn(usize) -> Option<Fi
         .into_iter()
         .map(|group| (fit(group), group))
         .collect();
+
     weighed.sort_by_key(|(fit, _)| Reverse(*fit));
 
     weighed
@@ -2108,21 +2177,25 @@ fn albums_of(rows: &mut [Row]) -> (Vec<AlbumGroup>, HashMap<String, usize>) {
     let mut keys: Vec<String> = Vec::new();
     let mut key_at: HashMap<String, usize> = HashMap::new();
     let mut keyed_rows: Vec<Vec<usize>> = Vec::new();
+
     for (at, row) in rows.iter().enumerate() {
         if row.filed_album.is_empty() {
             continue;
         }
+
         let key = keyed(&row.filed_album, row.grouping_artist().1);
         let provisional = *key_at.entry(key.clone()).or_insert_with(|| {
             keys.push(key);
             keyed_rows.push(Vec::new());
             keys.len() - 1
         });
+
         keyed_rows[provisional].push(at);
     }
 
     let mut gathering = Gathering::of(keys.len());
     let mut met: HashMap<Meeting, usize> = HashMap::new();
+
     for (provisional, held) in keyed_rows.iter().enumerate() {
         for at in held {
             for meeting in meetings(&rows[*at]) {
@@ -2140,14 +2213,17 @@ fn albums_of(rows: &mut [Row]) -> (Vec<AlbumGroup>, HashMap<String, usize>) {
     let mut group_of_root: HashMap<usize, usize> = HashMap::new();
     let mut album_at: HashMap<String, usize> = HashMap::new();
     let mut by_size: Vec<usize> = (0..keys.len()).collect();
+
     by_size.sort_by_key(|provisional| (Reverse(keyed_rows[*provisional].len()), *provisional));
     for provisional in by_size {
         let root = gathering.root(provisional);
         let group = *group_of_root.entry(root).or_insert_with(|| {
             let first = &rows[keyed_rows[provisional][0]];
+
             albums.push(AlbumGroup::first(keys[provisional].clone(), first));
             albums.len() - 1
         });
+
         album_at.insert(keys[provisional].clone(), group);
         for at in &keyed_rows[provisional] {
             albums[group].rows.push(*at);
@@ -2161,7 +2237,7 @@ fn albums_of(rows: &mut [Row]) -> (Vec<AlbumGroup>, HashMap<String, usize>) {
     (albums, album_at)
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 enum Meeting {
     Release(String),
     Sleeve { album: String, folder: String },
@@ -2196,12 +2272,16 @@ impl Gathering {
 
     fn root(&mut self, at: usize) -> usize {
         let mut root = at;
+
         while self.parent[root] != root {
             root = self.parent[root];
         }
+
         let mut walked = at;
+
         while self.parent[walked] != root {
             let next = self.parent[walked];
+
             self.parent[walked] = root;
             walked = next;
         }
@@ -2228,6 +2308,7 @@ fn sleeve_of(uri: &str) -> Option<String> {
             let tree = before
                 .split_once(ANDROID_TREE)
                 .map(|(_, tree)| unescaped(tree.split('/').next().unwrap_or_default()));
+
             if tree.as_deref() == Some(folder) {
                 return None;
             }
@@ -2236,6 +2317,7 @@ fn sleeve_of(uri: &str) -> Option<String> {
         None => {
             let (_, held) = uri.split_once(SCHEME_ENDS)?;
             let (folder, _) = held.rsplit_once('/')?;
+
             if !folder.contains('/') {
                 return None;
             }
@@ -2257,6 +2339,7 @@ fn unescaped(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut kept = Vec::with_capacity(bytes.len());
     let mut at = 0;
+
     while at < bytes.len() {
         let escaped = (bytes[at] == b'%')
             .then(|| bytes.get(at + 1..at + 3))
@@ -2299,6 +2382,7 @@ fn pieces_of(text: &str) -> Vec<Box<str>> {
 fn without_stamps(text: &str) -> String {
     let mut words = String::with_capacity(text.len());
     let mut closing = None;
+
     for letter in text.chars() {
         match (closing, letter) {
             (Some(close), _) if letter == close => closing = None,
@@ -2427,6 +2511,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("an indexed song");
+
         catalog
             .0
             .lock()
@@ -2451,6 +2536,7 @@ mod tests {
 
     fn library() -> Catalog {
         let catalog = catalog();
+
         for tagged in [
             Tagged {
                 title: "Time",
@@ -2611,8 +2697,10 @@ mod tests {
     #[test]
     fn songs_are_found_by_the_age_the_catalog_dated_them_and_an_undated_one_answers_neither_way() {
         let catalog = library();
+
         {
             let connection = catalog.0.lock();
+
             connection
                 .execute(
                     "UPDATE documents SET added = unixepoch() - 30 * 86400 WHERE title IN ('Time', 'Money')",
@@ -2655,7 +2743,9 @@ mod tests {
                 .expect("a study");
         };
         let searching = Searching::default();
+
         let searched = |text: &str| searching.search(&catalog, text, 100).expect("a search");
+
         studying("Time", Verdict::Fake);
         studying("Money", Verdict::Suspect);
         studying("Jóga", Verdict::Genuine);
@@ -2663,8 +2753,10 @@ mod tests {
         let fake = searched("is:fake");
         let suspect = searched("is:suspect");
         let not_fake = searched("-is:fake");
+
         studying("Time", Verdict::Genuine);
         studying("Jóga", Verdict::Fake);
+
         let fake_again = searched("is:fake");
 
         assert_eq!(titles(&fake.tracks), vec!["Time"]);
@@ -2698,12 +2790,15 @@ mod tests {
                     |row| row.get(0),
                 )
                 .expect("a document");
+
             catalog
                 .keep_agreement(id as u64, agreement)
                 .expect("an agreement");
         };
         let searching = Searching::default();
+
         let searched = |text: &str| searching.search(&catalog, text, 100).expect("a search");
+
         studying("Time");
         studying("Money");
         studying("Jóga");
@@ -2713,7 +2808,9 @@ mod tests {
 
         let misnamed = searched("is:misnamed");
         let not_misnamed = searched("-is:misnamed");
+
         hearing("Money", Agreement::Disagrees);
+
         let misnamed_again = searched("is:misnamed");
 
         assert_eq!(titles(&misnamed.tracks), vec!["Time"]);
@@ -2760,6 +2857,7 @@ mod tests {
 
     fn filed(catalog: &Catalog, uri: &str, tagged: Tagged<'_>) -> Track {
         let track = song(catalog, tagged);
+
         catalog
             .0
             .lock()
@@ -2775,6 +2873,7 @@ mod tests {
     fn an_album_split_by_its_credits_or_discs_is_gathered_by_the_folder_holding_it() {
         let catalog = catalog();
         let searching = Searching::default();
+
         for (uri, title, artist) in [
             (
                 "resonate-folder://local/Witcher%203/CD1/01.flac",
@@ -2839,6 +2938,7 @@ mod tests {
         let catalog = catalog();
         let searching = Searching::default();
         let release = "b1a9c0e9-d987-4042-ae91-78d6a3267d69";
+
         for (uri, album) in [
             ("resonate-folder://local/A/one.flac", "Set (Disc 1)"),
             ("resonate-folder://local/B/two.flac", "Set (Disc 2)"),
@@ -2897,6 +2997,7 @@ mod tests {
     fn albums_gather_by_folded_title_and_owner_in_disc_and_track_order() {
         let catalog = catalog();
         let searching = Searching::default();
+
         for tagged in [
             Tagged {
                 title: "Hidden",
@@ -2985,6 +3086,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         song(
             &catalog,
             Tagged {
@@ -2995,6 +3097,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let joga = song(
             &catalog,
             Tagged {
@@ -3005,6 +3108,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         catalog
             .0
             .lock()
@@ -3057,6 +3161,7 @@ mod tests {
         let catalog = catalog();
         let searching = Searching::default();
         let mut pictured = Vec::new();
+
         for (title, album, artwork) in [
             ("One", "Bare", false),
             ("Two", "First", true),
@@ -3087,6 +3192,7 @@ mod tests {
                 pictured.push(track.id);
             }
         }
+
         let added_first = TrackFilter {
             order: TrackOrder::Added,
             ..TrackFilter::default()
@@ -3113,6 +3219,7 @@ mod tests {
     fn the_unknown_artist_holds_only_songs_naming_no_artist() {
         let catalog = library();
         let searching = Searching::default();
+
         song(
             &catalog,
             Tagged {
@@ -3155,6 +3262,7 @@ mod tests {
     fn a_search_is_read_a_page_at_a_time_in_the_order_it_ranks() {
         let catalog = catalog();
         let searching = Searching::default();
+
         for number in 1..=7 {
             song(
                 &catalog,
@@ -3194,6 +3302,7 @@ mod tests {
     fn kept_lyrics_are_searched_without_their_stamps_once_kept() {
         let catalog = library();
         let searching = Searching::default();
+
         let money = searching
             .search(&catalog, "money", 1)
             .expect("a search")
@@ -3203,6 +3312,7 @@ mod tests {
         let before = searching
             .search(&catalog, "lyrics:\"grab that cash\"", 10)
             .expect("a lyric search");
+
         catalog
             .keep_lyrics(
                 money.id,
@@ -3211,6 +3321,7 @@ mod tests {
                 "embedded",
             )
             .expect("kept lyrics");
+
         let after = searching
             .search(&catalog, "lyrics:\"grab that cash\"", 10)
             .expect("a lyric search");
@@ -3229,6 +3340,7 @@ mod tests {
         let searching = Searching::default();
 
         let before = searching.search(&catalog, "karma", 10).expect("a search");
+
         song(
             &catalog,
             Tagged {
@@ -3237,6 +3349,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let after = searching.search(&catalog, "karma", 10).expect("a search");
 
         assert_eq!(before.track_count, 0);
@@ -3263,6 +3376,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         song(
             &catalog,
             Tagged {
@@ -3328,6 +3442,7 @@ mod tests {
                     descending,
                     ..TrackFilter::default()
                 };
+
                 assert_eq!(
                     searching
                         .filtered(&catalog, &filter, 0, 100)
@@ -3402,6 +3517,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let everything = searching
             .filtered(&catalog, &filter, 0, 100)
             .expect("every song");
@@ -3427,6 +3543,7 @@ mod tests {
         let first = searching
             .walked(&catalog, &filter, 0, 3, None)
             .expect("a first page");
+
         song(
             &catalog,
             Tagged {
@@ -3436,6 +3553,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let pinned = searching
             .walked(&catalog, &filter, 3, 100, Some(first.revision))
             .expect("a later page of the same walk");
@@ -3470,6 +3588,7 @@ mod tests {
         let first = searching
             .walked(&catalog, &filter, 0, 3, None)
             .expect("a first page");
+
         searching.walked.lock().clear();
         song(
             &catalog,
@@ -3480,6 +3599,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let lost = searching
             .walked(&catalog, &filter, 3, 100, Some(first.revision))
             .expect("a page whose pin is gone");
@@ -3500,6 +3620,7 @@ mod tests {
         let first = searching
             .saved_walked(&catalog, &query, 0, 3, None)
             .expect("a first page");
+
         song(
             &catalog,
             Tagged {
@@ -3509,6 +3630,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let pinned = searching
             .saved_walked(&catalog, &query, 3, 100, Some(first.revision))
             .expect("a later page of the same walk");
@@ -3561,6 +3683,7 @@ mod tests {
         let first = searching
             .saved_walked(&catalog, &query, 0, 3, None)
             .expect("a first page");
+
         searching.walked.lock().clear();
         song(
             &catalog,
@@ -3571,6 +3694,7 @@ mod tests {
                 ..UNTAGGED
             },
         );
+
         let lost = searching
             .saved_walked(&catalog, &query, 3, 100, Some(first.revision))
             .expect("a page whose pin is gone");
@@ -3583,9 +3707,12 @@ mod tests {
     fn a_two_word_search_over_twenty_thousand_songs_answers_within_its_budget() {
         let catalog = catalog();
         let searching = Searching::default();
+
         {
             let mut connection = catalog.0.lock();
+
             let transaction = connection.transaction().expect("a transaction");
+
             for at in 0..SYNTHETIC_ROWS {
                 transaction
                     .execute(
@@ -3611,8 +3738,10 @@ mod tests {
 
         let mut fastest = Duration::MAX;
         let mut found = 0;
+
         for _ in 0..TIMED_RUNS {
             let began = Instant::now();
+
             found = searching
                 .search(&catalog, "performer 12", 50)
                 .expect("a timed search")

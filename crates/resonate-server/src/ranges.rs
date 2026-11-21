@@ -24,10 +24,13 @@ fn number(text: &str) -> Option<u64> {
 impl Wanted {
     pub(crate) fn parse(header: &str) -> Option<Self> {
         let specification = header.trim().strip_prefix("bytes=")?;
+
         if specification.contains(',') {
             return None;
         }
+
         let (first, last) = specification.split_once('-')?;
+
         let (first, last) = (first.trim(), last.trim());
         match (first.is_empty(), last.is_empty()) {
             (true, true) => None,

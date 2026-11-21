@@ -146,6 +146,7 @@ fn fingerprint_of(bytes: &[u8]) -> u64 {
 
 fn bytes_of(seed: &Seed) -> Vec<u8> {
     let bytes = fs::read(seeds_folder().join(seed.name)).expect("a seed");
+
     assert_eq!(
         fingerprint_of(&bytes),
         seed.fingerprint,
@@ -203,6 +204,7 @@ fn every_seed_in_the_folder_is_held_by_a_kind() {
         .iter()
         .filter(|name| !held.contains(name.as_str()))
         .collect();
+
     assert!(unheld.is_empty(), "seeds no kind holds: {unheld:?}");
     assert_eq!(found.len(), held.len());
 }

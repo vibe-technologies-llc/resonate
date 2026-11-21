@@ -331,6 +331,7 @@ pub(crate) fn cut_to_fit(
     if room <= px(0.0) {
         return Cut::of(text.clone(), text);
     }
+
     let drawn = cx
         .text_system()
         .line_wrapper(font, size)
@@ -1404,6 +1405,7 @@ pub(crate) fn switch(id: impl Into<ElementId>, on: bool) -> Stateful<Div> {
 
 fn grown(spacer: Div, by: f32) -> Div {
     let mut spacer = spacer.flex_basis(px(0.0)).h_full();
+
     spacer.style().flex_grow = Some(by);
     spacer
 }
@@ -1582,10 +1584,12 @@ pub(crate) fn ledger(across: usize, cells: Vec<AnyElement>) -> Div {
     let mut cells = cells.into_iter().peekable();
     let mut ledger = section();
     let mut below_the_first = false;
+
     while cells.peek().is_some() {
         let mut line = div().flex().w_full().when(below_the_first, |line| {
             line.border_t_1().border_color(rgb(theme::border()))
         });
+
         for place in 0..across {
             line = line.child(
                 div()
@@ -1823,6 +1827,7 @@ pub(crate) fn measures_the_grid(grid: Rc<GridWidth>) -> impl IntoElement {
         move |bounds, window, _| {
             let across = window.viewport_size().width;
             let narrower = Some(across - bounds.size.width);
+
             grid.seen_in(across);
             if grid.narrower_than_the_window.get() != narrower {
                 grid.narrower_than_the_window.set(narrower);
@@ -1885,6 +1890,7 @@ pub(crate) fn brought_into_view_within(
             if !asked.replace(false) {
                 return;
             }
+
             let lowered = down.as_ref().and_then(|down| {
                 let seen = down.bounds();
                 moved_into(bounds.top(), bounds.bottom(), seen.top(), seen.bottom())
@@ -1895,12 +1901,15 @@ pub(crate) fn brought_into_view_within(
                 moved_into(bounds.left(), bounds.right(), seen.left(), seen.right())
                     .map(|moved| (across, moved))
             });
+
             if let Some((down, moved)) = lowered {
                 let offset = down.offset();
+
                 down.set_offset(point(offset.x, offset.y + moved));
             }
             if let Some((across, moved)) = slid {
                 let offset = across.offset();
+
                 across.set_offset(point(offset.x + moved, offset.y));
             }
             if lowered.is_some() || slid.is_some() {
@@ -2125,17 +2134,20 @@ mod tests {
     impl gpui::Render for Names {
         fn render(&mut self, _: &mut gpui::Window, _: &mut Context<Self>) -> impl IntoElement {
             self.layouts.clear();
+
             let mut row = div()
                 .flex()
                 .w(px(600.0))
                 .font_family("sans-serif")
                 .text_size(px(14.0));
+
             for name in [
                 "AVATAR",
                 "Taylor Swift",
                 "A very long song title ".repeat(30).as_str(),
             ] {
                 let text = gpui::StyledText::new(name.to_owned());
+
                 self.layouts.push(text.layout().clone());
                 row = row.child(
                     div().flex().w(px(180.0)).flex_none().child(
@@ -2160,9 +2172,11 @@ mod tests {
             None,
             platform.text_system(),
         );
+
         let (names, cx) = real.add_window_view(|_, _| Names {
             layouts: Vec::new(),
         });
+
         cx.run_until_parked();
         names.read_with(cx, |names, _| {
             assert_eq!(names.layouts[0].text(), "AVATAR");
@@ -2259,6 +2273,7 @@ mod tests {
             div()
                 .id("enriching")
                 .named_as(Role::Button, "Enriching…", "Looking things up");
+
         let fixed = [
             node_of(&sort),
             node_of(&enriching),
@@ -2346,13 +2361,16 @@ mod tests {
     #[test]
     fn a_grid_is_as_wide_as_the_window_now_less_what_it_was_narrower_by() {
         let grid = GridWidth::default();
+
         assert_eq!(grid.get(), px(0.0), "a grid nobody measured has a width");
 
         grid.seen_in(px(1_400.0));
         grid.narrower_than_the_window.set(Some(px(400.0)));
+
         assert_eq!(grid.get(), px(1_000.0));
 
         grid.seen_in(px(1_100.0));
+
         assert_eq!(
             grid.get(),
             px(700.0),

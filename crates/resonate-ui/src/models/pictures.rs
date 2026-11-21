@@ -31,6 +31,7 @@ impl LibraryModel {
         {
             return false;
         }
+
         let _ = self.cover(id, drawn, cx);
         true
     }
@@ -40,23 +41,28 @@ impl LibraryModel {
             key: id,
             side: drawn.side(self.pictures.scale),
         };
+
         if let Some(held) = self.pictures.covers.get(&wanted) {
             return held.clone();
         }
         if !self.pictures.decoding.may_ask(&wanted) {
             return None;
         }
+
         let ask = self.pictures.decoding.begin(wanted.clone());
 
         let library = Arc::clone(&self.library);
         let side = wanted.side;
+
         let drawing = cx
             .global::<Drawer>()
             .draw(move || drawn_cover(&library, id, side));
+
         cx.spawn(async move |this, cx| {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
                 let decoded = picture_or_trouble(read, words::models::read_a_cover(), cx);
+
                 this.pictures.decoding.answered(&wanted, ask);
                 this.pictures.covers.insert(wanted, decoded).forget(cx);
                 cx.notify();
@@ -82,6 +88,7 @@ impl LibraryModel {
         let drawing = cx
             .global::<Drawer>()
             .draw(move || whole_cover_of(&library, id));
+
         cx.spawn(async move |this, cx| {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
@@ -127,21 +134,26 @@ impl LibraryModel {
             key: release.clone(),
             side: drawn.side(self.pictures.scale),
         };
+
         if let Some(held) = self.pictures.released_covers.get(&wanted) {
             return held.clone();
         }
+
         let reference = self.reference.clone().filter(|_| self.choices.online);
+
         if reference.is_none() && group.is_none() {
             return None;
         }
         if !self.pictures.fetching_covers.may_ask(release) {
             return None;
         }
+
         let ask = self.pictures.fetching_covers.begin(release.clone());
 
         let asked = release.clone();
         let group = group.cloned();
         let library = Arc::clone(&self.library);
+
         let fetched = cx.background_executor().spawn(async move {
             if let Some(group) = &group {
                 match library.unheld_cover(group) {
@@ -158,6 +170,7 @@ impl LibraryModel {
             }
         });
         let side = wanted.side;
+
         cx.spawn(async move |this, cx| {
             let (art, answered) = fetched.await;
             let (art, answered) = match art {
@@ -175,6 +188,7 @@ impl LibraryModel {
                 return;
             };
             let decoded = drawing.await.flatten();
+
             let landed = this.update(cx, |this, cx| {
                 if answered || decoded.is_some() {
                     this.pictures.fetching_covers.answered(&wanted.key, ask);
@@ -203,23 +217,28 @@ impl LibraryModel {
             key: id,
             side: portrayed.drawn().side(self.pictures.scale),
         };
+
         if let Some(held) = self.pictures.portraits.get(&wanted) {
             return held.clone();
         }
         if !self.pictures.decoding_portraits.may_ask(&wanted) {
             return None;
         }
+
         let ask = self.pictures.decoding_portraits.begin(wanted.clone());
 
         let library = Arc::clone(&self.library);
         let side = wanted.side;
+
         let drawing = cx
             .global::<Drawer>()
             .draw(move || drawn_portrait(&library, id, side));
+
         cx.spawn(async move |this, cx| {
             let read = drawing.await;
             let landed = this.update(cx, |this, cx| {
                 let decoded = picture_or_trouble(read, words::models::read_a_portrait(), cx);
+
                 this.pictures.decoding_portraits.answered(&wanted, ask);
                 this.pictures.portraits.insert(wanted, decoded).forget(cx);
                 cx.notify();
@@ -307,7 +326,7 @@ impl Portrayed {
 
 pub(crate) type Picture = Arc<RenderImage>;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct AtSide<K> {
     pub(crate) key: K,
     pub(crate) side: NonZeroU32,
@@ -327,6 +346,7 @@ pub(crate) fn picture_of(raster: Raster) -> Option<Picture> {
         height,
         bgra,
     } = raster;
+
     let held = image::RgbaImage::from_raw(width, height, bgra)?;
     Some(Arc::new(RenderImage::new(vec![image::Frame::new(held)])))
 }

@@ -11,6 +11,7 @@ use crate::{
 impl MobilePlayer {
     pub(crate) fn still_waiting(zoned: &Zoned, state: &PlayerState) -> Option<String> {
         let mut waiting = zoned.waiting.lock();
+
         if waiting_is_over(state) {
             *waiting = None;
         }
@@ -21,6 +22,7 @@ impl MobilePlayer {
         match event {
             Event::Failed { track, error } => {
                 tracing::error!(%error, %track, "playback failed");
+
                 let title = rows
                     .iter()
                     .find(|item| item.id == track)
@@ -46,6 +48,7 @@ pub(crate) fn waiting_told(event: &Event) -> Option<String> {
     let Event::Waiting { track, error } = event else {
         return None;
     };
+
     tracing::warn!(%error, %track, "playback waits for a device");
     Some(waits_for_a_device(error.cause()).to_owned())
 }

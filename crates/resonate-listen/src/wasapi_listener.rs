@@ -76,6 +76,7 @@ impl Listener {
             Ok(playback) => playback,
             Err(error) => {
                 let _ = opened.stop();
+
                 return Err(error);
             }
         };
@@ -85,6 +86,7 @@ impl Listener {
             .map(Capture::stop)
             .transpose()
             .map_err(|source| Error::capture(CaptureOp::Stop, source));
+
         drop(accompanying);
 
         finished(
@@ -111,11 +113,13 @@ fn surveyed() -> Result<Vec<Microphone>> {
         .get_default_device(Direction::Capture)
         .and_then(|device| device.get_id())
         .ok();
+
     let collection = enumerator
         .get_device_collection(Direction::Capture)
         .map_err(connect)?;
 
     let mut endpoints = Vec::new();
+
     for device in &collection {
         let Ok(device) = device else {
             continue;
@@ -123,6 +127,7 @@ fn surveyed() -> Result<Vec<Microphone>> {
         let Ok(id) = device.get_id() else {
             continue;
         };
+
         endpoints.push(Endpoint {
             friendly_name: device.get_friendlyname().ok(),
             id,

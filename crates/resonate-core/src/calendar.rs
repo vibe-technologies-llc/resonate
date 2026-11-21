@@ -46,6 +46,7 @@ impl Calendar {
     pub fn midnight_of(&self, day: i64) -> SystemTime {
         let reading = day.saturating_mul(SECONDS_PER_DAY);
         let before = reading.saturating_sub(self.offset_at(reading));
+
         let after = reading.saturating_sub(self.offset_at(before));
 
         let began = [before.min(after), before.max(after)]

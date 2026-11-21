@@ -40,9 +40,13 @@ impl Watched {
         if matches!(object, Object::Song(_)) {
             return;
         }
+
         let mut held = self.held.lock();
+
         held.used += 1;
+
         let used = held.used;
+
         if let Some((_, watch)) = held
             .watches
             .iter_mut()
@@ -84,6 +88,7 @@ impl Watched {
             let Some(print) = print_of(catalog, object) else {
                 continue;
             };
+
             if catalog.revision() != revision {
                 return;
             }
@@ -109,16 +114,20 @@ impl Watched {
             .copied()
             .collect();
         let mut changed = Vec::new();
+
         for (object, before) in stale {
             let now = print_of(catalog, object);
             let moved = match (before.print, now) {
                 (Some(Print::Whole(was)), Some(Print::Whole(is))) => was != is,
                 _ => true,
             };
+
             if moved {
                 changed.push((object, revision));
             }
+
             let mut held = self.held.lock();
+
             let Some(at) = held
                 .watches
                 .iter()
@@ -129,6 +138,7 @@ impl Watched {
             match now {
                 Some(print) => {
                     let watch = &mut held.watches[at].1;
+
                     watch.seen = revision;
                     watch.print = Some(print);
                 }
@@ -163,6 +173,7 @@ fn print_of<C: Catalog>(catalog: &C, object: Object) -> Option<Print> {
 
 fn printed<C: Catalog>(catalog: &C, object: Object) -> Result<Option<Print>, C::Failure> {
     let mut hasher = DefaultHasher::new();
+
     match object {
         Object::Root => {
             for shelf in Shelf::TOP {
@@ -177,11 +188,14 @@ fn printed<C: Catalog>(catalog: &C, object: Object) -> Result<Option<Print>, C::
                 let Some(held) = catalog.shelf(shelf)? else {
                     return Ok(None);
                 };
+
                 held.hash(&mut hasher);
             }
+
             let Some(shelved) = catalog.shelved(shelf, Page::first(PRINTED_AT_MOST))? else {
                 return Ok(None);
             };
+
             if shelved.held.len() < shelved.total as usize {
                 return Ok(Some(Print::Unprinted));
             }
@@ -319,9 +333,12 @@ mod tests {
         watched.watch(albums, 1);
         watched.print_new(&catalog, 1);
         catalog.change(vec![2, 1]);
+
         let reordered = watched.changed(&catalog, 2);
         let unchanged = watched.changed(&catalog, 2);
+
         catalog.change(vec![2, 1]);
+
         let moved_alone = watched.changed(&catalog, 3);
 
         assert_eq!(reordered, [(listed, 2)]);
@@ -340,8 +357,11 @@ mod tests {
         watched.print_new(&catalog, 1);
         watched.watch(listed, 1);
         catalog.change(vec![1, 2]);
+
         let first = watched.changed(&catalog, 2);
+
         catalog.change(vec![1, 2]);
+
         let second = watched.changed(&catalog, 3);
 
         assert_eq!(first, [(songs, 2), (listed, 2)]);
@@ -356,6 +376,7 @@ mod tests {
 
         watched.watch(gone, 1);
         watched.watch(Object::Song(TrackId::new(1).expect("an id")), 1);
+
         let told = watched.changed(&catalog, 2);
 
         assert_eq!(told, [(gone, 2)]);
@@ -371,6 +392,7 @@ mod tests {
         watched.watch(listed, 1);
         catalog.change(vec![1, 2]);
         watched.print_new(&catalog, 1);
+
         let told = watched.changed(&catalog, 2);
 
         assert_eq!(told, [(listed, 2)]);
@@ -389,6 +411,7 @@ mod tests {
             );
             watched.watch(first, 1);
         }
+
         let watching = watched.watching();
 
         assert_eq!(watching.len(), WATCHED_AT_MOST);

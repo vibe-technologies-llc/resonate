@@ -26,6 +26,7 @@ pub(crate) fn offered_if_asked(
     }
 
     let offer = offer(transaction, &step)?;
+
     trimmed(transaction)?;
     Ok(Step {
         offered: Some(offer),
@@ -48,6 +49,7 @@ pub(crate) fn taken(transaction: &Transaction<'_>) -> Result<Vec<Step>> {
     let offers = offers_in(transaction)?;
 
     let mut steps = Vec::with_capacity(offers.len());
+
     for offer in offers {
         let rows = if offer.rows_held {
             Some(rows_of(transaction, offer.id)?)
@@ -122,6 +124,7 @@ fn offer(transaction: &Transaction<'_>, step: &Step) -> Result<i64> {
             ],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
     let offer = transaction.last_insert_rowid();
 
     for (position, row) in (0_i64..).zip(rows.unwrap_or_default()) {
@@ -140,14 +143,17 @@ fn trimmed(transaction: &Transaction<'_>) -> Result<()> {
     let mut statement = transaction
         .prepare_cached("SELECT id, row_count FROM offered_steps ORDER BY id DESC")
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     let held = statement
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut rows: i64 = 0;
+
     let first_dropped = held.iter().enumerate().find_map(|(at, (id, count))| {
         rows = rows.saturating_add(*count);
+
         let over = at >= STEPS_HELD || (at > 0 && rows > ROWS_HELD as i64);
         over.then_some(*id)
     });

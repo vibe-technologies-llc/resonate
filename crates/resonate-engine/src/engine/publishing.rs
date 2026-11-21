@@ -12,6 +12,7 @@ impl Engine {
         let position = self
             .heard_at_least
             .map_or(self.position(), |floor| self.position().max(floor));
+
         self.heard_at_least = self.track.is_some().then_some(position);
         position
     }
@@ -23,9 +24,12 @@ impl Engine {
                 .at
                 .saturating_sub(output.producer.read())
                 .saturating_add(output.latency().get());
+
             let on_the_clock = Frames(behind).rescaled(output.plan.stream.rate, leaving.clock());
+
             return leaving.decoding.position().saturating_sub(on_the_clock);
         }
+
         let Some(track) = self.track.as_ref() else {
             return Frames::ZERO;
         };
@@ -37,9 +41,11 @@ impl Engine {
         let Some(output) = self.output.as_ref() else {
             return self.unbound.unwrap_or(decoded);
         };
+
         if output.producer.is_discarding() {
             return decoded;
         }
+
         let downstream = (output.buffered() as u64)
             .saturating_add(output.latency().get())
             .saturating_add(output.chain.frames_it_holds() as u64);
@@ -93,6 +99,7 @@ impl Engine {
 
     fn publish_tap(&self) {
         let tapped = self.output.as_ref().map_or(Tapped::Nothing, Output::tapped);
+
         if !self.published.tap.read().is(&tapped) {
             *self.published.tap.write() = tapped;
         }
@@ -112,6 +119,7 @@ impl Engine {
             None => Cow::Borrowed(&self.config),
         };
         let unchanged = self.published.settings.read().already_says(&set);
+
         if unchanged {
             return;
         }
@@ -120,6 +128,7 @@ impl Engine {
 
     fn publish_queue(&mut self) {
         let revision = self.queue.revision();
+
         if self.announced == Some(revision) {
             return;
         }
@@ -141,6 +150,7 @@ impl Engine {
         };
 
         let points = track.profile.points();
+
         if !digest_is_due(track.published, points) {
             return;
         }

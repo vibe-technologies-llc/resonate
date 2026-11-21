@@ -54,6 +54,7 @@ impl RootView {
     pub(super) fn tab_past_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) && !self.something_stands_over_the_pane(cx) {
             let search = self.typed.search.focus_handle(cx);
+
             search.focus(window, cx);
         }
         self.step_the_focus(true, window, cx);
@@ -62,6 +63,7 @@ impl RootView {
     pub(super) fn tab_back_to_the_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.focus.is_focused(window) && !self.something_stands_over_the_pane(cx) {
             let search = self.typed.search.focus_handle(cx);
+
             search.focus(window, cx);
             return;
         }
@@ -206,6 +208,7 @@ impl RootView {
                 .library
                 .music_filters()
                 .minimum_length;
+
             self.settings_fields
                 .read(cx)
                 .minimum_length
@@ -334,6 +337,7 @@ impl RootView {
 
     pub(super) fn open_the_search(&mut self, cx: &mut Context<Self>) {
         let browsing = matches!(self.pane, Pane::Albums | Pane::Artists | Pane::Tracks);
+
         if !browsing {
             if self.library.read(cx).selection() != Selection::Everything {
                 self.show_everything(cx);
@@ -353,6 +357,7 @@ impl RootView {
 
     pub(super) fn land_where_the_search_began(&mut self) {
         let began = self.typing.left_for_the_search.take();
+
         self.landing_on = began
             .filter(|(pane, _)| *pane == self.pane)
             .map(|(_, at)| at)
@@ -366,6 +371,7 @@ impl RootView {
             .narrowing()
             .unwrap_or_default()
             .to_owned();
+
         if was == query {
             return;
         }
@@ -399,6 +405,7 @@ impl RootView {
 
     pub(super) fn forget_what_has_gone(&self, library: &Entity<LibraryModel>, cx: &mut App) {
         let listing = library.read(cx);
+
         if listing.narrowing().is_some() {
             return;
         }
@@ -408,12 +415,14 @@ impl RootView {
             .iter()
             .map(|playlist| playlist.id)
             .collect();
+
         self.browsing
             .update(cx, |browsing, _| browsing.forget_playlists_gone(&held));
     }
 
     pub(super) fn read_from_the_top(&self, cx: &mut App) {
         let opened = self.library.read(cx).opened();
+
         self.browsing
             .update(cx, |browsing, _| browsing.read_from_the_top(opened));
     }

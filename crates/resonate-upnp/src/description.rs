@@ -62,6 +62,7 @@ fn fetched(location: &Located) -> Result<String> {
         },
         Asked::Description,
     )?;
+
     if answer.status != 200 {
         return Err(Error::Status {
             asked: Asked::Description,
@@ -175,10 +176,13 @@ fn service_of(
         .filter(|node| node.tag_name().name() == "service")
         .find_map(|service| {
             let named = child_text(service, "serviceType")?;
+
             if !named.contains(kind) {
                 return None;
             }
+
             let control = base.join(child_text(service, "controlURL")?).ok()?;
+
             if !control.is_on_host_of(described_at) {
                 tracing::debug!(%control, %described_at, "a device's description names a control address on another host");
                 return None;
@@ -309,6 +313,7 @@ mod tests {
         ));
 
         let same_host = read(&location, &device("", "http://10.0.0.4:9000/av")).expect("describes");
+
         assert_eq!(
             same_host.transport.control.to_string(),
             "http://10.0.0.4:9000/av"
@@ -319,6 +324,7 @@ mod tests {
             &device("<URLBase>http://10.9.9.9:80/</URLBase>", "/av"),
         )
         .expect("describes");
+
         assert_eq!(
             elsewhere.transport.control.to_string(),
             "http://10.0.0.4:1400/av"

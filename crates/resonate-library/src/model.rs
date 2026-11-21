@@ -48,13 +48,13 @@ pub struct Counted {
     pub listen: Listen,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Listen {
     Held(ListenId),
     Unheld(ListenId),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Favoured {
     Track(TrackId),
     Album(AlbumId),
@@ -87,7 +87,7 @@ pub struct Artist {
     pub favourite: Option<SystemTime>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum CoverSource {
     #[default]
     File,
@@ -374,19 +374,19 @@ pub struct Playlist {
     pub source: Option<PlaylistSource>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct NamedPlaylist {
     pub id: PlaylistId,
     pub name: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Playing {
     pub playlist: PlaylistId,
     pub queue: QueueStamp,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Cut {
     pub location: MediaLocation,
     pub span: Option<FrameSpan>,
@@ -455,7 +455,7 @@ impl AsDrawn {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum PlaylistFormat {
     #[default]
     M3u,
@@ -500,7 +500,7 @@ impl PlaylistFormat {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Exported {
     pub rows: usize,
     pub format: PlaylistFormat,

@@ -15,7 +15,7 @@ const ANALYSES_KEPT: NonZeroUsize = NonZeroUsize::new(6).expect("six is not zero
 const RECOGNITIONS_KEPT: NonZeroUsize = NonZeroUsize::new(64).expect("sixty-four is not zero");
 const PROGRESS_EVERY: Duration = Duration::from_millis(200);
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct Row {
     pub(crate) location: MediaLocation,
     pub(crate) span: Option<FrameSpan>,
@@ -165,15 +165,20 @@ impl AnalysisModel {
         }
 
         self.recall(row.clone(), cx);
+
         let watch = Arc::new(Watch::default());
+
         self.studying = Studying::Running(Arc::clone(&watch));
+
         let player = Arc::clone(&self.player);
         let asked = row.clone();
+
         let studied = cx.background_executor().spawn(async move {
             player
                 .analyse(&asked.location, asked.span, watch.as_ref())
                 .map(|analysis| Arc::new(Drawn::of(analysis)))
         });
+
         self.running = cx.spawn(async move |this, cx| {
             let studied = studied.await;
             let _ = this.update(cx, |this, cx| this.landed(row, studied, cx));
@@ -186,8 +191,10 @@ impl AnalysisModel {
         self.ticking = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(PROGRESS_EVERY).await;
+
                 let still_running = this.update(cx, |this, cx| {
                     let running = matches!(this.studying, Studying::Running(_));
+
                     if running {
                         cx.notify();
                     }
@@ -228,6 +235,7 @@ impl AnalysisModel {
     fn recall(&mut self, row: Row, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
         let asked = row.clone();
+
         let recalled = cx.background_executor().spawn(async move {
             match library.study_of(&asked.location, asked.span) {
                 Ok(held) => held.and_then(|(_, studied)| Hearing::recalled(&studied)),
@@ -237,6 +245,7 @@ impl AnalysisModel {
                 }
             }
         });
+
         self.asking = cx.spawn(async move |this, cx| {
             let Some(recalled) = recalled.await else {
                 return;
@@ -256,12 +265,15 @@ impl AnalysisModel {
             return;
         }
         self.hearing = Hearing::Asking;
+
         let library = Arc::clone(&self.library);
         let fingerprinters = Arc::clone(&self.fingerprinters);
         let asked = row.clone();
+
         let heard = cx
             .background_executor()
             .spawn(async move { settled(&library, &fingerprinters, &asked, &drawn.analysis) });
+
         self.asking = cx.spawn(async move |this, cx| {
             let heard = heard.await;
             let _ = this.update(cx, |this, cx| {
@@ -283,6 +295,7 @@ impl AnalysisModel {
         };
         let library = Arc::clone(&self.library);
         let asked = row.clone();
+
         let taken = cx.background_executor().spawn(async move {
             let Some(track) = library.track_held(&asked.location, asked.span)? else {
                 return Ok(None);
@@ -293,6 +306,7 @@ impl AnalysisModel {
         });
         cx.spawn(async move |this, cx| {
             let taken = taken.await;
+
             if let Ok(Some(_)) = &taken {
                 let _ = this.update(cx, |this, cx| this.agreed(row, cx));
             }
@@ -312,6 +326,7 @@ impl AnalysisModel {
             | Hearing::Asking
             | Hearing::Refused => None,
         };
+
         if let Some(agreed) = self.heard.get(&row).and_then(agreeing) {
             self.heard.insert(row.clone(), agreed);
         }
@@ -329,16 +344,19 @@ impl AnalysisModel {
         cx: &mut Context<Self>,
     ) -> Option<Picture> {
         let row = self.following.clone()?;
+
         if let Some(painted) = &self.painted
             && painted.row == row
             && painted.stops == stops
         {
             return Some(Arc::clone(&painted.image));
         }
+
         let Studying::Done(drawn) = &self.studying else {
             return None;
         };
         let wanted = (row.clone(), stops.clone());
+
         if self.painting.as_ref() == Some(&wanted) {
             return self
                 .painted
@@ -347,11 +365,14 @@ impl AnalysisModel {
         }
 
         self.painting = Some(wanted);
+
         let drawn = Arc::clone(drawn);
         let ramp = ramp_through(&stops);
+
         let image = cx
             .background_executor()
             .spawn(async move { picture_of(drawn.analysis.spectrogram.painted(&ramp)) });
+
         self.drawing = cx.spawn(async move |this, cx| {
             let image = image.await;
             let _ = this.update(cx, |this, cx| {
@@ -387,6 +408,7 @@ fn settled(
             tracing::debug!(%error, "a study could not be read back");
             None
         });
+
     if let Some(recalled) = stored
         .as_ref()
         .and_then(|(_, studied)| Hearing::recalled(studied))
@@ -402,6 +424,7 @@ fn settled(
     if !fingerprinters.has_a_source() {
         return Hearing::Unserved;
     }
+
     let Some(print) = analysis.study.print.clone() else {
         return Hearing::Unprinted;
     };
@@ -424,6 +447,7 @@ fn settled(
                 artist: None,
                 print,
             });
+
             if recognition.refused && recognition.matches.is_empty() {
                 return Hearing::Refused;
             }
@@ -457,6 +481,7 @@ mod tests {
         });
         let redrawn = cx.new(|_| 0usize);
         let counting = redrawn.clone();
+
         cx.update(|cx| {
             cx.observe(&model, move |_, cx| {
                 counting.update(cx, |redrawn, _| *redrawn += 1);
@@ -482,11 +507,14 @@ mod tests {
             model.tick(cx);
         });
         beats(cx, 3);
+
         let while_running = redrawn.read_with(cx, |redrawn, _| *redrawn);
 
         model.update(cx, |model, _| model.studying = Studying::Idle);
         beats(cx, 1);
+
         let after_it_ended = redrawn.read_with(cx, |redrawn, _| *redrawn);
+
         beats(cx, 5);
 
         assert_eq!(while_running, 3);

@@ -69,6 +69,7 @@ pub(crate) fn send(file: &Path, data_home: Option<&Path>, at: SystemTime) -> Res
     let mut discriminator = 0_u32;
     loop {
         let (stem, info_name) = names_for(name, discriminator);
+
         discriminator += 1;
         match moved_in(file, &bin, &stem, &info_name, &record)? {
             Moved::Landed => return Ok(()),
@@ -100,6 +101,7 @@ fn moved_in(
         }
         Err(source) => return Err(trash_fault(TrashOp::Record, &info, source)),
     };
+
     let recorded = written
         .write_all(record.as_bytes())
         .and_then(|()| written.sync_all())
@@ -108,6 +110,7 @@ fn moved_in(
             file_facts::sync_directory(&bin.info)
                 .map_err(|source| trash_fault(TrashOp::Settle, &bin.info, source))
         });
+
     if let Err(error) = recorded {
         drop(fs::remove_file(&info));
         return Err(error);
@@ -137,6 +140,7 @@ fn moved_in(
 fn settled(folder: &Path) {
     if let Err(source) = file_facts::sync_directory(folder) {
         let error = trash_fault(TrashOp::Settle, folder, source);
+
         tracing::warn!(%error, "a file moved to the trash is not settled onto the disk");
     }
 }
@@ -165,6 +169,7 @@ fn bin_for(file: &Path, device: u64, data_home: Option<&Path>) -> Result<Bin> {
 
 fn made(trash: &Path) -> Result<Bin> {
     let bin = Bin::in_folder(trash, None);
+
     for folder in [&bin.files, &bin.info] {
         DirBuilder::new()
             .recursive(true)
@@ -178,6 +183,7 @@ fn made(trash: &Path) -> Result<Bin> {
 fn kept_alone(trash: &Path, top: PathBuf) -> Result<Bin> {
     let bin = Bin::in_folder(trash, Some(top));
     let owner = Owner::this_user();
+
     for folder in [trash, bin.files.as_path(), bin.info.as_path()] {
         owner
             .keeps_alone(folder)
@@ -188,6 +194,7 @@ fn kept_alone(trash: &Path, top: PathBuf) -> Result<Bin> {
 
 fn mount_point_of(file: &Path, device: u64) -> Option<PathBuf> {
     let mut top = file.parent()?;
+
     while let Some(up) = top.parent() {
         if fs::metadata(up).ok()?.dev() != device {
             break;
@@ -205,16 +212,19 @@ fn names_for(name: &OsStr, discriminator: u32) -> (OsString, OsString) {
     };
     let cut = naming::named_within("", name, format!("{after}{INFO_ENDING}"));
     let mut stem = cut.into_vec();
+
     stem.truncate(stem.len() - INFO_ENDING.len() - after.len());
     stem.extend_from_slice(after.as_bytes());
 
     let mut info = stem.clone();
+
     info.extend_from_slice(INFO_ENDING.as_bytes());
     (OsString::from_vec(stem), OsString::from_vec(info))
 }
 
 fn percent_encoded(path: &Path) -> String {
     let mut encoded = String::new();
+
     for &byte in path.as_os_str().as_bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'-' | b'_' | b'.' | b'~') {
             encoded.push(char::from(byte));
@@ -266,6 +276,7 @@ mod tests {
         fn new(name: &str) -> Self {
             let path = env::temp_dir().join(format!("resonate-trash-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(&path).expect("a scratch folder");
             Self(path)
         }
@@ -304,6 +315,7 @@ mod tests {
                 .expect("a folder")
                 .permissions()
                 .mode();
+
             assert_eq!(mode & 0o777, OWNER_ONLY, "{}", folder.display());
         }
     }
@@ -312,11 +324,13 @@ mod tests {
     fn a_volumes_trash_that_is_a_link_or_open_to_others_is_refused() {
         let linked = Scratch::new("linked");
         let elsewhere = linked.0.join("elsewhere");
+
         fs::create_dir(&elsewhere).expect("a folder another user made");
         fs::set_permissions(&elsewhere, fs::Permissions::from_mode(OWNER_ONLY)).expect("closed");
         symlink(&elsewhere, linked.volume_trash()).expect("a link where the trash goes");
 
         let open = Scratch::new("open");
+
         fs::create_dir(open.volume_trash()).expect("a trash made before");
         fs::set_permissions(
             open.volume_trash(),
@@ -326,6 +340,7 @@ mod tests {
 
         let open_files = Scratch::new("open-files");
         let files = open_files.volume_trash().join(FILES_FOLDER);
+
         fs::create_dir_all(&files).expect("a trash made before");
         fs::set_permissions(
             open_files.volume_trash(),
@@ -336,6 +351,7 @@ mod tests {
 
         let linked_info = Scratch::new("linked-info");
         let info_elsewhere = linked_info.0.join("elsewhere");
+
         fs::create_dir(&info_elsewhere).expect("a folder another user made");
         fs::create_dir(linked_info.volume_trash()).expect("a trash made before");
         fs::set_permissions(
@@ -367,8 +383,11 @@ mod tests {
         let scratch = Scratch::new("taken");
         let bin = made(&scratch.0.join(TRASH_FOLDER)).expect("a trash");
         let file = scratch.0.join("echoes.flac");
+
         fs::write(&file, b"deleted now").expect("a file to trash");
+
         let (stem, info_name) = names_for(OsStr::new("echoes.flac"), 0);
+
         fs::write(bin.files.join(&stem), b"trashed before").expect("a file already trashed");
 
         let moved = moved_in(&file, &bin, &stem, &info_name, "[Trash Info]\n");
@@ -391,9 +410,12 @@ mod tests {
         let data_home = scratch.0.join("data");
         let trash = data_home.join(TRASH_FOLDER);
         let bin = made(&trash).expect("a trash");
+
         fs::write(bin.files.join("echoes.flac"), b"trashed before")
             .expect("a file already trashed");
+
         let file = scratch.0.join("echoes.flac");
+
         fs::write(&file, b"deleted now").expect("a file to trash");
 
         send(&file, Some(&data_home), at(1_774_778_400)).expect("trashed");

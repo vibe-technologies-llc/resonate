@@ -87,6 +87,7 @@ impl<K: Clone + Eq + Hash> Underway<K> {
 
     pub(crate) fn answered(&mut self, key: &K, asked: Asked) -> bool {
         let current = self.left(key, asked);
+
         if current {
             self.failed.remove(key);
         }
@@ -95,6 +96,7 @@ impl<K: Clone + Eq + Hash> Underway<K> {
 
     pub(crate) fn failed(&mut self, key: K, asked: Asked) -> bool {
         let current = self.left(&key, asked);
+
         if current {
             self.failed.insert(key, Instant::now());
         }
@@ -103,6 +105,7 @@ impl<K: Clone + Eq + Hash> Underway<K> {
 
     pub(crate) fn left(&mut self, key: &K, asked: Asked) -> bool {
         let current = asked.forgotten == self.forgotten;
+
         if current {
             self.underway.remove(key);
         }
@@ -125,7 +128,9 @@ mod tests {
         let mut underway = Underway::fetching_from_one_server();
 
         let before = underway.begin("al-1");
+
         underway.forget();
+
         let after = underway.begin("al-1");
 
         assert!(!underway.answered(&"al-1", before));
@@ -142,6 +147,7 @@ mod tests {
 
         for key in 0..DECODES_AT_ONCE {
             assert!(underway.may_ask(&key));
+
             underway.begin(key);
         }
 
@@ -155,12 +161,14 @@ mod tests {
         let mut underway = Underway::fetching();
 
         let asked = underway.begin("cover");
+
         assert!(underway.failed("cover", asked));
 
         assert!(!underway.may_ask(&"cover"));
         assert!(underway.may_ask(&"another"));
 
         let asked = underway.begin("cover");
+
         assert!(underway.answered(&"cover", asked));
         assert!(underway.may_ask(&"cover"));
     }
@@ -170,6 +178,7 @@ mod tests {
         let mut underway = Underway::fetching();
 
         let asked = underway.begin("cover");
+
         underway.failed("cover", asked);
         underway.forget();
 

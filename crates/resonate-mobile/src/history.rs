@@ -73,6 +73,7 @@ impl MobilePlayer {
         let mut written = BufWriter::new(fresh_destination(descriptor)?);
 
         let mut listens = 0_u64;
+
         for line in history_lines(&PhoneListens(&self.catalog)) {
             writeln!(written, "{}", line.map_err(Error::history)?).map_err(failed)?;
             listens += 1;
@@ -84,6 +85,7 @@ impl MobilePlayer {
 
     pub fn import_history_file(&self, descriptor: i32) -> Result<HistoryBroughtIn> {
         let mut bytes = Vec::new();
+
         owned(descriptor)
             .and_then(|mut file| file.read_to_end(&mut bytes))
             .map_err(|source| Error::HistoryFile {
@@ -103,6 +105,7 @@ impl MobilePlayer {
         account: ScrobbleAccount,
     ) -> Result<HistoryBroughtIn> {
         self.require_online()?;
+
         let history = self.history_of(service, user.trim(), account)?;
 
         self.brought_in_from(history.as_ref())
@@ -140,6 +143,7 @@ impl MobilePlayer {
                 if account.lastfm_key.is_empty() || account.lastfm_secret.is_empty() {
                     return Err(Error::NoLastfmApplication);
                 }
+
                 let application = Application {
                     key: account.lastfm_key,
                     secret: account.lastfm_secret,
@@ -182,6 +186,7 @@ impl KeptListens for PhoneListens<'_> {
     ) -> resonate_library::Result<HistoryRead> {
         let most = i64::try_from(most.max(1)).unwrap_or(i64::MAX);
         let connection = self.0.0.lock();
+
         let rows = match from {
             HistoryFrom::Held(after) => held_after(&connection, after, most),
             HistoryFrom::Unheld(after) => served_after(&connection, after, most),
@@ -209,10 +214,12 @@ impl KeptListens for PhoneListens<'_> {
     ) -> resonate_library::Result<BroughtIn> {
         let mut connection = self.0.0.lock();
         let store = |op| move |source| resonate_library::Error::store(op, source);
+
         let transaction = connection.transaction().map_err(store(StoreOp::Update))?;
         let held = SongsHeld::read(&transaction).map_err(store(StoreOp::Query))?;
 
         let mut brought = BroughtIn::default();
+
         for listen in heard {
             match credited(&transaction, &held, service, listen).map_err(store(StoreOp::Insert))? {
                 Landed::Credited => brought.credited += 1,
@@ -296,6 +303,7 @@ fn credited(
     let track = track.cast_signed();
     let at = seconds_since_the_epoch(listen.at);
     let within = SAME_LISTEN_WITHIN.as_secs().cast_signed();
+
     if transaction.query_row(HELD_AT_THAT_MOMENT, params![track, at, within], |row| {
         row.get::<_, bool>(0)
     })? {
@@ -433,6 +441,7 @@ pub(crate) mod tests {
         let to = player();
         let [echoes, say] = songs_held(&from);
         let [held_echoes, held_say] = songs_held(&to);
+
         heard_here(&from, echoes, MOMENTS[0], 200_000);
         heard_here(&from, say, MOMENTS[1], 100_000);
         heard_here(&from, echoes, MOMENTS[2], 30_000);
@@ -442,6 +451,7 @@ pub(crate) mod tests {
             "INSERT INTO listens (track, began, heard_ms, counted, served) VALUES (NULL, ?1, 90000, 1, 'subsonic://server/song/7')",
             [MOMENTS[2] + 600],
         );
+
         let file = scratch("history.jsonl");
 
         let written = from.export_history(written_to(&file)).expect("exported");
@@ -450,6 +460,7 @@ pub(crate) mod tests {
             .import_history_file(read_from(&file))
             .expect("imported again");
         let text = fs::read_to_string(&file).expect("the file");
+
         fs::remove_file(&file).expect("cleaned");
 
         assert_eq!(written, 4);
@@ -485,8 +496,11 @@ pub(crate) mod tests {
     #[test]
     fn a_file_with_a_line_that_is_no_listen_brings_nothing_in_and_names_the_line() {
         let to = player();
+
         songs_held(&to);
+
         let file = scratch("refused.jsonl");
+
         fs::write(
             &file,
             "{\"listened_at\":1700000000,\"track_metadata\":{\"artist_name\":\"Low\",\"track_name\":\"Say\"}}\n\nnot a listen\n",
@@ -494,6 +508,7 @@ pub(crate) mod tests {
         .expect("a file");
 
         let refused = to.import_history_file(read_from(&file));
+
         fs::remove_file(&file).expect("cleaned");
 
         assert!(matches!(
@@ -537,6 +552,7 @@ pub(crate) mod tests {
 
         fn page(&self, from: Option<u64>) -> resonate_library::Result<HeardPage> {
             self.asked.lock().push(from);
+
             let at = usize::try_from(from.unwrap_or(1)).expect("a page") - 1;
             Ok(self.pages[at].clone())
         }
@@ -560,7 +576,9 @@ pub(crate) mod tests {
      {
         let phone = player();
         let [echoes, say] = songs_held(&phone);
+
         heard_here(&phone, say, MOMENTS[1] + 1, 100_000);
+
         let lastfm = LastfmServing {
             pages: vec![
                 HeardPage {
@@ -633,7 +651,9 @@ pub(crate) mod tests {
             "someone".into(),
             none.clone(),
         );
+
         phone.configure_online(true);
+
         let nobody = phone.import_history(ScrobbleService::ListenBrainz, "  ".into(), none.clone());
         let no_application = phone.import_history(ScrobbleService::LastFm, "someone".into(), none);
 

@@ -54,8 +54,10 @@ fn profile_followed(
             ProfileLink::SpotifyAccount => Error::NotSignedInToSpotify,
             ProfileLink::Deezer(_) => Error::NoProfileAtTheLink,
         })?;
+
     for read in &followed.playlists {
         let wanted = want_the_rest(library, reference, &read.found);
+
         said!(
             "{}{}{}",
             whence(read, link.service(), upkeep),
@@ -102,6 +104,7 @@ pub fn import(
     let read = library
         .import_playlist_link(reference.as_ref(), link, name, upkeep)?
         .ok_or(Error::NoPlaylistAtTheLink)?;
+
     let wanted = want_the_rest(library, reference.as_ref(), &read.found);
 
     said!(
@@ -129,6 +132,7 @@ fn refreshed_every_kept(
     spotify_signed_in: bool,
 ) -> Result<()> {
     let mut failed = 0;
+
     for (profile, _) in library.profiles_followed()? {
         if profile == ProfileLink::SpotifyAccount && !spotify_signed_in {
             said!("{}", words::followed::spotify_not_signed_in());
@@ -178,6 +182,7 @@ fn named(library: &Library, playlist: PlaylistId) -> String {
 fn with_its_causes(error: &Error) -> String {
     let mut said = error.to_string();
     let mut cause = std::error::Error::source(error);
+
     while let Some(under) = cause {
         said.push_str(": ");
         said.push_str(&under.to_string());
@@ -302,6 +307,7 @@ fn rows_moved(read: &FromTheLink) -> String {
 
 fn beyond_the_library(wanted: usize, found: usize, unnamed: usize) -> String {
     let mut said = String::new();
+
     if wanted > 0 {
         said.push_str(&format!(" · {}", words::followed::wanted(wanted)));
     }
@@ -500,6 +506,7 @@ mod tests {
     fn a_profile_deleted_on_its_service_is_told_and_the_next_is_still_read_again() {
         let library = Library::open_in_memory().expect("a catalog");
         let profiles = Profiles::new();
+
         for profile in [DELETED, STILL_THERE] {
             library
                 .follow_profile(&profiles, &profile, Upkeep::InStep)
@@ -507,6 +514,7 @@ mod tests {
                 .expect("a profile the service showed");
         }
         profiles.deleted.store(true, Ordering::Relaxed);
+
         let read_before = profiles.still_there_read.load(Ordering::Relaxed);
 
         let refreshed = refreshed_every_kept(&library, &profiles, false);

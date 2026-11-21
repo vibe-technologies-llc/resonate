@@ -148,6 +148,7 @@ fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
 
 fn workspace_except<'a>(excluded: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut args = vec!["--workspace".to_owned()];
+
     for package in excluded {
         args.extend(["--exclude".to_owned(), package.to_owned()]);
     }
@@ -173,6 +174,7 @@ pub fn lint(selection: &Selection, target: Option<&str>, locked: bool) -> Vec<St
 
     let clippy = |what: &str, packages: &[String], features: &[&str]| {
         let mut args = vec!["clippy".to_owned()];
+
         if locked {
             args.push("--locked".to_owned());
         }
@@ -192,6 +194,7 @@ pub fn lint(selection: &Selection, target: Option<&str>, locked: bool) -> Vec<St
     };
 
     let mut steps = vec![clippy("default features", &linted.every, &[])];
+
     if let Some(headless) = &linted.headless {
         steps.push(clippy("headless", headless, &["--no-default-features"]));
     }
@@ -226,6 +229,7 @@ pub fn test(selection: &Selection, locked: bool, passed_on: &[String], host: Hos
     };
 
     let mut nextest = vec!["nextest".to_owned(), "run".to_owned()];
+
     if locked {
         nextest.push("--locked".to_owned());
     }
@@ -280,6 +284,7 @@ pub fn ios(build: bool) -> Vec<Step> {
         ),
         Step::new("ios swift logic", Program::Python, ["ios/test-logic.py"]),
     ];
+
     if build {
         steps.extend([
             Step::new(

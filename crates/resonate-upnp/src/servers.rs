@@ -57,15 +57,18 @@ impl Addresses {
         if self.own.iter().any(|own| at.is_on_host_of(own)) {
             return true;
         }
+
         let Some(beside) = self.described_at.ip() else {
             return false;
         };
+
         if !at.could_be_another_address_beside(beside) {
             return false;
         }
 
         let host: Box<str> = at.host().to_ascii_lowercase().into();
         let mut tried = self.tried.lock();
+
         if let Some(admitted) = tried.get(&host) {
             return *admitted;
         }
@@ -73,7 +76,9 @@ impl Addresses {
             tracing::debug!(%at, udn = %self.udn, "a media server names more addresses of its own than are tried");
             return false;
         }
+
         let admitted = self.describes_itself_at(at);
+
         tried.insert(host, admitted);
         admitted
     }
@@ -114,6 +119,7 @@ pub struct Paged {
 impl ServerFound {
     pub(crate) fn reached(heard: &Answered) -> Result<Self> {
         let sender = heard.location.at_ip(heard.sender);
+
         if heard.location.is_at(heard.sender) {
             return Self::described_at(heard.location.clone(), vec![sender]);
         }
@@ -138,6 +144,7 @@ impl ServerFound {
         let heard_as = heard.udn.clone().ok_or(Error::LocationUnvouched)?;
         let server =
             Self::described_at(heard.location.clone(), vec![heard.location.clone(), sender])?;
+
         if !is_the_same_device(&server.udn, &heard_as) {
             return Err(Error::DescribedAsAnother {
                 heard: heard_as,
@@ -246,6 +253,7 @@ impl ServerFound {
 
     pub fn picture(&self, at: &Located) -> Result<Vec<u8>> {
         self.on_this_server(at)?;
+
         let answer = http::exchange(
             &Asking {
                 method: "GET",
@@ -275,14 +283,17 @@ impl ServerFound {
     fn paged_through(&self, mut asked: impl FnMut(PageAsked) -> Result<Paged>) -> Result<Listing> {
         let mut listing = Listing::default();
         let mut from = 0_u32;
+
         for _ in 0..PAGES_AT_MOST {
             let paged = asked(PageAsked {
                 from,
                 most: self.a_page,
             })?;
             let returned = paged.returned;
+
             listing.extend(paged.listing);
             from = from.saturating_add(returned);
+
             let whole = returned == 0
                 || paged.total.is_some_and(|total| from >= total)
                 || listing.len() >= ENTRIES_A_LISTING_AT_MOST;
@@ -300,6 +311,7 @@ impl ServerFound {
             .named("Result")
             .ok_or(Error::Unanswered { action })?;
         let also_serving = |at: &Located| self.addresses.admit(at);
+
         let listing = listing::read_from(
             didl,
             &Origin {
@@ -370,13 +382,17 @@ impl MediaServers {
 
         let mut seen = Vec::new();
         let mut reached = Vec::new();
+
         for answered in heard {
             let location = &answered.location;
+
             if let Some(udn) = self.held_at(location) {
                 seen.push(udn);
                 continue;
             }
+
             let held = self.known.lock().len() + reached.len();
+
             if held >= SERVERS_AT_MOST || reached.len() >= DESCRIBED_FROM_A_SEARCH_AT_MOST {
                 tracing::debug!(%location, "a media server answering the search was not described: enough are held");
                 continue;
@@ -390,6 +406,7 @@ impl MediaServers {
         }
 
         let mut known = self.known.lock();
+
         for held in known.values_mut() {
             held.missed = held.missed.saturating_add(1);
         }
@@ -410,6 +427,7 @@ impl MediaServers {
         }
         known.retain(|udn, held| {
             let kept = held.missed < SEARCHES_MISSED_BEFORE_GONE;
+
             if !kept {
                 tracing::debug!(%udn, "a media server has missed enough searches to be gone");
             }
@@ -426,6 +444,7 @@ impl MediaServers {
             .values()
             .map(|held| held.server.clone())
             .collect();
+
         servers.sort_by_cached_key(|server| (server.name.to_lowercase(), server.udn.clone()));
         servers
     }

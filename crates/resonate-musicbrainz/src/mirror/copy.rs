@@ -381,13 +381,16 @@ pub fn unescaped(field: &[u8]) -> Option<String> {
     if !field.contains(&b'\\') {
         return Some(String::from_utf8_lossy(field).into_owned());
     }
+
     let mut plain = Vec::with_capacity(field.len());
     let mut bytes = field.iter().copied().peekable();
+
     while let Some(byte) = bytes.next() {
         if byte != b'\\' {
             plain.push(byte);
             continue;
         }
+
         let Some(escaped) = bytes.next() else {
             plain.push(b'\\');
             break;
@@ -401,6 +404,7 @@ pub fn unescaped(field: &[u8]) -> Option<String> {
             b'v' => plain.push(0x0b),
             b'0'..=b'7' => {
                 let mut value = u32::from(escaped - b'0');
+
                 for _ in 0..2 {
                     match bytes.peek() {
                         Some(digit @ b'0'..=b'7') => {
@@ -415,6 +419,7 @@ pub fn unescaped(field: &[u8]) -> Option<String> {
             b'x' => {
                 let mut value = 0_u32;
                 let mut digits = 0;
+
                 for _ in 0..2 {
                     match bytes.peek().and_then(|digit| (*digit as char).to_digit(16)) {
                         Some(digit) => {

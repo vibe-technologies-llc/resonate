@@ -48,6 +48,7 @@ pub fn nfc_composed_text(text: Cow<'_, str>) -> Cow<'_, str> {
 pub fn cut_to_leave(name: &OsStr, room: usize) -> Cow<'_, OsStr> {
     let budget = NAME_BYTES_AT_MOST.saturating_sub(room);
     let bytes = os_bytes::bytes_of(name);
+
     if bytes.len() <= budget {
         return Cow::Borrowed(name);
     }
@@ -68,7 +69,9 @@ pub fn named_within(before: &str, name: &OsStr, after: impl AsRef<OsStr>) -> OsS
     let after = os_bytes::bytes_of(after.as_ref());
     let kept = cut_to_leave(name, before.len() + after.len());
     let kept = os_bytes::bytes_of(&kept);
+
     let mut named = Vec::with_capacity(before.len() + kept.len() + after.len());
+
     named.extend_from_slice(before.as_bytes());
     named.extend_from_slice(&kept);
     named.extend_from_slice(&after);
@@ -106,12 +109,15 @@ mod tests {
     #[test]
     fn a_name_near_the_limit_is_cut_on_a_letter_to_leave_room_for_what_goes_around_it() {
         let long = format!("{}.flac", "é".repeat(125));
+
         assert_eq!(long.len(), 255);
 
         let named = named_within(".", OsStr::new(&long), ".4242-17.resonate-delivery");
 
         assert!(named.len() <= NAME_BYTES_AT_MOST, "{}", named.len());
+
         let text = named.to_str().expect("a cut that keeps every letter whole");
+
         assert!(text.starts_with(".éé"));
         assert!(text.ends_with(".4242-17.resonate-delivery"));
     }

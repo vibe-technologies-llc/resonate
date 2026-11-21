@@ -87,9 +87,11 @@ pub enum Cookies {
 impl Cookies {
     pub fn read(value: &str) -> Self {
         let value = value.trim();
+
         if value.is_empty() {
             return Self::None;
         }
+
         let named = value
             .split(BROWSER_NAME_ENDS_AT)
             .next()
@@ -119,11 +121,13 @@ impl Cookies {
             }
             Self::File(file) => vec![file.display().to_string()],
         };
+
         let under_home: Vec<String> = said
             .iter()
             .filter_map(|text| text.strip_prefix(THE_HOME_FOLDER))
             .map(str::to_owned)
             .collect();
+
         said.extend(under_home);
         said.retain(|text| !text.is_empty());
         said.sort_by_key(|text| std::cmp::Reverse(text.len()));
@@ -264,7 +268,9 @@ fn holds_a_program(folders: &[PathBuf], name: &str) -> bool {
 
 fn searched_path(path: Option<&OsStr>, also: &[&str]) -> Option<OsString> {
     let mut folders: Vec<PathBuf> = path.map(env::split_paths).into_iter().flatten().collect();
+
     let before = folders.len();
+
     for folder in also.iter().map(PathBuf::from) {
         if !folders.contains(&folder) {
             folders.push(folder);
@@ -278,6 +284,7 @@ fn searched_path(path: Option<&OsStr>, also: &[&str]) -> Option<OsString> {
 
 fn runtime_named_on(path: Option<&OsStr>) -> Option<&'static str> {
     let folders: Vec<PathBuf> = env::split_paths(path?).collect();
+
     if holds_a_program(&folders, FOUND_BY_ITSELF) {
         return None;
     }
@@ -306,10 +313,12 @@ fn the_video_refused(said: &str, video: &VideoId) -> bool {
     {
         return false;
     }
+
     let mut reasons = said
         .lines()
         .filter_map(|line| said_of_the_video(line, video))
         .peekable();
+
     if reasons.peek().is_some() {
         return !reasons.any(is_no_verdict);
     }
@@ -347,6 +356,7 @@ static LIVING: Mutex<Living> = Mutex::new(Living {
 
 pub fn stop_the_tools() {
     let mut living = LIVING.lock();
+
     living.stopped = true;
     killed(&mut living);
 }
@@ -393,11 +403,14 @@ struct Reaped(Arc<Mutex<Child>>);
 impl Reaped {
     fn spawned(command: &mut Command) -> std::result::Result<Self, Starting> {
         let mut living = LIVING.lock();
+
         if living.stopped {
             return Err(Starting::Io(ErrorKind::Interrupted.into()));
         }
         without_a_console_window(command);
+
         let child = Arc::new(Mutex::new(command.spawn().map_err(Starting::NotRun)?));
+
         living.children.retain(|held| held.strong_count() > 0);
         living.children.push(Arc::downgrade(&child));
         Ok(Self(child))
@@ -425,6 +438,7 @@ impl Reaped {
 impl Drop for Reaped {
     fn drop(&mut self) {
         let mut child = self.0.lock();
+
         let _ = child.kill();
         let _ = child.wait();
     }
@@ -444,10 +458,12 @@ impl Telling {
             .position(|byte| A_LINE_ENDS_AT.contains(byte))
         {
             let line: Vec<u8> = self.line.drain(..=end).collect();
+
             self.told(&line);
         }
         if self.line.len() > STDERR_KEPT {
             let line = std::mem::take(&mut self.line);
+
             self.told(&line);
         }
     }
@@ -469,6 +485,7 @@ impl Telling {
 impl Drop for Telling {
     fn drop(&mut self) {
         let line = std::mem::take(&mut self.line);
+
         self.told(&line);
     }
 }
@@ -483,6 +500,7 @@ impl Complaints {
         let kept = Arc::new(Mutex::new(Vec::new()));
         let (ending, ended) = mpsc::channel();
         let tail = Arc::clone(&kept);
+
         thread::Builder::new()
             .name("resonate-ytmusic-stderr".to_owned())
             .spawn(move || {
@@ -497,6 +515,7 @@ impl Complaints {
                         Ok(0) => return,
                         Ok(read) => {
                             let said = &chunk[..read];
+
                             telling.heard(said);
                             kept_at_its_end(&mut tail.lock(), said);
                         }
@@ -516,7 +535,9 @@ impl Complaints {
 
 fn kept_at_its_end(kept: &mut Vec<u8>, said: &[u8]) {
     kept.extend_from_slice(said);
+
     let past = kept.len().saturating_sub(STDERR_KEPT);
+
     kept.drain(..past);
 }
 
@@ -524,6 +545,7 @@ type Chunks = Receiver<io::Result<Vec<u8>>>;
 
 fn pumped_from(mut stdout: ChildStdout) -> io::Result<Chunks> {
     let (sending, chunks) = mpsc::sync_channel(CHUNKS_AHEAD);
+
     thread::Builder::new()
         .name("resonate-ytmusic-stdout".to_owned())
         .spawn(move || {
@@ -540,6 +562,7 @@ fn pumped_from(mut stdout: ChildStdout) -> io::Result<Chunks> {
                     Err(error) if error.kind() == ErrorKind::Interrupted => {}
                     Err(error) => {
                         let _ = sending.send(Err(error));
+
                         return;
                     }
                 }
@@ -562,9 +585,11 @@ impl Running {
         withheld: Vec<String>,
     ) -> std::result::Result<Self, Starting> {
         let mut command = Command::new(program);
+
         if let Some(searched) = searched {
             command.env("PATH", searched);
         }
+
         let child = Reaped::spawned(
             command
                 .args(arguments)
@@ -614,6 +639,7 @@ impl Reading {
                 Ended::Failed(None)
             }
         };
+
         if self.running.complaints.said().contains(COOKIES_LAPSED) {
             self.lapse.heard();
         }
@@ -632,6 +658,7 @@ impl Reading {
             }
             Err(RecvTimeoutError::Timeout) => {
                 let _ = self.running.child.kill();
+
                 self.ended = Some(Ended::Silent);
             }
             Err(RecvTimeoutError::Disconnected) => self.ended = Some(self.ending()),
@@ -643,8 +670,10 @@ impl Read for Reading {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         loop {
             let left = &self.held[self.read..];
+
             if !left.is_empty() || into.is_empty() {
                 let taken = left.len().min(into.len());
+
                 into[..taken].copy_from_slice(&left[..taken]);
                 self.read += taken;
                 return Ok(taken);
@@ -719,6 +748,7 @@ impl Tool {
 
     fn arguments(&self, asked: &[&str], video: &VideoId) -> Vec<OsString> {
         let mut arguments: Vec<OsString> = vec!["--ignore-config".into(), "--no-playlist".into()];
+
         if let Some(runtime) = self.runtime {
             arguments.extend(["--js-runtimes".into(), runtime.into()]);
         }
@@ -816,6 +846,7 @@ impl Tool {
 
     pub(crate) fn formats_checked(&self, video: &VideoId) -> Result<Option<Formats>> {
         let formats = self.formats_asked(video)?;
+
         if formats.is_some() {
             self.lapse.forgotten();
         }
@@ -838,7 +869,9 @@ impl Tool {
         let op = ProviderOp::Search;
         let by = Instant::now() + self.asked_within;
         let arguments = self.arguments(&["-J", "--skip-download"], video);
+
         let mut running = self.running(op, &arguments)?;
+
         let listing = self.listed_within(&running, op, by)?;
         let status = running
             .child
@@ -864,18 +897,22 @@ impl Tool {
         let op = ProviderOp::Browse;
         let by = Instant::now() + self.asked_within * A_WHOLE_LISTING_TAKES_AT_MOST;
         let mut arguments: Vec<OsString> = vec!["--ignore-config".into()];
+
         if let Some(runtime) = self.runtime {
             arguments.extend(["--js-runtimes".into(), runtime.into()]);
         }
         arguments.extend(self.cookies.arguments());
         arguments.extend(["-J".into(), "--flat-playlist".into(), address.into()]);
+
         let mut running = self.running(op, &arguments)?;
+
         let listing = self.listed_within(&running, op, by)?;
         let status = running
             .child
             .exited_within(by.saturating_duration_since(Instant::now()))
             .map_err(|source| self.failed_io(op, source))?
             .ok_or_else(|| self.hung(op))?;
+
         if running.complaints.said().contains(COOKIES_LAPSED) {
             self.lapse.heard();
             return Err(self.cookies_lapsed(op));
@@ -889,7 +926,9 @@ impl Tool {
     pub fn download(&self, video: &VideoId, format: Tier) -> Result<Opened> {
         let op = ProviderOp::Download;
         let arguments = self.arguments(&["-f", format.format_id(), "-o", "-"], video);
+
         let mut running = self.running(op, &arguments)?;
+
         let first = match running.chunks.recv_timeout(self.left_silent_for) {
             Ok(Ok(chunk)) => chunk,
             Ok(Err(source)) => return Err(self.failed_io(op, source)),
@@ -921,6 +960,7 @@ impl Tool {
             .map_err(|source| self.failed_io(op, source))?
             .ok_or_else(|| self.hung(op))?;
         let said = running.complaints.said();
+
         if said.contains(COOKIES_LAPSED) {
             self.lapse.heard();
             return Err(self.cookies_lapsed(op));
@@ -943,6 +983,7 @@ mod tests {
             "resonate-ytmusic-runtimes-{}-{called}",
             std::process::id()
         ));
+
         fs::create_dir_all(&folder).expect("a folder");
         for name in names {
             fs::write(folder.join(name), b"").expect("a program");
@@ -1006,18 +1047,22 @@ mod tests {
             .iter()
             .position(|argument| argument == "--js-runtimes")
             .expect("the runtime named");
+
         assert_eq!(arguments[at + 1], "node");
     }
 
     #[test]
     fn a_lapse_stands_for_a_poll_and_no_longer() {
         let lapse = Lapse::default();
+
         assert!(!lapse.stands());
 
         lapse.heard();
+
         assert!(lapse.stands());
 
         *lapse.0.lock() = Instant::now().checked_sub(A_POLL_LASTS);
+
         assert!(!lapse.stands());
     }
 

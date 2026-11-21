@@ -124,8 +124,10 @@ impl Opens for Opener {
             renderer,
         } = self.bound.lock().remove(&opening.id).unwrap_or_default();
         let routing = Arc::new(output::Routing::serving(SinkId::new(opening.id.get())));
+
         routing.select(device);
         self.outputs.followed_by(&routing);
+
         let config = EngineConfig {
             sink: rendering::sink_of(renderer.as_ref()).or_else(|| opening.sink.clone()),
             volume: opening.volume,
@@ -135,6 +137,7 @@ impl Opens for Opener {
         };
 
         let player = (self.engines)(opening.id, config, &routing)?;
+
         self.zoned.lock().insert(
             opening.id,
             Arc::new(Zoned::new(routing, route, opening.volume, renderer)),
@@ -168,11 +171,13 @@ impl Playing {
         let name = kept
             .and_then(|kept| ZoneName::given(&kept.name))
             .unwrap_or_else(|| ZoneName::first_given_to(ZoneId::FIRST));
+
         let zoned = Arc::new(Mutex::new(BTreeMap::from([(
             ZoneId::FIRST,
             Arc::new(Zoned::new(routing, route, volume, renderer)),
         )])));
         let outputs = Arc::new(Outputs::default());
+
         let opener = Arc::new(Opener {
             engines,
             zoned: Arc::clone(&zoned),
@@ -217,6 +222,7 @@ impl Playing {
         if !OUTPUTS_ARE_HELD_PER_DEVICE {
             return None;
         }
+
         let zones = self.zones.lock().clone()?;
         let routed = self.zoned.lock();
 
@@ -376,6 +382,7 @@ impl Catalog {
                 "SELECT id, name, route, volume, renderer, renderer_name FROM zones ORDER BY id",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = query
             .query_map([], |row| {
                 Ok((
@@ -445,6 +452,7 @@ impl Catalog {
 
     pub(crate) fn forget_zone(&self, zone: ZoneId) -> Result<()> {
         let connection = self.0.lock();
+
         connection
             .execute("DELETE FROM zones WHERE id = ?1", [zone.get()])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -491,6 +499,7 @@ impl MobilePlayer {
 
     pub fn show_zone(&self, zone: u32) -> Result<()> {
         let id = zone_named(zone)?;
+
         self.playing.player_of(id)?;
         self.playing.shown.store(id.get(), Ordering::Release);
         self.services.watching.tell();
@@ -504,6 +513,7 @@ impl MobilePlayer {
         route: String,
     ) -> Result<PlayerZone> {
         let zone = self.zone_added(&name, device, route)?;
+
         crate::watching::keep(&self, zone.id);
         Ok(self.player_zone(&zone, self.playing.shown()))
     }
@@ -519,9 +529,11 @@ impl MobilePlayer {
 
     pub fn remove_zone(&self, zone: u32) -> Result<()> {
         let id = zone_named(zone)?;
+
         if id.is_first() {
             return Err(Error::FirstZoneStays);
         }
+
         let zones = self.playing.zones()?;
         let listening = self.playing.zoned(id)?;
 
@@ -586,6 +598,7 @@ impl MobilePlayer {
             self.playing.player_of(from)?.state().playback,
             PlaybackState::Playing | PlaybackState::Buffering
         );
+
         if handover_clashes(by, from, sounding) {
             return Err(resonate_engine::Error::DeviceHeld { by }.into());
         }
@@ -596,6 +609,7 @@ impl MobilePlayer {
         let zones = self.playing.zones()?;
         let id = zones.next_id().ok_or(resonate_engine::Error::NoZoneLeft)?;
         let name = ZoneName::given(name).unwrap_or_else(|| ZoneName::first_given_to(id));
+
         let kept = KeptZone {
             id,
             name: name.as_str().to_owned(),
@@ -660,6 +674,7 @@ impl MobilePlayer {
         device: i32,
     ) -> Result<Zone> {
         let name = ZoneName::given(&kept.name).unwrap_or_else(|| ZoneName::first_given_to(kept.id));
+
         self.playing.bind_on_opening(kept.id, device, kept);
 
         let zone = zones.open(&Opening {
@@ -668,6 +683,7 @@ impl MobilePlayer {
             sink: None,
             volume: kept.volume,
         })?;
+
         if let Some(impulse) = self.room.applied() {
             zone.player.send(Command::SetConvolution(Some(impulse)))?;
         }
@@ -683,6 +699,7 @@ impl MobilePlayer {
         carried_over: bool,
     ) -> Result<()> {
         let zones = self.playing.zones()?;
+
         for kept in kept.iter().filter(|kept| !kept.id.is_first()) {
             if let Err(error) = self.zone_opened(&zones, kept, 0) {
                 tracing::warn!(%error, zone = %kept.id, "a zone kept from the last run did not open");
@@ -701,6 +718,7 @@ impl MobilePlayer {
     pub(crate) fn keep_volume_of(&self, zone: &Zone) -> Result<()> {
         let zoned = self.playing.zoned(zone.id)?;
         let volume = zone.player.state().volume;
+
         if (volume.get() - zoned.volume.lock().get()).abs() < VOLUME_KEPT_WITHIN {
             return Ok(());
         }
@@ -715,11 +733,13 @@ impl MobilePlayer {
 
 pub(crate) fn shut_down(zones: Arc<Zones>) -> Result<()> {
     zones.leave();
+
     let players = zones
         .listed()
         .into_iter()
         .map(|zone| zone.player)
         .collect::<Vec<_>>();
+
     drop(zones);
 
     players
@@ -762,7 +782,9 @@ mod tests {
         let harness = Harness::new();
         let zones = harness.player.playing.take().expect("open zones");
         let player = zones.listed().remove(0).player;
+
         drop(zones);
+
         let holder = Arc::clone(&player);
 
         let refused = sole_holder(player, Duration::from_millis(20))
@@ -775,6 +797,7 @@ mod tests {
         let sole = sole_holder(refused, SETTLED_WITHIN);
 
         letting_go.join().expect("the holder finished");
+
         assert!(sole.is_ok());
     }
 
@@ -791,12 +814,14 @@ mod tests {
     #[test]
     fn a_zone_added_keeps_a_queue_of_its_own_and_every_call_follows_the_zone_shown() {
         let harness = Harness::new();
+
         harness.resumed("ab", 0, 0);
 
         let kitchen = harness
             .player
             .zone_added("Kitchen", 3, "v1:usb:dac".into())
             .expect("a second zone");
+
         harness
             .player
             .show_zone(kitchen.id.get())
@@ -805,6 +830,7 @@ mod tests {
             .player
             .load(harness.ids("c"), 0, false)
             .expect("a queue for the kitchen");
+
         let kitchen_shown = harness.settled(|snapshot| snapshot.current.is_some());
         let kitchen_queue = names_queued(&harness);
         let listed = harness.player.zones();
@@ -823,6 +849,7 @@ mod tests {
         );
 
         harness.player.show_zone(1).expect("the first zone shown");
+
         let first_shown = harness.settled(|snapshot| snapshot.current.is_some());
 
         assert_eq!(first_shown.zone, 1);
@@ -842,6 +869,7 @@ mod tests {
                 "never heard at {wanted}: {}",
                 player.state().volume
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
     }
@@ -861,11 +889,14 @@ mod tests {
 
     fn playing_bit_perfect() -> (Harness, Zone) {
         let harness = Harness::sounding();
+
         harness.resumed("abc", 1, 0);
+
         let kitchen = harness
             .player
             .zone_added("Kitchen", HELD_DEVICE, String::new())
             .expect("a second zone");
+
         harness
             .player
             .select_output(HELD_DEVICE)
@@ -875,6 +906,7 @@ mod tests {
 
         let asking = ZoneId::new(9).expect("a zone");
         let began = Instant::now();
+
         while harness
             .player
             .playing
@@ -885,6 +917,7 @@ mod tests {
                 began.elapsed() < SETTLED_WITHIN,
                 "the first zone never held its device"
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
         (harness, kitchen)
@@ -899,6 +932,7 @@ mod tests {
             .expect("a second zone");
 
         harness.player.save().expect("every zone saved");
+
         let untouched = harness.player.catalog.kept_zones().expect("read");
 
         harness.player.set_volume(0.5).expect("the first quieter");
@@ -956,12 +990,14 @@ mod tests {
             renderer: None,
         };
         let zones = harness.player.playing.zones().expect("the zones");
+
         let study = harness
             .player
             .zone_opened(&zones, &reopened, 0)
             .expect("a zone opened from the kept row");
 
         settled_at(&study.player, 0.4);
+
         assert!(
             (harness
                 .player
@@ -1024,10 +1060,12 @@ mod tests {
             harness
                 .player
                 .select_zone_output(kitchen.id.get(), HELD_DEVICE, String::new());
+
         harness
             .player
             .show_zone(kitchen.id.get())
             .expect("the kitchen shown");
+
         let chosen = harness.player.select_output(HELD_DEVICE);
         let handed = harness
             .player
@@ -1046,6 +1084,7 @@ mod tests {
                 "a held device was handed on: {refused:?}"
             );
         }
+
         assert!(free.is_ok());
         assert_eq!(harness.player.zones().len(), 3);
     }
@@ -1053,11 +1092,14 @@ mod tests {
     #[test]
     fn each_zones_queue_is_kept_under_its_id_and_goes_with_the_zone() {
         let harness = Harness::new();
+
         harness.resumed("ab", 1, 0);
+
         let study = harness
             .player
             .zone_added("Study", 0, String::new())
             .expect("a second zone");
+
         harness
             .player
             .show_zone(study.id.get())
@@ -1161,9 +1203,11 @@ mod tests {
     #[test]
     fn the_song_handed_to_another_zone_plays_there_and_leaves_the_zone_it_came_from() {
         let harness = Harness::sounding();
+
         harness.resumed("abc", 1, 0);
         harness.player.play().expect("played");
         harness.settled(|snapshot| snapshot.transport == Transport::Playing);
+
         let kitchen = harness
             .player
             .zone_added("Kitchen", 7, String::new())
@@ -1175,7 +1219,9 @@ mod tests {
             .expect("handed over");
 
         assert_eq!(harness.player.shown_zone(), kitchen.id.get());
+
         let began = Instant::now();
+
         loop {
             let left = harness
                 .player
@@ -1186,16 +1232,21 @@ mod tests {
                 .rows
                 .len();
             let snapshot = harness.player.snapshot().expect("a snapshot");
+
             if left == 0 && snapshot.transport == Transport::Playing {
                 assert_eq!(snapshot.queue_index, 1);
+
                 break;
             }
+
             assert!(
                 began.elapsed() < SETTLED_WITHIN * 2,
                 "never handed over: {snapshot:?}"
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
+
         assert_eq!(names_queued(&harness), "abc");
     }
 }

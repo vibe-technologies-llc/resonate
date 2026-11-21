@@ -49,8 +49,11 @@ fn provider() -> Arc<CryptoProvider> {
 
 pub fn trusted_roots(extra: Option<&Path>) -> Result<RootCertStore> {
     let mut roots = RootCertStore::empty();
+
     roots.add_parsable_certificates(webpki_root_certs::TLS_SERVER_ROOT_CERTS.iter().cloned());
+
     let system = rustls_native_certs::load_native_certs();
+
     for error in &system.errors {
         tracing::debug!(%error, "a certificate in the system's store could not be read");
     }
@@ -79,6 +82,7 @@ fn add_pem_file(roots: &mut RootCertStore, path: &Path) -> Result<usize> {
             source,
         })?;
     let count = certificates.len();
+
     for certificate in certificates {
         roots
             .add(certificate)
@@ -93,9 +97,12 @@ pub fn to_the_server(roots: RootCertStore) -> Result<ClientConfig> {
         .map_err(|source| Error::tls(TlsOp::Client, source))?
         .with_root_certificates(roots)
         .with_no_client_auth();
+
     tls.alpn_protocols = vec![SERVER_ALPN.to_vec()];
+
     let crypto = QuicClientConfig::try_from(tls).map_err(|_| Error::QuicCrypto)?;
     let mut config = ClientConfig::new(Arc::new(crypto));
+
     config.transport_config(Arc::new(transport(
         KEEP_THE_SERVER_EVERY,
         SERVER_SILENT_FOR,
@@ -105,6 +112,7 @@ pub fn to_the_server(roots: RootCertStore) -> Result<ClientConfig> {
 
 fn transport(keep_alive: Duration, silent_for: Duration) -> TransportConfig {
     let mut transport = TransportConfig::default();
+
     transport.keep_alive_interval(Some(keep_alive));
     transport.max_idle_timeout(IdleTimeout::try_from(silent_for).ok());
     transport
@@ -113,6 +121,7 @@ fn transport(keep_alive: Duration, silent_for: Duration) -> TransportConfig {
 pub fn server_transport(keep_alive: Duration, silent_for: Duration) -> TransportConfig {
     let window = VarInt::from_u32(A_SERVER_CONNECTION_BUFFERS_AT_MOST);
     let mut transport = transport(keep_alive, silent_for);
+
     transport.max_concurrent_bidi_streams(VarInt::from_u32(STREAMS_A_SERVER_SESSION_TAKES));
     transport.max_concurrent_uni_streams(VarInt::from_u32(0));
     transport.stream_receive_window(window);
@@ -149,9 +158,12 @@ impl PeerIdentity {
                 PrivateKeyDer::Pkcs8(self.key.clone_key()),
             )
             .map_err(|source| Error::tls(TlsOp::Server, source))?;
+
         tls.alpn_protocols = vec![PEER_ALPN.to_vec()];
+
         let crypto = QuicServerConfig::try_from(tls).map_err(|_| Error::QuicCrypto)?;
         let mut config = ServerConfig::with_crypto(Arc::new(crypto));
+
         config.transport_config(Arc::new(transport(KEEP_A_PEER_EVERY, PEER_SILENT_FOR)));
         Ok(config)
     }
@@ -170,9 +182,12 @@ impl PeerIdentity {
                 PrivateKeyDer::Pkcs8(self.key.clone_key()),
             )
             .map_err(|source| Error::tls(TlsOp::Client, source))?;
+
         tls.alpn_protocols = vec![PEER_ALPN.to_vec()];
+
         let crypto = QuicClientConfig::try_from(tls).map_err(|_| Error::QuicCrypto)?;
         let mut config = ClientConfig::new(Arc::new(crypto));
+
         config.transport_config(Arc::new(transport(KEEP_A_PEER_EVERY, PEER_SILENT_FOR)));
         Ok(config)
     }
@@ -276,6 +291,7 @@ pub async fn send_frame(stream: &mut SendStream, payload: &[u8]) -> Result<()> {
     let length = u32::try_from(payload.len()).map_err(|_| Error::Oversized {
         length: payload.len(),
     })?;
+
     if payload.len() > LARGEST_FRAME {
         return Err(Error::Oversized {
             length: payload.len(),
@@ -306,6 +322,7 @@ pub async fn read_frame_held<H>(
     hold: impl FnOnce(usize) -> Option<H>,
 ) -> Result<Option<(Vec<u8>, H)>> {
     let mut length = [0; FRAME_LENGTH_BYTES];
+
     match stream.read_exact(&mut length).await {
         Ok(()) => {}
         Err(quinn::ReadExactError::FinishedEarly(0)) => return Ok(None),
@@ -319,10 +336,13 @@ pub async fn read_frame_held<H>(
             return Err(Error::stream(StreamOp::Read, source));
         }
     }
+
     let length = usize::try_from(u32::from_be_bytes(length)).unwrap_or(usize::MAX);
+
     if length > most.min(LARGEST_FRAME) {
         return Err(Error::Oversized { length });
     }
+
     let held = hold(length).ok_or(Error::NoRoom { length })?;
     let mut payload = vec![0; length];
     match stream.read_exact(&mut payload).await {
@@ -354,8 +374,11 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
 
     fn kept(name: &str, text: &str) -> std::path::PathBuf {
         let folder = env::temp_dir().join(format!("resonate-quic-{}-{name}", process::id()));
+
         fs::create_dir_all(&folder).expect("a folder");
+
         let path = folder.join("certificate.pem");
+
         fs::write(&path, text).expect("a file");
         path
     }

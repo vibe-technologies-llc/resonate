@@ -87,7 +87,9 @@ impl Heard {
         {
             return false;
         }
+
         let from_sender = self.per_sender.entry(answered.sender).or_default();
+
         if *from_sender >= LOCATIONS_PER_SENDER_AT_MOST {
             return false;
         }
@@ -106,12 +108,15 @@ pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result
     let failed = |op| move |source| Error::Search { op, source };
 
     let socket = UdpSocket::bind(answered_on(to)).map_err(failed(SearchOp::Bind))?;
+
     if to.ip().is_multicast() && to.is_ipv4() {
         socket
             .set_multicast_ttl_v4(SEARCH_HOPS)
             .map_err(failed(SearchOp::Bind))?;
     }
+
     let asking = asking(to, within, sought);
+
     for _ in 0..SEARCHES_SENT {
         socket
             .send_to(asking.as_bytes(), to)
@@ -121,8 +126,10 @@ pub(crate) fn search(to: SocketAddr, within: Duration, sought: Sought) -> Result
     let until = Instant::now() + within;
     let mut found = Heard::default();
     let mut buffer = vec![0; ANSWER_BYTES_AT_MOST];
+
     loop {
         let left = until.saturating_duration_since(Instant::now());
+
         if left.is_zero() {
             break;
         }
@@ -178,11 +185,14 @@ fn asking(to: SocketAddr, within: Duration, sought: Sought) -> String {
 
 pub(crate) fn location_answered(answer: &[u8], sender: IpAddr, sought: Sought) -> Option<Answered> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut response = httparse::Response::new(&mut headers);
+
     match response.parse(answer) {
         Ok(httparse::Status::Complete(_)) if response.code == Some(200) => {}
         Ok(_) | Err(_) => return None,
     }
+
     let named = |name: &str| {
         response
             .headers
@@ -190,9 +200,11 @@ pub(crate) fn location_answered(answer: &[u8], sender: IpAddr, sought: Sought) -
             .find(|header| header.name.eq_ignore_ascii_case(name))
             .and_then(|header| std::str::from_utf8(header.value).ok())
     };
+
     if !named("ST").is_some_and(|kind| kind.contains(sought.kind())) {
         return None;
     }
+
     let location = named("LOCATION").and_then(|location| Located::parse(location).ok())?;
     let answered = Answered {
         location,
@@ -260,6 +272,7 @@ mod tests {
         };
 
         let mut heard = Heard::default();
+
         let from_one: Vec<bool> = (0..50)
             .map(|port| heard.take(answered(at(0, 1000 + port), sender(0))))
             .collect();

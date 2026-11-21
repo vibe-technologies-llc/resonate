@@ -83,6 +83,7 @@ impl MobilePlayer {
 
         for same_size in self.songs_sharing_a_size()? {
             let one_row_a_file = self.one_row_a_file(same_size, playing.as_deref());
+
             found.extend(
                 identical_among(one_row_a_file, |track| self.opened(&track.uri))
                     .into_iter()
@@ -110,6 +111,7 @@ impl MobilePlayer {
 
     pub fn fold_identical_songs(&self, kept: u64, copies: Vec<u64>) -> Result<SongsForgotten> {
         self.catalog.track(kept)?;
+
         let gone = self.held_uris(&copies);
         let gone = gone
             .into_iter()
@@ -120,6 +122,7 @@ impl MobilePlayer {
         let folded = self
             .catalog
             .fold_into(kept, &gone.keys().copied().collect::<Vec<_>>())?;
+
         self.forget_analyses(gone.keys());
         Ok(SongsForgotten {
             forgotten: counted(folded),
@@ -140,6 +143,7 @@ impl MobilePlayer {
         let forgotten = self
             .catalog
             .forget(&gone.keys().copied().collect::<Vec<_>>(), reach)?;
+
         self.forget_analyses(gone.keys());
         Ok(SongsForgotten {
             forgotten: counted(forgotten),
@@ -149,6 +153,7 @@ impl MobilePlayer {
 
     fn songs_sharing_a_size(&self) -> Result<Vec<Vec<Track>>> {
         let mut by_size = BTreeMap::<u64, Vec<Track>>::new();
+
         for (stamped, track) in self.catalog.held_with_their_sizes()? {
             let size = match stamped {
                 0 => self.measured(&track.uri),
@@ -167,6 +172,7 @@ impl MobilePlayer {
     fn one_row_a_file(&self, rows: Vec<Track>, playing: Option<&str>) -> Vec<Track> {
         let mut unidentified = Vec::new();
         let mut by_file = BTreeMap::<FileIdentity, Vec<Track>>::new();
+
         for row in rows {
             match self.services.files.identity_of(&row.uri) {
                 Some(identity) => by_file.entry(identity).or_default().push(row),
@@ -206,6 +212,7 @@ impl MobilePlayer {
         let player = self.playing.player().ok()?;
         let state = player.state();
         let queued = player.queued();
+
         let id = state
             .current
             .map(|track| track.id)
@@ -245,6 +252,7 @@ fn kept_among(mut alike: Vec<Track>, playing: Option<&str>) -> Option<IdenticalS
     if alike.len() < 2 {
         return None;
     }
+
     let kept_at = kept_at(&mut alike, playing);
     let kept = alike.remove(kept_at);
     Some(IdenticalSongs {
@@ -284,13 +292,17 @@ impl Catalog {
         if ids.is_empty() {
             return Ok(0);
         }
+
         let mut connection = self.0.lock();
+
         let referring = referring_tables(&connection)?;
         let transaction = connection.transaction().map_err(write_error)?;
         let now = nanos_now();
         let mut forgotten = 0;
+
         for id in ids {
             let picture = picture_of(&transaction, *id as i64).map_err(read_error)?;
+
             deletion_noted(&transaction, *id as i64, now, reach).map_err(write_error)?;
             forgotten += forgotten_in(&transaction, &referring, *id as i64).map_err(write_error)?;
             if let Some(picture) = picture {
@@ -303,6 +315,7 @@ impl Catalog {
 
     fn deletions_from_other_devices_taken(&self) -> Result<Vec<u64>> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let taken = transaction
             .prepare("SELECT track FROM deletions_from_other_devices ORDER BY told, track")
@@ -312,6 +325,7 @@ impl Catalog {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(read_error)?;
+
         transaction
             .execute("DELETE FROM deletions_from_other_devices", [])
             .map_err(write_error)?;
@@ -323,11 +337,15 @@ impl Catalog {
         if copies.is_empty() {
             return Ok(0);
         }
+
         let mut connection = self.0.lock();
+
         let referring = referring_tables(&connection)?;
         let transaction = connection.transaction().map_err(write_error)?;
+
         for copy in copies {
             let picture = picture_of(&transaction, *copy as i64).map_err(read_error)?;
+
             handed_over(&transaction, &referring, *copy as i64, kept as i64)
                 .map_err(write_error)?;
             if let Some(picture) = picture {
@@ -366,6 +384,7 @@ fn deletion_noted(
             |row| recording_at(row, 0),
         )
         .optional()?;
+
     if let Some(recording) = recording {
         if reach == Reach::EveryDevice {
             to_be_told(transaction, &recording, now)?;
@@ -393,6 +412,7 @@ fn to_be_told(
     let length = recording
         .length
         .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX));
+
     transaction.execute(
         "INSERT INTO songs_deleted_everywhere (title, artist, album, mbid, length, deleted)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
@@ -477,6 +497,7 @@ mod tests {
             })
             .collect();
         let ids: Vec<u64> = tracks.iter().map(|track| track.id).collect();
+
         catalog
             .save_queue(&ids, row, position_ms)
             .expect("a saved queue");
@@ -490,6 +511,7 @@ mod tests {
         catalog
             .forget(&[songs[0].id], Reach::ThisDevice)
             .expect("forgotten");
+
         let (ids, at, position) = catalog.resume().expect("resumed");
 
         assert_eq!(ids, vec![songs[1].id, songs[2].id]);
@@ -504,6 +526,7 @@ mod tests {
         catalog
             .forget(&[songs[1].id], Reach::ThisDevice)
             .expect("forgotten");
+
         let (ids, at, position) = catalog.resume().expect("resumed");
 
         assert_eq!(ids, vec![songs[0].id, songs[2].id]);
@@ -518,6 +541,7 @@ mod tests {
         catalog
             .forget(&[songs[2].id], Reach::ThisDevice)
             .expect("forgotten");
+
         let (ids, at, position) = catalog.resume().expect("resumed");
 
         assert_eq!(ids, vec![songs[0].id, songs[1].id]);

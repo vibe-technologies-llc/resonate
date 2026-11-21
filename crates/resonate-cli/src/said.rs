@@ -31,6 +31,7 @@ pub fn command() -> Command {
 
 pub fn parsed_from(arguments: impl IntoIterator<Item = impl Into<OsString> + Clone>) -> Cli {
     let mut command = command();
+
     let mut matches = command.clone().get_matches_from(arguments);
     Cli::from_arg_matches_mut(&mut matches)
         .unwrap_or_else(|refused| refused.format(&mut command).exit())
@@ -54,6 +55,7 @@ fn said(command: Command) -> Command {
 
 fn template_for(command: &Command) -> String {
     let mut template = format!("{BEFORE_HELP}{ABOUT}\n{} {USAGE}\n", words::said::usage());
+
     if command.has_subcommands() {
         template.push_str(&format!("\n{}\n{SUBCOMMANDS}\n", words::said::commands()));
     }

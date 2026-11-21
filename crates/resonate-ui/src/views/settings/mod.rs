@@ -122,6 +122,7 @@ impl RootView {
     pub(crate) fn settings(&mut self, cx: &mut Context<Self>) -> AnyElement {
         let narrowing = Narrowing::of(self.settings_fields.read(cx).finding.read(cx).text());
         let category = self.settings_pane.read(cx).shown.category;
+
         let page = self
             .settings_pane
             .read(cx)
@@ -130,6 +131,7 @@ impl RootView {
             .filter(|page| page.category() == category && !narrowing.narrows());
         let standing = self.standing(cx);
         let rail = self.categories(&narrowing, cx);
+
         let body = self.shown(&narrowing, category, page, &standing, cx);
 
         kit::pane()
@@ -402,6 +404,7 @@ impl RootView {
 
         if narrowing.narrows() {
             let mut places: Vec<(Place, Vec<Group>)> = Vec::new();
+
             for group in narrowing.anywhere() {
                 let place = (group.category(), group.page());
                 match places.last_mut() {
@@ -422,6 +425,7 @@ impl RootView {
                     .flex_col()
                     .gap_3()
                     .child(div().flex().child(self.place_link(category, page, cx)));
+
                 for group in groups {
                     place = place.child(self.group(group, standing, cx));
                 }
@@ -515,8 +519,10 @@ impl RootView {
     fn pages(&self, pages: &[Page], cx: &mut Context<Self>) -> Div {
         let gathered = pages.first().map_or("", |page| page.gathered_under());
         let mut listed = kit::rows();
+
         for page in pages.iter().copied() {
             let id = format!("settings-page-{}", page.id());
+
             listed = listed.child(self.in_the_ring_at(
                 id.clone(),
                 kit::nav_row(
@@ -1068,6 +1074,7 @@ impl RootView {
     ) -> Stateful<Div> {
         let named = named.into();
         let clicked = press.clone();
+
         self.controls
             .captioned_by_its_name(named.clone(), &mut control);
 
@@ -1096,6 +1103,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let handle = self.controls.at(named, cx);
+
         self.controls.captioned_by_its_name(named, &mut control);
         Self::ringed(&handle, control, press, cx)
     }
@@ -1147,6 +1155,7 @@ impl RootView {
             .map_or_else(SharedString::default, |id| {
                 SharedString::from(id.to_string())
             });
+
         self.controls.captioned_by_its_name(named.clone(), control);
         self.controls.at(named, cx)
     }
@@ -1252,6 +1261,7 @@ impl RootView {
 
         for (index, value) in T::ALL.iter().enumerate() {
             let value = *value;
+
             row = row.child(
                 self.option_in_the_ring(
                     kit::segment((id, index), value.label(), held == value)
@@ -1291,6 +1301,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let clicked = press.clone();
+
         self.controls
             .captioned_by_its_name(named.clone(), &mut control);
 

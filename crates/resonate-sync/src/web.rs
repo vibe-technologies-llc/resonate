@@ -94,6 +94,7 @@ struct Spending {
 impl Spending {
     fn spend(&mut self, read: usize) -> io::Result<()> {
         self.left = self.left.saturating_sub(read);
+
         let Some(drawing) = self.drawing.as_ref().filter(|_| read > 0) else {
             return Ok(());
         };
@@ -102,9 +103,11 @@ impl Spending {
                 .drawn
                 .as_ref()
                 .map_or(0, OwnedSemaphorePermit::num_permits);
+
             self.refused_at = Some(drawn.saturating_add(read));
             return Err(io::Error::from(io::ErrorKind::OutOfMemory));
         };
+
         match &mut self.drawn {
             Some(drawn) => drawn.merge(more),
             None => self.drawn = Some(more),
@@ -114,9 +117,12 @@ impl Spending {
 
     fn taken_by(&mut self, weight: usize) -> Option<OwnedSemaphorePermit> {
         let mut taken = self.drawn.take()?;
+
         let past = taken.num_permits().saturating_sub(weight);
+
         if let Some(mut carried) = taken.split(past).filter(|_| past > 0) {
             let unread = carried.num_permits().saturating_sub(WEB_READ_AT_ONCE);
+
             drop(carried.split(unread));
             self.drawn = Some(carried);
         }
@@ -187,8 +193,10 @@ impl<S: AsyncRead + Unpin> AsyncRead for Budgeted<S> {
         if self.spending.lock().left == 0 {
             return Poll::Ready(Err(io::Error::from(io::ErrorKind::InvalidData)));
         }
+
         let before = buffer.filled().len();
         let polled = Pin::new(&mut self.inner).poll_read(context, buffer);
+
         if let Poll::Ready(Ok(())) = polled {
             let read = buffer.filled().len() - before;
             if let Err(refused) = self.spending.lock().spend(read) {
@@ -234,6 +242,7 @@ pub fn web_address(server: &str) -> Option<WebAddress> {
         _ => return None,
     };
     let host = uri.host()?.trim_matches(['[', ']']).to_owned();
+
     let port = uri
         .port_u16()
         .unwrap_or(if secure { WEB_SERVER_PORT } else { 80 });
@@ -257,6 +266,7 @@ async fn on_this_machine(address: &WebAddress) -> Result<Vec<SocketAddr>> {
         && resolved
             .iter()
             .all(|resolved| resolved.ip().to_canonical().is_loopback());
+
     if !only_here {
         return Err(Error::PlainOffThisMachine {
             server: address.host.clone().into(),
@@ -271,6 +281,7 @@ pub fn to_the_web(roots: RootCertStore) -> Result<Arc<ClientConfig>> {
         .map_err(|source| Error::tls(TlsOp::Client, source))?
         .with_root_certificates(roots)
         .with_no_client_auth();
+
     tls.alpn_protocols = vec![WEB_ALPN.to_vec()];
     Ok(Arc::new(tls))
 }
@@ -300,8 +311,10 @@ pub async fn connect(
         TcpStream::connect(on_this_machine(address).await?.as_slice()).await
     }
     .map_err(|source| Error::stream(StreamOp::Open, source))?;
+
     tcp.set_nodelay(true)
         .map_err(|source| Error::stream(StreamOp::Open, source))?;
+
     let tunnel: Tunnel = if address.secure {
         let name = ServerName::try_from(address.host.clone()).map_err(|_| Error::ServerName {
             server: address.host.clone().into(),
@@ -360,6 +373,7 @@ pub async fn accepted(
         inner: stream,
         spending,
     });
+
     let socket = accept_hdr_async_with_config(tunnel, &mut forwarding, Some(accepting()))
         .await
         .map_err(Error::web)?;
@@ -433,6 +447,7 @@ impl Incoming {
             Self::Quic(stream) => return read_frame_held(stream, most, hold).await,
             Self::Web(stream, budget) => (stream, budget),
         };
+
         budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
         loop {
             match next_message(stream, budget).await? {
@@ -445,6 +460,7 @@ impl Incoming {
                 Some((Message::Binary(payload), _)) => {
                     let length = payload.len();
                     let held = hold(length).ok_or(Error::NoRoom { length })?;
+
                     return Ok(Some((payload.to_vec(), held)));
                 }
                 Some(_) => {}
@@ -460,6 +476,7 @@ impl Incoming {
         let (stream, budget) = match self {
             Self::Quic(stream) => {
                 let read = read_frame_held(stream, most, |length| holds.hold(length)).await?;
+
                 return Ok(read.map(|(payload, held)| Heard::Frame {
                     payload,
                     held: Some(held),
@@ -467,6 +484,7 @@ impl Incoming {
             }
             Self::Web(stream, budget) => (stream, budget),
         };
+
         budget.draw_from(holds);
         budget.allow(most.saturating_add(WEB_FRAMING_AT_MOST));
         match next_message(stream, budget).await? {
@@ -547,6 +565,7 @@ mod tests {
 
     fn binary_header(length: usize) -> Vec<u8> {
         let mut header = vec![BINARY_AND_FINAL, MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES];
+
         header.extend_from_slice(&u64::try_from(length).expect("a length").to_be_bytes());
         header.extend_from_slice(&UNMASKING_KEY);
         header
@@ -554,6 +573,7 @@ mod tests {
 
     fn ping() -> Vec<u8> {
         let mut ping = vec![PING_AND_FINAL, MASKED_WITH_A_SHORT_LENGTH];
+
         ping.extend_from_slice(&UNMASKING_KEY);
         ping
     }
@@ -562,6 +582,7 @@ mod tests {
         let mut stream = TcpStream::connect(("127.0.0.1", port))
             .await
             .expect("connected");
+
         stream
             .write_all(
                 format!(
@@ -573,8 +594,10 @@ mod tests {
             )
             .await
             .expect("asked to upgrade");
+
         let mut answer = Vec::new();
         let mut byte = [0; 1];
+
         while !answer.ends_with(b"\r\n\r\n") {
             stream.read_exact(&mut byte).await.expect("an answer");
             answer.push(byte[0]);
@@ -595,6 +618,7 @@ mod tests {
             loop {
                 let read = accepted.incoming.read_heard(most, &holds).await;
                 let ended = !matches!(read, Ok(Some(_)));
+
                 heard.push(read);
                 if ended {
                     return (heard, accepted.outgoing);
@@ -608,6 +632,7 @@ mod tests {
         let deadline = Instant::now() + SETTLES_WITHIN;
         while !done() {
             assert!(Instant::now() < deadline, "{what} never happened");
+
             sleep(Duration::from_millis(10)).await;
         }
     }
@@ -617,6 +642,7 @@ mod tests {
         let total = 1024 * 1024;
         let arrived = 100 * 1024;
         let (semaphore, holds) = pool_of(total);
+
         let (port, reading) = reading_with(holds, total).await;
         let mut stream = upgraded_by_hand(port).await;
 
@@ -631,7 +657,9 @@ mod tests {
         })
         .await;
         drop(stream);
+
         let (heard, _) = reading.await.expect("the reading task");
+
         assert!(matches!(heard.as_slice(), [Err(_)]));
         assert_eq!(semaphore.available_permits(), total);
     }
@@ -646,9 +674,11 @@ mod tests {
             .write_all(&binary_header(512 * 1024))
             .await
             .expect("announced");
+
         let _ = stream.write_all(&vec![7; 128 * 1024]).await;
 
         let (heard, _) = reading.await.expect("the reading task");
+
         assert!(
             matches!(heard.as_slice(), [Err(Error::NoRoom { .. })]),
             "{:?}",
@@ -660,6 +690,7 @@ mod tests {
     async fn a_ping_is_heard_as_passed_over_and_gives_back_what_it_drew() {
         let total = 64 * 1024;
         let (semaphore, holds) = pool_of(total);
+
         let (port, reading) = reading_with(holds, total).await;
         let mut stream = upgraded_by_hand(port).await;
 
@@ -680,12 +711,15 @@ mod tests {
         else {
             panic!("a ping then a frame were not heard");
         };
+
         assert_eq!(payload, &[1, 2, 3]);
         assert_eq!(
             held.as_ref().map(OwnedSemaphorePermit::num_permits),
             Some(as_framed_by_a_client(3))
         );
+
         drop(heard);
+
         assert_eq!(semaphore.available_permits(), total);
     }
 
@@ -722,12 +756,14 @@ mod tests {
         let serving = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accepted");
             let mut accepted = accepted(stream, None).await.expect("upgraded");
+
             let heard = accepted.incoming.read_at_most(most).await;
             (heard, accepted.outgoing)
         });
 
         let address = web_address(&format!("ws://127.0.0.1:{port}/")).expect("an address");
         let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+
         let (mut outgoing, _incoming) = connect(&address, &tls).await.expect("connected");
         let _ = outgoing.send(&vec![7; sent]).await;
 
@@ -739,15 +775,18 @@ mod tests {
     async fn a_budgeted_stream_stops_reading_once_its_budget_is_spent() {
         let (mut near, mut far) = duplex(4096);
         let (budget, spending) = Budget::spendable();
+
         let mut budgeted = Budgeted {
             inner: &mut near,
             spending,
         };
+
         budget.allow(40);
         far.write_all(&[1; 1000]).await.expect("written");
 
         let mut taken = 0;
         let mut buffer = [0; READ_AT_ONCE];
+
         let refused = loop {
             match budgeted.read(&mut buffer).await {
                 Ok(read) => taken += read,

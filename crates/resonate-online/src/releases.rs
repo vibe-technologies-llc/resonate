@@ -12,7 +12,7 @@ const RELEASE_PAGES: &str = "https://github.com/";
 
 const LARGEST_RELEASE: usize = 1024 * 1024;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Repository {
     owner: String,
     name: String,
@@ -57,19 +57,19 @@ impl fmt::Display for Repository {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 enum Identifier {
     Numeric(u64),
     Named(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 enum Standing {
     Candidate(Vec<Identifier>),
     Released,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Version {
     major: u64,
     minor: u64,
@@ -101,14 +101,17 @@ impl Version {
         let mut parts = numbers.split('.');
         let number = |part: Option<&str>| -> Option<u64> {
             let part = part?;
+
             if part.is_empty() || !part.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
             part.parse().ok()
         };
+
         let major = number(parts.next())?;
         let minor = number(parts.next())?;
         let patch = number(parts.next())?;
+
         if parts.next().is_some() {
             return None;
         }
@@ -198,6 +201,7 @@ impl ReleaseDoc {
         if self.draft || self.prerelease {
             return None;
         }
+
         let version = Version::read(&self.tag_name)?;
         let page = self
             .html_url
@@ -234,6 +238,7 @@ impl Releases {
     pub fn latest(&self) -> Result<Option<Release>> {
         let url = format!("{}{}", self.base, self.repository.latest_path());
         let op = LookupOp::LatestRelease;
+
         let Some(bytes) = self.client.bytes(Host::GitHub, op, &url, LARGEST_RELEASE)? else {
             return Ok(None);
         };
@@ -287,6 +292,7 @@ mod tests {
         for pair in rising.windows(2) {
             assert!(version(pair[0]) < version(pair[1]), "{pair:?}");
         }
+
         assert_eq!(version("v0.8.0"), version("0.8.0"));
         assert_eq!(version("0.8.0+build.7"), version("0.8.0"));
         assert_eq!(version("v0.8.0-rc1").to_string(), "0.8.0-rc1");
@@ -395,9 +401,11 @@ mod tests {
             let (mut stream, _) = listener.accept().expect("a connection");
             let mut head = Vec::new();
             let mut byte = [0u8; 1];
+
             while !head.ends_with(b"\r\n\r\n") && stream.read(&mut byte).expect("a request") == 1 {
                 head.push(byte[0]);
             }
+
             let response = format!(
                 "HTTP/1.1 {status}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
                 body.len()
@@ -436,6 +444,7 @@ mod tests {
             head.starts_with("GET /repos/someone/resonate/releases/latest "),
             "{head}"
         );
+
         let user_agent = head
             .lines()
             .find_map(|line| {
@@ -444,6 +453,7 @@ mod tests {
                     .then(|| value.trim().to_owned())
             })
             .expect("a user agent");
+
         assert_eq!(
             user_agent,
             format!("resonate/{}", env!("CARGO_PKG_VERSION"))
@@ -453,10 +463,13 @@ mod tests {
     #[test]
     fn a_repository_with_no_release_answers_none_and_a_page_that_is_no_release_is_unreadable() {
         let (base, served) = serving("404 Not Found", "");
+
         assert_eq!(over_loopback(base).latest().expect("an answer"), None);
+
         served.join().expect("the server");
 
         let (base, served) = serving("200 OK", "<html>sign in</html>");
+
         assert!(matches!(
             over_loopback(base).latest(),
             Err(crate::Error::Unreadable {
@@ -464,6 +477,7 @@ mod tests {
                 op: LookupOp::LatestRelease
             })
         ));
+
         served.join().expect("the server");
     }
 }

@@ -32,7 +32,7 @@ const SEMITONES_AN_OCTAVE: f64 = 12.0;
 const MILLIBELS_A_NUDGE: i32 = 500;
 const NOTCHES_A_NUDGE: f64 = 1.0;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Curve {
     Kept(ProfileName),
     Own(Option<NodeName>),
@@ -148,6 +148,7 @@ fn missed_the_room(error: &Missed) -> Notice {
 
 fn caveats(kept: &resonate_eq::Kept) -> String {
     let mut said = String::new();
+
     if kept.passed_over > 0 {
         said.push_str(&words::equaliser::lines_passed_over(kept.passed_over));
     }
@@ -176,6 +177,7 @@ pub fn narrowed(q: Q, notches: f64) -> Q {
     if !notches.is_finite() || notches == 0.0 {
         return q;
     }
+
     let lowest = f64::from(Q::WIDEST_MILLI) / MILLI_PER_UNIT;
     let highest = f64::from(Q::NARROWEST_MILLI) / MILLI_PER_UNIT;
     let steps_held = f64::from(q.milli()) / MILLI_PER_UNIT * Q_STEPS_PER_UNIT;
@@ -368,12 +370,14 @@ impl EqualiserModel {
             _measured: Task::ready(()),
             _sounded: Task::ready(()),
         };
+
         model.gather();
         model
     }
 
     fn gather(&mut self) {
         let bound: Vec<Curve> = self.bindings.curves().collect();
+
         self.held.retain(|curve, _| bound.contains(curve));
         for curve in bound {
             if self.held.contains_key(&curve) {
@@ -461,6 +465,7 @@ impl EqualiserModel {
 
     pub const fn take_untold(&mut self) -> bool {
         let untold = self.untold;
+
         self.untold = false;
         untold
     }
@@ -489,6 +494,7 @@ impl EqualiserModel {
             }
             return;
         };
+
         if self.shown_curve() == Some(&curve) {
             return;
         }
@@ -498,10 +504,12 @@ impl EqualiserModel {
     fn reread(&mut self, curve: Curve) {
         self.save_now();
         self.forget_the_rows();
+
         let held = self
             .held
             .get(&curve)
             .map(|profile| Ok(Some(Profile::clone(profile))));
+
         match held.unwrap_or_else(|| curve.read(&self.store)) {
             Ok(Some(profile)) => self.shown = Some((curve, profile)),
             Ok(None) => {
@@ -561,13 +569,16 @@ impl EqualiserModel {
 
     fn replaced(&mut self, name: &ProfileName) {
         let curve = Curve::Kept(name.clone());
+
         if self.shown_curve() == Some(&curve) {
             self.unsaved = false;
             self._saved = Task::ready(());
             self.shown = None;
             self.forget_the_rows();
         }
+
         let was_bound = self.held.remove(&curve).is_some();
+
         self.gather();
         self.untold |= was_bound;
     }
@@ -593,6 +604,7 @@ impl EqualiserModel {
             }]
             .into(),
         };
+
         self.drawn = Some(Drawn {
             rate,
             revision: self.revision,
@@ -608,7 +620,9 @@ impl EqualiserModel {
         {
             return peaked.peak;
         }
+
         let peak = self.shown().map_or(0.0, |profile| profile.peak_db(rate));
+
         self.peaked.set(Some(Peaked {
             rate,
             revision: self.revision,
@@ -654,9 +668,11 @@ impl EqualiserModel {
 
     pub fn carry_over(&mut self, carry: &Carry) -> bool {
         self.save_now();
+
         let Some(binding) = self.bindings.named(Some(&carry.from)).cloned() else {
             return false;
         };
+
         if binding == Binding::Own
             && let Err(error) = self.carry_the_own_curve(carry)
         {
@@ -677,10 +693,13 @@ impl EqualiserModel {
 
     fn carry_the_own_curve(&self, carry: &Carry) -> resonate_eq::Result<()> {
         let from = Some(carry.from.as_str());
+
         if !self.store.own_path(from)?.is_file() {
             return Ok(());
         }
+
         let curve = self.store.own(from)?;
+
         self.store.keep_own(Some(carry.to.as_str()), &curve)?;
         self.store.forget_own(from)?;
         Ok(())
@@ -748,6 +767,7 @@ impl EqualiserModel {
             Cell::Gain => BandGain::from_decibels(number).map(|held| band.gain = held),
             Cell::Q => Q::from_units(number).map(|held| band.q = held),
         };
+
         if read.is_err() {
             self.notice = Some(Notice::Trouble(refused(editing.cell)));
             return false;
@@ -769,12 +789,15 @@ impl EqualiserModel {
 
     pub fn add_at(&mut self, placed: Placed, cx: &mut Context<Self>) -> Option<usize> {
         let (_, profile) = self.shown.as_mut()?;
+
         if let Err(error) = profile.push(a_band_at(placed)) {
             tracing::debug!(%error, "a band was pressed onto a full curve");
             self.notice = Some(Notice::Trouble(words::equaliser::bands_at_most(MAX_BANDS)));
             return None;
         }
+
         let row = profile.bands().len().checked_sub(1)?;
+
         self.editing = None;
         self.shaping = None;
         self.chosen = Some(row);
@@ -787,6 +810,7 @@ impl EqualiserModel {
             return false;
         };
         let landed = moved(band, placed);
+
         if landed == band {
             return false;
         }
@@ -799,6 +823,7 @@ impl EqualiserModel {
             return false;
         };
         let next = nudged(band, nudge);
+
         if next == band {
             return false;
         }
@@ -812,6 +837,7 @@ impl EqualiserModel {
             return false;
         };
         let q = narrowed(band.q, notches);
+
         if q == band.q {
             return false;
         }
@@ -824,6 +850,7 @@ impl EqualiserModel {
         let Some(band) = self.band(row) else {
             return;
         };
+
         self.put(
             row,
             Band {
@@ -840,6 +867,7 @@ impl EqualiserModel {
         let Some(band) = self.band(row) else {
             return;
         };
+
         self.put(
             row,
             Band {
@@ -855,6 +883,7 @@ impl EqualiserModel {
             return;
         };
         let at = next_frequency(profile.bands());
+
         self.add_at(
             Placed {
                 frequency: at,
@@ -878,6 +907,7 @@ impl EqualiserModel {
     pub fn fit_the_preamp(&mut self, rate: SampleRate, cx: &mut Context<Self>) {
         if let Some((_, profile)) = self.shown.as_mut() {
             let fitted = profile.fitted_preamp(rate);
+
             profile.set_preamp(fitted);
         }
         self.settle(cx);
@@ -892,6 +922,7 @@ impl EqualiserModel {
         let Some((_, profile)) = self.shown.as_mut() else {
             return false;
         };
+
         if profile.bands() != measured.bands() {
             return false;
         }
@@ -909,17 +940,21 @@ impl EqualiserModel {
 
     fn settle(&mut self, cx: &mut Context<Self>) {
         self.step();
+
         let Some((curve, profile)) = self.shown.clone() else {
             return;
         };
+
         if self.held.contains_key(&curve) {
             self.held.insert(curve.clone(), Arc::new(profile.clone()));
         }
         self.unsaved = true;
+
         let folder = self.store.folder().to_path_buf();
 
         self._saved = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(PROFILE_SETTLES).await;
+
             let written = cx
                 .background_executor()
                 .spawn(async move { curve.keep(&Store::at(folder), &profile) })
@@ -941,6 +976,7 @@ impl EqualiserModel {
 
     pub fn import(&mut self, from: PathBuf, cx: &mut Context<Self>) {
         let folder = self.store.folder().to_path_buf();
+
         self._imported = cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
@@ -952,11 +988,13 @@ impl EqualiserModel {
                     this.reload();
                     this.replaced(&name);
                     this.reread(Curve::Kept(name.clone()));
+
                     let said = if kept.converted {
                         words::equaliser::kept_graphic(kept.profile.bands().len(), name.as_str())
                     } else {
                         words::equaliser::kept_with_bands(kept.profile.bands().len(), name.as_str())
                     };
+
                     this.notice = Some(Notice::Done(format!("{said}{}", caveats(&kept))));
                     cx.notify();
                 }
@@ -975,6 +1013,7 @@ impl EqualiserModel {
     pub fn fit_a_measurement(&mut self, from: PathBuf, cx: &mut Context<Self>) {
         let folder = self.store.folder().to_path_buf();
         let goal = self.goal.clone();
+
         self.fitting_a_measurement = true;
 
         self._measured = cx.spawn(async move |this, cx| {
@@ -987,6 +1026,7 @@ impl EqualiserModel {
                     let measured =
                         Store::fit_file(&from, &target, &resonate_eq::Fitting::default())?;
                     let name = Store::name_for_import(&from, None);
+
                     store.keep(&name, &measured.fitted.profile)?;
                     Ok::<_, resonate_eq::Error>((name, measured))
                 })
@@ -1018,6 +1058,7 @@ impl EqualiserModel {
         if self.measuring_the_room {
             return;
         }
+
         let Sounding {
             rig,
             through,
@@ -1028,6 +1069,7 @@ impl EqualiserModel {
         let goal = self.goal.clone();
         let calibration = self.calibration.clone();
         let hearing = Hearing::new();
+
         self.hearing = Some(Arc::clone(&hearing));
         self.measuring_the_room = true;
 
@@ -1044,10 +1086,12 @@ impl EqualiserModel {
                         .measure(through.as_ref(), &from, &hearing, microphone.as_ref())
                         .map_err(Missed::Heard)?;
                     let target = goal.response().map_err(Missed::Fitted)?;
+
                     let fitted =
                         fit(&heard, &target, &Fitting::default()).map_err(Missed::Fitted)?;
                     let name =
                         called.unwrap_or_else(|| ProfileName::after(words::equaliser::measured()));
+
                     Store::at(folder)
                         .keep(&name, &fitted.profile)
                         .map_err(Missed::Fitted)?;
@@ -1110,8 +1154,11 @@ impl EqualiserModel {
         let Some((Curve::Own(_), profile)) = self.shown.clone() else {
             return;
         };
+
         self.save_now();
+
         let name = unused_name(&self.kept, called);
+
         match self.store.keep(&name, &profile) {
             Ok(_) => {
                 self.reload();
@@ -1134,6 +1181,7 @@ impl EqualiserModel {
             Curve::Kept(name) => self.store.forget(name),
             Curve::Own(owner) => self.store.forget_own(owner.as_ref().map(NodeName::as_str)),
         };
+
         match discarded {
             Ok(_) => {
                 if self.shown_curve() == Some(curve) {
@@ -1187,6 +1235,7 @@ impl EqualiserModel {
             return;
         }
         self.reading_the_catalogue = true;
+
         let corrections = Arc::clone(&self.corrections);
 
         self._catalogued = cx.spawn(async move |this, cx| {
@@ -1202,6 +1251,7 @@ impl EqualiserModel {
                         this.catalogue = Some(catalogue);
                         if let Some(typed) = then {
                             let sink = this.looking_on.clone();
+
                             this.look(&typed, sink.as_ref(), cx);
                         }
                     }
@@ -1241,6 +1291,7 @@ impl EqualiserModel {
     pub fn fetch(&mut self, device: DeviceId, label: String, cx: &mut Context<Self>) {
         let corrections = Arc::clone(&self.corrections);
         let folder = self.store.folder().to_path_buf();
+
         self.fetching = true;
 
         self._fetched = cx.spawn(async move |this, cx| {
@@ -1290,6 +1341,7 @@ impl EqualiserModel {
 pub fn unused_name(kept: &[ProfileName], called: &str) -> ProfileName {
     let taken = |name: &ProfileName| kept.iter().any(|held| held.folded() == name.folded());
     let plain = ProfileName::after(called);
+
     if !taken(&plain) {
         return plain;
     }
@@ -1338,6 +1390,7 @@ pub fn read_typed(typed: &str, cell: Cell) -> Option<f64> {
                 return resonate_eq::read_number(kilohertz)
                     .map(|number| number * HERTZ_A_KILOHERTZ);
             }
+
             let hertz = without_unit(typed, "hz").unwrap_or(typed);
             if grouped_in_thousands(hertz) {
                 resonate_eq::read_number(&hertz.replace(',', ""))
@@ -1361,6 +1414,7 @@ fn without_unit<'a>(typed: &'a str, unit: &str) -> Option<&'a str> {
 fn grouped_in_thousands(number: &str) -> bool {
     let whole = number.split_once('.').map_or(number, |(whole, _)| whole);
     let mut groups = whole.split(',');
+
     let leading = groups.next().unwrap_or_default();
     let rest: Vec<&str> = groups.collect();
     let digits = |group: &str| group.bytes().all(|byte| byte.is_ascii_digit());
@@ -1385,6 +1439,7 @@ fn next_frequency(bands: &[Band]) -> Frequency {
     const FIRST: f64 = 1_000.0;
 
     let mut held: Vec<f64> = bands.iter().map(|band| band.frequency.hertz()).collect();
+
     if held.is_empty() {
         return Frequency::from_hertz(FIRST).unwrap_or(Frequency::LOWEST);
     }
@@ -1427,12 +1482,14 @@ mod tests {
         let store = Store::at(folder.clone());
         let name = named("Harman");
         let dac = NodeName::new("alsa_output.dac");
+
         store
             .keep(
                 &name,
                 &Profile::new(Preamp::NONE, vec![a_band()]).expect("a profile"),
             )
             .expect("the profile is kept");
+
         let model = cx.new(|cx| {
             EqualiserModel::saved_on_leaving(
                 folder.clone(),
@@ -1460,6 +1517,7 @@ mod tests {
             .expect("the profile reads")
             .expect("the profile is there");
         let _ = std::fs::remove_dir_all(&folder);
+
         assert_eq!(
             kept.preamp(),
             quieter,
@@ -1484,12 +1542,14 @@ mod tests {
             BandGain::FLAT,
             Q::BUTTERWORTH,
         );
+
         store
             .keep(
                 &name,
                 &Profile::new(Preamp::NONE, vec![notch]).expect("a profile"),
             )
             .expect("the profile is kept");
+
         let model = cx.new(|_| {
             EqualiserModel::new(
                 folder.clone(),
@@ -1504,6 +1564,7 @@ mod tests {
 
         let taken = model.update(cx, |model, cx| {
             model.show(Some(&dac));
+
             let editing = Editing {
                 row: 0,
                 cell: Cell::Gain,
@@ -1545,6 +1606,7 @@ mod tests {
             (model.is_looking(), model.knows_the_catalogue())
         });
         let _ = std::fs::remove_dir_all(&folder);
+
         assert!(
             !looking,
             "the catalogue read was dropped and left the pane looking"
@@ -1564,8 +1626,11 @@ mod tests {
                 format!("{hertz:.2}\t{level:.2}\n")
             })
             .collect();
+
         std::fs::create_dir_all(folder).expect("a writable temporary directory");
+
         let file = folder.join("dipped.txt");
+
         std::fs::write(&file, format!("* REW\n{text}")).expect("a writable temporary directory");
         file
     }
@@ -1593,7 +1658,9 @@ mod tests {
             model.aim_at(Goal::BuiltIn(BuiltIn::Flat));
             model.fit_a_measurement(measurement, cx);
         });
+
         assert!(model.read_with(cx, |model, _| model.is_fitting_a_measurement()));
+
         cx.run_until_parked();
 
         let (fitting, shown, bands, notice, kept) = model.update(cx, |model, _| {
@@ -1723,7 +1790,9 @@ mod tests {
             model.aim_at(Goal::BuiltIn(BuiltIn::Flat));
             model.measure_the_room(sounding(Arc::new(Dipped), Listening::Desktop, None), cx);
         });
+
         assert!(model.read_with(cx, |model, _| model.is_measuring_the_room()));
+
         cx.run_until_parked();
 
         let (measuring, shown, bands, notice) = model.update(cx, |model, _| {
@@ -1867,12 +1936,16 @@ mod tests {
             "resonate-ui-equaliser-calibrated-{}",
             std::process::id()
         ));
+
         std::fs::create_dir_all(&folder).expect("a scratch folder");
+
         let microphone = folder.join("microphone.csv");
         let rows: String = (0..12)
             .map(|step| format!("{},0.5\n", 100 * (step + 1)))
             .collect();
+
         std::fs::write(&microphone, format!("frequency,raw\n{rows}")).expect("a calibration");
+
         let read = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let model = cx.new(|_| {
             EqualiserModel::new(
@@ -1958,6 +2031,7 @@ mod tests {
             gain: BandGain::from_decibels(6.0).expect("a gain"),
             ..a_band()
         };
+
         store
             .keep(
                 &profile,
@@ -1970,6 +2044,7 @@ mod tests {
                 &Profile::new(Preamp::NONE, vec![louder]).expect("a profile"),
             )
             .expect("the own curve is kept");
+
         let mut model = EqualiserModel::new(
             folder.clone(),
             Arc::new(Corrected::uncorrected()),
@@ -2022,6 +2097,7 @@ mod tests {
             gain: BandGain::from_decibels(6.0).expect("a gain"),
             ..a_band()
         };
+
         for (name, band) in [(&before, a_band()), (&after, louder)] {
             store
                 .keep(
@@ -2030,6 +2106,7 @@ mod tests {
                 )
                 .expect("the profile is kept");
         }
+
         let mut model = EqualiserModel::new(
             folder.clone(),
             Arc::new(Corrected::uncorrected()),
@@ -2039,6 +2116,7 @@ mod tests {
                 by_sink: vec![(dac.clone(), Binding::Profile(before.clone()))],
             },
         );
+
         model.show(Some(&dac));
 
         model.rebound(Bindings {
@@ -2047,6 +2125,7 @@ mod tests {
             by_sink: vec![(dac.clone(), Binding::Profile(after.clone()))],
         });
         model.show(Some(&dac));
+
         let told = model.equalisation();
         let _ = std::fs::remove_dir_all(&folder);
 
@@ -2072,10 +2151,12 @@ mod tests {
             Arc::new(Corrected::uncorrected()),
             Bindings::default(),
         );
+
         model.catalogue = Some(Arc::new(Catalogue::of(vec![
             by("Rtings"),
             by("oratory1990"),
         ])));
+
         let measurer_of = |model: &EqualiserModel| {
             model
                 .suggested("Maker Thing 100", None)
@@ -2083,10 +2164,12 @@ mod tests {
         };
 
         let ranked = measurer_of(&model);
+
         model.prefer(Measurers {
             fallback: Some("rtings".to_owned()),
             by_sink: BTreeMap::new(),
         });
+
         let preferred = measurer_of(&model);
 
         assert_eq!(ranked.as_deref(), Some("oratory1990"));
@@ -2108,17 +2191,21 @@ mod tests {
             Arc::new(Corrected::uncorrected()),
             Bindings::default(),
         );
+
         model.catalogue = Some(Arc::new(Catalogue::of(vec![
             by("Rtings"),
             by("oratory1990"),
             by("crinacle"),
         ])));
+
         let dac = NodeName::new("alsa_output.dac");
         let speakers = NodeName::new("alsa_output.speakers");
+
         model.prefer(Measurers {
             fallback: Some("rtings".to_owned()),
             by_sink: BTreeMap::from([(dac.clone(), "crinacle".to_owned())]),
         });
+
         let measurer_of = |sink: Option<&NodeName>| {
             model
                 .suggested("Maker Thing 100", sink)
@@ -2148,6 +2235,7 @@ mod tests {
                 &Profile::new(Preamp::NONE, vec![a_band()]).expect("a profile"),
             )
             .expect("the first profile is kept");
+
         let mut model = EqualiserModel::new(
             folder.clone(),
             Arc::new(Corrected::uncorrected()),
@@ -2157,6 +2245,7 @@ mod tests {
                 by_sink: vec![(dac.clone(), Binding::Profile(name.clone()))],
             },
         );
+
         store
             .keep(
                 &name,
@@ -2164,6 +2253,7 @@ mod tests {
             )
             .expect("the second profile is kept over the first");
         model.replaced(&name);
+
         let untold = model.take_untold();
         let told = model.equalisation();
         let _ = std::fs::remove_dir_all(&folder);
@@ -2182,6 +2272,7 @@ mod tests {
         );
 
         model.replaced(&named("Unbound"));
+
         assert!(
             !model.take_untold(),
             "a profile nothing binds was told to the engine"
@@ -2193,12 +2284,15 @@ mod tests {
         let band = a_band();
 
         let higher = nudged(band, Nudge::Higher);
+
         assert!((higher.frequency.hertz() - 1_059.46).abs() < 0.01);
         assert_eq!(
             (higher.gain, higher.q, higher.kind),
             (band.gain, band.q, band.kind)
         );
+
         let back = nudged(higher, Nudge::Lower);
+
         assert!((back.frequency.hertz() - 1_000.0).abs() < 0.02);
 
         assert_eq!(nudged(band, Nudge::Louder).gain.milli_decibels(), 3_500);
@@ -2278,7 +2372,9 @@ mod tests {
             Q::BUTTERWORTH,
         );
         let profile = Profile::new(Preamp::NONE, vec![treble]).expect("a profile");
+
         store.keep(&name, &profile).expect("the profile is kept");
+
         let model = cx.new(|_| {
             let mut model = EqualiserModel::new(
                 folder.clone(),
@@ -2289,6 +2385,7 @@ mod tests {
                     by_sink: Vec::new(),
                 },
             );
+
             model.show(None);
             model
         });
@@ -2299,9 +2396,11 @@ mod tests {
                 model.peak_db(SampleRate::HZ_96000),
             )
         });
+
         model.update(cx, |model, cx| {
             model.fit_the_preamp(SampleRate::HZ_96000, cx);
         });
+
         let fitted = model.read_with(cx, |model, _| model.shown().map(Profile::preamp));
         let _ = std::fs::remove_dir_all(&folder);
 
@@ -2334,7 +2433,9 @@ mod tests {
             Q::BUTTERWORTH,
         );
         let profile = Profile::new(Preamp::NONE, vec![bass]).expect("a profile");
+
         store.keep(&name, &profile).expect("the profile is kept");
+
         let model = cx.new(|_| {
             let mut model = EqualiserModel::new(
                 folder.clone(),
@@ -2345,6 +2446,7 @@ mod tests {
                     by_sink: Vec::new(),
                 },
             );
+
             model.show(None);
             model
         });

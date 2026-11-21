@@ -75,6 +75,7 @@ impl<P: Pcm> AsWave<P> {
             .seek(Frames(frame))
             .map_err(io::Error::other)?
             .get();
+
         if landed > frame {
             return Err(io::ErrorKind::InvalidData.into());
         }
@@ -99,12 +100,15 @@ impl<P: Pcm> AsWave<P> {
                 return Ok(());
             };
             let shape = decoded.spec();
+
             if shape.format != self.spec.format
                 || shape.channel_count() != self.spec.channel_count()
             {
                 return Err(io::ErrorKind::InvalidData.into());
             }
+
             let first = self.next;
+
             self.next = first.saturating_add(decoded.frames() as u64);
             if self.next <= frame {
                 continue;
@@ -115,7 +119,9 @@ impl<P: Pcm> AsWave<P> {
                 Wrapping::Wave,
                 &mut self.held,
             );
+
             let passed = usize::try_from((frame - first) * self.block).unwrap_or(usize::MAX);
+
             self.held.drain(..passed.min(self.held.len()));
             self.held_from = frame * self.block;
             return Ok(());
@@ -127,6 +133,7 @@ impl<P: Pcm> AsWave<P> {
             .frames
             .saturating_sub(frame)
             .clamp(1, SILENCE_HANDED_AT_ONCE);
+
         self.held.clear();
         self.held
             .resize(usize::try_from(silent * self.block).unwrap_or(0), 0);
@@ -137,27 +144,34 @@ impl<P: Pcm> AsWave<P> {
 impl<P: Pcm> Read for AsWave<P> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let length = self.length();
+
         if into.is_empty() || self.at >= length {
             return Ok(0);
         }
+
         let left = usize::try_from(length - self.at).unwrap_or(usize::MAX);
         let header = self.header.len() as u64;
 
         let carried = if self.at < header {
             let from = self.at as usize;
             let carried = into.len().min(self.header.len() - from);
+
             into[..carried].copy_from_slice(&self.header[from..from + carried]);
             carried
         } else {
             let within = self.at - header;
+
             if !self.held().contains(&within) {
                 self.fill(within / self.block)?;
             }
+
             let from = usize::try_from(within - self.held_from).unwrap_or(usize::MAX);
             let carried = into.len().min(self.held.len() - from).min(left);
+
             into[..carried].copy_from_slice(&self.held[from..from + carried]);
             carried
         };
+
         self.at += carried as u64;
         Ok(carried)
     }
@@ -170,6 +184,7 @@ impl<P: Pcm> Seek for AsWave<P> {
             SeekFrom::End(by) => self.length().checked_add_signed(by),
             SeekFrom::Current(by) => self.at.checked_add_signed(by),
         };
+
         self.at = at.ok_or(io::ErrorKind::InvalidInput)?;
         Ok(self.at)
     }
@@ -242,15 +257,19 @@ mod tests {
                 .lasts
                 .saturating_sub(self.next)
                 .min(BLOCK_FRAMES as u64);
+
             if frames == 0 {
                 return Ok(None);
             }
             self.block.set_frames(frames as usize);
+
             let SampleData::S24(samples) = self.block.data_mut() else {
                 panic!("not twenty-four bits");
             };
+
             for (at, sample_at) in samples.iter_mut().enumerate() {
                 let at = at as u64;
+
                 *sample_at = sample(self.next + at / 2, at % 2);
             }
             self.next += frames;
@@ -284,6 +303,7 @@ mod tests {
 
     fn whole<R: Read>(mut read: R) -> Vec<u8> {
         let mut bytes = Vec::new();
+
         read.read_to_end(&mut bytes).expect("the body");
         bytes
     }
@@ -294,7 +314,9 @@ mod tests {
         let mut body = AsWave::over(Counting::lasting(1_000), SPEC, frames);
 
         let length = body.seek(SeekFrom::End(0)).expect("the length");
+
         body.seek(SeekFrom::Start(0)).expect("the start");
+
         let bytes = whole(&mut body);
 
         assert_eq!(length, wave_bytes(SPEC, frames));
@@ -319,12 +341,18 @@ mod tests {
         let from = 44 + 437 * 6 + 4;
 
         body.seek(SeekFrom::Start(from)).expect("the range");
+
         let mut part = vec![0; 6 * 400];
+
         body.read_exact(&mut part).expect("the range read");
+
         let rest = whole(&mut body);
+
         body.seek(SeekFrom::Start(10))
             .expect("back into the header");
+
         let mut header_and_more = vec![0; 40];
+
         body.read_exact(&mut header_and_more)
             .expect("across the header");
 
@@ -338,10 +366,12 @@ mod tests {
     #[test]
     fn a_decode_ending_early_is_carried_on_as_silence_to_the_length_named() {
         let mut body = AsWave::over(Counting::lasting(500), SPEC, Frames(800));
+
         let bytes = whole(&mut body);
 
         body.seek(SeekFrom::Start(44 + 700 * 6))
             .expect("past the decode");
+
         let tail = whole(&mut body);
 
         assert_eq!(bytes.len(), 44 + 800 * 6);

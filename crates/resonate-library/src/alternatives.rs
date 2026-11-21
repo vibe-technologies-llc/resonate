@@ -57,7 +57,7 @@ impl Owed {
     }
 }
 
-#[derive(Clone, PartialEq, Eq, Hash)]
+#[derive(Clone, Hash, PartialEq, Eq)]
 struct Song {
     album: String,
     artist: String,
@@ -116,6 +116,7 @@ impl Held {
         let bits = format_named_by(row.get(8)?).map_or(0, |format| format.valid_bits());
         let whole_file = row.get::<_, Option<i64>>(11)?.is_none();
         let size: i64 = row.get(10)?;
+
         let bitrate = match length {
             Some(length) if whole_file && !length.is_zero() => {
                 (size.max(0) as f64 * 8.0 / length.as_secs_f64()) as u64
@@ -171,6 +172,7 @@ fn regrouped(tx: &Transaction<'_>, read: &str) -> crate::Result<u64> {
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut moved = 0;
+
     for copies in one_song_apiece(copies) {
         for (copy, best) in held_under_the_best(copies) {
             if copy.held_under == best {
@@ -195,6 +197,7 @@ fn regrouped(tx: &Transaction<'_>, read: &str) -> crate::Result<u64> {
 fn one_song_apiece(copies: Vec<Held>) -> Vec<Vec<Held>> {
     let mut gathered = Gathering::of(copies.len());
     let mut first_named: AHashMap<Song, usize> = AHashMap::new();
+
     for (index, copy) in copies.iter().enumerate() {
         for song in copy.songs() {
             match first_named.get(&song) {
@@ -207,6 +210,7 @@ fn one_song_apiece(copies: Vec<Held>) -> Vec<Vec<Held>> {
     }
 
     let mut songs: AHashMap<usize, Vec<Held>> = AHashMap::new();
+
     for (index, copy) in copies.into_iter().enumerate() {
         songs.entry(gathered.root(index)).or_default().push(copy);
     }
@@ -229,6 +233,7 @@ impl Gathering {
             && above != index
         {
             let grand = self.under.get(above).copied().unwrap_or(above);
+
             if let Some(slot) = self.under.get_mut(index) {
                 *slot = grand;
             }
@@ -239,6 +244,7 @@ impl Gathering {
 
     fn join(&mut self, one: usize, other: usize) {
         let (one, other) = (self.root(one), self.root(other));
+
         let (low, high) = (one.min(other), one.max(other));
         if let Some(slot) = self.under.get_mut(high) {
             *slot = low;
@@ -248,6 +254,7 @@ impl Gathering {
 
 fn held_under_the_best(mut copies: Vec<Held>) -> Vec<(Held, Option<i64>)> {
     copies.sort_by_key(|copy| copy.length);
+
     let mut settled = Vec::with_capacity(copies.len());
     let mut run: Vec<Held> = Vec::new();
 
@@ -259,6 +266,7 @@ fn held_under_the_best(mut copies: Vec<Held>) -> Vec<(Held, Option<i64>)> {
             (Some(None), None) => true,
             _ => false,
         };
+
         if !joins {
             settled.extend(crowned(std::mem::take(&mut run)));
         }

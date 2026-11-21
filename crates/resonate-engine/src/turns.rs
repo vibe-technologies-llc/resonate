@@ -65,6 +65,7 @@ mod tests {
     #[test]
     fn a_level_rounded_to_the_devices_step_is_the_echo_of_the_one_sent() {
         let mut turns = Turns::new();
+
         turns.sent(at(-18.06));
 
         assert!(turns.echo(at(-18.5), at(-6.0)));
@@ -75,6 +76,7 @@ mod tests {
     fn every_turn_of_a_fast_drag_is_still_known_when_its_echo_comes_back() {
         let mut turns = Turns::new();
         let first = at(-40.0);
+
         turns.sent(first);
         for step in 1..=TURNS_REMEMBERED * 4 {
             turns.sent(at(-40.0 + step as f32 * 0.5));
@@ -86,6 +88,7 @@ mod tests {
     #[test]
     fn silence_is_the_echo_of_silence_alone() {
         let mut turns = Turns::new();
+
         turns.sent(Gain::SILENT);
 
         assert!(turns.echo(Gain::SILENT, at(-6.0)));

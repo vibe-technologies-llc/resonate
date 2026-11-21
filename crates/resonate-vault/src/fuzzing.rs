@@ -41,9 +41,11 @@ pub fn bare_a_file(bytes: &[u8]) {
     let location = MediaLocation::local(PathBuf::from("a.file"));
 
     let mut stream: Box<dyn MediaStream> = Box::new(Reading::new(Cursor::new(bytes.to_vec())));
+
     let _ = bare::bare(&mut stream, container, &location);
 
     let mut stream: Box<dyn MediaStream> = Box::new(Reading::new(Cursor::new(bytes.to_vec())));
+
     let _ = bare::declared_digest(&mut stream);
 }
 
@@ -52,6 +54,7 @@ struct Scratch(PathBuf);
 impl Scratch {
     fn holding(bytes: &[u8]) -> Self {
         let path = env::temp_dir().join(format!("resonate-fuzz-unpacking-{}", process::id()));
+
         fs::write(&path, bytes).expect("a scratch file");
         Self(path)
     }
@@ -73,6 +76,7 @@ pub fn unpack_a_file(bytes: &[u8]) {
         return;
     };
     let mut buffer = Vec::new();
+
     let _ = (&mut unpacking)
         .take(MOST_UNPACKED_READ)
         .read_to_end(&mut buffer);

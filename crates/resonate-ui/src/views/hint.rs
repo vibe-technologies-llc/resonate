@@ -34,6 +34,7 @@ fn remember(id: Option<ElementId>, wording: Wording) {
     let Some(id) = id else {
         return;
     };
+
     NAMED.with_borrow_mut(|named| {
         if named.len() >= NAMED_AT_MOST && !named.contains_key(&id) {
             named.clear();
@@ -58,6 +59,7 @@ pub(crate) trait Names: StatefulInteractiveElement {
     fn names(mut self, itself: impl Into<SharedString>) -> Self {
         let itself = itself.into();
         let spoken = itself.clone();
+
         remember(
             self.interactivity().element_id.clone(),
             Rc::new(move || spoken.clone()),
@@ -71,6 +73,7 @@ pub(crate) trait Names: StatefulInteractiveElement {
 
     fn names_when_raised(mut self, itself: impl Fn() -> SharedString + 'static) -> Self {
         let itself = Rc::new(itself);
+
         remember(self.interactivity().element_id.clone(), itself.clone());
         if !asked() {
             return self;
@@ -201,10 +204,12 @@ mod tests {
 
     fn sources() -> Vec<(String, String)> {
         let mut read = Vec::new();
+
         walk(
             Path::new(env!("CARGO_MANIFEST_DIR")).join("src").as_path(),
             &mut read,
         );
+
         assert!(
             read.len() > 10,
             "the walk found {} source files, so it is not reading the crate at all",
@@ -224,6 +229,7 @@ mod tests {
                     .expect("a file has a name")
                     .to_string_lossy()
                     .into_owned();
+
                 read.push((
                     name,
                     fs::read_to_string(&path).expect("a readable source file"),
@@ -249,6 +255,7 @@ mod tests {
             if name == SEAM {
                 continue;
             }
+
             assert!(
                 !source.contains(ATTACHED),
                 "{name} attaches a hint of its own rather than through hint::names, so it is not \

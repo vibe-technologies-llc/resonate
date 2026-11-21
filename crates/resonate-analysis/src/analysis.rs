@@ -141,7 +141,9 @@ pub fn print(
 ) -> Result<Option<Chromaprint>> {
     let (mut decoder, info) = opened(sources, location, span)?;
     let codec = Codec::from_id(info.codec);
+
     let format = native_format(&info, codec);
+
     decoder.set_output_format(format);
     decoder.follow_format_changes();
 
@@ -155,16 +157,21 @@ pub fn print(
     thread::scope(|scope| {
         let (mut to_printing, from_decode) = relay();
         let (wanting, wanted) = mpsc::channel();
+
         let printed = scope.spawn(move || {
             let mut printing = Printing::new(rate.hz(), channels);
+
             let _ = wanting.send(printing.frames_wanted());
+
             from_decode.each(|piece| printing.note(piece));
+
             let frames = Frames(walked_frames.load(Ordering::Acquire));
             printing.finished(declared.unwrap_or(frames).to_duration(rate))
         });
         let frames_wanted = wanted.recv().unwrap_or(0);
 
         let mut frames = 0_u64;
+
         let walked = loop {
             if frames >= frames_wanted && declared.is_some() {
                 break Ok(());
@@ -183,8 +190,10 @@ pub fn print(
                 Err(error) => break Err(error),
             }
         };
+
         walked_frames.store(frames, Ordering::Release);
         drop(to_printing);
+
         let printed = joined(printed);
         walked.map(|()| printed)
     })
@@ -206,7 +215,9 @@ pub fn excerpt(
 ) -> Result<Option<Excerpt>> {
     let (mut decoder, info) = opened(sources, location, span)?;
     let codec = Codec::from_id(info.codec);
+
     let format = native_format(&info, codec);
+
     decoder.set_output_format(format);
     decoder.follow_format_changes();
 
@@ -214,6 +225,7 @@ pub fn excerpt(
     let channels = usize::from(info.spec.channels.count().get());
     let placed = heard_channels(&info.speakers.placements(info.spec.channels.count().get()));
     let start = Frames::from_duration(from, rate);
+
     if info.is_seekable
         && start != Frames::ZERO
         && info.duration.is_none_or(|duration| start < duration)
@@ -226,15 +238,20 @@ pub fn excerpt(
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut mixed = Vec::new();
     let mut mono = Vec::with_capacity(wanted.min(1 << 22));
+
     while mono.len() < wanted {
         if watch.stopped() {
             return Err(Error::Stopped);
         }
+
         let Some(heard) = walking.step(&mut decoder)? else {
             break;
         };
+
         mix_down(heard.samples, channels, &placed, &mut mixed);
+
         let room = wanted - mono.len();
+
         mono.extend_from_slice(&mixed[..mixed.len().min(room)]);
     }
 
@@ -305,6 +322,7 @@ pub(crate) fn native_format(info: &MediaInfo, codec: Codec) -> SampleFormat {
     if codec == Codec::Dsd || info.spec.format.is_float() {
         return SampleFormat::F32;
     }
+
     let bits = info
         .bits_per_coded_sample
         .unwrap_or_else(|| info.spec.format.valid_bits());
@@ -328,7 +346,9 @@ fn walked<D: Drawing>(
 ) -> Result<(Study, D)> {
     let (mut decoder, info) = opened(sources, location, span)?;
     let codec = Codec::from_id(info.codec);
+
     let format = native_format(&info, codec);
+
     decoder.set_output_format(format);
     decoder.follow_format_changes();
 
@@ -363,11 +383,13 @@ fn walked<D: Drawing>(
         transforming: &mut transforming,
         drawn: &mut drawn,
     };
+
     let stages: Vec<&mut dyn Noting> = [&mut metering as &mut dyn Noting, &mut seeing]
         .into_iter()
         .chain(weighing.stages())
         .chain(splitting.stages())
         .collect();
+
     crew.fanned(
         rate.hz() as usize * channels,
         stages,
@@ -377,6 +399,7 @@ fn walked<D: Drawing>(
                 if watch.stopped() {
                     return Err(Error::Stopped);
                 }
+
                 let Some(heard) = walking.step(&mut decoder)? else {
                     return Ok(());
                 };
@@ -392,10 +415,12 @@ fn walked<D: Drawing>(
     )?;
 
     examined.length = Frames(frames).to_duration(rate);
+
     let spectrum = transforming.finished();
     let levels = leveling.finished();
     let steps = weighing.finished();
     let split = splitting.finished();
+
     let judgement = judged(Weighed {
         codec,
         rate: rate.hz(),
@@ -423,6 +448,7 @@ fn walked<D: Drawing>(
 
 pub(crate) fn normalise(native: &SampleData, into: &mut Vec<f32>) {
     into.clear();
+
     let scale = native.format().full_scale();
     match native {
         SampleData::S16(samples) => {
@@ -443,7 +469,9 @@ const fn finite_or_silent(sample: f32) -> f32 {
 
 fn mix_down(interleaved: &[f32], channels: usize, heard: &[usize], into: &mut Vec<f32>) {
     into.clear();
+
     let share = 1.0 / heard.len().max(1) as f32;
+
     into.extend(
         interleaved
             .chunks_exact(channels.max(1))

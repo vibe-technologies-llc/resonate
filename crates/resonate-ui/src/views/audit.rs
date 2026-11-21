@@ -74,7 +74,9 @@ mod tests {
     fn sources() -> Vec<(String, String)> {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/views");
         let mut read = Vec::new();
+
         walk(&root, &root, &mut read);
+
         assert!(
             read.len() > 20,
             "the walk found {} view files, so it is not reading the views at all",
@@ -94,6 +96,7 @@ mod tests {
                     .expect("a file under the views")
                     .to_string_lossy()
                     .into_owned();
+
                 read.push((
                     name,
                     fs::read_to_string(&path).expect("a readable source file"),
@@ -112,17 +115,21 @@ mod tests {
     fn chain_before<'a>(lines: &[&'a str], at: usize) -> Vec<&'a str> {
         let click = indent(lines[at]);
         let mut start = at;
+
         while start > 0 {
             let above = lines[start - 1];
             let trimmed = above.trim_start();
+
             let continues = trimmed.is_empty()
                 || indent(above) > click
                 || (indent(above) == click && continues_the_chain(trimmed));
+
             if !continues {
                 break;
             }
             start -= 1;
         }
+
         let base = start.saturating_sub(1);
 
         lines[base..=at].to_vec()
@@ -142,12 +149,14 @@ mod tests {
 
     fn pointer_only_sites() -> Vec<String> {
         let mut found = Vec::new();
+
         for (name, source) in sources() {
             let lines = built_part(&source);
             for (at, line) in lines.iter().enumerate() {
                 if !line.contains(CLICKED) {
                     continue;
                 }
+
                 let chain = chain_before(&lines, at);
                 if lacks_what_a_reader_needs(&chain) {
                     found.push(format!("{name} | {} | {}", chain[0].trim(), line.trim()));
@@ -160,6 +169,7 @@ mod tests {
 
     fn counted(sites: &[String]) -> BTreeMap<&str, usize> {
         let mut counts = BTreeMap::new();
+
         for site in sites {
             *counts.entry(site.as_str()).or_insert(0) += 1;
         }

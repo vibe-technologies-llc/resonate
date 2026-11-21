@@ -147,9 +147,11 @@ impl Account {
                     Self::Password => field.masked(),
                     Self::Server | Self::User => field,
                 };
+
                 field.hold(account.held(service, online), cx);
                 field
             });
+
             SettingsFields::says_when_entered(&field, Entered::Account(service, account), cx);
             field
         })
@@ -178,6 +180,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         if account == Account::Server && !given.is_empty() && !reads_as_a_server(&given) {
             self.report(not_a_server(), cx);
             return;
@@ -196,6 +199,7 @@ impl RootView {
         };
         let lets_the_session_go = service == Service::Jellyfin
             && (account == Account::Server || (account == Account::Password && !given.is_empty()));
+
         self.store(&account.setting(service, given), cx);
         if lets_the_session_go {
             self.let_go_of_the_jellyfin_session(cx);
@@ -296,6 +300,7 @@ impl RootView {
 
     pub(super) fn account_group(&mut self, service: Service, cx: &mut Context<Self>) -> Rows {
         let mut body = kit::rows();
+
         for account in Account::ALL {
             body = body.child(kit::field(
                 account.label(),

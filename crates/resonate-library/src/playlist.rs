@@ -95,6 +95,7 @@ pub fn within(
         let mut statement = connection
             .prepare(&sql)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let found = statement
             .query_map(params_from_iter(binds), read)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -119,6 +120,7 @@ pub fn lists(inner: &Inner, order: PlaylistOrder, direction: Direction) -> Resul
         let mut statement = connection
             .prepare(&sql)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let found = statement
             .query_map([], read)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -145,6 +147,7 @@ pub fn names(
         let mut statement = connection
             .prepare(&sql)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let found = statement
             .query_map(
                 params![taking, i64::try_from(from).unwrap_or(i64::MAX)],
@@ -165,6 +168,7 @@ pub fn pinned(inner: &Inner, most: usize) -> Result<Vec<NamedPlaylist>> {
                  ORDER BY p.pinned DESC, p.folded LIMIT ?1",
             )
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let found = statement
             .query_map(params![i64::try_from(most).unwrap_or(i64::MAX)], named_row)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -223,6 +227,7 @@ pub(crate) fn words_of(named: Option<&str>) -> Vec<String> {
 
 pub(crate) fn anywhere(word: &str) -> String {
     let mut held = String::with_capacity(word.len() + 2);
+
     held.push(ANY_RUN);
     for character in word.chars() {
         if matches!(character, ANY_RUN | '_' | LIKE_ESCAPE) {
@@ -280,6 +285,7 @@ pub fn start(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<PlaylistId> {
 
     let id = undo::started(inner, Edit::Started, &name, |transaction| {
         let id = created(transaction, &name)?;
+
         wanted.appended(transaction, id)?;
         Ok((id, id))
     })?;
@@ -302,6 +308,7 @@ fn created(transaction: &Transaction<'_>, name: &PlaylistName) -> Result<Playlis
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
 
     let id = PlaylistId::new(transaction.last_insert_rowid() as u64)?;
+
     forget_the_plays_of_a_discarded_holder(transaction, id)?;
     sourced::forget_the_source_of_a_discarded_holder(transaction, id)?;
     Ok(id)
@@ -403,6 +410,7 @@ pub fn fill(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<Filled> {
             return Ok(None);
         };
         let id = PlaylistId::new(id as u64)?;
+
         if asked_in(connection, id)?.is_some() {
             return Ok(None);
         }
@@ -412,6 +420,7 @@ pub fn fill(inner: &Inner, name: &str, cuts: &[Cut]) -> Result<Filled> {
     let Some((playlist, held)) = standing else {
         let named = inner.read(|connection| a_free_name(connection, wanted.as_str()))?;
         let playlist = start(inner, named.as_str(), cuts)?;
+
         return Ok(Filled {
             playlist,
             added: cuts.len(),
@@ -433,6 +442,7 @@ pub fn fill_into(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<usize> {
 fn lacking_added(inner: &Inner, id: PlaylistId, held: Vec<Row>, cuts: &[Cut]) -> Result<usize> {
     let mut kept: AHashSet<Row> = held.into_iter().collect();
     let mut missing = Vec::new();
+
     for cut in cuts {
         if kept.insert(Row::of(cut)?) {
             missing.push(cut.clone());
@@ -456,10 +466,13 @@ pub fn mirror(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<Mirrored> {
 
     let mirrored = undo::edited(inner, id, Edit::Refreshed, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
+
         let held = rows(transaction, id)?;
+
         if held == wanted.rows {
             return Ok(Change::Nothing(Mirrored::default()));
         }
+
         let mirrored = Mirrored {
             added: beyond(&wanted.rows, &held),
             removed: beyond(&held, &wanted.rows),
@@ -483,6 +496,7 @@ pub fn mirror(inner: &Inner, id: PlaylistId, cuts: &[Cut]) -> Result<Mirrored> {
 
 fn beyond(these: &[Row], those: &[Row]) -> usize {
     let mut counted: AHashMap<&Row, usize> = AHashMap::new();
+
     for row in those {
         *counted.entry(row).or_default() += 1;
     }
@@ -531,6 +545,7 @@ pub(crate) fn name_a_list_may_hold(connection: &Connection, name: &str) -> Resul
     let Some(held) = held_as(connection, &wanted)? else {
         return Ok(wanted);
     };
+
     if asked_in(connection, held)?.is_some() || synced::is_read_only(connection, held)? {
         return a_free_name(connection, wanted.as_str());
     }
@@ -550,6 +565,7 @@ fn a_free_name(connection: &Connection, name: &str) -> Result<PlaylistName> {
             .map_err(|source| Error::store(StoreOp::Query, source))
     };
     let first = wanted_name(name)?;
+
     if !taken(&first)? {
         return Ok(first);
     }
@@ -560,6 +576,7 @@ pub fn duplicate(inner: &Inner, id: PlaylistId) -> Result<PlaylistId> {
     let copy = undo::started_under_a_name_found(inner, Edit::Started, |transaction| {
         let name = a_free_copy_of(transaction, &name_of(transaction, id)?)?;
         let copy = created(transaction, &name)?;
+
         match asked_in(transaction, id)? {
             Some(query) => write_query(transaction, copy, &query)?,
             None => {
@@ -601,6 +618,7 @@ fn a_free_copy_of(connection: &Connection, name: &str) -> Result<PlaylistName> {
             .optional()
             .map_err(|source| Error::store(StoreOp::Query, source))?
             .is_some();
+
         if !taken {
             return Ok(PlaylistName::new(wanted));
         }
@@ -617,6 +635,7 @@ pub fn played_now(inner: &Inner, id: PlaylistId) -> Result<()> {
                 params![id.get() as i64, now],
             )
             .map_err(|source| Error::store(StoreOp::Update, source))?;
+
         if played > 0 {
             transaction
                 .execute(
@@ -658,6 +677,7 @@ pub fn save_query(inner: &Inner, name: &str, query: &SavedQuery) -> Result<Playl
 
     let id = undo::started(inner, Edit::Started, &name, |transaction| {
         let id = created(transaction, &name)?;
+
         write_query(transaction, id, query)?;
         Ok((id, id))
     })?;
@@ -738,13 +758,16 @@ pub fn entries_within(
 ) -> Result<(Vec<PlaylistEntry>, usize)> {
     if let Some(query) = inner.read(|connection| asked_in(connection, id))? {
         let mut asked = TrackQuery::from(&query);
+
         let matched = match most {
             Some(_) => db::measured_narrowed(inner, &asked, matching)?.rows as usize,
             None => 0,
         };
+
         if let Some(most) = most {
             asked.limit = Some(asked.limit.map_or(most, |held| held.min(most)));
         }
+
         let entries: Vec<PlaylistEntry> = db::tracks(inner, &asked, matching)?
             .into_iter()
             .zip(0..)
@@ -755,11 +778,13 @@ pub fn entries_within(
         } else {
             entries.len()
         };
+
         return Ok((entries, matched));
     }
 
     let mut filters = vec![HELD_BY_THE_PLAYLIST.to_owned()];
     let mut binds = vec![Value::Integer(id.get() as i64)];
+
     match matching.map(|text| db::cuts_matching(text, ROW)) {
         None | Some(Narrowed::Unasked) => {}
         Some(Narrowed::To(narrowed)) => {
@@ -832,11 +857,13 @@ pub fn entries_within(
 
 pub fn pictures(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<Vec<AlbumId>> {
     let at = inner.pictures_at();
+
     if let Some(kept) = inner.pictures_kept(at, id, at_most) {
         return Ok(kept);
     }
 
     let (albums, reads_listening) = pictures_read(inner, id, at_most)?;
+
     inner.keep_pictures(at, id, at_most, &albums, reads_listening);
     Ok(albums)
 }
@@ -858,6 +885,7 @@ fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<(Vec<A
             let mut statement = connection
                 .prepare_cached(&sql)
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let found = statement
                 .query_map(
                     params![
@@ -871,16 +899,20 @@ fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<(Vec<A
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(|source| Error::store(StoreOp::Query, source))
         })?;
+
         return Ok((db::distinct_pictures(inner, weighed, at_most)?, false));
     };
 
     let asked = TrackQuery::from(&query);
     let reads_listening = db::reads_listening(&asked);
+
     if asked.limit.is_none() {
         return Ok((db::pictured_by(inner, &asked, at_most)?, reads_listening));
     }
+
     let mut albums = Vec::new();
     let mut seen = AHashSet::new();
+
     for album in db::tracks(inner, &asked, None)?
         .into_iter()
         .filter_map(|track| track.album_id)
@@ -889,6 +921,7 @@ fn pictures_read(inner: &Inner, id: PlaylistId, at_most: usize) -> Result<(Vec<A
             albums.push(album);
         }
     }
+
     let weighed = db::pictures_of_albums(inner, &albums)?;
     Ok((
         db::distinct_pictures(inner, weighed, at_most)?,
@@ -930,8 +963,10 @@ pub fn insert_at(
         if wanted.rows.is_empty() {
             return Ok(Change::Nothing(0));
         }
+
         let held = usize::try_from(tail(transaction, id)?).unwrap_or(0);
         let added = wanted.appended(transaction, id)?;
+
         if kept_in(transaction, id)?.is_none() && at < held && added > 0 {
             reseated(
                 transaction,
@@ -984,9 +1019,11 @@ struct Adding {
 impl Adding {
     fn of(cuts: &[Cut]) -> Result<Self> {
         let mut rows = Vec::with_capacity(cuts.len());
+
         for cut in cuts {
             rows.push(Row::of(cut)?);
         }
+
         let volumes = volumes::under(rows.iter().map(|row| store::path_of(&row.path)));
 
         Ok(Self { rows, volumes })
@@ -1030,6 +1067,7 @@ pub fn remove_rows(
     let changed = undo::edited(inner, id, Edit::Removed, reach, |transaction| {
         only_a_list(transaction, id)?;
         stands_as_drawn(transaction, id, drawn)?;
+
         let held = length(transaction, id)?;
         let Some(rows) = up_to_the_end(rows, held) else {
             return Ok(Change::Nothing(false));
@@ -1077,6 +1115,7 @@ pub fn gather_rows(
         only_a_list(transaction, id)?;
         stands_as_drawn(transaction, id, drawn)?;
         refuse_a_kept_order(transaction, id)?;
+
         let held = numbered(transaction, id)?;
         let Some(order) = Span::gathered(runs, held.len(), onto) else {
             return Ok(Change::Nothing(false));
@@ -1121,7 +1160,9 @@ pub fn move_rows(
         only_a_list(transaction, id)?;
         stands_as_drawn(transaction, id, drawn)?;
         refuse_a_kept_order(transaction, id)?;
+
         let held = length(transaction, id)?;
+
         if rows.holds(to) || rows.last() >= held || to >= held {
             return Ok(Change::Nothing(false));
         }
@@ -1146,6 +1187,7 @@ pub fn sort_rows(
     let moved = undo::edited(inner, id, Edit::Ordered, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
         refuse_a_kept_order(transaction, id)?;
+
         let moved = in_order(
             transaction,
             id,
@@ -1154,6 +1196,7 @@ pub fn sort_rows(
                 reading: direction,
             },
         )?;
+
         if moved == 0 {
             return Ok(Change::Nothing(0));
         }
@@ -1170,11 +1213,13 @@ pub fn sort_rows(
 pub fn keep(inner: &Inner, id: PlaylistId, kept: Option<Kept>) -> Result<usize> {
     let moved = undo::edited(inner, id, Edit::Kept, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
+
         let standing = kept_in(transaction, id)?;
         let moved = match kept {
             Some(kept) => in_order(transaction, id, kept)?,
             None => 0,
         };
+
         if standing == kept && moved == 0 {
             return Ok(Change::Nothing(None));
         }
@@ -1213,6 +1258,7 @@ pub(crate) fn in_order(transaction: &Transaction<'_>, id: PlaylistId, kept: Kept
     );
     let held = rows(transaction, id)?;
     let wanted = rows_by(transaction, &sql, id)?;
+
     let Some(first) = out_of_place(&held, &wanted) else {
         return Ok(0);
     };
@@ -1313,6 +1359,7 @@ fn matched_in(transaction: &Transaction<'_>, id: PlaylistId, text: &str) -> Resu
         db::clause(&[HELD_BY_THE_PLAYLIST.to_owned(), narrowed.sql])
     );
     let mut binds = vec![Value::Integer(id.get() as i64)];
+
     binds.extend(narrowed.binds);
 
     let mut statement = transaction
@@ -1333,16 +1380,20 @@ fn dropped_where(
 ) -> Result<usize> {
     let dropped = undo::edited(inner, id, edit, Reach::Whole, |transaction| {
         only_a_list(transaction, id)?;
+
         let held = numbered(transaction, id)?;
+
         if let Some(drawn) = drawn {
             held_as_drawn(&held, id, drawn)?;
         }
+
         let going = asked_of(transaction, id, &held, question)?;
         let Some(first) = going.iter().position(|going| *going) else {
             return Ok(Change::Nothing(0));
         };
 
         let from = held[first].0;
+
         transaction
             .execute(
                 "DELETE FROM playlist_entries WHERE playlist_id = ?1 AND position >= ?2",
@@ -1357,6 +1408,7 @@ fn dropped_where(
             .filter(|(_, going)| !**going)
             .map(|((_, row), _)| row)
             .collect();
+
         for (position, row) in (from..).zip(&kept) {
             insert(transaction, id, position, row)?;
         }
@@ -1403,11 +1455,13 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
 
     let found = named(inner, &wanted)?;
     let mut held: AHashMap<Row, usize> = AHashMap::new();
+
     if let Some(found) = found.as_ref() {
         for row in inner.read(|connection| rows(connection, found.id))? {
             *held.entry(row).or_default() += 1;
         }
     }
+
     let mut fresh = Vec::with_capacity(reading.sheet.locations.len());
     let mut already = 0;
 
@@ -1421,6 +1475,7 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
             _ => fresh.push(cut),
         }
     }
+
     let missing = fresh
         .iter()
         .filter(|cut| !is_on_disk(&cut.location))
@@ -1453,6 +1508,7 @@ fn cuts_of(inner: &Inner, listed: Vec<Listed>) -> Result<Vec<Cut>> {
         roots: inner.read(root_paths)?,
         folders: HashMap::new(),
     };
+
     let asked: Vec<Option<Candidates>> = listed
         .iter()
         .map(|listed| {
@@ -1490,6 +1546,7 @@ fn cuts_of(inner: &Inner, listed: Vec<Listed>) -> Result<Vec<Cut>> {
                 (None, None) => (asked.otherwise, None),
             };
             let location = MediaLocation::local(path);
+
             if listed.timed.is_whole() {
                 return Cut::whole(location);
             }
@@ -1518,6 +1575,7 @@ impl Settling {
     fn candidates(&mut self, written: &Path) -> Candidates {
         let canonical = written.canonicalize().ok();
         let mut named = vec![written.to_path_buf()];
+
         for candidate in [self.under_a_root(written), canonical.clone()]
             .into_iter()
             .flatten()
@@ -1569,6 +1627,7 @@ fn trailing_components(path: &Path) -> Vec<String> {
             _ => None,
         })
         .collect();
+
     components.reverse();
     components
 }
@@ -1583,9 +1642,11 @@ fn reconnected_by_trailing_components(
         .zip(answered)
         .map(|(asked, answered)| {
             let asked = asked.as_ref()?;
+
             if answered.is_some() || asked.otherwise.exists() {
                 return None;
             }
+
             let trailing = trailing_components(&asked.otherwise);
             (trailing.len() >= FEWEST_TRAILING_COMPONENTS).then_some(trailing)
         })
@@ -1595,6 +1656,7 @@ fn reconnected_by_trailing_components(
         .flatten()
         .map(|trailing| trailing[0].as_str())
         .collect();
+
     if file_names.is_empty() {
         return Ok(lost.iter().map(|_| None).collect());
     }
@@ -1642,6 +1704,7 @@ fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldName
               WHERE file_name = ?1 COLLATE NOCASE GROUP BY path",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for name in plain {
         let rows = statement
             .query_map(params![name], paths_with_rates)
@@ -1658,12 +1721,15 @@ fn held_named(connection: &Connection, names: &HashSet<&str>) -> Result<HeldName
     if names.iter().all(|name| name.is_ascii()) {
         return Ok(held);
     }
+
     let mut statement = connection
         .prepare("SELECT path, min(sample_rate) FROM tracks GROUP BY path")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], paths_with_rates)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     for row in rows {
         let (path, rate) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
         let name = path
@@ -1754,6 +1820,7 @@ fn filled(inner: &Inner, mut found: Playlist) -> Result<Playlist> {
 
     let measured = inner.measured_saved(query)?;
     let (entries, duration) = (measured.rows, measured.length);
+
     found.entries = entries;
     found.duration = duration;
     Ok(found)
@@ -1845,9 +1912,11 @@ fn stands_as_drawn(
 
 fn held_as_drawn(held: &[(i64, Row)], id: PlaylistId, drawn: &AsDrawn) -> Result<()> {
     let moved = Error::PlaylistMovedSinceDrawn { playlist: id };
+
     if drawn.is_whole() && held.len() != drawn.entries().len() {
         return Err(moved);
     }
+
     let stands = |entry: &PlaylistEntry| {
         let standing = held
             .binary_search_by_key(&(entry.position as i64), |(position, _)| *position)
@@ -1909,8 +1978,10 @@ fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
         .into_iter()
         .filter(|volume| !volumes::is_mounted_among(volume, &points))
         .collect();
+
     out_of_reach.extend(roots.into_iter().filter(|root| !root.is_dir()));
     out_of_reach.extend(volumes::listed_and_not_mounted());
+
     let mut folders = AHashMap::new();
 
     Ok(paths
@@ -1951,6 +2022,7 @@ fn the_nearest_standing_folder_holds_something(
             .parent()
             .is_some_and(|above| the_nearest_standing_folder_holds_something(above, folders))
     };
+
     folders.insert(folder.to_path_buf(), verdict);
     verdict
 }
@@ -2006,6 +2078,7 @@ pub(crate) fn closed_up(
 fn reseated(transaction: &Transaction<'_>, id: PlaylistId, rows: Span, to: i64) -> Result<()> {
     let (first, last) = (rows.first() as i64, rows.last() as i64);
     let held = rows.rows() as i64;
+
     let (moved, crossed) = if to > last {
         (to - last, -held)
     } else {
@@ -2064,7 +2137,7 @@ pub(crate) fn insert(
     Ok(())
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct Row {
     pub(crate) path: String,
     pub(crate) start: i64,
@@ -2191,6 +2264,7 @@ const fn up_to_the_end(rows: Span, held: usize) -> Option<Span> {
     let Some(last) = held.checked_sub(1) else {
         return None;
     };
+
     if rows.first() > last {
         return None;
     }
@@ -2238,6 +2312,7 @@ pub(crate) fn local_path(location: &MediaLocation) -> Result<Cow<'_, str>> {
 
 fn wanted_name(name: &str) -> Result<PlaylistName> {
     let trimmed = name.trim();
+
     if trimmed.is_empty() {
         return Err(Error::UnnamedPlaylist);
     }
@@ -2432,6 +2507,7 @@ mod tests {
 
     fn a_playlist_of(library: &Library, held: usize) -> (PlaylistId, Vec<String>) {
         static NEXT: AtomicUsize = AtomicUsize::new(0);
+
         let named = NEXT.fetch_add(1, Ordering::Relaxed);
         let id = library
             .create_playlist(&format!("Evening {named}"))
@@ -2443,6 +2519,7 @@ mod tests {
             .iter()
             .map(|path| Cut::whole(MediaLocation::local(path)))
             .collect::<Vec<_>>();
+
         library
             .add_to_playlist(id, &cuts)
             .expect("a playlist takes the rows it is given");
@@ -2470,6 +2547,7 @@ mod tests {
 
     fn dropped_on(model: &mut Vec<String>, rows: Span, to: usize) -> bool {
         let held = model.len();
+
         if rows.holds(to) || rows.last() >= held || to >= held {
             return false;
         }
@@ -2485,6 +2563,7 @@ mod tests {
         } else {
             beside + 1
         };
+
         model.splice(at..at, taken);
         true
     }
@@ -2493,6 +2572,7 @@ mod tests {
         let Some(last) = model.len().checked_sub(1) else {
             return false;
         };
+
         if rows.first() > last {
             return false;
         }

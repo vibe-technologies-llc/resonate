@@ -74,7 +74,9 @@ pub(crate) fn mount_points_in(table: &str) -> impl Iterator<Item = (PathBuf, &st
         if line.trim_start().starts_with(COMMENT) {
             return None;
         }
+
         let mut fields = line.split_whitespace();
+
         let _device = fields.next()?;
         let point = PathBuf::from(unescaped_mount(fields.next()?));
         let kind = fields.next()?;
@@ -85,11 +87,13 @@ pub(crate) fn mount_points_in(table: &str) -> impl Iterator<Item = (PathBuf, &st
 fn unescaped_mount(field: &str) -> String {
     let mut written = String::with_capacity(field.len());
     let mut characters = field.chars().peekable();
+
     while let Some(character) = characters.next() {
         if character != OCTAL_ESCAPE {
             written.push(character);
             continue;
         }
+
         let digits: String = (0..3).filter_map(|_| characters.next()).collect();
         match u8::from_str_radix(&digits, 8) {
             Ok(byte) => written.push(char::from(byte)),
@@ -180,6 +184,7 @@ fn mount_point_above(folder: &Path, device: impl Fn(&Path) -> Option<u64>) -> Op
 
     loop {
         let parent = point.parent()?;
+
         if device(parent)? != inner {
             return Some(point.to_path_buf());
         }
@@ -204,6 +209,7 @@ pub fn settle(tx: &Transaction<'_>, walked: &[PathBuf], mounted: &[PathBuf]) -> 
 
     for volume in held(tx)? {
         let unwalked = !walked.iter().any(|root| volume.starts_with(root));
+
         if unwalked
             || mounted.contains(&volume)
             || holds_a_track(tx, &volume)?
@@ -268,6 +274,7 @@ mod tests {
     fn a_path_under_a_mount_point_nothing_is_mounted_at_is_out_of_reach_though_its_siblings_stand()
     {
         let base = env::temp_dir().join(format!("resonate-volumes-{}", process::id()));
+
         fs::create_dir_all(base.join("me/Other")).expect("a writable temporary folder");
 
         let music = base.join("me/Stick/Music/a.flac");
@@ -313,7 +320,9 @@ mod tests {
     fn a_bind_mount_of_the_same_filesystem_is_mounted_where_the_table_lists_it_and_not_otherwise() {
         let base = env::temp_dir().join(format!("resonate-binds-{}", process::id()));
         let bound = base.join("Music");
+
         fs::create_dir_all(&bound).expect("a writable temporary folder");
+
         let listed = format!(
             "/dev/nvme0n1p2 / btrfs rw 0 0\n/dev/nvme0n1p2 {} btrfs rw 0 0\n",
             bound.display()

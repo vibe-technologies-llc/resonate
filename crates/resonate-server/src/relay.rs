@@ -25,9 +25,12 @@ impl Bucket {
 
     fn spend_at(&mut self, bytes: usize, now: Instant) -> bool {
         let earned = now.saturating_duration_since(self.at).as_secs_f64() * self.rate as f64;
+
         self.tokens = (self.tokens + earned).min(self.rate as f64);
         self.at = now;
+
         let needed = bytes as f64;
+
         if self.tokens < needed {
             return false;
         }

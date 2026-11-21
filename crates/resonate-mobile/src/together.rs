@@ -287,6 +287,7 @@ impl PartySeat for PhoneSeat {
         let Some(at) = state.queue_position else {
             return (None, Vec::new());
         };
+
         let song = queued
             .rows
             .get(at)
@@ -311,6 +312,7 @@ impl PartySeat for PhoneSeat {
 
         for (row, item) in queued.rows.iter().enumerate().rev() {
             let stamp = QueueStamp::of([(&item.location, item.span)]).value();
+
             if known.contains(&stamp) {
                 continue;
             }
@@ -392,6 +394,7 @@ impl PartyFinder for Finder {
             ..song.recording.clone()
         };
         let held = (self.resolve)(&song.recording).or_else(|| (self.resolve)(&anywhere));
+
         if let Some(uri) = held
             && let Ok(location) = location(&uri)
         {
@@ -495,6 +498,7 @@ impl MobilePlayer {
         match invitation.to {
             Invited::Playlist => {
                 let shared = self.syncing.shared().ok_or(Error::SyncOff)?;
+
                 shared
                     .join(&invitation.code, invitation.server)
                     .map_err(|source| Error::sync(SyncOp::Start, source))?;
@@ -524,6 +528,7 @@ impl MobilePlayer {
         shared
             .reset(list.space, removing)
             .map_err(|source| Error::sync(SyncOp::Start, source))?;
+
         let at = self.synced_playlist(id)?;
 
         self.a_shared_list_at(at).ok_or(Error::UnknownPlaylist)
@@ -542,6 +547,7 @@ impl MobilePlayer {
 
     pub fn together_server(&self, server: String) {
         let server = server.trim();
+
         *self.syncing.chosen_server.lock() = (!server.is_empty()).then(|| server.to_owned());
     }
 
@@ -558,6 +564,7 @@ impl MobilePlayer {
     pub fn party_begin(&self) -> Result<ListeningParty> {
         let settings = self.party_settings(None)?;
         let party = Party::host(settings).map_err(|source| Error::sync(SyncOp::Start, source))?;
+
         self.party_seated(party)?;
 
         self.party_shown().ok_or(Error::SyncOff)
@@ -565,6 +572,7 @@ impl MobilePlayer {
 
     pub fn party_leave(&self) {
         let room = self.together.party.lock().take();
+
         drop(room);
     }
 
@@ -718,6 +726,7 @@ impl MobilePlayer {
         else {
             return false;
         };
+
         let Some(_claim) = party.claim_a_request(&asked) else {
             return true;
         };
@@ -726,6 +735,7 @@ impl MobilePlayer {
         };
         let queued = player.queued();
         let id = resonate_engine::unclaimed_id(queued.rows.iter().map(AsRef::as_ref));
+
         let placed = player.send(Command::Insert {
             items: vec![QueueItem {
                 id,
@@ -735,6 +745,7 @@ impl MobilePlayer {
             at: Placement::Next,
             play: false,
         });
+
         party.take_a_request(asked);
 
         placed.is_ok()
@@ -765,6 +776,7 @@ impl MobilePlayer {
     fn a_list_held(&self, id: u64) -> Result<(Arc<resonate_sync::shared::Shared>, SharedShown)> {
         let shared = self.syncing.shared().ok_or(Error::SyncOff)?;
         let at = self.synced_playlist(id)?;
+
         let list = shared
             .shown()
             .into_iter()
@@ -805,6 +817,7 @@ impl MobilePlayer {
 
     fn party_seated(&self, party: Party) -> Result<()> {
         self.party_leave();
+
         let zone = self.playing.shown();
         let player = self.playing.player_of(zone)?;
         let seat = PhoneSeat {
@@ -816,6 +829,7 @@ impl MobilePlayer {
             resolve: self.syncing.resolver(),
             services: self.served.playing_services(),
         });
+
         let going = Going::begin(party, seat, Arc::clone(&finder))
             .map_err(|source| Error::sync(SyncOp::Start, source))?;
 
@@ -915,6 +929,7 @@ mod tests {
         phone.configure_online(true);
 
         let hosted = phone.party_settings(None).expect("settings").server;
+
         phone.together_server(" https://mine.example/ ".to_owned());
 
         assert_eq!(
@@ -977,6 +992,7 @@ mod tests {
             .player
             .zone_added("Study", 0, String::new())
             .expect("a second zone");
+
         harness
             .player
             .show_zone(study.id.get())
@@ -989,6 +1005,7 @@ mod tests {
             .player
             .remove_zone(study.id.get())
             .expect("the study taken away");
+
         let kitchen = harness
             .player
             .zone_added("Kitchen", 0, String::new())
@@ -1008,6 +1025,7 @@ mod tests {
             .player
             .zone_added("Study", 0, String::new())
             .expect("a second zone");
+
         harness.player.party_seated(host).expect("seated");
         harness
             .player
@@ -1030,6 +1048,7 @@ mod tests {
         let harness = crate::harness::Harness::new();
         let host = Party::host(a_party_nowhere_reached()).expect("a host");
         let guest = Party::join(a_party_nowhere_reached(), &host.shown().code).expect("a guest");
+
         harness.player.party_seated(guest).expect("seated");
 
         let player = harness.player.playing.player().expect("an open player");
@@ -1046,7 +1065,9 @@ mod tests {
         let moved_to = format!("{}e.wav", crate::harness::FOLDER);
 
         seat.take_up(&rows, 0, Moment::now().nanos(), false);
+
         let known: Vec<u64> = rows.iter().map(|row| seat.stamp_of(row)).collect();
+
         std::fs::rename(harness.folder.join("c.wav"), harness.folder.join("e.wav"))
             .expect("a file moved");
         harness
@@ -1061,11 +1082,13 @@ mod tests {
         let moved = seat.moved();
         let known_now = [known[0], seat.stamp_of(&a_document(&moved_to))];
         let asked = seat.added_here(&known_now);
+
         player
             .request(Command::SetRepeat(resonate_engine::RepeatMode::Off))
             .expect("a command after any removal")
             .wait_for(crate::harness::SETTLED_WITHIN)
             .expect("every command before it settled");
+
         let queued: Vec<String> = player
             .queued()
             .rows
@@ -1107,6 +1130,7 @@ mod tests {
     fn a_request_is_found_by_its_name_whatever_place_the_list_has_moved_it_to() {
         let first = asked_by(1, 1, "Echoes");
         let second = asked_by(2, 1, "Meddle");
+
         let mut list = vec![first.clone(), second.clone()];
         let named_first = first.id();
         let named_second = second.id();
@@ -1124,7 +1148,9 @@ mod tests {
         let phone = crate::playlists::tests::player();
 
         assert!(!phone.party_play_next(vec![1, 2, 3]));
+
         phone.party_pass_over(vec![1, 2, 3]);
+
         assert!(phone.party_shown().is_none());
     }
 }

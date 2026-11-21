@@ -29,9 +29,11 @@ pub(crate) fn learn_the_songs_of(
 
     for group in &due.groups {
         let now = SystemTime::now();
+
         if let Some(pressings) = browsed.remove(group) {
             let pressing = songs::pressing_of(pressings);
             let landed = library.land_songs_of(group, pressing.as_ref(), now)?;
+
             learner.landed(group, pressing.as_ref(), landed)?;
             continue;
         }
@@ -45,6 +47,7 @@ pub(crate) fn learn_the_songs_of(
             Some(pressings) => {
                 let pressing = songs::pressing_of(pressings);
                 let landed = library.land_songs_of(group, pressing.as_ref(), now)?;
+
                 learner.landed(group, pressing.as_ref(), landed)?;
             }
             None => library.songs_of_refused(group, now)?,
@@ -67,9 +70,11 @@ fn browsed(
         if !learner.take_a_turn() {
             return Ok(AHashMap::new());
         }
+
         let Some(page) = learner.weigh(reference.releases_of_artist(artist, from))? else {
             return Ok(AHashMap::new());
         };
+
         for pressing in page.pressings {
             if let Some(group) = pressing
                 .group
@@ -82,8 +87,10 @@ fn browsed(
         if page.read_to <= from || page.read_to >= page.credited {
             return Ok(gathered);
         }
+
         let pages_left = (page.credited - page.read_to).div_ceil(page.read_to - from);
         let unseen = due.len().saturating_sub(gathered.len());
+
         if usize::try_from(pages_left).unwrap_or(usize::MAX) >= unseen {
             return Ok(gathered);
         }

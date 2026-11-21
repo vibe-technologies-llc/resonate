@@ -75,6 +75,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Stateful<Div> {
         let handle = self.standing_controls.at(named, cx);
+
         self.standing_controls
             .captioned_by_its_name(named, &mut control);
         Self::ringed(&handle, control, press, cx)
@@ -162,12 +163,15 @@ impl RootView {
         }
 
         let file = file?;
+
         if self.server.read(cx).names(file) {
             let art = self
                 .server
                 .update(cx, |server, cx| server.cover(file, None, drawn, cx))?;
+
             return Some((art, Magnified::Served(file.clone())));
         }
+
         let art = self
             .player
             .update(cx, |player, cx| player.art(file, drawn, cx))?;
@@ -282,6 +286,7 @@ impl RootView {
                     .finding
                     .read(cx)
                     .is_focused(window);
+
                 let shown = self.pane_shown(cx);
                 let named = match self.search_in_front(cx) {
                     Some(_) => words::root::search_region(),

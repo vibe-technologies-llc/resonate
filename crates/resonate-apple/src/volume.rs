@@ -44,6 +44,7 @@ struct Control {
 impl Control {
     fn of(device: Device, selector: u32) -> Option<Self> {
         let main = Address::towards(Direction::Output, selector);
+
         if property::has(device.id(), main) {
             return Some(Self {
                 device,
@@ -51,6 +52,7 @@ impl Control {
                 elements: Elements::Main,
             });
         }
+
         let preferred = Address::towards(
             Direction::Output,
             kAudioDevicePropertyPreferredChannelsForStereo,

@@ -4,7 +4,7 @@ use resonate_library::{Library, Suggestion};
 
 use crate::{Error, Result, missing::folded_name, table::Table, words};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct SuggestionName(Box<str>);
 
 impl SuggestionName {
@@ -43,6 +43,7 @@ fn list(suggested: &[Suggestion]) {
         words::suggest::tracks(),
         words::suggest::fills_from(),
     ]);
+
     for suggestion in suggested {
         table.push(vec![
             suggestion.name.clone(),

@@ -23,6 +23,7 @@ impl RootView {
         let finding = library.is_finding_identical();
         let folding = library.is_folding_identical();
         let planned = library.previewed_identical();
+
         let found = library.identical_songs().filter(|_| planned.is_shown());
         let foldable = found
             .as_ref()
@@ -128,6 +129,7 @@ fn listed(found: &Arc<Identified>) -> Vec<AnyElement> {
         .take(GROUPS_SHOWN)
         .map(|group| group_row(group).into_any_element())
         .collect();
+
     if let Some(rest) = groups
         .len()
         .checked_sub(GROUPS_SHOWN)
@@ -157,6 +159,7 @@ fn named(path: &Path) -> String {
 
 fn told(found: &Identified) -> String {
     let folding = found.copies.identical.len();
+
     if folding == 0 && found.copies.differing.is_empty() {
         return words::settings_identical::none_held_twice().to_owned();
     }
@@ -177,6 +180,7 @@ mod tests {
 
     fn scanned(folder: &Folder) -> Arc<Library> {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
         library
     }
@@ -191,12 +195,14 @@ mod tests {
     #[test]
     fn copies_of_one_song_are_one_group_named_by_the_song_that_is_not_numbered() {
         let folder = Folder::new();
+
         folder.tone("Song.wav", 1);
         folder.tone("Song (1).wav", 1);
         folder.tone("Song (2).wav", 1);
         folder.tone("Song2.wav", 1);
         folder.tone("Other.wav", 2);
         folder.tone("Other (1).wav", 3);
+
         let library = scanned(&folder);
 
         let found = Identified::of(library.identical_copies().expect("the copies are found"));
@@ -221,7 +227,9 @@ mod tests {
         let other = folder.tone("Other.wav", 2);
         let differing = folder.tone("Other (1).wav", 3);
         let library = scanned(&folder);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.set_pane(crate::Pane::Settings, cx);
             root.open_the_settings_page(Page::Identical, cx);
@@ -231,21 +239,28 @@ mod tests {
         let found = |driven: &mut Driven| {
             driven.read(|root, cx| root.library.read(cx).previewed_identical().is_shown())
         };
+
         assert!(!found(&mut driven));
+
         driven.click("fold-identical-songs");
+
         assert!(copy.exists(), "a fold nothing found took a file");
 
         driven.click("find-identical-songs");
         driven.until(|root, cx| root.library.read(cx).previewed_identical().is_shown());
+
         let listed = driven
             .read(|root, cx| root.library.read(cx).identical_songs())
             .expect("the copies are listed");
+
         assert_eq!(listed.copies.identical.len(), 1);
         assert_eq!(listed.copies.differing.len(), 1);
         assert!(copy.exists());
 
         driven.click("fold-identical-songs");
+
         assert!(copy.exists(), "one press folded");
+
         driven.click("fold-identical-songs");
         driven.until(|_, _| !copy.exists());
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);

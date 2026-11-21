@@ -106,10 +106,12 @@ impl Player {
                     match open(&config) {
                         Ok(backend) => {
                             *published.settings.write() = Arc::new(OutputSettings::of(&config));
+
                             let _ = ready.send(Ok(()));
                             let engine = Engine::new(
                                 config, sources, backend, requests, announce, published,
                             );
+
                             engine.run();
                         }
                         Err(error) => {
@@ -152,18 +154,21 @@ impl Player {
         command: Command,
     ) -> Result<Outcome> {
         let (request, outcome) = Request::asked(command);
+
         self.post(request.if_the_queue_is_still(revision))?;
         Ok(outcome)
     }
 
     pub fn request(&self, command: Command) -> Result<Outcome> {
         let (request, outcome) = Request::asked(command);
+
         self.post(request)?;
         Ok(outcome)
     }
 
     pub fn settle(&self, command: Command) -> Result<Landing> {
         let (request, landing) = Request::settled(command);
+
         self.post(request)?;
         Ok(landing)
     }
@@ -301,7 +306,9 @@ impl Player {
         {
             return Ok(recalled);
         }
+
         let analysis = resonate_analysis::analyse(&self.sources, location, span, watch)?;
+
         if let Some(kept) = &self.kept {
             kept.keep(location, span, &analysis);
         }

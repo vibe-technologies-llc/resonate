@@ -124,6 +124,7 @@ pub fn signed_in(cookies: &[Cookie]) -> bool {
 
 pub fn netscape(cookies: &[Cookie]) -> String {
     let mut text = HEADER.to_owned();
+
     for cookie in cookies {
         text.push_str(&cookie.line());
     }
@@ -132,23 +133,28 @@ pub fn netscape(cookies: &[Cookie]) -> String {
 
 pub fn written(jar: &Path, cookies: &[Cookie]) -> Result<()> {
     let folder = jar.parent().unwrap_or_else(|| Path::new("."));
+
     fs::create_dir_all(folder).map_err(|source| Error::Jar {
         op: JarOp::MakeFolder,
         source,
     })?;
+
     let staged = staged_beside(jar);
     let held = Held::taken_over(&staged).map_err(|source| Error::Jar {
         op: JarOp::Stage,
         source,
     })?;
+
     let filled = fill(held.file(), cookies).and_then(|()| {
         fs::rename(&staged, jar).map_err(|source| Error::Jar {
             op: JarOp::PutInPlace,
             source,
         })
     });
+
     if filled.is_err() {
         let _ = fs::remove_file(&staged);
+
         return filled;
     }
     drop(held);
@@ -160,6 +166,7 @@ pub fn written(jar: &Path, cookies: &[Cookie]) -> Result<()> {
 
 fn staged_beside(jar: &Path) -> PathBuf {
     let mut name = jar.as_os_str().to_owned();
+
     name.push(STAGED_SUFFIX);
     PathBuf::from(name)
 }
@@ -205,6 +212,7 @@ mod tests {
     fn scratch(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-signin-{}-{name}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -318,15 +326,19 @@ mod tests {
             fs::read_to_string(&jar).expect("the jar"),
             netscape(&cookies)
         );
+
         let left: Vec<_> = fs::read_dir(jar.parent().expect("a folder"))
             .expect("a listing")
             .map(|entry| entry.expect("an entry").file_name())
             .collect();
+
         assert_eq!(left, ["youtube-music-cookies.txt"]);
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt as _;
+
             let mode = fs::metadata(&jar).expect("metadata").permissions().mode();
+
             assert_eq!(mode & 0o777, 0o600);
         }
     }
@@ -335,7 +347,9 @@ mod tests {
     fn a_jar_another_sign_in_is_writing_is_not_written_over() {
         let folder = scratch("writing");
         let jar = folder.join("youtube-music-cookies.txt");
+
         fs::write(&jar, "kept").expect("a jar");
+
         let _writing = Held::taken_over(&folder.join("youtube-music-cookies.txt.staged"))
             .expect("another writer");
 

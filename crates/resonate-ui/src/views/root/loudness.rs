@@ -10,6 +10,7 @@ impl RootView {
         let current = self
             .muted_at(cx)
             .map_or_else(|| self.volume_now(cx), |muted_from| muted_from.get());
+
         self.set_volume(current + delta, cx);
     }
 
@@ -52,13 +53,16 @@ impl RootView {
         }
         if self.device_takes_the_volume(cx) {
             let muted = self.device_is_muted(cx);
+
             self.send(Command::SetDeviceMute(!muted), cx);
             cx.notify();
             return;
         }
+
         let Ok(heard_at) = Volume::new(self.volume_now(cx).clamp(0.0, 1.0)) else {
             return;
         };
+
         if heard_at == Volume::MUTE {
             return;
         }
@@ -72,6 +76,7 @@ impl RootView {
         let Ok(volume) = Volume::new(position.clamp(0.0, 1.0)) else {
             return;
         };
+
         self.rails.muted_from = None;
         self.send(Command::SetVolume(volume), cx);
         self.rails.volume_aimed = Some(volume.get());
@@ -79,6 +84,7 @@ impl RootView {
 
         self.rails.volume_settled = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(VOLUME_SETTLE).await;
+
             let stored = this.update(cx, |this, cx| this.keep_the_volume(cx));
             let _ = stored;
         });

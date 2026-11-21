@@ -35,11 +35,13 @@ fn passed_over(why: &str) {
         env::var(REQUIRED_BY).as_deref() != Ok("required"),
         "{why}, and {REQUIRED_BY} asks for a device"
     );
+
     eprintln!("skipped: {why}");
 }
 
 fn wait_until(holds: impl Fn() -> bool) -> bool {
     let started = Instant::now();
+
     while !holds() {
         if started.elapsed() >= WAIT {
             return false;
@@ -87,6 +89,7 @@ fn request(sink: &SinkInfo, spec: StreamSpec) -> StreamRequest {
 
 fn heard(stream: &SinkStream, wanted: impl Fn(&StreamEvent) -> bool) -> bool {
     let started = Instant::now();
+
     while started.elapsed() < WAIT {
         match stream.events().recv_timeout(Duration::from_millis(50)) {
             Ok(event) if wanted(&event) => return true,
@@ -110,8 +113,10 @@ struct Tone {
 impl AudioSource for Tone {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         let frames = (dst.len() / FRAME_BYTES).min(self.left.load(Ordering::Acquire));
+
         for frame in dst.as_chunks_mut::<FRAME_BYTES>().0.iter_mut().take(frames) {
             let sample = (self.phase.sin() * 0.25).to_ne_bytes();
+
             frame[..4].copy_from_slice(&sample);
             frame[4..].copy_from_slice(&sample);
             self.phase = (self.phase + self.step) % TAU;
@@ -138,11 +143,14 @@ fn a_tone_plays_through_the_shared_sink_stamped_in_order_and_drains() {
         return passed_over("the output device names no rate");
     };
     let layout = sink.formats[0].channels[0];
+
     if layout != ChannelLayout::Stereo {
         return passed_over("the output device is not stereo");
     }
+
     let left = Arc::new(AtomicUsize::new(rate.hz() as usize));
     let stamps = Arc::new(Mutex::new(Vec::new()));
+
     let tone = Tone {
         phase: 0.0,
         step: TAU * TONE_HZ / rate.hz() as f32,
@@ -160,7 +168,9 @@ fn a_tone_plays_through_the_shared_sink_stamped_in_order_and_drains() {
         event,
         StreamEvent::FormatChanged { spec: settled, .. } if *settled == spec
     )));
+
     stream.set_active(true).expect("started");
+
     assert!(heard(&stream, |event| matches!(
         event,
         StreamEvent::StateChanged {
@@ -168,22 +178,29 @@ fn a_tone_plays_through_the_shared_sink_stamped_in_order_and_drains() {
             ..
         }
     )));
+
     if !wait_until(|| left.load(Ordering::Acquire) == 0) {
         stream.close().expect("closed");
         return passed_over("the output device never asked for the tone");
     }
+
     assert!(wait_until(|| stream.latency() > Frames::ZERO));
+
     stream.drain().expect("asked to drain");
+
     assert!(heard(&stream, |event| matches!(
         event,
         StreamEvent::Drained
     )));
+
     stream.close().expect("closed");
 
     let stamps = stamps.lock();
     let moments: Vec<Moment> = stamps.iter().map(|stamp| stamp.at).collect();
+
     assert!(moments.len() > 1);
     assert!(moments.windows(2).all(|pair| pair[0] <= pair[1]));
+
     Box::new(backend).shutdown().expect("shut down");
 }
 
@@ -195,6 +212,7 @@ struct Ramp {
 impl AudioSource for Ramp {
     fn fill(&mut self, dst: &mut [u8]) -> usize {
         let frames = (dst.len() / FRAME_BYTES).min(self.left);
+
         for frame in dst.as_chunks_mut::<FRAME_BYTES>().0.iter_mut().take(frames) {
             frame[..4].copy_from_slice(&self.next.to_ne_bytes());
             frame[4..].copy_from_slice(&(-self.next).to_ne_bytes());
@@ -215,11 +233,13 @@ impl Hear for Captured {
         if !self.listening.load(Ordering::Acquire) {
             return;
         }
+
         let Some(mut words) = self.words.try_lock() else {
             return;
         };
         for frame in bytes.as_chunks::<FRAME_BYTES>().0 {
             let left = f32::from_ne_bytes([frame[0], frame[1], frame[2], frame[3]]);
+
             words.push((left * TWENTY_FOUR_BITS).round() as i32);
         }
     }
@@ -254,10 +274,12 @@ fn the_hogged_sink_moves_the_device_to_the_songs_rate_carries_24_bits_exactly_an
     let shared = listed
         .iter()
         .find(|sink| is_shared(sink) && loops_back(sink));
+
     let (Some(hogged), Some(shared), Some(device)) = (hogged, shared, loopback_device()) else {
         return passed_over("this machine has no loopback device to hog");
     };
     let before = shared.current_rate;
+
     let Some(rate) = another_rate(hogged, before) else {
         return passed_over("the loopback device offers 24 bits at no other rate");
     };
@@ -278,10 +300,12 @@ fn the_hogged_sink_moves_the_device_to_the_songs_rate_carries_24_bits_exactly_an
             .find(|sink| sink.id == shared.id)
             .and_then(|sink| sink.current_rate)
     };
+
     assert_eq!(rate_of_the_shared_sink(), Some(rate));
 
     let words = Arc::new(Mutex::new(Vec::new()));
     let listening = Arc::new(AtomicBool::new(true));
+
     let capture = Unit::hearing(
         Shape {
             component: Component::HalOutput,
@@ -299,29 +323,37 @@ fn the_hogged_sink_moves_the_device_to_the_songs_rate_carries_24_bits_exactly_an
         NonZeroU32::MIN.saturating_add(8_191),
     )
     .expect("a capture of the loopback");
+
     capture.start().expect("the capture started");
     stream.set_active(true).expect("started");
     stream.drain().expect("asked to drain");
+
     let drained = heard(&stream, |event| matches!(event, StreamEvent::Drained));
+
     listening.store(false, Ordering::Release);
     capture.stop().expect("the capture stopped");
     drop(capture);
     stream.close().expect("closed");
 
     assert!(wait_until(|| rate_of_the_shared_sink() == before));
+
     if !drained {
         return passed_over("the loopback device never asked for the ramp");
     }
+
     let words = words.lock();
     let Some(first) = words.iter().position(|word| *word != 0) else {
         return passed_over("the loopback device handed nothing back");
     };
+
     let run = &words[first..];
+
     assert!(run.len() >= RAMP_COMPARED_FRAMES);
     assert!(
         run[..RAMP_COMPARED_FRAMES]
             .windows(2)
             .all(|pair| pair[1] == pair[0] + 1)
     );
+
     Box::new(backend).shutdown().expect("shut down");
 }

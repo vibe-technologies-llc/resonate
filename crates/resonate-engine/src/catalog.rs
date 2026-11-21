@@ -84,7 +84,7 @@ impl Look<CoverArt> {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct Row {
     location: MediaLocation,
     span: Option<FrameSpan>,
@@ -269,6 +269,7 @@ impl Held {
 
     fn claim_tags(&mut self, row: &Row) -> Claim<MediaInfo> {
         let look = self.tags(row);
+
         if look.is_due_again() {
             self.keep_tags(row, Look::Pending);
             return Claim::Ours;
@@ -283,6 +284,7 @@ impl Held {
 
     fn claim_art(&mut self, location: &MediaLocation) -> Claim<CoverArt> {
         let look = self.art(location);
+
         if look.is_due_again() {
             self.keep_art(location, Look::Pending);
             return Claim::Ours;
@@ -297,15 +299,18 @@ impl Held {
 
     fn keep_tags(&mut self, row: &Row, look: Look<MediaInfo>) {
         self.make_room_for(&row.location);
+
         let added = self
             .entries
             .get_mut(&row.location)
             .map_or(0, |entry| entry.keep(row.span, look));
+
         self.rows += added;
     }
 
     fn keep_art(&mut self, location: &MediaLocation, look: Look<CoverArt>) {
         self.make_room_for(location);
+
         let gained = look.bytes();
         let draws_a_picture = look.is_a_picture();
 
@@ -343,6 +348,7 @@ impl Held {
         let Some(entry) = self.entries.get_mut(location) else {
             return false;
         };
+
         if entry.is_pending() || entry.stamped_at.elapsed() < LOOKED_AT_THE_FILE_EVERY {
             return false;
         }
@@ -355,6 +361,7 @@ impl Held {
             .entries
             .get(location)
             .is_some_and(|entry| !entry.is_pending() && entry.stamp != now);
+
         if moved {
             tracing::debug!(%location, "a queued item changed on disc; it is read again");
             self.forget(location);
@@ -379,6 +386,7 @@ impl Held {
         let named = Arc::clone(named);
 
         let now = self.tick();
+
         self.order.remove(&was);
         self.order.insert(now, Arc::clone(&named));
         if self.pictures.remove(&was).is_some() {
@@ -392,6 +400,7 @@ impl Held {
 
     fn make_room_for(&mut self, location: &MediaLocation) {
         let held = self.made_current(location);
+
         self.evict_until_one_fits();
         if held {
             return;
@@ -399,6 +408,7 @@ impl Held {
 
         let now = self.tick();
         let named = Arc::new(location.clone());
+
         self.order.insert(now, Arc::clone(&named));
         self.entries.insert(
             named,
@@ -419,6 +429,7 @@ impl Held {
             let Some(stale) = self.stalest_row() else {
                 return;
             };
+
             self.forget(&stale);
         }
     }
@@ -444,6 +455,7 @@ impl Held {
             };
 
             let freed = entry.art.bytes();
+
             entry.art = Look::Unasked;
             self.pictured -= freed;
         }
@@ -453,6 +465,7 @@ impl Held {
         let Some(entry) = self.entries.remove(location) else {
             return;
         };
+
         self.order.remove(&entry.used);
         self.pictures.remove(&entry.used);
         self.pictured -= entry.art.bytes();
@@ -483,6 +496,7 @@ impl Spares {
             let Some((_, stale)) = self.held.pop_front() else {
                 return;
             };
+
             self.bytes -= stale.bytes.len();
         }
     }
@@ -490,6 +504,7 @@ impl Spares {
     fn take(&mut self, location: &MediaLocation) -> Option<CoverArt> {
         let at = self.held.iter().position(|(held, _)| held == location)?;
         let (_, art) = self.held.remove(at)?;
+
         self.bytes -= art.bytes.len();
         Some(art)
     }
@@ -536,6 +551,7 @@ impl Shelf {
 
     fn keep_tags_stamped(&self, row: &Row, look: Look<MediaInfo>, before: Option<Stamp>) {
         let mut held = self.held.lock();
+
         held.keep_tags(row, look);
         held.stamp(&row.location, before, true);
         drop(held);
@@ -554,6 +570,7 @@ impl Shelf {
         before: Option<Stamp>,
     ) {
         let mut held = self.held.lock();
+
         held.keep_art(location, look);
         held.stamp(location, before, false);
         drop(held);
@@ -577,6 +594,7 @@ impl Shelf {
 
     fn keep_what_the_tags_saw(&self, location: &MediaLocation, pictured: Pictured) {
         let mut held = self.held.lock();
+
         let look = match (pictured, held.art(location)) {
             (_, Look::Found(_)) | (Pictured::StoodIn | Pictured::Carried, _) => return,
             (Pictured::Copied(art), Look::Pending) => Look::Found(Arc::new(art)),
@@ -587,6 +605,7 @@ impl Shelf {
             }
             (Pictured::Bare, _) => Look::Nothing,
         };
+
         held.keep_art(location, look);
         drop(held);
         self.landing();
@@ -620,6 +639,7 @@ impl Catalog {
         let (tags, tags_asked) = bounded(ROWS_ASKED);
         let (art, art_asked) = bounded(PICTURES_ASKED);
         let (look, look_asked) = bounded(LOOKS_ASKED);
+
         let asked = Asked {
             tags: tags_asked,
             art: art_asked,
@@ -664,6 +684,7 @@ impl Catalog {
     ) -> Option<Arc<MediaInfo>> {
         let row = Row::new(location, span);
         let claimed = self.shelf.claim_tags(&row);
+
         self.ask_for_the_looks();
         match claimed {
             Claim::Answered(answer) => answer,
@@ -676,12 +697,14 @@ impl Catalog {
 
     pub(crate) fn tags_read(&self, location: &MediaLocation, span: Option<FrameSpan>) -> TagsRead {
         let read = self.shelf.tags_read(&Row::new(location, span));
+
         self.ask_for_the_looks();
         read
     }
 
     pub(crate) fn art(&self, location: &MediaLocation) -> Option<Arc<CoverArt>> {
         let claimed = self.shelf.claim_art(location);
+
         self.ask_for_the_looks();
         match claimed {
             Claim::Answered(answer) => answer,
@@ -706,6 +729,7 @@ impl Catalog {
         patience: Duration,
     ) -> Option<Arc<MediaInfo>> {
         let until = Instant::now() + patience;
+
         if let Some(info) = self.media(location, span) {
             return Some(info);
         }
@@ -780,10 +804,12 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                     Ok(info) => Look::Found(Arc::new(info)),
                     Err(error) => {
                         let location = &row.location;
+
                         tracing::debug!(%error, %location, "a queued item would not be read");
                         Look::Failed(Instant::now())
                     }
                 };
+
                 shelf.keep_tags_stamped(&row, look, before);
             }
             Wanted::Art(location) => {
@@ -794,6 +820,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                     shelf.keep_art(&location, Look::Found(Arc::new(spare)));
                     continue;
                 }
+
                 let before = Stamp::of(&location);
                 let look = match probe_cover_art(sources, &location) {
                     Ok(Some(art)) => Look::Found(Arc::new(art)),
@@ -803,6 +830,7 @@ fn read_each(shelf: &Shelf, sources: &Sources, asked: &Asked) {
                         Look::Failed(Instant::now())
                     }
                 };
+
                 shelf.keep_art_stamped(&location, look, before);
             }
         }
@@ -815,6 +843,7 @@ fn whole(
     location: &MediaLocation,
 ) -> resonate_codec::Result<MediaInfo> {
     let (info, pictured) = probe_pictured(sources, location, Picturing::Copied)?;
+
     shelf.keep_what_the_tags_saw(location, pictured);
     Ok(info)
 }
@@ -844,11 +873,13 @@ mod tests {
     impl Fixture {
         fn holding(bytes: &[u8]) -> Self {
             static NEXT: AtomicU32 = AtomicU32::new(0);
+
             let path = env::temp_dir().join(format!(
                 "resonate-catalog-{}-{}.wav",
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::write(&path, bytes).expect("a writable temporary file");
             Self { path }
         }
@@ -863,6 +894,7 @@ mod tests {
                 .file_name()
                 .and_then(|named| named.to_str())
                 .expect("a temporary file with a name");
+
             fs::write(
                 self.path.with_extension(SHEET_EXTENSION),
                 format!(
@@ -961,21 +993,25 @@ mod tests {
 
     fn png(size: usize) -> Vec<u8> {
         let mut bytes = b"\x89PNG\r\n\x1a\n".to_vec();
+
         bytes.extend((0..size).map(|n| n as u8));
         bytes
     }
 
     fn id3_with_a_picture(bytes: &[u8]) -> Vec<u8> {
         let mut body = vec![UTF8];
+
         body.extend_from_slice(b"image/png\0");
         body.push(FRONT_COVER);
         body.push(0);
         body.extend_from_slice(bytes);
 
         let mut frames = Vec::new();
+
         frame(&mut frames, b"APIC", &body);
 
         let mut tag = b"ID3\x04\x00\x00".to_vec();
+
         tag.extend_from_slice(&synchsafe(frames.len() as u32));
         tag.extend_from_slice(&frames);
         tag
@@ -984,6 +1020,7 @@ mod tests {
     fn wav(titled: &str, by: &str) -> Vec<u8> {
         let block_align = CHANNELS * BITS / 8;
         let mut fmt = Vec::new();
+
         fmt.extend_from_slice(&1_u16.to_le_bytes());
         fmt.extend_from_slice(&CHANNELS.to_le_bytes());
         fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -992,13 +1029,16 @@ mod tests {
         fmt.extend_from_slice(&BITS.to_le_bytes());
 
         let mut info = b"INFO".to_vec();
+
         for (id, value) in [(b"INAM", titled), (b"IART", by)] {
             let mut terminated = value.as_bytes().to_vec();
+
             terminated.push(0);
             chunk(&mut info, id, &terminated);
         }
 
         let mut body = b"WAVE".to_vec();
+
         chunk(&mut body, b"fmt ", &fmt);
         chunk(&mut body, b"LIST", &info);
         chunk(
@@ -1008,6 +1048,7 @@ mod tests {
         );
 
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
         file
@@ -1015,6 +1056,7 @@ mod tests {
 
     fn wav_with_a_cover(titled: &str, by: &str, picture: &[u8]) -> Vec<u8> {
         let mut file = id3_with_a_picture(picture);
+
         file.extend_from_slice(&wav(titled, by));
         file
     }
@@ -1025,7 +1067,9 @@ mod tests {
             if let Some(art) = catalog.art(location) {
                 return Some(art);
             }
+
             let mut held = catalog.shelf.held.lock();
+
             match held.art(location) {
                 Look::Pending => {}
                 Look::Found(art) => return Some(art),
@@ -1062,11 +1106,13 @@ mod tests {
         let info = catalog
             .media_within(&file.location(), None, PATIENCE)
             .expect("a well-formed wav is read");
+
         assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
         assert_eq!(info.tags.artist.as_deref(), Some("Pink Floyd"));
         assert_eq!(info.duration, Some(resonate_core::Frames(u64::from(RATE))));
 
         let landed = catalog.revision();
+
         assert!(landed > 0, "a read that landed moved nothing");
         assert!(catalog.media(&file.location(), None).is_some());
         assert_eq!(catalog.revision(), landed, "a held row was read again");
@@ -1082,6 +1128,7 @@ mod tests {
         let row = catalog
             .media_within(&cut.location(), Some(echoes), PATIENCE)
             .expect("the row the sheet names");
+
         assert_eq!(row.tags.title.as_deref(), Some("Echoes"));
         assert_eq!(row.tags.album.as_deref(), Some("Meddle"));
         assert_eq!(row.duration, echoes.frames());
@@ -1089,6 +1136,7 @@ mod tests {
         let whole = catalog
             .media_within(&cut.location(), None, PATIENCE)
             .expect("the file the rows are cut from");
+
         assert_eq!(whole.tags.title.as_deref(), Some("Meddle"));
         assert_eq!(whole.duration, Some(Frames(u64::from(RATE))));
 
@@ -1112,10 +1160,15 @@ mod tests {
         let mut held = Held::default();
 
         held.keep_tags(&row, Look::Failed(Instant::now()));
+
         let at_once = held.claim_tags(&row);
+
         held.keep_tags(&row, Look::Failed(a_while_ago(READ_AGAIN_AFTER * 2)));
+
         let later = held.claim_tags(&row);
+
         held.keep_tags(&row, Look::Nothing);
+
         let found_nothing = held.claim_tags(&row);
 
         assert!(matches!(at_once, Claim::Answered(None)));
@@ -1130,6 +1183,7 @@ mod tests {
     fn a_row_whose_file_changed_on_disc_is_read_again() {
         let file = Fixture::holding(&wav("Echoes", "Pink Floyd"));
         let catalog = catalog();
+
         let first = catalog
             .media_within(&file.location(), None, PATIENCE)
             .expect("a well-formed wav is read");
@@ -1139,12 +1193,14 @@ mod tests {
         if let Some(entry) = catalog.shelf.held.lock().entries.get_mut(&file.location()) {
             entry.stamped_at = a_while_ago(LOOKED_AT_THE_FILE_EVERY * 2);
         }
+
         let deadline = Instant::now() + PATIENCE;
         let again = loop {
             let asked = catalog.media_within(&file.location(), None, PATIENCE);
             let retagged = asked
                 .as_ref()
                 .is_some_and(|info| info.tags.title.as_deref() != Some("Echoes"));
+
             if retagged || Instant::now() >= deadline {
                 break asked;
             }
@@ -1169,6 +1225,7 @@ mod tests {
                 .media_within(&file.location(), None, PATIENCE)
                 .is_none()
         );
+
         let refused = catalog.revision();
 
         assert!(catalog.media(&file.location(), None).is_none());
@@ -1192,6 +1249,7 @@ mod tests {
         );
 
         let art = art_within(&catalog, &file.location()).expect("a tagged wav carries its picture");
+
         assert_eq!(art.format, ImageFormat::Png);
         assert_eq!(art.bytes, picture);
     }
@@ -1225,6 +1283,7 @@ mod tests {
         let catalog = catalog();
 
         assert!(art_within(&catalog, &file.location()).is_none());
+
         let refused = catalog.revision();
 
         assert!(catalog.art(&file.location()).is_none());
@@ -1240,17 +1299,20 @@ mod tests {
         let info = catalog
             .media_within(&file.location(), None, PATIENCE)
             .expect("a well-formed wav is read");
+
         assert!(art_within(&catalog, &file.location()).is_some());
 
         let held = catalog
             .media(&file.location(), None)
             .expect("the tags were dropped by the look for a cover");
+
         assert!(Arc::ptr_eq(&info, &held), "the file was read twice");
     }
 
     fn counted(bytes: Vec<u8>) -> (Catalog, MediaLocation, Arc<AtomicU32>) {
         let opens = Arc::new(AtomicU32::new(0));
         let named = SourceId::new("counted").expect("a lowercase name");
+
         let sources = Sources::local().and(Arc::new(Counted {
             source: named.clone(),
             bytes,
@@ -1280,12 +1342,15 @@ mod tests {
         let (catalog, row, opens) = counted(wav_with_a_cover("Echoes", "Pink Floyd", &picture));
 
         assert!(matches!(catalog.shelf.claim_art(&row), Claim::Ours));
+
         let info = catalog
             .media_within(&row, None, PATIENCE)
             .expect("a well-formed wav is read");
+
         assert_eq!(info.tags.title.as_deref(), Some("Echoes"));
 
         let art = catalog.art(&row).expect("the picture landed with the tags");
+
         assert_eq!(art.bytes, picture);
         assert_eq!(
             opens.load(Ordering::Relaxed),
@@ -1307,6 +1372,7 @@ mod tests {
         );
 
         let art = art_within(&catalog, &row).expect("the picture is answered when it is asked for");
+
         assert_eq!(art.bytes, picture);
         assert_eq!(opens.load(Ordering::Relaxed), 1);
     }
@@ -1315,6 +1381,7 @@ mod tests {
     fn the_spare_pictures_stay_within_their_budget_and_the_newest_stay() {
         let mut spares = Spares::default();
         let quarter = SPARE_ART_BYTES / 4;
+
         for index in 0..6 {
             spares.keep(
                 &MediaLocation::local(format!("/music/{index}.flac")),
@@ -1367,6 +1434,7 @@ mod tests {
 
         let opens = Arc::new(AtomicU32::new(0));
         let named = SourceId::new("counted").expect("a lowercase name");
+
         let sources = Sources::local().and(Arc::new(Counted {
             source: named.clone(),
             bytes: wav("Echoes", "Pink Floyd"),
@@ -1391,6 +1459,7 @@ mod tests {
                 "a row every thread asked for was never read"
             );
         }
+
         assert_eq!(
             opens.load(Ordering::Relaxed) as usize,
             ROWS,
@@ -1424,6 +1493,7 @@ mod tests {
     fn a_source_that_does_not_answer_holds_back_no_more_than_the_reader_it_holds() {
         let gate = Arc::new(Mutex::new(()));
         let named = SourceId::new("stalls-one").expect("a lowercase name");
+
         let sources = Sources::local().and(Arc::new(StallsOneRow {
             source: named.clone(),
             bytes: wav("Echoes", "Pink Floyd"),
@@ -1437,6 +1507,7 @@ mod tests {
 
         let held = gate.lock();
         let _ = catalog.media(&stalled, None);
+
         for row in &healthy {
             let _ = catalog.media(row, None);
         }
@@ -1447,8 +1518,11 @@ mod tests {
                 "a row behind a stalled one was held back with it"
             );
         }
+
         assert!(catalog.media(&stalled, None).is_none());
+
         drop(held);
+
         assert!(catalog.media_within(&stalled, None, PATIENCE).is_some());
     }
 
@@ -1456,6 +1530,7 @@ mod tests {
     fn a_reader_that_is_behind_leaves_a_row_to_be_asked_for_again() {
         let gate = Arc::new(Mutex::new(()));
         let named = SourceId::new("stalls").expect("a lowercase name");
+
         let sources = Sources::local().and(Arc::new(Stalls {
             source: named.clone(),
             gate: Arc::clone(&gate),
@@ -1464,9 +1539,11 @@ mod tests {
         let stalled = gate.lock();
 
         let asked = rows(&named, ROWS_ASKED + READERS + 2);
+
         for row in &asked {
             assert!(catalog.media(row, None).is_none());
         }
+
         let turned_away = asked
             .iter()
             .filter(|row| {
@@ -1476,6 +1553,7 @@ mod tests {
                 )
             })
             .count();
+
         assert!(
             turned_away > 0,
             "a queue bounded at {ROWS_ASKED} took all {} rows",
@@ -1487,6 +1565,7 @@ mod tests {
         );
 
         drop(stalled);
+
         let again = asked.last().expect("a row to ask for again");
         let settled = Instant::now() + PATIENCE;
         while !matches!(
@@ -1497,7 +1576,9 @@ mod tests {
                 Instant::now() < settled,
                 "a row the queue turned away was never read"
             );
+
             let _ = catalog.media(again, None);
+
             thread::sleep(Duration::from_millis(1));
         }
     }
@@ -1506,6 +1587,7 @@ mod tests {
     fn a_row_looked_at_again_is_not_the_one_evicted() {
         let mut held = Held::default();
         let first = MediaLocation::local("/music/first.flac");
+
         held.keep_tags(&Row::new(&first, None), Look::Nothing);
         for row in 0..ROWS_HELD - 1 {
             held.keep_tags(
@@ -1515,6 +1597,7 @@ mod tests {
         }
 
         let _ = held.tags(&Row::new(&first, None));
+
         held.keep_tags(
             &Row::new(&MediaLocation::local("/music/last.flac"), None),
             Look::Nothing,
@@ -1536,6 +1619,7 @@ mod tests {
     #[test]
     fn the_rows_held_stay_within_the_bound_however_many_are_asked_for() {
         let mut held = Held::default();
+
         for row in 0..ROWS_HELD + 64 {
             held.keep_tags(
                 &Row::new(&MediaLocation::local(format!("/music/{row}.flac")), None),
@@ -1560,6 +1644,7 @@ mod tests {
     fn a_row_still_waiting_on_its_read_is_not_the_one_evicted() {
         let mut held = Held::default();
         let wanted = MediaLocation::local("/music/wanted.flac");
+
         held.keep_tags(&Row::new(&wanted, None), Look::Pending);
         for row in 0..ROWS_HELD + 64 {
             held.keep_tags(
@@ -1614,8 +1699,10 @@ mod tests {
     #[test]
     fn a_row_evicted_gives_the_bytes_of_its_picture_back() {
         let mut held = Held::default();
+
         for row in 0..ROWS_HELD + 64 {
             let location = MediaLocation::local(format!("/music/{row}.flac"));
+
             held.keep_art(&location, pictured(16));
         }
 

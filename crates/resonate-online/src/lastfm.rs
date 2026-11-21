@@ -121,10 +121,13 @@ pub fn approval_asked(
         .with("method", GET_TOKEN)
         .with("api_key", &application.key);
     let op = LookupOp::Token;
+
     let answer = approval_answered(&client, op, &fields, &application.secret)?;
+
     if let Some(code) = answer.error {
         return Err(refused(op, code));
     }
+
     let token = answer
         .token
         .filter(|token| !token.trim().is_empty())
@@ -160,10 +163,12 @@ impl LastfmApproving {
             if cancelled() || Instant::now() >= self.until {
                 return Ok(None);
             }
+
             let fields = Fields::default()
                 .with("method", GET_SESSION)
                 .with("api_key", &self.application.key)
                 .with("token", &self.token);
+
             match approval_answered(&self.client, op, &fields, &self.application.secret) {
                 Ok(answer) => {
                     unreached = 0;
@@ -213,7 +218,9 @@ fn waited(every: Duration, until: Instant, cancelled: &dyn Fn() -> bool) -> bool
         if cancelled() {
             return false;
         }
+
         let left = end.saturating_duration_since(Instant::now());
+
         if left.is_zero() {
             return true;
         }
@@ -295,12 +302,15 @@ impl Fields {
 
     fn signature(&self, secret: &str) -> String {
         let mut signing = String::new();
+
         for (name, value) in &self.0 {
             signing.push_str(name);
             signing.push_str(value);
         }
         signing.push_str(secret);
+
         let mut written = String::with_capacity(32);
+
         for byte in Md5::digest(signing.as_bytes()) {
             let _ = write!(written, "{byte:02x}");
         }
@@ -500,9 +510,11 @@ mod tests {
             .with("token", "approved");
 
         let mut expected = String::new();
+
         for byte in Md5::digest("api_keykeymethodauth.getSessiontokenapprovedsecret".as_bytes()) {
             let _ = write!(expected, "{byte:02x}");
         }
+
         assert_eq!(fields.signature("secret"), expected);
         assert!(fields.signed("secret").ends_with("&format=json"));
         assert!(!fields.signed("secret").contains("secret"));

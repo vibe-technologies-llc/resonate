@@ -45,6 +45,7 @@ fn alternate_streams(streaming: &impl Streaming, path: &Path) -> Result<Vec<OsSt
     let mut found = first;
     loop {
         let stream = name_of(&found);
+
         if stream != OsStr::new(THE_FILES_OWN_DATA) {
             streams.push(stream);
         }
@@ -58,6 +59,7 @@ fn alternate_streams(streaming: &impl Streaming, path: &Path) -> Result<Vec<OsSt
 
 fn stream_of(path: &Path, stream: &OsStr) -> PathBuf {
     let mut named = path.as_os_str().to_os_string();
+
     named.push(stream);
     PathBuf::from(named)
 }
@@ -69,6 +71,7 @@ fn copied(from: &Path, to: &Path) -> io::Result<()> {
         .create(true)
         .truncate(true)
         .open(to)?;
+
     io::copy(&mut reading, &mut writing)?;
     writing.sync_all()
 }
@@ -81,6 +84,7 @@ pub(crate) fn carrying_alternate_streams(
     for stream in alternate_streams(streaming, from)? {
         let source = stream_of(from, &stream);
         let destination = stream_of(to, &stream);
+
         copied(&source, &destination).map_err(|source| Error::Io {
             op: Op::CopyStream,
             path: destination,
@@ -127,6 +131,7 @@ mod real {
 
         fn first(&self, name: &Wide) -> Raw<(StreamSearch, Vec<u16>)> {
             let mut found = WIN32_FIND_STREAM_DATA::default();
+
             let handle = unsafe {
                 FindFirstStreamW(
                     name_of(name),
@@ -141,6 +146,7 @@ mod real {
 
         fn next(&self, search: &StreamSearch) -> Raw<Vec<u16>> {
             let mut found = WIN32_FIND_STREAM_DATA::default();
+
             unsafe { FindNextStreamW(search.handle, (&raw mut found).cast()) }.map_err(hresult)?;
             Ok(found.cStreamName.to_vec())
         }
@@ -209,6 +215,7 @@ mod tests {
 
         fn padded(text: &str) -> Vec<u16> {
             let mut units: Vec<u16> = text.encode_utf16().collect();
+
             units.resize(296, 0);
             units
         }
@@ -219,13 +226,16 @@ mod tests {
 
         fn first(&self, name: &Wide) -> Raw<(Search, Vec<u16>)> {
             self.calls.lock().push(Call::First(name.units().to_vec()));
+
             let names = self.first.clone()?;
             Ok((Search(Arc::clone(&self.calls)), Self::padded(names[0])))
         }
 
         fn next(&self, _: &Search) -> Raw<Vec<u16>> {
             self.calls.lock().push(Call::Next);
+
             let mut found = self.found.lock();
+
             *found += 1;
             if self.refusing_next == Some(*found) {
                 return Err(HResult(-31));
@@ -240,6 +250,7 @@ mod tests {
     fn folder(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-streams-{}-{name}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -341,8 +352,10 @@ mod tests {
         let folder = folder("copy");
         let from = folder.join("from.mp3");
         let to = folder.join("to.mp3");
+
         fs::write(folder.join("from.mp3:cover"), b"cover bytes").expect("a stream");
         fs::write(folder.join("from.mp3:tags"), b"tag bytes").expect("a stream");
+
         let fake = Fake::listing(&["::$DATA", ":cover", ":tags"]);
 
         carrying_alternate_streams(&fake, &from, &to).expect("carried");
@@ -355,6 +368,7 @@ mod tests {
             fs::read(folder.join("to.mp3:tags")).expect("copied"),
             b"tag bytes"
         );
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -371,6 +385,7 @@ mod tests {
             carried,
             Err(Error::Io { op: Op::CopyStream, ref path, .. }) if *path == folder.join("to.mp3:gone")
         ));
+
         let _ = fs::remove_dir_all(&folder);
     }
 }

@@ -34,6 +34,7 @@ where
         let named = service
             .as_ref()
             .and_then(|service| service.named_by(location));
+
         let (Some(service), Some(Named::Song(id))) = (service, named) else {
             return Err(resonate_codec::Error::LocatorNotUsable {
                 location: location.clone(),

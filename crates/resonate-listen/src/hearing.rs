@@ -88,6 +88,7 @@ impl Hearing {
 
     pub fn share(&self) -> f32 {
         let wanted = self.wanted.load(Ordering::Relaxed);
+
         if wanted == 0 {
             return 0.0;
         }

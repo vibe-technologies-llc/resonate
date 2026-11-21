@@ -91,6 +91,7 @@ impl Playback {
         };
         let (stopping, stopped) = mpsc::channel();
         let (ready, opened) = mpsc::channel();
+
         let thread = thread::Builder::new()
             .name("resonate-listen-playback".into())
             .spawn(move || sounding(device, played, &ready, &stopped))

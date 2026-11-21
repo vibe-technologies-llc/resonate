@@ -41,7 +41,7 @@ const COUPLED_CELLS_AT_LEAST: u64 = 2_000;
 const COUPLED_OVER_ITS_CONTROL_AT_LEAST: f64 = 0.05;
 const COUPLED_SIGNIFICANCE_AT_LEAST: f64 = 12.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Verdict {
     Genuine,
     Suspect,
@@ -86,7 +86,7 @@ impl Verdict {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum LossyGuess {
     UpTo64,
     Near96,
@@ -329,6 +329,7 @@ pub(crate) struct Weighed<'a> {
 pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     let spectrum = weighed.spectrum;
     let bands = banded(spectrum);
+
     let cutoff = lower_of(
         wall_in(&bands),
         wall_in(typical_bands(spectrum, bands.len())),
@@ -341,6 +342,7 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
         .filter(|cutoff| cutoff.hz <= LOSSY_CEILING_HZ)
         .filter(|cutoff| anti_aliased.is_none_or(|edge| cutoff.hz < edge))
         .map(|cutoff| LossyGuess::of(cutoff.hz));
+
     match cutoff {
         Some(cutoff) => findings.push(Finding::Wall {
             cutoff,
@@ -350,6 +352,7 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
     }
 
     let upsampled = cutoff.and_then(|cutoff| upsampled_from(cutoff.hz, weighed.rate));
+
     findings.extend(upsampled.map(|from_hz| Finding::Upsampled { from_hz }));
 
     let stepped: Vec<Finding> = weighed
@@ -374,17 +377,22 @@ pub(crate) fn judged(weighed: Weighed<'_>) -> Judgement {
         })
         .collect();
     let on_steps = !stepped.is_empty();
+
     findings.extend(stepped);
 
     let padded = padding(weighed);
+
     findings.extend(padded);
     findings.extend(incidentals(weighed.levels));
 
     let heard_enough = spectrum.heard() >= HEARD_AT_LEAST;
+
     if !heard_enough {
         findings.push(Finding::TooLittleHeard);
     }
+
     let from_dsd = weighed.codec == Codec::Dsd;
+
     if from_dsd {
         findings.push(Finding::FromDsd);
     }
@@ -421,6 +429,7 @@ fn taken(steps: &Steps) -> bool {
 
 fn coupled(steps: &Steps) -> bool {
     let (on, off) = (f64::from(steps.lattice), f64::from(steps.control));
+
     let spread = ((on * (1.0 - on) + off * (1.0 - off)) / steps.coefficients.max(1) as f64).sqrt();
     let over = on - off;
     steps.coefficients >= COUPLED_CELLS_AT_LEAST
@@ -456,6 +465,7 @@ fn spectral_verdict(rate: u32, cutoff: Option<Cutoff>, extent_hz: Option<u32>) -
             (None, _) => Verdict::NotJudged,
         };
     }
+
     let genuine_from = sources_of(rate)
         .map(|from| from / 2 + UPSAMPLE_SLACK_HZ)
         .max()
@@ -504,6 +514,7 @@ fn drop_at(bands: &[f32], edge: usize) -> Option<f32> {
     let below_to = edge.checked_sub((BELOW_WALL_TO_HZ / BAND_HZ) as usize)?;
     let above_from = edge + (ABOVE_WALL_FROM_HZ / BAND_HZ) as usize;
     let above = bands.get(above_from..)?;
+
     if above.len() < BANDS_ABOVE_A_WALL {
         return None;
     }
@@ -511,6 +522,7 @@ fn drop_at(bands: &[f32], edge: usize) -> Option<f32> {
     let below = mean(&bands[below_from..below_to])?;
     let above_mean = mean(above)?;
     let above_most = above.iter().copied().fold(f32::NEG_INFINITY, f32::max);
+
     let drop = below - above_mean;
     (drop >= WALL_DB && below - above_most >= WALL_DB - WALL_FLOOR_SLACK_DB).then_some(drop)
 }
@@ -518,6 +530,7 @@ fn drop_at(bands: &[f32], edge: usize) -> Option<f32> {
 fn wall_in(bands: &[f32]) -> Option<Cutoff> {
     let lowest = (LOWEST_WALL_HZ / BAND_HZ) as usize;
     let mut steepest: Option<(usize, f32)> = None;
+
     for edge in (lowest..bands.len()).rev() {
         match (drop_at(bands, edge), steepest) {
             (Some(drop), Some((_, held))) if drop > held => steepest = Some((edge, drop)),
@@ -598,6 +611,7 @@ mod tests {
     fn spectrum_of(rate: u32, level_at: impl Fn(f32) -> f32) -> Spectrum {
         let points = crate::spectrum::points_for(rate);
         let bin_hz = rate as f32 / points as f32;
+
         let levels = (0..=points / 2)
             .map(|bin| level_at(bin as f32 * bin_hz))
             .collect();
@@ -632,10 +646,12 @@ mod tests {
             let nyquist = rate as f32 / 2.0;
             let rolled_off = spectrum_of(rate, music_up_to(nyquist * 0.94));
             let judgement = judged_as(Codec::Flac, rate, &rolled_off, &QUIET);
+
             assert_eq!(judgement.verdict, Verdict::Genuine, "{rate}");
             assert_eq!(judgement.lossy_guess(), None, "{rate}");
 
             let cut_low = spectrum_of(rate, music_up_to(nyquist * 0.6));
+
             assert_ne!(
                 judged_as(Codec::Flac, rate, &cut_low, &QUIET).verdict,
                 Verdict::Genuine,
@@ -674,7 +690,9 @@ mod tests {
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &QUIET);
 
         assert_eq!(judgement.verdict, Verdict::Fake);
+
         let cutoff = judgement.cutoff.expect("a wall");
+
         assert!((15_800..=16_200).contains(&cutoff.hz), "{}", cutoff.hz);
         assert!(cutoff.drop_db >= WALL_DB);
         assert_eq!(judgement.lossy_guess(), Some(LossyGuess::Near128));
@@ -683,6 +701,7 @@ mod tests {
     #[test]
     fn a_wall_at_twenty_kilohertz_is_only_suspect_and_one_at_the_top_is_genuine() {
         let suspect = spectrum_of(44_100, music_up_to(20_300.0));
+
         assert_eq!(
             judged_as(Codec::Flac, 44_100, &suspect, &QUIET).verdict,
             Verdict::Suspect
@@ -690,6 +709,7 @@ mod tests {
 
         let genuine = spectrum_of(44_100, music_up_to(21_600.0));
         let judgement = judged_as(Codec::Flac, 44_100, &genuine, &QUIET);
+
         assert_eq!(judgement.verdict, Verdict::Genuine);
         assert_eq!(judgement.lossy_guess(), None);
     }
@@ -700,6 +720,7 @@ mod tests {
             -30.0 - 20.0 * (hz.max(100.0) / 1_000.0).log10()
         });
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &QUIET);
+
         assert_eq!(judgement.cutoff, None);
         assert_eq!(judgement.verdict, Verdict::Genuine);
     }
@@ -708,6 +729,7 @@ mod tests {
     fn a_gentle_rolloff_that_dies_early_cannot_be_judged() {
         let spectrum = spectrum_of(44_100, |hz| -20.0 - hz / 150.0);
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &QUIET);
+
         assert_eq!(judgement.cutoff, None);
         assert_eq!(judgement.verdict, Verdict::NotJudged);
         assert!(matches!(
@@ -720,10 +742,12 @@ mod tests {
     fn a_hi_res_stream_walled_where_cd_audio_ends_was_upsampled() {
         let spectrum = spectrum_of(96_000, music_up_to(21_800.0));
         let judgement = judged_as(Codec::Flac, 96_000, &spectrum, &QUIET);
+
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert_eq!(judgement.upsampled_from(), Some(44_100));
 
         let from_48 = spectrum_of(192_000, music_up_to(23_900.0));
+
         assert_eq!(
             judged_as(Codec::Flac, 192_000, &from_48, &QUIET).upsampled_from(),
             Some(48_000)
@@ -731,6 +755,7 @@ mod tests {
 
         let genuine = spectrum_of(96_000, music_up_to(40_000.0));
         let judgement = judged_as(Codec::Flac, 96_000, &genuine, &QUIET);
+
         assert_eq!(judgement.verdict, Verdict::Genuine);
         assert_eq!(judgement.upsampled_from(), None);
     }
@@ -739,6 +764,7 @@ mod tests {
     fn a_lossy_codec_is_lossy_whatever_its_spectrum_says() {
         let spectrum = spectrum_of(44_100, music_up_to(16_000.0));
         let judgement = judged_as(Codec::Mp3, 44_100, &spectrum, &QUIET);
+
         assert_eq!(judgement.verdict, Verdict::Lossy);
         assert_eq!(judgement.lossy_guess(), Some(LossyGuess::Near128));
     }
@@ -750,6 +776,7 @@ mod tests {
             bits_in_use: Some(16),
             ..QUIET
         };
+
         let judgement = judged(Weighed {
             codec: Codec::Flac,
             rate: 96_000,
@@ -759,6 +786,7 @@ mod tests {
             levels: &levels,
             steps: &[],
         });
+
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert_eq!(judgement.padded(), Some((16, 24)));
     }
@@ -767,11 +795,13 @@ mod tests {
     fn a_few_seconds_are_not_enough_to_judge_a_spectrum() {
         let points = crate::spectrum::points_for(44_100);
         let bin_hz = 44_100.0 / points as f32;
+
         let levels = (0..=points / 2)
             .map(|bin| music_up_to(16_000.0)(bin as f32 * bin_hz))
             .collect();
         let spectrum = Spectrum::new(bin_hz, levels, Duration::from_secs(2));
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &QUIET);
+
         assert_eq!(judgement.verdict, Verdict::NotJudged);
         assert!(judgement.findings.contains(&Finding::TooLittleHeard));
     }
@@ -800,6 +830,7 @@ mod tests {
         };
 
         let judgement = weighed(stepped);
+
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert!(judgement.findings.contains(&Finding::QuantiserSteps {
             coding: Coding::Aac,
@@ -811,29 +842,38 @@ mod tests {
             control: 0.1,
             ..stepped
         });
+
         assert_eq!(everywhere.verdict, Verdict::Genuine);
+
         let few = weighed(Steps {
             coefficients: 10_000,
             ..stepped
         });
+
         assert_eq!(few.verdict, Verdict::Genuine);
+
         let weak = weighed(Steps {
             lattice: 0.03,
             coefficients: 30_000,
             ..stepped
         });
+
         assert_eq!(weak.verdict, Verdict::Genuine);
+
         let strong_among_few = weighed(Steps {
             lattice: 0.1,
             coefficients: 30_000,
             ..stepped
         });
+
         assert_eq!(strong_among_few.verdict, Verdict::Fake);
+
         let loose = weighed(Steps {
             lattice: 0.003,
             control: 0.0005,
             ..stepped
         });
+
         assert_eq!(loose.verdict, Verdict::Genuine);
         assert_eq!(
             judged_as(Codec::Aac, 44_100, &spectrum, &QUIET).verdict,
@@ -865,6 +905,7 @@ mod tests {
         };
 
         let judgement = weighed(coupled);
+
         assert_eq!(judgement.verdict, Verdict::Fake);
         assert!(judgement.findings.contains(&Finding::IntensityStereo {
             coding: Coding::Opus,
@@ -883,17 +924,22 @@ mod tests {
             control: 0.88,
             ..coupled
         });
+
         assert_ne!(everywhere.verdict, Verdict::Fake);
+
         let few = weighed(Steps {
             coefficients: 1_000,
             ..coupled
         });
+
         assert_ne!(few.verdict, Verdict::Fake);
+
         let by_chance = weighed(Steps {
             lattice: 0.12,
             control: 0.1,
             ..coupled
         });
+
         assert_ne!(by_chance.verdict, Verdict::Fake);
     }
 
@@ -901,6 +947,7 @@ mod tests {
     fn a_dsd_stream_is_never_judged_by_its_decimated_spectrum() {
         let spectrum = spectrum_of(176_400, music_up_to(45_000.0));
         let judgement = judged_as(Codec::Dsd, 176_400, &spectrum, &QUIET);
+
         assert_eq!(judgement.verdict, Verdict::NotJudged);
         assert!(judgement.findings.contains(&Finding::FromDsd));
     }
@@ -912,6 +959,7 @@ mod tests {
         assert_eq!(LossyGuess::of(18_800), LossyGuess::Near192);
         assert_eq!(LossyGuess::of(19_600), LossyGuess::Near256);
         assert_eq!(LossyGuess::of(20_400), LossyGuess::Near320);
+
         for guess in LossyGuess::ALL {
             assert_eq!(LossyGuess::named(guess.as_str()), Some(guess));
         }
@@ -960,6 +1008,7 @@ mod tests {
                 lattice: 0.3,
             },
         ];
+
         assert!(findings.iter().all(|finding| !finding.told().is_empty()));
         assert_eq!(
             Finding::Upsampled { from_hz: 44_100 }.told(),
@@ -988,7 +1037,9 @@ mod tests {
             }),
             ..QUIET
         };
+
         let judgement = judged_as(Codec::Flac, 44_100, &spectrum, &levels);
+
         assert_eq!(judgement.verdict, Verdict::Genuine);
         assert!(judgement.findings.contains(&Finding::MonoAsStereo));
         assert!(judgement.findings.contains(&Finding::Clipped {

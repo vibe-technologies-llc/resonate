@@ -78,8 +78,11 @@ impl Reflector {
     pub async fn ask(&self, server: SocketAddr) -> Result<SocketAddr> {
         let transaction = random_bytes::<TRANSACTION_BYTES>()?;
         let (answer, mut answered) = oneshot::channel();
+
         self.asked.lock().push((transaction, answer));
+
         let request = binding_request(&transaction);
+
         for _ in 0..ATTEMPTS {
             let sent = self.inner.try_send(&Transmit {
                 destination: self.reachable(server),
@@ -88,6 +91,7 @@ impl Reflector {
                 segment_size: None,
                 src_ip: None,
             });
+
             if let Err(error) = sent
                 && error.kind() != io::ErrorKind::WouldBlock
             {
@@ -106,6 +110,7 @@ impl Reflector {
             return looks_like_stun(datagram);
         };
         let mut asked = self.asked.lock();
+
         if let Some(position) = asked.iter().position(|(asked, _)| *asked == transaction) {
             let (_, answer) = asked.swap_remove(position);
             let _ = answer.send(public);
@@ -135,18 +140,23 @@ impl AsyncUdpSocket for Reflector {
     ) -> Poll<io::Result<usize>> {
         loop {
             let relayed = self.relay.drain(cx, bufs, meta, self.local_is_ipv6());
+
             if relayed > 0 {
                 return Poll::Ready(Ok(relayed));
             }
+
             let received = ready!(self.inner.poll_recv(cx, bufs, meta))?;
             let mut kept = 0;
+
             for index in 0..received {
                 let length = meta[index].len.min(bufs[index].len());
+
                 if self.taken(&bufs[index][..length]) {
                     continue;
                 }
                 if kept != index {
                     let (before, after) = bufs.split_at_mut(index);
+
                     before[kept][..length].copy_from_slice(&after[0][..length]);
                     meta[kept] = meta[index];
                 }
@@ -177,6 +187,7 @@ impl AsyncUdpSocket for Reflector {
 
 fn binding_request(transaction: &Transaction) -> [u8; HEADER_BYTES] {
     let mut request = [0; HEADER_BYTES];
+
     request[..2].copy_from_slice(&BINDING_REQUEST);
     request[4..8].copy_from_slice(&MAGIC_COOKIE);
     request[8..].copy_from_slice(transaction);
@@ -193,20 +204,27 @@ pub(crate) fn binding_answer(datagram: &[u8]) -> Option<(Transaction, SocketAddr
     if !looks_like_stun(datagram) {
         return None;
     }
+
     let kind = u16::from_be_bytes([datagram[0], datagram[1]]);
     let declared = usize::from(u16::from_be_bytes([datagram[2], datagram[3]]));
+
     if kind != BINDING_SUCCESS || HEADER_BYTES + declared > datagram.len() {
         return None;
     }
+
     let mut transaction = [0; TRANSACTION_BYTES];
+
     transaction.copy_from_slice(&datagram[8..HEADER_BYTES]);
+
     let mut attributes = &datagram[HEADER_BYTES..HEADER_BYTES + declared];
     let mut plain = None;
+
     while attributes.len() >= ATTRIBUTE_HEADER_BYTES {
         let kind = u16::from_be_bytes([attributes[0], attributes[1]]);
         let length = usize::from(u16::from_be_bytes([attributes[2], attributes[3]]));
         let padded = length.next_multiple_of(4);
         let value = attributes.get(ATTRIBUTE_HEADER_BYTES..ATTRIBUTE_HEADER_BYTES + length)?;
+
         match kind {
             XOR_MAPPED_ADDRESS => {
                 return address_of(value, Some(&transaction)).map(|a| (transaction, a));
@@ -222,9 +240,11 @@ pub(crate) fn binding_answer(datagram: &[u8]) -> Option<(Transaction, SocketAddr
 fn address_of(value: &[u8], xored_with: Option<&Transaction>) -> Option<SocketAddr> {
     let family = *value.get(1)?;
     let mut port = u16::from_be_bytes([*value.get(2)?, *value.get(3)?]);
+
     if xored_with.is_some() {
         port ^= u16::from_be_bytes([MAGIC_COOKIE[0], MAGIC_COOKIE[1]]);
     }
+
     let mask = |index: usize| -> u8 {
         match xored_with {
             None => 0,
@@ -235,6 +255,7 @@ fn address_of(value: &[u8], xored_with: Option<&Transaction>) -> Option<SocketAd
     let ip = match family {
         FAMILY_V4 => {
             let mut octets: [u8; 4] = value.get(4..8)?.try_into().ok()?;
+
             for (index, octet) in octets.iter_mut().enumerate() {
                 *octet ^= mask(index);
             }
@@ -242,6 +263,7 @@ fn address_of(value: &[u8], xored_with: Option<&Transaction>) -> Option<SocketAd
         }
         FAMILY_V6 => {
             let mut octets: [u8; 16] = value.get(4..20)?.try_into().ok()?;
+
             for (index, octet) in octets.iter_mut().enumerate() {
                 *octet ^= mask(index);
             }
@@ -261,11 +283,14 @@ mod tests {
 
     fn answer_to(request: &[u8], public: SocketAddrV4Parts) -> Vec<u8> {
         let mut attribute = vec![0, FAMILY_V4];
+
         attribute.extend((public.port ^ 0x2112).to_be_bytes());
         for (octet, mask) in public.octets.iter().zip(MAGIC_COOKIE) {
             attribute.push(octet ^ mask);
         }
+
         let mut answer = Vec::new();
+
         answer.extend(BINDING_SUCCESS.to_be_bytes());
         answer.extend(
             u16::try_from(ATTRIBUTE_HEADER_BYTES + attribute.len())
@@ -316,6 +341,7 @@ mod tests {
     {
         let stun = UdpSocket::bind("127.0.0.1:0").await.expect("a stun socket");
         let stun_at = stun.local_addr().expect("address");
+
         tokio::spawn(async move {
             let mut buffer = [0; 64];
             loop {
@@ -325,6 +351,7 @@ mod tests {
                 let std::net::IpAddr::V4(ip) = from.ip() else {
                     return;
                 };
+
                 let answer = answer_to(
                     &buffer[..length],
                     SocketAddrV4Parts {
@@ -335,6 +362,7 @@ mod tests {
                 let _ = stun.send_to(&answer, from).await;
             }
         });
+
         let socket = std::net::UdpSocket::bind("127.0.0.1:0").expect("a socket");
         let own = socket.local_addr().expect("address");
         let wrapped = TokioRuntime.wrap_udp_socket(socket).expect("wrapped");

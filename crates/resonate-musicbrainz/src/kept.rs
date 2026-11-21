@@ -116,6 +116,7 @@ impl Kept {
         if let Some(folder) = path.parent() {
             let _ = std::fs::create_dir_all(folder);
         }
+
         let connection =
             Connection::open(path).map_err(Error::store(Store::Kept, StoreOp::Open))?;
         Self::over(connection)
@@ -129,6 +130,7 @@ impl Kept {
 
     fn over(mut connection: Connection) -> Result<Self> {
         let configure = Error::store(Store::Kept, StoreOp::Configure);
+
         connection
             .busy_timeout(Duration::from_secs(5))
             .map_err(configure)?;
@@ -138,6 +140,7 @@ impl Kept {
         connection
             .pragma_update(None, "foreign_keys", true)
             .map_err(Error::store(Store::Kept, StoreOp::Configure))?;
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(Error::store(Store::Kept, StoreOp::LayOut))?;
@@ -145,6 +148,7 @@ impl Kept {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(Error::store(Store::Kept, StoreOp::LayOut))?;
         let laid = usize::try_from(version).unwrap_or(usize::MAX);
+
         if laid > MIGRATIONS.len() {
             return Err(Error::KeptVersion { found: version });
         }
@@ -160,7 +164,9 @@ impl Kept {
                 u32::try_from(MIGRATIONS.len()).unwrap_or(u32::MAX),
             )
             .map_err(Error::store(Store::Kept, StoreOp::LayOut))?;
+
         let now = now();
+
         transaction
             .execute(FORGET_THE_STALE, [fresh_since(now)])
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
@@ -190,6 +196,7 @@ impl Kept {
     fn dated_at(&self, asked: &Asked, now: u64) -> Result<Option<Dated>> {
         let connection = self.connection.lock();
         let read = Error::store(Store::Kept, StoreOp::Read);
+
         let kept: Option<(Vec<u8>, i64)> = connection
             .query_row(
                 "SELECT packed, at FROM answers WHERE key = ?1 AND at >= ?2",
@@ -214,6 +221,7 @@ impl Kept {
     pub fn keep_told(&self, asked: &Asked, answer: &Answer, at: u64, device: &str) -> Result<bool> {
         let now = now();
         let at = no_later_than(at, now);
+
         if signed(at) < fresh_since(now) {
             return Ok(false);
         }
@@ -230,12 +238,15 @@ impl Kept {
         if answer.is_a_miss() || !asked.is_answered_by(answer) {
             return Ok(false);
         }
+
         let squeezed = packed(&answer.encoded(), KEPT_PACKED_AT)?;
         let mut connection = self.connection.lock();
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
         let kept = written(&transaction, &asked.key(), at, came_from, &squeezed)?;
+
         transaction
             .commit()
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
@@ -244,12 +255,14 @@ impl Kept {
 
     pub fn after(&self, seq: u64, most: usize, asker: &str) -> Result<Vec<KeptAnswer>> {
         let connection = self.connection.lock();
+
         connection
             .execute(
                 NUMBERED_PAST_A_MARK,
                 params![signed(seq), A_MARK_NO_DEVICE_REACHES],
             )
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
+
         let mut statement = connection
             .prepare_cached(
                 "SELECT seq, at, key, packed FROM answers \
@@ -257,6 +270,7 @@ impl Kept {
                  ORDER BY seq LIMIT ?4",
             )
             .map_err(Error::store(Store::Kept, StoreOp::Read))?;
+
         let rows = statement
             .query_map(
                 params![
@@ -305,14 +319,18 @@ impl Kept {
         let since = fresh_since(now);
         let mut taken = 0;
         let mut connection = self.connection.lock();
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(Error::store(Store::Kept, StoreOp::Write))?;
+
         for told in answers {
             let at = no_later_than(told.at, now);
+
             if signed(at) < since {
                 continue;
             }
+
             let read =
                 Asked::decoded(&told.key).and_then(|asked| Ok((asked, answer_of(&told.packed)?)));
             let (asked, answer) = match read {
@@ -322,6 +340,7 @@ impl Kept {
                     continue;
                 }
             };
+
             if asked.key() != told.key || !asked.is_answered_by(&answer) || answer.is_a_miss() {
                 tracing::debug!("an answer another device kept does not answer what it names");
                 continue;
@@ -370,12 +389,15 @@ fn written(
         })
         .optional()
         .map_err(write())?;
+
     if held.is_some_and(|held| held >= signed(at)) {
         return Ok(false);
     }
+
     let seq: i64 = transaction
         .query_row(THE_NEXT_NUMBER, [], |row| row.get(0))
         .map_err(write())?;
+
     transaction
         .execute("DELETE FROM answers WHERE key = ?1", [key])
         .map_err(write())?;
@@ -398,6 +420,7 @@ mod tests {
 
     fn kept_at_the_first_shape(newest: i64) -> Connection {
         let connection = Connection::open_in_memory().expect("a store in memory");
+
         connection.execute_batch(V1).expect("the first shape");
         connection
             .pragma_update(None, "user_version", 1)
@@ -442,6 +465,7 @@ mod tests {
     #[test]
     fn answers_kept_before_their_age_was_indexed_stay_and_are_aged_off_the_index() {
         let numbered = kept_at_the_first_shape(5);
+
         numbered
             .execute_batch(AN_ANSWERS_NUMBER_NEVER_GOES_BACK)
             .expect("the second shape");
@@ -469,6 +493,7 @@ mod tests {
         assert_eq!(held, 1, "the fresh answer was lost or the stale one kept");
         for statement in [FORGET_THE_STALE, BRING_THE_FUTURE_BACK_TO_NOW] {
             let plan = plan_of(&connection, statement);
+
             assert!(
                 plan.contains("answers_by_age"),
                 "{statement} reads every answer: {plan}"
@@ -481,6 +506,7 @@ mod tests {
         let echoes = Mbid::new("83d91898-7763-47d7-b03b-b92132375c47").expect("an mbid");
         let code = Isrc::new("GBN9Y7100006").expect("a code");
         let coded = Asked::Isrc(code.clone());
+
         let thin = Answer::Recordings(vec![Recording {
             id: echoes.clone(),
             title: "Echoes".to_owned(),
@@ -492,6 +518,7 @@ mod tests {
         let squeezed = packed(&thin.encoded(), KEPT_PACKED_AT).expect("packed");
 
         let indexed = Connection::open_in_memory().expect("a store in memory");
+
         for step in &MIGRATIONS[..3] {
             indexed.execute_batch(step).expect("a released step");
         }

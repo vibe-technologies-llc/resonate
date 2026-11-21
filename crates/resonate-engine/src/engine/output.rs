@@ -131,6 +131,7 @@ impl Output {
         let source = track.source();
         let decoded = track.decoded();
         let attenuator = Attenuator::of(config, sink);
+
         let plan = match target {
             Some(target) => plan_for(decoded, sink, target, config, track.replay_gain, attenuator),
             None => plan_output(decoded, sink, config, track.replay_gain),
@@ -151,6 +152,7 @@ impl Output {
             rendered: plan.amplitude(),
             heard: heard_amplitude(&plan, muted),
         };
+
         let (producer, consumer, monitor) =
             ring(plan.stream, capacity, plan.silence(), fade, entering, level);
 
@@ -272,6 +274,7 @@ impl Output {
         let Some(stream) = self.stream.as_ref() else {
             return Ok(());
         };
+
         stream.set_active(active)?;
         self.active = active;
         Ok(())
@@ -343,6 +346,7 @@ impl Output {
     pub(super) fn note_the_rendered_level(&mut self) {
         let rendered = self.chain.gain_amplitude().unwrap_or(Gain::UNITY.get());
         let ahead = self.frames_rendered_ahead_of_the_ring();
+
         self.producer.render_at(rendered, ahead);
     }
 
@@ -350,6 +354,7 @@ impl Output {
         let overs = self
             .overs_of_retired_chains
             .saturating_add(self.chain.overs());
+
         if self.status.overs == 0 && overs > 0 {
             tracing::warn!(
                 sink = %self.bound.name,
@@ -368,6 +373,7 @@ impl Output {
         if self.chain.max_flush_frames() == 0 {
             return;
         }
+
         let frames = match self
             .chain
             .flush_recalled(&mut self.carrier, &mut self.recall)
@@ -378,7 +384,9 @@ impl Output {
                 return;
             }
         };
+
         self.stage(frames);
+
         let written = self.producer.write(&self.staged);
         if let Some(tapping) = self.tapping.as_mut() {
             tapping.rendered_at(self.producer.rendering());
@@ -388,11 +396,14 @@ impl Output {
 
     pub(super) fn stage(&mut self, frames: usize) {
         let channels = self.plan.stream.channel_count().get() as usize;
+
         self.staged.set_frames(frames);
+
         let carried = self
             .carrier
             .get(..frames.saturating_mul(channels))
             .unwrap_or_default();
+
         self.staged.data_mut().write_f64(carried);
     }
 
@@ -412,6 +423,7 @@ impl Output {
         };
         let downstream = (self.producer.written_ahead_of_the_graph() as u64)
             .saturating_add(self.latency().get());
+
         tapping.hear(downstream, moving && self.stream.is_some());
     }
 
@@ -462,9 +474,11 @@ impl Output {
         if self.tail != Tail::Unasked {
             return;
         }
+
         let Some(stream) = self.stream.as_ref() else {
             return;
         };
+
         if let Err(error) = stream.drain() {
             tracing::debug!(%error, "the graph would not take a drain request");
         }
@@ -475,6 +489,7 @@ impl Output {
         if self.tail == Tail::Played {
             return true;
         }
+
         let played_by = self.latency().to_duration(self.plan.stream.rate);
         let until = *self.silent_until.get_or_insert(Instant::now() + played_by);
         Instant::now() >= until
@@ -501,8 +516,11 @@ impl Output {
         let Some(handed) = self.handed.take() else {
             return;
         };
+
         self.status.stream_volume = handed.stream_volume;
+
         let asked_alike = handed.spec == self.plan.stream;
+
         self.heard_while_kept = heard_while_kept
             .into_iter()
             .filter(|event| asked_alike || !matches!(event, StreamEvent::FormatChanged { .. }))

@@ -2,7 +2,7 @@ use std::{fmt, sync::Arc, time::Duration};
 
 use crate::{Error, Result};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Chromaprint {
     encoded: Arc<str>,
     length: Duration,
@@ -47,6 +47,7 @@ mod tests {
     fn a_print_is_url_safe_base64_and_nothing_else() {
         let length = Duration::from_secs(215);
         let print = Chromaprint::new("AQADtEmUaEkS-_x", length).expect("a print");
+
         assert_eq!(print.encoded(), "AQADtEmUaEkS-_x");
         assert_eq!(print.length(), length);
 

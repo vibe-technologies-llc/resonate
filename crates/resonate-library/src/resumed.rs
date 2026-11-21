@@ -17,6 +17,7 @@ impl Kept {
 
         let drawn = plays_in(&self.order, self.rows.len());
         let loaded_as = renumbered(&self.rows);
+
         let survives: Vec<bool> = drawn
             .iter()
             .map(|loaded| loaded_as.get(*loaded).copied().flatten().is_some())

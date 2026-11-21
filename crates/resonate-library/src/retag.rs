@@ -28,7 +28,7 @@ use crate::{
     store, words,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Unwritten {
     Cut,
     Vaulted,
@@ -204,12 +204,14 @@ pub(crate) fn start(
     let walking = library.walk_the_tree()?;
     let progress = Arc::new(RetagProgress::default());
     let owned = Arc::clone(&progress);
+
     walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-retag".to_owned())
         .spawn(move || {
             let outcome = run(&library, tags.as_ref(), &options, &progress);
+
             drop(walking);
             outcome
         })
@@ -225,6 +227,7 @@ fn run(
     progress: &RetagProgress,
 ) -> Result<RetagSummary> {
     let known = library.roots()?;
+
     for root in &options.roots {
         if !known.contains(root) {
             return Err(Error::NotARoot { path: root.clone() });
@@ -236,11 +239,13 @@ fn run(
     }
 
     let mut noted = Noted::default();
+
     if options.undo {
         let kept = library.last_retag()?;
         let kept_sheets = library.last_resheet()?;
         let mut retagging = undone(library, &kept, tags, progress)?;
         let (sheets, unread) = sheeted::undone(&kept_sheets);
+
         progress
             .walked
             .fetch_add(kept_sheets.len() as u64, Ordering::Relaxed);
@@ -263,6 +268,7 @@ fn run(
         if options.apply {
             let landed = apply(library, tags, &mut retagging, progress, &mut noted)?;
             let finished = retagging.passed_over.is_empty() && !progress.is_cancelled();
+
             library.retag_walked_back(&landed.files, &landed.sheets, finished)?;
         }
         return Ok(RetagSummary {
@@ -274,6 +280,7 @@ fn run(
 
     if !options.lyrics.is_empty() {
         let mut retagging = lyrics_planned(library, &options.lyrics, tags, progress)?;
+
         if options.apply {
             apply(library, tags, &mut retagging, progress, &mut noted)?;
         }
@@ -288,6 +295,7 @@ fn run(
     let mut retagging = Retagging::default();
     let mut sleeve = Sleeve::default();
     let mut paging = Paging::by(ROWS_A_PAGE);
+
     while !progress.is_cancelled() {
         let Some(page) = paging.next(
             |after, at_most| library.tracks_to_tag_after(&options.roots, after, at_most, &totals),
@@ -298,6 +306,7 @@ fn run(
         };
 
         let mut planned = planned(library, &page, tags, progress, &mut sleeve);
+
         if options.apply {
             apply(library, tags, &mut planned, progress, &mut noted)?;
         }
@@ -389,6 +398,7 @@ fn planned(
     sleeve: &mut Sleeve,
 ) -> Retagging {
     let mut retagging = Retagging::default();
+
     for group in rows.chunk_by(|one, next| one.path == next.path) {
         if progress.is_cancelled() {
             break;
@@ -416,6 +426,7 @@ fn planned(
         }
 
         let location = MediaLocation::local(&row.path);
+
         if !tags.writes(&location) {
             retagging.pass_over(&row.path, Unwritten::Unsupported, progress);
             continue;
@@ -450,6 +461,7 @@ fn planned(
         let edits = wanted(row, &held.tags);
         let (picture, replaced) = offered_picture(held.picture, sleeved);
         let (popularity, rated) = rated_otherwise(rated, &location, row.popularity);
+
         if edits.is_empty() && picture.is_none() && popularity.is_none() {
             RetagProgress::step(&progress.unchanged);
             continue;
@@ -463,6 +475,7 @@ fn planned(
                 popularity.and(rated),
             )
         };
+
         retagging.writes.push(Written {
             track: row.id,
             path: row.path.clone(),
@@ -492,13 +505,16 @@ fn lyrics_planned(
     progress: &RetagProgress,
 ) -> Result<Retagging> {
     let mut retagging = Retagging::default();
+
     for &track in tracks {
         if progress.is_cancelled() {
             break;
         }
+
         let Some(row) = library.lyrics_to_tag(track)? else {
             continue;
         };
+
         RetagProgress::step(&progress.walked);
 
         let why = match (&row.kept, row.cut, row.vaulted) {
@@ -508,11 +524,14 @@ fn lyrics_planned(
             (Some(_), false, false) => None,
         };
         let location = MediaLocation::local(&row.path);
+
         let why = why.or_else(|| (!tags.writes(&location)).then_some(Unwritten::Unsupported));
+
         if let Some(why) = why {
             retagging.pass_over(&row.path, why, progress);
             continue;
         }
+
         let Some(kept) = row.kept.as_deref().map(str::trim) else {
             continue;
         };
@@ -529,6 +548,7 @@ fn lyrics_planned(
                 continue;
             }
         };
+
         if TagField::Lyrics.read(&held).as_deref() == Some(kept) {
             RetagProgress::step(&progress.unchanged);
             continue;
@@ -610,6 +630,7 @@ fn wanted(row: &TrackToTag, held: &TagSet) -> Vec<TagEdit> {
 
 pub(crate) fn offered(row: &TrackToTag) -> Vec<(TagField, String)> {
     let mut offered = Vec::new();
+
     if row.answered {
         offer(&mut offered, TagField::Title, Some(&row.title));
         offer(&mut offered, TagField::Artist, row.artist.as_deref());
@@ -818,7 +839,9 @@ impl KeptPictures {
         tx.prepare_cached("INSERT INTO retagged_pictures (picture) VALUES (?1)")
             .and_then(|mut statement| statement.execute(params![picture.bytes.as_slice()]))
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
         let id = tx.last_insert_rowid();
+
         self.recent.push_front((Arc::clone(picture), id));
         self.recent.truncate(PICTURES_WEIGHED_AGAINST);
         Ok(id)
@@ -834,13 +857,16 @@ fn apply(
 ) -> Result<Landed> {
     let planned = mem::take(&mut retagging.writes);
     let sheets = mem::take(&mut retagging.sheets);
+
     if (planned.is_empty() && sheets.is_empty()) || progress.is_cancelled() {
         retagging.writes = planned;
         retagging.sheets = sheets;
         return Ok(Landed::default());
     }
+
     let undoing: Vec<Undoing> = planned.iter().map(Undoing::of).collect();
     let begins = !noted.begun;
+
     library.retag_to_be_written(&undoing, &sheets, begins, &mut noted.pictures)?;
     noted.begun = true;
 
@@ -848,6 +874,7 @@ fn apply(
     let mut landed = Vec::with_capacity(planned.len());
     let mut unwritten = Vec::new();
     let mut unconfirmed = Vec::new();
+
     for write in planned {
         if progress.is_cancelled() {
             unwritten.push(write.path.clone());
@@ -884,6 +911,7 @@ fn apply(
     }
 
     let noted_again = noted.noted_before(&unwritten);
+
     library.files_retagged(
         &followed,
         &Unlanded {
@@ -910,6 +938,7 @@ fn sheets_written(
     let mut followed = Vec::with_capacity(sheets.len());
     let mut landed = Vec::with_capacity(sheets.len());
     let mut unwritten = Vec::new();
+
     for write in sheets {
         if progress.is_cancelled() {
             unwritten.push(write.sheet.clone());
@@ -937,12 +966,14 @@ fn sheets_written(
     }
 
     let noted_again = noted.sheets_noted_before(&unwritten);
+
     library.sheets_retagged(&followed, &unwritten, noted_again.as_deref())?;
     Ok(landed)
 }
 
 fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed, Unwritten> {
     let location = MediaLocation::local(&write.path);
+
     if let Err(source) = tags.write(&location, write.writing()) {
         tracing::warn!(
             path = %write.path.display(),
@@ -951,6 +982,7 @@ fn written(tags: &dyn TagSink, write: &Written) -> std::result::Result<Followed,
         );
         return Err(Unwritten::Refused);
     }
+
     let landed = fs::metadata(&write.path).map_err(|source| {
         tracing::warn!(
             path = %write.path.display(),
@@ -1058,12 +1090,15 @@ pub(crate) fn files_retagged(
     noted_again: Option<&[KeptRetag]>,
 ) -> Result<()> {
     let unwritten = unlanded.unwritten;
+
     for path in unlanded.unconfirmed {
         let path = store::path_text(path);
+
         tx.prepare_cached("UPDATE retagged_fields SET wrote_known = 0 WHERE path = ?1")
             .and_then(|mut statement| statement.execute(params![path]))
             .map_err(|source| Error::store(StoreOp::Update, source))?;
     }
+
     let mut statement = tx
         .prepare(
             "UPDATE tracks
@@ -1079,6 +1114,7 @@ pub(crate) fn files_retagged(
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let kept = KeptAcross::through(tx)?;
+
     for follow in followed {
         kept.hold(follow.track, follow.renames())?;
         statement
@@ -1183,6 +1219,7 @@ impl<'t> KeptAcross<'t> {
     fn through(tx: &'t Transaction<'t>) -> Result<Self> {
         for kept in Kept::ALL {
             let table = kept.table();
+
             tx.execute_batch(&format!(
                 "CREATE TEMP TABLE IF NOT EXISTS kept_{table} AS SELECT * FROM main.{table} WHERE 0"
             ))
@@ -1237,6 +1274,7 @@ pub(crate) fn walked_back(
 fn note_again(tx: &Transaction<'_>, kept: &[KeptRetag]) -> Result<()> {
     for held in kept {
         let path = store::path_text(&held.path);
+
         tx.prepare_cached(
             "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture_id)
              VALUES (?1, ?2, ?3, ?4)",
@@ -1250,6 +1288,7 @@ fn note_again(tx: &Transaction<'_>, kept: &[KeptRetag]) -> Result<()> {
                 Wrote::Unrecorded => (None, false),
                 Wrote::As(wrote) => (wrote.as_deref(), true),
             };
+
             tx.prepare_cached(
                 "INSERT OR REPLACE INTO retagged_fields (path, field, was, wrote, wrote_known)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -1280,6 +1319,7 @@ fn forget_the_notes_of(tx: &Transaction<'_>, unwritten: &[PathBuf]) -> Result<()
     let mut fields = tx
         .prepare_cached("DELETE FROM retagged_fields WHERE path = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for path in unwritten {
         let path = store::path_text(path);
         for statement in [&mut noted, &mut fields] {
@@ -1338,6 +1378,7 @@ pub(crate) fn note_what_was_there(
             .as_ref()
             .map(|picture| pictures.id_of(tx, picture))
             .transpose()?;
+
         tx.prepare_cached(
             "INSERT OR REPLACE INTO retagged (path, pictured, rated, picture_id)
              VALUES (?1, ?2, ?3, ?4)",
@@ -1404,7 +1445,9 @@ impl PicturesPutBack {
         if let Some(held) = self.read.get(&id) {
             return Ok(held.clone());
         }
+
         let read = library.retagged_picture(id)?.map(Arc::new);
+
         self.read.insert(id, read.clone());
         Ok(read)
     }
@@ -1418,11 +1461,13 @@ fn undone(
 ) -> Result<Retagging> {
     let mut retagging = Retagging::default();
     let mut pictures = PicturesPutBack::default();
+
     for kept in noted {
         if progress.is_cancelled() {
             break;
         }
         RetagProgress::step(&progress.walked);
+
         let Some(track) = library.track_at(&kept.path, None)?.map(|track| track.id) else {
             retagging.pass_over(&kept.path, Unwritten::Unreadable, progress);
             continue;
@@ -1445,6 +1490,7 @@ fn undone(
             Some(id) => pictures.of(library, id)?,
             None => None,
         };
+
         let rated = popularity
             .is_some()
             .then(|| tags.rated(&location).ok())
@@ -1454,16 +1500,19 @@ fn undone(
             .iter()
             .filter(|field| field.still_as_written(&held.tags))
             .collect();
+
         if standing.len() < kept.fields.len() {
             tracing::debug!(
                 path = %kept.path.display(),
                 "a field edited since the run wrote it is left as it now stands"
             );
         }
+
         let (edits, taken): (Vec<&KeptField>, Vec<&KeptField>) = standing
             .iter()
             .copied()
             .partition(|kept| kept.was.is_some());
+
         retagging.writes.push(Written {
             track,
             path: kept.path.clone(),
@@ -1515,6 +1564,7 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
               ORDER BY r.path, f.field",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], |row| {
             Ok((
@@ -1532,8 +1582,10 @@ pub(crate) fn last_retag(connection: &rusqlite::Connection) -> Result<Vec<KeptRe
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut kept: Vec<KeptRetag> = Vec::new();
+
     for (path, pictured, rated, field, was, picture, wrote, wrote_known) in rows {
         let path = store::path_of(&path);
+
         if kept.last().is_none_or(|last| last.path != path) {
             kept.push(KeptRetag {
                 path,
@@ -1697,6 +1749,7 @@ mod tests {
         };
 
         let named = fields(&wanted(&row, &TagSet::default()));
+
         assert!(!named.contains(&TagField::Title), "{named:?}");
         assert!(!named.contains(&TagField::Artist), "{named:?}");
         assert!(!named.contains(&TagField::Album), "{named:?}");
@@ -1716,6 +1769,7 @@ mod tests {
         };
 
         let named = fields(&wanted(&row, &TagSet::default()));
+
         assert!(!named.contains(&TagField::Title), "{named:?}");
         assert!(!named.contains(&TagField::Artist), "{named:?}");
     }

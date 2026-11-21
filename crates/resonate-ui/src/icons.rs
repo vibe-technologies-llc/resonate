@@ -197,9 +197,11 @@ mod tests {
             .lines()
             .find_map(|line| line.strip_prefix("Icon="))
             .expect("the desktop entry names an icon");
+
         assert_eq!(Icon::Resonate.path(), format!("icons/{named}.svg"));
 
         let mark = String::from_utf8_lossy(Icon::Resonate.drawing()).into_owned();
+
         assert!(mark.starts_with("<svg"), "the mark is not an SVG: {mark}");
         assert!(mark.contains("viewBox=\"0 0 24 24\""));
         assert!(

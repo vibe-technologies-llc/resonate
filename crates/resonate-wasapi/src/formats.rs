@@ -89,6 +89,7 @@ pub fn formats_taken(
     mut probe: impl FnMut(SampleFormat, SampleRate, ChannelLayout) -> bool,
 ) -> Vec<SinkFormats> {
     let mut taken = Vec::new();
+
     for format in SampleFormat::ALL {
         for layout in PROBED_LAYOUTS {
             let rates: Vec<SampleRate> = PROBED_RATES
@@ -96,6 +97,7 @@ pub fn formats_taken(
                 .filter_map(|hz| SampleRate::new(*hz).ok())
                 .filter(|rate| probe(format, *rate, layout))
                 .collect();
+
             if rates.is_empty() {
                 continue;
             }
@@ -115,6 +117,7 @@ pub fn rates_of(formats: &[SinkFormats]) -> Vec<SampleRate> {
         .iter()
         .flat_map(|entry| entry.rates.iter().copied())
         .collect();
+
     rates.sort();
     rates.dedup();
     rates
@@ -138,6 +141,7 @@ mod tests {
         for format in SampleFormat::ALL {
             assert_eq!(format_of(wire_of(format)), Some(format));
         }
+
         assert_eq!(
             format_of(Wire {
                 store_bits: 24,
@@ -160,16 +164,20 @@ mod tests {
         });
 
         assert_eq!(taken.len(), 2);
+
         let sixteen = taken
             .iter()
             .find(|entry| entry.format == SampleFormat::S16)
             .expect("sixteen bits listed");
+
         assert_eq!(sixteen.rates.len(), 2);
         assert_eq!(sixteen.channels, [ChannelLayout::Stereo]);
+
         let twenty_four = taken
             .iter()
             .find(|entry| entry.format == SampleFormat::S24)
             .expect("twenty-four bits listed");
+
         assert_eq!(twenty_four.words, Words::Padded);
         assert_eq!(twenty_four.rates.len(), PROBED_RATES.len());
         assert_eq!(rates_of(&taken).len(), PROBED_RATES.len());

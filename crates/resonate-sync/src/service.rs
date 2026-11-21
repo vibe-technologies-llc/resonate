@@ -246,6 +246,7 @@ impl Shown {
             });
             self.transfers.len() - 1
         });
+
         change(&mut self.transfers[at]);
         while self.transfers.len() > TRANSFERS_SHOWN_AT_MOST {
             let Some(oldest) = self.transfers.iter().position(|transfer| {
@@ -256,6 +257,7 @@ impl Shown {
             }) else {
                 break;
             };
+
             self.transfers.remove(oldest);
         }
     }
@@ -396,6 +398,7 @@ impl Claims {
     fn claim(&self, recording: &Recording) -> bool {
         let keys = [recording.key(), recording.named_key()];
         let mut claimed = self.0.lock();
+
         if keys.iter().any(|key| claimed.contains(key)) {
             return false;
         }
@@ -405,6 +408,7 @@ impl Claims {
 
     fn release(&self, recording: &Recording) {
         let mut claimed = self.0.lock();
+
         claimed.remove(&recording.key());
         claimed.remove(&recording.named_key());
     }
@@ -485,6 +489,7 @@ impl Link {
 
     fn say(&self, message: &ToServer) -> Result<()> {
         let payload = message.encoded();
+
         if payload.len() > LARGEST_FRAME {
             return Err(Error::Oversized {
                 length: payload.len(),
@@ -524,6 +529,7 @@ impl Unanswered {
 
 fn plain_digest(plain: &[u8]) -> ToldDigest {
     let mut told = [0; SHA256_OUTPUT_LEN];
+
     told.copy_from_slice(digest(&SHA256, plain).as_ref());
     told
 }
@@ -570,6 +576,7 @@ impl Pieces {
             last.len() < BLOBS_A_FRAME_AT_MOST
                 && self.last_bytes + part.len() <= SNAPSHOT_FRAME_SHARE
         });
+
         if !fits {
             self.frames.push(Vec::new());
             self.last_bytes = 0;
@@ -606,6 +613,7 @@ pub(crate) struct InParts {
 impl InParts {
     pub(crate) fn asked(&mut self, through: u64, records_since: u64, pieces: Pieces) -> ToServer {
         let mut frames = pieces.frames;
+
         if frames.len() <= 1 {
             return ToServer::Compact {
                 through,
@@ -642,6 +650,7 @@ impl InParts {
 
     pub(crate) fn refused_as_stale(&mut self) -> Option<Oversized> {
         let staging = self.waiting.take()?;
+
         self.refused = true;
         Some(Oversized::found_at(staging.records_since))
     }
@@ -734,10 +743,13 @@ impl Sync {
         let serving = identity.serving()?;
 
         swept(&settings.staging, A_PARTIAL_IS_SWEPT_AFTER);
+
         let server = settings.server.address();
         let mut ledger = Ledger::open(&settings.ledger)?;
+
         ledger.enter_space(derived.space)?;
         ledger.through_a_server(server.is_some())?;
+
         let device = ledger.device();
         let ledger = Arc::new(Mutex::new(ledger));
 
@@ -758,6 +770,7 @@ impl Sync {
         let beacon_socket_v6 = broadcast
             .zip(nearby_port)
             .and_then(|(broadcast, port)| bound_v6(broadcast, port));
+
         let (endpoint, reflector, beacons, beacons_v6) = {
             let _entered = runtime.enter();
             let reflector =
@@ -783,6 +796,7 @@ impl Sync {
         let (events, events_received) = mpsc::unbounded_channel();
         let (heard, heard_received) = mpsc::unbounded_channel();
         let transfers_allowed = Arc::new(AtomicBool::new(settings.transfers_allowed));
+
         let answering = Arc::new(Answering {
             catalog: Arc::clone(&catalog),
             ledger: Arc::clone(&ledger),
@@ -800,6 +814,7 @@ impl Sync {
             },
             ..Shown::default()
         }));
+
         let running = Arc::new(Running {
             catalog,
             ledger: Arc::clone(&ledger),
@@ -845,6 +860,7 @@ impl Sync {
 
         let (commands, received) = mpsc::unbounded_channel();
         let ran_by = Arc::clone(&running);
+
         let thread = thread::Builder::new()
             .name("resonate-sync".into())
             .spawn(move || {
@@ -928,6 +944,7 @@ impl Sync {
 
     pub fn forget(&self, device: DeviceId) -> Result<bool> {
         let forgotten = self.ledger.lock().forget_device(device)?;
+
         if forgotten {
             let _ = self.commands.send(Command::Forgot);
         }
@@ -948,6 +965,7 @@ impl Sync {
 
     pub fn handoffs(&self) -> Result<Vec<Handoff>> {
         let mut handoffs = self.ledger.lock().handoffs()?;
+
         handoffs.retain(|handoff| handoff.device != self.device && !handoff.rows.is_empty());
         handoffs.sort_by_key(|handoff| Reverse(handoff.stamp));
         Ok(handoffs)
@@ -955,6 +973,7 @@ impl Sync {
 
     pub fn layouts(&self) -> Result<Vec<LayoutNote>> {
         let mut layouts = self.ledger.lock().layouts()?;
+
         layouts.retain(|note| note.device != self.device);
         layouts.sort_by_key(|note| Reverse(note.stamp));
         Ok(layouts)
@@ -976,6 +995,7 @@ impl Sync {
 
     pub fn consult_with(&self, consulted: Arc<dyn Consultable>) {
         *self.running.answering.consulted.write() = Some(consulted);
+
         let _ = self.commands.send(Command::KeptOwed);
     }
 
@@ -1025,6 +1045,7 @@ impl Sync {
     ) -> AskedToControl {
         let (answer, answered) = std_mpsc::channel();
         let queue_seen = command.names_a_row().then_some(drawn).flatten();
+
         let asked = Command::Control {
             device,
             zone,
@@ -1133,6 +1154,7 @@ impl Running {
         let (again, kept) = mem::take(&mut *passed)
             .into_iter()
             .partition(|passed| passed.recording.names_the_same_song_as(recording));
+
         *passed = kept;
         again
     }
@@ -1173,19 +1195,23 @@ impl Running {
         if !self.nearby || !self.transfers_allowed() {
             return None;
         }
+
         let beacon = self.beacon(false)?;
         let now = wall_seconds();
         let mut held = self.record.lock();
+
         if let Some(advertised) = held.as_ref()
             && advertised.still_says(&beacon, now)
         {
             return Some(advertised.record.clone());
         }
+
         let record = record_of(&self.derived, &beacon, now)
             .inspect_err(
                 |error| tracing::debug!(%error, "this device's record could not be sealed"),
             )
             .ok()?;
+
         *held = Some(Advertised {
             beacon,
             sealed_at: now,
@@ -1250,10 +1276,13 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
     let mut syncing = Syncing::new(Arc::clone(&running));
     let mut bonjour = running.bonjour.then(Bonjour::started).flatten();
     let mut watch = interval(WATCH_EVERY);
+
     watch.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     let mut beacon_at = Instant::now();
     let mut beacon = vec![0; LARGEST_BEACON];
     let mut beacon_v6 = vec![0; LARGEST_BEACON];
+
     loop {
         let due = syncing.next_due();
         let outcome = tokio::select! {
@@ -1340,6 +1369,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
             _ = watch.tick() => syncing.watched().await,
             () = until(due) => Ok(()),
         };
+
         if let Err(error) = outcome {
             tracing::warn!(%error, "sync could not carry on with something");
         }
@@ -1401,6 +1431,7 @@ async fn beacon_heard(
 
 async fn leave(running: &Running) {
     running.endpoint.close(0_u32.into(), b"leaving");
+
     let _ = timeout(LEAVE_WITHIN, running.endpoint.wait_idle()).await;
 }
 
@@ -1411,6 +1442,7 @@ fn jittered(wait: Duration) -> Duration {
 
 fn told_digest(change: &Change) -> ToldDigest {
     let mut told = [0; SHA256_OUTPUT_LEN];
+
     told.copy_from_slice(digest(&SHA256, &encoded_change(change)).as_ref());
     told
 }
@@ -1434,9 +1466,11 @@ pub(crate) fn peer_socket() -> Result<UdpSocket> {
 
 fn routed_candidates(server_address: SocketAddr, port: u16) -> Vec<SocketAddr> {
     let mut candidates = Vec::new();
+
     if server_address.ip().is_loopback() {
         candidates.push(SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port));
     }
+
     let unspecified = match server_address.ip().to_canonical() {
         IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
         IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
@@ -1445,6 +1479,7 @@ fn routed_candidates(server_address: SocketAddr, port: u16) -> Vec<SocketAddr> {
         probe.connect(server_address)?;
         probe.local_addr()
     });
+
     if let Ok(routed) = routed
         && !routed.ip().is_unspecified()
         && !routed.ip().is_loopback()
@@ -1462,6 +1497,7 @@ async fn resolve_stun(stun: &str) -> Result<SocketAddr> {
         },
         _ => (stun, STUN_PORT),
     };
+
     let addresses = tokio::net::lookup_host((host, port))
         .await
         .map_err(|source| Error::Resolve {
@@ -1479,6 +1515,7 @@ async fn resolve_stun(stun: &str) -> Result<SocketAddr> {
 
 pub(crate) async fn resolve(server: &str) -> Result<(SocketAddr, String)> {
     let (host, port) = host_and_port(server.trim());
+
     let addresses = tokio::net::lookup_host((host.as_str(), port))
         .await
         .map_err(|source| Error::Resolve {
@@ -1552,6 +1589,7 @@ fn punched_candidates(
     )
     .and_then(|plain| Candidates::decoded(&plain))
     .map_err(Unpunched::Unread)?;
+
     if theirs.asker != heard.from || theirs.asked != heard.to {
         return Err(Unpunched::ForAnotherPair {
             asker: theirs.asker,
@@ -1561,7 +1599,9 @@ fn punched_candidates(
     punches
         .admit(heard.sealed, theirs.sealed_at, now)
         .map_err(Unpunched::Unfresh)?;
+
     let mut candidates = Vec::with_capacity(theirs.addresses.len() + 1);
+
     if !heard.address.ip().is_unspecified() {
         candidates.push(heard.address);
     }
@@ -1583,9 +1623,12 @@ async fn reached(
 ) -> Result<(Carrier, Outgoing, Incoming, Option<SocketAddr>)> {
     if let Some(web) = web_address(server) {
         let (send, recv) = within(connect(&web, &running.to_web)).await?;
+
         return Ok((Carrier::web(), send, recv, None));
     }
+
     let (address, host) = within(resolve(server)).await?;
+
     let connecting = running
         .endpoint
         .connect_with(running.to_server.clone(), address, &host)
@@ -1624,16 +1667,21 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
             return Err(error);
         }
     };
+
     if head < cursor {
         reading.abort();
         carrier.close();
+
         let ledger = Arc::clone(&running.ledger);
+
         blocking(move || ledger.lock().space_made_anew()).await?;
         return Err(Error::SpaceMadeAnew);
     }
     tracing::info!(%server, "syncing with the server");
+
     let (outgoing, queued) = mpsc::unbounded_channel();
     let (relay_out, relayed) = mpsc::channel(RELAYED_DATAGRAMS_QUEUED_AT_MOST);
+
     let writing = tokio::spawn(write_frames(
         send,
         queued,
@@ -1672,6 +1720,7 @@ async fn welcomed(
         device: running.device,
         after: cursor,
     };
+
     send.send(&hello.encoded()).await?;
     match frames.recv().await {
         Some(Ok(FromServer::Welcome { online, head, .. })) => Ok((online, head, cursor)),
@@ -1689,8 +1738,11 @@ async fn write_frames(
     connection: usize,
 ) {
     let mut keeping = interval(KEEP_THE_SERVER_EVERY);
+
     keeping.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
     let mut relaying = true;
+
     loop {
         let written = tokio::select! {
             biased;
@@ -1709,6 +1761,7 @@ async fn write_frames(
         };
         if let Err(error) = written {
             let _ = events.send(Event::Dropped(connection, error));
+
             return;
         }
     }
@@ -1737,10 +1790,12 @@ async fn read_frames(
             Ok(None) => return,
             Err(error) => Err(error),
         };
+
         if let Ok(FromServer::Relayed { from, datagram }) = frame {
             reflector.relay().arrived(from, datagram);
             continue;
         }
+
         let failed = frame.is_err();
         if frames.send(frame).await.is_err() || failed {
             return;
@@ -1791,12 +1846,16 @@ impl Syncing {
 
     fn connect(&mut self) {
         self.retry_at = None;
+
         let Some(server) = self.running.server.clone() else {
             return;
         };
+
         self.running.stand(Standing::Connecting);
         self.publish_settled();
+
         let running = Arc::clone(&self.running);
+
         tokio::spawn(async move {
             let link = linked(Arc::clone(&running), server).await;
             let _ = running.events.send(Event::Linked(link));
@@ -1812,7 +1871,9 @@ impl Syncing {
             .reflector
             .relay()
             .attach(link.relay_out.clone());
+
         let _ = link.say(&ToServer::Relaying);
+
         self.server = Some(link);
         self.wait = FIRST_RETRY;
         self.look_at = Some(Instant::now());
@@ -1867,9 +1928,12 @@ impl Syncing {
                 reflector,
                 ..
             } = link;
+
             drop(outgoing);
             reflector.relay().detach();
+
             let _ = timeout(LEAVE_WITHIN, writing).await;
+
             reading.abort();
             carrier.close();
         }
@@ -1917,6 +1981,7 @@ impl Syncing {
             }
             Event::Unclaimed(passed) => {
                 let mut again: BTreeMap<(DeviceId, bool), Vec<Recording>> = BTreeMap::new();
+
                 for passed in passed {
                     again
                         .entry((passed.device, passed.asked))
@@ -1994,13 +2059,16 @@ impl Syncing {
             FromServer::Snapshot { through, parts } => {
                 self.apply(parts.into_iter().map(Some).collect(), None)
                     .await?;
+
                 let ledger = Arc::clone(&self.running.ledger);
+
                 blocking(move || ledger.lock().compacted(through)).await?;
                 self.caught_up_through(through);
             }
             FromServer::Records { entries } => {
                 let last = entries.iter().map(|entry| entry.seq).max();
                 let seqs = entries.iter().map(|entry| entry.seq).collect::<Vec<_>>();
+
                 self.apply(
                     entries.into_iter().map(|entry| entry.blob).collect(),
                     Some(seqs),
@@ -2013,15 +2081,18 @@ impl Syncing {
             }
             FromServer::Appended { .. } => {
                 self.unanswered = Unanswered::default();
+
                 let sent = self
                     .server
                     .as_mut()
                     .and_then(|link| link.in_flight.pop_front());
+
                 if let Some(pushed) = sent {
                     let changes = pushed
                         .into_iter()
                         .flat_map(|pushed| pushed.changes)
                         .collect::<Vec<_>>();
+
                     self.sent(changes).await?;
                 }
                 self.push().await?;
@@ -2051,8 +2122,10 @@ impl Syncing {
                     .as_mut()
                     .is_some_and(|link| compacted_by_another(&mut link.compacting, through));
                 let ledger = Arc::clone(&self.running.ledger);
+
                 blocking(move || {
                     let mut ledger = ledger.lock();
+
                     ledger.compacted(through)?;
                     if by_another {
                         ledger.owe_queries()?;
@@ -2091,6 +2164,7 @@ impl Syncing {
             }
             FromServer::Refused(Refusal::TooLarge) => {
                 self.unanswered = Unanswered::default();
+
                 let refused = self
                     .server
                     .as_mut()
@@ -2099,6 +2173,7 @@ impl Syncing {
                     .into_iter()
                     .flatten()
                     .max_by_key(|pushed| pushed.bytes);
+
                 if let Some(largest) = largest {
                     tracing::warn!(
                         bytes = largest.bytes,
@@ -2128,8 +2203,10 @@ impl Syncing {
             link.compacting = None;
             link.in_parts.waiting = None;
         }
+
         let ledger = Arc::clone(&self.running.ledger);
         let (records_since, _) = blocking(move || ledger.lock().since_snapshot()).await?;
+
         tracing::warn!(
             records_since,
             "the sync server's space is too full to take a compaction, so it is tried again once the records since the last snapshot double"
@@ -2173,12 +2250,14 @@ impl Syncing {
             }
         };
         let this = self.running.device;
+
         self.running.reflector.relay().admit(
             notes
                 .iter()
                 .map(|note| note.device)
                 .chain(self.server_online.iter().copied()),
         );
+
         let devices = notes
             .into_iter()
             .map(|note| {
@@ -2195,16 +2274,20 @@ impl Syncing {
                 }
             })
             .collect();
+
         self.running.shown.write().devices = devices;
     }
 
     async fn apply(&mut self, blobs: Vec<Option<Vec<u8>>>, seqs: Option<Vec<u64>>) -> Result<()> {
         let from_elsewhere = blobs.iter().any(Option::is_some);
         let running = Arc::clone(&self.running);
+
         blocking(move || {
             let mut ledger = running.ledger.lock();
+
             for (at, blob) in blobs.into_iter().enumerate() {
                 let length = blob.as_ref().map_or(0, Vec::len);
+
                 if let Some(blob) = blob {
                     match opened(
                         &running.derived.sealer,
@@ -2243,6 +2326,7 @@ impl Syncing {
                 .followed_again_at
                 .filter(|_| self.running.follow.everything)
                 .map(|at| at + EVERYTHING_FOLLOWED_AGAIN_AT_MOST_EVERY);
+
             self.follow_again_at = Some(soonest.map_or(soon, |soonest| soon.max(soonest)));
         }
     }
@@ -2262,12 +2346,14 @@ impl Syncing {
     async fn follow_again(&mut self) -> Result<()> {
         self.follow_again_at = None;
         self.followed_again_at = Some(Instant::now());
+
         let connected = self
             .neighbours
             .keys()
             .chain(self.peers.keys())
             .copied()
             .collect::<BTreeSet<_>>();
+
         for device in connected {
             self.followed.remove(&device);
             self.follow(device).await?;
@@ -2282,6 +2368,7 @@ impl Syncing {
     async fn watched(&mut self) -> Result<()> {
         let revision = self.running.catalog.revision();
         let now = Instant::now();
+
         if revision != self.seen_revision && self.look_at.is_none() {
             self.look_at = Some(now + LOOK_AFTER);
         }
@@ -2301,10 +2388,12 @@ impl Syncing {
         let running = Arc::clone(&self.running);
         let looked = blocking(move || {
             let mut ledger = running.ledger.lock();
+
             ledger.settle(running.catalog.as_ref())?;
             ledger.look(running.catalog.as_ref(), &running.me)
         })
         .await?;
+
         self.running.shown.write().owed = looked.owed;
         self.publish_devices();
         self.looked_once = true;
@@ -2315,7 +2404,9 @@ impl Syncing {
         {
             self.follow_again_soon();
         }
+
         let owed = self.tell_neighbours().await?;
+
         self.push().await?;
         if self.running.server.is_none() {
             self.sent(owed).await?;
@@ -2328,10 +2419,12 @@ impl Syncing {
         let ledger = Arc::clone(&self.running.ledger);
         let owed = blocking(move || {
             let mut ledger = ledger.lock();
+
             ledger.sent(&changes)?;
             ledger.owed_count()
         })
         .await?;
+
         self.running.shown.write().owed = owed;
         Ok(())
     }
@@ -2341,6 +2434,7 @@ impl Syncing {
             .server
             .as_ref()
             .is_none_or(|link| link.in_flight.is_empty());
+
         self.running.shown.write().settled = self.may_look() && self.looked_once && flown;
     }
 
@@ -2348,21 +2442,27 @@ impl Syncing {
         if self.server.as_ref().is_none_or(Link::answer_awaited) {
             return Ok(());
         }
+
         let running = Arc::clone(&self.running);
         let unanswered = mem::take(&mut self.unanswered);
+
         let bundles = blocking(move || {
             let mut ledger = running.ledger.lock();
+
             let owed = ledger.owed()?;
             let mut sealed_bundles = Vec::new();
+
             for changes in owed {
                 if sealed_bundles.len() == BLOBS_PER_APPEND {
                     break;
                 }
+
                 let plain = encoded_bundle(&changes);
                 let blob = match unanswered.sealed_as(&plain) {
                     Some(blob) => blob.clone(),
                     None => sealed(&running.derived.sealer, running.derived.space, &plain)?,
                 };
+
                 if blob.len() > LARGEST_RECORD {
                     tracing::warn!(
                         bytes = blob.len(),
@@ -2376,18 +2476,22 @@ impl Syncing {
             Ok(sealed_bundles)
         })
         .await?;
+
         self.unanswered = Unanswered(
             bundles
                 .iter()
                 .map(|(_, plain, blob)| (*plain, blob.clone()))
                 .collect(),
         );
+
         let Some(link) = self.server.as_mut() else {
             return Ok(());
         };
+
         if bundles.is_empty() {
             return Ok(());
         }
+
         let (pushed, blobs): (Vec<_>, Vec<_>) = bundles
             .into_iter()
             .map(|(changes, _, blob)| {
@@ -2400,6 +2504,7 @@ impl Syncing {
                 )
             })
             .unzip();
+
         link.in_flight.push_back(pushed);
         link.say(&ToServer::Append { blobs })
     }
@@ -2408,9 +2513,11 @@ impl Syncing {
         if self.neighbours.is_empty() && self.running.server.is_some() {
             return Ok(Vec::new());
         }
+
         let ledger = Arc::clone(&self.running.ledger);
         let owed = blocking(move || ledger.lock().owed()).await?;
         let owed = owed.into_iter().flatten().collect::<Vec<_>>();
+
         for (device, neighbour) in &mut self.neighbours {
             let fresh = owed
                 .iter()
@@ -2432,22 +2539,27 @@ impl Syncing {
         {
             return Ok(());
         }
+
         let running = Arc::clone(&self.running);
         let oversized = self.oversized;
         let parts_refused = self
             .server
             .as_ref()
             .is_some_and(|link| link.in_parts.refused);
+
         let snapshot = blocking(move || {
             let ledger = running.ledger.lock();
             let (records_since, bytes) = ledger.since_snapshot()?;
+
             if (records_since < COMPACT_PAST_RECORDS && bytes < COMPACT_PAST_BYTES)
                 || oversized.waits(records_since)
             {
                 return Ok(Snapshotted::Unneeded);
             }
+
             let through = ledger.cursor()?;
             let mut pieces = Pieces::default();
+
             for changes in ledger.snapshot()? {
                 pieces.push(sealed(
                     &running.derived.sealer,
@@ -2469,6 +2581,7 @@ impl Syncing {
             })
         })
         .await?;
+
         match snapshot {
             Snapshotted::Unneeded => {}
             Snapshotted::Oversized { records_since } => {
@@ -2482,7 +2595,9 @@ impl Syncing {
                 self.oversized = Oversized::default();
                 if let Some(link) = self.server.as_mut() {
                     link.compacting = Some(through);
+
                     let asked = link.in_parts.asked(through, records_since, pieces);
+
                     link.say(&asked)?;
                 }
             }
@@ -2492,12 +2607,15 @@ impl Syncing {
 
     async fn follow(&mut self, device: DeviceId) -> Result<()> {
         let follow = self.running.follow;
+
         if device == self.running.device
             || !(follow.everything || follow.favourites || follow.playlists)
         {
             return Ok(());
         }
+
         let now = Instant::now();
+
         if self
             .followed
             .get(&device)
@@ -2513,7 +2631,9 @@ impl Syncing {
         if device == self.running.device || !self.running.transfers_allowed() {
             return;
         }
+
         let now = Instant::now();
+
         if self
             .covers_asked
             .get(&device)
@@ -2541,10 +2661,12 @@ impl Syncing {
         if device == self.running.device || !self.running.transfers_allowed() {
             return;
         }
+
         let Some(consulted) = self.running.answering.consulted.read().clone() else {
             return;
         };
         let now = Instant::now();
+
         if self
             .kept_asked
             .get(&device)
@@ -2553,8 +2675,10 @@ impl Syncing {
             return;
         }
         self.kept_asked.insert(device, now);
+
         let asker = self.running.device;
         let connection = connection.clone();
+
         tokio::spawn(async move {
             match kept_from(&connection, asker, device, consulted).await {
                 Ok(0) => {}
@@ -2570,7 +2694,9 @@ impl Syncing {
         if device == self.running.device || !self.running.transfers_allowed() {
             return;
         }
+
         let now = Instant::now();
+
         if self
             .lyricsfiles_asked
             .get(&device)
@@ -2586,7 +2712,9 @@ impl Syncing {
         if device == self.running.device || !self.running.transfers_allowed() {
             return;
         }
+
         let now = Instant::now();
+
         if self
             .prints_asked
             .get(&device)
@@ -2625,8 +2753,10 @@ impl Syncing {
             self.spawn(device, connection, work);
             return Ok(());
         }
+
         let first = !self.waiting.contains_key(&device);
         let queued = self.waiting.entry(device).or_default();
+
         if matches!(work, Work::Follow) && queued.iter().any(|work| matches!(work, Work::Follow)) {
             return Ok(());
         }
@@ -2654,7 +2784,9 @@ impl Syncing {
         if !self.running.transfers_allowed() {
             return Ok(());
         }
+
         let devices = self.waiting.keys().copied().collect::<Vec<_>>();
+
         for device in devices {
             self.reach(device).await?;
         }
@@ -2672,14 +2804,18 @@ impl Syncing {
 
     fn relayed_or_unreached(&mut self, device: DeviceId) {
         let wanted = self.waiting.contains_key(&device) && !self.peers.contains_key(&device);
+
         if !wanted || self.server.is_none() || !self.running.reflector.relay().is_attached() {
             self.unreached(device);
             return;
         }
+
         let running = Arc::clone(&self.running);
+
         tokio::spawn(async move {
             let Some(address) = running.reflector.relay().address_of(device) else {
                 let _ = running.events.send(Event::Relayed(device, None));
+
                 return;
             };
             let connection = match dialled_within(
@@ -2753,6 +2889,7 @@ impl Syncing {
                 .map(|ip| SocketAddr::new(ip, port))
                 .collect(),
         };
+
         if self.running.endpoint_takes_ipv6() {
             candidates.extend(
                 global_addresses_here()
@@ -2790,13 +2927,16 @@ impl Syncing {
         if !self.running.transfers_allowed() {
             return Ok(());
         }
+
         let connected = self
             .peers
             .get(&device)
             .is_some_and(|connection| connection.close_reason().is_none());
+
         if connected {
             return Ok(());
         }
+
         let heard = PunchHeard {
             from: device,
             to: self.running.device,
@@ -2815,6 +2955,7 @@ impl Syncing {
                 return Ok(());
             }
         };
+
         if !self.waiting.contains_key(&device) {
             let known = self.knows_device(device);
             let (table, at_most) = if known {
@@ -2822,6 +2963,7 @@ impl Syncing {
             } else {
                 (&mut self.strangers_answered, STRANGERS_ANSWERED_AT_MOST)
             };
+
             if !may_answer(table, device, at_most) {
                 return Ok(());
             }
@@ -2830,7 +2972,9 @@ impl Syncing {
         if self.running.relay_only {
             candidates.clear();
         }
+
         let running = Arc::clone(&self.running);
+
         tokio::spawn(async move {
             let connection =
                 match dialled(&running.endpoint, &running.to_peers, &candidates, device).await {
@@ -2849,6 +2993,7 @@ impl Syncing {
         if !self.running.transfers_allowed() || self.running.told.is_empty() {
             return;
         }
+
         let Some(beacon) = self.running.beacon(false) else {
             return;
         };
@@ -2912,6 +3057,7 @@ impl Syncing {
         ) {
             Ok(resolved) => {
                 let seen_at = if resolved.first { at } else { &[] };
+
                 self.heard_nearby(resolved.beacon, seen_at, None).await;
             }
             Err(unheard) => tracing::debug!(%unheard, "a Bonjour record was passed over"),
@@ -2927,16 +3073,19 @@ impl Syncing {
         if !self.running.transfers_allowed() || beacon.device == self.running.device {
             return;
         }
+
         let named = beacon
             .addresses
             .iter()
             .map(|ip| SocketAddr::new(*ip, beacon.port));
         let seen = seen_at.iter().map(|seen| {
             let mut candidate = *seen;
+
             candidate.set_port(beacon.port);
             candidate
         });
         let mut candidates = Vec::new();
+
         for candidate in seen.chain(named) {
             let dialled_here = candidate.is_ipv4() || self.running.endpoint_takes_ipv6();
             if dialled_here && !candidates.contains(&candidate) {
@@ -2981,8 +3130,10 @@ impl Syncing {
 
     fn send_later(&self, after: Duration, event: Event) {
         let events = self.running.events.clone();
+
         tokio::spawn(async move {
             tokio::time::sleep(after).await;
+
             let _ = events.send(event);
         });
     }
@@ -3002,8 +3153,11 @@ impl Syncing {
             Some(redial) => (redial.wait * 2).min(LAST_REDIAL),
             None => FIRST_REDIAL,
         };
+
         self.dialled_at.insert(device, Redial { at: now, wait });
+
         let running = Arc::clone(&self.running);
+
         tokio::spawn(async move {
             let event = match neighbour_dialled(&running, &at, device).await {
                 Ok((met, connection)) => Event::Met(met, connection),
@@ -3019,8 +3173,10 @@ impl Syncing {
     fn watch_closing(&self, device: DeviceId, connection: &Connection) {
         let events = self.running.events.clone();
         let closing = connection.clone();
+
         tokio::spawn(async move {
             closing.closed().await;
+
             let _ = events.send(Event::Gone(device, closing.stable_id()));
         });
     }
@@ -3040,8 +3196,11 @@ impl Syncing {
 
     async fn forced(&mut self) -> Result<()> {
         let ledger = Arc::clone(&self.running.ledger);
+
         blocking(move || ledger.lock().forget_refusals()).await?;
+
         let catalog = Arc::clone(&self.running.catalog);
+
         blocking(move || catalog.forgive_deletions().map_err(Error::Catalog)).await?;
         self.wait = FIRST_RETRY;
         self.followed.clear();
@@ -3068,6 +3227,7 @@ impl Syncing {
             .copied()
             .filter(|device| !self.neighbours.contains_key(device))
             .collect::<Vec<_>>();
+
         for device in unmet {
             self.dial_neighbour(device);
         }
@@ -3124,6 +3284,7 @@ impl Syncing {
         self.peers.insert(device, connection.clone());
         if records {
             let (changes, told) = self.whole().await?;
+
             self.neighbours.insert(
                 device,
                 Neighbour {
@@ -3147,6 +3308,7 @@ async fn neighbour_dialled(
 ) -> Result<(DeviceId, Connection)> {
     let connection = dialled(&running.endpoint, &running.to_peers, at, device).await?;
     let met = meet(&connection, running.device, true).await?;
+
     tokio::spawn(serve(
         connection.clone(),
         Arc::clone(&running.answering),
@@ -3197,6 +3359,7 @@ fn spawn_lyricsfiles(running: Arc<Running>, device: DeviceId, connection: Connec
             .copied()
             .unwrap_or(0);
         let catalog = Arc::clone(&running.catalog);
+
         let wanted = blocking(move || {
             catalog
                 .lyricsfiles_wanted(skip, LYRICSFILES_ASKED_AT_MOST)
@@ -3215,6 +3378,7 @@ fn spawn_lyricsfiles(running: Arc<Running>, device: DeviceId, connection: Connec
         } else {
             skip + wanted.len()
         };
+
         running.lyricsfiles_skipped.lock().insert(device, next);
         if wanted.is_empty() {
             return;
@@ -3236,6 +3400,7 @@ fn spawn_prints(running: Arc<Running>, device: DeviceId, connection: Connection)
             .copied()
             .unwrap_or(0);
         let catalog = Arc::clone(&running.catalog);
+
         let wanted = blocking(move || {
             catalog
                 .prints_wanted(skip, PRINTS_ASKED_AT_MOST)
@@ -3254,6 +3419,7 @@ fn spawn_prints(running: Arc<Running>, device: DeviceId, connection: Connection)
         } else {
             skip + wanted.len()
         };
+
         running.prints_skipped.lock().insert(device, next);
         if wanted.is_empty() {
             return;
@@ -3269,6 +3435,7 @@ fn spawn_prints(running: Arc<Running>, device: DeviceId, connection: Connection)
 fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, work: Work) {
     tokio::spawn(async move {
         let following = matches!(work, Work::Follow);
+
         worked(&running, device, &connection, work).await;
         if following {
             let _ = running.events.send(Event::Followed(device));
@@ -3285,10 +3452,12 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
             answer,
         } => {
             let _ = answer.send(control(connection, zone, command, queue_seen).await);
+
             return;
         }
         Work::Consult { asked, answer } => {
             let _ = answer.send(consult(connection, asked).await);
+
             return;
         }
         Work::Export(asked) => {
@@ -3299,6 +3468,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
                 noted: &asked.noted,
             };
             let allowed = || running.transfers_allowed();
+
             let fetched = export_from(connection, device, &staged, &asked.receiving, &allowed)
                 .await
                 .unwrap_or_else(|error| {
@@ -3306,6 +3476,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
                     ExportFetched::Failed
                 });
             let _ = asked.answer.send(fetched);
+
             return;
         }
         Work::Watch => {
@@ -3316,6 +3487,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
                     .get(&device)
                     .is_some_and(|asked| asked.elapsed() < WATCH_LAPSES_AFTER)
             };
+
             if let Err(error) = watch(connection, device, &running.mirrors, still_watched).await {
                 tracing::debug!(%error, "another device's zones could not be watched");
             }
@@ -3338,6 +3510,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
             asked: false,
         } => {
             let wanted = running.not_failed_lately(recordings.clone()).await;
+
             for recording in &recordings {
                 if !wanted.contains(recording) {
                     running.unlisted_waiting(recording, device);
@@ -3348,6 +3521,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
         Work::Follow => match followed_songs(running, connection).await {
             Ok(recordings) => {
                 let recordings = running.not_failed_lately(recordings).await;
+
                 for recording in &recordings {
                     running.queued(recording, device);
                 }
@@ -3366,7 +3540,9 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
             for unasked in left.by_ref() {
                 running.listed_waiting_as(&unasked, device, TransferState::Failed);
             }
+
             let _ = running.events.send(Event::CutShort(device));
+
             return;
         }
         fetch_one(running, device, connection, recording, asked).await;
@@ -3385,6 +3561,7 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
                 .wanted(asking.follow, asking.catalog.as_ref())
         })
         .await?;
+
         if wanted.is_empty() {
             return Ok(Vec::new());
         }
@@ -3392,12 +3569,15 @@ async fn followed_songs(running: &Arc<Running>, connection: &Connection) -> Resu
     };
     let holdings = holdings_of(connection).await?;
     let held_running = Arc::clone(running);
+
     let wanted = blocking(move || {
         let follow = held_running.follow;
         let catalog = held_running.catalog.as_ref();
+
         if follow.everything {
             let ledger = held_running.ledger.lock();
             let mut missing = Vec::new();
+
             for recording in one_recording_a_song(holdings.into_iter().map(|held| held.recording)) {
                 if !ledger.deleted_everywhere(&recording)? && lacked(catalog, &recording)? {
                     missing.push(recording);
@@ -3430,6 +3610,7 @@ async fn fetch_one(
         running.passed_over(device, recording, asked);
         return;
     }
+
     let held = if held_already(running, &recording).await
         || (!asked && deleted_here(running, &recording).await)
     {
@@ -3437,12 +3618,15 @@ async fn fetch_one(
         true
     } else {
         let landed = fetch_claimed(running, device, connection, &recording).await;
+
         if landed && asked {
             asked_back(running, &recording).await;
         }
         landed
     };
+
     running.fetching.release(&recording);
+
     let again = running.unpassed(&recording);
     if !held && !again.is_empty() {
         let _ = running.events.send(Event::Unclaimed(again));
@@ -3494,15 +3678,19 @@ async fn fetch_claimed(
     running.transfer(recording, device, |transfer| {
         transfer.state = TransferState::Moving;
     });
+
     let staged = running.staging.join(format!(
         "{}.part",
         hex(&digest(&SHA256, recording.key().as_str().as_bytes()).as_ref()[..12])
     ));
+
     if let Err(error) = tokio::fs::create_dir_all(&running.staging).await {
         tracing::warn!(%error, "the sync staging folder could not be made");
     }
+
     let progress = Arc::clone(running);
     let progress_recording = recording.clone();
+
     let fetched = fetch(
         connection,
         device,
@@ -3517,11 +3705,13 @@ async fn fetch_claimed(
     )
     .await;
     let mut refused_here = false;
+
     let landed = match fetched {
         Ok(fetched) => {
             let catalog = Arc::clone(&running.catalog);
             let landing = recording.clone();
             let staged = fetched.staged.clone();
+
             let landed = blocking(move || {
                 catalog
                     .land(&landing, &fetched.tags, &fetched.extension, &fetched.staged)
@@ -3529,6 +3719,7 @@ async fn fetch_claimed(
             })
             .await;
             let _ = tokio::fs::remove_file(&staged).await;
+
             refused_here = !matches!(landed, Ok(true));
             landed
         }
@@ -3542,6 +3733,7 @@ async fn fetch_claimed(
             TransferState::Failed
         }
     };
+
     if refused_here {
         running.failed(recording).await;
     }
@@ -3555,7 +3747,9 @@ async fn accept_peers(running: Arc<Running>) {
             incoming.refuse();
             continue;
         }
+
         let answering = Arc::clone(&running.answering);
+
         tokio::spawn(async move {
             match incoming.await {
                 Ok(connection) => serve(connection, answering, None).await,
@@ -3586,8 +3780,10 @@ mod tests {
         let serving = tokio::spawn(async move {
             let (stream, _) = listener.accept().await.expect("accepted");
             let mut accepted = crate::web::accepted(stream, None).await.expect("upgraded");
+
             for count in 0..FRAMES_A_HOSTILE_SERVER_SENDS {
                 let frame = FromServer::Appended { count }.encoded();
+
                 accepted.outgoing.send(&frame).await.expect("sent");
             }
             accepted
@@ -3600,13 +3796,16 @@ mod tests {
         let (_outgoing, incoming) = connect(&address, &tls).await.expect("connected");
         let (reading, mut frames) = reading_from_the_server(incoming, reflector);
         let _server_side = serving.await.expect("the server task");
+
         tokio::time::sleep(THE_READER_SETTLES_WITHIN).await;
+
         let queued = frames.len();
         let first = frames.recv().await;
 
         assert_eq!(queued, FRAMES_FROM_THE_SERVER_QUEUED_AT_MOST);
         assert!(matches!(first, Some(Ok(FromServer::Appended { count: 0 }))));
         assert!(!reading.is_finished());
+
         reading.abort();
     }
 
@@ -3662,6 +3861,7 @@ mod tests {
             sealed_at: NOW,
             addresses: vec![theirs],
         };
+
         let sealed_candidates = sealed_punch(&derived, &candidates);
         let foreign = sealed_punch(&stranger, &candidates);
         let mut punches = fresh_punches();
@@ -3692,6 +3892,7 @@ mod tests {
             sealed_at: NOW,
             addresses: vec![SocketAddr::from(([192, 168, 1, 7], 5000))],
         };
+
         let genuine = sealed_punch(&derived, &candidates);
         let to_another = sealed_punch(
             &derived,
@@ -3812,6 +4013,7 @@ mod tests {
 
     fn pieces_of(parts: impl IntoIterator<Item = Vec<u8>>) -> Pieces {
         let mut pieces = Pieces::default();
+
         for part in parts {
             pieces.push(part);
         }
@@ -3888,6 +4090,7 @@ mod tests {
      {
         let mut in_parts = InParts::default();
         let pieces = pieces_of((0..=BLOBS_A_FRAME_AT_MOST).map(|_| vec![4; 40]));
+
         in_parts.asked(700, 600, pieces);
 
         let refused = in_parts.refused_as_stale();
@@ -3947,10 +4150,14 @@ mod tests {
     #[test]
     fn a_partial_untouched_for_long_is_swept_and_a_fresh_one_or_another_file_stays() {
         let staging = env::temp_dir().join(format!("resonate-staging-{}", process::id()));
+
         std::fs::create_dir_all(&staging).expect("a staging folder");
+
         let old = SystemTime::now() - A_PARTIAL_IS_SWEPT_AFTER - Duration::from_secs(60);
+
         for name in ["old.part", "old.from", "old.flac"] {
             let file = File::create(staging.join(name)).expect("a file");
+
             file.set_modified(old).expect("aged");
         }
         File::create(staging.join("fresh.part")).expect("a file");
@@ -3961,6 +4168,7 @@ mod tests {
         assert!(!staging.join("old.from").exists());
         assert!(staging.join("old.flac").exists());
         assert!(staging.join("fresh.part").exists());
+
         let _ = std::fs::remove_dir_all(&staging);
     }
 

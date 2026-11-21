@@ -33,6 +33,7 @@ pub fn profile_link_service(text: String) -> Option<String> {
 impl MobilePlayer {
     pub fn follow_profile(&self, link: String, kept_in_step: bool) -> Result<FollowedProfile> {
         self.require_online()?;
+
         let link = ProfileLink::read(&link).ok_or(Error::NotAProfileLink)?;
         let profile = self
             .services
@@ -44,6 +45,7 @@ impl MobilePlayer {
                 ProfileLink::Deezer(_) => Error::NoProfileAtTheLink,
             })?;
         let known = pages_of(&self.catalog.0.lock(), &link)?;
+
         let mut followed = FollowedProfile {
             name: profile.name,
             service: link.service().to_owned(),
@@ -56,10 +58,12 @@ impl MobilePlayer {
         for listed in &profile.playlists {
             let page = listed.link.page();
             let kept_here = self.kept_from_page(&page)?;
+
             if kept_in_step && known.contains(&page) && kept_here.is_none() {
                 followed.let_go += 1;
                 continue;
             }
+
             let Some((_, songs)) = self.songs_of_a_playlist(&listed.link)? else {
                 followed.unread += 1;
                 continue;
@@ -81,6 +85,7 @@ impl MobilePlayer {
             .iter()
             .map(|listed| listed.link.page())
             .collect();
+
         for page in known.iter().filter(|page| !listed.contains(page)) {
             if let Some(playlist) = self.kept_from_page(page)? {
                 self.forget_playlist_link(playlist)?;
@@ -89,6 +94,7 @@ impl MobilePlayer {
         }
 
         let connection = self.catalog.0.lock();
+
         match kept_in_step {
             true => keep_following(&connection, &link, &followed.name, &listed)?,
             false => stop_following(&connection, &link)?,
@@ -101,6 +107,7 @@ impl MobilePlayer {
         let mut query = connection
             .prepare("SELECT link, name FROM profile_links ORDER BY name, link")
             .map_err(read_error)?;
+
         let rows = query
             .query_map([], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -170,6 +177,7 @@ fn keep_following(
     pages: &[String],
 ) -> Result<()> {
     let profile = link.page();
+
     connection
         .execute(
             "INSERT INTO profile_links(link, name, refreshed) VALUES (?1, ?2, ?3)
@@ -233,6 +241,7 @@ mod tests {
     fn a_profile_followed_is_due_once_its_hours_pass_and_unfollowed_on_asking() {
         let player = player();
         let link = ProfileLink::read(PROFILE).expect("a profile");
+
         keep_following(
             &player.catalog.0.lock(),
             &link,
@@ -243,14 +252,17 @@ mod tests {
 
         let followed = player.profiles_followed().expect("the profiles");
         let due_now = player.profiles_due_a_refresh().expect("the due list");
+
         player
             .catalog
             .0
             .lock()
             .execute("UPDATE profile_links SET refreshed = 0", [])
             .expect("an old follow");
+
         let due_later = player.profiles_due_a_refresh().expect("the due list");
         let pages = pages_of(&player.catalog.0.lock(), &link).expect("its pages");
+
         player.unfollow_profile(PROFILE.into()).expect("unfollowed");
 
         assert_eq!(

@@ -6,12 +6,13 @@ use crate::{Error, Result};
 
 const LONGEST_EXTENSION: usize = 8;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Extension(Box<str>);
 
 impl Extension {
     pub fn new(text: &str) -> Result<Self> {
         let bare = text.strip_prefix('.').unwrap_or(text);
+
         if bare.is_empty()
             || bare.len() > LONGEST_EXTENSION
             || !bare.bytes().all(|byte| byte.is_ascii_alphanumeric())
@@ -226,6 +227,7 @@ mod tests {
                 opening: Opening::ready(std::io::empty()),
             },
         };
+
         assert_eq!(delivered.taken_from().to_uri(), "shop:track/42");
     }
 
@@ -239,9 +241,11 @@ mod tests {
         };
 
         assert!(!opening.is_resumable());
+
         let Ok(Reopened::Reading(resumed)) = opening.open_resuming(Some(held)) else {
             panic!("an opening reads");
         };
+
         assert_eq!(resumed.from, 0);
         assert_eq!(resumed.validator, None);
     }

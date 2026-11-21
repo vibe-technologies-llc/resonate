@@ -72,6 +72,7 @@ fn dsf(rate: u32, channels: u16, hertz: f64, bits: BitsPerSample) -> Vec<u8> {
     let total_bits = (per_channel * 8) as u64;
 
     let mut planes = vec![Vec::with_capacity(per_channel); lanes];
+
     for (lane, plane) in planes.iter_mut().enumerate() {
         let mut error = 0.0_f64;
         let tone = hertz * (lane as f64 + 1.0);
@@ -79,12 +80,16 @@ fn dsf(rate: u32, channels: u16, hertz: f64, bits: BitsPerSample) -> Vec<u8> {
 
         for n in 0..per_channel * 8 {
             let wanted = 0.5 * (std::f64::consts::TAU * tone * n as f64 / f64::from(rate)).sin();
+
             error += wanted;
+
             let high = error > 0.0;
+
             error -= if high { 1.0 } else { -1.0 };
 
             let within = n % 8;
             let set = u8::from(high);
+
             byte |= match bits {
                 BitsPerSample::LeastFirst => set << within,
                 BitsPerSample::MostFirst => set << (7 - within),
@@ -97,6 +102,7 @@ fn dsf(rate: u32, channels: u16, hertz: f64, bits: BitsPerSample) -> Vec<u8> {
     }
 
     let mut data = Vec::with_capacity(per_channel * lanes);
+
     for block in 0..blocks {
         for plane in &planes {
             data.extend_from_slice(&plane[block * DSF_BLOCK..(block + 1) * DSF_BLOCK]);
@@ -104,6 +110,7 @@ fn dsf(rate: u32, channels: u16, hertz: f64, bits: BitsPerSample) -> Vec<u8> {
     }
 
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(b"fmt ");
     fmt.extend_from_slice(&52_u64.to_le_bytes());
     fmt.extend_from_slice(&1_u32.to_le_bytes());
@@ -117,12 +124,14 @@ fn dsf(rate: u32, channels: u16, hertz: f64, bits: BitsPerSample) -> Vec<u8> {
     fmt.extend_from_slice(&0_u32.to_le_bytes());
 
     let mut chunk = Vec::new();
+
     chunk.extend_from_slice(b"data");
     chunk.extend_from_slice(&((data.len() + 12) as u64).to_le_bytes());
     chunk.extend_from_slice(&data);
 
     let total = (28 + fmt.len() + chunk.len()) as u64;
     let mut file = Vec::with_capacity(total as usize);
+
     file.extend_from_slice(b"DSD ");
     file.extend_from_slice(&28_u64.to_le_bytes());
     file.extend_from_slice(&total.to_le_bytes());
@@ -178,13 +187,16 @@ impl FlacBlock {
 
 fn blocks(path: &Path) -> Vec<FlacBlock> {
     let held = fs::read(path).expect("a flac file reads back");
+
     assert!(held.starts_with(&FLAC_MAGIC), "not a flac file");
 
     let mut found = Vec::new();
     let mut at = FLAC_MAGIC.len();
+
     while let Some(header) = held.get(at..at + FLAC_BLOCK_HEADER) {
         let kind = header[0] & !FLAC_LAST_BLOCK;
         let size = u32::from_be_bytes([0, header[1], header[2], header[3]]) as usize;
+
         found.push(FlacBlock::of(kind));
 
         at += FLAC_BLOCK_HEADER + size;
@@ -257,11 +269,13 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-encoded-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self { root }
     }
@@ -302,11 +316,13 @@ fn ran(name: &str, arguments: &[&str]) -> bool {
 fn tone(shape: Shape) -> Vec<i32> {
     let amplitude = shape.full_scale() * 0.9;
     let mut samples = Vec::with_capacity(shape.frames() * usize::from(shape.channels));
+
     for frame in 0..shape.frames() {
         let time = frame as f64 / f64::from(shape.rate);
         for channel in 0..shape.channels {
             let hz = 440.0 * 1.26_f64.powi(i32::from(channel));
             let wave = (2.0 * std::f64::consts::PI * hz * time).sin();
+
             samples.push((wave * amplitude) as i32);
         }
     }
@@ -315,10 +331,12 @@ fn tone(shape: Shape) -> Vec<i32> {
 
 fn wav(path: &Path, shape: Shape, samples: &[i32]) {
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &wave_fmt(shape));
     chunk(&mut body, b"data", &wave_data(shape, samples));
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     fs::write(path, file).expect("a writable temporary file");
@@ -327,6 +345,7 @@ fn wav(path: &Path, shape: Shape, samples: &[i32]) {
 fn wave_data(shape: Shape, samples: &[i32]) -> Vec<u8> {
     let stride = shape.bytes_per_sample();
     let mut data = Vec::with_capacity(samples.len() * stride);
+
     for sample in samples {
         data.extend_from_slice(
             sample
@@ -342,6 +361,7 @@ fn wave_fmt(shape: Shape) -> Vec<u8> {
     let extensible = shape.channels > 2;
     let align = shape.block_align();
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&if extensible { PCM_EXTENSIBLE } else { PCM }.to_le_bytes());
     fmt.extend_from_slice(&shape.channels.to_le_bytes());
     fmt.extend_from_slice(&shape.rate.to_le_bytes());
@@ -380,6 +400,7 @@ fn wide_wave(path: &Path, wide: Wide, shape: Shape, samples: &[i32]) {
     let file = match wide {
         Wide::Rf64 | Wide::Bw64 => {
             let mut ds64 = Vec::new();
+
             ds64.extend_from_slice(&0_u64.to_le_bytes());
             ds64.extend_from_slice(&(data.len() as u64).to_le_bytes());
             ds64.extend_from_slice(
@@ -388,6 +409,7 @@ fn wide_wave(path: &Path, wide: Wide, shape: Shape, samples: &[i32]) {
             ds64.extend_from_slice(&0_u32.to_le_bytes());
 
             let mut body = b"WAVE".to_vec();
+
             chunk(&mut body, b"ds64", &ds64);
             chunk(&mut body, b"fmt ", &fmt);
             body.extend_from_slice(b"data");
@@ -398,16 +420,19 @@ fn wide_wave(path: &Path, wide: Wide, shape: Shape, samples: &[i32]) {
                 Wide::Bw64 => b"BW64".to_vec(),
                 Wide::Rf64 | Wide::Wave64 => b"RF64".to_vec(),
             };
+
             file.extend_from_slice(&UNSTATED.to_le_bytes());
             file.extend_from_slice(&body);
             file
         }
         Wide::Wave64 => {
             let mut body = Vec::new();
+
             wave64_chunk(&mut body, *b"fmt ", &fmt);
             wave64_chunk(&mut body, *b"data", &data);
 
             let mut file = WAVE64_RIFF.to_vec();
+
             file.extend_from_slice(&(body.len() as u64 + 40).to_le_bytes());
             file.extend_from_slice(b"wave");
             file.extend_from_slice(&WAVE64_TAIL);
@@ -415,6 +440,7 @@ fn wide_wave(path: &Path, wide: Wide, shape: Shape, samples: &[i32]) {
             file
         }
     };
+
     fs::write(path, file).expect("a writable temporary file");
 }
 
@@ -439,6 +465,7 @@ fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
 
 fn encode(source: &Path, target: &Path, codec: &[&str]) -> bool {
     let mut command = Command::new("ffmpeg");
+
     command
         .args(["-y", "-v", "error", "-i"])
         .arg(source)
@@ -462,6 +489,7 @@ fn adts_packets(stream: &[u8]) -> Option<Vec<&[u8]>> {
 
     while at < stream.len() {
         let header = stream.get(at..at + ADTS_HEADER_BYTES)?;
+
         if header[0] != ADTS_SYNC || header[1] & ADTS_SYNC_TAIL != ADTS_SYNC_TAIL {
             return None;
         }
@@ -489,6 +517,7 @@ fn adts_frame_length(header: &[u8]) -> usize {
 fn caf_length(value: u64) -> Vec<u8> {
     let mut bytes = vec![(value & 0x7F) as u8];
     let mut left = value >> 7;
+
     while left > 0 {
         bytes.push(((left & 0x7F) as u8) | 0x80);
         left >>= 7;
@@ -499,6 +528,7 @@ fn caf_length(value: u64) -> Vec<u8> {
 
 fn caf(shape: Shape, packets: &[&[u8]], music: u64, priming: u32, remainder: u32) -> Vec<u8> {
     let mut description = Vec::new();
+
     description.extend_from_slice(&f64::from(shape.rate).to_be_bytes());
     description.extend_from_slice(b"aac ");
     description.extend_from_slice(&CAF_MPEG4_AAC_LC.to_be_bytes());
@@ -508,6 +538,7 @@ fn caf(shape: Shape, packets: &[&[u8]], music: u64, priming: u32, remainder: u32
     description.extend_from_slice(&CAF_UNUSED_BITS_PER_CHANNEL.to_be_bytes());
 
     let mut table = Vec::new();
+
     table.extend_from_slice(&(packets.len() as i64).to_be_bytes());
     table.extend_from_slice(&(music as i64).to_be_bytes());
     table.extend_from_slice(&(priming as i32).to_be_bytes());
@@ -517,12 +548,14 @@ fn caf(shape: Shape, packets: &[&[u8]], music: u64, priming: u32, remainder: u32
     }
 
     let mut audio = Vec::new();
+
     audio.extend_from_slice(&CAF_NO_EDITS.to_be_bytes());
     for packet in packets {
         audio.extend_from_slice(packet);
     }
 
     let mut held = Vec::new();
+
     held.extend_from_slice(b"caff");
     held.extend_from_slice(&CAF_VERSION.to_be_bytes());
     held.extend_from_slice(&0_u16.to_be_bytes());
@@ -572,6 +605,7 @@ fn drain(decoder: &mut Decoder, spec: StreamSpec) -> Vec<i32> {
 
     let mut block = AudioBuffer::empty(spec);
     let mut samples = Vec::new();
+
     while decoder.next_block(&mut block).expect("a clean decode") == DecodeStatus::Decoded {
         match block.data() {
             resonate_core::SampleData::S32(store) => samples.extend_from_slice(store),
@@ -599,6 +633,7 @@ fn rms(samples: &[i32]) -> f64 {
     if samples.is_empty() {
         return 0.0;
     }
+
     let sum: f64 = samples
         .iter()
         .map(|sample| {
@@ -616,6 +651,7 @@ fn two_audio_tracks(tree: &Tree, name: &str) -> Option<PathBuf> {
     }
 
     let source = tree.at("paired.wav");
+
     wav(&source, CD, &tone(CD));
 
     let target = tree.at(name);
@@ -649,15 +685,18 @@ fn tagged(tree: &Tree, name: &str, codec: &[&str], tags: &[&str]) -> Option<Path
     }
 
     let source = tree.at("tagged.wav");
+
     wav(&source, CD, &tone(CD));
 
     let target = tree.at(name);
     let mut command = Command::new("ffmpeg");
+
     command.args(["-y", "-v", "error", "-i"]).arg(&source);
     command.args(codec);
     for tag in tags {
         command.args(["-metadata", tag]);
     }
+
     let encoded = command
         .arg(&target)
         .stdout(Stdio::null())
@@ -679,9 +718,11 @@ fn shaped(tree: &Tree, shape: Shape, name: &str, codec: &[&str]) -> Option<(Path
 
     let samples = tone(shape);
     let source = tree.at("source.wav");
+
     wav(&source, shape, &samples);
 
     let target = tree.at(name);
+
     if !encode(&source, &target, codec) {
         eprintln!("skipped: ffmpeg would not encode {name}");
         return None;
@@ -745,6 +786,7 @@ fn a_wave_too_long_for_riff_decodes_to_exactly_the_samples_that_went_in() {
         for (shape, layout) in shapes {
             let samples = tone(shape);
             let path = tree.at(&format!("{wide:?}-{}.wav", shape.channels));
+
             wide_wave(&path, wide, shape, &samples);
 
             let info =
@@ -753,6 +795,7 @@ fn a_wave_too_long_for_riff_decodes_to_exactly_the_samples_that_went_in() {
                 Wide::Rf64 | Wide::Bw64 => Container::Rf64,
                 Wide::Wave64 => Container::Wave64,
             };
+
             assert_eq!(Container::from_id(info.container), named, "{wide:?}");
             assert_eq!(Codec::from_id(info.codec), Codec::Pcm, "{wide:?}");
             assert_eq!(
@@ -762,6 +805,7 @@ fn a_wave_too_long_for_riff_decodes_to_exactly_the_samples_that_went_in() {
             );
 
             let decoded = decode(&path);
+
             assert_eq!(decoded.spec.channels, layout, "{wide:?}");
             assert_eq!(decoded.spec.rate.hz(), shape.rate, "{wide:?}");
             assert_eq!(
@@ -783,8 +827,11 @@ fn a_wide_wave_cut_short_reports_the_frames_it_holds_and_decodes_them_to_the_end
 
     for wide in [Wide::Rf64, Wide::Bw64, Wide::Wave64] {
         let path = tree.at(&format!("{wide:?}-cut.wav"));
+
         wide_wave(&path, wide, STUDIO, &samples);
+
         let whole = fs::metadata(&path).expect("a file just written").len();
+
         fs::OpenOptions::new()
             .write(true)
             .open(&path)
@@ -796,6 +843,7 @@ fn a_wide_wave_cut_short_reports_the_frames_it_holds_and_decodes_them_to_the_end
             .expect("a cut wide wave still probes");
         let held = info.duration.expect("a duration").0;
         let full = STUDIO.frames() as u64;
+
         assert!(
             (full - lost_frames - 2..=full - lost_frames).contains(&held),
             "{wide:?} reported {held} of {full} frames"
@@ -816,7 +864,9 @@ fn a_seek_into_a_wide_wave_lands_on_the_frame_asked_for() {
 
     for wide in [Wide::Rf64, Wide::Wave64] {
         let path = tree.at(&format!("{wide:?}.w64"));
+
         wide_wave(&path, wide, STUDIO, &samples);
+
         let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
             .expect("a wide wave opens");
 
@@ -864,15 +914,18 @@ fn a_wave_ffmpeg_writes_as_rf64_or_wave64_decodes_to_what_went_in_and_keeps_its_
 
         let info = probe(&Sources::local(), &MediaLocation::local(&path))
             .expect("a wave ffmpeg wrote probes");
+
         assert_eq!(Container::from_id(info.container), container, "{name}");
         assert_eq!(
             info.duration,
             Some(Frames(STUDIO.frames() as u64)),
             "{name}"
         );
+
         if container == Container::Rf64 {
             assert_eq!(info.tags.title.as_deref(), Some("Echoes"), "{name}");
         }
+
         assert_eq!(
             decode(&path).samples,
             widened(&samples, STUDIO.bits),
@@ -916,10 +969,14 @@ fn chaptered(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i3
         eprintln!("skipped: no ffmpeg to build a chaptered {name}");
         return None;
     }
+
     let samples = tone(CD);
     let source = tree.at("source.wav");
+
     wav(&source, CD, &samples);
+
     let chapters = tree.at("chapters.txt");
+
     fs::write(&chapters, CHAPTERS).expect("a writable temporary file");
 
     let target = tree.at(name);
@@ -935,6 +992,7 @@ fn chaptered(tree: &Tree, name: &str, codec: &[&str]) -> Option<(PathBuf, Vec<i3
         .stderr(Stdio::null())
         .status()
         .is_ok_and(|status| status.success());
+
     if !made {
         eprintln!("skipped: ffmpeg would not write a chaptered {name}");
         return None;
@@ -959,10 +1017,12 @@ fn a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them() {
 
         let info = probe(&Sources::local(), &location).expect("a chaptered file probes");
         let cut = info.cue.expect("the chapters cut the file");
+
         let rows: Vec<_> = cut
             .audio_tracks()
             .map(|(_, track)| (track.start.at(info.spec.rate), track.titled().title))
             .collect();
+
         assert_eq!(
             rows,
             vec![
@@ -978,6 +1038,7 @@ fn a_file_carrying_chapters_is_cut_where_they_start_and_named_by_them() {
             .expect("a span");
         let heard = resonate_codec::probe_span(&Sources::local(), &location, second)
             .expect("a chapter probes as its own row");
+
         assert_eq!(
             heard.tags.title.as_deref(),
             Some("A Pillow of Winds"),
@@ -1007,9 +1068,11 @@ fn chapter_comments_cut_a_flac_or_an_ogg_where_they_start() {
     for (name, codec) in [("book.flac", "flac"), ("book.ogg", "libvorbis")] {
         let tree = Tree::new();
         let mut arguments = vec!["-c:a", codec];
+
         for comment in comments {
             arguments.extend(["-metadata", comment]);
         }
+
         let Some((path, _)) = shaped(&tree, CD, name, &arguments) else {
             return;
         };
@@ -1017,6 +1080,7 @@ fn chapter_comments_cut_a_flac_or_an_ogg_where_they_start() {
         let info = probe(&Sources::local(), &MediaLocation::local(&path))
             .expect("a file carrying chapter comments probes");
         let cut = info.cue.expect("the chapter comments cut the file");
+
         assert_eq!(
             cut.audio_tracks()
                 .map(|(_, track)| (track.start.at(info.spec.rate), track.titled().title))
@@ -1102,6 +1166,7 @@ fn a_lossy_stream_decodes_to_the_same_signal_it_encoded() {
 
     let decoded = decode(&path);
     let skip = RATE as usize * usize::from(CHANNELS) / 10;
+
     let kept = decoded
         .samples
         .get(skip..skip + samples.len() / 2)
@@ -1112,6 +1177,7 @@ fn a_lossy_stream_decodes_to_the_same_signal_it_encoded() {
 
     let expected = rms(&widened(&samples, 16));
     let actual = rms(kept);
+
     assert!(
         (actual - expected).abs() < expected * 0.1,
         "decoded loudness {actual:.4} is nothing like the source's {expected:.4}"
@@ -1134,6 +1200,7 @@ fn mpeg_frame_length(header: &[u8]) -> Option<usize> {
 
 fn frame_at(stream: &[u8], nth: usize) -> Option<usize> {
     let mut at = 0;
+
     for _ in 0..nth {
         at += mpeg_frame_length(stream.get(at..at + 4)?)?;
     }
@@ -1145,6 +1212,7 @@ fn frames_decoded(path: &Path) -> usize {
         Decoder::open(&Sources::local(), &MediaLocation::local(path)).expect("the file opens");
     let mut block = AudioBuffer::empty(info.spec);
     let mut frames = 0;
+
     while decoder.next_block(&mut block).expect("a decode") == DecodeStatus::Decoded {
         frames += block.frames();
     }
@@ -1154,6 +1222,7 @@ fn frames_decoded(path: &Path) -> usize {
 fn spoil(bytes: &mut [u8], header: usize) {
     let protected = bytes[header + 1] & 1 == 0;
     let side = header + SIDE_INFO_AFTER + if protected { 2 } else { 0 };
+
     bytes[side + 4] = BIG_VALUES_PAST_THE_GREATEST;
     bytes[side + 5] |= 0x80;
 }
@@ -1175,9 +1244,11 @@ fn decoded_with_holes(
 ) -> (usize, Holes, Option<resonate_codec::Error>) {
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(path)).expect("the file opens");
+
     if refusing {
         decoder.refuse_holes();
     }
+
     let mut block = AudioBuffer::empty(info.spec);
     let mut frames = 0;
     loop {
@@ -1199,12 +1270,16 @@ fn an_undecodable_packet_is_played_as_the_silence_it_would_have_lasted_and_count
         return;
     };
     let mut bytes = fs::read(&pristine).expect("the encoded file");
+
     let Some(header) = frame_at(&bytes, SPOILED) else {
         eprintln!("skipped: ffmpeg wrote frames this walk does not read");
         return;
     };
+
     spoil(&mut bytes, header);
+
     let spoiled = tree.at("spoiled.mp3");
+
     fs::write(&spoiled, &bytes).expect("a writable temporary file");
 
     let (frames, holes, failed) = decoded_with_holes(&spoiled, false);
@@ -1236,6 +1311,7 @@ fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_it
         eprintln!("skipped: no ffmpeg to build a VBR fixture");
         return;
     }
+
     let tree = Tree::new();
     let silence = vec![0; CD.frames() * usize::from(CD.channels) * 3];
     let quiet_then_loud = [silence.clone(), tone(CD)].concat();
@@ -1246,7 +1322,9 @@ fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_it
         ("loud then quiet", loud_then_quiet),
     ] {
         let source = tree.at(&format!("{named}.wav"));
+
         wav(&source, CD, &samples);
+
         let target = tree.at(&format!("{named}.mp3"));
         let vbr = [
             "-c:a",
@@ -1258,6 +1336,7 @@ fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_it
             "-id3v2_version",
             "0",
         ];
+
         if !encode(&source, &target, &vbr) {
             eprintln!("skipped: ffmpeg would not encode a VBR MP3");
             return;
@@ -1272,7 +1351,9 @@ fn a_variable_rate_mp3_naming_no_length_is_as_long_as_it_decodes_and_seeks_to_it
             Some(Frames(decoded as u64)),
             "{named}: the length was guessed from the opening frames' bitrate"
         );
+
         let near_the_end = Frames(decoded as u64 - 4_410);
+
         assert_eq!(
             decoder.seek(near_the_end).expect("a seek near the end"),
             near_the_end,
@@ -1295,22 +1376,30 @@ fn a_backward_seek_into_mpeg_audio_hears_what_a_seek_from_a_fresh_open_hears() {
         let at = Frames(u64::from(RATE) / 2 + 77);
 
         let (mut fresh, info) = Decoder::open(&Sources::local(), &location).expect("it opens");
+
         assert_eq!(fresh.seek(at).expect("a seek from the start"), at);
+
         let from_a_fresh_open = drain(&mut fresh, info.spec);
 
         let (mut played, _) = Decoder::open(&Sources::local(), &location).expect("it opens");
+
         drain(&mut played, info.spec);
+
         assert_eq!(played.seek(at).expect("a seek back after playing"), at);
+
         let after_playing = drain(&mut played, info.spec);
 
         assert_eq!(after_playing.len(), from_a_fresh_open.len());
+
         if exact {
             assert!(
                 after_playing == from_a_fresh_open,
                 "{name}: a seek back after playing heard otherwise than one from a fresh open"
             );
         }
+
         let apart = drift(&after_playing, &from_a_fresh_open);
+
         assert!(
             apart < 1e-4,
             "{name}: a seek back after playing landed {apart:e} RMS of full scale away"
@@ -1322,12 +1411,14 @@ const MP3_DECODER_DELAY: u32 = 529;
 
 fn id3v2_3_comment(description: &str, text: &str) -> Vec<u8> {
     let mut body = vec![0];
+
     body.extend_from_slice(b"eng");
     body.extend_from_slice(description.as_bytes());
     body.push(0);
     body.extend_from_slice(text.as_bytes());
 
     let mut frame = b"COMM".to_vec();
+
     frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
     frame.extend_from_slice(&[0, 0]);
     frame.extend_from_slice(&body);
@@ -1340,6 +1431,7 @@ fn id3v2_3_comment(description: &str, text: &str) -> Vec<u8> {
         (size & 0x7f) as u8,
     ];
     let mut tag = b"ID3".to_vec();
+
     tag.extend_from_slice(&[3, 0, 0]);
     tag.extend_from_slice(&synchsafe);
     tag.extend_from_slice(&frame);
@@ -1359,10 +1451,12 @@ fn an_mp3_whose_gapless_note_itunes_wrote_plays_without_its_delay_and_padding() 
     let told = probe(&Sources::local(), &MediaLocation::local(&lame)).expect("a LAME-tagged MP3");
     let heard = decode(&lame).samples;
     let music = heard.len() / usize::from(CHANNELS);
+
     if told.encoder_delay <= MP3_DECODER_DELAY {
         eprintln!("skipped: ffmpeg wrote no LAME tag to take the delay from");
         return;
     }
+
     let note = format!(
         " 00000000 {:08X} {:08X} {:016X}",
         told.encoder_delay - MP3_DECODER_DELAY,
@@ -1370,8 +1464,11 @@ fn an_mp3_whose_gapless_note_itunes_wrote_plays_without_its_delay_and_padding() 
         music
     );
     let mut bytes = id3v2_3_comment("iTunSMPB", &note);
+
     bytes.extend_from_slice(&fs::read(&plain).expect("the encoded file"));
+
     let noted = tree.at("itunes.mp3");
+
     fs::write(&noted, &bytes).expect("a writable temporary file");
 
     let untold = decode(&plain).samples;
@@ -1400,11 +1497,14 @@ fn a_stream_none_of_whose_packets_decode_is_refused_rather_than_played_silent() 
     };
     let mut bytes = fs::read(&pristine).expect("the encoded file");
     let mut nth = 0;
+
     while let Some(header) = frame_at(&bytes, nth) {
         spoil(&mut bytes, header);
         nth += 1;
     }
+
     let spoiled = tree.at("silent.mp3");
+
     fs::write(&spoiled, &bytes).expect("a writable temporary file");
 
     let (_, holes, failed) = decoded_with_holes(&spoiled, false);
@@ -1456,6 +1556,7 @@ fn a_lossy_stream_holds_its_signal_past_the_cd_shape() {
 
         let decoded = decode(&path);
         let skip = shape.rate as usize * usize::from(shape.channels) / 10;
+
         let kept = decoded
             .samples
             .get(skip..skip + samples.len() / 2)
@@ -1470,6 +1571,7 @@ fn a_lossy_stream_holds_its_signal_past_the_cd_shape() {
 
         let expected = rms(&widened(&samples, shape.bits));
         let actual = rms(kept);
+
         assert!(
             (actual - expected).abs() < expected * 0.1,
             "{name} decoded to a loudness of {actual:.4}, nothing like the source's {expected:.4}"
@@ -1486,11 +1588,13 @@ fn a_bare_adts_stream_decodes_as_the_media_type_the_desktop_advertises_promises(
 
     let probed =
         probe(&Sources::local(), &MediaLocation::local(&path)).expect("an adts stream probes");
+
     assert_eq!(Container::from_id(probed.container), Container::Adts);
     assert_eq!(Codec::from_id(probed.codec), Codec::Aac);
 
     let decoded = decode(&path);
     let skip = CD.rate as usize * usize::from(CD.channels) / 10;
+
     let kept = decoded
         .samples
         .get(skip..skip + samples.len() / 2)
@@ -1501,6 +1605,7 @@ fn a_bare_adts_stream_decodes_as_the_media_type_the_desktop_advertises_promises(
 
     let expected = rms(&widened(&samples, CD.bits));
     let actual = rms(kept);
+
     assert!(
         (actual - expected).abs() < expected * 0.1,
         "an adts stream decoded to a loudness of {actual:.4}, nothing like the source's {expected:.4}"
@@ -1556,12 +1661,14 @@ fn a_stream_that_seeks_but_declares_no_length_seeks_all_the_same() {
         return;
     };
     let served = resonate_core::SourceId::new("served").expect("a nameable source");
+
     let sources = Sources::local().and(std::sync::Arc::new(ServedUnmeasured {
         source: served.clone(),
         bytes: fs::read(&path).expect("the stream reads"),
     }));
     let (mut decoder, info) = Decoder::open(&sources, &MediaLocation::new(served, "rip.aac"))
         .expect("an adts stream opens");
+
     assert!(info.is_seekable);
     assert_eq!(
         info.duration, None,
@@ -1661,6 +1768,7 @@ fn every_encoder_the_workspace_claims_is_recognised_by_the_probe() {
 
         let report = probe_stream(&Sources::local(), &MediaLocation::local(&path))
             .expect("a real file probes");
+
         assert_eq!(
             Container::from_id(report.info.container),
             case.container,
@@ -1673,20 +1781,25 @@ fn every_encoder_the_workspace_claims_is_recognised_by_the_probe() {
         );
         assert_eq!(report.info.spec.rate, SampleRate::HZ_44100);
         assert_eq!(report.info.spec.channels, ChannelLayout::Stereo);
+
         if case.tagging == Tagging::Nothing {
             continue;
         }
+
         assert!(!report.tags.is_empty(), "{name} carried no raw tags at all");
 
         let tags = &report.info.tags;
+
         assert_eq!(
             tags.title.as_deref(),
             Some("Echoes"),
             "{name} lost its title"
         );
+
         if case.tagging == Tagging::TitleAlone {
             continue;
         }
+
         assert_eq!(
             tags.artist.as_deref(),
             Some("Pink Floyd"),
@@ -1710,6 +1823,7 @@ fn every_encoder_the_workspace_claims_is_recognised_by_the_probe() {
         );
 
         let profile = report.profile.expect("a bitrate profile");
+
         assert!(
             profile.overall.kilobits() > 0.0,
             "{name} reported no bitrate"
@@ -1814,6 +1928,7 @@ fn a_matroska_segment_declares_the_length_its_track_does_not() {
 
     let target = Frames(u64::from(RATE) / 2);
     let landed = decoder.seek(target).expect("a track with a length seeks");
+
     assert!(
         landed.get().abs_diff(target.get()) < u64::from(RATE) / 1_000,
         "a seek to {target} landed on {landed}, past the tick the container counts in"
@@ -1831,14 +1946,18 @@ fn a_flac_in_matroska_is_as_long_as_its_frames_whatever_the_segment_declares() {
     let frames = Frames((samples.len() / usize::from(CD.channels)) as u64);
 
     let mut bytes = fs::read(&path).expect("the fixture reads back");
+
     let at = bytes
         .windows(SEGMENT_DURATION_AS_A_DOUBLE.len())
         .position(|window| window == SEGMENT_DURATION_AS_A_DOUBLE)
         .expect("ffmpeg declares the segment's duration as a double")
         + SEGMENT_DURATION_AS_A_DOUBLE.len();
     let declared = f64::from_be_bytes(bytes[at..at + 8].try_into().expect("eight bytes"));
+
     bytes[at..at + 8].copy_from_slice(&(declared * 3.0).to_be_bytes());
+
     let overlong = tree.at("overlong.mka");
+
     fs::write(&overlong, &bytes).expect("the patched fixture writes");
 
     for path in [path, overlong] {
@@ -1864,17 +1983,22 @@ fn a_vorbis_in_matroska_is_as_long_as_its_packets_whatever_the_segment_declares(
     };
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
         .expect("a well-formed file opens");
+
     let decoded = Frames((drain(&mut decoder, info.spec).len() / usize::from(CD.channels)) as u64);
 
     let mut bytes = fs::read(&path).expect("the fixture reads back");
+
     let at = bytes
         .windows(SEGMENT_DURATION_AS_A_DOUBLE.len())
         .position(|window| window == SEGMENT_DURATION_AS_A_DOUBLE)
         .expect("ffmpeg declares the segment's duration as a double")
         + SEGMENT_DURATION_AS_A_DOUBLE.len();
     let declared = f64::from_be_bytes(bytes[at..at + 8].try_into().expect("eight bytes"));
+
     bytes[at..at + 8].copy_from_slice(&(declared * 3.0).to_be_bytes());
+
     let overlong = tree.at("overlong.mka");
+
     fs::write(&overlong, &bytes).expect("the patched fixture writes");
 
     for path in [path, overlong] {
@@ -1964,6 +2088,7 @@ fn seeking_a_real_container_lands_where_it_was_asked_to() {
 
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
         .expect("a well-formed file opens");
+
     assert!(info.is_seekable);
 
     for target in [
@@ -1972,9 +2097,11 @@ fn seeking_a_real_container_lands_where_it_was_asked_to() {
         Frames(u64::from(RATE) / 3),
     ] {
         let landed = decoder.seek(target).expect("a seekable stream seeks");
+
         assert_eq!(landed, target, "seek to {target} landed on {landed}");
 
         let mut block = AudioBuffer::empty(info.spec);
+
         assert_eq!(
             decoder.next_block(&mut block).expect("a clean decode"),
             DecodeStatus::Decoded
@@ -1996,10 +2123,12 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
     let tree = Tree::new();
     let samples = tone(CD);
     let source = tree.at("rip.wav");
+
     wav(&source, CD, &samples);
 
     let target = tree.at("rip.flac");
     let picture = tree.at("cover.png");
+
     fs::write(&picture, ONE_PIXEL_PNG).expect("a cover to embed");
 
     let encoded = ran(
@@ -2022,6 +2151,7 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
             &target.to_string_lossy(),
         ],
     );
+
     if !encoded || !described {
         eprintln!("skipped: flac would not build the rip");
         return;
@@ -2050,9 +2180,11 @@ fn a_reference_flac_rip_keeps_its_samples_its_tags_and_its_cover() {
     let cover = probe_cover_art(&Sources::local(), &location)
         .expect("a rip with a picture probes")
         .expect("the picture the ripper embedded");
+
     assert_eq!(cover.bytes, ONE_PIXEL_PNG);
 
     let decoded = decode(&target);
+
     assert_eq!(
         decoded.samples,
         widened(&samples, CD.bits),
@@ -2070,6 +2202,7 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
     let tree = Tree::new();
     let samples = tone(CD);
     let source = tree.at("rip.wav");
+
     wav(&source, CD, &samples);
 
     let target = tree.at("rip.mp3");
@@ -2088,12 +2221,14 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
             &target.to_string_lossy(),
         ],
     );
+
     if !encoded {
         eprintln!("skipped: lame would not build the rip");
         return;
     }
 
     let held = fs::read(&target).expect("the rip reads back");
+
     assert!(held.starts_with(b"ID3"), "lame wrote no id3v2 tag to skip");
     assert!(
         held.windows(4).any(|window| window == b"Xing"),
@@ -2118,6 +2253,7 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
     );
 
     let decoded = decode(&target);
+
     assert_eq!(
         (decoded.samples.len() / lanes) as u64,
         music.get(),
@@ -2127,6 +2263,7 @@ fn a_lame_encoded_rip_declares_the_priming_its_xing_header_carries() {
     let wanted = widened(&samples, CD.bits);
     let primed =
         usize::try_from(info.encoder_delay).expect("a priming of a thousand frames") * lanes;
+
     assert!(
         drift(&decoded.samples, &wanted) < drift(&decoded.samples, &wanted[primed..]),
         "the priming came off twice, once inside the decoder and once here"
@@ -2143,6 +2280,7 @@ fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pag
     let tree = Tree::new();
     let samples = tone(CD);
     let source = tree.at("rip.wav");
+
     wav(&source, CD, &samples);
 
     let target = tree.at("rip.ogg");
@@ -2162,6 +2300,7 @@ fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pag
             &target.to_string_lossy(),
         ],
     );
+
     if !encoded {
         eprintln!("skipped: ffmpeg would not build the rip");
         return;
@@ -2170,6 +2309,7 @@ fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pag
     let lanes = usize::from(CD.channels);
     let music = Frames((samples.len() / lanes) as u64);
     let whole = decode(&target);
+
     assert_eq!(
         (whole.samples.len() / lanes) as u64,
         music.get(),
@@ -2201,6 +2341,7 @@ fn a_vorbis_rip_over_a_pipe_is_spooled_and_drops_the_priming_and_padding_its_pag
     );
 
     let decoded = drain(&mut decoder, info.spec);
+
     assert_eq!(
         (decoded.len() / lanes) as u64,
         music.get(),
@@ -2218,6 +2359,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
     let tree = Tree::new();
     let samples = tone(CD);
     let source = tree.at("rip.wav");
+
     wav(&source, CD, &samples);
 
     let stream = tree.at("rip.aac");
@@ -2237,6 +2379,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
             &stream.to_string_lossy(),
         ],
     );
+
     if !encoded {
         eprintln!("skipped: ffmpeg would not build the rip");
         return;
@@ -2251,6 +2394,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
     let lanes = usize::from(CD.channels);
     let music = (samples.len() / lanes) as u64;
     let block = packets.len() as u64 * u64::from(AAC_FRAMES_PER_PACKET);
+
     let Some(remainder) = block
         .checked_sub(u64::from(AAC_PRIMING))
         .and_then(|held| held.checked_sub(music))
@@ -2261,6 +2405,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
     };
 
     let target = tree.at("rip.caf");
+
     fs::write(&target, caf(CD, &packets, music, AAC_PRIMING, remainder))
         .expect("a writable temporary directory");
 
@@ -2285,6 +2430,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
     );
 
     let decoded = decode(&target);
+
     assert_eq!(
         (decoded.samples.len() / lanes) as u64,
         music,
@@ -2293,6 +2439,7 @@ fn a_caf_rip_drops_the_priming_and_the_remainder_its_packet_table_declares() {
 
     let wanted = widened(&samples, CD.bits);
     let primed = AAC_PRIMING as usize * lanes;
+
     assert!(
         drift(&decoded.samples, &wanted) < drift(&decoded.samples[primed..], &wanted),
         "the decoded audio still lines up with the priming in front of it"
@@ -2309,6 +2456,7 @@ fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
     let tree = Tree::new();
     let samples = tone(CD);
     let source = tree.at("rip.wav");
+
     wav(&source, CD, &samples);
 
     let target = tree.at("rip.m4a");
@@ -2328,6 +2476,7 @@ fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
             &target.to_string_lossy(),
         ],
     );
+
     if !encoded {
         eprintln!("skipped: ffmpeg would not build the rip");
         return;
@@ -2353,6 +2502,7 @@ fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
     );
 
     let decoded = decode(&target);
+
     assert_eq!(
         (decoded.samples.len() / lanes) as u64,
         music.get(),
@@ -2362,6 +2512,7 @@ fn an_aac_rip_drops_the_priming_and_the_padding_its_edit_list_declares() {
     let wanted = widened(&samples, CD.bits);
     let primed =
         usize::try_from(info.encoder_delay).expect("a priming of a few thousand frames") * lanes;
+
     assert!(
         drift(&decoded.samples, &wanted) < drift(&decoded.samples[primed..], &wanted),
         "the decoded audio still lines up with the priming in front of it"
@@ -2381,12 +2532,15 @@ struct Listed {
 fn boxes_within(bytes: &[u8]) -> Vec<(&[u8], &[u8])> {
     let mut found = Vec::new();
     let mut at = 0;
+
     while at + BOX_HEADER <= bytes.len() {
         let size = u32::from_be_bytes(bytes[at..at + 4].try_into().expect("four bytes")) as usize;
+
         assert!(
             size >= BOX_HEADER,
             "ffmpeg wrote a box this helper does not walk"
         );
+
         found.push((&bytes[at + 4..at + 8], &bytes[at + BOX_HEADER..at + size]));
         at += size;
     }
@@ -2395,6 +2549,7 @@ fn boxes_within(bytes: &[u8]) -> Vec<(&[u8], &[u8])> {
 
 fn boxed(kind: &[u8], body: &[u8]) -> Vec<u8> {
     let mut held = ((body.len() + BOX_HEADER) as u32).to_be_bytes().to_vec();
+
     held.extend_from_slice(kind);
     held.extend_from_slice(body);
     held
@@ -2402,14 +2557,17 @@ fn boxed(kind: &[u8], body: &[u8]) -> Vec<u8> {
 
 fn edit_list_box(listed: &[Listed], movie_timescale: u32) -> Vec<u8> {
     let mut elst = vec![0, 0, 0, 0];
+
     elst.extend_from_slice(&(listed.len() as u32).to_be_bytes());
     for edit in listed {
         let ticks = u64::from(edit.frames) * u64::from(movie_timescale);
+
         assert_eq!(
             ticks % u64::from(RATE),
             0,
             "an edit the movie's ticks cannot hold"
         );
+
         elst.extend_from_slice(&((ticks / u64::from(RATE)) as u32).to_be_bytes());
         elst.extend_from_slice(&edit.media_time.to_be_bytes());
         elst.extend_from_slice(&UNITY_RATE.to_be_bytes());
@@ -2420,6 +2578,7 @@ fn edit_list_box(listed: &[Listed], movie_timescale: u32) -> Vec<u8> {
 fn with_edit_list(file: &[u8], listed: &[Listed]) -> Vec<u8> {
     let top = boxes_within(file);
     let kinds = top.iter().map(|(kind, _)| *kind).collect::<Vec<_>>();
+
     assert_eq!(
         kinds.last(),
         Some(&b"moov".as_slice()),
@@ -2429,6 +2588,7 @@ fn with_edit_list(file: &[u8], listed: &[Listed]) -> Vec<u8> {
     let (_, moov) = top.last().expect("a movie");
     let mut movie = Vec::new();
     let mut timescale = None;
+
     for (kind, body) in boxes_within(moov) {
         match kind {
             b"mvhd" => {
@@ -2442,6 +2602,7 @@ fn with_edit_list(file: &[u8], listed: &[Listed]) -> Vec<u8> {
             b"trak" => {
                 let timescale = timescale.expect("the movie header ahead of its tracks");
                 let mut track = Vec::new();
+
                 for (inner, held) in boxes_within(body) {
                     match inner {
                         b"edts" => {}
@@ -2459,6 +2620,7 @@ fn with_edit_list(file: &[u8], listed: &[Listed]) -> Vec<u8> {
     }
 
     let mut rewritten = Vec::new();
+
     for (kind, body) in &top[..top.len() - 1] {
         rewritten.extend(boxed(kind, body));
     }
@@ -2469,6 +2631,7 @@ fn with_edit_list(file: &[u8], listed: &[Listed]) -> Vec<u8> {
 fn heard_through(decoded: &[i32], listed: &[Listed]) -> Vec<i32> {
     let lanes = usize::from(CHANNELS);
     let mut heard = Vec::new();
+
     for edit in listed {
         let frames = edit.frames as usize;
         match usize::try_from(edit.media_time) {
@@ -2505,20 +2668,24 @@ fn a_spliced_m4a_plays_every_edit_in_the_order_its_list_names_them() {
         },
     ];
     let spliced = tree.at("spliced.m4a");
+
     fs::write(
         &spliced,
         with_edit_list(&fs::read(&path).expect("the fixture reads"), &listed),
     )
     .expect("a writable temporary file");
+
     let lasting = Frames(listed.iter().map(|edit| u64::from(edit.frames)).sum());
     let heard = heard_through(&whole, &listed);
     let lanes = usize::from(CHANNELS);
 
     let info = probe(&Sources::local(), &MediaLocation::local(&spliced)).expect("a spliced m4a");
+
     assert_eq!(info.duration, Some(lasting), "the edits were not added up");
     assert_eq!(info.encoder_delay, 4_410);
 
     let decoded = decode(&spliced);
+
     assert_eq!(
         decoded.samples.len(),
         heard.len(),
@@ -2536,7 +2703,9 @@ fn a_spliced_m4a_plays_every_edit_in_the_order_its_list_names_them() {
             decoder.seek(Frames(target as u64)).expect("a seek inside"),
             Frames(target as u64)
         );
+
         let rest = drain(&mut decoder, info.spec);
+
         assert!(
             rest == heard[target * lanes..],
             "a seek to {target} heard something other than the edit it lands in"
@@ -2573,8 +2742,10 @@ fn a_seek_in_an_aac_m4a_hears_what_playing_through_to_there_hears() {
             decoder.seek(Frames(target as u64)).expect("a seek inside"),
             Frames(target as u64)
         );
+
         let rest = drain(&mut decoder, info.spec);
         let apart = furthest_apart(&rest, &whole[target * lanes..]);
+
         assert!(
             apart <= AAC_RESIDUE_AT_MOST,
             "a seek to {target} landed on a packet with no lead-in, {apart} from what playing through hears"
@@ -2590,6 +2761,7 @@ fn every_jump_of_a_spliced_aac_m4a_lands_with_the_lead_in_it_would_have_played_t
     };
     let lanes = usize::from(CHANNELS);
     let mut media = vec![0; AAC_PRIMING as usize * lanes];
+
     media.extend(decode(&path).samples);
 
     let listed = [
@@ -2607,15 +2779,18 @@ fn every_jump_of_a_spliced_aac_m4a_lands_with_the_lead_in_it_would_have_played_t
         },
     ];
     let spliced = tree.at("spliced.m4a");
+
     fs::write(
         &spliced,
         with_edit_list(&fs::read(&path).expect("the fixture reads"), &listed),
     )
     .expect("a writable temporary file");
+
     let heard = heard_through(&media, &listed);
 
     let decoded = decode(&spliced);
     let apart = furthest_apart(&decoded.samples, &heard);
+
     assert!(
         apart <= AAC_RESIDUE_AT_MOST,
         "a jump landed on a packet with no lead-in, {apart} from what playing through hears"
@@ -2630,7 +2805,9 @@ fn every_real_file_the_run_was_pointed_at_opens_and_decodes() {
     };
 
     let mut walked = Vec::new();
+
     collect(Path::new(&root), &mut walked);
+
     assert!(
         !walked.is_empty(),
         "{REAL_FIXTURES} names a folder holding no file this build claims to read"
@@ -2638,6 +2815,7 @@ fn every_real_file_the_run_was_pointed_at_opens_and_decodes() {
 
     let sources = Sources::local();
     let mut read = 0;
+
     for path in &walked {
         let location = MediaLocation::local(path);
         let named = path.display();
@@ -2646,6 +2824,7 @@ fn every_real_file_the_run_was_pointed_at_opens_and_decodes() {
             Ok(info) => info,
             Err(refused) => panic!("{named} did not probe: {refused}"),
         };
+
         assert_ne!(
             Container::from_id(info.container),
             Container::Unknown,
@@ -2661,10 +2840,13 @@ fn every_real_file_the_run_was_pointed_at_opens_and_decodes() {
         let (mut decoder, info) = Decoder::open(&sources, &location)
             .unwrap_or_else(|refused| panic!("{named}: {refused}"));
         let mut out = AudioBuffer::empty(info.spec);
+
         let status = decoder
             .next_block(&mut out)
             .unwrap_or_else(|refused| panic!("{named} did not decode its first block: {refused}"));
+
         assert_eq!(status, DecodeStatus::Decoded, "{named} decoded nothing");
+
         read += 1;
     }
 
@@ -2717,8 +2899,10 @@ fn a_span_of_a_real_container_decodes_exactly_the_slice_it_names() {
         );
 
         decoder.set_output_format(SampleFormat::S32);
+
         let mut out = AudioBuffer::empty(info.spec);
         let mut decoded = Vec::new();
+
         while decoder.next_block(&mut out).expect("a span decodes") == DecodeStatus::Decoded {
             match out.data() {
                 resonate_core::SampleData::S32(store) => decoded.extend_from_slice(store),
@@ -2730,6 +2914,7 @@ fn a_span_of_a_real_container_decodes_exactly_the_slice_it_names() {
             &samples[start as usize * channels..end as usize * channels],
             CD.bits,
         );
+
         assert_eq!(
             decoded, wanted,
             "the span {start}..{end} is not the slice the file holds"
@@ -2741,6 +2926,7 @@ fn a_span_of_a_real_container_decodes_exactly_the_slice_it_names() {
 fn a_dsd_file_decodes_to_the_tone_its_bits_carry() {
     let tree = Tree::new();
     let path = tree.at("tone.dsf");
+
     fs::write(&path, dsf(DSD64, 2, 1_000.0, BitsPerSample::LeastFirst)).expect("a dsf fixture");
 
     let location = MediaLocation::local(&path);
@@ -2753,10 +2939,12 @@ fn a_dsd_file_decodes_to_the_tone_its_bits_carry() {
     assert_eq!(info.bits_per_coded_sample, Some(1));
 
     let (mut decoder, info) = Decoder::open(&Sources::local(), &location).expect("a dsf opens");
+
     decoder.set_output_format(SampleFormat::F32);
 
     let mut out = AudioBuffer::empty(info.spec);
     let mut decoded: Vec<f32> = Vec::new();
+
     while decoder.next_block(&mut out).expect("a dsf decodes") == DecodeStatus::Decoded {
         match out.data() {
             resonate_core::SampleData::F32(store) => decoded.extend_from_slice(store),
@@ -2766,6 +2954,7 @@ fn a_dsd_file_decodes_to_the_tone_its_bits_carry() {
 
     let settled: Vec<f32> = decoded.iter().skip(4_000).step_by(2).copied().collect();
     let loudest = settled.iter().fold(0.0_f32, |held, s| held.max(s.abs()));
+
     assert!(
         loudest > 0.2,
         "a decimated DSD tone came back near silence at {loudest}"
@@ -2779,6 +2968,7 @@ fn a_dsd_file_decodes_to_the_tone_its_bits_carry() {
     let tone = energy_at(&settled, 1_000.0, rate);
     for elsewhere in [400.0, 2_500.0, 6_000.0, 15_000.0] {
         let other = energy_at(&settled, elsewhere, rate);
+
         assert!(
             tone > other * 8.0,
             "a 1 kHz DSD tone is no louder at 1 kHz ({tone}) than at {elsewhere} Hz ({other})"
@@ -2789,8 +2979,10 @@ fn a_dsd_file_decodes_to_the_tone_its_bits_carry() {
 fn energy_at(samples: &[f32], hertz: f64, rate: f64) -> f64 {
     let mut real = 0.0;
     let mut imaginary = 0.0;
+
     for (n, sample) in samples.iter().enumerate() {
         let angle = std::f64::consts::TAU * hertz * n as f64 / rate;
+
         real += f64::from(*sample) * angle.cos();
         imaginary += f64::from(*sample) * angle.sin();
     }
@@ -2801,13 +2993,16 @@ fn energy_at(samples: &[f32], hertz: f64, rate: f64) -> f64 {
 fn a_dsd_file_asked_for_dop_carries_the_marker_a_dac_locks_onto() {
     let tree = Tree::new();
     let path = tree.at("marked.dsf");
+
     fs::write(&path, dsf(DSD64, 2, 1_000.0, BitsPerSample::LeastFirst)).expect("a dsf fixture");
 
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a dsf opens");
+
     assert_eq!(info.spec.format, SampleFormat::S24);
 
     let mut out = AudioBuffer::empty(info.spec);
+
     assert_eq!(
         decoder.next_block(&mut out).expect("a dsf decodes"),
         DecodeStatus::Decoded
@@ -2820,6 +3015,7 @@ fn a_dsd_file_asked_for_dop_carries_the_marker_a_dac_locks_onto() {
         let wanted = if frame % 2 == 0 { 0x05 } else { 0xFA };
         for sample in pair {
             let marker = (sample.to_le_bytes())[2];
+
             assert_eq!(
                 marker, wanted,
                 "frame {frame} carries {marker:#04x} where a DAC reads {wanted:#04x}"
@@ -2838,14 +3034,17 @@ fn a_dsf_declaring_the_other_bit_order_decodes_to_the_same_tone() {
         ("msb.dsf", BitsPerSample::MostFirst),
     ] {
         let path = tree.at(name);
+
         fs::write(&path, dsf(DSD64, 2, 1_000.0, bits)).expect("a dsf fixture");
 
         let (mut decoder, info) =
             Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a dsf opens");
+
         decoder.set_output_format(SampleFormat::F32);
 
         let mut out = AudioBuffer::empty(info.spec);
         let mut decoded: Vec<f32> = Vec::new();
+
         while decoder.next_block(&mut out).expect("a dsf decodes") == DecodeStatus::Decoded {
             match out.data() {
                 resonate_core::SampleData::F32(store) => decoded.extend_from_slice(store),
@@ -2860,6 +3059,7 @@ fn a_dsf_declaring_the_other_bit_order_decodes_to_the_same_tone() {
         let settled: Vec<f32> = decoded.iter().skip(4_000).step_by(2).copied().collect();
         let tone = energy_at(&settled, 1_000.0, rate);
         let elsewhere = energy_at(&settled, 6_000.0, rate);
+
         assert!(
             tone > elsewhere * 8.0,
             "a bit order was read the wrong way round: {tone} at 1 kHz against {elsewhere}"
@@ -2927,12 +3127,14 @@ fn a_cuesheet_block_a_ripper_embedded_cuts_the_file_into_the_tracks_it_names() {
         return;
     };
     let sheet = tree.at("cut.cue");
+
     fs::write(&sheet, CUT_SHEET).expect("a writable temporary file");
 
     if !import_cuesheet(&sheet, &target) {
         eprintln!("skipped: metaflac would not embed the sheet");
         return;
     }
+
     assert!(
         blocks(&target).contains(&FlacBlock::CueSheet),
         "metaflac stopped writing the block it was asked to import"
@@ -2991,12 +3193,15 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
         eprintln!("skipped: no metaflac to embed a block beside the comment");
         return;
     }
+
     let sheet = tree.at("cut.cue");
+
     fs::write(&sheet, CUT_SHEET).expect("a writable temporary file");
     if !import_cuesheet(&sheet, &target) {
         eprintln!("skipped: metaflac would not embed the sheet");
         return;
     }
+
     assert!(blocks(&target).contains(&FlacBlock::CueSheet));
 
     let both = embedded(&target);
@@ -3015,6 +3220,7 @@ fn a_cuesheet_comment_names_its_tracks_and_wins_over_the_block_beside_it() {
 
 fn id3_frame(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
     let mut frame = id.to_vec();
+
     frame.extend_from_slice(&(body.len() as u32).to_be_bytes());
     frame.extend_from_slice(&[0, 0]);
     frame.extend_from_slice(body);
@@ -3030,6 +3236,7 @@ fn id3_tag(frames: &[Vec<u8>], padding: usize) -> Vec<u8> {
         .collect();
     let size = body.len() as u32;
     let mut tag = b"ID3\x03\x00\x00".to_vec();
+
     tag.extend_from_slice(&[
         ((size >> 21) & 0x7F) as u8,
         ((size >> 14) & 0x7F) as u8,
@@ -3045,9 +3252,13 @@ fn tagged_dsf(tag: &[u8]) -> Vec<u8> {
     const TOTAL_AT: usize = 12;
 
     let mut file = dsf(DSD64, 2, 1_000.0, BitsPerSample::LeastFirst);
+
     let at = file.len() as u64;
+
     file.extend_from_slice(tag);
+
     let total = file.len() as u64;
+
     file[METADATA_AT..METADATA_AT + 8].copy_from_slice(&at.to_le_bytes());
     file[TOTAL_AT..TOTAL_AT + 8].copy_from_slice(&total.to_le_bytes());
     file
@@ -3058,10 +3269,12 @@ fn a_dsf_offers_the_cover_its_id3_tag_carries_however_large_the_tag() {
     const PAST_A_MEBIBYTE: usize = 3 << 20;
 
     let mut picture = vec![0];
+
     picture.extend_from_slice(b"image/png\0");
     picture.push(3);
     picture.push(0);
     picture.extend_from_slice(&ONE_PIXEL_PNG);
+
     let tag = id3_tag(
         &[id3_frame(b"APIC", &picture), id3_frame(b"TIT2", b"\0Pulse")],
         PAST_A_MEBIBYTE,
@@ -3069,7 +3282,9 @@ fn a_dsf_offers_the_cover_its_id3_tag_carries_however_large_the_tag() {
 
     let tree = Tree::new();
     let path = tree.at("tagged.dsf");
+
     fs::write(&path, tagged_dsf(&tag)).expect("a dsf fixture");
+
     let location = MediaLocation::local(&path);
 
     let info = probe(&Sources::local(), &location).expect("a dsf probes");
@@ -3125,10 +3340,12 @@ fn a_dsf_places_its_channels_by_the_type_it_declares_rather_than_their_count() {
     for (channels, kind, layout) in cases {
         let path = tree.at(&format!("{channels}-{kind}.dsf"));
         let mut file = dsf(DSD64, channels, 1_000.0, BitsPerSample::LeastFirst);
+
         file[CHANNEL_TYPE_AT..CHANNEL_TYPE_AT + 4].copy_from_slice(&kind.to_le_bytes());
         fs::write(&path, file).expect("a dsf fixture");
 
         let info = probe(&Sources::local(), &MediaLocation::local(&path)).expect("a dsf probes");
+
         assert_eq!(info.spec.channels, layout, "channel type {kind}");
         assert_eq!(info.speakers.is_named(), kind != 9, "channel type {kind}");
     }
@@ -3143,19 +3360,23 @@ fn a_dsf_whose_music_ends_inside_its_last_block_stops_where_the_music_does() {
     let tree = Tree::new();
     let path = tree.at("short.dsf");
     let mut file = dsf(DSD64, 2, 1_000.0, BitsPerSample::LeastFirst);
+
     let field = &mut file[SAMPLE_COUNT_AT..SAMPLE_COUNT_AT + 8];
     let padded = u64::from_le_bytes(field.try_into().expect("eight bytes"));
     let declared = padded - FRAMES_SHORT * BITS_PER_DOP_FRAME;
+
     field.copy_from_slice(&declared.to_le_bytes());
     fs::write(&path, file).expect("a dsf fixture");
 
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &MediaLocation::local(&path)).expect("a dsf opens");
     let music = Frames(declared / BITS_PER_DOP_FRAME);
+
     assert_eq!(info.duration, Some(music));
 
     let mut out = AudioBuffer::empty(info.spec);
     let mut decoded = 0_u64;
+
     while decoder.next_block(&mut out).expect("a dsf decodes") == DecodeStatus::Decoded {
         decoded += out.frames() as u64;
     }
@@ -3204,12 +3425,14 @@ fn opus_decodes_to_what_libopus_decodes_it_to_in_every_container_that_carries_it
             eprintln!("skipped: this ffmpeg has no libopus to decode {name} with");
             return;
         };
+
         assert!(
             reference.len() >= samples.len(),
             "libopus decoded {name} short of what went in"
         );
 
         let decoded = decode(&path);
+
         assert_eq!(decoded.spec.rate.hz(), 48_000, "{name} changed its rate");
         assert_eq!(decoded.spec.channels, layout, "{name} changed its layout");
         assert_eq!(
@@ -3217,9 +3440,11 @@ fn opus_decodes_to_what_libopus_decodes_it_to_in_every_container_that_carries_it
             samples.len(),
             "{name} decoded to another length than went in, its priming or its end unkept"
         );
+
         let (_, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
             .expect("a well-formed file opens");
         let decoded_frames = (samples.len() / usize::from(shape.channels)) as u64;
+
         assert_eq!(
             info.duration,
             Some(Frames(decoded_frames)),
@@ -3228,6 +3453,7 @@ fn opus_decodes_to_what_libopus_decodes_it_to_in_every_container_that_carries_it
 
         let kept = samples.len();
         let apart = drift(&decoded.samples[..kept], &reference[..kept]);
+
         assert!(
             apart < 1e-4,
             "{name} is {apart:e} RMS of full scale away from what libopus decodes it to"
@@ -3252,6 +3478,7 @@ fn a_stereo_opus_stream_of_mono_packets_decodes_to_both_channels_at_libopus_s_le
     };
 
     let decoded = decode(&path);
+
     assert_eq!(decoded.spec.channels, ChannelLayout::Stereo);
     assert_eq!(decoded.samples.len(), samples.len());
     assert!(
@@ -3265,6 +3492,7 @@ fn a_stereo_opus_stream_of_mono_packets_decodes_to_both_channels_at_libopus_s_le
     );
 
     let (ours, theirs) = (rms(&decoded.samples), rms(&reference[..samples.len()]));
+
     assert!(
         (ours - theirs).abs() < theirs * 0.01,
         "folded.opus decoded to a level of {ours:.4} where libopus reads {theirs:.4}"
@@ -3294,6 +3522,7 @@ fn an_opus_stream_starting_a_little_after_zero_seeks_back_to_its_start() {
         .expect("a well-formed file opens");
     let duration = info.duration.expect("an Opus file names its length");
     let mut block = AudioBuffer::empty(info.spec);
+
     assert_eq!(
         decoder.next_block(&mut block).expect("a first block"),
         DecodeStatus::Decoded
@@ -3328,13 +3557,18 @@ fn a_seek_into_opus_hears_what_decoding_from_the_start_hears_there() {
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
         .expect("a well-formed file opens");
     let at = Frames(u64::from(BROADCAST.rate));
+
     assert_eq!(decoder.seek(at).expect("a seek inside the track"), at);
+
     let from_there = drain(&mut decoder, info.spec);
 
     let channels = usize::from(BROADCAST.channels);
     let skipped = at.get() as usize * channels;
+
     assert_eq!(from_there.len(), whole.len() - skipped);
+
     let apart = drift(&from_there, &whole[skipped..]);
+
     assert!(
         apart < 1e-6,
         "a seek landed {apart:e} RMS of full scale away from what the whole decode holds there"
@@ -3362,23 +3596,30 @@ fn a_seek_into_the_first_moments_of_opus_in_matroska_hears_what_decoding_from_th
     ] {
         let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
             .expect("a well-formed file opens");
+
         assert!(
             info.priming() > Frames::ZERO,
             "the stream declared no priming"
         );
+
         decoder
             .seek(Frames(u64::from(BROADCAST.rate)))
             .expect("a seek into the track");
+
         assert_eq!(decoder.seek(at).expect("a seek back"), at);
+
         let from_there = drain(&mut decoder, info.spec);
 
         let skipped = at.get() as usize * channels;
+
         assert_eq!(
             from_there.len(),
             whole.len() - skipped,
             "a seek to {at} heard another length than the whole decode holds from there"
         );
+
         let apart = drift(&from_there, &whole[skipped..]);
+
         assert!(
             apart < 1e-6,
             "a seek to {at} landed {apart:e} RMS of full scale away from what the whole decode holds there"
@@ -3400,6 +3641,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
     let before = decode(&path).samples;
     let location = MediaLocation::local(&path);
     let tags = FileTags::default();
+
     assert!(
         tags.writes(&location),
         "an Opus file was not offered for writing"
@@ -3412,6 +3654,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
             value: written_as(field),
         })
         .collect();
+
     tags.write(
         &location,
         Writing {
@@ -3428,6 +3671,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
         .read(&location, Picturing::Whether)
         .expect("a readable Opus file")
         .tags;
+
     for edit in &edits {
         assert_eq!(
             edit.field.read(&read).as_deref(),
@@ -3436,6 +3680,7 @@ fn every_field_written_into_an_opus_file_reads_back_and_the_audio_is_left_alone(
             edit.field
         );
     }
+
     assert_eq!(
         decode(&path).samples,
         before,
@@ -3449,6 +3694,7 @@ fn titled_with(path: &Path, title: &str) {
         field: TagField::Title,
         value: title.to_owned(),
     }];
+
     FileTags::default()
         .write(
             &location,
@@ -3505,15 +3751,19 @@ fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_ha
         let long = long.trim_end();
 
         titled_with(&path, long);
+
         assert!(
             read_by_ffmpeg_without_a_complaint(&path),
             "{name} was read with complaints after its comment grew"
         );
+
         let grown = fs::metadata(&path).expect("the file").len();
         let grown_as = identity_of(&path);
 
         titled_with(&path, "Echoes (Live)");
+
         let shrunk = fs::metadata(&path).expect("the file").len();
+
         assert_eq!(
             (shrunk, identity_of(&path)),
             (grown, grown_as),
@@ -3528,6 +3778,7 @@ fn an_ogg_comment_grown_and_shrunk_keeps_its_audio_and_lands_in_place_once_it_ha
             .read(&location, Picturing::Whether)
             .expect("a readable Ogg file")
             .tags;
+
         assert_eq!(read.title.as_deref(), Some("Echoes (Live)"));
         assert_eq!(read.album.as_deref(), Some("Meddle"));
         assert_eq!(decode(&path).samples, before, "{name} had its audio moved");
@@ -3546,6 +3797,7 @@ fn a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there() {
         bytes: ONE_PIXEL_PNG.to_vec(),
     };
     let mut second = first.clone();
+
     second.bytes.extend_from_slice(b"another");
 
     for (name, codec) in cases {
@@ -3555,6 +3807,7 @@ fn a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there() {
         };
         let location = MediaLocation::local(&path);
         let tags = FileTags::default();
+
         let pictured = |picture: Option<&CoverArt>, unpictured: bool| {
             tags.write(
                 &location,
@@ -3577,9 +3830,11 @@ fn a_cover_taken_away_is_gone_and_a_cover_written_replaces_the_one_there() {
 
         pictured(Some(&first), false);
         pictured(Some(&second), false);
+
         assert_eq!(read(), Some(second.clone()), "{name}");
 
         pictured(None, true);
+
         assert_eq!(read(), None, "{name} kept a cover taken away");
     }
 }
@@ -3623,14 +3878,17 @@ fn counted_and_favoured_through(path: &Path) {
     let before = decode(path).samples;
     let location = MediaLocation::local(path);
     let tags = FileTags::default();
+
     assert!(tags.writes(&location), "{name} was not offered for writing");
 
     let favoured = Popularity {
         favourite: true,
         plays: 5,
     };
+
     tags.write(&location, rated_as(favoured))
         .expect("a favoured file");
+
     assert_eq!(
         tags.rated(&location).expect("a readable file"),
         Rated::Favourite { plays: Some(5) },
@@ -3641,9 +3899,12 @@ fn counted_and_favoured_through(path: &Path) {
         favourite: false,
         plays: 6,
     };
+
     tags.write(&location, rated_as(heard))
         .expect("a counted file");
+
     let held = tags.rated(&location).expect("a readable file");
+
     assert_eq!(held, Rated::Unrated { plays: Some(6) }, "{name}");
     assert!(!held.differs_from(heard), "{name} did not read back");
     assert_eq!(
@@ -3666,6 +3927,7 @@ fn a_play_count_and_a_favourite_read_back_out_of_every_tag_this_build_writes() {
         let Some((path, _)) = fixture(&tree, name, codec) else {
             continue;
         };
+
         counted_and_favoured_through(&path);
     }
 }
@@ -3676,10 +3938,14 @@ fn a_favourite_reaches_a_monkeys_audio_file_as_its_ape_tag_says_one() {
         eprintln!("skipped: no mac to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let source = tree.at("source.wav");
+
     wav(&source, CD, &tone(CD));
+
     let target = tree.at("counted.ape");
+
     assert!(
         monkeyed(&source, &target, "-c2000"),
         "mac would not write it"
@@ -3706,16 +3972,23 @@ fn a_seek_landing_ahead_of_the_music_does_not_hear_the_priming() {
             let (mut decoder, info) =
                 Decoder::open(&Sources::local(), &MediaLocation::local(&path))
                     .expect("a well-formed file opens");
+
             assert!(info.priming() > Frames::ZERO, "{name} declared no priming");
+
             decoder
                 .seek(Frames(u64::from(RATE)))
                 .expect("a seek into the track");
+
             assert_eq!(decoder.seek(at).expect("a seek back"), at);
+
             let from_there = drain(&mut decoder, info.spec);
 
             let skipped = at.get() as usize * lanes;
+
             assert_eq!(from_there.len(), whole.len() - skipped);
+
             let apart = drift(&from_there, &whole[skipped..]);
+
             assert!(
                 apart < 0.01,
                 "a seek to {at} in {name} landed {apart:e} RMS of full scale away from the whole decode"
@@ -3766,6 +4039,7 @@ fn packed(source: &Path, target: &Path, modes: &[&str]) -> bool {
 fn float_wav(path: &Path, rate: u32, channels: u16, samples: &[f32]) {
     let align = channels * FLOAT_BYTES;
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&IEEE_FLOAT.to_le_bytes());
     fmt.extend_from_slice(&channels.to_le_bytes());
     fmt.extend_from_slice(&rate.to_le_bytes());
@@ -3778,10 +4052,12 @@ fn float_wav(path: &Path, rate: u32, channels: u16, samples: &[f32]) {
         .flat_map(|sample| sample.to_le_bytes())
         .collect();
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &fmt);
     chunk(&mut body, b"data", &data);
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     fs::write(path, file).expect("a writable temporary file");
@@ -3790,11 +4066,13 @@ fn float_wav(path: &Path, rate: u32, channels: u16, samples: &[f32]) {
 fn awkward_floats(frames: usize) -> Vec<f32> {
     let mut samples = Vec::with_capacity(frames * 2);
     let mut state = 0x2545_f491_u32;
+
     for frame in 0..frames {
         for _ in 0..2 {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
+
             let sample = match frame % 9 {
                 0 => 0.0,
                 1 => -0.0,
@@ -3809,6 +4087,7 @@ fn awkward_floats(frames: usize) -> Vec<f32> {
                         / 2.0
                 }
             };
+
             samples.push(sample);
         }
     }
@@ -3817,8 +4096,10 @@ fn awkward_floats(frames: usize) -> Vec<f32> {
 
 fn drain_floats(decoder: &mut Decoder, spec: StreamSpec) -> Vec<u32> {
     decoder.set_output_format(SampleFormat::F32);
+
     let mut block = AudioBuffer::empty(spec);
     let mut samples = Vec::new();
+
     while decoder.next_block(&mut block).expect("a clean decode") == DecodeStatus::Decoded {
         match block.data() {
             resonate_core::SampleData::F32(store) => {
@@ -3836,6 +4117,7 @@ fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
         eprintln!("skipped: no wavpack to build the fixtures");
         return;
     }
+
     let cases: [(&str, Shape, ChannelLayout, &[&str]); 6] = [
         ("cd.wv", CD, ChannelLayout::Stereo, &[]),
         ("cd.hh.wv", CD, ChannelLayout::Stereo, &["-hh", "-x6"]),
@@ -3849,8 +4131,11 @@ fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
         let tree = Tree::new();
         let samples = tone(shape);
         let source = tree.at("source.wav");
+
         wav(&source, shape, &samples);
+
         let target = tree.at(name);
+
         assert!(
             packed(&source, &target, modes),
             "wavpack would not write {name}"
@@ -3858,6 +4143,7 @@ fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
 
         let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
             .expect("a WavPack file probes");
+
         assert_eq!(
             Container::from_id(report.info.container),
             Container::WavPack
@@ -3865,13 +4151,16 @@ fn wavpack_decodes_every_depth_and_layout_to_exactly_what_went_in() {
         assert_eq!(Codec::from_id(report.info.codec), Codec::WavPack);
 
         let decoded = decode(&target);
+
         assert_eq!(
             decoded.spec.rate.hz(),
             shape.rate,
             "{name} changed its rate"
         );
         assert_eq!(decoded.spec.channels, layout, "{name} changed its layout");
+
         let wanted = widened(&samples, shape.bits);
+
         assert_eq!(
             decoded.samples.len(),
             wanted.len(),
@@ -3891,13 +4180,16 @@ fn a_floating_wavpack_decodes_to_every_bit_that_went_in() {
         eprintln!("skipped: no wavpack to build the fixtures");
         return;
     }
+
     let tree = Tree::new();
     let samples = awkward_floats(48_000);
     let source = tree.at("floats.wav");
+
     float_wav(&source, 48_000, 2, &samples);
 
     for modes in [&[][..], &["-hh", "-x4"][..]] {
         let target = tree.at("floats.wv");
+
         assert!(
             packed(&source, &target, modes),
             "wavpack would not write floats"
@@ -3905,10 +4197,13 @@ fn a_floating_wavpack_decodes_to_every_bit_that_went_in() {
 
         let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
             .expect("a floating WavPack file opens");
+
         assert_eq!(info.spec.format, SampleFormat::F32);
+
         let decoded = drain_floats(&mut decoder, info.spec);
 
         let wanted: Vec<u32> = samples.iter().map(|sample| sample.to_bits()).collect();
+
         assert_eq!(decoded.len(), wanted.len());
         assert_eq!(
             first_apart(&decoded, &wanted),
@@ -3924,17 +4219,22 @@ fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
         eprintln!("skipped: no wavpack and wvunpack to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let samples = tone(CD);
     let source = tree.at("source.wav");
+
     wav(&source, CD, &samples);
+
     let target = tree.at("hybrid.wv");
+
     assert!(
         packed(&source, &target, &["-b256"]),
         "wavpack would not write a hybrid file"
     );
 
     let unpacked = tree.at("unpacked.wav");
+
     assert!(
         ran(
             "wvunpack",
@@ -3954,8 +4254,10 @@ fn a_hybrid_wavpack_decodes_to_what_the_reference_decoder_makes_of_it() {
         decode(&unpacked).samples,
         "a hybrid WavPack decoded to something the reference decoder does not"
     );
+
     let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
         .expect("a hybrid WavPack probes");
+
     assert_eq!(Codec::from_id(report.info.codec), Codec::WavPackHybrid);
     assert!(!Codec::from_id(report.info.codec).is_lossless());
 }
@@ -3966,8 +4268,10 @@ fn a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not() 
         eprintln!("skipped: no wavpack and ffmpeg to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let source = tree.at("source.wav");
+
     wav(&source, CD, &tone(CD));
 
     for (name, modes, billed) in [
@@ -3975,11 +4279,14 @@ fn a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not() 
         ("lossless", &[][..], Codec::WavPack),
     ] {
         let native = tree.at(&format!("{name}.wv"));
+
         assert!(
             packed(&source, &native, modes),
             "wavpack would not write the {name} file"
         );
+
         let wrapped = tree.at(&format!("{name}.mka"));
+
         assert!(
             ran(
                 "ffmpeg",
@@ -3999,6 +4306,7 @@ fn a_hybrid_wavpack_in_matroska_is_billed_as_hybrid_and_a_lossless_one_is_not() 
 
         let report = probe_stream(&Sources::local(), &MediaLocation::local(&wrapped))
             .expect("a WavPack in Matroska probes");
+
         assert_eq!(Codec::from_id(report.info.codec), billed, "{name}");
         assert_eq!(
             decode(&wrapped).samples,
@@ -4014,10 +4322,14 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
         eprintln!("skipped: no wavpack to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let source = tree.at("source.wav");
+
     wav(&source, CD, &tone(CD));
+
     let target = tree.at("tagged.wv");
+
     assert!(
         packed(
             &source,
@@ -4043,6 +4355,7 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
     let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
         .expect("a tagged WavPack probes");
     let tags = &report.info.tags;
+
     assert_eq!(tags.title.as_deref(), Some("Echoes"));
     assert_eq!(tags.artist.as_deref(), Some("Pink Floyd"));
     assert_eq!(tags.album.as_deref(), Some("Meddle"));
@@ -4052,7 +4365,9 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
 
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
         .expect("a tagged WavPack opens");
+
     assert!(info.is_seekable);
+
     let whole = decode(&target).samples;
     let lanes = usize::from(CHANNELS);
     for target in [
@@ -4061,9 +4376,12 @@ fn a_wavpack_carries_its_ape_tags_into_the_set_and_seeks_where_asked() {
         Frames(0),
     ] {
         let landed = decoder.seek(target).expect("a seekable stream seeks");
+
         assert_eq!(landed, target, "seek to {target} landed on {landed}");
+
         let from_there = drain(&mut decoder, info.spec);
         let skipped = target.get() as usize * lanes;
+
         assert_eq!(
             from_there,
             whole[skipped..],
@@ -4078,10 +4396,14 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         eprintln!("skipped: no wavpack to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let source = tree.at("source.wav");
+
     wav(&source, CD, &tone(CD));
+
     let path = tree.at("written.wv");
+
     assert!(
         packed(&source, &path, &[]),
         "wavpack would not write the fixture"
@@ -4090,6 +4412,7 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
     let before = decode(&path).samples;
     let location = MediaLocation::local(&path);
     let tags = FileTags::default();
+
     assert!(
         tags.writes(&location),
         "a WavPack file was not offered for writing"
@@ -4102,6 +4425,7 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
             value: written_as(field),
         })
         .collect();
+
     tags.write(
         &location,
         Writing {
@@ -4118,7 +4442,9 @@ fn every_field_written_into_a_wavpack_file_reads_back_and_the_audio_is_left_alon
         .read(&location, Picturing::Whether)
         .expect("a readable WavPack file")
         .tags;
+
     read_back_from_an_ape_tag(&read, &edits);
+
     assert_eq!(
         decode(&path).samples,
         before,
@@ -4158,6 +4484,7 @@ fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
         eprintln!("skipped: no mac to build the fixtures");
         return;
     }
+
     let cases: [(&str, Shape, ChannelLayout, &str); 6] = [
         ("cd.ape", CD, ChannelLayout::Stereo, "-c2000"),
         ("cd.insane.ape", CD, ChannelLayout::Stereo, "-c5000"),
@@ -4176,8 +4503,11 @@ fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
         let tree = Tree::new();
         let samples = tone(shape);
         let source = tree.at("source.wav");
+
         wav(&source, shape, &samples);
+
         let target = tree.at(name);
+
         assert!(
             monkeyed(&source, &target, level),
             "mac would not write {name}"
@@ -4185,6 +4515,7 @@ fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
 
         let report = probe_stream(&Sources::local(), &MediaLocation::local(&target))
             .expect("a Monkey's Audio file probes");
+
         assert_eq!(
             Container::from_id(report.info.container),
             Container::MonkeysAudio
@@ -4192,13 +4523,16 @@ fn monkeys_audio_decodes_every_depth_and_layout_to_exactly_what_went_in() {
         assert_eq!(Codec::from_id(report.info.codec), Codec::MonkeysAudio);
 
         let decoded = decode(&target);
+
         assert_eq!(
             decoded.spec.rate.hz(),
             shape.rate,
             "{name} changed its rate"
         );
         assert_eq!(decoded.spec.channels, layout, "{name} changed its layout");
+
         let wanted = widened(&samples, shape.bits);
+
         assert_eq!(
             decoded.samples.len(),
             wanted.len(),
@@ -4218,6 +4552,7 @@ fn a_floating_monkeys_audio_decodes_to_every_bit_that_went_in() {
         eprintln!("skipped: no mac to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let frames = 96_000;
     let samples: Vec<f32> = (0..frames)
@@ -4232,8 +4567,11 @@ fn a_floating_monkeys_audio_decodes_to_every_bit_that_went_in() {
         })
         .collect();
     let source = tree.at("floats.wav");
+
     float_wav(&source, 48_000, 1, &samples);
+
     let target = tree.at("floats.ape");
+
     assert!(
         monkeyed(&source, &target, "-c3000"),
         "mac would not write floats"
@@ -4241,9 +4579,12 @@ fn a_floating_monkeys_audio_decodes_to_every_bit_that_went_in() {
 
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&target))
         .expect("a floating Monkey's Audio file opens");
+
     assert_eq!(info.spec.format, SampleFormat::F32);
+
     let decoded = drain_floats(&mut decoder, info.spec);
     let wanted: Vec<u32> = samples.iter().map(|sample| sample.to_bits()).collect();
+
     assert_eq!(decoded.len(), wanted.len());
     assert_eq!(
         first_apart(&decoded, &wanted),
@@ -4258,10 +4599,14 @@ fn a_32_bit_stereo_monkeys_audio_is_refused_rather_than_heard_wrong() {
         eprintln!("skipped: no mac to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let source = tree.at("source.wav");
+
     wav(&source, WIDEST, &tone(WIDEST));
+
     let target = tree.at("widest.ape");
+
     assert!(
         monkeyed(&source, &target, "-c2000"),
         "mac would not write the fixture"
@@ -4283,16 +4628,22 @@ fn a_monkeys_audio_made_from_an_aiff_decodes_to_the_same_samples() {
         eprintln!("skipped: no mac and ffmpeg to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let samples = tone(STUDIO);
     let source = tree.at("source.wav");
+
     wav(&source, STUDIO, &samples);
+
     let aiff = tree.at("source.aiff");
+
     assert!(
         encode(&source, &aiff, &["-c:a", "pcm_s24be"]),
         "ffmpeg would not write an AIFF"
     );
+
     let target = tree.at("from-aiff.ape");
+
     assert!(
         monkeyed(&aiff, &target, "-c2000"),
         "mac would not take an AIFF"
@@ -4307,10 +4658,14 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         eprintln!("skipped: no mac to build the fixture");
         return;
     }
+
     let tree = Tree::new();
     let source = tree.at("source.wav");
+
     wav(&source, CD, &tone(CD));
+
     let path = tree.at("written.ape");
+
     assert!(
         monkeyed(&source, &path, "-c2000"),
         "mac would not write the fixture"
@@ -4319,6 +4674,7 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
     let before = decode(&path).samples;
     let location = MediaLocation::local(&path);
     let tags = FileTags::default();
+
     assert!(
         tags.writes(&location),
         "a Monkey's Audio file was not offered for writing"
@@ -4331,6 +4687,7 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
             value: written_as(field),
         })
         .collect();
+
     tags.write(
         &location,
         Writing {
@@ -4347,7 +4704,9 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         .read(&location, Picturing::Whether)
         .expect("a readable Monkey's Audio file")
         .tags;
+
     read_back_from_an_ape_tag(&read, &edits);
+
     assert_eq!(
         decode(&path).samples,
         before,
@@ -4356,7 +4715,9 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
 
     let (mut decoder, info) =
         Decoder::open(&Sources::local(), &location).expect("a tagged Monkey's Audio opens");
+
     assert!(info.is_seekable);
+
     let lanes = usize::from(CHANNELS);
     for target in [
         Frames(u64::from(RATE) * 2),
@@ -4364,9 +4725,12 @@ fn a_monkeys_audio_takes_its_tags_and_seeks_where_asked() {
         Frames(0),
     ] {
         let landed = decoder.seek(target).expect("a seekable stream seeks");
+
         assert_eq!(landed, target, "seek to {target} landed on {landed}");
+
         let from_there = drain(&mut decoder, info.spec);
         let skipped = target.get() as usize * lanes;
+
         assert_eq!(
             from_there,
             before[skipped..],
@@ -4385,10 +4749,12 @@ fn an_adpcm_wave_opens_and_is_billed_as_the_lossy_codec_it_is() {
 
         let info =
             probe(&Sources::local(), &MediaLocation::local(&path)).expect("an ADPCM WAVE probes");
+
         assert_eq!(Codec::from_id(info.codec), Codec::Adpcm, "{name}");
         assert!(!Codec::from_id(info.codec).is_lossless());
 
         let decoded = decode(&path);
+
         assert!(
             decoded.samples.len().abs_diff(samples.len()) < samples.len() / 10,
             "{name} decoded to {} samples where {} went in",
@@ -4453,6 +4819,7 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
     }
 
     let mut whole = Vec::new();
+
     for (index, link) in links.iter().enumerate() {
         let part = tree.at(&format!("{index}-{name}"));
         let tone = format!(
@@ -4461,6 +4828,7 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
             link.rate.hz()
         );
         let channels = link.layout.count().get().to_string();
+
         let made = Command::new("ffmpeg")
             .args([
                 "-y", "-v", "error", "-f", "lavfi", "-i", &tone, "-ac", &channels,
@@ -4475,10 +4843,12 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
             eprintln!("skipped: ffmpeg would not encode a link of {name}");
             return None;
         };
+
         whole.extend_from_slice(&bytes);
     }
 
     let path = tree.at(name);
+
     fs::write(&path, whole).expect("a writable fixture");
     Some(path)
 }
@@ -4509,7 +4879,9 @@ fn runs_of(decoder: &mut Decoder, spec: StreamSpec) -> Vec<Run> {
                     panic!("the decoder ignored the requested output format");
                 };
                 let run = runs.last_mut().expect("a run is always open");
+
                 assert_eq!(block.spec().channels, run.spec.channels);
+
                 run.samples.extend_from_slice(samples);
             }
             DecodeStatus::Reformatted(spec) => runs.push(Run {
@@ -4529,6 +4901,7 @@ fn loudness(samples: &[f32]) -> f32 {
 fn followed(path: &Path) -> (Decoder, resonate_codec::MediaInfo) {
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(path))
         .expect("a well-formed file opens");
+
     decoder.follow_format_changes();
     (decoder, info)
 }
@@ -4537,17 +4910,20 @@ fn followed(path: &Path) -> (Decoder, resonate_codec::MediaInfo) {
 fn a_chained_ogg_plays_every_link_at_its_own_rate_and_lasts_as_long_as_all_of_them() {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+
     let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
         return;
     };
 
     let (mut decoder, info) = followed(&path);
+
     let runs = runs_of(&mut decoder, info.spec);
 
     let shapes: Vec<_> = runs
         .iter()
         .map(|run| (run.spec.rate, run.spec.channels, run.frames()))
         .collect();
+
     assert_eq!(
         shapes,
         links
@@ -4568,6 +4944,7 @@ fn a_chained_ogg_plays_every_link_at_its_own_rate_and_lasts_as_long_as_all_of_th
 fn a_reader_that_does_not_follow_a_change_is_told_where_the_stream_turns() {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+
     let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
         return;
     };
@@ -4575,6 +4952,7 @@ fn a_reader_that_does_not_follow_a_change_is_told_where_the_stream_turns() {
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
         .expect("a chained ogg opens");
     let mut block = AudioBuffer::empty(info.spec);
+
     let turned = loop {
         match decoder.next_block(&mut block) {
             Ok(DecodeStatus::Decoded) => {}
@@ -4598,11 +4976,14 @@ fn a_reader_that_does_not_follow_a_change_is_told_where_the_stream_turns() {
 fn a_seek_into_a_later_link_lands_there_and_a_seek_back_rewinds_to_the_first() {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+
     let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
         return;
     };
     let (mut decoder, info) = followed(&path);
+
     decoder.set_output_format(SampleFormat::F32);
+
     let mut block = AudioBuffer::empty(info.spec);
     let into_the_second = Frames(MONO_AT_CD_RATE.frames() * 3 / 2);
     let into_the_first = Frames(MONO_AT_CD_RATE.frames() / 2);
@@ -4656,7 +5037,9 @@ fn a_seek_into_a_later_link_lands_there_and_a_seek_back_rewinds_to_the_first() {
         decoder.position(),
         into_the_first.saturating_add(Frames(block.frames() as u64))
     );
+
     let rest = runs_of(&mut decoder, info.spec);
+
     assert_eq!(
         rest.iter().map(|run| run.spec.channels).collect::<Vec<_>>(),
         [ChannelLayout::Mono, ChannelLayout::Stereo]
@@ -4675,6 +5058,7 @@ const STEREO_A_FIFTH_UP: Link = Link {
 fn a_seek_into_a_later_link_of_a_chained_opus_hears_what_decoding_through_hears_there() {
     let tree = Tree::new();
     let links = [STEREO_AT_DAT_RATE, STEREO_A_FIFTH_UP];
+
     let Some(path) = joined(&tree, "chained.opus", &links, &OPUS_IN_OGG) else {
         return;
     };
@@ -4683,12 +5067,17 @@ fn a_seek_into_a_later_link_of_a_chained_opus_hears_what_decoding_through_hears_
     let (mut decoder, info) = Decoder::open(&Sources::local(), &MediaLocation::local(&path))
         .expect("a chained ogg opus opens");
     let at = Frames(STEREO_AT_DAT_RATE.frames() + STEREO_A_FIFTH_UP.frames() / 2);
+
     assert_eq!(decoder.seek(at).expect("a seek into the second link"), at);
+
     let from_there = drain(&mut decoder, info.spec);
 
     let skipped = at.get() as usize * usize::from(info.spec.channel_count().get());
+
     assert_eq!(from_there.len(), whole.len() - skipped);
+
     let apart = drift(&from_there, &whole[skipped..]);
+
     assert!(
         apart < 1e-6,
         "a seek into the second link landed {apart:e} RMS of full scale away from what decoding through holds there"
@@ -4699,6 +5088,7 @@ fn a_seek_into_a_later_link_of_a_chained_opus_hears_what_decoding_through_hears_
 fn a_seek_to_the_head_of_a_later_link_starting_after_zero_lands_there() {
     let tree = Tree::new();
     let links = [STEREO_AT_DAT_RATE, STEREO_A_FIFTH_UP];
+
     let Some(path) = joined(
         &tree,
         "offset.opus",
@@ -4740,11 +5130,13 @@ fn a_seek_to_the_head_of_a_later_link_starting_after_zero_lands_there() {
 fn an_mpeg_stream_turning_from_mono_to_stereo_decodes_the_stereo_rather_than_silence() {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_CD_RATE];
+
     let Some(path) = joined(&tree, "turning.mp3", &links, &BARE_MP3) else {
         return;
     };
 
     let (mut decoder, info) = followed(&path);
+
     let runs = runs_of(&mut decoder, info.spec);
 
     assert_eq!(
@@ -4811,8 +5203,10 @@ fn ebml_element(bytes: &[u8], at: usize) -> Ebml {
         .iter()
         .fold(0_u32, |id, byte| (id << 8) | u32::from(*byte));
     let width = ebml_width(bytes[at + id_width]);
+
     let body = at + id_width + width;
     let marker = 1_u64 << (7 * width);
+
     let size = bytes[at + id_width..body]
         .iter()
         .fold(0_u64, |size, byte| (size << 8) | u64::from(*byte))
@@ -4828,8 +5222,10 @@ fn ebml_element(bytes: &[u8], at: usize) -> Ebml {
 fn ebml_within(bytes: &[u8], from: usize, to: usize) -> Vec<Ebml> {
     let mut found = Vec::new();
     let mut at = from;
+
     while at < to {
         let element = ebml_element(bytes, at);
+
         found.push(element);
         at = element.end;
     }
@@ -4865,6 +5261,7 @@ fn ebml_sized(id: u32, body: &[u8]) -> Vec<u8> {
         .skip_while(|byte| *byte == 0)
         .collect();
     let marked = (1_u64 << (7 * EBML_WIDEST_SIZE)) | body.len() as u64;
+
     bytes.extend_from_slice(&marked.to_be_bytes());
     bytes.extend_from_slice(body);
     bytes
@@ -4967,12 +5364,14 @@ fn laid_out_as_youtube_lays_it_out(bytes: &[u8]) -> Vec<u8> {
     let tracks_at = seek_head_bytes + info.len();
     let cues_at = tracks_at + tracks.len();
     let mut seeks = Vec::new();
+
     for (id, position) in [
         (EBML_INFO, seek_head_bytes),
         (EBML_TRACKS, tracks_at),
         (EBML_CUES, cues_at),
     ] {
         let mut entry = Vec::new();
+
         entry.extend_from_slice(&[0x53, 0xAB, 0x84]);
         entry.extend_from_slice(&id.to_be_bytes());
         entry.extend_from_slice(&[0x53, 0xAC, 0x88]);
@@ -4982,20 +5381,28 @@ fn laid_out_as_youtube_lays_it_out(bytes: &[u8]) -> Vec<u8> {
     }
 
     let mut head = vec![0x11, 0x4D, 0x9B, 0x74, 0x80 | seeks.len() as u8];
+
     head.extend_from_slice(&seeks);
+
     assert_eq!(head.len(), seek_head_bytes);
+
     head.extend_from_slice(info);
     head.extend_from_slice(tracks);
     head.extend_from_slice(cues);
 
     let wanted = first_cluster.at - segment.body;
     let filler_header_bytes = 12;
+
     let filler = wanted - head.len() - filler_header_bytes;
+
     head.extend_from_slice(&ebml_sized(EBML_NOTHING_ANY_READER_KNOWS, &vec![0; filler]));
+
     assert_eq!(head.len(), wanted);
+
     head.extend_from_slice(&bytes[first_cluster.at..last_cluster.end]);
 
     let mut file = bytes[..segment.at].to_vec();
+
     file.extend_from_slice(&ebml_sized(EBML_SEGMENT, &head));
     file
 }
@@ -5003,6 +5410,7 @@ fn laid_out_as_youtube_lays_it_out(bytes: &[u8]) -> Vec<u8> {
 fn opus_as_youtube_sends_it(tree: &Tree, name: &str) -> Option<PathBuf> {
     let path = opus_in_webm(tree, name)?;
     let bytes = fs::read(&path).expect("a Matroska file reads");
+
     fs::write(&path, laid_out_as_youtube_lays_it_out(&bytes)).expect("a writable fixture");
     Some(path)
 }
@@ -5014,14 +5422,17 @@ fn with_its_tags_after_the_clusters(bytes: &[u8]) -> Vec<u8> {
         .find(|element| element.id == EBML_TAGS)
         .expect("tags ffmpeg writes");
     let mut moved = bytes.to_vec();
+
     moved.extend_from_slice(&bytes[tags.at..tags.end]);
 
     let held = tags.end - tags.at;
     let void = ebml_sized(EBML_VOID, &vec![0; held - 9]);
+
     moved[tags.at..tags.end].copy_from_slice(&void);
 
     let size_at = segment.at + 4;
     let grown = (1_u64 << 56) | (segment.end - segment.body + held) as u64;
+
     moved[size_at..size_at + 8].copy_from_slice(&grown.to_be_bytes());
 
     let head = ebml_top(&moved)
@@ -5038,6 +5449,7 @@ fn with_its_tags_after_the_clusters(bytes: &[u8]) -> Vec<u8> {
     let position = ebml_one(&moved, seek, EBML_SEEK_POSITION);
     let moved_to = (segment.end - segment.body) as u64;
     let width = position.end - position.body;
+
     moved[position.body..position.end].copy_from_slice(&moved_to.to_be_bytes()[8 - width..]);
     moved
 }
@@ -5082,6 +5494,7 @@ fn a_matroska_file_is_tagged_and_every_audio_packet_stays_as_it_was() {
     let tags = FileTags::over(Sources::local());
     let before = packets_of(&path);
     let samples = decode(&path).samples;
+
     assert!(!before.is_empty(), "a song with no packets proves nothing");
     assert!(tags.writes(&location), "a .mka was not offered for writing");
 
@@ -5092,6 +5505,7 @@ fn a_matroska_file_is_tagged_and_every_audio_packet_stays_as_it_was() {
     .expect("a written Matroska file");
 
     let read = tags_of(&location);
+
     assert_eq!(read.title.as_deref(), Some("Creep"));
     assert_eq!(read.artist.as_deref(), Some("Radiohead"));
     assert_eq!(read.album, None);
@@ -5115,6 +5529,7 @@ fn a_matroska_tag_written_twice_is_replaced_and_lands_in_the_room_left_for_it() 
         only_edits(&title_and_artist("Creep", "Radiohead")),
     )
     .expect("a first write");
+
     let first = fs::read(&path).expect("a written file");
 
     tags.write(
@@ -5122,6 +5537,7 @@ fn a_matroska_tag_written_twice_is_replaced_and_lands_in_the_room_left_for_it() 
         only_edits(&title_and_artist("Karma Police", "Radiohead")),
     )
     .expect("a second write");
+
     let second = fs::read(&path).expect("a written file");
 
     assert_eq!(tags_elements(&second), 1);
@@ -5144,6 +5560,7 @@ fn a_matroska_seek_head_still_finds_every_element_after_a_write() {
             return;
         };
         let location = MediaLocation::local(&path);
+
         FileTags::over(Sources::local())
             .write(
                 &location,
@@ -5157,6 +5574,7 @@ fn a_matroska_seek_head_still_finds_every_element_after_a_write() {
         let bytes = fs::read(&path).expect("a written file");
         let segment = ebml_segment(&bytes);
         let entries = seek_entries(&bytes);
+
         assert!(
             entries.iter().any(|(id, _)| *id == EBML_TAGS),
             "{name} does not index its tags"
@@ -5205,6 +5623,7 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
         let read = tags
             .read(&location, Picturing::Copied)
             .expect("a readable file");
+
         assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
         assert_eq!(read.tags.title.as_deref(), Some("Creep"), "{name}");
         assert_eq!(packets_of(&path), before, "{name} had its packets moved");
@@ -5213,10 +5632,12 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
         let bytes = fs::read(&path).expect("a written file");
         let segment = ebml_segment(&bytes);
         let entries = seek_entries(&bytes);
+
         assert!(
             entries.iter().any(|(id, _)| *id == EBML_ATTACHMENTS),
             "{name} does not index its picture"
         );
+
         for (id, position) in entries {
             assert_eq!(
                 ebml_element(&bytes, segment.body + position).id,
@@ -5224,17 +5645,21 @@ fn a_cover_written_into_a_matroska_file_is_read_back_and_leaves_the_audio_and_th
                 "{name}'s seek head points at something else"
             );
         }
+
         assert!(
             read_by_ffmpeg_without_a_complaint(&path),
             "{name} was read with complaints after its picture was attached"
         );
 
         let again = title_and_artist("Karma Police", "Radiohead");
+
         tags.write(&location, only_edits(&again))
             .expect("a second write over a file holding a picture");
+
         let kept = tags
             .read(&location, Picturing::Copied)
             .expect("a readable file");
+
         assert_eq!(kept.picture.into_copied(), Some(picture.clone()), "{name}");
         assert_eq!(kept.tags.title.as_deref(), Some("Karma Police"), "{name}");
     }
@@ -5251,6 +5676,7 @@ fn attached_files(bytes: &[u8]) -> usize {
 fn every_seek_lands_on_its_element(bytes: &[u8], name: &str) {
     let segment = ebml_segment(bytes);
     let entries = seek_entries(bytes);
+
     assert!(
         entries.iter().any(|(id, _)| *id == EBML_ATTACHMENTS),
         "{name} does not index its picture"
@@ -5269,22 +5695,29 @@ fn with_the_attachments_sized_narrowly(bytes: &[u8]) -> Vec<u8> {
         .into_iter()
         .find(|element| element.id == EBML_ATTACHMENTS)
         .expect("the attachments written");
+
     assert_eq!(attachments.end, bytes.len(), "the attachments are not last");
+
     let body = &bytes[attachments.body..attachments.end];
     let width = (1..=8)
         .find(|width| (body.len() as u64) < (1_u64 << (7 * width)) - 1)
         .expect("a width the body fits");
+
     let marked = ((1_u64 << (7 * width)) | body.len() as u64).to_be_bytes();
 
     let mut narrowed = bytes[..attachments.at].to_vec();
+
     narrowed.extend_from_slice(&EBML_ATTACHMENTS.to_be_bytes());
     narrowed.extend_from_slice(&marked[8 - width..]);
     narrowed.extend_from_slice(body);
+
     let segment = ebml_segment(bytes);
     let size_at = segment.at + 4;
+
     let segment_width = segment.body - size_at;
     let segment_marked =
         ((1_u64 << (7 * segment_width)) | (narrowed.len() - segment.body) as u64).to_be_bytes();
+
     narrowed[size_at..segment.body].copy_from_slice(&segment_marked[8 - segment_width..]);
     narrowed
 }
@@ -5294,6 +5727,7 @@ fn replaced_once(bytes: &mut [u8], held: &[u8], with: &[u8]) {
         .windows(held.len())
         .position(|window| window == held)
         .expect("the bytes the file was written with");
+
     bytes[at..at + with.len()].copy_from_slice(with);
 }
 
@@ -5322,8 +5756,11 @@ fn a_matroska_file_whose_attachments_hold_no_cover_takes_the_picture_beside_them
             picture: Some(&picture),
             ..only_edits(&[])
         };
+
         tags.write(&location, writing).expect("a first attachment");
+
         let mut bytes = fs::read(&path).expect("a written file");
+
         replaced_once(&mut bytes, b"cover.png", b"fonts.png");
         replaced_once(
             &mut bytes,
@@ -5334,7 +5771,9 @@ fn a_matroska_file_whose_attachments_hold_no_cover_takes_the_picture_beside_them
             bytes = with_the_attachments_sized_narrowly(&bytes);
         }
         fs::write(&path, &bytes).expect("the attachment renamed");
+
         let before = packets_of(&path);
+
         assert_eq!(
             tags.read(&location, Picturing::Copied)
                 .expect("a readable file")
@@ -5350,11 +5789,16 @@ fn a_matroska_file_whose_attachments_hold_no_cover_takes_the_picture_beside_them
         let read = tags
             .read(&location, Picturing::Copied)
             .expect("a readable file");
+
         assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
+
         let bytes = fs::read(&path).expect("a written file");
+
         assert_eq!(attached_files(&bytes), 2, "{name}");
         assert_eq!(packets_of(&path), before, "{name} had its packets moved");
+
         every_seek_lands_on_its_element(&bytes, name);
+
         assert!(
             read_by_ffmpeg_without_a_complaint(&path),
             "{name} was read with complaints after its attachments grew"
@@ -5377,16 +5821,19 @@ fn a_matroska_file_with_no_seek_head_is_given_one_in_the_room_before_its_cluster
             return;
         };
         let mut bytes = fs::read(&path).expect("a Matroska file");
+
         let head = ebml_top(&bytes)
             .into_iter()
             .find(|element| element.id == EBML_SEEK_HEAD)
             .expect("a seek head");
         let length = head.end - head.at;
         let mut void = vec![0xEC, 0x01];
+
         void.extend_from_slice(&((length - 9) as u64).to_be_bytes()[1..]);
         void.resize(length, 0);
         bytes[head.at..head.end].copy_from_slice(&void);
         fs::write(&path, &bytes).expect("the seek head taken out");
+
         let location = MediaLocation::local(&path);
         let tags = FileTags::over(Sources::local());
         let samples = decode(&path).samples;
@@ -5403,8 +5850,10 @@ fn a_matroska_file_with_no_seek_head_is_given_one_in_the_room_before_its_cluster
         let read = tags
             .read(&location, Picturing::Copied)
             .expect("a readable file");
+
         assert_eq!(read.picture.into_copied(), Some(picture.clone()), "{name}");
         assert_eq!(decode(&path).samples, samples, "{name} had its audio moved");
+
         every_seek_lands_on_its_element(&fs::read(&path).expect("a written file"), name);
     }
 }
@@ -5427,6 +5876,7 @@ fn a_second_picture_is_refused_by_a_matroska_file_that_holds_one() {
     };
 
     tags.write(&location, writing).expect("a first picture");
+
     let held = fs::read(&path).expect("a written file");
 
     assert!(matches!(
@@ -5453,16 +5903,19 @@ fn a_matroska_cue_still_points_at_its_cluster_after_a_write() {
                 .expect("a well-formed file opens");
             let landed = decoder.seek(aimed_at).expect("a seekable stream seeks");
             let mut block = AudioBuffer::empty(info.spec);
+
             assert_eq!(
                 decoder.next_block(&mut block).expect("a clean decode"),
                 DecodeStatus::Decoded
             );
             (landed, block.frames())
         };
+
         let landed_before = heard(&path);
         let before = fs::read(&path).expect("a Matroska file reads");
         let clusters = clusters_of(&before);
         let cues = cue_positions(&before);
+
         assert!(cues.len() > 1, "one cue proves little about a seek");
 
         FileTags::over(Sources::local())
@@ -5474,14 +5927,17 @@ fn a_matroska_cue_still_points_at_its_cluster_after_a_write() {
 
         let after = fs::read(&path).expect("a written file");
         let segment = ebml_segment(&after);
+
         assert_eq!(cue_positions(&after), cues);
         assert_eq!(clusters_of(&after), clusters);
+
         for position in cue_positions(&after) {
             assert_eq!(
                 ebml_element(&after, segment.body + position).id,
                 EBML_CLUSTER
             );
         }
+
         assert_eq!(heard(&path), landed_before);
     }
 }
@@ -5493,9 +5949,13 @@ fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed()
         return;
     };
     let bytes = fs::read(&path).expect("a Matroska file reads");
+
     fs::write(&path, with_its_tags_after_the_clusters(&bytes)).expect("a writable fixture");
+
     let location = MediaLocation::local(&path);
+
     assert_eq!(tags_of(&location).artist.as_deref(), Some("Pink Floyd"));
+
     let before = packets_of(&path);
 
     FileTags::over(Sources::local())
@@ -5507,6 +5967,7 @@ fn a_matroska_tags_element_after_the_clusters_is_replaced_rather_than_shadowed()
 
     let after = fs::read(&path).expect("a written file");
     let read = tags_of(&location);
+
     assert_eq!(tags_elements(&after), 1);
     assert_eq!(read.title.as_deref(), Some("Creep"));
     assert_eq!(read.artist.as_deref(), Some("Radiohead"));
@@ -5530,7 +5991,9 @@ fn a_matroska_segment_of_unknown_size_is_refused_rather_than_guessed_at() {
         return;
     };
     let mut bytes = fs::read(&path).expect("a Matroska file reads");
+
     let size_at = ebml_segment(&bytes).at + 4;
+
     bytes[size_at..size_at + 8].copy_from_slice(&EBML_SIZE_UNKNOWN);
     fs::write(&path, &bytes).expect("a writable fixture");
 
@@ -5555,10 +6018,12 @@ fn every_field_written_alone_into_a_matroska_file_reads_back() {
 
     for field in TagField::ALL {
         fs::write(&path, &untouched).expect("a writable fixture");
+
         let edit = [TagEdit {
             field,
             value: written_as(field),
         }];
+
         tags.write(&location, only_edits(&edit))
             .expect("a written Matroska file");
 
@@ -5576,6 +6041,7 @@ fn ebml_narrow(id: u32, body: &[u8]) -> Vec<u8> {
         .into_iter()
         .skip_while(|byte| *byte == 0)
         .collect();
+
     if body.len() <= EBML_ONE_BYTE_SIZE_AT_MOST {
         bytes.push(0x80 | body.len() as u8);
     } else {
@@ -5587,6 +6053,7 @@ fn ebml_narrow(id: u32, body: &[u8]) -> Vec<u8> {
 
 fn simple_tag_holding(name: &str, value: &str, nested: &[u8]) -> Vec<u8> {
     let mut body = ebml_narrow(EBML_TAG_NAME, name.as_bytes());
+
     body.extend_from_slice(&ebml_narrow(EBML_TAG_STRING, value.as_bytes()));
     body.extend_from_slice(nested);
     ebml_narrow(EBML_SIMPLE_TAG, &body)
@@ -5602,6 +6069,7 @@ fn sorted_under(name: &str, value: &str, sort: &str) -> Vec<u8> {
 
 fn tag_at(level: u8, simple: &[Vec<u8>]) -> Vec<u8> {
     let mut body = ebml_narrow(EBML_TARGETS, &ebml_narrow(EBML_TARGET_TYPE_VALUE, &[level]));
+
     body.extend_from_slice(&simple.concat());
     ebml_narrow(EBML_TAG, &body)
 }
@@ -5613,16 +6081,20 @@ fn tags_of_tag(tags: &[Vec<u8>]) -> Vec<u8> {
 fn opus_holding(tree: &Tree, name: &str, elements: &[Vec<u8>]) -> Option<(PathBuf, MediaLocation)> {
     let path = opus_in_webm(tree, name)?;
     let mut bytes = fs::read(&path).expect("a Matroska file reads");
+
     let held = ebml_top(&bytes)
         .into_iter()
         .find(|element| element.id == EBML_TAGS)
         .expect("tags ffmpeg writes");
     let laid = elements.concat();
+
     let filler = held.end - held.at - laid.len() - 9;
     let mut room = laid;
+
     room.extend_from_slice(&ebml_sized(EBML_VOID, &vec![0; filler]));
     bytes[held.at..held.end].copy_from_slice(&room);
     fs::write(&path, &bytes).expect("a writable fixture");
+
     let location = MediaLocation::local(&path);
     Some((path, location))
 }
@@ -5653,6 +6125,7 @@ fn a_field_nobody_asked_to_change_reads_alike_once_several_tags_elements_are_one
     ) else {
         return;
     };
+
     assert_eq!(tags_of(&location).artist.as_deref(), Some("New Artist"));
 
     FileTags::over(Sources::local())
@@ -5661,6 +6134,7 @@ fn a_field_nobody_asked_to_change_reads_alike_once_several_tags_elements_are_one
 
     let after = fs::read(&path).expect("a written file");
     let read = tags_of(&location);
+
     assert_eq!(tags_elements(&after), 1);
     assert_eq!(read.genre.as_deref(), Some("Rock"));
     assert_eq!(read.artist.as_deref(), Some("New Artist"));
@@ -5688,6 +6162,7 @@ fn a_matroska_comment_written_leaves_a_description_the_reader_never_took_for_one
         .expect("a written Matroska file");
 
     let after = fs::read(&path).expect("a written file");
+
     assert_eq!(tags_of(&location).comment.as_deref(), Some("A remaster"));
     assert!(
         after.windows(7).any(|held| held == b"Keep me"),
@@ -5722,6 +6197,7 @@ fn a_matroska_tagged_by_its_targets_keeps_what_it_read_through_a_write_of_someth
     };
     let tags = FileTags::over(Sources::local());
     let before = tags_of(&location);
+
     assert_eq!(before.album.as_deref(), Some("Meddle"));
     assert_eq!(before.album_artist_sort.as_deref(), Some("Band, The"));
     assert_eq!(before.artist_sort.as_deref(), Some("Singer, The"));
@@ -5730,6 +6206,7 @@ fn a_matroska_tagged_by_its_targets_keeps_what_it_read_through_a_write_of_someth
         .expect("a written Matroska file");
 
     let read = tags_of(&location);
+
     assert_eq!(read.track_number, Some(4));
     assert_eq!(read.title.as_deref(), Some("Echoes"));
     assert_eq!(read.album.as_deref(), Some("Meddle"));
@@ -5761,6 +6238,7 @@ fn a_matroska_artist_edited_keeps_the_sort_name_nested_under_it() {
         .expect("a written Matroska file");
 
     let read = tags_of(&location);
+
     assert_eq!(read.artist.as_deref(), Some("Vocalist"));
     assert_eq!(read.artist_sort.as_deref(), Some("Singer, The"));
 }
@@ -5793,6 +6271,7 @@ fn a_sort_name_written_over_one_nested_in_a_matroska_replaces_it() {
     .expect("a written Matroska file");
 
     let read = tags_of(&location);
+
     assert_eq!(read.artist.as_deref(), Some("Singer"));
     assert_eq!(read.artist_sort, None);
 }

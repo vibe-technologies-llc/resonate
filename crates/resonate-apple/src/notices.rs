@@ -62,18 +62,22 @@ impl Notices {
         if NSBundle::mainBundle().bundleIdentifier().is_none() {
             return Err(Error::NoBundle);
         }
+
         let center = UNUserNotificationCenter::currentNotificationCenter();
 
         ANSWERED_BY_US.call_once(|| answer_through(&center));
         center
             .setNotificationCategories(&NSSet::from_retained_slice(&[transport_category(buttons)]));
+
         let asked = RcBlock::new(|_granted: Bool, _refusal: *mut NSError| {});
+
         center.requestAuthorizationWithOptions_completionHandler(
             UNAuthorizationOptions::Alert,
             &asked,
         );
 
         let asker = NEXT_ASKER.fetch_add(1, Ordering::Relaxed);
+
         ANSWERING.lock().insert(asker, Arc::new(pressed));
 
         Ok(Self { asker })
@@ -81,6 +85,7 @@ impl Notices {
 
     pub fn raise(&self, kind: &str, notice: &Notice<'_>) {
         let content = UNMutableNotificationContent::new();
+
         content.setTitle(&NSString::from_str(notice.title));
         content.setBody(&NSString::from_str(notice.body));
         content.setThreadIdentifier(&NSString::from_str(THREAD));
@@ -96,6 +101,7 @@ impl Notices {
             &content,
             None,
         );
+
         UNUserNotificationCenter::currentNotificationCenter()
             .addNotificationRequest_withCompletionHandler(&request, None);
     }
@@ -186,6 +192,7 @@ fn handed_copy_of(picture: &Path) -> Option<PathBuf> {
 
 fn answer_through(center: &UNUserNotificationCenter) {
     let answerer = Answerer::new();
+
     center.setDelegate(Some(ProtocolObject::from_ref(&*answerer)));
     std::mem::forget(answerer);
 }

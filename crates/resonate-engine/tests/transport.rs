@@ -63,17 +63,20 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-transport-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self { root }
     }
 
     fn write(&self, name: &str, bytes: &[u8]) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, bytes).expect("a writable temporary file");
         path
     }
@@ -98,11 +101,14 @@ fn pcm_of(bits: u16, channels: u16, frames: usize) -> Pcm {
     let stride = usize::from(bits / 8);
     let span = 1_i64 << (bits - 1);
     let samples = frames * usize::from(channels);
+
     let mut data = Vec::with_capacity(samples * stride);
     let mut stream = Vec::with_capacity(samples * stride);
+
     for n in 0..samples {
         let sample = ((n as i64 % (2 * span - 1)) - span + 1) as i32;
         let encoded = sample.to_le_bytes();
+
         data.extend_from_slice(&encoded[..stride]);
         stream.extend_from_slice(&encoded[..carried(bits).bytes_per_sample().get() as usize]);
     }
@@ -132,6 +138,7 @@ fn sixteen_bit_stereo_at(rate: u32, mut file: Vec<u8>) -> Vec<u8> {
 fn wave(bits: u16, channels: u16, data: &[u8]) -> Vec<u8> {
     let block_align = channels * bits / 8;
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&1_u16.to_le_bytes());
     fmt.extend_from_slice(&channels.to_le_bytes());
     fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -140,10 +147,12 @@ fn wave(bits: u16, channels: u16, data: &[u8]) -> Vec<u8> {
     fmt.extend_from_slice(&bits.to_le_bytes());
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &fmt);
     chunk(&mut body, b"data", data);
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -197,6 +206,7 @@ impl Graph {
         };
         let spec = request.spec;
         let frames = spec.bytes_to_frames(bytes as u64).get();
+
         let heard_for = Duration::from_secs_f64(frames as f64 / f64::from(spec.rate.hz()));
 
         (heard_for / times_real_time).max(SHORTEST_PAUSE_BETWEEN_PULLS)
@@ -206,6 +216,7 @@ impl Graph {
         if !self.active {
             return;
         }
+
         let Some(source) = self.source.as_mut() else {
             return;
         };
@@ -219,9 +230,13 @@ impl Graph {
             .clock
             .as_ref()
             .map_or_else(|| reading.stamp(), |clock| clock.stamp_by(Some(reading)));
+
         let filled = source.fill_stamped(&mut block, stamp);
+
         block.truncate(filled);
+
         let offset = self.played.len();
+
         self.heard.push((offset, due));
         self.played.extend_from_slice(&block);
     }
@@ -237,11 +252,14 @@ impl Graph {
         if !self.active {
             return 0;
         }
+
         let Some(source) = self.source.as_mut() else {
             return 0;
         };
         let mut block = vec![0_u8; bytes];
+
         let filled = source.fill(&mut block);
+
         block.truncate(filled);
         self.played.extend_from_slice(&block);
         filled
@@ -312,14 +330,17 @@ impl Surveyor for Surveyed {
     fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
         let gate = {
             let mut graph = self.0.lock();
+
             graph.enumerations += 1;
             graph.survey_gate.clone()
         };
+
         if let Some(gate) = gate {
             let _ = gate.recv();
         }
 
         let graph = self.0.lock();
+
         if graph.away {
             return Err(SinkError::Disconnected);
         }
@@ -337,6 +358,7 @@ impl Opener for FakeSink {
 
         {
             let mut graph = self.graph.lock();
+
             if graph.away {
                 return Err(SinkError::Disconnected);
             }
@@ -344,7 +366,9 @@ impl Opener for FakeSink {
                 return Err(SinkError::OpenUnanswered);
             }
             graph.opens += 1;
+
             let played = graph.played.len();
+
             graph.opened_after.push(played);
             graph.requests.push(request.clone());
             graph.source = (!self.lets_go).then_some(source);
@@ -353,7 +377,9 @@ impl Opener for FakeSink {
         }
 
         let clock = Arc::new(StreamClock::behind_by(Frames(self.latency)));
+
         self.graph.lock().clock = Some(Arc::clone(&clock));
+
         let control = Arc::clone(&self.graph);
         let answers_drain = self.answers_drain;
         let reshaper = match self.reshaping {
@@ -361,11 +387,13 @@ impl Opener for FakeSink {
             Reshaping::Settled => Some(reshaper(Arc::clone(&self.graph), true)),
             Reshaping::NeverSettled => Some(reshaper(Arc::clone(&self.graph), false)),
         };
+
         let stream = SinkStream::new(
             incoming,
             clock,
             Box::new(move |command| {
                 let mut graph = control.lock();
+
                 match command {
                     StreamCommand::SetActive(active) => graph.active = active,
                     StreamCommand::Drain => {
@@ -394,12 +422,14 @@ impl Opener for FakeSink {
 fn reshaper(graph: Arc<Mutex<Graph>>, settles: bool) -> Reshaper {
     Box::new(move |request, source| {
         let mut graph = graph.lock();
+
         let Some(open) = graph.requests.last().cloned() else {
             return Reshaped::Refused {
                 source,
                 because: Unreshapable::NoStream,
             };
         };
+
         if graph.events.is_none() {
             return Reshaped::Refused {
                 source,
@@ -414,7 +444,9 @@ fn reshaper(graph: Arc<Mutex<Graph>>, settles: bool) -> Reshaper {
         }
 
         graph.reshapes += 1;
+
         let heard = graph.played.len();
+
         graph.reshaped_after.push(heard);
         graph.requests.push(request.clone());
         graph.source = Some(source);
@@ -423,6 +455,7 @@ fn reshaper(graph: Arc<Mutex<Graph>>, settles: bool) -> Reshaper {
             spec: request.spec,
             words: Words::offered_for(request.spec.format),
         };
+
         if settles
             && request.spec != open.spec
             && let Some(events) = graph.events.as_ref()
@@ -511,6 +544,7 @@ fn dsf_tone_short_by(dop_frames: usize) -> Vec<u8> {
     let per_channel = blocks * DSF_BLOCK;
 
     let mut planes = vec![Vec::with_capacity(per_channel); lanes];
+
     for (lane, plane) in planes.iter_mut().enumerate() {
         let mut error = 0.0_f64;
         let mut byte = 0_u8;
@@ -519,11 +553,15 @@ fn dsf_tone_short_by(dop_frames: usize) -> Vec<u8> {
         for n in 0..per_channel * 8 {
             let wanted =
                 0.5 * (std::f64::consts::TAU * hertz * n as f64 / f64::from(DSD64_HZ)).sin();
+
             error += wanted;
+
             let high = error > 0.0;
+
             error -= if high { 1.0 } else { -1.0 };
 
             let within = n % 8;
+
             byte |= u8::from(high) << within;
             if within == 7 {
                 plane.push(byte);
@@ -533,6 +571,7 @@ fn dsf_tone_short_by(dop_frames: usize) -> Vec<u8> {
     }
 
     let mut data = Vec::with_capacity(per_channel * lanes);
+
     for block in 0..blocks {
         for plane in &planes {
             data.extend_from_slice(&plane[block * DSF_BLOCK..(block + 1) * DSF_BLOCK]);
@@ -540,6 +579,7 @@ fn dsf_tone_short_by(dop_frames: usize) -> Vec<u8> {
     }
 
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(b"fmt ");
     fmt.extend_from_slice(&52_u64.to_le_bytes());
     fmt.extend_from_slice(&1_u32.to_le_bytes());
@@ -548,18 +588,22 @@ fn dsf_tone_short_by(dop_frames: usize) -> Vec<u8> {
     fmt.extend_from_slice(&u32::from(CHANNELS).to_le_bytes());
     fmt.extend_from_slice(&DSD64_HZ.to_le_bytes());
     fmt.extend_from_slice(&1_u32.to_le_bytes());
+
     let declared = per_channel * 8 - dop_frames * DSD_BITS_A_DOP_FRAME_CARRIES;
+
     fmt.extend_from_slice(&(declared as u64).to_le_bytes());
     fmt.extend_from_slice(&(DSF_BLOCK as u32).to_le_bytes());
     fmt.extend_from_slice(&0_u32.to_le_bytes());
 
     let mut chunk = Vec::new();
+
     chunk.extend_from_slice(b"data");
     chunk.extend_from_slice(&((data.len() + 12) as u64).to_le_bytes());
     chunk.extend_from_slice(&data);
 
     let total = (28 + fmt.len() + chunk.len()) as u64;
     let mut file = Vec::new();
+
     file.extend_from_slice(b"DSD ");
     file.extend_from_slice(&28_u64.to_le_bytes());
     file.extend_from_slice(&total.to_le_bytes());
@@ -632,6 +676,7 @@ impl std::io::Read for Slowly {
 
         self.opened.store(true, Ordering::Release);
         thread::sleep(A_READ_TAKES);
+
         let most = into.len().min(A_READ_AT_MOST);
         self.held.read(&mut into[..most])
     }
@@ -706,6 +751,7 @@ impl MediaProvider for Gated {
 
     fn open(&self, location: &MediaLocation) -> CodecResult<Media> {
         let deadline = Instant::now() + PATIENCE;
+
         while !self.open.load(Ordering::Acquire) && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(1));
         }
@@ -743,11 +789,14 @@ impl std::io::Read for Trickle {
         } else {
             self.held_back_from
         };
+
         if self.at >= until && until < self.bytes.len() {
             thread::sleep(Duration::from_millis(5));
             return Err(std::io::ErrorKind::Interrupted.into());
         }
+
         let read = into.len().min(until - self.at);
+
         into[..read].copy_from_slice(&self.bytes[self.at..self.at + read]);
         self.at += read;
         Ok(read)
@@ -817,7 +866,9 @@ impl std::io::Read for Broken {
             return Err(std::io::ErrorKind::InvalidData.into());
         }
         self.reads_allowed -= 1;
+
         let read = into.len().min(self.bytes.len() - self.at);
+
         into[..read].copy_from_slice(&self.bytes[self.at..self.at + read]);
         self.at += read;
         Ok(read)
@@ -832,6 +883,7 @@ impl std::io::Seek for Broken {
             std::io::SeekFrom::End(by) => length + by,
             std::io::SeekFrom::Current(by) => self.at as i64 + by,
         };
+
         self.at = at.clamp(0, length) as usize;
         Ok(self.at as u64)
     }
@@ -928,6 +980,7 @@ fn frame_bytes(format: SampleFormat) -> usize {
 
 fn wait_for(player: &Player, mut ready: impl FnMut(&Player) -> bool, what: &str) {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if ready(player) {
             return;
@@ -949,8 +1002,10 @@ fn heard_as_faded_in(played: &[u8], expected: &[u8]) -> bool {
     else {
         return true;
     };
+
     let from = from / stride * stride;
     let faded = Frames::from_duration(FADED_OVER, SampleRate::HZ_44100).get() as usize * stride;
+
     let until = (from + faded).min(played.len());
     let samples = |bytes: &[u8]| -> Vec<i16> {
         bytes
@@ -960,6 +1015,7 @@ fn heard_as_faded_in(played: &[u8], expected: &[u8]) -> bool {
             .map(|sample| i16::from_le_bytes(*sample))
             .collect()
     };
+
     let no_louder = samples(&played[from..until])
         .iter()
         .zip(samples(&expected[from..until]))
@@ -1028,15 +1084,18 @@ fn play_paced_within(
     what: &str,
 ) {
     let deadline = Instant::now() + patience;
+
     while Instant::now() < deadline {
         let (settled, pause) = {
             let mut held = graph.lock();
+
             held.pull(block);
             (
                 done(player, &held),
                 held.pause_after_pulling(block, times_real_time),
             )
         };
+
         if settled {
             return;
         }
@@ -1052,11 +1111,14 @@ fn play_paced_within(
 fn announce(graph: &Arc<Mutex<Graph>>, device: SinkInfo) {
     let mut held = graph.lock();
     let node = device.id;
+
     held.sinks.push(device);
+
     let announced = held
         .announce
         .as_ref()
         .map(|announce| announce.send(SinkChange::Added(node)));
+
     assert!(
         announced.is_some_and(|sent| sent.is_ok()),
         "the fake daemon could not announce its new device"
@@ -1096,9 +1158,11 @@ fn a_track_whose_sink_takes_its_format_reaches_the_graph_byte_for_byte() -> Resu
         let format = carried(bits);
         let tree = Tree::new();
         let source = pcm(bits, FRAMES);
+
         let path = tree.write("track.wav", &source.file);
 
         let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[format])])?;
+
         player.send(Command::Load {
             items: vec![track(&path, 1)],
             start_at: 0,
@@ -1106,6 +1170,7 @@ fn a_track_whose_sink_takes_its_format_reaches_the_graph_byte_for_byte() -> Resu
         })?;
 
         let wanted = source.stream.len();
+
         play_until(
             &player,
             &graph,
@@ -1115,6 +1180,7 @@ fn a_track_whose_sink_takes_its_format_reaches_the_graph_byte_for_byte() -> Resu
         );
 
         let graph = graph.lock();
+
         assert_eq!(
             graph.played, source.stream,
             "{bits}-bit audio did not survive the stream"
@@ -1154,11 +1220,14 @@ fn surround(rates: &[SampleRate], formats: &[SampleFormat]) -> SinkInfo {
 #[test]
 fn a_stereo_sink_is_handed_a_stereo_stream_of_a_surround_track() -> Result<()> {
     const SURROUND: u16 = 6;
+
     let tree = Tree::new();
     let source = pcm_of(16, SURROUND, FRAMES);
+
     let path = tree.write("surround.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1168,10 +1237,12 @@ fn a_stereo_sink_is_handed_a_stereo_stream_of_a_surround_track() -> Result<()> {
     wait_for(&player, playing, "the stream to open");
 
     let status = player.state().output.expect("an output status");
+
     assert_eq!(status.negotiated.channels, ChannelLayout::Stereo);
     assert_eq!(status.mode, OutputMode::Converted);
 
     let wanted = FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -1181,6 +1252,7 @@ fn a_stereo_sink_is_handed_a_stereo_stream_of_a_surround_track() -> Result<()> {
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.requests.first().map(|request| request.spec),
         Some(status.negotiated),
@@ -1193,14 +1265,17 @@ fn a_stereo_sink_is_handed_a_stereo_stream_of_a_surround_track() -> Result<()> {
 #[test]
 fn a_surround_sink_is_handed_every_channel_the_file_carries() -> Result<()> {
     const SURROUND: u16 = 6;
+
     let tree = Tree::new();
     let source = pcm_of(16, SURROUND, FRAMES);
+
     let path = tree.write("surround.wav", &source.file);
 
     let (player, graph) = player(vec![surround(
         &[SampleRate::HZ_44100],
         &[SampleFormat::S16],
     )])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1208,6 +1283,7 @@ fn a_surround_sink_is_handed_every_channel_the_file_carries() -> Result<()> {
     })?;
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -1217,10 +1293,12 @@ fn a_surround_sink_is_handed_every_channel_the_file_carries() -> Result<()> {
     );
 
     let status = player.state().output.expect("an output status");
+
     assert_eq!(status.negotiated.channels, ChannelLayout::Surround51);
     assert_eq!(status.mode, OutputMode::BitPerfect);
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.played, source.stream,
         "a sink that takes 5.1 was handed something else"
@@ -1239,6 +1317,7 @@ fn five_point_oh(frames: usize) -> Pcm {
 
     let block_align = FIVE * BITS / 8;
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&0xFFFE_u16.to_le_bytes());
     fmt.extend_from_slice(&FIVE.to_le_bytes());
     fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -1255,10 +1334,12 @@ fn five_point_oh(frames: usize) -> Pcm {
         .collect();
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &fmt);
     chunk(&mut body, b"data", &stream);
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     Pcm { file, stream }
@@ -1268,6 +1349,7 @@ fn five_point_oh(frames: usize) -> Pcm {
 fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alone() -> Result<()> {
     let tree = Tree::new();
     let source = five_point_oh(FRAMES);
+
     let path = tree.write("five.wav", &source.file);
 
     let five = SinkInfo {
@@ -1280,6 +1362,7 @@ fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alon
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
     };
     let (player, graph) = player(vec![five])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1288,6 +1371,7 @@ fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alon
     wait_for(&player, playing, "the stream to open");
 
     let asked = graph.lock().requests[0].spec;
+
     assert_eq!(asked.channels, ChannelLayout::Surround50);
 
     graph
@@ -1307,6 +1391,7 @@ fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alon
     );
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -1316,6 +1401,7 @@ fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alon
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.opens, 1,
         "a graph answering the layout it was asked for had the stream rebuilt"
@@ -1331,9 +1417,11 @@ fn a_graph_settling_on_the_five_point_oh_it_was_asked_for_leaves_the_stream_alon
 fn a_sink_that_cannot_take_the_source_rate_is_asked_for_a_converted_stream() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1343,6 +1431,7 @@ fn a_sink_that_cannot_take_the_source_rate_is_asked_for_a_converted_stream() -> 
     wait_for(&player, playing, "the stream to open");
 
     let status = player.state().output.expect("an output status");
+
     assert_eq!(status.negotiated.rate, SampleRate::HZ_48000);
     assert_eq!(status.negotiated.format, SampleFormat::S32);
     assert_eq!(status.mode, OutputMode::Converted);
@@ -1358,9 +1447,11 @@ fn formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alon
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES * 40);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::F32])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1369,9 +1460,11 @@ fn formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alon
     wait_for(&player, playing, "the stream to open");
 
     let mixed = player.state().output.expect("an output status");
+
     assert_eq!(mixed.mode, OutputMode::Converted);
 
     let surveyed = graph.lock().enumerations;
+
     answered(&player, Command::FollowTheFormats)?;
     wait_for(
         &player,
@@ -1400,6 +1493,7 @@ fn formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alon
     );
 
     let held = graph.lock();
+
     assert_eq!(held.opens, 2);
     assert_eq!(
         held.requests.last().map(|request| request.spec),
@@ -1416,12 +1510,14 @@ fn formats_a_device_newly_offers_are_followed_where_the_plan_moves_and_left_alon
 fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let items = vec![track(&first, 1), track(&second, 2)];
     let as_loaded = stamp_of(&items);
+
     player.send(Command::Load {
         items,
         start_at: 0,
@@ -1450,6 +1546,7 @@ fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with()
         },
         "the moved row to publish",
     );
+
     assert_eq!(
         player.state().queue_stamp,
         as_loaded,
@@ -1468,6 +1565,7 @@ fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with()
         |player| player.state().queue_len == 3,
         "the queued row to publish",
     );
+
     assert_eq!(
         player.state().queue_stamp,
         as_loaded,
@@ -1486,6 +1584,7 @@ fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with()
         |player| player.state().queue_len == 4,
         "the arriving row to publish",
     );
+
     assert_ne!(
         player.state().queue_stamp,
         as_loaded,
@@ -1500,6 +1599,7 @@ fn the_published_stamp_holds_while_the_queue_holds_the_rows_it_was_loaded_with()
         |player| player.state().queue_len == 3,
         "the dropped row to publish",
     );
+
     assert_eq!(
         player.state().queue_stamp,
         as_loaded,
@@ -1516,6 +1616,7 @@ fn a_command_answered_is_one_the_published_state_already_says() -> Result<()> {
     player
         .request(Command::SetShuffle(true))?
         .wait_for(PATIENCE)?;
+
     assert!(
         player.state().shuffle,
         "a shuffle was answered before it was published"
@@ -1524,6 +1625,7 @@ fn a_command_answered_is_one_the_published_state_already_says() -> Result<()> {
     player
         .request(Command::SetRepeat(RepeatMode::Track))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().repeat,
         RepeatMode::Track,
@@ -1533,6 +1635,7 @@ fn a_command_answered_is_one_the_published_state_already_says() -> Result<()> {
     player
         .request(Command::SetVolume(half))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().volume,
         half,
@@ -1545,19 +1648,24 @@ fn a_command_answered_is_one_the_published_state_already_says() -> Result<()> {
 fn pausing_stops_the_graph_and_playing_starts_it_again() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert!(graph.lock().active);
 
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
+
     assert!(!graph.lock().active);
+
     wait_for(
         &player,
         |player| player.state().playback == PlaybackState::Paused,
@@ -1565,8 +1673,11 @@ fn pausing_stops_the_graph_and_playing_starts_it_again() -> Result<()> {
     );
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
+
     assert!(graph.lock().active);
+
     wait_for(&player, playing, "the transport to report itself playing");
+
     assert_eq!(graph.lock().opens, 1, "a pause reopened the stream");
     Ok(())
 }
@@ -1576,6 +1687,7 @@ fn two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alon
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
     let other_source = pcm(16, FRAMES / 2);
+
     let path = tree.write("track.wav", &source.file);
     let other_path = tree.write("other.wav", &other_source.file);
     let usb = SinkInfo {
@@ -1588,6 +1700,7 @@ fn two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alon
 
     let (one, one_graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let (other, other_graph) = player(vec![usb])?;
+
     one.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -1600,16 +1713,20 @@ fn two_players_in_one_process_play_at_once_each_on_its_own_sink_and_steered_alon
     })?;
     wait_for(&one, playing, "the first player to play");
     wait_for(&other, playing, "the second player to play");
+
     let both_pulling = one_graph.lock().active && other_graph.lock().active;
 
     one.request(Command::Pause)?.wait_for(PATIENCE)?;
+
     let paused_alone = !one_graph.lock().active && other_graph.lock().active;
+
     one.request(Command::Play)?.wait_for(PATIENCE)?;
 
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
     let deadline = Instant::now() + PATIENCE;
     let whole =
         |graph: &Arc<Mutex<Graph>>, wanted: &Pcm| graph.lock().played.len() >= wanted.stream.len();
+
     while !(whole(&one_graph, &source) && whole(&other_graph, &other_source))
         && Instant::now() < deadline
     {
@@ -1694,6 +1811,7 @@ impl Opens for FakeZones {
     fn open(&self, opening: &Opening, alongside: &Player) -> Result<Arc<Player>> {
         let player = self.opened(opening)?;
         let followed = player.output_settings().quality == alongside.output_settings().quality;
+
         assert!(
             followed,
             "a zone opened apart from the settings the first one holds"
@@ -1709,7 +1827,9 @@ impl Opens for FakeZones {
 impl FakeZones {
     fn opened(&self, opening: &Opening) -> Result<Arc<Player>> {
         let (backend, graph) = FakeSink::new(self.sinks.clone());
+
         self.graphs.lock().insert(opening.id, graph);
+
         let config = EngineConfig {
             sink: opening.sink.clone(),
             volume: opening.volume,
@@ -1736,6 +1856,7 @@ fn zones_added_at_once_from_several_threads_each_take_a_number_of_their_own() ->
             .collect::<Result<_>>()
     })?;
     let mut apart = added.clone();
+
     apart.sort();
     apart.dedup();
 
@@ -1768,15 +1889,20 @@ fn two_zones_play_apart_each_steered_alone_while_a_setting_reaches_both() -> Res
     let zones = opened.started()?;
 
     let study = zones.add()?;
+
     played_from(&zones, ZoneId::FIRST, &path)?;
     played_from(&zones, study.id, &other_path)?;
+
     let first = zones.first().player;
+
     wait_for(&first, playing, "the first zone to play");
     wait_for(&study.player, playing, "the second zone to play");
 
     zones.send(ZoneId::FIRST, Command::Pause)?;
     wait_for(&first, paused, "the first zone to pause");
+
     let half = Volume::new(0.5).expect("half way");
+
     zones.send(study.id, Command::SetVolume(half))?;
     zones.send(study.id, Command::SetQuality(Quality::LowLatency))?;
     wait_for(
@@ -1821,6 +1947,7 @@ fn a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared(
     let path = tree.write("held.wav", &pcm(16, FRAMES * 40).file);
     let dac = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
     let speakers = arriving();
+
     let opened = FakeZones::over(vec![dac.clone(), speakers.clone()]);
     let zones = opened.started()?;
     let study = zones.add()?;
@@ -1837,6 +1964,7 @@ fn a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared(
         },
         "the first zone to play its device bit-perfect",
     );
+
     let refused = zones.send(study.id, Command::SetSink(Some(dac.name.clone())));
     let refused_by_default = zones.send(study.id, Command::SetSink(None));
     let held = zones.holding(study.id);
@@ -1852,6 +1980,7 @@ fn a_device_another_zone_holds_bit_perfect_is_refused_and_a_mixed_one_is_shared(
         },
         "the first zone to move to a device it mixes into",
     );
+
     let shared = zones.send(study.id, Command::SetSink(Some(speakers.name.clone())));
     let freed = zones.send(ZoneId::FIRST, Command::SetSink(Some(speakers.name.clone())));
 
@@ -1930,6 +2059,7 @@ fn a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES * 20);
+
     let path = tree.write("handed.wav", &source.file);
     let after = tree.write("after.wav", &pcm(16, FRAMES).file);
     let elsewhere = kitchen();
@@ -1941,6 +2071,7 @@ fn a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_
     let study = zones.add()?;
     let first = zones.first().player;
     let outgoing = opened.graph(ZoneId::FIRST);
+
     let incoming = opened.graph(study.id);
     let stride = frame_bytes(SampleFormat::S16);
     let block = SHORT_PULL_FRAMES * stride;
@@ -1967,12 +2098,14 @@ fn a_zone_hands_its_song_over_to_another_that_fades_in_where_it_was_heard_while_
         },
         "the first zone to be heard a while",
     );
+
     let queued = locations(&first.queue());
     let heard_at = first.state().current.map(|track| track.position);
     let closed_before = outgoing.lock().closes;
 
     let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
     let (at, row, sounding) = (handover.at(), handover.row(), handover.sounding());
+
     play_paced_until(
         &first,
         &outgoing,
@@ -2047,6 +2180,7 @@ fn a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the
     let zones = opened.started()?;
     let study = zones.add()?;
     let first = zones.first().player;
+
     let incoming = opened.graph(study.id);
     let block = SHORT_PULL_FRAMES * frame_bytes(SampleFormat::S16);
 
@@ -2064,7 +2198,9 @@ fn a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the
         "the second zone to be heard a while",
     );
     stand_still(&study.player);
+
     let stood_at = study.player.state().current.map(|track| track.position);
+
     change_the_graph(&incoming, SinkChange::Removed(device.id), Vec::clear);
     wait_for(
         &study.player,
@@ -2075,6 +2211,7 @@ fn a_handover_the_other_zone_never_sounds_puts_its_own_queue_back_and_leaves_the
     wait_for(&first, playing, "the first zone to play");
 
     let landed = zones.hand_over(ZoneId::FIRST, study.id)?.wait();
+
     wait_for(
         &study.player,
         |player| {
@@ -2150,6 +2287,7 @@ impl Clocked {
 
     fn run_until(&mut self, devices: &[&Device], mut done: impl FnMut() -> bool, what: &str) {
         let deadline = Instant::now() + PATIENCE;
+
         while Instant::now() < deadline {
             let due = self.start.after_frames(
                 (self.ticks * QUANTUM_FRAMES as u64) as f64,
@@ -2160,9 +2298,11 @@ impl Clocked {
                 .enumerate()
                 .map(|(index, device)| (self.lateness_of(index), *device))
                 .collect();
+
             late.sort_by_key(|(lateness, _)| *lateness);
             for (lateness, device) in late {
                 let called = due.after(lateness);
+
                 while Moment::now() < called {
                     thread::sleep(Duration::from_micros(100));
                 }
@@ -2217,6 +2357,7 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
         is_default: false,
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])
     };
+
     let opened = FakeZones::over(vec![at_home, elsewhere.clone()]);
     let zones = opened.started()?;
     let study = zones.add()?;
@@ -2224,6 +2365,7 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
     let outgoing = Device {
         graph: opened.graph(ZoneId::FIRST),
     };
+
     let incoming = Device {
         graph: opened.graph(study.id),
     };
@@ -2241,8 +2383,10 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
         },
         "the first zone to be heard a while",
     );
+
     let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
     let asked_at = handover.at();
+
     clocked.run_until(
         &[&outgoing, &incoming],
         || {
@@ -2264,6 +2408,7 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
         })
         .expect("the second zone was heard whole");
     let measured = whole + MEASURED_PAST_THE_FADE;
+
     let moment = moment_of(&heard_in, measured);
     let reference = frame_at(
         &heard_out,
@@ -2271,10 +2416,12 @@ fn a_zone_handed_the_song_lands_its_first_frame_on_the_frame_the_other_is_heard_
     );
     let referenced = track_frame_in(&played_out, reference)
         .expect("the first zone was whole before the handover");
+
     let first_heard = referenced as f64
         + moment.frames_since(moment_of(&heard_out, reference), SampleRate::HZ_44100);
     let second_heard =
         track_frame_in(&played_in, measured).expect("the second zone was whole past its fade");
+
     let apart = second_heard - first_heard.round() as i64;
 
     assert!(
@@ -2314,6 +2461,7 @@ fn nudged_towards(frames_ahead: i64) -> Result<(i64, bool)> {
     );
 
     let mut measured = nudged_once(&first, &device, &mut clocked, frames_ahead)?;
+
     for _ in 1..NUDGES_TRIED_WHILE_THE_RING_RUNS_DRY {
         if !measured.ran_dry {
             break;
@@ -2348,6 +2496,7 @@ fn nudged_once(
     let heard = first.heard_at().expect("the zone is heard");
     let underruns_before = underruns(first);
     let afar = HeardClock::default();
+
     afar.tell(Some(HeardAt {
         frame: Frames(heard.frame.get().saturating_add_signed(frames_ahead)),
         ..heard
@@ -2361,10 +2510,12 @@ fn nudged_once(
         || matches!(first.stepping(), Stepping::Joined(_)),
         "the zone to step back in",
     );
+
     let joined_at = match first.stepping() {
         Stepping::Joined(moment) => moment,
         _ => Moment::now(),
     };
+
     clocked.run_until(
         &[device],
         || {
@@ -2428,6 +2579,7 @@ fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_q
         || first.heard_at().is_some(),
         "the listener's own queue to be heard",
     );
+
     let queue_before = first.queue().len();
     let seat = Seat::on(Arc::clone(&first));
     let row = Resumable {
@@ -2446,12 +2598,14 @@ fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_q
         TakenUp::InStep
     );
     assert!(seat.is_taking_part());
+
     let anchor = HeardAt {
         row: Seat::stamp_of(&row),
         frame: Frames(2 * u64::from(RATE)),
         at: Moment::now(),
         rate: SampleRate::HZ_44100,
     };
+
     clocked.run_until(
         &[&device],
         || {
@@ -2478,6 +2632,7 @@ fn a_seat_takes_up_a_song_part_way_through_in_step_with_the_clock_and_puts_the_q
         |player| player.queue().len() == queue_before && player.state().queue_stamp != anchor.row,
         "the listener's own queue to come back",
     );
+
     assert!(!seat.is_taking_part());
     Ok(())
 }
@@ -2489,7 +2644,9 @@ fn a_seat_taken_up_over_an_empty_queue_leaves_it_empty_with_its_shuffle_as_it_wa
     let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])]);
     let zones = opened.started()?;
     let first = zones.first().player;
+
     first.request(Command::SetShuffle(true))?.wait()?;
+
     let seat = Seat::on(Arc::clone(&first));
     let row = Resumable {
         location: MediaLocation::local(told),
@@ -2515,6 +2672,7 @@ fn a_seat_taken_up_over_an_empty_queue_leaves_it_empty_with_its_shuffle_as_it_wa
         |player| player.queue().is_empty() && player.state().shuffle,
         "the empty queue and shuffle to come back",
     );
+
     assert!(first.state().current.is_none());
     Ok(())
 }
@@ -2534,6 +2692,7 @@ fn a_seat_tells_the_rows_moved_under_it_and_puts_back_its_own_queue_where_the_fi
         span: None,
         held: None,
     };
+
     let told_filed = Resumable {
         location: MediaLocation::local(tree.root.join("filed-told.wav")),
         ..row.clone()
@@ -2588,12 +2747,14 @@ fn a_seat_tells_the_rows_moved_under_it_and_puts_back_its_own_queue_where_the_fi
 fn a_seat_taking_up_rows_whose_first_will_not_start_says_they_stand_in_the_queue() -> Result<()> {
     let tree = Tree::new();
     let long = pcm(16, RATE as usize * 10).file;
+
     let [a, b] = ["a", "b"].map(|name| tree.write(&format!("{name}.wav"), &long));
     let broken = tree.write("broken.wav", b"not a song at all");
     let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let zones = opened.started()?;
     let first = zones.first().player;
     let seat = Seat::on(Arc::clone(&first));
+
     let [row_a, row_b, row_broken] = [&a, &b, &broken].map(|path| kept(path));
 
     assert_eq!(
@@ -2633,11 +2794,13 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
 -> Result<()> {
     let tree = Tree::new();
     let long = pcm(16, RATE as usize * 10).file;
+
     let [a, b, c, d] = ["a", "b", "c", "d"].map(|name| tree.write(&format!("{name}.wav"), &long));
     let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let zones = opened.started()?;
     let first = zones.first().player;
     let seat = Seat::on(Arc::clone(&first));
+
     let [row_a, row_b, row_c, row_d] = [&a, &b, &c, &d].map(|path| kept(path));
     let queue = |player: &Player| locations(&player.queue());
     let here = |paths: &[&PathBuf]| -> Vec<MediaLocation> {
@@ -2656,14 +2819,17 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
         )?,
         TakenUp::InStep
     );
+
     let id_of_b = first.queue().iter().nth(1).map(|row| row.id);
 
     assert!(seat.keep_ahead(&[row_b.clone(), row_c.clone(), row_d.clone()])?);
+
     wait_for(
         &first,
         |player| queue(player) == here(&[&a, &b, &c, &d]),
         "the song added behind to be queued",
     );
+
     assert_eq!(
         first.queue().iter().nth(1).map(|row| row.id),
         id_of_b,
@@ -2671,14 +2837,17 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
     );
 
     assert!(seat.keep_ahead(&[row_d.clone(), row_c.clone()])?);
+
     wait_for(
         &first,
         |player| queue(player) == here(&[&a, &d, &c]),
         "the queue behind the song to follow the host's order",
     );
+
     assert_eq!(first.state().queue_position, Some(0));
 
     assert!(seat.keep_ahead(&[])?);
+
     wait_for(
         &first,
         |player| queue(player) == here(&[&a]),
@@ -2690,6 +2859,7 @@ fn a_seat_keeps_the_queue_behind_the_song_heard_changing_only_what_differs_and_n
         span: None,
         held: None,
     };
+
     assert_eq!(
         seat.take_up(
             std::slice::from_ref(&near_its_end),
@@ -2712,11 +2882,13 @@ fn a_seat_that_read_the_queue_before_another_edit_changes_nothing_and_keeps_it_o
 -> Result<()> {
     let tree = Tree::new();
     let long = pcm(16, RATE as usize * 10).file;
+
     let [a, b, c, d] = ["a", "b", "c", "d"].map(|name| tree.write(&format!("{name}.wav"), &long));
     let opened = FakeZones::over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let zones = opened.started()?;
     let first = zones.first().player;
     let seat = Seat::on(Arc::clone(&first));
+
     let [row_a, row_b, row_c, row_d] = [&a, &b, &c, &d].map(|path| kept(path));
     let queue = |player: &Player| locations(&player.queue());
     let here = |paths: &[&PathBuf]| -> Vec<MediaLocation> {
@@ -2735,12 +2907,14 @@ fn a_seat_that_read_the_queue_before_another_edit_changes_nothing_and_keeps_it_o
         )?,
         TakenUp::InStep
     );
+
     let (queued, state) = seat.settled_view().expect("a settled view");
 
     first
         .request(Command::Remove(Span::one(1)))?
         .wait()
         .expect("removed");
+
     let after_the_other_edit = queue(&first);
 
     assert!(!seat.keep_ahead_seen(&queued, &state, &[row_b.clone(), row_d.clone()])?);
@@ -2748,6 +2922,7 @@ fn a_seat_that_read_the_queue_before_another_edit_changes_nothing_and_keeps_it_o
     assert_eq!(queue(&first), here(&[&a, &c]));
 
     assert!(seat.keep_ahead(&[row_b, row_d])?);
+
     wait_for(
         &first,
         |player| queue(player) == here(&[&a, &b, &d]),
@@ -2792,15 +2967,18 @@ fn a_paused_zone_hands_over_paused_where_it_stood_and_a_handover_is_refused_wher
         },
         "the first zone to be heard a while",
     );
+
     let held = zones.hand_over(ZoneId::FIRST, study.id).err();
     let itself = zones.hand_over(ZoneId::FIRST, ZoneId::FIRST).err();
     let empty = zones.hand_over(study.id, third.id).err();
 
     stand_still(&first);
+
     let stood_at = first.state().current.map(|track| track.position);
     let handover = zones.hand_over(ZoneId::FIRST, study.id)?;
     let sounding = handover.sounding();
     let at = handover.at();
+
     handover.wait()?;
     wait_for(
         &study.player,
@@ -2851,12 +3029,14 @@ fn what_a_starved_graph_went_without_is_published_in_frames() -> Result<()> {
     let path = tree.write("long.wav", &steady(1_000, 10 * A_SECOND));
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(
         player.state().output.map(|output| output.went_without),
         Some(Frames::ZERO)
@@ -2864,6 +3044,7 @@ fn what_a_starved_graph_went_without_is_published_in_frames() -> Result<()> {
 
     let stride = frame_bytes(SampleFormat::S16);
     let taken = graph.lock().pull(A_SECOND * stride) / stride;
+
     assert!(taken < A_SECOND, "a ring as deep as a second was asked for");
 
     wait_for(
@@ -2876,7 +3057,9 @@ fn what_a_starved_graph_went_without_is_published_in_frames() -> Result<()> {
         },
         "the starve to be counted",
     );
+
     let output = player.state().output.expect("an open output");
+
     assert_eq!(
         output.went_without,
         Frames((A_SECOND - taken) as u64),
@@ -2890,17 +3073,20 @@ fn the_word_the_graph_settled_on_is_published_once_it_says() -> Result<()> {
     let tree = Tree::new();
     let path = tree.write("deep.wav", &pcm(24, FRAMES).file);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S24])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(player.state().output.and_then(|output| output.words), None);
 
     let spec = {
         let graph = graph.lock();
         let spec = graph.requests[0].spec;
+
         graph
             .events
             .as_ref()
@@ -2912,11 +3098,13 @@ fn the_word_the_graph_settled_on_is_published_once_it_says() -> Result<()> {
             .expect("the engine hears the stream");
         spec
     };
+
     wait_for(
         &player,
         |player| player.state().output.and_then(|output| output.words) == Some(Words::Packed),
         "the settled word to be published",
     );
+
     assert_eq!(
         player.state().output.map(|output| output.negotiated),
         Some(spec),
@@ -2942,6 +3130,7 @@ fn answer_with_the_other_format(graph: &Arc<Mutex<Graph>>) {
         asked.channels,
         the_other_word_of_the_two(asked.format),
     );
+
     graph
         .events
         .as_ref()
@@ -2969,6 +3158,7 @@ fn two_formats_over_a_deep_track_reshaped(
         )],
         reshaping,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -2991,6 +3181,7 @@ fn a_graph_answering_another_format_has_the_stream_rebuilt_around_it() -> Result
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.requests[1].spec.format,
         the_other_word_of_the_two(asked.format)
@@ -3020,6 +3211,7 @@ fn a_graph_answering_another_format_has_the_stream_it_holds_reshaped_rather_than
     wait_for(&player, playing, "the reshaped stream to play on");
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.opens, 1,
         "a renegotiation reopened a stream that could be reshaped"
@@ -3070,6 +3262,7 @@ fn a_format_the_graph_settled_while_its_stream_was_kept_is_followed_once_the_str
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.reshapes, 2);
     assert_eq!(graph.requests[1].spec, asked, "the buffer moved the format");
     assert_eq!(
@@ -3100,6 +3293,7 @@ fn a_reshaped_stream_whose_format_the_graph_never_settles_is_reopened() -> Resul
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.reshapes, 1,
         "the unanswered stream was reshaped again"
@@ -3121,6 +3315,7 @@ fn a_graph_that_will_not_settle_on_a_format_fails_the_row_once_the_rebuilds_are_
             "the stream to be rebuilt again",
         );
     }
+
     assert!(
         !player
             .events()
@@ -3130,7 +3325,9 @@ fn a_graph_that_will_not_settle_on_a_format_fails_the_row_once_the_rebuilds_are_
     );
 
     answer_with_the_other_format(&graph);
+
     let mut failure = None;
+
     wait_for(
         &player,
         |player| {
@@ -3156,11 +3353,13 @@ fn a_graph_that_will_not_settle_on_a_format_fails_the_row_once_the_rebuilds_are_
 fn a_seek_discards_what_the_ring_held_without_reopening_the_stream() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
     let target = Frames(FRAMES as u64 / 2);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -3179,6 +3378,7 @@ fn a_seek_discards_what_the_ring_held_without_reopening_the_stream() -> Result<(
     player.request(Command::Seek(target))?.wait_for(PATIENCE)?;
 
     let tail = source.stream.split_at(target.get() as usize * stride).1;
+
     play_until(
         &player,
         &graph,
@@ -3194,6 +3394,7 @@ fn a_seek_discards_what_the_ring_held_without_reopening_the_stream() -> Result<(
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.opens, 1, "a seek reopened the stream");
     assert_eq!(graph.closes, 0, "a seek closed the stream");
     assert!(
@@ -3207,10 +3408,12 @@ fn a_seek_discards_what_the_ring_held_without_reopening_the_stream() -> Result<(
 fn only_a_seek_that_landed_moves_the_count_the_engine_publishes() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -3229,16 +3432,20 @@ fn only_a_seek_that_landed_moves_the_count_the_engine_publishes() -> Result<()> 
     );
 
     let unseeked = player.state().seeks;
+
     player
         .request(Command::Seek(Frames(FRAMES as u64 / 2)))?
         .wait_for(PATIENCE)?;
+
     let seeked = player.state().seeks;
+
     assert_ne!(seeked, unseeked, "a seek that landed was not counted");
 
     player
         .request(Command::Seek(Frames(FRAMES as u64 * 4)))?
         .wait_for(PATIENCE)
         .expect_err("a seek past the end of the track was taken");
+
     assert_eq!(
         player.state().seeks,
         seeked,
@@ -3247,6 +3454,7 @@ fn only_a_seek_that_landed_moves_the_count_the_engine_publishes() -> Result<()> 
 
     player.request(Command::Next)?.wait_for(PATIENCE)?;
     wait_for(&player, |player| plays(player, 2), "the next track to open");
+
     assert_eq!(
         player.state().seeks,
         seeked,
@@ -3259,9 +3467,11 @@ fn only_a_seek_that_landed_moves_the_count_the_engine_publishes() -> Result<()> 
 fn a_row_heard_again_from_the_start_is_counted_as_a_seek() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let path = tree.write("short.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::SetRepeat(RepeatMode::Track))?
         .wait_for(PATIENCE)?;
@@ -3273,6 +3483,7 @@ fn a_row_heard_again_from_the_start_is_counted_as_a_seek() -> Result<()> {
     wait_for(&player, playing, "the stream to open");
 
     let unseeked = player.state().seeks;
+
     play_until(
         &player,
         &graph,
@@ -3284,7 +3495,9 @@ fn a_row_heard_again_from_the_start_is_counted_as_a_seek() -> Result<()> {
     player
         .request(Command::SetRepeat(RepeatMode::Queue))?
         .wait_for(PATIENCE)?;
+
     let repeated = player.state().seeks;
+
     play_until(
         &player,
         &graph,
@@ -3304,10 +3517,12 @@ fn a_row_heard_again_from_the_start_is_counted_as_a_seek() -> Result<()> {
 fn a_relative_seek_past_the_end_moves_on_to_the_next_row() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -3326,6 +3541,7 @@ fn a_relative_seek_past_the_end_moves_on_to_the_next_row() -> Result<()> {
     );
 
     let unseeked = player.state().seeks;
+
     player
         .request(Command::SeekBy(FRAMES as i64 * 4))?
         .wait_for(PATIENCE)?;
@@ -3346,6 +3562,7 @@ fn without_a_declared_length(file: &[u8]) -> Vec<u8> {
         .expect("a data chunk")
         + 4;
     let mut open_ended = file.to_vec();
+
     open_ended[at..at + 4].copy_from_slice(&u32::MAX.to_le_bytes());
     open_ended[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
     open_ended
@@ -3355,16 +3572,19 @@ fn without_a_declared_length(file: &[u8]) -> Vec<u8> {
 fn a_track_of_unknown_length_plays_to_its_end_and_hands_on_to_the_next_row() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &without_a_declared_length(&source.file));
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(
         player.state().current.map(|track| track.duration),
         Some(None),
@@ -3380,6 +3600,7 @@ fn a_track_of_unknown_length_plays_to_its_end_and_hands_on_to_the_next_row() -> 
     );
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -3389,6 +3610,7 @@ fn a_track_of_unknown_length_plays_to_its_end_and_hands_on_to_the_next_row() -> 
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.played[..wanted], source.stream[..]);
     assert_eq!(graph.played[wanted..wanted * 2], source.stream[..]);
     Ok(())
@@ -3398,9 +3620,11 @@ fn a_track_of_unknown_length_plays_to_its_end_and_hands_on_to_the_next_row() -> 
 fn a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let row = tree.write("row.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Load {
             items: Vec::new(),
@@ -3408,6 +3632,7 @@ fn a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next() -> Res
             autoplay: true,
         })?
         .wait_for(PATIENCE)?;
+
     let refused = player.request(Command::TogglePlayPause)?.wait_for(PATIENCE);
 
     assert!(
@@ -3437,12 +3662,14 @@ fn a_load_of_nothing_leaves_the_transport_ready_to_play_what_comes_next() -> Res
 fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
     let target = Frames(FRAMES as u64 / 2);
     let block = BLOCK_FRAMES * stride;
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -3470,6 +3697,7 @@ fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() 
         |_| graph.lock().opens == 2,
         "the paused seek to fill a ring the graph is not draining",
     );
+
     assert_eq!(
         player.state().playback,
         PlaybackState::Paused,
@@ -3477,9 +3705,12 @@ fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() 
     );
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
+
     let played = {
         let mut held = graph.lock();
+
         held.played.clear();
+
         assert_eq!(
             held.pull(block),
             block,
@@ -3489,6 +3720,7 @@ fn a_seek_while_paused_leaves_the_ring_ready_rather_than_waiting_on_the_graph() 
     };
 
     let tail = source.stream.split_at(target.get() as usize * stride).1;
+
     assert!(
         heard_as_faded_in(&played, tail),
         "the audio waiting for the graph was not the audio at the seek target"
@@ -3501,12 +3733,14 @@ fn a_pause_caught_between_a_seek_and_the_graph_rebuilds_the_ring_rather_than_par
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
     let target = Frames(FRAMES as u64 / 2);
     let block = BLOCK_FRAMES * stride;
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -3531,9 +3765,12 @@ fn a_pause_caught_between_a_seek_and_the_graph_rebuilds_the_ring_rather_than_par
     );
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
+
     let played = {
         let mut held = graph.lock();
+
         held.played.clear();
+
         assert_eq!(
             held.pull(block),
             block,
@@ -3543,6 +3780,7 @@ fn a_pause_caught_between_a_seek_and_the_graph_rebuilds_the_ring_rather_than_par
     };
 
     let tail = source.stream.split_at(target.get() as usize * stride).1;
+
     assert!(
         heard_as_faded_in(&played, tail),
         "the ring a pause caught mid-seek did not hold the audio at the seek target"
@@ -3555,10 +3793,12 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -3581,7 +3821,9 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
         "the row to be bound to the graph again",
     );
     wait_for(&player, playing, "the row to play again");
+
     let heard = graph.lock().played.len();
+
     play_until(
         &player,
         &graph,
@@ -3591,7 +3833,9 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
     );
 
     assert_eq!(player.state().current.map(|track| track.id.get()), Some(1));
+
     let played = graph.lock().played.clone();
+
     assert!(
         heard_as_faded_in(&played, &source.stream),
         "the row did not play on from the frame the graph had last been handed"
@@ -3610,12 +3854,14 @@ fn a_graph_that_lets_go_of_the_ring_is_waited_for_and_the_row_plays_on_from_wher
 fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
     let wanted = source.stream.len();
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -3631,8 +3877,11 @@ fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start()
     );
 
     let remaining = wanted - graph.lock().played.len();
+
     wait_for_the_ring_to_hold(&player, &graph, remaining / frame_bytes(SampleFormat::S16));
+
     let pulled = graph.lock().pull(remaining);
+
     graph.lock().source = None;
 
     assert_eq!(
@@ -3654,7 +3903,9 @@ fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start()
     );
 
     assert!(plays(&player, 2), "{}", transport(&player));
+
     let played = graph.lock().played.clone();
+
     assert_eq!(played[..wanted], source.stream[..]);
     assert!(
         heard_as_faded_in(&played[wanted..wanted + block * 4], &source.stream),
@@ -3674,16 +3925,20 @@ fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start()
 fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -3694,6 +3949,7 @@ fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -
 
     {
         let mut held = graph.lock();
+
         held.away = true;
         held.source = None;
     }
@@ -3702,9 +3958,12 @@ fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -
         |player| player.state().playback == PlaybackState::Buffering,
         "the row to wait for the graph",
     );
+
     let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+
     thread::sleep(A_SHORT_DOZE);
     neither_failed_nor_finished(&player);
+
     assert!(plays(&player, 2), "{}", transport(&player));
 
     graph.lock().away = false;
@@ -3721,16 +3980,20 @@ fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -
 fn a_skip_the_graph_refuses_before_the_engine_has_noticed_it_gone_waits_for_it_too() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -3740,9 +4003,12 @@ fn a_skip_the_graph_refuses_before_the_engine_has_noticed_it_gone_waits_for_it_t
     );
 
     graph.lock().away = true;
+
     let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+
     thread::sleep(A_SHORT_DOZE);
     neither_failed_nor_finished(&player);
+
     assert!(plays(&player, 2), "{}", transport(&player));
 
     graph.lock().away = false;
@@ -3760,17 +4026,21 @@ fn a_skip_onto_a_daemon_that_never_answers_the_open_waits_for_it_rather_than_fai
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let third = tree.write("third.wav", &source.file);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2), track(&third, 3)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -3780,9 +4050,12 @@ fn a_skip_onto_a_daemon_that_never_answers_the_open_waits_for_it_rather_than_fai
     );
 
     graph.lock().unanswering = true;
+
     let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+
     thread::sleep(A_SHORT_DOZE);
     neither_failed_nor_finished(&player);
+
     assert!(plays(&player, 2), "{}", transport(&player));
 
     graph.lock().unanswering = false;
@@ -3800,17 +4073,20 @@ fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_kee
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let rows: Vec<QueueItem> = (1..=3)
         .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
         .collect();
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: rows,
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the first row to play");
+
     assert_eq!(
         player.state().skip_under_repeat,
         SkipUnderRepeat::RepeatsTheQueue
@@ -3820,7 +4096,9 @@ fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_kee
         .request(Command::SetRepeat(RepeatMode::Track))?
         .wait_for(PATIENCE)?;
     player.request(Command::Next)?.wait_for(PATIENCE)?;
+
     let skipped = player.state();
+
     assert_eq!(skipped.repeat, RepeatMode::Queue);
     assert_eq!(skipped.loaded_position, Some(1));
 
@@ -3833,7 +4111,9 @@ fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_kee
         .request(Command::SetRepeat(RepeatMode::Track))?
         .wait_for(PATIENCE)?;
     player.request(Command::Previous)?.wait_for(PATIENCE)?;
+
     let kept = player.state();
+
     assert_eq!(
         kept.skip_under_repeat,
         SkipUnderRepeat::KeepsRepeatingTheTrack
@@ -3845,6 +4125,7 @@ fn a_skip_while_one_track_repeats_goes_on_repeating_the_queue_unless_told_to_kee
         .request(Command::SetRepeat(RepeatMode::Off))?
         .wait_for(PATIENCE)?;
     player.request(Command::Next)?.wait_for(PATIENCE)?;
+
     assert_eq!(player.state().repeat, RepeatMode::Off);
     Ok(())
 }
@@ -3911,6 +4192,7 @@ fn a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands() 
         fresh_first: false,
         ..SmartShuffle::default()
     };
+
     let config = EngineConfig {
         smart_shuffle: smart,
         kinship: KinSource::by(Arc::clone(&kinship) as Arc<dyn Kinship>),
@@ -3918,6 +4200,7 @@ fn a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands() 
     };
     let (backend, _graph) =
         FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+
     let player = Player::with_backend(config, move |_| Ok(Box::new(backend)))?;
     let rows: Vec<QueueItem> = (1..=30)
         .map(|id| track(Path::new(&format!("/nowhere/{id}.flac")), id))
@@ -3948,17 +4231,20 @@ fn a_smart_shuffle_spreads_the_artists_its_kinship_names_once_their_kin_lands() 
 fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, RATE as usize * 8);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let past = Frames(u64::from(RATE) * 5);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 1,
         autoplay: true,
     })?;
     wait_for(&player, |player| plays(player, 2), "the second row to play");
+
     assert_eq!(
         player.state().previous_restarts,
         PreviousRestarts::RestartsTheTrack
@@ -3983,9 +4269,13 @@ fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_
         |player| heard_past(player, 3),
         "the seek to pass the opening",
     );
+
     let seeks = player.state().seeks;
+
     player.request(Command::Previous)?.wait_for(PATIENCE)?;
+
     let restarted = player.state();
+
     assert_eq!(restarted.current.map(|track| track.id.get()), Some(2));
     assert_eq!(restarted.queue_position, Some(1));
     assert!(
@@ -4014,7 +4304,9 @@ fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_
         |player| paused(player) && plays(player, 2) && near_the_start(player),
         "previous while paused to restart the song and stay paused",
     );
+
     let paused_at_the_start = player.state();
+
     assert_eq!(paused_at_the_start.playback, PlaybackState::Paused);
     assert_eq!(
         paused_at_the_start.current.map(|track| track.id.get()),
@@ -4030,6 +4322,7 @@ fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_
             .map(|track| track.position.get())
             .unwrap_or(0)
     );
+
     player.request(Command::Play)?.wait_for(PATIENCE)?;
     wait_for(&player, playing, "play to resume on the restarted song");
 
@@ -4043,7 +4336,9 @@ fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_
         "the seek under repeat to pass the opening",
     );
     player.request(Command::Previous)?.wait_for(PATIENCE)?;
+
     let repeating = player.state();
+
     assert_eq!(repeating.repeat, RepeatMode::Track);
     assert_eq!(repeating.current.map(|track| track.id.get()), Some(2));
 
@@ -4068,10 +4363,12 @@ fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_
             PreviousRestarts::AlwaysGoesBack,
         ))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().previous_restarts,
         PreviousRestarts::AlwaysGoesBack
     );
+
     player.request(Command::Seek(past))?.wait_for(PATIENCE)?;
     wait_for(
         &player,
@@ -4091,10 +4388,12 @@ fn previous_restarts_a_song_past_its_opening_and_goes_back_while_it_is_still_in_
 fn previous_leaves_a_song_shorter_than_the_opening() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 1,
@@ -4131,16 +4430,19 @@ fn near_the_start(player: &Player) -> bool {
 fn a_track_change_binds_from_the_published_list_rather_than_asking_the_graph_again() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the first row to play");
+
     let taken = graph.lock().enumerations;
 
     player.request(Command::Next)?.wait_for(PATIENCE)?;
@@ -4172,6 +4474,7 @@ fn a_track_change_binds_from_the_published_list_rather_than_asking_the_graph_aga
         },
         "the device that announced itself to take over",
     );
+
     assert!(
         graph.lock().enumerations > taken,
         "an announced device was bound without the list being refreshed"
@@ -4183,9 +4486,11 @@ fn a_track_change_binds_from_the_published_list_rather_than_asking_the_graph_aga
 fn a_device_that_appears_mid_track_reaches_the_picker_without_reopening_anything() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -4207,6 +4512,7 @@ fn a_device_that_appears_mid_track_reaches_the_picker_without_reopening_anything
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.opens, 1, "a sink list refresh reopened the stream");
     assert!(graph.active, "a sink list refresh stopped the graph");
     Ok(())
@@ -4216,6 +4522,7 @@ fn a_device_that_appears_mid_track_reaches_the_picker_without_reopening_anything
 fn switching_sink_rebuilds_the_stream_around_the_new_device() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![
@@ -4246,6 +4553,7 @@ fn switching_sink_rebuilds_the_stream_around_the_new_device() -> Result<()> {
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.closes, 1);
     Ok(())
 }
@@ -4255,6 +4563,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
     let source = pcm(16, FRAMES);
     let named = SourceId::new("trickling").expect("a lowercase name");
     let arrived = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Trickling {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -4266,6 +4575,7 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
         vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -4280,15 +4590,18 @@ fn a_stream_that_cannot_seek_refuses_a_seek_and_keeps_its_stream_until_it_can() 
     let refused = player
         .request(Command::Seek(Frames(FRAMES as u64 / 2)))?
         .wait_for(PATIENCE);
+
     assert!(
         refused
             .as_ref()
             .is_err_and(|error| error.cause() == Cause::CannotSeek),
         "a seek on a stream that cannot seek answered {refused:?}"
     );
+
     player
         .request(Command::SetQuality(Quality::LowLatency))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         graph.lock().opens,
         1,
@@ -4314,6 +4627,7 @@ fn a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits() -> R
     let arriving = source.stream.len() / 2;
     let named = SourceId::new("trickling").expect("a lowercase name");
     let arrived = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Trickling {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -4325,6 +4639,7 @@ fn a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits() -> R
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -4334,11 +4649,14 @@ fn a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits() -> R
         start_at: 0,
         autoplay: true,
     })?;
+
     let _arrives_whatever_happens = ArrivesOnDrop(Arc::clone(&arrived));
+
     wait_for(&player, playing, "the stream to open");
 
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
     let short_of_what_arrived = arriving - 2 * block;
+
     play_until(
         &player,
         &graph,
@@ -4346,7 +4664,9 @@ fn a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits() -> R
         |_, graph| graph.played.len() >= short_of_what_arrived,
         "what arrived to reach the graph",
     );
+
     let starved_until = Instant::now() + STARVED_FOR;
+
     play_until(
         &player,
         &graph,
@@ -4356,10 +4676,14 @@ fn a_pipe_that_stops_producing_leaves_the_engine_answering_while_it_waits() -> R
     );
 
     let asked = Instant::now();
+
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
+
     let paused_after = asked.elapsed();
     let asked = Instant::now();
+
     player.request(Command::Stop)?.wait_for(PATIENCE)?;
+
     let stopped_after = asked.elapsed();
 
     assert!(
@@ -4382,6 +4706,7 @@ fn a_pause_is_answered_while_a_deep_ring_is_still_priming() -> Result<()> {
     let source = pcm(16, RATE as usize * SECONDS_HELD);
     let named = SourceId::new("slow").expect("a lowercase name");
     let opened = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(SlowToRead {
         source: named.clone(),
         bytes: source.file,
@@ -4395,6 +4720,7 @@ fn a_pause_is_answered_while_a_deep_ring_is_still_priming() -> Result<()> {
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -4412,7 +4738,9 @@ fn a_pause_is_answered_while_a_deep_ring_is_still_priming() -> Result<()> {
     thread::sleep(Duration::from_millis(100));
 
     let asked = Instant::now();
+
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
+
     let answered_after = asked.elapsed();
 
     assert!(
@@ -4427,6 +4755,7 @@ fn a_stream_that_cannot_seek_is_opened_again_to_go_back_to_its_start() -> Result
     let source = pcm(16, FRAMES);
     let named = SourceId::new("trickling").expect("a lowercase name");
     let served = Arc::new(AtomicU64::new(0));
+
     let sources = Sources::local().and(Arc::new(Trickling {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -4438,6 +4767,7 @@ fn a_stream_that_cannot_seek_is_opened_again_to_go_back_to_its_start() -> Result
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -4461,6 +4791,7 @@ fn a_stream_that_cannot_seek_is_opened_again_to_go_back_to_its_start() -> Result
     );
 
     let before = served.load(Ordering::Acquire);
+
     player
         .request(Command::Seek(Frames::ZERO))?
         .wait_for(PATIENCE)?;
@@ -4485,8 +4816,11 @@ fn change_the_graph(
     edit: impl FnOnce(&mut Vec<SinkInfo>),
 ) {
     let mut held = graph.lock();
+
     edit(&mut held.sinks);
+
     let announced = held.announce.as_ref().map(|announce| announce.send(change));
+
     assert!(
         announced.is_some_and(|sent| sent.is_ok()),
         "the fake daemon could not announce the change"
@@ -4506,6 +4840,7 @@ fn bound_to(player: &Player) -> Option<SinkId> {
 fn playing_one_track_over(config: EngineConfig) -> Result<(Player, Arc<Mutex<Graph>>)> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (backend, graph) = FakeSink::new(vec![
@@ -4513,12 +4848,14 @@ fn playing_one_track_over(config: EngineConfig) -> Result<(Player, Arc<Mutex<Gra
         arriving(),
     ]);
     let player = Player::with_backend(config, move |_| Ok(Box::new(backend)))?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(bound_to(&player), Some(SinkId::new(1)));
     Ok((player, graph))
 }
@@ -4537,6 +4874,7 @@ fn a_stream_following_the_default_moves_when_the_desktop_chooses_another() -> Re
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.opens, 2);
     assert_eq!(
         graph.requests.last().map(|request| request.target),
@@ -4554,8 +4892,10 @@ fn a_stream_whose_ring_holds_under_a_tenth_of_a_second_still_follows_the_default
 
     let tree = Tree::new();
     let mut file = pcm(16, FRAMES).file;
+
     file[RATE_AT].copy_from_slice(&HIGH_RATE.to_le_bytes());
     file[BYTES_A_SECOND_AT].copy_from_slice(&(HIGH_RATE * 4).to_le_bytes());
+
     let path = tree.write("high.wav", &file);
 
     let (backend, graph) = FakeSink::new(vec![
@@ -4569,12 +4909,14 @@ fn a_stream_whose_ring_holds_under_a_tenth_of_a_second_still_follows_the_default
         },
         move |_| Ok(Box::new(backend)),
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(bound_to(&player), Some(SinkId::new(1)));
 
     change_the_graph(&graph, SinkChange::DefaultChanged, |sinks| {
@@ -4649,8 +4991,11 @@ fn tell_the_stream(
     event: StreamEvent,
 ) {
     let mut held = graph.lock();
+
     edit(&mut held.sinks);
+
     let failed = held.events.as_ref().map(|events| events.send(event));
+
     assert!(
         failed.is_some_and(|sent| sent.is_ok()),
         "the fake daemon could not fail the stream"
@@ -4660,10 +5005,12 @@ fn tell_the_stream(
 fn two_rows_playing_over(sinks: Vec<SinkInfo>) -> Result<(Player, Arc<Mutex<Graph>>, Pcm)> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(sinks)?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -4675,6 +5022,7 @@ fn two_rows_playing_over(sinks: Vec<SinkInfo>) -> Result<(Player, Arc<Mutex<Grap
 
 fn neither_failed_nor_finished(player: &Player) -> Vec<Event> {
     let events: Vec<Event> = player.events().try_iter().collect();
+
     assert!(
         !events
             .iter()
@@ -4703,7 +5051,9 @@ fn a_stream_failing_as_its_device_goes_moves_the_row_to_the_fallback_rather_than
     );
 
     assert!(plays(&player, 1), "{}", transport(&player));
+
     let events = neither_failed_nor_finished(&player);
+
     assert!(
         events
             .iter()
@@ -4719,6 +5069,7 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
     let (player, graph, source) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -4736,6 +5087,7 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
     thread::sleep(A_SHORT_DOZE);
 
     assert!(plays(&player, 1), "{}", transport(&player));
+
     neither_failed_nor_finished(&player);
 
     announce(
@@ -4750,7 +5102,9 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
         |player| playing(player) && bound_to(player) == Some(SinkId::new(3)),
         "the row to play on the device that came",
     );
+
     let heard = graph.lock().played.len();
+
     play_until(
         &player,
         &graph,
@@ -4760,7 +5114,9 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
     );
 
     assert!(plays(&player, 1), "{}", transport(&player));
+
     neither_failed_nor_finished(&player);
+
     assert!(
         heard_as_faded_in(&graph.lock().played, &source.stream),
         "the row did not play on from the frame the graph had last been handed"
@@ -4772,6 +5128,7 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
 fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write(
         "second.wav",
@@ -4781,6 +5138,7 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
         &[SampleRate::HZ_44100, SampleRate::HZ_48000],
         &[SampleFormat::S16],
     )])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -4790,11 +5148,14 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
 
     {
         let mut held = graph.lock();
+
         held.sinks.clear();
+
         let removed = held
             .announce
             .as_ref()
             .map(|announce| announce.send(SinkChange::Removed(SinkId::new(1))));
+
         assert!(removed.is_some_and(|sent| sent.is_ok()));
     }
     wait_for(
@@ -4813,7 +5174,9 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
         },
         "the second row to wait for a device",
     );
+
     let before: Vec<Event> = player.events().try_iter().collect();
+
     assert!(
         !before
             .iter()
@@ -4839,6 +5202,7 @@ fn a_row_that_found_no_device_to_start_on_is_announced_once_it_plays() -> Result
 
     let after: Vec<Event> = player.events().try_iter().collect();
     let second = TrackId::new(2).expect("a non-zero track id");
+
     assert!(
         before
             .iter()
@@ -4854,16 +5218,20 @@ fn a_stream_that_fails_to_open_parks_the_row_where_it_was_heard_not_where_it_was
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -4873,13 +5241,16 @@ fn a_stream_that_fails_to_open_parks_the_row_where_it_was_heard_not_where_it_was
     );
 
     graph.lock().away = true;
+
     let _ = player.request(Command::Next)?.wait_for(PATIENCE);
+
     wait_for(
         &player,
         |player| plays(player, 2) && player.state().playback == PlaybackState::Buffering,
         "the second row to wait for the graph",
     );
     thread::sleep(A_SHORT_DOZE);
+
     assert_eq!(
         player.state().current.map(|track| track.position.get()),
         Some(0),
@@ -4887,6 +5258,7 @@ fn a_stream_that_fails_to_open_parks_the_row_where_it_was_heard_not_where_it_was
     );
 
     let already_played = graph.lock().played.len();
+
     graph.lock().away = false;
     wait_for(
         &player,
@@ -4936,6 +5308,7 @@ fn a_stream_the_system_refuses_to_start_is_lost_like_one_that_failed() -> Result
 fn a_device_announced_while_the_survey_is_out_still_binds_the_row_waiting_for_one() -> Result<()> {
     let (player, graph, _) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     fail_the_stream_as_the_graph_becomes(&graph, Vec::clear);
     wait_for(
         &player,
@@ -4944,8 +5317,11 @@ fn a_device_announced_while_the_survey_is_out_still_binds_the_row_waiting_for_on
     );
 
     let (open_the_gate, gate) = unbounded::<()>();
+
     graph.lock().survey_gate = Some(gate);
+
     let asked = graph.lock().enumerations;
+
     announce(
         &graph,
         SinkInfo {
@@ -4982,6 +5358,7 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
     let (player, graph, source) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -4996,6 +5373,7 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
         |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
         "the row to wait for a device",
     );
+
     let waiting_at = player.state().current.map(|current| current.position);
     let _ = player
         .request(Command::SetForceGraphRate(true))?
@@ -5003,6 +5381,7 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
     let _ = player
         .request(Command::SetBuffer(Duration::from_millis(200)))?
         .wait_for(PATIENCE);
+
     assert_eq!(
         player.state().current.map(|current| current.position),
         waiting_at,
@@ -5021,7 +5400,9 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
         |player| playing(player) && bound_to(player) == Some(SinkId::new(3)),
         "the row to play on the device that came",
     );
+
     let heard = graph.lock().played.len();
+
     play_until(
         &player,
         &graph,
@@ -5041,10 +5422,12 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
 fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let filed = tree.root.join("filed.wav");
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -5059,6 +5442,7 @@ fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
             MediaLocation::local(&filed),
         )]))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.queued().rows[1].location,
         MediaLocation::local(&filed),
@@ -5071,6 +5455,7 @@ fn a_queued_row_whose_file_was_moved_is_reached_where_it_went() -> Result<()> {
         |player| playing(player) && plays(player, 2),
         "the moved row to play",
     );
+
     assert!(
         !player
             .events()
@@ -5093,12 +5478,14 @@ fn a_playing_row_whose_file_was_moved_is_heard_as_the_row_it_became() -> Result<
     let landed = track(&filed, 1);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![left.clone()],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let start = Moment::now();
     let pull = |pulled: usize| {
         graph.lock().pull_heard(
@@ -5106,12 +5493,14 @@ fn a_playing_row_whose_file_was_moved_is_heard_as_the_row_it_became() -> Result<
             start.after_frames((pulled * PULLED) as f64, SampleRate::HZ_44100),
         );
     };
+
     pull(0);
     wait_for(
         &player,
         |player| player.heard_at().is_some(),
         "the stream to be heard",
     );
+
     let before = player.heard_at().map(|heard| heard.row);
 
     fs::rename(&path, &filed).expect("the file moves");
@@ -5142,6 +5531,7 @@ fn a_row_opening_while_its_file_is_moved_lands_where_the_file_went() -> Result<(
 
     let named = SourceId::new("gated").expect("a lowercase name");
     let open = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Gated {
         source: named.clone(),
         bytes: pcm(16, FRAMES).file,
@@ -5162,6 +5552,7 @@ fn a_row_opening_while_its_file_is_moved_lands_where_the_file_went() -> Result<(
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![left.clone()],
         start_at: 0,
@@ -5201,12 +5592,14 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
 {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let rows: Vec<QueueItem> = (1..=3)
         .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
         .collect();
     let added = tree.write("added.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: rows,
         start_at: 0,
@@ -5217,6 +5610,7 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
         |player| player.queue().len() == 3,
         "the queue to load",
     );
+
     let seen = player.queued().revision;
 
     player
@@ -5235,6 +5629,7 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
     let refused = player
         .request_if_the_queue_is_still(seen, Command::Remove(Span::one(0)))?
         .wait_for(PATIENCE);
+
     assert!(
         matches!(refused, Err(EngineError::QueueChanged { seen: held, .. }) if held == seen),
         "{refused:?}"
@@ -5247,6 +5642,7 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
     );
 
     let now = player.queued().revision;
+
     player
         .request_if_the_queue_is_still(now, Command::Remove(Span::one(0)))?
         .wait_for(PATIENCE)?;
@@ -5255,6 +5651,7 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
         |player| player.queue().len() == 3,
         "the removal to land",
     );
+
     assert_eq!(player.queue().first().map(|item| item.id.get()), Some(1));
     Ok(())
 }
@@ -5263,11 +5660,13 @@ fn an_edit_made_against_a_queue_another_client_changed_is_refused_and_touches_no
 fn clearing_keeps_the_playing_row_whichever_row_that_is_when_the_command_lands() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let rows: Vec<QueueItem> = (1..=4)
         .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
         .collect();
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: rows,
         start_at: 2,
@@ -5286,6 +5685,7 @@ fn clearing_keeps_the_playing_row_whichever_row_that_is_when_the_command_lands()
     assert!(playing(&player), "the playing row stopped");
 
     player.request(Command::Clear)?.wait_for(PATIENCE)?;
+
     assert_eq!(player.queue().len(), 1, "a lone row was cleared");
     Ok(())
 }
@@ -5294,11 +5694,13 @@ fn clearing_keeps_the_playing_row_whichever_row_that_is_when_the_command_lands()
 fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeating() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let rows: Vec<QueueItem> = (1..=3)
         .map(|id| track(&tree.write(&format!("{id}.wav"), &source.file), id))
         .collect();
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: rows,
         start_at: 0,
@@ -5317,6 +5719,7 @@ fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeatin
         |player| playing(player) && plays(player, 2),
         "the row that slid into place to play",
     );
+
     assert_eq!(player.queue().len(), 2);
     assert_eq!(player.state().repeat, RepeatMode::Track);
     assert_eq!(player.state().queue_position, Some(0));
@@ -5338,6 +5741,7 @@ fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeatin
         |player| player.queue().is_empty() && player.state().current.is_none(),
         "an emptied queue to leave nothing playing",
     );
+
     assert_ne!(player.state().playback, PlaybackState::Playing);
     Ok(())
 }
@@ -5346,11 +5750,13 @@ fn removing_the_playing_row_under_repeat_plays_what_slides_in_and_keeps_repeatin
 fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let third = tree.write("third.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2), track(&third, 3)],
         start_at: 0,
@@ -5369,6 +5775,7 @@ fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
         |player| paused(player) && plays(player, 2),
         "the row that slid into place to be loaded, still paused",
     );
+
     assert!(
         !graph.lock().active,
         "removing the playing row started the graph"
@@ -5380,6 +5787,7 @@ fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
         |player| paused(player) && plays(player, 3),
         "the next row to be loaded, still paused",
     );
+
     assert!(!graph.lock().active, "skipping a row started the graph");
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
@@ -5395,17 +5803,20 @@ fn a_pause_survives_the_track_changing_under_it() -> Result<()> {
 fn a_run_of_paused_skips_binds_nothing_until_the_transport_is_asked_to_play() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let third = tree.write("third.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2), track(&third, 3)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the first row to play");
+
     assert_eq!(graph.lock().opens, 1);
 
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
@@ -5418,6 +5829,7 @@ fn a_run_of_paused_skips_binds_nothing_until_the_transport_is_asked_to_play() ->
             |player| paused(player) && plays(player, row),
             "the skipped row to be loaded, still paused",
         );
+
         assert!(
             player.state().output.is_none(),
             "a paused skip bound the row to a sink"
@@ -5437,6 +5849,7 @@ fn a_run_of_paused_skips_binds_nothing_until_the_transport_is_asked_to_play() ->
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
     wait_for(&player, playing, "the row the skips landed on to play");
+
     assert!(
         plays(&player, 3),
         "playing after a run of paused skips played a different row"
@@ -5453,12 +5866,14 @@ fn a_run_of_paused_skips_binds_nothing_until_the_transport_is_asked_to_play() ->
 fn a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(
         &[SampleRate::HZ_48000, SampleRate::HZ_44100],
         &[SampleFormat::S16],
     )])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5469,12 +5884,14 @@ fn a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect() -> Result
         playing,
         "the stream to open at the file's own rate",
     );
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::BitPerfect)
     );
 
     let clock = graph.lock().clock.clone().expect("an open stream's clock");
+
     clock.note(ticking_at(48_000), SampleRate::HZ_44100);
     play_until(
         &player,
@@ -5488,7 +5905,9 @@ fn a_stream_the_graph_runs_at_another_rate_is_not_called_bit_perfect() -> Result
         },
         "the chip to say the graph converts the stream",
     );
+
     let status = player.state().output.expect("an output status");
+
     assert!(status.converted_by_the_graph());
     assert_eq!(status.graph_rate, Some(SampleRate::HZ_48000));
 
@@ -5513,14 +5932,17 @@ fn a_stream_another_client_turned_or_muted_is_not_called_bit_perfect_until_it_is
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let heard_as = |mode: OutputMode| {
         move |player: &Player| {
             player
@@ -5542,7 +5964,9 @@ fn a_stream_another_client_turned_or_muted_is_not_called_bit_perfect_until_it_is
             },
             "the engine to hear the stream's own volume",
         );
+
         let status = player.state().output.expect("an output status");
+
         assert!(status.scaled_by_the_stream());
         assert_eq!(status.mode, OutputMode::Converted);
         assert_eq!(graph.lock().opens, 1, "the stream's own volume reopened it");
@@ -5577,6 +6001,7 @@ fn ticking_at(hz: u32) -> GraphTime {
 fn following_the_graph_rate_resamples_where_matching_the_file_would_not() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(
@@ -5596,6 +6021,7 @@ fn following_the_graph_rate_resamples_where_matching_the_file_would_not() -> Res
     );
 
     let matched = player.state().output.expect("a stream is open");
+
     assert_eq!(matched.negotiated.rate, SampleRate::HZ_44100);
     assert_eq!(matched.mode, OutputMode::BitPerfect);
 
@@ -5628,9 +6054,11 @@ fn following_the_graph_rate_resamples_where_matching_the_file_would_not() -> Res
 fn a_setting_that_leaves_the_stream_as_it_was_does_not_reopen_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5661,11 +6089,13 @@ fn choosing_the_bound_device_or_a_setting_the_plan_does_not_read_leaves_the_stre
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let device = sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]);
     let bound = device.name.clone();
 
     let (player, graph) = player(vec![device])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5700,9 +6130,11 @@ fn choosing_the_bound_device_or_a_setting_the_plan_does_not_read_leaves_the_stre
 fn changing_the_quality_a_resampled_track_is_converted_at_reopens_its_stream() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5725,9 +6157,11 @@ fn changing_the_quality_a_resampled_track_is_converted_at_reopens_its_stream() -
 fn leaving_the_graph_rate_to_the_daemon_stops_the_stream_asking_for_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5769,16 +6203,19 @@ fn leaving_the_graph_rate_to_the_daemon_stops_the_stream_asking_for_it() -> Resu
 fn setting_the_buffer_reopens_the_stream_around_the_new_depth() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let deeper = Duration::from_millis(250);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(player.output_settings().buffer, config().buffer);
 
     player
@@ -5803,6 +6240,7 @@ fn a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_h
 {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
     let deeper = Duration::from_millis(250);
@@ -5811,6 +6249,7 @@ fn a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_h
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Reshaping::Settled,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5826,10 +6265,13 @@ fn a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_h
     );
 
     let heard = graph.lock().played.len();
+
     player
         .request(Command::SetBuffer(deeper))?
         .wait_for(PATIENCE)?;
+
     let tail = source.stream.split_at(heard).1;
+
     play_until(
         &player,
         &graph,
@@ -5848,6 +6290,7 @@ fn a_buffer_moved_mid_track_reshapes_the_stream_and_plays_on_from_where_it_was_h
     );
 
     let graph = graph.lock();
+
     assert_eq!(graph.opens, 1, "a deeper buffer reopened the stream");
     assert_eq!(graph.closes, 0, "a deeper buffer closed the stream");
     assert_eq!(
@@ -5869,6 +6312,7 @@ fn a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Reshaping::Settled,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -5892,6 +6336,7 @@ fn a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.reshapes, 0,
         "the stream on one device was reshaped onto another"
@@ -5908,10 +6353,12 @@ fn a_device_chosen_mid_track_opens_a_stream_on_it_rather_than_reshaping_the_one_
 fn a_queue_that_runs_out_finishes_every_track_then_stops() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -5929,6 +6376,7 @@ fn a_queue_that_runs_out_finishes_every_track_then_stops() -> Result<()> {
     let mut started = Vec::new();
     let mut finished = Vec::new();
     let mut ended = false;
+
     for event in player.events().try_iter() {
         match event {
             Event::TrackStarted(id) => started.push(id.get()),
@@ -5957,10 +6405,12 @@ fn rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_b
 
     let tree = Tree::new();
     let leaving = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &leaving.file);
     let second = tree.write("second.wav", &steady(ENTERING_LEVEL, FRAMES));
     let third = tree.write("third.wav", &leaving.file);
     let mut heard = leaving.stream.clone();
+
     heard.extend((0..FRAMES * usize::from(CHANNELS)).flat_map(|_| ENTERING_LEVEL.to_le_bytes()));
 
     let (player, graph) = player_with_tail(
@@ -5968,6 +6418,7 @@ fn rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_b
         0,
         true,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2), track(&third, 3)],
         start_at: 0,
@@ -5982,6 +6433,7 @@ fn rows_of_one_format_play_on_through_one_stream_with_no_drain_and_not_a_frame_b
     );
 
     let graph = graph.lock();
+
     assert!(
         graph.played[..heard.len()] == heard[..],
         "the rows did not reach the graph back to back, frame for frame"
@@ -6000,11 +6452,13 @@ fn a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_i
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
     let boundary = source.stream.len();
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -6014,6 +6468,7 @@ fn a_row_heard_on_without_a_gap_is_announced_as_the_graph_reaches_it_not_as_it_i
     let mut finished_at = None;
     let mut started_at = None;
     let mut published_early = None;
+
     play_until(
         &player,
         &graph,
@@ -6063,10 +6518,12 @@ fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_wh
 {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let boundary = source.stream.len();
     let named = SourceId::new("breaking").expect("a lowercase name");
     let broken = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Breaking {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -6079,6 +6536,7 @@ fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_wh
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![
             track(&first, 1),
@@ -6094,6 +6552,7 @@ fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_wh
 
     let mut finished_at = None;
     let mut failed_at = None;
+
     play_until(
         &player,
         &graph,
@@ -6119,6 +6578,7 @@ fn a_row_failing_just_after_a_gapless_handover_lets_the_leaving_tail_play_out_wh
     );
 
     let played = graph.lock().played.clone();
+
     assert!(
         played.get(..boundary) == Some(&source.stream[..]),
         "the first row's tail was not heard whole before the failing row was passed over"
@@ -6148,6 +6608,7 @@ fn heard_with_a_second_row(
         vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![
             track(first, 1),
@@ -6162,6 +6623,7 @@ fn heard_with_a_second_row(
     })?;
 
     let mut failed_at = None;
+
     play_until(
         &player,
         &graph,
@@ -6178,12 +6640,14 @@ fn heard_with_a_second_row(
         },
         "the second row to fail or the first row's tail to be heard",
     );
+
     let played = graph.lock().played.clone();
     Ok((played, failed_at))
 }
 
 fn played_alone_at_48(path: &Path) -> Result<Vec<u8>> {
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(path, 1)],
         start_at: 0,
@@ -6196,6 +6660,7 @@ fn played_alone_at_48(path: &Path) -> Result<Vec<u8>> {
         |player, _| player.state().playback == PlaybackState::Stopped,
         "the row to play to its end alone",
     );
+
     let played = graph.lock().played.clone();
     Ok(played)
 }
@@ -6217,6 +6682,7 @@ fn a_row_failing_before_its_frames_pass_the_chains_latency_lets_the_leaving_tail
 -> Result<()> {
     let tree = Tree::new();
     let song = steady(HALF_SCALE, FRAMES);
+
     let first = tree.write("first.wav", &song);
     let healthy = tree.write("second.wav", &song);
     let named = SourceId::new("breaking").expect("a lowercase name");
@@ -6236,6 +6702,7 @@ fn a_row_failing_before_its_frames_pass_the_chains_latency_lets_the_leaving_tail
         whole,
     )?;
     let (heard, failed_at) = heard_with_a_second_row(&first, &breaking, breaks, usize::MAX)?;
+
     assert!(
         failed_at.is_some_and(|at| at >= whole),
         "the failing row was passed over at {failed_at:?} of {whole} bytes"
@@ -6246,7 +6713,9 @@ fn a_row_failing_before_its_frames_pass_the_chains_latency_lets_the_leaving_tail
     let heard_tail = heard
         .get(..settled)
         .expect("the failing row was passed over after the tail");
+
     let widest = widest_step_between(heard_tail, &unbroken[..settled]);
+
     assert!(
         widest.is_some_and(|widest| widest <= DITHER_AND_ROUNDING_AT_MOST),
         "the leaving tail was heard {widest:?} steps from what plays on unbroken"
@@ -6273,10 +6742,12 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
         })
         .collect();
     let last = pcm(16, FRAMES);
+
     let mut items: Vec<QueueItem> = rows
         .iter()
         .map(|(id, file)| track(&tree.write(&format!("{id}.wav"), file), *id))
         .collect();
+
     items.push(track(&tree.write("last.wav", &last.file), SHORT_ROWS + 1));
 
     let row_bytes = SHORT_ROW_FRAMES * frame_bytes(SampleFormat::S16);
@@ -6286,7 +6757,9 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
             (0..SHORT_ROW_FRAMES * usize::from(CHANNELS)).flat_map(move |_| level.to_le_bytes())
         })
         .collect();
+
     heard.extend_from_slice(&last.stream[..BLOCK_FRAMES * frame_bytes(SampleFormat::S16)]);
+
     let boundaries: Vec<usize> = (1..=SHORT_ROWS as usize)
         .map(|row| row * row_bytes)
         .collect();
@@ -6296,6 +6769,7 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
         0,
         true,
     )?;
+
     player.send(Command::Load {
         items,
         start_at: 0,
@@ -6307,9 +6781,11 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
     let mut finished = Vec::new();
     let mut published_early = Vec::new();
     let deadline = Instant::now() + PATIENCE;
+
     loop {
         let (played, pause) = {
             let mut held = graph.lock();
+
             held.pull(pull);
             (
                 held.played.len(),
@@ -6317,6 +6793,7 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
             )
         };
         let passed = boundaries.iter().filter(|at| played > **at).count();
+
         loop {
             for event in player.events().try_iter() {
                 match event {
@@ -6326,10 +6803,13 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
                     _ => {}
                 }
             }
+
             let announced = passed == 0 || (started.len() > passed && finished.len() >= passed);
+
             if announced {
                 break;
             }
+
             assert!(
                 Instant::now() < deadline,
                 "row {} was never announced; {}, {}",
@@ -6337,6 +6817,7 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
                 transport(&player),
                 pulls(&graph.lock())
             );
+
             thread::sleep(SHORTEST_PAUSE_BETWEEN_PULLS);
         }
         for (row, boundary) in boundaries.iter().enumerate() {
@@ -6348,16 +6829,19 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
         if played >= heard.len() && started.last().is_some_and(|(id, _)| *id == SHORT_ROWS + 1) {
             break;
         }
+
         assert!(
             Instant::now() < deadline,
             "timed out waiting for every short row and the long one after them to be heard; {}, {}",
             transport(&player),
             pulls(&graph.lock())
         );
+
         thread::sleep(pause);
     }
 
     let graph = graph.lock();
+
     assert!(
         graph.played[..heard.len()] == heard[..],
         "the short rows did not reach the graph back to back, frame for frame"
@@ -6384,13 +6868,17 @@ fn a_run_of_rows_each_shorter_than_the_ring_plays_on_without_a_gap_each_announce
         finished.iter().map(|(id, _)| *id).collect::<Vec<_>>(),
         (1..=SHORT_ROWS).collect::<Vec<_>>()
     );
+
     for (row, boundary) in boundaries.iter().enumerate() {
         let (id, at) = started[row + 1];
+
         assert!(
             *boundary <= at && at < boundary + row_bytes,
             "row {id} was started at {at} bytes, its first frame at {boundary}"
         );
+
         let (id, at) = finished[row];
+
         assert!(
             *boundary <= at && at < boundary + row_bytes,
             "row {id} was finished at {at} bytes, its last frame before {boundary}"
@@ -6453,6 +6941,7 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
             ..ring_deep()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -6466,6 +6955,7 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
         "the leaving row to play until its end is in the ring",
     );
     thread::sleep(Duration::from_millis(300));
+
     assert!(plays(&player, 1), "the boundary was reached before the ask");
 
     player
@@ -6483,6 +6973,7 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
     let heard = left_words(&graph.played);
     let tail = &heard[PULLED_BEFORE_THE_ASK + RAMP_AND_MARGIN..FRAMES];
     let entering = &heard[FRAMES..FRAMES + FRAMES / 2];
+
     assert!(
         tail.iter()
             .all(|word| (word - leaving_heard).abs() <= TOLERANCE),
@@ -6616,6 +7107,7 @@ fn a_gapless_turn_from_96_khz_down_to(rate: u32) -> Result<TurnedDown> {
     let frame = frame_bytes(SampleFormat::S16);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_96000], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -6727,6 +7219,7 @@ fn a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though
             ..ring_deep()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -6746,6 +7239,7 @@ fn a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though
         .iter()
         .position(|word| *word > LEAVING_HEARD * 3 / 4)
         .expect("the leaving row is heard");
+
     let hushed = heard
         .iter()
         .skip(sounding)
@@ -6800,12 +7294,15 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
             ..ring_deep()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
+
     let pulled_before_the_ask = asked.pulled_before();
+
     if let Some(command) = asked.command() {
         play_until(
             &player,
@@ -6815,7 +7312,9 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
             "the leaving row to play until its end is in the ring",
         );
         thread::sleep(Duration::from_millis(300));
+
         assert!(plays(&player, 1), "the boundary was reached before the ask");
+
         player.request(command)?.wait_for(PATIENCE)?;
     }
     play_until(
@@ -6829,6 +7328,7 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
     let graph = graph.lock();
     let heard = left_words(&graph.played);
     let searched_from = PULLED_BEFORE_THE_LEAVING_ROW_ENDS + RAMP_AND_MARGIN;
+
     let turned = heard
         .iter()
         .skip(searched_from)
@@ -6837,6 +7337,7 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
         .expect("the entering row is heard");
     let tail = &heard[turned - TURNING_WITHIN - MEASURED_OVER..turned - TURNING_WITHIN];
     let entering = &heard[turned + TURNING_WITHIN..turned + TURNING_WITHIN + MEASURED_OVER];
+
     assert!(
         tail.iter()
             .all(|word| (word - leaving_heard).abs() <= TOLERANCE),
@@ -6875,6 +7376,7 @@ fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
         sources,
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items,
         start_at: 0,
@@ -6888,16 +7390,20 @@ fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
         "the leaving row to play until its end is in the ring",
     );
     thread::sleep(Duration::from_millis(300));
+
     assert!(plays(&player, 1), "the boundary was reached before the ask");
+
     let seeks = player.state().seeks;
 
     let refused = player.request(Command::Seek(asked))?.wait_for(PATIENCE);
+
     assert!(
         refused
             .as_ref()
             .is_err_and(|error| error.cause() == Cause::CannotSeek),
         "the seek was answered {refused:?}"
     );
+
     play_until(
         &player,
         &graph,
@@ -6908,6 +7414,7 @@ fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
 
     let graph = graph.lock();
     let entering = &left_words(&graph.played)[FRAMES..FRAMES + FRAMES / 2];
+
     assert!(
         entering
             .iter()
@@ -6942,6 +7449,7 @@ fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
         Arc::new(Sources::local()),
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items: vec![
             track(&leaving, 1),
@@ -6959,6 +7467,7 @@ fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
         "the leaving row to play until its end is in the ring",
     );
     thread::sleep(Duration::from_millis(300));
+
     assert!(
         plays(&player, 1),
         "the boundary was reached before the edit"
@@ -6975,6 +7484,7 @@ fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
 
     let heard = left_words(&graph.lock().played);
     let (before, past) = heard.split_at(FRAMES);
+
     assert!(
         before
             .iter()
@@ -7046,6 +7556,7 @@ fn a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gaples
 fn a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write(
         "second.wav",
@@ -7060,6 +7571,7 @@ fn a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own() -> R
         0,
         true,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -7074,6 +7586,7 @@ fn a_row_at_another_rate_still_drains_the_stream_and_opens_one_of_its_own() -> R
     );
 
     let graph = graph.lock();
+
     assert!(
         graph.played[..source.stream.len()] == source.stream[..],
         "the first row did not reach the graph whole"
@@ -7096,9 +7609,11 @@ fn a_queue_that_runs_out_says_so_however_many_events_went_undrained_before_it() 
 
     let tree = Tree::new();
     let source = pcm(16, 256);
+
     let path = tree.write("short.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (1..=ROWS).map(|id| track(&path, id)).collect(),
         start_at: 0,
@@ -7115,6 +7630,7 @@ fn a_queue_that_runs_out_says_so_however_many_events_went_undrained_before_it() 
     let mut finished = 0;
     let mut ended = false;
     let deadline = Instant::now() + PATIENCE;
+
     while !ended && Instant::now() < deadline {
         for event in player.events().try_iter() {
             match event {
@@ -7139,12 +7655,14 @@ fn a_graph_that_lets_go_of_every_stream_stops_a_repeating_queue_rather_than_loop
 {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let backend = backend.letting_go_of_every_ring();
     let player = Player::with_backend(config(), move |_| Ok(Box::new(backend)))?;
+
     player
         .request(Command::SetRepeat(RepeatMode::Queue))?
         .wait_for(PATIENCE)?;
@@ -7165,6 +7683,7 @@ fn a_graph_that_lets_go_of_every_stream_stops_a_repeating_queue_rather_than_loop
         .try_iter()
         .filter(|event| matches!(event, Event::Failed { .. }))
         .count();
+
     assert!(
         failures <= 3,
         "a queue of two rows failed {failures} times before it stopped"
@@ -7181,10 +7700,12 @@ fn a_graph_that_lets_go_of_every_stream_stops_a_repeating_queue_rather_than_loop
 fn next_drains_the_current_track_and_opens_the_following_one() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -7213,6 +7734,7 @@ fn next_drains_the_current_track_and_opens_the_following_one() -> Result<()> {
 fn a_track_boundary_ends_when_the_graph_says_it_is_done_not_on_its_own_clock() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write(
         "second.wav",
@@ -7228,6 +7750,7 @@ fn a_track_boundary_ends_when_the_graph_says_it_is_done_not_on_its_own_clock() -
         unplayable_tail,
         true,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -7254,6 +7777,7 @@ fn a_track_boundary_ends_when_the_graph_says_it_is_done_not_on_its_own_clock() -
 fn a_rebind_mid_track_never_publishes_a_position_behind_one_already_published() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, RATE as usize * 4);
+
     let path = tree.write("long.wav", &source.file);
 
     let (player, graph) = player_with_tail(
@@ -7261,6 +7785,7 @@ fn a_rebind_mid_track_never_publishes_a_position_behind_one_already_published() 
         u64::from(RATE) / 10,
         true,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -7274,6 +7799,7 @@ fn a_rebind_mid_track_never_publishes_a_position_behind_one_already_published() 
             .current
             .map_or(Frames::ZERO, |track| track.position)
     };
+
     play_until(
         &player,
         &graph,
@@ -7283,17 +7809,20 @@ fn a_rebind_mid_track_never_publishes_a_position_behind_one_already_published() 
     );
 
     let mut furthest = position(&player);
+
     player
         .request(Command::SetDither(DitherKind::None))?
         .wait_for(PATIENCE)?;
 
     let mut behind = Vec::new();
+
     play_until(
         &player,
         &graph,
         block,
         |player, _| {
             let now = position(player);
+
             if now < furthest {
                 behind.push((furthest, now));
             }
@@ -7325,6 +7854,7 @@ fn a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_no
     let tree = Tree::new();
     let silent = vec![0_i16; SILENT_FOR * usize::from(CHANNELS)];
     let sung = vec![SUNG_LEVEL; SUNG_FOR * usize::from(CHANNELS)];
+
     let data: Vec<u8> = silent
         .iter()
         .chain(&sung)
@@ -7350,6 +7880,7 @@ fn a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_no
         },
         move |_| Ok(Box::new(backend)),
     )?);
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -7358,6 +7889,7 @@ fn a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_no
 
     let frame = frame_bytes(SampleFormat::S16);
     let mut lit_with = None;
+
     play_paced_until(
         &player,
         &graph,
@@ -7368,6 +7900,7 @@ fn a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_no
                 track.position.to_duration(track.source.rate)
             });
             let lit = lyrics.voices_in_play(heard)[0].is_some();
+
             if lit {
                 lit_with = Some(graph.played.len() / frame);
             }
@@ -7399,6 +7932,7 @@ fn a_lyric_line_lights_when_its_words_are_heard_past_the_chain_and_the_device_no
 fn a_graph_that_never_reports_a_drain_still_advances_on_the_delay_it_reports() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write(
         "second.wav",
@@ -7413,6 +7947,7 @@ fn a_graph_that_never_reports_a_drain_still_advances_on_the_delay_it_reports() -
         u64::from(RATE) / 10,
         false,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
@@ -7439,6 +7974,7 @@ fn a_graph_that_never_reports_a_drain_still_advances_on_the_delay_it_reports() -
 fn a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write(
         "second.wav",
@@ -7453,12 +7989,15 @@ fn a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play
         u64::from(RATE) / 4,
         false,
     )?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&second, 2)],
         start_at: 0,
         autoplay: true,
     })?;
+
     let whole = 4_000 * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -7470,6 +8009,7 @@ fn a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play
     player.request(Command::Pause)?.wait_for(PATIENCE)?;
     wait_for(&player, paused, "the draining row to say it is paused");
     thread::sleep(Duration::from_millis(400));
+
     assert!(plays(&player, 1), "{}", transport(&player));
     assert!(paused(&player), "{}", transport(&player));
 
@@ -7488,11 +8028,13 @@ fn a_pause_while_the_last_buffer_drains_says_paused_and_holds_the_row_until_play
 fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..4)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     assert!(player.queue().is_empty());
 
     let items: Vec<QueueItem> = paths
@@ -7500,6 +8042,7 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
         .enumerate()
         .map(|(index, path)| track(path, index as u64 + 1))
         .collect();
+
     player
         .request(Command::Load {
             items: items.clone(),
@@ -7528,7 +8071,9 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
 
     let shuffled = player.queue();
     let mut seen: Vec<u64> = shuffled.iter().map(|item| item.id.get()).collect();
+
     seen.sort_unstable();
+
     assert_eq!(seen, [1, 2, 3, 4], "shuffling lost or duplicated an item");
     assert_eq!(
         player.state().queue_position,
@@ -7548,7 +8093,9 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
         "the jump to land on the row it was given",
     );
     stand_still(&player);
+
     let jumped = player.state();
+
     assert_eq!(
         jumped.current.map(|track| track.id),
         shuffled.get(2).map(|item| item.id),
@@ -7570,7 +8117,9 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
         |player| !player.state().shuffle,
         "the shuffle to be turned off",
     );
+
     let unshuffled = player.state();
+
     assert_eq!(
         unshared(&player.queue()),
         items,
@@ -7587,12 +8136,14 @@ fn the_queue_the_engine_publishes_is_the_order_it_will_play() -> Result<()> {
 fn editing_the_queue_leaves_the_playing_track_alone_until_its_own_row_goes() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
     let added = tree.write("added.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (0..3).map(|n| track(&paths[n], n as u64 + 1)).collect(),
         start_at: 1,
@@ -7631,6 +8182,7 @@ fn editing_the_queue_leaves_the_playing_track_alone_until_its_own_row_goes() -> 
         |player| player.queue().len() == 3,
         "the removed row to publish",
     );
+
     assert_eq!(player.state().queue_position, Some(1));
     assert_eq!(player.state().current.map(|track| track.id.get()), Some(2));
     assert_eq!(graph.lock().opens, 1, "a removal reopened the stream");
@@ -7648,6 +8200,7 @@ fn editing_the_queue_leaves_the_playing_track_alone_until_its_own_row_goes() -> 
         },
         "the row that slid in to take over",
     );
+
     assert_eq!(player.state().queue_position, Some(1));
     assert_eq!(player.queue().len(), 2);
     assert!(
@@ -7658,11 +8211,13 @@ fn editing_the_queue_leaves_the_playing_track_alone_until_its_own_row_goes() -> 
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
     wait_for(&player, playing, "the row that took over to play");
+
     assert_eq!(graph.lock().opens, 2);
 
     let outcome = player
         .request(Command::Remove(Span::one(9)))?
         .wait_for(PATIENCE);
+
     assert!(outcome.is_err(), "a row past the end was removed");
     Ok(())
 }
@@ -7671,12 +8226,14 @@ fn editing_the_queue_leaves_the_playing_track_alone_until_its_own_row_goes() -> 
 fn jumping_between_queued_rows_leaves_the_stamp_of_what_is_playing_from_alone() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let items = vec![track(&first, 1), track(&second, 2)];
     let as_loaded = stamp_of(&items);
+
     player.send(Command::Load {
         items,
         start_at: 0,
@@ -7693,6 +8250,7 @@ fn jumping_between_queued_rows_leaves_the_stamp_of_what_is_playing_from_alone() 
         .wait_for(PATIENCE)?;
     player.request(Command::Next)?.wait_for(PATIENCE)?;
     wait_for(&player, |player| plays(player, 90), "the first queued row");
+
     assert_eq!(player.state().queue_stamp, as_loaded);
 
     player.request(Command::JumpTo(2))?.wait_for(PATIENCE)?;
@@ -7710,12 +8268,14 @@ fn jumping_between_queued_rows_leaves_the_stamp_of_what_is_playing_from_alone() 
 fn queueing_a_row_next_leaves_the_track_playing_and_does_not_start_one() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
     let queued = tree.write("queued.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (0..3).map(|n| track(&paths[n], n as u64 + 1)).collect(),
         start_at: 0,
@@ -7763,9 +8323,11 @@ fn queueing_a_row_next_leaves_the_track_playing_and_does_not_start_one() -> Resu
 fn queueing_into_an_empty_queue_waits_for_play() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let queued = tree.write("queued.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Insert {
             items: vec![track(&queued, 90)],
@@ -7784,6 +8346,7 @@ fn queueing_into_an_empty_queue_waits_for_play() -> Result<()> {
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
     wait_for(&player, playing, "the queued row to open on play");
+
     assert_eq!(player.state().current.map(|track| track.id.get()), Some(90));
     Ok(())
 }
@@ -7792,9 +8355,11 @@ fn queueing_into_an_empty_queue_waits_for_play() -> Result<()> {
 fn queueing_into_an_empty_queue_to_hear_it_plays_it_without_a_play() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let queued = tree.write("queued.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Insert {
             items: vec![track(&queued, 90)],
@@ -7818,6 +8383,7 @@ fn queueing_into_an_empty_queue_to_hear_it_plays_it_without_a_play() -> Result<(
 fn queueing_a_run_to_hear_it_plays_the_whole_run_before_the_rows_already_queued() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
@@ -7829,6 +8395,7 @@ fn queueing_a_run_to_hear_it_plays_the_whole_run_before_the_rows_already_queued(
         .collect();
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (0..3).map(|n| track(&paths[n], n as u64 + 1)).collect(),
         start_at: 0,
@@ -7853,6 +8420,7 @@ fn queueing_a_run_to_hear_it_plays_the_whole_run_before_the_rows_already_queued(
     wait_for(&player, |player| plays(player, 90), "the run to start");
 
     let ids: Vec<u64> = player.queue().iter().map(|item| item.id.get()).collect();
+
     assert_eq!(ids, [1, 90, 91, 92, 80, 81, 2, 3]);
 
     for expected in [91, 92, 80, 81, 2] {
@@ -7870,12 +8438,14 @@ fn queueing_a_run_to_hear_it_plays_the_whole_run_before_the_rows_already_queued(
 fn queueing_a_row_next_to_hear_it_jumps_to_the_row_that_landed() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
     let queued = tree.write("queued.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (0..3).map(|n| track(&paths[n], n as u64 + 1)).collect(),
         start_at: 0,
@@ -7911,11 +8481,13 @@ fn queueing_a_row_next_to_hear_it_jumps_to_the_row_that_landed() -> Result<()> {
 fn moving_a_row_reorders_the_queue_without_disturbing_the_stream() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (0..3).map(|n| track(&paths[n], n as u64 + 1)).collect(),
         start_at: 0,
@@ -7950,6 +8522,7 @@ fn moving_a_row_reorders_the_queue_without_disturbing_the_stream() -> Result<()>
     assert!(playing(&player), "a move stopped the transport");
 
     let order: Vec<u64> = player.queue().iter().map(|item| item.id.get()).collect();
+
     assert_eq!(order, vec![3, 1, 2]);
 
     player
@@ -7963,6 +8536,7 @@ fn moving_a_row_reorders_the_queue_without_disturbing_the_stream() -> Result<()>
         |player| player.state().queue_position == Some(2),
         "the playing row to follow the move",
     );
+
     assert_eq!(player.state().current.map(|track| track.id.get()), Some(1));
 
     let outcome = player
@@ -7971,6 +8545,7 @@ fn moving_a_row_reorders_the_queue_without_disturbing_the_stream() -> Result<()>
             to: 9,
         })?
         .wait_for(PATIENCE);
+
     assert!(outcome.is_err(), "a row past the end was moved");
     Ok(())
 }
@@ -7979,11 +8554,13 @@ fn moving_a_row_reorders_the_queue_without_disturbing_the_stream() -> Result<()>
 fn a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let wanted = NodeName::new("alsa_output.usb");
+
     let player = Player::with_backend(
         EngineConfig {
             sink: Some(wanted.clone()),
@@ -8002,6 +8579,7 @@ fn a_named_sink_binds_when_the_device_turns_up_rather_than_at_startup() -> Resul
         playing,
         "the stream to open on the only device there",
     );
+
     assert_eq!(
         player.state().output.map(|output| output.sink),
         Some(SinkId::new(1)),
@@ -8032,20 +8610,25 @@ fn a_player_answers_before_its_first_survey_and_says_when_that_survey_has_landed
 
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let (open_the_gate, gate) = unbounded::<()>();
+
     graph.lock().survey_gate = Some(gate);
 
     let (answer, answered) = unbounded();
+
     thread::spawn(move || {
         let _ = answer.send(Player::with_backend(config(), move |_| {
             Ok(Box::new(backend))
         }));
     });
+
     let player = answered
         .recv_timeout(PATIENCE)
         .expect("the player to answer while its first survey is out")?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -8061,6 +8644,7 @@ fn a_player_answers_before_its_first_survey_and_says_when_that_survey_has_landed
     drop(open_the_gate);
 
     assert_eq!(player.sinks_once_surveyed(PATIENCE).len(), 1);
+
     wait_for(&player, playing, "the row loaded before the survey to play");
     Ok(())
 }
@@ -8069,6 +8653,7 @@ fn a_player_answers_before_its_first_survey_and_says_when_that_survey_has_landed
 fn a_sink_list_with_no_devices_fails_the_load_rather_than_playing_silence() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(Vec::new())?;
@@ -8089,6 +8674,7 @@ fn a_sink_list_with_no_devices_fails_the_load_rather_than_playing_silence() -> R
 fn a_load_onto_a_list_with_no_devices_is_refused_without_asking_the_graph_again() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(Vec::new())?;
@@ -8114,11 +8700,14 @@ fn a_load_onto_a_list_with_no_devices_is_refused_without_asking_the_graph_again(
 fn a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_back() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(Vec::new())?;
     let (open_the_gate, gate) = unbounded::<()>();
+
     graph.lock().survey_gate = Some(gate);
+
     let asked = graph.lock().enumerations;
 
     announce(&graph, sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]));
@@ -8134,6 +8723,7 @@ fn a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_ba
             autoplay: true,
         })?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         graph.lock().opens,
         0,
@@ -8146,6 +8736,7 @@ fn a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_ba
         playing,
         "the row to bind once the survey brought the device",
     );
+
     assert_eq!(graph.lock().opens, 1);
     Ok(())
 }
@@ -8154,6 +8745,7 @@ fn a_load_while_the_survey_is_out_is_answered_at_once_and_bound_once_it_comes_ba
 fn play_pressed_while_the_survey_is_out_binds_the_row_once_it_comes_back() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(Vec::new())?;
@@ -8164,11 +8756,15 @@ fn play_pressed_while_the_survey_is_out_binds_the_row_once_it_comes_back() -> Re
             autoplay: true,
         })?
         .wait_for(PATIENCE);
+
     assert!(outcome.is_err(), "a queue with no sink started playing");
 
     let (open_the_gate, gate) = unbounded::<()>();
+
     graph.lock().survey_gate = Some(gate);
+
     let asked = graph.lock().enumerations;
+
     announce(&graph, sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]));
     wait_for(
         &player,
@@ -8176,6 +8772,7 @@ fn play_pressed_while_the_survey_is_out_binds_the_row_once_it_comes_back() -> Re
         "the survey to be asked about the device that appeared",
     );
     player.request(Command::Play)?.wait_for(PATIENCE)?;
+
     assert_eq!(
         graph.lock().opens,
         0,
@@ -8195,6 +8792,7 @@ fn play_pressed_while_the_survey_is_out_binds_the_row_once_it_comes_back() -> Re
 fn the_first_play_pause_after_a_load_that_found_no_device_plays() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(Vec::new())?;
@@ -8205,6 +8803,7 @@ fn the_first_play_pause_after_a_load_that_found_no_device_plays() -> Result<()> 
             autoplay: true,
         })?
         .wait_for(PATIENCE);
+
     assert!(outcome.is_err(), "a queue with no sink started playing");
 
     announce(&graph, sink(&[SampleRate::HZ_44100], &[SampleFormat::S16]));
@@ -8214,6 +8813,7 @@ fn the_first_play_pause_after_a_load_that_found_no_device_plays() -> Result<()> 
         .wait_for(PATIENCE)?;
 
     wait_for(&player, playing, "the first press to play");
+
     assert_eq!(graph.lock().opens, 1);
     Ok(())
 }
@@ -8223,6 +8823,7 @@ fn a_pause_while_the_row_waits_for_a_device_says_it_is_paused() -> Result<()> {
     let (player, graph, _) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -8249,6 +8850,7 @@ fn a_pause_while_the_row_waits_for_a_device_says_it_is_paused() -> Result<()> {
 fn a_source_that_is_not_the_local_files_reaches_the_graph_the_same_way() -> Result<()> {
     let source = pcm(16, FRAMES);
     let named = SourceId::new("held").expect("a lowercase name");
+
     let sources = Sources::local().and(Arc::new(InMemory {
         source: named.clone(),
         key: "tracks/1.wav".to_owned(),
@@ -8260,6 +8862,7 @@ fn a_source_that_is_not_the_local_files_reaches_the_graph_the_same_way() -> Resu
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -8271,6 +8874,7 @@ fn a_source_that_is_not_the_local_files_reaches_the_graph_the_same_way() -> Resu
     })?;
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -8295,9 +8899,11 @@ fn a_source_that_is_not_the_local_files_reaches_the_graph_the_same_way() -> Resu
 #[test]
 fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<()> {
     const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+
     let source = pcm(16, FRAMES);
     let named = SourceId::new("slow").expect("a lowercase name");
     let open = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Gated {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -8317,12 +8923,14 @@ fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<
         start_at: 0,
         autoplay: true,
     })?;
+
     loaded.wait_for(ANSWERED_WITHIN)?;
     player
         .request(Command::SetVolume(
             Volume::new(0.5).expect("half is a volume"),
         ))?
         .wait_for(ANSWERED_WITHIN)?;
+
     assert_eq!(
         player.state().playback,
         PlaybackState::Buffering,
@@ -8331,7 +8939,9 @@ fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<
     assert_eq!(graph.lock().opens, 0);
 
     open.store(true, Ordering::Release);
+
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -8346,8 +8956,10 @@ fn a_source_slow_to_open_leaves_the_engine_answering_while_it_waits() -> Result<
 fn a_moment_asked_while_a_track_opens_lands_by_the_rate_it_opens_at() -> Result<()> {
     const OPENS_AT: u32 = 8_000;
     const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+
     let named = SourceId::new("slow").expect("a lowercase name");
     let open = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Gated {
         source: named.clone(),
         bytes: sixteen_bit_stereo_at(OPENS_AT, pcm(16, FRAMES).file),
@@ -8359,6 +8971,7 @@ fn a_moment_asked_while_a_track_opens_lands_by_the_rate_it_opens_at() -> Result<
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player
         .request(Command::Load {
             items: vec![QueueItem {
@@ -8383,10 +8996,13 @@ fn a_moment_asked_while_a_track_opens_lands_by_the_rate_it_opens_at() -> Result<
         |player| player.state().current.is_some(),
         "the paused track to land",
     );
+
     let landed = player.state().current.map(|track| track.position);
+
     player
         .request(Command::SeekToMoment(Duration::from_secs(2)))?
         .wait_for(ANSWERED_WITHIN)?;
+
     let moved = player.state().current.map(|track| track.position);
 
     assert_eq!(landed, Some(at_the_rate_it_opens_at(1)));
@@ -8397,9 +9013,11 @@ fn a_moment_asked_while_a_track_opens_lands_by_the_rate_it_opens_at() -> Result<
 #[test]
 fn a_pause_while_a_track_opens_is_published_as_paused_before_it_lands() -> Result<()> {
     const ANSWERED_WITHIN: Duration = Duration::from_millis(500);
+
     let source = pcm(16, FRAMES);
     let named = SourceId::new("slow").expect("a lowercase name");
     let open = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Gated {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -8410,6 +9028,7 @@ fn a_pause_while_a_track_opens_is_published_as_paused_before_it_lands() -> Resul
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player
         .request(Command::Load {
             items: vec![QueueItem {
@@ -8435,6 +9054,7 @@ fn a_pause_while_a_track_opens_is_published_as_paused_before_it_lands() -> Resul
         |player| player.state().current.is_some(),
         "the paused track to land",
     );
+
     assert_eq!(player.state().playback, PlaybackState::Paused);
     assert_eq!(graph.lock().opens, 0);
     Ok(())
@@ -8445,6 +9065,7 @@ fn a_sleep_timer_due_while_a_track_opens_leaves_it_paused_once_open() -> Result<
     let source = pcm(16, FRAMES);
     let named = SourceId::new("slow").expect("a lowercase name");
     let open = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Gated {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -8455,6 +9076,7 @@ fn a_sleep_timer_due_while_a_track_opens_leaves_it_paused_once_open() -> Result<
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player
         .request(Command::Load {
             items: vec![QueueItem {
@@ -8482,6 +9104,7 @@ fn a_sleep_timer_due_while_a_track_opens_leaves_it_paused_once_open() -> Result<
         "the track to open once its source answered",
     );
     thread::sleep(A_SHORT_DOZE);
+
     assert!(paused(&player), "{}", transport(&player));
     assert!(
         !graph.lock().active,
@@ -8495,6 +9118,7 @@ fn a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row() -> Resul
     let source = pcm(16, FRAMES);
     let named = SourceId::new("slow").expect("a lowercase name");
     let open = Arc::new(AtomicBool::new(false));
+
     let sources = Sources::local().and(Arc::new(Gated {
         source: named.clone(),
         bytes: source.file.clone(),
@@ -8505,6 +9129,7 @@ fn a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row() -> Resul
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![
             QueueItem {
@@ -8524,6 +9149,7 @@ fn a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row() -> Resul
     open.store(true, Ordering::Release);
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -8534,6 +9160,7 @@ fn a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row() -> Resul
         },
         "the row after one that would not open to reach the graph",
     );
+
     assert!(
         player
             .events()
@@ -8548,6 +9175,7 @@ fn a_source_that_refuses_after_a_wait_is_passed_over_for_the_next_row() -> Resul
 fn a_source_that_serves_one_handle_plays_without_the_layout_the_inspector_draws() -> Result<()> {
     let source = pcm(16, FRAMES);
     let named = SourceId::new("once").expect("a lowercase name");
+
     let sources = Sources::local().and(Arc::new(ServesOnce {
         source: named.clone(),
         key: "tracks/1.wav".to_owned(),
@@ -8560,6 +9188,7 @@ fn a_source_that_serves_one_handle_plays_without_the_layout_the_inspector_draws(
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -8571,6 +9200,7 @@ fn a_source_that_serves_one_handle_plays_without_the_layout_the_inspector_draws(
     })?;
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -8597,6 +9227,7 @@ fn a_source_that_serves_one_handle_plays_without_the_layout_the_inspector_draws(
 fn a_queue_row_cut_to_a_span_hands_the_graph_that_span_and_stops() -> Result<()> {
     let source = pcm(16, FRAMES);
     let named = SourceId::new("held").expect("a lowercase name");
+
     let sources = Sources::local().and(Arc::new(InMemory {
         source: named.clone(),
         key: "album.wav".to_owned(),
@@ -8607,12 +9238,14 @@ fn a_queue_row_cut_to_a_span_hands_the_graph_that_span_and_stops() -> Result<()>
     let start = Frames(1_000);
     let end = Frames(4_000);
     let stride = frame_bytes(SampleFormat::S16);
+
     let wanted = source.stream[start.get() as usize * stride..end.get() as usize * stride].to_vec();
 
     let (player, graph) = player_over(
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
         Arc::new(sources),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -8666,6 +9299,7 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
     let tree = Tree::new();
     let path = tree.write("long.wav", &steady(1_000, MINUTE_OF_FRAMES * 3));
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -8673,6 +9307,7 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
     })?;
 
     let mut digests = Vec::new();
+
     play_paced_within(
         &player,
         &graph,
@@ -8704,17 +9339,21 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
             .map_or(0, |profile| profile.series.len())
     };
     let gained = points(digests.last().expect("a digest")) - points(&digests[0]);
+
     assert!(
         digests.len() < gained,
         "{} digests for {gained} points",
         digests.len()
     );
+
     for pair in digests.windows(2) {
         assert!(pair[1].only_grew_from(&pair[0]));
     }
 
     let mut elsewhere = (**digests.last().expect("a digest")).clone();
+
     elsewhere.profiled_from = Frames(RATE as u64);
+
     assert!(!elsewhere.only_grew_from(&digests[0]));
     Ok(())
 }
@@ -8723,6 +9362,7 @@ fn a_long_decode_publishes_its_digest_fewer_times_than_it_gains_a_point_and_each
 fn a_row_a_sheet_cut_it_out_of_plays_at_the_gain_that_sheet_declares_for_it() -> Result<()> {
     let tree = Tree::new();
     let file = tree.write("Meddle.wav", &pcm(16, FRAMES).file);
+
     tree.write("Meddle.cue", SHEET.as_bytes());
 
     let (player, graph) = settled_over(
@@ -8733,6 +9373,7 @@ fn a_row_a_sheet_cut_it_out_of_plays_at_the_gain_that_sheet_declares_for_it() ->
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -8752,6 +9393,7 @@ fn a_row_a_sheet_cut_it_out_of_plays_at_the_gain_that_sheet_declares_for_it() ->
     );
 
     let digest = player.digest().expect("a digest for the row being played");
+
     assert_eq!(
         digest.info.tags.title.as_deref(),
         Some("Echoes"),
@@ -8778,7 +9420,9 @@ fn a_boost_its_full_scale_peak_caps_at_unity_reaches_the_graph_byte_for_byte() -
     for dither in [DitherKind::None, DitherKind::Triangular] {
         let tree = Tree::new();
         let source = pcm(16, FRAMES);
+
         let file = tree.write("Normalised.wav", &source.file);
+
         tree.write("Normalised.cue", PEAK_NORMALISED.as_bytes());
 
         let (player, graph) = settled_over(
@@ -8790,6 +9434,7 @@ fn a_boost_its_full_scale_peak_caps_at_unity_reaches_the_graph_byte_for_byte() -
                 ..config()
             },
         )?;
+
         player.send(Command::Load {
             items: vec![QueueItem {
                 id: TrackId::new(1).expect("a non-zero track id"),
@@ -8803,6 +9448,7 @@ fn a_boost_its_full_scale_peak_caps_at_unity_reaches_the_graph_byte_for_byte() -
         let wanted = source.stream.len();
         let mut mode = None;
         let mut applied = None;
+
         play_until(
             &player,
             &graph,
@@ -8830,6 +9476,7 @@ fn a_boost_its_full_scale_peak_caps_at_unity_reaches_the_graph_byte_for_byte() -
         );
 
         let graph = graph.lock();
+
         assert_eq!(
             graph.played.get(..wanted),
             Some(source.stream.as_slice()),
@@ -8866,6 +9513,7 @@ fn a_dsd_track_reaches_a_dop_capable_sink_with_its_markers_intact() -> Result<()
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem::whole(
             TrackId::new(1).expect("a non-zero track id"),
@@ -8876,6 +9524,7 @@ fn a_dsd_track_reaches_a_dop_capable_sink_with_its_markers_intact() -> Result<()
     })?;
 
     let stride = frame_bytes(SampleFormat::S24);
+
     play_until(
         &player,
         &graph,
@@ -8891,9 +9540,11 @@ fn a_dsd_track_reaches_a_dop_capable_sink_with_its_markers_intact() -> Result<()
         !words.is_empty(),
         "the graph was handed no DoP words at all"
     );
+
     for (index, word) in words.iter().enumerate().take(256) {
         let frame = index / usize::from(CHANNELS);
         let wanted = if frame % 2 == 0 { 0x05 } else { 0xFA };
+
         assert_eq!(
             word[2], wanted,
             "word {index} reached the graph carrying {:#04x} where a DAC reads {wanted:#04x}",
@@ -8930,6 +9581,7 @@ fn dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbro
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![row(1), row(2)],
         start_at: 0,
@@ -8969,6 +9621,7 @@ fn dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbro
     for (index, word) in heard.iter().enumerate() {
         let frame = index / lanes;
         let wanted = if frame % 2 == 0 { 0x05 } else { 0xFA };
+
         assert_eq!(
             word[2], wanted,
             "word {index} (frame {frame}, the boundary at {frames}) broke the marker sequence"
@@ -8981,6 +9634,7 @@ fn dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbro
             "word {index} of the entering row was not its own music right behind the leaving row"
         );
     }
+
     assert_eq!(
         graph.opens, 1,
         "the second DoP row opened a stream of its own"
@@ -9015,6 +9669,7 @@ fn a_seek_on_a_dop_stream_marks_the_prime_window_rather_than_dropping_the_carrie
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem::whole(
             TrackId::new(1).expect("a non-zero track id"),
@@ -9026,6 +9681,7 @@ fn a_seek_on_a_dop_stream_marks_the_prime_window_rather_than_dropping_the_carrie
 
     let stride = frame_bytes(SampleFormat::S24);
     let block = BLOCK_FRAMES * stride;
+
     play_until(
         &player,
         &graph,
@@ -9040,7 +9696,9 @@ fn a_seek_on_a_dop_stream_marks_the_prime_window_rather_than_dropping_the_carrie
 
     let primed = {
         let mut held = graph.lock();
+
         held.played.clear();
+
         assert_eq!(
             held.pull(block),
             block,
@@ -9052,6 +9710,7 @@ fn a_seek_on_a_dop_stream_marks_the_prime_window_rather_than_dropping_the_carrie
     for (index, word) in primed.as_chunks::<4>().0.iter().enumerate() {
         let frame = index / usize::from(CHANNELS);
         let wanted = if frame % 2 == 0 { 0x05 } else { 0xFA };
+
         assert_eq!(
             word[2], wanted,
             "word {index} of the prime window left the marker a DAC locks onto"
@@ -9083,6 +9742,7 @@ fn a_dop_stream_turned_down_and_back_up_is_marked_again_within_the_track() -> Re
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem::whole(
             TrackId::new(1).expect("a non-zero track id"),
@@ -9093,6 +9753,7 @@ fn a_dop_stream_turned_down_and_back_up_is_marked_again_within_the_track() -> Re
     })?;
 
     let stride = frame_bytes(SampleFormat::S24);
+
     play_until(
         &player,
         &graph,
@@ -9107,6 +9768,7 @@ fn a_dop_stream_turned_down_and_back_up_is_marked_again_within_the_track() -> Re
     player
         .request(Command::SetVolume(Volume::new(0.5).expect("half volume")))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::Converted),
@@ -9116,6 +9778,7 @@ fn a_dop_stream_turned_down_and_back_up_is_marked_again_within_the_track() -> Re
     player
         .request(Command::SetVolume(Volume::MAX))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::BitPerfect),
@@ -9123,6 +9786,7 @@ fn a_dop_stream_turned_down_and_back_up_is_marked_again_within_the_track() -> Re
     );
 
     let marked_from = graph.lock().played.len();
+
     play_until(
         &player,
         &graph,
@@ -9130,10 +9794,12 @@ fn a_dop_stream_turned_down_and_back_up_is_marked_again_within_the_track() -> Re
         |_, graph| graph.played.len() >= marked_from + 512 * stride,
         "the stream to play on after it was marked again",
     );
+
     let played = graph.lock().played.clone();
     let tail = played
         .get(played.len() - 256 * stride..)
         .unwrap_or_default();
+
     assert!(
         tail.as_chunks::<4>()
             .0
@@ -9162,6 +9828,7 @@ fn a_dsd_track_a_sink_cannot_take_is_decimated_rather_than_marked() -> Result<()
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem::whole(
             TrackId::new(1).expect("a non-zero track id"),
@@ -9173,6 +9840,7 @@ fn a_dsd_track_a_sink_cannot_take_is_decimated_rather_than_marked() -> Result<()
 
     let stride = frame_bytes(SampleFormat::S16);
     let mut negotiated = None;
+
     play_until(
         &player,
         &graph,
@@ -9253,11 +9921,13 @@ fn steepest_level_change(heard: &[i16], meant: &[i16]) -> f64 {
 fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4 * FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let rate = SampleRate::HZ_44100;
     let stride = frame_bytes(SampleFormat::S16);
     let sample = usize::from(SampleFormat::S16.bytes_per_sample().get());
     let block = BLOCK_FRAMES * stride;
+
     let ring = frames_in(RING_DEPTH, rate) * stride;
     let ramp = frames_in(A_RAMP_AT_MOST, rate) * stride;
     let window = 16 * block;
@@ -9268,6 +9938,7 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
         Arc::new(Sources::local()),
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -9275,6 +9946,7 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
     })?;
 
     let mut mode = None;
+
     play_until(
         &player,
         &graph,
@@ -9285,19 +9957,23 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
         },
         "the first blocks to play",
     );
+
     assert_eq!(mode, Some(OutputMode::BitPerfect));
 
     player
         .request(Command::SetVolume(half))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::Converted),
         "turning a bit-perfect track down left it bit-perfect"
     );
+
     let turned_down = graph.lock().played.len();
 
     let attenuated = turned_down + ramp;
+
     play_until(
         &player,
         &graph,
@@ -9309,7 +9985,9 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
     player
         .request(Command::SetVolume(Volume::MAX))?
         .wait_for(PATIENCE)?;
+
     let mut restored = None;
+
     play_until(
         &player,
         &graph,
@@ -9322,9 +10000,11 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
         },
         "the ramp back to unity to settle into a bit-perfect chain",
     );
+
     let Some((restored, opens, closes)) = restored else {
         panic!("the chain never came back bit-perfect");
     };
+
     assert_eq!(
         (opens, closes),
         (1, 0),
@@ -9332,6 +10012,7 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
     );
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -9341,6 +10022,7 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.opens, 1,
         "the track reopened the stream on its way out"
@@ -9352,6 +10034,7 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
     );
 
     let exact = restored + ring;
+
     assert!(
         exact + block <= wanted,
         "the ramp back settled too late to leave anything to compare"
@@ -9363,18 +10046,21 @@ fn turning_a_bit_perfect_track_down_and_back_up_keeps_its_stream_and_every_frame
 
     let heard = words(&graph.played);
     let meant = words(&source.stream);
+
     let level = mean_level(
         &heard,
         &meant,
         attenuated / sample..(attenuated + window) / sample,
     );
     let asked = f64::from(half.to_gain().get());
+
     assert!(
         (level - asked).abs() < 0.01,
         "the turned-down audio reached the graph at {level} where the slider asks for {asked}"
     );
 
     let steepest = steepest_level_change(&heard, &meant);
+
     assert!(
         steepest < A_LEVEL_STEP,
         "the level stepped by {steepest} between one frame and the next"
@@ -9389,6 +10075,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     let rate = SampleRate::HZ_48000;
     let stride = frame_bytes(SampleFormat::S32);
     let block = BLOCK_FRAMES * stride;
+
     let ramp = frames_in(A_RAMP_AT_MOST, rate) * stride;
     let half = Volume::new(0.5).expect("in range");
 
@@ -9397,6 +10084,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
         Arc::new(Sources::local()),
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -9404,6 +10092,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     })?;
 
     let mut mode = None;
+
     play_until(
         &player,
         &graph,
@@ -9414,7 +10103,9 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
         },
         "the resampled track to settle",
     );
+
     assert_eq!(mode, Some(OutputMode::Converted));
+
     let (before, turned_down) = {
         let held = graph.lock();
         let played = held.played.len();
@@ -9424,7 +10115,9 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     player
         .request(Command::SetVolume(half))?
         .wait_for(PATIENCE)?;
+
     let settled = turned_down + ramp + block;
+
     play_until(
         &player,
         &graph,
@@ -9434,6 +10127,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.opens, 1,
         "turning a resampled track down reopened the stream"
@@ -9445,6 +10139,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
 
     let after = loudness(&graph.played[settled - block..settled]);
     let asked = f64::from(half.to_gain().get());
+
     assert!(
         (after / before - asked).abs() < 0.01,
         "the level went from {before} to {after} where the slider asks for {asked} of it"
@@ -9460,6 +10155,7 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
         .windows(2)
         .map(|pair| ((pair[1] - pair[0]) / pair[0]).abs())
         .fold(0.0, f64::max);
+
     assert!(
         steepest < A_LEVEL_STEP,
         "the level stepped by {steepest} between one frame and the next"
@@ -9471,10 +10167,12 @@ fn turning_a_resampled_track_down_retunes_the_stream_it_is_already_playing() -> 
 fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4 * FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let rate = SampleRate::HZ_44100;
     let stride = frame_bytes(SampleFormat::S16);
     let block = BLOCK_FRAMES * stride;
+
     let ramp = frames_in(A_RAMP_AT_MOST, rate) * stride;
     let window = 8 * block;
 
@@ -9483,6 +10181,7 @@ fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -
         Arc::new(Sources::local()),
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -9499,8 +10198,11 @@ fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -
     player
         .request(Command::SetVolume(Volume::MUTE))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(player.state().volume, Volume::MUTE);
+
     let muted = graph.lock().played.len() + ramp;
+
     play_until(
         &player,
         &graph,
@@ -9508,13 +10210,16 @@ fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -
         |_, graph| graph.played.len() >= muted + window,
         "the muted audio to reach the graph",
     );
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::BitPerfect),
         "muting took a bit-perfect stream off its path"
     );
+
     {
         let held = graph.lock();
+
         assert!(
             held.played[muted..muted + window]
                 .iter()
@@ -9526,8 +10231,10 @@ fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -
     player
         .request(Command::SetVolume(Volume::MAX))?
         .wait_for(PATIENCE)?;
+
     let unmuted = graph.lock().played.len() + ramp;
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -9537,6 +10244,7 @@ fn muting_is_silent_at_once_and_unmuting_is_heard_at_once_on_the_same_stream() -
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         (graph.opens, graph.closes),
         (1, 0),
@@ -9583,6 +10291,7 @@ fn equalised(bands: Vec<(f64, f64, f64)>) -> Arc<Equalisation> {
 #[test]
 fn a_default_configuration_carries_no_equaliser() {
     let config = config();
+
     assert!(!config.equaliser.enabled);
     assert!(!config.equaliser.binds_anything());
 }
@@ -9591,15 +10300,18 @@ fn a_default_configuration_carries_no_equaliser() {
 fn the_first_band_reshapes_the_chain_in_place_and_switching_off_puts_it_back() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::BitPerfect)
@@ -9610,14 +10322,17 @@ fn the_first_band_reshapes_the_chain_in_place_and_switching_off_puts_it_back() -
             1_000.0, 6.0, 1.0,
         )])))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::Converted),
         "the first band left the stream bit-perfect"
     );
     assert!(playing(&player), "the equaliser left the transport idle");
+
     {
         let graph = graph.lock();
+
         assert_eq!(graph.opens, 1, "the first band reopened the stream");
         assert_eq!(graph.closes, 0, "the first band closed the stream");
     }
@@ -9625,7 +10340,9 @@ fn the_first_band_reshapes_the_chain_in_place_and_switching_off_puts_it_back() -
     player
         .request(Command::SetEqualisation(Arc::new(Equalisation::default())))?
         .wait_for(PATIENCE)?;
+
     let mut restored = None;
+
     play_until(
         &player,
         &graph,
@@ -9651,6 +10368,7 @@ fn the_first_band_reshapes_the_chain_in_place_and_switching_off_puts_it_back() -
 fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Result<()> {
     let tree = Tree::new();
     let level = 16_000_i16;
+
     let path = tree.write("steady.wav", &steady(level, RATE as usize * 2));
     let halved = Arc::new(Equalisation {
         enabled: true,
@@ -9670,14 +10388,17 @@ fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Re
     });
     let frame = frame_bytes(SampleFormat::S16);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let pulled_past =
         |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+
     play_until(
         &player,
         &graph,
@@ -9720,6 +10441,7 @@ fn switching_the_equaliser_on_and_off_mid_track_glides_rather_than_steps() -> Re
         .max()
         .unwrap_or_default();
     let halfway = i32::from(level) / 2;
+
     assert!(
         left.iter().any(|sample| (sample - halfway).abs() < 64),
         "the equaliser never took the level down to half"
@@ -9811,6 +10533,7 @@ fn sine_over_a_deep_ring(seconds: usize) -> Result<(Player, Arc<Mutex<Graph>>, T
         },
         move |_| Ok(Box::new(backend)),
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -9843,7 +10566,9 @@ fn a_volume_scrolled_up_fast_from_zero_is_never_heard_louder_than_where_it_lands
     player
         .request(Command::SetVolume(Volume::MUTE))?
         .wait_for(PATIENCE)?;
+
     let rendered_nearly_silent = graph.lock().played.len() + 2 * ring;
+
     play_until(
         &player,
         &graph,
@@ -9853,6 +10578,7 @@ fn a_volume_scrolled_up_fast_from_zero_is_never_heard_louder_than_where_it_lands
     );
 
     let turned_up_at = graph.lock().played.len();
+
     for volume in scrolled {
         player.send(Command::SetVolume(volume))?;
     }
@@ -9871,6 +10597,7 @@ fn a_volume_scrolled_up_fast_from_zero_is_never_heard_louder_than_where_it_lands
     let loudest_allowed = landed_peak + DITHER_HEARD_AT_MOST;
     let left = left_of_the_graph(&graph.lock().played[turned_up_at..]);
     let loudest = left.iter().map(|sample| sample.abs()).fold(0.0, f64::max);
+
     assert!(
         loudest <= loudest_allowed,
         "a volume scrolled up from zero to a peak of {landed_peak} was heard at {loudest}"
@@ -9889,6 +10616,7 @@ fn an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_an
     let frame = frame_bytes(SampleFormat::S16);
     let pulled_past =
         |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+
     play_until(
         &player,
         &graph,
@@ -9898,6 +10626,7 @@ fn an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_an
     );
 
     let asked_at = graph.lock().played.len() / frame;
+
     player
         .request(Command::SetEqualisation(preamped(-6.0)))?
         .wait_for(PATIENCE)?;
@@ -9956,6 +10685,7 @@ fn an_equaliser_change_is_heard_within_a_few_pulls_rather_than_a_buffer_later_an
 fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_last() -> Result<()> {
     let (player, graph, _tree) = sine_over_a_deep_ring(4)?;
     let frame = frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -9970,6 +10700,7 @@ fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_las
             .request(Command::SetEqualisation(preamped(decibels)))?
             .wait_for(PATIENCE)?;
     }
+
     let landed_at = play_waiting_on_the_engine(
         &player,
         &graph,
@@ -9977,6 +10708,7 @@ fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_las
         "the last equaliser to be spliced in",
     );
     let settled_at = landed_at + RATE as usize;
+
     play_waiting_on_the_engine(
         &player,
         &graph,
@@ -9985,16 +10717,20 @@ fn equaliser_changes_asked_for_faster_than_the_graph_reaches_them_end_on_the_las
     );
 
     player.events().try_iter().for_each(drop);
+
     let off_at = graph.lock().played.len() / frame;
+
     player
         .request(Command::SetEqualisation(Arc::new(Equalisation::default())))?
         .wait_for(PATIENCE)?;
+
     let let_go_at = play_waiting_on_the_engine(
         &player,
         &graph,
         |_, changes| changes >= 1,
         "the equaliser to be let go",
     );
+
     play_waiting_on_the_engine(
         &player,
         &graph,
@@ -10040,12 +10776,15 @@ fn play_waiting_on_the_engine(
     let changed = |event: &Event| matches!(event, Event::OutputChanged(_));
     let deadline = Instant::now() + PATIENCE;
     let mut changes = 0;
+
     while Instant::now() < deadline {
         let frames = {
             let mut held = graph.lock();
+
             held.pull(BLOCK_FRAMES * frame);
             held.played.len() / frame
         };
+
         changes += player
             .events()
             .recv_timeout(THE_ENGINE_IS_WAITED_FOR)
@@ -10066,6 +10805,7 @@ fn play_waiting_on_the_engine(
 
 fn correcting_the_room(seconds_of_response: f64) -> EngineConfig {
     let mut taps = vec![0.0; (f64::from(RATE) * seconds_of_response) as usize];
+
     taps[0] = 1.0;
     EngineConfig {
         convolution: Some(Arc::new(
@@ -10082,6 +10822,7 @@ fn a_convolver_leaves_the_ring_as_deep_as_the_buffer_asks_whatever_its_tail() ->
     let frame = frame_bytes(SampleFormat::S16);
     let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let player = Player::with_backend(correcting_the_room(2.0), move |_| Ok(Box::new(backend)))?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -10106,6 +10847,7 @@ fn a_convolver_leaves_the_ring_as_deep_as_the_buffer_asks_whatever_its_tail() ->
 fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap() -> Result<()> {
     let tree = Tree::new();
     let level = 16_000_i16;
+
     let path = tree.write("steady.wav", &steady(level, RATE as usize * 4));
     let halved = Arc::new(Equalisation {
         enabled: true,
@@ -10126,14 +10868,17 @@ fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap
     let frame = frame_bytes(SampleFormat::S16);
     let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let player = Player::with_backend(correcting_the_room(0.5), move |_| Ok(Box::new(backend)))?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let pulled_past =
         |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+
     play_until(
         &player,
         &graph,
@@ -10145,7 +10890,9 @@ fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap
     player
         .request(Command::SetEqualisation(halved))?
         .wait_for(PATIENCE)?;
+
     let asked_at = graph.lock().played.len() / frame;
+
     play_until(
         &player,
         &graph,
@@ -10165,6 +10912,7 @@ fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap
         .iter()
         .position(|sample| sample.abs() > i32::from(level) / 4)
         .expect("the music reached the graph");
+
     let heard = &left[music_from..];
     let largest_step = heard
         .windows(2)
@@ -10191,10 +10939,12 @@ fn an_equaliser_switched_on_under_a_convolver_takes_hold_mid_track_without_a_gap
 fn an_equaliser_switched_on_while_the_tail_drains_lets_the_whole_tail_play() -> Result<()> {
     let tree = Tree::new();
     let music = RATE as usize / 4;
+
     let path = tree.write("short.wav", &steady(8_000, music));
     let frame = frame_bytes(SampleFormat::S16);
     let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
     let player = Player::with_backend(correcting_the_room(1.0), move |_| Ok(Box::new(backend)))?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -10223,6 +10973,7 @@ fn an_equaliser_switched_on_while_the_tail_drains_lets_the_whole_tail_play() -> 
     );
 
     let played = graph.lock().played.len() / frame;
+
     assert!(
         played >= music + RATE as usize,
         "{played} frames played of a quarter second's music under a second's response"
@@ -10234,9 +10985,11 @@ fn an_equaliser_switched_on_while_the_tail_drains_lets_the_whole_tail_play() -> 
 fn the_first_band_and_every_edit_after_it_leave_the_stream_open() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -10249,6 +11002,7 @@ fn the_first_band_and_every_edit_after_it_leave_the_stream_open() -> Result<()> 
             1_000.0, 3.0, 1.0,
         )])))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::Converted),
@@ -10257,6 +11011,7 @@ fn the_first_band_and_every_edit_after_it_leave_the_stream_open() -> Result<()> 
 
     for gain in [4.0, 5.0, 6.0, 7.0] {
         let wanted = equalised(vec![(1_000.0, gain, 1.0)]);
+
         player
             .request(Command::SetEqualisation(Arc::clone(&wanted)))?
             .wait_for(PATIENCE)?;
@@ -10268,6 +11023,7 @@ fn the_first_band_and_every_edit_after_it_leave_the_stream_open() -> Result<()> 
     }
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.opens,
         1,
@@ -10289,17 +11045,21 @@ fn switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its
 
     let tree = Tree::new();
     let level = 16_000_i16;
+
     let path = tree.write("steady.wav", &steady(level, RATE as usize * 2));
     let frame = frame_bytes(SampleFormat::S32);
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_48000], &[SampleFormat::S32])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let pulled_past =
         |frames: usize| move |_: &Player, graph: &Graph| graph.played.len() >= frames * frame;
+
     play_until(
         &player,
         &graph,
@@ -10332,12 +11092,14 @@ fn switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         (graph.opens, graph.closes),
         (1, 0),
         "the equaliser reopened a stream whose resampler it could carry: {}",
         pulls(&graph)
     );
+
     let left: Vec<f64> = graph
         .played
         .as_chunks::<8>()
@@ -10353,6 +11115,7 @@ fn switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its
         .skip(SETTLED_AFTER)
         .map(|pair| (pair[1] - pair[0]).abs())
         .fold(0.0, f64::max);
+
     assert!(
         largest_step < STEPS_AT_MOST,
         "the level stepped by {largest_step} where the equaliser came and went"
@@ -10364,9 +11127,11 @@ fn switching_the_equaliser_on_and_off_under_a_resampler_keeps_the_stream_and_its
 fn a_profile_bound_to_another_device_does_not_reach_this_one() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -10423,6 +11188,7 @@ fn a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let aliased = SinkInfo {
@@ -10430,6 +11196,7 @@ fn a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_
         ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
     };
     let (player, _graph) = player(vec![aliased.clone()])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -10460,6 +11227,7 @@ fn a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_
     };
 
     let under_the_alias = bound_under(&aliased.aliases[0], boost(9.0));
+
     player
         .request(Command::SetEqualisation(Arc::clone(&under_the_alias)))?
         .wait_for(PATIENCE)?;
@@ -10470,6 +11238,7 @@ fn a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_
     );
 
     let under_the_name = bound_under(&aliased.name, boost(9.0));
+
     player
         .request(Command::SetEqualisation(under_the_name))?
         .wait_for(PATIENCE)?;
@@ -10485,10 +11254,12 @@ fn a_profile_bound_under_an_alias_of_the_sink_reaches_it_and_one_under_its_name_
 fn the_bytes_the_graph_is_handed_carry_the_correction() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let loudness = |equaliser: Option<Arc<Equalisation>>| -> Result<f64> {
         let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
         if let Some(equaliser) = equaliser {
             player
                 .request(Command::SetEqualisation(equaliser))?
@@ -10509,6 +11280,7 @@ fn the_bytes_the_graph_is_handed_carry_the_correction() -> Result<()> {
         );
 
         let played = graph.lock().played.clone();
+
         player.shutdown()?;
 
         let words = played.as_chunks::<2>().0;
@@ -10555,6 +11327,7 @@ fn the_bytes_the_graph_is_handed_carry_the_correction() -> Result<()> {
 
 fn overs_after_playing(path: &Path, equaliser: Arc<Equalisation>, true_peak: bool) -> Result<u64> {
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::SetTruePeak(true_peak))?
         .wait_for(PATIENCE)?;
@@ -10574,7 +11347,9 @@ fn overs_after_playing(path: &Path, equaliser: Arc<Equalisation>, true_peak: boo
         |_, graph| graph.played.len() >= BLOCK_FRAMES * frame_bytes(SampleFormat::S16) * 8,
         "a run of the tone to reach the graph",
     );
+
     let overs = player.state().output.map_or(0, |output| output.overs);
+
     player.shutdown()?;
     Ok(overs)
 }
@@ -10583,6 +11358,7 @@ fn overs_after_playing(path: &Path, equaliser: Arc<Equalisation>, true_peak: boo
 fn a_boost_that_reaches_the_clamp_with_true_peak_off_is_counted_and_a_cut_is_not() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let boosted = overs_after_playing(&path, equalised(vec![(1_000.0, 6.0, 0.3)]), false)?;
@@ -10600,6 +11376,7 @@ fn a_boost_that_reaches_the_clamp_with_true_peak_off_is_counted_and_a_cut_is_not
 fn with_true_peak_on_the_guard_leaves_nothing_to_clamp_and_so_nothing_to_count() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let guarded = overs_after_playing(&path, equalised(vec![(1_000.0, 6.0, 0.3)]), true)?;
@@ -10612,11 +11389,13 @@ fn with_true_peak_on_the_guard_leaves_nothing_to_clamp_and_so_nothing_to_count()
 fn the_equaliser_survives_a_track_change() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let wanted = equalised(vec![(1_000.0, 6.0, 1.0)]);
+
     player
         .request(Command::SetEqualisation(Arc::clone(&wanted)))?
         .wait_for(PATIENCE)?;
@@ -10644,6 +11423,7 @@ fn the_equaliser_survives_a_track_change() -> Result<()> {
 fn a_queue_resumed_opens_paused_on_the_row_it_was_left_on_at_that_frame() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..3)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
@@ -10651,6 +11431,7 @@ fn a_queue_resumed_opens_paused_on_the_row_it_was_left_on_at_that_frame() -> Res
     let left_on = MediaLocation::local(&paths[1]);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Resume(Resumption {
             rows: (0..3).map(|n| kept(&paths[n])).collect(),
@@ -10667,7 +11448,9 @@ fn a_queue_resumed_opens_paused_on_the_row_it_was_left_on_at_that_frame() -> Res
         |player| playing_row(player).as_ref() == Some(&left_on),
         "the resumed row to be the one open",
     );
+
     let state = player.state();
+
     assert_eq!(
         state.playback,
         PlaybackState::Paused,
@@ -10678,7 +11461,9 @@ fn a_queue_resumed_opens_paused_on_the_row_it_was_left_on_at_that_frame() -> Res
         Some(resumed),
         "the resumed row did not open where it was left"
     );
+
     let graph = graph.lock();
+
     assert!(
         graph.played.is_empty(),
         "a queue resumed into handed the graph audio before anything asked it to"
@@ -10694,10 +11479,12 @@ fn a_queue_resumed_opens_paused_on_the_row_it_was_left_on_at_that_frame() -> Res
 fn playing_a_resumed_queue_carries_on_from_where_it_was_left() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let resumed = Frames(FRAMES as u64 / 2);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Resume(Resumption {
             rows: vec![kept(&path)],
@@ -10711,6 +11498,7 @@ fn playing_a_resumed_queue_carries_on_from_where_it_was_left() -> Result<()> {
     player.request(Command::Play)?.wait_for(PATIENCE)?;
 
     let tail = source.stream.len() - resumed.get() as usize * frame_bytes(SampleFormat::S16);
+
     play_until(
         &player,
         &graph,
@@ -10720,6 +11508,7 @@ fn playing_a_resumed_queue_carries_on_from_where_it_was_left() -> Result<()> {
     );
 
     let graph = graph.lock();
+
     assert!(
         heard_as_faded_in(
             &graph.played[..tail],
@@ -10748,13 +11537,16 @@ fn a_chain_reshaped_mid_song_behind_a_new_true_peak_guard_is_heard_at_the_frame_
             ..config()
         },
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let start = Moment::now();
+
     for pulled in 0..PULLS {
         graph.lock().pull_heard(
             PULLED * frame,
@@ -10769,12 +11561,14 @@ fn a_chain_reshaped_mid_song_behind_a_new_true_peak_guard_is_heard_at_the_frame_
     player
         .request(Command::SetVolume(Volume::MAX))?
         .wait_for(PATIENCE)?;
+
     let before = player.heard_at().expect("the stream is heard");
     let opens = graph.lock().opens;
 
     player
         .request(Command::SetVolume(Volume::new(0.5).expect("a volume")))?
         .wait_for(PATIENCE)?;
+
     let after = player.heard_at().expect("the stream is heard");
 
     assert_eq!(graph.lock().opens, opens, "the volume reopened the stream");
@@ -10789,9 +11583,11 @@ fn a_chain_reshaped_mid_song_behind_a_new_true_peak_guard_is_heard_at_the_frame_
 fn a_queue_loaded_from_the_top_with_nothing_to_play_opens_no_track() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Load {
             items: vec![track(&path, 1)],
@@ -10801,6 +11597,7 @@ fn a_queue_loaded_from_the_top_with_nothing_to_play_opens_no_track() -> Result<(
         .wait_for(PATIENCE)?;
 
     let state = player.state();
+
     assert_eq!(state.queue_len, 1, "the queue did not take the row");
     assert!(
         state.current.is_none(),
@@ -10814,12 +11611,14 @@ fn a_shuffled_queue_resumed_plays_as_it_played_and_unshuffles_into_what_it_was_l
 -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..4)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
     let played = [2_usize, 0, 3, 1];
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Resume(Resumption {
             rows: paths.iter().map(|path| kept(path)).collect(),
@@ -10870,11 +11669,13 @@ fn a_shuffled_queue_resumed_plays_as_it_played_and_unshuffles_into_what_it_was_l
 fn what_the_engine_publishes_beside_the_queue_says_where_each_row_was_loaded() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..8)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Load {
             items: (0..8).map(|n| track(&paths[n], n as u64 + 1)).collect(),
@@ -10884,6 +11685,7 @@ fn what_the_engine_publishes_beside_the_queue_says_where_each_row_was_loaded() -
         .wait_for(PATIENCE)?;
 
     let loaded = player.queued();
+
     assert_eq!(
         loaded.rows.loaded_at().collect::<Vec<_>>(),
         (0..8).collect::<Vec<_>>(),
@@ -10895,11 +11697,13 @@ fn what_the_engine_publishes_beside_the_queue_says_where_each_row_was_loaded() -
         .wait_for(PATIENCE)?;
 
     let shuffled = player.queued();
+
     assert_ne!(
         shuffled.revision, loaded.revision,
         "shuffling published the queue that was drawn before it"
     );
     assert_eq!(shuffled.rows.len(), 8);
+
     for (row, loaded_at) in shuffled.rows.loaded_at().enumerate() {
         assert_eq!(
             shuffled.rows[row].location,
@@ -10914,11 +11718,13 @@ fn what_the_engine_publishes_beside_the_queue_says_where_each_row_was_loaded() -
 fn putting_the_queue_in_order_leaves_the_playing_row_playing() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let paths: Vec<PathBuf> = (0..4)
         .map(|n| tree.write(&format!("{n}.wav"), &source.file))
         .collect();
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: (0..4).map(|n| track(&paths[n], n as u64 + 1)).collect(),
         start_at: 1,
@@ -10957,6 +11763,7 @@ fn putting_the_queue_in_order_leaves_the_playing_row_playing() -> Result<()> {
     let refused = player
         .request(Command::Order(vec![0, 0, 1, 2]))?
         .wait_for(PATIENCE);
+
     assert!(
         matches!(refused, Err(EngineError::NotAnOrder { named: 4, len: 4 })),
         "a run naming one row twice was taken as an order: {refused:?}"
@@ -10965,6 +11772,7 @@ fn putting_the_queue_in_order_leaves_the_playing_row_playing() -> Result<()> {
     let short = player
         .request(Command::Order(vec![0, 1]))?
         .wait_for(PATIENCE);
+
     assert!(
         matches!(short, Err(EngineError::NotAnOrder { named: 2, len: 4 })),
         "a run naming half the queue was taken as an order: {short:?}"
@@ -11000,6 +11808,7 @@ fn an_event_raised_by_the_last_command_before_the_player_stops_is_still_told() -
     let refused = events
         .try_iter()
         .any(|event| matches!(event, Event::CommandFailed { .. }));
+
     assert!(
         refused,
         "the refusal of a command sent as the player stopped was never told"
@@ -11012,10 +11821,12 @@ fn a_settled_command_lands_with_its_state_published_and_a_refusal_is_still_annou
 {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let first = tree.write("one.wav", &source.file);
     let second = tree.write("two.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .settle(Command::Load {
             items: vec![track(&first, 1), track(&second, 2)],
@@ -11023,24 +11834,29 @@ fn a_settled_command_lands_with_its_state_published_and_a_refusal_is_still_annou
             autoplay: true,
         })?
         .wait_for(PATIENCE)?;
+
     assert!(
         plays(&player, 1),
         "a settled load had not published its track"
     );
 
     player.settle(Command::Next)?.wait_for(PATIENCE)?;
+
     assert!(
         plays(&player, 2),
         "a settled skip had not published its track"
     );
 
     player.settle(Command::Pause)?.wait_for(PATIENCE)?;
+
     assert!(paused(&player), "a settled pause had not published itself");
 
     player
         .settle(Command::Remove(Span::one(9)))?
         .wait_for(PATIENCE)?;
+
     let refused = faulted(&player);
+
     assert_eq!(
         refused.len(),
         1,
@@ -11051,6 +11867,7 @@ fn a_settled_command_lands_with_its_state_published_and_a_refusal_is_still_annou
         .request(Command::Remove(Span::one(9)))?
         .wait_for(PATIENCE)
         .expect_err("a refused removal to answer its refusal");
+
     assert_eq!(
         faulted(&player),
         Vec::<String>::new(),
@@ -11064,9 +11881,11 @@ fn a_settled_command_lands_with_its_state_published_and_a_refusal_is_still_annou
 fn a_sleep_timer_pauses_the_transport_when_its_time_is_out() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11124,6 +11943,7 @@ fn a_steady_level_playing_for(
     let tree = Tree::new();
     let path = tree.write("steady.wav", &steady(level, RATE as usize * seconds));
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11154,6 +11974,7 @@ fn a_pause_fades_the_level_out_and_a_play_fades_it_back_in() -> Result<()> {
         |_, graph| !graph.active,
         "the graph to stand down once the level had faded out",
     );
+
     let paused_at = graph.lock().played.len();
     let faded_out = left_channel(&graph.lock().played);
 
@@ -11165,6 +11986,7 @@ fn a_pause_fades_the_level_out_and_a_play_fades_it_back_in() -> Result<()> {
         |_, graph| graph.played.len() >= paused_at + 2_048 * frame_bytes(SampleFormat::S16),
         "the level to come back",
     );
+
     let heard = left_channel(&graph.lock().played);
 
     assert_eq!(
@@ -11198,6 +12020,7 @@ fn a_stop_fades_the_level_out_before_the_stream_closes() -> Result<()> {
         |_, graph| graph.closes == 1,
         "the stream to close once the level had faded out",
     );
+
     let heard = left_channel(&graph.lock().played);
 
     assert_eq!(
@@ -11230,6 +12053,7 @@ fn a_sleep_timer_fades_the_music_out_before_it_pauses() -> Result<()> {
         |player, graph| paused(player) && !graph.active,
         "the sleep timer to pause the transport and the graph to stand down",
     );
+
     let heard = left_channel(&graph.lock().played);
 
     assert_eq!(
@@ -11250,6 +12074,7 @@ fn a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun() -> Resu
     let level = 16_000_i32;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
     let (player, graph, _tree) = a_steady_level_playing_for(16_000, 14)?;
+
     player
         .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
         .wait_for(PATIENCE)?;
@@ -11268,8 +12093,10 @@ fn a_seek_back_under_an_end_of_track_timer_lifts_the_fade_it_had_begun() -> Resu
     player
         .request(Command::Seek(Frames(0)))?
         .wait_for(PATIENCE)?;
+
     let sought_at = graph.lock().played.len();
     let lifted = level * 9 / 10;
+
     play_until(
         &player,
         &graph,
@@ -11291,6 +12118,7 @@ fn a_seek_back_inside_the_sleep_fade_never_hushes_a_ring_the_graph_has_not_heard
     let level = 16_000_i32;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
     let (player, graph, _tree) = a_steady_level_playing_for(16_000, 6)?;
+
     player
         .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
         .wait_for(PATIENCE)?;
@@ -11328,10 +12156,12 @@ fn a_seek_back_inside_the_sleep_fade_never_hushes_a_ring_the_graph_has_not_heard
 fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
         .wait_for(PATIENCE)?;
@@ -11355,7 +12185,9 @@ fn a_sleep_timer_set_to_the_end_of_a_track_leaves_the_queue_on_the_next_row() ->
         None,
         "a timer that fired is still published"
     );
+
     let graph = graph.lock();
+
     assert!(
         graph.played.len() >= source.stream.len(),
         "the first track was cut short of the sleep timer"
@@ -11383,6 +12215,7 @@ fn an_end_of_track_timer_under_a_long_impulse_or_none_pauses_on_the_next_row() -
         let player = once_surveyed(Player::with_backend(config, move |_| {
             Ok(Box::new(backend))
         })?);
+
         player
             .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
             .wait_for(PATIENCE)?;
@@ -11420,6 +12253,7 @@ fn an_end_of_queue_timer_set_while_a_long_response_rings_past_the_music_ends_the
     let player = once_surveyed(Player::with_backend(correcting_the_room(4.0), move |_| {
         Ok(Box::new(backend))
     })?);
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11433,6 +12267,7 @@ fn an_end_of_queue_timer_set_while_a_long_response_rings_past_the_music_ends_the
         |_, graph| graph.played.len() >= RATE as usize * 2 * frame_bytes(SampleFormat::S16),
         "the music to end and its response to ring on",
     );
+
     assert!(playing(&player), "the response stopped ringing early");
 
     player
@@ -11473,6 +12308,7 @@ fn an_end_of_track_timer_over_a_dop_stream_plays_the_track_out_and_pauses_on_the
             ..config()
         },
     )?;
+
     player
         .request(Command::SleepUntil(Some(Until::EndOfTrack)))?
         .wait_for(PATIENCE)?;
@@ -11502,10 +12338,12 @@ fn an_end_of_track_timer_over_a_dop_stream_plays_the_track_out_and_pauses_on_the
 fn a_sleep_timer_set_to_the_end_of_a_queue_pauses_where_the_queue_wraps() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4_000);
+
     let first = tree.write("first.wav", &source.file);
     let second = tree.write("second.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::SetRepeat(RepeatMode::Queue))?
         .wait_for(PATIENCE)?;
@@ -11533,7 +12371,9 @@ fn a_sleep_timer_set_to_the_end_of_a_queue_pauses_where_the_queue_wraps() -> Res
         None,
         "a timer that fired is still published"
     );
+
     let played = &graph.lock().played;
+
     assert!(
         played.len() >= source.stream.len() * 2,
         "the queue was cut short of its wrap"
@@ -11553,6 +12393,7 @@ fn an_end_of_queue_timer_under_repeat_queue_fades_the_music_out_before_the_wrap(
     let path = tree.write("steady.wav", &steady(16_000, RATE as usize * 6));
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11573,6 +12414,7 @@ fn an_end_of_queue_timer_under_repeat_queue_fades_the_music_out_before_the_wrap(
         |player, _| paused(player),
         "the repeating queue to wrap onto the timer",
     );
+
     let heard = left_channel(&graph.lock().played);
 
     assert_eq!(
@@ -11592,9 +12434,11 @@ fn an_end_of_queue_timer_under_repeat_queue_fades_the_music_out_before_the_wrap(
 fn removing_the_last_row_under_an_end_of_queue_timer_disarms_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11604,6 +12448,7 @@ fn removing_the_last_row_under_an_end_of_queue_timer_disarms_it() -> Result<()> 
     player
         .request(Command::SleepUntil(Some(Until::EndOfQueue)))?
         .wait_for(PATIENCE)?;
+
     assert_eq!(dozing(&player), Some(Until::EndOfQueue));
 
     player
@@ -11627,9 +12472,11 @@ fn removing_the_last_row_under_an_end_of_queue_timer_disarms_it() -> Result<()> 
 fn cancelling_a_sleep_timer_leaves_the_transport_playing() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11657,6 +12504,7 @@ fn cancelling_a_sleep_timer_leaves_the_transport_playing() -> Result<()> {
 #[test]
 fn a_sleep_timer_says_how_long_is_left_on_it() -> Result<()> {
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::SleepUntil(Some(Until::After(A_LONG_DOZE))))?
         .wait_for(PATIENCE)?;
@@ -11667,16 +12515,21 @@ fn a_sleep_timer_says_how_long_is_left_on_it() -> Result<()> {
     );
 
     let asleep = player.state().sleeping.expect("a timer that is set");
+
     assert_eq!(asleep.until, Until::After(A_LONG_DOZE));
+
     let left = asleep.left.expect("a timer counting down says how long");
+
     assert!(left <= A_LONG_DOZE && left > Duration::ZERO, "{left:?}");
 
     thread::sleep(A_SHORT_DOZE * 4);
+
     let later = player
         .state()
         .sleeping
         .and_then(|asleep| asleep.left)
         .expect("a timer that is still set");
+
     assert!(later < left, "the countdown stood still at {later:?}");
     Ok(())
 }
@@ -11684,6 +12537,7 @@ fn a_sleep_timer_says_how_long_is_left_on_it() -> Result<()> {
 #[test]
 fn a_sleep_timer_firing_against_a_stopped_transport_says_nothing() -> Result<()> {
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::SleepUntil(Some(Until::After(A_SHORT_DOZE))))?
         .wait_for(PATIENCE)?;
@@ -11706,6 +12560,7 @@ fn heard_now(player: &Player) -> (Vec<(f32, f32)>, Caught) {
     };
     let mut left = vec![f32::NAN; LOOKED_AT];
     let mut right = vec![f32::NAN; LOOKED_AT];
+
     let caught = tap.around(Instant::now(), &mut left, &mut right);
     (left.into_iter().zip(right).collect(), caught)
 }
@@ -11728,10 +12583,12 @@ fn around_the_played(played: usize) -> Range<usize> {
 fn what_the_tap_says_is_heard_is_what_the_graph_is_playing_at_that_moment() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.listen_in(true);
     player.send(Command::Load {
         items: vec![track(&path, 1)],
@@ -11765,6 +12622,7 @@ fn what_the_tap_says_is_heard_is_what_the_graph_is_playing_at_that_moment() -> R
 fn the_tap_reads_what_the_chain_hands_the_graph_rather_than_what_the_file_holds() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
     let block = BLOCK_FRAMES * stride;
@@ -11777,6 +12635,7 @@ fn the_tap_reads_what_the_chain_hands_the_graph_rather_than_what_the_file_holds(
             ..config()
         },
     )?;
+
     player.listen_in(true);
     player.send(Command::Load {
         items: vec![track(&path, 1)],
@@ -11791,6 +12650,7 @@ fn the_tap_reads_what_the_chain_hands_the_graph_rather_than_what_the_file_holds(
         "the first blocks to play",
     );
     stand_still(&player);
+
     assert_eq!(
         player.state().output.map(|output| output.mode),
         Some(OutputMode::Converted)
@@ -11800,7 +12660,9 @@ fn the_tap_reads_what_the_chain_hands_the_graph_rather_than_what_the_file_holds(
     let (heard, _) = heard_now(&player);
 
     player.request(Command::Play)?.wait_for(PATIENCE)?;
+
     let reached = around_the_played(played).end;
+
     play_until(
         &player,
         &graph,
@@ -11808,6 +12670,7 @@ fn the_tap_reads_what_the_chain_hands_the_graph_rather_than_what_the_file_holds(
         |_, graph| graph.played.len() >= reached,
         "the frames the tap was read around to reach the graph",
     );
+
     let handed = levels_of(&graph.lock().played[around_the_played(played)]);
     let written = levels_of(&source.stream[around_the_played(played)]);
 
@@ -11826,10 +12689,12 @@ fn the_tap_reads_what_the_chain_hands_the_graph_rather_than_what_the_file_holds(
 fn nothing_is_tapped_while_nobody_listens_in() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let stride = frame_bytes(SampleFormat::S16);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -11869,7 +12734,9 @@ fn a_dop_stream_publishes_markers_rather_than_a_tap() -> Result<()> {
             ..config()
         },
     )?;
+
     assert!(matches!(player.tap(), Tapped::Nothing));
+
     player.listen_in(true);
     player.send(Command::Load {
         items: vec![QueueItem::whole(
@@ -11891,6 +12758,7 @@ fn a_dop_stream_publishes_markers_rather_than_a_tap() -> Result<()> {
 fn events_of(player: &Player) -> (Vec<u64>, Vec<u64>) {
     let mut started = Vec::new();
     let mut failed = Vec::new();
+
     for event in player.events().try_iter() {
         match event {
             Event::TrackStarted(id) => started.push(id.get()),
@@ -11906,11 +12774,13 @@ fn a_row_whose_file_has_gone_is_passed_over_for_the_next_one_that_opens() -> Res
     let tree = Tree::new();
     let short = pcm(16, 2_000);
     let good = pcm(16, 2_000);
+
     let first = tree.write("short.wav", &short.file);
     let missing = tree.root.join("missing.wav");
     let last = tree.write("good.wav", &good.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player.send(Command::Load {
         items: vec![track(&first, 1), track(&missing, 2), track(&last, 3)],
         start_at: 0,
@@ -11926,6 +12796,7 @@ fn a_row_whose_file_has_gone_is_passed_over_for_the_next_one_that_opens() -> Res
     );
 
     let (started, failed) = events_of(&player);
+
     assert_eq!(
         started,
         [1, 3],
@@ -11944,10 +12815,12 @@ fn next_and_play_on_a_row_that_will_not_open_move_on_to_one_that_does() -> Resul
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
     let missing = tree.root.join("missing.wav");
+
     let second = tree.write("second.wav", &source.file);
     let third = tree.write("third.wav", &source.file);
 
     let (player, _graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Load {
             items: vec![track(&missing, 1), track(&second, 2), track(&third, 3)],
@@ -11989,6 +12862,7 @@ fn next_and_play_on_a_row_that_will_not_open_move_on_to_one_that_does() -> Resul
 fn a_play_after_a_sink_appears_binds_the_track_an_autoplay_found_no_sink_for() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(Vec::new())?;
@@ -11999,6 +12873,7 @@ fn a_play_after_a_sink_appears_binds_the_track_an_autoplay_found_no_sink_for() -
             autoplay: true,
         })?
         .wait_for(PATIENCE);
+
     assert!(
         loaded.is_err(),
         "a load with no sink to play through answered Ok"
@@ -12018,6 +12893,7 @@ fn a_play_after_a_sink_appears_binds_the_track_an_autoplay_found_no_sink_for() -
         playing,
         "play to bind the track once a sink was there",
     );
+
     assert_eq!(graph.lock().opens, 1);
     Ok(())
 }
@@ -12026,9 +12902,11 @@ fn a_play_after_a_sink_appears_binds_the_track_an_autoplay_found_no_sink_for() -
 fn a_resumption_past_the_end_of_a_file_since_cut_shorter_opens_at_its_start() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
     player
         .request(Command::Resume(Resumption {
             rows: vec![kept(&path)],
@@ -12040,6 +12918,7 @@ fn a_resumption_past_the_end_of_a_file_since_cut_shorter_opens_at_its_start() ->
         }))?
         .wait_for(PATIENCE)?;
     wait_for(&player, paused, "the resumed row to open paused");
+
     assert_eq!(
         player.state().current.map(|track| track.position),
         Some(Frames::ZERO)
@@ -12064,11 +12943,14 @@ fn a_block_the_resampler_writes_wider_than_the_buffer_still_primes_the_stream() 
 
     let tree = Tree::new();
     let mut file = pcm(16, 8_000).file;
+
     file[RATE_AT].copy_from_slice(&LOW_RATE.to_le_bytes());
     file[BYTES_A_SECOND_AT].copy_from_slice(&(LOW_RATE * 4).to_le_bytes());
+
     let path = tree.write("telephone.wav", &file);
 
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_192000], &[SampleFormat::S32])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12113,6 +12995,7 @@ impl Hinting for Loud {
 fn a_track_with_no_replay_gain_tags_is_levelled_by_what_the_catalog_measured() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4 * FRAMES);
+
     let path = tree.write("untagged.wav", &source.file);
     let rate = SampleRate::HZ_44100;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
@@ -12128,6 +13011,7 @@ fn a_track_with_no_replay_gain_tags_is_levelled_by_what_the_catalog_measured() -
                 ..ring_deep()
             },
         )?;
+
         player.send(Command::Load {
             items: vec![track(&path, 1)],
             start_at: 0,
@@ -12147,6 +13031,7 @@ fn a_track_with_no_replay_gain_tags_is_levelled_by_what_the_catalog_measured() -
             &words(&source.stream),
             4 * block / sample..12 * block / sample,
         );
+
         assert!(
             (level - wanted_level).abs() < 0.01,
             "under {replay_gain:?} the untagged track played at {level}"
@@ -12159,6 +13044,7 @@ fn a_track_with_no_replay_gain_tags_is_levelled_by_what_the_catalog_measured() -
 fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, 4 * FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let rate = SampleRate::HZ_44100;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
@@ -12177,6 +13063,7 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
                 ..ring_deep()
             },
         )?;
+
         player.send(Command::Load {
             items: vec![track(&path, 1)],
             start_at: 0,
@@ -12184,6 +13071,7 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
         })?;
 
         let mut mode = None;
+
         play_until(
             &player,
             &graph,
@@ -12194,6 +13082,7 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
             },
             "the first blocks to play",
         );
+
         assert_eq!(mode, Some(wanted_mode), "heeding the true peak: {heeded}");
 
         let graph = graph.lock();
@@ -12202,6 +13091,7 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
             &words(&source.stream),
             4 * block / sample..12 * block / sample,
         );
+
         assert!(
             (level - wanted_level).abs() < 0.01,
             "heeding the true peak: {heeded}, the track played at {level}"
@@ -12213,8 +13103,10 @@ fn a_track_the_catalog_measured_past_full_scale_is_turned_down_under_it() -> Res
 fn floating_wave(amplitude: f32, frames: usize) -> Vec<u8> {
     const IEEE_FLOAT: u16 = 3;
     const FLOAT_BITS: u16 = 32;
+
     let block_align = CHANNELS * FLOAT_BITS / 8;
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&IEEE_FLOAT.to_le_bytes());
     fmt.extend_from_slice(&CHANNELS.to_le_bytes());
     fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -12232,9 +13124,12 @@ fn floating_wave(amplitude: f32, frames: usize) -> Vec<u8> {
         .collect();
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &fmt);
     chunk(&mut body, b"data", &data);
+
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -12262,6 +13157,7 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
         Arc::new(Sources::local()),
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12269,12 +13165,14 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
     })?;
 
     let mut first_mode = None;
+
     play_until(
         &player,
         &graph,
         block,
         |player, graph| {
             let mode = player.state().output.map(|output| output.mode);
+
             if first_mode.is_none() {
                 first_mode = mode;
             }
@@ -12282,6 +13180,7 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
         },
         "the measured peak to turn the stream down",
     );
+
     assert_eq!(
         first_mode,
         Some(OutputMode::BitPerfect),
@@ -12289,6 +13188,7 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
     );
 
     let heard_before = graph.lock().played.len();
+
     play_until(
         &player,
         &graph,
@@ -12296,9 +13196,12 @@ fn a_float_track_over_full_scale_nobody_studied_is_measured_and_turned_down_unde
         |_, graph| graph.played.len() >= heard_before + 64 * block,
         "the turned-down stream to play on",
     );
+
     let graph = graph.lock();
     let settled = graph.played.len() - 16 * block..graph.played.len();
+
     let loudest = loudest_float(&graph.played[settled]);
+
     assert!(
         loudest <= 1.0,
         "a sample of {loudest} reached the device after the peak was measured"
@@ -12326,6 +13229,7 @@ fn a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_th
         Arc::new(sources),
         ring_deep(),
     )?;
+
     player.send(Command::Load {
         items: vec![QueueItem {
             id: TrackId::new(1).expect("a non-zero track id"),
@@ -12335,7 +13239,9 @@ fn a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_th
         start_at: 0,
         autoplay: true,
     })?;
+
     let mut asked_since = None;
+
     play_until(
         &player,
         &graph,
@@ -12343,7 +13249,9 @@ fn a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_th
         |_, graph| {
             let opened = served.served.load(Ordering::Relaxed);
             let played = graph.played.len();
+
             let since = *asked_since.get_or_insert((opened, played));
+
             if opened != since.0 {
                 asked_since = Some((opened, played));
                 return false;
@@ -12352,6 +13260,7 @@ fn a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_th
         },
         "the track to play on",
     );
+
     let opened = served.served.load(Ordering::Relaxed);
 
     for command in [
@@ -12361,7 +13270,9 @@ fn a_track_played_in_place_from_a_service_is_opened_once_and_its_peak_left_to_th
         Command::SetReplayGain(ReplayGainMode::Off),
     ] {
         player.send(command)?;
+
         let heard_before = graph.lock().played.len();
+
         play_until(
             &player,
             &graph,
@@ -12417,6 +13328,7 @@ fn heard_near(player: &Player, volume: f32) -> bool {
 fn a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let half = Volume::new(0.5).expect("in range");
 
@@ -12424,6 +13336,7 @@ fn a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect
     let player = Player::with_backend(handing_the_volume_over(true), move |_| {
         Ok(Box::new(backend))
     })?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12435,19 +13348,23 @@ fn a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect
         |player| heard_near(player, 0.5),
         "the slider to take the level the device was already at",
     );
+
     assert!(
         graph.lock().turned.is_empty(),
         "the device was turned before the listener moved anything"
     );
 
     let louder = Volume::new(0.8).expect("in range");
+
     answered(&player, Command::SetVolume(louder))?;
+
     assert_eq!(
         graph.lock().turned.last(),
         Some(&(SinkId::new(1), louder.to_gain()))
     );
 
     let wanted = source.stream.len();
+
     play_until(
         &player,
         &graph,
@@ -12455,7 +13372,9 @@ fn a_device_that_turns_its_own_volume_is_turned_and_the_stream_stays_bit_perfect
         |_, graph| graph.played.len() >= wanted,
         "the whole track to reach the graph",
     );
+
     let status = player.state().output.expect("an output status");
+
     assert_eq!(status.mode, OutputMode::BitPerfect);
     assert_eq!(
         graph.lock().played,
@@ -12470,11 +13389,13 @@ fn a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not() -
     let (player, graph) = {
         let tree = Tree::new();
         let source = pcm(16, FRAMES);
+
         let path = tree.write("track.wav", &source.file);
         let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
         let player = Player::with_backend(handing_the_volume_over(true), move |_| {
             Ok(Box::new(backend))
         })?;
+
         player.send(Command::Load {
             items: vec![track(&path, 1)],
             start_at: 0,
@@ -12486,18 +13407,22 @@ fn a_device_turned_from_elsewhere_moves_the_slider_and_its_own_echo_does_not() -
 
     let first = Volume::new(0.3).expect("in range");
     let second = Volume::new(0.6).expect("in range");
+
     answered(&player, Command::SetVolume(first))?;
     answered(&player, Command::SetVolume(second))?;
     change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
         sinks[0] = turning_its_own_volume(first.to_gain().get());
     });
+
     let enumerated = graph.lock().enumerations;
+
     wait_for(
         &player,
         |_| graph.lock().enumerations > enumerated,
         "the engine to read the device again",
     );
     thread::sleep(A_SHORT_DOZE);
+
     assert!(
         heard_near(&player, 0.6),
         "an echo of the engine's own earlier turn moved the slider back"
@@ -12520,11 +13445,13 @@ fn a_device_echoing_a_fast_drag_rounded_to_its_own_steps_leaves_the_slider_and_t
     let (player, graph) = {
         let tree = Tree::new();
         let source = pcm(16, FRAMES);
+
         let path = tree.write("track.wav", &source.file);
         let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
         let player = Player::with_backend(handing_the_volume_over(true), move |_| {
             Ok(Box::new(backend))
         })?;
+
         player.send(Command::Load {
             items: vec![track(&path, 1)],
             start_at: 0,
@@ -12551,7 +13478,9 @@ fn a_device_echoing_a_fast_drag_rounded_to_its_own_steps_leaves_the_slider_and_t
     change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
         sinks[0] = turning_its_own_volume(rounded_to_a_step(dragged[0]));
     });
+
     let enumerated = graph.lock().enumerations;
+
     wait_for(
         &player,
         |_| graph.lock().enumerations > enumerated,
@@ -12569,7 +13498,9 @@ fn a_device_echoing_a_fast_drag_rounded_to_its_own_steps_leaves_the_slider_and_t
     change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
         sinks[0] = turning_its_own_volume(rounded_to_a_step(dragged[31]));
     });
+
     let enumerated = graph.lock().enumerations;
+
     wait_for(
         &player,
         |_| graph.lock().enumerations > enumerated,
@@ -12589,18 +13520,22 @@ fn a_device_echoing_a_fast_drag_rounded_to_its_own_steps_leaves_the_slider_and_t
 fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
     let player = Player::with_backend(handing_the_volume_over(true), move |_| {
         Ok(Box::new(backend))
     })?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
         autoplay: true,
     })?;
     wait_for(&player, playing, "the stream to open");
+
     let level = Volume::new(0.5).expect("in range");
+
     answered(&player, Command::SetVolume(level))?;
 
     let device_muted = |player: &Player| {
@@ -12615,6 +13550,7 @@ fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
             .map(|port| SinkPort { muted, ..port }),
         ..turning_its_own_volume(1.0)
     };
+
     change_the_graph(&graph, SinkChange::Turned(SinkId::new(1)), |sinks| {
         sinks[0] = muted_at(true);
     });
@@ -12623,6 +13559,7 @@ fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
         device_muted,
         "the engine to read the device's mute",
     );
+
     assert!(
         heard_near(&player, 0.5),
         "a device muted from the desktop pulled the slider to nothing"
@@ -12636,9 +13573,11 @@ fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
         |player| !device_muted(player),
         "the engine to read the device unmuted",
     );
+
     assert!(heard_near(&player, 0.5));
 
     answered(&player, Command::SetDeviceMute(true))?;
+
     assert_eq!(graph.lock().muted, vec![(SinkId::new(1), true)]);
     Ok(())
 }
@@ -12647,11 +13586,13 @@ fn a_device_muted_from_elsewhere_keeps_the_slider_where_it_was() -> Result<()> {
 fn a_stream_turning_its_own_volume_leaves_the_devices_mute_alone() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, FRAMES);
+
     let path = tree.write("track.wav", &source.file);
     let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(1.0)]);
     let player = Player::with_backend(handing_the_volume_over(false), move |_| {
         Ok(Box::new(backend))
     })?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12660,6 +13601,7 @@ fn a_stream_turning_its_own_volume_leaves_the_devices_mute_alone() -> Result<()>
     wait_for(&player, playing, "the stream to open");
 
     answered(&player, Command::SetDeviceMute(true))?;
+
     let status = player.state().output.expect("an output status");
 
     assert!(!status.device_turned);
@@ -12671,12 +13613,14 @@ fn a_stream_turning_its_own_volume_leaves_the_devices_mute_alone() -> Result<()>
 fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()> {
     let tree = Tree::new();
     let source = pcm(16, RATE as usize * 10);
+
     let path = tree.write("track.wav", &source.file);
 
     let (backend, graph) = FakeSink::new(vec![turning_its_own_volume(0.125)]);
     let player = Player::with_backend(handing_the_volume_over(false), move |_| {
         Ok(Box::new(backend))
     })?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12687,8 +13631,10 @@ fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()
         &player,
         Command::SetVolume(Volume::new(0.9).expect("in range")),
     )?;
+
     let mode = |player: &Player| player.state().output.map(|output| output.mode);
     let pulled = BLOCK_FRAMES * usize::from(CHANNELS) * 2;
+
     play_until(
         &player,
         &graph,
@@ -12696,6 +13642,7 @@ fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()
         |player, _| mode(player) == Some(OutputMode::Converted),
         "the stream's own volume to leave the bit-perfect path",
     );
+
     assert!(graph.lock().turned.is_empty());
 
     answered(&player, Command::SetDeviceVolume(true))?;
@@ -12715,6 +13662,7 @@ fn handing_the_volume_back_to_the_stream_puts_the_gain_stage_back() -> Result<()
         |player, _| mode(player) == Some(OutputMode::Converted),
         "the stream to take the volume back",
     );
+
     assert!(heard_near(&player, 0.5));
     Ok(())
 }
@@ -12769,6 +13717,7 @@ const BARE_MP3: [&str; 10] = [
 
 fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<PathBuf> {
     let mut whole = Vec::new();
+
     for (index, link) in links.iter().enumerate() {
         let part = tree.root.join(format!("{index}-{name}"));
         let tone = format!(
@@ -12776,6 +13725,7 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
             link.hertz,
             link.rate.hz()
         );
+
         let made = process::Command::new("ffmpeg")
             .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tone, "-ac"])
             .arg(link.channels.to_string())
@@ -12789,6 +13739,7 @@ fn joined(tree: &Tree, name: &str, links: &[Link], codec: &[&str]) -> Option<Pat
             eprintln!("skipped: no ffmpeg to encode a link of {name}");
             return None;
         };
+
         whole.extend_from_slice(&bytes);
     }
     Some(tree.write(name, &whole))
@@ -12807,6 +13758,7 @@ fn a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_
 -> Result<()> {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+
     let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
         return Ok(());
     };
@@ -12814,6 +13766,7 @@ fn a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_
         &[SampleRate::HZ_44100, SampleRate::HZ_48000],
         &[SampleFormat::F32],
     )])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12822,6 +13775,7 @@ fn a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_
 
     let whole = (links[0].frames() + links[1].frames()) * F32_STEREO_FRAME;
     let mut held_the_row = true;
+
     play_until(
         &player,
         &graph,
@@ -12837,6 +13791,7 @@ fn a_stream_turning_to_another_rate_reopens_the_output_at_the_turn_and_plays_on_
 
     let graph = graph.lock();
     let turned_at = graph.opened_after.get(1).copied();
+
     assert_eq!(
         graph
             .requests
@@ -12872,6 +13827,7 @@ fn a_stream_turning_to_another_rate_has_the_stream_it_drained_reshaped_rather_th
 -> Result<()> {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+
     let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
         return Ok(());
     };
@@ -12885,6 +13841,7 @@ fn a_stream_turning_to_another_rate_has_the_stream_it_drained_reshaped_rather_th
     );
     let backend = backend.reshaping(Reshaping::Settled);
     let player = Player::with_backend(config(), move |_| Ok(Box::new(backend)))?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12892,6 +13849,7 @@ fn a_stream_turning_to_another_rate_has_the_stream_it_drained_reshaped_rather_th
     })?;
 
     let whole = (links[0].frames() + links[1].frames()) * F32_STEREO_FRAME;
+
     play_until(
         &player,
         &graph,
@@ -12901,6 +13859,7 @@ fn a_stream_turning_to_another_rate_has_the_stream_it_drained_reshaped_rather_th
     );
 
     let graph = graph.lock();
+
     assert_eq!(
         graph.opens, 1,
         "the turn reopened a stream it could reshape"
@@ -12941,10 +13900,12 @@ fn a_stream_turning_from_mono_to_stereo_on_a_stream_that_carries_both_keeps_it_a
 -> Result<()> {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_CD_RATE];
+
     let Some(path) = joined(&tree, "turning.mp3", &links, &BARE_MP3) else {
         return Ok(());
     };
     let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::F32])])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -12952,6 +13913,7 @@ fn a_stream_turning_from_mono_to_stereo_on_a_stream_that_carries_both_keeps_it_a
     })?;
 
     let mut finished = false;
+
     play_until(
         &player,
         &graph,
@@ -12969,6 +13931,7 @@ fn a_stream_turning_from_mono_to_stereo_on_a_stream_that_carries_both_keeps_it_a
         .and_then(|info| info.duration)
         .map_or(0, |frames| frames.get() as usize);
     let halfway = decoded / 2 * F32_STEREO_FRAME;
+
     assert_eq!(graph.opens, 1, "the turn reopened the stream");
     assert_eq!(graph.played.len(), decoded * F32_STEREO_FRAME);
     assert!(sounds(&graph.played[..halfway]));
@@ -12990,6 +13953,7 @@ fn a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_dr
 
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_CD_RATE];
+
     let Some(path) = joined(&tree, "turning.mp3", &links, &BARE_MP3) else {
         return Ok(());
     };
@@ -12997,6 +13961,7 @@ fn a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_dr
     let player = Player::with_backend(correcting_the_room(SECONDS_OF_RESPONSE), move |_| {
         Ok(Box::new(backend))
     })?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -13004,6 +13969,7 @@ fn a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_dr
     })?;
 
     let mut finished = false;
+
     play_until(
         &player,
         &graph,
@@ -13017,6 +13983,7 @@ fn a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_dr
 
     let graph = graph.lock();
     let first_link = links[0].frames() * F32_STEREO_FRAME;
+
     assert!(graph.played.len() > first_link + links[1].frames() * F32_STEREO_FRAME);
     assert!(sounds(&graph.played[..first_link]));
     assert!(sounds(&graph.played[first_link..]));
@@ -13034,6 +14001,7 @@ fn a_stream_turning_from_mono_to_stereo_under_a_response_longer_than_the_ring_dr
 fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> Result<()> {
     let tree = Tree::new();
     let links = [MONO_AT_CD_RATE, STEREO_AT_DAT_RATE];
+
     let Some(path) = joined(&tree, "chained.ogg", &links, &VORBIS_IN_OGG) else {
         return Ok(());
     };
@@ -13041,6 +14009,7 @@ fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> 
         &[SampleRate::HZ_44100, SampleRate::HZ_48000],
         &[SampleFormat::F32],
     )])?;
+
     player.send(Command::Load {
         items: vec![track(&path, 1)],
         start_at: 0,
@@ -13071,6 +14040,7 @@ fn a_seek_back_across_a_turn_reopens_the_output_for_the_format_it_lands_in() -> 
         .iter()
         .map(|request| request.spec.rate)
         .collect();
+
     assert_eq!(
         rates,
         [
@@ -13121,6 +14091,7 @@ fn auditioning(
         },
         move |_| Ok(Box::new(backend)),
     )?;
+
     player.send(Command::Load {
         items: vec![track(path, 1)],
         start_at: 0,
@@ -13132,17 +14103,23 @@ fn auditioning(
 
 fn pull_to(graph: &Arc<Mutex<Graph>>, stride: usize, frame: usize, what: &str) {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         let pause = {
             let mut held = graph.lock();
+
             let left = frame.saturating_sub(held.played.len() / stride);
+
             if left == 0 {
                 return;
             }
+
             let block = left.min(BLOCK_FRAMES) * stride;
+
             held.pull(block);
             held.pause_after_pulling(block, AUDITIONS_PULLED_TIMES_REAL_TIME)
         };
+
         thread::sleep(pause);
     }
     panic!("timed out pulling {what}; {}", pulls(&graph.lock()));
@@ -13150,15 +14127,18 @@ fn pull_to(graph: &Arc<Mutex<Graph>>, stride: usize, frame: usize, what: &str) {
 
 fn pull_until_reopened(graph: &Arc<Mutex<Graph>>, stride: usize, opens: usize) -> usize {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         let pause = {
             let mut held = graph.lock();
+
             if let Some(opened) = held.opened_after.get(opens) {
                 return opened / stride;
             }
             held.pull(BLOCK_FRAMES * stride);
             held.pause_after_pulling(BLOCK_FRAMES * stride, AUDITIONS_PULLED_TIMES_REAL_TIME)
         };
+
         thread::sleep(pause);
     }
     panic!(
@@ -13169,6 +14149,7 @@ fn pull_until_reopened(graph: &Arc<Mutex<Graph>>, stride: usize, opens: usize) -
 
 fn wait_for_the_ring_to_hold(player: &Player, graph: &Arc<Mutex<Graph>>, frames: usize) {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if graph.lock().frames_ready() >= frames {
             return;
@@ -13217,17 +14198,26 @@ fn switched_back_and_forth(
     let held_to_switch = (rate as f64 * HELD_BEFORE_AN_ARM_IS_SWITCHED.as_secs_f64()) as usize;
 
     pull_to(graph, stride, rate / 4, "the song to play");
+
     let opens = graph.lock().opens;
+
     answered(player, audition_of(contest, Arm::A, Lowered::NOTHING))?;
+
     let from = pull_until_reopened(graph, stride, opens) + rate;
+
     pull_to(graph, stride, from, "arm A to be heard");
+
     let opens = graph.lock().opens;
+
     spliced_since(player);
 
     let mut switches = Vec::new();
+
     for heard in [Arm::B, Arm::A, Arm::B] {
         wait_for_the_ring_to_hold(player, graph, held_to_switch);
+
         let switched = graph.lock().played.len() / stride;
+
         switches.push(switched);
         answered(player, audition_of(contest, heard, Lowered::NOTHING))?;
         pull_to(
@@ -13292,6 +14282,7 @@ fn switching_between_two_resampler_qualities_splices_the_other_without_a_gap_or_
     let left = left_of_the_graph(&graph.played);
     let period = (SINE_PERIOD_FRAMES * 48_000).div_ceil(RATE as usize);
     let climbs = steepest_the_sine_climbs() * f64::from(RATE) / 48_000.0;
+
     assert!(
         every_period_holds_its_peak(&left, switched.from, period, SINE_PEAK),
         "a period after the audition began fell from the sine's peak: a gap, or two arms out of step blended ({underruns} underruns)"
@@ -13339,6 +14330,7 @@ fn switching_dither_on_and_off_splices_the_other_without_a_gap_or_a_step() -> Re
     let left = left_of_the_graph(&graph.played);
     let peak = loudest_period(&left, switched.from, SINE_PERIOD_FRAMES);
     let climbs = steepest_the_sine_climbs() * peak / SINE_PEAK;
+
     assert!(
         every_period_holds_its_peak(&left, switched.from, SINE_PERIOD_FRAMES, peak),
         "a period after the audition began fell from the sine's peak"
@@ -13354,6 +14346,7 @@ fn switching_dither_on_and_off_splices_the_other_without_a_gap_or_a_step() -> Re
         "switching the dither reopened the stream"
     );
     assert_eq!(switched.spliced, 3, "not every switch was spliced in");
+
     let settled =
         Frames::from_duration(Duration::from_millis(100), SampleRate::HZ_44100).get() as usize;
     let repeats_itself = |frames: Range<usize>| {
@@ -13363,6 +14356,7 @@ fn switching_dither_on_and_off_splices_the_other_without_a_gap_or_a_step() -> Re
     };
     let dithered = switched.switches[1] + settled..switched.switches[2];
     let undithered = switched.switches[2] + settled..left.len() - SINE_PERIOD_FRAMES;
+
     assert!(
         !repeats_itself(dithered),
         "arm A, dithered, came out as the same words every period"
@@ -13383,6 +14377,7 @@ fn tones_in_an_mp3(tree: &Tree) -> Option<PathBuf> {
         .join("+");
     let tones =
         format!("aevalsrc={sum}|{sum}:sample_rate={RATE}:duration={RESTORED_TONES_SECONDS}");
+
     let made = process::Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tones])
         .args([
@@ -13400,6 +14395,7 @@ fn tones_in_an_mp3(tree: &Tree) -> Option<PathBuf> {
         .stderr(process::Stdio::null())
         .status()
         .is_ok_and(|status| status.success());
+
     if !made {
         eprintln!("skipped: no ffmpeg with libmp3lame to encode the tones");
         return None;
@@ -13421,6 +14417,7 @@ fn loudness_over(samples: &[f32], frames: Range<usize>) -> f64 {
         &[SpeakerPlacement::Front, SpeakerPlacement::Front],
         SampleRate::HZ_44100,
     );
+
     meter.note(&samples[frames.start * 2..frames.end * 2]);
     f64::from(
         meter
@@ -13472,17 +14469,26 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
 
     let levels = player.levels_of_the_contest(contest, &AtomicBool::new(false))?;
     let lowered = levels.lowered()?;
+
     pull_to(&graph, stride, auditioned_from, "the song to play");
+
     let opens = graph.lock().opens;
+
     answered(&player, audition_of(contest, Arm::A, lowered))?;
+
     let began = pull_until_reopened(&graph, stride, opens);
     let switched_at = began + settled + measured;
+
     pull_to(&graph, stride, switched_at, "arm A to be heard");
+
     let opens = graph.lock().opens;
+
     spliced_since(&player);
     wait_for_the_ring_to_hold(&player, &graph, held_to_switch);
     answered(&player, audition_of(contest, Arm::B, lowered))?;
+
     let b_from = switched_at + rate / 2;
+
     pull_to(&graph, stride, b_from + measured, "arm B to be heard");
 
     let spliced = spliced_since(&player);
@@ -13490,6 +14496,7 @@ fn restoration_on_and_off_are_heard_level_matched_and_switched_without_a_gap() -
     let samples = floats_of_the_graph(&graph.played);
     let heard_a = loudness_over(&samples, switched_at - measured..switched_at);
     let heard_b = loudness_over(&samples, b_from..b_from + measured);
+
     assert!(
         levels.apart_db().abs() > RESTORATION_MOVES_THE_TONES_BY_AT_LEAST_DB,
         "restoring the tones moved their loudness by only {} dB, too little to prove a match",
@@ -13530,6 +14537,7 @@ fn noise_in_an_mp3(tree: &Tree, encoded: &Encoded) -> Option<PathBuf> {
         "anoisesrc=color=white:amplitude={NOISE_AMPLITUDE}:sample_rate={RATE}:duration={NOISE_SECONDS}:seed={}",
         encoded.seed
     );
+
     let made = process::Command::new("ffmpeg")
         .args(["-y", "-v", "error", "-f", "lavfi", "-i", &noise, "-ac", "2"])
         .args(["-c:a", "libmp3lame", "-b:a", encoded.bitrate, "-cutoff"])
@@ -13540,6 +14548,7 @@ fn noise_in_an_mp3(tree: &Tree, encoded: &Encoded) -> Option<PathBuf> {
         .stderr(process::Stdio::null())
         .status()
         .is_ok_and(|status| status.success());
+
     if !made {
         eprintln!("skipped: no ffmpeg with libmp3lame to encode the noise");
         return None;
@@ -13552,6 +14561,7 @@ fn band_power_db(samples: &[f32], frames: Range<usize>, hertz: Range<f64>) -> f6
     let bin_of = |hz: f64| (hz * WINDOW_FRAMES as f64 / rate) as usize;
     let windows = (frames.end - frames.start) / WINDOW_FRAMES;
     let mut power = 0.0;
+
     for window in 0..windows {
         let from = frames.start + window * WINDOW_FRAMES;
         let left: Vec<f64> = (0..WINDOW_FRAMES)
@@ -13570,9 +14580,11 @@ fn band_power_db(samples: &[f32], frames: Range<usize>, hertz: Range<f64>) -> f6
                     let angle = step * n as f64;
                     (re + sample * angle.cos(), im - sample * angle.sin())
                 });
+
             power += re * re + im * im;
         }
     }
+
     let bins = (bin_of(hertz.end) - bin_of(hertz.start)) * windows.max(1);
     10.0 * (power / bins as f64).max(1e-30).log10()
 }
@@ -13624,6 +14636,7 @@ fn a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than
     let stride = frame_bytes(SampleFormat::F32);
     let from = wide_frames + frames_in(MEASURED_FROM, SampleRate::HZ_44100);
     let to = from + frames_in(MEASURED_FOR, SampleRate::HZ_44100);
+
     player.send(Command::Load {
         items: vec![track(&wide, 1), track(&narrow, 2)],
         start_at: 0,
@@ -13641,6 +14654,7 @@ fn a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than
     let samples = floats_of_the_graph(&graph.played);
     let above = band_power_db(&samples, from..to, ABOVE_THE_NARROW_WALL_HZ);
     let under = band_power_db(&samples, from..to, UNDER_EVERY_WALL_HZ);
+
     assert_eq!(graph.opens, 1, "the rows were not heard on without a gap");
     assert!(
         under - above < EXTENDED_WITHIN_DB,

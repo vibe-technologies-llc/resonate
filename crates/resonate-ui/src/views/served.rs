@@ -48,6 +48,7 @@ impl ServicesPane {
         cx: &mut Context<Self>,
     ) -> Self {
         let search = cx.new(|cx| Field::new(words::served::search_placeholder, window, cx));
+
         cx.subscribe_in(&search, window, |this, _, _: &Submitted, window, cx| {
             this.search_the_server(window, cx);
         })
@@ -63,6 +64,7 @@ impl ServicesPane {
 
     fn search_the_server(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let words = self.search.read(cx).text().trim().to_owned();
+
         self.server.update(cx, |server, cx| {
             if words.is_empty() {
                 server.leave_the_search(cx);
@@ -136,6 +138,7 @@ impl RootView {
 
     fn server_failed(&self, failure: Failure, cx: &mut Context<Self>) -> AnyElement {
         let network = self.server.read(cx).lists_the_network();
+
         if failure.is_searched_again(network) {
             return kit::trouble_offering(
                 Icon::Server,
@@ -198,9 +201,11 @@ impl RootView {
             .cloned();
 
         let mut actions = kit::actions();
+
         if let Some(whole) = playable {
             let playing = whole.clone();
             let queueing = whole;
+
             actions = actions
                 .child(self.in_the_pane_ring(
                     kit::button(
@@ -221,6 +226,7 @@ impl RootView {
                     cx,
                 ));
         }
+
         let keepable = match (place, page) {
             (Place::Mix { location, name }, Page::Read(rows))
                 if !rows.is_empty() && self.server.read(cx).keeps_songs(location) =>
@@ -229,6 +235,7 @@ impl RootView {
             }
             _ => None,
         };
+
         if let Some((name, rows)) = keepable {
             actions = actions.child(self.in_the_pane_ring(
                 kit::button(
@@ -251,6 +258,7 @@ impl RootView {
         let model = self.server.read(cx);
         let titles = model.titles();
         let chosen = model.chosen();
+
         let chooser = (titles.len() > 1).then(|| self.service_chooser(&titles, chosen, cx));
         let eyebrow = match place {
             Place::Artists if chooser.is_some() => None,
@@ -333,6 +341,7 @@ impl RootView {
             kit::pick("served-service", shown, words::served::choose_among_hint()),
             move |this, at, cx| {
                 let menu = services_menu(at, &offered, chosen);
+
                 this.open_a_menu(menu, cx);
             },
             cx,
@@ -366,6 +375,7 @@ impl RootView {
             .child(self.services.read(cx).search.clone())
             .on_click(cx.listener(|this, _, window, cx| {
                 let search = this.services.read(cx).search.clone();
+
                 search.update(cx, |field, cx| field.take_focus(window, cx));
                 cx.notify();
             }))
@@ -420,6 +430,7 @@ impl RootView {
         };
         let cover = self.served_cover(&location, row, cx);
         let (title, by, figure) = describe(row);
+
         let said = spoken::joined([title.as_str(), by.as_deref().unwrap_or_default()]);
 
         let from = songs_here.then(|| songs_from(rows, index)).flatten();
@@ -550,6 +561,7 @@ impl RootView {
         let playing = location.clone();
         let next = location.clone();
         let queued = location;
+
         let controls = self
             .row_controls(("server-controls", index), cx)
             .children(star)
@@ -657,6 +669,7 @@ impl RootView {
         };
         let favoured = !self.server.read(cx).is_favoured(&song);
         let location = song.location;
+
         self.server.update(cx, |server, cx| {
             server.note_favoured(location.clone(), favoured);
             cx.notify();
@@ -672,6 +685,7 @@ impl RootView {
                 let Err(error) = kept else {
                     return;
                 };
+
                 tracing::warn!(%error, "the service did not keep the favourite");
                 this.server
                     .update(cx, |server, _| server.note_favoured(location, !favoured));
@@ -693,10 +707,12 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let mut minting = Unclaimed::beside(&[]);
+
         let items: Vec<QueueItem> = locations
             .into_iter()
             .map(|location| QueueItem::whole(minting.mint(), location))
             .collect();
+
         if items.is_empty() {
             return;
         }
@@ -721,15 +737,19 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let mut minting = Unclaimed::beside(self.player.read(cx).queue().iter().map(Arc::as_ref));
+
         let items: Vec<QueueItem> = locations
             .into_iter()
             .map(|location| QueueItem::whole(minting.mint(), location))
             .collect();
         let rows = items.len();
+
         if rows == 0 {
             return;
         }
+
         let play = self.player.read(cx).state().current.is_none();
+
         self.send(Command::Insert { items, at, play }, cx);
         self.report(Notice::Done(queued_words(rows, at, play)), cx);
         cx.notify();
@@ -763,6 +783,7 @@ impl RootView {
         let Some(serves) = self.server.read(cx).serves() else {
             return;
         };
+
         cx.spawn(async move |this, cx| {
             let expanded = cx
                 .background_executor()
@@ -1264,9 +1285,11 @@ mod tests {
         assert!(!driven.read(|root, cx| root.server.read(cx).is_open()));
 
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+
         assert!(driven.read(|root, cx| root.server.read(cx).is_open()));
 
         open_the_server(&mut driven);
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
     }
 
@@ -1275,9 +1298,11 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
+
         assert!(driven.cx.debug_bounds("tab-server").is_none());
 
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+
         let row = driven.bounds_of("tab-server");
 
         assert!(driven.bounds_of("tab-party").bottom() <= row.top());
@@ -1289,6 +1314,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+
         open_the_server(&mut driven);
 
         let online_set_to = |driven: &mut Driven, enabled| {
@@ -1299,10 +1325,12 @@ mod tests {
         };
 
         online_set_to(&mut driven, false);
+
         assert!(driven.cx.debug_bounds("tab-server").is_none());
         assert_eq!(driven.read(|root, _| root.pane), Pane::default());
 
         online_set_to(&mut driven, true);
+
         assert!(driven.cx.debug_bounds("tab-server").is_some());
         assert_eq!(driven.read(|root, _| root.pane), Pane::default());
     }
@@ -1318,16 +1346,20 @@ mod tests {
         let read = Arc::clone(&service.first_pages_read);
         let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
         let mut driven = Driven::serving(cx, vec![service], an_account());
+
         driven.click("tab-party");
+
         assert_eq!(times_read(), 0, "the account was touched before the row");
 
         driven.cx.simulate_keystrokes("ctrl-tab");
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
         assert_eq!(times_read(), 1);
 
         driven.cx.simulate_keystrokes("ctrl-tab");
         driven.settle();
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Lyrics);
     }
 
@@ -1336,6 +1368,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], Online::default());
+
         driven.click("tab-party");
 
         driven.cx.simulate_keystrokes("ctrl-tab");
@@ -1350,13 +1383,16 @@ mod tests {
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
         let shortest = px(theme::WINDOW_MIN_HEIGHT);
+
         driven
             .cx
             .simulate_resize(gpui::size(px(theme::WINDOW_MIN_WIDTH), shortest));
         driven.settle();
+
         assert!(driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y) > px(0.0));
 
         let categories = driven.centre_of("tab-albums");
+
         driven.scroll_at(categories, SCROLLED_PAST_EVERY_CATEGORY);
         driven.click("tab-server");
 
@@ -1367,6 +1403,7 @@ mod tests {
     #[gpui::test]
     fn other_devices_make_way_for_the_services_row_as_for_every_category(cx: &mut TestAppContext) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.settings_pane.update(cx, |pane, _| {
                 pane.remotely.songs = vec![remote::tests::song()];
@@ -1374,11 +1411,16 @@ mod tests {
             cx.notify();
         });
         driven.settle();
+
         let room_with_the_cards =
             driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
+
         driven.click("toggle-other-devices");
+
         let room = driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
+
         driven.click("toggle-other-devices");
+
         let categories = driven.read(|root, _| {
             root.window_scrolls
                 .sidebar
@@ -1389,6 +1431,7 @@ mod tests {
         });
         let spare = f32::from(room_with_the_cards - categories);
         let cards = f32::from(room - room_with_the_cards);
+
         let too_short_for_the_cards = crate::driven::TALL - spare - cards / 2.0;
 
         driven.cx.simulate_resize(gpui::size(
@@ -1402,7 +1445,9 @@ mod tests {
             driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y),
             px(0.0)
         );
+
         driven.click("tab-server");
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
     }
 
@@ -1411,6 +1456,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Held)], an_account());
+
         open_the_server(&mut driven);
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
 
@@ -1435,6 +1481,7 @@ mod tests {
                 .map(|item| item.location.to_uri())
                 .collect::<Vec<_>>()
         });
+
         assert_eq!(queued, ["subsonic:track/so-1", "subsonic:track/so-2"]);
     }
 
@@ -1553,6 +1600,7 @@ mod tests {
         let read = Arc::clone(&network.first_pages_read);
         let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
         let mut driven = Driven::serving(cx, vec![network], an_account());
+
         assert_eq!(
             times_read(),
             0,
@@ -1561,10 +1609,12 @@ mod tests {
 
         open_the_server(&mut driven);
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+
         let servers = driven.read(|root, cx| match root.server.read(cx).page() {
             Page::Read(rows) => counted_on_the_network(rows, &Place::Artists),
             Page::Reading | Page::Failed(_) => String::new(),
         });
+
         driven.click("server-row-0");
         driven.until(|root, cx| {
             matches!(root.server.read(cx).place(), Place::Artist { .. })
@@ -1579,14 +1629,17 @@ mod tests {
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
         );
+
         let songs = driven.read(|root, cx| match root.server.read(cx).page() {
             Page::Read(rows) => counted_on_the_network(rows, root.server.read(cx).place()),
             Page::Reading | Page::Failed(_) => String::new(),
         });
+
         driven.click("server-row-1");
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         let queued = driven.read(|root, cx| root.player.read(cx).queue()[1].location.to_uri());
+
         assert_eq!(times_read(), 1);
         assert_eq!(servers, "1 server");
         assert_eq!(songs, "2 songs");
@@ -1615,6 +1668,7 @@ mod tests {
         let asleep = Arc::clone(&network.asleep);
         let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
         let mut driven = Driven::serving(cx, vec![network], an_account());
+
         open_the_server(&mut driven);
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
 
@@ -1655,6 +1709,7 @@ mod tests {
         let garbled = Arc::clone(&network.garbled);
         let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
         let mut driven = Driven::serving(cx, vec![network], an_account());
+
         open_the_server(&mut driven);
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
 
@@ -1690,6 +1745,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(Favoured)], an_account());
+
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 4),
@@ -1699,10 +1755,12 @@ mod tests {
             Page::Read(rows) => (favourites_in(rows), counted_in(rows, &Place::Artists)),
             Page::Reading | Page::Failed(_) => (false, String::new()),
         });
+
         driven.click("server-row-3");
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         let queued = driven.read(|root, cx| root.player.read(cx).queue()[0].location.to_uri());
+
         assert_eq!(
             first,
             (true, "0 artists · 1 album · 0 mixes · 1 song".to_owned())
@@ -1716,6 +1774,7 @@ mod tests {
             favoured: Arc::default(),
         };
         let mut driven = Driven::serving(cx, vec![Arc::new(kept)], an_account());
+
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 5),
@@ -1730,6 +1789,7 @@ mod tests {
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         let queued = driven.read(|root, cx| root.player.read(cx).queue()[0].location.to_uri());
+
         assert_eq!(queued, "tidal:track/13");
     }
 
@@ -1742,6 +1802,7 @@ mod tests {
             favoured: Arc::clone(&favoured),
         };
         let mut driven = Driven::serving(cx, vec![Arc::new(kept)], an_account());
+
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 5),
@@ -1763,6 +1824,7 @@ mod tests {
                 Page::Reading | Page::Failed(_) => Vec::new(),
             }
         });
+
         assert_eq!(
             favoured
                 .lock()
@@ -1873,22 +1935,27 @@ mod tests {
         let read = Arc::clone(&service.first_pages_read);
         let times_read = || read.load(std::sync::atomic::Ordering::SeqCst);
         let mut driven = Driven::serving(cx, vec![service], an_account());
+
         driven.settle();
+
         assert_eq!(times_read(), 0, "the account was touched at launch");
 
         open_the_server(&mut driven);
         driven.until(|root, cx| matches!(root.server.read(cx).page(), Page::Read(_)));
+
         assert_eq!(times_read(), 1);
 
         driven.click("tab-albums");
         driven.settle();
         driven.click("tab-server");
         driven.settle();
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Server);
         assert_eq!(times_read(), 1, "a page read is not read again");
 
         driven.click("tab-server");
         driven.settle();
+
         assert_eq!(times_read(), 1, "a press on the row in front reads nothing");
     }
 
@@ -1917,6 +1984,7 @@ mod tests {
             an_account(),
         );
         let music = folder.path().to_path_buf();
+
         driven.cx.update(|_, cx| {
             gpui::BorrowAppContext::update_global::<crate::ResonateApp, _>(cx, |global, _| {
                 global.music_folder = Some(music);
@@ -1925,14 +1993,18 @@ mod tests {
         the_mix_opened(&mut driven);
 
         assert!(driven.cx.debug_bounds("server-row-keep-0").is_some());
+
         driven.click("server-keep");
+
         let library = driven.read(|_, cx| Arc::clone(&cx.global::<crate::ResonateApp>().library));
+
         driven.until(|_, _| library.keeps_pending().is_ok_and(|queued| queued == 1));
         driven.until(|root, cx| root.library.read(cx).keeps_left().is_none());
 
         driven.click("server-row-keep-0");
         driven.settle();
         driven.until(|root, cx| root.library.read(cx).keeps_left().is_none());
+
         assert_eq!(library.keeps_pending().expect("a count"), 2);
     }
 
@@ -1941,11 +2013,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::serving(cx, vec![Arc::new(NotPlayed::default())], an_account());
+
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2),
         );
         driven.settle();
+
         assert!(driven.cx.debug_bounds("server-row-1").is_some());
         assert!(driven.cx.debug_bounds("server-row-play-1").is_none());
 
@@ -1957,6 +2031,7 @@ mod tests {
         driven.settle();
 
         assert!(driven.cx.debug_bounds("server-row-0").is_some());
+
         for offered in [
             "server-play",
             "server-queue",
@@ -1971,6 +2046,7 @@ mod tests {
 
         driven.click("server-row-0");
         driven.settle();
+
         assert!(driven.read(|root, cx| root.player.read(cx).queue().is_empty()));
     }
 
@@ -1980,6 +2056,7 @@ mod tests {
     ) {
         let mut driven =
             Driven::serving(cx, vec![Arc::new(Held), Arc::new(Searched)], an_account());
+
         open_the_server(&mut driven);
         driven.until(
             |root, cx| matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 1),
@@ -2015,6 +2092,7 @@ mod tests {
                 server.titles(),
             )
         });
+
         assert_eq!(queued, "tidal:track/11");
         assert_eq!(
             named,
@@ -2034,6 +2112,7 @@ mod tests {
             ],
             an_account(),
         );
+
         open_the_server(&mut driven);
         driven.until(|root, cx| root.server.read(cx).titles().len() == 4);
 
@@ -2050,6 +2129,7 @@ mod tests {
     ) {
         let mut driven =
             Driven::serving(cx, vec![Arc::new(Held), Arc::new(Searched)], an_account());
+
         open_the_server(&mut driven);
         driven.click("served-service-1");
         driven.until(|root, cx| root.server.read(cx).chosen() == 1);
@@ -2061,6 +2141,7 @@ mod tests {
             matches!(root.server.read(cx).place(), Place::Found { words } if words == "days")
                 && matches!(root.server.read(cx).page(), Page::Read(rows) if rows.len() == 2)
         });
+
         let left_the_field = driven.read(|root, cx| {
             let window_holds_it = root.focus.clone();
             (
@@ -2071,10 +2152,12 @@ mod tests {
         let window_focused = driven
             .cx
             .update(|window, _| left_the_field.0.is_focused(window));
+
         driven.click(SEARCH_ID);
         driven.cx.simulate_input(" again");
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
+
         let cleared =
             driven.read(|root, cx| root.services.read(cx).search.read(cx).text().to_owned());
 

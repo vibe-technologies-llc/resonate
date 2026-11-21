@@ -142,14 +142,18 @@ impl NamedByTheCatalog {
             .iter()
             .filter(|item| !Served::names(&item.location))
             .filter_map(|item| document_uri(&item.location).ok());
+
         let (mut named, unread) = {
             let mut kept = self.kept.lock();
+
             if kept.revision != revision || kept.rows.len() > ROWS_KEPT_AT_MOST {
                 kept.revision = revision;
                 kept.rows.clear();
             }
+
             let mut named = BTreeMap::new();
             let mut unread = Vec::new();
+
             for uri in uris {
                 match kept.rows.get(&uri) {
                     Some(row) => {
@@ -162,6 +166,7 @@ impl NamedByTheCatalog {
         };
         let read = self.read_outside_the_lock(unread);
         let mut kept = self.kept.lock();
+
         if kept.revision == revision {
             kept.rows
                 .extend(read.iter().map(|(uri, row)| (uri.clone(), row.clone())));
@@ -373,6 +378,7 @@ impl MobilePlayer {
         let running = self.syncing.running.lock();
         let running = running.as_ref().ok_or(Error::SyncOff)?;
         let device = the_device(&running.sync, &device).ok_or(Error::UnknownSyncDevice)?;
+
         running.sync.watch(device.id);
         Ok(device_of(&running.sync.watched(device.id), Instant::now()))
     }
@@ -439,6 +445,7 @@ pub(super) mod tests {
         let deadline = Instant::now() + SETTLES_WITHIN;
         while !done() {
             assert!(Instant::now() < deadline, "{what} never happened");
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
     }
@@ -465,6 +472,7 @@ pub(super) mod tests {
             let zones = driven.zones();
             zones.len() == 1 && zones[0].queue_length == 3 && titles(&zones[0]) == rows
         });
+
         assert_eq!(
             driven.zones()[0].rows[0].length,
             Some(Duration::from_secs(u64::from(SECONDS_A_SONG)))
@@ -631,7 +639,9 @@ pub(super) mod tests {
         let harness = Harness::sounding();
         let player = &harness.player;
         let folder = env::temp_dir().join(format!("resonate-driven-phone-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a test folder");
+
         let key = SyncKey::minted().expect("a key");
 
         player
@@ -655,6 +665,7 @@ pub(super) mod tests {
                 takes_deletions: true,
             })
             .expect("sync started");
+
         let told = player
             .syncing
             .running
@@ -697,7 +708,9 @@ pub(super) mod tests {
                 .find(|known| known.name == "Phone" && known.nearby)
                 .map(|known| known.id)
         };
+
         eventually("the desk meeting the phone", || the_phone().is_some());
+
         let phone = the_phone().expect("the phone");
 
         eventually("the phone's queue mirrored on the desk", || {
@@ -715,16 +728,19 @@ pub(super) mod tests {
             desk.control(phone, ZoneId::FIRST, RemoteCommand::Remove(0)),
             Controlling::Untrusted
         );
+
         eventually("the jump reached the engine", || {
             player
                 .playing
                 .player()
                 .is_ok_and(|player| player.state().queue_position == Some(1))
         });
+
         assert_eq!(player.queue().expect("the queue").len(), 2);
 
         drop(desk);
         player.sync_stop();
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -748,6 +764,7 @@ pub(super) mod tests {
             }],
             queue_revision: Some(4),
         };
+
         let watched = Watched::Mirrored(Mirror {
             zones: vec![zone],
             heard_at,

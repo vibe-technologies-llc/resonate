@@ -29,6 +29,7 @@ fn deliver(settings: &Path, group: Option<Reloadable>) {
 
     let mut taking = Vec::new();
     let mut keeping = Vec::new();
+
     for player in &players {
         let name = player.name().to_string();
         let reached = group.map(|group| player.reload(group, settings));
@@ -99,6 +100,7 @@ mod tests {
     fn a_write_is_returned_whether_or_not_it_moved_the_settings_file() {
         let folder = crate::fixtures::scratch("reloading");
         let settings = folder.join("config.toml");
+
         fs::write(&settings, "online = true\n").expect("a settings file");
 
         let untouched = delivering(&settings, None, || Ok(1));
@@ -111,6 +113,7 @@ mod tests {
         });
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(untouched.expect("no write fails"), 1);
         assert_eq!(rewritten.expect("no write fails"), 2);
         assert!(matches!(refused, Err(crate::Error::SyncOff)));

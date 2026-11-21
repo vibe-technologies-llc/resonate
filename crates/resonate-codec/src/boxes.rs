@@ -91,7 +91,7 @@ const TEXT_LENGTH_BYTES: u64 = 2;
 const LONGEST_CHAPTER_TITLE: u64 = 1 << 10;
 const UTF16_BIG_ENDIAN_MARK: [u8; 2] = [0xFE, 0xFF];
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq)]
 pub struct BoxKind([u8; 4]);
 
 impl BoxKind {
@@ -126,7 +126,7 @@ impl fmt::Debug for BoxKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Faststart {
     Ready,
     Trailing,
@@ -157,6 +157,7 @@ pub struct BoxLayout {
 pub(crate) fn read_layout<S: Read + Seek + ?Sized>(source: &mut S) -> Option<BoxLayout> {
     let origin = source.stream_position().ok()?;
     let found = layout_of(source);
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("an ISO-BMFF layout scan could not restore the stream position");
     }
@@ -166,6 +167,7 @@ pub(crate) fn read_layout<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Box
 fn layout_of<S: Read + Seek + ?Sized>(source: &mut S) -> Option<BoxLayout> {
     let len = source.seek(SeekFrom::End(0)).ok()?;
     let head = read_at::<8, S>(source, 0)?;
+
     if head[4..] != FTYP.as_bytes() {
         return None;
     }
@@ -184,6 +186,7 @@ fn walk<S: Read + Seek + ?Sized>(file: &mut S, len: u64) -> Option<BoxLayout> {
     while at + HEADER <= len && boxes.len() < MAX_TOP_LEVEL_BOXES {
         let header: [u8; 8] = read_at(file, at)?;
         let kind = BoxKind([header[4], header[5], header[6], header[7]]);
+
         if !kind.is_printable() {
             break;
         }
@@ -194,6 +197,7 @@ fn walk<S: Read + Seek + ?Sized>(file: &mut S, len: u64) -> Option<BoxLayout> {
             LARGE_SIZE => large_size(file, at)?,
             declared => u64::from(declared),
         };
+
         if bytes < HEADER || at.checked_add(bytes)? > len {
             break;
         }
@@ -216,6 +220,7 @@ fn large_size<S: Read + Seek + ?Sized>(file: &mut S, at: u64) -> Option<u64> {
 
 fn read_at<const N: usize, S: Read + Seek + ?Sized>(file: &mut S, at: u64) -> Option<[u8; N]> {
     let mut buffer = [0; N];
+
     file.seek(SeekFrom::Start(at)).ok()?;
     file.read_exact(&mut buffer).ok()?;
     Some(buffer)
@@ -330,6 +335,7 @@ pub(crate) fn read_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Movie {
         return Movie::default();
     };
     let found = scan_movie(source).unwrap_or_default();
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("an ISO-BMFF gapless scan could not restore the stream position");
     }
@@ -339,6 +345,7 @@ pub(crate) fn read_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Movie {
 fn scan_movie<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Movie> {
     let end = source.seek(SeekFrom::End(0)).ok()?;
     let top = children(source, Extent { at: 0, end });
+
     if top.first()?.kind != FTYP {
         return None;
     }
@@ -378,17 +385,22 @@ fn nero_chapters<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent) -> Optio
     let chpl = descend(source, moov, &[UDTA, CHPL])?;
     let bytes = leaf(source, chpl)?;
     let mut at = VERSION_AND_FLAGS as usize;
+
     if *bytes.first()? > 0 {
         at += NERO_RESERVED_BYTES;
     }
+
     let count = usize::from(*bytes.get(at)?);
+
     at += 1;
 
     let mut marked = Vec::with_capacity(count);
+
     for _ in 0..count {
         let ticks = be64(&bytes, at)?;
         let length = usize::from(*bytes.get(at + 8)?);
         let title = bytes.get(at + 9..at + 9 + length)?;
+
         at += 9 + length;
         marked.push(Marked {
             start: ChapterStart::new(ticks, NERO_TICKS_A_SECOND),
@@ -410,6 +422,7 @@ fn chapter_track<S: Read + Seek + ?Sized>(
         .filter(|held| held.kind == TRAK)
         .map(|held| held.body)
         .collect::<Vec<_>>();
+
     let trak = traks
         .into_iter()
         .find(|trak| track_id(source, *trak) == Some(wanted))?;
@@ -422,10 +435,12 @@ fn chapter_track<S: Read + Seek + ?Sized>(
     let lasting = sample_durations(source, stts)?;
     let stsz = child(source, stbl, STSZ)?;
     let sizes = sample_sizes(source, stsz)?;
+
     let offsets = sample_offsets(source, stbl, &sizes)?;
 
     let mut marked = Vec::new();
     let mut ticks = 0_u64;
+
     for (offset, lasted) in offsets.into_iter().zip(lasting).take(MOST_CHAPTERS) {
         marked.push(Marked {
             start: ChapterStart::new(ticks, media.timescale),
@@ -449,11 +464,13 @@ fn sample_durations<S: Read + Seek + ?Sized>(source: &mut S, table: Extent) -> O
     let bytes = leaf(source, table)?;
     let entries = (be32(&bytes, ENTRY_COUNT_AT)? as usize).min(MAX_TIME_TO_SAMPLE_ENTRIES);
     let mut lasting = Vec::new();
+
     for entry in 0..entries {
         let at = ENTRIES_AT + entry * TIME_TO_SAMPLE_ENTRY_BYTES;
         let count = be32(&bytes, at)? as usize;
         let delta = u64::from(be32(&bytes, at + 4)?);
         let room = MOST_CHAPTERS.saturating_sub(lasting.len());
+
         lasting.extend(std::iter::repeat_n(delta, count.min(room)));
     }
     Some(lasting)
@@ -488,16 +505,20 @@ fn sample_offsets<S: Read + Seek + ?Sized>(
     let mut offsets = Vec::with_capacity(sizes.len());
     let mut sizes = sizes.iter();
     let mut entry = 0;
+
     for (chunk, start) in chunks.into_iter().enumerate() {
         let number = chunk + 1;
+
         while entry + 1 < entries && run(entry + 1)?.0 <= number {
             entry += 1;
         }
+
         let mut at = start;
         for _ in 0..run(entry)?.1 {
             let Some(size) = sizes.next() else {
                 return Some(offsets);
             };
+
             offsets.push(at);
             at = at.checked_add(*size)?;
         }
@@ -523,6 +544,7 @@ fn chunk_offsets<S: Read + Seek + ?Sized>(source: &mut S, stbl: Extent) -> Optio
 fn sample_text<S: Read + Seek + ?Sized>(source: &mut S, at: u64) -> Option<String> {
     let length = u16::from_be_bytes(read_at::<2, S>(source, at)?);
     let body = at.checked_add(TEXT_LENGTH_BYTES)?;
+
     let text = leaf(
         source,
         Extent {
@@ -572,13 +594,16 @@ fn indexed_length<S: Read + Seek + ?Sized>(
 ) -> Option<Ticks> {
     let sound = track_id(source, sound);
     let mut indexes = index_boxes(source, top, end);
+
     let followed = sound
         .filter(|wanted| indexes.iter().any(|held| held.reference == *wanted))
         .or_else(|| indexes.first().map(|held| held.reference))?;
+
     indexes.retain(|held| held.reference == followed);
 
     let timescale = indexes.first()?.timescale;
     let mut ticks = 0_u64;
+
     for held in &indexes {
         ticks = ticks.checked_add(rescaled(held.ticks, held.timescale, timescale)?)?;
     }
@@ -594,6 +619,7 @@ struct Index {
 
 fn index_boxes<S: Read + Seek + ?Sized>(source: &mut S, top: &[Child], end: u64) -> Vec<Index> {
     let mut seen = top.to_vec();
+
     if seen.iter().any(|held| held.kind == SIDX) {
         for _ in 0..MAX_INDEX_ROUNDS {
             let Some(last) = seen
@@ -609,6 +635,7 @@ fn index_boxes<S: Read + Seek + ?Sized>(source: &mut S, top: &[Child], end: u64)
                     end,
                 },
             );
+
             if more.is_empty() {
                 break;
             }
@@ -629,13 +656,16 @@ fn index_of<S: Read + Seek + ?Sized>(source: &mut S, sidx: Extent) -> Option<Ind
         0 => INDEX_COUNT_AT,
         _ => WIDE_INDEX_COUNT_AT,
     };
+
     let references = usize::from(u16::from_be_bytes(
         bytes.get(count_at..count_at + 2)?.try_into().ok()?,
     ));
 
     let mut ticks = 0_u64;
+
     for reference in 0..references {
         let at = count_at + 2 + reference * INDEX_REFERENCE_BYTES;
+
         ticks = ticks.checked_add(u64::from(be32(&bytes, at + 4)?))?;
     }
 
@@ -677,11 +707,13 @@ fn free_form<S: Read + Seek + ?Sized>(source: &mut S, moov: Extent, name: &str) 
     for item in items {
         let named =
             child(source, item, ITEM_NAME).and_then(|name| text(source, name, VERSION_AND_FLAGS));
+
         if named.as_deref() != Some(name) {
             continue;
         }
 
         let data = child(source, item, ITEM_DATA)?;
+
         return text(source, data, ITEM_DATA_HEAD);
     }
 
@@ -728,6 +760,7 @@ impl Edited {
         let rescale = |ticks: u64| rescaled(ticks, self.timescale, to);
 
         let mut listed = Vec::with_capacity(self.listed.len());
+
         for edit in &self.listed {
             listed.push(match *edit {
                 Listed::Media { from, lasting } => Listed::Media {
@@ -739,6 +772,7 @@ impl Edited {
                 },
             });
         }
+
         let decoded = match self.decoded {
             Some(ticks) => Some(rescale(ticks)?),
             None => None,
@@ -751,6 +785,7 @@ impl Edited {
         let &Listed::Media { from, lasting } = listed.first()? else {
             return None;
         };
+
         let first = Priming {
             delay: u32::try_from(from).ok()?,
             padding: frames_past(whole, from.saturating_add(lasting)),
@@ -785,14 +820,17 @@ fn edit_list<S: Read + Seek + ?Sized>(
         _ => WIDE_EDIT_ENTRY_BYTES,
     };
     let entries = be32(&bytes, ENTRY_COUNT_AT)? as usize;
+
     if entries > (bytes.len().saturating_sub(ENTRIES_AT)) / entry_bytes {
         return None;
     }
 
     let mut listed = Vec::with_capacity(entries);
+
     for entry in 0..entries {
         let (segment, media_time, rate) = edit_entry(&bytes, version, entry)?;
         let lasting = rescaled(segment, movie.timescale, media.timescale)?;
+
         if lasting == 0 {
             continue;
         }
@@ -802,6 +840,7 @@ fn edit_list<S: Read + Seek + ?Sized>(
             (Ok(_), DWELL_EDIT_RATE) | (Err(_), _) => Listed::Empty { lasting },
             (Ok(_), _) => return None,
         };
+
         joined(&mut listed, edit);
     }
     while matches!(listed.last(), Some(Listed::Empty { .. })) {
@@ -877,6 +916,7 @@ fn frames_past(whole: u64, reach: u64) -> u32 {
 fn edit_entry(bytes: &[u8], version: u8, entry: usize) -> Option<(u64, i64, u32)> {
     if version == 0 {
         let at = ENTRIES_AT + entry.checked_mul(EDIT_ENTRY_BYTES)?;
+
         return Some((
             u64::from(be32(bytes, at)?),
             i64::from(be32(bytes, at + 4)? as i32),
@@ -899,14 +939,17 @@ fn rescaled(ticks: u64, from: NonZeroU32, to: NonZeroU32) -> Option<u64> {
 fn decoded_frames<S: Read + Seek + ?Sized>(source: &mut S, table: Extent) -> Option<u64> {
     let bytes = leaf(source, table)?;
     let entries = be32(&bytes, ENTRY_COUNT_AT)? as usize;
+
     if entries > MAX_TIME_TO_SAMPLE_ENTRIES {
         return None;
     }
 
     let mut samples = 0_u64;
     let mut longest = 0_u64;
+
     for entry in 0..entries {
         let at = ENTRIES_AT + entry * TIME_TO_SAMPLE_ENTRY_BYTES;
+
         samples = samples.checked_add(u64::from(be32(&bytes, at)?))?;
         longest = longest.max(u64::from(be32(&bytes, at + 4)?));
     }
@@ -939,6 +982,7 @@ fn descend<S: Read + Seek + ?Sized>(
     path: &[BoxKind],
 ) -> Option<Extent> {
     let mut held = within;
+
     for kind in path {
         held = child(source, held, *kind)?;
     }
@@ -965,6 +1009,7 @@ fn children<S: Read + Seek + ?Sized>(source: &mut S, within: Extent) -> Vec<Chil
             break;
         };
         let kind = BoxKind([header[4], header[5], header[6], header[7]]);
+
         if !kind.is_printable() {
             break;
         }
@@ -981,6 +1026,7 @@ fn children<S: Read + Seek + ?Sized>(source: &mut S, within: Extent) -> Vec<Chil
         let Some(ends) = at.checked_add(bytes) else {
             break;
         };
+
         if bytes < head || ends > within.end {
             break;
         }
@@ -1004,11 +1050,13 @@ fn leaf<S: Read + Seek + ?Sized>(source: &mut S, held: Extent) -> Option<Vec<u8>
 
 fn leaf_up_to<S: Read + Seek + ?Sized>(source: &mut S, held: Extent, most: u64) -> Option<Vec<u8>> {
     let bytes = held.end.checked_sub(held.at)?;
+
     if bytes > most {
         return None;
     }
 
     let mut read = vec![0; bytes as usize];
+
     source.seek(SeekFrom::Start(held.at)).ok()?;
     source.read_exact(&mut read).ok()?;
     Some(read)
@@ -1064,11 +1112,13 @@ mod tests {
     impl Scratch {
         fn holding(bytes: &[u8]) -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let path = env::temp_dir().join(format!(
                 "resonate-boxes-{}-{}.mp4",
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
+
             std::fs::write(&path, bytes).expect("a writable temporary file");
             Self { path }
         }
@@ -1082,6 +1132,7 @@ mod tests {
 
     fn atom(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut out = ((payload.len() + 8) as u32).to_be_bytes().to_vec();
+
         out.extend_from_slice(kind);
         out.extend_from_slice(payload);
         out
@@ -1089,6 +1140,7 @@ mod tests {
 
     fn large_atom(kind: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut out = LARGE_SIZE.to_be_bytes().to_vec();
+
         out.extend_from_slice(kind);
         out.extend_from_slice(&((payload.len() + 16) as u64).to_be_bytes());
         out.extend_from_slice(payload);
@@ -1150,13 +1202,16 @@ mod tests {
     #[test]
     fn a_final_box_declaring_zero_runs_to_the_end_of_the_file() {
         let mut bytes = atom(b"ftyp", b"M4A isom");
+
         bytes.extend_from_slice(&atom(b"moov", &[0; 16]));
         bytes.extend_from_slice(&TO_END.to_be_bytes());
         bytes.extend_from_slice(b"mdat");
         bytes.extend_from_slice(&[0; 100]);
+
         let scratch = Scratch::holding(&bytes);
 
         let found = layout(&scratch).expect("an ISO-BMFF layout");
+
         assert_eq!(found.boxes.len(), 3);
         assert_eq!(found.boxes[2].bytes, 108);
         assert_eq!(found.faststart, Some(Faststart::Ready));
@@ -1172,11 +1227,14 @@ mod tests {
     #[test]
     fn a_box_declaring_more_than_the_file_holds_ends_the_walk() {
         let mut bytes = atom(b"ftyp", b"M4A isom");
+
         bytes.extend_from_slice(&1_000_000_u32.to_be_bytes());
         bytes.extend_from_slice(b"moov");
+
         let scratch = Scratch::holding(&bytes);
 
         let found = layout(&scratch).expect("the file type box was readable");
+
         assert_eq!(found.boxes.len(), 1);
         assert_eq!(found.faststart, None);
     }
@@ -1196,12 +1254,14 @@ mod tests {
 
     fn full_atom(kind: &[u8; 4], version: u8, payload: &[u8]) -> Vec<u8> {
         let mut body = vec![version, 0, 0, 0];
+
         body.extend_from_slice(payload);
         atom(kind, &body)
     }
 
     fn header_atom(kind: &[u8; 4], timescale: u32, frames: u32) -> Vec<u8> {
         let mut payload = vec![0; 8];
+
         payload.extend_from_slice(&timescale.to_be_bytes());
         payload.extend_from_slice(&frames.to_be_bytes());
         full_atom(kind, 0, &payload)
@@ -1218,6 +1278,7 @@ mod tests {
 
     fn edit_list_paced(entries: &[(u32, i32, u32)]) -> Vec<u8> {
         let mut payload = (entries.len() as u32).to_be_bytes().to_vec();
+
         for (segment, media_time, rate) in entries {
             payload.extend_from_slice(&segment.to_be_bytes());
             payload.extend_from_slice(&media_time.to_be_bytes());
@@ -1228,6 +1289,7 @@ mod tests {
 
     fn wide_edit_list_paced(entries: &[(u64, i64, u32)]) -> Vec<u8> {
         let mut payload = (entries.len() as u32).to_be_bytes().to_vec();
+
         for (segment, media_time, rate) in entries {
             payload.extend_from_slice(&segment.to_be_bytes());
             payload.extend_from_slice(&media_time.to_be_bytes());
@@ -1238,6 +1300,7 @@ mod tests {
 
     fn time_to_sample(entries: &[(u32, u32)]) -> Vec<u8> {
         let mut payload = (entries.len() as u32).to_be_bytes().to_vec();
+
         for (samples, ticks) in entries {
             payload.extend_from_slice(&samples.to_be_bytes());
             payload.extend_from_slice(&ticks.to_be_bytes());
@@ -1247,12 +1310,14 @@ mod tests {
 
     fn handler(kind: &[u8; 4]) -> Vec<u8> {
         let mut payload = vec![0; 4];
+
         payload.extend_from_slice(kind);
         full_atom(b"hdlr", 0, &payload)
     }
 
     fn track_header(id: u32) -> Vec<u8> {
         let mut payload = vec![0; 8];
+
         payload.extend_from_slice(&id.to_be_bytes());
         full_atom(b"tkhd", 0, &payload)
     }
@@ -1303,6 +1368,7 @@ mod tests {
 
     fn free_form_item(name: &str, value: &str) -> Vec<u8> {
         let mut data = vec![0, 0, 0, 1, 0, 0, 0, 0];
+
         data.extend_from_slice(value.as_bytes());
 
         atom(
@@ -1326,6 +1392,7 @@ mod tests {
 
     fn movie(traks: &[Vec<u8>], udta: &[Vec<u8>]) -> Vec<u8> {
         let mut inside = header_atom(b"mvhd", RATE, PRIMING + MUSIC);
+
         inside.extend_from_slice(&traks.concat());
         inside.extend_from_slice(&udta.concat());
 
@@ -1550,6 +1617,7 @@ mod tests {
     fn an_itunes_sound_check_item_is_read_beside_the_gapless_one() {
         const CHECKED: &str = " 000009C4 000009C4 00002710 00002710 00024CA8 00024CA8 00004000 \
                                00002000 00024CA8 00024CA8";
+
         let bytes = movie(
             &[sound(&[])],
             &[user_data(&[
@@ -1702,6 +1770,7 @@ mod tests {
             .as_ref()
             .map(Splices::edits)
             .unwrap_or_default();
+
         assert_eq!(edits.len(), 200);
         assert_eq!(edits.last().copied(), Some(music(398 * stretch, stretch)));
     }
@@ -1709,7 +1778,9 @@ mod tests {
     #[test]
     fn an_edit_list_declaring_more_entries_than_its_box_holds_is_declined() {
         let mut payload = u32::MAX.to_be_bytes().to_vec();
+
         payload.extend_from_slice(&[0; 12]);
+
         let hostile = atom(b"edts", &full_atom(b"elst", 0, &payload));
 
         assert_eq!(priming_of(&movie(&[sound(&[hostile])], &[])), None);
@@ -1717,6 +1788,7 @@ mod tests {
 
     fn fragmented(extends: &[Vec<u8>], index: &[Vec<u8>]) -> Movie {
         let mut inside = header_atom(b"mvhd", RATE, 0);
+
         inside.extend_from_slice(&track(b"soun", &[], &[]));
         inside.extend_from_slice(&extends.concat());
 
@@ -1738,6 +1810,7 @@ mod tests {
 
     fn index_of_track(reference: u32, timescale: u32, durations: &[u32]) -> Vec<u8> {
         let mut payload = reference.to_be_bytes().to_vec();
+
         payload.extend_from_slice(&timescale.to_be_bytes());
         payload.extend_from_slice(&[0; 8]);
         payload.extend_from_slice(&[0, 0]);
@@ -1794,8 +1867,10 @@ mod tests {
     #[test]
     fn an_index_of_another_track_is_not_added_to_the_sound_tracks() {
         let mut inside = header_atom(b"mvhd", RATE, 0);
+
         inside.extend_from_slice(&sound_track_numbered(2));
         inside.extend_from_slice(&sound_track_numbered(7));
+
         let held = read_movie(&mut Cursor::new(
             [
                 atom(b"ftyp", b"iso8mp41dash"),

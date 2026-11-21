@@ -68,7 +68,7 @@ pub struct ScanOptions {
     pub workers: NonZeroUsize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Failure {
     Misnamed,
     Undecodable,
@@ -189,6 +189,7 @@ impl FailureCounts {
             Failure::Undecodable => &self.undecodable,
             Failure::Unreadable => &self.unreadable,
         };
+
         counted.fetch_add(rows, Ordering::Relaxed);
     }
 
@@ -263,6 +264,7 @@ pub(crate) fn start(
     let walking = inner.walk_the_tree()?;
     let progress = Arc::new(ScanProgress::default());
     let owned = Arc::clone(&progress);
+
     walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
@@ -270,6 +272,7 @@ pub(crate) fn start(
         .spawn(move || {
             let outcome = roots(&inner, &options.roots)
                 .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
+
             drop(walking);
             outcome.map(|summary| replaced_after(summary, after))
         })
@@ -285,17 +288,21 @@ pub(crate) fn start_over_held(
 ) -> Result<Option<ScanHandle>> {
     let walking = inner.walk_the_tree()?;
     let roots = held_roots(&inner, &options.roots)?;
+
     if roots.is_empty() {
         return Ok(None);
     }
+
     let progress = Arc::new(ScanProgress::default());
     let owned = Arc::clone(&progress);
+
     walking.cancelled_by(Arc::clone(&progress) as Arc<dyn Cancelling>);
 
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
         .spawn(move || {
             let outcome = run(&inner, &options, roots, Beside::LeftToTheWatch, &progress);
+
             drop(walking);
             outcome.map(|summary| replaced_after(summary, after))
         })
@@ -353,8 +360,10 @@ struct Known {
 impl Known {
     fn under(inner: &Inner, roots: &[Root]) -> Result<Self> {
         let mut known = Self::default();
+
         inner.read(|connection| {
             known.volumes = volumes::held(connection)?;
+
             let mut statement = connection
                 .prepare(
                     "SELECT path, id, file_size, modified, sheet_modified, (probe_again OR
@@ -366,6 +375,7 @@ impl Known {
 
             for root in roots {
                 let (from, past) = walked_from(&store::path_text(&root.path));
+
                 let rows = statement
                     .query_map(params![from, past], |row| {
                         Ok((
@@ -471,6 +481,7 @@ pub(crate) fn retire(inner: &Arc<Inner>, folder: &Path) -> Result<u64> {
     inner.write(|transaction| {
         let forgotten =
             forget_at_or_under(transaction, slice::from_ref(&folder), Unmounted::Retired)?;
+
         volumes::retire_at_or_under(transaction, &folder)?;
         Ok(forgotten)
     })
@@ -493,6 +504,7 @@ fn forget_at_or_under(
         Unmounted::Retired => Vec::new(),
     };
     let mut gone: BTreeMap<i64, Vec<PathBuf>> = BTreeMap::new();
+
     for path in named {
         let text = store::path_text(path);
         let (from, past) = walked_from(&text);
@@ -512,9 +524,11 @@ fn forget_at_or_under(
 
 pub(crate) fn walked_from(root: &str) -> (String, String) {
     let mut from = root.trim_end_matches(MAIN_SEPARATOR).to_owned();
+
     from.push(MAIN_SEPARATOR);
 
     let mut past = from.clone();
+
     past.pop();
     past.push(PAST_THE_SEPARATOR);
     (from, past)
@@ -582,10 +596,12 @@ fn run(
     let (done_tx, done_rx) = bounded::<Outcome>(QUEUE);
 
     let mut workers = Vec::with_capacity(options.workers.get());
+
     for index in 0..options.workers.get() {
         let work_rx = work_rx.clone();
         let done_tx = done_tx.clone();
         let progress = Arc::clone(progress);
+
         workers.push(
             thread::Builder::new()
                 .name(format!("resonate-probe-{index}"))
@@ -614,6 +630,7 @@ fn run(
                     &work_tx,
                     vault.as_deref(),
                 );
+
                 drop(work_tx);
                 outcome
             })
@@ -621,16 +638,21 @@ fn run(
     };
 
     let written = write_all(inner, options, &done_rx, progress, generation);
+
     drop(done_rx);
+
     let mut lost = false;
+
     for worker in workers {
         lost |= worker.join().is_err();
     }
+
     let walked = walker.join().unwrap_or(Err(Error::Stopped {
         pass: PassKind::Scan,
     }));
     let reached = written?;
     let mounted = walked?;
+
     if lost {
         return Err(Error::Stopped {
             pass: PassKind::Scan,
@@ -640,10 +662,12 @@ fn run(
     let cancelled = progress.is_cancelled();
     let arrived = progress.added.load(Ordering::Relaxed);
     let mut changed = arrived + progress.updated.load(Ordering::Relaxed);
+
     if !cancelled {
         inner.write(|transaction| {
             store::mark_the_unreached(transaction, &ids, generation, &reached)
         })?;
+
         let asked = inner.read(|connection| moves::to_be_heard(connection, &ids, generation))?;
         let prints: AHashMap<PathBuf, String> = asked
             .into_iter()
@@ -654,20 +678,27 @@ fn run(
                 prints.get(path).cloned()
             })
         })?;
+
         undo::followed(inner, &moved.moves);
+
         let moved = moved.rows;
+
         progress.moved.store(moved, Ordering::Relaxed);
         progress.added.fetch_sub(moved, Ordering::Relaxed);
+
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
+
         inner.write(store::sweep_orphans_if_owed)?;
         inner.write(|transaction| volumes::settle(transaction, &walked_roots, &mounted))?;
         if arrived > 0 {
             inner.write(history::credit_the_unheld)?;
         }
+
         let tidied = match beside {
             Beside::Tidied => tidy_the_roots_beside(inner, &ids, progress)?,
             Beside::LeftToTheWatch => 0,
         };
+
         progress.removed.store(removed + tidied, Ordering::Relaxed);
         if changed > 0 {
             let weighed = match removed + tidied {
@@ -743,10 +774,12 @@ fn roots(inner: &Inner, wanted: &[PathBuf]) -> Result<Vec<Root>> {
     }
     inner.write(|transaction| {
         let mut resolved: Vec<Root> = Vec::with_capacity(wanted.len());
+
         for root in wanted {
             if !root.is_dir() {
                 return Err(Error::RootNotADirectory { path: root.clone() });
             }
+
             let path = naming::composed(root.canonicalize().map_err(|source| Error::Io {
                 path: root.clone(),
                 source,
@@ -787,6 +820,7 @@ fn tidy_the_roots_beside(
 ) -> Result<u64> {
     let mut tidied = 0;
     let absent = inner.read(volumes::absent)?;
+
     for root in roots_beside(inner, walked)? {
         if progress.is_cancelled() {
             break;
@@ -801,6 +835,7 @@ fn tidy_the_roots_beside(
             .filter(|(path, _)| is_gone(path) && !volumes::is_on_an_absent_one(path, &absent))
             .cloned()
             .collect();
+
         if gone.is_empty() {
             continue;
         }
@@ -816,6 +851,7 @@ fn tidy_the_roots_beside(
             })
             .map(|(path, _)| path)
             .collect();
+
         if gone.is_empty() {
             continue;
         }
@@ -849,6 +885,7 @@ fn sizes_of_files_not_catalogued(
 ) -> Option<AHashSet<i64>> {
     let mut sizes = AHashSet::new();
     let mut folders = vec![(root.to_path_buf(), 0_u8)];
+
     while let Some((folder, depth)) = folders.pop() {
         let entries = match fs::read_dir(&folder) {
             Ok(entries) => entries,
@@ -861,6 +898,7 @@ fn sizes_of_files_not_catalogued(
             let entry = entry.ok()?;
             let kind = entry.file_type().ok()?;
             let path = naming::composed(entry.path());
+
             if is_passed_over(&path) {
                 continue;
             }
@@ -889,6 +927,7 @@ fn walk_all(
 ) -> Result<Vec<PathBuf>> {
     let mut visited = Visited::default();
     let mut mounted = Vec::new();
+
     for root in roots.walked {
         let walking = Walking {
             known,
@@ -920,6 +959,7 @@ fn kept_the_vanished_volumes(walking: &Walking<'_>) -> bool {
 fn mend_what_dead_writers_left(entries: &[fs::DirEntry]) {
     for entry in entries {
         let path = entry.path();
+
         if !names_a_cut_short_write(&path) {
             continue;
         }
@@ -967,7 +1007,9 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
             );
             continue;
         }
+
         let device = volumes::device(&directory);
+
         if device.is_some() && outer.is_some() && (device != outer || points.hold(&directory)) {
             mounted.push(directory.clone());
         } else if walking.known.is_a_volume(&directory) {
@@ -1011,10 +1053,13 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
             if progress.is_cancelled() {
                 return Ok(false);
             }
+
             let path = naming::composed(entry.path());
+
             if is_passed_over(&path) {
                 continue;
             }
+
             let kind = match entry.file_type() {
                 Ok(kind) => kind,
                 Err(error) => {
@@ -1089,6 +1134,7 @@ fn followed(path: &Path, visited: &mut Visited, walking: &Walking<'_>) -> bool {
     let Ok(target) = path.canonicalize() else {
         return false;
     };
+
     if walking.is_the_vault(&target) {
         return false;
     }
@@ -1134,6 +1180,7 @@ impl Walking<'_> {
 
     fn is_the_vault(&self, directory: &Path) -> bool {
         let inside = self.vault.is_some_and(|vault| directory.starts_with(vault));
+
         if inside {
             tracing::debug!(
                 path = %directory.display(),
@@ -1152,6 +1199,7 @@ fn directory_of(
 ) -> Result<bool> {
     let mut claimed = AHashSet::new();
     let mut below: AHashMap<PathBuf, Vec<(PathBuf, Metadata)>> = AHashMap::new();
+
     for (path, metadata) in sheets {
         let Some(folder) = path.parent() else {
             continue;
@@ -1191,6 +1239,7 @@ fn directory_of(
                 );
                 continue;
             };
+
             if claimed_from_above.contains(&held.0) {
                 tracing::debug!(
                     sheet = %path.display(),
@@ -1234,6 +1283,7 @@ fn audio_below(walking: &Walking<'_>, folder: &Path) -> Vec<(PathBuf, Metadata)>
     if walking.is_the_vault(folder) {
         return Vec::new();
     }
+
     let Ok(entries) = fs::read_dir(folder) else {
         return Vec::new();
     };
@@ -1267,9 +1317,11 @@ fn sheet_job(
     } = walking;
     let (file, metadata) = held;
     let tracks = cut.audio_tracks().count();
+
     progress
         .discovered
         .fetch_add(tracks as u64, Ordering::Relaxed);
+
     let text = store::path_text(file);
 
     let file_size = metadata.len();
@@ -1291,6 +1343,7 @@ fn sheet_job(
     }
 
     let mut existing: Vec<Option<TrackId>> = rows.iter().map(|held| Some(held.id)).collect();
+
     existing.resize(tracks, None);
 
     let job = Job::Sheet(Box::new(SheetCandidate {
@@ -1316,7 +1369,9 @@ fn whole_file_job(walking: &Walking<'_>, path: &Path, metadata: &Metadata) -> Re
         work,
         ..
     } = walking;
+
     progress.discovered.fetch_add(1, Ordering::Relaxed);
+
     let text = store::path_text(path);
 
     let file_size = metadata.len();
@@ -1357,9 +1412,11 @@ fn rows_past_the_first(progress: &ScanProgress, rows: usize) {
 
 pub(crate) fn sleeve(path: &Path, root: &Path) -> Option<PathBuf> {
     let folder = path.parent()?;
+
     if folder == root {
         return None;
     }
+
     let one_disc = folder
         .file_name()
         .and_then(OsStr::to_str)
@@ -1575,6 +1632,7 @@ fn heard_sheet(path: &Path) -> Heard {
         Ok(held) => held,
         Err(error) => return unheard(path, &error),
     };
+
     if held.len() > LARGEST_SHEET_ON_DISC {
         tracing::warn!(
             path = %path.display(),
@@ -1588,6 +1646,7 @@ fn heard_sheet(path: &Path) -> Heard {
         Ok(bytes) => bytes,
         Err(error) => return unheard(path, &error),
     };
+
     if bytes.is_empty() {
         tracing::debug!(path = %path.display(), "a cue sheet read as empty");
         return Heard::Unreadable;
@@ -1687,6 +1746,7 @@ fn probe_all(work: &Receiver<Job>, done: &Sender<Outcome>, progress: &ScanProgre
                 }
                 Err(error) => {
                     let failure = Failure::of(&error);
+
                     tracing::debug!(%error, ?failure, path = %candidate.path.display(), "keeping what the catalog holds of a file that would not probe");
                     progress.failed.add(failure, 1);
                     progress.processed.fetch_add(1, Ordering::Relaxed);
@@ -1701,6 +1761,7 @@ fn probe_all(work: &Receiver<Job>, done: &Sender<Outcome>, progress: &ScanProgre
                 Err(error) => {
                     let tracks = candidate.cut.audio_tracks().count() as u64;
                     let failure = Failure::of(&error);
+
                     tracing::debug!(%error, ?failure, sheet = %candidate.sheet.display(), "keeping what the catalog holds of a cue sheet whose file would not probe");
                     progress.failed.add(failure, tracks);
                     progress.processed.fetch_add(tracks, Ordering::Relaxed);
@@ -1750,6 +1811,7 @@ fn cut_into_rows(
         let Some(span) = cut.span_of(index, rate, info.duration) else {
             continue;
         };
+
         records.push(TrackRecord {
             root_id: cutting.root_id,
             path: cutting.path.to_path_buf(),
@@ -1843,9 +1905,11 @@ struct Stemmed {
 
 fn name_from_stem(path: &Path, tags: &mut TagSet) -> Stemmed {
     let mut stemmed = Stemmed::default();
+
     if tags.title.is_some() && tags.artist.is_some() {
         return stemmed;
     }
+
     let Some(stem) = path.file_stem() else {
         return stemmed;
     };
@@ -1887,6 +1951,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
         modified: candidate.modified,
         sheet_modified: None,
     };
+
     if let Some(cut) = info
         .cue
         .as_ref()
@@ -1894,6 +1959,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
     {
         return Ok(cut_into_rows(&cutting, cut, &info, embeds_a_picture));
     }
+
     let stemmed = name_from_stem(&candidate.path, &mut info.tags);
 
     Ok(vec![TrackRecord {
@@ -1966,6 +2032,7 @@ fn commit(
     if batch.is_empty() {
         return Ok(());
     }
+
     let mut added = 0;
     let mut updated = 0;
 
@@ -1974,6 +2041,7 @@ fn commit(
             reached.push(id.get() as i64);
         }
     }
+
     let stores = batch
         .iter()
         .any(|outcome| matches!(outcome, Outcome::Store(_)));
@@ -1985,6 +2053,7 @@ fn commit(
                     Outcome::Seen(_) | Outcome::Kept(_) => {}
                     Outcome::Store(record) => {
                         crate::synced::recover_received(transaction, record)?;
+
                         let stored = store::apply(
                             transaction,
                             cache,
@@ -1992,6 +2061,7 @@ fn commit(
                             generation,
                             options.extract_cover_art,
                         )?;
+
                         if !stored {
                             continue;
                         }
@@ -2005,6 +2075,7 @@ fn commit(
             }
             Ok(())
         })?;
+
         let covers = cache.take_owed_covers().read();
         if !covers.is_empty() {
             inner.write(|transaction| store::land_covers(transaction, cache, covers))?;
@@ -2012,6 +2083,7 @@ fn commit(
     }
 
     let counted = batch.iter().filter(|outcome| outcome.is_counted()).count();
+
     progress
         .processed
         .fetch_add(counted as u64, Ordering::Relaxed);

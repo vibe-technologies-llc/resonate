@@ -66,6 +66,7 @@ impl Fetched {
             position: 0,
             answer: None,
         };
+
         fetched.answer = Some(fetched.asked_from(0)?);
         Ok(fetched)
     }
@@ -84,22 +85,27 @@ impl Fetched {
             source,
         };
         let address = self.at.reached_at().map_err(failed)?;
+
         let mut stream = TcpStream::connect_timeout(&address, CONNECTED_WITHIN).map_err(failed)?;
+
         stream
             .set_write_timeout(Some(CONNECTED_WITHIN))
             .map_err(failed)?;
         stream
             .set_read_timeout(Some(SILENT_AT_MOST))
             .map_err(failed)?;
+
         let request = format!(
             "GET {} HTTP/1.1\r\nHost: {}\r\nUser-Agent: {USER_AGENT}\r\nConnection: \
              close\r\nRange: bytes={from}-\r\nAccept-Encoding: identity\r\n\r\n",
             self.at.path(),
             self.at.authority(),
         );
+
         stream.write_all(request.as_bytes()).map_err(failed)?;
 
         let mut held = Vec::new();
+
         let ends = loop {
             if let Some(at) = head_end(&held) {
                 break at;
@@ -116,6 +122,7 @@ impl Fetched {
             asked: Asked::Media,
         })?;
         let held = held.split_off(ends);
+
         if self.media_type.is_none() {
             self.media_type = head.media_type;
         }
@@ -129,6 +136,7 @@ impl Fetched {
             body: BufReader::new(Cursor::new(held).chain(stream)),
             framing,
         };
+
         match (head.status, head.range) {
             (206, Some((start, total))) if start == from => {
                 if let Some(total) = total {
@@ -159,11 +167,13 @@ impl Fetched {
 impl Answer {
     fn pass_over(&mut self, mut bytes: u64) -> io::Result<()> {
         let mut discarded = vec![0; DISCARDED_IN];
+
         while bytes > 0 {
             let wanted = usize::try_from(bytes)
                 .unwrap_or(usize::MAX)
                 .min(DISCARDED_IN);
             let read = self.read(&mut discarded[..wanted])?;
+
             if read == 0 {
                 return Err(io::ErrorKind::UnexpectedEof.into());
             }
@@ -189,6 +199,7 @@ impl Answer {
                 }
                 Chunk::Within { left: 0 } => {
                     let mut end = [0; LINE_END.len()];
+
                     self.body.read_exact(&mut end)?;
                     if end != LINE_END {
                         return Err(io::ErrorKind::InvalidData.into());
@@ -198,6 +209,7 @@ impl Answer {
                 Chunk::Within { left } => {
                     let room = usize::try_from(left).unwrap_or(usize::MAX).min(buf.len());
                     let read = self.body.read(&mut buf[..room])?;
+
                     if read == 0 {
                         return Err(io::ErrorKind::UnexpectedEof.into());
                     }
@@ -213,8 +225,10 @@ impl Answer {
 
 fn chunk_size(body: &mut impl BufRead) -> io::Result<u64> {
     let mut line = Vec::new();
+
     body.take(CHUNK_LINE_BYTES_AT_MOST)
         .read_until(b'\n', &mut line)?;
+
     let Some(line) = line.strip_suffix(LINE_END) else {
         return Err(if line.is_empty() {
             io::ErrorKind::UnexpectedEof
@@ -245,6 +259,7 @@ impl Read for Answer {
             Framing::Declared { left } => {
                 let room = usize::try_from(left).unwrap_or(usize::MAX).min(buf.len());
                 let read = self.body.read(&mut buf[..room])?;
+
                 self.framing = Framing::Declared {
                     left: left - read as u64,
                 };
@@ -259,17 +274,21 @@ impl Read for Fetched {
         if buf.is_empty() || self.length.is_some_and(|length| self.position >= length) {
             return Ok(0);
         }
+
         let mut asked_without_a_byte = 0;
         loop {
             if self.answer.is_none() {
                 let answer = self.asked_from(self.position).map_err(io::Error::other)?;
+
                 self.answer = Some(answer);
             }
+
             let Some(answer) = &mut self.answer else {
                 return Ok(0);
             };
             let read = answer.read(buf)?;
             let ended_short = read == 0 && self.length.is_some_and(|length| self.position < length);
+
             if !ended_short {
                 self.position += read as u64;
                 return Ok(read);
@@ -294,6 +313,7 @@ impl Seek for Fetched {
                 .checked_add_signed(by),
         }
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+
         if target != self.position {
             self.answer = None;
             self.position = target;
@@ -304,11 +324,14 @@ impl Seek for Fetched {
 
 fn head_of(bytes: &[u8]) -> Option<Head> {
     let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
     let mut response = httparse::Response::new(&mut headers);
+
     match response.parse(bytes) {
         Ok(httparse::Status::Complete(_)) => {}
         Ok(httparse::Status::Partial) | Err(_) => return None,
     }
+
     let named = |name: &str| {
         response
             .headers
@@ -338,9 +361,11 @@ pub(crate) fn range_of(header: &str) -> Option<(u64, Option<u64>)> {
     let (start, end) = span.trim().split_once('-')?;
     let start: u64 = start.trim().parse().ok()?;
     let end: u64 = end.trim().parse().ok()?;
+
     if end < start {
         return None;
     }
+
     let total = match total.trim() {
         "*" => None,
         total => Some(total.parse::<u64>().ok().filter(|total| *total > end)?),
@@ -357,6 +382,7 @@ mod tests {
         let stream =
             TcpStream::connect(listener.local_addr().expect("an address")).expect("connected");
         let (mut serving, _) = listener.accept().expect("accepted");
+
         serving.write_all(served).expect("written");
         drop(serving);
         Answer {
@@ -386,6 +412,7 @@ mod tests {
     fn serving_capped_answers(answers: usize, cap: usize) -> Located {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bound");
         let at = listener.local_addr().expect("an address");
+
         std::thread::spawn(move || {
             for _ in 0..answers {
                 let Ok((mut stream, _)) = listener.accept() else {
@@ -393,14 +420,17 @@ mod tests {
                 };
                 let mut head = Vec::new();
                 let mut buffer = [0; 512];
+
                 while head_end(&head).is_none() {
                     match stream.read(&mut buffer) {
                         Ok(0) | Err(_) => break,
                         Ok(read) => head.extend_from_slice(&buffer[..read]),
                     }
                 }
+
                 let from = asked_from_of(&String::from_utf8_lossy(&head));
                 let end = (from + cap).min(SONG_BYTES);
+
                 let reply = format!(
                     "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{SONG_BYTES}\r\n\
                      Content-Length: {}\r\nConnection: close\r\n\r\n",
@@ -418,9 +448,12 @@ mod tests {
     fn a_server_capping_every_partial_answer_is_asked_again_from_where_it_ended() {
         let mut fetched = Fetched::open(serving_capped_answers(8, CAPPED_AT)).expect("opened");
         let mut whole = Vec::new();
+
         fetched.read_to_end(&mut whole).expect("read whole");
+
         let landed = fetched.seek(SeekFrom::Start(SOUGHT_TO)).expect("a seek");
         let mut after = Vec::new();
+
         fetched.read_to_end(&mut after).expect("read from there");
 
         assert_eq!(whole, song());
@@ -444,15 +477,20 @@ mod tests {
     #[test]
     fn a_chunked_body_is_read_as_its_chunks_and_a_cut_or_malformed_one_is_refused() {
         let mut whole = Vec::new();
+
         let read = answer_of(b"5\r\nhello\r\n7;ext=1\r\n, world\r\n0\r\nTrailer: x\r\n\r\n")
             .read_to_end(&mut whole);
         let mut cut = Vec::new();
+
         let cut_read = answer_of(b"5\r\nhel").read_to_end(&mut cut);
         let mut unended = Vec::new();
+
         let unended_read = answer_of(b"5\r\nhello\r\n").read_to_end(&mut unended);
         let mut malformed = Vec::new();
+
         let malformed_read = answer_of(b"zz\r\nhello\r\n0\r\n\r\n").read_to_end(&mut malformed);
         let mut overlong = Vec::new();
+
         let overlong_read = answer_of(b"5\r\nhelloXX0\r\n\r\n").read_to_end(&mut overlong);
 
         assert_eq!(read.expect("read whole"), 12);

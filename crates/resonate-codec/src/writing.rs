@@ -49,7 +49,7 @@ use crate::{
     tags::{TagSource, Tagged},
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum TagField {
     Title,
     Artist,
@@ -455,6 +455,7 @@ impl FileTags {
         let path = location.as_path().ok_or_else(|| Error::LocatorNotUsable {
             location: location.clone(),
         })?;
+
         if !self.writes(location) {
             return Err(Error::Unwritable {
                 location: location.clone(),
@@ -490,6 +491,7 @@ impl TagSink for FileTags {
     fn write(&self, location: &MediaLocation, writing: Writing<'_>) -> Result<()> {
         let named = self.writable(location)?;
         let linked = fs::symlink_metadata(named).is_ok_and(|held| held.is_symlink());
+
         let resolved = match linked {
             true => fs::canonicalize(named).map_err(|source| Error::Io {
                 location: location.clone(),
@@ -498,14 +500,18 @@ impl TagSink for FileTags {
             false => named.to_path_buf(),
         };
         let path = resolved.as_path();
+
         mend_what_dead_writers_left(path);
+
         let taken = Taken::of(path).map_err(|source| Error::Io {
             location: location.clone(),
             source,
         })?;
+
         if names_a_matroska(named) {
             return written_into_a_matroska(path, location, writing, taken);
         }
+
         let unstaged = |source| Error::Io {
             location: location.clone(),
             source,
@@ -518,6 +524,7 @@ impl TagSink for FileTags {
             None => None,
         };
         let written = self.written(path, rechunked.as_ref(), location, writing, taken);
+
         if written.is_err()
             && let Some(rechunked) = &rechunked
         {
@@ -553,6 +560,7 @@ impl TagSink for FileTags {
             source,
         };
         let file = File::open(path).map_err(io)?;
+
         let media = Media {
             stream: Box::new(Reading::new(file.try_clone().map_err(io)?)),
             hint: FormatHint::of(location),
@@ -593,11 +601,15 @@ const fn chunks_its_id3(kind: FileType) -> bool {
 
 fn tag_in_front_of_a_riff(path: &Path) -> io::Result<Option<u64>> {
     let mut file = File::open(path)?;
+
     let Some(riff_at) = crate::prescan::past_id3(&mut file).filter(|at| *at > 0) else {
         return Ok(None);
     };
+
     file.seek(SeekFrom::Start(riff_at))?;
+
     let mut header = [0_u8; RIFF_HEADER_BYTES as usize];
+
     if file.read_exact(&mut header).is_err() {
         return Ok(None);
     }
@@ -650,27 +662,35 @@ fn chunked_into(path: &Path, staged: Staged, riff_at: u64) -> io::Result<Staged>
 fn chunked(path: &Path, staged: &File, riff_at: u64) -> io::Result<()> {
     let mut file = File::open(path)?;
     let mut tag = vec![0_u8; usize::try_from(riff_at).unwrap_or(usize::MAX)];
+
     file.read_exact(&mut tag)?;
+
     let mut header = [0_u8; RIFF_HEADER_BYTES as usize];
+
     file.read_exact(&mut header)?;
+
     let declared = u32::from_le_bytes([header[4], header[5], header[6], header[7]]);
     let tag_bytes =
         u32::try_from(tag.len()).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
     let padded = tag_bytes + tag_bytes % 2;
     let to_a_word = declared % 2;
+
     let grown = declared
         .checked_add(to_a_word + CHUNK_HEADER_BYTES + padded)
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidData))?;
 
     let mut written = io::BufWriter::new(staged);
+
     written.write_all(RIFF)?;
     written.write_all(&grown.to_le_bytes())?;
     written.write_all(WAVE)?;
+
     let within = u64::from(declared).saturating_sub(WAVE.len() as u64);
     let standing = file
         .metadata()?
         .len()
         .saturating_sub(riff_at + RIFF_HEADER_BYTES);
+
     if standing < within {
         return Err(io::Error::from(io::ErrorKind::InvalidData));
     }
@@ -715,6 +735,7 @@ fn written_into_a_matroska(
     let unwritable = || Error::Unwritable {
         location: location.clone(),
     };
+
     if writing.unpictured {
         return Err(unwritable());
     }
@@ -728,11 +749,13 @@ fn written_into_a_matroska(
         location: location.clone(),
         source,
     })?;
+
     let rewrite = matroska_tags::rewritten(&mut BufReader::new(file), &edits, writing.taken)
         .map_err(|refused| {
             tracing::debug!(?refused, path = %path.display(), "a Matroska file its tags could not be placed in is left as it stood");
             unwritable()
         })?;
+
     if !rewrite.is_empty() {
         landed(path, location, &Rewriting { rewrite, taken })?;
     }
@@ -758,6 +781,7 @@ fn attached_to_a_matroska(path: &Path, location: &MediaLocation, picture: &Cover
         location: location.clone(),
         source,
     })?;
+
     let rewrite = matroska_tags::attached(&mut BufReader::new(file), &attached).map_err(
         |refused| {
             tracing::debug!(?refused, path = %path.display(), "a Matroska file a picture could not be attached to is left as it stood");
@@ -781,20 +805,24 @@ impl FileTags {
     ) -> Result<()> {
         let staged = rechunked.map(Rechunked::staged);
         let mut tagged = opened_in(read_of(staged, path, location)?, location)?;
+
         let kind = tagged.file_type();
         let options = WriteOptions::default().use_id3v23(Counted::holds_id3v2_3(
             &mut read_of(staged, path, location)?,
             kind,
         ));
         let others = cleared_elsewhere(&tagged, writing.taken);
+
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
+
             tagged.insert_tag(Tag::new(kind));
         }
 
         let tag = tagged
             .primary_tag_mut()
             .expect("a primary tag this call has just put there");
+
         for edit in writing.edits {
             if let Some(key) = edit.field.key_in(tag.tag_type()) {
                 tag.insert_text(key, edit.value.clone());
@@ -811,7 +839,9 @@ impl FileTags {
         if let Some(picture) = writing.picture {
             tag.push_picture(front_cover(picture));
         }
+
         let counting = writing.popularity.filter(|_| counts(tag.tag_type()));
+
         if let Some(popularity) = writing.popularity
             && keeps_popularimeters(tag.tag_type())
         {
@@ -834,11 +864,13 @@ impl FileTags {
             taken,
             options,
         };
+
         if chunks_its_id3(kind) && saving.tag.tag_type() == TagType::Id3v2 {
             let bytes = saving.id3_bytes().map_err(|source| Error::TagsUnwritten {
                 location: location.clone(),
                 source: source.into(),
             })?;
+
             held_by_an_id3_chunk(bytes, location)?;
         }
         match rechunked {
@@ -864,22 +896,28 @@ pub(crate) fn rating_in(mut file: File, location: &MediaLocation) -> Result<Rate
     if location.as_path().is_some_and(names_a_matroska) {
         return Ok(Rated::Unrateable);
     }
+
     let unread = |source| Error::TagsUnread {
         location: location.clone(),
         source,
     };
+
     file.rewind().map_err(|source| unread(source.into()))?;
+
     let reading = file.try_clone().map_err(|source| unread(source.into()))?;
     let probed = guessed_for_its_tags(reading, location)?;
     let file_type = probed.file_type().ok_or_else(|| Error::Unwritable {
         location: location.clone(),
     })?;
     let kind = file_type.primary_tag_type();
+
     if !rates(kind) {
         return Ok(Rated::Unrateable);
     }
+
     let (counted, primary) = if counts(kind) {
         file.rewind().map_err(|source| unread(source.into()))?;
+
         let counted = Counted::read_in(&mut file, file_type).map_err(unread)?;
         let primary = counted.as_ref().map(Counted::tag);
         (counted, primary)
@@ -893,6 +931,7 @@ pub(crate) fn rating_in(mut file: File, location: &MediaLocation) -> Result<Rate
             .find(|popularimeter| popularimeter.is_ours(kind))
             .map(|popularimeter| (popularimeter.stars, popularimeter.plays))
     });
+
     let favourite = match counted.as_ref().and_then(Counted::favoured_in_ape) {
         Some(favoured) => favoured,
         None => ours.is_some_and(|(stars, _)| stars == FAVOURITE_STARS),
@@ -923,6 +962,7 @@ struct Popularimeter<'a> {
 impl<'a> Popularimeter<'a> {
     fn read(text: &'a str) -> Option<Self> {
         let mut parts = text.splitn(3, '|');
+
         let by = parts.next()?;
         let stars = parts.next()?.parse().ok()?;
         let plays = parts.next()?.parse().ok()?;
@@ -938,6 +978,7 @@ fn uncovered(tag: &mut Tag) {
     let mut at = tag.pictures().len();
     while let Some(before) = at.checked_sub(1) {
         at = before;
+
         let kind = tag.pictures().get(at).map(Picture::pic_type);
         if kind.is_some_and(read_as_the_cover) {
             tag.remove_picture(at);
@@ -966,6 +1007,7 @@ fn cleared_elsewhere(tagged: &lofty::file::TaggedFile, taken: &[TagField]) -> Ve
         })
         .map(|held| {
             let mut cleared = held.clone();
+
             for key in taken
                 .iter()
                 .filter_map(|field| field.key_in(held.tag_type()))
@@ -1058,14 +1100,17 @@ fn credit_performers(frames: &mut Id3v2Tag, performers: Option<&str>) {
         .collect();
 
     let mut credited: Vec<(Cow<'static, str>, Cow<'static, str>)> = Vec::new();
+
     for name in named {
         if credited.iter().any(|(_, held)| held == name) {
             continue;
         }
+
         let role = standing
             .iter()
             .find(|(_, held)| held == name)
             .map_or_else(String::new, |(role, _)| role.clone());
+
         credited.push((role.into(), name.to_owned().into()));
     }
     if credited.is_empty() {
@@ -1103,9 +1148,11 @@ fn voiced_by(frames: &Id3v2Tag) -> Option<Voiced> {
 
 fn sung_into(frames: &mut Id3v2Tag, lyrics: Option<&str>) {
     let voiced = voiced_by(frames);
+
     frames.retain(|frame| {
         timed_words(frame).is_none() && !matches!(frame, Frame::UnsynchronizedText(_))
     });
+
     let Some(lyrics) = lyrics else {
         return;
     };
@@ -1120,6 +1167,7 @@ fn sung_into(frames: &mut Id3v2Tag, lyrics: Option<&str>) {
         }
         None => lyrics.to_owned(),
     };
+
     frames.insert(Frame::UnsynchronizedText(UnsynchronizedTextFrame::new(
         TextEncoding::UTF8,
         language,
@@ -1130,6 +1178,7 @@ fn sung_into(frames: &mut Id3v2Tag, lyrics: Option<&str>) {
 
 fn beat(items: &mut ApeTag, beats: Option<&str>) {
     items.remove(APE_BEATS);
+
     let Some(beats) = beats else {
         return;
     };
@@ -1145,6 +1194,7 @@ const fn names_who_rated(kind: TagType) -> bool {
 
 fn rate(tag: &mut Tag, popularity: Popularity) {
     let kind = tag.tag_type();
+
     tag.retain(|item| {
         item.key() != ItemKey::Popularimeter
             || !item
@@ -1224,7 +1274,9 @@ impl Lands for Rewriting {
             location: location.clone(),
             source,
         };
+
         let mut overlay = Overlay::over(&file).map_err(unread)?;
+
         match self.rewrite.laid_on(&mut overlay) {
             Ok(()) => {}
             Err(_) if overlay.outgrown() => return Ok(false),
@@ -1287,6 +1339,7 @@ impl Saving<'_> {
 
     fn id3_bytes(&self) -> std::result::Result<u64, TagEncodingError> {
         let mut tally = Tally::default();
+
         match concrete(self.tag, self.counting, self.unkeyed) {
             Some(Counted::Framed(frames)) => frames.dump_to(&mut tally, self.options())?,
             _ => self.tag.dump_to(&mut tally, self.options())?,
@@ -1327,11 +1380,14 @@ impl Saving<'_> {
         let length = usize::try_from(head.length + tail)
             .map_err(|_| io::Error::from(io::ErrorKind::FileTooLarge))?;
         let mut held = vec![0_u8; length];
+
         file.rewind()?;
         file.read_exact(&mut held)?;
+
         let past = held[usize::try_from(head.length).unwrap_or(length)..].to_vec();
 
         let mut copy = io::Cursor::new(held);
+
         saved(
             self.tag,
             self.counting,
@@ -1339,6 +1395,7 @@ impl Saving<'_> {
             &mut copy,
             self.options(),
         )?;
+
         let written = copy.into_inner();
         Ok(written.strip_suffix(past.as_slice()).map(<[u8]>::to_vec))
     }
@@ -1350,6 +1407,7 @@ impl Saving<'_> {
         let Some(written) = self.head_written(head, file)? else {
             return self.written_into(file);
         };
+
         let Some(rebuilt) = head
             .rebuilt(&written, Room::Held)
             .or_else(|| head.rebuilt(&written, Room::Generous))
@@ -1381,6 +1439,7 @@ impl Saving<'_> {
         let Some(rebuilt) = head.rebuilt(written, Room::Blocks(block)) else {
             return Ok(false);
         };
+
         if head.length > MOST_BYTES_WRITTEN_IN_PLACE || rebuilt.renumbered_from.is_some() {
             return Ok(false);
         }
@@ -1416,6 +1475,7 @@ impl Saving<'_> {
 
 fn laid_head(file: &mut File, standing: u64, rebuilt: &Rebuilt) -> io::Result<()> {
     let lands = rebuilt.head.len() as u64;
+
     if lands != standing {
         moved(file, standing, lands)?;
     }
@@ -1447,6 +1507,7 @@ struct ReadAt<'a> {
 impl Read for ReadAt<'_> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.file.read_at(into, self.at)?;
+
         self.at += read as u64;
         Ok(read)
     }
@@ -1455,11 +1516,14 @@ impl Read for ReadAt<'_> {
 fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
     let length = file.metadata()?.len();
     let mut chunk = vec![0_u8; MOVED_AT_ONCE_BYTES];
+
     if to > from {
         let mut end = length;
+
         while end > from {
             let start = end.saturating_sub(MOVED_AT_ONCE_BYTES as u64).max(from);
             let bytes = usize::try_from(end - start).unwrap_or(MOVED_AT_ONCE_BYTES);
+
             file.read_exact_at(&mut chunk[..bytes], start)?;
             file.write_all_at(&chunk[..bytes], start + (to - from))?;
             end = start;
@@ -1468,9 +1532,11 @@ fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
     }
 
     let mut at = from;
+
     while at < length {
         let bytes = usize::try_from(length - at)
             .map_or(MOVED_AT_ONCE_BYTES, |left| left.min(MOVED_AT_ONCE_BYTES));
+
         file.read_exact_at(&mut chunk[..bytes], at)?;
         file.write_all_at(&chunk[..bytes], at - (from - to))?;
         at += bytes as u64;
@@ -1489,6 +1555,7 @@ fn landed<L: Lands>(path: &Path, location: &MediaLocation, saving: &L) -> Result
         location: location.clone(),
         source,
     };
+
     match cloned_beside(path) {
         Ok(Some(staged)) => return landed_through(&staged, path, location, saving),
         Ok(None) => {}
@@ -1514,6 +1581,7 @@ fn landed_from_elsewhere<L: Lands>(
     saving: &L,
 ) -> Result<()> {
     let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
+
     for folder in crate::spool::kept_under() {
         match Staged::elsewhere(&folder, path).and_then(|staged| copied_into(path, staged, saving))
         {
@@ -1533,6 +1601,7 @@ fn landed_from_elsewhere<L: Lands>(
 fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
     let file = File::open(path)?;
     let staged = Staged::beside(path)?;
+
     if let Err(error) = rustix::fs::ioctl_ficlone(staged.held.file(), &file) {
         tracing::trace!(path = %path.display(), %error, "the file cannot be cloned");
         fs::remove_file(&staged.path)?;
@@ -1544,6 +1613,7 @@ fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
 #[cfg(target_os = "macos")]
 fn cloned_beside(path: &Path) -> io::Result<Option<Staged>> {
     let staged = staged_in(folder_of(path), path);
+
     if let Err(error) = resonate_apple::clone_file(path, &staged) {
         tracing::trace!(path = %path.display(), %error, "the file cannot be cloned");
         return Ok(None);
@@ -1568,11 +1638,14 @@ fn copied_beside<L: Lands>(path: &Path, folder: &Path, saving: &L) -> io::Result
 
 fn outgrown_head(path: &Path, saving: &Saving<'_>) -> Option<(Head, Rebuilt)> {
     let mut file = File::open(path).ok()?;
+
     let head = Head::of(saving.kind, &mut file)?;
     let written = saving.head_written(head, &mut file).ok()??;
+
     if head.rebuilt(&written, Room::Held).is_some() {
         return None;
     }
+
     let rebuilt = head.rebuilt(&written, Room::Generous)?;
     Some((head, rebuilt))
 }
@@ -1596,6 +1669,7 @@ fn copied_into<L: Lands>(path: &Path, staged: Staged, saving: &L) -> io::Result<
     let copied = File::open(path).and_then(|mut from| {
         let permissions = from.metadata()?.permissions();
         let mut into = staged.held.file();
+
         match &outgrown {
             Some((head, rebuilt)) => copied_with_head(&mut from, &mut into, *head, rebuilt)?,
             None => {
@@ -1626,9 +1700,11 @@ fn landed_in_place(
         location: location.clone(),
         source,
     };
+
     let mut overlay = Overlay::over(&file).map_err(unread)?;
     let head = Head::of(saving.kind, &mut &file);
     let mut outgrown = None;
+
     let fitted = match head {
         Some(head) => match saving.head_written(head, &mut overlay) {
             Ok(Some(written)) => match head.rebuilt(&written, Room::Held) {
@@ -1648,6 +1724,7 @@ fn landed_in_place(
         },
         None => saving.written_into(&mut overlay).map(|()| true),
     };
+
     match fitted {
         Ok(true) => {}
         Ok(false) => {
@@ -1732,6 +1809,7 @@ fn landed_by<L: Lands>(
                 source,
             }),
         });
+
     if let Err(error) = &written
         && !matches!(error, Error::WrittenBackPartway { .. })
     {
@@ -1771,6 +1849,7 @@ impl Staged {
 
     fn handle(&self) -> io::Result<File> {
         let mut file = self.held.file().try_clone()?;
+
         file.rewind()?;
         Ok(file)
     }
@@ -1786,6 +1865,7 @@ fn staged_in(folder: &Path, path: &Path) -> PathBuf {
         process::id(),
         STAGED.fetch_add(1, Ordering::Relaxed)
     ));
+
     stamped.push(path.extension().unwrap_or_default());
     folder.join(naming::named_within(
         ".",
@@ -1799,19 +1879,24 @@ fn staged_by(path: &Path, staged: &OsStr) -> Option<u32> {
     let stem = stem.as_ref();
     let extension = path.extension().map(os_bytes::bytes_of).unwrap_or_default();
     let staged_bytes = os_bytes::bytes_of(staged);
+
     let unsuffixed = staged_bytes
         .strip_prefix(b".")?
         .strip_suffix(extension.as_ref())?
         .strip_suffix(b".")?;
     let dot = unsuffixed.iter().rposition(|byte| *byte == b'.')?;
+
     let (kept, stamp) = (&unsuffixed[..dot], &unsuffixed[dot + 1..]);
     let cut = staged.len() + LONGEST_LETTER_BYTES > naming::NAME_BYTES_AT_MOST;
+
     if kept != stem && !(cut && !kept.is_empty() && stem.starts_with(kept)) {
         return None;
     }
+
     let (writer, counted) = str::from_utf8(stamp)
         .ok()?
         .split_once(STAGED_BY_AND_COUNTED)?;
+
     counted.parse::<u64>().ok()?;
     writer.parse().ok()
 }
@@ -1828,6 +1913,7 @@ fn sweep_what_a_dead_writer_staged(path: &Path) {
             continue;
         };
         let left = entry.path();
+
         if writer::writer_of(&left, writer) == Writer::Living {
             continue;
         }
@@ -1852,6 +1938,7 @@ fn settled_over_asking(
     readers: &dyn Shifting,
 ) -> std::result::Result<(), Unsettled> {
     let standing = fs::metadata(path)?;
+
     file_facts::sync_file(&staged.path)?;
     if has_other_names(&standing) || !carries_what_the_file_did(&standing, path, &staged.path) {
         return WholeCopy::named_beside(&staged.path, &staged.held, path)?.written_back(readers);
@@ -2110,17 +2197,20 @@ mod tests {
     impl Folder {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let root = env::temp_dir().join(format!(
                 "resonate-writing-{}-{}",
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&root).expect("a writable temporary directory");
             Self { root }
         }
 
         fn holding(&self, name: &str, bytes: &[u8]) -> MediaLocation {
             let path = self.root.join(name);
+
             fs::write(&path, bytes).expect("a writable temporary file");
             MediaLocation::local(path)
         }
@@ -2134,8 +2224,11 @@ mod tests {
 
     fn a_wave_behind_an_id3_tag(truncated_by: usize) -> Vec<u8> {
         let mut tag = b"ID3\x04\x00\x00\x00\x00\x00\x0a".to_vec();
+
         tag.extend_from_slice(&[0; 10]);
+
         let mut bytes = tag;
+
         bytes.extend_from_slice(&wave());
         bytes.truncate(bytes.len() - truncated_by);
         bytes
@@ -2153,6 +2246,7 @@ mod tests {
                 .expect("a readable file")
                 .expect("a tag before the RIFF")
         };
+
         let rechunked = |path: &Path| {
             let staged = folder.root.join(format!(
                 "{}.staged",
@@ -2184,10 +2278,12 @@ mod tests {
             .join(format!(".Echoes.{}-0.flac", process::id()));
         let another = folder.root.join(format!(".Time.{NEVER_A_PROCESS}-0.flac"));
         let hidden = folder.root.join(".Echoes.live.flac");
+
         for path in [&track, &left, &ours, &another, &hidden] {
             fs::write(path, b"fLaC").expect("a writable temporary file");
         }
         left_long_ago(&left);
+
         let sandboxed = folder
             .root
             .join(format!(".Echoes.{NEVER_A_PROCESS}-4.flac"));
@@ -2197,6 +2293,7 @@ mod tests {
 
         assert!(!left.exists(), "a dead writer's copy was left");
         assert!(sandboxed.exists(), "a held copy was swept");
+
         drop(held);
         for kept in [&track, &ours, &another, &hidden] {
             assert!(kept.exists(), "{} was swept", kept.display());
@@ -2217,6 +2314,7 @@ mod tests {
             ]
             .concat(),
         ));
+
         for path in [&track, &left] {
             fs::write(path, b"fLaC").expect("a writable temporary file");
         }
@@ -2253,6 +2351,7 @@ mod tests {
             .tags;
 
         written.expect("the track mended and then written");
+
         assert!(!copy.exists(), "the dead writer's whole copy was left");
         assert_eq!(TagField::Artist.read(&read).as_deref(), Some("Pink Floyd"));
         assert_eq!(TagField::Title.read(&read), None);
@@ -2266,7 +2365,9 @@ mod tests {
         let folder = Folder::new();
         let whole = a_wave_behind_an_id3_tag(0);
         let mut torn = whole.clone();
+
         torn.extend_from_slice(&[TORN; TORN_RUN]);
+
         let location = folder.holding("echoes.wav", &torn);
         let path = location.as_path().expect("a local file").to_path_buf();
         let copy = left_whole_by_a_dead_writer(&path, &whole);
@@ -2280,6 +2381,7 @@ mod tests {
             .tags;
 
         written.expect("the track mended and then written");
+
         assert!(!copy.exists(), "the dead writer's whole copy was left");
         assert!(
             !rewritten
@@ -2297,6 +2399,7 @@ mod tests {
         let syncsafe =
             [21, 14, 7, 0].map(|shift| u8::try_from((body >> shift) & 0x7f).expect("seven bits"));
         let mut tag = b"ID3\x04\x00\x00".to_vec();
+
         tag.extend_from_slice(&syncsafe);
         tag.resize(usize::try_from(bytes).expect("a tag held in memory"), 0);
         tag
@@ -2314,7 +2417,9 @@ mod tests {
      {
         let folder = Folder::new();
         let mut bytes = a_padded_id3_tag_of(MAX_ID3_CHUNK_BYTES + 1);
+
         bytes.extend_from_slice(&wave());
+
         let location = folder.holding("echoes.wav", &bytes);
         let path = location.as_path().expect("a local file").to_path_buf();
 
@@ -2327,6 +2432,7 @@ mod tests {
         else {
             panic!("a leading tag past the bound was not refused by its size: {written:?}");
         };
+
         assert_eq!(held, MAX_ID3_CHUNK_BYTES + 1);
         assert_eq!(most, MAX_ID3_CHUNK_BYTES);
         assert_eq!(staged_beside(&folder), std::slice::from_ref(&path));
@@ -2355,6 +2461,7 @@ mod tests {
         else {
             panic!("a picture past the bound was not refused by its size: {written:?}");
         };
+
         assert!(held > MAX_ID3_CHUNK_BYTES);
         assert_eq!(most, MAX_ID3_CHUNK_BYTES);
         assert_eq!(staged_beside(&folder), std::slice::from_ref(&path));
@@ -2369,11 +2476,14 @@ mod tests {
         let wave_holding = |tag: Vec<u8>| {
             let mut body = wave();
             let tag_bytes = u32::try_from(tag.len()).expect("a chunk a RIFF can hold");
+
             body.extend_from_slice(ID3_CHUNK);
             body.extend_from_slice(&tag_bytes.to_le_bytes());
             body.extend_from_slice(&tag);
+
             let riff =
                 u32::try_from(body.len() - CHUNK_HEADER_BYTES as usize).expect("a RIFF size");
+
             body[4..8].copy_from_slice(&riff.to_le_bytes());
             body
         };
@@ -2396,13 +2506,17 @@ mod tests {
             [21, 14, 7, 0].map(|shift| u8::try_from((bytes >> shift) & 0x7f).expect("seven bits"))
         };
         let mut text = vec![UTF8];
+
         text.extend_from_slice(artist.as_bytes());
+
         let mut frame = b"TPE1".to_vec();
+
         frame.extend_from_slice(&syncsafe(text.len()));
         frame.extend_from_slice(&[0, 0]);
         frame.extend_from_slice(&text);
 
         let mut tag = b"ID3\x04\x00\x00".to_vec();
+
         tag.extend_from_slice(&syncsafe(frame.len()));
         tag.extend_from_slice(&frame);
         tag
@@ -2415,13 +2529,16 @@ mod tests {
         const SILENT: u8 = 0x80;
 
         let mut format = Vec::new();
+
         format.extend_from_slice(&1_u16.to_le_bytes());
         format.extend_from_slice(&MONO.to_le_bytes());
         format.extend_from_slice(&RATE.to_le_bytes());
         format.extend_from_slice(&RATE.to_le_bytes());
         format.extend_from_slice(&MONO.to_le_bytes());
         format.extend_from_slice(&EIGHT_BITS.to_le_bytes());
+
         let mut body = b"WAVE".to_vec();
+
         riff_chunk(&mut body, b"fmt ", &format);
         body.extend_from_slice(b"data");
         body.extend_from_slice(
@@ -2432,6 +2549,7 @@ mod tests {
         body.extend_from_slice(&[SILENT; ODD_FRAMES]);
 
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(
             &u32::try_from(body.len())
                 .expect("a small file")
@@ -2454,7 +2572,9 @@ mod tests {
 
         for uncounted_pad in [false, true] {
             let mut bytes = an_id3_tag_naming("Pink Floyd");
+
             bytes.extend_from_slice(&a_wave_of_odd_length(uncounted_pad));
+
             let location = folder.holding("echoes.wav", &bytes);
             let path = location.as_path().expect("a local file");
             let riff_at = tag_in_front_of_a_riff(path)
@@ -2464,6 +2584,7 @@ mod tests {
             let file = File::create(&staged).expect("a staging file");
 
             chunked(path, &file, riff_at).expect("a wave of odd length is chunked");
+
             let chunked = fs::read(&staged).expect("what was staged");
             let id3_at = chunked
                 .windows(ID3_CHUNK.len())
@@ -2487,13 +2608,16 @@ mod tests {
     fn a_wave_of_odd_size_behind_an_id3_tag_keeps_its_tags_when_one_is_written() {
         let folder = Folder::new();
         let mut bytes = an_id3_tag_naming("Pink Floyd");
+
         bytes.extend_from_slice(&a_wave_of_odd_length(false));
+
         let location = folder.holding("echoes.wav", &bytes);
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
 
         tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
             .expect("a written WAVE");
+
         let rewritten = fs::read(&path).expect("the file");
         let found = riff::read(&mut Cursor::new(&rewritten));
         let tagged = opened(&path, &location).expect("a WAVE lofty reads");
@@ -2518,23 +2642,29 @@ mod tests {
 
     fn aiff() -> Vec<u8> {
         let mut common = Vec::new();
+
         common.extend_from_slice(&CHANNELS.to_be_bytes());
         common.extend_from_slice(&FRAMES.to_be_bytes());
         common.extend_from_slice(&BITS.to_be_bytes());
+
         let leading = RATE.leading_zeros();
         let exponent = u16::try_from(16_383 + 31 - leading).expect("a rate inside the exponent");
+
         common.extend_from_slice(&exponent.to_be_bytes());
         common.extend_from_slice(&(u64::from(RATE) << (leading + 32)).to_be_bytes());
 
         let stride = usize::from(CHANNELS) * usize::from(BITS / 8);
         let mut sound = vec![0_u8; 8];
+
         sound.resize(sound.len() + FRAMES as usize * stride, 0);
 
         let mut body = b"AIFF".to_vec();
+
         chunk(&mut body, b"COMM", &common);
         chunk(&mut body, b"SSND", &sound);
 
         let mut file = b"FORM".to_vec();
+
         file.extend_from_slice(
             &u32::try_from(body.len())
                 .expect("a small file")
@@ -2559,6 +2689,7 @@ mod tests {
 
     fn flac() -> Vec<u8> {
         let mut info = Vec::new();
+
         info.extend_from_slice(
             &u16::try_from(FLAC_BLOCK)
                 .expect("a small block")
@@ -2570,14 +2701,17 @@ mod tests {
                 .to_be_bytes(),
         );
         info.extend_from_slice(&[0; 6]);
+
         let packed = (u64::from(RATE) << 44)
             | (u64::from(CHANNELS - 1) << 41)
             | (u64::from(BITS - 1) << 36)
             | u64::from(FLAC_BLOCK);
+
         info.extend_from_slice(&packed.to_be_bytes());
         info.extend_from_slice(&[0; 16]);
 
         let mut file = b"fLaC".to_vec();
+
         file.push(STREAMINFO);
         file.extend_from_slice(
             &u32::try_from(info.len())
@@ -2598,6 +2732,7 @@ mod tests {
             (channels - 1) << 4 | FLAC_16_BIT << 1,
             0x00,
         ];
+
         frame.push(crc8(&frame));
         for _ in 0..channels {
             frame.push(FLAC_CONSTANT_SUBFRAME);
@@ -2647,20 +2782,26 @@ mod tests {
 
     fn wave_with(info: &[(&[u8; 4], &str)]) -> Vec<u8> {
         let mut format = Vec::new();
+
         format.extend_from_slice(&1_u16.to_le_bytes());
         format.extend_from_slice(&CHANNELS.to_le_bytes());
         format.extend_from_slice(&RATE.to_le_bytes());
+
         let align = CHANNELS * BITS / 8;
+
         format.extend_from_slice(&(RATE * u32::from(align)).to_le_bytes());
         format.extend_from_slice(&align.to_le_bytes());
         format.extend_from_slice(&BITS.to_le_bytes());
 
         let mut body = b"WAVE".to_vec();
+
         riff_chunk(&mut body, b"fmt ", &format);
         if !info.is_empty() {
             let mut list = b"INFO".to_vec();
+
             for (id, value) in info {
                 let mut terminated = value.as_bytes().to_vec();
+
                 terminated.push(0);
                 riff_chunk(&mut list, id, &terminated);
             }
@@ -2673,6 +2814,7 @@ mod tests {
         );
 
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(
             &u32::try_from(body.len())
                 .expect("a small file")
@@ -2767,6 +2909,7 @@ mod tests {
                 true => None,
                 false => Some(edit.value.as_str()),
             };
+
             assert_eq!(
                 edit.field.read(tags).as_deref(),
                 wanted,
@@ -2792,6 +2935,7 @@ mod tests {
 
         tags.write(&location, just(&named_and_identified()))
             .expect("a written FLAC");
+
         assert_eq!(
             fs::metadata(&path).expect("a file").ino() == before,
             lengthens_in_place,
@@ -2799,6 +2943,7 @@ mod tests {
         );
 
         let broken = folder.holding("broken.flac", b"fLaC but nothing after it");
+
         assert!(tags.write(&broken, just(&named_and_identified())).is_err());
         assert_eq!(
             fs::read(broken.as_path().expect("a local file")).expect("the file"),
@@ -2811,6 +2956,7 @@ mod tests {
             .map(|entry| entry.file_name())
             .filter(|name| name.to_string_lossy().starts_with('.'))
             .collect();
+
         assert!(left.is_empty(), "a staged copy was left behind: {left:?}");
     }
 
@@ -2818,6 +2964,7 @@ mod tests {
     fn every_field_set_into_a_tag_set_reads_back_as_it_was_spelled() {
         let edits = named_and_identified();
         let mut tags = TagSet::default();
+
         for edit in &edits {
             edit.field.set(&mut tags, &edit.value);
         }
@@ -2870,11 +3017,15 @@ mod tests {
         shifting: &dyn Shifting,
     ) -> Result<bool> {
         let mut tagged = opened(path, location)?;
+
         let kind = tagged.file_type();
+
         if tagged.primary_tag().is_none() {
             tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
         }
+
         let tag = tagged.primary_tag_mut().expect("a primary tag");
+
         tag.insert_text(ItemKey::TrackTitle, title.to_owned());
         landed_in_place(
             path,
@@ -2898,12 +3049,14 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut permissions = fs::metadata(&path).expect("a file").permissions();
+
         permissions.set_readonly(true);
         fs::set_permissions(&path, permissions).expect("a file made read-only");
         if OpenOptions::new().write(true).open(&path).is_ok() {
             eprintln!("skipped: this user writes a read-only file regardless");
             return;
         }
+
         let before = fs::read(&path).expect("the file");
 
         let written = FileTags::default().write(&location, just(&named_and_identified()));
@@ -2924,15 +3077,20 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::metadata(&path).expect("a file").ino();
+
         fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o555))
             .expect("a folder made unwritable");
+
         let probe = folder.root.join("probe");
+
         if File::create_new(&probe).is_ok() {
             let _ = fs::remove_file(&probe);
             let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
+
             eprintln!("skipped: this user creates files in an unwritable folder regardless");
             return;
         }
+
         let tags = FileTags::default();
         let edits = named_and_identified();
 
@@ -2949,8 +3107,10 @@ mod tests {
             .collect();
 
         written.expect("a file in an unwritable folder written");
+
         assert_eq!(fs::metadata(&path).expect("a file").ino(), before);
         assert!(left.is_empty(), "copies left in the spool: {left:?}");
+
         assert_read_back(
             &tags
                 .read(&location, Picturing::Whether)
@@ -2970,15 +3130,20 @@ mod tests {
         let location = folder.holding("echoes.wav", &a_wave_behind_an_id3_tag(0));
         let path = location.as_path().expect("a local file").to_path_buf();
         let before = fs::metadata(&path).expect("a file").ino();
+
         fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o555))
             .expect("a folder made unwritable");
+
         let probe = folder.root.join("probe");
+
         if File::create_new(&probe).is_ok() {
             let _ = fs::remove_file(&probe);
             let _ = fs::set_permissions(&folder.root, fs::Permissions::from_mode(0o755));
+
             eprintln!("skipped: this user creates files in an unwritable folder regardless");
             return;
         }
+
         let tags = FileTags::default();
         let edits = [edited(TagField::Title, "Echoes")];
 
@@ -2996,6 +3161,7 @@ mod tests {
         let rewritten = fs::read(&path).expect("the file");
 
         written.expect("a wave in an unwritable folder written");
+
         assert_eq!(fs::metadata(&path).expect("a file").ino(), before);
         assert!(left.is_empty(), "copies left in the spool: {left:?}");
         assert!(
@@ -3026,8 +3192,10 @@ mod tests {
         let folder = Folder::new();
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
+
         fs::set_permissions(&path, fs::Permissions::from_mode(SHARED_WITH_THE_GROUP))
             .expect("a file shared with the group");
+
         let mode_of =
             |path: &Path| fs::metadata(path).expect("a file").permissions().mode() & 0o777;
         let tags = FileTags::default();
@@ -3035,11 +3203,14 @@ mod tests {
 
         let staged = Staged::beside(&path).expect("a staged copy");
         let staged_mode = mode_of(&staged.path);
+
         fs::remove_file(&staged.path).expect("the stage taken away");
         drop(staged);
+
         let written = tags.write(&location, just(&edits));
 
         written.expect("a file written");
+
         assert_eq!(staged_mode, OURS_ALONE);
         assert_eq!(mode_of(&path), SHARED_WITH_THE_GROUP);
     }
@@ -3054,6 +3225,7 @@ mod tests {
         assert!(taken.still_stands(&path));
 
         let mut grown = fs::read(&path).expect("the file");
+
         grown.push(0);
         fs::write(&path, &grown).expect("a writable file");
 
@@ -3068,17 +3240,21 @@ mod tests {
         let folder = Folder::new();
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
+
         FileTags::default()
             .write(&location, just(&named_and_identified()))
             .expect("a written FLAC");
+
         let taken = Taken::of(&path).expect("a writable file");
 
         let later = SystemTime::now() + Duration::from_secs(3_600);
+
         File::options()
             .write(true)
             .open(&path)
             .and_then(|file| file.set_modified(later))
             .expect("a file touched by another program");
+
         let before = fs::read(&path).expect("the file");
 
         let landed = retitled_after(&path, &location, "Echoes (Live)", taken, &Refusing);
@@ -3097,8 +3273,10 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
+
         tags.write(&location, just(&named_and_identified()))
             .expect("a written FLAC");
+
         let standing = fs::metadata(&path).expect("the file");
 
         assert!(
@@ -3107,6 +3285,7 @@ mod tests {
         );
 
         let landed = fs::metadata(&path).expect("the file");
+
         assert_eq!(landed.ino(), standing.ino());
         assert_eq!(landed.len(), standing.len());
         assert_eq!(
@@ -3129,25 +3308,31 @@ mod tests {
         const AUDIO_BYTES: usize = 40 << 20;
 
         let mut format = Vec::new();
+
         format.extend_from_slice(&1_u16.to_le_bytes());
         format.extend_from_slice(&CHANNELS.to_le_bytes());
         format.extend_from_slice(&RATE.to_le_bytes());
+
         let align = CHANNELS * BITS / 8;
+
         format.extend_from_slice(&(RATE * u32::from(align)).to_le_bytes());
         format.extend_from_slice(&align.to_le_bytes());
         format.extend_from_slice(&BITS.to_le_bytes());
 
         let mut list = b"INFO".to_vec();
         let mut terminated = title.as_bytes().to_vec();
+
         terminated.push(0);
         riff_chunk(&mut list, b"INAM", &terminated);
 
         let mut body = b"WAVE".to_vec();
+
         riff_chunk(&mut body, b"fmt ", &format);
         riff_chunk(&mut body, b"data", &vec![0; AUDIO_BYTES]);
         riff_chunk(&mut body, b"LIST", &list);
 
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(
             &u32::try_from(body.len())
                 .expect("a file under four gigabytes")
@@ -3170,11 +3355,14 @@ mod tests {
         let standing = fs::metadata(&path).expect("the file");
 
         let longer = "Echoes (Live at Pompeii, the director's cut)";
+
         assert!(
             retitled(&path, &location, longer).expect("an edit in place"),
             "a tag after the audio grew the file and was not landed in place"
         );
+
         let grown = fs::metadata(&path).expect("the file");
+
         assert_eq!(grown.ino(), standing.ino());
         assert!(grown.len() > standing.len());
         assert_eq!(titled(&tags, &location).as_deref(), Some(longer));
@@ -3183,7 +3371,9 @@ mod tests {
             retitled(&path, &location, "Echo").expect("an edit in place"),
             "a tag after the audio shrank the file and was not landed in place"
         );
+
         let shrunk = fs::metadata(&path).expect("the file");
+
         assert_eq!(shrunk.ino(), standing.ino());
         assert!(shrunk.len() < grown.len());
         assert_eq!(titled(&tags, &location).as_deref(), Some("Echo"));
@@ -3198,9 +3388,12 @@ mod tests {
     fn mp3() -> Vec<u8> {
         const FRAME_BYTES: usize = 417;
         const FRAMES_HELD: usize = 8;
+
         let mut file = Vec::with_capacity(FRAME_BYTES * FRAMES_HELD);
+
         for _ in 0..FRAMES_HELD {
             let mut frame = vec![0xFF, 0xFB, 0x90, 0x64];
+
             frame.resize(FRAME_BYTES, 0);
             file.extend_from_slice(&frame);
         }
@@ -3214,8 +3407,10 @@ mod tests {
         let location = folder.holding("echoes.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
+
         tags.write(&location, just(&named_and_identified()))
             .expect("a written MP3");
+
         let standing = fs::metadata(&path).expect("the file");
 
         assert!(
@@ -3224,12 +3419,15 @@ mod tests {
         );
 
         let landed = fs::metadata(&path).expect("the file");
+
         assert_eq!(landed.ino(), standing.ino());
         assert_eq!(landed.len(), standing.len());
+
         let read = tags
             .read(&location, Picturing::Whether)
             .expect("a readable MP3")
             .tags;
+
         assert_eq!(read.title.as_deref(), Some("Echoes (Live)"));
         assert_eq!(read.album.as_deref(), Some("Meddle"));
     }
@@ -3256,6 +3454,7 @@ mod tests {
 
     fn read_through(staged: &Staged) -> Vec<u8> {
         let mut bytes = Vec::new();
+
         staged
             .handle()
             .expect("a handle on the copy")
@@ -3268,6 +3467,7 @@ mod tests {
     fn a_staged_copy_is_read_and_written_through_its_held_handle_whatever_its_name_now_names() {
         let folder = Folder::new();
         let staged = Staged::beside(&folder.root.join("echoes.flac")).expect("a staged copy");
+
         staged
             .held
             .file()
@@ -3276,7 +3476,9 @@ mod tests {
 
         fs::remove_file(&staged.path).expect("the name taken away");
         fs::write(&staged.path, b"a decoy").expect("a decoy under the name");
+
         let mut handle = staged.handle().expect("a handle");
+
         handle
             .write_all(b"THE")
             .expect("a write through the handle");
@@ -3289,15 +3491,19 @@ mod tests {
     fn a_handle_on_a_staged_copy_starts_at_its_head_wherever_the_copy_was_left() {
         let folder = Folder::new();
         let staged = Staged::beside(&folder.root.join("echoes.flac")).expect("a staged copy");
+
         staged.held.file().write_all(b"0123456789").expect("a copy");
 
         let mut first = Vec::new();
+
         staged
             .handle()
             .expect("a handle")
             .read_to_end(&mut first)
             .expect("a read");
+
         let mut again = Vec::new();
+
         staged
             .handle()
             .expect("a handle")
@@ -3334,6 +3540,7 @@ mod tests {
 
         let landed = fs::read(&path).expect("the file");
         let grown = (landed.len() - standing.len()) as u64;
+
         assert!(
             grown > 0 && grown.is_multiple_of(BLOCK),
             "the head grew by {grown}"
@@ -3388,12 +3595,17 @@ mod tests {
             let path = location.as_path().expect("a local file").to_path_buf();
             let standing = fs::read(&path).expect("the file");
             let old_head = head_length(kind, &path);
+
             let mut tagged = opened(&path, &location).expect("a tagged file");
+
             if tagged.primary_tag().is_none() {
                 tagged.insert_tag(Tag::new(tagged.primary_tag_type()));
             }
+
             let tag = tagged.primary_tag_mut().expect("a primary tag");
+
             tag.insert_text(ItemKey::TrackTitle, "Echoes ".repeat(4096));
+
             let saving = Saving {
                 kind,
                 tag,
@@ -3410,7 +3622,9 @@ mod tests {
             let head = Head::of(kind, &mut staged.handle().expect("the copy"))
                 .expect("a head")
                 .length as usize;
+
             assert!(head > old_head, "{name} was copied with the head it had");
+
             match kind {
                 FileType::Opus => {
                     assert!(ogg::pages_are_whole(&copy), "{name}'s pages were torn");
@@ -3421,12 +3635,15 @@ mod tests {
                     "{name} lost audio in the copy"
                 ),
             }
+
             let mut file = staged.handle().expect("the copy");
+
             let grown = Head::of(kind, &mut file).expect("a head");
             let written = saving
                 .head_written(grown, &mut file)
                 .expect("a head written")
                 .expect("a head with a tail");
+
             assert!(
                 grown.rebuilt(&written, Room::Held).is_some(),
                 "{name}'s copy still has to move its audio"
@@ -3449,6 +3666,7 @@ mod tests {
 
         let landed = fs::read(&path).expect("the file");
         let head = head_length(FileType::Mpeg, &path);
+
         assert!(
             head > 0 && (head as u64).is_multiple_of(BLOCK),
             "a head of {head}"
@@ -3468,8 +3686,10 @@ mod tests {
             let location = folder.holding(name, &bytes);
             let path = location.as_path().expect("a local file").to_path_buf();
             let tags = FileTags::default();
+
             tags.write(&location, just(&named_and_identified()))
                 .expect("a written file");
+
             let standing = fs::metadata(&path).expect("the file");
 
             assert!(
@@ -3490,10 +3710,13 @@ mod tests {
 
     fn opus_head_vendored(vendor: &str) -> Vec<u8> {
         let mut identification = b"OpusHead".to_vec();
+
         identification.extend_from_slice(&[1, 2, 0x38, 0x01]);
         identification.extend_from_slice(&48_000_u32.to_le_bytes());
         identification.extend_from_slice(&[0, 0, 0]);
+
         let mut comments = b"OpusTags".to_vec();
+
         comments.extend_from_slice(&(vendor.len() as u32).to_le_bytes());
         comments.extend_from_slice(vendor.as_bytes());
         comments.extend_from_slice(&0_u32.to_le_bytes());
@@ -3502,10 +3725,14 @@ mod tests {
 
     fn opus_vendored(vendor: &str) -> Vec<u8> {
         let mut file = opus_head_vendored(vendor);
+
         for page in 0..OPUS_PAGES {
             let mut packet = vec![page as u8; OPUS_PACKET_BYTES];
+
             packet[0] = 0xFC;
+
             let last = page + 1 == OPUS_PAGES;
+
             file.extend_from_slice(&ogg::page(
                 if last { 0x04 } else { 0 },
                 960 * u64::from(page + 1),
@@ -3534,6 +3761,7 @@ mod tests {
         tags.write(&location, just(&edits)).expect("a written Opus");
 
         let written = fs::read(&path).expect("the file");
+
         assert!(
             ogg::pages_are_whole(&written),
             "the pages were not a whole stream"
@@ -3543,6 +3771,7 @@ mod tests {
             audio_of(&opus()).len(),
             "the audio pages changed in size"
         );
+
         assert_read_back(
             &tags
                 .read(&location, Picturing::Whether)
@@ -3560,8 +3789,10 @@ mod tests {
         let location = folder.holding("echoes.opus", &opus());
         let path = location.as_path().expect("a local file").to_path_buf();
         let tags = FileTags::default();
+
         tags.write(&location, just(&named_and_identified()))
             .expect("a written Opus");
+
         let standing = fs::read(&path).expect("the file");
         let inode = fs::metadata(&path).expect("the file").ino();
 
@@ -3571,6 +3802,7 @@ mod tests {
         );
 
         let landed = fs::read(&path).expect("the file");
+
         assert_eq!(landed.len(), standing.len());
         assert_eq!(fs::metadata(&path).expect("the file").ino(), inode);
         assert!(ogg::pages_are_whole(&landed));
@@ -3600,6 +3832,7 @@ mod tests {
         );
 
         let landed = fs::read(&path).expect("the file");
+
         assert!(((landed.len() - standing.len()) as u64).is_multiple_of(BLOCK));
         assert!(ogg::pages_are_whole(&landed));
         assert_eq!(audio_of(&landed), audio_of(&standing));
@@ -3627,6 +3860,7 @@ mod tests {
             let standing_head = opus_head_vendored(standing_vendor);
             let landing_head = opus_head_vendored(landing_vendor);
             let mut audio = audio_of(&opus());
+
             ogg::renumbered_whole(
                 &mut audio,
                 ogg::Renumbering {
@@ -3634,6 +3868,7 @@ mod tests {
                     from: pages_of(&standing_head),
                 },
             );
+
             let standing = [standing_head.as_slice(), &audio].concat();
             let rebuilt = Rebuilt {
                 head: landing_head.clone(),
@@ -3643,25 +3878,33 @@ mod tests {
                 }),
             };
             let mut tail = audio.clone();
+
             ogg::renumbered_whole(&mut tail, rebuilt.renumbered_from.expect("a renumbering"));
+
             let expected = [landing_head.as_slice(), &tail].concat();
             let head = Head::of(FileType::Opus, &mut Cursor::new(&standing)).expect("a head");
 
             let laid = folder.root.join("laid.opus");
+
             fs::write(&laid, &standing).expect("a writable folder");
+
             let mut file = OpenOptions::new()
                 .read(true)
                 .write(true)
                 .open(&laid)
                 .expect("the file opens");
+
             laid_head(&mut file, head.length, &rebuilt).expect("the head is laid");
             drop(file);
 
             let source = folder.root.join("source.opus");
+
             fs::write(&source, &standing).expect("a writable folder");
+
             let copied = folder.root.join("copied.opus");
             let into = File::create_new(&copied).expect("a copy");
             let mut from = File::open(&source).expect("the source opens");
+
             copied_with_head(&mut from, &mut &into, head, &rebuilt).expect("the copy lands");
             drop(into);
 
@@ -3689,9 +3932,11 @@ mod tests {
         assert_eq!(fs::read(&path).expect("the file"), standing);
 
         let edits = [edited(TagField::Title, &title)];
+
         tags.write(&location, just(&edits)).expect("a written Opus");
 
         let written = fs::read(&path).expect("the file");
+
         assert!(
             ogg::pages_are_whole(&written),
             "the audio pages were left unnumbered"
@@ -3710,10 +3955,12 @@ mod tests {
             let location = folder.holding(name, &bytes);
             let path = location.as_path().expect("a local file").to_path_buf();
             let file = File::open(&path).expect("a file");
+
             if Fallocate.block_of(&file).is_none() {
                 eprintln!("skipped: the temporary folder cannot insert a range into a file");
                 return;
             }
+
             let standing = fs::read(&path).expect("the file");
             let old_head = head_length(kind, &path);
             let tags = FileTags::default();
@@ -3726,6 +3973,7 @@ mod tests {
             );
 
             let landed = fs::read(&path).expect("the file");
+
             assert_eq!(landed[head_length(kind, &path)..], standing[old_head..]);
             assert_eq!(titled(&tags, &location).as_deref(), Some(title));
             assert_eq!(fs::read_dir(&folder.root).expect("the folder").count(), 1);
@@ -3754,7 +4002,9 @@ mod tests {
     fn a_file_named_at_the_limit_is_written_through_a_copy_named_within_it() {
         let folder = Folder::new();
         let name = format!("{}.aiff", "ö".repeat(125));
+
         assert_eq!(name.len(), 255);
+
         let location = folder.holding(&name, &aiff());
         let tags = FileTags::default();
         let edits = named_and_identified();
@@ -3769,6 +4019,7 @@ mod tests {
             &edits,
             &[],
         );
+
         let path = location.as_path().expect("a local file");
         let left: Vec<_> = fs::read_dir(path.parent().expect("a folder"))
             .expect("the folder")
@@ -3776,6 +4027,7 @@ mod tests {
             .map(|entry| entry.file_name())
             .filter(|named| os_bytes::bytes_of(named).starts_with(b"."))
             .collect();
+
         assert!(left.is_empty(), "{left:?}");
     }
 
@@ -3797,6 +4049,7 @@ mod tests {
             .read(&location, Picturing::Whether)
             .expect("a readable FLAC")
             .tags;
+
         assert_eq!(read.title.as_deref(), Some("Echoes (2011 Remaster)"));
         assert_eq!(read.album.as_deref(), Some("Meddle"));
         assert_eq!(
@@ -3807,9 +4060,11 @@ mod tests {
 
     fn painted(shade: u8) -> CoverArt {
         const SIDE: u32 = 8;
+
         let drawn =
             image::RgbaImage::from_pixel(SIDE, SIDE, image::Rgba([shade, shade, shade, 255]));
         let mut bytes = Vec::new();
+
         drawn
             .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
             .expect("a flat image is written as PNG");
@@ -3860,6 +4115,7 @@ mod tests {
             ("echoes.wav", wave()),
         ] {
             let location = folder.holding(name, &bytes);
+
             assert_eq!(
                 tags.rated(&location).expect("a readable file"),
                 Rated::Unrated { plays: Some(0) },
@@ -3870,9 +4126,12 @@ mod tests {
                 favourite: true,
                 plays: 12,
             };
+
             tags.write(&location, rating(favoured))
                 .expect("a rated file");
+
             let held = tags.rated(&location).expect("a readable file");
+
             assert_eq!(held, Rated::Favourite { plays: Some(12) }, "{name}");
             assert!(!held.differs_from(favoured), "{name} did not read back");
             assert!(
@@ -3891,6 +4150,7 @@ mod tests {
                 }),
             )
             .expect("a file unrated");
+
             assert_eq!(
                 tags.rated(&location).expect("a readable file"),
                 Rated::Unrated { plays: Some(12) },
@@ -3909,6 +4169,7 @@ mod tests {
             ("echoes.wav", wave()),
         ] {
             let location = folder.holding(name, &bytes);
+
             tags.write(
                 &location,
                 rating(Popularity {
@@ -3950,6 +4211,7 @@ mod tests {
                 favourite: false,
                 plays: 3,
             };
+
             assert!(
                 tags.rated(&location)
                     .expect("a readable file")
@@ -3961,11 +4223,13 @@ mod tests {
                 .expect("a counted file");
 
             let held = tags.rated(&location).expect("a readable file");
+
             assert_eq!(held, Rated::Unrated { plays: Some(3) }, "{name}");
             assert!(!held.differs_from(heard), "{name} did not read back");
 
             tags.write(&location, rating(Popularity::default()))
                 .expect("a count taken away");
+
             assert_eq!(
                 tags.rated(&location).expect("a readable file"),
                 Rated::Unrated { plays: Some(0) },
@@ -3980,6 +4244,7 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut comments = VorbisComments::default();
+
         comments.insert("FMPS_PLAYCOUNT".to_owned(), "9.0".to_owned());
         comments
             .save_to_path(&path, WriteOptions::default())
@@ -3999,6 +4264,7 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut comments = VorbisComments::default();
+
         comments.insert("MOOD".to_owned(), "calm".to_owned());
         comments.insert("ACOUSTID_ID".to_owned(), "abc".to_owned());
         comments
@@ -4015,6 +4281,7 @@ mod tests {
         let Counted::Commented(kept) = kept else {
             panic!("a FLAC read as something other than comments");
         };
+
         assert_eq!(kept.get("MOOD"), Some("calm"));
         assert_eq!(kept.get("ACOUSTID_ID"), Some("abc"));
     }
@@ -4028,6 +4295,7 @@ mod tests {
             let location = folder.holding(name, &mp3());
             let path = location.as_path().expect("a local file").to_path_buf();
             let mut frames = Id3v2Tag::new();
+
             frames.insert_user_text("MOOD".to_owned(), "calm".to_owned());
             frames
                 .save_to_path(&path, WriteOptions::default().use_id3v23(three))
@@ -4044,6 +4312,7 @@ mod tests {
                 .expect("a written MP3");
 
             let written = fs::read(&path).expect("the file");
+
             assert!(written.starts_with(b"ID3"), "{name}");
             assert_eq!(
                 written[MAJOR_VERSION_AT],
@@ -4065,6 +4334,7 @@ mod tests {
         let location = folder.holding("echoes.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut frames = Id3v2Tag::new();
+
         frames.insert_user_text("MOOD".to_owned(), "calm".to_owned());
         frames.insert(Frame::Private(PrivateFrame::new("resonate", vec![1, 2, 3])));
         frames
@@ -4090,6 +4360,7 @@ mod tests {
         else {
             panic!("an MP3 read with no ID3v2 tag");
         };
+
         assert_eq!(kept.get_user_text("MOOD"), Some("calm"));
         assert!(
             kept.get(&FrameId::Valid("PRIV".into())).is_some(),
@@ -4103,6 +4374,7 @@ mod tests {
         let location = folder.holding("echoes.mp3", &mp3());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut frames = Id3v2Tag::new();
+
         frames.insert(Frame::KeyValue(KeyValueFrame::new(
             FrameId::Valid(MUSICIAN_CREDITS.into()),
             TextEncoding::UTF8,
@@ -4114,6 +4386,7 @@ mod tests {
         frames
             .save_to_path(&path, WriteOptions::default())
             .expect("a credited MP3");
+
         let tags = FileTags::default();
 
         tags.write(
@@ -4132,6 +4405,7 @@ mod tests {
         else {
             panic!("no musician credits were written");
         };
+
         assert_eq!(
             credits.key_value_pairs.as_ref(),
             [
@@ -4157,6 +4431,7 @@ mod tests {
             },
         )
         .expect("a cleared MP3");
+
         assert_eq!(
             tags.read(&location, Picturing::Whether)
                 .expect("a readable MP3")
@@ -4173,11 +4448,15 @@ mod tests {
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
         let mut tagged = lofty::read_from_path(&path).expect("a readable FLAC");
+
         if tagged.primary_tag().is_none() {
             let kind = tagged.primary_tag_type();
+
             tagged.insert_tag(Tag::new(kind));
         }
+
         let tag = tagged.primary_tag_mut().expect("a primary tag");
+
         tag.push(TagItem::new(
             ItemKey::Popularimeter,
             ItemValue::Text("MusicBee|3|0".to_owned()),
@@ -4186,6 +4465,7 @@ mod tests {
             .expect("a rated FLAC");
 
         let tags = FileTags::default();
+
         tags.write(
             &location,
             rating(Popularity {
@@ -4202,6 +4482,7 @@ mod tests {
             .get_strings(ItemKey::Popularimeter)
             .map(str::to_owned)
             .collect();
+
         assert!(
             ratings
                 .iter()
@@ -4320,13 +4601,17 @@ mod tests {
         let weighed = tags
             .read(&location, Picturing::Whether)
             .expect("a readable FLAC");
+
         assert_read_back(&weighed.tags, &edits, &[]);
+
         assert_eq!(weighed.picture, Pictured::Carried);
 
         let copied = tags
             .read(&location, Picturing::Copied)
             .expect("a readable FLAC");
+
         assert_read_back(&copied.tags, &edits, &[]);
+
         assert_eq!(copied.picture, Pictured::Copied(picture));
     }
 
@@ -4358,6 +4643,7 @@ mod tests {
             &edits,
             &[],
         );
+
         assert_eq!(
             tags.read(&location, Picturing::Copied)
                 .expect("a readable FLAC")
@@ -4376,6 +4662,7 @@ mod tests {
         let cover = painted(77);
 
         assert!(tags.writes(&location), "a WAV was refused for writing");
+
         tags.write(
             &location,
             Writing {
@@ -4391,7 +4678,9 @@ mod tests {
         let read = tags
             .read(&location, Picturing::Copied)
             .expect("a readable WAV");
+
         assert_read_back(&read.tags, &edits, &[]);
+
         assert_eq!(read.picture, Pictured::Copied(cover));
     }
 
@@ -4408,7 +4697,9 @@ mod tests {
         let folder = Folder::new();
         let target = folder.holding("echoes.flac", &flac());
         let link = folder.root.join("linked.flac");
+
         unix_fs::symlink(target.as_path().expect("a local file"), &link).expect("a link");
+
         let linked = MediaLocation::local(&link);
         let tags = FileTags::default();
 
@@ -4428,13 +4719,16 @@ mod tests {
         let folder = Folder::new();
         let first = folder.holding("echoes.flac", &flac());
         let second = folder.root.join("also.flac");
+
         fs::hard_link(first.as_path().expect("a local file"), &second).expect("a hard link");
+
         let tags = FileTags::default();
 
         tags.write(&first, just(&[edited(TagField::Title, "Echoes")]))
             .expect("a hard-linked file written");
 
         let also = MediaLocation::local(&second);
+
         assert_eq!(titled(&tags, &also).as_deref(), Some("Echoes"));
         assert_eq!(
             fs::metadata(&second).expect("the second name").nlink(),
@@ -4465,7 +4759,9 @@ mod tests {
         let first = folder.holding("echoes.flac", &flac());
         let path = first.as_path().expect("a local file").to_path_buf();
         let second = folder.root.join("also.flac");
+
         fs::hard_link(&path, &second).expect("a hard link");
+
         let reader = File::open(&second).expect("a reader of the second name");
         let tags = FileTags::default();
 
@@ -4497,9 +4793,12 @@ mod tests {
         let folder = Folder::new();
         let first = folder.holding("echoes.flac", &flac());
         let path = first.as_path().expect("a local file").to_path_buf();
+
         fs::hard_link(&path, folder.root.join("also.flac")).expect("a hard link");
+
         let staged = Staged::beside(&path).expect("a staged copy");
         let mut grown = flac();
+
         grown.extend_from_slice(&flac_frame());
         staged.held.file().write_all(&grown).expect("a grown copy");
 
@@ -4521,18 +4820,22 @@ mod tests {
         let folder = Folder::new();
         let location = folder.holding("echoes.flac", &flac());
         let path = location.as_path().expect("a local file").to_path_buf();
+
         if rustix::fs::setxattr(&path, NAME, b"yes", XattrFlags::empty()).is_err() {
             eprintln!("skipped: the temporary folder holds no extended attributes");
             return;
         }
+
         let tags = FileTags::default();
 
         tags.write(&location, just(&[edited(TagField::Title, "Echoes")]))
             .expect("a written file");
 
         let mut held = [0_u8; 8];
+
         let read =
             rustix::fs::getxattr(&path, NAME, &mut held[..]).expect("the attribute is there");
+
         assert_eq!(held.get(..read), Some(b"yes".as_slice()));
         assert_eq!(titled(&tags, &location).as_deref(), Some("Echoes"));
     }
@@ -4541,6 +4844,7 @@ mod tests {
     fn a_field_cleared_from_a_wave_file_is_gone_from_its_info_list_too() {
         let folder = Folder::new();
         let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Pink Floyd")]);
+
         let location = folder.holding("echoes.wav", &listed);
         let tags = FileTags::default();
 
@@ -4562,6 +4866,7 @@ mod tests {
             .read(&location, Picturing::Whether)
             .expect("a readable WAV")
             .tags;
+
         assert_eq!(read.title, None, "the INFO list's title came back");
         assert_eq!(read.artist.as_deref(), Some("Pink Floyd"));
         assert_eq!(read.album.as_deref(), Some("Meddle"));
@@ -4571,6 +4876,7 @@ mod tests {
     fn a_title_written_into_a_wave_file_outranks_the_info_list_beside_it() {
         let folder = Folder::new();
         let listed = wave_with(&[(b"INAM", "Untitled"), (b"IART", "Pink Floyd")]);
+
         let location = folder.holding("echoes.wav", &listed);
         let tags = FileTags::default();
 
@@ -4581,6 +4887,7 @@ mod tests {
             .read(&location, Picturing::Whether)
             .expect("a readable WAV")
             .tags;
+
         assert_eq!(read.title.as_deref(), Some("Echoes"));
         assert_eq!(read.artist.as_deref(), Some("Pink Floyd"));
     }
@@ -4623,7 +4930,9 @@ mod tests {
     fn a_file_whose_bytes_disagree_with_its_extension_is_refused() {
         let folder = Folder::new();
         let mut musepack = b"MPCK".to_vec();
+
         musepack.resize(64, 0);
+
         let location = folder.holding("echoes.flac", &musepack);
         let tags = FileTags::default();
 
@@ -4643,9 +4952,13 @@ mod tests {
     #[test]
     fn a_field_names_itself_once() {
         let mut named: Vec<&str> = TagField::ALL.iter().map(|field| field.as_str()).collect();
+
         named.sort_unstable();
+
         let held = named.len();
+
         named.dedup();
+
         assert_eq!(named.len(), held, "two fields answer to one name");
     }
 }

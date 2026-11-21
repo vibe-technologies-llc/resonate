@@ -8,7 +8,7 @@ use resonate_core::{BitDepth, SampleRate, StreamSpec};
 
 use crate::{ProcessCount, Processor, Result};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum DitherKind {
     None,
     Rectangular,
@@ -30,7 +30,7 @@ impl DitherKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum NoiseShaping {
     #[default]
     None,
@@ -131,6 +131,7 @@ fn weighted_autocorrelation(rate: SampleRate) -> [f64; THRESHOLD_LAGS] {
     let nyquist_khz = f64::from(rate.hz()) / 2.0 / HERTZ_PER_KILOHERTZ;
     let spacing_khz = nyquist_khz / THRESHOLD_GRID_POINTS as f64;
     let held = threshold_in_quiet(THRESHOLD_HELD_BELOW_KHZ);
+
     let thresholds: [Points; POINT_GROUPS] = array::from_fn(|group| {
         array::from_fn(|lane| {
             let khz = midpoint(group, lane) * spacing_khz;
@@ -149,11 +150,13 @@ fn weighted_autocorrelation(rate: SampleRate) -> [f64; THRESHOLD_LAGS] {
         + THRESHOLD_RANGE_DB;
 
     let mut lags = [[0.0; POINTS_TOGETHER]; THRESHOLD_LAGS];
+
     for (group, thresholds) in thresholds.iter().enumerate() {
         let weights = thresholds.map(|threshold| power_ratio(-threshold.min(ceiling)));
         let cosines = array::from_fn(|lane| {
             (PI * midpoint(group, lane) / THRESHOLD_GRID_POINTS as f64).cos()
         });
+
         accumulate_lags(&mut lags, weights, cosines);
     }
     lags.map(|lanes| lanes.iter().sum::<f64>() / THRESHOLD_GRID_POINTS as f64)
@@ -165,7 +168,9 @@ fn accumulate_lags(lags: &mut [Points; THRESHOLD_LAGS], weights: Points, cosines
         for ((sum, weight), cosine) in lag.iter_mut().zip(weights).zip(current) {
             *sum += weight * cosine;
         }
+
         let mut next = [0.0; POINTS_TOGETHER];
+
         for (((slot, first), now), before) in
             next.iter_mut().zip(cosines).zip(current).zip(previous)
         {
@@ -178,7 +183,9 @@ fn accumulate_lags(lags: &mut [Points; THRESHOLD_LAGS], weights: Points, cosines
 
 fn prediction_error_filter(autocorrelation: &[f64; THRESHOLD_LAGS]) -> [f64; THRESHOLD_LAGS] {
     let mut filter = [0.0; THRESHOLD_LAGS];
+
     filter[0] = 1.0;
+
     let [mut error, ..] = *autocorrelation;
 
     for order in 1..THRESHOLD_LAGS {
@@ -190,6 +197,7 @@ fn prediction_error_filter(autocorrelation: &[f64; THRESHOLD_LAGS]) -> [f64; THR
             .sum();
         let reflection = -correlation / error;
         let previous = filter;
+
         for ((tap, own), mirrored) in filter
             .iter_mut()
             .zip(previous)
@@ -318,14 +326,19 @@ impl Dither {
 
     fn alike_from(&mut self, frames: &[f64]) -> (Heard, usize) {
         let mut run = frames.chunks_exact(self.channels.get());
+
         let Some(first) = run.next() else {
             return (Heard::Sound, 0);
         };
         let (heard, silent_for) = self.hearing(first);
+
         self.silent_for = silent_for;
+
         let mut alike = 1;
+
         for frame in run {
             let (next, silent_for) = self.hearing(frame);
+
             if next != heard {
                 break;
             }
@@ -356,6 +369,7 @@ impl Dither {
 
         for (sample, slot) in input.iter().zip(output.iter_mut()).take(samples) {
             let dithered = grid.steps(*sample) + self.noise.draw(self.kind);
+
             *slot = grid.sample(on_the_grid(dithered));
         }
     }
@@ -381,12 +395,14 @@ impl Dither {
         for (frame_in, frame_out) in frames_in.zip(frames_out).take(frames) {
             let written_at = newest_at.checked_sub(1).unwrap_or(TAPS - 1);
             let lanes = frame_in.iter().zip(frame_out.iter_mut());
+
             for ((sample, slot), held) in lanes.zip(histories.iter_mut()) {
                 let errors = held.as_flattened_mut();
                 let Some(recent) = errors.get(newest_at..newest_at + TAPS) else {
                     continue;
                 };
                 let mut feedback = 0.0;
+
                 for (coefficient, error) in coefficients.iter().zip(recent).rev() {
                     feedback += coefficient * error;
                 }
@@ -400,6 +416,7 @@ impl Dither {
                 } else {
                     0.0
                 };
+
                 for copy in [written_at, written_at + TAPS] {
                     if let Some(held) = errors.get_mut(copy) {
                         *held = fed_back;
@@ -446,16 +463,20 @@ impl Processor for Dither {
         let frames = (input.len() / channels).min(output.len() / channels);
 
         let mut done = 0;
+
         while done < frames {
             let from = done * channels;
             let (heard, run) =
                 self.alike_from(input.get(from..frames * channels).unwrap_or_default());
+
             if run == 0 {
                 break;
             }
+
             let until = from + run * channels;
             let taken = input.get(from..until).unwrap_or_default();
             let made = output.get_mut(from..until).unwrap_or_default();
+
             match heard {
                 Heard::Sound => self.requantise_run(taken, made, run),
                 Heard::DigitalSilence => {
@@ -581,6 +602,7 @@ mod tests {
         shaping: NoiseShaping,
     ) -> Dither {
         let mut stage = Dither::new(target, kind, shaping, SEED);
+
         stage
             .prepare(
                 StreamSpec::new(rate, ChannelLayout::Mono, SampleFormat::F32),
@@ -614,8 +636,10 @@ mod tests {
 
     fn noise_power_gain(coefficients: &[f64], cycles_per_sample: f64) -> f64 {
         let (mut real, mut imaginary) = (1.0, 0.0);
+
         for (delay, coefficient) in (1..).zip(coefficients) {
             let angle = TAU * cycles_per_sample * f64::from(delay);
+
             real -= coefficient * angle.cos();
             imaginary += coefficient * angle.sin();
         }
@@ -632,10 +656,12 @@ mod tests {
             let along = point as f64 / (EVALUATION_POINTS - 1) as f64;
             let frequency = LOWEST_EVALUATED_HZ + (nyquist - LOWEST_EVALUATED_HZ) * along;
             let gain = noise_power_gain(coefficients, frequency / hz);
+
             peak = peak.max(gain);
             if audible.contains(&frequency) {
                 let threshold = threshold_in_quiet(frequency / HERTZ_PER_KILOHERTZ);
                 let weight = 10.0_f64.powf(-threshold / DECIBELS_PER_BEL);
+
                 weighted += weight * gain;
                 weights += weight;
             }
@@ -653,10 +679,13 @@ mod tests {
             .map(|coefficient| -coefficient)
             .collect();
         let mut reflections = Vec::new();
+
         while let Some(&last) = filter.last() {
             reflections.push(last);
+
             let order = filter.len();
             let scale = 1.0 - last * last;
+
             filter = (0..order - 1)
                 .map(|tap| (filter[tap] - last * filter[order - 2 - tap]) / scale)
                 .collect();
@@ -668,9 +697,11 @@ mod tests {
         let coefficient = 2.0 * (TAU * cycles_per_sample).cos();
         let length = samples.len() as f64;
         let (mut newer, mut older) = (0.0, 0.0);
+
         for (n, sample) in samples.iter().enumerate() {
             let hann = 0.5 - 0.5 * (TAU * n as f64 / length).cos();
             let next = sample * hann + coefficient * newer - older;
+
             older = newer;
             newer = next;
         }
@@ -679,6 +710,7 @@ mod tests {
 
     fn error_power_at(rate: SampleRate, shaping: NoiseShaping, hz: f64) -> f64 {
         let mut stage = prepared_at(rate, BitDepth::Bits16, DitherKind::Triangular, shaping);
+
         let step = stage.step();
         let input = sine(
             rate,
@@ -687,6 +719,7 @@ mod tests {
             MEASURED_BLOCK * MEASURED_BLOCKS,
         );
         let mut output = vec![0.0; input.len()];
+
         stage.process(&input, &mut output);
 
         let error: Vec<f64> = output
@@ -708,11 +741,13 @@ mod tests {
         let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, NoiseShaping::None);
         let input = ramp(4_096);
         let mut output = vec![0.0; input.len()];
+
         stage.process(&input, &mut output);
 
         let step = stage.step();
         for sample in output {
             let steps = sample / step;
+
             assert_eq!(steps, steps.round(), "{sample} is {steps} steps");
         }
     }
@@ -720,24 +755,32 @@ mod tests {
     #[test]
     fn undithered_half_steps_round_to_the_even_neighbour() {
         let mut stage = prepared(BitDepth::Bits16, DitherKind::None, NoiseShaping::None);
+
         let step = stage.step();
         let halves = [0.5, 1.5, 2.5, 3.5, -0.5, -1.5, -2.5, -3.5];
+
         let input: Vec<f64> = halves.iter().map(|half| half * step).collect();
         let mut output = vec![0.0; input.len()];
+
         stage.process(&input, &mut output);
 
         let evens: Vec<f64> = output.iter().map(|sample| *sample / step).collect();
+
         assert_eq!(evens, [0.0, 2.0, 2.0, 4.0, 0.0, -2.0, -2.0, -4.0]);
     }
 
     #[test]
     fn a_24_bit_word_near_full_scale_is_dithered_without_bias() {
         let mut stage = prepared(BitDepth::Bits24, DitherKind::Triangular, NoiseShaping::None);
+
         let step = stage.step();
         let between_two_steps = ((0.9 / step).floor() + 0.5) * step;
         let input = vec![between_two_steps; BIAS_SAMPLES];
+
         assert_eq!(input[0], between_two_steps);
+
         let mut output = vec![0.0; input.len()];
+
         stage.process(&input, &mut output);
 
         let bias = output
@@ -745,6 +788,7 @@ mod tests {
             .map(|sample| (*sample - between_two_steps) / step)
             .sum::<f64>()
             / BIAS_SAMPLES as f64;
+
         assert!(
             bias.abs() < UNBIASED_WITHIN_STEPS,
             "the dither left a bias of {bias} steps"
@@ -755,17 +799,22 @@ mod tests {
     fn undithered_quantisation_is_deterministic_and_dither_is_not() {
         let input = ramp(1_024);
         let mut plain = vec![0.0; input.len()];
+
         prepared(BitDepth::Bits16, DitherKind::None, NoiseShaping::None)
             .process(&input, &mut plain);
 
         let mut again = vec![0.0; input.len()];
+
         prepared(BitDepth::Bits16, DitherKind::None, NoiseShaping::None)
             .process(&input, &mut again);
+
         assert_eq!(plain, again);
 
         let mut dithered = vec![0.0; input.len()];
+
         prepared(BitDepth::Bits16, DitherKind::Triangular, NoiseShaping::None)
             .process(&input, &mut dithered);
+
         assert_ne!(plain, dithered);
     }
 
@@ -774,11 +823,13 @@ mod tests {
         let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, NoiseShaping::None);
         let input = ramp(4_096);
         let mut output = vec![0.0; input.len()];
+
         stage.process(&input, &mut output);
 
         let step = stage.step();
         for (sample, quantised) in input.iter().zip(&output) {
             let error = (*sample - *quantised).abs() / step;
+
             assert!(error < 2.0, "error of {error} LSB at {sample}");
         }
     }
@@ -809,6 +860,7 @@ mod tests {
         let input = ramp(4_096);
 
         let mut shaped = vec![0.0; input.len()];
+
         prepared_at(
             SampleRate::HZ_96000,
             BitDepth::Bits16,
@@ -818,6 +870,7 @@ mod tests {
         .process(&input, &mut shaped);
 
         let mut flat = vec![0.0; input.len()];
+
         prepared_at(
             SampleRate::HZ_96000,
             BitDepth::Bits16,
@@ -825,15 +878,18 @@ mod tests {
             NoiseShaping::None,
         )
         .process(&input, &mut flat);
+
         assert_eq!(shaped, flat, "a curve designed for 44.1 kHz ran at 96 kHz");
 
         let mut at_design_rate = vec![0.0; input.len()];
+
         prepared(
             BitDepth::Bits16,
             DitherKind::Triangular,
             NoiseShaping::Lipshitz,
         )
         .process(&input, &mut at_design_rate);
+
         assert_ne!(
             at_design_rate, flat,
             "the curve did not run at the rate it was designed for"
@@ -846,7 +902,9 @@ mod tests {
 
         let mut flat = vec![0.0; input.len()];
         let mut flat_stage = prepared(BitDepth::Bits16, DitherKind::Triangular, NoiseShaping::None);
+
         let step = flat_stage.step();
+
         flat_stage.process(&input, &mut flat);
 
         let energy = |samples: &[f64]| -> f64 {
@@ -859,11 +917,13 @@ mod tests {
 
         for shaping in SHAPED_CURVES {
             let mut shaped = vec![0.0; input.len()];
+
             prepared(BitDepth::Bits16, DitherKind::Triangular, shaping)
                 .process(&input, &mut shaped);
 
             let shaping_trades_total_power_for_a_quieter_audible_band =
                 energy(&shaped) > energy(&flat);
+
             assert!(
                 shaping_trades_total_power_for_a_quieter_audible_band,
                 "{shaping:?} did not redistribute error energy"
@@ -876,6 +936,7 @@ mod tests {
     fn a_shaped_channels_error_never_reaches_the_channel_beside_it() {
         for shaping in SHAPED_CURVES {
             let mut stage = Dither::new(BitDepth::Bits16, DitherKind::None, shaping, SEED);
+
             stage
                 .prepare(
                     StreamSpec::new(
@@ -889,21 +950,26 @@ mod tests {
 
             let loud = ramp(2_048);
             let mut input = vec![0.0; loud.len() * 2];
+
             for (frame, sample) in loud.iter().enumerate() {
                 if let Some(slot) = input.get_mut(frame * 2) {
                     *slot = *sample;
                 }
             }
+
             let mut output = vec![0.0; input.len()];
+
             stage.process(&input, &mut output);
 
             let (frames, _) = output.as_chunks::<2>();
+
             for (frame, [_, right]) in frames.iter().enumerate() {
                 assert_eq!(
                     *right, 0.0,
                     "{shaping:?}: silence picked up the other channel's error at frame {frame}"
                 );
             }
+
             assert!(
                 frames.iter().any(|[left, _]| *left != 0.0),
                 "{shaping:?}: the shaped channel produced nothing to leak"
@@ -918,6 +984,7 @@ mod tests {
             (SampleRate::HZ_96000, PROTOTYPE_AT_96_KHZ),
         ] {
             let designed = threshold_coefficients(rate);
+
             assert_eq!(designed.len(), THRESHOLD_ORDER);
             for (tap, (ours, theirs)) in designed.iter().zip(prototype).enumerate() {
                 assert!(
@@ -933,6 +1000,7 @@ mod tests {
         for rate in LIPSHITZ_1992_DESIGN_RATES {
             let lipshitz = figures(&LIPSHITZ_1992_E_WEIGHTED, rate);
             let threshold = figures(&threshold_coefficients(rate), rate);
+
             assert!(
                 threshold.weighted_db <= lipshitz.weighted_db,
                 "{rate}: threshold {:.1} dB against lipshitz {:.1} dB",
@@ -951,6 +1019,7 @@ mod tests {
             SampleRate::HZ_192000,
         ] {
             let threshold = figures(&threshold_coefficients(rate), rate);
+
             assert!(
                 threshold.weighted_db <= -HIGH_RATES_QUIETER_THAN_FLAT_BY_DB,
                 "{rate}: only {:.1} dB against flat",
@@ -963,6 +1032,7 @@ mod tests {
     fn no_designed_curve_lifts_the_noise_past_its_ceiling_at_any_rate() {
         for rate in every_rate() {
             let threshold = figures(&threshold_coefficients(rate), rate);
+
             assert!(
                 threshold.peak_db < PEAK_CEILING_DB,
                 "{rate}: the curve peaks at {:.1} dB",
@@ -998,12 +1068,15 @@ mod tests {
 
         for hz in [1_000.0, 4_000.0] {
             let moved = against_flat(hz);
+
             assert!(
                 moved < -MIDRANGE_QUIETER_BY_DB,
                 "{hz} Hz is only {moved:.1} dB against flat"
             );
         }
+
         let moved = against_flat(NEAR_NYQUIST_HZ);
+
         assert!(
             moved > NEAR_NYQUIST_LOUDER_BY_DB,
             "{NEAR_NYQUIST_HZ} Hz is {moved:.1} dB against flat"
@@ -1019,6 +1092,7 @@ mod tests {
                 DitherKind::Triangular,
                 NoiseShaping::Threshold,
             );
+
             let step = stage.step();
             let input = sine(
                 rate,
@@ -1043,6 +1117,7 @@ mod tests {
 
             for sample in output {
                 let steps = sample / step;
+
                 assert_eq!(steps, steps.round(), "{rate}: {sample} is off the grid");
                 assert!(
                     (-1.0..=1.0 - step).contains(&sample),
@@ -1073,6 +1148,7 @@ mod tests {
                     .fold(0.0, |sum, (coefficient, error)| sum + coefficient * error);
                 let shaped = grid.steps(*sample) + feedback;
                 let quantised = on_the_grid(shaped + noise.draw(kind));
+
                 errors.rotate_right(1);
                 if let Some(newest) = errors.first_mut() {
                     *newest = shaped - quantised;
@@ -1101,6 +1177,7 @@ mod tests {
                     rate.hz() as usize,
                 );
                 let mut output = vec![0.0; input.len()];
+
                 prepared_at(rate, BitDepth::Bits16, kind, shaping).process(&input, &mut output);
 
                 assert!(
@@ -1119,15 +1196,19 @@ mod tests {
             let step = prepared_at(rate, BitDepth::Bits16, DitherKind::Triangular, shaping).step();
             let quiet = sine(rate, QUIET_SINE_HZ, QUIET_SINE_STEPS * step, WILD_STREAM);
             let mut clean = vec![0.0; quiet.len()];
+
             prepared_at(rate, BitDepth::Bits16, DitherKind::Triangular, shaping)
                 .process(&quiet, &mut clean);
 
             let streams = WILD_SAMPLES.map(|wild| {
                 let mut input = quiet.clone();
+
                 input[WILD_AT] = wild;
+
                 let mut stage =
                     prepared_at(rate, BitDepth::Bits16, DitherKind::Triangular, shaping);
                 let mut output = vec![0.0; input.len()];
+
                 for (block, landed) in input
                     .chunks(THRESHOLD_ORDER)
                     .zip(output.chunks_mut(THRESHOLD_ORDER))
@@ -1145,9 +1226,11 @@ mod tests {
 
             for (wild, output) in WILD_SAMPLES.iter().zip(&streams) {
                 assert_eq!(output[..WILD_AT], clean[..WILD_AT], "{wild} reached back");
+
                 for sample in &output[WILD_AT + 1..] {
                     let sample = *sample;
                     let steps = sample / step;
+
                     assert!(sample.is_finite(), "{wild} rode the feedback to {sample}");
                     assert_eq!(steps, steps.round(), "{wild}: {sample} is off the grid");
                     assert!(
@@ -1155,6 +1238,7 @@ mod tests {
                         "{wild}: {sample} is out of range"
                     );
                 }
+
                 assert!(
                     output[WILD_AT + 1..] == streams[0][WILD_AT + 1..],
                     "{shaping:?} at {rate}: {wild} was not forgotten the way a NaN is"
@@ -1162,6 +1246,7 @@ mod tests {
             }
 
             let [not_a_number, above, below, huge] = streams.map(|output| output[WILD_AT]);
+
             assert_eq!(not_a_number, 0.0, "a NaN leaves the stage as silence");
             assert_eq!(above, 1.0 - step);
             assert_eq!(below, -1.0);
@@ -1183,8 +1268,10 @@ mod tests {
 
     fn through_in_blocks(stage: &mut Dither, input: &[f64]) -> Vec<f64> {
         let mut output = vec![0.0; input.len()];
+
         for (taken, made) in input.chunks(511).zip(output.chunks_mut(511)) {
             let count = stage.process(taken, made);
+
             assert_eq!(count.frames_out, taken.len());
         }
         output
@@ -1194,9 +1281,12 @@ mod tests {
     fn digital_silence_held_for_a_moment_comes_out_as_digital_silence() {
         for shaping in every_curve() {
             let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+
             through_in_blocks(&mut stage, &sine(SampleRate::HZ_44100, 997.0, 0.5, 4_096));
+
             let quiet = through_in_blocks(&mut stage, &[0.0; 4 * 4_096]);
             let (moment, after) = quiet.split_at(a_moment_at_44_1_khz());
+
             assert!(
                 moment.iter().any(|sample| *sample != 0.0),
                 "{shaping:?}: the dither went quiet the instant the music stopped"
@@ -1216,9 +1306,12 @@ mod tests {
     fn a_filter_tail_far_under_any_step_is_digital_silence_too() {
         for shaping in every_curve() {
             let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+
             through_in_blocks(&mut stage, &sine(SampleRate::HZ_44100, 997.0, 0.5, 4_096));
+
             let tail = through_in_blocks(&mut stage, &[1e-30; 4 * 4_096]);
             let (_, after) = tail.split_at(a_moment_at_44_1_khz());
+
             assert!(
                 after.iter().all(|sample| *sample == 0.0),
                 "{shaping:?}: a tail at -600 dB came out as hiss"
@@ -1231,8 +1324,10 @@ mod tests {
         for shaping in every_curve() {
             let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
             let faint = sine(SampleRate::HZ_44100, 997.0, 1e-6, 4 * 4_096);
+
             let output = through_in_blocks(&mut stage, &faint);
             let tail = output.get(output.len() - a_moment_at_44_1_khz()..);
+
             assert!(
                 tail.is_some_and(|tail| tail.iter().any(|sample| *sample != 0.0)),
                 "{shaping:?}: a signal under the last step was muted as if it were silence"
@@ -1244,11 +1339,14 @@ mod tests {
     fn sound_after_digital_silence_is_dithered_from_a_clean_history() {
         for shaping in every_curve() {
             let mut stage = prepared(BitDepth::Bits16, DitherKind::Triangular, shaping);
+
             through_in_blocks(&mut stage, &[0.0; 4 * 4_096]);
+
             let level = 0.25;
             let output = through_in_blocks(&mut stage, &[level; 64]);
             let unshaped = DitherKind::Triangular.largest_error_steps() * stage.step();
             let first = output.first().copied().unwrap_or_default();
+
             assert!(
                 (first - level).abs() <= unshaped,
                 "{shaping:?}: the first frame after the silence carried an error fed back from \
@@ -1260,35 +1358,45 @@ mod tests {
     #[test]
     fn dither_is_never_transparent_because_it_always_requantises() {
         let stage = prepared(BitDepth::Bits16, DitherKind::None, NoiseShaping::None);
+
         assert!(!stage.is_transparent());
     }
 
     #[test]
     fn a_32_bit_word_is_dithered_on_its_own_grid_without_bias() {
         let mut stage = prepared(BitDepth::Bits32, DitherKind::Triangular, NoiseShaping::None);
+
         let step = stage.step();
+
         assert_eq!(step, 1.0 / 2_147_483_648.0);
+
         let between_two_steps = ((0.9 / step).floor() + 0.5) * step;
         let input = vec![between_two_steps; BIAS_SAMPLES];
         let mut output = vec![0.0; input.len()];
+
         stage.process(&input, &mut output);
 
         for sample in &output {
             let steps = sample / step;
+
             assert_eq!(steps, steps.round(), "{sample} is {steps} steps");
         }
+
         let bias = output
             .iter()
             .map(|sample| (sample - between_two_steps) / step)
             .sum::<f64>()
             / BIAS_SAMPLES as f64;
+
         assert!(
             bias.abs() < UNBIASED_WITHIN_STEPS,
             "the dither left a bias of {bias} steps"
         );
 
         let mut word = SampleData::S32(vec![0; output.len()]);
+
         word.write_f64(&output);
+
         let SampleData::S32(words) = word else {
             panic!("the word changed its format");
         };

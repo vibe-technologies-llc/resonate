@@ -3,7 +3,7 @@ use std::result;
 use resonate_core::{SampleRate, StreamSpec};
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum AnalysisOp {
     Open,
     Decode,

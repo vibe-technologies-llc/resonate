@@ -77,7 +77,7 @@ const SPEND_AN_UNHELD_LISTEN: &str = "UPDATE unheld_listens SET heard = ?1 WHERE
 const SPEND_WHAT_AN_UNHELD_LISTEN_BECAME: &str = "UPDATE listens SET heard = ?1
       WHERE id = (SELECT listen FROM unheld_credited WHERE unheld = ?2)";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum HistoryKept {
     #[default]
     Forever,
@@ -102,6 +102,7 @@ impl HistoryKept {
 
     pub fn parse(text: &str) -> Option<Self> {
         let text = text.trim();
+
         if text.eq_ignore_ascii_case(FOREVER) {
             return Some(Self::Forever);
         }
@@ -158,6 +159,7 @@ fn forgotten_before(transaction: &Transaction<'_>, before: i64) -> Result<Aged> 
     let passes = transaction
         .execute(FORGET_THE_PASSES, params![before])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
     for forgetting in [FORGET_THE_UNHELD, FORGET_THE_PLAYLIST_PLAYS] {
         transaction
             .execute(forgetting, params![before])
@@ -187,6 +189,7 @@ pub(crate) fn credit_the_unheld(transaction: &Transaction<'_>) -> Result<()> {
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if now_held.is_empty() {
         return Ok(());
     }
@@ -195,6 +198,7 @@ pub(crate) fn credit_the_unheld(transaction: &Transaction<'_>) -> Result<()> {
             row.get::<_, i64>(0)
         })
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
         store::cached(
             transaction,
             NOTE_AN_UNHELD_CREDITED,
@@ -252,6 +256,7 @@ mod tests {
     #[test]
     fn the_credit_counts_only_the_tracks_an_unheld_listen_names() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         schema::configure(&connection, schema::Role::Writing).expect("the pragmas");
         schema::lay_out(&connection).expect("the schema applies");
 
@@ -266,6 +271,7 @@ mod tests {
     #[test]
     fn an_unheld_listen_whose_track_arrived_is_counted_on_it_and_the_others_wait() {
         let mut connection = Connection::open_in_memory().expect("a catalog");
+
         schema::configure(&connection, schema::Role::Writing).expect("the pragmas");
         schema::lay_out(&connection).expect("the schema applies");
         connection
@@ -282,6 +288,7 @@ mod tests {
             .expect("a catalog with listens kept against paths");
 
         let transaction = connection.transaction().expect("a write");
+
         credit_the_unheld(&transaction).expect("the credit");
         transaction.commit().expect("the credit is kept");
 
@@ -321,6 +328,7 @@ mod tests {
         for kept in HistoryKept::OFFERED {
             assert_eq!(HistoryKept::parse(&kept.to_string()), Some(kept));
         }
+
         assert_eq!(HistoryKept::parse(" Forever "), Some(HistoryKept::Forever));
         assert_eq!(HistoryKept::parse("0"), None);
         assert_eq!(HistoryKept::parse("a while"), None);
@@ -332,6 +340,7 @@ mod tests {
     #[test]
     fn forever_forgets_nothing_and_a_span_reaches_back_that_far() {
         let now = UNIX_EPOCH + Duration::from_secs(1_000 * SECONDS_PER_DAY);
+
         assert_eq!(HistoryKept::Forever.before(now), None);
         assert_eq!(
             HistoryKept::days(365).before(now),

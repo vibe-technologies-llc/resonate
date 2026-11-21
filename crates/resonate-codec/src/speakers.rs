@@ -3,10 +3,10 @@ use symphonia::core::audio::{Channels, Position};
 const WAVE_POSITIONS: u32 = 18;
 const WIDEST_FLAC: u32 = 8;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Speakers(u64);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Placement {
     Front,
     Side,
@@ -135,7 +135,9 @@ impl Speakers {
                 if bits == 0 {
                     return Placement::Front;
                 }
+
                 let lowest = bits.isolate_lowest_one();
+
                 bits &= !lowest;
                 Placement::of(Position::from_bits_truncate(lowest))
             })

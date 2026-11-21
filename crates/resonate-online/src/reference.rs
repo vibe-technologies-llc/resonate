@@ -332,14 +332,18 @@ mod tests {
     #[test]
     fn a_walk_that_found_nothing_answers_its_first_refusal_and_a_miss_under_five_hundred_is_none() {
         let mut walk = Walk::default();
+
         let _ = walk.tried(refused(Host::Commons, 404));
         let _ = walk.tried(refused(Host::Spotify, 403));
+
         assert!(matches!(walk.ended::<()>(), Ok(None)));
 
         let mut walk = Walk::default();
+
         let _ = walk.tried(refused(Host::Wikidata, 502));
         let _ = walk.tried(refused(Host::Commons, 500));
         let _ = walk.tried::<()>(Ok(None));
+
         assert!(matches!(
             walk.ended::<()>(),
             Err(Error::Refused {
@@ -374,6 +378,7 @@ mod tests {
             op: LookupOp::Portrait,
             source: io::Error::from(io::ErrorKind::TimedOut),
         }));
+
         assert!(matches!(answered, Err(Error::Unreachable { .. })));
     }
 

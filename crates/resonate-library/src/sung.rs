@@ -12,7 +12,7 @@ pub const MISSED_AGAIN_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
 
 pub const BETTERED_AFTER: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LyricsAhead(i32);
 
 impl LyricsAhead {
@@ -123,6 +123,7 @@ pub(crate) fn to_ask(
             refused_lately()
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let found = statement
         .query_map(
             params![
@@ -179,9 +180,11 @@ pub(crate) fn asking(connection: &Connection, id: TrackId) -> Result<Option<Aski
     let Some(artist) = artist.filter(|artist| !artist.trim().is_empty()) else {
         return Ok(None);
     };
+
     if title.trim().is_empty() {
         return Ok(None);
     }
+
     let rate = SampleRate::new(rate)?;
 
     Ok(Some(Asking {
@@ -277,6 +280,7 @@ pub(crate) fn keep(
         (Some(held), Some(told)) => told.detail() >= held.detail() && held != told,
     };
     let kept = richer(held, told.cloned());
+
     tx.execute(
         "INSERT INTO lyrics_kept (path, span_start, text, synced, lyricsfile, taken)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -344,9 +348,13 @@ mod tests {
         assert_eq!(LyricsAhead::ZERO.earlier().millis(), LyricsAhead::STEP_MS);
         assert_eq!(LyricsAhead::ZERO.later().millis(), -LyricsAhead::STEP_MS);
         assert_eq!(LyricsAhead::of_millis(LyricsAhead::MOST_MS + 1), None);
+
         let furthest = LyricsAhead::of_millis(LyricsAhead::MOST_MS).expect("at the edge");
+
         assert_eq!(furthest.earlier(), furthest);
+
         let least = LyricsAhead::of_millis(-LyricsAhead::MOST_MS).expect("at the edge");
+
         assert_eq!(least.later(), least);
     }
 

@@ -11,7 +11,7 @@ use crate::{
     ScanSummary, TakeInProgress, TakeInSummary, VaultWeighing, VaultWeighingProgress,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PassKind {
     Scan,
     Enrich,
@@ -66,7 +66,9 @@ impl<Progress: Cancelling, Summary> PassHandle<Progress, Summary> {
 
     pub fn wound_down(self, patience: Duration) -> Option<Result<Summary>> {
         self.cancel();
+
         let deadline = Instant::now() + patience;
+
         while !self.is_finished() {
             if Instant::now() >= deadline {
                 return None;
@@ -134,7 +136,9 @@ mod tests {
             }
             Ok(7_u8)
         });
+
         let handle = PassHandle::of(PassKind::TakeIn, stoppable, thread);
+
         assert_eq!(
             handle
                 .wound_down(Duration::from_secs(20))
@@ -148,7 +152,9 @@ mod tests {
             Ok(())
         });
         let handle = PassHandle::of(PassKind::TakeIn, Arc::new(Stoppable::default()), deaf);
+
         assert!(handle.wound_down(Duration::ZERO).is_none());
+
         let _ = release.send(());
     }
 

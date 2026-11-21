@@ -513,6 +513,7 @@ pub(crate) fn release(client: &Client, id: &Mbid) -> Result<Option<Release>> {
 pub(crate) fn find_release(client: &Client, asked: &ReleaseAsked) -> Result<Vec<ReleaseMatch>> {
     let op = LookupOp::FindRelease;
     let path = release_search(asked);
+
     let found = client
         .json::<ReleaseSearchDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.releases)
@@ -527,6 +528,7 @@ pub(crate) fn find_release(client: &Client, asked: &ReleaseAsked) -> Result<Vec<
 pub(crate) fn releases_by_barcode(client: &Client, barcode: &Barcode) -> Result<Vec<BarcodeMatch>> {
     let op = LookupOp::FindRelease;
     let path = searched("/release/", &barcode_query(barcode), RELEASES_FOUND_AT_MOST);
+
     let found = client
         .json::<ReleaseSearchDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.releases)
@@ -567,6 +569,7 @@ pub(crate) fn find_artist(client: &Client, name: &str) -> Result<Vec<ArtistMatch
             .with("limit", &FOUND_AT_MOST.to_string())
             .finish()
     );
+
     let found = client
         .json::<ArtistSearchDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.artists)
@@ -585,14 +588,17 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid, from: u32) -> Re
     let mut unread: u32 = 0;
     let mut read_to = from;
     let mut offset = from;
+
     loop {
         let path = release_groups_path(artist, offset);
         let Some(page) = client.json::<BrowseDoc>(Host::MusicBrainz, op, &path)? else {
             break;
         };
         let read = u32::try_from(page.release_groups.len()).unwrap_or(u32::MAX);
+
         let next = page.release_group_offset.saturating_add(read);
         let held = page.release_group_count.min(reading_to);
+
         unread = page.release_group_count.saturating_sub(held);
         if offset == from && unread > 0 {
             tracing::debug!(
@@ -624,6 +630,7 @@ pub(crate) fn release_groups_of(client: &Client, artist: &Mbid, from: u32) -> Re
 pub(crate) fn releases_of_group(client: &Client, group: &Mbid) -> Result<Vec<Release>> {
     let op = LookupOp::ReleasesOfGroup;
     let path = pressings_path(group);
+
     let pressings = client
         .json::<PressingsDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.releases)
@@ -715,6 +722,7 @@ pub(crate) fn find_recording(
 ) -> Result<Vec<RecordingMatch>> {
     let op = LookupOp::FindRecording;
     let path = recording_search(asked);
+
     let found = client
         .json::<RecordingSearchDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.recordings)
@@ -741,12 +749,16 @@ fn found_for(
     mut ask: impl FnMut(&str) -> Result<Vec<RecordingMatch>>,
 ) -> Result<Vec<RecordingMatch>> {
     let mut crediting = Vec::new();
+
     if let Some(by) = &asked.by {
         let coded = ask(&songs_by_search(by, Coded::Required))?;
+
         if bears_out(by, &coded) {
             return Ok(coded);
         }
+
         let found = ask(&songs_by_search(by, Coded::Either))?;
+
         if bears_out(by, &found) {
             return Ok(found);
         }
@@ -763,6 +775,7 @@ fn found_for(
         Some(path) => ask(&path)?,
         None => Vec::new(),
     };
+
     if answers_every_word(&coded, words, Spelt::AsTyped) {
         found.extend(coded);
     } else {
@@ -830,9 +843,11 @@ fn songs_coded_search(words: &str, spelt: Spelt) -> Option<String> {
             Spelt::Loosely => loosely(&word),
         })
         .collect();
+
     if words.is_empty() {
         return None;
     }
+
     let terms = words
         .iter()
         .map(|word| format!("+(recording:{word} artist:{word})"))
@@ -878,6 +893,7 @@ fn songs_by_search(by: &ByArtist, coded: Coded) -> String {
         .collect();
     let titled = words_of_a_name(&by.title);
     let quoted = lucene_quoted(&by.title);
+
     let query = match (named.is_empty(), titled.is_empty()) {
         (true, _) => format!("+recording:{quoted}"),
         (false, true) => format!("+artist:({})", named.join(" AND ")),
@@ -907,6 +923,7 @@ pub(crate) fn release_group(client: &Client, id: &Mbid) -> Result<Option<Release
 pub(crate) fn find_release_group(client: &Client, asked: &GroupAsked) -> Result<Vec<GroupMatch>> {
     let op = LookupOp::FindReleaseGroup;
     let path = release_group_search(asked);
+
     let found = client
         .json::<GroupSearchDoc>(Host::MusicBrainz, op, &path)?
         .map(|document| document.release_groups)
@@ -920,6 +937,7 @@ pub(crate) fn find_release_group(client: &Client, asked: &GroupAsked) -> Result<
 
 pub(crate) fn find_albums(client: &Client, words: &str) -> Result<Vec<AlbumMatch>> {
     let mut found = albums_found(client, &albums_credited_search(words))?;
+
     found.extend(albums_found(client, &albums_search(words))?);
 
     Ok(found)
@@ -1019,6 +1037,7 @@ fn searched_in_words(endpoint: &str, title: &str, artist: Option<&str>, limit: u
 
 fn release_query(asked: &ReleaseAsked) -> String {
     let mut query = format!("release:{}", lucene_quoted(&asked.title));
+
     credited_to(
         &mut query,
         asked.artist_mbid.as_ref(),
@@ -1036,6 +1055,7 @@ fn release_query(asked: &ReleaseAsked) -> String {
 
 fn recording_query(asked: &RecordingAsked) -> String {
     let mut query = format!("recording:{}", lucene_quoted(&asked.title));
+
     credited_to(
         &mut query,
         asked.artist_mbid.as_ref(),
@@ -1056,6 +1076,7 @@ fn recording_query(asked: &RecordingAsked) -> String {
 
 fn release_group_query(asked: &GroupAsked) -> String {
     let mut query = format!("releasegroup:{}", lucene_quoted(&asked.title));
+
     credited_to(
         &mut query,
         asked.artist_mbid.as_ref(),
@@ -1158,6 +1179,7 @@ impl ReleaseDoc {
             .into_iter()
             .map(|medium| medium.into_medium(&credited))
             .collect();
+
         media.sort_by_key(|medium| medium.position);
 
         Ok(Release {
@@ -1186,6 +1208,7 @@ impl MediumDoc {
             .into_iter()
             .map(|track| track.into_track(release_credited))
             .collect();
+
         tracks.sort_by_key(|track| track.position);
 
         Medium {
@@ -1501,11 +1524,13 @@ fn aliases(documents: Vec<AliasDoc>, billed: &str) -> Vec<String> {
     let billed = folded(billed);
     let mut known_as: Vec<String> = Vec::new();
     let mut folds: Vec<String> = Vec::new();
+
     for document in documents {
         let Some(name) = present(Some(document.name)) else {
             continue;
         };
         let fold = folded(&name);
+
         if fold == billed || folds.contains(&fold) {
             continue;
         }
@@ -1524,6 +1549,7 @@ fn genres(tags: Vec<TagDoc>) -> Vec<Genre> {
             present(Some(tag.name)).map(|name| Genre { name, weight })
         })
         .collect();
+
     genres.sort_by(|one, other| {
         other
             .weight
@@ -1625,6 +1651,7 @@ mod tests {
         assert_eq!(release.track_count(), 6);
 
         let first = &release.media[0].tracks[0];
+
         assert_eq!(first.position, 1);
         assert_eq!(first.number, "1");
         assert_eq!(first.title, "One of These Days");
@@ -1651,6 +1678,7 @@ mod tests {
             .iter()
             .map(|track| track.position)
             .collect();
+
         assert_eq!(positions, vec![1, 2, 3, 4, 5, 6]);
         assert!(
             release.media[0]
@@ -1744,7 +1772,9 @@ mod tests {
 
         assert_eq!(release.credited_as(), "Matthew Sweet & Susanna Hoffs");
         assert_eq!(release.media[0].position, 1);
+
         let tracks = &release.media[1].tracks;
+
         assert_eq!(tracks[0].number, "A");
         assert_eq!(tracks[0].artist.as_deref(), Some("Susanna Hoffs"));
         assert_eq!(tracks[0].length, Some(Duration::from_secs(1)));
@@ -1838,6 +1868,7 @@ mod tests {
             catalog_number: None,
             wording: Wording::Phrase,
         };
+
         assert_eq!(release_query(&asked), "release:\"Meddle\"");
 
         let asked = ReleaseAsked {
@@ -1846,6 +1877,7 @@ mod tests {
             catalog_number: Some("CDP 7 46034 2".to_owned()),
             ..asked
         };
+
         assert_eq!(
             release_query(&asked),
             "release:\"Meddle\" AND artist:\"Pink \\\"the\\\" Floyd\" AND barcode:\"5099968083755\" AND catno:\"CDP 7 46034 2\""
@@ -1862,6 +1894,7 @@ mod tests {
             catalog_number: None,
             wording: Wording::Phrase,
         };
+
         assert_eq!(
             release_query(&asked),
             "release:\"Meddle\" AND arid:83d91898-7763-47d7-b03b-b92132375c47"
@@ -1878,6 +1911,7 @@ mod tests {
             catalog_number: Some("B0029901-02".to_owned()),
             wording: Wording::Phrase,
         };
+
         assert_eq!(
             release_search(&asked),
             "/release/?query=release%3A%22When%20We%20All%20Fall%20Asleep%2C%20Where%20Do%20We%20Go%3F%20LP%22%20AND%20arid%3A83d91898-7763-47d7-b03b-b92132375c47%20AND%20barcode%3A%22602577427664%22%20AND%20catno%3A%22B0029901-02%22&fmt=json&limit=10"
@@ -1887,6 +1921,7 @@ mod tests {
             wording: Wording::Words,
             ..asked
         };
+
         assert_eq!(
             release_search(&asked),
             "/release/?query=When%20We%20All%20Fall%20Asleep%2C%20Where%20Do%20We%20Go%3F%20LP%20Billie%20Eilish&dismax=true&fmt=json&limit=10"
@@ -1896,6 +1931,7 @@ mod tests {
             artist: None,
             ..asked
         };
+
         assert_eq!(
             release_search(&asked),
             "/release/?query=When%20We%20All%20Fall%20Asleep%2C%20Where%20Do%20We%20Go%3F%20LP&dismax=true&fmt=json&limit=10"
@@ -1927,7 +1963,9 @@ mod tests {
         );
 
         assert_eq!(recording.releases.len(), 25);
+
         let first = &recording.releases[0];
+
         assert_eq!(first.id.as_str(), "09ed5877-bb22-4a26-8ec7-c95e5ee70fd3");
         assert_eq!(first.title, "Meddle");
         assert_eq!(first.date.as_deref(), Some("1971-10-30"));
@@ -1939,6 +1977,7 @@ mod tests {
             .iter()
             .find(|release| release.title == "The Pink Floyd Collection")
             .expect("the box set is one of them");
+
         assert_eq!(boxed.disc, Some(7));
         assert_eq!(boxed.position, Some(1));
 
@@ -1977,6 +2016,7 @@ mod tests {
         assert_eq!(recordings[1].length, Some(Duration::from_millis(356_000)));
 
         let asked = Isrc::new("GBAYE7100389").expect("a well-formed isrc");
+
         assert!(
             recordings
                 .iter()
@@ -2122,6 +2162,7 @@ mod tests {
         asked: &SongsAsked,
     ) -> (Vec<RecordingMatch>, Vec<String>) {
         let mut paths = Vec::new();
+
         let found = found_for(asked, |path| {
             paths.push(path.to_owned());
             Ok(answers
@@ -2139,6 +2180,7 @@ mod tests {
         let words = asked("stand by me");
         let by = words.by.clone().expect("a reading");
         let ben = credited_match(1, "Stand by Me", "Ben E. King");
+
         let answers = vec![
             (
                 songs_by_search(&by, Coded::Required),
@@ -2178,6 +2220,7 @@ mod tests {
         let words = asked("you fo by stella cole");
         let by = words.by.clone().expect("a reading");
         let you_f_o = credited_match(1, "You F.O.", "Stela Cole");
+
         let answers = vec![(songs_by_search(&by, Coded::Required), vec![you_f_o.clone()])];
 
         let (found, paths) = answered_by(answers, &words);
@@ -2191,6 +2234,7 @@ mod tests {
         let words = asked("bohemian rapsody");
         let queen = credited_match(1, "Bohemian Rhapsody", "Queen");
         let loosely = songs_coded_search(&words.typed, Spelt::Loosely).expect("words");
+
         let answers = vec![(loosely.clone(), vec![queen.clone()])];
 
         let (found, paths) = answered_by(answers, &words);
@@ -2200,6 +2244,7 @@ mod tests {
         assert!(paths.iter().all(|path| !path.contains("dismax")));
 
         let (_, paths) = answered_by(Vec::new(), &asked("bohemian rapsody"));
+
         assert!(paths.last().is_some_and(|path| path.contains("dismax")));
     }
 
@@ -2256,6 +2301,7 @@ mod tests {
         let queen = credited_match(1, "Bohemian Rhapsody", "Queen");
         let loosely = songs_coded_search(&words.typed, Spelt::Loosely).expect("words");
         let mut hundred: Vec<RecordingMatch> = covers.collect();
+
         hundred.insert(63, queen.clone());
 
         let (found, paths) = answered_by(vec![(loosely.clone(), hundred.clone())], &words);
@@ -2360,6 +2406,7 @@ mod tests {
             length: None,
             wording: Wording::Phrase,
         };
+
         assert_eq!(recording_query(&asked), "recording:\"One of These Days\"");
 
         let asked = RecordingAsked {
@@ -2368,6 +2415,7 @@ mod tests {
             length: Some(Duration::from_millis(356_000)),
             ..asked
         };
+
         assert_eq!(
             recording_query(&asked),
             "recording:\"One of These Days\" AND artist:\"Pink \\\"the\\\" Floyd\" AND release:\"Meddle\" AND dur:[346000 TO 366000]"
@@ -2377,6 +2425,7 @@ mod tests {
             length: Some(Duration::from_millis(1_000)),
             ..asked
         };
+
         assert!(recording_query(&asked).ends_with("AND dur:[0 TO 11000]"));
 
         let asked = RecordingAsked {
@@ -2385,6 +2434,7 @@ mod tests {
             length: None,
             ..asked
         };
+
         assert_eq!(
             recording_query(&asked),
             "recording:\"One of These Days\" AND arid:83d91898-7763-47d7-b03b-b92132375c47"
@@ -2401,6 +2451,7 @@ mod tests {
             length: None,
             wording: Wording::Phrase,
         };
+
         assert_eq!(
             recording_search(&asked),
             "/recording/?query=recording%3A%22One%20of%20These%20Days%22%20AND%20artist%3A%22Pink%20Floyd%22&fmt=json&limit=5"
@@ -2410,6 +2461,7 @@ mod tests {
             wording: Wording::Words,
             ..asked
         };
+
         assert_eq!(
             recording_search(&asked),
             "/recording/?query=One%20of%20These%20Days%20Pink%20Floyd&dismax=true&fmt=json&limit=5"
@@ -2420,6 +2472,7 @@ mod tests {
             release: Some("Meddle".to_owned()),
             ..asked
         };
+
         assert_eq!(
             recording_search(&asked),
             "/recording/?query=One%20of%20These%20Days%20Meddle&dismax=true&fmt=json&limit=5"
@@ -2429,6 +2482,7 @@ mod tests {
             release: None,
             ..asked
         };
+
         assert_eq!(
             recording_search(&asked),
             "/recording/?query=One%20of%20These%20Days&dismax=true&fmt=json&limit=5"
@@ -2477,7 +2531,9 @@ mod tests {
                 .iter()
                 .all(|release| release.track_count == Some(6))
         );
+
         let first = &group.releases[0];
+
         assert_eq!(first.id.as_str(), "09ed5877-bb22-4a26-8ec7-c95e5ee70fd3");
         assert_eq!(first.title, "Meddle");
         assert_eq!(first.date.as_deref(), Some("1971-10-30"));
@@ -2546,6 +2602,7 @@ mod tests {
             year: None,
             wording: Wording::Phrase,
         };
+
         assert_eq!(release_group_query(&asked), "releasegroup:\"Meddle\"");
 
         let asked = GroupAsked {
@@ -2553,6 +2610,7 @@ mod tests {
             year: Some(1971),
             ..asked
         };
+
         assert_eq!(
             release_group_query(&asked),
             "releasegroup:\"Meddle\" AND artist:\"Pink \\\"the\\\" Floyd\" AND firstreleasedate:1971*"
@@ -2562,6 +2620,7 @@ mod tests {
             artist_mbid: Some(Mbid::new(PINK_FLOYD).expect("a well-formed mbid")),
             ..asked
         };
+
         assert_eq!(
             release_group_query(&asked),
             "releasegroup:\"Meddle\" AND arid:83d91898-7763-47d7-b03b-b92132375c47 AND firstreleasedate:1971*"
@@ -2577,6 +2636,7 @@ mod tests {
             year: Some(2024),
             wording: Wording::Phrase,
         };
+
         assert_eq!(
             release_group_search(&asked),
             "/release-group/?query=releasegroup%3A%22From%20Zero%20%28Deluxe%20Edition%29%22%20AND%20arid%3A83d91898-7763-47d7-b03b-b92132375c47%20AND%20firstreleasedate%3A2024%2A&fmt=json&limit=5"
@@ -2586,6 +2646,7 @@ mod tests {
             wording: Wording::Words,
             ..asked
         };
+
         assert_eq!(
             release_group_search(&asked),
             "/release-group/?query=From%20Zero%20%28Deluxe%20Edition%29%20Linkin%20Park&dismax=true&fmt=json&limit=5"
@@ -2595,6 +2656,7 @@ mod tests {
             artist: None,
             ..asked
         };
+
         assert_eq!(
             release_group_search(&asked),
             "/release-group/?query=From%20Zero%20%28Deluxe%20Edition%29&dismax=true&fmt=json&limit=5"
@@ -2688,7 +2750,9 @@ mod tests {
             .expect("every pressing maps");
 
         assert_eq!(releases.len(), 3);
+
         let first = &releases[0];
+
         assert_eq!(first.title, "The Piper at the Gates of Dawn");
         assert_eq!(first.date.as_deref(), Some("1967-08-05"));
         assert_eq!(
@@ -2697,7 +2761,9 @@ mod tests {
         );
         assert_eq!(first.kind.as_deref(), Some("Album"));
         assert_eq!(first.track_count(), 11);
+
         let opening = &first.media[0].tracks[0];
+
         assert_eq!(opening.title, "Astronomy Domine");
         assert_eq!(
             opening.recording.as_ref().map(Mbid::as_str),
@@ -2720,9 +2786,11 @@ mod tests {
             .into_iter()
             .filter_map(BrowsedGroupDoc::into_artist_release)
             .collect();
+
         assert_eq!(groups.len(), 100);
 
         let first = &groups[0];
+
         assert_eq!(first.mbid.as_str(), "06bc66bb-b9f1-3748-98a9-2acc878a940a");
         assert_eq!(first.title, "Works");
         assert_eq!(first.kind.as_deref(), Some("Album"));
@@ -2770,6 +2838,7 @@ mod tests {
         assert!(profile.genres.iter().all(|genre| genre.weight > 0));
 
         let services: Vec<Service> = profile.links.iter().map(|link| link.service).collect();
+
         for service in [
             Service::Spotify,
             Service::Deezer,
@@ -2786,6 +2855,7 @@ mod tests {
         ] {
             assert!(services.contains(&service), "{service:?} is missing");
         }
+
         assert_eq!(
             resonate_library::portrait_urls(&profile.links).collect::<Vec<&str>>(),
             vec!["https://commons.wikimedia.org/wiki/File:PinkFloyd1973_retouched.jpg"]

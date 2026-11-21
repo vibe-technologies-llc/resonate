@@ -30,6 +30,7 @@ impl Engine {
             return;
         };
         let moved_on = !self.playing || !self.boundaries.is_empty() || self.output.is_none();
+
         if moved_on || nudging.since.elapsed() >= IN_STEP_WITHIN {
             self.nudging = None;
             if let Some(output) = self.output.as_ref() {
@@ -38,9 +39,11 @@ impl Engine {
             self.stepping = Stepping::Alone;
             return;
         }
+
         let Some(output) = self.output.as_ref() else {
             return;
         };
+
         if !output.producer.is_quiet() {
             return;
         }
@@ -67,13 +70,16 @@ impl Engine {
         let Some(following) = self.lockstep.as_ref() else {
             return;
         };
+
         if following.since.elapsed() >= IN_STEP_WITHIN {
             self.step_in_now();
             return;
         }
+
         let Some(output) = self.output.as_ref() else {
             return;
         };
+
         if !output.producer.is_held_in_step() {
             self.step_in_now();
             return;
@@ -81,6 +87,7 @@ impl Engine {
         if output.stream.is_none() || output.producer.drops_pending() {
             return;
         }
+
         let stamped_under_the_hold = output.producer.stamp().filter(|stamp| !stamp.flowing);
         let (Some(stamp), Some(aim)) = (stamped_under_the_hold, following.with.read()) else {
             return;
@@ -89,6 +96,7 @@ impl Engine {
             return;
         };
         let clock = track.clock();
+
         if track.heard_as != aim.row || aim.rate != clock {
             self.step_in_now();
             return;
@@ -97,6 +105,7 @@ impl Engine {
         let sink = output.plan.stream.rate;
         let kept = stamp.pulled.saturating_mul(PULLS_RELEASED_AHEAD_BY);
         let lead = stamp.next.nanos().saturating_sub(stamp.taken.nanos());
+
         let soonest = stamp
             .next
             .max(Moment::from_nanos(
@@ -105,6 +114,7 @@ impl Engine {
             .after(RELEASED_AHEAD_BY)
             .after_frames(kept as f64, sink);
         let behind = aim.frame_at(soonest) - next.get() as f64;
+
         let (release, behind) = if behind < 0.0 {
             (soonest.after_frames(-behind, clock), 0.0)
         } else {
@@ -115,6 +125,7 @@ impl Engine {
 
         if dropped.saturating_add(kept) > held {
             let partly = held.saturating_sub(kept);
+
             if partly > 0 {
                 output.producer.drop_ahead(partly);
             }
@@ -129,6 +140,7 @@ impl Engine {
 
     fn step_in_now(&mut self) {
         let now = Moment::now();
+
         if let Some(output) = self.output.as_ref() {
             output.producer.release_at(now);
         }
@@ -141,8 +153,11 @@ impl Engine {
         if self.transport != TransportState::Playing {
             return None;
         }
+
         let output = self.output.as_ref()?;
+
         output.stream.as_ref()?;
+
         let stamp = output.producer.stamp().filter(|stamp| stamp.flowing)?;
         let (track, frame) = self.frame_of_the_ring(output, stamp.read)?;
         Some(HeardAt {
@@ -159,15 +174,19 @@ impl Engine {
         ring_frame: u64,
     ) -> Option<(&'a Track, Frames)> {
         let rate = output.plan.stream.rate;
+
         if let Some(boundary) = self.boundaries.front() {
             let leaving = &boundary.leaving;
             let behind = boundary.at.checked_sub(ring_frame)?;
+
             let on_the_clock = Frames(behind).rescaled(rate, leaving.clock());
+
             return Some((
                 leaving,
                 leaving.decoding.position().saturating_sub(on_the_clock),
             ));
         }
+
         let track = self.track.as_ref()?;
         let decoded = track
             .decoding
@@ -180,6 +199,7 @@ impl Engine {
         let behind = written
             .saturating_sub(ring_frame)
             .saturating_add(output.chain.frames_it_holds() as u64);
+
         let on_the_clock = Frames(behind).rescaled(rate, track.clock());
         Some((track, decoded.saturating_sub(on_the_clock)))
     }

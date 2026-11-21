@@ -73,9 +73,11 @@ pub(crate) fn field(
             window,
             cx,
         );
+
         field.hold(online.spotify_client_id.clone(), cx);
         field
     });
+
     SettingsFields::says_when_entered(&field, Entered::SpotifyClient, cx);
     field
 }
@@ -90,6 +92,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .spotify_client
@@ -99,11 +102,13 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| {
             global.online.spotify_client_id = given.clone();
         });
+
         let said = if given.is_empty() {
             words::settings_spotify::no_spotify_app_is_named_no()
         } else {
             words::settings_spotify::kept_for_signing_in_to_spotify()
         };
+
         self.store(&Setting::SpotifyClientId(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);
@@ -118,6 +123,7 @@ impl RootView {
         let field = self.settings_fields.read(cx).spotify_client.read(cx);
         let typed_apart = field.is_focused(window)
             && field.text().trim() != cx.global::<ResonateApp>().online.spotify_client_id;
+
         if typed_apart {
             self.spotify_client_given(window, cx);
         }
@@ -145,6 +151,7 @@ impl RootView {
             client_id,
             refresh_token,
         } = signed_in;
+
         self.settings_fields
             .read(cx)
             .spotify_client
@@ -182,6 +189,7 @@ impl RootView {
             return;
         };
         let client_id = app.online.spotify_client_id.trim().to_owned();
+
         if client_id.is_empty() {
             self.report(
                 Notice::Trouble(words::settings_spotify::no_client().to_owned()),
@@ -196,7 +204,9 @@ impl RootView {
             .spotify
             .stopped
             .store(true, Ordering::Relaxed);
+
         let stopped = Arc::new(AtomicBool::new(false));
+
         self.settings_pane.update(cx, |pane, _| {
             pane.accounts.spotify.stopped = Arc::clone(&stopped);
             pane.accounts.spotify.shown = SpotifySigning::Asking;
@@ -213,6 +223,7 @@ impl RootView {
                 Err(failure) => {
                     let told = this.update(cx, |this, cx| this.spotify_answered(Err(failure), cx));
                     let _ = told;
+
                     return;
                 }
             };
@@ -224,9 +235,11 @@ impl RootView {
                 cx.open_url(&waiting);
                 cx.notify();
             });
+
             if shown.is_err() {
                 return;
             }
+
             let answered = cx
                 .background_executor()
                 .spawn(async move { approval.approved(&move || stopped.load(Ordering::Relaxed)) })
@@ -234,6 +247,7 @@ impl RootView {
             let told = this.update(cx, |this, cx| this.spotify_answered(answered, cx));
             let _ = told;
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts.spotify.task = task);
     }
@@ -284,7 +298,9 @@ impl RootView {
             global.online.spotify_refresh_token = String::new();
         });
         self.store(&Setting::SpotifyRefreshToken(String::new()), cx);
+
         let library = self.library.read(cx).catalog();
+
         cx.spawn(async move |this, cx| {
             let let_go = cx
                 .background_executor()
@@ -315,6 +331,7 @@ impl RootView {
         if self.settings_pane.read(cx).accounts.spotify.reading {
             return;
         }
+
         let Some((library, reference)) = self.library.read(cx).follows_links() else {
             self.report(
                 Notice::Trouble(words::settings_spotify::offline().to_owned()),
@@ -322,6 +339,7 @@ impl RootView {
             );
             return;
         };
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts.spotify.reading = true);
         cx.notify();
@@ -379,6 +397,7 @@ impl RootView {
                 cx,
             ),
         ));
+
         if signed_in && client_given {
             return body
                 .child(

@@ -47,6 +47,7 @@ fn mark(library: &Library, wanted: &FavouritesArgs) -> Result<()> {
     for name in names {
         let chosen = chosen_by(library, kind, name, wanted.by.as_deref())?;
         let changed = library.favour(chosen.what, favourite)?;
+
         said!("{}", told_of(favourite, changed, &chosen.shown));
     }
     Ok(())
@@ -222,6 +223,7 @@ fn tracks(held: &[Track]) -> Option<Table> {
     if held.is_empty() {
         return None;
     }
+
     let mut table = Table::new(vec![
         columns::title(),
         columns::artist(),
@@ -229,6 +231,7 @@ fn tracks(held: &[Track]) -> Option<Table> {
         columns::plays(),
         columns::favourited(),
     ]);
+
     for track in held {
         table.push(vec![
             track.title.clone(),
@@ -247,6 +250,7 @@ fn albums(held: &[Album]) -> Option<Table> {
     if held.is_empty() {
         return None;
     }
+
     let mut table = Table::new(vec![
         columns::album(),
         columns::artist(),
@@ -254,6 +258,7 @@ fn albums(held: &[Album]) -> Option<Table> {
         columns::tracks(),
         columns::favourited(),
     ]);
+
     for album in held {
         table.push(vec![
             album.title.clone(),
@@ -270,12 +275,14 @@ fn artists(held: &[Artist]) -> Option<Table> {
     if held.is_empty() {
         return None;
     }
+
     let mut table = Table::new(vec![
         columns::artist(),
         columns::albums(),
         columns::tracks(),
         columns::favourited(),
     ]);
+
     for artist in held {
         table.push(vec![
             artist.name.clone(),
@@ -314,6 +321,7 @@ mod tests {
 
     fn library_of_two_songs_sharing_a_title() -> (PathBuf, Library) {
         let root = scratch("favourites");
+
         for (file, artist, album) in [("a.wav", "Ada", "First"), ("b.wav", "Ben", "Second")] {
             fs::write(
                 root.join(file),
@@ -321,6 +329,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let library = scanned(&root);
         (root, library)
     }
@@ -347,13 +356,17 @@ mod tests {
             &asked(&["--tracks", "--add", "intro", "--by", "ben"]),
         )
         .expect("a mark");
+
         let marked = favourite_titles(&library);
+
         run(
             &library,
             &asked(&["--tracks", "--remove", "Intro", "--by", "Ben"]),
         )
         .expect("a removal");
+
         let removed = favourite_titles(&library);
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert_eq!(marked, ["Intro by Ben"]);
@@ -370,6 +383,7 @@ mod tests {
             &asked(&["--tracks", "--add", "Intro", "--by", "Cleo"]),
         );
         let held = favourite_titles(&library);
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert!(matches!(several, Err(Error::SeveralNamed { held: 2, .. })));
@@ -389,6 +403,7 @@ mod tests {
 
         run(&library, &asked(&["--albums", "--add", "Second"])).expect("an album");
         run(&library, &asked(&["--artists", "--add", "Ada"])).expect("an artist");
+
         let without_a_kind = run(&library, &asked(&["--add", "Second"]));
         let a_stranger = run(&library, &asked(&["--artists", "--add", "Cleo"]));
         let albums = library
@@ -397,6 +412,7 @@ mod tests {
         let artists = library
             .favourite_artists(&ArtistQuery::default())
             .expect("the artists");
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert_eq!(albums.len(), 1);

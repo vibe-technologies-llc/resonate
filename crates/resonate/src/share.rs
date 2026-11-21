@@ -14,6 +14,7 @@ pub fn print(
         Some(path) => (MediaLocation::local(from_here(path)), None),
         None => playing()?,
     };
+
     let held = held(library, &location, span)?;
     let shared = match reference {
         Some(reference) => held.streamed_where_asked(reference),

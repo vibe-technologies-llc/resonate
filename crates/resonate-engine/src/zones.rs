@@ -19,7 +19,7 @@ use crate::{
 pub const HANDED_OVER_WITHIN: Duration = Duration::from_secs(10);
 const LOOKED_AT_EVERY: Duration = Duration::from_millis(2);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Within {
     TheZone,
     EveryZone,
@@ -136,6 +136,7 @@ impl Zones {
             opens: Arc::clone(&opens),
             revision: AtomicU64::new(0),
         });
+
         opens.opened(&zones, &first);
         zones
     }
@@ -195,8 +196,10 @@ impl Zones {
             name: opening.name.clone(),
             player: self.opens.open(opening, &self.first().player)?,
         };
+
         {
             let mut held = self.held.write();
+
             held.push(zone.clone());
             held.sort_by_key(|zone| zone.id);
         }
@@ -210,14 +213,17 @@ impl Zones {
         if id.is_first() {
             return Err(Error::FirstZoneStays);
         }
+
         let zone = {
             let mut held = self.held.write();
+
             let at = held
                 .iter()
                 .position(|zone| zone.id == id)
                 .ok_or(Error::NoSuchZone { zone: id })?;
             held.remove(at)
         };
+
         self.moved();
 
         if let Err(error) = zone.player.send(Command::Stop) {
@@ -230,10 +236,12 @@ impl Zones {
     pub fn rename(&self, id: ZoneId, name: ZoneName) -> Result<()> {
         {
             let mut held = self.held.write();
+
             let zone = held
                 .iter_mut()
                 .find(|zone| zone.id == id)
                 .ok_or(Error::NoSuchZone { zone: id })?;
+
             zone.name = name;
         }
         self.moved();
@@ -242,6 +250,7 @@ impl Zones {
 
     pub fn send(&self, id: ZoneId, command: Command) -> Result<()> {
         let zone = self.zone(id).ok_or(Error::NoSuchZone { zone: id })?;
+
         if let Command::SetSink(sink) = &command
             && let Some(held) = self.holder_of(id, sink.as_ref())
         {
@@ -275,16 +284,20 @@ impl Zones {
         if from == to {
             return Err(Error::HandedToItself { zone: from });
         }
+
         let outgoing = self.zone(from).ok_or(Error::NoSuchZone { zone: from })?;
         let incoming = self.zone(to).ok_or(Error::NoSuchZone { zone: to })?;
         let state = outgoing.player.state();
         let queued = outgoing.player.queued();
+
         if queued.rows.is_empty() {
             return Err(Error::NothingToHandOver { zone: from });
         }
+
         let sounding = means_to_sound(&state);
 
         let wanted = incoming.player.output_settings().sink.clone();
+
         if let Some(held) = self.holder_of(to, wanted.as_ref())
             && (held.by != from || sounding)
         {
@@ -306,10 +319,12 @@ impl Zones {
             }
         };
         let following = Command::KeepInStepWith(outgoing.player.heard_clock());
+
         if sounding && let Err(error) = self.send(to, following) {
             self.put_back(to, before, None);
             return Err(error);
         }
+
         let played = match sounding.then(|| incoming.player.request(Command::Play)) {
             Some(Err(error)) => {
                 self.put_back(to, before, None);
@@ -323,6 +338,7 @@ impl Zones {
         let revision = queued.revision;
         let last = queued.rows.len() - 1;
         let kept = before.clone();
+
         let waiting = thread::Builder::new()
             .name("resonate-handover".to_owned())
             .spawn(move || {
@@ -332,6 +348,7 @@ impl Zones {
                     before: kept,
                 };
                 let landed = zones.let_the_outgoing_go(from, to, handed, revision, last);
+
                 if let Err(error) = &landed {
                     tracing::warn!(%error, %from, %to, "playback handed over did not land");
                 }
@@ -372,6 +389,7 @@ impl Zones {
             (Ok(()), Some(played)) => self.started(to, played),
             (Ok(()), None) => Ok(()),
         };
+
         if let Err(error) = landed {
             self.put_back(to, before, installed);
             return Err(error);
@@ -391,6 +409,7 @@ impl Zones {
 
     fn wait_until_in_step(&self, id: ZoneId) -> Result<()> {
         let deadline = Instant::now() + HANDED_OVER_WITHIN;
+
         while Instant::now() < deadline {
             let zone = self.zone(id).ok_or(Error::NoSuchZone { zone: id })?;
             match zone.player.stepping() {
@@ -398,6 +417,7 @@ impl Zones {
                 Stepping::Alone => return Ok(()),
                 Stepping::Joined(at) => {
                     let faded_in = at.after(FADED_OVER);
+
                     while Moment::now() < faded_in && Instant::now() < deadline {
                         thread::sleep(LOOKED_AT_EVERY);
                     }
@@ -426,8 +446,10 @@ impl Zones {
 
     fn heard_from(&self, id: ZoneId) -> Result<bool> {
         let deadline = Instant::now() + HANDED_OVER_WITHIN;
+
         while Instant::now() < deadline {
             let zone = self.zone(id).ok_or(Error::NoSuchZone { zone: id })?;
+
             if sounds(&zone.player.state()) {
                 return Ok(true);
             }
@@ -453,9 +475,11 @@ impl Zones {
 
     pub fn holder_of(&self, asking: ZoneId, sink: Option<&NodeName>) -> Option<Held> {
         let held = self.holding(asking);
+
         if held.is_empty() {
             return None;
         }
+
         let surveyed = self.zone(asking)?.player.sinks();
         let wanted = surveyed
             .iter()

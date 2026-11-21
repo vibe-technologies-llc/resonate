@@ -19,6 +19,7 @@ impl Engine {
         if !self.playing || self.opening.is_some() || self.past_the_boundary.is_some() {
             return;
         }
+
         let (Some(track), Some(_)) = (self.track.as_ref(), self.output.as_ref()) else {
             return;
         };
@@ -29,13 +30,16 @@ impl Engine {
                     .to_duration(track.clock())
                     <= OPENED_AHEAD_BY
             });
+
         if !near {
             return;
         }
+
         let Some(next) = self.queue.follows_naturally_after(self.boundaries.len()) else {
             self.ahead = None;
             return;
         };
+
         if self
             .ahead
             .as_ref()
@@ -48,10 +52,12 @@ impl Engine {
 
     pub(super) fn follow_the_change(&mut self) {
         self.fill_owed = true;
+
         let kept = self.plan_wanted_now().filter(|wanted| {
             self.keeps_its_stream_for(wanted)
                 && self.the_ring_could_ever_take_the_chains_tail(wanted)
         });
+
         if let Some(wanted) = kept {
             if let Err(error) = self.swap_chain(wanted) {
                 self.fail(error);
@@ -62,6 +68,7 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return;
         };
+
         track.at_a_change = true;
         if output.stream.is_none() && output.buffered() == 0 {
             if let Err(error) = self.reopen_at_the_change() {
@@ -125,6 +132,7 @@ impl Engine {
 
             if output.plan.is_transparent() && output.arms.is_none() {
                 let written = output.producer.write_from(&track.decoded, track.decoded_at);
+
                 if written == 0 {
                     return Ok(Filled::AsFarAsItGoes);
                 }
@@ -158,13 +166,16 @@ impl Engine {
         let channels = track.source().channel_count().get() as usize;
         let frames_in = track.undecoded().min(CHAIN_BLOCK);
         let start = track.decoded_at.saturating_mul(channels);
+
         let samples = frames_in.saturating_mul(channels);
 
         let Some(room) = output.widened.get_mut(..samples) else {
             return false;
         };
         let widened = track.decoded.data().widen_into(start, room);
+
         output.level_the_arms(widened);
+
         let Some(input) = output.widened.get(..widened) else {
             return false;
         };
@@ -172,6 +183,7 @@ impl Engine {
         let count = output
             .chain
             .process_recalled(input, &mut output.carrier, &mut output.recall);
+
         output.render_the_other_arm(
             count.frames_out,
             count.frames_in.min(frames_in),
@@ -182,7 +194,9 @@ impl Engine {
             .decoded_at
             .saturating_add(count.frames_in.min(frames_in));
         output.stage(count.frames_out);
+
         let written = output.producer.write(&output.staged);
+
         if let Some(tapping) = output.tapping.as_mut() {
             tapping.rendered_at(output.producer.rendering());
             tapping.record(&output.staged, 0, written);
@@ -196,6 +210,7 @@ impl Engine {
             output.end();
             return;
         }
+
         let frames = match output
             .chain
             .flush_recalled(&mut output.carrier, &mut output.recall)
@@ -219,10 +234,12 @@ impl Engine {
             return;
         };
         let laid = output.producer.write_from(&output.staged, written);
+
         if let Some(tapping) = output.tapping.as_mut() {
             tapping.rendered_at(output.producer.rendering());
             tapping.record(&output.staged, written, laid);
         }
+
         let written = written.saturating_add(laid);
 
         if written >= output.staged.frames() {
@@ -266,9 +283,11 @@ impl Engine {
             return;
         }
         self.let_go_of_a_stream_nothing_will_take();
+
         let Some(output) = self.output.as_ref() else {
             return;
         };
+
         if output.stream.is_some() || !output.primed() || self.retiring.is_some() {
             return;
         }
@@ -296,10 +315,13 @@ impl Engine {
         else {
             return;
         };
+
         if self.playing {
             self.wake_the_link();
         }
+
         let kept = self.kept.take();
+
         if let Some(output) = self.output.as_mut() {
             output.handed = kept.as_ref().map(|kept| kept.handed);
         }
@@ -316,6 +338,7 @@ impl Engine {
         };
         if let Some(asked) = refused {
             let (made, opened) = asked.answered_by(self.opener.as_ref());
+
             self.land_the_stream(made, opened);
         }
     }
@@ -334,6 +357,7 @@ impl Engine {
             }
             (Err(error), true) => {
                 let heard = self.heard_position();
+
                 self.output = None;
                 self.unbound.get_or_insert(heard);
                 self.fail(error.into());
@@ -352,6 +376,7 @@ impl Engine {
                 false
             }
         };
+
         if let Some(output) = self.output.as_mut() {
             output.stream = Some(stream);
             output.active = active;

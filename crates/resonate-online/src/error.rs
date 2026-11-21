@@ -6,7 +6,7 @@ use resonate_library::LookupOp;
 use resonate_lyrics::LyricOp;
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Host {
     MusicBrainz,
     CoverArtArchive,
@@ -29,7 +29,7 @@ pub enum Host {
     SoundCloud,
     SoundCloudPictures,
     SongLink,
-    Catbox,
+    NullPointer,
     ListenBrainz,
     LastFm,
     Youtube,
@@ -68,7 +68,7 @@ impl Host {
             Self::SpotifyApi => "https://api.spotify.com/v1",
             Self::SoundCloud => "https://soundcloud.com",
             Self::SoundCloudPictures => "https://i1.sndcdn.com",
-            Self::Catbox => "https://catbox.moe",
+            Self::NullPointer => "https://0x0.st",
             Self::SongLink => "https://song.link",
             Self::ListenBrainz => "https://api.listenbrainz.org",
             Self::LastFm => "https://ws.audioscrobbler.com/2.0/",
@@ -284,6 +284,7 @@ mod tests {
             op: LookupOp::Lyrics,
             status: 429,
         };
+
         assert!(matches!(
             resonate_library::Error::from(refused),
             resonate_library::Error::Refused {
@@ -297,6 +298,7 @@ mod tests {
             op: LookupOp::Lyrics,
             source: io::Error::from(io::ErrorKind::TimedOut),
         };
+
         assert!(matches!(
             unreachable.into_lyric_error(provider.clone(), LyricOp::Fetch),
             resonate_lyrics::Error::Unreachable { cause, .. } if cause.kind() == io::ErrorKind::TimedOut
@@ -307,6 +309,7 @@ mod tests {
             op: LookupOp::Lyrics,
             status: 429,
         };
+
         assert!(matches!(
             refused.into_lyric_error(provider.clone(), LyricOp::Fetch),
             resonate_lyrics::Error::Refused { status: 429, .. }
@@ -317,6 +320,7 @@ mod tests {
             op: LookupOp::Correction,
             status: 429,
         };
+
         assert!(matches!(
             refused.into_eq_error(provider.clone(), EqOp::Index),
             resonate_eq::Error::Refused {
@@ -331,6 +335,7 @@ mod tests {
             op: LookupOp::Lyrics,
             limit: 1,
         };
+
         assert!(matches!(
             too_large.into_lyric_error(provider, LyricOp::Search),
             resonate_lyrics::Error::Unreadable {

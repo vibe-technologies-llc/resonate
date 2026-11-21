@@ -43,6 +43,7 @@ impl MobilePlayer {
     ) -> Result<HeardAnswer> {
         refuse_a_long_clip(samples.len())?;
         self.require_online()?;
+
         let clip = Clip {
             rate: SampleRate::new(rate)?,
             channels: HEARD_IN_MONO,

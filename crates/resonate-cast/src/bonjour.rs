@@ -27,12 +27,14 @@ impl Record<'_> {
                     .chars()
                     .all(|letter| letter.is_ascii_alphanumeric() || letter == '-')
         })?;
+
         if let Some(capabilities) = self.capabilities
             && let Ok(capabilities) = capabilities.trim().parse::<u64>()
             && capabilities & AUDIO_OUT == 0
         {
             return None;
         }
+
         let ip = addresses
             .iter()
             .find(|ip| ip.is_ipv4())
@@ -57,6 +59,7 @@ pub(crate) fn found_in(resolved: &ResolvedService) -> Option<Found> {
         .iter()
         .map(ScopedIp::to_ip_addr)
         .collect();
+
     addresses.sort();
     Record {
         id: resolved.get_property_val_str("id"),

@@ -38,6 +38,7 @@ pub fn append_frames<'a>(
 
     for bundle in bundles {
         let mut sealed = Vec::new();
+
         seal(bundle, &mut sealed)?;
         if !frame.takes(&sealed) {
             frames.push(std::mem::take(&mut frame));
@@ -101,6 +102,7 @@ pub fn compaction_answered(
 pub fn owed_sent(owed: &mut Vec<(i64, Vec<SharedOp>)>, sent: usize) {
     let mut left = sent;
     let mut whole = 0;
+
     for (_, ops) in owed.iter_mut() {
         if ops.len() > left {
             ops.drain(..left);
@@ -202,6 +204,7 @@ mod tests {
             .map(|nanos| renamed(i64::try_from(nanos).expect("a small stamp")))
             .collect::<Vec<_>>();
         let mut in_parts = InParts::default();
+
         in_parts.asked(
             700,
             600,
@@ -285,7 +288,9 @@ mod tests {
         ];
 
         owed_sent(&mut owed, 3);
+
         let after_three = owed.clone();
+
         owed_sent(&mut owed, 3);
 
         assert_eq!(

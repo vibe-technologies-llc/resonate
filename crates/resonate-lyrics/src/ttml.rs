@@ -32,6 +32,7 @@ pub fn read_ttml(source: SourceId, text: &str) -> Result<Lyricsfile, Unread> {
     if text.len() > LARGEST_LYRICSFILE {
         return Err(Unread::TooLarge);
     }
+
     let options = ParsingOptions {
         allow_dtd: false,
         nodes_limit: MOST_NODES,
@@ -42,6 +43,7 @@ pub fn read_ttml(source: SourceId, text: &str) -> Result<Lyricsfile, Unread> {
         Unread::NotADocument
     })?;
     let root = document.root_element();
+
     if !root.has_tag_name((TTML, "tt")) {
         return Err(Unread::NotADocument);
     }
@@ -67,13 +69,16 @@ pub fn read_ttml(source: SourceId, text: &str) -> Result<Lyricsfile, Unread> {
         .descendants()
         .filter(|node| node.has_tag_name((TTML, "p")))
         .collect();
+
     if paragraphs.len() > MOST_LINES {
         return Err(Unread::TooMany);
     }
+
     let lines: Vec<Paragraph> = paragraphs
         .into_iter()
         .map(|paragraph| Paragraph::of(paragraph, &singers))
         .collect();
+
     if lines.iter().map(|line| line.words.len()).sum::<usize>() > MOST_WORDS {
         return Err(Unread::TooMany);
     }
@@ -155,6 +160,7 @@ impl Paragraph {
             lead: String::new(),
             words: Vec::new(),
         };
+
         read.take_children_of(paragraph);
         if let Some(last) = read.words.last_mut() {
             last.text.truncate(last.text.trim_end().len());
@@ -176,6 +182,7 @@ impl Paragraph {
             match child.attribute("begin").and_then(moment) {
                 Some(at) if child.has_tag_name((TTML, "span")) => {
                     let mut word = SungWord::sung(at, String::new());
+
                     spaced(&mut word.text, &spoken_within(child));
                     if let Some(until) = child.attribute("end").and_then(moment) {
                         word = word.ending(until);
@@ -200,6 +207,7 @@ impl Paragraph {
             LyricLine::sung(at, self.lead)
         } else {
             let mut words = self.words;
+
             if let Some(first) = words.first_mut()
                 && !self.lead.is_empty()
             {
@@ -219,6 +227,7 @@ impl Paragraph {
         if self.words.is_empty() {
             return self.lead;
         }
+
         let words: String = self.words.into_iter().map(|word| word.text).collect();
         if self.lead.is_empty() {
             words
@@ -234,6 +243,7 @@ fn is_beside_the_words(node: Node<'_, '_>) -> bool {
 
 fn spoken_within(node: Node<'_, '_>) -> String {
     let mut text = String::new();
+
     for part in node.descendants().filter(|part| part.is_text()) {
         let aside = part
             .ancestors()
@@ -262,6 +272,7 @@ fn moment(value: &str) -> Option<Duration> {
     let value = value.trim();
     let value = value.strip_suffix('s').unwrap_or(value);
     let mut parts = value.rsplit(':');
+
     let seconds = parts.next()?;
     let minutes = match parts.next() {
         Some(minutes) => whole(minutes)?,
@@ -271,9 +282,11 @@ fn moment(value: &str) -> Option<Duration> {
         Some(hours) => whole(hours)?,
         None => 0,
     };
+
     if parts.next().is_some() {
         return None;
     }
+
     let (whole_seconds, fraction) = seconds.split_once('.').unwrap_or((seconds, ""));
 
     let total = hours
@@ -297,6 +310,7 @@ fn millis(fraction: &str) -> Option<u64> {
     if !fraction.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
+
     let kept: String = fraction
         .chars()
         .chain(std::iter::repeat('0'))
@@ -345,6 +359,7 @@ mod tests {
     #[test]
     fn a_word_timed_ttml_is_read_word_by_word_with_each_line_ending_where_it_says() {
         let read = read_ttml(source(), WORDED).expect("the document reads");
+
         assert!(read.says_more_than_its_lines);
         assert_eq!(
             read.declared,
@@ -352,8 +367,11 @@ mod tests {
         );
 
         let lyrics = read.lyrics.expect("the document holds lines");
+
         assert_eq!(lyrics.detail(), Detail::Words);
+
         let line = &lyrics.lines()[0];
+
         assert_eq!(line.text, "I used to rule the world");
         assert_eq!(
             texts(line),
@@ -371,18 +389,22 @@ mod tests {
 
         assert_eq!(lyrics.lines()[0].text, "Ooh, ooh");
         assert_eq!(lyrics.lines()[0].voice, Voice::Two);
+
         let together = lyrics
             .lines()
             .iter()
             .find(|line| line.text == "'Cause you already know what you mean to me")
             .expect("a line sung together");
+
         assert_eq!(together.voice, Voice::One);
         assert!(lyrics.lines().iter().any(|line| line.voice == Voice::One));
+
         let goodbye = lyrics
             .lines()
             .iter()
             .find(|line| line.text.ends_with("say goodbye"))
             .expect("a line with a word sung in two syllables");
+
         assert!(texts(goodbye).ends_with(&["say ", "good", "bye"]));
     }
 
@@ -394,6 +416,7 @@ mod tests {
                 <p begin="00:03.000">All that you see</p>
             </div></body></tt>"#,
         );
+
         assert_eq!(lined.detail(), Detail::Lines);
         assert_eq!(lined.lines()[0].text, "All that you touch");
         assert_eq!(lined.lines()[0].until, Some(Duration::from_millis(2_500)));
@@ -404,8 +427,11 @@ mod tests {
             r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div><p>All that you touch</p><p>All that you see</p></div></body></tt>"#,
         )
         .expect("the document reads");
+
         assert!(!untimed.says_more_than_its_lines);
+
         let untimed = untimed.lyrics.expect("the words are there");
+
         assert_eq!(untimed.timing(), Timing::Unsynced);
         assert_eq!(untimed.lines()[1].text, "All that you see");
     }
@@ -446,6 +472,7 @@ mod tests {
             "version: '1.0'\nlines:\n  - {text: 'Stay', start_ms: 4200}\n",
         )
         .expect("the lyricsfile reads");
+
         assert_eq!(lyricsfile.lyrics.expect("a line").lines()[0].text, "Stay");
         assert!(read_document(source(), DUET).is_ok());
     }

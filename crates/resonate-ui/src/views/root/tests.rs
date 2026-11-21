@@ -56,11 +56,14 @@ fn a_hint_is_dropped_only_where_what_is_under_a_still_pointer_moved() {
 #[test]
 fn a_list_whose_rows_grew_lands_on_the_row_it_was_left_at_and_as_far_into_it() {
     let left_at = LeftAt::read_off(px(-1_037.0), 36.0);
+
     assert_eq!(left_at.row, 28);
     assert!((left_at.into_the_row - 29.0 / 36.0).abs() < 1e-5);
 
     assert_eq!(left_at.offset_at(36.0), px(-1_037.0));
+
     let grown = f32::from(left_at.offset_at(40.0));
+
     assert!((grown - -(40.0 * 28.0 + 29.0 / 36.0 * 40.0)).abs() < 1e-3);
 }
 
@@ -253,6 +256,7 @@ fn the_pane_keys_walk_the_sidebar_and_wrap_at_either_end() {
     let walked = listed.iter().fold(first, |pane, _| {
         stepped_pane(pane, Step::Below, EVERY_TAB, A_SERVICE)
     });
+
     assert_eq!(
         walked, first,
         "walking the whole sidebar did not come back to where it started"
@@ -311,6 +315,7 @@ fn every_pane_is_listed_once_and_read_back_from_the_name_it_is_stored_under() {
     {
         assert!(Pane::ALL.contains(&pane));
     }
+
     assert_eq!(Pane::ALL.len(), Pane::BROWSE.len() + 2);
 }
 
@@ -391,6 +396,7 @@ mod driven {
     fn queue_open(cx: &mut TestAppContext, folder: &Folder, names: &[&str]) -> Driven {
         let files = queued(folder, names);
         let mut driven = Driven::opened_in(cx, catalog(), folder);
+
         driven.play(&files);
         driven.click("queue");
         driven.focus_the_window();
@@ -404,8 +410,10 @@ mod driven {
     impl Driven {
         fn focus_the_window(&mut self) {
             let root = self.root.clone();
+
             self.cx.update(|window, cx| {
                 let focus = root.read(cx).focus.clone();
+
                 window.focus(&focus, cx);
             });
             self.settle();
@@ -413,10 +421,12 @@ mod driven {
 
         fn lapse_the_type_ahead(&mut self) {
             let root = self.root.clone();
+
             self.cx.update(|_, cx| {
                 root.update(cx, |root, cx| root.stop_typing(cx));
             });
             self.settle();
+
             assert!(self.read(|root, _| root.typing.ahead.typed().is_none()));
         }
     }
@@ -427,6 +437,7 @@ mod driven {
     ) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+
         let before = driven.queue();
 
         driven.cx.simulate_keystrokes("end shift-up delete");
@@ -448,6 +459,7 @@ mod driven {
 
     fn edited_behind_the_window(driven: &mut Driven, command: resonate_engine::Command) {
         let before = driven.read(|root, cx| root.player.read(cx).queued().revision);
+
         driven.read(|root, cx| {
             root.player
                 .read(cx)
@@ -471,6 +483,7 @@ mod driven {
     ) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+
         let before = driven.queue();
 
         driven.cx.simulate_keystrokes("end up");
@@ -495,10 +508,12 @@ mod driven {
     ) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+
         let before = driven.queue();
         let landing = driven.read(|root, cx| {
             let queued = root.player.read(cx).queue();
             let mut landing = resonate_engine::QueueItem::clone(&queued.to_vec()[3]);
+
             landing.id = resonate_engine::unclaimed_id(queued.iter().map(AsRef::as_ref));
             landing
         });
@@ -531,6 +546,7 @@ mod driven {
     fn a_queue_row_raised_twice_by_its_keys_stays_reached_as_it_climbs(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three", "four"]);
+
         let before = driven.queue();
 
         driven.cx.simulate_keystrokes("end");
@@ -607,12 +623,15 @@ mod driven {
     fn the_playlist_picker_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+
         driven.cx.simulate_keystrokes("down down");
+
         let root = driven.root.clone();
 
         driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 let rows: Arc<[Cut]> = Arc::from(Vec::new());
+
                 root.adding = Some(Held::of(rows));
                 window.focus(&root.focus, cx);
                 cx.notify();
@@ -622,6 +641,7 @@ mod driven {
         nothing_behind_the_sheet_answers(&mut driven, 3);
 
         driven.cx.simulate_keystrokes("escape");
+
         assert!(driven.read(|root, _| root.adding.is_none()));
     }
 
@@ -629,7 +649,9 @@ mod driven {
     fn the_magnified_cover_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+
         driven.cx.simulate_keystrokes("down down");
+
         let location = driven.read(|root, cx| root.player.read(cx).queue()[0].location.clone());
         let root = driven.root.clone();
 
@@ -647,7 +669,9 @@ mod driven {
     fn the_listen_sheet_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+
         driven.cx.simulate_keystrokes("down down");
+
         let root = driven.root.clone();
 
         driven.cx.update(|window, cx| {
@@ -669,7 +693,9 @@ mod driven {
     fn the_delete_sheet_holds_the_keys_back_from_the_queue_behind(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
+
         driven.cx.simulate_keystrokes("down down");
+
         let track = driven.queue()[0];
         let root = driven.root.clone();
 
@@ -694,6 +720,7 @@ mod driven {
         );
 
         driven.cx.simulate_keystrokes("escape");
+
         assert!(driven.read(|root, _| root.deleting.is_none()));
     }
 
@@ -752,6 +779,7 @@ mod driven {
     fn tab_stays_inside_the_delete_sheet_in_both_directions(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
+
         asking_to_delete(&mut driven);
 
         for keys in [
@@ -785,6 +813,7 @@ mod driven {
     ) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
+
         let root = driven.root.clone();
         let opener = driven.cx.update(|window, cx| {
             let opener = root
@@ -792,12 +821,15 @@ mod driven {
                 .standing_controls
                 .handle(Pane::Albums.label())
                 .expect("the Albums tab is in the ring");
+
             window.focus(&opener, cx);
             opener
         });
+
         driven.settle();
 
         asking_to_delete(&mut driven);
+
         assert!(focused_is(&mut driven, "keep-the-track"));
 
         driven.cx.simulate_keystrokes("escape");
@@ -835,6 +867,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         *joining.at.lock() = Some(crate::together::PartySeen {
             zone: resonate_core::ZoneId::FIRST,
             hosting: false,
@@ -898,10 +931,12 @@ mod driven {
     ) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one"]);
+
         let root = driven.root.clone();
         let joining = Arc::new(party_offer::joined::Joining::default());
         let second = resonate_core::ZoneId::new(2).expect("a second zone");
         let third = resonate_core::ZoneId::new(3).expect("a third zone");
+
         together_over(&mut driven, joining.clone());
 
         for _ in 0..2 {
@@ -933,6 +968,7 @@ mod driven {
         let mut driven = queue_open(cx, &folder, &["one"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
         let ada = [3; 16];
+
         *joining.at.lock() = Some(crate::together::PartySeen {
             zone: resonate_core::ZoneId::FIRST,
             hosting: true,
@@ -1017,6 +1053,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         *joining.at.lock() = Some(hosting_with_requests(vec![
             requested(1, "Echoes"),
             requested(2, "Meddle"),
@@ -1050,6 +1087,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         together_over(&mut driven, joining.clone());
 
         offering_a_party(&mut driven);
@@ -1074,6 +1112,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         together_over(&mut driven, joining.clone());
 
         driven.cx.simulate_keystrokes("down down");
@@ -1095,7 +1134,9 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         together_over(&mut driven, joining.clone());
+
         let zone = driven.read(|root, _| root.switcher.selected());
 
         offering_a_party(&mut driven);
@@ -1138,6 +1179,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         together_over(&mut driven, joining.clone());
 
         offering_a_list(&mut driven);
@@ -1164,6 +1206,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two", "three"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         together_over(&mut driven, joining.clone());
 
         driven.cx.simulate_keystrokes("down down");
@@ -1183,6 +1226,7 @@ mod driven {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
         let joining = Arc::new(party_offer::joined::Joining::default());
+
         together_over(&mut driven, joining.clone());
 
         offering_a_list(&mut driven);
@@ -1198,6 +1242,7 @@ mod driven {
     fn a_party_that_will_not_be_joined_is_told_and_the_pane_stays(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one"]);
+
         together_over(&mut driven, party_offer::joined::Joining::refusing());
 
         offering_a_party(&mut driven);
@@ -1218,7 +1263,9 @@ mod driven {
             toast::tell(Notice::Done("Queued".to_owned()), cx);
         });
         driven.settle();
+
         let on_the_toast = driven.centre_of("toast");
+
         driven.hover(on_the_toast);
 
         for _ in 0..30 {
@@ -1228,6 +1275,7 @@ mod driven {
                 .advance_clock(std::time::Duration::from_secs(1));
             driven.settle();
         }
+
         assert!(
             driven.read(|_, cx| toast::is_showing(cx)),
             "a toast under the pointer went"
@@ -1241,6 +1289,7 @@ mod driven {
                 .advance_clock(std::time::Duration::from_secs(1));
             driven.settle();
         }
+
         assert!(driven.read(|_, cx| !toast::is_showing(cx)));
     }
 
@@ -1248,6 +1297,7 @@ mod driven {
     fn escape_closes_an_open_menu_before_it_takes_a_toast_down(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one"]);
+
         let root = driven.root.clone();
 
         driven.cx.update(|_, cx| {
@@ -1260,9 +1310,11 @@ mod driven {
         driven.settle();
 
         driven.cx.simulate_keystrokes("escape");
+
         assert!(driven.read(|root, cx| root.menu.is_none() && RootView::noticed(cx)));
 
         driven.cx.simulate_keystrokes("escape");
+
         assert!(driven.read(|_, cx| !RootView::noticed(cx)));
     }
 
@@ -1276,20 +1328,27 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         cx.set_platform_info(ON_A_MAC);
+
         let mut driven = Driven::open(cx, catalog());
+
         driven.focus_the_window();
+
         let behind = driven.read(|root, _| root.pane);
 
         driven.cx.simulate_keystrokes("ctrl-u");
+
         assert_eq!(driven.read(|root, _| root.pane), behind);
 
         driven.cx.simulate_keystrokes("cmd-u");
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
 
         driven.cx.simulate_keystrokes("secondary-u");
+
         assert_eq!(driven.read(|root, _| root.pane), behind);
 
         driven.cx.simulate_keystrokes("cmd-,");
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Settings);
         assert!(driven.cx.update(|window, cx| {
             driven
@@ -1306,6 +1365,7 @@ mod driven {
     #[gpui::test]
     fn the_menus_about_opens_the_about_category_whatever_stood_there(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.focus_the_window();
 
         driven.cx.dispatch_action(About);
@@ -1322,13 +1382,17 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.focus_the_window();
+
         let behind = driven.read(|root, _| root.pane);
 
         driven.cx.simulate_keystrokes("secondary-u");
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Queue);
 
         driven.cx.simulate_keystrokes("secondary-u");
+
         assert_eq!(driven.read(|root, _| root.pane), behind);
     }
 
@@ -1336,6 +1400,7 @@ mod driven {
     fn a_key_mutes_and_the_same_key_brings_back_the_level_it_was_heard_at(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one"]);
+
         let heard_at = driven.read(|root, cx| root.player.read(cx).state().volume);
 
         driven.cx.simulate_keystrokes("ctrl-m");
@@ -1349,6 +1414,7 @@ mod driven {
     fn two_edits_asked_for_at_once_both_land(cx: &mut TestAppContext) {
         let library = catalog();
         let mut driven = Driven::open(cx, Arc::clone(&library));
+
         let model = driven.read(|root, _| root.library.clone());
 
         driven.cx.update(|_, cx| {
@@ -1392,9 +1458,11 @@ mod driven {
     fn regions_told(driven: &mut Driven) -> Rc<RefCell<Vec<Region>>> {
         let told = Rc::new(RefCell::new(Vec::new()));
         let parts = driven.read(|root, _| root.parts.each());
+
         driven.cx.update(|_, cx| {
             for (region, part) in parts {
                 let telling = Rc::clone(&told);
+
                 cx.observe(&part, move |_, _| telling.borrow_mut().push(region))
                     .detach();
             }
@@ -1415,11 +1483,14 @@ mod driven {
             root.update(cx, |root, cx| root.set_pane(Pane::Party, cx));
         });
         driven.settle();
+
         let told = regions_told(&mut driven);
+
         for _ in 0..3 {
             driven.cx.executor().advance_clock(beat);
             driven.cx.run_until_parked();
         }
+
         let told = told.borrow().clone();
 
         assert!(told.contains(&Region::Pane));
@@ -1436,6 +1507,7 @@ mod driven {
         let folder = Folder::new();
         let library = catalog();
         let playlist = library.create_playlist("Mix").expect("a playlist");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let joining = Arc::new(party_offer::joined::Joining::default());
         let shared = crate::together::SharedSeen {
@@ -1447,8 +1519,10 @@ mod driven {
             unheld: Vec::new(),
             reach: crate::together::SharedReach::Reached,
         };
+
         *joining.sharing.lock() = Some(shared.clone());
         together_over(&mut driven, joining.clone());
+
         let root = driven.root.clone();
         let asked = || *joining.seen_asked.lock();
 
@@ -1456,6 +1530,7 @@ mod driven {
             root.update(cx, |root, cx| root.open_sharing(playlist, cx));
         });
         driven.cx.run_until_parked();
+
         let on_opening = asked();
         let seen_on_opening = driven.read(|root, _| {
             root.social
@@ -1463,13 +1538,17 @@ mod driven {
                 .as_ref()
                 .map(|sharing| sharing.seen.clone())
         });
+
         for _ in 0..5 {
             driven.cx.update(|window, _| window.refresh());
             driven.cx.run_until_parked();
         }
+
         let while_drawn = asked();
+
         driven.cx.executor().advance_clock(Duration::from_secs(1));
         driven.cx.run_until_parked();
+
         let a_second_on = asked();
 
         assert_eq!(on_opening, 1);
@@ -1492,6 +1571,7 @@ mod driven {
     fn deleting_every_row_leaves_nothing_reached(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = queue_open(cx, &folder, &["one", "two"]);
+
         let root = driven.root.clone();
 
         driven.cx.update(|_, cx| {
@@ -1522,8 +1602,10 @@ mod driven {
 
     fn opened_the_sheet_for(driven: &mut Driven, playlist: resonate_core::PlaylistId) {
         driven.right_click(playlist_row(playlist));
+
         let at = the_menu_offers(driven, crate::words::replacing::replace_lossy_songs())
             .expect("the menu offers to replace the lossy songs");
+
         driven.click(Box::leak(format!("menu-entry-{at}").into_boxed_str()));
         driven.until(|root, _| {
             root.replacing
@@ -1554,37 +1636,48 @@ mod driven {
         };
         let trash = Folder::new();
         let library = catalog();
+
         library.trash_into(Some(trash.path().to_path_buf()));
         Driven::scanned(&library, &folder);
+
         let lossy = resonate_core::MediaLocation::local(&opus);
         let road_trip = library
             .start_playlist("Road trip", &[Cut::whole(lossy.clone())])
             .expect("a playlist holding the lossy copy");
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.play(std::slice::from_ref(&opus));
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
         assert_eq!(queued_at(&mut driven), [lossy]);
 
         let rows = library
             .songs_to_better_in(road_trip)
             .expect("the playlist read");
         let model = driven.read(|root, _| root.library.clone());
+
         driven.cx.update(|_, cx| {
             model.update(cx, |library, cx| library.replace_lossy_songs(rows, cx));
         });
+
         let song = library
             .track_at(&opus, None)
             .expect("the catalog read")
             .expect("the song is held")
             .id;
+
         driven.until(|root, cx| root.library.read(cx).has_a_version_chosen(song));
 
         assert!(opus.exists(), "the lossy copy went");
+
         driven.root.update(&mut driven.cx, |root, cx| {
             let held = root.library.read(cx).held_tracks(&[song]);
+
             root.play(&held, 0, cx);
         });
+
         let lossless = resonate_core::MediaLocation::local(&flac);
+
         driven.until(|root, cx| {
             root.player
                 .read(cx)
@@ -1592,6 +1685,7 @@ mod driven {
                 .iter()
                 .all(|item| item.location == lossless)
         });
+
         assert_eq!(queued_at(&mut driven), [lossless]);
     }
 
@@ -1657,6 +1751,7 @@ mod driven {
             .expect("the catalog read")
             .expect("the song is catalogued");
         let album = track.album_id.expect("the song files under an album");
+
         library
             .land_release(
                 album,
@@ -1706,8 +1801,10 @@ mod driven {
             return;
         };
         let library = catalog();
+
         Driven::scanned(&library, &folder);
         matched_on_musicbrainz(&library, &opus);
+
         let road_trip = library
             .start_playlist(
                 "Road trip",
@@ -1717,10 +1814,12 @@ mod driven {
         let rows = library
             .songs_to_better_in(road_trip)
             .expect("the playlist read");
+
         assert!(
             rows.iter().all(|row| row.release_track.is_some()),
             "{rows:?}"
         );
+
         let mut driven = Driven::provided_by(
             cx,
             Arc::clone(&library),
@@ -1729,6 +1828,7 @@ mod driven {
         );
 
         let model = driven.read(|root, _| root.library.clone());
+
         driven.cx.update(|_, cx| {
             model.update(cx, |library, cx| library.replace_lossy_songs(rows, cx));
         });
@@ -1738,6 +1838,7 @@ mod driven {
                 library.replaces_a_song(download) && library.fetching(download).can_be_cancelled()
             })
         });
+
         assert!(
             library
                 .songs_to_better_in(road_trip)
@@ -1745,6 +1846,7 @@ mod driven {
                 .iter()
                 .all(|row| row.pending)
         );
+
         driven.click("downloads");
         driven.bounds_of("download-0");
 
@@ -1756,6 +1858,7 @@ mod driven {
                 .songs_to_better_in(road_trip)
                 .is_ok_and(|rows| rows.len() == 1 && rows.iter().all(|row| !row.pending))
         });
+
         assert!(library.wants().expect("the wants read").is_empty());
         assert!(opus.exists(), "a cancelled replacement took the lossy copy");
     }
@@ -1766,13 +1869,16 @@ mod driven {
     ) {
         let folder = Folder::new();
         let long = "Echoes ".repeat(40);
+
         let Some(opus) =
             folder.encoded_titled("A.opus", &["-c:a", "libopus", "-b:a", "96k"], long.trim())
         else {
             return;
         };
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let road_trip = library
             .start_playlist(
                 "Road trip",
@@ -1785,6 +1891,7 @@ mod driven {
             .expect("the song is catalogued")
             .id;
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
 
@@ -1794,6 +1901,7 @@ mod driven {
         let standing = driven.bounds_of(Box::leak(
             format!("replacing-standing-{track}").into_boxed_str(),
         ));
+
         assert!(
             standing.right() <= sheet.right(),
             "why the song stands was pushed past the sheet: {standing:?} beyond {sheet:?}"
@@ -1811,7 +1919,9 @@ mod driven {
             return;
         };
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
         let road_trip = library
             .start_playlist(
@@ -1819,6 +1929,7 @@ mod driven {
                 &[Cut::whole(resonate_core::MediaLocation::local(&opus))],
             )
             .expect("a playlist holding the lossy copy");
+
         assert_eq!(
             driven.read(|root, cx| root.library.read(cx).playlist_name(road_trip)),
             None,
@@ -1826,6 +1937,7 @@ mod driven {
         );
 
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.open_replacing(road_trip, cx));
         });
@@ -1851,8 +1963,10 @@ mod driven {
             return;
         };
         let library = catalog();
+
         Driven::scanned(&library, &folder);
         matched_on_musicbrainz(&library, &opus);
+
         let road_trip = library
             .start_playlist(
                 "Road trip",
@@ -1865,14 +1979,17 @@ mod driven {
             &folder,
             a_shop_answering_nothing(),
         );
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
         opened_the_sheet_for(&mut driven, road_trip);
+
         let ticked_before = driven.read(|root, _| {
             root.replacing
                 .as_ref()
                 .map_or(0, |sheet| sheet.ticked.len())
         });
+
         assert_eq!(ticked_before, 1, "the matched song starts ticked");
 
         driven.click("look-for-lossless-copies");
@@ -1902,6 +2019,7 @@ mod driven {
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
         opened_the_sheet_for(&mut driven, road_trip);
+
         assert!(
             driven.read(|root, _| root.replacing.as_ref().is_some_and(|sheet| {
                 sheet.ticked.is_empty()
@@ -1925,7 +2043,9 @@ mod driven {
             return;
         };
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let road_trip = library
             .start_playlist(
                 "Road trip",
@@ -1938,9 +2058,11 @@ mod driven {
             &folder,
             a_shop_offering_it_lossless(),
         );
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
         opened_the_sheet_for(&mut driven, road_trip);
+
         assert!(
             driven.read(|root, _| root
                 .replacing
@@ -1967,6 +2089,7 @@ mod driven {
     fn a_long_playlists_lossy_songs_are_drawn_where_the_sheet_shows_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut songs = Vec::new();
+
         for at in 0..40 {
             let Some(song) = folder.encoded_titled(
                 &format!("{at}.opus"),
@@ -1975,10 +2098,14 @@ mod driven {
             ) else {
                 return;
             };
+
             songs.push(song);
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let cuts: Vec<Cut> = songs
             .iter()
             .map(|song| Cut::whole(resonate_core::MediaLocation::local(song)))
@@ -1992,9 +2119,11 @@ mod driven {
             &folder,
             a_shop_offering_it_lossless(),
         );
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlist_name(road_trip).is_some());
         opened_the_sheet_for(&mut driven, road_trip);
+
         let first = driven.read(|root, _| {
             root.replacing
                 .as_ref()
@@ -2006,13 +2135,16 @@ mod driven {
         let standing = format!("replacing-standing-{first}");
         let sheet = driven.bounds_of("replacing-sheet");
         let drawn = driven.bounds_of(Box::leak(standing.clone().into_boxed_str()));
+
         assert!(
             drawn.top() >= sheet.top() && drawn.bottom() <= sheet.bottom(),
             "the first row is drawn outside the sheet before checking: {drawn:?} in {sheet:?}"
         );
+
         let line = driven.bounds_of(Box::leak(
             format!("replacing-line-{first}").into_boxed_str(),
         ));
+
         assert!(
             line.size.height >= drawn.size.height,
             "the rows were squeezed to fit the list rather than scrolled: {line:?} holding {drawn:?}"
@@ -2027,6 +2159,7 @@ mod driven {
 
         let sheet = driven.bounds_of("replacing-sheet");
         let drawn = driven.bounds_of(Box::leak(standing.into_boxed_str()));
+
         assert!(
             drawn.top() >= sheet.top() && drawn.bottom() <= sheet.bottom(),
             "the first row is drawn outside the sheet after checking: {drawn:?} in {sheet:?}"
@@ -2046,8 +2179,10 @@ mod driven {
         };
         let trash = Folder::new();
         let library = catalog();
+
         library.trash_into(Some(trash.path().to_path_buf()));
         Driven::scanned(&library, &folder);
+
         let whole = |path: &PathBuf| Cut::whole(resonate_core::MediaLocation::local(path));
         let road_trip = library
             .start_playlist("Road trip", &[whole(&opus)])
@@ -2056,6 +2191,7 @@ mod driven {
             .start_playlist("Bright", &[whole(&flac)])
             .expect("a playlist holding the lossless copy");
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-playlists");
         driven.until(|root, cx| {
             let library = root.library.read(cx);
@@ -2063,15 +2199,18 @@ mod driven {
         });
 
         driven.right_click(playlist_row(bright));
+
         assert!(
             the_menu_offers(&mut driven, crate::words::replacing::replace_lossy_songs()).is_some(),
             "every playlist is offered its higher quality versions"
         );
+
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
         opened_the_sheet_for(&mut driven, road_trip);
         driven.bounds_of("replacing-sheet");
+
         let (listed, ticked) = driven.read(|root, _| {
             let sheet = root.replacing.as_ref().expect("the sheet stands");
             let rows = sheet.rows.clone().unwrap_or_default();
@@ -2082,11 +2221,13 @@ mod driven {
                 rows.iter().all(|row| sheet.ticked.contains(&row.track.id)),
             )
         });
+
         assert_eq!(listed, ["Echoes"]);
         assert!(ticked, "the song that can be replaced starts ticked");
 
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
+
         assert!(driven.read(|root, _| root.replacing.is_none()));
         assert_eq!(
             library
@@ -2122,11 +2263,14 @@ mod driven {
 
     fn a_second_zone_behind_the_first(driven: &mut Driven) -> resonate_core::ZoneId {
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
         driven.until(|root, _| root.zones.len() == 2);
+
         let second = driven.read(|root, _| root.switcher.selected());
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.show_zone(resonate_core::ZoneId::FIRST, cx);
@@ -2141,12 +2285,17 @@ mod driven {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         for name in ["one", "two", "three"] {
             folder.tone(&format!("{name}.wav"), 1);
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
         let second = a_second_zone_behind_the_first(&mut driven);
 
@@ -2180,8 +2329,11 @@ mod driven {
         let folder = Folder::new();
         let songs = queued(&folder, &["one", "two"]);
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let playlist = library.create_playlist("Evening").expect("a playlist");
+
         library
             .add_to_playlist(
                 playlist,
@@ -2191,7 +2343,9 @@ mod driven {
                     .collect::<Vec<_>>(),
             )
             .expect("the rows appended");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
         let second = a_second_zone_behind_the_first(&mut driven);
 

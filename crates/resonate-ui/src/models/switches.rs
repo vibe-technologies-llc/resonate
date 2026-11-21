@@ -39,6 +39,7 @@ impl LibraryModel {
         self.choices.resume = resume;
         if !resume {
             let library = Arc::clone(&self.library);
+
             self.keep_after_what_was_kept(cx, move || {
                 if let Err(error) = library.forget_resumption() {
                     tracing::warn!(%error, "what was kept of a queue could not be discarded");
@@ -50,6 +51,7 @@ impl LibraryModel {
 
     pub fn age_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
+
         self.watchers._aged = cx.background_executor().spawn(async move {
             if let Err(error) = library.age_the_history(kept) {
                 tracing::warn!(%error, "the history could not be aged");
@@ -64,6 +66,7 @@ impl LibraryModel {
             .together
             .as_ref()
             .is_some_and(|together| together.following(zone));
+
         if following {
             return;
         }
@@ -108,6 +111,7 @@ impl LibraryModel {
         keep: impl FnOnce() + Send + 'static,
     ) {
         let before = std::mem::replace(&mut self.watchers._kept, Task::ready(()));
+
         self.watchers._kept = cx.background_executor().spawn(async move {
             before.await;
             keep();

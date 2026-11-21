@@ -25,6 +25,7 @@ impl TrackId {
     pub(crate) fn linked(url: &str) -> Option<Self> {
         let path = url.split(['?', '#']).next()?;
         let mut segments = path.split('/');
+
         segments.by_ref().find(|segment| *segment == "track")?;
         segments.next()?.parse().ok().map(Self)
     }
@@ -57,6 +58,7 @@ pub(crate) fn found(finds: &impl Finds, identity: &Identity) -> Result<Obtained>
         .track_on(Service::Tidal)
         .and_then(TrackId::linked)
         .filter(|track| !identity.finds_gone(&track.taken_from(finds.provider())));
+
     if linked.is_none() && !identity.may_be_listed() {
         return Ok(Obtained::Nothing);
     }
@@ -120,10 +122,12 @@ impl Player<'_> {
         read: std::result::Result<Manifest, manifest::Unread>,
     ) -> Result<Option<Media>> {
         let op = ProviderOp::Playback;
+
         if !presentation.eq_ignore_ascii_case(FULL) {
             tracing::debug!(track = track.0, %presentation, provider = %self.source, "offered less than the whole track");
             return Ok(None);
         }
+
         let media = match read {
             Ok(Manifest::Media(media)) => media,
             Ok(Manifest::Withheld(withheld)) => {
@@ -142,6 +146,7 @@ impl Player<'_> {
                 return Err(self.unreadable(op));
             }
         };
+
         if let Some(elsewhere) = media.urls.iter().find(|url| !self.hosts.holds(url)) {
             tracing::warn!(track = track.0, host = %elsewhere.split('/').nth(2).unwrap_or_default(), provider = %self.source, "a manifest named media off TIDAL's audio hosts");
             return Err(Error::OffItsHosts {
@@ -196,12 +201,14 @@ impl Player<'_> {
 
 fn streamed(provider: &SourceId, agent: &Agent, media: Media) -> Result<Streamed> {
     let op = ProviderOp::Stream;
+
     if let (Container::Flac, [url]) = (media.container, media.urls.as_slice()) {
         let response = agent
             .get(url)
             .call()
             .map_err(|error| unreached(provider.clone(), op, error))?;
         let status = response.status().as_u16();
+
         if status != WHOLE {
             return Err(Error::Refused {
                 provider: provider.clone(),
@@ -209,6 +216,7 @@ fn streamed(provider: &SourceId, agent: &Agent, media: Media) -> Result<Streamed
                 status,
             });
         }
+
         let reader = Seeking::continuing(
             agent.clone(),
             url.clone(),
@@ -216,6 +224,7 @@ fn streamed(provider: &SourceId, agent: &Agent, media: Media) -> Result<Streamed
             Patience::default().resumed_after,
         );
         let length = reader.length();
+
         return Ok(Streamed::seeking(
             reader,
             length,
@@ -283,6 +292,7 @@ mod tests {
         ] {
             assert_eq!(TrackId::linked(link), Some(TrackId(track)), "{link}");
         }
+
         assert_eq!(TrackId::linked("https://tidal.com/album/55391740"), None);
         assert_eq!(TrackId::linked("https://tidal.com/track/echoes"), None);
     }

@@ -125,7 +125,9 @@ fn placed(icon: &AppIcon, theme: &Path) -> Result<Placing> {
         Standing::Somebody => return Ok(Placing::NotOurs),
         Standing::Nothing | Standing::Ours | Standing::ThePackagedCopy => {}
     }
+
     let wanted = icon.drawing();
+
     if held.as_deref() == Some(wanted.as_bytes()) {
         return Ok(Placing::Standing);
     }
@@ -141,6 +143,7 @@ fn written(path: &Path, drawn: &str) -> Result<()> {
             source: io::ErrorKind::InvalidInput.into(),
         });
     };
+
     fs::create_dir_all(folder).map_err(|source| Error::CreateDir {
         path: folder.to_path_buf(),
         source,
@@ -175,6 +178,7 @@ fn flushed(theme: &Path) {
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .status();
+
     match rebuilt {
         Ok(status) if !status.success() => {
             tracing::debug!(%status, "the desktop's service cache was not rebuilt");
@@ -224,6 +228,7 @@ mod tests {
     impl Scratch {
         fn new() -> Self {
             static NEXT: AtomicU64 = AtomicU64::new(0);
+
             let theme = env::temp_dir().join(format!(
                 "resonate-icons-{}-{}",
                 process::id(),
@@ -283,6 +288,7 @@ mod tests {
         let scratch = Scratch::new();
         let teal = worn(Theme::Resonate, Some(Accent::Teal));
         let its_own = worn(Theme::Resonate, None);
+
         placed(&teal, &scratch.theme).expect("placed");
 
         assert_eq!(
@@ -303,6 +309,7 @@ mod tests {
         let scratch = Scratch::new();
         let teal = worn(Theme::Midnight, Some(Accent::Teal));
         let red = worn(Theme::Midnight, Some(Accent::Red));
+
         placed(&teal, &scratch.theme).expect("placed");
 
         assert_eq!(
@@ -316,7 +323,9 @@ mod tests {
     fn a_copy_of_the_packaged_icon_or_an_earlier_builds_takes_the_accent() {
         let scratch = Scratch::new();
         let path = icon_path(&scratch.theme);
+
         fs::create_dir_all(path.parent().expect("a folder")).expect("a scratch folder");
+
         let icon = worn(Theme::Resonate, Some(Accent::Mauve));
         let earlier = icon.drawing().replacen(
             "<svg id=\"resonate-in-the-accent\" ",
@@ -342,8 +351,10 @@ mod tests {
     fn an_icon_this_build_did_not_draw_is_left_as_it_was() {
         let scratch = Scratch::new();
         let path = icon_path(&scratch.theme);
+
         fs::create_dir_all(path.parent().expect("a folder")).expect("a scratch folder");
         fs::write(&path, b"<svg aria-label=\"mine\"/>").expect("a scratch icon");
+
         let icon = worn(Theme::Resonate, Some(Accent::Teal));
 
         assert_eq!(

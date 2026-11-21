@@ -33,7 +33,7 @@ const SURROUND_TRIED_FIRST_AT: SampleRate = SampleRate::HZ_48000;
 
 const CHANNELS_UNSAID: u8 = 2;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Wrapping {
     Flac,
     Wave,
@@ -126,6 +126,7 @@ impl Carriage {
 
     pub fn rates(&self) -> Vec<SampleRate> {
         let mut rates = Vec::new();
+
         for rate in self.shapes().flat_map(|shape| &shape.rates) {
             if !rates.contains(rate) {
                 rates.push(*rate);
@@ -148,6 +149,7 @@ impl Carriage {
             .rates()
             .filter(|rate| !self.carries_stereo_at(*rate))
             .collect();
+
         if !rates.is_empty() {
             self.played.push(Shape {
                 rates,
@@ -163,9 +165,11 @@ impl Carriage {
                 .into_iter()
                 .filter(|layout| !self.said.layouts.contains(layout))
                 .collect();
+
             if layouts.is_empty() {
                 continue;
             }
+
             let mut rates: Vec<SampleRate> = self
                 .said
                 .rates
@@ -173,6 +177,7 @@ impl Carriage {
                 .copied()
                 .filter(|rate| *rate <= highest)
                 .collect();
+
             if !rates.contains(&highest) {
                 rates.push(highest);
             }
@@ -207,12 +212,14 @@ impl Carriage {
         let mut flac = Seen::default();
         let mut wave = Seen::default();
         let mut l16 = Seen::default();
+
         for entry in sink.split(',') {
             let Some(kind) = entry.split(':').nth(2) else {
                 continue;
             };
             let kind = kind.trim().to_ascii_lowercase();
             let mut parts = kind.split(';');
+
             let named = parts.next().unwrap_or_default().trim();
             let seen = if FLAC_KINDS.contains(&named) {
                 &mut flac
@@ -223,10 +230,12 @@ impl Carriage {
             } else {
                 continue;
             };
+
             seen.read(parts);
         }
 
         let mut carriages = Vec::new();
+
         if flac.entries > 0 {
             let carriage = flac.carriage(Wrapping::Flac, &RATES_OFFERED, flac_unsaid);
             if !carriage.said.rates.is_empty() {
@@ -280,15 +289,18 @@ impl Seen {
     ) -> Carriage {
         let stated = !self.rates.is_empty();
         let mut rates = if stated { self.rates } else { unsaid.to_vec() };
+
         if wrapping == Wrapping::Flac && !stated && flac_unsaid == FlacUnsaid::UpTo96kHz {
             rates.retain(|rate| rate.hz() <= FLAC_RATES_UNSAID_AT_MOST_HZ);
         }
+
         let counts = if self.counts.is_empty() {
             vec![CHANNELS_UNSAID]
         } else {
             self.counts
         };
         let mut layouts = Vec::new();
+
         for count in counts {
             for layout in layouts_of(count) {
                 if !layouts.contains(&layout) {
@@ -322,6 +334,7 @@ pub(crate) fn taught(said: &[Carriage], plays: Option<&Plays>) -> Vec<Carriage> 
     let Some(plays) = plays else {
         return carriages;
     };
+
     if let Some(at) = carriages
         .iter()
         .position(|carriage| carriage.wrapping == Wrapping::Flac)
@@ -341,6 +354,7 @@ pub(crate) fn tried_in(said: &[Carriage], trial: Trial) -> Option<(Carriage, Str
             .wrapping
     } else {
         let carriage = said.get(surround_tried_in(said)?)?;
+
         if !carriage.said.rates.contains(&trial.rate()) {
             return None;
         }
@@ -356,6 +370,7 @@ pub(crate) fn tried_in(said: &[Carriage], trial: Trial) -> Option<(Carriage, Str
         SampleFormat::S16
     };
     let spec = trial.spec(format);
+
     let carriage = Carriage::new(wrapping, vec![spec.rate], vec![spec.channels]);
     Some((carriage, spec))
 }
@@ -370,6 +385,7 @@ fn surround_tried_in(said: &[Carriage]) -> Option<usize> {
 pub(crate) fn unite(carriages: &[Carriage]) -> (Vec<SinkFormats>, Vec<SampleRate>) {
     let mut formats: Vec<SinkFormats> = Vec::new();
     let mut rates: Vec<SampleRate> = Vec::new();
+
     for carriage in carriages {
         for offered in carriage.formats() {
             if !formats.contains(&offered) {
@@ -439,6 +455,7 @@ mod tests {
         )));
 
         let l16 = &accepted("http-get:*:audio/L16;rate=44100;channels=2:*")[0];
+
         assert!(!l16.carries(stereo(SampleRate::HZ_44100, SampleFormat::S24)));
         assert!(!l16.carries(stereo(SampleRate::HZ_48000, SampleFormat::S16)));
     }
@@ -452,6 +469,7 @@ mod tests {
 
         let stated =
             &accepted("http-get:*:audio/flac;rate=96000:*,http-get:*:audio/flac;rate=192000:*")[0];
+
         assert!(stated.carries(stereo(SampleRate::HZ_192000, SampleFormat::S24)));
         assert!(stated.carries(stereo(SampleRate::HZ_96000, SampleFormat::S24)));
         assert!(!stated.carries(stereo(SampleRate::HZ_44100, SampleFormat::S24)));
@@ -473,9 +491,11 @@ mod tests {
 
         let stated =
             &Carriage::accepted_by("http-get:*:audio/flac;rate=48000:*", FlacUnsaid::AnyRate)[0];
+
         assert_eq!(stated.rates(), [SampleRate::HZ_48000]);
 
         let wave = &Carriage::accepted_by("http-get:*:audio/wav:*", FlacUnsaid::AnyRate)[0];
+
         assert_eq!(wave.wrapping(), Wrapping::Wave);
     }
 
@@ -592,16 +612,20 @@ mod tests {
         let l16 = accepted("http-get:*:audio/L16;rate=48000:*");
 
         let (carriage, spec) = tried_in(&flac, Trial::FlacAt192kHz).expect("FLAC is taken");
+
         assert_eq!(carriage.wrapping(), Wrapping::Flac);
         assert_eq!(spec, stereo(SampleRate::HZ_192000, SampleFormat::S24));
         assert!(carriage.carries(spec));
 
         assert!(tried_in(&wave, Trial::FlacAt176kHz).is_none());
+
         let (carriage, spec) = tried_in(&wave, Trial::EightChannels).expect("WAVE at 48 kHz");
+
         assert_eq!(carriage.wrapping(), Wrapping::Wave);
         assert_eq!(spec.channels, ChannelLayout::Surround71);
 
         let (carriage, spec) = tried_in(&l16, Trial::SixChannels).expect("L16 at 48 kHz");
+
         assert_eq!(carriage.wrapping(), Wrapping::L16);
         assert_eq!(spec.format, SampleFormat::S16);
         assert!(carriage.carries(spec));

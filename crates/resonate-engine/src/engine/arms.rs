@@ -27,6 +27,7 @@ impl Other {
                 return;
             };
             let count = self.chain.process(input, &mut self.carrier);
+
             if let Some(made) = self.carrier.get(..count.frames_out * channels_out) {
                 self.rendered.enter(made);
             }
@@ -104,6 +105,7 @@ impl Output {
         if !matches!(self.plan.packing, Packing::Samples) {
             return Ok(());
         }
+
         let source = track.source();
         let other_arm = audition.heard.other();
         let other_config = audition.contest.applied(other_arm, config);
@@ -116,6 +118,7 @@ impl Output {
             self.attenuator,
             audition.contest,
         );
+
         let plan = match other_arm {
             Arm::A => a,
             Arm::B => b,
@@ -123,9 +126,11 @@ impl Output {
         let alike = plan.stream == self.plan.stream
             && plan.packing == self.plan.packing
             && plan.remix == self.plan.remix;
+
         if !alike || audition.contest.renders_alike(&plan, &self.plan) {
             return Ok(());
         }
+
         let chain = plan
             .build_chain(source, &other_config, CHAIN_BLOCK)
             .map_err(|error| Error::Convert {
@@ -138,6 +143,7 @@ impl Output {
         let ring_frames = Frames(self.capacity as u64);
         let carrier = vec![0.0; carried_samples(&chain, plan.stream)];
         let widened = vec![0.0; self.widened.len()];
+
         self.arms = Some(Arms {
             heard: audition.heard,
             heard_gain: audition.lowered.gain_of(audition.heard),
@@ -176,6 +182,7 @@ impl Output {
         let Some(arms) = self.arms.as_mut() else {
             return;
         };
+
         if let Some(rendered) = self.carrier.get(..made * channels_out) {
             arms.heard_rendered.enter(rendered);
         }
@@ -187,6 +194,7 @@ impl Output {
         let Some(arms) = self.arms.as_mut() else {
             return;
         };
+
         if let Some(rendered) = self.carrier.get(..made * channels_out) {
             arms.heard_rendered.enter(rendered);
         }
@@ -197,6 +205,7 @@ impl Output {
         let Some(arms) = self.arms.as_mut() else {
             return;
         };
+
         arms.other.chain.reset();
         arms.other.rendered.forget();
         arms.heard_rendered.forget();
@@ -204,12 +213,14 @@ impl Output {
 
     pub(super) fn hear_the_other_arm(&mut self, graph_is_pulling: bool) -> Splicing {
         self.switch_waits_for_room = false;
+
         let renders_in_place = matches!(self.plan.packing, Packing::Samples)
             && self.draining.is_none()
             && !self.ended
             && !self.ends_at_a_change
             && !self.producer.is_discarding()
             && self.arms.is_some();
+
         if !renders_in_place {
             return Splicing::Unspliceable;
         }
@@ -221,6 +232,7 @@ impl Output {
         let rate = self.plan.stream.rate;
         let over = Frames::from_duration(SPLICE_BLENDED_OVER, rate);
         let ahead = Frames::from_duration(SPLICED_AHEAD_AT_LEAST, rate);
+
         let Some(at) = self.producer.splice_point(ahead, over) else {
             return Splicing::Unspliceable;
         };
@@ -230,14 +242,18 @@ impl Output {
         };
         let rendered = &arms.other.rendered;
         let entered = rendered.entered();
+
         if from < rendered.oldest() || from >= entered {
             return Splicing::Unspliceable;
         }
+
         let laid_again = entered - from;
         let room = self.producer.room_to_splice() as u64;
+
         if laid_again > room {
             let drained = (laid_again - room).div_ceil(2);
             let held_past_the_point = self.producer.written().saturating_sub(at);
+
             if graph_is_pulling && held_past_the_point >= drained.saturating_add(over.get()) {
                 self.switch_owed = true;
                 self.switch_waits_for_room = true;
@@ -252,6 +268,7 @@ impl Output {
             over: over.get(),
         };
         let stale_to = self.producer.written();
+
         self.lay_the_other_arm(&blend);
         self.producer.splice(at, stale_to);
         self.change_arms();
@@ -272,10 +289,13 @@ impl Output {
         let mut next = blend.from;
         while next < entered {
             let frames = rendered.recalled(next, &mut taken);
+
             if frames == 0 {
                 return;
             }
+
             let blended_to = (next + frames as u64).min(blend.from + blend.over);
+
             if next < blended_to {
                 let blended = (blended_to - next) as usize;
                 let old = before.get_mut(..blended * channels).unwrap_or_default();
@@ -299,7 +319,9 @@ impl Output {
             if let Some(laid) = taken.get(..frames * channels) {
                 staged.data_mut().write_f64(laid);
             }
+
             let written = self.producer.write_spliced(&staged);
+
             if let Some(tapping) = self.tapping.as_mut() {
                 tapping.rendered_at(self.producer.rendering());
                 tapping.record(&staged, 0, written);
@@ -316,6 +338,7 @@ impl Output {
             return;
         };
         let fronts_alike = self.plan.fronts_alike(&arms.other.plan);
+
         mem::swap(&mut self.chain, &mut arms.other.chain);
         mem::swap(&mut self.plan, &mut arms.other.plan);
         mem::swap(&mut arms.heard_gain, &mut arms.other.gain);

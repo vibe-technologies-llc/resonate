@@ -145,8 +145,10 @@ impl Served {
             tracing::warn!(%location, "this service's songs are not played from here");
             return Some(Vec::new());
         }
+
         let service = serving(&self.slot.read(), location.source())?;
         let named = service.named_by(location)?;
+
         if let Named::Song(_) = named {
             return Some(vec![location.clone()]);
         }
@@ -177,6 +179,7 @@ impl Served {
         resonate_ui::Serving::new(move |online| {
             let services = providers::in_place_given(online, settings.clone());
             let mut held = adapted.lock();
+
             let serving: Vec<Arc<ServedBy>> = services
                 .iter()
                 .map(|service| {
@@ -186,6 +189,7 @@ impl Served {
                         .unwrap_or_else(|| Arc::new(ServedBy(Arc::clone(service))))
                 })
                 .collect();
+
             held.clone_from(&serving);
             *slot.write() = services;
             serving
@@ -375,6 +379,7 @@ impl resonate_ui::Serves for ServedBy {
         let Some(named) = self.0.named_by(named) else {
             return Err(self.unreadable());
         };
+
         if let Named::Song(_) = named {
             return Ok(vec![self.0.location_of(&named)]);
         }
@@ -436,8 +441,10 @@ pub fn browse(
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let services = providers::in_place_named(config, settings);
     let chosen = chosen(services, service)?;
+
     for table in tables(chosen.as_ref(), wanted)? {
         said!("{}", table.render());
     }
@@ -453,8 +460,10 @@ pub fn browse_subsonic(
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let services = providers::in_place_named(config, settings);
     let subsonic = chosen(services, Some(SUBSONIC)).map_err(|_| Error::NoSubsonicServer)?;
+
     for table in tables(subsonic.as_ref(), wanted)? {
         said!("{}", table.render());
     }
@@ -501,6 +510,7 @@ fn chosen(services: InPlace, asked: Option<&str>) -> Result<Arc<dyn PlaysInPlace
 fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table>> {
     if let Some(id) = wanted.artist.as_deref() {
         let held = service.artist(&server_id(service, id)?)?;
+
         return Ok(vec![albums_table(service, &held.albums)]);
     }
     if let Some(id) = wanted.album.as_deref() {
@@ -508,6 +518,7 @@ fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table
         let within = service.albums_within(&album)?;
         let held = service.album(&album)?;
         let mut tables = Vec::new();
+
         if !within.is_empty() {
             tables.push(albums_table(service, &within));
         }
@@ -522,14 +533,17 @@ fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table
     ] {
         if let Some(id) = id {
             let song = server_id(service, id)?;
+
             service.favour(&song, favoured)?;
             return Ok(vec![favoured_table(service, &song, favoured)]);
         }
     }
     if let Some(id) = wanted.mix.as_deref() {
         let held = service.mix(&server_id(service, id)?)?;
+
         return Ok(vec![songs_table(service, &held.songs)]);
     }
+
     let found = match wanted.search.as_deref() {
         Some(words) => service.search(words)?,
         None => service.first_page()?,
@@ -540,6 +554,7 @@ fn tables(service: &dyn PlaysInPlace, wanted: &BrowsingArgs) -> Result<Vec<Table
 #[cfg(feature = "online")]
 fn found_tables(service: &dyn PlaysInPlace, found: &Found) -> Vec<Table> {
     let mut tables = Vec::new();
+
     if !found.artists.is_empty() {
         tables.push(artists_table(service, &found.artists));
     }
@@ -578,6 +593,7 @@ fn counted(count: Option<u32>) -> String {
 #[cfg(feature = "online")]
 fn artists_table(service: &dyn PlaysInPlace, artists: &[Artist]) -> Table {
     let mut table = Table::new(vec![columns::artist(), columns::albums(), "URI"]);
+
     for artist in artists {
         table.push(vec![
             artist.name.clone(),
@@ -597,6 +613,7 @@ fn albums_table(service: &dyn PlaysInPlace, albums: &[Album]) -> Table {
         columns::songs(),
         "URI",
     ]);
+
     for album in albums {
         table.push(vec![
             album.name.clone(),
@@ -614,6 +631,7 @@ fn albums_table(service: &dyn PlaysInPlace, albums: &[Album]) -> Table {
 #[cfg(feature = "online")]
 fn favoured_table(service: &dyn PlaysInPlace, song: &Id, favoured: bool) -> Table {
     let mut table = Table::new(vec![columns::favourite(), "URI"]);
+
     table.push(vec![
         if favoured {
             words::served::kept()
@@ -629,6 +647,7 @@ fn favoured_table(service: &dyn PlaysInPlace, song: &Id, favoured: bool) -> Tabl
 #[cfg(feature = "online")]
 fn mixes_table(service: &dyn PlaysInPlace, mixes: &[Mix]) -> Table {
     let mut table = Table::new(vec![columns::mix(), columns::about(), "URI"]);
+
     for mix in mixes {
         table.push(vec![
             mix.name.clone(),
@@ -649,6 +668,7 @@ fn songs_table(service: &dyn PlaysInPlace, songs: &[Song]) -> Table {
         columns::format(),
         "URI",
     ]);
+
     for song in songs {
         table.push(vec![
             counted(song.track),
@@ -726,16 +746,20 @@ mod tests {
         let frames = (FRAMES_A_BLOCK * BLOCKS) as u64;
         let block = u16::try_from(FRAMES_A_BLOCK).expect("a small block");
         let mut file = b"fLaC".to_vec();
+
         file.extend_from_slice(&[LAST_STREAMINFO, 0, 0, STREAMINFO_BYTES]);
         file.extend_from_slice(&block.to_be_bytes());
         file.extend_from_slice(&block.to_be_bytes());
         file.extend_from_slice(&[0; 6]);
+
         let packed = (RATE << 44) | ((CHANNELS as u64 - 1) << 41) | ((BITS - 1) << 36) | frames;
+
         file.extend_from_slice(&packed.to_be_bytes());
         file.extend_from_slice(&[0; 16]);
 
         for nth in 0..BLOCKS {
             let mut frame = FIXED_BLOCKING.to_vec();
+
             frame.extend_from_slice(&[
                 A_192_BLOCK_AT_44100,
                 TWO_CHANNELS_OF_16_BITS,
@@ -777,17 +801,22 @@ mod tests {
 
     fn asked_of(reader: &mut BufReader<TcpStream>) -> Option<Asked> {
         let mut line = String::new();
+
         reader.read_line(&mut line).ok()?;
+
         let mut range = None;
         let mut authorization = None;
         let mut body_length = 0;
+
         loop {
             let mut header = String::new();
+
             match reader.read_line(&mut header) {
                 Ok(0) | Err(_) => return None,
                 Ok(_) if header == "\r\n" => break,
                 Ok(_) => {}
             }
+
             let Some((name, value)) = header.split_once(':') else {
                 continue;
             };
@@ -813,6 +842,7 @@ mod tests {
 
     fn answered(stream: TcpStream, file: &[u8], route: &dyn Fn(&Asked, &str) -> Answer, own: &str) {
         let mut reader = BufReader::new(stream);
+
         let Some(asked) = asked_of(&mut reader) else {
             return;
         };
@@ -839,6 +869,7 @@ mod tests {
             ),
         };
         let mut stream = reader.into_inner();
+
         let _ = write!(
             stream,
             "HTTP/1.1 {head}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -852,6 +883,7 @@ mod tests {
         let url = format!("http://{}", listener.local_addr().expect("a bound address"));
         let file = flac();
         let own = url.clone();
+
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 answered(stream, &file, &route, &own);
@@ -1094,8 +1126,10 @@ mod tests {
 
     fn decoded(decoder: &mut Decoder) -> Vec<i16> {
         decoder.set_output_format(SampleFormat::S16);
+
         let mut block = AudioBuffer::empty(decoder.info().spec);
         let mut samples = Vec::new();
+
         while decoder.next_block(&mut block).expect("a clean decode") == DecodeStatus::Decoded {
             match block.data() {
                 SampleData::S16(held) => samples.extend_from_slice(held),
@@ -1124,7 +1158,9 @@ mod tests {
 
         assert!(opened.is_seekable, "{uri} is seekable by range");
         assert_eq!(whole, written(0), "{uri}");
+
         let from = usize::try_from(landed.0).expect("a small frame");
+
         assert_eq!(rest, written(from), "{uri}");
     }
 
@@ -1302,6 +1338,7 @@ mod tests {
                 "dlna:track/uuid%3A5e7a1b00-0000-4000-8000-00000000d1a7/song-2"
             ]
         );
+
         decodes_bit_for_bit_and_seeks_back(&served, &uris[1]);
     }
 
@@ -1391,6 +1428,7 @@ mod tests {
         let uris: Vec<_> = queued.iter().map(|item| item.location.to_uri()).collect();
 
         assert_eq!(uris, ["tidal:track/11", "tidal:track/12"]);
+
         decodes_bit_for_bit_and_seeks_back(&served, "tidal:track/11");
     }
 
@@ -1440,17 +1478,22 @@ mod tests {
 
         let folder =
             std::env::temp_dir().join(format!("resonate-served-mix-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let program = folder.join("yt-dlp");
         let ran = folder.join("ran");
+
         std::fs::write(&program, format!("#!/bin/sh\ntouch {}\n", ran.display()))
             .expect("the fake tool");
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o755))
             .expect("the fake tool made executable");
+
         let location = MediaLocation::from_uri("ytmusic:mix/LM").expect("a uri");
 
         let songs = kept_only(Some(program)).songs_at(&location);
         let asked = ran.exists();
+
         std::fs::remove_dir_all(&folder).expect("the folder removed");
 
         assert_eq!(songs, Some(Vec::new()));

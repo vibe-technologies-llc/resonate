@@ -184,6 +184,7 @@ impl Tidal {
             .and_then(|followed| followed())
             .filter(|token| !token.is_empty());
         let mut account = self.account.lock();
+
         if let Some(heard) = heard {
             account.refresh_token = heard;
         }
@@ -193,6 +194,7 @@ impl Tidal {
     fn rotated_to(&self, rotated: String) {
         {
             let mut account = self.account.lock();
+
             if rotated.is_empty() || account.refresh_token == rotated {
                 return;
             }
@@ -233,9 +235,11 @@ impl Tidal {
             ("refresh_token", account.refresh_token.as_str()),
             ("client_id", account.client_id.as_str()),
         ];
+
         if let Some(secret) = &account.client_secret {
             form.push(("client_secret", secret.as_str()));
         }
+
         let response = match self.asker.sent(op, || {
             self.asker
                 .agent
@@ -257,9 +261,11 @@ impl Tidal {
         let granted: Granted = self
             .asker
             .parsed(op, &self.asker.read_whole(op, response)?)?;
+
         if let Some(rotated) = granted.refresh_token {
             self.rotated_to(rotated);
         }
+
         let lasts = granted
             .expires_in
             .map_or(LASTS_WHEN_UNSAID, Duration::from_secs)
@@ -304,10 +310,13 @@ impl Tidal {
 
     fn user(&self) -> Result<Option<u64>> {
         let session = self.session()?;
+
         if session.user.is_some() {
             return Ok(session.user);
         }
+
         let user = self.sessions_of(&session.bearer)?.user;
+
         if let Some(held) = self.session.lock().as_mut() {
             held.user = user;
         }
@@ -316,13 +325,16 @@ impl Tidal {
 
     fn session(&self) -> Result<Session> {
         let mut held = self.session.lock();
+
         if let Some(session) = held
             .as_ref()
             .filter(|session| session.until > Instant::now())
         {
             return Ok(session.clone());
         }
+
         let fresh = self.sign_in()?;
+
         *held = Some(fresh.clone());
         Ok(fresh)
     }
@@ -347,6 +359,7 @@ impl Tidal {
         loop {
             let session = self.session()?;
             let url = url(&session.country);
+
             let sent = self.asker.sent(op, || match verb {
                 Verb::Get => {
                     let request = self
@@ -403,6 +416,7 @@ impl Finds for Tidal {
 
     fn tracks_for(&self, identity: &Identity) -> Result<Vec<TrackId>> {
         let mut tracks: Vec<TrackId> = Vec::new();
+
         for isrc in identity.isrcs.iter().take(CODES_ASKED_AT_MOST) {
             for track in self.tracks_coded(isrc)? {
                 if !tracks.contains(&track) {
@@ -439,6 +453,7 @@ impl Tidal {
         let Asked::Answered(bytes) = asked else {
             return Ok(Vec::new());
         };
+
         let listed: Listed = self.asker.parsed(op, &bytes)?;
         Ok(listed
             .data
@@ -460,6 +475,7 @@ impl Tidal {
     fn tracks_named(&self, identity: &Identity) -> Result<Vec<TrackId>> {
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
+
         for words in &wordings {
             for track in self.tracks_worded(words)? {
                 choosing.weigh(identity, &track.weighed(), track.id);
@@ -468,6 +484,7 @@ impl Tidal {
                 break;
             }
         }
+
         let seen = choosing.seen();
         let ranked: Vec<TrackId> = choosing
             .ranked()
@@ -478,6 +495,7 @@ impl Tidal {
             })
             .take(TRACKS_TRIED_AT_MOST)
             .collect();
+
         if ranked.is_empty() {
             tracing::debug!(
                 title = identity.title,
@@ -505,8 +523,10 @@ impl Tidal {
         let Asked::Answered(bytes) = asked else {
             return Ok(Vec::new());
         };
+
         let searched: Searched = self.asker.parsed(op, &bytes)?;
         let mut tracks = searched.tracks();
+
         tracks.truncate(LISTED_AT_MOST);
         Ok(tracks)
     }
@@ -539,6 +559,7 @@ impl Tidal {
         let Asked::Answered(bytes) = asked else {
             return Ok(None);
         };
+
         let playback: Playback = self.asker.parsed(op, &bytes)?;
         self.player().media_in(track, &playback)
     }

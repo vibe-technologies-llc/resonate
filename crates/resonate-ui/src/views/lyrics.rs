@@ -88,13 +88,16 @@ impl RootView {
         let model = self.player.read(cx);
         let state = model.state().clone();
         let digest = model.digest();
+
         let asked = Asked::of(&state, digest.as_deref());
+
         if !self.lyrics.read(cx).asks_again(asked) {
             return;
         }
 
         let wanted = self.wanted_lyrics(&state, digest.as_deref(), cx);
         let catalog = self.library.read(cx).catalog();
+
         self.lyrics.update(cx, |model, cx| {
             model.follow(asked, wanted.clone(), cx);
             model.read_how_far_ahead(wanted, catalog, cx);
@@ -105,6 +108,7 @@ impl RootView {
         let Some(wanted) = self.lyrics.read(cx).looked_for().cloned() else {
             return;
         };
+
         self.lyrics.update(cx, |model, _| model.hold_ahead(ahead));
         self.library.update(cx, |library, cx| {
             library.hold_lyrics_ahead(&wanted, ahead, cx);
@@ -117,6 +121,7 @@ impl RootView {
             model.follow_again();
             model.ahead()
         });
+
         self.seek_to_moment(ahead.back(at), cx);
     }
 
@@ -137,6 +142,7 @@ impl RootView {
         let playing = self.playing(&state, digest.as_deref(), cx);
         let now = Instant::now();
         let heard = Heard::of(&state);
+
         let heard_at = match heard {
             Some(heard) => self
                 .lyrics
@@ -150,6 +156,7 @@ impl RootView {
         let moving = self.lyrics.update(cx, |model, _| {
             model.keep_still(stilled);
             model.follow_the_track(position, now);
+
             let placing = model.place(now);
 
             placing || model.is_turning(now)
@@ -165,6 +172,7 @@ impl RootView {
                 model.looks_quietly(now),
             )
         };
+
         let heading = self.lyrics_heading(&playing, &look, synced, following, cx);
 
         let body = match &look {
@@ -460,8 +468,10 @@ impl RootView {
             |_, _, _| (),
             move |_, (), window, _| {
                 let moved = watching.clone();
+
                 window.on_mouse_event(move |event: &MouseMoveEvent, _, _, cx| {
                     let at = event.position;
+
                     moved.update(cx, |this, cx| {
                         let near = this.lyrics.read(cx).opened_by(at);
                         if this.lyrics.update(cx, |model, _| model.open_out(near)) {
@@ -489,6 +499,7 @@ impl RootView {
                 .h(height)
                 .into_any_element();
         }
+
         let second = line.voice == Voice::Two;
         let row = div()
             .flex()
@@ -498,9 +509,11 @@ impl RootView {
             .when(second, |row| row.items_end())
             .when(line.two_voices && !second, |row| row.items_start())
             .when(!line.two_voices, |row| row.items_center());
+
         if line.text.is_empty() {
             return row.h(measures.pause).into_any_element();
         }
+
         let carried = div()
             .relative()
             .top(line.offset)
@@ -523,6 +536,7 @@ impl RootView {
         } else {
             1.0
         };
+
         let shown = kept_with_its_marks(
             &line.text,
             theme::ui(FontWeight::BOLD),
@@ -582,10 +596,12 @@ impl RootView {
                     .chosen(line.sounding),
                 move |this, where_at, cx| {
                     let menu = this.copies_a_lyric(where_at, &offered, cx);
+
                     this.open_a_menu(menu, cx);
                 },
                 cx,
             );
+
             return row
                 .child(carried.child(menu::opens_a_menu(
                     lit,
@@ -606,6 +622,7 @@ impl RootView {
             )
         };
         let offered = words.clone();
+
         let lit = self.in_the_pane_ring_for_keys_at(
             drawn
                 .id(("lyric", line.index))
@@ -622,6 +639,7 @@ impl RootView {
                 })),
             move |this, where_at, cx| {
                 let menu = offer(this, where_at, &offered, cx);
+
                 this.open_a_menu(menu, cx);
             },
             cx,
@@ -647,6 +665,7 @@ impl RootView {
                     lyrics.update(cx, |model, _| model.left(index));
                     return;
                 }
+
                 let moved = lyrics.update(cx, |model, _| model.reached(index, Instant::now()));
                 if moved {
                     window.refresh();
@@ -702,6 +721,7 @@ impl RootView {
         let current_digest = digest.filter(|digest| digest.track == current.id);
         let tags = current_digest.map(|digest| &digest.info.tags);
         let file_artist = tags.and_then(|tags| tags.album_artist.clone());
+
         let file_duration = current_digest
             .and_then(|digest| digest.info.whole_file)
             .map(|whole| whole.to_duration(current.source.rate));
@@ -751,7 +771,9 @@ fn kept_with_its_marks(
     if !text.contains(|mark: char| !mark.is_alphanumeric() && mark != ' ') {
         return text.clone();
     }
+
     let mut wrapper = cx.text_system().line_wrapper(font, size);
+
     let mended = mended(text, |segment| {
         wrapper
             .wrap_line(
@@ -769,6 +791,7 @@ fn kept_with_its_marks(
 fn mended(text: &str, mut breaking_at: impl FnMut(&str) -> Vec<usize>) -> String {
     let mut mended = text.to_owned();
     let mut from = 0;
+
     while from <= mended.len() {
         let end = mended[from..]
             .find('\n')
@@ -803,6 +826,7 @@ fn swept(text: SharedString, sweep: &Sweep, unsung: u32, sung: u32) -> StyledTex
     };
     let wiped = sweep.wiped(&text);
     let mut runs = Vec::with_capacity(2);
+
     if wiped.sung_to > 0 {
         runs.push((0..wiped.sung_to, coloured(sung)));
     }
@@ -919,6 +943,7 @@ fn end_of_the_words(ending: Ending, measures: Measures) -> Div {
 fn breather(breath: Breath, measures: Measures) -> Div {
     let at_rest = f32::from(measures.dot);
     let swells_by = at_rest * DOT_SWELLS_BY;
+
     let widest = at_rest + swells_by;
     let apart = widest + f32::from(measures.dot_gap);
     #[expect(clippy::cast_precision_loss, reason = "three dots fit an f32 exactly")]
@@ -936,6 +961,7 @@ fn breather(breath: Breath, measures: Measures) -> Div {
                 let side = px((swells_by * breath.swell).mul_add(lit.mul_add(0.5, 0.5), at_rest));
                 let centre = point(middle.x + px(apart * (dot - (dots - 1.0) / 2.0)), middle.y);
                 let shade = accent.opacity((1.0 - DIM_DOT).mul_add(lit, DIM_DOT));
+
                 window.paint_quad(
                     fill(Bounds::centered_at(centre, size(side, side)), shade)
                         .corner_radii(side / 2.0),
@@ -971,6 +997,7 @@ fn dissolving(from_the_top: bool, measures: Measures) -> Div {
     } else {
         (theme::tinted(ground, 0x00), theme::tinted(ground, 0xff))
     };
+
     let edge = div()
         .absolute()
         .left_0()
@@ -1041,17 +1068,23 @@ mod tests {
         held: LyricsAhead,
     ) -> (Driven, Arc<Library>, MediaLocation) {
         let track = folder.tone("one.wav", 5);
+
         fs::write(
             folder.path().join("one.lrc"),
             "[00:00.50]first words\n[00:03.00]second words\n",
         )
         .expect("a sidecar beside the track");
+
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
+
         let location = MediaLocation::local(&track);
+
         library
             .hold_lyrics_ahead(&location, None, held)
             .expect("the catalog keeps how far the words run ahead");
+
         let mut driven = Driven::singing(cx, Arc::clone(&library), folder);
 
         driven.play(&[track]);
@@ -1082,6 +1115,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (mut driven, library, location) = sung(cx, &folder, LyricsAhead::ZERO);
+
         driven.until_drawn("lyrics-later");
 
         assert_eq!(ahead_of(&mut driven), LyricsAhead::ZERO);
@@ -1089,7 +1123,9 @@ mod tests {
 
         driven.click("lyrics-later");
         driven.click("lyrics-later");
+
         let twice = LyricsAhead::ZERO.later().later();
+
         driven.until(|root, cx| root.lyrics.read(cx).ahead() == twice);
         kept_until(&mut driven, &library, &location, twice);
         driven.until_drawn("lyrics-ahead");
@@ -1109,6 +1145,7 @@ mod tests {
     fn how_far_the_words_were_moved_for_a_song_is_read_back_as_it_plays(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let held = LyricsAhead::of_millis(400).expect("within reach");
+
         let (mut driven, _, _) = sung(cx, &folder, held);
 
         driven.until(|root, cx| root.lyrics.read(cx).ahead() == held);
@@ -1139,8 +1176,11 @@ mod tests {
                 model.read_how_far_ahead(Some(retagged), Arc::clone(&library), cx);
             });
         });
+
         let straight_after = ahead_of(&mut driven);
+
         driven.settle();
+
         let settled = ahead_of(&mut driven);
 
         driven.root.update(&mut driven.cx, |root, cx| {
@@ -1148,6 +1188,7 @@ mod tests {
                 model.read_how_far_ahead(Some(elsewhere), Arc::clone(&library), cx);
             });
         });
+
         let other_song = ahead_of(&mut driven);
 
         assert_eq!(straight_after, twice);

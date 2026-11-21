@@ -15,7 +15,7 @@ pub(crate) trait Identifying {
     fn information_of(&self, file: &File) -> Raw<Information>;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct FileIdentity {
     pub volume: u32,
     pub index: u64,
@@ -60,6 +60,7 @@ mod real {
     impl Identifying for Windows {
         fn information_of(&self, file: &File) -> Raw<Information> {
             let mut information = BY_HANDLE_FILE_INFORMATION::default();
+
             unsafe {
                 GetFileInformationByHandle(HANDLE(file.as_raw_handle()), &raw mut information)
             }
@@ -86,20 +87,27 @@ mod real {
         #[test]
         fn a_file_written_in_place_keeps_its_identity_and_one_renamed_over_it_does_not() {
             let folder = env::temp_dir().join(format!("resonate-identity-{}", process::id()));
+
             fs::create_dir_all(&folder).expect("a folder");
+
             let held = folder.join("held.bin");
             let staged = folder.join("staged.bin");
+
             fs::write(&held, b"first").expect("a file");
 
             let before = file_identity(&held).expect("the file's identity");
+
             OpenOptions::new()
                 .write(true)
                 .open(&held)
                 .and_then(|mut file| file.write_all(b"FIRST"))
                 .expect("a write in place");
+
             let in_place = file_identity(&held).expect("the identity after a write in place");
+
             fs::write(&staged, b"second").expect("a staged copy");
             fs::rename(&staged, &held).expect("the copy renamed over the file");
+
             let renamed = file_identity(&held).expect("the identity after a rename over it");
             let _ = fs::remove_dir_all(&folder);
 

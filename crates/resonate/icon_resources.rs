@@ -49,6 +49,7 @@ pub struct Image<'a> {
 
 const fn null_record() -> [u8; HEADER_SIZE] {
     let mut record = [0; HEADER_SIZE];
+
     record[4] = HEADER_SIZE as u8;
     record[8] = 0xFF;
     record[9] = 0xFF;
@@ -112,6 +113,7 @@ pub fn images(ico: &[u8]) -> Result<Vec<Image<'_>>, Error> {
                 usize::try_from(entry.offset).map_err(|_| Error::ImageOutsideFile { index })?;
             let length =
                 usize::try_from(entry.length).map_err(|_| Error::ImageOutsideFile { index })?;
+
             let bytes = start
                 .checked_add(length)
                 .and_then(|end| ico.get(start..end))

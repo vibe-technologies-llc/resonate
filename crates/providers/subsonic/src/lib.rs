@@ -139,7 +139,7 @@ struct Listings {
     song: Vec<Listing>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize)]
 struct Listing {
     #[serde(deserialize_with = "id_spelt")]
     id: String,
@@ -195,6 +195,7 @@ fn weighed(
         .recording
         .as_ref()
         .and_then(|recording| songs.iter().find(|song| song.is_the_recording(recording)));
+
     if let Some(song) = by_recording {
         return Some(song.clone());
     }
@@ -223,6 +224,7 @@ fn hex(bytes: &[u8]) -> String {
 
 fn token(password: &str, salt: &str) -> String {
     let mut digest = Md5::new();
+
     digest.update(password.as_bytes());
     digest.update(salt.as_bytes());
     hex(&digest.finalize())
@@ -261,24 +263,31 @@ impl Subsonic {
         let mut retried = 0;
         loop {
             self.pacing.paced();
+
             let mut request = asking_to_resume(agent.get(url), held);
+
             if let Some(deadline) = deadline {
                 request = request
                     .config()
                     .timeout_global(Some(self.left_before(deadline, op)?))
                     .build();
             }
+
             let response = request
                 .call()
                 .map_err(|error| self.unreachable(op, error))?;
+
             if response.status().is_success() {
                 return Ok(response);
             }
+
             let status = response.status().as_u16();
+
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
+
                 tracing::debug!(
                     status,
                     ?wait,
@@ -318,6 +327,7 @@ impl Subsonic {
             escaped(&self.server.user),
             token(&self.server.password, &salt),
         );
+
         for (name, value) in asked {
             let _ = write!(url, "&{name}={}", escaped(value));
         }
@@ -373,6 +383,7 @@ impl Subsonic {
         let op = ProviderOp::Browse;
         let deadline = Instant::now() + self.patience.answered_within;
         let url = self.url(method, asked);
+
         let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
         let bytes = self.read_whole(op, response)?;
         self.answered(&bytes, op)
@@ -427,6 +438,7 @@ impl Subsonic {
         let method = if favoured { "star" } else { "unstar" };
         let deadline = Instant::now() + self.patience.answered_within;
         let url = self.url(method, &[("id", id.as_str())]);
+
         let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
         let bytes = self.read_whole(op, response)?;
         self.answered(&bytes, op).map(drop)
@@ -450,9 +462,11 @@ impl Subsonic {
             "getCoverArt",
             &[("id", cover.as_str()), ("size", &side.to_string())],
         );
+
         let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
         let media_type = response.body().mime_type().map(str::to_owned);
         let bytes = self.read_whole(op, response)?;
+
         if is_a_document(media_type.as_deref()) {
             return Err(self.refusal_in(&bytes, op));
         }
@@ -465,6 +479,7 @@ impl Subsonic {
             Named::Album(id) => Ok(self.album(id)?.songs),
             Named::Artist(id) => {
                 let mut songs = Vec::new();
+
                 for album in self.artist(id)?.albums {
                     songs.extend(self.album(&album.id)?.songs);
                 }
@@ -485,12 +500,16 @@ impl Subsonic {
     pub fn streamed(&self, id: &Id) -> Result<Streamed> {
         let op = ProviderOp::Stream;
         let url = self.url("stream", &[("id", id.as_str()), ("format", AS_STORED)]);
+
         let response = self.called_within(&self.downloading, op, &url, None, None)?;
         let media_type = response.body().mime_type().map(str::to_owned);
+
         if is_a_document(media_type.as_deref()) {
             let bytes = self.read_whole(op, response)?;
+
             return Err(self.refusal_in(&bytes, op));
         }
+
         let reader = Seeking::continuing(
             self.downloading.clone(),
             url,
@@ -513,6 +532,7 @@ impl Subsonic {
                 ("albumCount", "0"),
             ],
         );
+
         let response = self.called_within(&self.asking, op, &url, Some(deadline), None)?;
         let bytes = self.read_whole(op, response)?;
         self.read(&bytes, op)
@@ -522,9 +542,11 @@ impl Subsonic {
         let deadline = Instant::now() + self.patience.answered_within;
         let mut choosing = Choosing::default();
         let wordings = identity.wordings();
+
         for words in &wordings {
             for page in 0..PAGES_AT_MOST {
                 let songs = self.searched(words, page * SONGS_A_PAGE, deadline)?;
+
                 if let Some(song) = weighed(identity, &songs, &mut choosing) {
                     return Ok(Some(song));
                 }
@@ -536,11 +558,13 @@ impl Subsonic {
                 break;
             }
         }
+
         let seen = choosing.seen();
         let chosen = choosing.chosen().map(|(song, taken)| {
             tracing::debug!(song = song.id, ?taken, "the Subsonic server holds the song");
             song
         });
+
         if chosen.is_none() {
             tracing::debug!(
                 title = identity.title,
@@ -579,9 +603,11 @@ impl Subsonic {
                 self.unreadable(op)
             }
         })?;
+
         if answer.response.status != OK {
             let code = answer.response.error.map_or(0, |refusal| refusal.code);
             let provider = self.source.clone();
+
             return Err(if ACCOUNT_REFUSALS.contains(&code) {
                 Error::Unwelcome { provider, op, code }
             } else {
@@ -601,6 +627,7 @@ impl Subsonic {
     fn downloaded(&self, url: &str, held: Option<Held>) -> Result<Reopened> {
         let op = ProviderOp::Download;
         let held = held.filter(Held::can_be_checked);
+
         let response = match self.called_within(&self.downloading, op, url, None, held.as_ref()) {
             Err(Error::Refused { status, .. })
                 if held.is_some() && NOT_AS_HELD.contains(&status) =>
@@ -609,12 +636,16 @@ impl Subsonic {
             }
             called => called?,
         };
+
         if is_a_document(response.body().mime_type()) {
             let bytes = self.read_whole(op, response)?;
+
             return Err(self.refusal_in(&bytes, op));
         }
+
         let agent = self.downloading.clone();
         let resumed_after = self.patience.resumed_after;
+
         let ranged = match &held {
             Some(held) => {
                 match Ranged::continuing_held(agent, url.to_owned(), response, held, resumed_after)
@@ -688,6 +719,7 @@ impl Provider for Subsonic {
         if identity.recording.is_none() && !identity.may_be_listed() {
             return Ok(Obtained::Nothing);
         }
+
         let Some(song) = self.found(identity)? else {
             return Ok(Obtained::Nothing);
         };
@@ -760,6 +792,7 @@ mod tests {
             password: "sesame".to_owned(),
         });
         let url = subsonic.url("ping", &[]);
+
         let refused = subsonic
             .asking
             .get(&url)
@@ -790,7 +823,9 @@ mod tests {
         let songs = subsonic()
             .read(SEARCHED.as_bytes(), ProviderOp::Search)
             .expect("a search answer");
+
         assert_eq!(songs.len(), 3);
+
         let id = |identity: &Identity| {
             let mut choosing = Choosing::default();
             weighed(identity, &songs, &mut choosing)
@@ -802,6 +837,7 @@ mod tests {
             recording: Some(Mbid::new(ECHOES).expect("an mbid")),
             ..Identity::named("Echoes")
         };
+
         assert_eq!(id(&by_recording).as_deref(), Some("song-2"));
 
         let by_isrc = Identity {
@@ -811,6 +847,7 @@ mod tests {
             ],
             ..Identity::named("Echoes")
         };
+
         assert_eq!(id(&by_isrc).as_deref(), Some("song-3"));
 
         let named = Identity {
@@ -818,6 +855,7 @@ mod tests {
             length: Some(Duration::from_secs(1412)),
             ..Identity::named("Echoes")
         };
+
         assert_eq!(id(&named).as_deref(), Some("song-2"));
         assert_eq!(id(&Identity::named("Echoes")), None);
     }

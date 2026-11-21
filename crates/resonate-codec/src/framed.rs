@@ -114,17 +114,23 @@ impl Framing for Mpeg {
 
             let mut opening = [0_u8; MPEG_WEIGHED_BYTES];
             let weighed = header.length.min(MPEG_WEIGHED_BYTES);
+
             opening[..4].copy_from_slice(&word.to_be_bytes());
+
             let body = &mut opening[MPEG_HEADER_BYTES as usize..weighed];
+
             if until_eof(stream.read_buf_exact(body).map_err(Error::from))?.is_none() {
                 return Ok(None);
             }
+
             let rest = length.saturating_sub(weighed as u64);
+
             if until_eof(stream.ignore_bytes(rest).map_err(Error::from))?.is_none() {
                 return Ok(None);
             }
 
             let opening = &opening[..weighed];
+
             if is_an_info_note(opening, header) || is_a_vbri_note(opening, header) {
                 continue;
             }
@@ -177,6 +183,7 @@ fn is_an_info_note(opening: &[u8], header: FrameHeader) -> bool {
         return false;
     };
     let (named, flags) = note.split_at(4);
+
     if named != XING && named != INFO {
         return false;
     }
@@ -186,6 +193,7 @@ fn is_an_info_note(opening: &[u8], header: FrameHeader) -> bool {
     {
         return false;
     }
+
     let flags = u32::from_be_bytes([flags[0], flags[1], flags[2], flags[3]]);
     let fields: usize = XING_FIELDS
         .iter()
@@ -217,6 +225,7 @@ fn reservoir(opening: &[u8], header: FrameHeader) -> u64 {
     if header.xing_at().is_none() {
         return 0;
     }
+
     let at = header_bytes(header);
     match (header.is_mpeg_one(), opening.get(at..at + 2)) {
         (true, Some(&[high, low])) => u64::from(u16::from_be_bytes([high, low]) >> 7),
@@ -250,12 +259,15 @@ impl Framing for Adts {
 
     fn walk(stream: &mut MediaSourceStream<'_>) -> Result<Option<Walked<Self::Key>>> {
         let mut word = 0_u16;
+
         while word & ADTS_SYNC_MASK != ADTS_SYNC {
             let Some(byte) = until_eof(stream.read_u8().map_err(Error::from))? else {
                 return Ok(None);
             };
+
             word = (word << 8) | u16::from(byte);
         }
+
         let at = stream.pos() - 2;
         let checked = word & 1 == 0;
         let header = if checked {
@@ -265,15 +277,18 @@ impl Framing for Adts {
         };
 
         let mut body = [0_u8; 5];
+
         if until_eof(stream.read_buf_exact(&mut body).map_err(Error::from))?.is_none() {
             return Ok(None);
         }
         if (body[0] >> 2) & 0b1111 >= ADTS_SAMPLE_RATES {
             return decode_error("adts: invalid sample rate");
         }
+
         let length = (u16::from(body[1] & 0b11) << 11)
             | (u16::from(body[2]) << 3)
             | (u16::from(body[3]) >> 5);
+
         if length < header {
             return decode_error("adts: invalid adts frame length");
         }
@@ -282,6 +297,7 @@ impl Framing for Adts {
         }
 
         let rest = u64::from(length) - 5 - 2;
+
         if until_eof(stream.ignore_bytes(rest).map_err(Error::from))?.is_none() {
             return Ok(None);
         }
@@ -364,6 +380,7 @@ pub(crate) struct Framed<'s, F> {
 impl<'s, F: Framing> Framed<'s, F> {
     pub(crate) fn try_new(stream: MediaSourceStream<'s>, options: FormatOptions) -> Result<Self> {
         let mut options = options;
+
         let metadata = options.external_data.metadata.take().unwrap_or_default();
         let chapters = options.external_data.chapters.take();
         let seekable = stream.is_seekable();
@@ -377,11 +394,13 @@ impl<'s, F: Framing> Framed<'s, F> {
 
         let (reading, music_at, beside) = if seekable {
             let mut stream = reading.into_inner();
+
             let music_at = stream.pos();
             let beside = F::walk(&mut stream)
                 .ok()
                 .flatten()
                 .map_or(0, |walked| walked.beside);
+
             stream.seek(SeekFrom::Start(opened_at))?;
             (F::open(stream, FormatOptions::default())?, music_at, beside)
         } else {
@@ -455,6 +474,7 @@ impl<'s, F: Framing> Framed<'s, F> {
     fn keep_a_mark(&mut self, mark: Mark, samples: u64, found: Found) {
         let ts = mark.ts.get();
         let apart = i64::try_from(samples.saturating_mul(MARKED_EVERY_FRAMES)).unwrap_or(i64::MAX);
+
         let near = ts.saturating_sub(apart)..=ts.saturating_add(apart);
         if self.marks.range(near).next().is_none() {
             self.marks.insert(ts, (mark.at, found));
@@ -465,7 +485,9 @@ impl<'s, F: Framing> Framed<'s, F> {
         if self.playing.is_none_or(|playing| playing == stood_at) {
             return;
         }
+
         let synced = self.synced.get();
+
         self.marks
             .retain(|&ts, &mut (_, found)| ts <= synced || found == Found::Walked);
     }
@@ -477,6 +499,7 @@ impl<'s, F: Framing> Framed<'s, F> {
         required: Timestamp,
     ) -> Result<Option<Mark>> {
         stream.seek(SeekFrom::Start(from.at))?;
+
         let mut behind: VecDeque<Frame<F::Key>> = VecDeque::with_capacity(FRAMES_HELD_BEHIND);
         let mut ts = from.ts;
 
@@ -484,10 +507,13 @@ impl<'s, F: Framing> Framed<'s, F> {
             let Some(walked) = F::walk(stream)? else {
                 return seek_error(SeekErrorKind::OutOfRange);
             };
+
             if let Some(before) = behind.back_mut() {
                 before.restarts =
                     !F::RESTARTS_ONLY_BEFORE_A_LIKE_FRAME || before.is_followed_by(&walked);
+
                 let before = *before;
+
                 self.keep_a_mark(before.mark(), before.walked.samples, Found::Walked);
             }
             if behind.len() == FRAMES_HELD_BEHIND {
@@ -502,6 +528,7 @@ impl<'s, F: Framing> Framed<'s, F> {
             let ends = ts
                 .checked_add(Duration::new(walked.samples))
                 .ok_or(Error::SeekError(SeekErrorKind::OutOfRange))?;
+
             if ends > required {
                 break walked;
             }
@@ -509,6 +536,7 @@ impl<'s, F: Framing> Framed<'s, F> {
         };
 
         let after = F::walk(stream);
+
         if let Some(last) = behind.back_mut() {
             last.restarts = !F::RESTARTS_ONLY_BEFORE_A_LIKE_FRAME
                 || match after {
@@ -532,7 +560,9 @@ impl<'s, F: Framing> Framed<'s, F> {
 
     fn reopen_at(&mut self, mut stream: MediaSourceStream<'s>, restart: Mark) -> Result<()> {
         stream.seek(SeekFrom::Start(restart.at))?;
+
         let reading = F::open(stream, FormatOptions::default())?;
+
         self.shift = restart.ts.get() - first_ts(reading.tracks()).get();
         self.next = restart.ts;
         self.playing = Some(restart.at);
@@ -558,6 +588,7 @@ impl<'s, F: Framing> Framed<'s, F> {
         required: Timestamp,
     ) -> Result<SeekedTo> {
         self.reopen_at_the_opening(stream)?;
+
         let seeked = self.reading()?.seek(
             mode,
             SeekTo::Timestamp {
@@ -565,6 +596,7 @@ impl<'s, F: Framing> Framed<'s, F> {
                 track_id: 0,
             },
         )?;
+
         self.next = seeked.actual_ts;
         self.playing = None;
         Ok(seeked)
@@ -575,6 +607,7 @@ impl<'s, F: Framing> Framed<'s, F> {
             return;
         };
         let samples = F::lasts(packet);
+
         self.keep_a_mark(Mark { at, ts: packet.pts }, samples, Found::Heard);
         self.playing = Some(at + packet.data.len() as u64 + self.beside);
     }
@@ -637,6 +670,7 @@ impl<'s, F: Framing> FormatReader for Framed<'s, F> {
         let Some(mut packet) = self.reading()?.next_packet()? else {
             return Ok(None);
         };
+
         packet.pts = shifted(packet.pts, shift)?;
         packet.dts = shifted(packet.dts, shift)?;
         self.hear(&packet);
@@ -649,6 +683,7 @@ impl<'s, F: Framing> FormatReader for Framed<'s, F> {
 
     fn seek(&mut self, mode: SeekMode, to: SeekTo) -> Result<SeekedTo> {
         let required = self.required(to)?;
+
         if !self.seekable {
             let seeked = self.reading()?.seek(
                 mode,
@@ -657,6 +692,7 @@ impl<'s, F: Framing> FormatReader for Framed<'s, F> {
                     track_id: 0,
                 },
             )?;
+
             self.next = seeked.actual_ts;
             return Ok(seeked);
         }
@@ -668,11 +704,14 @@ impl<'s, F: Framing> FormatReader for Framed<'s, F> {
             return decode_error(LOST_TO_A_FAILED_SEEK);
         };
         let mut stream = reading.into_inner();
+
         let current = Mark {
             at: stream.pos(),
             ts: self.next,
         };
+
         self.forget_what_was_heard_since_the_stream_drifted(current.at);
+
         let from = self.walk_from(current, required);
 
         match self.restart_for(&mut stream, from, required) {
@@ -733,6 +772,7 @@ mod tests {
     impl Read for Counted {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             let read = self.held.read(buf)?;
+
             self.read.fetch_add(read as u64, Ordering::Relaxed);
             Ok(read)
         }
@@ -761,6 +801,7 @@ mod tests {
             (AT_128, AT_128_LENGTH)
         };
         let mut frame = header.to_vec();
+
         frame.resize(length, 0);
         frame[48..56].copy_from_slice(&(index as u64).to_be_bytes());
         frame
@@ -773,6 +814,7 @@ mod tests {
     fn adts_frame(index: usize) -> Vec<u8> {
         let length = 200 + index % 7 * 31;
         let mut frame = vec![0xff, 0xf1, 0x50, 0x80, 0, 0, 0xfc];
+
         frame[3] |= ((length >> 11) & 0b11) as u8;
         frame[4] = ((length >> 3) & 0xff) as u8;
         frame[5] = (((length & 0b111) << 5) as u8) | 0x1f;
@@ -825,17 +867,21 @@ mod tests {
     ) {
         let whole = every_packet(&mut opened::<F>(file.clone()).0);
         let (mut reader, _) = opened::<F>(file);
+
         every_packet(&mut reader);
 
         for &ts in wanted {
             let landed = seek_to(&mut reader, ts);
+
             assert!(landed <= ts, "a seek to {ts} landed past it, at {landed}");
             assert!(
                 ts - landed < samples * FRAMES_HELD_BEHIND as i64,
                 "a seek to {ts} landed far short of it, at {landed}"
             );
+
             let next = reader.next_packet().unwrap().unwrap();
             let heard = whole.iter().find(|(pts, _)| *pts == landed).unwrap();
+
             assert_eq!(next.pts.get(), landed);
             assert_eq!(
                 next.data, heard.1,
@@ -853,6 +899,7 @@ mod tests {
             0,
             300 * SAMPLES + 1_151,
         ];
+
         lands_where_a_reading_from_the_start_would::<Mpeg>(mpeg(FRAMES), SAMPLES, &wanted);
     }
 
@@ -860,6 +907,7 @@ mod tests {
     fn an_adts_stream_lands_every_seek_where_a_walk_from_its_start_would() {
         let samples = ADTS_SAMPLES as i64;
         let wanted = [500 * samples + 3, 0, 250 * samples, 599 * samples + 1_000];
+
         lands_where_a_reading_from_the_start_would::<Adts>(adts(FRAMES), samples, &wanted);
     }
 
@@ -867,15 +915,20 @@ mod tests {
     fn a_backward_seek_after_playing_reads_near_where_it_lands_not_from_the_first_frame() {
         let file = mpeg(FRAMES);
         let (mut reader, read) = opened::<Mpeg>(file.clone());
+
         every_packet(&mut reader);
 
         let before = read.load(Ordering::Relaxed);
         let landed = seek_to(&mut reader, 550 * SAMPLES);
+
         reader.next_packet().unwrap().unwrap();
+
         let spent = read.load(Ordering::Relaxed) - before;
 
         assert!(landed > 500 * SAMPLES);
+
         let prefix = (0..550).map(|index| mpeg_frame(index).len()).sum::<usize>() as u64;
+
         assert!(
             spent * 10 < prefix,
             "a seek near the end read {spent} bytes of a {prefix} byte prefix"
@@ -885,8 +938,10 @@ mod tests {
     #[test]
     fn junk_between_frames_moves_no_seek_off_its_frame() {
         let mut file = mpeg(200);
+
         file.extend_from_slice(&[0x12; 333]);
         file.extend((200..FRAMES).flat_map(mpeg_frame));
+
         let wanted = [
             100 * SAMPLES,
             450 * SAMPLES + 5,
@@ -894,6 +949,7 @@ mod tests {
             201 * SAMPLES,
             50,
         ];
+
         lands_where_a_reading_from_the_start_would::<Mpeg>(file, SAMPLES, &wanted);
     }
 
@@ -907,6 +963,7 @@ mod tests {
                 track_id: 0,
             },
         );
+
         assert!(matches!(
             past,
             Err(Error::SeekError(SeekErrorKind::OutOfRange))

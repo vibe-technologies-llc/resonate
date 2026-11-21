@@ -53,6 +53,7 @@ fn serving_in(folder: &Path) -> Result<Vec<(WellKnownName<'static>, Arc<dyn Peer
     let names = registry::listed(folder).map_err(|source| Error::pipe(PipeOp::List, source))?;
 
     let mut found = Vec::new();
+
     for player in names {
         let Ok(name) = WellKnownName::try_from(player.clone()) else {
             continue;
@@ -66,6 +67,7 @@ fn serving_in(folder: &Path) -> Result<Vec<(WellKnownName<'static>, Arc<dyn Peer
         match reached {
             Ok(peer) => {
                 let peer: Arc<dyn Peer> = Arc::new(peer);
+
                 found.push((name, peer));
             }
             Err(error) => {
@@ -93,10 +95,12 @@ impl Serving {
 
     fn start_in(folder: &Path, zone: ZoneId, answering: Arc<dyn Serves>) -> Result<Self> {
         kept_to_this_user(folder).map_err(|source| Error::pipe(PipeOp::Claim, source))?;
+
         let mut last = None;
 
         let names = std::iter::once(bus_name_of(zone))
             .chain((1..=INSTANCES).map(|attempt| instance_name(zone, attempt)));
+
         for player in names {
             let name = WellKnownName::try_from(player.clone())
                 .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
@@ -158,6 +162,7 @@ impl Serving {
             Ok(thread) => thread,
             Err(source) => {
                 let _ = fs::remove_file(&socket);
+
                 return Err(Error::pipe(PipeOp::Spawn, source));
             }
         };
@@ -210,7 +215,9 @@ fn listening_at(socket: &Path) -> io::Result<UnixListener> {
         Err(error) if error.kind() == io::ErrorKind::NotFound => {}
         Err(error) => return Err(error),
     }
+
     let listener = UnixListener::bind(socket)?;
+
     fs::set_permissions(socket, Permissions::from_mode(READ_BY_US_ALONE))?;
 
     Ok(listener)
@@ -265,7 +272,9 @@ mod tests {
 
     fn echoed(socket: &Path, byte: u8) -> u8 {
         let mut stream = UnixStream::connect(socket).expect("the socket answers");
+
         write_frame(&mut stream, &[byte]).expect("a byte sent");
+
         let heard = read_frame(&mut stream)
             .expect("a frame back")
             .expect("the player answered");
@@ -335,6 +344,7 @@ mod tests {
             Serving::start_in(&folder.0, ZoneId::FIRST, echoing()).expect("a player served");
 
         let mode = |path: &Path| fs::metadata(path).expect("it stands").mode() & 0o777;
+
         assert_eq!(mode(&folder.0), OURS_ALONE);
         assert_eq!(mode(&folder.0.join("socket")), READ_BY_US_ALONE);
     }
@@ -342,6 +352,7 @@ mod tests {
     #[test]
     fn a_folder_others_can_reach_is_refused_rather_than_served_in() {
         let folder = Folder::new("open");
+
         fs::create_dir_all(&folder.0).expect("a folder");
         fs::set_permissions(&folder.0, Permissions::from_mode(0o755)).expect("opened to others");
 
@@ -359,8 +370,11 @@ mod tests {
     #[test]
     fn a_socket_a_dead_player_left_is_taken_over_by_the_next_to_claim_its_name() {
         let folder = Folder::new("stale");
+
         kept_to_this_user(&folder.0).expect("a folder");
+
         let socket = folder.0.join("socket");
+
         drop(UnixListener::bind(&socket).expect("what a dead player left"));
 
         assert!(UnixStream::connect(&socket).is_err());
@@ -381,6 +395,7 @@ mod tests {
             Serving::start_in(&folder.0, ZoneId::FIRST, echoing()).expect("a second player");
 
         let instance = format!("{BUS_NAME}.instance{}", process::id());
+
         assert_eq!(second.name().as_str(), instance);
         assert_eq!(
             echoed(
@@ -390,6 +405,7 @@ mod tests {
             3
         );
         assert_eq!(echoed(&folder.0.join("socket"), 4), 4);
+
         drop((first, second));
     }
 
@@ -402,7 +418,9 @@ mod tests {
         let found = serving_in(&folder.0).expect("the folder is read");
 
         let names: Vec<&str> = found.iter().map(|(name, _)| name.as_str()).collect();
+
         assert_eq!(names, vec![bus_name_of(second_zone())]);
+
         drop((zone, silent));
     }
 }

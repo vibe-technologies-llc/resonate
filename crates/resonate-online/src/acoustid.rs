@@ -102,6 +102,7 @@ fn printed(answer: Option<Answer>) -> Printed {
     };
 
     let mut matches: Vec<RecordingMatch> = Vec::new();
+
     for found in answer.results {
         let score = (found.score * WHOLE_SCORE).round().clamp(0.0, WHOLE_SCORE) as u8;
         for heard in found.recordings {
@@ -167,7 +168,9 @@ mod tests {
         };
 
         assert_eq!(found.len(), 2);
+
         let first = &found[0];
+
         assert_eq!(
             first.recording,
             Mbid::new("cd2e7c47-16f5-46c6-a37c-a1eb7bf599ff").expect("an mbid")
@@ -180,6 +183,7 @@ mod tests {
         assert!(first.credit[0].mbid.is_some());
 
         let second = &found[1];
+
         assert_eq!(second.score, 51);
         assert_eq!(second.title, "Echoes");
         assert_eq!(second.credit[0].joined_by, " & ");

@@ -173,6 +173,7 @@ pub(crate) fn better_held(track: &Track, found: impl IntoIterator<Item = Track>)
     let song = TheSong::new(heard_of(track));
     let held = quality_of(track);
     let mut better: Vec<Track> = Vec::new();
+
     for copy in found {
         let fits = copy.id != track.id
             && !better.iter().any(|kept| kept.id == copy.id)
@@ -244,9 +245,11 @@ fn served_label(search: VersionSearch, service: &str, song: &Song) -> String {
 fn variant_label(original: &Track, variant: &Track) -> String {
     let codec = variant.codec.as_str();
     let quality = quality_said(variant);
+
     if variant.id == original.id {
         return words::versions::variant_original(codec, quality);
     }
+
     let named = match album_of(variant) {
         Some(album) if album_of(original) != Some(album) => {
             words::versions::variant_on_album(album, codec, quality)
@@ -292,8 +295,10 @@ pub(crate) fn asked_of(
     search: VersionSearch,
 ) -> Asked {
     let mut asked = Asked::default();
+
     for plays in services.iter().filter(|plays| plays.plays_songs()) {
         let service = plays.title().to_owned();
+
         match plays.search(words) {
             Ok(found) => {
                 for found in found
@@ -302,6 +307,7 @@ pub(crate) fn asked_of(
                     .filter(|found| song.served_as(search.sought(), heard_served(found)))
                 {
                     let location = plays.location_of(&Named::Song(found.id.clone()));
+
                     asked.heard.push(served_song_of(&location, &found));
                     asked.found.push(FoundVersion {
                         label: served_label(search, &service, &found),
@@ -430,6 +436,7 @@ impl MobilePlayer {
             0,
             HELD_WEIGHED_AT_MOST,
         )?;
+
         let held: Vec<FoundVersion> = held_versions(&track, search, named_alike)
             .into_iter()
             .map(|copy| FoundVersion {
@@ -445,11 +452,13 @@ impl MobilePlayer {
             _ if services.iter().all(|plays| !plays.plays_songs()) => Some(Nothing::NowhereToAsk),
             _ => None,
         };
+
         if let Some(why) = nothing_to_ask {
             let said = match held.is_empty() {
                 true => nothing_said(search, why, &title, &[]),
                 false => words::versions::found(held.len(), &title),
             };
+
             return Ok(FoundVersions {
                 versions: held,
                 said: Some(said),
@@ -461,7 +470,9 @@ impl MobilePlayer {
         let trouble = (!asked.refused.is_empty())
             .then(|| words::versions::could_not_ask(asked.refused.join(NAMES_APART)));
         let mut versions = held;
+
         versions.extend(asked.found);
+
         let said = match versions.len() {
             0 => {
                 let answered: Vec<String> = asked
@@ -498,6 +509,7 @@ impl MobilePlayer {
             }
             SongVersion::Served { uri } => {
                 let wanted = self.served_version_wanted(&track, &uri)?;
+
                 self.catalog.want_a_version(id, &wanted)?;
                 Ok(VersionChosen {
                     said: words::versions::downloading(title),
@@ -522,6 +534,7 @@ impl MobilePlayer {
 
     pub fn forget_version_chosen(&self, id: u64) -> Result<String> {
         let track = self.catalog.track(id)?;
+
         self.catalog
             .0
             .lock()
@@ -534,6 +547,7 @@ impl MobilePlayer {
         let original = self.catalog.the_song_a_variant_is_of(id)?.unwrap_or(id);
         let song = self.catalog.track(original)?;
         let variants = self.catalog.variants_held_by(original)?;
+
         if variants.is_empty() {
             return Ok(Vec::new());
         }
@@ -558,6 +572,7 @@ impl MobilePlayer {
         let mut query = connection
             .prepare_cached(SONGS_HOLDING_VARIANTS)
             .map_err(read_error)?;
+
         let ids = query
             .query_map([], |row| row.get::<_, i64>(0))
             .map_err(read_error)?
@@ -573,11 +588,14 @@ impl MobilePlayer {
         let original = self.catalog.the_song_a_variant_is_of(song)?.unwrap_or(song);
         let track = self.catalog.track(original)?;
         let title = titles::bare(&track.title);
+
         if variant == original {
             self.catalog.keep_a_variant(original, original)?;
             return Ok(words::versions::own_copy_again(title));
         }
+
         let held = self.catalog.variants_held_by(original)?;
+
         if !held.iter().any(|kept| kept.id == variant) {
             return Err(Error::NotAVariant);
         }
@@ -602,15 +620,18 @@ impl MobilePlayer {
         search: VersionSearch,
     ) -> Asked {
         let asked = asked_of(services, words, song, search);
+
         self.served.kept(&asked.heard);
         asked
     }
 
     pub(crate) fn served_version_wanted(&self, track: &Track, uri: &str) -> Result<SearchSong> {
         let location = MediaLocation::from_uri(uri).ok_or(Error::InvalidUri)?;
+
         if !self.served.serves(&location) {
             return Err(Error::NoServedServer);
         }
+
         let served = self.served.song_at(&location);
         Ok(SearchSong {
             title: Some(served.title)
@@ -634,6 +655,7 @@ impl MobilePlayer {
                     .served
                     .streamed_to_keep(&location, job.song.served_catalog.as_deref())?;
                 let known = self.served.song_at(&location).format;
+
                 let extension = resonate_providers::stream_extension(
                     known.as_deref(),
                     streamed.media_type.as_deref(),
@@ -668,6 +690,7 @@ impl MobilePlayer {
 
     pub(crate) fn as_chosen(&self, items: Vec<QueueItem>) -> Result<Vec<QueueItem>> {
         let mut chosen = Vec::with_capacity(items.len());
+
         for item in &items {
             chosen.push(self.chosen_for(item.id)?);
         }
@@ -724,6 +747,7 @@ impl Catalog {
 
     pub(crate) fn want_a_version(&self, song: u64, wanted: &SearchSong) -> Result<()> {
         self.save_wanted(std::slice::from_ref(wanted))?;
+
         let connection = self.0.lock();
         let want: i64 = connection
             .query_row(THE_WANT_OF_A_VERSION, [wanted_key(wanted)], |row| {
@@ -741,6 +765,7 @@ impl Catalog {
 
     pub(crate) fn variant_landed(&self, song: &SearchSong, landed: u64) -> Result<()> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let want: Option<i64> = transaction
             .query_row(THE_WANT_OF_A_VERSION, [wanted_key(song)], |row| row.get(0))
@@ -749,6 +774,7 @@ impl Catalog {
         let Some(want) = want else {
             return Ok(());
         };
+
         let songs = {
             let mut query = transaction
                 .prepare(THE_SONGS_A_WANT_IS_A_VERSION_OF)
@@ -758,11 +784,13 @@ impl Catalog {
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                 .map_err(read_error)?
         };
+
         if songs.is_empty() {
             return Ok(());
         }
 
         let now = seconds_now();
+
         songs
             .iter()
             .filter_map(|song| u64::try_from(*song).ok())
@@ -812,6 +840,7 @@ mod tests {
             .player
             .choose_version(song, SongVersion::Held { id: copy })
             .expect("a version chosen");
+
         harness.player.load(vec![song], 0, false).expect("a load");
 
         assert!(told.said.starts_with(&harness.song('a').title));
@@ -848,6 +877,7 @@ mod tests {
                 .choose_version(song, SongVersion::Held { id: copy })
                 .expect("a version kept");
         }
+
         let listed = |id: u64| {
             harness
                 .player
@@ -865,6 +895,7 @@ mod tests {
         assert_eq!(listed(b), listed(song));
 
         let mut holding = harness.player.songs_with_variants().expect("the songs");
+
         holding.sort_unstable();
 
         assert_eq!(holding, vec![song, b, c]);
@@ -955,6 +986,7 @@ mod tests {
         catalog
             .want_a_version(song, &wanted_from_a_service())
             .expect("a version wanted");
+
         let due = harness.player.poll_wanted_due().expect("the wants due");
 
         assert_eq!(due.len(), 1);

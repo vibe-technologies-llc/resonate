@@ -21,9 +21,11 @@ impl RootView {
         if self.something_stands_over_the_pane(cx) {
             return;
         }
+
         let Some((shift, held)) = self.movable(cx) else {
             return;
         };
+
         let Some(reach) = self.reach_in(shift, held, cx) else {
             return;
         };
@@ -34,6 +36,7 @@ impl RootView {
         else {
             return;
         };
+
         let landed = chosen.gathered_by(to, held);
 
         self.shift_chosen(shift, &chosen, to, cx);
@@ -62,10 +65,12 @@ impl RootView {
         let Some((shift, held)) = self.reachable(cx) else {
             return;
         };
+
         let Some(reach) = self.reach_in(shift, held, cx) else {
             return;
         };
         let chosen = self.choosable(shift, reach.selected(), cx);
+
         let row = if shift.chooses_apart() {
             chosen.first().unwrap_or(reach.row)
         } else {
@@ -83,18 +88,22 @@ impl RootView {
                 let library = self.library.read(cx);
                 let narrowed = library.narrowing().is_some();
                 let entries = library.entries().to_vec();
+
                 self.play_playlist(playlist, &entries, row, !narrowed, cx);
             }
             Shift::Listing(Listed::Tracks) => {
                 if let Some(found) = self.library.read(cx).found_at(row) {
                     let zone = self.zone_acted_on();
+
                     self.library
                         .update(cx, |library, cx| library.fetch_and_play(found, zone, cx));
                     return;
                 }
+
                 let Some((played, start)) = self.library.read(cx).played_from(row) else {
                     return;
                 };
+
                 self.play_the_listing_from(&played, start, window, cx);
             }
             Shift::Listing(Listed::Albums) => {
@@ -102,6 +111,7 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.opened(Selection::Album(album), cx);
             }
             Shift::Listing(Listed::Artists) => {
@@ -109,6 +119,7 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.opened(Selection::Artist(artist), cx);
             }
             Shift::Listing(Listed::Playlists) => {
@@ -121,10 +132,12 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.show_playlist(Some(playlist), cx);
             }
             Shift::Listing(Listed::Favourites) => {
                 let tracks = self.library.read(cx).favourite_tracks();
+
                 self.play(&tracks, row, cx);
             }
             Shift::Listing(Listed::FavouriteArtists) => {
@@ -137,6 +150,7 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.opened(Selection::Artist(artist), cx);
             }
             Shift::Listing(Listed::FavouriteAlbums) => {
@@ -149,6 +163,7 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.opened(Selection::Album(album), cx);
             }
             Shift::Listing(Listed::Missing) => self.open_what_is_missing_at(row, cx),
@@ -162,12 +177,14 @@ impl RootView {
                 else {
                     return;
                 };
+
                 self.play(&tracks, row, cx);
             }
             Shift::Listing(Listed::Offered) => {
                 let Some(query) = self.offered_in_shelf_order(cx).into_iter().nth(row) else {
                     return;
                 };
+
                 self.open_offered(query, cx);
             }
             Shift::Listing(Listed::Heard) => self.open_what_was_heard_at(row, cx),
@@ -184,6 +201,7 @@ impl RootView {
         match shift {
             Shift::Listing(Listed::Albums | Listed::FavouriteAlbums) => {
                 let albums = self.albums_chosen(shift, chosen, cx);
+
                 self.plays_everything_in_each(
                     albums.into_iter().map(Selection::Album).collect(),
                     Placement::Queued,
@@ -194,6 +212,7 @@ impl RootView {
             }
             Shift::Listing(Listed::Artists | Listed::FavouriteArtists) => {
                 let artists = self.artists_chosen(shift, chosen, cx);
+
                 self.plays_everything_in_each(
                     artists.into_iter().map(Selection::Artist).collect(),
                     Placement::Queued,
@@ -204,10 +223,12 @@ impl RootView {
             }
             Shift::Listing(Listed::Playlists) => {
                 let playlists = self.library.read(cx).playlists_at(chosen.rows());
+
                 self.queue_the_playlists(playlists, Placement::Queued, true, cx);
             }
             _ => {
                 let tracks = self.tracks_chosen(shift, chosen, cx);
+
                 self.play(&tracks, 0, cx);
             }
         }
@@ -243,10 +264,12 @@ impl RootView {
             Shift::Playlist(playlist) => {
                 let held = self.library.read(cx).entries().len();
                 let runs = chosen.runs().to_vec();
+
                 self.set_reach(Reach::after_dropping_runs(shift, &runs, held), cx);
                 self.typing.landed_by_a_jump = None;
                 self.library.update(cx, |library, cx| {
                     let drawn = library.playlist_as_drawn();
+
                     library.remove_runs_from_playlist(playlist, runs, drawn, cx);
                 });
                 cx.notify();
@@ -263,8 +286,10 @@ impl RootView {
             }
             Shift::Playlist(playlist) => {
                 let held = self.library.read(cx).entries().len();
+
                 self.library.update(cx, |library, cx| {
                     let drawn = library.playlist_as_drawn();
+
                     library.remove_from_playlist(playlist, rows, drawn, cx);
                 });
                 held
@@ -349,6 +374,7 @@ impl RootView {
     ) {
         let pressed = held.get(start).map(|track| track.id);
         let shuffled = self.player.read(cx).state().shuffle;
+
         if shuffled && self.library.read(cx).is_searching_the_whole_library() {
             self.with_the_whole_library(window, cx, move |this, library, window, cx| {
                 let found = pressed
@@ -387,6 +413,7 @@ impl RootView {
                 );
                 return;
             };
+
             this.play(&listing, start, cx);
         });
     }

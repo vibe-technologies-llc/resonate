@@ -81,6 +81,7 @@ fn offer(
     );
 
     let _ = stopped.recv();
+
     drop(server);
 
     said!("{}", words::offer::stopped());
@@ -124,6 +125,7 @@ mod tests {
     fn heard(socket: &UdpSocket, until: impl Fn(&str) -> bool) -> String {
         let deadline = Instant::now() + HEARD_WITHIN;
         let mut buffer = [0; 8192];
+
         while Instant::now() < deadline {
             let Ok(read) = socket.recv(&mut buffer) else {
                 continue;
@@ -147,6 +149,7 @@ mod tests {
 
     fn fetched(address: SocketAddr, path: &str) -> String {
         let mut stream = TcpStream::connect(address).expect("connects");
+
         stream
             .set_read_timeout(Some(HEARD_WITHIN))
             .expect("a read timeout");
@@ -155,7 +158,9 @@ mod tests {
             "GET {path} HTTP/1.1\r\nHost: {address}\r\nConnection: close\r\n\r\n"
         )
         .expect("asks");
+
         let mut answer = String::new();
+
         stream.read_to_string(&mut answer).expect("an answer");
         answer
     }
@@ -200,6 +205,7 @@ mod tests {
     #[test]
     fn the_catalog_is_offered_until_told_to_stop_and_byebye_is_sent() {
         let root = scratch("offer");
+
         for (file, title) in [("a.wav", "Alpha"), ("b.wav", "Bravo")] {
             fs::write(
                 root.join(file),
@@ -207,12 +213,15 @@ mod tests {
             )
             .expect("a song");
         }
+
         let shelves = Arc::new(Shelves::over(Arc::new(scanned(&root))));
         let _ = fs::remove_dir_all(&root);
 
         let told = UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of it");
+
         told.set_read_timeout(Some(HEARD_WITHIN))
             .expect("a read timeout");
+
         let offering = Offering {
             heard_on: SocketAddr::new(LOOPBACK, 0),
             told: told.local_addr().expect("an address"),
@@ -231,14 +240,17 @@ mod tests {
         let alive = heard(&told, |told| told.contains("NTS: ssdp:alive"));
         let at = located_by(&alive);
         let description = fetched(at, "/description.xml");
+
         assert!(description.starts_with("HTTP/1.1 200"));
         assert!(description.contains(udn.as_str()));
         assert!(description.contains("<friendlyName>Study</friendlyName>"));
 
         assert!(!offering_thread.is_finished());
+
         stop.send(()).expect("the offer is listening");
 
         let gone = heard(&told, |told| told.contains("NTS: ssdp:byebye"));
+
         offering_thread
             .join()
             .expect("the offer did not panic")
@@ -250,6 +262,7 @@ mod tests {
     #[test]
     fn the_counts_the_offer_prints_are_the_shelves_totals() {
         let root = scratch("offer-counts");
+
         for (file, title) in [("a.wav", "Alpha"), ("b.wav", "Bravo"), ("c.wav", "Charlie")] {
             fs::write(
                 root.join(file),
@@ -257,6 +270,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let shelves = Shelves::over(Arc::new(scanned(&root)));
         let _ = fs::remove_dir_all(&root);
 

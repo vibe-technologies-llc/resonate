@@ -117,15 +117,18 @@ fn copy_through(
     let (told, heard) = oneshot::channel();
     let served = text.as_bytes().to_vec();
     let serving = Arc::clone(&claim);
+
     let spawned = thread::Builder::new()
         .name("resonate-clipboard".to_owned())
         .spawn(move || offer(served, &serving, told));
+
     if spawned.is_err() {
         cx.write_to_clipboard(ClipboardItem::new_string(text));
         return;
     }
 
     let deadline = cx.background_executor().timer(ANSWERED_WITHIN);
+
     cx.spawn(async move |cx| {
         let taken = match answered_by(heard, deadline).await {
             Answer::InTime(taken) => taken,
@@ -141,6 +144,7 @@ fn copy_through(
 
 async fn answered_by(mut heard: oneshot::Receiver<bool>, deadline: Task<()>) -> Answer {
     let mut deadline = pin!(deadline);
+
     let in_time = poll_fn(|waker| {
         if let Poll::Ready(answer) = Pin::new(&mut heard).poll(waker) {
             return Poll::Ready(Some(answer.unwrap_or(false)));
@@ -168,8 +172,10 @@ struct Offered {
 
 fn serve(text: Vec<u8>, claim: &Claim, told: Told) {
     let mut offering = Offering { text, taken: false };
+
     let Some(mut offered) = offer(&mut offering, claim) else {
         let _ = told.send(false);
+
         return;
     };
     let _ = told.send(true);
@@ -182,6 +188,7 @@ fn serve(text: Vec<u8>, claim: &Claim, told: Told) {
     }
     offered.source.destroy();
     offered.device.destroy();
+
     let _ = offered.queue.flush();
 }
 
@@ -205,15 +212,20 @@ fn offer(offering: &mut Offering, claim: &Claim) -> Option<Offered> {
 
     let device = manager.get_data_device(&seat, &handle, ());
     let source = manager.create_data_source(&handle, ());
+
     for kind in TEXT_TYPES {
         source.offer(kind.to_owned());
     }
+
     let handing_over = claim.handing_over();
+
     if !claim.for_the_compositor() {
         tracing::debug!("the window gave up on the compositor before it could be handed the copy");
         source.destroy();
         device.destroy();
+
         let _ = queue.flush();
+
         return None;
     }
     device.set_selection(Some(&source));
@@ -302,6 +314,7 @@ mod tests {
     #[gpui::test]
     fn a_copy_hands_the_thread_its_text_and_waits_on_nothing(cx: &mut TestAppContext) {
         cx.executor().allow_parking();
+
         let (release, released) = mpsc::channel::<()>();
         let (heard, hearing) = mpsc::channel();
 
@@ -315,6 +328,7 @@ mod tests {
                 cx,
             );
         });
+
         let _ = release.send(());
 
         assert_eq!(hearing.recv().as_deref(), Ok(&b"Echoes"[..]));
@@ -325,6 +339,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.executor().allow_parking();
+
         let (release, released) = mpsc::channel::<()>();
         let (claimed, claiming) = mpsc::channel();
 
@@ -341,19 +356,23 @@ mod tests {
             );
         });
         cx.run_until_parked();
+
         assert_eq!(held(cx), None);
 
         cx.executor().advance_clock(ANSWERED_WITHIN);
         cx.run_until_parked();
+
         assert_eq!(held(cx).as_deref(), Some("Time"));
 
         let _ = release.send(());
+
         assert_eq!(claiming.recv(), Ok(false));
     }
 
     #[gpui::test]
     fn a_compositor_taking_the_copy_in_time_leaves_the_fallback_unwritten(cx: &mut TestAppContext) {
         cx.executor().allow_parking();
+
         let (answered, answering) = mpsc::channel();
 
         cx.write_to_clipboard(ClipboardItem::new_string("Money".to_owned()));
@@ -368,7 +387,9 @@ mod tests {
                 cx,
             );
         });
+
         let _ = answering.recv();
+
         cx.run_until_parked();
         cx.executor().advance_clock(ANSWERED_WITHIN);
         cx.run_until_parked();
@@ -379,6 +400,7 @@ mod tests {
     #[gpui::test]
     fn a_compositor_refusing_the_copy_is_answered_by_the_fallback_at_once(cx: &mut TestAppContext) {
         cx.executor().allow_parking();
+
         let (answered, answering) = mpsc::channel();
 
         cx.update(|cx| {
@@ -391,7 +413,9 @@ mod tests {
                 cx,
             );
         });
+
         let _ = answering.recv();
+
         cx.run_until_parked();
 
         assert_eq!(held(cx).as_deref(), Some("Brain Damage"));
@@ -402,6 +426,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         cx.executor().allow_parking();
+
         let (release, released) = mpsc::channel::<()>();
         let (claimed, claiming) = mpsc::channel();
         let (later, answering) = mpsc::channel();
@@ -426,15 +451,21 @@ mod tests {
                 cx,
             );
         });
+
         let _ = answering.recv();
+
         cx.run_until_parked();
+
         assert_eq!(held(cx).as_deref(), Some("Breathe"));
 
         let _ = release.send(());
+
         assert_eq!(claiming.recv(), Ok(false));
+
         cx.run_until_parked();
         cx.executor().advance_clock(ANSWERED_WITHIN);
         cx.run_until_parked();
+
         assert_eq!(held(cx).as_deref(), Some("Breathe"));
     }
 

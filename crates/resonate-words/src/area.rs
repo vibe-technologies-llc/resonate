@@ -74,6 +74,7 @@ impl Area {
         args: [(&str, Arg<'_>); N],
     ) -> String {
         let mut fluent = FluentArgs::with_capacity(N);
+
         for (name, Arg(value)) in args {
             fluent.set(name, value);
         }
@@ -105,6 +106,7 @@ impl Area {
             });
 
         let mut bundle = bundle_for(language.identifier());
+
         bundle.set_formatter(Some(crate::figures::fluent));
         if let Err(errors) = bundle.add_builtins() {
             tracing::warn!(%language, ?errors, "builtin functions that were not all taken");
@@ -133,9 +135,11 @@ impl Area {
         match held {
             Some((bundle, pattern)) => {
                 let mut errors = Vec::new();
+
                 let said = bundle
                     .format_pattern(pattern, args, &mut errors)
                     .into_owned();
+
                 if !errors.is_empty() {
                     tracing::warn!(%language, id, ?errors, "a message said in part");
                 }
@@ -153,6 +157,7 @@ impl Area {
 fn bundle_for(identifier: LanguageIdentifier) -> FluentBundle<FluentResource> {
     let isolated = is_right_to_left(&identifier);
     let mut bundle = FluentBundle::new_concurrent(vec![identifier]);
+
     bundle.set_use_isolating(isolated);
     bundle
 }
@@ -227,10 +232,14 @@ mod tests {
     fn a_right_to_left_sentence_isolates_an_inserted_name() {
         let mut bundle = bundle_for("ar".parse().unwrap());
         let resource = FluentResource::try_new("song = تشغيل { $title } الآن".to_owned()).unwrap();
+
         bundle.add_resource(resource).unwrap();
+
         let pattern = bundle.get_message("song").unwrap().value().unwrap();
         let mut args = FluentArgs::new();
+
         args.set("title", "Echoes (Live)");
+
         let mut errors = Vec::new();
 
         assert_eq!(

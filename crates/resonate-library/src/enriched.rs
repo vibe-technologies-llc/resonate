@@ -190,6 +190,7 @@ pub(crate) fn stamp_album_asked(
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownAlbum(album));
     }
@@ -208,6 +209,7 @@ pub(crate) fn land_release(
         Pressing::Fitted(fit) => (fit.stored(), false),
         Pressing::AsHeld => (None, true),
     };
+
     let changed = tx
         .execute(
             "UPDATE albums SET
@@ -249,12 +251,14 @@ pub(crate) fn land_release(
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownAlbum(album));
     }
     gather_under(tx, id, &release.id)?;
 
     let held = wants_under(tx, id)?;
+
     tx.execute(
         "DELETE FROM release_tracks WHERE album_id = ?1",
         params![id],
@@ -275,6 +279,7 @@ pub(crate) fn land_release(
              RETURNING id",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for medium in &release.media {
         for track in &medium.tracks {
             let row: i64 = insert
@@ -297,6 +302,7 @@ pub(crate) fn land_release(
                     |row| row.get(0),
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
             code(tx, row, &track.isrcs)?;
             write_links(
                 tx,
@@ -325,6 +331,7 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
     let Some((release, group)) = matched else {
         return Err(Error::UnknownAlbum(album));
     };
+
     let Some(refused) = release.or(group) else {
         return Ok(false);
     };
@@ -454,6 +461,7 @@ pub(crate) fn land_release_group(
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownAlbum(album));
     }
@@ -481,6 +489,7 @@ fn write_credit(tx: &Transaction<'_>, album: i64, credit: &[Credit]) -> Result<(
              VALUES (?1, ?2, ?3, ?4, ?5)",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for (position, credited) in credit.iter().enumerate() {
         insert
             .execute(params![
@@ -508,6 +517,7 @@ fn write_media(tx: &Transaction<'_>, album: i64, media: &[Medium]) -> Result<()>
              VALUES (?1, ?2, ?3, ?4)",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for medium in media {
         insert
             .execute(params![
@@ -524,6 +534,7 @@ fn write_media(tx: &Transaction<'_>, album: i64, media: &[Medium]) -> Result<()>
 
 fn gather_under(tx: &Transaction<'_>, album: i64, release: &Mbid) -> Result<()> {
     let key = store::release_key(release.as_str());
+
     for other in albums_sharing(tx, album, release.as_str(), &key)? {
         gather(tx, album, other)?;
     }
@@ -596,6 +607,7 @@ pub(crate) fn code(tx: &Transaction<'_>, release_track: i64, isrcs: &[String]) -
              ON CONFLICT DO NOTHING",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for isrc in isrcs {
         insert
             .execute(params![release_track, isrc])
@@ -664,6 +676,7 @@ fn wants_under(tx: &Transaction<'_>, album: i64) -> Result<Vec<HeldWant>> {
 
 fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<()> {
     let mut landing = Vec::with_capacity(held.len());
+
     for want in held {
         if let Some((carried, row)) = row_again(tx, album, &want)? {
             landing.push((carried, row, want));
@@ -684,8 +697,10 @@ fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<(
              VALUES (?1, ?2, ?3)",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for (_, row, want) in landing {
         code(tx, row, &want.isrcs)?;
+
         let landed = insert
             .execute(params![
                 row,
@@ -695,9 +710,11 @@ fn want_again(tx: &Transaction<'_>, album: i64, held: Vec<HeldWant>) -> Result<(
                 want.misses
             ])
             .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
         if landed == 0 {
             continue;
         }
+
         let id = tx.last_insert_rowid();
         for (taken_from, forgotten) in &want.forgotten {
             remember
@@ -750,6 +767,7 @@ fn write_links(
     if links.is_empty() {
         return Ok(());
     }
+
     let mut insert = tx
         .prepare(&format!(
             "INSERT INTO {table} ({column}, relation, provider, url) VALUES (?1, ?2, ?3, ?4)
@@ -789,6 +807,7 @@ pub(crate) fn rematch_release_tracks(tx: &Transaction<'_>, album: AlbumId) -> Re
         &|row, track| row.folded == track.folded,
         &at_its_place,
     ];
+
     for pairs in passes {
         pair(&rows, &tracks, &mut matched, &mut taken, pairs);
     }
@@ -808,6 +827,7 @@ pub(crate) fn rematch_release_tracks(tx: &Transaction<'_>, album: AlbumId) -> Re
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let mut moved = 0;
+
     for (row, track) in rows.iter().zip(&matched) {
         if let Some(track) = track {
             identify
@@ -837,6 +857,7 @@ fn pair(
         if matched[at].is_some() {
             continue;
         }
+
         let found = tracks
             .iter()
             .enumerate()
@@ -1009,6 +1030,7 @@ pub(crate) fn albums_wanting_a_cover(
               ORDER BY id"
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held = statement
         .query_map([asked_before], |row| {
             Ok((
@@ -1022,6 +1044,7 @@ pub(crate) fn albums_wanting_a_cover(
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut wanting = Vec::with_capacity(held.len());
+
     for (album, release, group, may_have_a_front) in held {
         if let Some(wanted) = cover_wanted(album, release, group, may_have_a_front)? {
             wanting.push(wanted);
@@ -1062,16 +1085,19 @@ pub(crate) fn albums_owed_a_larger_cover(connection: &Connection) -> Result<Vec<
               ORDER BY id",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let mut rows = statement
         .query([])
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     let mut owed = Vec::new();
+
     while let Some(row) = rows
         .next()
         .map_err(|source| Error::store(StoreOp::Query, source))?
     {
         let (held, album, release, group, may_have_a_front) =
             owed_row(row).map_err(|source| Error::store(StoreOp::Query, source))?;
+
         if !is_a_small_cover(held) {
             continue;
         }
@@ -1179,6 +1205,7 @@ pub(crate) fn stamp_track_asked(
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownTrack(track));
     }
@@ -1237,6 +1264,7 @@ pub(crate) fn land_recording(
         )?),
         (Some(_) | None, _) => None,
     };
+
     if billed.is_some() {
         for member in recording.credit.iter().skip(1) {
             store::artist_named_in(tx, &member.name, member.mbid.as_ref().map(Mbid::as_str))?;
@@ -1367,6 +1395,7 @@ pub(crate) fn land_what_was_heard(
             },
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     tx.execute(
         "UPDATE track_studies SET agreement = ?1 WHERE track_id = ?2",
         params![Agreement::Agrees.as_str(), id],
@@ -1399,9 +1428,11 @@ fn seated_where_it_was_heard(tx: &Transaction<'_>, track: i64, album: Option<i64
         params![track],
     )
     .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     let Some(album) = album else {
         return Ok(());
     };
+
     rematch_release_tracks(tx, AlbumId::new(album as u64)?)?;
     tx.execute(
         "UPDATE tracks SET (track_number, disc_number) =
@@ -1434,6 +1465,7 @@ pub(crate) fn stamp_artist_asked(
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownArtist(artist));
     }
@@ -1483,6 +1515,7 @@ pub(crate) fn land_artist(
             ],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownArtist(artist));
     }
@@ -1492,12 +1525,14 @@ pub(crate) fn land_artist(
         params![id],
     )
     .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
     let mut insert = tx
         .prepare(
             "INSERT INTO artist_genres (artist_id, name, weight) VALUES (?1, ?2, ?3)
              ON CONFLICT(artist_id, name) DO UPDATE SET weight = max(weight, excluded.weight)",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for genre in &profile.genres {
         insert
             .execute(params![id, genre.name, i64::from(genre.weight)])
@@ -1533,6 +1568,7 @@ pub(crate) fn land_artist_releases(
         })
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if known.is_none() {
         return Err(Error::UnknownArtist(artist));
     }
@@ -1549,6 +1585,7 @@ pub(crate) fn land_artist_releases(
         params![id, unread, read_to],
     )
     .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     let mut insert = tx
         .prepare(
             "INSERT INTO artist_releases (artist_id, mbid, title, kind, first_released, folded,
@@ -1558,6 +1595,7 @@ pub(crate) fn land_artist_releases(
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
     let mut written = 0;
+
     for release in releases {
         written += insert
             .execute(params![
@@ -1578,6 +1616,7 @@ pub(crate) fn land_artist_releases(
 
 fn spelt_out(release: &ArtistRelease) -> String {
     let mut said = release.title.clone();
+
     for also in [release.kind.as_deref(), release.first_released.as_deref()]
         .into_iter()
         .flatten()
@@ -1614,6 +1653,7 @@ pub(crate) fn write_artist_mbid(tx: &Transaction<'_>, artist: ArtistId, mbid: &M
             params![mbid.as_str(), artist.get() as i64],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownArtist(artist));
     }
@@ -1752,6 +1792,7 @@ fn whole_count_of(discs: &[DeclaredDisc]) -> Option<u32> {
     let [lowest, later @ ..] = discs else {
         return None;
     };
+
     if later.is_empty() {
         return Some(lowest.total);
     }
@@ -2057,6 +2098,7 @@ pub(crate) fn set_isrc(tx: &Transaction<'_>, track: TrackId, isrc: &Isrc) -> Res
             params![track.get() as i64, isrc.to_string()],
         )
         .map_err(|source| Error::store(StoreOp::Update, source))?;
+
     if changed == 0 {
         return Err(Error::UnknownTrack(track));
     }
@@ -2168,6 +2210,7 @@ mod tests {
 
     fn tagged(title: &str, recording: Option<&str>, release_track: Option<&str>) -> TrackRecord {
         let mut record = scanned(title, None, recording);
+
         record.tags.musicbrainz_release_track_id = release_track.map(str::to_owned);
         record
     }
@@ -2229,6 +2272,7 @@ mod tests {
 
     fn one_album(tx: &Transaction<'_>) -> AlbumId {
         let mut cache = Cache::default();
+
         store::apply(
             tx,
             &mut cache,
@@ -2237,6 +2281,7 @@ mod tests {
             false,
         )
         .expect("the track is stored");
+
         let grouped: i64 = tx
             .query_row("SELECT id FROM albums", [], |row| row.get(0))
             .expect("one album was grouped");
@@ -2247,11 +2292,13 @@ mod tests {
     #[test]
     fn an_album_that_answers_nothing_waits_twice_as_long_before_it_is_asked_again() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let asked = UNIX_EPOCH + A_MONTH;
@@ -2267,11 +2314,13 @@ mod tests {
         );
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked).expect("the album is stamped");
+
         assert!(!due_at(asked + A_MOMENT));
         assert!(due_at(asked + A_DAY + A_MOMENT));
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked)
             .expect("the album is stamped again");
+
         assert!(
             !due_at(asked + A_DAY + A_MOMENT),
             "an album asked twice in vain was asked again after one wait"
@@ -2280,6 +2329,7 @@ mod tests {
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked)
             .expect("the album is stamped a third time");
+
         assert!(!due_at(asked + A_DAY * 2 + A_MOMENT));
         assert!(due_at(asked + A_DAY * 4 + A_MOMENT));
     }
@@ -2287,11 +2337,13 @@ mod tests {
     #[test]
     fn looking_again_for_covers_asks_again_about_an_album_nothing_matched() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let asked = UNIX_EPOCH + A_MONTH;
@@ -2302,6 +2354,7 @@ mod tests {
         };
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked).expect("the album is stamped");
+
         assert!(!due_at(asked + A_MOMENT));
 
         assert_eq!(
@@ -2314,11 +2367,13 @@ mod tests {
     #[test]
     fn an_album_the_reference_refused_is_asked_again_without_the_wait_a_miss_earns() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let asked = UNIX_EPOCH + A_MONTH;
@@ -2329,6 +2384,7 @@ mod tests {
         };
 
         stamp_album_asked(&tx, album, Fruitless::Refused, asked).expect("the album is stamped");
+
         assert!(
             !due_at(asked + A_MOMENT),
             "a refusal is not asked again in the same breath"
@@ -2340,6 +2396,7 @@ mod tests {
 
         stamp_album_asked(&tx, album, Fruitless::Refused, asked)
             .expect("the album is refused again");
+
         assert!(
             !due_at(asked + AN_HOUR + A_MOMENT),
             "a second refusal in a row waits twice the hour the first one did"
@@ -2347,6 +2404,7 @@ mod tests {
         assert!(due_at(asked + AN_HOUR * 2 + A_MOMENT));
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked).expect("the album is missed");
+
         assert!(
             !due_at(asked + AN_HOUR + A_MOMENT),
             "a miss after a refusal waits the day a first miss earns"
@@ -2357,11 +2415,13 @@ mod tests {
     #[test]
     fn a_service_that_refuses_a_row_for_ever_is_asked_about_it_less_and_less_often() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let asked = UNIX_EPOCH + A_MONTH;
@@ -2373,7 +2433,9 @@ mod tests {
 
         for refusals in 1..=WAITS_DOUBLE_AT_MOST + 3 {
             stamp_album_asked(&tx, album, Fruitless::Refused, asked).expect("the album is refused");
+
             let earned = AN_HOUR * (1 << u32::min(refusals - 1, WAITS_DOUBLE_AT_MOST));
+
             assert!(
                 !due_at(asked + earned),
                 "refusal {refusals} was asked again before the wait it had earned"
@@ -2401,14 +2463,17 @@ mod tests {
     #[test]
     fn an_album_landed_as_its_group_alone_is_asked_again_for_a_pressing() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let asked = UNIX_EPOCH + A_MONTH;
+
         let due_at = |now: SystemTime| {
             albums_to_ask(&tx, WAITED, false, now)
                 .expect("the albums read back")
@@ -2418,6 +2483,7 @@ mod tests {
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked).expect("the album is stamped");
         land_release_group(&tx, album, &the_group(Vec::new()), asked).expect("the group lands");
+
         assert!(
             !due_at(asked + A_MOMENT),
             "an album asked a moment ago is due again"
@@ -2431,6 +2497,7 @@ mod tests {
             .expect("the album is stamped again");
         land_release_group(&tx, album, &the_group(Vec::new()), asked)
             .expect("the group lands again");
+
         assert!(
             !due_at(asked + A_DAY + A_MOMENT),
             "an album asked twice for a pressing was asked again after one wait"
@@ -2445,6 +2512,7 @@ mod tests {
             asked,
         )
         .expect("the pressing lands");
+
         assert!(
             !due_at(asked + A_DAY * 4),
             "an album whose pressing landed is still being asked for one"
@@ -2454,14 +2522,17 @@ mod tests {
     #[test]
     fn a_release_that_lands_puts_the_wait_back_to_where_it_started() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let asked = UNIX_EPOCH + A_MONTH;
+
         let due_at = |now: SystemTime| {
             albums_to_ask(&tx, WAITED, false, now)
                 .expect("the albums read back")
@@ -2480,6 +2551,7 @@ mod tests {
             asked,
         )
         .expect("the release lands");
+
         assert!(
             !due_at(asked + A_DAY * 4),
             "an album the reference answered is asked again before it is stale"
@@ -2487,6 +2559,7 @@ mod tests {
 
         stamp_album_asked(&tx, album, Fruitless::Missed, asked)
             .expect("the album is stamped once more");
+
         assert!(
             !due_at(asked + A_MOMENT),
             "an album asked a moment ago is due again"
@@ -2500,14 +2573,17 @@ mod tests {
     #[test]
     fn a_closest_pressing_is_kept_as_one_until_a_pressing_that_matches_lands() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let release = meddle(vec![row(1, "One of These Days", None)]);
+
         let fit = || -> Option<i64> {
             tx.query_row(
                 "SELECT pressing_fit FROM albums WHERE id = ?1",
@@ -2525,11 +2601,16 @@ mod tests {
             UNIX_EPOCH,
         )
         .expect("the closest pressing lands");
+
         let fitted = fit();
+
         land_release(&tx, album, &release, Pressing::AsHeld, UNIX_EPOCH)
             .expect("the pressing the album holds lands again");
+
         let held = fit();
+
         land_release(&tx, album, &release, EXACTLY, UNIX_EPOCH).expect("a match lands");
+
         let matched = fit();
 
         assert_eq!(fitted, Fit::Narrower.stored());
@@ -2540,14 +2621,17 @@ mod tests {
     #[test]
     fn a_stale_answer_asked_again_in_vain_waits_its_turn_like_any_other_ask() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let landed = UNIX_EPOCH + A_MONTH;
+
         let due_at = |now: SystemTime| {
             albums_to_ask(&tx, WAITED, false, now)
                 .expect("the albums read back")
@@ -2563,10 +2647,13 @@ mod tests {
             landed,
         )
         .expect("the release lands");
+
         let stale = landed + A_MONTH + A_MOMENT;
+
         assert!(due_at(stale), "an answer gone stale is not asked again");
 
         stamp_album_asked(&tx, album, Fruitless::Missed, stale).expect("the album is missed");
+
         assert!(
             !due_at(stale + A_MOMENT),
             "a stale answer asked again in vain is due again on the very next pass"
@@ -2574,6 +2661,7 @@ mod tests {
         assert!(due_at(stale + A_DAY + A_MOMENT));
 
         stamp_album_asked(&tx, album, Fruitless::Refused, stale).expect("the album is refused");
+
         assert!(!due_at(stale + A_MOMENT));
         assert!(due_at(stale + AN_HOUR + A_MOMENT));
     }
@@ -2581,14 +2669,17 @@ mod tests {
     #[test]
     fn an_answer_whose_companion_ask_was_refused_is_asked_again_once_it_has_waited() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let album = one_album(&tx);
         let landed = UNIX_EPOCH + A_MONTH;
+
         let due_at = |now: SystemTime| {
             albums_to_ask(&tx, WAITED, false, now)
                 .expect("the albums read back")
@@ -2617,13 +2708,16 @@ mod tests {
     #[test]
     fn a_recording_id_matches_a_row_before_its_position_or_its_title_can_mislead() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let mut cache = Cache::default();
+
         for record in [
             scanned("One of These Days", Some(3), Some(RECORDING)),
             scanned("A Pillow of Winds", Some(2), None),
@@ -2631,6 +2725,7 @@ mod tests {
         ] {
             store::apply(&tx, &mut cache, &record, 0, false).expect("the track is stored");
         }
+
         let grouped: i64 = tx
             .query_row("SELECT id FROM albums", [], |row| row.get(0))
             .expect("one album was grouped");
@@ -2649,7 +2744,9 @@ mod tests {
             UNIX_EPOCH,
         )
         .expect("the release lands");
+
         let matched = rematch_release_tracks(&tx, album).expect("the rows are matched");
+
         assert_eq!(matched, 3);
 
         let mut statement = tx
@@ -2658,10 +2755,12 @@ mod tests {
                    LEFT JOIN tracks t ON t.id = rt.track_id ORDER BY rt.position",
             )
             .expect("the pairing is readable");
+
         let paired: Vec<(u32, Option<String>)> = statement
             .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
             .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
             .expect("the pairing reads back");
+
         assert_eq!(
             paired,
             vec![
@@ -2676,13 +2775,16 @@ mod tests {
     #[test]
     fn matching_an_album_again_writes_no_track_whose_identifiers_it_already_holds() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let mut cache = Cache::default();
+
         store::apply(
             &tx,
             &mut cache,
@@ -2691,10 +2793,12 @@ mod tests {
             false,
         )
         .expect("the track is stored");
+
         let grouped: i64 = tx
             .query_row("SELECT id FROM albums", [], |row| row.get(0))
             .expect("one album was grouped");
         let album = AlbumId::new(grouped as u64).expect("a non-zero id");
+
         land_release(
             &tx,
             album,
@@ -2705,6 +2809,7 @@ mod tests {
         .expect("the release lands");
 
         rematch_release_tracks(&tx, album).expect("the rows are matched");
+
         let identified: Option<String> = tx
             .query_row("SELECT mbid FROM tracks", [], |row| row.get(0))
             .expect("the track reads back");
@@ -2719,19 +2824,23 @@ mod tests {
     #[test]
     fn a_release_track_id_is_weighed_against_the_column_that_holds_one_and_not_the_recordings() {
         let mut connection = Connection::open_in_memory().expect("an in-memory database");
+
         schema::configure(&connection, schema::Role::Writing).expect("the functions register");
         schema::lay_out(&connection).expect("the schema applies");
         connection
             .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
             .expect("a root is stored");
+
         let tx = connection.transaction().expect("a transaction");
         let mut cache = Cache::default();
+
         for record in [
             tagged("One of These Days", Some(TRACK), None),
             tagged("A Pillow of Winds", None, Some(TRACK)),
         ] {
             store::apply(&tx, &mut cache, &record, 0, false).expect("the track is stored");
         }
+
         let grouped: i64 = tx
             .query_row("SELECT id FROM albums", [], |row| row.get(0))
             .expect("one album was grouped");
@@ -2745,6 +2854,7 @@ mod tests {
             UNIX_EPOCH,
         )
         .expect("the release lands");
+
         assert_eq!(
             rematch_release_tracks(&tx, album).expect("the rows are matched"),
             1
@@ -2758,6 +2868,7 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("the pairing reads back");
+
         assert_eq!(paired.as_deref(), Some("A Pillow of Winds"));
     }
 

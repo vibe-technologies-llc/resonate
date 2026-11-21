@@ -137,6 +137,7 @@ impl Mpris {
         });
         let stop = Arc::new(AtomicBool::new(false));
         let (tells, told) = bounded(WAITING_TELLS);
+
         let service = Self::served(zone, &shared, playlists, &told, &stop)?;
         #[cfg(any(windows, target_os = "macos"))]
         let transport = transporting(&shared, &stop);
@@ -174,6 +175,7 @@ impl Mpris {
             Ok(bus) => Ok(Service::Bus(bus)),
             Err(error) => {
                 tracing::debug!(%error, "no session bus; the player is served on a pipe");
+
                 let answering = Arc::new(crate::answering::Answering::over(
                     Arc::clone(shared),
                     playlists,
@@ -247,6 +249,7 @@ fn toasting(
     let shared = Arc::clone(shared);
     let told = told.clone();
     let stop = Arc::clone(stop);
+
     let spawned = thread::Builder::new()
         .name("resonate-toasts".to_owned())
         .spawn(move || toast_what_plays(&shared, &told, &stop));
@@ -265,8 +268,10 @@ fn transporting(shared: &Arc<Shared>, stop: &Arc<AtomicBool>) -> Option<JoinHand
     if !shared.host.answers_media_keys() {
         return None;
     }
+
     let shared = Arc::clone(shared);
     let stop = Arc::clone(stop);
+
     let spawned = thread::Builder::new()
         .name("resonate-transport".to_owned())
         .spawn(move || transport_what_plays(&shared, &stop));
@@ -298,12 +303,14 @@ fn transport_what_plays(shared: &Arc<Shared>, stop: &AtomicBool) {
     };
 
     let mut watched = snapshot(shared, None, None);
+
     transport.tell(controls_of(&watched), true);
 
     while !stop.load(Ordering::Acquire) {
         thread::sleep(POLL);
 
         let next = snapshot(shared, None, Some(&watched));
+
         transport.tell(controls_of(&next), watched.seeks != next.seeks);
         watched = next;
     }
@@ -316,12 +323,14 @@ fn transport_what_plays(shared: &Arc<Shared>, stop: &AtomicBool) {
     let mut transport = crate::nowplaying::Transport::open(shared);
 
     let mut watched = snapshot(shared, None, None);
+
     transport.tell(controls_of(&watched), true);
 
     while !stop.load(Ordering::Acquire) {
         transport.answer_within(POLL);
 
         let next = snapshot(shared, None, Some(&watched));
+
         transport.tell(controls_of(&next), watched.seeks != next.seeks);
         watched = next;
     }
@@ -412,6 +421,7 @@ impl OnTheBus {
                 .serve_at(OBJECT_PATH, PlaylistsInterface { playlists })
                 .map_err(|source| Error::bus(BusOp::Serve, source))?;
         }
+
         let connection = builder
             .build()
             .map_err(|source| Error::bus(BusOp::Connect, source))?;
@@ -428,6 +438,7 @@ impl OnTheBus {
                 .spawn(move || announce(&connection, &shared, playlists.as_ref(), &told, &stop))
                 .map_err(|_| Error::ThreadStopped)?
         };
+
         if let Some(losses) = losses {
             watch_the_name(
                 connection.clone(),
@@ -452,6 +463,7 @@ impl OnTheBus {
         }
         if let Some(connection) = self.connection.take() {
             hand_back(&connection, &self.claimed.name());
+
             let _ = connection.close();
         }
     }
@@ -466,6 +478,7 @@ impl Drop for Mpris {
 fn claim(connection: &Connection, zone: ZoneId) -> Result<WellKnownName<'static>> {
     let preferred = WellKnownName::try_from(bus_name_of(zone))
         .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
+
     if owned(connection, &preferred)? {
         return Ok(preferred);
     }
@@ -480,9 +493,11 @@ fn instances(
     fallback: WellKnownName<'static>,
 ) -> Result<WellKnownName<'static>> {
     let mut taken = fallback;
+
     for attempt in 1..=INSTANCES {
         let name = WellKnownName::try_from(instance_name(zone, attempt))
             .map_err(|source| Error::bus(BusOp::ClaimName, source))?;
+
         if owned(connection, &name)? {
             return Ok(name);
         }
@@ -524,10 +539,12 @@ fn watch_the_name(
                 if stop.load(Ordering::Acquire) {
                     break;
                 }
+
                 let Ok(args) = loss.args() else {
                     continue;
                 };
                 let lost = claimed.name();
+
                 if args.name().as_str() != lost.as_str() {
                     continue;
                 }
@@ -552,6 +569,7 @@ fn watch_the_name(
 fn hand_back(connection: &Connection, name: &WellKnownName<'static>) {
     if let Err(source) = connection.release_name(name.clone()) {
         let error = Error::bus(BusOp::ReleaseName, source);
+
         tracing::debug!(%error, %name, "the bus name was left to the connection closing rather than handed back");
     }
 }
@@ -675,6 +693,7 @@ fn announce(
         thread::sleep(POLL);
 
         let next = snapshot(shared, playlists, Some(&watched));
+
         publish(&player, &watched, &next);
         if let Some(headsets) = headsets.as_ref() {
             publish(headsets.player(), &watched, &next);
@@ -690,6 +709,7 @@ fn announce(
             && let Some(playhead) = next.playhead
         {
             let position = micros(playhead.position, playhead.rate);
+
             emit_seeked(&player, position);
             if let Some(headsets) = headsets.as_ref() {
                 emit_seeked(headsets.player(), position);
@@ -716,14 +736,17 @@ fn tell_the_desktop(
     if let Some(errands) = errands {
         errands.follow(next.playback);
     }
+
     let wanted = Telling::of(shared.host.attended(), shared.host.notifies());
     let told = tell(errands, next, told, wanted);
+
     for heard in heard_from.try_iter() {
         if let (Telling::Raise, Some(errands)) = (wanted, errands) {
             let art = heard
                 .picture
                 .as_ref()
                 .and_then(|picture| shared.pictures.uri_of(picture));
+
             errands.tell(Shown::told(heard.summary, heard.body, art));
         }
     }
@@ -740,6 +763,7 @@ fn toast_what_plays(shared: &Arc<Shared>, told: &Receiver<Told>, stop: &AtomicBo
         thread::sleep(POLL);
 
         let next = snapshot(shared, None, Some(&watched));
+
         toasted = tell_the_desktop(shared, errands.as_ref(), &next, toasted, told);
         watched = next;
     }
@@ -874,6 +898,7 @@ fn snapshot(
     let state = shared.player.state();
     let digest = shared.player.digest();
     let current = state.current;
+
     let art = shared.art(&state, digest.as_ref());
     let queued = shared.player.queued();
     let listed = match before {
@@ -887,6 +912,7 @@ fn snapshot(
     };
     let queue = queued.rows;
     let heard = Reading::again(shared, &state, &queue, before.map(|held| &held.heard));
+
     let described = Described {
         track: current.map(|track| TrackState {
             position: Frames::ZERO,
@@ -1056,11 +1082,14 @@ fn publish_queue_moves(
                                     .media_within(&item.location, item.span, patience);
                             let state = shared.player.state();
                             let digest = shared.player.digest();
+
                             let playing = shared.art(&state, digest.as_ref());
                             let cover = shared.row_art(item, &state, playing.as_ref());
+
                             if media.is_none() || matches!(cover, RowArt::NotYet) {
                                 shared.owed.note(item.id);
                             }
+
                             let metadata = queued_metadata(
                                 item,
                                 &state,
@@ -1069,6 +1098,7 @@ fn publish_queue_moves(
                                 cover.uri(),
                                 shared.host.heard(&item.location, item.span),
                             );
+
                             report(block_on(TrackList::track_added(
                                 emitter,
                                 metadata,
@@ -1081,6 +1111,7 @@ fn publish_queue_moves(
         }
         Change::Replaced => {
             let rows = now.listed.iter().map(|item| track_path(item.id)).collect();
+
             report(block_on(TrackList::track_list_replaced(
                 emitter,
                 rows,
@@ -1100,9 +1131,11 @@ fn publish_queue_moves(
 
 fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, now: &Watched) {
     let owed = shared.owed.taken();
+
     if owed.is_empty() {
         return;
     }
+
     let rows: AHashMap<TrackId, &QueueItem> = now
         .queue
         .iter()
@@ -1110,10 +1143,12 @@ fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, no
         .collect();
     let state = shared.player.state();
     let digest = shared.player.digest();
+
     let playing = shared.art(&state, digest.as_ref());
 
     let mut landed = Vec::new();
     let mut waiting = Vec::new();
+
     for track in owed {
         let Some(item) = rows.get(&track).copied() else {
             continue;
@@ -1143,6 +1178,7 @@ fn publish_late_reads(tracks: &InterfaceRef<TrackList>, shared: &Arc<Shared>, no
             cover,
             shared.host.heard(&item.location, item.span),
         );
+
         report(block_on(TrackList::track_metadata_changed(
             emitter,
             track_path(track),
@@ -1184,7 +1220,9 @@ fn publish_playlists(
     if Arc::ptr_eq(&before.rows, &now.rows) {
         return;
     }
+
     let moved = moved(&before.rows, &now.rows);
+
     if moved.arrived_or_left {
         report(block_on(iface.playlist_count_changed(emitter)));
     }
@@ -1210,6 +1248,7 @@ fn emit_seeked(player: &InterfaceRef<PlayerInterface>, position: i64) {
 fn report(outcome: zbus::Result<()>) {
     if let Err(source) = outcome {
         let error = Error::bus(BusOp::Emit, source);
+
         tracing::debug!(%error, "a property change did not reach the bus");
     }
 }

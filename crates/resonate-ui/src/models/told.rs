@@ -81,6 +81,7 @@ pub(super) async fn cover_what_was_wanted(
     cx.background_executor()
         .spawn(async move { library.cover_what_was_wanted(reference.as_ref(), &covering) })
         .await;
+
     let _ = this.update(cx, |this, cx| this.read(Wanted::Everything, cx));
 }
 
@@ -98,6 +99,7 @@ pub(super) fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notic
         .filter(|(count, _)| *count > 0)
         .map(|(count, done)| done(count))
         .collect();
+
     if failed > 0 {
         said.push(words::models::could_not_be_read(failed));
     }
@@ -110,6 +112,7 @@ pub(super) fn scanned(summary: &ScanSummary, prompted: Prompted) -> Option<Notic
     } else {
         said.join(" · ")
     };
+
     if summary.cancelled {
         told.push_str(words::models::stopped_early());
     }
@@ -137,6 +140,7 @@ pub(super) fn filed(summary: &OrganiseSummary) -> Notice {
         moved => words::models::moved_files(moved),
     };
     let unmoved = stats.collided + stats.failed;
+
     if unmoved > 0 {
         told = [told, words::models::could_not_be_moved(unmoved)].join(" · ");
     }
@@ -151,6 +155,7 @@ pub(super) fn retagged(summary: &RetagSummary) -> Notice {
         0 => words::models::no_file_needed_its_tags_written().to_owned(),
         written => words::models::wrote_the_tags_into(written),
     };
+
     if summary.cancelled {
         told.push_str(words::models::stopped_early());
     }
@@ -163,6 +168,7 @@ pub(super) fn vaulted(summary: &ImportSummary) -> Notice {
         0 => words::models::the_vault_already_holds_every_track_it().to_owned(),
         vaulted => words::models::kept_in_the_vault(vaulted, format::bytes(stats.saved())),
     };
+
     if summary.cancelled {
         told.push_str(words::models::stopped_early());
     }
@@ -213,6 +219,7 @@ pub(super) fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice 
 pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
     let replaced = summary.replaced.beside;
+
     if stats.kept == 0 && replaced == 0 && prompted != Prompted::ByHand && !summary.cancelled {
         return None;
     }
@@ -221,6 +228,7 @@ pub(super) fn polled(summary: &PollSummary, prompted: Prompted) -> Option<Notice
         0 => words::models::nothing_in_the_inbox_filled_a_want().to_owned(),
         kept => words::models::the_inbox_filled(kept),
     };
+
     if stats.unkept > 0 {
         told = [told, words::models::could_not_be_kept(stats.unkept)].join(" · ");
     }
@@ -246,6 +254,7 @@ pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
         .filter(|(count, _)| *count > 0)
         .map(|(count, said)| said(count))
         .collect();
+
     if parts.is_empty() {
         parts.push(words::replacing::beside(0));
     }
@@ -257,20 +266,25 @@ pub(super) fn replaced_now(replacing: &Replacing) -> Notice {
 
 pub(super) fn looked_up(summary: &EnrichSummary, prompted: Prompted) -> Option<Notice> {
     let stats = summary.stats;
+
     if prompted == Prompted::OnItsOwn && summary.stopped_by.is_none() {
         return None;
     }
+
     let mut parts = vec![words::models::albums_and_artists_answered(
         stats.releases,
         stats.artists,
     )];
+
     if stats.lyrics > 0 {
         parts.push(words::models::lyrics_for_tracks(stats.lyrics));
     }
     if stats.songs > 0 {
         parts.push(words::models::songs_of_albums_not_held_learnt(stats.songs));
     }
+
     let mut said = parts.join(" · ");
+
     if summary.cancelled {
         said.push_str(words::models::stopped_early());
     }

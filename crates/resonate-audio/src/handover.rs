@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::mem;
@@ -29,11 +29,13 @@ impl Fed {
         if self.spent.is_full() {
             return;
         }
+
         let Ok(handed) = self.handed.pop() else {
             return;
         };
         let spent = mem::replace(&mut self.source, handed);
         let kept_off_this_thread = self.spent.push(spent);
+
         debug_assert!(kept_off_this_thread.is_ok());
     }
 }
@@ -110,6 +112,7 @@ mod tests {
 
     fn mark_read(fed: &mut Fed) -> u8 {
         let mut bytes = [0_u8; 4];
+
         fed.source().fill(&mut bytes);
         bytes.first().copied().unwrap_or_default()
     }
@@ -132,10 +135,13 @@ mod tests {
         let (mut fed, mut handing) = fed_from(marked(1, &dropped));
 
         assert!(handing.hand(marked(2, &dropped)).is_ok());
+
         mark_read(&mut fed);
+
         assert_eq!(dropped.load(Ordering::Acquire), 0);
 
         handing.let_go_of_the_spent();
+
         assert_eq!(dropped.load(Ordering::Acquire), 1);
     }
 
@@ -150,6 +156,7 @@ mod tests {
         assert!(handing.hand(marked(3, &dropped)).is_err());
 
         mark_read(&mut fed);
+
         assert!(handing.has_room());
     }
 
@@ -162,11 +169,13 @@ mod tests {
             assert!(handing.hand(marked(mark, &dropped)).is_ok());
             assert_eq!(mark_read(&mut fed), mark);
         }
+
         assert!(handing.hand(marked(4, &dropped)).is_ok());
 
         assert_eq!(mark_read(&mut fed), 3);
 
         handing.let_go_of_the_spent();
+
         assert_eq!(mark_read(&mut fed), 4);
     }
 }

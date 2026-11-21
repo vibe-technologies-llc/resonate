@@ -43,16 +43,16 @@ impl Default for Allowance {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Source(IpAddr);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Width {
     Site,
     Network,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 struct Prefix {
     width: Width,
     network: IpAddr,
@@ -166,6 +166,7 @@ impl Source {
         match address.to_canonical() {
             IpAddr::V6(v6) => {
                 let mut octets = v6.octets();
+
                 octets[IPV6_PREFIX_BYTES..].fill(0);
                 Self(IpAddr::V6(octets.into()))
             }
@@ -240,11 +241,13 @@ fn kept_to(address: IpAddr, kept: usize) -> IpAddr {
     match address {
         IpAddr::V4(v4) => {
             let mut octets = v4.octets();
+
             octets[kept..].fill(0);
             IpAddr::V4(octets.into())
         }
         IpAddr::V6(v6) => {
             let mut octets = v6.octets();
+
             octets[kept..].fill(0);
             IpAddr::V6(octets.into())
         }
@@ -308,7 +311,9 @@ impl Guard {
             .collect();
         let now = Instant::now();
         let mut held = self.ledger.lock();
+
         let ledger = &mut *held;
+
         if ledger.open >= self.allowance.connections {
             return None;
         }
@@ -319,27 +324,33 @@ impl Guard {
                 return None;
             }
         }
+
         let account = ledger
             .accounts
             .entry(source)
             .or_insert_with(|| Account::new(now));
+
         account.seen = now;
         if !account.flow.has_room(self.allowance.per_address(), now) {
             return None;
         }
+
         let prefixes_have_room = prefixes.iter().all(|(prefix, most)| {
             ledger
                 .prefixes
                 .get_mut(prefix)
                 .is_none_or(|pooled| pooled.flow.has_room(*most, now))
         });
+
         if !prefixes_have_room {
             return None;
         }
+
         let unkept = prefixes
             .iter()
             .filter(|(prefix, _)| !ledger.prefixes.contains_key(prefix))
             .count();
+
         if !ledger.room_for_prefixes(unkept, self.most_prefixes(), now) {
             return None;
         }
@@ -352,6 +363,7 @@ impl Guard {
                 .prefixes
                 .entry(*prefix)
                 .or_insert_with(|| Pooled::new(now));
+
             pooled.seen = now;
             pooled.flow.take();
         }
@@ -369,6 +381,7 @@ impl Guard {
 
     fn release(&self, source: Source, address: IpAddr) {
         let mut ledger = self.ledger.lock();
+
         ledger.open = ledger.open.saturating_sub(1);
         if let Some(account) = ledger.accounts.get_mut(&source) {
             account.flow.give_back();
@@ -390,15 +403,18 @@ impl Ledger {
         if self.accounts.len() < most {
             return;
         }
+
         let mut closed: Vec<(Instant, Source)> = self
             .accounts
             .iter()
             .filter(|(_, account)| account.flow.open == 0)
             .map(|(source, account)| (account.seen, *source))
             .collect();
+
         let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR)
             .max(1)
             .min(closed.len());
+
         if evicted == 0 {
             return;
         }
@@ -424,6 +440,7 @@ impl Ledger {
     fn room_for_prefixes(&mut self, unkept: usize, most: usize, now: Instant) -> bool {
         let fits =
             |prefixes: &HashMap<Prefix, Pooled>| prefixes.len().saturating_add(unkept) <= most;
+
         if fits(&self.prefixes) {
             return true;
         }
@@ -431,6 +448,7 @@ impl Ledger {
         if fits(&self.prefixes) {
             return true;
         }
+
         let mut closed: Vec<(Instant, Prefix)> = self
             .prefixes
             .iter()
@@ -438,9 +456,11 @@ impl Ledger {
             .map(|(prefix, pooled)| (pooled.seen, *prefix))
             .collect();
         let wanted = (self.prefixes.len() + unkept).saturating_sub(most);
+
         let evicted = (most / ADDRESSES_EVICTED_AT_ONCE_DIVISOR)
             .max(wanted)
             .min(closed.len());
+
         if evicted > 0 {
             closed.select_nth_unstable_by_key(evicted - 1, |(seen, _)| *seen);
             for (_, prefix) in &closed[..evicted] {
@@ -474,6 +494,7 @@ impl Admitted {
             })
             .collect();
         let mut held = self.guard.ledger.lock();
+
         let ledger = &mut *held;
 
         let Some(account) = ledger.accounts.get_mut(&self.source) else {
@@ -486,6 +507,7 @@ impl Admitted {
                 .get_mut(prefix)
                 .is_none_or(|pooled| pooled.daily.of(making).has_room(*most, now))
         });
+
         if !(address_has_room && prefixes_have_room) {
             return false;
         }
@@ -729,7 +751,9 @@ mod tests {
         let refused = guard.admit(address(5));
 
         assert!(refused.is_none());
+
         let flow = guard.ledger.lock().accounts[&Source::of(address(5))].flow;
+
         assert_eq!((flow.open, flow.attempts), (0, 0));
     }
 
@@ -742,7 +766,9 @@ mod tests {
         };
 
         let held = guard.admit(in_six(0, 1, 1));
+
         drop(guard.admit(in_six(0, 2, 1)));
+
         let arriving = guard.admit(in_six(0, 3, 1));
 
         assert!(held.is_some() && arriving.is_some());
@@ -758,15 +784,19 @@ mod tests {
 
         for last in 1..=4 {
             let admitted = guard.admit(address(last)).expect("admitted");
+
             assert!(admitted.may_host_a_room() && admitted.may_host_a_room());
         }
+
         let refused = guard.admit(address(5)).expect("admitted");
 
         assert!(!refused.may_host_a_room());
+
         let spent = guard.ledger.lock().accounts[&Source::of(address(5))]
             .daily
             .rooms
             .spent;
+
         assert_eq!(spent, 0);
     }
 
@@ -779,7 +809,9 @@ mod tests {
             .collect();
 
         assert_eq!(made, [true; 6]);
+
         let ledger = guard.ledger.lock();
+
         assert_eq!(ledger.prefixes.len(), 4);
         assert!(
             ledger
@@ -796,17 +828,21 @@ mod tests {
         let oldest = guard.admit(address(1)).expect("admitted");
         let held = guard.admit(address(2)).expect("admitted");
         let newest = guard.admit(address(3)).expect("admitted");
+
         drop(oldest);
         drop(newest);
 
         let arriving = guard.admit(address(4));
 
         assert!(arriving.is_some());
+
         let ledger = guard.ledger.lock();
+
         assert_eq!(ledger.accounts.len(), 3);
         assert!(!ledger.accounts.contains_key(&Source::of(address(1))));
         assert!(ledger.accounts.contains_key(&Source::of(address(2))));
         assert!(ledger.accounts.contains_key(&Source::of(address(3))));
+
         drop(ledger);
         drop(held);
     }

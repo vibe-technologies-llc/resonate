@@ -46,6 +46,7 @@ impl Running {
             showing: Showing::finding_with(Box::new(Session::find)),
             covered: None,
         };
+
         let spawned = thread::Builder::new()
             .name("resonate-discord".to_owned())
             .spawn(move || {
@@ -144,6 +145,7 @@ impl Publisher {
         let wanted = self
             .playing(&presence)
             .and_then(|playing| Activity::of(&presence, &playing, SystemTime::now()));
+
         self.showing.show(app, wanted, Instant::now());
     }
 
@@ -162,6 +164,7 @@ impl Publisher {
         let tags = &digest.info.tags;
         let pictures_a_cover =
             presence.pictured == Pictured::Cover && presence.shown != Shown::Application;
+
         let cover = if pictures_a_cover {
             self.cover(current.id, &digest)
         } else {
@@ -249,12 +252,15 @@ impl Showing {
         let Link::Open { session, sent, .. } = &mut self.link else {
             return;
         };
+
         let outcome = session.drain().and_then(|()| {
             if !due(sent.as_ref(), wanted.as_ref(), now) {
                 return Ok(());
             }
+
             let set = session.set(wanted.as_ref());
             let refusals = refusals_carried(sent.as_ref(), wanted.as_ref());
+
             *sent = Some(Sent {
                 activity: wanted,
                 at: now,
@@ -309,7 +315,9 @@ fn cover_for(
     {
         return held.cover.clone();
     }
+
     let cover = tagged(tags).or_else(|| releases.cover(location, span));
+
     *cached = Some(CachedCover {
         track,
         location: location.clone(),
@@ -422,6 +430,7 @@ mod tests {
                 process::id(),
                 FOLDERS.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&folder).expect("a folder");
             folder
         }
@@ -431,14 +440,18 @@ mod tests {
             let (said, heard) = mpsc::channel();
             let streams = Arc::new(Mutex::new(Vec::new()));
             let kept = Arc::clone(&streams);
+
             thread::spawn(move || {
                 for (connection, stream) in listener.incoming().enumerate() {
                     let Ok(mut stream) = stream else {
                         break;
                     };
+
                     kept.lock()
                         .push(stream.try_clone().expect("a second handle"));
+
                     let said = said.clone();
+
                     thread::spawn(move || serve(connection, &mut stream, &said));
                 }
             });
@@ -479,6 +492,7 @@ mod tests {
             client_id,
         });
         let ready = json!({ "cmd": "DISPATCH", "evt": "READY", "data": { "v": 1 } });
+
         write_frame(
             stream,
             Opcode::Frame,
@@ -525,17 +539,20 @@ mod tests {
     fn a_discord_nobody_answers_is_asked_again_ever_later_up_to_a_ceiling() {
         let folder = FakeDiscord::folder();
         let finds = Arc::new(AtomicUsize::new(0));
+
         let mut showing = Showing::finding_with(found_at(FakeDiscord::socket_in(&folder), &finds));
         let wanted = || Some(activity("Echoes", 0));
         let started = Instant::now();
 
         showing.show(app(FIRST_APP), wanted(), started);
+
         assert_eq!(finds.load(Ordering::Relaxed), 1);
         assert_eq!(retry_at(&showing), Some(started + RETRY_AFTER_AT_FIRST));
         assert_eq!(showing.waits, RETRY_AFTER_AT_FIRST * 2);
 
         showing.show(app(FIRST_APP), wanted(), started + Duration::from_secs(1));
         showing.show(app(FIRST_APP), None, started + RETRY_AFTER_AT_FIRST);
+
         assert_eq!(
             finds.load(Ordering::Relaxed),
             1,
@@ -543,13 +560,16 @@ mod tests {
         );
 
         let mut asked_again = started;
+
         for _ in 0..8 {
             asked_again = retry_at(&showing).expect("a time to ask again");
             showing.show(app(FIRST_APP), wanted(), asked_again);
         }
+
         assert_eq!(finds.load(Ordering::Relaxed), 9);
         assert_eq!(showing.waits, RETRY_AFTER_AT_MOST);
         assert_eq!(retry_at(&showing), Some(asked_again + RETRY_AFTER_AT_MOST));
+
         fs::remove_dir_all(&folder).expect("the folder removed");
     }
 
@@ -557,11 +577,14 @@ mod tests {
     fn a_discord_that_appears_is_reached_and_what_is_wanted_shown_at_once() {
         let folder = FakeDiscord::folder();
         let finds = Arc::new(AtomicUsize::new(0));
+
         let mut showing = Showing::finding_with(found_at(FakeDiscord::socket_in(&folder), &finds));
         let started = Instant::now();
 
         showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+
         let discord = FakeDiscord::listening_in(folder);
+
         showing.show(
             app(FIRST_APP),
             Some(activity("Echoes", 0)),
@@ -590,6 +613,7 @@ mod tests {
     fn a_changed_application_clears_the_old_one_and_connects_again_under_the_new_id() {
         let discord = FakeDiscord::listening_in(FakeDiscord::folder());
         let finds = Arc::new(AtomicUsize::new(0));
+
         let mut showing =
             Showing::finding_with(found_at(FakeDiscord::socket_in(&discord.folder), &finds));
         let started = Instant::now();
@@ -602,6 +626,7 @@ mod tests {
         );
 
         let mut heard: Vec<Said> = (0..5).map(|_| discord.hear()).collect();
+
         heard.sort_by_key(|said| match said {
             Said::Handshake { connection, .. } => (*connection, 0),
             Said::Activity {
@@ -609,6 +634,7 @@ mod tests {
                 details,
             } => (*connection, 1 + usize::from(details.is_none())),
         });
+
         assert_eq!(finds.load(Ordering::Relaxed), 2);
         assert!(is_open(&showing));
         assert_eq!(
@@ -642,8 +668,10 @@ mod tests {
     fn an_application_discord_does_not_know_is_waited_out_until_the_id_changes() {
         let discord = FakeDiscord::listening_in(FakeDiscord::folder());
         let finds = Arc::new(AtomicUsize::new(0));
+
         let reaching = found_at(FakeDiscord::socket_in(&discord.folder), &finds);
         let unknown = app(FIRST_APP);
+
         let find: Find = Box::new(move |asked, answered| {
             if asked == unknown {
                 return Err(Error::Closed { code: 4000 });
@@ -654,12 +682,15 @@ mod tests {
         let started = Instant::now();
 
         showing.show(app(FIRST_APP), Some(activity("Echoes", 0)), started);
+
         assert!(matches!(showing.link, Link::Unknown { .. }));
+
         showing.show(
             app(FIRST_APP),
             Some(activity("Echoes", 0)),
             started + RETRY_AFTER_AT_MOST * 5,
         );
+
         assert!(matches!(showing.link, Link::Unknown { .. }));
         assert_eq!(finds.load(Ordering::Relaxed), 0);
 
@@ -683,6 +714,7 @@ mod tests {
     fn a_lost_connection_is_made_again_after_the_first_wait_and_what_is_wanted_sent_afresh() {
         let discord = FakeDiscord::listening_in(FakeDiscord::folder());
         let finds = Arc::new(AtomicUsize::new(0));
+
         let mut showing =
             Showing::finding_with(found_at(FakeDiscord::socket_in(&discord.folder), &finds));
         let started = Instant::now();
@@ -692,12 +724,16 @@ mod tests {
         discord.hear();
         discord.hear();
         discord.hang_up();
+
         let lost_at = started + SENDS_APART;
+
         showing.show(app(FIRST_APP), wanted(), lost_at);
 
         assert!(!is_open(&showing));
         assert_eq!(retry_at(&showing), Some(lost_at + RETRY_AFTER_AT_FIRST));
+
         showing.show(app(FIRST_APP), wanted(), lost_at + RETRY_AFTER_AT_FIRST / 2);
+
         assert_eq!(finds.load(Ordering::Relaxed), 1);
 
         showing.show(app(FIRST_APP), wanted(), lost_at + RETRY_AFTER_AT_FIRST);
@@ -745,6 +781,7 @@ mod tests {
         let track = TrackId::new(1).expect("a track id");
         let location = MediaLocation::local(Path::new("song.wav"));
         let now = Instant::now();
+
         let read = |cached: &mut Option<CachedCover>, at| {
             cover_for(
                 &releases,
@@ -758,7 +795,9 @@ mod tests {
         };
 
         assert_eq!(read(&mut cached, now), None);
+
         *releases.cover.write() = Some(Cover::Group(Mbid::new(GROUP).expect("a group id")));
+
         assert_eq!(read(&mut cached, now + COVER_REFRESH_AFTER / 2), None);
         assert_eq!(releases.reads.load(Ordering::Relaxed), 1);
         assert_eq!(
@@ -788,6 +827,7 @@ mod tests {
         let now = Instant::now();
         let first = FrameSpan::between(Frames(0), Frames(44_100));
         let second = FrameSpan::starting(Frames(44_100));
+
         let read = |cached: &mut Option<CachedCover>, span| {
             cover_for(
                 &CoverPerCut,
@@ -969,6 +1009,7 @@ mod tests {
             musicbrainz_release_group_id: Some(GROUP.to_owned()),
             ..TagSet::default()
         };
+
         assert_eq!(
             tagged(&released),
             Some(Cover::Release(Mbid::new(RELEASE).expect("an mbid")))
@@ -979,6 +1020,7 @@ mod tests {
             musicbrainz_release_group_id: Some(GROUP.to_owned()),
             ..TagSet::default()
         };
+
         assert_eq!(
             tagged(&grouped),
             Some(Cover::Group(Mbid::new(GROUP).expect("an mbid")))

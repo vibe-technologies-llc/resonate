@@ -82,12 +82,14 @@ impl Tree {
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a scratch tree");
         Self { root }
     }
 
     fn wave(&self, name: &str, rate: u32, mask: u32, interleaved: &[f32]) -> PathBuf {
         let path = self.root.join(name);
+
         fs::write(&path, float_wave(rate, mask, interleaved)).expect("a written fixture");
         path
     }
@@ -110,6 +112,7 @@ fn float_wave(rate: u32, mask: u32, interleaved: &[f32]) -> Vec<u8> {
     let block_align = channels * 4;
 
     let mut format = Vec::new();
+
     format.extend_from_slice(&EXTENSIBLE.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
     format.extend_from_slice(&rate.to_le_bytes());
@@ -127,11 +130,13 @@ fn float_wave(rate: u32, mask: u32, interleaved: &[f32]) -> Vec<u8> {
         .collect();
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -163,9 +168,12 @@ fn programme(rate: u32, channels: usize) -> Vec<f32> {
             let gain = decibels(PROGRAMME_STEPS_DB[frame / step_frames % PROGRAMME_STEPS_DB.len()]);
             let time = frame as f32 / rate as f32;
             let mut samples = Vec::with_capacity(channels);
+
             for channel in 0..channels {
                 smoothed[channel] = smoothed[channel] * 0.9 + noises[channel].next() * 0.1;
+
                 let tone = (time * std::f32::consts::TAU * (220.0 * (channel + 1) as f32)).sin();
+
                 samples.push(gain * (smoothed[channel] * 4.0 + tone * 0.5));
             }
             samples
@@ -180,6 +188,7 @@ fn tone(rate: u32, seconds: &[(u32, f32)]) -> Vec<f32> {
         .flat_map(|(length, db)| {
             let gain = decibels(*db);
             let from = frame;
+
             frame += (rate * length) as usize;
             (from..frame).flat_map(move |at| {
                 let sample =
@@ -217,6 +226,7 @@ fn ebur128_of(path: &Path) -> Option<Reference> {
         .args(["-af", "ebur128=peak=true", "-f", "null", "-"])
         .output()
         .ok()?;
+
     if !output.status.success() {
         return None;
     }
@@ -362,6 +372,7 @@ fn the_loudness_read_alone_is_the_one_a_whole_study_reads() {
     let tree = Tree::new();
     let rate = 48_000;
     let channels = FIVE_ONE_WITH_REARS.count_ones() as usize;
+
     let programme = programme(rate, channels);
     let heard = &programme[..(rate * SECONDS_READ_BOTH_WAYS) as usize * channels];
     let path = tree.wave("five-one.wav", rate, FIVE_ONE_WITH_REARS, heard);
@@ -382,6 +393,7 @@ fn fpcalc_print_of(path: &Path) -> Option<String> {
         .arg(path)
         .output()
         .ok()?;
+
     if !output.status.success() {
         return None;
     }
@@ -397,9 +409,11 @@ fn a_print_of_a_clip_at_chromaprints_own_rate_is_the_one_fpcalc_makes() {
     let tree = Tree::new();
     let mut noise = Noise(0x1234_5678);
     let mut smoothed = 0.0_f32;
+
     let mono: Vec<f32> = (0..PRINT_RATE * PRINT_SECONDS)
         .map(|frame| {
             smoothed = smoothed * 0.8 + noise.next() * 0.2;
+
             let time = frame as f32 / PRINT_RATE as f32;
             0.25 * smoothed + 0.3 * (time * std::f32::consts::TAU * (300.0 + 40.0 * time)).sin()
         })
@@ -430,12 +444,14 @@ fn wideband_music(rate: u32, seconds: u32) -> Vec<f32> {
             if frame % beat == 0 {
                 gain = 0.05 + 0.15 * (swell.next() + 1.0);
             }
+
             let time = frame as f32 / rate as f32;
             let decay = (-((frame % beat) as f32) / beat as f32 * 3.0).exp();
             let melody =
                 (time * std::f32::consts::TAU * (330.0 + 110.0 * (time * 0.7).sin())).sin();
             let shared = noises[0].next();
             let apart = noises[1].next();
+
             let left = gain * decay * (0.6 * shared + 0.4 * apart) + 0.2 * melody;
             let right = gain * decay * (0.6 * shared - 0.4 * apart) + 0.15 * melody;
             [left, right]
@@ -477,6 +493,7 @@ fn encoder(program: &str, flags: &[&str], from: &Path, to: &Path) -> Option<()> 
 fn as_flac(from: &Path, to: &Path, filter: Option<String>) -> Option<()> {
     let mut arguments = vec![OsStr::new("-i"), from.as_os_str()];
     let filter = filter.map(OsString::from);
+
     if let Some(filter) = &filter {
         arguments.extend([OsStr::new("-af"), filter.as_os_str()]);
     }
@@ -518,6 +535,7 @@ fn assert_a_genuine_source(study: &Study) {
         let by_chance = match (steps.tell, steps.coding) {
             (Tell::IntensityStereo, _) => {
                 let (on, off) = (steps.lattice, steps.control);
+
                 let spread = ((on * (1.0 - on) + off * (1.0 - off))
                     / steps.coefficients.max(1) as f32)
                     .sqrt();
@@ -530,6 +548,7 @@ fn assert_a_genuine_source(study: &Study) {
                 steps.lattice < SOURCE_LATTICE_BELOW
             }
         };
+
         assert!(by_chance, "{steps:?}");
     }
 }
@@ -629,6 +648,7 @@ fn music_source(rate: u32) -> Option<Sourced> {
     );
     let source = tree.root.join("source.flac");
     let wave = tree.root.join("source.wav");
+
     as_flac(&made, &source, None)?;
     as_wave(&source, &wave)?;
     Some(Sourced { tree, source, wave })
@@ -661,9 +681,12 @@ fn ffmpegs_aac_at_256_and_320_kbps_decoded_back_to_flac_lands_on_its_quantiser_s
 
     for bitrate in AAC_BITRATES {
         let encoded = tree.root.join(format!("{bitrate}.m4a"));
+
         aac_of(&source, bitrate, &encoded);
+
         let whole = tree.root.join(format!("{bitrate}.flac"));
         let cut = tree.root.join(format!("{bitrate}-cut.flac"));
+
         as_flac(&encoded, &whole, None).expect("a decode");
         as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
 
@@ -685,22 +708,28 @@ fn faacs_and_fdk_aacs_decoded_back_to_flac_land_on_aacs_steps_whatever_blocks_th
 
     for bitrate in FAAC_BITRATES {
         let encoded = tree.root.join(format!("faac-{bitrate}.m4a"));
+
         if encoder("faac", &["-b", bitrate], &wave, &encoded).is_none() {
             eprintln!("skipped: no faac to encode AAC with");
             break;
         }
+
         let decoded = tree.root.join(format!("faac-{bitrate}.flac"));
+
         as_flac(&encoded, &decoded, None).expect("a decode");
 
         expected.decoded_from(decoded, Coding::Aac, None, format!("faac {bitrate}"));
     }
     for (name, flags) in FDK_ENCODES {
         let encoded = tree.root.join(format!("fdk-{name}.m4a"));
+
         if encoder("fdkaac", flags, &wave, &encoded).is_none() {
             eprintln!("skipped: no fdkaac to encode AAC with");
             break;
         }
+
         let decoded = tree.root.join(format!("fdk-{name}.flac"));
+
         as_flac(&encoded, &decoded, None).expect("a decode");
 
         expected.decoded_from(decoded, Coding::Aac, None, format!("fdkaac {name}"));
@@ -717,7 +746,9 @@ fn a_lossy_decode_dithered_or_taken_to_a_hi_res_rate_still_lands_on_the_steps() 
         return;
     };
     let aac = tree.root.join("256k.m4a");
+
     aac_of(&source, "256k", &aac);
+
     let mp3 = tree.root.join("open.mp3");
     let has_lame = lame(&[
         "-b".as_ref(),
@@ -732,11 +763,13 @@ fn a_lossy_decode_dithered_or_taken_to_a_hi_res_rate_still_lands_on_the_steps() 
 
     for (nth, (filter, resampled_from)) in DECODE_FILTERS.into_iter().enumerate() {
         let decoded = tree.root.join(format!("aac-{nth}.flac"));
+
         as_flac(&aac, &decoded, Some(filter.to_owned())).expect("a decode");
         expected.decoded_from(decoded, Coding::Aac, resampled_from, filter);
 
         if has_lame {
             let decoded = tree.root.join(format!("mp3-{nth}.flac"));
+
             as_flac(&mp3, &decoded, Some(filter.to_owned())).expect("a decode");
             expected.decoded_from(decoded, Coding::Mp3, resampled_from, filter);
         }
@@ -756,15 +789,20 @@ fn an_aac_decode_resampled_to_the_other_cd_rate_lands_on_aacs_steps_once_brought
             return;
         };
         let resampled_source = tree.root.join("resampled-source.flac");
+
         as_flac(
             &source,
             &resampled_source,
             Some(format!("aresample={other}")),
         )
         .expect("a resampled source");
+
         let encoded = tree.root.join("256k.m4a");
+
         aac_of(&source, "256k", &encoded);
+
         let resampled = tree.root.join("resampled.flac");
+
         as_flac(&encoded, &resampled, Some(format!("aresample={other}"))).expect("a decode");
 
         expected.genuine(resampled_source);
@@ -782,6 +820,7 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules() {
         return;
     };
     let probe = tree.root.join("probe.mp3");
+
     if lame(&[
         "-b".as_ref(),
         "128".as_ref(),
@@ -793,16 +832,20 @@ fn lames_mp3_with_no_lowpass_decoded_back_to_flac_lands_on_its_granules() {
         eprintln!("skipped: no lame to encode MP3 with");
         return;
     }
+
     let mut expected = Expectations::default();
 
     for (name, flags) in MP3_ENCODES {
         let encoded = tree.root.join(format!("{name}.mp3"));
         let mut arguments: Vec<&OsStr> = flags.iter().map(OsStr::new).collect();
+
         arguments.extend([wave.as_os_str(), encoded.as_os_str()]);
         lame(&arguments).expect("an MP3 encode");
+
         let whole = tree.root.join(format!("{name}.flac"));
         let cut = tree.root.join(format!("{name}-cut.flac"));
         let resampled = tree.root.join(format!("{name}-resampled.flac"));
+
         as_flac(&encoded, &whole, None).expect("a decode");
         as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
         as_flac(&encoded, &resampled, Some("aresample=48000".to_owned())).expect("a decode");
@@ -825,6 +868,7 @@ fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels(
 
     let mut encodes = Vec::new();
     let ffmpegs = tree.root.join("ffmpeg.mp2");
+
     ffmpeg(&[
         "-i".as_ref(),
         wave.as_os_str(),
@@ -843,17 +887,20 @@ fn mp2_from_twolame_and_ffmpeg_decoded_back_to_flac_lands_on_its_subband_levels(
             .arg(&wave)
             .arg(&encoded)
             .status();
+
         if !status.is_ok_and(|status| status.success()) {
             eprintln!("skipped: no twolame to encode MP2 with");
             break;
         }
         encodes.push(("twolame", encoded));
     }
+
     let mut expected = Expectations::default();
 
     for (name, encoded) in encodes {
         let whole = encoded.with_extension("flac");
         let cut = tree.root.join(format!("{name}-cut.flac"));
+
         as_flac(&encoded, &whole, None).expect("a decode");
         as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
 
@@ -875,6 +922,7 @@ fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor() {
 
     for quality in VORBIS_QUALITIES {
         let encoded = tree.root.join(format!("q{quality}.ogg"));
+
         if ffmpeg(&[
             "-i".as_ref(),
             wave.as_os_str(),
@@ -889,8 +937,10 @@ fn libvorbis_with_no_lowpass_decoded_back_to_flac_lands_on_its_floor() {
             eprintln!("skipped: no libvorbis in ffmpeg");
             return;
         }
+
         let whole = tree.root.join(format!("q{quality}.flac"));
         let cut = tree.root.join(format!("q{quality}-cut.flac"));
+
         as_flac(&encoded, &whole, None).expect("a decode");
         as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
 
@@ -912,6 +962,7 @@ fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies()
 
     for bitrate in OPUS_BITRATES {
         let encoded = tree.root.join(format!("{bitrate}.opus"));
+
         if ffmpeg(&[
             "-i".as_ref(),
             wave.as_os_str(),
@@ -926,9 +977,11 @@ fn opus_decoded_back_to_flac_lands_on_the_steps_of_its_predicted_band_energies()
             eprintln!("skipped: no libopus in ffmpeg");
             return;
         }
+
         let whole = tree.root.join(format!("opus-{bitrate}.flac"));
         let cut = tree.root.join(format!("opus-{bitrate}-cut.flac"));
         let resampled = tree.root.join(format!("opus-{bitrate}-resampled.flac"));
+
         as_flac(&encoded, &whole, None).expect("a decode");
         as_flac(&encoded, &cut, cut_decode()).expect("a cut decode");
         as_flac(
@@ -954,19 +1007,25 @@ fn a_lossy_decode_downsampled_below_its_coded_rate_lands_on_the_steps_once_broug
         return;
     };
     let downsampled_source = tree.root.join("downsampled-source.flac");
+
     as_flac(
         &source,
         &downsampled_source,
         Some(format!("aresample={BELOW_ITS_CODED_RATE}")),
     )
     .expect("a downsampled source");
+
     let mut expected = Expectations::default();
+
     expected.genuine(downsampled_source);
 
     let aac = tree.root.join("256k.m4a");
+
     aac_of(&source, "256k", &aac);
+
     let mut encodes = vec![(Coding::Aac, aac)];
     let mp3 = tree.root.join("192.mp3");
+
     if lame(&[
         "-b".as_ref(),
         "192".as_ref(),
@@ -980,6 +1039,7 @@ fn a_lossy_decode_downsampled_below_its_coded_rate_lands_on_the_steps_once_broug
 
     for (coding, encoded) in encodes {
         let downsampled = encoded.with_extension("flac");
+
         as_flac(
             &encoded,
             &downsampled,
@@ -1001,6 +1061,7 @@ fn loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps() {
     for rate in [MUSIC_RATE, 48_000] {
         let tree = Tree::new();
         let mut noise = Noise(0x5eed_cafe);
+
         let loud: Vec<f32> = (0..(rate * MUSIC_SECONDS * 2) as usize)
             .map(|_| 0.7 * noise.next())
             .collect();
@@ -1013,8 +1074,10 @@ fn loud_noise_and_dense_music_at_every_cd_rate_land_on_no_codecs_steps() {
                 &wideband_music(rate, MUSIC_SECONDS),
             ),
         ];
+
         for made in made {
             let flac = made.with_extension("flac");
+
             if as_flac(&made, &flac, None).is_none() {
                 eprintln!("skipped: no ffmpeg to write FLAC with");
                 return;

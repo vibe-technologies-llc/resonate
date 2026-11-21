@@ -75,6 +75,7 @@ impl Category {
 
     pub(crate) fn drawn(self) -> Vec<Drawn> {
         let mut drawn: Vec<Drawn> = Vec::new();
+
         for group in self.groups() {
             match group.page() {
                 None => drawn.push(Drawn::Group(group)),
@@ -83,6 +84,7 @@ impl Category {
                         Drawn::Pages(pages) => pages.contains(&page),
                         Drawn::Group(_) => false,
                     });
+
                     if gathered {
                         continue;
                     }
@@ -109,7 +111,7 @@ pub(crate) enum Drawn {
     Pages(Vec<Page>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Page {
     HeadphoneCorrection,
     OwnMeasurement,
@@ -233,7 +235,7 @@ pub(crate) struct Described {
     pub(crate) keys: &'static [ConfigKey],
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Group {
     Device,
     DeviceVolume,
@@ -1303,6 +1305,7 @@ impl Narrowing {
                 .map(|(_, reading)| *reading)
                 .max()
         };
+
         let mut ranked: Vec<Ranked> = found
             .iter()
             .map(|(group, reading)| {
@@ -1320,6 +1323,7 @@ impl Narrowing {
                 )
             })
             .collect();
+
         ranked.sort_by_key(|(best, category, best_on_the_page, page, reading, _)| {
             (*best, *category, *best_on_the_page, *page, *reading)
         });
@@ -1353,6 +1357,7 @@ mod tests {
             assert!(!group.is_offered_where(false, false));
             assert!(!group.is_offered_where(false, true));
         }
+
         assert!(Group::WindowButtons.is_offered_where(true, false));
         assert!(Group::WindowButtons.is_offered_where(false, false));
         assert!(!Group::WindowButtons.is_offered_where(false, true));
@@ -1376,6 +1381,7 @@ mod tests {
                 category.label()
             );
         }
+
         assert_eq!(
             Category::ALL
                 .into_iter()
@@ -1408,6 +1414,7 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.title() == group.title())
                 .count();
+
             assert_eq!(
                 sharing,
                 1,
@@ -1431,6 +1438,7 @@ mod tests {
                     .into_iter()
                     .filter(|other| other.keys().contains(key))
                     .count();
+
                 assert_eq!(
                     claiming,
                     1,
@@ -1447,9 +1455,11 @@ mod tests {
         let narrowing = Narrowing::of("   ");
 
         assert!(!narrowing.narrows());
+
         for group in Group::ALL {
             assert!(narrowing.allows(group));
         }
+
         assert_eq!(
             narrowing.anywhere().count(),
             Group::ALL
@@ -1468,6 +1478,7 @@ mod tests {
             let titled = found
                 .iter()
                 .any(|group| group.title().to_lowercase().contains(word));
+
             if titled {
                 assert!(
                     found[0].title().to_lowercase().contains(word),
@@ -1475,6 +1486,7 @@ mod tests {
                     found[0].title()
                 );
             }
+
             let mut seen = Vec::new();
             for group in &found {
                 let category = group.category();
@@ -1483,6 +1495,7 @@ mod tests {
                         !seen.contains(&category),
                         "{word:?} drew {category:?} under two headings"
                     );
+
                     seen.push(category);
                 }
             }
@@ -1542,6 +1555,7 @@ mod tests {
                 "{} is a page with nothing on it",
                 page.title()
             );
+
             for group in page.groups() {
                 assert_eq!(
                     group.category(),
@@ -1551,10 +1565,12 @@ mod tests {
                     page.title()
                 );
             }
+
             let sharing = Page::ALL
                 .into_iter()
                 .filter(|other| other.title() == page.title() || other.id() == page.id())
                 .count();
+
             assert_eq!(sharing, 1, "{} is named as another page is", page.title());
         }
     }
@@ -1600,6 +1616,7 @@ mod tests {
 
         for category in Category::ALL {
             let mut shown: Vec<Group> = category.shown_on(None).collect();
+
             for drawn in category.drawn() {
                 if let Drawn::Pages(pages) = drawn {
                     for page in pages {
@@ -1608,6 +1625,7 @@ mod tests {
                 }
             }
             shown.sort_by_key(|group| *group as usize);
+
             assert_eq!(
                 shown,
                 category.groups().collect::<Vec<_>>(),
@@ -1649,6 +1667,7 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.icon() == category.icon())
                 .count();
+
             assert_eq!(
                 sharing,
                 1,

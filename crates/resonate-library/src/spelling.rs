@@ -59,8 +59,10 @@ impl Held {
         }
 
         self.in_order = OnceLock::new();
+
         let letters = letters_in(&folded);
         let key: Arc<str> = Arc::from(folded);
+
         if self.by_letters.len() <= letters {
             self.by_letters.resize_with(letters + 1, Vec::new);
         }
@@ -78,8 +80,10 @@ impl Held {
         if self.entries.contains_key(run) {
             return true;
         }
+
         let in_order = self.in_order.get_or_init(|| {
             let mut keys: Vec<Arc<str>> = self.entries.keys().cloned().collect();
+
             keys.sort_unstable();
             keys
         });
@@ -172,6 +176,7 @@ struct Reached {
 impl Vocabulary {
     pub fn taking(&mut self, name: &str) {
         let mut whole = String::with_capacity(name.len());
+
         for (spelling, folded) in runs_in(name) {
             if !whole.is_empty() {
                 whole.push(BETWEEN_RUNS);
@@ -260,10 +265,13 @@ impl Spellings {
             .map(|(_, folded)| folded)
             .collect::<Vec<_>>()
             .join(&BETWEEN_RUNS.to_string());
+
         if whole.is_empty() {
             return None;
         }
+
         let artists = &self.artists;
+
         if let Some(held) = artists
             .named
             .get(&whole)
@@ -307,6 +315,7 @@ impl Spellings {
 
     fn instead_of(&self, run: &str, column: Option<Column>) -> Option<String> {
         let reading = self.reading(column);
+
         if reading.iter().any(|vocabulary| vocabulary.holds(run)) {
             return None;
         }
@@ -339,6 +348,7 @@ impl Spellings {
         }
 
         let mut joined = String::with_capacity(one.len() + other.len());
+
         joined.push_str(one);
         joined.push_str(other);
 
@@ -348,6 +358,7 @@ impl Spellings {
 
     fn instead_of_the_whole(&self, text: &str, column: Option<Column>) -> Option<String> {
         let runs = lettered_runs(text);
+
         if runs.len() < 2 {
             return None;
         }
@@ -363,6 +374,7 @@ impl Spellings {
 
     fn instead_of_the_name(&self, whole: &str, column: Option<Column>) -> Option<String> {
         let reading = self.reading(column);
+
         if reading.iter().any(|vocabulary| vocabulary.names(whole)) {
             return None;
         }
@@ -378,13 +390,16 @@ impl Spellings {
 
     fn split_apart(&self, run: &str, column: Option<Column>) -> Option<String> {
         let reading = self.reading(column);
+
         if reading.iter().any(|vocabulary| vocabulary.holds(run)) {
             return None;
         }
 
         furthest_from(letters_in(run))?;
+
         let letters: Vec<char> = run.chars().collect();
         let mut reached = vec![vec![None; MOST_PIECES + 1]; letters.len() + 1];
+
         reached[0][0] = Some(Reached { rows: 0, from: 0 });
 
         for to in 1..=letters.len() {
@@ -422,6 +437,7 @@ impl Spellings {
         for left in (1..=pieces).rev() {
             let step = reached[to][left].expect("a cut the walk reached");
             let piece: String = letters[step.from..to].iter().collect();
+
             spelt.push(
                 self.whole(&piece, column)
                     .map_or(piece, |held| held.spelling.clone()),
@@ -471,6 +487,7 @@ impl Spellings {
         };
 
         let mut offered = Vec::new();
+
         for vocabulary in [&self.artists, &self.albums, &self.genres] {
             for (folded, spelt) in vocabulary.named.iter() {
                 for (taken, tail) in tails.iter().enumerate() {
@@ -510,6 +527,7 @@ impl Spellings {
                     &other.written,
                 ))
         });
+
         let mut seen = AHashSet::new();
         offered
             .into_iter()
@@ -520,7 +538,9 @@ impl Spellings {
 
     pub fn did_you_mean(&self, text: &str) -> Option<String> {
         let mut search = Search::read(text);
+
         let mut corrected = self.run_tokens_together(&mut search);
+
         corrected |= self.name_the_tokens(&mut search);
 
         for clause in &mut search.clauses {
@@ -532,6 +552,7 @@ impl Spellings {
                     let Condition::Word(word) = condition else {
                         continue;
                     };
+
                     corrected |= self.correct(word);
                 }
             }
@@ -558,6 +579,7 @@ impl Spellings {
                 at += 1;
                 continue;
             };
+
             word.text = written;
             search.clauses.remove(at + 1);
             joined = true;
@@ -579,6 +601,7 @@ impl Spellings {
                 at += 1;
                 continue;
             };
+
             if word.column.is_some() && written.contains(char::is_whitespace) {
                 word.reach = word.reach.at_least_a_phrase();
             }
@@ -599,17 +622,21 @@ impl Spellings {
             let Some((held, folded)) = one_run_of(clause) else {
                 break;
             };
+
             if runs.is_empty() {
                 column = *held;
             } else if column != *held {
                 break;
             }
+
             let beyond = self.beyond_a_word(&folded, column);
+
             runs.push((folded, beyond));
         }
 
         for span in (2..=runs.len()).rev() {
             let taken = &runs[..span];
+
             if !taken.iter().any(|(_, beyond)| *beyond) {
                 continue;
             }
@@ -656,6 +683,7 @@ impl Spellings {
                 continue;
             };
             let taken = at + instead.runs - 1;
+
             written.push_str(word.text.get(after..runs[at].0.start).unwrap_or_default());
             written.push_str(&instead.written);
             after = runs[taken].0.end;
@@ -680,15 +708,19 @@ fn one_run_of(clause: &Clause) -> Option<(&Option<Column>, String)> {
     let [asked] = clause.any.as_slice() else {
         return None;
     };
+
     if asked.denied {
         return None;
     }
+
     let [Condition::Word(word)] = asked.all.as_slice() else {
         return None;
     };
+
     if word.reach.is_phrased() {
         return None;
     }
+
     let runs = lettered_runs(&word.text);
     let [(_, folded)] = runs.as_slice() else {
         return None;
@@ -699,6 +731,7 @@ fn one_run_of(clause: &Clause) -> Option<(&Option<Column>, String)> {
 
 fn tails_of(typed: &str) -> Vec<Tail> {
     let runs = lettered_runs(typed);
+
     if runs.last().is_none_or(|(at, _)| at.end != typed.len()) {
         return Vec::new();
     }
@@ -744,6 +777,7 @@ fn apart_by(one: &str, other: &str, furthest: usize) -> Option<usize> {
     if one.is_ascii() && other.is_ascii() {
         return edits_between(one.as_bytes(), other.as_bytes(), furthest);
     }
+
     let left: Letters<char> = one.chars().collect();
     let right: Letters<char> = other.chars().collect();
     edits_between(&left, &right, furthest)
@@ -764,12 +798,15 @@ fn edits_between<T: PartialEq>(left: &[T], right: &[T], furthest: usize) -> Opti
 
     for (down, letter) in left.iter().enumerate() {
         row[0] = down + 1;
+
         let mut nearest = row[0];
+
         for (across, against) in right.iter().enumerate() {
             let swapped = usize::from(letter != against);
             let mut steps = (before[across] + swapped)
                 .min(before[across + 1] + 1)
                 .min(row[across] + 1);
+
             if down > 0 && across > 0 && letter == &right[across - 1] && &left[down - 1] == against
             {
                 steps = steps.min(last[across - 1] + 1);
@@ -793,6 +830,7 @@ mod tests {
 
     fn catalogued() -> Spellings {
         let mut spellings = Spellings::default();
+
         spellings.taking(Column::Artist, "Pink Floyd");
         spellings.taking(Column::Artist, "Marcin Przybyłowicz");
         spellings.taking(Column::Album, "The Dark Side of the Moon");
@@ -847,7 +885,9 @@ mod tests {
             .expect("a name the catalog holds");
 
         assert_eq!(offered, "artist:\"Pink Floyd\"");
+
         let read = Search::read(&offered);
+
         assert_eq!(
             read.clauses.len(),
             1,
@@ -858,6 +898,7 @@ mod tests {
     #[test]
     fn a_word_in_another_script_is_weighed_by_its_letters_rather_than_its_bytes() {
         let mut spellings = Spellings::default();
+
         spellings.taking(Column::Title, "Мор");
         spellings.taking(Column::Title, "東京");
         spellings.taking(Column::Title, "Echoes");
@@ -1048,6 +1089,7 @@ mod tests {
     #[test]
     fn a_word_spelt_more_than_one_way_is_answered_in_the_marked_spelling() {
         let mut spellings = Spellings::default();
+
         spellings.taking(Column::Title, "PYRAMID");
         spellings.taking(Column::Title, "Pyramid Song");
 
@@ -1058,6 +1100,7 @@ mod tests {
         );
 
         let mut marked = Spellings::default();
+
         marked.taking(Column::Artist, "Bjork");
         marked.taking(Column::Artist, "Björk");
 
@@ -1067,6 +1110,7 @@ mod tests {
     #[test]
     fn the_word_the_most_rows_hold_wins_a_tie() {
         let mut spellings = Spellings::default();
+
         spellings.taking(Column::Title, "Rain");
         spellings.taking(Column::Title, "Rain");
         spellings.taking(Column::Title, "Ruin");
@@ -1134,6 +1178,7 @@ mod tests {
     #[test]
     fn a_run_too_short_to_be_corrected_is_too_short_to_be_split() {
         let mut spellings = Spellings::default();
+
         spellings.taking(Column::Title, "In A Silent Way");
 
         assert_eq!(

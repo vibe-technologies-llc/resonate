@@ -212,6 +212,7 @@ impl ListeningTest {
 
     fn command_for(&self, hear: TestHear) -> Result<Option<Command>> {
         let mut running = self.running.lock();
+
         let arm = match hear {
             TestHear::A => Arm::A,
             TestHear::B => Arm::B,
@@ -220,6 +221,7 @@ impl ListeningTest {
                 None => return Ok(None),
             },
         };
+
         running.heard = match hear {
             TestHear::A => Some(TestArm::A),
             TestHear::B => Some(TestArm::B),
@@ -297,7 +299,9 @@ impl ListeningTest {
 
     pub fn answer(&self, said: TestArm) -> Result<bool> {
         let mut running = self.running.lock();
+
         let verdict = running.session.answer(said.into()).map_err(refused)?;
+
         running.heard = None;
         Ok(verdict == Verdict::Right)
     }
@@ -348,9 +352,11 @@ impl MobilePlayer {
         trials: u32,
     ) -> Result<Arc<ListeningTest>> {
         let profile = Arc::new(curve.profile()?);
+
         if profile.is_transparent() {
             return Err(Error::ListeningTestNothingToTest);
         }
+
         let rate = {
             self.playing
                 .player()?
@@ -374,6 +380,7 @@ impl MobilePlayer {
     ) -> Result<Arc<ListeningTest>> {
         let contest = Contest::from(setting);
         let player = self.playing.player()?;
+
         let lowered = if contest.is_flat_in_level() {
             Lowered::NOTHING
         } else {
@@ -383,6 +390,7 @@ impl MobilePlayer {
         };
         let test =
             ListeningTest::comparing(trials, clock_seed(), Compared::Setting { contest, lowered })?;
+
         self.playing
             .player()?
             .request(Command::Audition(Some(Audition {
@@ -404,6 +412,7 @@ impl MobilePlayer {
     pub fn end_listening_test(&self) -> Result<()> {
         let preferences = self.preferences.lock().clone();
         let equalisation = preferences.equalisation(preferences.equaliser.profile()?);
+
         self.command(Command::Audition(None))?;
         self.command(Command::SetEqualisation(Arc::new(equalisation)))
     }
@@ -457,6 +466,7 @@ mod tests {
                 began.elapsed() < SETTLED_WITHIN,
                 "the engine never took the equalisation"
             );
+
             thread::sleep(LOOKED_AGAIN_AFTER);
         }
     }
@@ -540,6 +550,7 @@ mod tests {
             .hear_in_listening_test(Arc::clone(&test), TestHear::A)
             .expect("heard");
         engine_holds(&harness, &sent(&arms_of(&test).a));
+
         assert_eq!(test.standing().heard, Some(TestArm::A));
 
         harness
@@ -547,19 +558,24 @@ mod tests {
             .hear_in_listening_test(Arc::clone(&test), TestHear::B)
             .expect("heard");
         engine_holds(&harness, &sent(&arms_of(&test).b));
+
         assert_eq!(test.standing().heard, Some(TestArm::B));
 
         let x = drawn(&test);
+
         harness
             .player
             .hear_in_listening_test(Arc::clone(&test), TestHear::X)
             .expect("heard");
         engine_holds(&harness, &sent(arms_of(&test).profile(x)));
+
         assert_eq!(test.standing().heard, None);
 
         harness.player.end_listening_test().expect("put back");
+
         let preferences = harness.player.playback_preferences();
         let standing = preferences.equalisation(preferences.equaliser.profile().expect("a curve"));
+
         engine_holds(&harness, &standing);
     }
 
@@ -574,6 +590,7 @@ mod tests {
         while !test.standing().finished {
             assert!(test.answer(named(drawn(&test))).expect("answered"));
         }
+
         let standing = test.standing();
 
         assert_eq!(standing.answered, 8);
@@ -605,6 +622,7 @@ mod tests {
         assert!(!test.answer(other).expect("answered"));
 
         let standing = test.standing();
+
         assert_eq!(standing.verdicts, vec![false]);
         assert_eq!(standing.right, 0);
         assert!(!standing.significant);

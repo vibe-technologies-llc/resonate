@@ -58,6 +58,7 @@ impl MobilePlayer {
         if spelled == Spelled::Anew {
             return Ok(uri);
         }
+
         let Some(held) = self.row_naming_the_file(&uri, name, probed)? else {
             return Ok(uri);
         };
@@ -71,10 +72,13 @@ impl MobilePlayer {
         if self.catalog.holds_uri(uri)? {
             return Ok(None);
         }
+
         let alike = self.catalog.lasting_alike(uri, name, probed)?;
+
         if alike.is_empty() {
             return Ok(None);
         }
+
         let Some(file) = self.services.files.identity_of(uri) else {
             return Ok(None);
         };
@@ -85,13 +89,16 @@ impl MobilePlayer {
 
     pub(crate) fn fold_rows_naming_one_file(&self) -> Result<usize> {
         let rows = self.catalog.sharing_a_length()?;
+
         if rows.len() < 2 {
             return Ok(0);
         }
+
         let queued = self.queued_uris();
         let playing = self.playing_uri();
 
         let mut by_file = BTreeMap::<FileIdentity, Vec<Track>>::new();
+
         for row in rows {
             if let Some(identity) = self.services.files.identity_of(&row.uri) {
                 by_file.entry(identity).or_default().push(row);
@@ -99,6 +106,7 @@ impl MobilePlayer {
         }
 
         let mut folded = Vec::new();
+
         for naming_one_file in by_file.into_values().filter(|rows| rows.len() > 1) {
             let kept = kept_of(&naming_one_file, playing.as_deref(), &queued);
             let others = naming_one_file
@@ -106,6 +114,7 @@ impl MobilePlayer {
                 .filter(|row| row.id != kept && !queued.contains(&row.uri))
                 .map(|row| row.id)
                 .collect::<Vec<_>>();
+
             self.catalog.fold_into(kept, &others)?;
             folded.extend(others);
         }
@@ -155,8 +164,10 @@ impl Catalog {
     fn lasting_alike(&self, uri: &str, name: &str, probed: &Probed) -> Result<Vec<Track>> {
         let connection = self.0.lock();
         let mut found = Vec::new();
+
         for alike in [LASTING_ALIKE, OF_NO_LENGTH_NAMED_ALIKE] {
             let mut query = connection.prepare_cached(alike).map_err(read_error)?;
+
             let rows = query
                 .query_map(
                     params![
@@ -170,6 +181,7 @@ impl Catalog {
                 .map_err(read_error)?
                 .collect::<rusqlite::Result<Vec<_>>>()
                 .map_err(read_error)?;
+
             found.extend(rows);
         }
         Ok(found)

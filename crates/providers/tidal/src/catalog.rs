@@ -132,6 +132,7 @@ pub(crate) struct V1Mix {
 impl V1Mix {
     pub(crate) fn mix(self) -> Option<Mix> {
         let id = self.id.trim();
+
         is_a_mix(id).then_some(())?;
         Some(Mix {
             id: Id::new(id)?,
@@ -306,9 +307,11 @@ pub(crate) fn picture_at(images: &str, cover: &Id, side: u32) -> Option<String> 
         ("artist", uuid) => (ARTIST_SIDES.as_slice(), uuid),
         _ => return None,
     };
+
     if !is_a_picture(uuid) {
         return None;
     }
+
     let drawn = sides
         .iter()
         .copied()
@@ -376,12 +379,14 @@ pub(crate) trait AsksV1 {
 
     fn mix_songs(&self, id: &Id) -> Result<MixSongs> {
         let op = ProviderOp::Browse;
+
         if !is_a_mix(id.as_str()) {
             return Err(Error::Unreadable {
                 provider: self.provider().clone(),
                 op,
             });
         }
+
         let entries: Items<Entry> = self.browsed(&format!(
             "mixes/{id}/items?limit={SONGS_OF_A_MIX_AT_MOST}&offset=0"
         ))?;

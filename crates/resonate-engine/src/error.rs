@@ -116,7 +116,7 @@ pub enum Error {
     LevelsTooFarApart { millibels: i32 },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Cause {
     Unreadable,
     Unsupported,

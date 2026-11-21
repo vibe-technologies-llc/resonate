@@ -60,10 +60,13 @@ impl Opens {
                 .find(|(held, _)| *held == id)
                 .map(|(_, node)| node.clone())
         };
+
         if let Some(node) = named(&self.known) {
             return Ok(Target::Node(node));
         }
+
         let sinks = enumerate()?;
+
         *self.known.lock() = sinks
             .iter()
             .map(|sink| (sink.id, sink.name.clone()))
@@ -87,6 +90,7 @@ fn start(target: &Target, request: &StreamRequest, feeding: Feeding) -> SinkResu
     let mut client = device
         .get_iaudioclient()
         .map_err(|error| backend_error(Operation::Open, error))?;
+
     let (mode, share) = match way {
         Way::Shared => (
             StreamMode::EventsShared {
@@ -112,9 +116,11 @@ fn start(target: &Target, request: &StreamRequest, feeding: Feeding) -> SinkResu
             )
         }
     };
+
     client
         .initialize_client(&wave, Direction::Render, mode, None)
         .map_err(initialize_error)?;
+
     let event = client
         .set_get_eventhandle()
         .map_err(|error| backend_error(Operation::Open, error))?;
@@ -127,6 +133,7 @@ fn start(target: &Target, request: &StreamRequest, feeding: Feeding) -> SinkResu
     let frame_bytes =
         wire_of(spec.format).store_bits / 8 * usize::from(spec.channels.count().get());
     let frame_bytes = NonZeroUsize::new(frame_bytes).ok_or(Error::FormatRefused)?;
+
     let scratch =
         vec![0_u8; frame_bytes.get() * usize::try_from(buffer_frames).unwrap_or_default()];
     let audio_clock = client.get_audioclock().ok().and_then(|audio_clock| {

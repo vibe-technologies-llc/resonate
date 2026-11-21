@@ -6,7 +6,7 @@ pub(crate) const MOST_FLAC_CHANNELS: u8 = 8;
 pub(crate) const WIDEST_FLOAT_A_WAVE_HOLDS: u8 = 32;
 pub const FASTEST_FLAC_RATE: SampleRate = SampleRate::HZ_96000;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Form {
     #[default]
     Flac,

@@ -49,8 +49,10 @@ pub(crate) fn forgotten(library: &Library, argument: &Path) -> Result<Forgotten>
     if library.remove_root(argument)? {
         return Ok(Forgotten::Root);
     }
+
     let named = location_of_argument(argument.as_os_str(), &Sources::local());
     let path = named.as_path().unwrap_or(argument);
+
     if library.forget_delivered(path)? {
         return Ok(Forgotten::Delivered(path.to_path_buf()));
     }
@@ -75,12 +77,15 @@ mod tests {
         let root = env::temp_dir().join(format!("resonate-forget-{}", process::id()));
         let retired = root.join("retired");
         let kept = root.join("kept");
+
         fs::create_dir_all(&retired).expect("a scratch folder");
         fs::create_dir_all(&kept).expect("a scratch folder");
         fs::write(retired.join("a.wav"), silent_wave(1)).expect("a track");
         fs::write(retired.join("b.wav"), silent_wave(1)).expect("a track");
         fs::write(kept.join("c.wav"), silent_wave(1)).expect("a track");
+
         let library = Library::open_in_memory().expect("a catalog");
+
         library.add_root(&root).expect("a root");
 
         let scanned = library
@@ -93,14 +98,17 @@ mod tests {
             })
             .and_then(PassHandle::join)
             .expect("a scan");
+
         fs::remove_file(retired.join("a.wav")).expect("a track taken away");
         fs::remove_file(kept.join("c.wav")).expect("a track taken away");
+
         let from_the_folder = forgotten(&library, &retired).expect("a forget");
         let from_nowhere = forgotten(&library, &root.join("never")).expect("a forget");
         let left = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the tracks");
         let the_root = forgotten(&library, &root).expect("a forget");
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         assert_eq!(scanned.stats.added, 3);

@@ -44,6 +44,7 @@ impl Scope {
         let Some(first) = trimmed.chars().next() else {
             return (Self::All, "");
         };
+
         let scope = match first {
             '>' => Self::Commands,
             '?' => Self::Settings,
@@ -74,10 +75,12 @@ impl FoldedText {
         for (start, ch) in original.char_indices() {
             let end = start + ch.len_utf8();
             let mut buf = [0_u8; 4];
+
             let piece = ch.encode_utf8(&mut buf);
             let mapped = folded_letters(piece);
             for mapped_ch in mapped.chars() {
                 let len = mapped_ch.len_utf8();
+
                 folded.push(mapped_ch);
                 for _ in 0..len {
                     byte_spans.push(start..end);
@@ -92,6 +95,7 @@ impl FoldedText {
         if folded_range.is_empty() || folded_range.end > self.byte_spans.len() {
             return None;
         }
+
         let start = self.byte_spans[folded_range.start].start;
         let end = self.byte_spans[folded_range.end - 1].end;
         (start < end).then_some(start..end)
@@ -110,6 +114,7 @@ fn is_word_boundary(folded: &str, byte_index: usize) -> bool {
 
 fn match_token_in_title(title: &FoldedText, token: &str) -> Option<(i32, Vec<Range<usize>>)> {
     let text = &title.folded;
+
     if text == token {
         return Some((
             SCORE_EXACT,
@@ -119,6 +124,7 @@ fn match_token_in_title(title: &FoldedText, token: &str) -> Option<(i32, Vec<Ran
 
     if text.starts_with(token) {
         let penalty = (text.len().saturating_sub(token.len()) as i32).min(120);
+
         return Some((
             SCORE_PREFIX - penalty,
             title.original_span(0..token.len()).into_iter().collect(),
@@ -127,6 +133,7 @@ fn match_token_in_title(title: &FoldedText, token: &str) -> Option<(i32, Vec<Ran
 
     if let Some(pos) = find_word_boundary_match(text, token) {
         let penalty = (pos as i32).min(80);
+
         return Some((
             SCORE_WORD_PREFIX - penalty,
             title
@@ -138,6 +145,7 @@ fn match_token_in_title(title: &FoldedText, token: &str) -> Option<(i32, Vec<Ran
 
     if let Some(pos) = text.find(token) {
         let penalty = (pos as i32).min(100);
+
         return Some((
             SCORE_SUBSTRING - penalty,
             title
@@ -152,12 +160,16 @@ fn match_token_in_title(title: &FoldedText, token: &str) -> Option<(i32, Vec<Ran
 
 fn find_word_boundary_match(text: &str, token: &str) -> Option<usize> {
     let mut search_from = 0;
+
     while let Some(rel) = text[search_from..].find(token) {
         let pos = search_from + rel;
+
         if is_word_boundary(text, pos) {
             return Some(pos);
         }
+
         let next_char = text[pos..].chars().next()?.len_utf8();
+
         search_from = pos + next_char;
     }
     None
@@ -171,17 +183,21 @@ fn subsequence_match(title: &FoldedText, token: &str) -> Option<(i32, Vec<Range<
 
     for wanted in token.chars() {
         let mut found = None;
+
         for (rel, ch) in title.folded[cursor..].char_indices() {
             if ch == wanted {
                 let start = cursor + rel;
                 let end = start + ch.len_utf8();
+
                 found = Some((start, end));
                 if is_word_boundary(&title.folded, start) {
                     break;
                 }
             }
         }
+
         let (start, end) = found?;
+
         if is_word_boundary(&title.folded, start) {
             score += SCORE_WORD_START_BONUS;
         }
@@ -189,6 +205,7 @@ fn subsequence_match(title: &FoldedText, token: &str) -> Option<(i32, Vec<Range<
             score += SCORE_CONSECUTIVE_BONUS;
         } else if let Some(prev) = prev_end {
             let gap = start.saturating_sub(prev) as i32;
+
             score -= gap.min(20);
         }
         if let Some(span) = title.original_span(start..end) {
@@ -206,7 +223,9 @@ fn merge_ranges(mut ranges: Vec<Range<usize>>) -> Vec<Range<usize>> {
         return ranges;
     }
     ranges.sort_by_key(|range| (range.start, range.end));
+
     let mut merged: Vec<Range<usize>> = Vec::with_capacity(ranges.len());
+
     for range in ranges {
         if let Some(last) = merged.last_mut()
             && range.start <= last.end
@@ -236,6 +255,7 @@ pub(crate) fn fuzzy_match(
         let boost = mru_rank
             .map(|rank| SCORE_MRU_BOOST - (rank as i32 * 10))
             .unwrap_or_default();
+
         return Some(MatchResult {
             score: boost,
             highlights: Vec::new(),
@@ -317,7 +337,9 @@ mod tests {
         let matched = fuzzy_match("rose", title, None, "", None).expect("folded diacritic matches");
 
         assert_eq!(matched.highlights.len(), 1);
+
         let range = &matched.highlights[0];
+
         assert!(title.is_char_boundary(range.start));
         assert!(title.is_char_boundary(range.end));
         assert_eq!(&title[range.clone()], "Rosé");
@@ -332,9 +354,11 @@ mod tests {
     #[test]
     fn mru_records_newest_first_without_duplicates_within_the_cap() {
         let mut recent = Vec::new();
+
         for id in [1, 2, 3, 4, 5, 2] {
             record_recent(&mut recent, id);
         }
+
         assert_eq!(recent, vec![2, 5, 4, 3]);
     }
 }

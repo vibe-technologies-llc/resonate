@@ -45,9 +45,11 @@ impl Engine {
 
     pub(super) fn plan_wanted_now(&self) -> Option<OutputPlan> {
         let (track, output) = (self.track.as_ref()?, self.output.as_ref()?);
+
         if output.plan.stream != output.status.negotiated {
             return None;
         }
+
         let sink = self.bound_sink()?;
         Some(plan_output(
             track.decoded(),
@@ -97,15 +99,18 @@ impl Engine {
         if self.track.is_none() {
             return Ok(());
         }
+
         let resumes_at = at.unwrap_or_else(|| self.position());
         let at = if self.take_the_boundary_back() {
             Some(resumes_at)
         } else {
             at
         };
+
         self.retire(how);
 
         let bound = self.bind(at, target);
+
         if bound.is_err() && self.track.is_some() {
             self.unbound = Some(resumes_at);
         }
@@ -123,6 +128,7 @@ impl Engine {
 
         if !self.playing && self.unbound.is_some() {
             let at = at.unwrap_or_else(|| self.position());
+
             self.unbound = Some(at);
             self.transport = TransportState::Paused;
             return Ok(());
@@ -133,6 +139,7 @@ impl Engine {
             self.wait_for_the_survey(at);
             return Ok(());
         }
+
         let sink = self.select_sink()?;
         let Some(track) = self.track.as_ref() else {
             return Ok(());
@@ -146,6 +153,7 @@ impl Engine {
         } else {
             Entering::Whole
         };
+
         let mut output = Output::open(
             track,
             &sink,
@@ -155,11 +163,13 @@ impl Engine {
             entering,
             self.muted,
         )?;
+
         if let Some(auditioning) = self.auditioning.as_ref() {
             output.take_up_the_audition(track, &self.config, &auditioning.audition)?;
         }
 
         let delivery = output.plan.delivery();
+
         if let Some(track) = self.track.as_mut() {
             track.at_a_change = false;
             track.decoding.deliver(delivery);
@@ -170,7 +180,9 @@ impl Engine {
         if output.attenuator == Attenuator::Device {
             self.take_the_devices_volume(&sink);
         }
+
         let status = output.status;
+
         self.outputs_made = self.outputs_made.wrapping_add(1);
         self.downstream_restart_due = None;
         self.output = Some(Output {
@@ -190,6 +202,7 @@ impl Engine {
         let made = self.outputs_made;
         let heard_otherwise = self.renders_otherwise_for_a_renderer();
         let retuned = self.retune_for(retuning);
+
         if heard_otherwise && self.outputs_made == made {
             self.owe_a_downstream_restart();
         }
@@ -226,14 +239,17 @@ impl Engine {
         let Some(due) = self.downstream_restart_due else {
             return;
         };
+
         if Instant::now() < due || !self.boundaries.is_empty() {
             return;
         }
         self.downstream_restart_due = None;
+
         let holds_seconds = self
             .output
             .as_ref()
             .is_some_and(Output::holds_seconds_downstream);
+
         if !holds_seconds {
             return;
         }

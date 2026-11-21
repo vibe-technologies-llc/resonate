@@ -140,6 +140,7 @@ impl RootView {
             return;
         };
         let track = self.player.read(cx).state().current.map(|track| track.id);
+
         self.rails.grabbed = Some(Grab {
             handle,
             fraction,
@@ -160,6 +161,7 @@ impl RootView {
         else {
             return;
         };
+
         if fraction == grab.fraction {
             return;
         }
@@ -173,6 +175,7 @@ impl RootView {
             return;
         };
         let playing = self.player.read(cx).state().current.map(|track| track.id);
+
         if grab.seeks_still(playing) {
             self.seek_to(grab.fraction, cx);
         }
@@ -293,6 +296,7 @@ impl RootView {
                         let Some(share) = spoken::share_asked(asked) else {
                             return;
                         };
+
                         set.update(cx, |this, cx| this.set_by_a_reader(handle, share, cx))
                             .ok();
                     })
@@ -434,7 +438,9 @@ mod tests {
             Arc::new(Library::open_in_memory().expect("a catalog")),
             &folder,
         );
+
         driven.play(&[file]);
+
         let root = driven.root.clone();
         let (wanted, engine) = driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
@@ -445,6 +451,7 @@ mod tests {
                     .current
                     .expect("a paused track");
                 let wanted = Frames(current.duration.expect("a length").get() * 3 / 4);
+
                 root.rails.grabbed = Some(Grab {
                     handle: Handle::Seek,
                     fraction: 0.75,
@@ -452,7 +459,9 @@ mod tests {
                     snaps: false,
                 });
                 root.release(cx);
+
                 let model = root.player.read(cx);
+
                 assert_eq!(
                     model.state().current.expect("a track").position,
                     current.position
@@ -462,6 +471,7 @@ mod tests {
                 (wanted, model.engine())
             })
         });
+
         driven.until(|root, cx| {
             root.player
                 .read(cx)
@@ -469,6 +479,7 @@ mod tests {
                 .current
                 .is_some_and(|track| track.position == wanted)
         });
+
         let newest = driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 let current = root
@@ -477,6 +488,7 @@ mod tests {
                     .state()
                     .current
                     .expect("a paused track");
+
                 for fraction in [0.5, 0.25] {
                     root.rails.grabbed = Some(Grab {
                         handle: Handle::Seek,
@@ -486,11 +498,14 @@ mod tests {
                     });
                     root.release(cx);
                 }
+
                 let newest = Frames(current.duration.expect("a length").get() / 4);
+
                 assert_eq!(root.player.read(cx).shown_position(), Some(newest));
                 newest
             })
         });
+
         driven.until(|root, cx| {
             root.player
                 .read(cx)
@@ -498,7 +513,9 @@ mod tests {
                 .current
                 .is_some_and(|track| track.position == newest)
         });
+
         let later = Frames::ZERO;
+
         engine.send(Command::Seek(later)).expect("a later seek");
         driven.until(|root, cx| {
             root.player
@@ -507,6 +524,7 @@ mod tests {
                 .current
                 .is_some_and(|track| track.position == later)
         });
+
         assert_eq!(
             driven.read(|root, cx| root.player.read(cx).shown_position()),
             Some(later)
@@ -524,18 +542,24 @@ mod tests {
             Arc::new(Library::open_in_memory().expect("a catalog")),
             &folder,
         );
+
         driven.play(&[file]);
+
         let model = driven.read(|root, _| root.player.clone());
         let before = driven.cx.update(|_, cx| {
             model.update(cx, |model, cx| {
                 let current = model.state().current.expect("a paused track");
                 let past_end = Frames(current.duration.expect("a length").get() + 1);
+
                 model.seek(past_end, cx);
+
                 assert_eq!(model.shown_position(), Some(past_end));
                 current.position
             })
         });
+
         driven.until(|root, cx| root.player.read(cx).shown_position() == Some(before));
+
         assert_eq!(
             driven.read(|root, cx| root
                 .player

@@ -93,11 +93,14 @@ fn every_package_installs_the_manual_of_the_settings_file() {
     };
 
     assert!(installed.contains(CONFIG_MAN_PAGE));
+
     for language in resonate_words::Language::ALL {
         if language == resonate_words::Language::English {
             continue;
         }
+
         let localized = packaging(&format!("{language}/{CONFIG_MAN_PAGE}"));
+
         assert_eq!(settings(&english), settings(&localized), "{language}");
     }
 

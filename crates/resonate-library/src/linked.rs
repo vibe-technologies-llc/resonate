@@ -141,7 +141,7 @@ pub enum PlaylistLink {
     Tidal(String),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum ProfileLink {
     Deezer(u64),
     SpotifyAccount,
@@ -189,7 +189,7 @@ pub struct FollowedPlaylist {
     pub unnamed: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Barcode(String);
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -297,9 +297,11 @@ fn one_token(text: &str) -> Option<&str> {
 impl SongLink {
     pub fn read(text: &str) -> Option<Self> {
         let text = one_token(text)?;
+
         if let Some(id) = text.strip_prefix(SPOTIFY_TRACK) {
             return names_an_id(id).then(|| Self::Elsewhere(format!("{SPOTIFY_TRACK_PAGE}{id}")));
         }
+
         let address = Address::read(text)?;
 
         if address.is_on_musicbrainz() {
@@ -330,9 +332,11 @@ impl SongLink {
 impl AlbumLink {
     pub fn read(text: &str) -> Option<Self> {
         let text = one_token(text)?;
+
         if let Some(id) = text.strip_prefix(SPOTIFY_ALBUM) {
             return names_an_id(id).then(|| Self::Elsewhere(format!("{SPOTIFY_ALBUM_PAGE}{id}")));
         }
+
         let address = Address::read(text)?;
 
         if address.is_on_musicbrainz() {
@@ -364,10 +368,12 @@ impl AlbumLink {
 impl ArtistLink {
     pub fn read(text: &str) -> Option<Self> {
         let text = one_token(text)?;
+
         if let Some(id) = text.strip_prefix(SPOTIFY_ARTIST) {
             return names_an_id(id)
                 .then(|| Self::Elsewhere(format!("https://open.spotify.com/artist/{id}")));
         }
+
         let address = Address::read(text)?;
 
         if address.is_on_musicbrainz() {
@@ -475,9 +481,11 @@ impl FollowedLink {
 impl ProfileLink {
     pub fn read(text: &str) -> Option<Self> {
         let text = one_token(text)?;
+
         if text == SPOTIFY_ACCOUNT {
             return Some(Self::SpotifyAccount);
         }
+
         let address = Address::read(text)?;
         match address.host.as_str() {
             "deezer.com" => address.after("profile")?.parse().ok().map(Self::Deezer),
@@ -530,9 +538,11 @@ impl PlaylistLink {
 
     pub fn read(text: &str) -> Option<Self> {
         let text = one_token(text)?;
+
         if let Some(id) = text.strip_prefix(SPOTIFY_PLAYLIST) {
             return names_a_spotify_id(id).then(|| Self::Spotify(id.to_owned()));
         }
+
         let address = Address::read(text)?;
 
         match address.host.as_str() {
@@ -651,6 +661,7 @@ impl Barcode {
     pub fn spellings(&self) -> Vec<String> {
         let significant = self.0.trim_start_matches(PADDING);
         let mut spellings = vec![self.0.clone()];
+
         for width in [UPC_DIGITS, EAN_DIGITS] {
             let spelt = format!("{significant:0>width$}");
             if !spellings.contains(&spelt) {
@@ -808,6 +819,7 @@ fn channel_named(artist: &str) -> Option<&str> {
 
 fn as_billed(title: &str) -> Option<(&str, &str)> {
     let (before, after) = title.split_once(BETWEEN_ARTIST_AND_TITLE)?;
+
     let (before, after) = (before.trim(), after.trim());
     (!before.is_empty() && !after.is_empty()).then_some((before, after))
 }
@@ -815,6 +827,7 @@ fn as_billed(title: &str) -> Option<(&str, &str)> {
 fn readings_of(title: &str, artist: Option<&str>) -> Vec<Reading> {
     let artist = artist.and_then(channel_named);
     let mut readings = Vec::new();
+
     match (as_billed(title), artist) {
         (Some((before, after)), Some(artist)) if enrich::names_agree(before, artist) => {
             readings.push(Reading::of(after, artist));
@@ -862,6 +875,7 @@ pub(crate) fn the_song_searched_for(
     })? {
         return Ok(Some(heard));
     }
+
     let Some(ran) = song.length.filter(|_| footage == Footage::Filmed) else {
         return Ok(None);
     };
@@ -952,6 +966,7 @@ pub(crate) fn album_named(
             let Some(names) = reference.album_linked(link)? else {
                 return Ok(None);
             };
+
             for barcode in &names.barcodes {
                 let found = reference.releases_by_barcode(barcode)?;
                 if let Some(named) = the_release_barcoded(found, barcode) {
@@ -981,6 +996,7 @@ pub(crate) fn the_release_barcoded(
         .iter()
         .filter_map(|found| found.group.as_ref())
         .collect();
+
     if groups.len() > 1 {
         tracing::debug!(%barcode, groups = groups.len(), "a barcode names releases in several groups, so it names none");
         return None;
@@ -1042,6 +1058,7 @@ mod tests {
     #[test]
     fn a_song_an_album_or_an_artist_held_under_an_identifier_is_found_off_an_index() {
         let connection = Connection::open_in_memory().expect("an in-memory catalog");
+
         crate::schema::configure(&connection, crate::schema::Role::Writing)
             .expect("the pragmas apply");
         crate::schema::lay_out(&connection).expect("the schema lays out");
@@ -1445,6 +1462,7 @@ mod tests {
         ] {
             assert_eq!(page(text), stored, "{text}");
         }
+
         assert_eq!(
             ArtistLink::read("https://music.apple.com/gb/artist/x/349736311")
                 .map(|link| link.pages()),

@@ -29,10 +29,14 @@ fn cookies() -> Cookies {
 fn drained(stream: &TcpStream) -> Option<bool> {
     let mut reader = BufReader::new(stream);
     let mut line = String::new();
+
     reader.read_line(&mut line).ok()?;
+
     let mut length = 0;
+
     loop {
         let mut header = String::new();
+
         reader.read_line(&mut header).ok()?;
         if header.trim_end().is_empty() {
             break;
@@ -43,7 +47,9 @@ fn drained(stream: &TcpStream) -> Option<bool> {
             length = value.trim().parse().ok()?;
         }
     }
+
     let mut body = vec![0; length];
+
     reader.read_exact(&mut body).ok()?;
     Some(line.starts_with("POST"))
 }
@@ -51,6 +57,7 @@ fn drained(stream: &TcpStream) -> Option<bool> {
 fn serving(songs: String) -> String {
     let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
     let address = format!("http://{}", listener.local_addr().expect("an address"));
+
     thread::spawn(move || {
         for mut stream in listener.incoming().flatten() {
             let Some(searched) = drained(&stream) else {
@@ -137,6 +144,7 @@ fn a_search_lists_songs_alone_explicit_first_and_offers_no_clean_take() {
     let found = music.search("bad guy").expect("an answer");
 
     let songs: Vec<&str> = found.songs.iter().map(|song| song.id.as_str()).collect();
+
     assert_eq!(songs, ["first", "explicit"]);
     assert_eq!(found.songs[1].rating, Rating::Explicit);
     assert_eq!(found.songs[1].artist.as_deref(), Some("Ada"));
@@ -153,10 +161,12 @@ fn the_first_page_is_the_accounts_playlists_and_liked_songs() {
 
     assert_eq!(found.mixes[0].name, "Liked songs");
     assert_eq!(found.mixes[0].id.as_str(), "LM");
+
     let rest: Vec<(&str, &str)> = found.mixes[1..]
         .iter()
         .map(|mix| (mix.id.as_str(), mix.name.as_str()))
         .collect();
+
     assert_eq!(
         rest,
         [
@@ -164,12 +174,16 @@ fn the_first_page_is_the_accounts_playlists_and_liked_songs() {
             ("PLa_b", "Road")
         ]
     );
+
     let calls = fake.calls();
+
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].last().map(String::as_str), Some(THE_FEED));
+
     for asked in ["--ignore-config", "--cookies", "-J", "--flat-playlist"] {
         assert!(calls[0].iter().any(|argument| argument == asked), "{asked}");
     }
+
     assert!(!calls[0].iter().any(|argument| argument == "--no-playlist"));
 }
 
@@ -229,6 +243,7 @@ fn a_lapse_standing_stops_both_lists_before_the_tool_is_run() {
     let tool = fake.tool(cookies());
 
     tool.playlists().expect_err("lapsed");
+
     let asked = fake.calls().len();
 
     assert!(matches!(tool.playlists(), Err(Error::Unwelcome { .. })));
@@ -290,6 +305,7 @@ fn a_playlist_lists_its_songs_in_youtubes_order() {
             )
         })
         .collect();
+
     assert_eq!(
         read,
         [
@@ -304,7 +320,9 @@ fn a_playlist_lists_its_songs_in_youtubes_order() {
         songs[0].cover.as_ref().map(Id::as_str),
         Some("https://i.ytimg.com/vi/second-song/large.jpg")
     );
+
     let calls = fake.calls();
+
     assert_eq!(calls.len(), 1, "a listing whole needs no call per song");
     assert_eq!(
         calls[0].last().map(String::as_str),
@@ -382,11 +400,15 @@ fn a_song_is_named_from_one_listing_by_its_track_artist_and_album() {
     assert_eq!(song.artist.as_deref(), Some("Radiohead"));
     assert_eq!(song.album.as_deref(), Some("Pablo Honey"));
     assert_eq!(song.length, Some(Duration::from_millis(238_600)));
+
     let calls = fake.calls();
+
     assert_eq!(calls.len(), 1);
+
     for asked in ["--ignore-config", "--no-playlist", "--cookies", "-J"] {
         assert!(calls[0].iter().any(|argument| argument == asked), "{asked}");
     }
+
     assert_eq!(
         calls[0].last().map(String::as_str),
         Some("https://music.youtube.com/watch?v=9RfVp-GhKfs")
@@ -484,6 +506,7 @@ fn a_playlist_id_that_would_leave_the_address_is_never_asked() {
             "{refused}"
         );
     }
+
     assert!(fake.calls().is_empty());
 }
 
@@ -529,12 +552,14 @@ fn a_cover_is_the_rows_own_thumbnail_and_comes_only_from_youtubes_image_hosts() 
     let found = music.search("creep").expect("an answer");
 
     let cover = found.songs[0].cover.as_ref().expect("the row's thumbnail");
+
     assert!(
         cover
             .as_str()
             .starts_with("https://yt3.googleusercontent.com/"),
         "{cover}"
     );
+
     for refused in [
         "http://i.ytimg.com/a.jpg",
         "https://elsewhere.example/a.jpg",
@@ -548,6 +573,7 @@ fn a_cover_is_the_rows_own_thumbnail_and_comes_only_from_youtubes_image_hosts() 
             })
         ));
     }
+
     assert!(matches!(
         music.cover_of(&Named::Song(an_id("a"))),
         Err(Error::NotOffered {
@@ -573,6 +599,7 @@ fn a_keep_is_given_a_picture_only_from_youtubes_image_hosts() {
             })
         ));
     }
+
     assert!(matches!(
         music.picture("  "),
         Err(Error::Unreadable {

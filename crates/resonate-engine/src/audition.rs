@@ -20,19 +20,19 @@ const SETTLING_LEFT_UNMEASURED: Duration = Duration::from_secs(4);
 const LEVELS_APART_AT_MOST_MILLIBELS: i32 = Trim::WIDEST_MILLIBELS;
 const MILLIBELS_A_DECIBEL: f64 = 100.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Resampling {
     pub quality: Quality,
     pub phase: FilterPhase,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Dithering {
     pub kind: DitherKind,
     pub shaping: NoiseShaping,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Contest {
     Restoration { a: Restoration, b: Restoration },
     Resampling { a: Resampling, b: Resampling },
@@ -53,6 +53,7 @@ impl Contest {
                     Arm::A => a,
                     Arm::B => b,
                 };
+
                 config.quality = chosen.quality;
                 config.filter_phase = chosen.phase;
             }
@@ -61,6 +62,7 @@ impl Contest {
                     Arm::A => a,
                     Arm::B => b,
                 };
+
                 config.dither = chosen.kind;
                 config.noise_shaping = chosen.shaping;
             }
@@ -69,6 +71,7 @@ impl Contest {
 
     pub fn applied(self, arm: Arm, config: &EngineConfig) -> EngineConfig {
         let mut config = config.clone();
+
         self.apply(arm, &mut config);
         config
     }
@@ -89,7 +92,7 @@ impl Contest {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) struct Contested {
     restoration: Restoration,
     quality: Quality,
@@ -118,7 +121,7 @@ impl Contested {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Lowered {
     pub arm: Arm,
     pub by: Trim,
@@ -134,12 +137,13 @@ impl Lowered {
         if arm != self.arm || self.by.is_none() {
             return 1.0;
         }
+
         let decibels = -f64::from(self.by.millibels().abs()) / MILLIBELS_A_DECIBEL;
         10.0_f64.powf(decibels / 20.0)
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Audition {
     pub contest: Contest,
     pub heard: Arm,
@@ -160,11 +164,13 @@ impl ContestLevels {
     pub fn lowered(self) -> Result<Lowered> {
         let apart = self.apart_db();
         let millibels = (apart.abs() * MILLIBELS_A_DECIBEL).round();
+
         if !millibels.is_finite() || millibels > f64::from(LEVELS_APART_AT_MOST_MILLIBELS) {
             return Err(Error::LevelsTooFarApart {
                 millibels: millibels.clamp(0.0, f64::from(i32::MAX)) as i32,
             });
         }
+
         let by = Trim::from_millibels(millibels as i32).map_err(|_| Error::LevelsTooFarApart {
             millibels: millibels as i32,
         })?;
@@ -206,10 +212,13 @@ struct Measured {
 impl Measured {
     fn take(&mut self, frames: usize, channels: usize) {
         let passed_over = frames.min(self.unmeasured);
+
         self.unmeasured -= passed_over;
+
         let Some(made) = self.out.get(passed_over * channels..frames * channels) else {
             return;
         };
+
         self.narrowed.clear();
         self.narrowed
             .extend(made.iter().map(|&sample| sample as f32));
@@ -220,6 +229,7 @@ impl Measured {
         let mut rest = input;
         while !rest.is_empty() {
             let count = self.chain.process(rest, &mut self.out);
+
             self.take(count.frames_out, channels_out);
             if count.frames_in == 0 {
                 return;
@@ -232,6 +242,7 @@ impl Measured {
 
     fn finish(mut self, channels_out: usize) -> Option<f64> {
         let mut tail = vec![0.0; self.chain.max_flush_frames().max(1) * channels_out];
+
         if let Ok(frames) = self.chain.flush(&mut tail) {
             self.out = tail;
             self.take(frames, channels_out);
@@ -269,10 +280,13 @@ pub fn levels_of(
         Some(span) => Decoder::open_span(sources, &item.location, span),
         None => Decoder::open(sources, &item.location),
     };
+
     let (mut decoder, info) = opened.map_err(|source| Error::Decode { track, source })?;
     let hints = sources.hints(&item.location, item.span);
+
     let decoded = Decoded::of(&info, hints.lowpass);
     let source = info.spec;
+
     decoder.set_output_format(SampleFormat::F32);
 
     let flat = EngineConfig {
@@ -288,6 +302,7 @@ pub fn levels_of(
         Attenuator::Stream,
         contest,
     );
+
     if contest.renders_alike(&plan_a, &plan_b) {
         return Err(Error::ArmsAlike);
     }
@@ -302,6 +317,7 @@ pub fn levels_of(
             settling.min(Frames(length.rescaled(source.rate, stream.rate).get() / 2))
         })
         .get() as usize;
+
     let arm = |plan: &OutputPlan, arm: Arm| -> Result<Measured> {
         let chain = plan
             .build_chain(source, &contest.applied(arm, &flat), MEASURED_IN_BLOCKS_OF)
@@ -328,6 +344,7 @@ pub fn levels_of(
         SampleFormat::F32,
     ));
     let mut widened = Vec::new();
+
     loop {
         if stop.load(Ordering::Relaxed) {
             return Err(Error::LevelsUnmeasured);
@@ -339,7 +356,9 @@ pub fn levels_of(
                 let mut from = 0;
                 while from < samples.len() {
                     widened.resize(MEASURED_IN_BLOCKS_OF * channels_in, 0.0);
+
                     let taken = samples.widen_into(from, &mut widened);
+
                     widened.truncate(taken);
                     a.run(&widened, channels_in, channels_out);
                     b.run(&widened, channels_in, channels_out);
@@ -391,6 +410,7 @@ mod tests {
     #[test]
     fn each_arm_writes_its_own_settings_and_putting_back_restores_the_rest() {
         let mut config = EngineConfig::default();
+
         let before = Contested::of(&config);
         let contest = Contest::Resampling {
             a: Resampling {
@@ -404,10 +424,14 @@ mod tests {
         };
 
         contest.apply(Arm::B, &mut config);
+
         assert_eq!(config.quality, Quality::VeryHigh);
         assert_eq!(config.filter_phase, FilterPhase::Linear);
+
         contest.apply(Arm::A, &mut config);
+
         assert_eq!(config.quality, Quality::LowLatency);
+
         before.put_back(&mut config);
 
         assert_eq!(Contested::of(&config), before);

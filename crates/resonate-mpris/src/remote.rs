@@ -29,7 +29,7 @@ const TITLE: &str = "xesam:title";
 const ARTIST: &str = "xesam:artist";
 const ALBUM: &str = "xesam:album";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PlayerName(Box<str>);
 
 impl PlayerName {
@@ -79,7 +79,7 @@ pub struct Queueing {
     pub play: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Seeking {
     Forward(Duration),
     Backward(Duration),
@@ -149,6 +149,7 @@ impl Session {
 
     fn players(&self) -> Result<Vec<Running>> {
         let mut players = Vec::new();
+
         if let Some(connection) = &self.bus {
             players.extend(BusPeer::serving(connection)?);
         }
@@ -382,6 +383,7 @@ impl Running {
                 .iter()
                 .map(|(from, to)| (from.to_uri(), to.to_uri()))
                 .collect();
+
             self.peer.relocate(&uris)?;
         }
         Ok(())
@@ -391,6 +393,7 @@ impl Running {
         if settings.is_empty() {
             return Ok(());
         }
+
         let pairs: Vec<(String, String)> = settings
             .iter()
             .map(|(setting, value)| (setting.name().to_owned(), value.clone()))
@@ -411,6 +414,7 @@ impl Running {
         if rows.is_empty() {
             return Ok(0);
         }
+
         let after = self.landing(queueing.at)?;
         let uris: Vec<String> = rows
             .iter()
@@ -418,6 +422,7 @@ impl Running {
             .collect();
 
         let mut landed = 0;
+
         for (nth, chunk) in uris.chunks(ROWS_A_CALL).enumerate().rev() {
             let heard_now = queueing.play && nth == 0;
             match self.peer.add_tracks(chunk, after, heard_now) {
@@ -492,9 +497,11 @@ fn names_an_instance(rest: &str) -> bool {
 
 fn numbered(name: &str) -> Option<ZoneId> {
     let rest = name.strip_prefix(BUS_NAME)?;
+
     if rest.is_empty() {
         return Some(ZoneId::FIRST);
     }
+
     let last = rest.rsplit('.').next()?;
     match last.strip_prefix(ZONE_PREFIX) {
         Some(number) => ZoneId::new(number.parse().ok()?),
@@ -629,6 +636,7 @@ mod tests {
             BUS_NAME.to_owned(),
             format!("{BUS_NAME}.instance10"),
         ];
+
         names.sort_unstable();
 
         assert_eq!(

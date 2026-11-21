@@ -1,6 +1,6 @@
 use std::{fmt, ops::RangeInclusive};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Span {
     first: usize,
     last: usize,
@@ -82,13 +82,16 @@ impl Span {
             .map(|row| runs.iter().any(|run| run.holds(row)))
             .collect();
         let first = chosen.iter().position(|chosen| *chosen)?;
+
         if chosen[onto] {
             return None;
         }
 
         let taken: Vec<usize> = (0..held).filter(|row| chosen[*row]).collect();
         let mut order: Vec<usize> = (0..held).filter(|row| !chosen[*row]).collect();
+
         let at = order.partition_point(|row| *row < onto) + usize::from(onto > first);
+
         order.splice(at..at, taken);
 
         order
@@ -141,8 +144,10 @@ mod tests {
 
     fn after_moving(held: usize, rows: Span, to: usize) -> Vec<usize> {
         let mut list = (0..held).collect::<Vec<_>>();
+
         let taken = list.drain(rows.range()).collect::<Vec<_>>();
         let at = rows.landing(to);
+
         list.splice(at..at, taken);
         list
     }

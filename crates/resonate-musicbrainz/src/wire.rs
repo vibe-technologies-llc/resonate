@@ -39,6 +39,7 @@ impl Writer {
     pub fn number(&mut self, mut number: u64) {
         loop {
             let low = (number & 0x7f) as u8;
+
             number >>= 7;
             if number == 0 {
                 self.0.push(low);
@@ -67,6 +68,7 @@ impl Writer {
 
     pub fn text(&mut self, text: &str) {
         let mut end = text.len().min(LONGEST_TEXT);
+
         while !text.is_char_boundary(end) {
             end -= 1;
         }
@@ -447,15 +449,18 @@ impl<'a> Reader<'a> {
 
     pub fn byte(&mut self) -> Result<u8> {
         let byte = *self.bytes.get(self.at).ok_or(malformed(Malformed::Short))?;
+
         self.at += 1;
         Ok(byte)
     }
 
     pub fn number(&mut self) -> Result<u64> {
         let mut number = 0_u64;
+
         for shift in (0..64).step_by(7) {
             let byte = self.byte()?;
             let low = u64::from(byte & 0x7f);
+
             if shift == 63 && low > 1 {
                 return Err(malformed(Malformed::Number));
             }
@@ -486,6 +491,7 @@ impl<'a> Reader<'a> {
 
     pub fn count_of(&mut self, at_least: usize) -> Result<usize> {
         let count = usize::try_from(self.number()?).map_err(|_| malformed(Malformed::Number))?;
+
         if count.saturating_mul(at_least) > self.left() {
             return Err(malformed(Malformed::Overlong { length: count }));
         }
@@ -494,10 +500,13 @@ impl<'a> Reader<'a> {
 
     pub fn bytes(&mut self, at_most: usize) -> Result<&'a [u8]> {
         let length = self.count_of(1)?;
+
         if length > at_most {
             return Err(malformed(Malformed::Overlong { length }));
         }
+
         let bytes = &self.bytes[self.at..self.at + length];
+
         self.at += length;
         Ok(bytes)
     }
@@ -529,7 +538,9 @@ impl<'a> Reader<'a> {
         if self.left() < MBID_BYTES {
             return Err(malformed(Malformed::Short));
         }
+
         let mut raw = [0_u8; MBID_BYTES];
+
         raw.copy_from_slice(&self.bytes[self.at..self.at + MBID_BYTES]);
         self.at += MBID_BYTES;
         Ok(mbid_of(raw))
@@ -546,6 +557,7 @@ impl<'a> Reader<'a> {
     fn list<T>(&mut self, mut read: impl FnMut(&mut Self) -> Result<T>) -> Result<Vec<T>> {
         let count = self.count_of(ITEM_AT_LEAST)?;
         let mut items = reserved_for(count);
+
         for _ in 0..count {
             items.push(read(self)?);
         }
@@ -872,8 +884,10 @@ impl<'a> Reader<'a> {
 pub fn mbid_bytes(mbid: &Mbid) -> [u8; MBID_BYTES] {
     let mut raw = [0_u8; MBID_BYTES];
     let digits = mbid.as_str().bytes().filter(u8::is_ascii_hexdigit);
+
     for (at, digit) in digits.enumerate().take(MBID_BYTES * 2) {
         let nibble = (digit as char).to_digit(16).unwrap_or(0) as u8;
+
         raw[at / 2] |= if at % 2 == 0 { nibble << 4 } else { nibble };
     }
     raw
@@ -889,6 +903,7 @@ pub fn mbid_of(raw: [u8; MBID_BYTES]) -> Mbid {
             HEX_DIGITS[usize::from(byte & 0x0f)],
         ]
     });
+
     for (group, width) in MBID_GROUPS.iter().enumerate() {
         if group > 0 {
             dashed.push('-');
@@ -914,6 +929,7 @@ mod tests {
 
     fn written(with: impl FnOnce(&mut Writer)) -> Vec<u8> {
         let mut writer = Writer::new();
+
         with(&mut writer);
         writer.finish()
     }
@@ -935,6 +951,7 @@ mod tests {
             let mut reader = Reader::new(&bytes);
 
             assert_eq!(reader.number().expect("a number"), number);
+
             reader.done().expect("nothing left");
         }
     }
@@ -986,6 +1003,7 @@ mod tests {
         assert_eq!(reader.text().expect("text"), "");
         assert_eq!(reader.maybe_text().expect("nothing"), None);
         assert_eq!(reader.maybe_text().expect("text").as_deref(), Some("x"));
+
         reader.done().expect("nothing left");
     }
 
@@ -1073,15 +1091,18 @@ mod tests {
         let mut reader = Reader::new(&bytes);
 
         assert_eq!(reader.credit().expect("a credit"), credit);
+
         reader.done().expect("nothing left");
     }
 
     #[test]
     fn bytes_left_after_a_value_are_trailing() {
         let mut bytes = written(|writer| writer.text("a"));
+
         bytes.push(0);
 
         let mut reader = Reader::new(&bytes);
+
         reader.text().expect("text");
 
         assert!(!reader.is_done());
@@ -1109,6 +1130,7 @@ mod tests {
     fn a_count_past_what_is_reserved_reserves_no_more_and_the_list_still_reads_whole() {
         let told = 4 * ITEMS_RESERVED_AT_MOST;
         let empties = vec![String::new(); told];
+
         let bytes = written(|writer| {
             writer.number(u64::try_from(told).expect("a count"));
             for empty in &empties {
@@ -1118,10 +1140,12 @@ mod tests {
 
         let reservation = reserved_for::<Credit>(usize::MAX / 2);
         let mut reader = Reader::new(&bytes);
+
         let read = reader.texts().expect("a whole list");
 
         assert!(reservation.capacity() <= ITEMS_RESERVED_AT_MOST);
         assert_eq!(read, empties);
+
         reader.done().expect("nothing left");
     }
 }

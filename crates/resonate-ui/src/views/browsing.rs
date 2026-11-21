@@ -117,6 +117,7 @@ impl BrowsePanes {
                 panes.take_what_landed(&library, cx);
             }),
         };
+
         panes.take_what_landed(library, cx);
 
         panes
@@ -132,6 +133,7 @@ impl BrowsePanes {
             true => mem::take(&mut self.around.records),
             false => landed.records,
         };
+
         self.around = AroundTheRows { records, ..landed };
         cx.notify();
     }
@@ -167,6 +169,7 @@ impl BrowsePanes {
             });
             let _ = landed;
         });
+
         self.pressed = Some(Pressed {
             album,
             pressings: Pressings::Asking,
@@ -206,10 +209,12 @@ impl BrowsePanes {
 
     pub(crate) fn read_the_kept_order(&mut self, kept: Option<Kept>) {
         self.orders.keeping = kept.is_some();
+
         let Kept { order, reading } = kept.unwrap_or(Kept {
             order: RowOrder::default(),
             reading: Direction::default(),
         });
+
         self.orders.row_order = order;
         self.orders.row_reading = reading;
     }
@@ -343,12 +348,14 @@ impl RootView {
 
     pub(crate) fn set_reach(&self, reach: Option<Reach>, cx: &mut App) {
         let queued = self.player.read(cx).queued();
+
         self.browsing
             .update(cx, |browsing, _| browsing.reach_over(reach, &queued));
     }
 
     pub(crate) fn follow_the_queue_reach(&self, cx: &mut App) {
         let queued = self.player.read(cx).queued();
+
         self.browsing
             .update(cx, |browsing, _| browsing.follow_the_queue(&queued));
     }
@@ -370,6 +377,7 @@ impl RootView {
         let Some(asked) = asked else {
             return;
         };
+
         self.browsing.update(cx, |browsing, cx| {
             browsing.ask_for_pressings(album, asked, cx)
         });

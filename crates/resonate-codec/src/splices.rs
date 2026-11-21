@@ -57,8 +57,10 @@ impl Splices {
 
     pub(crate) fn place_of(&self, heard: Frames) -> Place {
         let mut before = Frames::ZERO;
+
         for (edit, held) in self.0.iter().enumerate() {
             let after = before.saturating_add(held.lasting());
+
             if heard < after {
                 return Place {
                     edit,

@@ -118,7 +118,7 @@ const KEYS: [(&str, Named); 14] = [
     ("is", Named::Shape),
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Named {
     Added,
     Plays,
@@ -139,7 +139,7 @@ impl Named {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Compare {
     Below,
     AtMost,
@@ -193,7 +193,7 @@ impl Compare {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum ClockUnit {
     Second,
     Minute,
@@ -230,7 +230,7 @@ impl ClockUnit {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Grain {
     pub unit: ClockUnit,
     pub decimals: u32,
@@ -268,7 +268,7 @@ struct Spanned {
     grain: Grain,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Column {
     Title,
     Artist,
@@ -315,7 +315,7 @@ impl Column {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Reach {
     #[default]
     Begins,
@@ -336,7 +336,7 @@ impl Reach {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Shape {
     Lossless,
     Lossy,
@@ -389,7 +389,7 @@ impl Shape {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Term {
     Added {
         compare: Compare,
@@ -469,12 +469,14 @@ impl Term {
 
     fn range(low: &Self, high: &Self) -> Option<String> {
         let bounds = (low.compare(), high.compare());
+
         if low.key() != high.key()
             || low.window() != high.window()
             || bounds != (Some(Compare::AtLeast), Some(Compare::AtMost))
         {
             return None;
         }
+
         let from = low.measured();
 
         (!from.contains(DENIED)).then(|| format!("{}:{from}-{}", low.key(), high.value()))
@@ -511,7 +513,7 @@ impl fmt::Display for Term {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Word {
     pub column: Option<Column>,
     pub text: String,
@@ -531,7 +533,7 @@ impl fmt::Display for Word {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Condition {
     Word(Word),
     Term(Term),
@@ -546,7 +548,7 @@ impl fmt::Display for Condition {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Asked {
     pub denied: bool,
     pub all: Conditions,
@@ -577,7 +579,7 @@ impl fmt::Display for Asked {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Clause {
     pub any: Alternatives,
 }
@@ -638,13 +640,16 @@ impl Search {
     pub fn lit(&self, text: &str, column: Column) -> Lit {
         let mut reaching = self.words_reaching(column).peekable();
         let mut lit = Lit::new();
+
         if reaching.peek().is_none() {
             return lit;
         }
 
         let tokens = tokens_of(text);
+
         for word in reaching {
             let pieces = pieces_of(word);
+
             if pieces.is_empty() {
                 continue;
             }
@@ -674,8 +679,10 @@ impl Search {
 
     pub fn as_sung(&self) -> Option<Self> {
         let mut words = Vec::with_capacity(self.clauses.len());
+
         for clause in &self.clauses {
             let word = clause.lone_word()?;
+
             if word.column.is_some() || word.text.contains('"') {
                 return None;
             }
@@ -788,7 +795,9 @@ fn phrased(tokens: &[Lettered], pieces: &[String], lit: &mut Lit) {
 
 fn merge(lit: &mut Lit) {
     lit.sort_unstable_by_key(|run| (run.start, run.end));
+
     let mut kept: usize = 0;
+
     for at in 0..lit.len() {
         let Some(run) = lit.get(at).cloned() else {
             break;
@@ -830,6 +839,7 @@ impl Token {
 
     fn asked(&self) -> Alternatives {
         let all = self.conditions();
+
         if all.is_empty() {
             return Alternatives::new();
         }
@@ -856,6 +866,7 @@ impl Token {
                 reach: self.reach(false),
             },
         };
+
         if pieces_of(&word).is_empty() {
             return Conditions::new();
         }
@@ -889,6 +900,7 @@ impl Token {
         let Some(key) = self.key.as_deref() else {
             return Reading::Loose(self.value.clone());
         };
+
         if let Some(column) = Column::of(key) {
             return Reading::Scoped(column, self.value.clone());
         }
@@ -1062,6 +1074,7 @@ fn bounded<T: Copy + PartialOrd>(
         } else {
             (first, second)
         };
+
         return Some(vec![
             term(Compare::AtLeast, low),
             term(Compare::AtMost, high),
@@ -1101,6 +1114,7 @@ fn span(value: &str) -> Option<Spanned> {
     if let Some((minutes, seconds)) = value.split_once(':') {
         let minutes: u64 = minutes.parse().ok()?;
         let seconds: u64 = seconds.parse().ok()?;
+
         return (seconds < MINUTE)
             .then(|| minutes.checked_mul(MINUTE)?.checked_add(seconds))
             .flatten()
@@ -1113,12 +1127,14 @@ fn span(value: &str) -> Option<Spanned> {
     let mut rest = value;
     let mut seconds = 0.0;
     let mut finest: Option<Grain> = None;
+
     while !rest.is_empty() {
         let (written, tail) = counted(rest);
         let count: f64 = written.parse().ok()?;
         let end = tail
             .find(|character: char| character.is_ascii_digit())
             .unwrap_or(tail.len());
+
         let (unit, tail) = tail.split_at(end);
         let grain = Grain::of(unit, written)?;
 
@@ -1142,6 +1158,7 @@ fn span(value: &str) -> Option<Spanned> {
 fn hertz(value: &str) -> Option<u32> {
     let (count, unit) = counted(value);
     let count: f64 = count.parse().ok()?;
+
     let scale = if unit.is_empty() && count < A_BARE_RATE_IS_IN_KILOHERTZ_BELOW {
         KILOHERTZ
     } else {
@@ -1209,8 +1226,10 @@ fn spanned(length: Duration, grain: Grain) -> String {
 
     let mut written = String::new();
     let mut rest = length.as_secs();
+
     for unit in ClockUnit::LARGEST_FIRST {
         let held = rest / unit.seconds();
+
         rest %= unit.seconds();
         if held > 0 || !written.is_empty() || unit == grain.unit {
             written.push_str(&format!("{held}{}", unit.name()));
@@ -1438,6 +1457,7 @@ mod tests {
                 grain: Grain::SECOND,
             }]
         );
+
         for text in [
             "length:3m",
             "length:3m0s",
@@ -1455,6 +1475,7 @@ mod tests {
                 "{text} read back wrong"
             );
         }
+
         assert_eq!(Search::read("length:180").to_string(), "length:3m0s");
         assert_eq!(Search::read("length:3:30").to_string(), "length:3m30s");
     }
@@ -1486,6 +1507,7 @@ mod tests {
                 "{text} read wrong"
             );
         }
+
         assert_eq!(Search::read("rate:500hz").to_string(), "rate:500hz");
         assert_eq!(Search::read("rate:44.1").to_string(), "rate:44100");
     }
@@ -1506,6 +1528,7 @@ mod tests {
                 Search::read(text)
             );
         }
+
         assert_eq!(shape("moon !!! or sun"), vec!["moon or sun"]);
         assert_eq!(shape("moon or !!!"), vec!["moon", "or"]);
     }
@@ -1541,6 +1564,7 @@ mod tests {
             Some(Reach::Phrase),
             "the words a track sings are not a name"
         );
+
         for text in [
             "artist:=\"Air\"",
             "-album:=\"The Wall\"",
@@ -1552,6 +1576,7 @@ mod tests {
                 "{text} read back wrong"
             );
         }
+
         assert!(Search::read("artist:=Air").reads() == vec!["artist:=\"Air\"".to_owned()]);
     }
 
@@ -1656,6 +1681,7 @@ mod tests {
             "is:hidden",
         ] {
             let read = terms(text);
+
             assert_eq!(read.len(), 1, "{text} read as {read:?}");
             assert_eq!(read[0].to_string(), text, "{text} was written back wrong");
             assert_eq!(terms(&read[0].to_string()), read);

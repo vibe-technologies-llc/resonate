@@ -110,11 +110,13 @@ fn every_step_a_release_shipped_is_laid_as_it_shipped() {
 fn a_catalog_stamped_at_any_released_step_opens_and_is_carried_to_the_last() {
     let folder = env::temp_dir().join(format!("resonate-mobile-released-{}", process::id()));
     let _ = fs::remove_dir_all(&folder);
+
     fs::create_dir_all(&folder).expect("a folder");
 
     for stamped in 1..=STEPS_RELEASED.len() {
         let path = folder.join(format!("documents-{stamped}.sqlite"));
         let laid = Connection::open(&path).expect("a catalog");
+
         laid.create_scalar_function(
             "folded",
             1,
@@ -139,6 +141,7 @@ fn a_catalog_stamped_at_any_released_step_opens_and_is_carried_to_the_last() {
             .expect("the catalog again")
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .expect("the stamp read");
+
         assert_eq!(usize::try_from(version).expect("a count"), MIGRATIONS.len());
     }
 
@@ -149,7 +152,9 @@ fn a_catalog_stamped_at_any_released_step_opens_and_is_carried_to_the_last() {
 fn a_catalog_of_before_larger_covers_owes_its_fetched_covers_one_ask_and_keeps_them() {
     let folder = env::temp_dir().join(format!("resonate-mobile-larger-{}", process::id()));
     let _ = fs::remove_dir_all(&folder);
+
     fs::create_dir_all(&folder).expect("a folder");
+
     let path = folder.join("documents.sqlite");
     let before = MIGRATIONS
         .iter()
@@ -157,6 +162,7 @@ fn a_catalog_of_before_larger_covers_owes_its_fetched_covers_one_ask_and_keeps_t
         .expect("the larger covers step");
 
     let laid = Connection::open(&path).expect("a catalog");
+
     laid.create_scalar_function(
         "folded",
         1,
@@ -198,7 +204,9 @@ fn a_catalog_of_before_larger_covers_owes_its_fetched_covers_one_ask_and_keeps_t
             |row| row.get(0),
         )
         .expect("the album's cover");
+
     drop(opened);
+
     let _ = fs::remove_dir_all(&folder);
 
     assert!(owed, "the larger covers were not owed after the step");

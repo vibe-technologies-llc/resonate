@@ -26,6 +26,7 @@ impl BitRate {
 
     pub fn over(bytes: u64, frames: Frames, rate: SampleRate) -> Option<Self> {
         let seconds = frames.get() as f64 / f64::from(rate.hz());
+
         if seconds <= 0.0 {
             return None;
         }
@@ -68,7 +69,7 @@ impl PacketSpan {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Variability {
     Constant,
     Variable,
@@ -126,6 +127,7 @@ impl StreamProfile {
             .map(|column| {
                 let from = column * self.series.len() / columns;
                 let to = ((column + 1) * self.series.len() / columns).max(from + 1);
+
                 let bucket = self
                     .series
                     .get(from..to.min(self.series.len()))
@@ -217,19 +219,23 @@ impl ProfileBuilder {
         if self.packets == 0 {
             return None;
         }
+
         let frames = Frames(self.frames);
         let overall = BitRate::over(self.bytes, frames, self.rate)?;
 
         let mut series = self.series.clone();
+
         if series.is_empty() {
             series.push(overall);
         }
 
         let mut sorted = series.clone();
+
         sorted.sort_by(|left, right| left.partial_cmp(right).unwrap_or(Ordering::Equal));
 
         let mean = mean(&series);
         let deviation = deviation(&series, mean);
+
         let variation = if mean > 0.0 { deviation / mean } else { 0.0 };
 
         Some(StreamProfile {
@@ -274,6 +280,7 @@ fn deviation(series: &[BitRate], mean: f64) -> f64 {
     if series.len() < 2 {
         return 0.0;
     }
+
     let total: f64 = series
         .iter()
         .map(|rate| (rate.get() - mean).powi(2))
@@ -285,6 +292,7 @@ fn percentile(sorted: &[BitRate], fraction: f64) -> BitRate {
     if sorted.is_empty() {
         return BitRate::ZERO;
     }
+
     let rank = (fraction * sorted.len() as f64).ceil() as usize;
     let index = rank.max(1).min(sorted.len()) - 1;
     sorted.get(index).copied().unwrap_or_default()
@@ -311,6 +319,7 @@ pub fn probe_stream(sources: &Sources, location: &MediaLocation) -> Result<Strea
     };
     let (track, _) = container::audio_track(coded.reader.as_ref(), location)?;
     let id = StreamTrackId(track.id);
+
     let raw = tags::read_raw(&coded.revisions, track.id, &coded.prescan);
     let timeline = container::timeline(track, &info);
 
@@ -370,6 +379,7 @@ mod tests {
 
     fn constant(packets: usize, bytes: u32, frames: u64) -> StreamProfile {
         let mut builder = ProfileBuilder::new(RATE);
+
         for index in 0..packets {
             builder.push(PacketSpan {
                 at: Frames(index as u64 * frames),
@@ -418,12 +428,14 @@ mod tests {
 
     fn swinging(period: u64, packets: u64) -> StreamProfile {
         let mut builder = ProfileBuilder::new(RATE);
+
         for index in 0..packets {
             let bytes = if index % (2 * period) < period {
                 200
             } else {
                 800
             };
+
             builder.push(PacketSpan {
                 at: Frames(index * 1_152),
                 frames: Frames(1_152),
@@ -465,6 +477,7 @@ mod tests {
         let seconds = profile.duration_seconds();
 
         let expected = (seconds / WINDOW).floor() as usize;
+
         assert!(
             profile.series.len().abs_diff(expected) <= 1,
             "{} points for {seconds:.1}s",
@@ -492,6 +505,7 @@ mod tests {
                 bytes: 417,
             });
         }
+
         let profile = builder.finish().expect("packets were pushed");
 
         assert_eq!(profile.series.len(), MAX_WINDOWS);
@@ -517,6 +531,7 @@ mod tests {
     #[test]
     fn the_percentiles_rise_with_their_rank_and_stay_inside_the_range() {
         let mut builder = ProfileBuilder::new(RATE);
+
         for index in 0..400_u64 {
             builder.push(PacketSpan {
                 at: Frames(index * 1_152),
@@ -524,6 +539,7 @@ mod tests {
                 bytes: 100 + (index as u32 * 3),
             });
         }
+
         let profile = builder.finish().expect("packets were pushed");
         let Percentiles {
             p05,
@@ -548,6 +564,7 @@ mod tests {
         assert!(condensed.iter().all(|rate| *rate <= profile.max));
 
         let level = mean(&condensed);
+
         assert!(
             (level - profile.mean.get()).abs() < profile.mean.get() * 0.05,
             "{level} against {}",
@@ -565,6 +582,7 @@ mod tests {
     #[test]
     fn the_builder_counts_the_windows_it_has_closed() {
         let mut builder = ProfileBuilder::new(RATE);
+
         assert_eq!(builder.points(), 0);
 
         for index in 0..400_u64 {
@@ -574,6 +592,7 @@ mod tests {
                 bytes: 417,
             });
         }
+
         let profile = builder.finish().expect("packets were pushed");
 
         assert_eq!(builder.points(), profile.series.len());
@@ -600,6 +619,7 @@ mod tests {
             frames: Frames::ZERO,
             bytes: 417,
         };
+
         assert_eq!(span.rate(RATE), None);
     }
 }

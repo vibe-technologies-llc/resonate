@@ -17,6 +17,7 @@ fn inputs_in(folder: PathBuf) -> Vec<PathBuf> {
         .expect("a folder of inputs for the probe fuzz target")
         .map(|entry| entry.expect("a listed input").path())
         .collect();
+
     inputs.sort();
     inputs
 }
@@ -36,7 +37,9 @@ fn weigh_the_blocks_of(path: &Path) {
     else {
         return;
     };
+
     decoder.follow_format_changes();
+
     let mut block = AudioBuffer::empty(info.spec);
 
     for _ in 0..BLOCKS_WEIGHED {

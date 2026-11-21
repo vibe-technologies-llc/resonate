@@ -59,8 +59,10 @@ impl Holders {
     pub(crate) fn idle(&self, udn: &Udn) -> Option<Hold> {
         let lane = self.lane(udn);
         let mine = self.mint();
+
         {
             let mut held = lane.lock();
+
             if held.is_some() {
                 return None;
             }
@@ -83,6 +85,7 @@ impl Hold {
 
     pub(crate) fn let_go<T>(&self, call: impl FnOnce() -> T) -> Option<T> {
         let mut held = self.lane.lock();
+
         if *held != Some(self.mine) {
             return None;
         }
@@ -162,14 +165,17 @@ pub(crate) fn open(
         Arc::clone(&clock),
     ));
     let token = server.offer(Arc::clone(&feed));
+
     let offer = Offer {
         server: Arc::clone(server),
         token,
         feed,
         hold,
     };
+
     {
         let mut held = offer.hold.lane.lock();
+
         if held.replace(offer.hold.mine).is_some()
             && let Err(error) = renderer.stop()
         {
@@ -184,6 +190,7 @@ pub(crate) fn open(
         SampleFormat::S24 => Words::Packed,
         SampleFormat::S16 | SampleFormat::S32 | SampleFormat::F32 => Words::Whole,
     };
+
     let _ = announce.send(StreamEvent::FormatChanged { spec, words });
 
     let watched = Watch {
@@ -191,6 +198,7 @@ pub(crate) fn open(
         offer,
         announce,
     };
+
     apart(move || watched.run(&steered), a_thread)?;
 
     let steering = Steering(steer);
@@ -278,6 +286,7 @@ impl Watch {
                 continue;
             }
             asked_at = Instant::now();
+
             let Some(heard) = self.offer.hold.steer(|| self.renderer.heard()) else {
                 continue;
             };
@@ -295,6 +304,7 @@ impl Watch {
                             >= ended
                     {
                         drained = true;
+
                         let _ = self.announce.send(StreamEvent::Drained);
                     }
                 }
@@ -330,6 +340,7 @@ impl Watch {
 
     fn failed(&self, from: StreamState, error: &Error) -> StreamState {
         tracing::warn!(%error, renderer = %self.renderer.udn(), "a renderer stopped taking the stream");
+
         let event = match error {
             Error::Fault { action, code } => StreamEvent::Refused {
                 from,
@@ -371,6 +382,7 @@ mod tests {
         let holders = Holders::default();
         let udn = Udn::new("uuid:4c1b3a27-0000-4000-8000-000000000001");
         let feed = silent_feed();
+
         let offer = Offer {
             server: Arc::clone(&server),
             token: server.offer(Arc::clone(&feed)),

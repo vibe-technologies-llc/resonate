@@ -108,6 +108,7 @@ impl<T> Seat<T> {
         let running = Arc::new(running);
         let taken = {
             let mut held = self.held.lock();
+
             if !held.left {
                 held.running = Some(Arc::clone(&running));
             }
@@ -118,6 +119,7 @@ impl<T> Seat<T> {
 
     fn left(&self) -> Option<Arc<T>> {
         let mut held = self.held.lock();
+
         held.left = true;
         held.running.take()
     }
@@ -253,10 +255,12 @@ impl Service {
         library: &Arc<Library>,
     ) -> Arrangement {
         let arrangement = Arrangement::of(config);
+
         self.running.emptied();
 
         *self.trust.lock() = arrangement.trust;
         self.filed_as.told_by(config);
+
         let filed_as = Arc::clone(&self.filed_as);
         match started(
             config,
@@ -267,6 +271,7 @@ impl Service {
         ) {
             Ok(Some(running)) => {
                 let code = running.sync.code().to_owned();
+
                 if let Some(driven) = self.driven.lock().clone() {
                     running.sync.control_with(driven, arrangement.trust);
                 }
@@ -402,7 +407,9 @@ impl Syncing {
     #[cfg(feature = "sync")]
     pub(crate) fn drive(&self, driven: resonate_driven::Driven) {
         let driven = Arc::new(driven) as Arc<dyn Controlled>;
+
         *self.service.driven.lock() = Some(Arc::clone(&driven));
+
         let trust = *self.service.trust.lock();
         if let Some(running) = self.service.running.cloned() {
             running.sync.control_with(driven, trust);
@@ -430,6 +437,7 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
         filed_as: Arc::default(),
     });
     let arranged = service.arranged(config, settings, library);
+
     #[cfg(feature = "online")]
     {
         let reached = Arc::downgrade(&service);
@@ -441,10 +449,12 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
                 reach(&running.sync);
             }
         });
+
         crate::musicbrainz::consulting_through(Some(Arc::new(
             resonate_musicbrainz::Consulting::new(asked),
         )));
     }
+
     let watching = settings.map(Path::to_path_buf).and_then(|settings| {
         let service = Arc::clone(&service);
         let library = Arc::clone(library);
@@ -499,6 +509,7 @@ fn started(
     if !config.syncs() {
         return Ok(None);
     }
+
     let Some(alone) = alone()? else {
         tracing::debug!("another Resonate synchronises this catalog");
         return Ok(None);
@@ -506,7 +517,9 @@ fn started(
     let key = key_of(config, settings)?;
     let folder = config::private_data_dir()?;
     let ledger = folder.join(LEDGER);
+
     config::private_store(&ledger)?;
+
     let settings = Settings {
         server: server_of(config),
         trusted: config.sync_server_certificate.clone(),
@@ -530,7 +543,9 @@ fn started(
         filed_as,
         takes_deletions: config.is_on(Switch::SyncDeletionsFromOthers),
     });
+
     let sync = Sync::start(settings, catalog).map_err(Error::Sync)?;
+
     #[cfg(feature = "online")]
     sync.consult_with(crate::musicbrainz::ConsultedHere::of(config));
     Ok(Some(Running {
@@ -589,7 +604,9 @@ fn key_of(config: &Config, settings: Option<&Path>) -> Result<SyncKey> {
     if let Some(code) = &config.sync_key {
         return SyncKey::from_code(code).map_err(Error::Sync);
     }
+
     let key = SyncKey::minted().map_err(Error::Sync)?;
+
     if let Some(settings) = settings {
         config::store(settings, ConfigKey::SyncKey, key.code())?;
     }
@@ -743,10 +760,12 @@ impl Catalog for Catalogued {
         };
         let playing = resumption.landing();
         let order = resumption.in_play_order();
+
         let window = Resumed::window_around(playing, order.len());
         let mut rows = Vec::new();
         let mut at = None;
         let mut playing_named = false;
+
         for place in window {
             let Some(resumable) = order
                 .get(place)
@@ -766,6 +785,7 @@ impl Catalog for Catalogued {
                 rows.push(recording);
             }
         }
+
         let at = at.unwrap_or(rows.len());
         let heard = order
             .get(playing)
@@ -1092,6 +1112,7 @@ pub(crate) fn asked(
     match asked {
         Asked::Join(code) => {
             let key = SyncKey::from_code(code).map_err(Error::Sync)?;
+
             config::store(settings, ConfigKey::SyncKey, key.code())?;
             said!("{}", words::sync::joins(key.code()));
             Ok(None)
@@ -1107,6 +1128,7 @@ pub(crate) fn asked(
             let sync = &running.sync;
             let _ = connected(sync);
             let device = device_named(sync, name)?;
+
             if device.online {
                 return Err(Error::SyncDeviceOnline(name.into()));
             }
@@ -1118,14 +1140,19 @@ pub(crate) fn asked(
             let library = library.ok_or(Error::SyncOff)?;
             let running = running(config, settings, &library)?;
             let sync = &running.sync;
+
             said!("{}\t{}", words::sync::pairing_code(), sync.code());
+
             let server = words::sync::server();
+
             match server_of(config) {
                 Server::Nowhere => said!("{server}\t{}", words::sync::no_server()),
                 Server::At(at) => said!("{server}\t{at}"),
                 Server::Hosted => said!("{server}\t{}", resonate_sync::HOSTED_SERVER),
             }
+
             let standing = connected(sync);
+
             said!("{}\t{}", words::sync::standing(), standing_of(standing));
             for device in sync.shown().devices {
                 let reached = match (device.nearby, device.online) {
@@ -1133,6 +1160,7 @@ pub(crate) fn asked(
                     (false, true) => words::sync::online(),
                     (false, false) => words::sync::away(),
                 };
+
                 said!(
                     "{}\t{}",
                     device.name,
@@ -1154,9 +1182,11 @@ pub(crate) fn asked(
             let sync = &running.sync;
             let standing = connected(sync);
             let device = device_named(sync, from)?;
+
             if standing != Standing::Connected && !device.nearby {
                 return Err(Error::SyncUnreachable);
             }
+
             let created = library
                 .synced_playlists()?
                 .into_iter()
@@ -1169,15 +1199,18 @@ pub(crate) fn asked(
                     created,
                 })
                 .map_err(Error::Sync)?;
+
             if missing.is_empty() {
                 said!("{}", words::sync::lacks_nothing(from, playlist));
                 return Ok(None);
             }
+
             let landed = fetched_in_batches(
                 &missing,
                 |batch| sync.fetch(batch, device.id),
                 |batch| transferred(sync, batch),
             );
+
             said!("{}", words::sync::came_from(from, landed, missing.len()));
             Ok(None)
         }
@@ -1187,6 +1220,7 @@ pub(crate) fn asked(
             let sync = &running.sync;
             let _ = connected(sync);
             let device = device_named(sync, from)?;
+
             let handoff = sync
                 .handoffs()
                 .map_err(Error::Sync)?
@@ -1202,6 +1236,7 @@ pub(crate) fn asked(
         } => {
             let library = library.ok_or(Error::SyncOff)?;
             let running = running(config, settings, &library)?;
+
             controlled(&running.sync, device, zone.as_ref(), command)?;
             Ok(None)
         }
@@ -1270,14 +1305,17 @@ fn controlled(
             Some(_) => vec![zone_asked(&mirror, &device.name, zone)?],
             None => mirror.zones.iter().collect(),
         };
+
         for held in shown {
             said_zone(&mirror, held);
         }
         return Ok(());
     };
+
     let asked_of = zone_asked(&mirror, &device.name, zone)?;
     let (target, drawn) = (asked_of.zone, asked_of.queue_revision);
     let asked_at = Instant::now();
+
     match sync
         .ask_to_control(device.id, target, command, drawn)
         .answer()
@@ -1290,7 +1328,9 @@ fn controlled(
             });
         }
     }
+
     let after = mirrored(sync, device.id, &device.name, asked_at)?;
+
     if let Some(held) = after.zone(target) {
         said_zone(&after, held);
     }
@@ -1306,6 +1346,7 @@ fn said_zone(mirror: &Mirror, zone: &RemoteZone) {
         let length = zone.length.map_or_else(String::new, |length| {
             format!(" / {}", elapsed::clock(length))
         });
+
         said!(
             "{}\t{}\t{place}{length}",
             words::sync::playing(),
@@ -1329,6 +1370,7 @@ fn said_zone(mirror: &Mirror, zone: &RemoteZone) {
         } else {
             " "
         };
+
         said!("{mark}{}\t{}", number + 1, billed(row));
     }
 }
@@ -1355,6 +1397,7 @@ fn playback_word(playback: RemotePlayback) -> &'static str {
 #[cfg(feature = "sync")]
 fn running(config: &Config, settings: &Path, library: &Arc<Library>) -> Result<Running> {
     let filed_as = Arc::new(FiledAs::default());
+
     filed_as.told_by(config);
     started(config, Some(settings), library, Follow::default(), filed_as)?.ok_or(Error::SyncBusy)
 }
@@ -1365,6 +1408,7 @@ fn connected(sync: &Sync) -> Standing {
     loop {
         let shown = sync.shown();
         let refused = matches!(shown.standing, Standing::Refused(_));
+
         if shown.settled || refused || Instant::now() >= deadline {
             return shown.standing;
         }
@@ -1455,6 +1499,7 @@ fn continuing(
     let first = usize::try_from(first).unwrap_or_default();
     let mut cuts = Vec::new();
     let mut handed_row_held = false;
+
     for (row, recording) in rows.iter().enumerate().skip(first) {
         if let Some(cut) = library.resolve_recording(recording)? {
             handed_row_held |= row == first;
@@ -1483,11 +1528,13 @@ fn rate_of(library: &Library, cut: &Cut) -> Option<SampleRate> {
 #[cfg(feature = "sync")]
 fn handed_off(library: &Library, handoff: &Handoff) -> Result<Handed> {
     let (cuts, at) = continuing(library, &handoff.rows, handoff.at, handoff.position)?;
+
     if cuts.is_empty() {
         return Err(Error::NothingHandedOff(handoff.device.to_string().into()));
     }
 
     let mut minting = Unclaimed::beside(&[]);
+
     let items = cuts
         .into_iter()
         .map(|cut| QueueItem {
@@ -1519,15 +1566,18 @@ impl Running {
 
     fn handoffs(&self) -> Vec<Handoff> {
         let mut held = self.handed_off.lock();
+
         if let Some((read, handoffs)) = held.as_ref()
             && read.elapsed() < HANDOFFS_READ_EVERY
         {
             return handoffs.clone();
         }
+
         let handoffs = self.sync.handoffs().unwrap_or_else(|error| {
             tracing::debug!(%error, "what other devices were playing could not be read");
             Vec::new()
         });
+
         *held = Some((Instant::now(), handoffs.clone()));
         handoffs
     }
@@ -1677,6 +1727,7 @@ impl resonate_ui::Syncing for Running {
         let Some(id) = self.other_device(device) else {
             return resonate_ui::RemoteShown::Refused;
         };
+
         self.sync.watch(id);
         match self.sync.watched(id) {
             Watched::Waiting => resonate_ui::RemoteShown::Waiting,
@@ -1942,8 +1993,10 @@ mod tests {
     fn each_setting_the_service_is_started_with_moves_the_arrangement() {
         let held = key();
         let base = syncing_with(&held);
+
         let moved = |change: fn(&mut Config)| {
             let mut config = syncing_with(&held);
+
             change(&mut config);
             Arrangement::of(&config) != Arrangement::of(&base)
         };
@@ -2003,6 +2056,7 @@ mod tests {
 
     fn wait_for(counted: &AtomicUsize, calls: usize) -> bool {
         let deadline = Instant::now() + Duration::from_secs(10);
+
         while Instant::now() < deadline {
             if counted.load(Ordering::Acquire) >= calls {
                 return true;
@@ -2014,6 +2068,7 @@ mod tests {
 
     fn written_whole(settings: &Path, text: &str) {
         let staged = settings.with_extension("staged");
+
         fs::write(&staged, text).expect("a file");
         fs::rename(&staged, settings).expect("the file put in place");
     }
@@ -2050,7 +2105,9 @@ mod tests {
         let settings = folder.join("config.toml");
         let held = key();
         let joined = key();
+
         fs::write(&settings, format!("sync-key = \"{}\"\n", held.code())).expect("a file");
+
         let arranged = Arrangement::of(&syncing_with(&held));
         let rearranged = Arc::new(AtomicUsize::new(0));
         let counting = Arc::clone(&rearranged);
@@ -2074,6 +2131,7 @@ mod tests {
             &format!("sync-key = \"{}\"\nvolume = 0.5\n", held.code()),
         );
         thread::sleep(Duration::from_millis(300));
+
         let unmoved = rearranged.load(Ordering::Acquire);
         let changes_before = filed_as.changes();
 
@@ -2084,23 +2142,29 @@ mod tests {
                 held.code()
             ),
         );
+
         let deadline = Instant::now() + Duration::from_secs(5);
+
         while filed_as.layout().as_deref() != Some(FILED_AS) && Instant::now() < deadline {
             thread::sleep(Duration::from_millis(20));
         }
+
         let filed = filed_as.layout();
         let changes_after = filed_as.changes();
         let unmoved_by_the_layout = rearranged.load(Ordering::Acquire);
 
         written_whole(&settings, &format!("sync-key = \"{}\"\n", joined.code()));
+
         let moved = wait_for(&rearranged, 1);
 
         written_whole(&settings, "sync-key = [\n");
         thread::sleep(Duration::from_millis(300));
+
         let after_a_bad_file = rearranged.load(Ordering::Acquire);
 
         let _ = stop.try_send(());
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(unmoved, 0);
         assert_eq!(filed.as_deref(), Some(FILED_AS));
         assert_eq!(changes_after, changes_before + 1);
@@ -2118,6 +2182,7 @@ mod tests {
         let taken = seat.left();
         let seated_after = seat.seated(Arc::clone(&witness));
         let held_after = seat.cloned();
+
         drop(taken);
 
         assert!(seated_before);
@@ -2142,9 +2207,13 @@ mod tests {
         let seat = Seat::empty();
 
         let elsewhere = seat.seated(Witness::default()).expect("seated");
+
         seat.ended();
+
         let ended_while_held = elsewhere.ended.load(Ordering::Acquire);
+
         seat.ended();
+
         let ended_again = elsewhere.ended.load(Ordering::Acquire);
 
         assert_eq!(ended_while_held, 1);
@@ -2157,7 +2226,9 @@ mod tests {
         let seat = Seat::empty();
 
         let elsewhere = seat.seated(Witness::default()).expect("seated");
+
         seat.emptied();
+
         let ended_while_held = elsewhere.ended.load(Ordering::Acquire);
         let held_after = seat.cloned().is_some();
         let next = seat.seated(Witness::default());
@@ -2185,11 +2256,13 @@ mod tests {
         use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_wave};
 
         let folder = scratch("sync-continuing");
+
         fs::write(
             folder.join("held.wav"),
             tagged_wave(&[(TITLE, "Held"), (ARTIST, "Artist"), (ALBUM, "Album")]),
         )
         .expect("a song");
+
         let library = scanned(&folder);
         (folder, library)
     }
@@ -2206,6 +2279,7 @@ mod tests {
         let with_no_place_given = continuing(&library, &rows, 0, Duration::ZERO).expect("resolved");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(whole.0.len(), 1);
         assert_eq!(whole.1, Frames(5 * 44_100));
         assert_eq!(behind_a_missing_one.0.len(), 1);
@@ -2222,6 +2296,7 @@ mod tests {
             continuing(&library, &[heard("Missing")], 0, Duration::from_secs(5)).expect("resolved");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(nothing.0.is_empty());
         assert_eq!(nothing.1, Frames(0));
     }
@@ -2233,6 +2308,7 @@ mod tests {
 
         let (folder, library) = held_song();
         let filed_as = Arc::new(FiledAs::default());
+
         let catalog = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::clone(&filed_as),
@@ -2243,9 +2319,12 @@ mod tests {
             platform: Platform::Linux,
         };
         let mut ledger = Ledger::in_memory().expect("a ledger");
+
         ledger.enter_space(SpaceId([8; 16])).expect("a space");
+
         let told = |ledger: &mut Ledger| {
             ledger.look(&catalog, &me).expect("a look");
+
             let owed = ledger.owed().expect("owed").into_iter().flatten();
             let layouts = owed
                 .filter_map(|change| match change {
@@ -2253,6 +2332,7 @@ mod tests {
                     _ => None,
                 })
                 .collect::<Vec<_>>();
+
             ledger
                 .sent(&ledger.owed().expect("owed").concat())
                 .expect("sent");
@@ -2261,20 +2341,27 @@ mod tests {
         let named = "{artist}/{year} {album}/{track} {title}";
 
         let untold = told(&mut ledger);
+
         filed_as.told_by(&Config::default());
+
         let revision = catalog.revision();
+
         filed_as.told_by(&Config::default());
+
         let unmoved = catalog.revision();
         let by_default = told(&mut ledger);
+
         filed_as.told_by(&Config {
             organise_as: Some(Layout::read(named).expect("a layout")),
             ..Config::default()
         });
+
         let moved = catalog.revision();
         let renamed = told(&mut ledger);
         let again = told(&mut ledger);
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(untold.is_empty());
         assert_eq!(unmoved, revision);
         assert_eq!(by_default, [Layout::default().to_string()]);
@@ -2287,11 +2374,14 @@ mod tests {
     fn a_hidden_song_is_held_so_no_follow_fetches_it_again_and_one_deleted_by_hand_is_not() {
         let (folder, library) = held_song();
         let path = folder.join("held.wav");
+
         let track = library
             .track_at(&path, None)
             .expect("read")
             .expect("catalogued");
+
         library.hide_track(track.id, true).expect("hidden");
+
         let catalog = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
@@ -2299,10 +2389,13 @@ mod tests {
         };
 
         let hidden = catalog.holds(&heard("Held")).expect("asked");
+
         fs::remove_file(&path).expect("the song goes");
+
         let deleted = catalog.holds(&heard("Held")).expect("asked");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(hidden);
         assert!(!deleted);
     }
@@ -2311,8 +2404,10 @@ mod tests {
     fn a_song_deleted_through_the_library_is_marked_for_the_sync_and_forgiven_by_it() {
         let (folder, library) = held_song();
         let trash = folder.join("trash");
+
         fs::create_dir_all(&trash).expect("a trash");
         library.trash_into(Some(trash));
+
         let track = library
             .track_at(&folder.join("held.wav"), None)
             .expect("read")
@@ -2324,13 +2419,18 @@ mod tests {
         };
 
         let before = catalog.deleted_here(&heard("Held")).expect("asked");
+
         catalog.library.delete_tracks(&[track.id]).expect("deleted");
+
         let after = catalog.deleted_here(&heard("Held")).expect("asked");
         let held = catalog.holds(&heard("Held")).expect("asked");
+
         catalog.forgive_deletions().expect("forgiven");
+
         let forgiven = catalog.deleted_here(&heard("Held")).expect("asked");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(!before);
         assert!(after);
         assert!(!held);
@@ -2341,6 +2441,7 @@ mod tests {
         use crate::fixtures::{ALBUM, ARTIST, TITLE, scanned, scratch, tagged_wave};
 
         let folder = scratch("sync-handoff-order");
+
         for title in titles {
             fs::write(
                 folder.join(format!("{title}.wav")),
@@ -2348,6 +2449,7 @@ mod tests {
             )
             .expect("a song");
         }
+
         let library = scanned(&folder);
         let locations = titles
             .iter()
@@ -2374,9 +2476,11 @@ mod tests {
         use crate::fixtures::{ALBUM, ARTIST, TITLE, tagged_wave};
 
         let (folder, there, locations) = kept_songs(&["San Tropez (2011 Remaster)"]);
+
         there
             .start_playlist("Mix", &[Cut::whole(locations[0].clone())])
             .expect("a playlist");
+
         let sender = Catalogued {
             library: Arc::new(there),
             filed_as: Arc::default(),
@@ -2385,14 +2489,20 @@ mod tests {
         let asked = sender.playlists().expect("the playlists")[0].entries[0]
             .clone()
             .expect("a named song");
+
         sender.favour(&asked, true).expect("a favourite");
+
         let received = folder.join("received");
+
         fs::create_dir_all(&received).expect("a music folder");
+
         let here = Library::open_in_memory().expect("a catalog");
+
         here.deliver_into(Some(DeliveryFolder {
             path: received,
             layout: Layout::default(),
         }));
+
         let filed = here
             .file_song_from_elsewhere(
                 &asked,
@@ -2416,6 +2526,7 @@ mod tests {
         };
         let ledger = || {
             let mut ledger = Ledger::in_memory().expect("a ledger");
+
             ledger.enter_space(SpaceId([7; 16])).expect("a space");
             ledger
         };
@@ -2423,16 +2534,21 @@ mod tests {
         let mut receiving = ledger();
 
         sending.look(&sender, &me("Desk")).expect("a look");
+
         let told = sending
             .owed()
             .expect("owed")
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
+
         receiving.arrived(&receiver, &told).expect("arrived");
+
         let written_at = receiver.revision();
         let settled = receiving.settle(&receiver).expect("settled");
+
         receiving.look(&receiver, &me("Laptop")).expect("a look");
+
         let echoed = receiving
             .owed()
             .expect("owed")
@@ -2442,6 +2558,7 @@ mod tests {
         let settled_again = receiving.settle(&receiver).expect("settled");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(matches!(filed, SongFiled::Filed(_)), "{filed:?}");
         assert_eq!((settled, settled_again), (0, 0));
         assert_eq!(receiver.revision(), written_at);
@@ -2482,13 +2599,16 @@ mod tests {
 
         let desktop = |takes_deletions: bool| {
             let (folder, library, locations) = kept_songs(&["A", "B"]);
+
             library.trash_through(Some(Arc::new(TakenAtOnce)));
+
             let catalog = Catalogued {
                 library: Arc::new(library),
                 filed_as: Arc::default(),
                 takes_deletions,
             };
             let mut ledger = Ledger::in_memory().expect("a ledger");
+
             ledger.enter_space(SpaceId([9; 16])).expect("a space");
             (folder, catalog, locations, ledger)
         };
@@ -2510,17 +2630,20 @@ mod tests {
 
         let a = track_of(&desk, &desk_songs[0]).expect("scanned");
         let b = track_of(&desk, &desk_songs[1]).expect("scanned");
+
         desk.library.delete_tracks(&[b]).expect("deleted here");
         desk.library
             .delete_tracks_everywhere(&[a])
             .expect("deleted everywhere");
         desk_ledger.look(&desk, &me).expect("a look");
+
         let told = desk_ledger
             .owed()
             .expect("owed")
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
+
         laptop_ledger.arrived(&laptop, &told).expect("arrived");
         study_ledger.arrived(&study, &told).expect("arrived");
 
@@ -2530,9 +2653,11 @@ mod tests {
         let a_on_disk = [&laptop_songs[0], &study_songs[0]]
             .map(|location| location.as_path().is_some_and(Path::exists));
         let refused_marked = study_ledger.deleted_everywhere(&heard("A"));
+
         for folder in [desk_folder, laptop_folder, study_folder] {
             let _ = fs::remove_dir_all(&folder);
         }
+
         assert!(laptop_a.is_none());
         assert!(laptop_b.is_some());
         assert!(study_a.is_some());
@@ -2561,6 +2686,7 @@ mod tests {
                 held: None,
             })
             .collect();
+
         library
             .keep_resumption(
                 resonate_core::ZoneId::FIRST,
@@ -2574,6 +2700,7 @@ mod tests {
                 },
             )
             .expect("a resumption kept");
+
         let catalogued = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
@@ -2586,6 +2713,7 @@ mod tests {
             .expect("a resumption");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(handed_titles(&resumed), ["C", "A", "B"]);
         assert_eq!(resumed.at, 1);
         assert_eq!(resumed.position, Duration::from_secs(3));
@@ -2595,6 +2723,7 @@ mod tests {
     fn a_song_heard_that_the_catalog_cannot_name_hands_off_the_next_one_named_from_its_start() {
         let (folder, library, locations) = kept_songs(&["A", "C"]);
         let unscanned = resonate_core::MediaLocation::local(folder.join("B.wav"));
+
         let rows = [locations[0].clone(), unscanned, locations[1].clone()]
             .into_iter()
             .map(|location| resonate_core::Resumable {
@@ -2603,6 +2732,7 @@ mod tests {
                 held: None,
             })
             .collect();
+
         library
             .keep_resumption(
                 resonate_core::ZoneId::FIRST,
@@ -2616,6 +2746,7 @@ mod tests {
                 },
             )
             .expect("a resumption kept");
+
         let catalogued = Catalogued {
             library: Arc::new(library),
             filed_as: Arc::default(),
@@ -2628,6 +2759,7 @@ mod tests {
             .expect("a resumption");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(handed_titles(&resumed), ["A", "C"]);
         assert_eq!(resumed.at, 1);
         assert_eq!(resumed.position, Duration::ZERO);

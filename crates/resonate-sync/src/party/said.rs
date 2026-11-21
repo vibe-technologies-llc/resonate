@@ -55,11 +55,12 @@ fn cut_to_a_line(text: &str) -> String {
         .chars()
         .map(|letter| if letter.is_control() { ' ' } else { letter })
         .collect();
+
     line.truncate(line.floor_char_boundary(LONGEST_LINE));
     line
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PartyReaction {
     Love,
     Fire,
@@ -249,7 +250,9 @@ impl PartySaid {
                 if let Some(song) = &now.song {
                     written_song(&mut writer, song);
                 }
+
                 let next = &now.next[..now.next.len().min(SONGS_AHEAD_TOLD_AT_MOST)];
+
                 writer.length(next.len());
                 for song in next {
                     written_song(&mut writer, song);
@@ -269,7 +272,9 @@ impl PartySaid {
             }
             Self::Chatted(lines) => {
                 writer.byte(SAID_CHATTED);
+
                 let lines = &lines[..lines.len().min(LINES_TOLD_AT_MOST)];
+
                 writer.length(lines.len());
                 for line in lines {
                     writer.number(line.id);
@@ -295,6 +300,7 @@ impl PartySaid {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let said = match reader.byte()? {
             SAID_HELLO => Self::Hello {
                 name: cut_to_a_name(reader.text()?),
@@ -302,8 +308,10 @@ impl PartySaid {
             SAID_PEOPLE => {
                 let count = reader.length(PEOPLE_TOLD_AT_MOST)?;
                 let mut people = crate::wire::reserved(count);
+
                 for _ in 0..count {
                     let member = reader.device()?;
+
                     people.push((member, cut_to_a_name(reader.text()?)));
                 }
                 Self::People(people)
@@ -316,6 +324,7 @@ impl PartySaid {
                 };
                 let count = reader.length(SONGS_AHEAD_TOLD_AT_MOST)?;
                 let mut next = crate::wire::reserved(count);
+
                 for _ in 0..count {
                     next.push(read_song(&mut reader)?);
                 }
@@ -338,6 +347,7 @@ impl PartySaid {
             SAID_CHATTED => {
                 let count = reader.length(LINES_TOLD_AT_MOST)?;
                 let mut lines = crate::wire::reserved(count);
+
                 for _ in 0..count {
                     let id = reader.number()?;
                     let from = reader.device()?;
@@ -361,6 +371,7 @@ impl PartySaid {
             }),
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
+
         reader.done()?;
 
         Ok(said)
@@ -451,6 +462,7 @@ mod tests {
     fn a_reaction_of_a_later_build_is_refused_alone_and_passed_over_among_lines() {
         let lone = [SAID_CHAT, CHAT_REACTION, 200];
         let mut among = vec![SAID_CHATTED, 2];
+
         for (id, code) in [(1, 200), (2, PartyReaction::Clap.code())] {
             among.push(id);
             among.extend([7; 16]);

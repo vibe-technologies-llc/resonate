@@ -243,6 +243,7 @@ impl Walk {
 impl Drop for Walk {
     fn drop(&mut self) {
         let mut held = self.inner.walking_pass.lock();
+
         *held = None;
         self.inner.walking.store(false, Ordering::Release);
         drop(held);
@@ -278,7 +279,9 @@ fn asking_across_processes(catalog: &Path, pass: PassKind) -> Result<File> {
 
 fn lock_beside(catalog: &Path, suffix: &str, held: impl FnOnce() -> Error) -> Result<File> {
     let mut named = catalog.as_os_str().to_owned();
+
     named.push(suffix);
+
     let path = PathBuf::from(named);
     let lock = OpenOptions::new()
         .create(true)
@@ -311,6 +314,7 @@ impl Drop for Reader<'_> {
         let Some(connection) = self.connection.take() else {
             return;
         };
+
         self.pool.readers.lock().parked.push(connection);
         self.pool.freed.notify_one();
     }
@@ -352,6 +356,7 @@ impl Inner {
                 return Ok(None);
             };
             let path = self.in_the_vault(kept)?;
+
             return vault
                 .picture(&path)
                 .map(Some)
@@ -394,10 +399,12 @@ impl Inner {
         {
             return Err(Error::AlreadyWalking);
         }
+
         let mut walk = Walk {
             inner: Arc::clone(self),
             _across_processes: None,
         };
+
         if let Source::File(catalog) = &self.source {
             walk._across_processes = Some(locked_across_processes(catalog)?);
         }
@@ -502,11 +509,13 @@ impl Inner {
         change: impl FnOnce(&rusqlite::Transaction<'_>) -> Result<T>,
     ) -> Result<T> {
         let mut connection = self.writer.lock();
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Transaction, source))?;
 
         let value = change(&transaction)?;
+
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Transaction, source))?;
@@ -523,6 +532,7 @@ impl Inner {
 
     pub(crate) fn filing(&self) -> Result<Arc<suggest::Filing>> {
         let stamp = self.names_stamp();
+
         if let Some(kept) = self
             .filed
             .lock()
@@ -533,6 +543,7 @@ impl Inner {
         }
 
         let filing = Arc::new(suggest::Filing::read(self)?);
+
         *self.filed.lock() = Some(KeptFiling {
             stamp,
             filing: Arc::clone(&filing),
@@ -660,6 +671,7 @@ impl Inner {
 
     fn vocabulary(&self) -> Result<Arc<Spellings>> {
         let stamp = self.names_stamp();
+
         if let Some(kept) = self
             .spellings
             .lock()
@@ -670,6 +682,7 @@ impl Inner {
         }
 
         let spellings = Arc::new(self.read(store::spellings)?);
+
         *self.spellings.lock() = Some(KeptVocabulary {
             stamp,
             spellings: Arc::clone(&spellings),
@@ -793,12 +806,14 @@ fn plans_moved_triggers() -> String {
          INSERT INTO temp.{PLANS_MOVED} (id, times) VALUES (1, 0);"
     );
     let bump = format!("BEGIN UPDATE temp.{PLANS_MOVED} SET times = times + 1; END;");
+
     for (table, columns) in PLANNED_FROM {
         for (event, named) in [("INSERT", "added"), ("DELETE", "taken")] {
             sql.push_str(&format!(
                 "CREATE TEMP TRIGGER {table}_{named}_under_a_plan AFTER {event} ON main.{table} {bump}"
             ));
         }
+
         let moved = match columns {
             Some(columns) => format!(
                 "AFTER UPDATE OF {} ON main.{table} WHEN {}",
@@ -811,6 +826,7 @@ fn plans_moved_triggers() -> String {
             ),
             None => format!("AFTER UPDATE ON main.{table}"),
         };
+
         sql.push_str(&format!(
             "CREATE TEMP TRIGGER {table}_moved_under_a_plan {moved} {bump}"
         ));
@@ -858,6 +874,7 @@ fn track_rows_moved_triggers(connection: &Connection) -> Result<String> {
         .partition(|column| LISTENING.contains(&column.as_str()));
 
     let mut sql = String::new();
+
     for table in [ROWS_MOVED, HEARD_MOVED] {
         sql.push_str(&format!(
             "CREATE TEMP TABLE {table} (
@@ -867,7 +884,9 @@ fn track_rows_moved_triggers(connection: &Connection) -> Result<String> {
              INSERT INTO temp.{table} (id, times) VALUES (1, 0);"
         ));
     }
+
     let rows_moved = format!("BEGIN UPDATE temp.{ROWS_MOVED} SET times = times + 1; END;");
+
     for (event, named) in [("INSERT", "added"), ("DELETE", "taken")] {
         sql.push_str(&format!(
             "CREATE TEMP TRIGGER track_row_{named} AFTER {event} ON main.tracks {rows_moved}"
@@ -919,6 +938,7 @@ fn watch_the_names(connection: &mut Connection, counters: Counters) -> Result<()
                     && (table == RETITLED || table == ADDED)
                 {
                     let at = named.fetch_add(1, Ordering::AcqRel).wrapping_add(1);
+
                     renamed.lock().note(at, row, table == ADDED);
                 } else if NAMED_TABLES.contains(&table) {
                     written.fetch_add(1, Ordering::AcqRel);
@@ -1099,12 +1119,14 @@ impl Library {
                 Some((release_track, path))
             })
             .collect();
+
         if landed.is_empty() {
             return Ok(0);
         }
 
         self.inner.write(|transaction| {
             let mut paired = 0;
+
             for (release_track, path) in &landed {
                 paired += transaction
                     .execute(
@@ -1144,6 +1166,7 @@ impl Library {
 
     fn build(source: Source, vault: Option<Arc<Vault>>) -> Result<Self> {
         let mut writer = connect(&source, schema::Role::Writing)?;
+
         schema::lay_out(&writer)?;
         writer
             .execute_batch(TITLES_WORDED_TRIGGERS)
@@ -1159,6 +1182,7 @@ impl Library {
         let heard = Arc::new(AtomicU64::new(0));
         let planned = Arc::new(AtomicU64::new(0));
         let renamed = Arc::new(Mutex::new(Renamed::default()));
+
         watch_the_names(
             &mut writer,
             Counters {
@@ -1244,6 +1268,7 @@ fn keep_order(
     kept: KeptPlace,
 ) -> Result<()> {
     let zoned = i64::from(zone.get());
+
     transaction
         .execute("DELETE FROM resume_order WHERE zone = ?1", [zoned])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
@@ -1262,6 +1287,7 @@ fn keep_order(
     }
 
     keep_place(transaction, zone, kept.row, kept.at)?;
+
     let next = kept.next.map(|next| {
         (
             i64::try_from(next.first()).unwrap_or(i64::MAX),
@@ -1315,6 +1341,7 @@ fn note_the_delivered_object(
     took: i64,
 ) -> Result<()> {
     let key = kept.key.to_string();
+
     transaction
         .execute(
             "INSERT INTO vault_objects (key, form, path, bytes, sample_rate, channels,
@@ -1357,6 +1384,7 @@ const fn weighed_under(kept: &VaultKept, renewing: bool) -> Encoding {
 
 fn rooted(roots: &[PathBuf]) -> Result<Vec<Value>> {
     let mut named = Vec::with_capacity(roots.len());
+
     for root in roots {
         named.push(Value::Text(store::path_text(root).into_owned()));
     }
@@ -1403,12 +1431,14 @@ pub(crate) struct ReleaseTotals {
 
 fn paged_under_roots(select: &str, roots: usize, after: bool) -> String {
     let mut clauses = Vec::with_capacity(2);
+
     if roots > 0 {
         clauses.push(format!("roots.path IN ({})", vec!["?"; roots].join(", ")));
     }
     if after {
         clauses.push("tracks.path > ?".to_owned());
     }
+
     let filter = if clauses.is_empty() {
         String::new()
     } else {
@@ -1431,6 +1461,7 @@ fn counted_by_album(connection: &Connection, sql: &str) -> Result<AHashMap<i64, 
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let counted = statement
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?)))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -1446,6 +1477,7 @@ fn counted_by_disc(connection: &Connection, sql: &str) -> Result<AHashMap<(i64, 
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let counted = statement
         .query_map([], |row| {
             Ok((

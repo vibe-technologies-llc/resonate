@@ -7,6 +7,7 @@ pub(crate) fn bessel_i0(x: f64) -> f64 {
 
     for step in 1..=BESSEL_TERMS {
         let step = f64::from(step);
+
         term *= (half / step) * (half / step);
         sum += term;
         if term < sum * f64::EPSILON {
@@ -46,6 +47,7 @@ pub(crate) fn kaiser_sinc(taps: usize, cutoff: f64, beta: f64) -> Vec<f64> {
         .collect();
 
     let sum: f64 = kernel.iter().sum();
+
     if sum != 0.0 {
         for tap in &mut kernel {
             *tap /= sum;
@@ -61,8 +63,10 @@ mod tests {
     fn gain_at(kernel: &[f64], cycles_per_sample: f64) -> f64 {
         let mut real = 0.0;
         let mut imaginary = 0.0;
+
         for (tap, weight) in kernel.iter().enumerate() {
             let angle = std::f64::consts::TAU * cycles_per_sample * tap as f64;
+
             real += weight * angle.cos();
             imaginary -= weight * angle.sin();
         }
@@ -79,6 +83,7 @@ mod tests {
     #[test]
     fn the_designed_kernel_passes_direct_current_untouched() {
         let kernel = kaiser_sinc(512, 45_000.0 / 2_822_400.0, beta_for(96.0));
+
         assert!((gain_at(&kernel, 0.0) - 1.0).abs() < 1e-9);
     }
 
@@ -88,6 +93,7 @@ mod tests {
         let nyquist = 88_200.0 / 2_822_400.0;
 
         let rejected = 20.0 * gain_at(&kernel, nyquist).log10();
+
         assert!(
             rejected < -90.0,
             "the decimator would fold {rejected} dB of ultrasonic noise into the band"

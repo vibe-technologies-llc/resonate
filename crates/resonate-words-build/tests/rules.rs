@@ -197,6 +197,7 @@ fn source_files(folder: &Path, found: &mut Vec<PathBuf>) {
     for entry in entries.flatten() {
         let path = entry.path();
         let name = entry.file_name();
+
         if NOT_SOURCE.iter().any(|skipped| name == *skipped) {
             continue;
         }
@@ -213,6 +214,7 @@ fn source_files(folder: &Path, found: &mut Vec<PathBuf>) {
 
 fn written_names(root: &Path) -> BTreeSet<String> {
     let mut files = Vec::new();
+
     for folder in SOURCE_ROOTS {
         source_files(&root.join(folder), &mut files);
     }
@@ -263,12 +265,14 @@ fn is_a_name(word: &str) -> bool {
 
 fn name_of(span: &str) -> Option<&str> {
     let called = span.strip_suffix("()").unwrap_or(span);
+
     if !called
         .chars()
         .all(|letter| letter.is_ascii_alphanumeric() || letter == '_' || letter == ':')
     {
         return None;
     }
+
     let last = called.rsplit("::").next()?;
     is_a_name(last).then_some(last)
 }
@@ -294,11 +298,14 @@ fn every_function_a_rule_names_is_written_somewhere_in_the_source() {
     let mut missing = Vec::new();
     let mut named = BTreeSet::new();
     let rules = fs::read_dir(root.join(RULES)).expect("the rules folder");
+
     for entry in rules.flatten() {
         let path = entry.path();
+
         if path.extension().is_none_or(|extension| extension != "md") {
             continue;
         }
+
         let text = fs::read_to_string(&path).expect("a readable rule");
         for name in names_in(&text) {
             if !written_by_others(&name) && !written.contains(&name) {
@@ -314,6 +321,7 @@ fn every_function_a_rule_names_is_written_somewhere_in_the_source() {
         .copied()
         .filter(|name| !named.contains(*name))
         .collect();
+
     assert!(
         unnamed.is_empty(),
         "names set aside as other programs' that no rule names:\n{}",

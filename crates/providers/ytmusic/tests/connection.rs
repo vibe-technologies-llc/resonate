@@ -42,6 +42,7 @@ fn a_connection_is_checked_on_the_album_song_alone() {
     told(&fake, cookies());
 
     let calls = fake.calls();
+
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].last().map(String::as_str), Some(CHECKED_WITH));
 }
@@ -66,6 +67,7 @@ fn a_check_asks_though_a_lapse_was_noted_and_a_good_answer_clears_it() {
     assert_eq!(fake.calls().len(), 2, "a lapse heard again stands");
 
     fs::write(fake.folder().join("exported"), b"").expect("the cookies exported again");
+
     assert_eq!(music.check(), Connection::Premium);
     assert_eq!(fake.calls().len(), 3);
 
@@ -117,9 +119,11 @@ fn the_check_song_gone_leaves_a_lapse_standing() {
     let tool = fake.tool(cookies());
     let music = YtMusic::new(tool.clone());
     let song = VideoId::read("abc").expect("a video id");
+
     assert!(matches!(tool.formats(&song), Err(Error::Unwelcome { .. })));
 
     fs::write(fake.folder().join("taken-down"), b"").expect("the check song taken down");
+
     assert_eq!(music.check(), Connection::CheckSongGone);
 
     assert!(matches!(tool.formats(&song), Err(Error::Unwelcome { .. })));

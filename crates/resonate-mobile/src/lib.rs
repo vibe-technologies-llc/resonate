@@ -363,10 +363,12 @@ impl MobilePlayer {
             op: StoreOp::CreateFolder,
             source,
         })?;
+
         let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
         let documents: Arc<dyn Documents> = Arc::from(documents);
         let files = Arc::clone(&documents);
         let served = Arc::new(served::Served::default());
+
         let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
             served.sources(Sources::local().spooling_under(Path::new(&folder).to_path_buf())),
             |sources, scheme| {
@@ -378,16 +380,19 @@ impl MobilePlayer {
         let routing = Arc::new(output::Routing::new());
         let kept = catalog.kept_zones()?;
         let rendering = rendering::Rendering::on_the_network();
+
         rendering.taught_from(&catalog)?;
         if kept.iter().any(|zone| zone.renderer.is_some()) {
             rendering.look_behind();
         }
+
         let config = EngineConfig {
             volume: zoning::first_zones_volume(&kept),
             sink: zoning::first_zones_sink(&kept),
             ..EngineConfig::default()
         };
         let kinds = rendering.kinds();
+
         let player = output::player(config, Arc::clone(&sources), &routing, kinds.clone())?;
         let engines: Box<zoning::Engines> = {
             let sources = Arc::clone(&sources);
@@ -397,6 +402,7 @@ impl MobilePlayer {
                 },
             )
         };
+
         let playing = zoning::Playing::start(
             player,
             routing,
@@ -421,9 +427,12 @@ impl MobilePlayer {
             offered: offering::Offered::under(PathBuf::from(&folder)),
             releases: resonate_online::KeptRelease::in_folder(Path::new(&folder)),
         });
+
         this.downloads.stall_by(this.services.downloads.clone());
         this.services.files.reach_through(files);
+
         let carried_over = this.catalog.carries_queues_over()?;
+
         if carried_over {
             this.resume_saved_in(ZoneId::FIRST)?;
         }
@@ -444,6 +453,7 @@ impl MobilePlayer {
         modified_ms: i64,
     ) -> Result<Track> {
         let stamp = DocumentStamp::of(size, modified_ms);
+
         if let Some(stamp) = stamp
             && let Some(known) = self.catalog.unchanged(&uri, stamp)?
         {
@@ -475,6 +485,7 @@ impl MobilePlayer {
     ) -> Result<(Track, NamedByTheFile)> {
         let (info, picture) = probe_pictured(&self.sources, &location(&uri)?, Picturing::Copied)?;
         let mut named = info.tags.clone();
+
         let by_the_file = named_by_the_file(&name, &mut named);
         let duration_ms = info.duration.map_or(0, |frames| {
             frames
@@ -487,6 +498,7 @@ impl MobilePlayer {
             duration_ms,
         };
         let uri = self.spelled_as_held(uri, &name, spelled, &probed)?;
+
         let track = self.catalog.upsert_named(
             Track {
                 id: 0,
@@ -503,6 +515,7 @@ impl MobilePlayer {
             },
             by_the_file,
         )?;
+
         self.services.analyses.lock().remove(&track.id);
         self.catalog.tagged(track.id, &info, stamp)?;
         if let Some(picture) = picture.into_copied() {
@@ -533,6 +546,7 @@ impl MobilePlayer {
     pub fn queue_window(&self, heard_at_most: u32, ahead_at_most: u32) -> Result<QueueWindow> {
         let player = self.playing.player()?;
         let rows = player.queued().rows;
+
         let shown = Shown::around(
             player.state().queue_position,
             rows.len(),
@@ -566,6 +580,7 @@ impl MobilePlayer {
             })
             .collect::<Result<Vec<_>>>()?;
         let items = self.as_chosen(items)?;
+
         if !autoplay {
             return self.command_landed(Command::Resume(Resumption {
                 rows: items
@@ -628,7 +643,9 @@ impl MobilePlayer {
 
     pub fn configure_playback(&self, preferences: PlaybackPreferences) -> Result<()> {
         let mut previous = self.preferences.lock();
+
         let commands = preferences.commands(&previous)?;
+
         if preferences.carries_the_queue_over != self.catalog.carries_queues_over()? {
             self.catalog
                 .carry_queues_over(preferences.carries_the_queue_over)?;
@@ -647,6 +664,7 @@ impl MobilePlayer {
     pub fn seek(&self, position_ms: u64) -> Result<()> {
         let player = self.playing.player()?;
         let (state, queue) = (player.state(), player.queued());
+
         if holds_a_place_to_seek(&state, &queue.rows) {
             self.command(Command::SeekToMoment(Duration::from_millis(position_ms)))?;
         }
@@ -655,6 +673,7 @@ impl MobilePlayer {
 
     pub fn jump_to_at(&self, index: u32, position_ms: u64) -> Result<()> {
         let rows = self.playing.player()?.queued().rows;
+
         self.command(Command::JumpTo(index as usize))?;
         if position_ms > 0 && rows.get(index as usize).is_some() {
             self.command(Command::SeekToMoment(Duration::from_millis(position_ms)))?;
@@ -675,7 +694,9 @@ impl MobilePlayer {
             let events = player.events().try_iter().collect::<Vec<_>>();
             (events, player.state(), player.queued())
         };
+
         self.take_in(&zoned, events, &queue.rows);
+
         let waiting = Self::still_waiting(&zoned, &state);
         let heard = self.heard(&state, &queue.rows);
         let queue_revision = queue.revision;
@@ -727,6 +748,7 @@ impl MobilePlayer {
         self.configure_online(false);
         self.cancel_analysis();
         self.downloads.cancel_every_job();
+
         let finished = self.finish_listening();
         let saved = self.save();
         let stopped = match self.playing.take() {
@@ -747,24 +769,29 @@ impl MobilePlayer {
 
     fn save_zone(&self, zone: &resonate_engine::Zone, following: bool) -> Result<()> {
         self.keep_volume_of(zone)?;
+
         let zoned = self.playing.zoned(zone.id)?;
         let mut saved = zoned.saved.lock();
         let (place, queue, rate) = {
             let state = zone.player.state();
             let queue = zone.player.queued();
+
             let Some(place) = place_saved(following, &state, &queue.rows, queue.revision) else {
                 return Ok(());
             };
             let rate = state.current.map(|track| track.source.rate.hz());
             (place, queue, rate)
         };
+
         if saved.as_ref() == Some(&place) {
             return Ok(());
         }
+
         let served_playing = queue
             .rows
             .get(place.row as usize)
             .is_some_and(|item| served::Served::names(&item.location));
+
         if saved
             .as_ref()
             .is_some_and(|saved| saved.arranged_as(&place))
@@ -794,6 +821,7 @@ impl MobilePlayer {
                 shuffle: place.shuffle,
                 next: queue.next,
             };
+
             let (kept, passed) = arranged.retained(|at, item| {
                 if served::Served::names(&item.location) {
                     return Some(catalog::KeptRow::Served(catalog::KeptServed {
@@ -808,6 +836,7 @@ impl MobilePlayer {
             } else {
                 place.position_ms
             };
+
             self.catalog.save_rows_of(zone.id, &kept, position_ms)?;
             if passed.any {
                 *saved = None;
@@ -820,9 +849,11 @@ impl MobilePlayer {
 
     pub(crate) fn resume_saved_in(&self, zone: ZoneId) -> Result<()> {
         let (kept, position) = self.catalog.resume_rows_of(zone)?;
+
         if kept.is_empty() {
             return Ok(());
         }
+
         let ids: Vec<u64> = kept
             .rows
             .iter()
@@ -834,6 +865,7 @@ impl MobilePlayer {
         let mut tracks = self.catalog.tracks_by_id(&ids)?.into_iter();
         let place = kept.row;
         let mut playing_rate = None;
+
         let (resumed, _) = kept.retained(|row, held| {
             let (resumable, its_rate) = match held {
                 catalog::KeptRow::Document(_) => {
@@ -851,6 +883,7 @@ impl MobilePlayer {
                 catalog::KeptRow::Served(served) => {
                     let location = MediaLocation::from_uri(&served.song.uri)?;
                     let its_rate = served.rate.and_then(|rate| SampleRate::new(rate).ok());
+
                     self.served.kept(std::slice::from_ref(&served.song));
                     (
                         Resumable {
@@ -862,6 +895,7 @@ impl MobilePlayer {
                     )
                 }
             };
+
             if row == place {
                 playing_rate = its_rate;
             }
@@ -872,6 +906,7 @@ impl MobilePlayer {
             Duration::from_millis(at_ms),
             playing_rate.unwrap_or(SampleRate::HZ_48000),
         );
+
         self.playing
             .send_to(zone, Command::Resume(resumed.resumption(at)))?;
         Ok(())
@@ -894,6 +929,7 @@ impl MobilePlayer {
                         .flatten()
                         .unwrap_or_else(|| Track::gone(&item.location))
                 };
+
                 track.queue_id = Some(item.id.get());
                 track
             })
@@ -902,11 +938,14 @@ impl MobilePlayer {
 
     fn queue_track(&self, rows: &QueueRows, id: TrackId) -> Option<Track> {
         let item = rows.iter().find(|item| item.id == id)?;
+
         if served::Served::names(&item.location) {
             return Some(self.served.track_of(item));
         }
+
         let uri = document_uri(&item.location).ok()?;
         let mut track = self.catalog.kept_track_uri(&uri).ok()?;
+
         track.queue_id = Some(item.id.get());
         Some(track)
     }
@@ -973,10 +1012,13 @@ mod tests {
     #[test]
     fn a_queue_row_whose_catalog_row_is_gone_stays_listed_beside_the_rows_that_are_held() {
         let harness = crate::harness::Harness::new();
+
         harness.resumed("abc", 1, 0);
+
         let rows = harness.queue_ids();
 
         row_gone_from_the_catalog(&harness, 'b');
+
         let queue = harness.player.queue().expect("a queue past a gone row");
 
         assert_eq!(queue.len(), 3);
@@ -993,6 +1035,7 @@ mod tests {
     fn a_saved_row_whose_uri_does_not_read_is_passed_over_and_the_place_follows_the_song() {
         let harness = crate::harness::Harness::new();
         let ids = harness.ids("abcd");
+
         harness
             .player
             .catalog
@@ -1013,6 +1056,7 @@ mod tests {
             .player
             .resume_saved_in(ZoneId::FIRST)
             .expect("a resumption past a row that does not read");
+
         let resumed = harness.settled(|snapshot| snapshot.current.is_some());
 
         assert_eq!(harness.queued(), "bcd");
@@ -1050,6 +1094,7 @@ mod tests {
     #[test]
     fn a_shuffled_queue_comes_back_shuffled_with_its_list_order_and_the_rows_played_next() {
         let harness = crate::harness::Harness::new();
+
         harness.resumed("abcd", 0, 0);
         harness.player.set_shuffle(true).expect("shuffle on");
         harness.settled(|snapshot| snapshot.shuffle);
@@ -1058,6 +1103,7 @@ mod tests {
             .play_next(harness.ids("c"))
             .expect("a row played next");
         harness.settled(|snapshot| snapshot.next_count == 1);
+
         let saved = arrangement(&harness);
 
         harness.player.save().expect("a save");
@@ -1067,6 +1113,7 @@ mod tests {
             .resume_saved_in(ZoneId::FIRST)
             .expect("the saved queue resumed");
         harness.settled(|snapshot| snapshot.shuffle && snapshot.next_count == 1);
+
         let resumed = arrangement(&harness);
 
         assert!(saved.2);
@@ -1095,6 +1142,7 @@ mod tests {
     #[test]
     fn the_queue_is_read_as_a_window_around_the_row_playing() {
         let harness = crate::harness::Harness::new();
+
         harness.resumed("abcd", 2, 0);
 
         let window = harness.player.queue_window(1, 0).expect("a window");
@@ -1126,6 +1174,7 @@ mod tests {
     #[test]
     fn a_jump_with_a_place_lands_there_whatever_rate_the_catalog_names() {
         let harness = crate::harness::Harness::new();
+
         harness.resumed("abc", 0, 0);
         harness
             .player
@@ -1139,6 +1188,7 @@ mod tests {
             .expect("a rate");
 
         harness.player.jump_to_at(2, 500).expect("a jump");
+
         let landed = harness.settled(|snapshot| {
             snapshot.position_ms > 0
                 && snapshot

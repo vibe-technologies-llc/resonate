@@ -34,13 +34,17 @@ pub struct Session {
 
 fn client_trusting(certificate: CertificateDer<'static>) -> ClientConfig {
     let mut roots = RootCertStore::empty();
+
     roots.add(certificate).expect("a root");
+
     let mut tls = rustls::ClientConfig::builder_with_provider(Arc::new(default_provider()))
         .with_protocol_versions(&[&TLS13])
         .expect("a version")
         .with_root_certificates(roots)
         .with_no_client_auth();
+
     tls.alpn_protocols = vec![SERVER_ALPN.to_vec()];
+
     let crypto = QuicClientConfig::try_from(tls).expect("a configuration");
 
     ClientConfig::new(Arc::new(crypto))
@@ -52,11 +56,13 @@ pub fn serving_with(limits: Limits) -> Serving {
         .and_then(|params| params.self_signed(&signing))
         .expect("a certificate");
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
+
     let config = serving(vec![certificate.der().clone()], key).expect("a configuration");
     let endpoint =
         listening(config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("listening");
     let address = endpoint.local_addr().expect("an address");
     let server = Server::new(Store::in_memory().expect("a store"), limits);
+
     tokio::spawn(server.serve(endpoint));
 
     Serving {
@@ -67,7 +73,9 @@ pub fn serving_with(limits: Limits) -> Serving {
 
 async fn connected(serving: &Serving) -> (Endpoint, Connection) {
     let mut client = Endpoint::client(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("client");
+
     client.set_default_client_config(client_trusting(serving.certificate.clone()));
+
     let connection = client
         .connect(serving.address, "localhost")
         .expect("connecting")
@@ -89,6 +97,7 @@ pub async fn welcomed(serving: &Serving, device: u8) -> Session {
     };
 
     send_frame(&mut send, &hello.encoded()).await.expect("said");
+
     let welcome = read_frame(&mut recv).await.expect("read").expect("a frame");
 
     assert!(matches!(
@@ -138,6 +147,7 @@ async fn frames_announced_across_sessions_past_what_the_server_holds_are_refused
 
     announce(&mut first.send, announced).await;
     announce(&mut second.send, announced).await;
+
     let refused = timeout(
         SERVER_ENDS_THE_CONNECTION_WITHIN,
         whichever_is_refused(&mut first.recv, &mut second.recv),
@@ -161,6 +171,7 @@ async fn first_frames_still_arriving_hold_their_bytes_from_every_other_session()
 
     announce(&mut first_greeting, first_frame).await;
     announce(&mut second_greeting, first_frame).await;
+
     let refused = timeout(
         SERVER_ENDS_THE_CONNECTION_WITHIN,
         whichever_is_refused(&mut first_answers, &mut second_answers),
@@ -181,7 +192,9 @@ async fn a_first_frame_announced_past_the_ceiling_ends_the_connection_without_wa
     let (mut send, _recv) = connection.open_bi().await.expect("a stream");
 
     let announced = 20 * MEBIBYTE;
+
     assert!(usize::try_from(announced).expect("a size") > FIRST_FRAME_AT_MOST);
+
     announce(&mut send, announced).await;
 
     let ended = timeout(SERVER_ENDS_THE_CONNECTION_WITHIN, connection.closed()).await;

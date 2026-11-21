@@ -1,4 +1,4 @@
-#![deny(clippy::print_stdout, clippy::print_stderr)]
+#![deny(clippy::print_stderr, clippy::print_stdout)]
 use resonate_core::Switch;
 
 #[macro_use]
@@ -172,7 +172,9 @@ const DEFAULT_LOG: &str = "warn,resonate=info,symphonia=off";
 
 fn main() -> ExitCode {
     gaming::watch();
+
     let ran = run();
+
     providers::stop_the_tools();
     match ran {
         Ok(()) => ExitCode::SUCCESS,
@@ -185,6 +187,7 @@ fn main() -> ExitCode {
 
 fn report(error: &(dyn std::error::Error + 'static)) {
     told!("resonate: {error}");
+
     let mut source = error.source();
     while let Some(cause) = source {
         told!("  caused by: {cause}");
@@ -211,6 +214,7 @@ fn init_logging() -> Result<()> {
     let written = fmt::layer().with_writer(io::stderr);
     #[cfg(windows)]
     let written = written.with_ansi(readout::understands_escapes());
+
     tracing_subscriber::registry()
         .with(filter)
         .with(written)
@@ -240,8 +244,11 @@ fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
 
 fn run() -> Result<()> {
     let arguments: Vec<_> = env::args_os().collect();
+
     resonate_words::speak(config::spoken_before_the_grammar(&arguments));
+
     let cli = cli::parsed_from(arguments);
+
     one_way_on_bit_perfect(&cli)?;
     #[cfg(all(windows, feature = "ui"))]
     if cli.command.is_none() {
@@ -250,7 +257,9 @@ fn run() -> Result<()> {
     init_logging()?;
     #[cfg(windows)]
     name_the_process();
+
     let config = config::load(cli.config.as_deref())?;
+
     resonate_words::speak(config.language_spoken());
     resonate_words::settle(&config.region().conventions());
 
@@ -352,11 +361,13 @@ fn run() -> Result<()> {
             album,
         }) => {
             let library = open_library(&cli, &config)?;
+
             if let Some(title) = dismiss {
                 let narrowing = wanting::Narrowing {
                     artist: artist.as_deref(),
                     album: album.as_deref(),
                 };
+
                 return wanting::dismiss(&library, title, narrowing);
             }
             if let Some(title) = dismiss_release {
@@ -365,10 +376,12 @@ fn run() -> Result<()> {
             if *bring_back {
                 said!("{}", brought_back(library.bring_back_dismissed()?));
             }
+
             let held = match artist.as_deref() {
                 Some(named) => Some((named, held_artist(&library, named)?)),
                 None => None,
             };
+
             if *read_the_rest && let Some((named, id)) = held {
                 read_the_rest_of(&library, &config, named, id)?;
             }
@@ -601,6 +614,7 @@ const fn made_where_asked(cli: &Cli, config: &Config) -> bool {
 
 fn vault_already_kept(cli: &Cli, config: &Config) -> Option<Arc<Vault>> {
     let path = vault_path(cli, config).ok()?;
+
     if !path.is_dir() && cli.vault.is_none() {
         if config.vault.is_some() {
             tracing::warn!(
@@ -611,6 +625,7 @@ fn vault_already_kept(cli: &Cli, config: &Config) -> Option<Arc<Vault>> {
         }
         return None;
     }
+
     let opened = if cli.vault.is_some() {
         Vault::make(path)
     } else {
@@ -631,6 +646,7 @@ fn sources_over(vault: Option<&Arc<Vault>>) -> Arc<Sources> {
 
 fn held_over(vault: Option<&Arc<Vault>>) -> Sources {
     let mut sources = Sources::local();
+
     if let Some(vault) = vault {
         sources = sources.and(Arc::new(VaultFiles::over(vault)));
     }
@@ -654,6 +670,7 @@ fn open_library_with(cli: &Cli, config: &Config, vault: Option<&Arc<Vault>>) -> 
         Some(vault) => Library::open_with_vault(&path, Arc::clone(vault))?,
         None => Library::open(&path)?,
     };
+
     library.filter_music(config.music_filters());
     stop_telling_what_has_no_account(&library, config);
     age_the_history(&library, config.history_kept());

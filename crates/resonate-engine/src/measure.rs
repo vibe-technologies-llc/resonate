@@ -52,6 +52,7 @@ impl Measuring {
         let stop = Arc::new(AtomicBool::new(false));
         let lands = Arc::clone(&landed);
         let stopped = Arc::clone(&stop);
+
         let spawned = thread::Builder::new()
             .name("resonate-peak".into())
             .spawn(move || {
@@ -60,6 +61,7 @@ impl Measuring {
                     Some(None) => Measured::Unmeasured,
                     None => return,
                 };
+
                 *lands.lock() = Some(measured);
             });
         match spawned {
@@ -99,8 +101,10 @@ fn loudest(
             return Some(None);
         }
     };
+
     decoder.set_output_format(SampleFormat::F32);
     decoder.follow_format_changes();
+
     let mut meter = meter_for(info.spec);
     let mut loudest = 0.0_f64;
     let mut block = AudioBuffer::empty(StreamSpec::new(
@@ -108,6 +112,7 @@ fn loudest(
         info.spec.channels,
         SampleFormat::F32,
     ));
+
     loop {
         if stop.load(Ordering::Relaxed) {
             return None;
@@ -168,6 +173,7 @@ mod tests {
 
     fn chained(scratch: &Path, links: &[Link]) -> Option<PathBuf> {
         let mut whole = Vec::new();
+
         for (index, link) in links.iter().enumerate() {
             let part = scratch.join(format!("{index}.ogg"));
             let tone = format!(
@@ -180,6 +186,7 @@ mod tests {
             } else {
                 "anull"
             };
+
             let made = Command::new("ffmpeg")
                 .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tone])
                 .args(["-af", filter])
@@ -189,13 +196,16 @@ mod tests {
                 .stderr(Stdio::null())
                 .status()
                 .is_ok_and(|status| status.success());
+
             if !made {
                 eprintln!("skipped: no ffmpeg with libvorbis to write a link");
                 return None;
             }
             whole.extend_from_slice(&fs::read(&part).ok()?);
         }
+
         let path = scratch.join("chained.ogg");
+
         fs::write(&path, whole).ok()?;
         Some(path)
     }
@@ -203,7 +213,9 @@ mod tests {
     #[test]
     fn a_peak_is_the_loudest_of_every_shape_a_stream_turns_through() {
         let scratch = Scratch(env::temp_dir().join(format!("resonate-peak-{}", process::id())));
+
         fs::create_dir_all(&scratch.0).expect("a scratch folder");
+
         let Some(path) = chained(
             &scratch.0,
             &[
@@ -232,6 +244,7 @@ mod tests {
         let Some(Some(peak)) = peak else {
             panic!("a stream that turns went unmeasured: {peak:?}");
         };
+
         assert!(
             (peak.get() - LOUD).abs() < PEAK_AGREES_WITHIN,
             "{}",

@@ -58,6 +58,7 @@ fn scratch(name: &str) -> PathBuf {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos())
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder
 }
@@ -76,6 +77,7 @@ fn hosted_over(folder: &Path, store: Store) -> Hosted {
         STANDARD.encode(certificate.der())
     );
     let trusted = folder.join("server.pem");
+
     fs::write(&trusted, pem).expect("written");
 
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
@@ -84,12 +86,14 @@ fn hosted_over(folder: &Path, store: Store) -> Hosted {
         .enable_all()
         .build()
         .expect("a runtime");
+
     let endpoint = {
         let _entered = runtime.enter();
         listening(config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("listening")
     };
     let address = endpoint.local_addr().expect("an address");
     let server = Server::new(store, Limits::default());
+
     runtime.spawn(server.serve(endpoint));
     Hosted {
         address,
@@ -141,6 +145,7 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + SETTLES_WITHIN;
     while !done() {
         assert!(Instant::now() < deadline, "{what} never happened");
+
         thread::sleep(Duration::from_millis(100));
     }
 }
@@ -152,6 +157,7 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Summer", &["A", "B"]);
     desk_shelf.favour_here("B", true);
 
@@ -175,10 +181,12 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
     eventually("the playlist arriving", || {
         phone_shelf.playlist_named("Summer").is_some()
     });
+
     assert_eq!(
         phone_shelf.playlist_named("Summer").expect("arrived").1,
         ["A"]
     );
+
     eventually("both devices seeing each other online", || {
         phone
             .shown()
@@ -186,13 +194,16 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
             .iter()
             .any(|seen| seen.name == "Desk" && seen.online)
     });
+
     assert_eq!(phone.shown().standing, Standing::Connected);
 
     phone.fetch(vec![song("B")], desk.device());
     eventually("the song arriving from the desk", || {
         phone_shelf.holds_title("B")
     });
+
     assert_eq!(phone_shelf.bytes_of("B"), desk_shelf.bytes_of("B"));
+
     eventually("the playlist taking the song in", || {
         phone_shelf.playlist_named("Summer").expect("held").1 == ["A", "B"]
     });
@@ -201,6 +212,7 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
     });
 
     let (on_phone, _) = phone_shelf.playlist_named("Summer").expect("held");
+
     phone_shelf.rename_playlist(on_phone, "Summer days");
     eventually("the rename reaching the desk", || {
         desk_shelf.playlist_named("Summer days").is_some()
@@ -208,6 +220,7 @@ fn two_devices_of_one_key_share_playlists_and_songs_through_the_server_and_each_
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -227,6 +240,7 @@ fn a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_i
         disc_total: Some(2),
         compilation: true,
     };
+
     desk_shelf.declare("A", declared.clone());
 
     let desk = device(
@@ -245,6 +259,7 @@ fn a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_i
         Arc::clone(&phone_shelf),
         Follow::default(),
     );
+
     eventually("both devices seeing each other online", || {
         phone
             .shown()
@@ -263,6 +278,7 @@ fn a_song_fetched_from_a_device_arrives_with_the_tags_that_device_declares_for_i
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -295,6 +311,7 @@ fn a_saved_query_travels_through_the_server_as_text_and_follows_its_revision_and
     eventually("the query arriving", || {
         phone_shelf.query_named("Recent").is_some()
     });
+
     assert_eq!(
         phone_shelf.query_named("Recent").expect("arrived").1,
         Some("added:<30d".to_owned())
@@ -312,6 +329,7 @@ fn a_saved_query_travels_through_the_server_as_text_and_follows_its_revision_and
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -322,7 +340,9 @@ fn a_device_following_favourites_fetches_them_when_the_other_is_online() {
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
+
     let follow = Follow {
         favourites: true,
         ..Follow::default()
@@ -336,9 +356,11 @@ fn a_device_following_favourites_fetches_them_when_the_other_is_online() {
         Arc::clone(&desk_shelf),
         Follow::default(),
     );
+
     eventually("the desk connecting", || {
         desk.shown().standing == Standing::Connected
     });
+
     let phone = device(
         &hosted,
         &folder,
@@ -351,10 +373,12 @@ fn a_device_following_favourites_fetches_them_when_the_other_is_online() {
     eventually("the favourite song arriving", || {
         phone_shelf.holds_title("A")
     });
+
     assert!(!phone_shelf.holds_title("B"));
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -382,6 +406,7 @@ fn a_forced_sync_reconnects_to_the_server_and_carries_on() {
         Arc::clone(&phone_shelf),
         Follow::default(),
     );
+
     eventually("both connecting", || {
         desk.shown().standing == Standing::Connected
             && phone.shown().standing == Standing::Connected
@@ -399,6 +424,7 @@ fn a_forced_sync_reconnects_to_the_server_and_carries_on() {
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -408,6 +434,7 @@ fn a_device_of_another_key_sees_nothing_of_the_first() {
     let hosted = hosted(&folder);
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let stranger_shelf = Arc::new(Shelf::holding(&["A"]));
+
     desk_shelf.make_playlist("Private", &["A"]);
 
     let desk = device(
@@ -426,6 +453,7 @@ fn a_device_of_another_key_sees_nothing_of_the_first() {
         Arc::clone(&stranger_shelf),
         Follow::default(),
     );
+
     eventually("both connecting", || {
         desk.shown().standing == Standing::Connected
             && stranger.shown().standing == Standing::Connected
@@ -443,6 +471,7 @@ fn a_device_of_another_key_sees_nothing_of_the_first() {
 
     drop(stranger);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -453,7 +482,9 @@ fn a_song_reaches_a_device_the_other_can_only_reach_through_the_servers_relay() 
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
+
     let follow = Follow {
         favourites: true,
         ..Follow::default()
@@ -468,9 +499,11 @@ fn a_song_reaches_a_device_the_other_can_only_reach_through_the_servers_relay() 
         Follow::default(),
         true,
     );
+
     eventually("the desk connecting", || {
         desk.shown().standing == Standing::Connected
     });
+
     let phone = device_reaching(
         &hosted,
         &folder,
@@ -484,11 +517,13 @@ fn a_song_reaches_a_device_the_other_can_only_reach_through_the_servers_relay() 
     eventually("the favourite song arriving through the relay", || {
         phone_shelf.holds_title("A")
     });
+
     assert_eq!(phone_shelf.bytes_of("A"), desk_shelf.bytes_of("A"));
     assert!(!phone_shelf.holds_title("B"));
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -499,6 +534,7 @@ fn a_device_dialling_directly_still_reaches_one_that_dials_only_through_the_rela
     let key = SyncKey::minted().expect("a key");
     let desk_shelf = Arc::new(Shelf::holding(&["A"]));
     let phone_shelf = Arc::new(Shelf::holding(&[]));
+
     desk_shelf.favour_here("A", true);
 
     let desk = device_reaching(
@@ -510,9 +546,11 @@ fn a_device_dialling_directly_still_reaches_one_that_dials_only_through_the_rela
         Follow::default(),
         true,
     );
+
     eventually("the desk connecting", || {
         desk.shown().standing == Standing::Connected
     });
+
     let phone = device(
         &hosted,
         &folder,
@@ -531,6 +569,7 @@ fn a_device_dialling_directly_still_reaches_one_that_dials_only_through_the_rela
 
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -542,7 +581,9 @@ fn a_song_deleted_from_every_device_leaves_those_that_let_it_through_the_server(
     let desk_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let phone_shelf = Arc::new(Shelf::holding(&["A", "B"]));
     let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+
     laptop_shelf.inside.lock().refuses_deletions = true;
+
     let joined = |name: &str, shelf: &Arc<Shelf>| {
         device(
             &hosted,
@@ -556,6 +597,7 @@ fn a_song_deleted_from_every_device_leaves_those_that_let_it_through_the_server(
     let desk = joined("Desk", &desk_shelf);
     let phone = joined("Phone", &phone_shelf);
     let laptop = joined("Laptop", &laptop_shelf);
+
     eventually("every device meeting the others", || {
         [&desk, &phone, &laptop]
             .iter()
@@ -580,6 +622,7 @@ fn a_song_deleted_from_every_device_leaves_those_that_let_it_through_the_server(
     drop(laptop);
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }
 
@@ -587,12 +630,14 @@ const SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE: usize = 760;
 
 fn words_deflate_hardly_shortens(seed: u64) -> String {
     const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+
     let mut state = seed.wrapping_mul(0x9e37_79b9_7f4a_7c15) | 1;
     (0..LONGEST_SHARED_LYRICS)
         .map(|_| {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
+
             let at = usize::try_from(state % LETTERS.len() as u64).expect("an index");
             char::from(LETTERS[at])
         })
@@ -610,6 +655,7 @@ fn lyrics_of(at: usize) -> Answer {
 fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_up_from_it() {
     let folder = scratch("compacted-in-parts");
     let kept_at = folder.join("server.sqlite");
+
     let hosted = hosted_over(&folder, Store::open(&kept_at).expect("a store"));
     let key = SyncKey::minted().expect("a key");
     let space = key.derived().expect("derived").space;
@@ -618,9 +664,11 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
         .collect::<Vec<_>>();
     let held = titles.iter().map(String::as_str).collect::<Vec<_>>();
     let desk_shelf = Arc::new(Shelf::holding(&held));
+
     for (at, title) in titles.iter().enumerate() {
         desk_shelf.answer_here(title, lyrics_of(at));
     }
+
     let watching = Store::open(&kept_at).expect("the server's store, read beside it");
 
     let desk = device(
@@ -631,10 +679,12 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
         Arc::clone(&desk_shelf),
         Follow::default(),
     );
+
     eventually("every lyric reaching the server", || {
         let shown = desk.shown();
         shown.settled && shown.owed == 0 && watching.head(space).is_ok_and(|(head, _)| head > 0)
     });
+
     let phone_shelf = Arc::new(Shelf::holding(&held));
     let phone = device(
         &hosted,
@@ -644,6 +694,7 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
         Arc::clone(&phone_shelf),
         Follow::default(),
     );
+
     eventually("the server holding a snapshot past a frame's share", || {
         watching
             .snapshot(space)
@@ -653,6 +704,7 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
                 snapshot.parts.iter().map(Vec::len).sum::<usize>() > LARGEST_FRAME / 2
             })
     });
+
     let tablet_shelf = Arc::new(Shelf::holding(&held));
     let tablet = device(
         &hosted,
@@ -662,17 +714,20 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
         Arc::clone(&tablet_shelf),
         Follow::default(),
     );
+
     eventually("every lyric reaching the tablet", || {
         tablet_shelf.inside.lock().answers.len() == SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE
     });
 
     let (_, through) = watching.head(space).expect("the head");
     let last = SONGS_WHOSE_LYRICS_PASS_A_FRAMES_SHARE - 1;
+
     assert!(through > 0);
     assert_eq!(tablet_shelf.answers_of(&titles[last]), [lyrics_of(last)]);
 
     drop(tablet);
     drop(phone);
     drop(desk);
+
     let _ = fs::remove_dir_all(&folder);
 }

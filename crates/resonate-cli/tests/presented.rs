@@ -48,6 +48,7 @@ fn the_desktop_entry_and_the_metainfo_say_what_the_catalog_says_in_every_languag
 
     for language in Language::ALL {
         resonate_words::speak(language);
+
         let said = resonate_cli::presented();
 
         assert_eq!(

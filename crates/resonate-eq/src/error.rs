@@ -3,14 +3,14 @@ use std::{io, path::PathBuf, result};
 use resonate_core::SourceId;
 use thiserror::Error;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum EqOp {
     Index,
     Fetch,
     Parse,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StoreOp {
     Read,
     Write,

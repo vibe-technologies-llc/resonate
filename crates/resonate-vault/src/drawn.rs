@@ -36,8 +36,10 @@ impl Drawings {
     pub(crate) fn drawn(&self, key: VaultKey) -> Option<CoverArt> {
         let mut held = self.held.lock();
         let at = held.newest_last.iter().position(|(held, _)| *held == key)?;
+
         let found = held.newest_last.remove(at)?;
         let art = found.1.clone();
+
         held.newest_last.push_back(found);
         Some(art)
     }
@@ -48,17 +50,20 @@ impl Drawings {
 
     pub(crate) fn forget(&self, key: VaultKey) {
         let mut held = self.held.lock();
+
         held.taken(key);
         held.forgotten = Forgetting(held.forgotten.0.wrapping_add(1));
     }
 
     pub(crate) fn note(&self, key: VaultKey, art: &CoverArt, drawn_after: Forgetting) {
         let weight = art.bytes.len();
+
         if weight > DRAWN_BYTES_AT_MOST {
             return;
         }
 
         let mut held = self.held.lock();
+
         if held.forgotten != drawn_after {
             return;
         }
@@ -67,6 +72,7 @@ impl Drawings {
             let Some((_, gone)) = held.newest_last.pop_front() else {
                 break;
             };
+
             held.bytes -= gone.bytes.len();
         }
         held.bytes += weight;
@@ -91,6 +97,7 @@ mod tests {
 
     fn key(first: u8) -> VaultKey {
         let mut bytes = [0; 16];
+
         bytes[0] = first;
         VaultKey::of(bytes)
     }
@@ -98,6 +105,7 @@ mod tests {
     #[test]
     fn a_drawing_noted_is_handed_back_and_a_key_never_noted_is_not() {
         let drawings = Drawings::default();
+
         drawings.note(key(1), &art(10), drawings.forgetting());
 
         assert_eq!(drawings.drawn(key(1)), Some(art(10)));
@@ -108,9 +116,11 @@ mod tests {
     fn the_drawing_asked_for_least_lately_goes_first_once_the_bound_is_reached() {
         let drawings = Drawings::default();
         let third = DRAWN_BYTES_AT_MOST / 3;
+
         drawings.note(key(1), &art(third), drawings.forgetting());
         drawings.note(key(2), &art(third), drawings.forgetting());
         drawings.note(key(3), &art(third), drawings.forgetting());
+
         assert!(drawings.drawn(key(1)).is_some());
 
         drawings.note(key(4), &art(third), drawings.forgetting());
@@ -124,6 +134,7 @@ mod tests {
     #[test]
     fn a_drawing_heavier_than_the_whole_bound_is_not_held_and_takes_nothing_with_it() {
         let drawings = Drawings::default();
+
         drawings.note(key(1), &art(10), drawings.forgetting());
         drawings.note(key(2), &art(DRAWN_BYTES_AT_MOST + 1), drawings.forgetting());
 
@@ -135,6 +146,7 @@ mod tests {
     fn noting_one_key_twice_weighs_it_once() {
         let drawings = Drawings::default();
         let half = DRAWN_BYTES_AT_MOST / 2;
+
         drawings.note(key(1), &art(half), drawings.forgetting());
         drawings.note(key(1), &art(half), drawings.forgetting());
         drawings.note(key(2), &art(half), drawings.forgetting());
@@ -161,6 +173,7 @@ mod tests {
 
         let drawings = Drawings::default();
         let starting = Barrier::new(THREADS);
+
         thread::scope(|scope| {
             for _ in 0..THREADS {
                 scope.spawn(|| {
@@ -173,6 +186,7 @@ mod tests {
         });
 
         let held = drawings.held.lock();
+
         assert_eq!(held.newest_last.len(), 1);
         assert_eq!(held.bytes, 10);
     }

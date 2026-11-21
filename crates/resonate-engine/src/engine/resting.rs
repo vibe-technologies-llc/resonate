@@ -51,16 +51,20 @@ impl Engine {
         let Some(output) = self.output.as_ref() else {
             return;
         };
+
         if !self.config.bluetooth.on || !output.over_bluetooth || !self.link_is_asleep(output.sink)
         {
             return;
         }
+
         let lead = Frames::from_duration(self.config.bluetooth.lead, output.plan.stream.rate);
+
         output.producer.lead_in(lead);
     }
 
     pub(super) fn let_the_link_rest(&mut self) {
         self.note_what_is_sounding();
+
         let Some(output) = self.output.as_mut() else {
             return;
         };
@@ -68,6 +72,7 @@ impl Engine {
             return;
         };
         let wake = self.config.bluetooth;
+
         if wake.on && since.elapsed() < wake.awake_for {
             return;
         }

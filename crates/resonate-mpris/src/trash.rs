@@ -80,6 +80,7 @@ fn opened_as_itself(file: &Path) -> Result<OwnedFd, Trashing> {
     };
     let opened =
         rustix::fs::open(file, OFlags::PATH | OFlags::CLOEXEC, Mode::empty()).map_err(unopened)?;
+
     let held = rustix::fs::fstat(&opened).map_err(unopened)?;
     let named = rustix::fs::lstat(file).map_err(unopened)?;
 
@@ -134,9 +135,12 @@ mod tests {
     fn a_link_is_never_handed_to_the_portal_and_a_file_is() {
         let folder = env::temp_dir().join(format!("resonate-trash-link-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let song = folder.join("echoes.flac");
         let link = folder.join("linked.flac");
+
         fs::write(&song, b"not a song").expect("a song");
         symlink(&song, &link).expect("a link to the song");
 

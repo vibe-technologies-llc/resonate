@@ -54,12 +54,14 @@ pub struct WantedSong {
 impl MobilePlayer {
     pub fn open_online_link(&self, text: String) -> Result<OnlineCollection> {
         self.require_online()?;
+
         let mut collection = OnlineCollection {
             name: String::new(),
             songs: Vec::new(),
             releases: Vec::new(),
             artists: Vec::new(),
         };
+
         match FollowedLink::read(&text) {
             Some(FollowedLink::Song(_)) => collection.songs = self.search_online(text)?,
             Some(FollowedLink::Album(AlbumLink::Release(id))) => {
@@ -142,9 +144,11 @@ impl MobilePlayer {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
+
         if tracks.is_empty() {
             return Err(Error::NoLocalMatches);
         }
+
         let matched = tracks.len() as u32;
         let id = self.make_playlist(name, tracks)?;
         Ok(ImportedPlaylist {
@@ -161,17 +165,22 @@ impl MobilePlayer {
 
     pub fn index_download(&self, job: u64, uri: String, name: String) -> Result<crate::Track> {
         let job = self.downloads.job(job)?;
+
         job.moved_to(DownloadPhase::Validating)?;
+
         let indexed = self
             .refuse_a_lossy_delivery(&uri, &job.song)
             .and_then(|()| self.indexed_download(uri, name, &job.song));
+
         if matches!(indexed, Err(Error::WrongSong | Error::LossyForAReplacement))
             && let Some(taken_from) = job.taken_from()
             && let Err(error) = self.catalog.note_refused_offer(&job.song, &taken_from)
         {
             tracing::warn!(%error, "a refused delivery could not be remembered");
         }
+
         let track = job.settled(indexed)?;
+
         job.done();
 
         if let Err(error) = self.catalog.variant_landed(&job.song, track.id) {
@@ -232,6 +241,7 @@ impl MobilePlayer {
             PlaylistLink::Spotify(_) | PlaylistLink::SpotifyLiked => ACCOUNT_SONGS_READ_AT_MOST,
             _ => PLAYLIST_SONGS_READ_AT_MOST,
         };
+
         for song in playlist.songs.into_iter().take(read_at_most) {
             match song {
                 ListedSong::Recording(id) => {
@@ -276,10 +286,12 @@ impl MobilePlayer {
         song: &SearchSong,
     ) -> Result<crate::Track> {
         self.validate_download(uri.clone(), song.duration_ms)?;
+
         let (track, by_the_file) =
             self.indexed_and_named(uri, name, None, Absorbing::FoundGone, Spelled::AsHeld)?;
         let identified = |id: &str| Mbid::new(id).ok().map(|id| id.to_string());
         let connection = self.catalog.0.lock();
+
         connection.execute("UPDATE documents SET title = CASE WHEN (?10 OR title = name) AND ?2 != '' THEN ?2 ELSE title END, artist = CASE WHEN (?11 OR artist = '') AND ?3 != '' THEN ?3 ELSE artist END, album = coalesce(nullif(album, ''), ?4), recording = coalesce(recording, ?5), release = coalesce(release, ?6), artist_mbid = coalesce(artist_mbid, ?7), track_number = coalesce(track_number, ?8), disc_number = coalesce(disc_number, ?9) WHERE id = ?1", params![track.id as i64, song.title, song.artist, song.album, identified(&song.recording), identified(&song.release), identified(&song.artist_id), song.position, song.disc, by_the_file.title, by_the_file.artist]).map_err(write_error)?;
         connection
             .execute(
@@ -397,6 +409,7 @@ impl Catalog {
     fn wanted(&self, offset: u32, limit: u32) -> Result<Vec<WantedSong>> {
         let connection = self.0.lock();
         let mut query = connection.prepare("SELECT id, recording, title, artist, album, duration_ms, isrcs, tried, misses, release, release_group, artist_id, disc, position, served FROM wanted ORDER BY added DESC, id DESC LIMIT ?1 OFFSET ?2").map_err(read_error)?;
+
         let rows = query
             .query_map(params![limit.min(500), offset], wanted_row)
             .map_err(read_error)?
@@ -410,6 +423,7 @@ impl Catalog {
     fn wanted_due(&self, now: SystemTime) -> Result<Vec<WantedSong>> {
         let connection = self.0.lock();
         let mut due = Vec::new();
+
         for row in still_asked(&connection)? {
             if due.len() >= WANTED_READ_AT_MOST {
                 break;
@@ -417,6 +431,7 @@ impl Catalog {
             if due_at(row.tried, row.misses).is_none_or(|due_at| due_at > now) {
                 continue;
             }
+
             let wanted = wanted_song(&connection, row)?;
             if !wanted.held {
                 due.push(wanted);
@@ -428,10 +443,12 @@ impl Catalog {
     fn next_wanted_due(&self) -> Result<Option<SystemTime>> {
         let connection = self.0.lock();
         let mut next: Option<SystemTime> = None;
+
         for row in still_asked(&connection)? {
             let Some(due) = due_at(row.tried, row.misses) else {
                 continue;
             };
+
             if next.is_some_and(|next| next <= due) {
                 continue;
             }
@@ -444,6 +461,7 @@ impl Catalog {
 
     pub(crate) fn note_refused_offer(&self, song: &SearchSong, taken_from: &str) -> Result<()> {
         let connection = self.0.lock();
+
         connection
             .execute(
                 "DELETE FROM refused_offers WHERE refused < ?1",
@@ -487,6 +505,7 @@ impl Catalog {
             }
             Tried::Unheard => return Ok(()),
         };
+
         self.0
             .lock()
             .execute(noted, [wanted_key(song)])
@@ -496,12 +515,15 @@ impl Catalog {
 
     pub(crate) fn save_wanted(&self, songs: &[SearchSong]) -> Result<u64> {
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let mut saved = 0;
+
         for song in songs.iter().take(500) {
             if song.title.trim().is_empty() {
                 return Err(Error::InvalidWantedSong);
             }
+
             let identity = wanted_key(song);
             let isrcs = song
                 .isrcs
@@ -510,6 +532,7 @@ impl Catalog {
                 .map(|code| code.to_string())
                 .collect::<Vec<_>>()
                 .join("\n");
+
             saved += transaction.execute("INSERT INTO wanted(identity, recording, title, artist, album, duration_ms, isrcs, release, release_group, artist_id, disc, position, served) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) ON CONFLICT(identity) DO NOTHING", params![identity, song.recording, song.title, song.artist, song.album, song.duration_ms.map(|value| value.min(i64::MAX as u64) as i64), isrcs, song.release, song.release_group, song.artist_id, song.disc, song.position, song.served]).map_err(write_error)? as u64;
         }
         transaction.commit().map_err(write_error)?;
@@ -526,6 +549,7 @@ pub(crate) fn local_match(connection: &Connection, song: &SearchSong) -> Result<
     let mut coded = connection
         .prepare_cached(FOUND_BY_ITS_ISRC)
         .map_err(read_error)?;
+
     for isrc in &song.isrcs {
         let found = coded
             .query_row(
@@ -538,7 +562,9 @@ pub(crate) fn local_match(connection: &Connection, song: &SearchSong) -> Result<
             return Ok(found);
         }
     }
+
     let mut query = connection.prepare(LOCAL_MATCH).map_err(read_error)?;
+
     let matches = query
         .query_map(
             params![
@@ -565,6 +591,7 @@ pub(crate) fn wanted_key(song: &SearchSong) -> String {
     if let Ok(recording) = Mbid::new(&song.recording) {
         return format!("recording:{recording}");
     }
+
     let title = folded_letters(song.title.trim());
     let artist = folded_letters(song.artist.trim());
     let album = folded_letters(song.album.trim());
@@ -611,15 +638,19 @@ mod tests {
             duration_ms: Some(track.duration_ms),
             ..SearchSong::default()
         };
+
         let matched = harness
             .player
             .match_local_song(song.clone())
             .expect("a match");
+
         assert_eq!(matched.map(|matched| matched.id), Some(track.id));
+
         let absent = SearchSong {
             title: "Absent".into(),
             ..song
         };
+
         assert!(
             harness
                 .player
@@ -640,6 +671,7 @@ mod tests {
             isrcs: vec!["GBN9Y1100089".into()],
             ..SearchSong::default()
         };
+
         assert_eq!(
             catalog
                 .save_wanted(std::slice::from_ref(&song))
@@ -653,6 +685,7 @@ mod tests {
             0
         );
         assert!(!catalog.wanted(0, 500).expect("a missing want")[0].held);
+
         catalog
             .upsert(Track {
                 uri: "content://test/song.flac".into(),
@@ -662,7 +695,9 @@ mod tests {
                 ..Track::default()
             })
             .expect("a local song");
+
         let wants = catalog.wanted(0, 500).expect("the held want");
+
         assert!(wants[0].held);
         assert_eq!(wants[0].song.isrcs, song.isrcs);
     }
@@ -685,6 +720,7 @@ mod tests {
         catalog
             .save_wanted(std::slice::from_ref(&song))
             .expect("a wanted song");
+
         let kept = &catalog.wanted(0, 500).expect("the wants")[0].song;
 
         assert_eq!(kept.release, song.release);
@@ -708,6 +744,7 @@ mod tests {
     fn duplicate_takes_collapse_in_a_search_but_a_listing_keeps_its_repeats_and_both_say_what_is_held()
      {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+
         catalog
             .upsert(Track {
                 uri: "content://test/hunter.flac".into(),
@@ -717,6 +754,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a local song");
+
         let joga = "1b5b8f5d-6c3f-4f8b-8d3e-2d1f0a6b9c11";
         let songs = vec![
             take("Jóga", 305_000, ""),
@@ -759,6 +797,7 @@ mod tests {
         let other = take("Hunter", 255_000, "");
         let taken_from = "monochrome:track/1";
         let catalog = Catalog::open(&path).expect("a catalog");
+
         catalog
             .note_refused_offer(&song, taken_from)
             .expect("a refusal");
@@ -784,6 +823,7 @@ mod tests {
             )
             .is_empty()
         );
+
         drop(reopened);
         std::fs::remove_file(path).expect("remove the test catalog");
     }
@@ -792,9 +832,11 @@ mod tests {
     fn a_want_missed_waits_its_turn_and_one_missed_every_time_is_given_up() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = take("Jóga", 305_000, "");
+
         catalog
             .save_wanted(std::slice::from_ref(&song))
             .expect("a want");
+
         let now = SystemTime::now();
         let due_now = |catalog: &Catalog| catalog.wanted_due(now).expect("the due wants").len();
         let next_due = |catalog: &Catalog| catalog.next_wanted_due().expect("the next due want");
@@ -805,11 +847,13 @@ mod tests {
         catalog
             .note_wanted_tried(&song, Tried::Unheard)
             .expect("an unheard try");
+
         assert_eq!(due_now(&catalog), 1);
 
         catalog
             .note_wanted_tried(&song, Tried::Missed)
             .expect("a miss");
+
         assert_eq!(due_now(&catalog), 0);
         assert!(
             next_due(&catalog).is_some_and(
@@ -829,6 +873,7 @@ mod tests {
                 .note_wanted_tried(&song, Tried::Missed)
                 .expect("a miss");
         }
+
         assert_eq!(
             catalog
                 .wanted_due(now + Duration::from_secs(365 * 24 * 60 * 60))
@@ -841,6 +886,7 @@ mod tests {
         catalog
             .note_wanted_tried(&song, Tried::Offered)
             .expect("an offer");
+
         assert_eq!(due_now(&catalog), 0);
         assert_eq!(
             catalog
@@ -864,6 +910,7 @@ mod tests {
             let mut query = connection
                 .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
                 .expect("a plan");
+
             let unbound = rusqlite::params_from_iter(
                 (0..query.parameter_count()).map(|_| rusqlite::types::Value::Text("x".into())),
             );

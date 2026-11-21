@@ -9,7 +9,7 @@ use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedP
 
 use crate::{change::QueryBody, key::DeviceId};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LocalPlaylistId {
     pub id: i64,
     pub created: i64,
@@ -121,7 +121,7 @@ pub struct Opened {
     pub extension: String,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Refused {
     Unavailable,
     NotHere,

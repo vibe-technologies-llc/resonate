@@ -108,6 +108,7 @@ pub fn song(title: &str) -> Recording {
 impl Shelf {
     pub fn holding(titles: &[&str]) -> Self {
         let shelf = Self::default();
+
         for title in titles {
             shelf.add_song(song(title), title.as_bytes().repeat(1000));
         }
@@ -120,6 +121,7 @@ impl Shelf {
 
     fn arrive(&self, recording: Recording, bytes: Vec<u8>, received: bool) {
         let mut inside = self.inside.lock();
+
         inside
             .arrivals
             .push((recording.clone(), resonate_sync::wall_nanos(), received));
@@ -134,9 +136,12 @@ impl Shelf {
 
     pub fn make_playlist(&self, name: &str, titles: &[&str]) -> i64 {
         let mut inside = self.inside.lock();
+
         inside.next_id += 1;
+
         let id = inside.next_id;
         let entries = titles.iter().map(|title| song(title)).collect();
+
         inside
             .playlists
             .insert(id, (id * 1000, name.into(), entries));
@@ -151,10 +156,13 @@ impl Shelf {
     pub fn delete_everywhere(&self, title: &str) {
         let mut inside = self.inside.lock();
         let gone = song(title);
+
         Self::remove_where(&mut inside, |held, _| held.names_the_same_song_as(&gone));
         inside.deleted_here.push(title.into());
         inside.next_id += 1;
+
         let id = inside.next_id;
+
         inside.to_tell.push(DeletedEverywhere {
             id,
             recording: gone,
@@ -171,18 +179,21 @@ impl Shelf {
             .iter()
             .map(|(recording, _)| recording.title.clone())
             .collect::<Vec<_>>();
+
         titles.sort();
         titles
     }
 
     pub fn receive_named_otherwise(&self, asked: Recording, own: Recording) {
         let bytes = own.title.as_bytes().repeat(1000);
+
         self.inside.lock().received_as.push((asked, own.clone()));
         self.add_song(own, bytes);
     }
 
     pub fn answer_here(&self, title: &str, answer: Answer) {
         let mut inside = self.inside.lock();
+
         Self::answered(&mut inside, song(title), answer);
         drop(inside);
         self.moved();
@@ -200,7 +211,9 @@ impl Shelf {
 
     fn answered(inside: &mut Inside, recording: Recording, answer: Answer) {
         inside.next_answered += 1;
+
         let at = inside.next_answered;
+
         inside.answers.retain(|held| {
             !(held.recording.names_the_same_song_as(&recording)
                 && std::mem::discriminant(&held.answer) == std::mem::discriminant(&answer)
@@ -228,8 +241,11 @@ impl Shelf {
 
     pub fn make_query(&self, name: &str, text: &str) -> i64 {
         let mut inside = self.inside.lock();
+
         inside.next_id += 1;
+
         let id = inside.next_id;
+
         inside.queries.insert(
             id,
             (
@@ -250,7 +266,9 @@ impl Shelf {
 
     pub fn revise_query(&self, id: i64, name: &str, text: &str) {
         let mut inside = self.inside.lock();
+
         let body = &mut inside.queries.get_mut(&id).expect("a query").1;
+
         body.name = name.into();
         body.text = Some(text.into());
         drop(inside);
@@ -308,6 +326,7 @@ impl Shelf {
 
     pub fn favour_here(&self, title: &str, on: bool) {
         let mut inside = self.inside.lock();
+
         inside
             .favourites
             .retain(|recording| recording.title != title);
@@ -326,6 +345,7 @@ impl Shelf {
             .iter()
             .map(|recording| recording.title.clone())
             .collect::<Vec<_>>();
+
         titles.sort();
         titles
     }
@@ -337,11 +357,14 @@ impl Shelf {
             .map(|(held, at, _)| gone(held, *at))
             .collect();
         let mut at = 0;
+
         inside.songs.retain(|_| {
             at += 1;
             !doomed[at - 1]
         });
+
         let mut at = 0;
+
         inside.arrivals.retain(|_| {
             at += 1;
             !doomed[at - 1]
@@ -421,6 +444,7 @@ impl Catalog for Shelf {
         entries: &[Recording],
     ) -> Result<LocalPlaylist, Refused> {
         let mut inside = self.inside.lock();
+
         let held = entries
             .iter()
             .filter_map(|entry| Self::own_of(&inside, entry))
@@ -433,14 +457,17 @@ impl Catalog for Shelf {
         };
         let mut used = name.to_owned();
         let mut copy = 2;
+
         while taken(&inside, &used) {
             used = format!("{name} ({copy})");
             copy += 1;
         }
+
         let at = match at.filter(|at| inside.playlists.contains_key(&at.id)) {
             Some(at) => at,
             None => {
                 inside.next_id += 1;
+
                 let id = inside.next_id;
                 LocalPlaylistId {
                     id,
@@ -448,6 +475,7 @@ impl Catalog for Shelf {
                 }
             }
         };
+
         inside
             .playlists
             .insert(at.id, (at.created, used.clone(), held.clone()));
@@ -462,6 +490,7 @@ impl Catalog for Shelf {
 
     fn remove_playlist(&self, at: LocalPlaylistId) -> Result<(), Refused> {
         let mut inside = self.inside.lock();
+
         inside.playlists.remove(&at.id);
         inside.queries.remove(&at.id);
         drop(inside);
@@ -495,12 +524,14 @@ impl Catalog for Shelf {
         body: &QueryBody,
     ) -> Result<LocalQuery, Refused> {
         let mut inside = self.inside.lock();
+
         if inside
             .unwritable_sorts_from
             .is_some_and(|unwritable| body.sort >= unwritable)
         {
             return Err(Refused::Unwritable);
         }
+
         let taken = |inside: &Inside, candidate: &str| {
             inside
                 .queries
@@ -509,14 +540,17 @@ impl Catalog for Shelf {
         };
         let mut used = body.name.clone();
         let mut copy = 2;
+
         while taken(&inside, &used) {
             used = format!("{} ({copy})", body.name);
             copy += 1;
         }
+
         let at = match at.filter(|at| inside.queries.contains_key(&at.id)) {
             Some(at) => at,
             None => {
                 inside.next_id += 1;
+
                 let id = inside.next_id;
                 LocalPlaylistId {
                     id,
@@ -528,6 +562,7 @@ impl Catalog for Shelf {
             name: used,
             ..body.clone()
         };
+
         inside.queries.insert(at.id, (at.created, written.clone()));
         drop(inside);
         self.moved();
@@ -540,9 +575,11 @@ impl Catalog for Shelf {
 
     fn favour(&self, recording: &Recording, favoured: bool) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         let Some(own) = Self::own_of(&inside, recording) else {
             return Ok(false);
         };
+
         inside
             .favourites
             .retain(|held| !held.names_the_same_song_as(&own));
@@ -568,6 +605,7 @@ impl Catalog for Shelf {
 
     fn credit(&self, listen: &RemoteListen) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         if !Self::holds_song(&inside, &listen.recording) {
             return Ok(false);
         }
@@ -596,12 +634,14 @@ impl Catalog for Shelf {
 
     fn deleted_here(&self, recording: &Recording) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         if let Some(at) = inside
             .deleted_after_the_first_look
             .iter()
             .position(|title| *title == recording.title)
         {
             let title = inside.deleted_after_the_first_look.remove(at);
+
             inside.deleted_here.push(title);
             return Ok(false);
         }
@@ -636,18 +676,22 @@ impl Catalog for Shelf {
 
     fn takes_deletions(&self) -> bool {
         let mut inside = self.inside.lock();
+
         inside.deletions_weighed += 1;
         !inside.refuses_deletions
     }
 
     fn take_deletion(&self, recording: &Recording, before: i64) -> Result<u64, Refused> {
         let mut inside = self.inside.lock();
+
         if inside.trash_refuses {
             return Ok(0);
         }
+
         let removed = Self::remove_where(&mut inside, |held, at| {
             held.names_the_same_song_as(recording) && at < before
         });
+
         if removed > 0 {
             inside.deleted_here.push(recording.title.clone());
         }
@@ -669,6 +713,7 @@ impl Catalog for Shelf {
 
     fn held_as(&self, recording: &Recording) -> Result<Option<Recording>, Refused> {
         let inside = self.inside.lock();
+
         if inside.refuses_resolving {
             return Err(Refused::Unavailable);
         }
@@ -694,7 +739,9 @@ impl Catalog for Shelf {
     fn open(&self, recording: &Recording) -> Result<Option<Opened>, Refused> {
         self.inside.lock().opened += 1;
         self.opening.pass();
+
         let inside = self.inside.lock();
+
         if inside.refuses_opening {
             return Ok(None);
         }
@@ -728,6 +775,7 @@ impl Catalog for Shelf {
         staged: &Path,
     ) -> Result<bool, Refused> {
         let bytes = fs::read(staged).map_err(|_| Refused::Unwritable)?;
+
         if self.inside.lock().refuses_landing {
             return Ok(false);
         }
@@ -752,6 +800,7 @@ impl Catalog for Shelf {
             .filter(|answered| answered.at >= mark)
             .cloned()
             .collect::<Vec<_>>();
+
         answers.sort_by_key(|answered| answered.at);
         answers.truncate(most);
         Ok(answers)
@@ -759,9 +808,11 @@ impl Catalog for Shelf {
 
     fn songs_held_after(&self, mark: i64, most: usize) -> Result<SongsHeldAfter, Refused> {
         let inside = self.inside.lock();
+
         if inside.arrivals_untracked {
             return Ok(SongsHeldAfter::Untracked);
         }
+
         let mut held = inside
             .arrivals
             .iter()
@@ -778,6 +829,7 @@ impl Catalog for Shelf {
                 file: None,
             })
             .collect::<Vec<_>>();
+
         held.sort_by_key(|song| song.at);
         held.truncate(most);
         Ok(SongsHeldAfter::Listed(held))
@@ -785,7 +837,9 @@ impl Catalog for Shelf {
 
     fn take_answer(&self, recording: &Recording, answer: &Answer) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         inside.answers_offered += 1;
+
         let Some(own) = inside
             .songs
             .iter()
@@ -801,6 +855,7 @@ impl Catalog for Shelf {
                     (held, told) => held == told,
                 }
         });
+
         if !richer_here {
             Self::answered(&mut inside, own, answer.clone());
             drop(inside);
@@ -826,6 +881,7 @@ impl Catalog for Shelf {
 
     fn take_cover(&self, release: &Mbid, picture: &[u8]) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         if !inside.uncovered.contains(release) || inside.covers.contains_key(release.as_str()) {
             return Ok(false);
         }
@@ -868,6 +924,7 @@ impl Catalog for Shelf {
         lyricsfile: &SharedLyricsfile,
     ) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         let lacking = inside
             .lacking_lyricsfiles
             .iter()
@@ -876,6 +933,7 @@ impl Catalog for Shelf {
             .lyricsfiles
             .iter()
             .any(|(held, _)| held.names_the_same_song_as(recording));
+
         if !lacking || held {
             return Ok(false);
         }
@@ -909,8 +967,10 @@ impl Catalog for Shelf {
 
     fn take_print(&self, file: WholeFile, print: &SharedPrint) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
         let lacking = inside.lacking_prints.contains(&file);
         let held = inside.prints.iter().any(|(held, _)| *held == file);
+
         if !lacking || held {
             return Ok(false);
         }

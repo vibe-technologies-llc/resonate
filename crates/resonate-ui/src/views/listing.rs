@@ -32,6 +32,7 @@ use crate::{
 
 pub(crate) fn keyed_by(name: &'static str, held: &impl Hash) -> ElementId {
     let mut hasher = DefaultHasher::new();
+
     held.hash(&mut hasher);
 
     ElementId::from((name, hasher.finish()))
@@ -390,6 +391,7 @@ impl Spelt for Matched {
 
 pub(crate) fn matched(text: SharedString, lit: Lit) -> Matched {
     let spelt = text.clone();
+
     if lit.is_empty() {
         return Matched {
             text: spelt,
@@ -421,6 +423,7 @@ pub(crate) fn matched_within(cut: kit::Cut, lit: Lit) -> Matched {
         })
         .collect();
     let mut shown = matched(cut.drawn().clone(), lit);
+
     shown.text = cut.spelt();
     shown
 }
@@ -481,6 +484,7 @@ pub(crate) fn columns(
     cx: &mut Context<RootView>,
 ) -> Div {
     let shown = Shown::within(fitting.room.get(), with_cover, trailing_controls);
+
     fitting.shown.set(shown);
 
     let number = heads(
@@ -560,9 +564,11 @@ fn heads(
     cx: &mut Context<RootView>,
 ) -> AnyElement {
     let cell = cell.flex().items_center().gap_1();
+
     if label.is_empty() || !sorted.offers.contains(&column) {
         return cell.child(label).into_any_element();
     }
+
     let offers = sorted.offers;
     let press = sorted.press;
 
@@ -588,7 +594,9 @@ fn heads(
         });
 
     let key = key_of(column);
+
     controls.captioned_by_its_name(key, &mut head);
+
     let handle = controls.at(key, cx);
     let head = RootView::ringed(
         &handle,
@@ -602,8 +610,10 @@ fn heads(
         head,
         move |_, at, _| {
             let mut menu = Menu::at(at);
+
             for offered in offers {
                 let by = *offered;
+
                 menu = menu.does(Icon::Sort, sorts_by(by), move |this, _, cx| {
                     press(this, by, cx)
                 });

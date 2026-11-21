@@ -82,17 +82,21 @@ impl<T> Default for Choosing<T> {
 impl<T: PartialEq> Choosing<T> {
     pub fn weigh(&mut self, identity: &Identity, listed: &Listed<'_>, item: T) {
         self.seen += 1;
+
         let rating = listed.rating();
+
         if rating == Rating::Clean {
             self.clean_passed_over += 1;
             return;
         }
+
         let apart = identity.apart_in_length(listed.length);
         let coded = listed
             .isrcs
             .iter()
             .filter_map(|code| Isrc::new(code.trim()).ok())
             .any(|code| identity.isrcs.contains(&code));
+
         if coded {
             if apart.is_none_or(|apart| apart <= LENGTHS_AGREE_WITHIN) {
                 self.coded.push((rating, apart.unwrap_or_default(), item));
@@ -104,6 +108,7 @@ impl<T: PartialEq> Choosing<T> {
                 .isrcs
                 .iter()
                 .any(|code| Isrc::new(code.trim()).is_ok());
+
             self.named
                 .push((rating, uncoded, apart.unwrap_or_default(), item));
         }
@@ -140,11 +145,13 @@ impl<T: PartialEq> Choosing<T> {
                     }),
             )
             .collect();
+
         listed.sort_by_key(|(rating, taken, uncoded, apart, _)| {
             (*rating, *taken == Taken::NamedAlike, *uncoded, *apart)
         });
 
         let mut ranked: Vec<(T, Taken)> = Vec::new();
+
         for (_, taken, _, _, item) in listed {
             if !ranked.iter().any(|(kept, _)| *kept == item) {
                 ranked.push((item, taken));
@@ -185,9 +192,11 @@ impl Identity {
 
     pub fn wordings(&self) -> Vec<String> {
         let title = self.title.trim();
+
         if title.is_empty() {
             return Vec::new();
         }
+
         let bare = titles::bare(title);
         let worded = match self.lead_artist() {
             Some(lead) => vec![
@@ -200,6 +209,7 @@ impl Identity {
         };
 
         let mut wordings: Vec<String> = Vec::with_capacity(worded.len());
+
         for words in worded {
             if !wordings.contains(&words) {
                 wordings.push(words);
@@ -299,21 +309,25 @@ mod tests {
         let title = "Bohemian Rhapsody";
 
         let mut stated = Choosing::default();
+
         stated.weigh(
             &want,
             &rated(listed(QUEEN_ISRC, title, "Queen", 355), Rating::Clean),
             "clean",
         );
+
         assert_eq!(stated.clean_passed_over(), 1);
         assert_eq!(stated.chosen(), None, "only a clean take is no take at all");
 
         let mut worded = Choosing::default();
+
         worded.weigh(
             &want,
             &listed(QUEEN_ISRC, "Bohemian Rhapsody (Clean)", "Queen", 355),
             "clean",
         );
         worded.weigh(&want, &listed(OTHER_ISRC, title, "Queen", 355), "plain");
+
         assert_eq!(worded.chosen(), Some(("plain", Taken::NamedAlike)));
     }
 
@@ -426,10 +440,12 @@ mod tests {
         ] {
             choosing.weigh(&identity, &listing, item);
         }
+
         assert!(!choosing.holds_a_coded_listing());
         assert_eq!(choosing.ranked(), [(4, Taken::NamedAlike)]);
 
         let mut coded = Choosing::default();
+
         coded.weigh(
             &identity,
             &listed("USHR10421348", "Bohemian Rhapsody", "Queen", 355),
@@ -440,6 +456,7 @@ mod tests {
             &listed("GBUM71029604", "Bohemian Rhapsody", "Queen", 359),
             2,
         );
+
         assert_eq!(coded.chosen(), Some((2, Taken::ByItsCode)));
     }
 

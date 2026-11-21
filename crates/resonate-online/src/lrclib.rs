@@ -35,6 +35,7 @@ impl Answer {
         if self.instrumental {
             return None;
         }
+
         let read = present(self.lyricsfile).and_then(|document| {
             read_lyricsfile(source(), &document)
                 .map_err(|unread| tracing::debug!(?unread, id = ?self.id, "lrclib answered with a lyricsfile this build cannot read"))
@@ -44,6 +45,7 @@ impl Answer {
         let lyricsfile = read
             .as_ref()
             .and_then(|(document, read)| read.says_more_than_its_lines.then(|| document.clone()));
+
         if let Some(synced) = present(self.synced) {
             return Some(LyricText {
                 text: synced,
@@ -58,6 +60,7 @@ impl Answer {
                 lyricsfile,
             });
         }
+
         let (_, read) = read?;
         let lines: Vec<String> = read
             .lyrics?
@@ -165,6 +168,7 @@ fn ask(client: &Client, asked: &LyricsAsked) -> Result<Option<Answer>, Failed> {
     let got: Option<Answer> = client
         .json(Host::Lrclib, LookupOp::Lyrics, &format!("/get{get}"))
         .map_err(|error| Failed::new(source(), LyricOp::Fetch, error))?;
+
     if let Some(answer) = got {
         return Ok(Some(answer));
     }
@@ -185,6 +189,7 @@ pub(crate) fn told(client: &Client, asked: &LyricsAsked) -> Result<Option<LyricT
     let answer = ask(client, asked)?;
     let id = answer.as_ref().and_then(|answer| answer.id);
     let told = answer.and_then(Answer::told);
+
     tracing::debug!(
         ?id,
         title = asked.title,
@@ -236,15 +241,19 @@ mod tests {
     #[test]
     fn an_lrclib_answer_is_synced_where_it_carries_timestamps() {
         let answer: Answer = serde_json::from_str(GET).expect("the fixture parses");
+
         assert_eq!(answer.id, Some(488_884));
         assert!(answer.names("Echoes", "Pink Floyd"));
         assert!(answer.lasts_about(Some(ECHOES_LASTS)));
 
         let told = answer.told().expect("the answer carries words");
+
         assert!(told.synced);
+
         let lyrics = set_of(&told)
             .expect("the sheet reads")
             .expect("the sheet holds lines");
+
         assert_eq!(lyrics.timing(), Timing::Synced);
         assert!(lyrics.lines().len() > 30);
         assert!(
@@ -259,10 +268,13 @@ mod tests {
         )
         .expect("the document parses");
         let told = plain_only.told().expect("the answer carries words");
+
         assert!(!told.synced);
+
         let lyrics = set_of(&told)
             .expect("the words read")
             .expect("the words are there");
+
         assert_eq!(lyrics.timing(), Timing::Unsynced);
         assert_eq!(lyrics.lines().len(), 2);
 
@@ -270,18 +282,22 @@ mod tests {
             r#"{"instrumental":true,"plainLyrics":"la la","syncedLyrics":"[00:01.00]la la"}"#,
         )
         .expect("the document parses");
+
         assert!(instrumental.told().is_none());
 
         let bare: Answer = serde_json::from_str(r"{}").expect("the document parses");
+
         assert!(bare.told().is_none());
     }
 
     #[test]
     fn a_lyricsfile_an_lrc_was_turned_into_is_not_kept_beside_the_lrc() {
         let answer: Answer = serde_json::from_str(GET).expect("the fixture parses");
+
         assert!(answer.lyricsfile.is_some());
 
         let told = answer.told().expect("the answer carries words");
+
         assert_eq!(told.lyricsfile, None);
     }
 
@@ -299,11 +315,14 @@ mod tests {
         };
 
         let told = answer.told().expect("the answer carries words");
+
         assert!(told.synced);
         assert_eq!(told.lyricsfile.as_deref(), Some(WORDED));
+
         let lyrics = set_of(&told)
             .expect("the document reads")
             .expect("the document holds lines");
+
         assert_eq!(lyrics.detail(), Detail::Words);
 
         let unreadable = LyricText {
@@ -313,6 +332,7 @@ mod tests {
         let lyrics = set_of(&unreadable)
             .expect("the lines read")
             .expect("the lines are there");
+
         assert_eq!(lyrics.detail(), Detail::Lines);
     }
 
@@ -325,6 +345,7 @@ mod tests {
 
         let taken = pick(found(), &asked("echoes - ECHOES", "pink floyd", None))
             .expect("the first is named so");
+
         assert_eq!(taken.id, Some(18_688_320));
 
         let taken = pick(
@@ -336,6 +357,7 @@ mod tests {
             ),
         )
         .expect("four last about as long");
+
         assert_eq!(taken.id, Some(20_607_281));
 
         let taken = pick(
@@ -343,6 +365,7 @@ mod tests {
             &asked("Echoes - Echoes", "Pink Floyd", Some(ECHOES_LASTS)),
         )
         .expect("the last folds to the same name and lasts as long");
+
         assert_eq!(taken.id, Some(22_369_384));
 
         assert!(pick(found(), &asked("Echoes - Echoes", "Roger Waters", None)).is_none());
@@ -378,6 +401,7 @@ mod tests {
 
         let taken = pick(vec![hit(1, 413.0, false), hit(2, 420.0, true)], &wanted)
             .expect("both are acceptable");
+
         assert_eq!(taken.id, Some(2));
 
         let taken = pick(
@@ -389,6 +413,7 @@ mod tests {
             &wanted,
         )
         .expect("every one is acceptable");
+
         assert_eq!(taken.id, Some(2));
 
         let silent = Answer {
@@ -396,6 +421,7 @@ mod tests {
             ..hit(1, 413.0, true)
         };
         let taken = pick(vec![silent, hit(2, 440.0, false)], &wanted).expect("both are acceptable");
+
         assert_eq!(taken.id, Some(2));
 
         let taken = pick(
@@ -403,6 +429,7 @@ mod tests {
             &asked("Time", "Pink Floyd", None),
         )
         .expect("both are acceptable");
+
         assert_eq!(taken.id, Some(1));
     }
 }

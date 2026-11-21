@@ -44,6 +44,7 @@ pub(crate) fn after(inner: &Inner, mark: i64, most: usize) -> Result<Vec<Answere
     let most = i64::try_from(most).unwrap_or(i64::MAX);
     let mut answered = inner.read(|connection| {
         let mut answered = lyrics_after(connection, mark, most)?;
+
         answered.extend(studies_after(connection, mark, most)?);
         answered.extend(band_peaks_after(connection, mark, most)?);
         answered.extend(releases_after(connection, mark, most)?);
@@ -94,6 +95,7 @@ fn lyrics_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Ans
     let mut statement = connection
         .prepare_cached(&lyrics_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(params![mark, most], |row| {
             let at: i64 = row.get(0)?;
@@ -116,6 +118,7 @@ fn studies_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<An
     let mut statement = connection
         .prepare_cached(&studies_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(
             params![mark, most, i64::from(JUDGED_UNDER), BANDS as i64],
@@ -138,6 +141,7 @@ fn band_peaks_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec
     let mut statement = connection
         .prepare_cached(&band_peaks_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(
             params![mark, most, i64::from(JUDGED_UNDER), BAND_PEAKS_BYTES as i64],
@@ -242,6 +246,7 @@ fn take_lyrics(
     };
 
     let held = sung::kept(transaction, &path, span_start)?.and_then(|kept| kept.sung);
+
     if held.is_some_and(|held| held.detail() >= told.detail()) {
         return Ok(true);
     }
@@ -263,6 +268,7 @@ fn held_strictly(connection: &Connection, recording: &Recording) -> Result<Optio
         return Ok(None);
     };
     let (span_start, _) = store::span_columns(cut.span);
+
     let held = connection
         .query_row(
             &format!(
@@ -295,12 +301,14 @@ fn take_study(inner: &Inner, study: &SharedStudy) -> Result<bool> {
             None => return Ok(true),
         },
     };
+
     if study.judged_under != JUDGED_UNDER || study.band_levels.len() != BANDS {
         return Ok(true);
     }
 
     inner.write(|transaction| {
         let copies = copies_of(transaction, study.file)?;
+
         for (track, studied) in &copies {
             if !studied {
                 write_shared_study(transaction, *track, study, verdict, lossy_guess)?;
@@ -317,6 +325,7 @@ fn take_band_peaks(inner: &Inner, shared: &SharedBandPeaks) -> Result<bool> {
 
     inner.write(|transaction| {
         let copies = copies_of(transaction, shared.file)?;
+
         for (track, studied) in &copies {
             if *studied {
                 transaction
@@ -346,6 +355,7 @@ fn copies_of(connection: &Connection, file: WholeFile) -> Result<Vec<(TrackId, b
               WHERE t.packets = ?1 AND t.duration = ?2 AND t.sample_rate = ?3 AND {WHOLE_FILE}"
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(
             params![
@@ -371,6 +381,7 @@ fn write_shared_study(
     lossy_guess: Option<LossyGuess>,
 ) -> Result<()> {
     let figure = |figure: Figure| f64::from(figure.value());
+
     transaction
         .execute(
             "INSERT OR REPLACE INTO track_studies (
@@ -427,6 +438,7 @@ fn releases_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<A
               ORDER BY a.answered LIMIT ?2",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let heads = statement
         .query_map(params![mark, most], |row| {
             Ok(ReleaseHead {
@@ -449,6 +461,7 @@ fn releases_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<A
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut answered = Vec::with_capacity(heads.len());
+
     for head in heads {
         let Some(id) = store::mbid_in(head.id.as_deref()) else {
             continue;
@@ -476,6 +489,7 @@ fn releases_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<A
             )?,
             media: media_of(connection, head.album)?,
         };
+
         answered.push(Answered {
             recording,
             at: head.at,
@@ -526,6 +540,7 @@ fn links_of(connection: &Connection, query: &str, owner: i64) -> Result<Vec<Link
     let mut statement = connection
         .prepare_cached(query)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(params![owner], |row| {
             Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
@@ -543,6 +558,7 @@ fn codes_of(connection: &Connection, row: i64, first: Option<String>) -> Result<
             "SELECT isrc FROM release_track_isrcs WHERE release_track_id = ?1 ORDER BY isrc",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rest = statement
         .query_map(params![row], |row| row.get::<_, String>(0))
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -558,6 +574,7 @@ fn media_of(connection: &Connection, album: i64) -> Result<Vec<SharedMedium>> {
     let mut statement = connection
         .prepare_cached("SELECT position, format, title FROM release_media WHERE album_id = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let mut media = statement
         .query_map(params![album], |row| {
             Ok(SharedMedium {
@@ -580,6 +597,7 @@ fn media_of(connection: &Connection, album: i64) -> Result<Vec<SharedMedium>> {
                FROM release_tracks WHERE album_id = ?1 ORDER BY disc, position",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(params![album], |row| {
             Ok((
@@ -603,6 +621,7 @@ fn media_of(connection: &Connection, album: i64) -> Result<Vec<SharedMedium>> {
         })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     for (row, disc, first, track) in rows {
         let track = SharedTrack {
             isrcs: codes_of(connection, row, first)?,
@@ -614,6 +633,7 @@ fn media_of(connection: &Connection, album: i64) -> Result<Vec<SharedMedium>> {
             )?,
             ..track
         };
+
         media
             .entry(disc)
             .or_insert_with(|| SharedMedium {
@@ -686,16 +706,19 @@ fn take_release(
     shared: &SharedRelease,
 ) -> Result<bool> {
     let (albums, held_as_keyed) = albums_holding(transaction, recording, shared)?;
+
     if albums.is_empty() {
         return Ok(false);
     }
 
     let release = as_release(shared);
     let mut landed = false;
+
     for album in albums {
         let Some(pressing) = landing_on(transaction, album, &release)? else {
             continue;
         };
+
         enriched::land_release(transaction, album, &release, pressing, SystemTime::now())?;
         enriched::rematch_release_tracks(transaction, album)?;
         identify_the_credited(transaction, &release.credit)?;
@@ -710,11 +733,14 @@ fn albums_holding(
     release: &SharedRelease,
 ) -> Result<(BTreeSet<AlbumId>, bool)> {
     let mut albums = BTreeSet::new();
+
     albums.extend(album_holding_strictly(connection, recording)?);
     if albums.is_empty() {
         albums.extend(albums_holding_its_recordings(connection, release)?);
     }
+
     let held_as_keyed = !albums.is_empty();
+
     if !held_as_keyed {
         for track in release.tracks() {
             let named = Recording {
@@ -729,9 +755,11 @@ fn albums_holding(
                     .length_ms
                     .map(|length| Duration::from_millis(u64::from(length))),
             };
+
             albums.extend(album_holding_strictly(connection, &named)?);
         }
     }
+
     let albums = albums
         .into_iter()
         .map(|album| Ok(AlbumId::new(album.cast_unsigned())?))
@@ -768,6 +796,7 @@ fn albums_holding_its_recordings(
             "SELECT DISTINCT album_id FROM tracks WHERE mbid = ?1 AND album_id IS NOT NULL",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     for recorded in release
         .tracks()
         .filter_map(|track| track.recording.as_ref())
@@ -776,6 +805,7 @@ fn albums_holding_its_recordings(
             .query_map(params![recorded.as_str()], |row| row.get::<_, i64>(0))
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Query, source))?;
+
         albums.extend(held);
     }
     Ok(albums)
@@ -789,9 +819,11 @@ fn landing_on(
     let Some(asked) = enriched::album_to_ask(connection, album)? else {
         return Ok(None);
     };
+
     if enriched::refuses(connection, album, &release.id)? {
         return Ok(None);
     }
+
     let answered: bool = connection
         .query_row(
             "SELECT answered IS NOT NULL FROM albums WHERE id = ?1",
@@ -799,13 +831,16 @@ fn landing_on(
             |row| row.get(0),
         )
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if let Some(named) = &asked.mbid {
         return Ok((*named == release.id && !answered).then_some(Pressing::AsHeld));
     }
+
     let another_group = asked
         .group
         .as_ref()
         .is_some_and(|group| release.group.as_ref() != Some(group));
+
     if another_group {
         return Ok(None);
     }
@@ -827,6 +862,7 @@ fn identify_the_credited(transaction: &Transaction<'_>, credit: &[Credit]) -> Re
         let Some(mbid) = &credited.mbid else {
             continue;
         };
+
         transaction
             .execute(
                 "UPDATE artists SET mbid = ?1 WHERE key = ?2 AND mbid IS NULL",
@@ -917,6 +953,7 @@ pub(crate) fn lyricsfiles_wanted(
                   ORDER BY k.taken DESC, t.id LIMIT ?1 OFFSET ?2"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let wanted = statement
             .query_map(params![most, skip], |row| recording_at(row, 0))
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -933,6 +970,7 @@ pub(crate) fn lyricsfile_to_share(
         let Some((path, span_start)) = held_row(connection, recording)? else {
             return Ok(None);
         };
+
         let kept = sung::kept(connection, &path, span_start)?.and_then(|kept| kept.sung);
         Ok(kept.and_then(|kept| {
             Some(SharedLyricsfile {
@@ -961,7 +999,9 @@ pub(crate) fn take_lyricsfile(
             synced: shared.synced,
             lyricsfile: Some(shared.document.clone()),
         };
+
         let held = sung::kept(transaction, &path, span_start)?.and_then(|kept| kept.sung);
+
         if held.is_some_and(|held| held.detail() >= told.detail()) {
             return Ok(false);
         }
@@ -1055,6 +1095,7 @@ pub(crate) fn take_print(inner: &Inner, file: WholeFile, shared: &SharedPrint) -
                     AND {WHOLE_FILE} AND s.studied_under = ?4"
             ))
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
         let copies = statement
             .query_map(
                 params![
@@ -1075,8 +1116,10 @@ pub(crate) fn take_print(inner: &Inner, file: WholeFile, shared: &SharedPrint) -
             .map_err(|source| Error::store(StoreOp::Query, source))?;
 
         let mut landed = false;
+
         for (id, unprinted, unrecognised) in copies {
             let track = TrackId::new(id.cast_unsigned())?;
+
             if unprinted {
                 landed |= studies::write_print(transaction, track, &shared.print)?;
             }
@@ -1125,6 +1168,7 @@ mod tests {
     #[test]
     fn a_sync_look_reads_the_answers_kept_since_its_mark_off_an_index_in_their_order() {
         let connection = Connection::open_in_memory().expect("a catalog");
+
         schema::configure(&connection, schema::Role::Writing).expect("the pragmas");
         schema::lay_out(&connection).expect("the schema applies");
 

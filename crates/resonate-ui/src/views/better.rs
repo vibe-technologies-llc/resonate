@@ -117,8 +117,10 @@ pub(crate) struct Asked {
 
 fn asked_of(services: &[Arc<dyn Serves>], words: &str, song: &TheSong, sought: Sought) -> Asked {
     let mut asked = Asked::default();
+
     for serves in services.iter().filter(|serves| serves.plays_songs()) {
         let service = serves.title().to_owned();
+
         match serves.search(words) {
             Ok(found) => asked.served.extend(
                 found
@@ -184,11 +186,13 @@ fn versions_menu(
 ) -> Menu {
     let mut menu = Menu::at(at);
     let track = song.id;
+
     for (copy, album) in held {
         let label = held_label(sought, &copy, album.as_deref());
         let chosen = copy.id;
         let playing: Arc<[Track]> = Arc::from([copy]);
         let title = title.to_owned();
+
         menu = menu.does(Icon::Play, label, move |this, _, cx| {
             this.play(&playing, 0, cx);
             this.choose_the_version(track, chosen, &title, cx);
@@ -198,8 +202,10 @@ fn versions_menu(
         let label = version.label(sought);
         let kept = version.kept;
         let title = title.to_owned();
+
         menu = menu.does(Icon::Download, label, move |this, _, cx| {
             let (kept, title) = (kept.clone(), title.clone());
+
             this.library.update(cx, |library, cx| {
                 library.keep_as_a_version(track, kept, ServedVersion::kept_as(sought), title, cx);
             });
@@ -239,6 +245,7 @@ impl RootView {
         let pressed = self.press_a_lookup();
         let library = self.library.read(cx).catalog();
         let asked = track.clone();
+
         let reading = cx.background_executor().spawn(async move {
             match sought {
                 Sought::Better => {
@@ -265,6 +272,7 @@ impl RootView {
                 }
             }
         });
+
         cx.spawn(async move |this, cx| {
             let held = reading.await;
             let _ = this.update(cx, |this, cx| {
@@ -305,6 +313,7 @@ impl RootView {
             _ if services.iter().all(|serves| !serves.plays_songs()) => Some(Nothing::NowhereToAsk),
             _ => None,
         };
+
         if let Some(why) = nothing_to_ask {
             match held.is_empty() {
                 true => self.report(Notice::Noted(nothing_said(sought, why, &title, &[])), cx),
@@ -320,19 +329,24 @@ impl RootView {
         }
 
         self.report(Notice::Noted(looking(sought, &title)), cx);
+
         let words = words_of(&track);
         let asking = cx
             .background_executor()
             .spawn(async move { asked_of(&services, &words, &song, sought) });
+
         cx.spawn(async move |this, cx| {
             let asked = asking.await;
             let _ = this.update(cx, |this, cx| {
                 if this.window_has_moved_on_from(pressed, cx) {
                     return;
                 }
+
                 let found = held.len() + asked.served.len();
+
                 if !asked.refused.is_empty() {
                     let refused = asked.refused.join(NAMES_APART);
+
                     this.report(Notice::Trouble(words::better::could_not_ask(&refused)), cx);
                 }
                 if found == 0 {
@@ -342,8 +356,10 @@ impl RootView {
                         .filter(|service| !asked.refused.contains(service))
                         .cloned()
                         .collect();
+
                     if !answered.is_empty() {
                         let said = nothing_said(sought, Nothing::NoneOn, &title, &answered);
+
                         this.report(Notice::Noted(said), cx);
                     }
                     return;
@@ -366,6 +382,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let title = title.to_owned();
+
         self.library.update(cx, |library, cx| {
             library.choose_version(track, copy, title, cx);
         });
@@ -445,6 +462,7 @@ mod tests {
             location: track.location.clone(),
             span: track.span,
         };
+
         let chosen = Chosen::of(
             vec![ChosenVersion {
                 track: opus.id,

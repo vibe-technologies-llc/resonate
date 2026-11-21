@@ -64,12 +64,14 @@ impl LibraryModel {
 
         self._edit = cx.spawn(async move |this, cx| {
             before.await;
+
             let done = cx
                 .background_executor()
                 .spawn(async move { change(&library) })
                 .await;
             if let Err(error) = done {
                 tracing::error!(%error, edit = ?what, "an edit could not be made");
+
                 let _ = this.update(cx, |_, cx| {
                     toast::tell(toast::could_not(what.doing(), &error), cx);
                 });
@@ -100,6 +102,7 @@ impl LibraryModel {
 
         self._edit = cx.spawn(async move |this, cx| {
             before.await;
+
             let done = cx
                 .background_executor()
                 .spawn(async move { change(&library) })

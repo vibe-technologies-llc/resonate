@@ -19,7 +19,7 @@ const SECONDS_AN_HOUR: u64 = 60 * SECONDS_A_MINUTE;
 
 pub const WITHOUT_A_SPEC: Sleep = Sleep::InSeconds(NonZeroU64::new(30 * SECONDS_A_MINUTE).unwrap());
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Spoken(Box<str>);
 
 impl fmt::Display for Spoken {
@@ -28,7 +28,7 @@ impl fmt::Display for Spoken {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Sleep {
     InSeconds(NonZeroU64),
     EndOfTrack,
@@ -67,6 +67,7 @@ impl Sleep {
 pub fn set(spoken: &str, player: Option<&str>, zone: Option<&str>) -> Result<()> {
     let wanted = Sleep::read(spoken)?;
     let running = reached(player, zone)?;
+
     running.set_sleep(wanted.until())?;
 
     said!(

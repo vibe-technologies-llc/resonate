@@ -89,6 +89,7 @@ pub(crate) fn header(spec: StreamSpec) -> Vec<u8> {
 pub(crate) fn header_holding(spec: StreamSpec, data: Option<u64>) -> Vec<u8> {
     let channels = u16::from(spec.channel_count().get());
     let sample_bytes = wire_bytes(spec.format) as u16;
+
     let block = channels.saturating_mul(sample_bytes);
     let per_second = spec.rate.hz().saturating_mul(u32::from(block));
     let container_bits = sample_bytes * 8;
@@ -111,6 +112,7 @@ pub(crate) fn header_holding(spec: StreamSpec, data: Option<u64>) -> Vec<u8> {
     };
 
     let mut header = Vec::with_capacity(EXTENSIBLE_HEADER_BYTES);
+
     header.extend_from_slice(b"RIFF");
     header.extend_from_slice(&riff_bytes.to_le_bytes());
     header.extend_from_slice(b"WAVEfmt ");
@@ -196,6 +198,7 @@ mod tests {
             Wrapping::Wave,
             &mut wire,
         );
+
         assert_eq!(wire, [0x01, 0x02, 0x03, 0xfd, 0xfe, 0xff]);
 
         carried(
@@ -204,9 +207,11 @@ mod tests {
             Wrapping::L16,
             &mut wire,
         );
+
         assert_eq!(wire, [0x12, 0x34, 0xab, 0xcd]);
 
         carried(&[0x34, 0x12], SampleFormat::S16, Wrapping::Wave, &mut wire);
+
         assert_eq!(wire, [0x34, 0x12]);
     }
 }

@@ -41,7 +41,7 @@ impl Clip {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PictureFormat {
     Jpeg,
     Png,
@@ -126,7 +126,9 @@ impl Recognisers {
         if clip.is_silent() {
             return Err(Error::NothingHeard);
         }
+
         let mut refused = Vec::new();
+
         for recogniser in &self.held {
             match recogniser.recognise(clip) {
                 Ok(Some(heard)) => {
@@ -210,6 +212,7 @@ mod tests {
         let recognition = recognisers
             .recognise(&sounding())
             .expect("a clip that sounds");
+
         assert_eq!(
             recognition.heard.map(|heard| heard.title).as_deref(),
             Some("Tuesday")
@@ -223,6 +226,7 @@ mod tests {
             samples: vec![0.0; 9_600],
             ..sounding()
         };
+
         assert!(matches!(
             Recognisers::none()
                 .and(canned("knows", Some("Tuesday"), false))
@@ -236,11 +240,14 @@ mod tests {
         let recognisers = Recognisers::none()
             .and(canned("knows", Some("Tuesday"), false))
             .and(canned("knows", Some("Wednesday"), false));
+
         assert_eq!(recognisers.names().len(), 1);
+
         let heard = recognisers
             .recognise(&sounding())
             .expect("a clip that sounds")
             .heard;
+
         assert_eq!(heard.map(|heard| heard.title).as_deref(), Some("Wednesday"));
     }
 }

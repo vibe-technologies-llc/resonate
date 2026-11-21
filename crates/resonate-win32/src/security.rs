@@ -39,6 +39,7 @@ fn descriptor_of<T: Securing>(securing: &T, path: &Path) -> Result<(Wide, T::Des
 pub(crate) fn carrying_security(securing: &impl Securing, from: &Path, to: &Path) -> Result<()> {
     let (_, standing) = descriptor_of(securing, from)?;
     let (name, copy) = descriptor_of(securing, to)?;
+
     let with_owner = !securing.is_owned_alike(&standing, &copy);
     let protected = securing
         .is_protected(&standing)
@@ -107,6 +108,7 @@ mod real {
             let mut held = PSECURITY_DESCRIPTOR(ptr::null_mut());
             let mut owner = PSID(ptr::null_mut());
             let mut dacl: *mut ACL = ptr::null_mut();
+
             unsafe {
                 GetNamedSecurityInfoW(
                     name_of(name),
@@ -127,6 +129,7 @@ mod real {
         fn is_protected(&self, descriptor: &Descriptor) -> Raw<bool> {
             let mut control = 0_u16;
             let mut revision = 0_u32;
+
             unsafe {
                 GetSecurityDescriptorControl(descriptor.held, &raw mut control, &raw mut revision)
             }
@@ -234,7 +237,9 @@ mod tests {
 
         fn read(&self, name: &Wide) -> Raw<Held> {
             self.calls.lock().push(Call::Read(name.units().to_vec()));
+
             let mut reads = self.reads.lock();
+
             *reads += 1;
             if self.refusing_read_of == Some(usize::from(*reads)) {
                 return Err(HResult(-21));
@@ -404,7 +409,9 @@ mod tests {
             Err(Error::WindowsOnFile { op: Op::WriteSecurity, ref path, source: HResult(-23) })
                 if path == Path::new("b")
         ));
+
         let calls = fake.calls();
+
         assert_eq!(&calls[calls.len() - 2..], [Call::Freed(2), Call::Freed(1)]);
     }
 }

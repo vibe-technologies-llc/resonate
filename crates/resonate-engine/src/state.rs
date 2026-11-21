@@ -19,7 +19,7 @@ use crate::{
     Tapped,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum PlaybackState {
     #[default]
     Idle,
@@ -29,7 +29,7 @@ pub enum PlaybackState {
     Stopped,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum TransportState {
     #[default]
     Idle,
@@ -48,7 +48,7 @@ pub struct TrackState {
     pub duration: Option<Frames>,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Seeks(u64);
 
 impl Seeks {
@@ -260,6 +260,7 @@ pub struct MovesTold {
 impl MovesTold {
     pub(crate) fn watched(&self) -> Receiver<Relocated> {
         let (told, watched) = unbounded();
+
         self.watching.lock().push(told);
         watched
     }
@@ -363,6 +364,7 @@ mod tests {
 
     fn every_field_moved(config: &mut EngineConfig) -> Vec<&'static str> {
         let mut moved = Vec::new();
+
         let mut note = |named, config: &EngineConfig| {
             if !OutputSettings::of(&EngineConfig::default()).already_says(config) {
                 moved.push(named);
@@ -458,12 +460,14 @@ mod tests {
     #[test]
     fn every_published_setting_is_one_already_says_compares() {
         let mut config = EngineConfig::default();
+
         assert!(
             OutputSettings::of(&config).already_says(&config),
             "a settings value built from a config must agree with it"
         );
 
         let moved = every_field_moved(&mut config);
+
         assert_eq!(
             moved.len(),
             17,

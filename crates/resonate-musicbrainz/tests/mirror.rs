@@ -85,6 +85,7 @@ impl Scratch {
             std::process::id()
         ));
         let _ = fs::remove_dir_all(&path);
+
         fs::create_dir_all(&path).expect("a scratch folder");
         Self(path)
     }
@@ -98,6 +99,7 @@ impl Drop for Scratch {
 
 fn line(width: usize, set: &[(usize, &str)]) -> String {
     let mut fields = vec!["\\N".to_owned(); width];
+
     for (at, value) in set {
         fields[*at] = (*value).to_owned();
     }
@@ -110,8 +112,10 @@ const SCHEMA: u32 = 31;
 fn archived(into: impl Write, files: &[(String, String)]) {
     let packed = bzip2::write::BzEncoder::new(into, bzip2::Compression::fast());
     let mut builder = tar::Builder::new(packed);
+
     for (name, body) in files {
         let mut header = tar::Header::new_gnu();
+
         header.set_size(body.len() as u64);
         header.set_mode(0o644);
         header.set_cksum();
@@ -137,8 +141,10 @@ fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
         ),
         ("SCHEMA_SEQUENCE".to_owned(), format!("{SCHEMA}\n")),
     ];
+
     for (name, rows) in tables {
         let mut body = rows.join("\n");
+
         if !body.is_empty() {
             body.push('\n');
         }
@@ -371,6 +377,7 @@ fn dump_beside(into: &Path, beside: &[(&str, Vec<String>)]) -> Archives {
             )],
         ),
     ];
+
     for (table, rows) in beside {
         if let Some((_, held)) = core_tables.iter_mut().find(|(name, _)| name == table) {
             held.extend(rows.iter().cloned());
@@ -408,8 +415,11 @@ fn built_from_archives(scratch: &Scratch, archives: &Archives, keeping: Keeping)
     let folder = scratch.0.join("musicbrainz");
     let held = held_for_building(&folder).expect("the building lock");
     let building = Building::default();
+
     let built = built_from(archives, &folder, keeping, &building, &held).expect("a built mirror");
+
     drop(held);
+
     let settled = settled(&built, &folder).expect("the mirror settled");
     Mirror::open(&settled).expect("the mirror opens")
 }
@@ -557,6 +567,7 @@ fn an_artists_pressings_are_paged_the_same_whether_or_not_its_list_was_already_r
             .collect()
     };
     let mut every: Vec<Mbid> = [ids(&first), ids(&second)].concat();
+
     every.sort();
     every.dedup();
 
@@ -686,6 +697,7 @@ fn crowded_round_love() -> Vec<(&'static str, Vec<String>)> {
             )
         })
         .collect();
+
     let recordings = (0..=CROWDED_BY)
         .map(|at| {
             line(
@@ -741,7 +753,9 @@ fn word_table_rows(mirror: &Path, table: &str, query: &str, ranked: bool) -> Vec
 fn a_word_table_weighs_every_row_alike_so_its_candidates_are_the_same_unranked() {
     let scratch = Scratch::new("unranked");
     let archives = dump_beside(&scratch.0, &crowded_round_love());
+
     drop(built_from_archives(&scratch, &archives, Keeping::TheMirror));
+
     let copy = mirror_in(&scratch.0.join("musicbrainz"));
 
     for table in ["artist_words", "recording_words", "group_words"] {
@@ -757,6 +771,7 @@ fn a_word_table_weighs_every_row_alike_so_its_candidates_are_the_same_unranked()
 fn a_common_word_is_narrowed_to_the_names_alike_once_bare_before_every_row_holding_it() {
     let scratch = Scratch::new("crowded");
     let archives = dump_beside(&scratch.0, &crowded_round_love());
+
     let mirror = built_from_archives(&scratch, &archives, Keeping::TheMirror);
 
     let artists = mirror.find_artist("love").expect("a search");
@@ -893,6 +908,7 @@ fn alike_but_heavier_later() -> Vec<(&'static str, Vec<String>)> {
 fn of_names_alike_the_one_pressed_or_credited_most_comes_first_though_numbered_later() {
     let scratch = Scratch::new("weighed");
     let archives = dump_beside(&scratch.0, &alike_but_heavier_later());
+
     let mirror = built_from_archives(&scratch, &archives, Keeping::TheMirror);
 
     let recordings = mirror
@@ -965,13 +981,16 @@ fn a_layered_reference_keeps_what_the_mirror_answered_and_serves_it_without_the_
     let mirror = Arc::new(built(&scratch));
     let kept = Arc::new(Kept::in_memory().expect("a kept store"));
     let mirrored = Arc::new(Mirrored::default());
+
     mirrored.hold(Some(Arc::clone(&mirror)));
 
     let layered = Layered::new()
         .keeping(Some(Arc::clone(&kept)))
         .mirrored(Some(Arc::clone(&mirrored)));
     let first = layered.answered(&Asked::Recording(mbid(CREEP)));
+
     mirrored.hold(None);
+
     let again = layered.answered(&Asked::Recording(mbid(CREEP)));
     let unknown = layered
         .release(&mbid(HEARING))
@@ -992,7 +1011,9 @@ fn a_device_holding_a_mirror_answers_what_another_asks_and_a_device_without_answ
     let scratch = Scratch::new("consulted");
     let mirror = Arc::new(built(&scratch));
     let mirrored = Arc::new(Mirrored::default());
+
     mirrored.hold(Some(mirror));
+
     let serving = Consultation::new(Some(mirrored), None);
     let kept = Arc::new(Kept::in_memory().expect("a kept store"));
     let keeping = Consultation::new(None, Some(Arc::clone(&kept)));
@@ -1002,8 +1023,10 @@ fn a_device_holding_a_mirror_answers_what_another_asks_and_a_device_without_answ
         .consulted(&asked.encoded())
         .map(|told| Answer::decoded(&told.answer).expect("an answer"));
     let before = keeping.consulted(&asked.encoded());
+
     kept.keep(&asked, answered.as_ref().expect("an answer"))
         .expect("kept");
+
     let after = keeping
         .consulted(&asked.encoded())
         .map(|told| Answer::decoded(&told.answer).expect("an answer"));
@@ -1036,6 +1059,7 @@ fn pending(seq: u64, table: &str, xid: u64, old: Option<&str>, new: Option<&str>
 
 fn pending_data(changes: &[String]) -> String {
     let mut body = changes.join("\n");
+
     body.push('\n');
     body
 }
@@ -1043,6 +1067,7 @@ fn pending_data(changes: &[String]) -> String {
 fn packet(sequence: u64, schema: u32, changes: &[String]) -> Packet {
     let body = pending_data(changes);
     let mut packed = Vec::new();
+
     archived(
         &mut packed,
         &[
@@ -1278,7 +1303,9 @@ fn a_packet_of_another_schema_stops_replication_where_it_stood_and_a_new_build_l
     let nothing_new = replicated_through(&mirror, &folder, Vec::new()).expect("nothing to do");
     let first = replicated_through(&mirror, &folder, vec![first_packet()]).expect("replicated");
     let amended_before = folder.join(AMENDED_FILE).is_file();
+
     drop(mirror);
+
     let rebuilt = built_keeping(&scratch, Keeping::TheMirror);
 
     assert!(matches!(
@@ -1318,6 +1345,7 @@ fn a_mirror_built_without_its_tables_cannot_follow_the_changes() {
 #[test]
 fn a_packet_naming_another_number_than_the_one_asked_for_is_refused() {
     let mut packed = Vec::new();
+
     archived(
         &mut packed,
         &[
@@ -1327,7 +1355,9 @@ fn a_packet_naming_another_number_than_the_one_asked_for_is_refused() {
             ("mbdump/pending_data".to_owned(), String::new()),
         ],
     );
+
     let mut old_form = Vec::new();
+
     archived(
         &mut old_form,
         &[
@@ -1353,8 +1383,11 @@ fn a_packet_naming_another_number_than_the_one_asked_for_is_refused() {
 fn received(offered: Offered, staged: &Path) {
     let mut file = offered.file;
     let mut bytes = Vec::new();
+
     std::io::Read::read_to_end(&mut file, &mut bytes).expect("the offer reads");
+
     assert_eq!(bytes.len() as u64, offered.size);
+
     fs::write(staged, bytes).expect("the offer received");
 }
 
@@ -1363,9 +1396,12 @@ fn a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another() {
     let scratch = Scratch::new("offered");
     let folder = scratch.0.join("musicbrainz");
     let mirror = built_keeping(&scratch, Keeping::TheMirrorAndItsTables);
+
     replicated_through(&mirror, &folder, vec![first_packet()]).expect("replicated");
+
     let followed = Mirror::open(mirror.path()).expect("the mirror opens again");
     let phone = scratch.0.join("phone");
+
     fs::create_dir_all(&phone).expect("the phone's folder");
 
     let copy = followed
@@ -1378,10 +1414,12 @@ fn a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another() {
         .expect("the amendments");
     let dump = copy.dump.clone();
     let sequence = amendments.sequence;
+
     received(copy, &phone.join("copy.received"));
     received(amendments, &phone.join("amendments.received"));
     received_copy(&phone, &phone.join("copy.received")).expect("the copy kept");
     received_amendments(&phone, &phone.join("amendments.received")).expect("the amendments kept");
+
     let landed = Mirror::open(&mirror_in(&phone)).expect("the copy opens on the phone");
     let renamed = landed
         .recording(&mbid(CREEP))
@@ -1405,6 +1443,7 @@ fn a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays() {
     let scratch = Scratch::new("refused-offer");
     let mirror = built(&scratch);
     let phone = scratch.0.join("phone");
+
     fs::create_dir_all(&phone).expect("the phone's folder");
     received(
         mirror
@@ -1415,6 +1454,7 @@ fn a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays() {
     );
     received_copy(&phone, &phone.join("copy.received")).expect("the copy kept");
     fs::write(phone.join("broken.received"), b"no database").expect("a broken file");
+
     let unamended = mirror.offered(CopyPart::ItsAmendments).expect("an offer");
 
     let refused = received_copy(&phone, &phone.join("broken.received"));

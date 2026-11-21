@@ -53,6 +53,7 @@ const fn mirroring(_config: &Config) -> Option<Arc<dyn resonate_ui::Mirroring>> 
 
 pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<()> {
     let starting = crate::starting::one_window_at_a_time();
+
     if settings_of_its_own(&cli).is_empty()
         && let Some(window) = Running::a_window().ok().flatten()
     {
@@ -64,6 +65,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             &Served::of(&config, settings_path(&cli).ok()),
         );
     }
+
     let places = resonate_ui::Places {
         config: settings_path(&cli)?,
         library: library_path(&cli, &config)?,
@@ -75,6 +77,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let rendering = Rendering::for_the_window(&config, wanted_sink(&cli, &config).as_ref());
     let renderers = rendering.switch();
     let offered = crate::offering::Offered::for_the_window(&config, &library);
+
     let player = rendering.player(
         kinship::kin_from(engine_config(&cli, &config), Some(&library)),
         Arc::clone(&sources),
@@ -83,12 +86,15 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         Some(dir) => player.keeping_analyses(resonate_engine::KeptAnalyses::at(dir)),
         None => player,
     });
+
     confirm_sink_once_the_window_is_open(&player, wanted_sink(&cli, &config));
+
     let keeps = resuming(&config, Some(&library));
     #[cfg(feature = "sync")]
     let files = crate::together::invitations_taken_out(&cli.files);
     #[cfg(not(feature = "sync"))]
     let files = cli.files.clone();
+
     queue(&player, &files, &library, keeps, &served)?;
 
     let (asked_to_quit, quitting) = bounded(1);
@@ -98,6 +104,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     let notify = Arc::new(AtomicBool::new(config.is_on(Switch::Notify)));
     let by_sound = online::by_sound(&config);
     let lyrics_by_the_locale = online::lyrics_by_the_locale(&config);
+
     let opener = crate::zoning::Opener::new(
         kinship::kin_from(engine_config(&cli, &config), Some(&library)),
         &sources,
@@ -116,12 +123,14 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         ),
     );
     let kept_zones = crate::zoning::kept_zones(&library, keeps);
+
     let zones = Zones::start(
         Arc::clone(&player),
         crate::zoning::first_named(&kept_zones),
         Arc::clone(&opener) as Arc<dyn Opens>,
     );
     let silenced = Arc::downgrade(&zones);
+
     crate::signals::quit_when_told(
         asked_to_quit,
         crate::signals::silencing(move || {
@@ -132,10 +141,13 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     );
     drop(starting);
     crate::zoning::restore(&zones, &library, &kept_zones);
+
     let listens = listen::in_the_window(&config, opener.teller());
     let desktop = the_desktop_asks(&config);
     let (hears, heard) = crossbeam_channel::unbounded();
+
     watch_the_desktop(hears);
+
     let presenter = Arc::new(discord::start(&player, Some(&library), &config));
     #[cfg(any(windows, target_os = "macos"))]
     let _awake = {
@@ -147,13 +159,16 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         })
     };
     let submitting = submitting::start(&config, &library, &player);
+
     #[cfg(feature = "online")]
     crate::musicbrainz::keep_fresh(&config);
+
     #[cfg(feature = "sync")]
     let together = crate::together::start(&config, &library).unwrap_or_else(|error| {
         tracing::warn!(%error, "shared playlists could not start");
         None
     });
+
     #[cfg(feature = "sync")]
     crate::party_room::in_the_window(crate::party_room::Seats {
         zones: Arc::clone(&zones),
@@ -165,12 +180,15 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         time_server: config.party_time_server(),
         told: follow,
     });
+
     let syncing = sync::start(&config, Some(&places.config), &library);
+
     #[cfg(feature = "sync")]
     syncing.drive(resonate_driven::Driven::zones(
         &zones,
         resonate_driven::ByTheirTags,
     ));
+
     let syncing_for_the_window = syncing.for_the_window();
     #[cfg(feature = "sync")]
     let together_for_the_window = together
@@ -179,7 +197,9 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     #[cfg(not(feature = "sync"))]
     let together_for_the_window = None;
     let (opening, opened) = crossbeam_channel::unbounded();
+
     queue_what_the_system_opens(opened, Arc::clone(&library), served.clone());
+
     let present = Arc::clone(&presenter) as Arc<dyn resonate_ui::Present>;
     let leaving: resonate_ui::Leaving = {
         let zones = Arc::clone(&zones);
@@ -197,6 +217,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
             zones.leave();
         })
     };
+
     let outcome = resonate_ui::run(
         Arc::clone(&zones),
         Arc::clone(&library),
@@ -357,6 +378,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
         },
         leaving,
     );
+
     outcome?;
     Ok(())
 }
@@ -411,6 +433,7 @@ struct DesktopAsks {
 
 fn the_desktop_asks(config: &Config) -> DesktopAsks {
     let follows = config.appearance_where_the_desktop_asks(false).follows;
+
     if config.theme.is_some() && config.reduced_motion.is_some() && !follows.scheme && !follows.text
     {
         return DesktopAsks::default();
@@ -455,6 +478,7 @@ fn caret_as_the_desktop_blinks() -> resonate_ui::CaretBlink {
             resonate_mpris::Blinking::Every(half) => told.every(half),
             resonate_mpris::Blinking::Unsaid => {}
         });
+
     if let Err(error) = asked {
         tracing::debug!(%error, "the desktop was not asked how its caret blinks");
     }
@@ -495,8 +519,11 @@ fn queued_in(
     served: &Served,
 ) -> Result<()> {
     let (invitations, arguments) = invitations_among(arguments);
+
     window.invite(&invitations)?;
+
     let rows = handed_rows(&arguments, library, served);
+
     if !rows.is_empty() {
         window.queue(
             &rows,
@@ -612,8 +639,10 @@ mod tests {
             .expect("the scratch folder as the scan stores it");
         let song = root.join("echoes.wav");
         let copy = root.join("elsewhere.wav");
+
         fs::write(&song, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a song");
         fs::write(&copy, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a copy");
+
         let library = fixtures::scanned(&root);
         let held = |path| {
             library
@@ -623,9 +652,11 @@ mod tests {
                 .id
         };
         let (song_id, copy_id) = (held(&song), held(&copy));
+
         library
             .choose_version(song_id, copy_id)
             .expect("a version chosen");
+
         let opened = [song.clone().into_os_string()];
 
         let loaded = match opening(&opened, &library, false, &Served::default()) {
@@ -634,10 +665,12 @@ mod tests {
         };
         let handed = handed_rows(&opened, &library, &Served::default());
         let nothing_opened = opening(&[], &library, false, &Served::default());
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         let ids: Vec<TrackId> = loaded.iter().map(|item| item.id).collect();
         let locations: Vec<&MediaLocation> = loaded.iter().map(|item| &item.location).collect();
+
         assert_eq!(ids, [copy_id]);
         assert_eq!(locations, [&MediaLocation::local(&copy)]);
         assert_eq!(handed, [(MediaLocation::local(&copy), None)]);
@@ -654,9 +687,11 @@ mod tests {
 
         let code = "E-ABCDE-12345";
         let server = "wss://music.example.org:8443/";
+
         let link = link_to(Invited::Playlist, code, Some(server));
         let page =
             web_link_to(Invited::Playlist, code, server).expect("a server a browser reaches");
+
         let given: Vec<OsString> = ["a.flac", link.as_str(), page.as_str(), "b.flac"]
             .into_iter()
             .map(OsString::from)
@@ -668,6 +703,7 @@ mod tests {
         assert_eq!(files, [OsString::from("a.flac"), OsString::from("b.flac")]);
         for invitation in &invitations {
             let read = invitation_in(invitation).expect("the window reads an invitation");
+
             assert_eq!(read.code, code, "{invitation}");
             assert_eq!(read.server.as_deref(), Some(server), "{invitation}");
         }

@@ -58,6 +58,7 @@ impl Farewell {
 
 fn watch(reaction: Reaction) -> bool {
     let watching = *WATCHING.get_or_init(start_watching);
+
     if watching {
         *REACTION.lock() = Some(reaction);
     }
@@ -77,6 +78,7 @@ fn start_watching() -> bool {
 pub(crate) fn quit_when_told(asked_to_quit: Sender<()>, silence: Silencing) {
     let farewell = Farewell::of(silence);
     let mut told = false;
+
     let watching = watch(Box::new(move || {
         if told {
             tracing::warn!("a second interrupt; leaving without closing the stream");
@@ -136,6 +138,7 @@ impl Drop for Interrupting {
 
 pub(crate) fn cancel_when_told(cancel: impl Fn() + Send + 'static) -> Option<Interrupting> {
     let mut told = false;
+
     let watching = watch(Box::new(move || {
         if told {
             tracing::warn!("a second interrupt; leaving without finishing the file in hand");

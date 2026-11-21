@@ -165,9 +165,11 @@ impl YoutubeMusicField {
                     Self::Cookies => field.masked(),
                     Self::Program => field,
                 };
+
                 field.hold(named.held(online), cx);
                 field
             });
+
             SettingsFields::says_when_entered(&field, Entered::YoutubeMusic(named), cx);
             field
         })
@@ -191,6 +193,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.youtube_music_field(named, cx)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
@@ -212,6 +215,7 @@ impl RootView {
                 words::settings_youtube_music::yt_dlp_is_run_from_there()
             }
         };
+
         self.store(&named.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.the_sources_moved(cx);
@@ -291,6 +295,7 @@ impl RootView {
             pane.accounts.youtube_music_check.asking = true;
         });
         cx.notify();
+
         let task = cx.spawn(async move |this, cx| {
             let answered = cx
                 .background_executor()
@@ -305,12 +310,14 @@ impl RootView {
             });
             let _ = told;
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts.youtube_music_check.task = task);
     }
 
     fn hold_the_youtube_music_cookies(&mut self, cookies: String, cx: &mut Context<Self>) {
         let named = YoutubeMusicField::Cookies;
+
         self.youtube_music_field(named, cx)
             .clone()
             .update(cx, |field, cx| field.hold(cookies.clone(), cx));
@@ -330,6 +337,7 @@ impl RootView {
             pane.accounts.youtube_music_sign_in.asking = true;
         });
         cx.notify();
+
         let task = cx.spawn(async move |this, cx| {
             let answered = cx
                 .background_executor()
@@ -348,6 +356,7 @@ impl RootView {
             });
             let _ = told;
         });
+
         self.settings_pane.update(cx, |pane, _| {
             pane.accounts.youtube_music_sign_in.task = task;
         });
@@ -362,6 +371,7 @@ impl RootView {
             pane.accounts.youtube_music_sign_in.asking = true;
         });
         cx.notify();
+
         let task = cx.spawn(async move |this, cx| {
             let gone = cx
                 .background_executor()
@@ -374,24 +384,29 @@ impl RootView {
                 this.settings_pane.update(cx, |pane, _| {
                     pane.accounts.youtube_music_sign_in.asking = false;
                 });
+
                 let held = cx
                     .global::<ResonateApp>()
                     .online
                     .youtube_music_cookies
                     .clone();
+
                 if signs_in.names_the_window_jar(&held) {
                     this.hold_the_youtube_music_cookies(String::new(), cx);
                 }
+
                 let said = if gone {
                     Notice::Done(words::settings_youtube_music::signed_out().to_owned())
                 } else {
                     Notice::Trouble(words::settings_youtube_music::sign_out_failed().to_owned())
                 };
+
                 this.report(said, cx);
                 cx.notify();
             });
             let _ = told;
         });
+
         self.settings_pane.update(cx, |pane, _| {
             pane.accounts.youtube_music_sign_in.task = task;
         });
@@ -402,9 +417,11 @@ impl RootView {
         let Some(signs_in) = app.signs_in_to_youtube_music.clone() else {
             return row;
         };
+
         if !signs_in.is_offered() {
             return row;
         }
+
         let reachable = app.online.enabled && app.online.youtube_music;
         let kept = signs_in.names_the_window_jar(&app.online.youtube_music_cookies);
         let asking = self
@@ -413,6 +430,7 @@ impl RootView {
             .accounts
             .youtube_music_sign_in
             .asking;
+
         let label = match (asking, kept) {
             (true, _) => words::settings_youtube_music::signing_in_label(),
             (false, true) => words::settings_youtube_music::sign_in_again_label(),
@@ -428,6 +446,7 @@ impl RootView {
             self,
             cx,
         ));
+
         if !kept {
             return row;
         }
@@ -498,6 +517,7 @@ impl RootView {
                 cx,
             ))
             .child(note(words::settings_youtube_music::terms_note()));
+
         for named in YoutubeMusicField::ALL {
             body = body.child(kit::field(
                 named.label(),
@@ -509,6 +529,7 @@ impl RootView {
                 ),
             ));
         }
+
         let body = body
             .child(self.in_the_ring(
                 "youtube-music-keep-order",
@@ -549,6 +570,7 @@ mod tests {
         ];
 
         let mut said = connections.map(told);
+
         said.sort_unstable();
 
         assert!(said.windows(2).all(|pair| pair[0] != pair[1]));

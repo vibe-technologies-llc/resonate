@@ -88,6 +88,7 @@ fn exclusive_on(device: i32) -> Option<StreamSpec> {
         .set_sample_rate_conversion_quality(SampleRateConversionQuality::None)
         .open_stream()
         .ok()?;
+
     let native = exclusive_spec_of(&stream);
     let _ = stream.close();
     native
@@ -97,6 +98,7 @@ fn exclusive_spec_of(stream: &impl AudioStreamBase) -> Option<StreamSpec> {
     if stream.get_sharing_mode() != SharingMode::Exclusive {
         return None;
     }
+
     let rate = SampleRate::new(u32::try_from(stream.get_sample_rate()).ok()?).ok()?;
     let channels = match stream.get_channel_count() {
         ChannelCount::Mono => ChannelLayout::Mono,
@@ -209,9 +211,11 @@ where
     } = opening;
     let Some(format) = OutputFormat::of(spec) else {
         let _ = ready.send(Err(Error::FormatRefused));
+
         return;
     };
     let requested = routing.requested();
+
     if way == Way::Exclusive && !opens_as_asked::<T, C>(&Asked::of(way, requested), spec) {
         routing.exclusive_refused();
         way = Way::Mixed;
@@ -227,6 +231,7 @@ where
 
     let empty = Arc::new(AtomicBool::new(false));
     let failed = Arc::new(AtomicBool::new(false));
+
     let rendering = Rendering::<(T, C)> {
         fed,
         empty: Arc::clone(&empty),
@@ -249,16 +254,22 @@ where
         }
         Ok(mut stream) => {
             let _ = stream.close();
+
             routing.give_back(&claim);
+
             let _ = ready.send(Err(Error::FormatRefused));
+
             return;
         }
         Err(source) => {
             routing.give_back(&claim);
+
             let _ = ready.send(Err(backend_error(Operation::Open, source)));
+
             return;
         }
     };
+
     let path = if way == Way::Exclusive && stream.get_sharing_mode() != SharingMode::Exclusive {
         Way::Mixed.path()
     } else {
@@ -282,6 +293,7 @@ where
     );
     let Some(told) = told else {
         let _ = stream.close();
+
         routing.give_back(&claim);
         return;
     };
@@ -295,7 +307,9 @@ where
         &empty,
         &failed,
     );
+
     let _ = stream.close();
+
     routing.closed(told);
 }
 
@@ -321,10 +335,12 @@ fn serve(
                 from: state,
                 to: StreamState::Failed,
             });
+
             return;
         }
         if let Ok(latency) = stream.calculate_latency_millis() {
             let frames = (latency.max(0.0) * f64::from(rate.hz()) / MILLISECONDS_A_SECOND) as u64;
+
             clock.note(
                 GraphTime {
                     delay: frames.min(i64::MAX as u64) as i64,
@@ -342,6 +358,7 @@ fn serve(
             if Instant::now() >= ready_at {
                 let _ = stream.request_stop();
                 let _ = announced.send(StreamEvent::Drained);
+
                 draining = false;
                 drain_after = None;
             }
@@ -374,6 +391,7 @@ fn serve(
                     from: state,
                     to: next,
                 });
+
                 state = next;
             }
             Err(RecvTimeoutError::Timeout) => {}
@@ -399,6 +417,7 @@ impl Opener for Device {
         let (fed, handing) = fed_from(source);
         let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
         let claim = self.0.claim();
+
         let opening = Opening {
             spec,
             way: self.0.way_for(spec),
@@ -410,6 +429,7 @@ impl Opener for Device {
             announced,
             clock: Arc::clone(&clock),
         };
+
         thread::Builder::new()
             .name("resonate-mobile-output".into())
             .spawn(move || play_as(opening))
@@ -417,6 +437,7 @@ impl Opener for Device {
                 op: Operation::Open,
                 source,
             })?;
+
         let opened = opened_within(&started, OPEN_WITHIN, &claim)?;
         let reshape = reshaper(opened, Arc::clone(&self.0), handing, commands.clone());
         Ok(SinkStream::new(events, clock, controlled_by(commands)).reshaped_by(reshape))

@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::{DeviceId, catalog::Refused, wire::Refusal};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StoreOp {
     Open,
     Migrate,
@@ -12,13 +12,13 @@ pub enum StoreOp {
     Write,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DeflateOp {
     Pack,
     Unpack,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum TlsOp {
     Roots,
     Client,
@@ -26,14 +26,14 @@ pub enum TlsOp {
     Quic,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StreamOp {
     Open,
     Write,
     Read,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum FileOp {
     Stage,
     Write,
@@ -41,14 +41,14 @@ pub enum FileOp {
     Open,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum CodeRefused {
     Length { found: usize },
     Symbol { at: usize },
     Check,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Malformed {
     Ended,
     Trailing { left: usize },

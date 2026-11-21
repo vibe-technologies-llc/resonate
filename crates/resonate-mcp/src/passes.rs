@@ -42,7 +42,7 @@ impl Lookups {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Pass {
     Scan,
@@ -164,6 +164,7 @@ impl Ended for EnrichSummary {
 
     fn told(&self) -> Value {
         let mut told = json!({ "stats": self.stats.told(), "cancelled": self.cancelled });
+
         match self.stopped_by {
             Some(Stopped::Unreached(op)) => {
                 told["stopped_by"] = json!("unreached");
@@ -209,9 +210,11 @@ impl<Progress: Watched, Summary: Ended> Slot<Progress, Summary> {
         let Self::Running(handle) = std::mem::replace(self, Self::Idle) else {
             return;
         };
+
         *self = match handle.join() {
             Ok(summary) => {
                 let mut told = summary.told();
+
                 told["state"] = json!("finished");
                 Self::Finished {
                     told,
@@ -317,6 +320,7 @@ impl Passes {
 
     pub(crate) fn scan(&self, library: &Library, asked: &ScanAsked) -> Result<Value> {
         let roots = asked.roots.as_slice();
+
         self.free(Pass::Scan)?;
         if let Some(missing) = roots.iter().find(|root| !root.is_dir()) {
             return Err(Error::NoSuchFolder {
@@ -335,6 +339,7 @@ impl Passes {
         })?;
         let looks_up_after = self.lookups.after_a_scan && self.lookups.reference.is_some();
         let mut running = self.running.borrow_mut();
+
         running.scan = Slot::Running(handle);
         running.lookup_owed = looks_up_after;
         drop(running);
@@ -355,12 +360,15 @@ impl Passes {
 
     pub(crate) fn carry_on(&self, library: &Library) {
         let mut running = self.running.borrow_mut();
+
         if !running.lookup_owed {
             return;
         }
+
         let Some(whole) = running.scan.ran_whole() else {
             return;
         };
+
         running.lookup_owed = false;
         drop(running);
 
@@ -375,10 +383,12 @@ impl Passes {
     fn admit(library: &Library, roots: &[PathBuf]) -> Result<()> {
         let held = library.roots()?;
         let mut kept = held.clone();
+
         for root in roots {
             let canonical = root
                 .canonicalize()
                 .map_err(|_| Error::NoSuchFolder { path: root.clone() })?;
+
             if canonical.parent().is_none() {
                 return Err(Error::FilesystemRoot { path: canonical });
             }
@@ -414,6 +424,7 @@ impl Passes {
 
     pub(crate) fn look_up(&self, library: &Library, refresh: bool) -> Result<Value> {
         self.free(Pass::Lookup)?;
+
         let reference = self.lookups.reference.clone().ok_or(Error::NoReference)?;
 
         let left = if refresh {
@@ -432,6 +443,7 @@ impl Passes {
                 ..EnrichOptions::default()
             },
         )?;
+
         self.running.borrow_mut().lookup = Slot::Running(handle);
 
         Ok(json!({
@@ -443,12 +455,14 @@ impl Passes {
 
     pub(crate) fn poll(&self, library: &Library, again: bool) -> Result<Value> {
         self.free(Pass::Poll)?;
+
         let options = if again {
             PollOptions::ASKING_EVERY_WANT
         } else {
             PollOptions::default()
         };
         let handle = library.poll(Arc::clone(&self.lookups.providers), options)?;
+
         self.running.borrow_mut().poll = Slot::Running(handle);
 
         Ok(json!({
@@ -460,6 +474,7 @@ impl Passes {
     pub(crate) fn states(&self) -> Value {
         let mut running = self.running.borrow_mut();
         let mut states = serde_json::Map::new();
+
         for pass in Pass::ALL {
             states.insert(pass.name().to_owned(), running.state(pass));
         }
@@ -468,12 +483,14 @@ impl Passes {
 
     pub(crate) fn stop(&self, pass: Pass) -> Value {
         let mut running = self.running.borrow_mut();
+
         running.stop(pass);
         running.state(pass)
     }
 
     pub fn drain(&self) {
         let mut running = self.running.borrow_mut();
+
         running.lookup_owed = false;
         running.scan.stop();
         running.lookup.stop();

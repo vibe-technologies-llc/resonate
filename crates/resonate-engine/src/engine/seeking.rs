@@ -21,18 +21,22 @@ impl Engine {
             opening.at = OpensAt::Frame(to);
             return Ok(());
         }
+
         let Some(track) = self.track.as_ref() else {
             return Ok(());
         };
+
         if !track.info.is_seekable {
             self.seeks = self.seeks.stepped();
             return self.start(Frames::ZERO);
         }
+
         let landed = if self.reuses_stream() {
             self.seek_in_place(to)
         } else {
             self.rebind(Some(to), None)
         };
+
         if landed.is_ok() {
             self.seeks = self.seeks.stepped();
             self.heard_at_least = None;
@@ -49,6 +53,7 @@ impl Engine {
             }
             return Ok(());
         }
+
         let Some(clock) = self.seeking_track().map(Track::clock) else {
             return Err(Error::InvalidTransition {
                 state: self.transport,
@@ -65,6 +70,7 @@ impl Engine {
                 attempted: CommandKind::Seek,
             });
         };
+
         if let Some(duration) = track.info.duration
             && to > duration
         {
@@ -104,6 +110,7 @@ impl Engine {
                 .track
                 .as_ref()
                 .is_some_and(|track| !track.info.is_seekable);
+
         if streaming_what_cannot_seek {
             tracing::debug!(
                 "a track that cannot seek keeps its stream until it can or the next begins"
@@ -111,6 +118,7 @@ impl Engine {
             self.rebind_owed = true;
             return Ok(());
         }
+
         let at = self.position();
         self.rebind(Some(at), None)
     }
@@ -151,6 +159,7 @@ impl Engine {
         let Some(unanswered) = self.unanswered_discard() else {
             return;
         };
+
         match unanswered {
             Unanswered::NothingPulling => tracing::debug!(
                 "the transport stopped before the graph took the seek; rebuilding the ring around it"
@@ -159,6 +168,7 @@ impl Engine {
                 "the graph did not drain the ring after a seek; rebuilding the stream around it"
             ),
         }
+
         let at = self.position();
         if let Err(error) = self.rebind_on_a_new_stream(Some(at), None) {
             self.fail(error);
@@ -169,6 +179,7 @@ impl Engine {
         let playing = self.playing;
         let output = self.output.as_mut()?;
         let since = output.discarding_since?;
+
         if !output.producer.is_discarding() {
             output.discarding_since = None;
             return None;

@@ -45,17 +45,20 @@ struct Folder(PathBuf);
 impl Folder {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let folder = env::temp_dir().join(format!(
             "resonate-driven-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&folder).expect("a test folder");
         Self(folder)
     }
 
     fn song(&self, name: &str, tags: &[(&[u8; 4], &str)], id: u64) -> QueueItem {
         let path = self.0.join(format!("{name}.wav"));
+
         fs::write(&path, silence(tags)).expect("a song");
         QueueItem::whole(
             TrackId::new(id).expect("an id"),
@@ -82,6 +85,7 @@ fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
 fn silence(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     let bytes = RATE * SECONDS_A_SONG * BYTES_A_FRAME;
     let mut fmt = Vec::new();
+
     fmt.extend_from_slice(&1_u16.to_le_bytes());
     fmt.extend_from_slice(&CHANNELS.to_le_bytes());
     fmt.extend_from_slice(&RATE.to_le_bytes());
@@ -90,13 +94,16 @@ fn silence(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     fmt.extend_from_slice(&16_u16.to_le_bytes());
 
     let mut info = b"INFO".to_vec();
+
     for (id, value) in tags {
         let mut text = value.as_bytes().to_vec();
+
         text.push(0);
         chunk(&mut info, id, &text);
     }
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &fmt);
     if !tags.is_empty() {
         chunk(&mut body, b"LIST", &info);
@@ -104,6 +111,7 @@ fn silence(tags: &[(&[u8; 4], &str)]) -> Vec<u8> {
     chunk(&mut body, b"data", &vec![0; bytes as usize]);
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&u32::try_from(body.len()).expect("a file").to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -144,6 +152,7 @@ impl Opener for Pulled {
         let (announces, incoming) = unbounded();
         let active = Arc::new(AtomicBool::new(false));
         let closed = Arc::new(AtomicBool::new(false));
+
         let (pulling, ending) = (Arc::clone(&active), Arc::clone(&closed));
 
         thread::spawn(move || {
@@ -205,6 +214,7 @@ impl Backend for Sink {
 
 fn player() -> Player {
     let (announces, changes) = unbounded();
+
     let backend = Sink {
         _announces: announces,
         changes,
@@ -217,6 +227,7 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
     let deadline = Instant::now() + SETTLES_WITHIN;
     while !done() {
         assert!(Instant::now() < deadline, "{what} never happened");
+
         thread::sleep(LOOKED_AGAIN_AFTER);
     }
 }
@@ -239,6 +250,7 @@ fn load_three(player: &Player, folder: &Folder, autoplay: bool) {
         folder.song("time", &[], 2),
         folder.song("money", &[], 3),
     ];
+
     player
         .settle(Command::Load {
             items,
@@ -299,6 +311,7 @@ fn a_real_engine_is_mirrored_and_takes_every_command_a_device_may_send() {
     });
 
     let sought = Duration::from_secs(12);
+
     driven
         .control(first, RemoteCommand::Seek(sought))
         .expect("seek");
@@ -381,10 +394,12 @@ fn an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothin
     let player = Arc::new(player());
     let driven = Driven::player(&player);
     let first = ZoneId::FIRST;
+
     load_three(&player, &folder, false);
     eventually("the three rows mirrored", || {
         the_zone(&driven, first).queue_length == 3
     });
+
     let seen = the_zone(&driven, first)
         .queue_revision
         .expect("a driven zone names its queue's revision");
@@ -398,6 +413,7 @@ fn an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothin
     eventually("the edit made here mirrored", || {
         titles(&the_zone(&driven, first)) == ["money", "Echoes", "time"]
     });
+
     let aimed_at_the_old_queue =
         driven.control_if_the_queue_is_still(first, seen, RemoteCommand::Remove(1));
     let jumped_in_the_old_queue =
@@ -410,6 +426,7 @@ fn an_edit_by_row_aimed_at_a_queue_since_edited_here_is_refused_and_moves_nothin
     assert_eq!(aimed_at_the_old_queue, Err(Uncontrolled::QueueMoved));
     assert_eq!(jumped_in_the_old_queue, Err(Uncontrolled::QueueMoved));
     assert_eq!(aimed_at_the_queue_as_it_is, Ok(()));
+
     eventually("only the row aimed at in the queue as it is gone", || {
         titles(&the_zone(&driven, first)) == ["money", "Echoes"]
     });
@@ -504,6 +521,7 @@ fn each_zone_is_driven_alone_named_as_the_seam_names_its_rows_and_gone_with_its_
     });
 
     let by_tags = Driven::zones(&zones, ByTheirTags);
+
     eventually("the tags read for the same rows", || {
         titles(&the_zone(&by_tags, second.id)) == ["Echoes", "time", "money"]
     });
@@ -630,9 +648,12 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
     load_three(&player, &folder, false);
 
     let desk = device(&folder.0, &key, "Desk", None);
+
     desk.control_with(Arc::new(Driven::player(&player)), RemoteTrust::Everything);
+
     let phone = device(&folder.0, &key, "Phone", Some(&desk));
     let deadline = Instant::now() + MEETS_WITHIN;
+
     while !phone
         .shown()
         .devices
@@ -640,8 +661,10 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
         .any(|known| known.name == "Desk" && known.nearby)
     {
         assert!(Instant::now() < deadline, "the phone never met the desk");
+
         thread::sleep(LOOKED_AGAIN_AFTER);
     }
+
     let driven = desk.device();
 
     eventually("the desk's queue mirrored on the phone", || {
@@ -654,6 +677,7 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
         phone.control(driven, first, RemoteCommand::Play),
         Controlling::Done
     );
+
     eventually("the engine playing as the mirror says", || {
         player.state().playback == resonate_engine::PlaybackState::Playing
             && mirrored_on(&phone, driven, |zone| {
@@ -665,6 +689,7 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
         phone.control(driven, first, RemoteCommand::Move { from: 2, to: 1 }),
         Controlling::Done
     );
+
     eventually("the move mirrored back", || {
         mirrored_on(&phone, driven, |zone| {
             titles(zone) == ["Echoes", "money", "time"]
@@ -677,6 +702,7 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
     );
 
     desk.trust(RemoteTrust::Transport);
+
     assert_eq!(
         phone.control(driven, first, RemoteCommand::Remove(1)),
         Controlling::Untrusted
@@ -686,11 +712,13 @@ fn a_device_drives_a_real_engine_across_the_wire_as_far_as_it_is_trusted() {
         phone.control(driven, first, RemoteCommand::Jump(1)),
         Controlling::Done
     );
+
     eventually("the jump heard", || {
         player.state().queue_position == Some(1)
     });
 
     desk.trust(RemoteTrust::Nothing);
+
     assert_eq!(
         phone.control(driven, first, RemoteCommand::Pause),
         Controlling::Untrusted

@@ -98,6 +98,7 @@ impl LibraryModel {
             .map(|item| item.id)
             .filter(|id| !self.versions.read || self.versions.chosen.contains(id))
             .collect();
+
         if queued.is_empty() {
             return resonate_library::Chosen::default();
         }
@@ -110,7 +111,9 @@ impl LibraryModel {
 
     pub(super) fn read_the_versions_chosen(&mut self, cx: &mut Context<Self>) {
         self.versions.touched = false;
+
         let library = Arc::clone(&self.library);
+
         self.versions._reading = cx.spawn(async move |this, cx| {
             let read =
                 cx.background_executor()

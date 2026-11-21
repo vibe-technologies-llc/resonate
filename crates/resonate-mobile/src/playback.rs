@@ -168,12 +168,15 @@ impl PlaybackPreferences {
 
     pub(crate) fn commands(&self, previous: &Self) -> Result<Vec<Command>> {
         let profile = self.equaliser.profile()?;
+
         if !(50..=2000).contains(&self.buffer_ms) {
             return Err(Error::BufferRange {
                 milliseconds: self.buffer_ms,
             });
         }
+
         let mut commands = Vec::new();
+
         if self.equaliser_enabled != previous.equaliser_enabled
             || self.equaliser.sounds_unlike(&previous.equaliser)
         {
@@ -282,6 +285,7 @@ mod tests {
     fn the_desktops_playback_choices_reach_the_engine_only_where_they_moved() {
         let previous = PlaybackPreferences::default();
         let mut preferences = previous.clone();
+
         preferences.previous_restarts = false;
         preferences.skip_repeats_the_queue = false;
         preferences.shuffle = ShuffleStyle::Albums;
@@ -314,7 +318,9 @@ mod tests {
             crate::catalog::Catalog::open(std::path::Path::new(":memory:")).expect("a catalog");
 
         let at_first = catalog.carries_queues_over().expect("read");
+
         catalog.carry_queues_over(false).expect("kept");
+
         let after = catalog.carries_queues_over().expect("read");
 
         assert!(at_first);
@@ -325,14 +331,17 @@ mod tests {
     fn a_shaped_curve_reaches_the_engine_and_only_what_changed_is_sent() {
         let previous = PlaybackPreferences::default();
         let mut preferences = previous.clone();
+
         preferences.equaliser_enabled = true;
         preferences.equaliser = ten_band_curve(-6.0, vec![0.0, 0.0, 0.0, 0.0, 0.0, 6.0]);
 
         let profile = preferences.equaliser.profile().expect("a valid curve");
+
         assert!((profile.magnitude_db(1000.0, SampleRate::HZ_48000)).abs() < 0.01);
         assert!(profile.magnitude_db(100.0, SampleRate::HZ_48000) < -5.0);
 
         let commands = preferences.commands(&previous).expect("a curve edit");
+
         assert!(matches!(commands.as_slice(), [Command::SetEqualisation(_)]));
         assert!(
             preferences
@@ -342,7 +351,9 @@ mod tests {
         );
 
         let mut renamed = preferences.clone();
+
         renamed.equaliser.name = "Renamed".into();
+
         assert!(
             renamed
                 .commands(&preferences)
@@ -354,6 +365,7 @@ mod tests {
     #[test]
     fn a_crossfeed_level_is_sent_once_and_survives_a_round_trip_of_every_level() {
         let previous = PlaybackPreferences::default();
+
         assert_eq!(previous.crossfeed, CrossfeedLevel::Off);
 
         for (level, engine) in [
@@ -362,9 +374,11 @@ mod tests {
             (CrossfeedLevel::Strong, Crossfeed::Strong),
         ] {
             let mut preferences = previous.clone();
+
             preferences.crossfeed = level;
 
             let commands = preferences.commands(&previous).expect("a level");
+
             assert!(matches!(
                 commands.as_slice(),
                 [Command::SetCrossfeed(sent)] if *sent == engine
@@ -374,8 +388,11 @@ mod tests {
         }
 
         let mut back = previous.clone();
+
         back.crossfeed = CrossfeedLevel::Strong;
+
         let commands = previous.commands(&back).expect("switched off");
+
         assert!(matches!(
             commands.as_slice(),
             [Command::SetCrossfeed(Crossfeed::Off)]
@@ -386,6 +403,7 @@ mod tests {
     fn a_curve_of_any_shape_up_to_the_bound_is_sent_whole() {
         let previous = PlaybackPreferences::default();
         let mut preferences = previous.clone();
+
         preferences.equaliser.bands = (0..20)
             .map(|at| EqualiserBand {
                 filter: EqualiserFilter::Peaking,
@@ -400,6 +418,7 @@ mod tests {
         let [Command::SetEqualisation(equalisation)] = commands.as_slice() else {
             panic!("one equalisation command");
         };
+
         assert_eq!(
             equalisation
                 .fallback
@@ -414,6 +433,7 @@ mod tests {
     #[test]
     fn a_malformed_curve_is_refused_before_any_commands_are_sent() {
         let mut preferences = PlaybackPreferences::default();
+
         preferences.equaliser.bands.push(EqualiserBand {
             filter: EqualiserFilter::Peaking,
             frequency_hz: f32::NAN,
@@ -422,6 +442,7 @@ mod tests {
             channels: u8::MAX,
         });
         preferences.buffer_ms = 100;
+
         assert!(matches!(
             preferences.commands(&PlaybackPreferences::default()),
             Err(Error::BandFrequency { band: 0, .. })
@@ -429,6 +450,7 @@ mod tests {
 
         preferences.equaliser.bands.clear();
         preferences.equaliser.preamp_db = f32::INFINITY;
+
         assert!(matches!(
             preferences.commands(&PlaybackPreferences::default()),
             Err(Error::PreampRange { .. })

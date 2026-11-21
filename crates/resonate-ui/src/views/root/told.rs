@@ -24,6 +24,7 @@ impl RootView {
         let Some(zone) = self.zones.iter_mut().find(|zone| zone.id == id) else {
             return;
         };
+
         let Some(counting) = zone.listening.heard(&state, &queue) else {
             return;
         };
@@ -45,6 +46,7 @@ impl RootView {
         if !self.library.read(cx).resumes() {
             return;
         }
+
         let (state, queued) = {
             let model = player.read(cx);
             (model.state().clone(), model.queued())
@@ -52,6 +54,7 @@ impl RootView {
         let Some(zone) = self.zones.iter_mut().find(|zone| zone.id == id) else {
             return;
         };
+
         let Some(keep) = zone.resuming.kept(&state, &queued) else {
             return;
         };
@@ -67,6 +70,7 @@ impl RootView {
     ) {
         let playing = PlayingRow::of(player.read(cx).state());
         let shown = self.pane == Pane::Queue;
+
         if self
             .queue
             .update(cx, |queue, _| queue.follows(playing, shown))
@@ -106,7 +110,9 @@ impl RootView {
             tracing::debug!(%zone, "the zone acted on was taken away before its rows were read");
             return;
         }
+
         let around = self.acting_on.replace(zone);
+
         act(self);
         self.acting_on = around;
     }
@@ -203,6 +209,7 @@ impl RootView {
         let Some(landed) = self.settings_written.next_batch() else {
             return;
         };
+
         cx.spawn(async move |this, cx| {
             let written = landed.await;
             let landed = this.update(cx, |this, cx| {

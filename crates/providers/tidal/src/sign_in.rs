@@ -173,18 +173,23 @@ impl TidalSignIn {
             ("grant_type", DEVICE_GRANT),
             ("scope", SCOPE),
         ];
+
         if let Some(secret) = &client.secret {
             form.push(("client_secret", secret.as_str()));
         }
+
         let (status, bytes) = self.sent(
             &self.endpoints.auth,
             &form,
             Some(self.polls_answered_within),
         )?;
+
         if (200..300).contains(&status) {
             let granted: Granted = serde_json::from_slice(&bytes).map_err(|_| self.unreadable())?;
+
             return Ok(Answered::Granted(RefreshToken::new(granted.refresh_token)));
         }
+
         let error = serde_json::from_slice::<Refusal>(&bytes)
             .ok()
             .and_then(|refusal| refusal.error);
@@ -221,6 +226,7 @@ impl Passing {
 
 fn waited(every: Duration, until: Instant, cancelled: &(dyn Fn() -> bool + Sync)) -> bool {
     let next = Instant::now().checked_add(every).unwrap_or(until);
+
     while Instant::now() < next.min(until) {
         if cancelled() {
             return false;
@@ -241,9 +247,11 @@ impl SignsIn for TidalSignIn {
             &[("client_id", client.id.as_str()), ("scope", SCOPE)],
             None,
         )?;
+
         if !(200..300).contains(&status) {
             return Err(self.refused(status));
         }
+
         let device: Device = serde_json::from_slice(&bytes).map_err(|_| self.unreadable())?;
         let verify_at = device
             .verification_uri_complete
@@ -327,18 +335,23 @@ mod tests {
 
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(mut stream) = stream else {
                     return;
                 };
+
                 thread::spawn(move || {
                     let mut byte = [0_u8; 1];
+
                     let _ = stream.read(&mut byte);
+
                     thread::sleep(SILENT_FOR);
                 });
             }
         });
+
         let signing_in = TidalSignIn::at(Endpoints {
             auth: format!("{url}/auth/token"),
             device: format!("{url}/auth/device"),

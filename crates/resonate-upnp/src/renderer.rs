@@ -30,7 +30,7 @@ pub(crate) struct Transport {
     pub(crate) errored: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Udn(Box<str>);
 
 impl Udn {
@@ -115,9 +115,11 @@ impl Renderer {
     pub fn reached(location: Located, vouched: &Vouched) -> Result<Self> {
         let described = description::described(&location)?;
         let flac_unsaid = vouched.flac_unsaid_for(&described.udn);
+
         if flac_unsaid == FlacUnsaid::AnyRate {
             tracing::info!(udn = %described.udn, "FLAC is offered at any rate the renderer does not state, as the listener vouched");
         }
+
         let carriages = match described.connection.as_ref() {
             Some(connection) => match soap::call(connection, Action::GetProtocolInfo, &[]) {
                 Ok(answered) => {
@@ -125,6 +127,7 @@ impl Renderer {
                         answered.named("Sink").unwrap_or_default(),
                         flac_unsaid,
                     );
+
                     if carriages.is_empty() {
                         return Err(Error::TakesNoCarriage);
                     }
@@ -300,6 +303,7 @@ impl Renderer {
             )
             .map(drop);
         }
+
         let Some(rendering) = self.rendering.as_ref() else {
             return Ok(());
         };
@@ -315,8 +319,10 @@ impl Renderer {
     pub(crate) fn set_mute(&self, muted: bool) -> Result<()> {
         if let Some(openhome) = self.openhome.as_ref() {
             let muted = if muted { "true" } else { "false" };
+
             return soap::call(&openhome.service, Action::SetMute, &[("Value", muted)]).map(drop);
         }
+
         let Some(rendering) = self.rendering.as_ref() else {
             return Ok(());
         };
@@ -350,12 +356,15 @@ fn didl(address: &str, title: &str, kind: &str) -> String {
 
 fn clock_of(time: &str) -> Option<Duration> {
     let mut fields = time.trim().rsplitn(3, ':');
+
     let seconds: f64 = fields.next()?.parse().ok()?;
     let minutes: u64 = fields.next()?.parse().ok()?;
     let hours: u64 = fields.next()?.trim_start_matches('+').parse().ok()?;
+
     if !seconds.is_finite() || seconds < 0.0 {
         return None;
     }
+
     let whole = hours
         .checked_mul(3_600)?
         .checked_add(minutes.checked_mul(60)?)?;

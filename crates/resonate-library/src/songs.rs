@@ -25,12 +25,14 @@ pub struct AlbumNotHeld {
 
 pub fn pressing_of(releases: Vec<Release>) -> Option<Release> {
     let mut counted: AHashMap<u32, usize> = AHashMap::new();
+
     for release in &releases {
         let tracks = release.track_count();
         if tracks > 0 {
             *counted.entry(tracks).or_default() += 1;
         }
     }
+
     let usual = counted
         .into_iter()
         .max_by_key(|(tracks, pressings)| (*pressings, Reverse(*tracks)))
@@ -73,6 +75,7 @@ pub(crate) fn land(
     .map_err(|source| Error::store(StoreOp::Delete, source))?;
 
     let mut landed = 0;
+
     if let Some(pressing) = pressing {
         let mut insert = tx
             .prepare_cached(
@@ -89,6 +92,7 @@ pub(crate) fn land(
                     continue;
                 };
                 let artist = track.artist.clone().unwrap_or_else(|| billed.clone());
+
                 landed += insert
                     .execute(params![
                         group.as_str(),
@@ -316,6 +320,7 @@ mod tests {
             Some("2014-04-14"),
             12,
         );
+
         for track in &mut coded.media[0].tracks {
             track.isrcs = vec![format!("TR03914{:05}", track.position)];
             track.length = Some(Duration::from_secs(240));
@@ -338,9 +343,11 @@ mod tests {
             held,
             " astronomy domine pink floyd the piper at the gates of dawn "
         );
+
         for word in sought_words("ASTRO floy piper") {
             assert!(held.contains(&word), "{word}");
         }
+
         assert!(!held.contains(&sought_words("omine")[0]));
     }
 }

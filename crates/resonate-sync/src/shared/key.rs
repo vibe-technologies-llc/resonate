@@ -81,6 +81,7 @@ impl Access {
 
     pub fn from_code(code: &str) -> Result<Self> {
         let code = code.trim();
+
         if let Some(edit) = strip_mark(code, EDIT_MARK) {
             return match SyncKey::from_code(edit) {
                 Err(Error::Code(CodeRefused::Length { .. })) => {
@@ -105,6 +106,7 @@ impl Access {
         match self {
             Self::Edit(EditKey::FirstToClaim(edit)) => {
                 let mut view = [0; SYNC_KEY_BYTES];
+
                 expand(
                     &extracted(DERIVATION_SALT, edit.bytes()),
                     VIEW_INFO,
@@ -116,7 +118,9 @@ impl Access {
             Self::Edit(EditKey::Committed(edit)) => {
                 let prk = extracted(COMMITTED_SALT, edit);
                 let mut secret = [0; SYNC_KEY_BYTES];
+
                 expand(&prk, VIEW_INFO, &mut secret)?;
+
                 let commitment = SpaceId::committed_to(&written_with(&prk)?.digest())
                     .commitment()
                     .ok_or(Error::KeyDerivation)?;
@@ -147,6 +151,7 @@ impl Access {
             ViewKey::FirstToClaim(view) => {
                 let prk = extracted(DERIVATION_SALT, view.bytes());
                 let mut space = [0; 16];
+
                 expand(&prk, SPACE_INFO, &mut space)?;
                 (prk, SpaceId(space))
             }
@@ -157,8 +162,10 @@ impl Access {
         };
         let mut read_token = [0; TOKEN_BYTES];
         let mut seal = [0; SEAL_KEY_BYTES];
+
         expand(&prk, READ_INFO, &mut read_token)?;
         expand(&prk, SEAL_INFO, &mut seal)?;
+
         let unbound =
             UnboundKey::new(&CHACHA20_POLY1305, &seal).map_err(|_| Error::KeyDerivation)?;
 
@@ -177,6 +184,7 @@ fn extracted(salt: &[u8], key: &[u8]) -> Prk {
 
 fn written_with(prk: &Prk) -> Result<Token> {
     let mut token = [0; TOKEN_BYTES];
+
     expand(prk, WRITE_INFO, &mut token)?;
 
     Ok(Token(token))
@@ -184,6 +192,7 @@ fn written_with(prk: &Prk) -> Result<Token> {
 
 fn joined(secret: &SyncKey, commitment: &[u8; COMMITMENT_BYTES]) -> [u8; COMMITTED_KEY_BYTES] {
     let mut bytes = [0; COMMITTED_KEY_BYTES];
+
     bytes[..SYNC_KEY_BYTES].copy_from_slice(secret.bytes());
     bytes[SYNC_KEY_BYTES..].copy_from_slice(commitment);
     bytes
@@ -192,6 +201,7 @@ fn joined(secret: &SyncKey, commitment: &[u8; COMMITMENT_BYTES]) -> [u8; COMMITT
 fn split(bytes: &[u8; COMMITTED_KEY_BYTES]) -> ViewKey {
     let mut secret = [0; SYNC_KEY_BYTES];
     let mut commitment = [0; COMMITMENT_BYTES];
+
     secret.copy_from_slice(&bytes[..SYNC_KEY_BYTES]);
     commitment.copy_from_slice(&bytes[SYNC_KEY_BYTES..]);
 
@@ -236,6 +246,7 @@ mod tests {
         assert!(!view.may_edit());
 
         let told = sealed(&edit_keys.sealer, edit_keys.space, b"a record").expect("sealed");
+
         assert_eq!(
             opened(&view_keys.sealer, view_keys.space, &told, LARGEST_OPENED).expect("opened"),
             b"a record"

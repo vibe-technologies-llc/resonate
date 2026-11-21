@@ -193,9 +193,11 @@ impl TidalAccount {
                     Self::ClientSecret | Self::RefreshToken | Self::HifiSecret => field.masked(),
                     Self::ClientId | Self::HifiApi | Self::Monochrome => field,
                 };
+
                 field.hold(account.held(online), cx);
                 field
             });
+
             SettingsFields::says_when_entered(&field, Entered::Tidal(account), cx);
             field
         })
@@ -220,6 +222,7 @@ impl RootView {
             .trim()
             .to_owned();
         let names_a_server = matches!(account, TidalAccount::HifiApi | TidalAccount::Monochrome);
+
         if names_a_server && !given.is_empty() && !reads_as_a_server(&given) {
             self.report(not_a_server(), cx);
             return;
@@ -253,6 +256,7 @@ impl RootView {
             (_, true) => words::settings_tidal::tidal_is_no_longer_asked(),
             (_, false) => words::settings_tidal::tidal_is_asked_from_now_on(),
         };
+
         self.store(&account.setting(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.the_sources_moved(cx);
@@ -270,6 +274,7 @@ impl RootView {
             client_secret,
             refresh_token,
         } = signed_in;
+
         for (account, given) in [
             (TidalAccount::ClientId, client_id),
             (TidalAccount::ClientSecret, client_secret),
@@ -317,6 +322,7 @@ impl RootView {
 
     pub(crate) fn forget_the_resonate_key(&mut self, cx: &mut Context<Self>) {
         let account = TidalAccount::HifiSecret;
+
         self.tidal_field(account, cx)
             .clone()
             .update(cx, |field, cx| field.hold(String::new(), cx));
@@ -377,7 +383,9 @@ impl RootView {
             .signing_in
             .stopped
             .store(true, Ordering::Relaxed);
+
         let stopped = Arc::new(AtomicBool::new(false));
+
         self.settings_pane.update(cx, |pane, _| {
             pane.accounts.signing_in.stopped = Arc::clone(&stopped);
             pane.accounts.signing_in.shown = TidalSigning::Asking;
@@ -387,6 +395,7 @@ impl RootView {
         let task = cx.spawn(async move |this, cx| {
             let asking = Arc::clone(&signs_in);
             let asked_for = client.clone();
+
             let authorizing = cx
                 .background_executor()
                 .spawn(async move { asking.authorizing(&asked_for) })
@@ -396,6 +405,7 @@ impl RootView {
                 Err(error) => {
                     let told = this.update(cx, |this, cx| this.tidal_signed_in(Err(error), cx));
                     let _ = told;
+
                     return;
                 }
             };
@@ -407,9 +417,11 @@ impl RootView {
                 });
                 cx.notify();
             });
+
             if waiting.is_err() {
                 return;
             }
+
             let answered = cx
                 .background_executor()
                 .spawn(async move {
@@ -420,6 +432,7 @@ impl RootView {
             let told = this.update(cx, |this, cx| this.tidal_signed_in(answered, cx));
             let _ = told;
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts.signing_in.task = task);
     }
@@ -436,6 +449,7 @@ impl RootView {
             Ok(Some(token)) => {
                 let token = token.into_string();
                 let account = TidalAccount::RefreshToken;
+
                 self.tidal_field(account, cx)
                     .clone()
                     .update(cx, |field, cx| field.hold(token.clone(), cx));
@@ -567,6 +581,7 @@ impl RootView {
 
     pub(super) fn tidal_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let mut body = kit::rows();
+
         for account in TidalAccount::ALL
             .into_iter()
             .filter(|account| account.is_tidals())
@@ -581,6 +596,7 @@ impl RootView {
                 ),
             ));
         }
+
         let allowed = cx.global::<ResonateApp>().online.hosted_services;
         body.child(self.in_the_ring(
             "hosted-services",

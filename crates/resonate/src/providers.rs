@@ -216,6 +216,7 @@ impl resonate_ui::SignsInToJellyfin for QuickConnects {
         use resonate_ui::JellyfinBegun;
 
         let asking = resonate_jellyfin::QuickConnect::at(address);
+
         match asking.offered() {
             Ok(true) => {}
             Ok(false) => return JellyfinBegun::Off,
@@ -228,6 +229,7 @@ impl resonate_ui::SignsInToJellyfin for QuickConnects {
             Ok(approving) => {
                 let code = approving.code.clone();
                 let mut waiting = self.waiting.lock();
+
                 waiting.retain(|_, held| {
                     held.began.elapsed() < resonate_jellyfin::A_QUICK_CONNECT_LAPSES_AFTER
                 });
@@ -358,12 +360,14 @@ impl Typed<'_> {
     fn accounts(self) -> Accounts {
         let owned = |text: &str| text.to_owned();
         let [server, user, password] = self.subsonic.map(owned);
+
         let subsonic = ServiceAccount::Subsonic {
             server,
             user,
             password,
         };
         let [server, user, password, token, user_id, device] = self.jellyfin.map(owned);
+
         let jellyfin = ServiceAccount::Jellyfin {
             server,
             user,
@@ -373,12 +377,14 @@ impl Typed<'_> {
             device,
         };
         let [client_id, client_secret, refresh_token] = self.tidal.map(owned);
+
         let tidal = ServiceAccount::Tidal {
             client_id,
             client_secret,
             refresh_token,
         };
         let [server, key] = self.hifi_api.map(owned);
+
         let hifi_api = ServiceAccount::HifiApi { server, key };
         let monochrome = ServiceAccount::Monochrome {
             server: owned(self.monochrome),
@@ -637,6 +643,7 @@ impl Renewed {
         let settings = self.settings.as_ref()?;
         let moved = fs::metadata(settings).and_then(|file| file.modified()).ok();
         let mut read_at = self.read_at.lock();
+
         if moved == *read_at {
             return None;
         }
@@ -665,10 +672,12 @@ impl Renewed {
 
     fn note(&self, given: String, token: resonate_providers::RefreshToken) {
         let standing = token.into_string();
+
         *self.rotated.lock() = Some(Rotation {
             given,
             standing: standing.clone(),
         });
+
         let failure = match &self.settings {
             None => Some(Error::TidalTokenHasNoSettings),
             Some(settings) => config::store(settings, ConfigKey::TidalRefreshToken, standing)
@@ -678,6 +687,7 @@ impl Renewed {
                     source: Box::new(source),
                 }),
         };
+
         if let Some(failure) = &failure {
             tracing::error!(%failure, "the refresh token TIDAL rotated could not be kept");
         }
@@ -703,12 +713,15 @@ impl<Settings, Made> Default for Kept<Settings, Made> {
 impl<Settings: Clone + PartialEq, Made> Kept<Settings, Made> {
     fn made_for(&self, settings: &Settings, make: impl FnOnce(&Settings) -> Made) -> Arc<Made> {
         let mut held = self.held.lock();
+
         if let Some((standing, made)) = held.as_ref()
             && standing == settings
         {
             return Arc::clone(made);
         }
+
         let made = Arc::new(make(settings));
+
         *held = Some((settings.clone(), Arc::clone(&made)));
         made
     }
@@ -727,6 +740,7 @@ fn registry(inbox: Option<&Path>, accounts: &Accounts, made: &Made) -> Providers
                 ),
                 None => providers,
             };
+
             if reachable.fetches_for_wants()
                 && let Some(provider) = built.provider()
             {
@@ -760,6 +774,7 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let kept = |held: &Option<String>| {
         held.as_deref()
             .map(str::trim)
@@ -773,6 +788,7 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
 
     let signs_in = resonate_tidal::TidalSignIn::default();
     let authorizing = signs_in.authorizing(&client)?;
+
     said!(
         "{}",
         crate::words::providers::open_to_sign_in(
@@ -790,6 +806,7 @@ pub fn sign_in_to_tidal(config: &Config, settings: &Path) -> Result<()> {
     let Some(token) = token else {
         return Err(Error::SignInCancelled);
     };
+
     config::store(settings, ConfigKey::TidalRefreshToken, token.into_string())?;
     said!(
         "{}",
@@ -805,6 +822,7 @@ pub fn sign_in_to_tidal(_: &Config, _: &Path) -> Result<()> {
 
 fn with_inbox(inbox: Option<&Path>) -> Providers {
     let mut providers = Providers::none();
+
     if let Some(folder) = inbox {
         providers = providers.and(Arc::new(Inbox::at(folder)));
     }
@@ -839,6 +857,7 @@ mod tests {
             tidal_client_id: Some("client".to_owned()),
             ..Config::default()
         };
+
         assert!(matches!(
             sign_in_to_tidal(&offline, &nowhere),
             Err(Error::OnlineOff)
@@ -849,6 +868,7 @@ mod tests {
                 tidal_client_id: blank,
                 ..Config::default()
             };
+
             assert!(matches!(
                 sign_in_to_tidal(&unregistered, &nowhere),
                 Err(Error::NoTidalClient)
@@ -862,6 +882,7 @@ mod tests {
             switches: Switches::UNSAID.with(Switch::Online, false),
             ..Config::default()
         };
+
         assert!(!registered(&offline, None).has_a_source());
 
         let config = Config {
@@ -869,6 +890,7 @@ mod tests {
             ..offline
         };
         let providers = registered(&config, None);
+
         assert!(providers.has_a_source());
         assert!(named(&config).contains(&"inbox".to_owned()));
     }
@@ -881,24 +903,28 @@ mod tests {
             subsonic_user: Some("listener".to_owned()),
             ..Config::default()
         };
+
         assert!(!named(&halfway).contains(&"subsonic".to_owned()));
 
         let blank = Config {
             subsonic_password: Some("  ".to_owned()),
             ..halfway.clone()
         };
+
         assert!(!named(&blank).contains(&"subsonic".to_owned()));
 
         let whole = Config {
             subsonic_password: Some("sesame".to_owned()),
             ..halfway
         };
+
         assert!(named(&whole).contains(&"subsonic".to_owned()));
 
         let offline = Config {
             switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
+
         assert!(!named(&offline).contains(&"subsonic".to_owned()));
     }
 
@@ -921,12 +947,14 @@ mod tests {
             jellyfin_user: Some("listener".to_owned()),
             ..Config::default()
         };
+
         assert!(!schemes(&halfway).contains(&"jellyfin".to_owned()));
 
         let whole = Config {
             jellyfin_password: Some("sesame".to_owned()),
             ..halfway
         };
+
         assert!(schemes(&whole).contains(&"jellyfin".to_owned()));
         assert!(!named(&whole).contains(&"jellyfin".to_owned()));
 
@@ -934,6 +962,7 @@ mod tests {
             switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
+
         assert!(!schemes(&offline).contains(&"jellyfin".to_owned()));
     }
 
@@ -978,18 +1007,21 @@ mod tests {
             tidal_client_id: Some("client".to_owned()),
             ..Config::default()
         };
+
         assert!(!named(&halfway).contains(&"tidal".to_owned()));
 
         let whole = Config {
             tidal_refresh_token: Some("token".to_owned()),
             ..halfway
         };
+
         assert!(named(&whole).contains(&"tidal".to_owned()));
 
         let offline = Config {
             switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
+
         assert!(!named(&offline).contains(&"tidal".to_owned()));
     }
 
@@ -1004,6 +1036,7 @@ mod tests {
         };
 
         let alone = keyed(None, false);
+
         assert!(Accounts::of(&alone).0.iter().any(
             |reachable| matches!(reachable, Reachable::Resonate(key) if key.as_str() == "key")
         ));
@@ -1011,6 +1044,7 @@ mod tests {
         assert!(!named(&alone).contains(&"hifi-api".to_owned()));
 
         let beside = keyed(Some("https://hifi.home.arpa"), true);
+
         assert!(
             Accounts::of(&beside)
                 .0
@@ -1018,8 +1052,10 @@ mod tests {
                     "https://hifi.home.arpa".to_owned()
                 )))
         );
+
         let order = named(&beside);
         let place = |name: &str| order.iter().position(|each| each == name);
+
         assert!(place("resonate").is_some());
         assert!(place("resonate") < place("hifi-api"));
         assert!(place("hifi-api") < place("monochrome"));
@@ -1055,17 +1091,21 @@ mod tests {
             switches: Switches::UNSAID.with(Switch::HostedServices, false),
             ..Config::default()
         };
+
         assert!(!named(&unasked).contains(&"hifi-api".to_owned()));
 
         let allowed = Config {
             switches: Switches::UNSAID.with(Switch::HostedServices, true),
             ..Config::default()
         };
+
         assert!(named(&allowed).contains(&"hifi-api".to_owned()));
+
         let blank = Config {
             hifi_api: Some("  ".to_owned()),
             ..allowed.clone()
         };
+
         assert!(
             Accounts::of(&blank)
                 .0
@@ -1076,6 +1116,7 @@ mod tests {
             switches: allowed.switches.with(Switch::Online, false),
             ..allowed
         };
+
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
     }
 
@@ -1099,6 +1140,7 @@ mod tests {
             switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
+
         assert!(!named(&offline).contains(&"hifi-api".to_owned()));
     }
 
@@ -1117,6 +1159,7 @@ mod tests {
             switches: Switches::UNSAID.with(Switch::HostedServices, false),
             ..Config::default()
         };
+
         assert!(!named(&unasked).contains(&"monochrome".to_owned()));
         assert!(!monochrome_of(&unasked));
 
@@ -1125,6 +1168,7 @@ mod tests {
             ..Config::default()
         };
         let hosted = named(&allowed);
+
         assert!(hosted.contains(&"monochrome".to_owned()));
         assert_eq!(
             hosted.iter().position(|name| name == "monochrome"),
@@ -1143,6 +1187,7 @@ mod tests {
             monochrome: Some("https://tracks.home.arpa".to_owned()),
             ..Config::default()
         };
+
         assert!(named(&whole).contains(&"monochrome".to_owned()));
         assert!(
             Accounts::of(&whole)
@@ -1156,6 +1201,7 @@ mod tests {
             switches: whole.switches.with(Switch::Online, false),
             ..whole
         };
+
         assert!(!named(&offline).contains(&"monochrome".to_owned()));
     }
 
@@ -1163,6 +1209,7 @@ mod tests {
     #[test]
     fn youtube_music_is_registered_only_where_it_is_turned_on_and_online_is_on() {
         let unasked = Config::default();
+
         assert!(!named(&unasked).contains(&"ytmusic".to_owned()));
         assert_eq!(Accounts::of(&unasked).youtube_music(), None);
 
@@ -1171,18 +1218,21 @@ mod tests {
             youtube_music_cookies: Some("firefox".to_owned()),
             ..Config::default()
         };
+
         assert!(!named(&turned_off).contains(&"ytmusic".to_owned()));
 
         let turned_on = Config {
             switches: Switches::UNSAID.with(Switch::YoutubeMusic, true),
             ..Config::default()
         };
+
         assert!(named(&turned_on).contains(&"ytmusic".to_owned()));
 
         let offline = Config {
             switches: turned_on.switches.with(Switch::Online, false),
             ..turned_on
         };
+
         assert!(!named(&offline).contains(&"ytmusic".to_owned()));
     }
 
@@ -1321,6 +1371,7 @@ mod tests {
         };
 
         let nowhere = Made::new(None);
+
         assert!(matches!(
             rotate(&nowhere),
             Some(Error::TidalTokenHasNoSettings)
@@ -1328,14 +1379,19 @@ mod tests {
         assert!(nowhere.keeping().unkept().is_none());
 
         let folder = std::env::temp_dir().join(format!("resonate-unkept-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a writable temporary directory");
+
         let file = folder.join("file");
+
         std::fs::write(&file, "").expect("a writable temporary directory");
+
         let beneath_a_file = file.join("config.toml");
         let unwritable = Made::new(Some(beneath_a_file.clone()));
         let failed = rotate(&unwritable);
         let kept = Made::new(Some(folder.join("config.toml")));
         let succeeded = rotate(&kept);
+
         std::fs::remove_dir_all(&folder).expect("the temporary directory removed");
 
         assert!(
@@ -1348,28 +1404,36 @@ mod tests {
     #[test]
     fn a_refresh_token_written_by_another_process_is_heard_once_the_file_moves() {
         let folder = std::env::temp_dir().join(format!("resonate-heard-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a writable temporary directory");
+
         let file = folder.join("config.toml");
 
         let nowhere = Made::new(None);
+
         assert_eq!(nowhere.renewed.heard_elsewhere(), None);
 
         let made = Made::new(Some(file.clone()));
+
         assert_eq!(made.renewed.heard_elsewhere(), None);
 
         std::fs::write(&file, "tidal-refresh-token = \"theirs\"\n")
             .expect("a writable temporary directory");
+
         assert_eq!(made.renewed.heard_elsewhere(), Some("theirs".to_owned()));
         assert_eq!(made.renewed.heard_elsewhere(), None);
 
         std::fs::write(&file, "tidal-refresh-token = \"later\"\n")
             .expect("a writable temporary directory");
+
         let moved_on = std::time::SystemTime::now() + std::time::Duration::from_secs(5);
+
         std::fs::File::options()
             .write(true)
             .open(&file)
             .and_then(|open| open.set_modified(moved_on))
             .expect("a file whose time can be set");
+
         assert_eq!(made.renewed.heard_elsewhere(), Some("later".to_owned()));
 
         std::fs::remove_dir_all(&folder).expect("the temporary directory removed");
@@ -1395,6 +1459,7 @@ mod tests {
         };
 
         let accounts = Accounts::given(&on);
+
         assert_eq!(
             accounts.youtube_music().map(the_tool_of),
             Some((
@@ -1462,6 +1527,7 @@ mod tests {
             .collect()
         };
         let offline = resonate_ui::Online::default();
+
         assert!(!named(&offline).contains(&"tidal".to_owned()));
 
         let signed_in = resonate_ui::Online {
@@ -1470,6 +1536,7 @@ mod tests {
             tidal_refresh_token: "token".to_owned(),
             ..resonate_ui::Online::default()
         };
+
         assert!(named(&signed_in).contains(&"tidal".to_owned()));
         assert!(!named(&signed_in).contains(&"hifi-api".to_owned()));
         assert!(!named(&signed_in).contains(&"monochrome".to_owned()));
@@ -1478,6 +1545,7 @@ mod tests {
             hosted_services: true,
             ..signed_in.clone()
         };
+
         assert!(named(&hosted).contains(&"hifi-api".to_owned()));
         assert!(named(&hosted).contains(&"monochrome".to_owned()));
 
@@ -1486,6 +1554,7 @@ mod tests {
             online: &signed_in,
             asking: resonate_ui::Asking::TheInboxAlone,
         });
+
         assert_eq!(
             alone
                 .names()
@@ -1506,13 +1575,16 @@ mod tests {
             Some(Built::Tidal(tidal)) => tidal,
             _ => panic!("a TIDAL account"),
         };
+
         let first = tidal(&accounts);
+
         assert!(Arc::ptr_eq(&first, &tidal(&accounts)));
 
         let renewed = Accounts::given(&resonate_ui::Online {
             tidal_refresh_token: "another".to_owned(),
             ..signed_in
         });
+
         assert!(!Arc::ptr_eq(&first, &tidal(&renewed)));
     }
 }

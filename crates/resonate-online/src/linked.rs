@@ -150,6 +150,7 @@ impl Song {
         let mut length = self.length;
         let mut title = self.title;
         let mut artist = self.artist;
+
         if let Some(twin) = twin {
             for isrc in twin.isrcs {
                 if !isrcs.contains(&isrc) {
@@ -160,6 +161,7 @@ impl Song {
             title = title.or(twin.title);
             artist = artist.or(twin.artist);
         }
+
         let titled = title.is_some() && artist.is_some();
 
         (!isrcs.is_empty() || titled).then_some(LinkNames {
@@ -190,6 +192,7 @@ impl Album {
 
     fn named_with(barcode: Option<Barcode>, twin: Option<Barcode>) -> Option<AlbumNames> {
         let mut barcodes: Vec<Barcode> = barcode.into_iter().collect();
+
         if let Some(twin) = twin
             && !barcodes.iter().any(|held| held.names(twin.as_str()))
         {
@@ -257,6 +260,7 @@ mod tests {
     fn a_failed_optional_twin_preserves_the_song_link_answer() {
         let song = Song::read(PAGE).expect("a song on the page");
         let expected = song.clone().named_with(None);
+
         assert!(expected.is_some());
         assert_eq!(
             song.named_after(Err(crate::Error::Offline {

@@ -221,6 +221,7 @@ impl Visualiser {
     fn catch(&mut self, tap: Option<&Tap>, now: Instant, frames: usize) -> Caught {
         self.left.resize(frames, 0.0);
         self.right.resize(frames, 0.0);
+
         let caught = match tap {
             Some(tap) => tap.around(now, &mut self.left, &mut self.right),
             None => {
@@ -246,6 +247,7 @@ impl Visualiser {
     fn read_the_spectrum(&mut self, tap: Option<&Tap>, now: Instant, step: Duration) -> bool {
         let points = self.spectrum.points();
         let caught = self.catch(tap, now, points);
+
         self.spectrum.take(&self.mid, step);
 
         caught.tapped == 0 && !self.spectrum.is_at_rest()
@@ -254,6 +256,7 @@ impl Visualiser {
     fn read_the_stereo(&mut self, tap: Option<&Tap>, now: Instant, step: Duration) -> bool {
         let points = self.spectrum.points();
         let caught = self.catch(tap, now, points);
+
         self.stereo.take(
             Heard {
                 left: &self.left,
@@ -276,6 +279,7 @@ impl Visualiser {
     fn read_the_scope(&mut self, tap: Option<&Tap>, now: Instant) {
         let span = spanned(self.spectrum.rate());
         let caught = self.catch(tap, now, span * 2);
+
         self.side.clear();
         self.side
             .extend(stereo::sides_and_mids(&self.left, &self.right).map(|(side, _)| side));
@@ -288,6 +292,7 @@ impl Visualiser {
             cx.background_executor()
                 .timer(PlayerModel::poll_interval())
                 .await;
+
             let settled = this.update(cx, |_, cx| cx.notify());
             let _ = settled;
         });
@@ -297,6 +302,7 @@ impl Visualiser {
         let from = self.traced?;
         let span = spanned(self.spectrum.rate());
         let step = span.div_ceil(TRACE_POINTS_AT_MOST).max(1);
+
         let thinned = |levels: &[f32]| -> Levels {
             levels
                 .iter()
@@ -325,6 +331,7 @@ impl Render for Visualiser {
         };
         let rate = tap.map_or(self.spectrum.rate(), Tap::rate);
         let spectral = cx.global::<ResonateApp>().spectral;
+
         if rate != self.spectrum.rate() || spectral != self.spectrum.spectral() {
             self.spectrum = Spectrum::new(rate, spectral);
         }
@@ -333,6 +340,7 @@ impl Render for Visualiser {
         let step = self
             .drawn_at
             .map_or(Duration::ZERO, |then| now.saturating_duration_since(then));
+
         self.drawn_at = Some(now);
 
         let still = self.stands_still(cx);
@@ -346,6 +354,7 @@ impl Render for Visualiser {
                 }
                 Showing::Stereo => self.read_the_stereo(tap, now, step),
             };
+
         if still && reads {
             self.still_of = Some(self.showing);
         }
@@ -405,13 +414,16 @@ fn bars(columns: Columns, heard_to: f64, floor: f32) -> Canvas<()> {
             let wide = f32::from(bounds.size.width);
             let top = f32::from(bounds.top()) + HEAD_ROOM;
             let bottom = f32::from(bounds.bottom()) - LABEL_ROOM;
+
             let tall = (bottom - top).max(0.0);
             let across = |hertz: f64| left + spectrum::across(hertz, heard_to) * wide;
             let down = |height: f32| bottom - height * tall;
 
             let mut level = CEILING_DB;
+
             while level >= floor {
                 let y = down(height_within(level, floor));
+
                 window.paint_quad(fill(
                     Bounds::from_corners(
                         point(px(left), px(y)),
@@ -426,6 +438,7 @@ fn bars(columns: Columns, heard_to: f64, floor: f32) -> Canvas<()> {
             for column in columns {
                 let from = across(column.low_hz) + BAR_GAP * HALF;
                 let to = across(column.high_hz) - BAR_GAP * HALF;
+
                 if to <= from {
                     continue;
                 }
@@ -452,6 +465,7 @@ fn bars(columns: Columns, heard_to: f64, floor: f32) -> Canvas<()> {
                 }
                 if column.peak > 0.0 {
                     let y = down(column.peak);
+
                     window.paint_quad(fill(
                         Bounds::from_corners(
                             point(px(from), px(y - PEAK_THICKNESS)),
@@ -501,6 +515,7 @@ fn traced(trace: Option<(Levels, Levels)>) -> Canvas<()> {
                     })
                     .collect()
             };
+
             stroke(
                 window,
                 &drawn(&on_the_right),
@@ -559,12 +574,15 @@ fn stereo_plot(dots: Dots, metered: Metered) -> Canvas<()> {
                 - CORRELATION_ROOM
                 - PLOT_INSET)
                 .max(0.0);
+
             let side = wide.min(tall);
             let centre = point(left + wide * HALF, top + tall * HALF);
             let reach = side * HALF * SCOPE_FILLS;
 
             goniometer(window, centre, reach, &dots);
+
             let meters_left = left + wide + PLOT_INSET;
+
             meter(window, meters_left, top, tall, metered.left);
             meter(
                 window,
@@ -588,6 +606,7 @@ fn stereo_plot(dots: Dots, metered: Metered) -> Canvas<()> {
 
 fn goniometer(window: &mut Window, centre: Point<f32>, reach: f32, dots: &[(f32, f32)]) {
     let guide = rgb(theme::border());
+
     window.paint_quad(fill(
         Bounds::from_corners(
             point(px(centre.x), px(centre.y - reach)),
@@ -602,7 +621,9 @@ fn goniometer(window: &mut Window, centre: Point<f32>, reach: f32, dots: &[(f32,
         ),
         guide,
     ));
+
     let steps = (reach as usize).max(1);
+
     for at in 0..=steps {
         let along = (at as f32 / steps as f32).mul_add(2.0, -1.0) * reach * HALF;
         for (x, y) in [
@@ -620,6 +641,7 @@ fn goniometer(window: &mut Window, centre: Point<f32>, reach: f32, dots: &[(f32,
     for (side, mid) in dots {
         let x = centre.x + side.clamp(-1.0, 1.0) * reach;
         let y = centre.y - mid.clamp(-1.0, 1.0) * reach;
+
         window.paint_quad(fill(
             Bounds::from_corners(
                 point(px(x - DOT * HALF), px(y - DOT * HALF)),
@@ -633,6 +655,7 @@ fn goniometer(window: &mut Window, centre: Point<f32>, reach: f32, dots: &[(f32,
 fn meter(window: &mut Window, left: f32, top: f32, tall: f32, meter: Meter) {
     let bottom = top + tall;
     let right = left + METER_WIDTH;
+
     window.paint_quad(
         fill(
             Bounds::from_corners(point(px(left), px(top)), point(px(right), px(bottom))),
@@ -640,7 +663,9 @@ fn meter(window: &mut Window, left: f32, top: f32, tall: f32, meter: Meter) {
         )
         .corner_radii(Corners::all(px(BAR_ROUNDING))),
     );
+
     let accent = theme::accent();
+
     if meter.level > 0.0 {
         window.paint_quad(
             fill(
@@ -659,6 +684,7 @@ fn meter(window: &mut Window, left: f32, top: f32, tall: f32, meter: Meter) {
     }
     if meter.peak > 0.0 {
         let y = bottom - meter.peak * tall;
+
         window.paint_quad(fill(
             Bounds::from_corners(
                 point(px(left), px(y - PEAK_THICKNESS)),
@@ -671,6 +697,7 @@ fn meter(window: &mut Window, left: f32, top: f32, tall: f32, meter: Meter) {
 
 fn correlation_meter(window: &mut Window, left: f32, middle: f32, wide: f32, held: Option<f32>) {
     let half_track = CORRELATION_TRACK * HALF;
+
     window.paint_quad(
         fill(
             Bounds::from_corners(
@@ -681,7 +708,9 @@ fn correlation_meter(window: &mut Window, left: f32, middle: f32, wide: f32, hel
         )
         .corner_radii(Corners::all(px(half_track))),
     );
+
     let centre = left + wide * HALF;
+
     window.paint_quad(fill(
         Bounds::from_corners(
             point(px(centre), px(middle - CORRELATION_TRACK)),
@@ -689,6 +718,7 @@ fn correlation_meter(window: &mut Window, left: f32, middle: f32, wide: f32, hel
         ),
         rgb(theme::border()),
     ));
+
     let Some(held) = held else {
         return;
     };
@@ -698,6 +728,7 @@ fn correlation_meter(window: &mut Window, left: f32, middle: f32, wide: f32, hel
     } else {
         theme::accent()
     };
+
     window.paint_quad(
         fill(
             Bounds::from_corners(
@@ -720,6 +751,7 @@ impl RootView {
         let state = model.state().clone();
         let digest = model.digest();
         let tapped = model.tap();
+
         if state.current.is_none() {
             return kit::empty(
                 Icon::Visualiser,
@@ -762,6 +794,7 @@ impl RootView {
     pub(crate) fn hold_the_picture(&mut self, cx: &mut Context<Self>) {
         self.visualiser.update(cx, |visualiser, cx| {
             let held = visualiser.is_held();
+
             visualiser.hold_the_picture(!held);
             cx.notify();
         });
@@ -847,11 +880,13 @@ mod tests {
         };
 
         let reads = reads_hint(steep_twelfths);
+
         assert!(reads.contains("twelfth-octave bands"), "{reads}");
         assert!(reads.contains("tilted up 4.5 dB an octave"), "{reads}");
         assert!(spectrum_hint(steep_twelfths).starts_with("Twelfth-octave bands"));
 
         let reads = reads_hint(flat_thirds);
+
         assert!(reads.contains("third-octave bands"), "{reads}");
         assert!(!reads.contains("tilted"), "{reads}");
         assert!(spectrum_hint(flat_thirds).starts_with("Third-octave bands"));

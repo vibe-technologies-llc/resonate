@@ -23,6 +23,7 @@ impl VersionSought {
             Rating::Unmarked => vec![Self::Rated(Rating::Clean), Self::Rated(Rating::Explicit)],
         };
         let mut offered = vec![Self::Better];
+
         offered.extend(rated);
         offered
     }
@@ -60,6 +61,7 @@ impl Quality {
         if self.lossless != held.lossless {
             return self.lossless;
         }
+
         let at_least = self.bits >= held.bits && self.rate >= held.rate;
         at_least && self != held
     }
@@ -192,6 +194,7 @@ pub fn better_held(track: &Track, copies: Vec<Track>) -> Vec<Track> {
         .into_iter()
         .filter(|copy| Quality::of(copy).is_above(held))
         .collect();
+
     better.sort_by_key(|copy| Quality::of(copy).best_first());
     better
 }

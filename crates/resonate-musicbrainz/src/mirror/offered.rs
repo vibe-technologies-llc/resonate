@@ -65,6 +65,7 @@ impl Drop for OfferedFile {
         self.file = None;
         if let Some((held, path)) = self.snapshot.take() {
             drop(held);
+
             let _ = removed(&path);
         }
     }
@@ -89,6 +90,7 @@ impl Mirror {
     fn offered_copy(&self) -> Result<Offered> {
         let path = self.path();
         let file = File::open(path).map_err(copy_failed(path, CopyOp::Open))?;
+
         let size = file
             .metadata()
             .map_err(copy_failed(path, CopyOp::Measure))?
@@ -108,10 +110,13 @@ impl Mirror {
         if self.amended_to().is_none() {
             return Ok(None);
         }
+
         let Some(folder) = self.path().parent() else {
             return Ok(None);
         };
+
         swept_snapshots(folder);
+
         let snapshot = folder.join(format!(
             "{SNAPSHOT_STEM}{}-{}{SNAPSHOT_EXTENSION}",
             process::id(),
@@ -119,11 +124,14 @@ impl Mirror {
         ));
         let held = Held::made(&snapshot).map_err(copy_failed(&snapshot, CopyOp::Hold))?;
         let taken = snapshot_of(&folder.join(AMENDED_FILE), &snapshot, &self.made().dump);
+
         let to = match taken {
             Ok(Some(to)) => to,
             Ok(None) | Err(_) => {
                 drop(held);
+
                 let _ = removed(&snapshot);
+
                 return taken.map(|_| None);
             }
         };
@@ -132,7 +140,9 @@ impl Mirror {
             Ok(opened) => opened,
             Err(error) => {
                 drop(held);
+
                 let _ = removed(&snapshot);
+
                 return Err(copy_failed(&snapshot, CopyOp::Open)(error));
             }
         };
@@ -156,6 +166,7 @@ fn snapshot_of(amended: &Path, snapshot: &Path, dump: &str) -> Result<Option<Ame
 
     let connection = Connection::open_with_flags(amended, read_by_uri)
         .map_err(Error::store(Store::Amended, StoreOp::Open))?;
+
     connection
         .busy_timeout(WAITED_FOR_A_WRITER)
         .map_err(Error::store(Store::Amended, StoreOp::Configure))?;
@@ -171,6 +182,7 @@ fn snapshot_of(amended: &Path, snapshot: &Path, dump: &str) -> Result<Option<Ame
 
 fn unlocked_uri_of(path: &Path) -> String {
     let mut uri = String::from("file:");
+
     for byte in path.to_string_lossy().bytes() {
         if byte.is_ascii_alphanumeric() || LEFT_AS_WRITTEN_IN_A_URI.contains(&byte) {
             uri.push(char::from(byte));
@@ -212,6 +224,7 @@ pub fn removed_copy(folder: &Path) -> Result<()> {
 
 pub fn received_copy(folder: &Path, staged: &Path) -> Result<()> {
     let landed = Mirror::open(staged)?;
+
     drop(landed);
     removed(&folder.join(AMENDED_FILE))?;
     fs::rename(staged, mirror_in(folder)).map_err(copy_failed(staged, CopyOp::Land))
@@ -220,6 +233,7 @@ pub fn received_copy(folder: &Path, staged: &Path) -> Result<()> {
 pub fn received_amendments(folder: &Path, staged: &Path) -> Result<()> {
     let copy = Mirror::open(&mirror_in(folder))?;
     let held = Amended::open(staged, &copy.made().dump)?;
+
     if held.is_none() {
         return Err(Error::AmendmentsOfAnotherExport {
             path: staged.to_path_buf(),
@@ -228,7 +242,9 @@ pub fn received_amendments(folder: &Path, staged: &Path) -> Result<()> {
     }
     drop(held);
     drop(copy);
+
     let amended = folder.join(AMENDED_FILE);
+
     removed(&amended)?;
     fs::rename(staged, &amended).map_err(copy_failed(staged, CopyOp::Land))
 }
@@ -262,15 +278,20 @@ mod tests {
             process::id()
         ));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let amended = folder.join(AMENDED_FILE);
         let snapshot = folder.join(format!("{SNAPSHOT_STEM}1-0{SNAPSHOT_EXTENSION}"));
+
         made_at(&amended, "20261104-002222", 7, 1).expect("the amendments laid out");
 
         let held = Held::made(&snapshot).expect("the snapshot held");
         let taken = snapshot_of(&amended, &snapshot, "20261104-002222").expect("a snapshot");
         let size = fs::metadata(&snapshot).expect("the snapshot").len();
+
         drop(held);
+
         let _ = fs::remove_dir_all(&folder);
 
         assert_eq!(taken.map(|to| to.sequence), Some(7));

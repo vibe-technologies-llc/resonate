@@ -45,6 +45,7 @@ impl Sound {
 
     pub(crate) fn keyed(self, pcm: VaultKey) -> VaultKey {
         let mut digest = Digest::default();
+
         digest.note(SOUND_KEYED_AS);
         digest.note(pcm.as_bytes());
         digest.note(&self.rate.to_le_bytes());
@@ -69,7 +70,7 @@ const fn format_code(format: SampleFormat) -> u8 {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct VaultKey([u8; KEY_BYTES]);
 
 impl VaultKey {
@@ -87,8 +88,10 @@ impl VaultKey {
         }
 
         let mut bytes = [0_u8; KEY_BYTES];
+
         for (at, byte) in bytes.iter_mut().enumerate() {
             let pair = text.get(at * 2..at * 2 + 2).ok_or(Error::NotAKey)?;
+
             *byte = u8::from_str_radix(pair, 16).map_err(|_| Error::NotAKey)?;
         }
         Ok(Self(bytes))
@@ -127,6 +130,7 @@ mod tests {
         let keyed = |spec: StreamSpec, speakers: Speakers, form: Form| {
             Sound::placed(spec, speakers, form).keyed(silence)
         };
+
         let stereo = keyed(
             spec(44_100, 2, SampleFormat::S16),
             Speakers::UNNAMED,

@@ -31,6 +31,7 @@ pub(crate) fn unescaped(text: &str) -> String {
 
     while let Some(at) = rest.find('&') {
         plain.push_str(&rest[..at]);
+
         let tail = &rest[at..];
         let spelt = tail
             .find(';')

@@ -40,10 +40,10 @@ const ED25519_PKCS8_V1_PREFIX: [u8; 16] = [
 #[derive(Clone, PartialEq, Eq)]
 pub struct SyncKey([u8; SYNC_KEY_BYTES]);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpaceId(pub [u8; SPACE_BYTES]);
 
-#[derive(Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DeviceId(pub [u8; DEVICE_BYTES]);
 
 #[derive(Clone, PartialEq, Eq)]
@@ -67,6 +67,7 @@ impl KeyType for Length {
 
 pub fn random_bytes<const N: usize>() -> Result<[u8; N]> {
     let mut bytes = [0; N];
+
     SystemRandom::new()
         .fill(&mut bytes)
         .map_err(|_| Error::NoRandomness)?;
@@ -114,6 +115,7 @@ impl SyncKey {
         let mut token = [0; TOKEN_BYTES];
         let mut seal = [0; SEAL_KEY_BYTES];
         let mut peer_seed = [0; PEER_SEED_BYTES];
+
         expand(&prk, SPACE_INFO, &mut space)?;
         expand(&prk, TOKEN_INFO, &mut token)?;
         expand(&prk, SEAL_INFO, &mut seal)?;
@@ -124,6 +126,7 @@ impl SyncKey {
         let peer =
             Ed25519KeyPair::from_seed_unchecked(&peer_seed).map_err(|_| Error::KeyDerivation)?;
         let mut peer_public = [0; PEER_PUBLIC_KEY_BYTES];
+
         peer_public.copy_from_slice(peer.public_key().as_ref());
 
         Ok(Derived {
@@ -139,6 +142,7 @@ impl SyncKey {
 impl Derived {
     pub fn peer_pkcs8(&self) -> Vec<u8> {
         let mut pkcs8 = Vec::with_capacity(ED25519_PKCS8_V1_PREFIX.len() + PEER_SEED_BYTES);
+
         pkcs8.extend_from_slice(&ED25519_PKCS8_V1_PREFIX);
         pkcs8.extend_from_slice(&self.peer_seed);
         pkcs8
@@ -170,9 +174,11 @@ const fn symbols_spelling(bytes: usize) -> usize {
 
 pub(crate) fn spelled(bytes: &[u8]) -> String {
     let mut values = packed(bytes);
+
     values.extend_from_slice(&check_values(bytes));
 
     let mut code = String::with_capacity(values.len() + values.len() / GROUP_SYMBOLS);
+
     for (at, value) in values.iter().enumerate() {
         if at > 0 && at % GROUP_SYMBOLS == 0 {
             code.push('-');
@@ -188,18 +194,23 @@ pub(crate) fn read_spelled<const N: usize>(code: &str) -> Result<[u8; N]> {
         .filter(|letter| !matches!(letter, '-' | ' ' | '\t'))
         .collect::<Vec<_>>();
     let spelling = symbols_spelling(N);
+
     if symbols.len() != spelling + CHECK_SYMBOLS {
         return Err(Error::Code(CodeRefused::Length {
             found: symbols.len(),
         }));
     }
+
     let mut values = Vec::with_capacity(symbols.len());
+
     for (at, letter) in symbols.iter().enumerate() {
         let value = symbol_value(*letter).ok_or(Error::Code(CodeRefused::Symbol { at }))?;
+
         values.push(value);
     }
 
     let mut bytes = [0; N];
+
     if !unpacked(&values[..spelling], &mut bytes) || values[spelling..] != check_values(&bytes) {
         return Err(Error::Code(CodeRefused::Check));
     }
@@ -215,9 +226,11 @@ pub(crate) fn in_symbols(bytes: &[u8]) -> String {
 
 pub(crate) fn from_symbols(text: &str, at_most: usize) -> Option<Vec<u8>> {
     let symbols = text.trim();
+
     if symbols.len() > symbols_spelling(at_most) {
         return None;
     }
+
     let values = symbols
         .chars()
         .map(symbol_value)
@@ -230,6 +243,7 @@ fn check_values(bytes: &[u8]) -> [u8; CHECK_SYMBOLS] {
     let digested = digest(&SHA256, bytes);
     let digested = digested.as_ref();
     let mut values = [0; CHECK_SYMBOLS];
+
     for (at, value) in values.iter_mut().enumerate() {
         *value = digested[at] & 0x1f;
     }
@@ -240,6 +254,7 @@ fn packed(bytes: &[u8]) -> Vec<u8> {
     let mut values = Vec::with_capacity(symbols_spelling(bytes.len()));
     let mut held = 0_u32;
     let mut bits = 0;
+
     for byte in bytes {
         held = (held << 8) | u32::from(*byte);
         bits += 8;
@@ -258,14 +273,17 @@ fn unpacked(values: &[u8], out: &mut [u8]) -> bool {
     let mut held = 0_u32;
     let mut bits = 0;
     let mut at = 0;
+
     for value in values {
         held = (held << BITS_PER_SYMBOL) | u32::from(*value);
         bits += BITS_PER_SYMBOL;
         if bits >= 8 {
             bits -= 8;
+
             let Some(byte) = out.get_mut(at) else {
                 return false;
             };
+
             *byte = ((held >> bits) & 0xff) as u8;
             at += 1;
         }
@@ -324,10 +342,13 @@ impl fmt::Display for SpaceId {
 impl SpaceId {
     pub fn committed_to(digest: &[u8; 32]) -> Self {
         let mut hashing = Context::new(&SHA256);
+
         hashing.update(COMMITMENT_SALT);
         hashing.update(digest);
+
         let hashed = hashing.finish();
         let mut commitment = [0; COMMITMENT_BYTES];
+
         commitment.copy_from_slice(&hashed.as_ref()[..COMMITMENT_BYTES]);
 
         Self::of_commitment(commitment)
@@ -335,6 +356,7 @@ impl SpaceId {
 
     pub fn of_commitment(commitment: [u8; COMMITMENT_BYTES]) -> Self {
         let mut space = [0; SPACE_BYTES];
+
         space[..COMMITTED_MARK.len()].copy_from_slice(&COMMITTED_MARK);
         space[COMMITTED_MARK.len()..].copy_from_slice(&commitment);
 
@@ -343,10 +365,13 @@ impl SpaceId {
 
     pub fn commitment(&self) -> Option<[u8; COMMITMENT_BYTES]> {
         let (mark, commitment) = self.0.split_at(COMMITTED_MARK.len());
+
         if mark != COMMITTED_MARK {
             return None;
         }
+
         let mut held = [0; COMMITMENT_BYTES];
+
         held.copy_from_slice(commitment);
 
         Some(held)
@@ -360,6 +385,7 @@ impl SpaceId {
 impl Token {
     pub fn digest(&self) -> [u8; 32] {
         let mut digested = [0; 32];
+
         digested.copy_from_slice(digest(&SHA256, &self.0).as_ref());
         digested
     }
@@ -367,7 +393,9 @@ impl Token {
 
 pub fn hex(bytes: &[u8]) -> String {
     const DIGITS: &[u8; 16] = b"0123456789abcdef";
+
     let mut text = String::with_capacity(bytes.len() * 2);
+
     for byte in bytes {
         text.push(char::from(DIGITS[usize::from(byte >> 4)]));
         text.push(char::from(DIGITS[usize::from(byte & 0x0f)]));
@@ -475,13 +503,17 @@ mod tests {
         ));
 
         let mut values = packed(&bytes);
+
         let last = values.len() - 1;
+
         values[last] |= 1;
+
         let padded: String = values
             .iter()
             .chain(check_values(&bytes).iter())
             .map(|value| char::from(ALPHABET[usize::from(*value)]))
             .collect();
+
         assert!(matches!(
             read_spelled::<COMMITTED_KEY_BYTES>(&padded),
             Err(Error::Code(CodeRefused::Check))

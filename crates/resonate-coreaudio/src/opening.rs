@@ -55,10 +55,13 @@ impl Opens {
                 .find(|(held, _)| *held == id)
                 .map(|(_, node)| node.clone())
         };
+
         if let Some(node) = named(&self.known) {
             return Ok(Target::Node(node));
         }
+
         let sinks = enumerate(&self.remembered)?;
+
         *self.known.lock() = sinks
             .iter()
             .map(|sink| (sink.id, sink.name.clone()))
@@ -160,11 +163,13 @@ impl Hogged {
             .collect();
         let physicals: Vec<_> = carried.iter().map(|(physical, _)| *physical).collect();
         let chosen = physical_for(spec, &physicals).ok_or(Error::FormatRefused)?;
+
         let (_, format) = carried
             .iter()
             .find(|(physical, _)| *physical == chosen)
             .ok_or(Error::FormatRefused)?;
         let hz = f64::from(spec.rate.hz());
+
         let format = format.at(hz);
 
         match device.mixes() {
@@ -188,11 +193,13 @@ impl Hogged {
             return Err(Error::FormatRefused);
         }
         stream.set_physical_format(&format).map_err(unformatted)?;
+
         let took = settled(|| {
             stream.physical_format().is_ok_and(|now| {
                 now.depth() == format.depth() && (now.rate() - hz).abs() < RATES_AGREE_WITHIN_HZ
             })
         });
+
         if !took {
             return Err(Error::FormatRefused);
         }
@@ -262,11 +269,14 @@ impl Playing {
         let channels =
             NonZeroU32::new(u32::from(spec.channel_count().get())).ok_or(Error::FormatRefused)?;
         let hz = f64::from(spec.rate.hz());
+
         let hogged = match way {
             Way::Shared => None,
             Way::Hog => Some(Hogged::taken(device, spec)?),
         };
+
         ask_for_the_buffer(device, latency, hz);
+
         let shape = Shape {
             component: Component::HalOutput,
             device: Some(device.id()),
@@ -284,6 +294,7 @@ impl Playing {
                 .unit
                 .device_rate()
                 .is_ok_and(|rate| (rate - hz).abs() < RATES_AGREE_WITHIN_HZ);
+
         if converted {
             return Err(Error::FormatRefused);
         }

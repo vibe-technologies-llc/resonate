@@ -10,6 +10,7 @@ use crate::{
 impl Engine {
     pub(super) fn settings_as_set(&self) -> EngineConfig {
         let mut set = self.config.clone();
+
         if let Some(auditioning) = self.auditioning.as_ref() {
             auditioning.before.put_back(&mut set);
         }
@@ -36,9 +37,11 @@ impl Engine {
         let (Some(track), Some(output)) = (self.track.as_ref(), self.output.as_ref()) else {
             return Err(Error::NothingToAudition);
         };
+
         if !matches!(output.plan.packing, Packing::Samples) {
             return Err(Error::NothingToAudition);
         }
+
         let planned_for = self.bound_sink().unwrap_or_else(|| output.bound.clone());
         let (a, b) = plans_of(
             track.decoded(),
@@ -49,11 +52,13 @@ impl Engine {
             output.attenuator,
             asked.contest,
         );
+
         if asked.contest.renders_alike(&a, &b) {
             return Err(Error::ArmsAlike);
         }
 
         let before = Contested::of(&set);
+
         self.config = set;
         asked.contest.apply(asked.heard, &mut self.config);
         self.auditioning = Some(Auditioning {
@@ -67,11 +72,14 @@ impl Engine {
         let Some(running) = self.auditioning.as_mut() else {
             return Ok(());
         };
+
         if running.audition.heard == arm {
             return Ok(());
         }
         running.audition.heard = arm;
+
         let contest = running.audition.contest;
+
         contest.apply(arm, &mut self.config);
         self.switch_the_arms()
     }
@@ -87,6 +95,7 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return Ok(());
         };
+
         if output
             .arms
             .as_ref()
@@ -95,7 +104,9 @@ impl Engine {
             output.switch_waits_for_room = false;
             return Ok(());
         }
+
         let downstream = output.holds_seconds_downstream();
+
         if !self.boundaries.is_empty() && output.arms.is_some() {
             output.switch_owed = true;
             if downstream {
@@ -103,7 +114,9 @@ impl Engine {
             }
             return Ok(());
         }
+
         let switched = output.hear_the_other_arm(self.playing);
+
         if downstream {
             self.owe_a_downstream_restart();
         }
@@ -122,6 +135,7 @@ impl Engine {
             .output
             .as_ref()
             .is_some_and(|output| output.switch_owed && !output.producer.is_splicing());
+
         if !owed || !self.boundaries.is_empty() {
             return;
         }
@@ -137,6 +151,7 @@ impl Engine {
         let Some(running) = self.auditioning.take() else {
             return;
         };
+
         running.before.put_back(&mut self.config);
         if let Some(output) = self.output.as_mut() {
             output.let_go_of_the_other_arm();
@@ -151,6 +166,7 @@ impl Engine {
         };
         let set = self.settings_as_set();
         let as_set = Contested::of(&set);
+
         let arm_as_set = [Arm::A, Arm::B]
             .into_iter()
             .find(|&arm| Contested::of(&running.contest.applied(arm, &set)) == as_set);
@@ -158,6 +174,7 @@ impl Engine {
             self.forget_the_audition();
             return self.rebind_where_it_stands();
         };
+
         self.hear_the_arm(arm)?;
         self.forget_the_audition();
         Ok(())
@@ -170,6 +187,7 @@ impl Engine {
             output.splice_owed = true;
             return Ok(Splicing::Owed);
         }
+
         let (Some(track), Some(output)) = (self.track.as_mut(), self.output.as_mut()) else {
             return Ok(Splicing::Unspliceable);
         };
@@ -181,6 +199,7 @@ impl Engine {
             .output
             .as_ref()
             .is_some_and(|output| output.splice_owed && !output.producer.is_splicing());
+
         if !owed || !self.boundaries.is_empty() {
             return;
         }

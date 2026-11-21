@@ -9,7 +9,7 @@ const SCHEME: &str = "http://";
 
 const HTTP_PORT: u16 = 80;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Located {
     host: Box<str>,
     port: u16,
@@ -19,9 +19,11 @@ pub struct Located {
 impl Located {
     pub fn parse(address: &str) -> Result<Self> {
         let address = address.trim();
+
         if !is_writable_in_a_request(address) {
             return Err(Error::UnreadableAddress);
         }
+
         let rest = address
             .get(..SCHEME.len())
             .filter(|scheme| scheme.eq_ignore_ascii_case(SCHEME))
@@ -35,6 +37,7 @@ impl Located {
             .rsplit_once('@')
             .map_or(authority, |(_, host)| host);
         let (host, port) = host_and_port(authority)?;
+
         if host.is_empty() {
             return Err(Error::UnreadableAddress);
         }
@@ -48,6 +51,7 @@ impl Located {
 
     pub fn join(&self, reference: &str) -> Result<Self> {
         let reference = reference.trim();
+
         if reference.is_empty() || !is_writable_in_a_request(reference) {
             return Err(Error::UnreadableAddress);
         }
@@ -57,6 +61,7 @@ impl Located {
         {
             return Self::parse(reference);
         }
+
         let path = if reference.starts_with('/') {
             reference.to_owned()
         } else {
@@ -162,6 +167,7 @@ fn host_and_port(authority: &str) -> Result<(&str, u16)> {
             None if after.is_empty() => HTTP_PORT,
             None => return Err(Error::UnreadableAddress),
         };
+
         return Ok((host, port));
     }
     match authority.rsplit_once(':') {
@@ -209,6 +215,7 @@ mod tests {
         for hostile in ["/ctl\r\nX-Injected: 1", "ctl\nX: 1", "/a b", "/a\0b"] {
             assert!(base.join(hostile).is_err(), "{hostile:?} was joined");
         }
+
         assert_eq!(
             base.join("/ctl%0D%0A").expect("an escaped one").path(),
             "/ctl%0D%0A"

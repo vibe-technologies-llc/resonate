@@ -28,6 +28,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .contact
@@ -40,6 +41,7 @@ impl RootView {
         } else {
             words::root::contact_taken()
         };
+
         self.store(&Setting::Contact(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
     }
@@ -74,6 +76,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .acoustid
@@ -86,6 +89,7 @@ impl RootView {
         } else {
             words::root::acoustid_key_taken()
         };
+
         self.store(&Setting::AcoustidKey(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
     }
@@ -118,6 +122,7 @@ impl RootView {
 
     pub(crate) fn put_back_acoustid(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().online.acoustid_key.to_owned();
+
         self.settings_fields
             .read(cx)
             .acoustid
@@ -159,6 +164,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .replication
@@ -173,6 +179,7 @@ impl RootView {
         } else {
             words::root::replication_token_taken()
         };
+
         self.store(&Setting::MusicbrainzReplicationToken(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
     }
@@ -216,6 +223,7 @@ impl RootView {
             .online
             .musicbrainz_replication_token
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .replication
@@ -259,6 +267,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .audd
@@ -271,6 +280,7 @@ impl RootView {
         } else {
             words::root::audd_token_taken()
         };
+
         self.store(&Setting::AuddToken(given), cx);
         self.report(Notice::Done(said.to_owned()), cx);
     }
@@ -297,6 +307,7 @@ impl RootView {
 
     pub(crate) fn put_back_audd(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().online.audd_token.to_owned();
+
         self.settings_fields
             .read(cx)
             .audd
@@ -335,6 +346,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .listenbrainz
@@ -349,6 +361,7 @@ impl RootView {
         } else {
             words::root::listens_sent()
         };
+
         self.store(&Setting::ListenbrainzToken(given.clone()), cx);
         self.report(Notice::Done(said.to_owned()), cx);
         self.check_the_listenbrainz_token(given, cx);
@@ -359,6 +372,7 @@ impl RootView {
         let Some(scrobblers) = app.scrobblers.clone().filter(|_| app.online.enabled) else {
             return;
         };
+
         if token.is_empty() {
             self.settings_pane
                 .update(cx, |pane, _| pane.accounts._token_checked = Task::ready(()));
@@ -373,6 +387,7 @@ impl RootView {
             let outcome = this.update(cx, |this, cx| this.report(token_notice(held), cx));
             let _ = outcome;
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts._token_checked = token_checked);
     }
@@ -409,6 +424,7 @@ impl RootView {
             .online
             .listenbrainz_token
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .listenbrainz
@@ -468,6 +484,7 @@ impl RootView {
 
     pub(crate) fn put_back_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().online.contact.to_owned();
+
         self.settings_fields
             .read(cx)
             .contact
@@ -518,6 +535,7 @@ impl RootView {
 
     pub(crate) fn put_back_organising(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let stored = cx.global::<ResonateApp>().organise_as.clone();
+
         self.settings_fields
             .read(cx)
             .organising

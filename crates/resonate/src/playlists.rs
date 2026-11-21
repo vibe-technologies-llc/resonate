@@ -90,6 +90,7 @@ impl Playlists for Collection {
         let queue = self.player.state().queue_stamp;
         let playlist = self.library.playing_playlist(queue)?;
         let revision = self.library.playlists_revision();
+
         if let Some(held) = self.named_playing.lock().as_ref()
             && held.playlist == playlist
             && held.revision == revision
@@ -98,6 +99,7 @@ impl Playlists for Collection {
         }
 
         let info = self.named(playlist);
+
         *self.named_playing.lock() = Some(NamedAt {
             playlist,
             revision,
@@ -116,9 +118,11 @@ impl Playlists for Collection {
         };
 
         let items = played_as_chosen(Some(&self.library), queue_items(&entries));
+
         if items.is_empty() {
             return Opened::Refused;
         }
+
         let queue = stamp_of(&items);
         match self.player.send(Command::Load {
             items,

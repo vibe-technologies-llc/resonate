@@ -93,12 +93,15 @@ enum Asked {
 fn decoded(query: &str) -> String {
     let mut decoded = Vec::new();
     let mut bytes = query.bytes();
+
     while let Some(byte) = bytes.next() {
         if byte == b'%' {
             let high = bytes.next().unwrap_or(b'0');
             let low = bytes.next().unwrap_or(b'0');
+
             let hex = [high, low];
             let text = std::str::from_utf8(&hex).unwrap_or("00");
+
             decoded.push(u8::from_str_radix(text, 16).unwrap_or(0));
         } else {
             decoded.push(byte);
@@ -109,6 +112,7 @@ fn decoded(query: &str) -> String {
 
 fn asked_from(target: &str, range: Option<&str>) -> Asked {
     let (path, query) = target.split_once('?').unwrap_or((target, ""));
+
     if path == "/search/tracks" {
         let words = query
             .split('&')
@@ -116,6 +120,7 @@ fn asked_from(target: &str, range: Option<&str>) -> Asked {
             .find(|(key, _)| *key == "q")
             .map(|(_, value)| decoded(value))
             .unwrap_or_default();
+
         return Asked::Search(words);
     }
     if let Some(id) = path.strip_prefix("/track/") {
@@ -123,6 +128,7 @@ fn asked_from(target: &str, range: Option<&str>) -> Asked {
             .and_then(|range| range.trim().strip_prefix("bytes="))
             .and_then(|range| range.strip_suffix('-'))
             .and_then(|from| from.parse().ok());
+
         return Asked::Track {
             id: id.to_owned(),
             from,
@@ -145,6 +151,7 @@ impl Fake {
         let heard = Arc::new(Mutex::new(Vec::new()));
         let noted = Arc::clone(&heard);
         let answering: Arc<Answering> = Arc::new(answering);
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else {
@@ -152,6 +159,7 @@ impl Fake {
                 };
                 let noted = Arc::clone(&noted);
                 let answering = Arc::clone(&answering);
+
                 thread::spawn(move || answer(stream, &noted, answering.as_ref()));
             }
         });
@@ -179,10 +187,13 @@ impl Fake {
 fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
+
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
+
     let mut range = None;
+
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -197,11 +208,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
             }
         }
     }
+
     let target = request_line.split(' ').nth(1).unwrap_or_default();
     let asked = asked_from(target, range.as_deref());
     let canned = {
         let mut heard = heard.lock();
+
         let canned = answering(&asked, heard.len());
+
         heard.push(asked);
         canned
     };
@@ -211,11 +225,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
         canned.status,
         canned.body.len()
     );
+
     for (name, value) in &canned.headers {
         written.push_str(&format!("{name}: {value}\r\n"));
     }
     written.push_str("\r\n");
+
     let mut stream = reader.into_inner();
+
     let _ = stream.write_all(written.as_bytes());
     match canned.sent {
         Sent::Whole => {
@@ -228,12 +245,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
         Sent::StallingAfter(bytes) => {
             let _ = stream.write_all(&canned.body[..bytes]);
             let _ = stream.flush();
+
             thread::sleep(STALLED_FOR);
         }
         Sent::Dripping { bytes, apart } => {
             for drop in canned.body.chunks(bytes) {
                 let _ = stream.write_all(drop);
                 let _ = stream.flush();
+
                 thread::sleep(apart);
             }
         }
@@ -288,6 +307,7 @@ fn streamed(obtained: Obtained) -> Option<(String, String, Vec<u8>)> {
         }) => {
             let mut reader = opened(opening);
             let mut bytes = Vec::new();
+
             reader.read_to_end(&mut bytes).expect("the stream reads");
             Some((key.into_string(), extension.as_str().to_owned(), bytes))
         }
@@ -375,6 +395,7 @@ fn a_listing_under_another_isrc_is_delivered_only_named_as_the_want_and_as_long_
         _ => Canned::audio(),
     });
     let unmeasured = fake.monochrome().find(&echoes()).expect("an answer");
+
     assert!(matches!(unmeasured, Obtained::Nothing));
     assert_eq!(
         fake.heard(),
@@ -386,6 +407,7 @@ fn a_listing_under_another_isrc_is_delivered_only_named_as_the_want_and_as_long_
     );
 
     let too_long = Fake::serving(move |_, _| another());
+
     assert!(matches!(
         too_long
             .monochrome()
@@ -399,6 +421,7 @@ fn a_listing_under_another_isrc_is_delivered_only_named_as_the_want_and_as_long_
         _ => Canned::audio(),
     });
     let delivered = streamed(alike.monochrome().find(&measured(1413)).expect("an answer"));
+
     assert_eq!(
         delivered.map(|(key, ..)| key),
         Some("track/176742690942394368".to_owned())
@@ -431,6 +454,7 @@ fn a_want_with_no_code_is_searched_for_by_its_name_and_one_with_no_length_asks_n
             })
             .expect("an answer"),
     );
+
     assert!(delivered.is_some());
 }
 
@@ -500,6 +524,7 @@ fn a_search_is_answered_without_the_download_being_asked_for() {
     let opening = offered(fake.monochrome().find(&echoes()).expect("an answer"));
     let asked_before_opening = fake.heard();
     let mut bytes = Vec::new();
+
     opened(opening)
         .read_to_end(&mut bytes)
         .expect("the stream reads");
@@ -598,6 +623,7 @@ fn a_download_that_stalls_and_stays_stalled_is_broken_off_rather_than_held() {
     };
     let mut reader = opened(opening);
     let mut bytes = Vec::new();
+
     let broken_off = reader.read_to_end(&mut bytes);
 
     assert!(broken_off.is_err());
@@ -626,6 +652,7 @@ fn a_download_that_keeps_coming_is_read_however_long_it_takes_in_all() {
 fn an_unreachable_server_is_the_provider_away() {
     let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
     let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+
     drop(listener);
 
     let refused = Monochrome::at(&url).find(&echoes());
@@ -659,10 +686,14 @@ fn a_search_played_in_place_lists_the_playable_songs_and_a_song_streams_and_seek
         .songs;
     let mut streamed = PlaysInPlace::streamed(&monochrome, &songs[0].id).expect("a stream");
     let mut head = [0; 20];
+
     streamed.read_exact(&mut head).expect("the head");
     streamed.seek(SeekFrom::Start(5)).expect("a seek back");
+
     let mut rest = Vec::new();
+
     streamed.read_to_end(&mut rest).expect("the rest");
+
     let album = PlaysInPlace::album(&monochrome, &songs[0].id).map(|_| ());
     let named =
         monochrome.named_by(&monochrome.location_of(&Named::Album(Id::new("1").expect("an id"))));

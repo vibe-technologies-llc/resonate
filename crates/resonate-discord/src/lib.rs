@@ -48,6 +48,7 @@ impl Discord {
 
     pub fn follow(&self, presence: &Presence) {
         presence.clone_into(&mut self.presence.write());
+
         let mut running = self.running.lock();
 
         match (presence.active(), running.take()) {

@@ -22,9 +22,11 @@ const TWO_THOUSAND: i64 = 2_000;
 
 pub fn retry_after(headers: &HeaderMap, now: SystemTime) -> Option<Duration> {
     let value = headers.get(RETRY_AFTER)?.to_str().ok()?.trim();
+
     if let Ok(seconds) = value.parse::<u64>() {
         return Some(Duration::from_secs(seconds));
     }
+
     let until = second_named(value)?.saturating_sub(seconds_since_the_epoch(now));
     Some(Duration::from_secs(u64::try_from(until).unwrap_or(0)))
 }
@@ -50,11 +52,13 @@ fn of_two_digits(year: i64) -> i64 {
 
 fn clock_read(clock: &str) -> Option<i64> {
     let mut parts = clock.split(':').map(|part| part.parse::<i64>().ok());
+
     let (Some(Some(hour)), Some(Some(minute)), Some(Some(second)), None) =
         (parts.next(), parts.next(), parts.next(), parts.next())
     else {
         return None;
     };
+
     let read = (0..HOURS_PER_DAY).contains(&hour)
         && (0..MINUTES_PER_HOUR).contains(&minute)
         && (0..=LEAP_SECOND).contains(&second);
@@ -72,6 +76,7 @@ fn second_named(date: &str) -> Option<i64> {
         }
         [_, dated, clock, GMT] => {
             let mut parts = dated.split('-');
+
             let (Some(day), Some(month), Some(year), None) =
                 (parts.next(), parts.next(), parts.next(), parts.next())
             else {
@@ -87,9 +92,11 @@ fn second_named(date: &str) -> Option<i64> {
         [_, month, day, clock, year] => (day.parse().ok()?, *month, year.parse().ok()?, *clock),
         _ => return None,
     };
+
     if !(1..=LAST_DAY_OF_A_MONTH).contains(&day) || !(0..=LAST_YEAR_A_DATE_NAMES).contains(&year) {
         return None;
     }
+
     let month = month_named(month)?;
     let day = CivilDate { year, month, day }.day_since_the_epoch();
     Some(day.saturating_mul(SECONDS_PER_DAY) + clock_read(clock)?)
@@ -107,6 +114,7 @@ mod tests {
 
     fn asked(value: &str) -> HeaderMap {
         let mut headers = HeaderMap::new();
+
         headers.insert(
             RETRY_AFTER,
             HeaderValue::from_str(value).expect("a header value"),
@@ -147,6 +155,7 @@ mod tests {
 
         for year in ["9223372036854775807", "-9223372036854775808", "10000", "-1"] {
             let date = format!("Sun Nov  6 08:49:37 {year}");
+
             assert_eq!(retry_after(&asked(&date), now), None, "{date}");
         }
     }

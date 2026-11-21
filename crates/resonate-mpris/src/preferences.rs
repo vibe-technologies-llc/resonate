@@ -137,6 +137,7 @@ fn keep_watching(
         let Ok((namespace, _, _)) = body.deserialize::<(String, String, OwnedVariant)>() else {
             continue;
         };
+
         if !WATCHED.contains(&namespace.as_str()) {
             continue;
         }

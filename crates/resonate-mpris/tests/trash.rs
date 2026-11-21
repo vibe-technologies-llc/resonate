@@ -55,6 +55,7 @@ struct Tree {
 impl Tree {
     fn new() -> Self {
         let root = env::temp_dir().join(format!("resonate-portal-{}", std::process::id()));
+
         fs::create_dir_all(&root).expect("a folder for the portal's data");
         Self { root }
     }
@@ -89,6 +90,7 @@ fn the_portal_installed() -> Option<&'static str> {
 
 fn hosted(binary: &str, data: &Path, runtime: Option<&Path>) -> Portal {
     let mut portal = Command::new(binary);
+
     if let Some(runtime) = runtime {
         portal.env("XDG_RUNTIME_DIR", runtime);
     }
@@ -129,7 +131,9 @@ fn on_a_bus_of_its_own(tree: &Tree, test: &str) -> bool {
     }
 
     let config = tree.root.join("session.conf");
+
     fs::write(&config, A_BUS_WITH_NOTHING_TO_ACTIVATE).expect("a writable bus configuration");
+
     let ran = Command::new("dbus-run-session")
         .arg(format!("--config-file={}", config.display()))
         .arg("--")
@@ -137,6 +141,7 @@ fn on_a_bus_of_its_own(tree: &Tree, test: &str) -> bool {
         .args(["--exact", in_this_suite(test).as_str(), "--nocapture"])
         .env(ON_A_BUS_OF_ITS_OWN, "1")
         .status();
+
     match ran {
         Ok(status) => assert!(status.success(), "the run on a bus of its own failed"),
         Err(error) => eprintln!("skipped: no dbus-run-session to host a bus ({error})"),
@@ -151,14 +156,19 @@ fn a_file_is_taken_to_the_trash_by_a_portal_hosted_on_a_bus_of_its_own() {
         return;
     };
     let tree = Tree::new();
+
     if !on_a_bus_of_its_own(&tree, THIS_TEST) {
         return;
     }
 
     let data = tree.data();
+
     fs::create_dir_all(&data).expect("a data home to trash into");
+
     let file = tree.root.join(SONG);
+
     fs::write(&file, b"not a song").expect("a file to trash");
+
     let _portal = hosted(binary, &data, None);
 
     let trashed = trashed_when_it_answers(&file);
@@ -166,8 +176,10 @@ fn a_file_is_taken_to_the_trash_by_a_portal_hosted_on_a_bus_of_its_own() {
     assert!(trashed.is_ok(), "{trashed:?}");
     assert!(!file.exists(), "the file stayed where it was");
     assert_eq!(trashed_names(&data.join("Trash/files")).len(), 1);
+
     let record = trashed_names(&data.join("Trash/info")).remove(0);
     let recorded = fs::read_to_string(data.join("Trash/info").join(record)).expect("a record");
+
     assert!(
         recorded.contains(&format!("Path={}", file.display())),
         "{recorded}"
@@ -191,6 +203,7 @@ fn bus_socket_of(address: &str) -> Option<PathBuf> {
 
 fn sandbox(info: &Path) -> Command {
     let mut bwrap = Command::new("bwrap");
+
     bwrap
         .args([
             "--unshare-pid",
@@ -251,6 +264,7 @@ fn wait_for(path: &Path) {
             "{} never appeared",
             path.display()
         );
+
         thread::sleep(POLL_EVERY);
     }
 }
@@ -263,6 +277,7 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
     };
     let tree = Tree::new();
     let info = tree.root.join("flatpak-info");
+
     fs::write(&info, flatpak_info(&tree)).expect("a flatpak-info");
     if !can_sandbox(&info) {
         eprintln!("skipped: no bwrap and xdg-dbus-proxy to build a sandbox with");
@@ -273,22 +288,33 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
     }
 
     let data = tree.data();
+
     fs::create_dir_all(&data).expect("a data home to trash into");
+
     let music = tree.root.join("music");
+
     fs::create_dir_all(&music).expect("a music folder");
+
     let file = music.join(SONG);
+
     fs::write(&file, b"not a song").expect("a file to trash");
+
     let runtime = tree.root.join("run");
     let instance = runtime.join(".flatpak").join(INSTANCE_ID);
+
     fs::create_dir_all(&instance).expect("the instance's folder in the runtime directory");
+
     let _portal = hosted(binary, &data, Some(&runtime));
 
     let address = env::var("DBUS_SESSION_BUS_ADDRESS").expect("the bus this run is on");
     let bus = bus_socket_of(&address).expect("a bus on a socket file");
     let proxied = tree.root.join("proxied");
+
     fs::create_dir_all(&proxied).expect("a folder for the proxy's socket");
+
     let socket = proxied.join("bus");
     let mut proxy = bound(bound(sandbox(&info), true, &bus), true, &proxied);
+
     let _proxy = Portal {
         process: proxy
             .args(["xdg-dbus-proxy", &address])
@@ -299,6 +325,7 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
             .spawn()
             .expect("the proxy starts"),
     };
+
     wait_for(&socket);
 
     let executable = env::current_exe().expect("the test binary names itself");
@@ -308,11 +335,13 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
         true,
         &music,
     );
+
     child.args(["--info-fd", "3"]).arg(&executable).args([
         "--exact",
         in_this_suite(CHILD_TEST).as_str(),
         "--nocapture",
     ]);
+
     let ran = Command::new("sh")
         .args(["-c", r#"exec "$@" 3>"$BWRAPINFO""#, "sh", "bwrap"])
         .args(child.get_args())
@@ -327,8 +356,10 @@ fn a_file_is_taken_to_the_trash_from_a_sandbox_the_portal_knows_by_its_app_id() 
 
     assert!(ran.success(), "the sandboxed trash failed");
     assert!(!file.exists(), "the file stayed where it was");
+
     let record = trashed_names(&data.join("Trash/info")).remove(0);
     let recorded = fs::read_to_string(data.join("Trash/info").join(record)).expect("a record");
+
     assert!(
         recorded.contains(&format!("Path={}", file.display())),
         "{recorded}"

@@ -5,7 +5,7 @@ use crate::{Error, Result};
 const MBID_LEN: usize = 36;
 const MBID_GROUPS: [usize; 5] = [8, 4, 4, 4, 12];
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Mbid(Box<str>);
 
 impl Mbid {
@@ -13,10 +13,13 @@ impl Mbid {
         if text.len() != MBID_LEN {
             return Err(Error::NotAnMbid);
         }
+
         let mut groups = text.split('-');
         let mut lowered = String::with_capacity(MBID_LEN);
+
         for expected in MBID_GROUPS {
             let group = groups.next().ok_or(Error::NotAnMbid)?;
+
             if group.len() != expected || !group.bytes().all(|byte| byte.is_ascii_hexdigit()) {
                 return Err(Error::NotAnMbid);
             }
@@ -49,12 +52,13 @@ const ISRC_YEAR_AND_DESIGNATION_DIGITS: usize = 7;
 const ISRC_REGISTRANT_ENDS: usize = ISRC_COUNTRY_LETTERS + ISRC_REGISTRANT_CHARACTERS;
 const ISRC_LEN: usize = ISRC_REGISTRANT_ENDS + ISRC_YEAR_AND_DESIGNATION_DIGITS;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Isrc(Box<str>);
 
 impl Isrc {
     pub fn new(text: &str) -> Result<Self> {
         let mut shouted = String::with_capacity(ISRC_LEN);
+
         for letter in text.chars().filter(|letter| *letter != '-') {
             if shouted.len() == ISRC_LEN || !belongs_at(letter, shouted.len()) {
                 return Err(Error::NotAnIsrc);
@@ -98,10 +102,12 @@ mod tests {
     #[test]
     fn an_mbid_is_the_dashed_uuid_text_and_reads_back_lowercased() {
         let lowered = Mbid::new(ECHOES).expect("a well-formed mbid");
+
         assert_eq!(lowered.as_str(), ECHOES);
         assert_eq!(lowered.to_string(), ECHOES);
 
         let shouted = Mbid::new(&ECHOES.to_ascii_uppercase()).expect("case is not part of an mbid");
+
         assert_eq!(shouted, lowered);
     }
 
@@ -127,6 +133,7 @@ mod tests {
     #[test]
     fn an_isrc_is_twelve_characters_and_reads_back_uppercased_without_its_dashes() {
         let isrc = Isrc::new("GB-AYE-71-00389").expect("a well-formed isrc");
+
         assert_eq!(isrc.as_str(), "GBAYE7100389");
         assert_eq!(isrc.to_string(), "GBAYE7100389");
         assert_eq!(

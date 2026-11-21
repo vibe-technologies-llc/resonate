@@ -138,6 +138,7 @@ impl Link {
 
         {
             let broken = Arc::clone(&broken);
+
             thread::Builder::new()
                 .name(LINK_THREAD.to_owned())
                 .spawn(move || converse(stream, &queue, &broken))
@@ -158,11 +159,13 @@ impl Link {
 
         let (reply, answer) = bounded(1);
         let taken = Arc::new(AtomicBool::new(false));
+
         let job = Job {
             request,
             reply,
             taken: Arc::clone(&taken),
         };
+
         if self.jobs.send(job).is_err() {
             self.broken.store(true, Ordering::Release);
             return Err(severed());
@@ -204,6 +207,7 @@ fn converse<S: Read + Write>(mut stream: S, queue: &Receiver<Job>, broken: &Atom
         if !first_to_take(&job.taken) {
             continue;
         }
+
         let answered = write_frame(&mut stream, &job.request).and_then(|()| {
             read_frame(&mut stream)?
                 .ok_or_else(|| Error::pipe(PipeOp::Read, io::ErrorKind::UnexpectedEof.into()))
@@ -418,6 +422,7 @@ mod tests {
 
     fn answering_with(reply: Vec<u8>) -> PipePeer {
         let (near, mut far) = UnixStream::pair().expect("a pair of sockets");
+
         thread::spawn(move || {
             while let Ok(Some(_)) = read_frame(&mut far) {
                 if write_frame(&mut far, &reply).is_err() {
@@ -460,10 +465,12 @@ mod tests {
         let (near, mut far) = UnixStream::pair().expect("a pair of sockets");
         let (dropped, let_go) = bounded(1);
         let (read, heard) = bounded(1);
+
         thread::spawn(move || {
             let _ = read.send(read_frame(&mut far).is_ok_and(|frame| frame.is_some()));
             let _ = read_frame(&mut far);
         });
+
         let peer = PipePeer::over(Watched {
             stream: near,
             dropped,
@@ -482,9 +489,11 @@ mod tests {
         );
         assert!(waited < ANSWERS_WITHIN * 2, "{waited:?}");
         assert!(released.is_ok(), "the link's thread still holds the stream");
+
         let Err(error) = asked else {
             panic!("a command nobody answered was taken as done");
         };
+
         assert!(
             matches!(error, Error::Unconfirmed { call: Call::Told }),
             "{error:?}"
@@ -499,7 +508,9 @@ mod tests {
     fn a_call_queued_behind_one_that_went_unanswered_is_said_to_have_failed_and_not_to_have_landed()
     {
         let (near, mut far) = UnixStream::pair().expect("a pair of sockets");
+
         thread::spawn(move || while let Ok(Some(_)) = read_frame(&mut far) {});
+
         let peer = Arc::new(PipePeer::over(near).expect("a peer"));
 
         let first = {
@@ -510,6 +521,7 @@ mod tests {
             let peer = Arc::clone(&peer);
             thread::spawn(move || peer.told(Act::Previous))
         };
+
         let answers = [
             first.join().expect("an asker"),
             second.join().expect("an asker"),
@@ -523,13 +535,16 @@ mod tests {
             .iter()
             .filter(|answer| matches!(answer, Err(Error::Pipe { .. })))
             .count();
+
         assert_eq!((unconfirmed, failed), (1, 1), "{answers:?}");
     }
 
     #[test]
     fn a_player_that_hangs_up_is_a_closed_pipe_and_not_a_hang() {
         let (near, far) = UnixStream::pair().expect("a pair of sockets");
+
         drop(far);
+
         let peer = PipePeer::over(near).expect("a peer");
 
         let asked = peer.zone();

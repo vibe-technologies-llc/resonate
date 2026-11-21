@@ -69,7 +69,7 @@ const NOT_A_DEVICE: [&str; 12] = [
     "iec958",
 ];
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DeviceId(Box<str>);
 
 impl DeviceId {
@@ -118,7 +118,7 @@ impl Device {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Found {
     pub at: usize,
 }
@@ -132,6 +132,7 @@ pub struct Catalogue {
 
 fn measurer_rank(measured_by: &str, preferred: Option<&str>) -> usize {
     let named = measured_by.trim().to_lowercase();
+
     if preferred.is_some_and(|wanted| wanted.trim().to_lowercase() == named) {
         return 0;
     }
@@ -162,6 +163,7 @@ fn percent_decoded(text: &str) -> String {
     let raw: Vec<u8> = text.bytes().collect();
     let mut bytes = Vec::with_capacity(raw.len());
     let mut at = 0;
+
     while at < raw.len() {
         let byte = raw.get(at).copied().unwrap_or(b' ');
         let pair = (raw.get(at + 1).copied(), raw.get(at + 2).copied());
@@ -200,6 +202,7 @@ fn entry_of(line: &str) -> Option<Device> {
 
     let id = DeviceId::new(&percent_decoded(path)).ok()?;
     let tail_of_path = id.as_str().rsplit('/').next().unwrap_or_default();
+
     if tail_of_path != label {
         tracing::debug!(label, path = id.as_str(), "an index row names two devices");
         return None;
@@ -274,6 +277,7 @@ pub fn search_preferring(
     preferred: Option<&str>,
 ) -> Vec<Found> {
     let wanted = words_of(typed);
+
     if wanted.is_empty() {
         return Vec::new();
     }
@@ -313,6 +317,7 @@ fn telling(word: &str) -> bool {
 
 fn names_a_model(words: &[String]) -> bool {
     let telling: Vec<&String> = words.iter().filter(|word| telling(word)).collect();
+
     if telling.len() >= 2 {
         return true;
     }
@@ -333,6 +338,7 @@ pub fn suggest_preferring(
     preferred: Option<&str>,
 ) -> Option<Found> {
     let said = words_of(description);
+
     if said
         .iter()
         .any(|word| NOT_A_DEVICE.contains(&word.as_str()))
@@ -341,6 +347,7 @@ pub fn suggest_preferring(
     }
 
     let mut best: Vec<(u8, usize, usize)> = Vec::new();
+
     for (at, words) in catalogue.words.iter().enumerate() {
         if words.len() < 2 {
             continue;
@@ -349,9 +356,11 @@ pub fn suggest_preferring(
             best.push((2, words.len(), at));
             continue;
         }
+
         let Some((_, tail)) = words.split_first() else {
             continue;
         };
+
         if tail.is_empty() || !tail.iter().all(|word| said.contains(word)) {
             continue;
         }
@@ -371,8 +380,10 @@ pub fn suggest_preferring(
                     .cmp(&catalogue.measurer_rank_of(other.2, preferred))
             })
     });
+
     let top = best.first().copied()?;
     let named = catalogue.folded.get(top.2);
+
     let rivals = best
         .iter()
         .filter(|held| (held.0, held.1) == (top.0, top.1) && catalogue.folded.get(held.2) != named)

@@ -180,6 +180,7 @@ mod tests {
         let mut keeper = beside(&window);
 
         the_window_keeps(&library, &["window-one", "window-two", "window-three"], 2);
+
         let windows = kept_rows(&library);
         let queued = queue(&["terminal-one", "terminal-two"]);
 
@@ -218,6 +219,7 @@ mod tests {
         keeper.keep_into(&library, Moment::Playing, &at_row(0), &queued);
         window.set(true);
         the_window_keeps(&library, &["window-one", "window-two"], 0);
+
         let windows = kept_rows(&library);
 
         keeper.keep_into(&library, Moment::Playing, &at_row(2), &queued);

@@ -53,6 +53,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
     fn new(channels: usize) -> Self {
         let windowed = WindowedSinc::new(INTERPOLATOR);
         let mut weights = [[0.0; PHASES]; TAPS];
+
         if let Some(lane) = weights
             .get_mut(REACH - 1)
             .and_then(|lanes| lanes.first_mut())
@@ -72,6 +73,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
                 }
             }
         }
+
         let gain_at_most = (0..PHASES)
             .map(|phase| {
                 weights
@@ -111,7 +113,9 @@ impl<const PHASES: usize> Oversampler<PHASES> {
 
     fn loudest_after(&mut self, frame: &[f64]) -> f64 {
         self.hold(frame);
+
         let loudest = self.read();
+
         self.advance();
         loudest
     }
@@ -120,27 +124,32 @@ impl<const PHASES: usize> Oversampler<PHASES> {
         if self.hold(frame) > quiet_below {
             self.loud_for = TAPS;
         }
+
         let loudest = if self.loud_for == 0 {
             0.0
         } else {
             self.loud_for -= 1;
             self.read()
         };
+
         self.advance();
         loudest
     }
 
     fn loudest_that_could_beat(&mut self, frame: &[f64], beaten: f64) -> f64 {
         let quiet_below = self.quiet_below(beaten);
+
         if self.hold(frame) > quiet_below {
             self.loud_for = TAPS;
         }
+
         let loudest = if self.loud_for == 0 {
             0.0
         } else {
             self.loud_for -= 1;
             self.read_what_could_beat(beaten)
         };
+
         self.advance();
         loudest
     }
@@ -149,9 +158,11 @@ impl<const PHASES: usize> Oversampler<PHASES> {
         if PHASES < BOUNDED_FROM_PHASES || beaten < BOUNDED_FROM_PEAK {
             return self.read();
         }
+
         let bounded_below = beaten * BOUND_MARGIN;
         let mut loudest = 0.0;
         let mut channel = 0;
+
         while channel < self.channels {
             let first = self.bound_of_a_read(channel);
             let second = if channel + 1 < self.channels {
@@ -159,10 +170,13 @@ impl<const PHASES: usize> Oversampler<PHASES> {
             } else {
                 None
             };
+
             if !first.is_finite() || second.is_some_and(|bound| !bound.is_finite()) {
                 return self.read();
             }
+
             let first_could = first >= bounded_below;
+
             match second {
                 Some(second) if first_could && second >= bounded_below => {
                     let (left, right) = self.phases_of_a_pair(channel);
@@ -194,6 +208,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
         let mut sums = [f32x8::ZERO; 4];
         let (blocks, _) = window.as_chunks::<BOUND_BLOCK>();
         let (reaches, _) = self.reach_at_most.as_chunks::<BOUND_BLOCK>();
+
         for (block, reach) in blocks.iter().zip(reaches) {
             let (block, _) = block.as_chunks::<BOUND_LANES>();
             let (reach, _) = reach.as_chunks::<BOUND_LANES>();
@@ -201,6 +216,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
                 *sum = f32x8::new(*reach).mul_add(f32x8::new(*block), *sum);
             }
         }
+
         let [first, second, third, fourth] = sums;
         f64::from(((first + second) + (third + fourth)).reduce_add())
     }
@@ -208,8 +224,10 @@ impl<const PHASES: usize> Oversampler<PHASES> {
     fn hold(&mut self, frame: &[f64]) -> f64 {
         let slot = self.newest;
         let mut loudest: f64 = 0.0;
+
         for (channel, sample) in frame.iter().enumerate().take(self.channels) {
             let plane = channel * HELD_TWICE;
+
             for copy in [slot, slot + TAPS] {
                 if let Some(held) = self.held.get_mut(plane + copy) {
                     *held = *sample;
@@ -227,10 +245,13 @@ impl<const PHASES: usize> Oversampler<PHASES> {
         if PHASES == 1 {
             return self.centre();
         }
+
         let mut loudest = [0.0; PHASES];
         let mut channel = 0;
+
         while channel + 2 <= self.channels {
             let (left, right) = self.phases_of_a_pair(channel);
+
             for ((loudest, left), right) in loudest.iter_mut().zip(left).zip(right) {
                 *loudest = larger(*loudest, larger(left.abs(), right.abs()));
             }
@@ -257,6 +278,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
 
     fn phases_of(&self, channel: usize) -> [f64; PHASES] {
         let mut phases = [0.0; PHASES];
+
         for (lanes, sample) in self.weights.iter().zip(self.window_of(channel)) {
             for (phase, weight) in phases.iter_mut().zip(lanes) {
                 *phase = multiply_add(*weight, *sample, *phase);
@@ -269,6 +291,7 @@ impl<const PHASES: usize> Oversampler<PHASES> {
         let mut left = [0.0; PHASES];
         let mut right = [0.0; PHASES];
         let pairs = self.window_of(first).iter().zip(self.window_of(first + 1));
+
         for (lanes, (sample, beside)) in self.weights.iter().zip(pairs) {
             for ((left, right), weight) in left.iter_mut().zip(right.iter_mut()).zip(lanes) {
                 *left = multiply_add(*weight, *sample, *left);
@@ -385,9 +408,11 @@ impl TruePeakMeter {
             for (slot, sample) in self.frame.iter_mut().zip(frame) {
                 *slot = f64::from(*sample);
             }
+
             let loudest = self
                 .oversampler
                 .loudest_that_could_beat(&self.frame, self.loudest);
+
             self.loudest = self.loudest.max(loudest);
         }
     }
@@ -401,16 +426,21 @@ impl TruePeakMeter {
     fn loudest_sample_a_read_is_centred_on(&self, interleaved: &[f32]) -> f64 {
         let channels = self.frame.len();
         let frames = interleaved.len() / channels;
+
         if frames < 2 * REACH {
             return 0.0;
         }
+
         let whole = &interleaved[..frames * channels];
         let centred = &whole[(REACH - 1) * channels..(frames - REACH) * channels];
         let mut loudest = 0.0_f32;
+
         for sample in centred {
             loudest = loudest.max(sample.abs());
         }
+
         let mut finite = true;
+
         for sample in whole {
             finite &= sample.is_finite();
         }
@@ -419,8 +449,10 @@ impl TruePeakMeter {
 
     pub fn finish(mut self) -> f64 {
         let silence = vec![0.0; self.frame.len()];
+
         for _ in 0..TAPS {
             let loudest = self.oversampler.loudest_after(&silence);
+
             self.loudest = self.loudest.max(loudest);
         }
         self.loudest
@@ -498,11 +530,13 @@ impl TruePeak {
         } else {
             recovered
         };
+
         self.applied = smoothed.min(recovered);
 
         let channels = self.channels;
         let into = self.write_at;
         let out = if into == self.delay { 0 } else { into + 1 };
+
         if let Some(slot) = self.delayed.get_mut(into * channels..(into + 1) * channels) {
             for (held, sample) in slot.iter_mut().zip(frame) {
                 *held = *sample;
@@ -513,10 +547,12 @@ impl TruePeak {
         if self.taken <= self.delay as u64 {
             return false;
         }
+
         let ready = self
             .delayed
             .get(out * channels..(out + 1) * channels)
             .unwrap_or_default();
+
         for (slot, sample) in output.iter_mut().zip(ready) {
             *slot = sample * self.applied;
         }
@@ -525,11 +561,14 @@ impl TruePeak {
 
     fn quietest_with(&mut self, wanted: f64) -> f64 {
         let at = self.taken;
+
         while self.lows.back().is_some_and(|low| low.wanted >= wanted) {
             self.lows.pop_back();
         }
         self.lows.push_back(Low { at, wanted });
+
         let window = self.lookahead as u64 + 1;
+
         while self.lows.front().is_some_and(|low| low.at + window <= at) {
             self.lows.pop_front();
         }
@@ -538,6 +577,7 @@ impl TruePeak {
 
     fn smoothed_with(&mut self, quietest: f64) -> f64 {
         let at = self.ring_at;
+
         if let Some(slot) = self.smallest.get_mut(at) {
             if *slot < 1.0 {
                 self.smallest_under -= 1;
@@ -572,8 +612,11 @@ impl Processor for TruePeak {
     fn prepare(&mut self, spec: StreamSpec, max_frames_in: usize) -> Result<usize> {
         let channels = usize::from(spec.channel_count().get());
         let rate = f64::from(spec.rate.hz());
+
         self.channels = channels;
+
         let oversampler = Sampling::at(spec.rate, channels);
+
         self.quiet_below = oversampler.quiet_below(self.ceiling);
         self.oversampler = Some(oversampler);
         self.lookahead = (LOOKAHEAD_SECONDS * rate).ceil() as usize;
@@ -629,14 +672,18 @@ impl Processor for TruePeak {
         let room = output.len() / channels;
         let mut produced = 0;
         let mut taken = 0;
+
         for frame in input.chunks_exact(channels) {
             let held_back = self.taken < self.delay as u64;
+
             if !held_back && produced >= room {
                 break;
             }
+
             let slot = output
                 .get_mut(produced * channels..(produced + 1) * channels)
                 .unwrap_or_default();
+
             if self.step(frame, slot) {
                 produced += 1;
             }
@@ -653,10 +700,12 @@ impl Processor for TruePeak {
         let owed = self.taken.min(self.delay as u64) as usize;
         let silence = std::mem::take(&mut self.silence);
         let mut produced = 0;
+
         for _ in 0..self.delay {
             if produced == owed {
                 break;
             }
+
             let Some(slot) = output.get_mut(produced * channels..(produced + 1) * channels) else {
                 break;
             };
@@ -708,6 +757,7 @@ mod tests {
 
     fn faded(mut samples: Vec<f64>) -> Vec<f64> {
         let frames = samples.len() / 2;
+
         for (frame, pair) in samples.as_chunks_mut::<2>().0.iter_mut().enumerate() {
             let from_an_end = frame.min(frames - 1 - frame);
             if from_an_end < FADE_FRAMES {
@@ -723,6 +773,7 @@ mod tests {
     fn metered(samples: &[f64]) -> f64 {
         let mut meter = TruePeakMeter::new(NonZeroUsize::new(2).expect("two channels"));
         let narrow: Vec<f32> = samples.iter().map(|sample| *sample as f32).collect();
+
         meter.note(&narrow);
         meter.finish()
     }
@@ -733,21 +784,29 @@ mod tests {
 
     fn guarded_at(rate: SampleRate, input: &[f64]) -> (Vec<f64>, TruePeak) {
         let mut stage = TruePeak::new();
+
         stage
             .prepare(
                 StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32),
                 BLOCK,
             )
             .expect("the guard prepares");
+
         let mut output = Vec::new();
         let mut scratch = vec![0.0; BLOCK * 2];
+
         for block in input.chunks(BLOCK * 2) {
             let count = stage.process(block, &mut scratch);
+
             assert_eq!(count.frames_in, block.len() / 2);
+
             output.extend_from_slice(&scratch[..count.frames_out * 2]);
         }
+
         let mut tail = vec![0.0; stage.max_flush_frames() * 2];
+
         let drained = stage.flush(&mut tail);
+
         output.extend_from_slice(&tail[..drained * 2]);
         (output, stage)
     }
@@ -756,22 +815,29 @@ mod tests {
     fn the_meter_skipping_what_cannot_pass_reads_what_one_reading_every_sample_does() {
         let mut state = 0x9e37_79b9_u32;
         let mut music = Vec::new();
+
         for frame in 0..48_000 {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
+
             let hiss = f64::from(state) / f64::from(u32::MAX) - 0.5;
             let swell = 0.1 + 0.8 * (frame as f64 / 48_000.0);
             let tone = (TAU * 3_000.0 * frame as f64 / 48_000.0).sin();
+
             let left = swell * (0.8 * tone + 0.2 * hiss);
+
             music.extend([left, -left * 0.9]);
         }
+
         let narrow: Vec<f32> = music.iter().map(|sample| *sample as f32).collect();
 
         let mut everywhere = Oversampler::<METERED_AT>::new(2);
         let mut every_read = 0.0_f64;
+
         for frame in narrow.as_chunks::<2>().0 {
             let widened = [f64::from(frame[0]), f64::from(frame[1])];
+
             every_read = every_read.max(everywhere.loudest_after(&widened));
         }
         for _ in 0..TAPS {
@@ -783,6 +849,7 @@ mod tests {
 
     fn heavy_tailed(frames: usize, channels: usize) -> Vec<f32> {
         let mut state = 0x2545_f491_u32;
+
         let mut draw = move || {
             state ^= state << 13;
             state ^= state >> 17;
@@ -790,11 +857,13 @@ mod tests {
             f64::from(state) / f64::from(u32::MAX)
         };
         let mut samples = Vec::with_capacity(frames * channels);
+
         for frame in 0..frames {
             let swell = 0.02 + 0.2 * (1.0 + (frame as f64 / 3_000.0).sin());
             for _ in 0..channels {
                 let sign = if draw() < 0.5 { -1.0 } else { 1.0 };
                 let magnitude = -draw().max(1e-9).ln() * swell;
+
                 samples.push((sign * magnitude).clamp(-1.0, 1.0) as f32);
             }
         }
@@ -839,6 +908,7 @@ mod tests {
                     Some(rate) => TruePeakMeter::at(rate, width),
                     None => TruePeakMeter::new(width),
                 };
+
                 let taken: Vec<f64> = samples
                     .chunks(chunk_frames * channels)
                     .map(|chunk| meter.take(chunk))
@@ -860,6 +930,7 @@ mod tests {
     #[test]
     fn a_meter_given_a_rate_oversamples_as_the_guard_does() {
         const FOLDED_READS_WITHIN_DB: f64 = 0.2;
+
         let straddled = faded(sine(12_000.0, 1.0, FRAC_PI_4, 4_800));
         let narrow: Vec<f32> = straddled.iter().map(|sample| *sample as f32).collect();
         let sampled = decibels(
@@ -875,7 +946,9 @@ mod tests {
             SampleRate::HZ_96000,
         ] {
             let mut meter = TruePeakMeter::at(rate, NonZeroUsize::new(2).expect("two channels"));
+
             meter.note(&narrow);
+
             let read = decibels(meter.finish());
 
             assert!(
@@ -889,7 +962,9 @@ mod tests {
             SampleRate::HZ_192000,
             NonZeroUsize::new(2).expect("two channels"),
         );
+
         single.note(&narrow);
+
         assert_eq!(decibels(single.finish()), sampled);
     }
 
@@ -899,12 +974,14 @@ mod tests {
         let sampled = straddled
             .iter()
             .fold(0.0_f64, |loudest, s| loudest.max(s.abs()));
+
         assert!(
             decibels(sampled) < -2.9,
             "the samples already reached {sampled}"
         );
 
         let read = decibels(metered(&straddled));
+
         assert!(
             read.abs() < READS_WITHIN_DB,
             "the meter read {read:.3} dBTP"
@@ -939,6 +1016,7 @@ mod tests {
     fn a_tone_at_nine_tenths_of_nyquist_is_read_at_its_peak() {
         let high = faded(sine(21_600.0, 1.0, 0.0, 48_000));
         let read = decibels(metered(&high));
+
         assert!(
             read.abs() < NEAR_NYQUIST_READS_WITHIN_DB,
             "the meter read {read:.3} dBTP"
@@ -948,6 +1026,7 @@ mod tests {
     #[test]
     fn every_phase_passes_a_tone_at_nineteen_twentieths_of_nyquist_within_a_tenth_of_a_decibel() {
         const FRACTION_OF_NYQUIST: f64 = 0.95;
+
         let omega = PI * FRACTION_OF_NYQUIST;
         let weights = Oversampler::<METERED_AT>::new(1).weights;
         for phase in 1..METERED_AT {
@@ -963,7 +1042,9 @@ mod tests {
                             imaginary - weight * turned.sin(),
                         )
                     });
+
             let passed = decibels(real.hypot(imaginary));
+
             assert!(
                 passed.abs() < NEAR_NYQUIST_READS_WITHIN_DB,
                 "phase {phase} passed the tone at {passed:.3} dB"
@@ -976,23 +1057,28 @@ mod tests {
         let ceiling = 10_f64.powf(CEILING_DECIBELS / DECIBELS_PER_DECADE);
         let mut exact = Oversampler::<METERED_AT>::new(2);
         let mut skipping = Oversampler::<METERED_AT>::new(2);
+
         let quiet_below = skipping.quiet_below(ceiling);
         let quiet = sine(18_000.0, quiet_below, 0.4, 3_000);
         let loud = sine(18_000.0, 1.3, 0.4, 3_000);
         let mut skipped = 0;
+
         let frames = [&quiet, &loud, &quiet]
             .into_iter()
             .flat_map(|run| run.as_chunks::<2>().0);
+
         for frame in frames {
             let read = exact.loudest_after(frame);
             let guarded = skipping.loudest_that_could_pass(frame, quiet_below);
             if guarded == 0.0 {
                 skipped += 1;
+
                 assert!(read <= ceiling, "a skipped frame read {read}");
             } else {
                 assert_eq!(guarded, read);
             }
         }
+
         assert!(skipped > 5_000, "only {skipped} frames were skipped");
     }
 
@@ -1000,6 +1086,7 @@ mod tests {
     fn a_stream_that_never_nears_full_scale_passes_through_exactly_and_whole() {
         let quiet = sine(997.0, 0.5, 0.3, 9_000);
         let (output, stage) = guarded(&quiet);
+
         assert_eq!(
             output.len(),
             quiet.len(),
@@ -1014,6 +1101,7 @@ mod tests {
         for frames in [1, 40, 50, 95, 96, 97] {
             let short = sine(997.0, 0.5, 0.3, frames);
             let (output, _) = guarded(&short);
+
             assert_eq!(output, short, "{frames} frames came back otherwise");
         }
     }
@@ -1022,10 +1110,12 @@ mod tests {
     fn an_over_between_the_samples_is_ridden_down_under_the_ceiling() {
         let hot = sine(12_000.0, 1.25, FRAC_PI_4, 48_000);
         let before = decibels(metered(&hot));
+
         assert!(before > 1.8, "the test tone read only {before:.2} dBTP");
 
         let (output, _) = guarded(&hot);
         let after = decibels(metered(&output));
+
         assert!(
             after <= CEILING_DECIBELS + READS_WITHIN_DB,
             "the guard let {after:.3} dBTP through"
@@ -1040,6 +1130,7 @@ mod tests {
 
         for frame in signal.as_chunks::<2>().0 {
             sample_peak.push_back(*frame);
+
             let delayed = sample_peak.pop_front().expect("a delayed frame");
             let expected = delayed[0].abs().max(delayed[1].abs());
 
@@ -1087,20 +1178,25 @@ mod tests {
     #[test]
     fn a_lone_transient_is_attenuated_ahead_of_itself_and_released_after() {
         let mut signal = sine(440.0, 0.3, 0.0, 4 * 48_000);
+
         for frame in 12_000..12_004 {
             signal[frame * 2] = 1.4;
             signal[frame * 2 + 1] = 1.4;
         }
+
         let (output, _) = guarded(&signal);
         let loudest = output
             .iter()
             .fold(0.0_f64, |loudest, s| loudest.max(s.abs()));
+
         assert!(
             decibels(loudest) <= CEILING_DECIBELS + 1e-9,
             "a sample reached {loudest}"
         );
+
         let settled = &output[output.len() - 2_000..];
         let original = &signal[signal.len() - 2_000..];
+
         assert_eq!(
             settled, original,
             "the guard never let go after the transient"

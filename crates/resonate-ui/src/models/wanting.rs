@@ -19,6 +19,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return;
         };
+
         if self.wishes.wanting.contains_key(&found.recording) {
             return;
         }
@@ -26,6 +27,7 @@ impl LibraryModel {
             .downloads
             .landing(found.clone(), SystemTime::now());
         cx.notify();
+
         let library = Arc::clone(&self.library);
         let recording = found.recording.clone();
         let providers = Some(self.providers(cx))
@@ -60,6 +62,7 @@ impl LibraryModel {
                 match wanted.map(|wanted| wanted.wanted) {
                     Ok(want) => {
                         let fetched_by = this.fetched_by(cx);
+
                         this.delivered
                             .downloads
                             .wanted(&found.recording, want, fetched_by);
@@ -74,6 +77,7 @@ impl LibraryModel {
                 }
                 this.read(Wanted::Everything, cx);
             });
+
             if landed.is_err() {
                 return;
             }
@@ -96,11 +100,13 @@ impl LibraryModel {
                 cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
             }
         });
+
         self.wishes.wanting.insert(recording, wanting);
     }
 
     pub fn fetch_and_play(&mut self, found: Found, zone: ZoneId, cx: &mut Context<Self>) {
         let recording = found.recording.clone();
+
         self.want_found(found, cx);
         self.play_if_landing(recording, zone);
     }
@@ -126,9 +132,11 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return;
         };
+
         if self.unheld.albums_wanted.contains_key(&group) {
             return;
         }
+
         let library = Arc::clone(&self.library);
         let asked = group.clone();
         let held_under = group.clone();
@@ -155,6 +163,7 @@ impl LibraryModel {
                     Ok(wanted) => {
                         let fetched_by = this.fetched_by(cx);
                         let now = SystemTime::now();
+
                         this.unheld.album_songs.insert(
                             group,
                             wanted
@@ -164,6 +173,7 @@ impl LibraryModel {
                         );
                         for (song, want) in wanted {
                             let recording = song.recording.clone();
+
                             this.delivered.downloads.landing(song, now);
                             this.delivered
                                 .downloads
@@ -180,6 +190,7 @@ impl LibraryModel {
                 }
                 this.read(Wanted::Everything, cx);
             });
+
             if landed.is_err() {
                 return;
             }
@@ -187,6 +198,7 @@ impl LibraryModel {
                 cover_what_was_wanted(&this, cx, covered_by, covering_with, covering).await;
             }
         });
+
         self.unheld.albums_wanted.insert(held_under, wanting);
         cx.notify();
     }
@@ -199,10 +211,12 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return Task::ready(None);
         };
+
         if !self.unheld.albums_opening.insert(group.clone()) {
             return Task::ready(None);
         }
         cx.notify();
+
         let library = Arc::clone(&self.library);
         let asked = group.clone();
 
@@ -253,10 +267,12 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone() else {
             return Task::ready(None);
         };
+
         if !self.unheld.artists_opening.insert(found.mbid.clone()) {
             return Task::ready(None);
         }
         cx.notify();
+
         let library = Arc::clone(&self.library);
 
         cx.spawn(async move |this, cx| {
@@ -313,6 +329,7 @@ impl LibraryModel {
             });
             let _ = landed;
         });
+
         wanting.detach();
         cx.notify();
     }
@@ -329,6 +346,7 @@ impl LibraryModel {
         if self.unheld.albums_wanted.contains_key(group) {
             return Some(Fetching::Landing);
         }
+
         let fetching: Vec<Fetching> = self
             .unheld
             .album_songs
@@ -356,6 +374,7 @@ impl LibraryModel {
         if self.unheld.albums_wanted.contains_key(group) {
             return Some(Fetching::Landing.saying());
         }
+
         let songs: Vec<&Download> = self
             .unheld
             .album_songs
@@ -363,9 +382,11 @@ impl LibraryModel {
             .iter()
             .filter_map(|recording| self.delivered.downloads.of(recording))
             .collect();
+
         if songs.is_empty() {
             return None;
         }
+
         let fetching: Vec<Fetching> = songs.iter().map(|song| self.fetching(song)).collect();
         let arriving = songs.iter().any(|song| {
             self.fetched(song)

@@ -118,6 +118,7 @@ impl Shelves {
 
     fn view(&self) -> Result<Arc<View>> {
         let index = self.searching.index(&self.catalog)?;
+
         if let Some(view) = self
             .view
             .lock()
@@ -128,6 +129,7 @@ impl Shelves {
         }
 
         let view = Arc::new(View::of(index, self.sizes()?));
+
         *self.view.lock() = Some(Arc::clone(&view));
         Ok(view)
     }
@@ -135,6 +137,7 @@ impl Shelves {
     fn sizes(&self) -> Result<HashMap<u64, u64>> {
         let connection = self.catalog.0.lock();
         let mut query = connection.prepare_cached(SIZES_KNOWN).map_err(read_error)?;
+
         let sizes = query
             .query_map([], |row| {
                 Ok((
@@ -153,6 +156,7 @@ impl Shelves {
         let mut query = connection
             .prepare_cached(PLAYLISTS_BY_NAME)
             .map_err(read_error)?;
+
         let listed = query
             .query_map([], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
@@ -217,6 +221,7 @@ impl Shelves {
         );
 
         let mut lists = view.lists.lock();
+
         if lists.len() >= LISTS_KEPT_AT_MOST {
             lists.clear();
         }
@@ -279,10 +284,13 @@ impl View {
             .collect();
 
         let mut songs: Vec<usize> = (0..rows.len()).filter(|at| served[*at]).collect();
+
         songs.sort_by(|one, other| in_title_order(&rows[*one], &rows[*other]));
+
         let song_at = songs.iter().map(|at| (rows[*at].track.id, *at)).collect();
 
         let mut groups: Vec<usize> = (0..index.albums.len()).collect();
+
         groups.sort_by(|one, other| {
             album_order(
                 CollectionOrder::Alphabetical,
@@ -290,16 +298,21 @@ impl View {
                 &index.albums[*other],
             )
         });
+
         let mut albums: Vec<Album> = Vec::new();
         let mut album_at = HashMap::new();
         let mut album_of_group = HashMap::new();
+
         for group in groups {
             let held = &index.albums[group];
             let songs: Vec<usize> = held.rows.iter().copied().filter(|at| served[*at]).collect();
+
             if songs.is_empty() {
                 continue;
             }
+
             let id = AlbumId::of(named(&held.key));
+
             if album_at.contains_key(&id) {
                 tracing::warn!(album = %held.title, "an album named like another is left off the network");
                 continue;
@@ -310,6 +323,7 @@ impl View {
         }
 
         let mut groups: Vec<usize> = (0..index.artists.len()).collect();
+
         groups.sort_by(|one, other| {
             artist_order(
                 CollectionOrder::Alphabetical,
@@ -317,24 +331,31 @@ impl View {
                 &index.artists[*other],
             )
         });
+
         let mut artists: Vec<Artist> = Vec::new();
         let mut artist_at = HashMap::new();
+
         for group in groups {
             let held = &index.artists[group];
+
             if held.filed.is_empty() || !held.rows.iter().any(|at| served[*at]) {
                 continue;
             }
+
             let id = ArtistId::of(named(&held.filed));
+
             if artist_at.contains_key(&id) {
                 tracing::warn!(artist = %held.name, "an artist named like another is left off the network");
                 continue;
             }
+
             let mut by_them: Vec<usize> = held
                 .rows
                 .iter()
                 .filter_map(|at| rows[*at].album_group)
                 .filter_map(|group| album_of_group.get(&group).copied())
                 .collect();
+
             by_them.sort_unstable();
             by_them.dedup();
             by_them.sort_by(|one, other| {
@@ -402,13 +423,16 @@ impl View {
             .iter()
             .copied()
             .collect();
+
         let mut songs: Vec<usize> = artist
             .albums
             .iter()
             .flat_map(|album| self.albums[*album].songs.iter().copied())
             .filter(|row| theirs.contains(row))
             .collect();
+
         let on_their_albums: HashSet<usize> = songs.iter().copied().collect();
+
         songs.extend(
             self.songs
                 .iter()
@@ -667,6 +691,7 @@ impl resonate_upnp::Catalog for Shelves {
         let Some(at) = view.song_at.get(&id.get()) else {
             return Ok(None);
         };
+
         let track = &view.index.rows[*at].track;
         let Some(kind) = kind_of(track) else {
             return Ok(None);
@@ -690,7 +715,9 @@ impl resonate_upnp::Catalog for Shelves {
         let Some(at) = view.album_at.get(&album) else {
             return Ok(None);
         };
+
         let group = &view.index.albums[view.albums[*at].group];
+
         if !group.has_a_picture(&view.index.rows) {
             return Ok(None);
         }
@@ -737,6 +764,7 @@ impl Wanted {
                     let words = pieces_of(&folded_letters(text))
                         .map(str::to_owned)
                         .collect::<Vec<_>>();
+
                     if words.is_empty() {
                         return None;
                     }
@@ -833,13 +861,16 @@ fn read_error(source: rusqlite::Error) -> Error {
 
 fn kept_udn(folder: &Path) -> Udn {
     let kept_in = folder.join(UDN_KEPT_IN);
+
     if let Some(kept) = fs::read_to_string(&kept_in)
         .ok()
         .and_then(|text| Udn::read(&text))
     {
         return kept;
     }
+
     let minted = Udn::minted();
+
     if let Err(error) = fs::write(&kept_in, minted.as_str()) {
         tracing::warn!(%error, "the media server's name on the network could not be kept, so it changes next run");
     }
@@ -889,6 +920,7 @@ impl Offered {
         }
 
         let mut running = self.running.lock();
+
         if running.is_some() {
             return Ok(());
         }
@@ -906,6 +938,7 @@ impl Offered {
         .map_err(|source| Error::CatalogNotOffered {
             source: Box::new(source),
         })?;
+
         tracing::info!(
             port = server.port(),
             "the catalog is offered on the network"
@@ -918,8 +951,10 @@ impl Offered {
         let shown = name
             .as_ref()
             .map_or_else(String::new, |name| name.as_str().to_owned());
+
         {
             let mut kept = self.name.lock();
+
             if *kept == name {
                 return Ok(shown);
             }
@@ -927,9 +962,11 @@ impl Offered {
         }
 
         let mut running = self.running.lock();
+
         let Some(stopping) = running.take() else {
             return Ok(shown);
         };
+
         drop(stopping);
         *running = Some(self.started(shelves)?);
         Ok(shown)
@@ -941,6 +978,7 @@ impl Offered {
 
     pub(crate) fn leave(&self) {
         let stopping = self.running.lock().take();
+
         drop(stopping);
     }
 
@@ -1063,8 +1101,11 @@ mod tests {
 
     fn file(harness: &Harness, song: &Filed) -> u64 {
         let written = written_for(song.name);
+
         fs::write(harness.folder.join(song.name), &written).expect("a song");
+
         let connection = harness.player.catalog.0.lock();
+
         connection
             .execute(
                 "INSERT INTO documents (uri, name, title, artist, album, duration_ms, rate, codec, genre, track_number, channels, bits, size)
@@ -1159,6 +1200,7 @@ mod tests {
      {
         let harness = Harness::new();
         let ids = filed(&harness);
+
         let evening = harness
             .player
             .make_playlist(
@@ -1239,6 +1281,7 @@ mod tests {
      {
         let harness = Harness::new();
         let ids = filed(&harness);
+
         harness
             .player
             .catalog
@@ -1254,6 +1297,7 @@ mod tests {
                 [ids["Moment's Notice"] as i64],
             )
             .expect("a size forgotten");
+
         let shelves = shelves(&harness);
         let blue_train = TrackId::new(ids["Blue Train"]).expect("an id");
 
@@ -1264,12 +1308,16 @@ mod tests {
             .expect("a song");
         let mut opened = shelves.bytes_of(blue_train).expect("read").expect("bytes");
         let mut served = Vec::new();
+
         opened.bytes.read_to_end(&mut served).expect("the bytes");
+
         let cover = shelves
             .cover(song.cover.expect("a cover named"))
             .expect("read")
             .expect("a cover");
+
         fs::remove_file(harness.folder.join("so-what.mp3")).expect("removed");
+
         let gone = shelves
             .bytes_of(TrackId::new(ids["So What"]).expect("an id"))
             .expect("read");
@@ -1295,6 +1343,7 @@ mod tests {
     fn a_search_from_the_network_is_answered_over_the_folded_catalog_and_an_unreadable_one_is_not()
     {
         let harness = Harness::new();
+
         filed(&harness);
         harness
             .player
@@ -1308,6 +1357,7 @@ mod tests {
                 },
             )
             .expect("a saved search");
+
         let shelves = shelves(&harness);
 
         let by_coltrane = found(
@@ -1392,6 +1442,7 @@ mod tests {
     fn a_search_under_an_artist_an_album_or_a_playlist_answers_what_each_holds_in_its_order() {
         let harness = Harness::new();
         let ids = filed(&harness);
+
         let evening = PlaylistId::new(
             harness
                 .player
@@ -1540,6 +1591,7 @@ mod tests {
     #[test]
     fn a_search_under_artists_or_albums_finds_what_is_nested_below_and_nothing_loose() {
         let harness = Harness::new();
+
         filed(&harness);
         for loose in [
             Filed {
@@ -1563,6 +1615,7 @@ mod tests {
         ] {
             file(&harness, &loose);
         }
+
         let shelves = shelves(&harness);
         let everything = Query::Everything;
         let blue = text(Field::Title, Test::Contains, "blue");
@@ -1645,13 +1698,17 @@ mod tests {
 
     fn fetched(port: u16, request: &str, body: &str) -> (String, Vec<u8>) {
         let mut stream = TcpStream::connect(SocketAddr::new(LOOPBACK, port)).expect("connects");
+
         stream
             .set_read_timeout(Some(SETTLED_WITHIN))
             .expect("a read timeout");
         stream.write_all(request.as_bytes()).expect("asks");
         stream.write_all(body.as_bytes()).expect("sends the body");
+
         let mut answer = Vec::new();
+
         stream.read_to_end(&mut answer).expect("an answer");
+
         let ends = answer
             .windows(4)
             .position(|window| window == b"\r\n\r\n")
@@ -1687,6 +1744,7 @@ mod tests {
             ),
             &body,
         );
+
         assert!(head.starts_with("HTTP/1.1 200"), "{head}");
         String::from_utf8(answer).expect("text")
     }
@@ -1694,6 +1752,7 @@ mod tests {
     fn heard(harness: &Harness, said: &str) -> String {
         let began = Instant::now();
         let mut buffer = [0; 4_096];
+
         while began.elapsed() < SETTLED_WITHIN {
             let Ok(read) = harness.told.recv(&mut buffer) else {
                 continue;
@@ -1716,12 +1775,15 @@ mod tests {
             .player
             .share_catalog_on_network(true)
             .expect("offered");
+
         let port = harness.player.offered.port().expect("a port");
         let alive = heard(&harness, "ssdp:alive");
+
         harness
             .player
             .share_catalog_on_network(true)
             .expect("still offered");
+
         let (described_head, described) = got(port, "/description.xml");
         let albums = browsed(port, "albums");
         let (song_head, song) = got(port, &format!("/resonate/song-{}.flac", ids["Blue Train"]));
@@ -1733,16 +1795,20 @@ mod tests {
             .player
             .share_catalog_on_network(false)
             .expect("taken off");
+
         let byebye = heard(&harness, "ssdp:byebye");
         let stopped = harness.player.catalog_shared_on_network();
+
         harness
             .player
             .share_catalog_on_network(true)
             .expect("offered again");
+
         let (_, described_again) = got(
             harness.player.offered.port().expect("a port"),
             "/description.xml",
         );
+
         harness
             .player
             .share_catalog_on_network(false)
@@ -1785,16 +1851,19 @@ mod tests {
     #[test]
     fn a_name_typed_on_the_phone_names_the_catalog_and_its_root_on_the_network_at_once() {
         let harness = Harness::new();
+
         filed(&harness);
 
         let kept_before = harness
             .player
             .name_catalog_on_network("  Kitchen \n shelf ".to_owned())
             .expect("named");
+
         harness
             .player
             .share_catalog_on_network(true)
             .expect("offered");
+
         let first_port = harness.player.offered.port().expect("a port");
         let first = named_on_the_network(first_port);
         let kept_again = harness
@@ -1816,10 +1885,12 @@ mod tests {
             .name_catalog_on_network("   ".to_owned())
             .expect("named by default");
         let unnamed = named_on_the_network(harness.player.offered.port().expect("a port"));
+
         harness
             .player
             .share_catalog_on_network(false)
             .expect("taken off");
+
         let resting = harness
             .player
             .name_catalog_on_network("Den".to_owned())

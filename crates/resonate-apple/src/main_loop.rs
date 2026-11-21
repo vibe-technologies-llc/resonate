@@ -15,10 +15,12 @@ pub fn while_the_main_loop_runs<T: Send>(work: impl FnOnce() -> T + Send) -> T {
     thread::scope(|scope| {
         let working = scope.spawn(|| {
             let worked = panic::catch_unwind(AssertUnwindSafe(work));
+
             done.store(true, Ordering::Release);
             worked
         });
         let mode = unsafe { kCFRunLoopDefaultMode };
+
         while !done.load(Ordering::Acquire) {
             if CFRunLoop::run_in_mode(mode, LOOKED_AT_EVERY_SECONDS, true)
                 == CFRunLoopRunResult::Finished

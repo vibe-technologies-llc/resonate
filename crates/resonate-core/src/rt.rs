@@ -4,7 +4,7 @@ use thiserror::Error;
 
 use crate::SampleFormat;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Error)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Error)]
 pub enum RtFault {
     #[error("underrun: the graph asked for more than the ring held")]
     Underrun,
@@ -13,7 +13,7 @@ pub enum RtFault {
     Dropped { count: u32 },
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Silence {
     #[default]
     Unmarked,
@@ -68,6 +68,7 @@ impl Silence {
             let Some(marked) = word.get(..width) else {
                 break;
             };
+
             for (slot, byte) in frame.iter_mut().zip(marked.iter().cycle()) {
                 *slot = *byte;
             }
@@ -117,14 +118,18 @@ mod tests {
     #[test]
     fn silence_takes_the_marker_that_follows_the_frame_it_is_given() {
         let mut silence = dop_silence();
+
         silence.follows(&POSITIVE);
 
         let mut dst = [0_u8; 8];
+
         assert_eq!(silence.write(&mut dst, stereo(SampleFormat::S24)), 8);
         assert_eq!(dst[2], 0xFA, "silence repeated the marker it followed");
 
         let mut silence = dop_silence();
+
         silence.follows(&NEGATIVE);
+
         assert_eq!(silence.write(&mut dst, stereo(SampleFormat::S24)), 8);
         assert_eq!(dst[2], 0x05);
     }
@@ -132,6 +137,7 @@ mod tests {
     #[test]
     fn unmarked_silence_follows_nothing_and_is_due_nothing() {
         let mut silence = Silence::default();
+
         silence.follows(&POSITIVE);
 
         assert_eq!(silence, Silence::Unmarked);
@@ -178,7 +184,9 @@ mod tests {
         );
 
         let mut next = [0_u8; 8];
+
         silence.write(&mut next, stereo(SampleFormat::S24));
+
         assert_eq!(next, [5, 6, 7, 8, 5, 6, 7, 8], "the parity did not carry");
     }
 

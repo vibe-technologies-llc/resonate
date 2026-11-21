@@ -51,6 +51,7 @@ impl YtMusic {
             .call()
             .map_err(|error| self.unreachable(op, error))?;
         let status = response.status();
+
         if !status.is_success() {
             return Err(Error::Refused {
                 provider: self.source.clone(),
@@ -107,7 +108,9 @@ impl PlaysInPlace for YtMusic {
         if !self.tool.holds_cookies() {
             return Ok(Found::default());
         }
+
         let mut mixes = Vec::from_iter(liked_songs());
+
         mixes.extend(self.tool.playlists()?);
         Ok(Found {
             mixes,

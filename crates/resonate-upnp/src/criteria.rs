@@ -19,7 +19,7 @@ const DERIVED_APART_BY: char = '.';
 pub(crate) const SEARCH_CAPABILITIES: &str =
     "dc:title,dc:creator,upnp:artist,upnp:album,upnp:genre,upnp:class";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Property {
     Title,
     Creator,
@@ -43,7 +43,7 @@ impl Property {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Op {
     Is,
     IsNot,
@@ -111,10 +111,12 @@ fn quoted(letters: &mut Peekable<CharIndices<'_>>) -> Result<String, Refusal> {
 fn tokens(text: &str) -> Result<Vec<Token<'_>>, Refusal> {
     let mut found = Vec::new();
     let mut letters = text.char_indices().peekable();
+
     while let Some((at, letter)) = letters.next() {
         if found.len() >= TOKENS_AT_MOST {
             return Err(Refusal::TooMany);
         }
+
         let token = match letter {
             letter if letter.is_whitespace() => continue,
             '(' => Token::Open,
@@ -131,6 +133,7 @@ fn tokens(text: &str) -> Result<Vec<Token<'_>>, Refusal> {
             }
             _ => {
                 let mut ends = at + letter.len_utf8();
+
                 while let Some((next, letter)) =
                     letters.next_if(|(_, letter)| !ends_a_word(*letter))
                 {
@@ -139,6 +142,7 @@ fn tokens(text: &str) -> Result<Vec<Token<'_>>, Refusal> {
                 Token::Word(text.get(at..ends).ok_or(Refusal::Unreadable)?)
             }
         };
+
         found.push(token);
     }
     Ok(found)
@@ -157,6 +161,7 @@ impl<'a> Reading<'a> {
 
     fn take(&mut self) -> Option<&Token<'a>> {
         let token = self.tokens.get(self.at);
+
         self.at += 1;
         token
     }
@@ -167,6 +172,7 @@ impl<'a> Reading<'a> {
 
     fn either(&mut self, depth: usize) -> Result<Criterion, Refusal> {
         let mut any = vec![self.every(depth)?];
+
         while self.joined_by("or") {
             self.at += 1;
             any.push(self.every(depth)?);
@@ -180,6 +186,7 @@ impl<'a> Reading<'a> {
 
     fn every(&mut self, depth: usize) -> Result<Criterion, Refusal> {
         let mut all = vec![self.one(depth)?];
+
         while self.joined_by("and") {
             self.at += 1;
             all.push(self.one(depth)?);
@@ -197,6 +204,7 @@ impl<'a> Reading<'a> {
                 if depth >= DEPTH_AT_MOST {
                     return Err(Refusal::TooDeep);
                 }
+
                 let inside = self.either(depth + 1)?;
                 match self.take() {
                     Some(Token::Close) => Ok(inside),
@@ -205,6 +213,7 @@ impl<'a> Reading<'a> {
             }
             Some(Token::Word(name)) => {
                 let name = *name;
+
                 self.relations += 1;
                 if self.relations > RELATIONS_AT_MOST {
                     return Err(Refusal::TooMany);
@@ -230,6 +239,7 @@ impl<'a> Reading<'a> {
                     _ => return Err(Refusal::Unreadable),
                 };
                 let property = Property::named(name).ok_or(Refusal::UnknownProperty)?;
+
                 return Ok(Criterion::Exists { property, held });
             }
             Some(Token::Word(_)) => return Err(Refusal::UnknownOperator),
@@ -240,6 +250,7 @@ impl<'a> Reading<'a> {
         };
         let value = value.clone();
         let property = Property::named(name).ok_or(Refusal::UnknownProperty)?;
+
         if op == Op::DerivedFrom && property != Property::Class {
             return Err(Refusal::UnknownOperator);
         }
@@ -258,12 +269,15 @@ pub(crate) fn read(text: &str) -> Result<Criterion, Refusal> {
     if text.trim() == EVERYTHING {
         return Ok(Criterion::Every);
     }
+
     let mut reading = Reading {
         tokens: tokens(text)?,
         at: 0,
         relations: 0,
     };
+
     let read = reading.either(0)?;
+
     if reading.peek().is_some() {
         return Err(Refusal::Unreadable);
     }
@@ -352,6 +366,7 @@ pub(crate) fn reduced(criterion: &Criterion, described: &Described<'_>) -> Reduc
         Criterion::Every => Reduced::Always,
         Criterion::All(all) => {
             let mut asked = Vec::new();
+
             for one in all {
                 match reduced(one, described) {
                     Reduced::Never => return Reduced::Never,
@@ -368,6 +383,7 @@ pub(crate) fn reduced(criterion: &Criterion, described: &Described<'_>) -> Reduc
         }
         Criterion::Any(any) => {
             let mut asked = Vec::new();
+
             for one in any {
                 match reduced(one, described) {
                     Reduced::Always => return Reduced::Always,

@@ -125,9 +125,11 @@ impl Item {
             .content_descriptor
             .as_ref()
             .and_then(|descriptor| descriptor.kind.as_deref());
+
         if kind.is_some_and(|kind| kind != A_SONG) {
             return None;
         }
+
         let artist = stated(self.artist_name.as_deref()).or_else(|| {
             let credited: Vec<String> = self
                 .subtitle_links
@@ -188,20 +190,26 @@ pub(crate) fn artist_page(url: &str) -> Option<String> {
         .strip_prefix(SECURE)
         .or_else(|| url.strip_prefix("http://"))?;
     let (host, path) = rest.split_once('/')?;
+
     if host != "music.apple.com" && host != "itunes.apple.com" {
         return None;
     }
+
     let path = path.split(['?', '#']).next()?;
     let mut segments = path.split('/').filter(|segment| !segment.is_empty());
+
     let store = segments.next()?;
+
     if store.len() != 2 || !store.chars().all(|letter| letter.is_ascii_lowercase()) {
         return None;
     }
     if segments.next()? != "artist" {
         return None;
     }
+
     let last = segments.next_back()?;
     let id = last.strip_prefix("id").unwrap_or(last);
+
     if id.is_empty() || !id.chars().all(|digit| digit.is_ascii_digit()) {
         return None;
     }
@@ -211,10 +219,12 @@ pub(crate) fn artist_page(url: &str) -> Option<String> {
 
 fn squared(picture: &str) -> Option<String> {
     on_host(picture, PICTURES_SERVED_BY)?;
+
     let thumbnail = &picture[picture.find(THUMBNAIL)? + THUMBNAIL.len()..];
     let bucket = thumbnail.split('/').next()?;
     let (named, _sized) = picture.rsplit_once('/')?;
     let file = named.rsplit('/').next()?;
+
     let of_the_artist = ARTIST_BUCKETS
         .iter()
         .any(|artists| bucket.starts_with(artists))
@@ -308,6 +318,7 @@ mod tests {
     #[test]
     fn the_picture_a_page_shares_is_read_off_its_open_graph_tag() {
         let page = r#"<meta name="x"><meta property="og:image" content="https://is1-ssl.mzstatic.com/image/thumb/Features115/v4/34/pr_source.png/1200x630cw.png"><meta>"#;
+
         assert_eq!(
             shared_picture(page),
             Some(

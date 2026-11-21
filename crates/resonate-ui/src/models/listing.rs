@@ -116,9 +116,11 @@ impl LibraryModel {
 
     pub fn played_from_held(&self, held: usize) -> Option<(Arc<[Track]>, usize)> {
         let listing = self.listing();
+
         if self.browse.rows.is_empty() {
             return Some((listing.whole(), held));
         }
+
         let order = held_in(&self.browse.rows);
         let start = order.iter().position(|at| *at == held)?;
         let played = order
@@ -431,6 +433,7 @@ impl LibraryModel {
             Selection::Everything => {}
             Selection::Album(album) => {
                 let owner = self.album_owner(album);
+
                 self.ask_about(Some(album), owner);
             }
             Selection::Artist(artist) => {

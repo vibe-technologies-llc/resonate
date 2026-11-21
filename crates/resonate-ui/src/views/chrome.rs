@@ -235,6 +235,7 @@ pub(crate) fn the_header_moves_the_window(window: &Window) -> bool {
 fn moved_as_a_mac_moves_it(bar: Div) -> Div {
     bar.on_mouse_down(MouseButton::Left, |event: &MouseDownEvent, window, _| {
         let twice = event.click_count == A_DOUBLE_PRESS;
+
         PRESSED_ON_THE_BAR.set(!twice);
         if twice {
             window.titlebar_double_click();
@@ -278,6 +279,7 @@ pub(crate) fn rounded(window: &Window) -> Corners<Pixels> {
     };
     let rounding = theme::width(theme::CORNER_RADIUS);
     let square = px(0.0);
+
     let round_unless = |held: bool| if held { square } else { rounding };
 
     Corners {
@@ -307,7 +309,9 @@ pub(crate) fn frame(window: &mut Window, content: Div) -> Div {
 
     let border = theme::width(theme::RESIZE_BORDER);
     let corners = rounded(window);
+
     window.set_client_inset(border);
+
     let held = held_edges(window, tiling);
 
     div()
@@ -371,6 +375,7 @@ fn shadow_rim(border: Pixels, corners: Corners<Pixels>) -> [Div; 4] {
             inset: false,
         }])
     };
+
     let across = || cast().left(border).right(border).h(rim);
     let down = || cast().top(border + rim).bottom(border + rim).w(rim);
 
@@ -404,6 +409,7 @@ fn resize_cursor(border: Pixels, held: Tiling) -> AnyElement {
             let Some(edge) = grabbed_edge(window.mouse_position(), border, size, held) else {
                 return;
             };
+
             window.set_cursor_style(cursor_over(edge), &hitbox);
         },
     )
@@ -514,6 +520,7 @@ mod tests {
             left: true,
             right: false,
         };
+
         assert_eq!(grabbed(960.0, 1_075.0, left_half), None);
         assert_eq!(grabbed(1_915.0, 540.0, left_half), Some(ResizeEdge::Right));
     }

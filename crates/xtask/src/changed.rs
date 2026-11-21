@@ -57,6 +57,7 @@ pub fn files(root: &Path, since: &str) -> Result<BTreeSet<String>, Error> {
 
 fn git(root: &Path) -> Command {
     let mut command = Command::new("git");
+
     command.current_dir(root);
     command
 }
@@ -69,6 +70,7 @@ pub fn members(root: &Path) -> Result<Vec<Member>, Error> {
         .map(|folder| {
             let path = root.join(folder).join(MANIFEST);
             let own = read(&path)?;
+
             let name = package_name(&own).ok_or(Error::Unnamed { path })?;
 
             Ok(Member {
@@ -136,6 +138,7 @@ fn owner<'a>(file: &str, members: &'a [Member]) -> Option<&'a str> {
 
 pub fn dependents(root: &Path, touched: &BTreeSet<String>) -> Result<BTreeSet<String>, Error> {
     let mut command = Command::new("cargo");
+
     command.current_dir(root).args([
         "tree",
         "--workspace",

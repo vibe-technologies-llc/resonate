@@ -22,6 +22,7 @@ impl Surveying {
     pub(crate) fn start(surveyor: Arc<dyn Surveyor>, within: Duration) -> Option<Self> {
         let (asks, asked) = bounded::<()>(1);
         let (answer, answers) = bounded(1);
+
         let thread = thread::Builder::new()
             .name("resonate-sinks".to_owned())
             .spawn(move || {
@@ -52,9 +53,11 @@ impl Surveying {
         if self.asked {
             return false;
         }
+
         let Some(asks) = self.asks.as_ref() else {
             return false;
         };
+
         self.asked = asks.try_send(()).is_ok();
         self.asked
     }
@@ -127,6 +130,7 @@ mod tests {
     impl Surveyor for Scripted {
         fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
             *self.asked.lock() += 1;
+
             let doing = self.doing.lock().pop().unwrap_or(Doing::Answer);
             match doing {
                 Doing::Answer => Ok(Vec::new()),
@@ -196,9 +200,11 @@ mod tests {
             Surveying::start(surveyor.clone(), Duration::from_secs(1)).expect("a worker");
 
         surveying.ask();
+
         let releasing = thread::spawn(move || {
             let _ = release.send(());
         });
+
         surveying.stop();
         releasing.join().expect("released");
 

@@ -86,6 +86,7 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 library.revise_query(id, &name, &query)?;
+
                 let held = library.playlist(id)?.map_or(0, |found| found.entries);
 
                 Ok(Some(words::models::fills_itself_from_the_new_search(
@@ -235,6 +236,7 @@ impl LibraryModel {
         let Some(matching) = self.narrowing().map(ToOwned::to_owned) else {
             return;
         };
+
         self.edit(
             Change::Playlist,
             move |library| {
@@ -274,6 +276,7 @@ impl LibraryModel {
             Change::Playlist,
             move |library| {
                 let mut said = Vec::with_capacity(files.len());
+
                 for file in &files {
                     said.push(read_in(library.import_playlist(file, None)?));
                 }

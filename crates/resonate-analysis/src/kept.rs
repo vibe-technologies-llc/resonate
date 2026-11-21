@@ -63,6 +63,7 @@ impl KeptAnalyses {
         let path = self.path_of(location, span)?;
         let bytes = fs::read(&path).ok()?;
         let recalled = read(&bytes);
+
         match &recalled {
             Some(_) => {
                 if let Ok(file) = File::options().append(true).open(&path) {
@@ -71,6 +72,7 @@ impl KeptAnalyses {
             }
             None => {
                 tracing::debug!(path = %path.display(), "a kept analysis could not be read back");
+
                 let _ = fs::remove_file(&path);
             }
         }
@@ -81,6 +83,7 @@ impl KeptAnalyses {
         let Some(path) = self.path_of(location, span) else {
             return;
         };
+
         if let Err(error) = self.written(&path, &written(analysis)) {
             tracing::debug!(%error, path = %path.display(), "an analysis could not be kept");
             return;
@@ -98,12 +101,14 @@ impl KeptAnalyses {
             Err(_) => return None,
         };
         let mut hash = FNV_OFFSET_BASIS;
+
         let mut take = |bytes: &[u8]| {
             for byte in bytes {
                 hash ^= u64::from(*byte);
                 hash = hash.wrapping_mul(FNV_PRIME);
             }
         };
+
         take(file.as_os_str().as_encoded_bytes());
         take(&span.map_or(0, |span| span.start().get()).to_le_bytes());
         take(
@@ -119,6 +124,7 @@ impl KeptAnalyses {
 
     fn written(&self, path: &Path, bytes: &[u8]) -> io::Result<()> {
         fs::create_dir_all(&self.dir)?;
+
         let staged = self.dir.join(format!(
             "{}-{}.{STAGED_AS}",
             process::id(),
@@ -126,10 +132,12 @@ impl KeptAnalyses {
         ));
         let landed = Held::made(&staged).and_then(|held| {
             let mut file = held.file();
+
             file.write_all(bytes)?;
             file.sync_all()?;
             fs::rename(&staged, path)
         });
+
         if landed.is_err() {
             let _ = fs::remove_file(&staged);
         }
@@ -142,6 +150,7 @@ impl KeptAnalyses {
         };
         let mut kept: Vec<(SystemTime, u64, PathBuf)> = Vec::new();
         let mut staged_by_the_living = 0;
+
         for entry in entries.filter_map(Result::ok) {
             let path = entry.path();
             let Ok(held) = entry.metadata() else {
@@ -160,8 +169,10 @@ impl KeptAnalyses {
                 kept.push((modified, held.len(), path));
             }
         }
+
         let mut total: u64 =
             kept.iter().map(|(_, size, _)| size).sum::<u64>() + staged_by_the_living;
+
         kept.sort_by_key(|(modified, ..)| *modified);
         for (_, size, path) in kept {
             if total <= self.at_most {
@@ -235,6 +246,7 @@ struct Reader<'a>(&'a [u8]);
 impl<'a> Reader<'a> {
     fn taken(&mut self, count: usize) -> Option<&'a [u8]> {
         let (taken, rest) = self.0.split_at_checked(count)?;
+
         self.0 = rest;
         Some(taken)
     }
@@ -274,6 +286,7 @@ impl<'a> Reader<'a> {
 
     fn levels(&mut self) -> Option<Vec<f32>> {
         let count = usize::try_from(self.u32()?).ok()?;
+
         if count.checked_mul(4)? > self.0.len() {
             return None;
         }
@@ -283,12 +296,14 @@ impl<'a> Reader<'a> {
 
 fn written(analysis: &Analysis) -> Vec<u8> {
     let mut writer = Writer(Vec::new());
+
     writer.0.extend_from_slice(MAGIC);
     writer.u8(WRITTEN_AS);
     writer.u32(JUDGED_UNDER);
 
     let study = &analysis.study;
     let examined = &study.examined;
+
     writer.bytes(examined.codec.as_str().as_bytes());
     writer.u32(examined.rate.hz());
     writer.u8(examined.channels);
@@ -297,6 +312,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     writer.duration(examined.length);
 
     let levels = &study.levels;
+
     writer.f32(levels.peak);
     writer.f32(levels.rms);
     writer.f32(levels.dc);
@@ -309,6 +325,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     });
 
     let loudness = &study.loudness;
+
     writer.maybe(loudness.integrated, Writer::f32);
     writer.maybe(loudness.range, Writer::f32);
     writer.maybe(loudness.momentary_max, Writer::f32);
@@ -317,6 +334,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     writer.f32(loudness.true_peak);
 
     let spectrum = &study.spectrum;
+
     writer.f32(spectrum.bin_hz());
     writer.levels(spectrum.levels());
     writer.levels(spectrum.typical());
@@ -338,6 +356,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     writer.bytes(&study.band_peaks.to_bytes());
 
     let envelope = &analysis.envelope;
+
     writer.u8(u8::try_from(envelope.lanes).unwrap_or(u8::MAX));
     writer.u64(envelope.frames_per_column);
     writer.u64(envelope.frames);
@@ -351,6 +370,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
     }
 
     let spectrogram = &analysis.spectrogram;
+
     writer.u32(u32::try_from(spectrogram.columns).unwrap_or(u32::MAX));
     writer.u32(spectrogram.nyquist_hz);
     writer.u64(spectrogram.frames_per_column);
@@ -362,6 +382,7 @@ fn written(analysis: &Analysis) -> Vec<u8> {
 
 pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let mut reader = Reader(bytes);
+
     if reader.taken(MAGIC.len())? != MAGIC
         || reader.u8()? != WRITTEN_AS
         || reader.u32()? != JUDGED_UNDER
@@ -409,6 +430,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let bin_hz = reader.f32()?;
     let spectrum_levels = reader.levels()?;
     let typical = reader.levels()?;
+
     let spectrum = Spectrum::new(bin_hz, spectrum_levels, reader.duration()?).with_typical(typical);
     let weighed = reader.u8()?;
     let steps = (0..weighed)
@@ -429,6 +451,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
         })
         .collect::<Option<Vec<_>>>()?;
     let reaches_hz = spectrum.nyquist_hz();
+
     if !reaches_hz.is_finite() || reaches_hz > examined.rate.hz() as f32 {
         return None;
     }
@@ -442,16 +465,22 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let lanes = usize::from(reader.u8()?);
     let frames_per_column = reader.u64()?;
     let frames = reader.u64()?;
+
     if !(1..=ENVELOPE_LANES).contains(&lanes) || (frames_per_column == 0 && frames > 0) {
         return None;
     }
+
     let count = usize::try_from(reader.u32()?).ok()?;
+
     if count.checked_mul(ENVELOPE_LANES * 12)? > reader.0.len() {
         return None;
     }
+
     let mut columns = Vec::with_capacity(count);
+
     for _ in 0..count {
         let mut column = [crate::Reach::default(); ENVELOPE_LANES];
+
         for reach in &mut column {
             *reach = crate::Reach {
                 low: reader.f32()?,
@@ -461,6 +490,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
         }
         columns.push(column);
     }
+
     let envelope = Envelope {
         lanes,
         frames_per_column,
@@ -473,9 +503,11 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
     let spectrogram_frames_per_column = reader.u64()?;
     let spectrogram_frames = reader.u64()?;
     let spectrogram_levels = reader.bytes()?.to_vec();
+
     if spectrogram_levels.len() != spectrogram_columns.checked_mul(SPECTROGRAM_ROWS)? {
         return None;
     }
+
     let spectrogram = Spectrogram {
         columns: spectrogram_columns,
         levels: spectrogram_levels,
@@ -483,6 +515,7 @@ pub(crate) fn read(bytes: &[u8]) -> Option<Analysis> {
         frames_per_column: spectrogram_frames_per_column,
         frames: spectrogram_frames,
     };
+
     if !reader.0.is_empty() {
         return None;
     }
@@ -545,6 +578,7 @@ mod tests {
                 process::id(),
                 NEXT.fetch_add(1, Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&root).expect("a scratch folder");
             Self(root)
         }
@@ -665,6 +699,7 @@ mod tests {
 
         for bin_hz in [f32::MAX, f32::INFINITY, f32::NAN] {
             let mut bytes = written(&analysis);
+
             bytes[bin_hz_at..bin_hz_at + 4].copy_from_slice(&bin_hz.to_le_bytes());
 
             assert_eq!(read(&bytes), None);
@@ -684,10 +719,15 @@ mod tests {
     #[test]
     fn a_kept_envelope_whose_shape_could_not_have_been_drawn_is_not_read_back() {
         let mut too_many_lanes = analysed();
+
         too_many_lanes.envelope.lanes = ENVELOPE_LANES + 1;
+
         let mut no_lanes = analysed();
+
         no_lanes.envelope.lanes = 0;
+
         let mut columns_of_nothing = analysed();
+
         columns_of_nothing.envelope.frames_per_column = 0;
 
         assert_eq!(read(&written(&too_many_lanes)), None);
@@ -706,17 +746,24 @@ mod tests {
     fn an_analysis_is_kept_against_the_file_as_it_stands_and_forgotten_once_it_changes() {
         let folder = Folder::new();
         let file = folder.0.join("track.wav");
+
         fs::write(&file, b"audio").expect("a file");
+
         let location = MediaLocation::local(&file);
         let kept = KeptAnalyses::at(folder.0.join("kept"));
 
         assert_eq!(kept.recalled(&location, None), None);
+
         kept.keep(&location, None, &analysed());
+
         assert_eq!(kept.recalled(&location, None), Some(analysed()));
+
         let span = FrameSpan::starting(resonate_core::Frames(10));
+
         assert_eq!(kept.recalled(&location, Some(span)), None);
 
         fs::write(&file, b"other audio").expect("a changed file");
+
         assert_eq!(kept.recalled(&location, None), None);
     }
 
@@ -727,6 +774,7 @@ mod tests {
         let kept = KeptAnalyses::at(folder.0.join("kept"));
 
         assert_eq!(kept.recalled(&location, None), None);
+
         kept.keep(&location, None, &analysed());
 
         assert_eq!(kept.recalled(&location, None), Some(analysed()));
@@ -736,6 +784,7 @@ mod tests {
         );
 
         fs::write(folder.0.join("vaulted.wav"), b"audio").expect("a file arrives at the path");
+
         assert_eq!(
             kept.recalled(&location, None),
             None,
@@ -748,32 +797,44 @@ mod tests {
         let folder = Folder::new();
         let kept = KeptAnalyses::at(folder.0.join("kept")).holding_at_most(1);
         let file = folder.0.join("track.wav");
+
         fs::write(&file, b"audio").expect("a file");
+
         let location = MediaLocation::local(&file);
 
         kept.keep(&location, None, &analysed());
+
         assert_eq!(kept.recalled(&location, None), None);
     }
 
     #[test]
     fn what_a_dead_writer_staged_is_swept_and_a_living_ones_is_counted_and_left() {
         const NEVER_A_PROCESS: u32 = 999_999_999;
+
         let folder = Folder::new();
         let dir = folder.0.join("kept");
+
         fs::create_dir_all(&dir).expect("a folder");
+
         let dead = dir.join(format!("{NEVER_A_PROCESS}-0.{STAGED_AS}"));
         let living = dir.join(format!("{}-999.{STAGED_AS}", process::id()));
+
         fs::write(&dead, b"half").expect("a file");
+
         let aged = SystemTime::now() - writer::UNHELD_AND_UNTOUCHED_FOR * 2;
+
         File::options()
             .write(true)
             .open(&dead)
             .and_then(|file| file.set_modified(aged))
             .expect("an aged file");
         fs::write(&living, [0; 64]).expect("a file");
+
         let kept = KeptAnalyses::at(dir).holding_at_most(64);
         let file = folder.0.join("track.wav");
+
         fs::write(&file, b"audio").expect("a file");
+
         let location = MediaLocation::local(&file);
 
         kept.keep(&location, None, &analysed());

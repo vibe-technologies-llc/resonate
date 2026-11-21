@@ -44,6 +44,7 @@ fn gigabytes(bytes: u64) -> String {
 
 fn step_standing(taken: MirrorStep, step: MirrorStep, done: Option<(u64, u64)>) -> (String, f32) {
     let (place, at) = (taken.place(), step.place());
+
     if place < at {
         return (words::settings_online::mirror_step_done().to_owned(), 1.0);
     }
@@ -60,6 +61,7 @@ fn step_standing(taken: MirrorStep, step: MirrorStep, done: Option<(u64, u64)>) 
         Some((read, of)) if of > 0 => {
             let read = read.min(of);
             let share = read as f64 / of as f64;
+
             let said = if taken.counts_bytes() {
                 words::settings_online::mirror_step_bytes(gigabytes(of), gigabytes(read))
             } else {
@@ -231,6 +233,7 @@ impl RootView {
             .as_ref()
             .map(|mirroring| mirroring.told());
         let building = matches!(told, Some(MirrorTold::Building { .. }));
+
         if building {
             self.settings_pane.update(cx, |pane, cx| {
                 pane.remotely.mirror_redraws.beats_while_drawn(
@@ -240,6 +243,7 @@ impl RootView {
                 );
             });
         }
+
         let held = matches!(told, Some(MirrorTold::Held { .. }));
 
         rows.child(self.in_the_ring(
@@ -636,6 +640,7 @@ impl RootView {
                         HeardFrom::Desktop => Listening::Desktop,
                         HeardFrom::Microphone => Listening::Microphone(None),
                     };
+
                     this.listen_from(listening, cx);
                 }),
             ))

@@ -45,6 +45,7 @@ pub struct Sweep {
 impl Sweep {
     pub fn new(rate: SampleRate, from_hz: u32, to_hz: u32, length: Duration) -> Result<Self> {
         let below_nyquist = u64::from(to_hz) * 2 < u64::from(rate.hz());
+
         if from_hz == 0 || to_hz <= from_hz || !below_nyquist {
             return Err(Error::SweepBand {
                 from_hz,
@@ -62,6 +63,7 @@ impl Sweep {
         let seconds = frames as f64 / f64::from(rate.hz());
         let from = f64::from(from_hz);
         let octaves_in_e = (f64::from(to_hz) / from).ln();
+
         let phase_scale = 2.0 * PI * from * seconds / octaves_in_e;
         let fade = frames_of(FADED_OVER, rate).max(1);
 
@@ -115,7 +117,9 @@ impl Sweep {
                 played: self.played.len(),
             });
         }
+
         let size = (recorded.len() + self.played.len()).next_power_of_two();
+
         if size > FRAMES_HEARD_AT_MOST {
             return Err(Error::HeardTooLong {
                 frames: recorded.len(),
@@ -123,15 +127,19 @@ impl Sweep {
         }
 
         let mut planner = RealFftPlanner::<f64>::new();
+
         let forward = planner.plan_fft_forward(size);
         let inverse = planner.plan_fft_inverse(size);
 
         let spectrum_of = |samples: &[f32]| {
             let mut window = forward.make_input_vec();
+
             for (slot, sample) in window.iter_mut().zip(samples) {
                 *slot = f64::from(*sample);
             }
+
             let mut spectrum = forward.make_output_vec();
+
             forward
                 .process(&mut window, &mut spectrum)
                 .map_err(|_| Error::SweepTransform { size })?;
@@ -147,6 +155,7 @@ impl Sweep {
             .zip(&played)
             .map(|(heard, played)| heard * played.conj() / (played.norm_sqr() + regularised))
             .collect();
+
         if let Some(first) = divided.first_mut() {
             first.im = 0.0;
         }
@@ -155,9 +164,11 @@ impl Sweep {
         }
 
         let mut impulse = inverse.make_output_vec();
+
         inverse
             .process(&mut divided, &mut impulse)
             .map_err(|_| Error::SweepTransform { size })?;
+
         let scale = 1.0 / size as f64;
 
         let (peak_at, peak) = impulse
@@ -170,14 +181,17 @@ impl Sweep {
                     if next.1 > held.1 { next } else { held }
                 },
             );
+
         if peak < SILENT_BELOW {
             return Err(Error::NothingHeard);
         }
 
         let before = frames_of(PRE_ROLL, self.rate);
         let after = frames_of(GATE_AFTER, self.rate);
+
         let taper_from = before + ((after as f64) * (1.0 - TAPERED_SHARE)) as usize;
         let length = before + after;
+
         let taps = (0..length)
             .map(|at| {
                 let source = (peak_at + size + at - before) % size;
@@ -231,12 +245,16 @@ impl Heard {
             .next_power_of_two()
             .max(SPECTRUM_BINS_AT_LEAST);
         let mut planner = RealFftPlanner::<f64>::new();
+
         let forward = planner.plan_fft_forward(size);
         let mut window = forward.make_input_vec();
+
         for (slot, tap) in window.iter_mut().zip(&self.taps) {
             *slot = f64::from(*tap);
         }
+
         let mut spectrum = forward.make_output_vec();
+
         forward
             .process(&mut window, &mut spectrum)
             .map_err(|_| Error::SweepTransform { size })?;
@@ -276,10 +294,13 @@ mod tests {
         let mut noise = 0x2545_f491_u32;
         let mut held = 0.0_f64;
         let mut out = vec![0.0_f32; delay];
+
         for sample in played.iter().copied().chain(std::iter::repeat_n(0.0, tail)) {
             held = SMOOTHING * f64::from(sample) + (1.0 - SMOOTHING) * held;
             noise = noise.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+
             let hiss = (f64::from(noise >> 8) / f64::from(1_u32 << 24) - 0.5) * 2e-5;
+
             out.push((GAIN * held + hiss) as f32);
         }
         out
@@ -308,6 +329,7 @@ mod tests {
             assert_eq!(sweep.length(), MEASURED_FOR);
             assert_eq!(sweep.heard_for(), MEASURED_FOR + HEARD_AFTER_THE_SWEEP);
         }
+
         assert!(matches!(
             Sweep::for_measuring(SampleRate::new(32_000).expect("a rate")),
             Err(Error::SweepBand { .. })
@@ -324,7 +346,9 @@ mod tests {
         let levels = heard.response().expect("a response");
 
         assert!(levels.len() > 400);
+
         let worst = worst_error_between(&levels, 60.0, 15_000.0);
+
         assert!(
             worst < 0.5,
             "the response is {worst:.2} dB off the filter's"
@@ -348,6 +372,7 @@ mod tests {
             .expect("heard");
 
         assert_eq!(far.delay_frames() - near.delay_frames(), 9_590);
+
         let far = far.response().expect("a response");
         let near = near.response().expect("a response");
         let worst = near
@@ -356,6 +381,7 @@ mod tests {
             .filter(|(level, _)| level.hertz > 60.0 && level.hertz < 15_000.0)
             .map(|(near, far)| (near.decibels - far.decibels).abs())
             .fold(0.0, f64::max);
+
         assert!(worst < 0.1, "a delay moved the response by {worst:.3} dB");
     }
 
@@ -368,6 +394,7 @@ mod tests {
             .iter()
             .map(|sample| f64::from(sample.abs()))
             .fold(0.0, f64::max);
+
         assert!(
             loudest <= LEVEL + 1e-6 && loudest > LEVEL * 0.9,
             "{loudest}"
@@ -380,6 +407,7 @@ mod tests {
     #[test]
     fn a_band_the_rate_cannot_hold_or_a_length_that_does_not_measure_is_refused() {
         let length = Duration::from_secs(5);
+
         assert!(matches!(
             Sweep::new(RATE, 20, 24_000, length),
             Err(Error::SweepBand { .. })

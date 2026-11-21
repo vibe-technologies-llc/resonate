@@ -270,6 +270,7 @@ pub fn read_hrir(
     let mut media = sources.open(location)?;
 
     let mut bytes = vec![0; SIGNATURE.len()];
+
     match media.stream.read_exact(&mut bytes) {
         Ok(()) => {}
         Err(source) if source.kind() == io::ErrorKind::UnexpectedEof => return Ok(None),
@@ -291,6 +292,7 @@ pub fn read_hrir(
     }
 
     let room = SOFA_BYTES_AT_MOST + 1 - SIGNATURE.len() as u64;
+
     (&mut *media.stream)
         .take(room)
         .read_to_end(&mut bytes)
@@ -327,7 +329,9 @@ pub fn read_hrir_bytes(
     if !is_container(&bytes) {
         return Ok(None);
     }
+
     let held = bytes.len() as u64;
+
     if held > SOFA_BYTES_AT_MOST {
         return Err(Fault::TooLarge {
             bytes: held,
@@ -385,11 +389,14 @@ impl Container {
                 .and_then(|wanted| offset.checked_add(wanted))
                 .filter(|end| *end <= length)
                 .ok_or_else(|| io::Error::from(io::ErrorKind::UnexpectedEof))?;
+
             if wanted > STREAMED_READ_AT_MOST || end > length {
                 return Err(io::Error::from(io::ErrorKind::OutOfMemory).into());
             }
+
             let mut held = vec![0; wanted];
             let mut stream = stream.lock();
+
             stream.seek(SeekFrom::Start(offset))?;
             stream.read_exact(&mut held)?;
             Ok(held)
@@ -409,6 +416,7 @@ impl Container {
             let options = OpenOptions::default()
                 .with_chunk_cache_bytes(CHUNK_CACHE_BYTES)
                 .with_max_chunk_bytes(CHUNK_BYTES_AT_MOST);
+
             return Hdf5File::from_vec_with_options(bytes, options)
                 .map(Self::Hdf5)
                 .map_err(|source| Fault::Open {
@@ -557,9 +565,11 @@ struct Pose {
 impl Pose {
     fn carry(self, from_the_head: Direction) -> Option<Direction> {
         let left = self.up.unwrap_or(UP).cross(self.front);
+
         if left.length() <= POLE_AT_MOST_LENGTH {
             return None;
         }
+
         let left = left.unit();
         let up = self.front.cross(left);
         Some(
@@ -574,9 +584,11 @@ impl Pose {
 impl Room {
     fn seen(&self, yaw: f64, azimuth: f64, elevation: f64) -> (u64, Direction) {
         let from_the_head = Direction::heard_from(azimuth - yaw, elevation);
+
         if self.views.len() == 1 {
             return (0, from_the_head);
         }
+
         let heading = Direction::heard_from(yaw, 0.0);
         self.views
             .iter()
@@ -595,9 +607,11 @@ impl Room {
             return self.emitters.clone();
         };
         let row = if listener.rows == 1 { 0 } else { view as usize };
+
         let Some(standing) = listener.points.get(row).copied().flatten() else {
             return self.emitters.clone();
         };
+
         if standing.length() <= LISTENER_AT_THE_ORIGIN_WITHIN {
             return self.emitters.clone();
         }
@@ -676,6 +690,7 @@ impl<'a> Set<'a> {
                 });
             }
         };
+
         if measurements == 0 || emitters == Some(0) {
             return Err(Fault::NoMeasurements);
         }
@@ -727,16 +742,19 @@ impl<'a> Set<'a> {
         let frames = usize::try_from(self.samples)
             .unwrap_or(usize::MAX)
             .min(most);
+
         if frames == 0 {
             return Err(Fault::NoSamples);
         }
 
         let mut ears = Vec::with_capacity(4);
+
         for side in [Side::Left, Side::Right] {
             ears.extend(self.ears_of(side, speakers, frames, most)?);
         }
 
         let length = ears.iter().map(Vec::len).max().unwrap_or(0);
+
         for ear in &mut ears {
             ear.resize(length, 0.0);
         }
@@ -766,6 +784,7 @@ impl<'a> Set<'a> {
             Placing::Speakers(room) => {
                 let (view, wanted) = room.seen(yaw, azimuth, elevation);
                 let emitters = room.emitters_seen_from(view);
+
                 let neighbours = neighbours_of(&emitters, wanted, side)?;
                 let contributions = self.contributions(&neighbours, Some(view), frames, most)?;
                 Ok(blended(contributions, most, Blend::OnsetsAligned))
@@ -789,11 +808,13 @@ impl<'a> Set<'a> {
             end: frames as u64,
         };
         let mut contributions = Vec::with_capacity(neighbours.len());
+
         for (index, weight) in neighbours {
             let (picks, row) = match view {
                 None => (vec![Pick::At(*index), ears, taps], *index),
                 Some(view) => (vec![Pick::At(view), ears, Pick::At(*index), taps], view),
             };
+
             contributions.push((*weight, self.responses(&picks, row, frames, most)?));
         }
         Ok(contributions)
@@ -807,6 +828,7 @@ impl<'a> Set<'a> {
         most: usize,
     ) -> std::result::Result<Vec<Vec<f64>>, Fault> {
         let values = self.impulses.numbers(Member::Impulses, picks)?;
+
         if values.len() != frames * EARS as usize {
             return Err(Fault::ShapeNotUsable {
                 member: Member::Impulses,
@@ -820,6 +842,7 @@ impl<'a> Set<'a> {
             .zip(delays)
             .map(|(ear, delay)| {
                 let mut response = vec![0.0; delay.min(most)];
+
                 response.extend_from_slice(ear);
                 response.truncate(most);
                 response
@@ -834,6 +857,7 @@ impl<'a> Set<'a> {
         let row = if delays.rows == 1 { 0 } else { measurement };
         let start = (row * EARS) as usize;
         let mut samples = [0; 2];
+
         for (slot, delay) in samples
             .iter_mut()
             .zip(delays.samples.iter().skip(start).take(EARS as usize))
@@ -855,6 +879,7 @@ fn apart_from(directions: &[Option<Direction>], wanted: Direction) -> Vec<(u64, 
             direction.map(|direction| (index as u64, direction.degrees_from(wanted)))
         })
         .collect();
+
     apart.sort_by(|(_, apart), (_, other)| apart.total_cmp(other));
     apart
 }
@@ -884,6 +909,7 @@ fn neighbours_of(
     side: Side,
 ) -> std::result::Result<Vec<(u64, f64)>, Fault> {
     let (nearest, distance) = nearest_of(directions, wanted, side)?;
+
     if distance <= EXACT_WITHIN_DEGREES {
         return Ok(vec![(nearest, 1.0)]);
     }
@@ -935,6 +961,7 @@ fn along_the_ring(
 ) -> Option<Vec<(u64, f64)>> {
     let ring = directions.get(usize::try_from(nearest).ok()?).copied()??;
     let ring_elevation = elevation_of(ring);
+
     if ring_elevation.abs() > RING_POLE_ELEVATION_DEGREES {
         return None;
     }
@@ -942,13 +969,16 @@ fn along_the_ring(
     let wanted_azimuth = azimuth_of(wanted);
     let mut before: Option<(u64, f64)> = None;
     let mut after: Option<(u64, f64)> = None;
+
     for (index, direction) in directions.iter().enumerate() {
         let Some(direction) = direction else {
             continue;
         };
+
         if (elevation_of(*direction) - ring_elevation).abs() > RING_ELEVATION_WITHIN_DEGREES {
             continue;
         }
+
         let turn = wrapped(azimuth_of(*direction) - wanted_azimuth);
         let (held, apart) = if turn < 0.0 {
             (&mut before, -turn)
@@ -961,7 +991,9 @@ fn along_the_ring(
     }
 
     let ((first, behind), (second, ahead)) = before.zip(after)?;
+
     let gap = behind + ahead;
+
     if gap > RING_GAP_AT_MOST_DEGREES {
         return None;
     }
@@ -1015,9 +1047,11 @@ impl Tangent {
 
 fn barycentric(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<[f64; 3]> {
     let area = (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+
     if area.abs() < TRIANGLE_AREA_AT_LEAST {
         return None;
     }
+
     let turn = |from: [f64; 2], to: [f64; 2]| (from[0] * to[1] - from[1] * to[0]) / area;
     let weights = [turn(b, c), turn(c, a), turn(a, b)];
     weights
@@ -1028,10 +1062,13 @@ fn barycentric(a: [f64; 2], b: [f64; 2], c: [f64; 2]) -> Option<[f64; 3]> {
 
 fn cap_around(corners: [Direction; 3]) -> Option<(Direction, f64)> {
     let [a, b, c] = corners;
+
     let centre = b.minus(a).cross(c.minus(a));
+
     if centre.length() <= f64::EPSILON {
         return None;
     }
+
     let centre = centre.unit();
     let (centre, cosine) = match centre.dot(a) {
         cosine if cosine < 0.0 => (centre.reversed(), -cosine),
@@ -1059,6 +1096,7 @@ fn surrounding(directions: &[Option<Direction>], wanted: Direction) -> Option<Ve
         .collect();
 
     let mut best: Option<(f64, [usize; 3], [f64; 3])> = None;
+
     for i in 0..corners.len() {
         for j in i + 1..corners.len() {
             for k in j + 1..corners.len() {
@@ -1073,10 +1111,12 @@ fn surrounding(directions: &[Option<Direction>], wanted: Direction) -> Option<Ve
                 ]) else {
                     continue;
                 };
+
                 let crowded = corners.iter().enumerate().any(|(other, corner)| {
                     ![i, j, k].contains(&other)
                         && corner.direction.dot(centre) > cosine + CAP_TOLERANCE
                 });
+
                 if crowded {
                     continue;
                 }
@@ -1088,6 +1128,7 @@ fn surrounding(directions: &[Option<Direction>], wanted: Direction) -> Option<Ve
     }
 
     let (_, places, weights) = best?;
+
     let chosen: Vec<(u64, f64)> = places
         .iter()
         .zip(weights)
@@ -1136,9 +1177,11 @@ fn onset_of(response: &[f64]) -> usize {
     let peak = response
         .iter()
         .fold(0.0_f64, |peak, tap| peak.max(tap.abs()));
+
     if peak == 0.0 {
         return 0;
     }
+
     let threshold = peak * ONSET_AT_FRACTION_OF_PEAK;
     response
         .iter()
@@ -1157,6 +1200,7 @@ fn aligned_sum(parts: &[(f64, &[f64])], most: usize) -> Vec<f64> {
         .map(|((weight, _), onset)| weight * *onset as f64)
         .sum::<f64>()
         .round() as isize;
+
     let shifts: Vec<isize> = onsets
         .iter()
         .map(|onset| target - *onset as isize)
@@ -1170,6 +1214,7 @@ fn aligned_sum(parts: &[(f64, &[f64])], most: usize) -> Vec<f64> {
         .unwrap_or(0)
         .min(most);
     let mut sum = vec![0.0; length];
+
     for ((weight, response), shift) in parts.iter().zip(&shifts) {
         for (index, tap) in response.iter().enumerate() {
             let at = index as isize + shift;
@@ -1192,6 +1237,7 @@ fn magnitude_and_delay(parts: &[(f64, &[f64])], most: usize) -> Vec<f64> {
         .map(|((weight, _), onset)| weight * *onset as f64)
         .sum::<f64>()
         .round() as isize;
+
     let length = parts
         .iter()
         .zip(&onsets)
@@ -1214,6 +1260,7 @@ fn magnitude_and_delay(parts: &[(f64, &[f64])], most: usize) -> Vec<f64> {
 
     let shift = target - onset_of(&rebuilt) as isize;
     let mut sum = vec![0.0; length];
+
     for (index, tap) in rebuilt.iter().enumerate() {
         let at = index as isize + shift;
         if (0..length as isize).contains(&at) {
@@ -1226,6 +1273,7 @@ fn magnitude_and_delay(parts: &[(f64, &[f64])], most: usize) -> Vec<f64> {
 fn blended_magnitude(parts: &[(f64, &[f64])], size: usize) -> Vec<f64> {
     let forward = FftPlanner::<f64>::new().plan_fft_forward(size);
     let mut magnitude = vec![0.0; size];
+
     for (weight, response) in parts {
         let mut spectrum: Vec<Complex<f64>> = response
             .iter()
@@ -1233,6 +1281,7 @@ fn blended_magnitude(parts: &[(f64, &[f64])], size: usize) -> Vec<f64> {
             .chain(std::iter::repeat(Complex::new(0.0, 0.0)))
             .take(size)
             .collect();
+
         forward.process(&mut spectrum);
         for (held, bin) in magnitude.iter_mut().zip(&spectrum) {
             *held += weight * bin.norm();
@@ -1244,12 +1293,15 @@ fn blended_magnitude(parts: &[(f64, &[f64])], size: usize) -> Vec<f64> {
 fn minimum_phase(magnitude: &[f64]) -> Option<Vec<f64>> {
     let size = magnitude.len();
     let loudest = magnitude.iter().copied().fold(0.0_f64, f64::max);
+
     if loudest <= 0.0 || !loudest.is_finite() {
         return None;
     }
+
     let floor = loudest * SPECTRUM_FLOOR;
 
     let mut planner = FftPlanner::<f64>::new();
+
     let forward = planner.plan_fft_forward(size);
     let inverse = planner.plan_fft_inverse(size);
     let scale = 1.0 / size as f64;
@@ -1258,10 +1310,12 @@ fn minimum_phase(magnitude: &[f64]) -> Option<Vec<f64>> {
         .iter()
         .map(|bin| Complex::new(bin.max(floor).ln(), 0.0))
         .collect();
+
     inverse.process(&mut cepstrum);
 
     let half = size / 2;
     let mut folded = vec![Complex::new(0.0, 0.0); size];
+
     folded[0] = cepstrum[0] * scale;
     for place in 1..half {
         folded[place] = cepstrum[place] * (2.0 * scale);
@@ -1270,13 +1324,16 @@ fn minimum_phase(magnitude: &[f64]) -> Option<Vec<f64>> {
     forward.process(&mut folded);
 
     let mut response: Vec<Complex<f64>> = folded.iter().map(|bin| bin.exp()).collect();
+
     inverse.process(&mut response);
     Some(response.iter().map(|tap| tap.re * scale).collect())
 }
 
 fn rate_of(container: &Container) -> std::result::Result<SampleRate, Fault> {
     let variable = container.locate(Member::SamplingRate)?;
+
     variable.is_bounded(Member::SamplingRate, RATES_AT_MOST)?;
+
     let hertz = variable
         .numbers(Member::SamplingRate, &[])?
         .first()
@@ -1287,6 +1344,7 @@ fn rate_of(container: &Container) -> std::result::Result<SampleRate, Fault> {
         })?;
 
     let whole = hertz.round();
+
     if !(f64::from(SampleRate::MIN_HZ)..=f64::from(SampleRate::MAX_HZ)).contains(&whole) {
         return Err(Fault::RateNotUsable { hertz });
     }
@@ -1328,6 +1386,7 @@ fn positions_in(
         [held, COORDINATES, 1] => held == rows && positions.trailing_one,
         _ => false,
     };
+
     if !held {
         return Err(Fault::ShapeNotUsable {
             member: positions.member,
@@ -1364,6 +1423,7 @@ fn views_of(
             });
         }
     };
+
     if rows == 1 {
         return Ok(vec![None]);
     }
@@ -1394,7 +1454,9 @@ fn ups_of(
             });
         }
     };
+
     let ups = directions_in(&variable, Positions::UP, rows)?;
+
     if rows == 1 {
         return Ok(vec![ups[0]; views as usize]);
     }
@@ -1426,6 +1488,7 @@ fn listener_of(
             });
         }
     };
+
     let points = positions_in(&variable, Positions::LISTENER, rows, Reach::Point)?;
     Ok(Some(Listener { rows, points }))
 }
@@ -1500,10 +1563,12 @@ impl Coordinates {
                     .iter()
                     .filter(|unit| !unit.is_empty())
                     .map(|unit| metres_in(unit));
+
                 let Some(first) = scales.next() else {
                     return Ok(self);
                 };
                 let metres = first.ok_or(Fault::LengthUnitUnknown { member })?;
+
                 if scales.any(|scale| scale != Some(metres)) {
                     return Err(unknown);
                 }
@@ -1522,6 +1587,7 @@ impl Coordinates {
                 } else {
                     (first, second)
                 };
+
                 let heard = Direction::heard_from(azimuth, elevation);
                 Some(Direction {
                     front: heard.front * third,
@@ -1813,6 +1879,7 @@ mod tests {
                     values: vec![self.rate],
                 },
             ];
+
             if let Some(delay) = &self.delay {
                 variables.push(written::Column {
                     name: "Data.Delay",
@@ -1822,6 +1889,7 @@ mod tests {
                     values: delay.clone(),
                 });
             }
+
             let delays = self.delay.as_ref().map_or(1, |delay| delay.len() / 2) as u32;
             written::File {
                 version,
@@ -1841,6 +1909,7 @@ mod tests {
 
         fn impulses(&self) -> Vec<f64> {
             let mut values = Vec::new();
+
             for measurement in 0..self.directions.len() {
                 for ear in 0..self.ears as usize {
                     for frame in 0..self.samples {
@@ -1853,6 +1922,7 @@ mod tests {
 
         fn positions(&self) -> Vec<f64> {
             let mut values = Vec::new();
+
             for (azimuth, elevation) in &self.directions {
                 match self.positions {
                     Positions::Spherical => values.extend([*azimuth, *elevation, 1.0]),
@@ -1861,6 +1931,7 @@ mod tests {
                     }
                     Positions::Cartesian => {
                         let heard = Direction::heard_from(*azimuth, *elevation);
+
                         values.extend([heard.front * 2.0, heard.left * 2.0, heard.up * 2.0]);
                     }
                 }
@@ -1876,6 +1947,7 @@ mod tests {
             } else {
                 DatasetBuilder::typed_data("Data.IR", shape, &self.impulses()).expect("impulses")
             };
+
             if self.compressed {
                 impulses = impulses
                     .chunked(vec![1, self.ears, self.samples as u64])
@@ -1898,6 +1970,7 @@ mod tests {
             )
             .expect("positions")
             .attribute(AttributeBuilder::fixed_string("Units", units));
+
             if let Some(kind) = self.kind {
                 positions = positions.attribute(AttributeBuilder::fixed_string("Type", kind));
             }
@@ -1909,6 +1982,7 @@ mod tests {
                     DatasetBuilder::typed_data("Data.SamplingRate", vec![1], &[self.rate])
                         .expect("rate"),
                 );
+
             if let Some(delay) = &self.delay {
                 plan = plan.dataset(
                     DatasetBuilder::typed_data(
@@ -1972,6 +2046,7 @@ mod tests {
     #[test]
     fn cartesian_positions_choose_as_spherical_ones_do() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.positions = Positions::Cartesian;
         fixture.kind = Some("cartesian");
 
@@ -1983,6 +2058,7 @@ mod tests {
     #[test]
     fn angles_in_radians_choose_as_degrees_do() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.positions = Positions::Radians;
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -1994,8 +2070,11 @@ mod tests {
     fn single_precision_and_compressed_chunks_read_as_the_plain_double_set_does() {
         let plain = Fixture::new(&SURROUND);
         let mut single = Fixture::new(&SURROUND);
+
         single.single = true;
+
         let mut compressed = Fixture::new(&SURROUND);
+
         compressed.compressed = true;
 
         let wanted = plain.read().expect("a set").expect("a SOFA file");
@@ -2014,7 +2093,9 @@ mod tests {
     #[test]
     fn a_rate_that_is_not_whole_is_rounded_and_one_no_stream_runs_at_is_refused() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.rate = 44_100.000_000_1;
+
         let rounded = fixture.read().expect("a set").expect("a SOFA file");
 
         let refusals: Vec<_> = [0.0, -48_000.0, f64::NAN, 4.0e9, 1.0]
@@ -2034,14 +2115,17 @@ mod tests {
     #[test]
     fn a_delay_puts_silent_samples_before_an_ear_and_every_response_stays_as_long_as_the_rest() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.delay = Some(vec![0.0, 3.2]);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
 
         let plain = fixture.expected(1, 3);
+
         assert!(hrir.responses.iter().all(|ear| ear.len() == FRAMES + 3));
         for (index, ear) in hrir.responses.iter().enumerate() {
             let padding = if index % 2 == 1 { 3 } else { 0 };
+
             assert!(ear[..padding].iter().all(|tap| *tap == 0.0));
             assert_eq!(&ear[padding..padding + FRAMES], plain[index].as_slice());
             assert!(ear[padding + FRAMES..].iter().all(|tap| *tap == 0.0));
@@ -2051,6 +2135,7 @@ mod tests {
     #[test]
     fn a_delay_for_each_measurement_is_read_by_the_measurement_chosen() {
         let mut fixture = Fixture::new(&[(30.0, 0.0), (330.0, 0.0)]);
+
         fixture.delay = Some(vec![0.0, 0.0, 2.0, 2.0]);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -2062,6 +2147,7 @@ mod tests {
     #[test]
     fn a_delay_that_is_not_a_number_is_refused() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.delay = Some(vec![f64::NAN, 0.0]);
 
         assert!(matches!(fixture.read(), Err(Fault::DelayNotUsable { .. })));
@@ -2070,6 +2156,7 @@ mod tests {
     #[test]
     fn responses_are_cut_at_the_longest_asked_for() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.samples = 100;
 
         let hrir = read_hrir_bytes(fixture.bytes(), Duration::from_millis(1), STANDARD)
@@ -2099,6 +2186,7 @@ mod tests {
     #[test]
     fn a_set_that_is_not_two_ears_over_samples_is_refused_with_its_shape() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.ears = 1;
 
         let refused = fixture.read();
@@ -2115,8 +2203,11 @@ mod tests {
     #[test]
     fn positions_of_a_kind_no_one_knows_or_none_at_all_are_refused() {
         let mut unknown = Fixture::new(&SURROUND);
+
         unknown.kind = Some("polar");
+
         let mut unsaid = Fixture::new(&SURROUND);
+
         unsaid.kind = None;
 
         assert!(matches!(unknown.read(), Err(Fault::PositionTypeUnknown)));
@@ -2156,7 +2247,9 @@ mod tests {
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80] {
                 let mut marked = whole.clone();
+
                 marked[index] = pattern;
+
                 let _ = read_hrir_bytes(marked, LONG_ENOUGH, STANDARD);
             }
         }
@@ -2165,11 +2258,15 @@ mod tests {
     #[test]
     fn a_file_is_read_through_the_sources_and_one_of_another_kind_is_left_to_the_decoders() {
         let folder = env::temp_dir().join(format!("resonate-sofa-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let set = folder.join("set.sofa");
         let other = folder.join("other.wav");
+
         fs::write(&set, Fixture::new(&SURROUND).bytes()).expect("a set");
         fs::write(&other, b"RIFF\0\0\0\0WAVE").expect("a wave");
+
         let sources = Sources::local();
 
         let read = read_hrir(&sources, &MediaLocation::local(&set), LONG_ENOUGH, STANDARD);
@@ -2181,6 +2278,7 @@ mod tests {
         );
         let broken = {
             let mut bytes = fs::read(&set).expect("the set");
+
             bytes.truncate(40);
             fs::write(&set, bytes).expect("a cut set");
             read_hrir(&sources, &MediaLocation::local(&set), LONG_ENOUGH, STANDARD)
@@ -2208,6 +2306,7 @@ mod tests {
             let read = read_hrir_bytes(fs::read(&seed).expect("a seed"), LONG_ENOUGH, STANDARD);
 
             let hrir = read.expect("a set").expect("a SOFA file");
+
             assert_eq!(hrir.rate, SampleRate::HZ_48000, "{}", seed.display());
             assert_eq!(hrir.responses.len(), 4);
             assert!(hrir.responses.iter().all(|ear| ear.len() == 10));
@@ -2267,6 +2366,7 @@ mod tests {
     #[test]
     fn two_measurements_either_side_of_a_speaker_are_blended_with_their_onsets_aligned() {
         let mut fixture = Fixture::new(&[(20.0, 0.0), (40.0, 0.0), (340.0, 0.0), (320.0, 0.0)]);
+
         fixture.taps = Some(impulse_by_measurement);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -2279,6 +2379,7 @@ mod tests {
     #[test]
     fn a_nearer_measurement_weighs_more_and_the_onset_follows_its_weight() {
         let mut fixture = Fixture::new(&[(28.0, 0.0), (38.0, 0.0), (332.0, 0.0), (322.0, 0.0)]);
+
         fixture.taps = Some(impulse_by_measurement);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -2290,8 +2391,11 @@ mod tests {
     #[test]
     fn a_measurement_within_half_a_degree_is_taken_whole_and_a_far_one_is_not_blended_in() {
         let mut near = Fixture::new(&[(30.2, 0.0), (36.0, 0.0), (330.0, 0.0), (324.0, 0.0)]);
+
         near.taps = Some(impulse_by_measurement);
+
         let mut far = Fixture::new(&[(25.0, 0.0), (0.0, 0.0), (335.0, 0.0), (0.0, 0.0)]);
+
         far.taps = Some(impulse_by_measurement);
 
         let exact = near.read().expect("a set").expect("a SOFA file");
@@ -2304,6 +2408,7 @@ mod tests {
     #[test]
     fn a_blend_keeps_the_difference_between_the_ears_that_the_delays_make() {
         let mut fixture = Fixture::new(&[(20.0, 0.0), (40.0, 0.0), (340.0, 0.0), (320.0, 0.0)]);
+
         fixture.taps = Some(impulse_at_frame_one);
         fixture.delay = Some(vec![0.0, 3.0, 0.0, 3.0, 0.0, 3.0, 0.0, 3.0]);
 
@@ -2336,6 +2441,7 @@ mod tests {
     #[test]
     fn a_classic_file_keeping_its_measurements_as_records_single_precision_and_delayed_reads_too() {
         let mut fixture = Fixture::new(&SURROUND);
+
         fixture.single = true;
         fixture.delay = Some(vec![0.0, 3.0]);
 
@@ -2355,6 +2461,7 @@ mod tests {
     #[test]
     fn a_classic_file_is_blended_like_any_other() {
         let mut fixture = Fixture::new(&[(20.0, 0.0), (40.0, 0.0), (340.0, 0.0), (320.0, 0.0)]);
+
         fixture.taps = Some(impulse_by_measurement);
 
         let hrir = read_hrir_bytes(fixture.classic_bytes(2, false), LONG_ENOUGH, STANDARD)
@@ -2367,8 +2474,11 @@ mod tests {
     #[test]
     fn a_netcdf_version_this_reader_does_not_know_and_a_header_that_lies_are_refused() {
         let mut other = Fixture::new(&SURROUND).classic_bytes(1, false);
+
         other[3] = 3;
+
         let mut lying = Fixture::new(&SURROUND).classic_bytes(1, false);
+
         lying[8..12].copy_from_slice(&0x0000_00ff_u32.to_be_bytes());
 
         let version = read_hrir_bytes(other, LONG_ENOUGH, STANDARD);
@@ -2388,7 +2498,9 @@ mod tests {
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80] {
                 let mut marked = whole.clone();
+
                 marked[index] = pattern;
+
                 let _ = read_hrir_bytes(marked, LONG_ENOUGH, STANDARD);
             }
         }
@@ -2413,6 +2525,7 @@ mod tests {
         fn bytes(&self) -> Vec<u8> {
             let (views, emitters) = (self.views.len(), self.emitters.len());
             let mut taps = Vec::new();
+
             for view in 0..views {
                 for ear in 0..2 {
                     for emitter in 0..emitters {
@@ -2422,6 +2535,7 @@ mod tests {
                     }
                 }
             }
+
             let positions: Vec<f64> = self
                 .emitters
                 .iter()
@@ -2459,6 +2573,7 @@ mod tests {
             let mut view =
                 DatasetBuilder::typed_data("ListenerView", vec![views as u64, 3], &looking)
                     .expect("views");
+
             if let Some(kind) = self.view_kind {
                 view = view.attribute(AttributeBuilder::fixed_string("Type", kind));
             }
@@ -2468,10 +2583,12 @@ mod tests {
                 .dataset(emitting)
                 .dataset(rate)
                 .dataset(view);
+
             if let Some((front, left, up)) = self.listener {
                 let mut listener =
                     DatasetBuilder::typed_data("ListenerPosition", vec![1, 3], &[front, left, up])
                         .expect("listener");
+
                 if let Some(units) = self.listener_units {
                     listener = listener.attribute(AttributeBuilder::fixed_string("Units", units));
                 }
@@ -2482,6 +2599,7 @@ mod tests {
                     .iter()
                     .flat_map(|(front, left, up)| [*front, *left, *up])
                     .collect();
+
                 plan = plan.dataset(
                     DatasetBuilder::typed_data("ListenerUp", vec![ups.len() as u64, 3], &tilted)
                         .expect("ups"),
@@ -2582,6 +2700,7 @@ mod tests {
             radius_degrees.to_radians(),
             bearing_degrees.to_radians(),
         );
+
         let (along, up) = (radius.sin() * bearing.cos(), radius.sin() * bearing.sin());
         let front = radius.cos() * azimuth.cos() - along * azimuth.sin();
         let left = radius.cos() * azimuth.sin() + along * azimuth.cos();
@@ -2599,12 +2718,15 @@ mod tests {
     #[test]
     fn a_speaker_inside_a_triangle_of_measurements_takes_all_three_by_where_it_stands() {
         let mut directions = Vec::new();
+
         for speaker in [30.0, -30.0] {
             for bearing in [90.0, 210.0, 330.0] {
                 directions.push(around(speaker, 20.0, bearing));
             }
         }
+
         let mut fixture = Fixture::new(&directions);
+
         fixture.taps = Some(level_by_measurement);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -2618,16 +2740,21 @@ mod tests {
     fn a_speaker_standing_nearer_one_corner_of_its_triangle_takes_more_of_that_corner() {
         let mut centred = Vec::new();
         let mut shifted = Vec::new();
+
         for speaker in [30.0, -30.0] {
             for bearing in [90.0, 210.0, 330.0] {
                 centred.push(around(speaker, 20.0, bearing));
                 shifted.push(around(speaker, 20.0, bearing));
             }
         }
+
         let mut near_the_first = Fixture::new(&shifted);
+
         near_the_first.directions[0] = around(30.0, 12.0, 90.0);
         near_the_first.taps = Some(level_by_measurement);
+
         let mut level = Fixture::new(&centred);
+
         level.taps = Some(level_by_measurement);
 
         let near = near_the_first.read().expect("a set").expect("a SOFA file");
@@ -2640,6 +2767,7 @@ mod tests {
     #[test]
     fn a_speaker_raised_is_read_from_the_measurements_at_that_elevation() {
         let mut fixture = Fixture::new(&[(30.0, 0.0), (30.0, 30.0), (330.0, 0.0), (330.0, 30.0)]);
+
         fixture.taps = Some(impulse_by_measurement);
 
         let level = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, STANDARD)
@@ -2666,6 +2794,7 @@ mod tests {
             (320.0, 0.0),
             (330.0, 25.0),
         ]);
+
         fixture.taps = Some(level_by_measurement);
 
         let hrir = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, raised(8))
@@ -2673,6 +2802,7 @@ mod tests {
             .expect("a SOFA file");
 
         let level = rounded(&hrir.responses[0])[1];
+
         assert!(level > 1.0 && level < 6.0, "{level}");
         assert!((level - 2.0).abs() > 0.2, "{level}");
     }
@@ -2722,6 +2852,7 @@ mod tests {
     #[test]
     fn a_set_at_one_elevation_is_interpolated_between_its_two_neighbours_along_the_ring() {
         let mut fixture = Fixture::new(&[(20.0, 0.0), (50.0, 0.0), (340.0, 0.0), (310.0, 0.0)]);
+
         fixture.taps = Some(level_by_measurement);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -2733,6 +2864,7 @@ mod tests {
     #[test]
     fn a_ring_with_a_gap_wider_than_sixty_degrees_is_not_interpolated_across() {
         let mut fixture = Fixture::new(&[(10.0, 0.0), (80.0, 0.0), (350.0, 0.0), (280.0, 0.0)]);
+
         fixture.taps = Some(level_by_measurement);
 
         let hrir = fixture.read().expect("a set").expect("a SOFA file");
@@ -2752,6 +2884,7 @@ mod tests {
             (340.0, 20.0),
             (320.0, 20.0),
         ]);
+
         fixture.taps = Some(level_by_measurement);
 
         let hrir = read_hrir_bytes(fixture.bytes(), LONG_ENOUGH, raised(35))
@@ -2817,6 +2950,7 @@ mod tests {
             listener.1 + range * heard.left,
             listener.2 + range * heard.up,
         );
+
         let radius = (front * front + left * left + up * up).sqrt();
         (
             left.atan2(front).to_degrees().rem_euclid(360.0),
@@ -2937,12 +3071,15 @@ mod tests {
             None,
             Vec::new(),
         );
+
         set.ups = Some(vec![(0.0, -roll.sin(), roll.cos()), (0.0, 0.0, 1.0)]);
 
         let rolled = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90))
             .expect("a set")
             .expect("a SOFA file");
+
         set.ups = None;
+
         let upright = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90))
             .expect("a set")
             .expect("a SOFA file");
@@ -2960,12 +3097,15 @@ mod tests {
             None,
             Vec::new(),
         );
+
         set.ups = Some(vec![(0.0, -roll.sin(), roll.cos())]);
 
         let shared = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90))
             .expect("a set")
             .expect("a SOFA file");
+
         set.ups = Some(vec![(0.0, 0.0, 1.0); 3]);
+
         let refused = read_hrir_bytes(set.bytes(), LONG_ENOUGH, angle(90));
 
         assert_eq!(shared.responses, set.expected(0, 0, 1));
@@ -2982,6 +3122,7 @@ mod tests {
     fn a_listener_position_in_centimetres_stands_where_the_same_one_in_metres_does() {
         let mut metres = room_with_the_listener_at(Some((1.0, 0.0, 0.0)));
         let mut centimetres = room_with_the_listener_at(Some((100.0, 0.0, 0.0)));
+
         metres.listener_units = Some("metre");
         centimetres.listener_units = Some("centimetre");
 
@@ -2999,6 +3140,7 @@ mod tests {
     #[test]
     fn emitters_whose_range_is_in_millimetres_are_measured_against_a_listener_in_metres() {
         let mut set = room_with_the_listener_at(Some((1.0, 0.0, 0.0)));
+
         set.ranges = set.ranges.iter().map(|range| range * 1000.0).collect();
         set.emitter_units = "degree, degree, millimetre";
 
@@ -3012,6 +3154,7 @@ mod tests {
     #[test]
     fn a_listener_position_in_a_unit_of_length_no_one_knows_is_refused() {
         let mut set = room_with_the_listener_at(Some((1.0, 0.0, 0.0)));
+
         set.listener_units = Some("parsec");
 
         let refused = read_hrir_bytes(set.bytes(), LONG_ENOUGH, STANDARD);
@@ -3033,6 +3176,7 @@ mod tests {
     impl Read for Counting {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             let taken = self.inner.read(buf)?;
+
             self.read
                 .fetch_add(taken as u64, std::sync::atomic::Ordering::Relaxed);
             Ok(taken)
@@ -3091,6 +3235,7 @@ mod tests {
         let size = bytes.len();
         let read = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let source = resonate_core::SourceId::new("counted").expect("a name");
+
         let sources = Sources::local().and(Arc::new(Counted {
             source: source.clone(),
             bytes,
@@ -3110,6 +3255,7 @@ mod tests {
     fn a_seekable_set_is_read_from_the_measurements_chosen_alone_and_a_stream_that_cannot_seek_is_read_whole()
      {
         let mut fixture = Fixture::new(&every_ten_degrees());
+
         fixture.samples = 4096;
 
         let (streamed, bytes_streamed, size) = read_counting(&fixture, true, STANDARD);
@@ -3128,6 +3274,7 @@ mod tests {
     fn a_seekable_classic_set_is_read_from_the_measurements_chosen_alone_and_as_a_stream_that_cannot_seek_does()
      {
         let mut fixture = Fixture::new(&every_ten_degrees());
+
         fixture.samples = 4096;
 
         for version in [1, 2, 5] {
@@ -3150,9 +3297,11 @@ mod tests {
     #[test]
     fn a_seekable_classic_set_keeping_its_measurements_as_records_is_read_as_the_whole_one_is() {
         let mut fixture = Fixture::new(&every_ten_degrees());
+
         fixture.samples = 4096;
         fixture.single = true;
         fixture.delay = Some(vec![0.0, 3.0]);
+
         let bytes = fixture.classic_bytes(1, true);
 
         let (streamed, bytes_streamed, size) = read_counting_bytes(bytes.clone(), true, STANDARD);
@@ -3167,7 +3316,9 @@ mod tests {
     #[test]
     fn a_seekable_classic_file_of_a_version_no_one_reads_is_refused_before_its_body_is_read() {
         let mut bytes = Fixture::new(&SURROUND).classic_bytes(1, false);
+
         bytes[3] = 3;
+
         let size = bytes.len() as u64;
         let counted = Counting {
             inner: io::Cursor::new(bytes.clone()),
@@ -3207,7 +3358,9 @@ mod tests {
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80] {
                 let mut marked = whole.clone();
+
                 marked[index] = pattern;
+
                 let _ = read(marked);
             }
         }
@@ -3266,9 +3419,11 @@ mod blending {
 
     fn windowed_sinc(offset: f64) -> f64 {
         const HALF: f64 = 16.0;
+
         if offset.abs() >= HALF {
             return 0.0;
         }
+
         let sinc = if offset.abs() < 1e-12 {
             1.0
         } else {
@@ -3304,7 +3459,9 @@ mod blending {
             .chain(std::iter::repeat(Complex::new(0.0, 0.0)))
             .take(size)
             .collect();
+
         forward.process(&mut spectrum);
+
         let top = (16_000.0 / RATE_HZ * size as f64) as usize;
         spectrum[1..top]
             .iter()
@@ -3326,6 +3483,7 @@ mod blending {
     #[test]
     fn a_coarse_set_blended_by_magnitude_and_delay_lands_nearer_the_head_between_than_a_sum_does() {
         let (near, far) = (head(0.0), head(SPAN_DEGREES));
+
         let halves = [(0.5, near.as_slice()), (0.5, far.as_slice())];
         let fifths = [(0.8, near.as_slice()), (0.2, far.as_slice())];
 
@@ -3348,6 +3506,7 @@ mod blending {
     #[test]
     fn the_onset_of_a_blend_by_magnitude_and_delay_follows_the_weights_as_a_sums_does() {
         let (near, far) = (head(0.0), head(SPAN_DEGREES));
+
         let parts = [(0.75, near.as_slice()), (0.25, far.as_slice())];
 
         let summed = onset_of(&aligned_sum(&parts, MOST));

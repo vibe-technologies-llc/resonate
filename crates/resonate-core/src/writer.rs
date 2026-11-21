@@ -25,6 +25,7 @@ impl Held {
 
     pub fn made_closed(path: &Path) -> io::Result<Self> {
         let mut options = OpenOptions::new();
+
         options.read(true).write(true).create_new(true);
         Ok(Self::over(closing::to_others(&mut options).open(path)?))
     }
@@ -35,6 +36,7 @@ impl Held {
 
     pub fn taken_over_closed(path: &Path) -> io::Result<Self> {
         let held = Self::claimed_and_emptied(path, closing::to_others(&mut OpenOptions::new()))?;
+
         closing::now(&held.0)?;
         Ok(held)
     }
@@ -44,6 +46,7 @@ impl Held {
             path,
             options.read(true).write(true).create(true).truncate(false),
         )?;
+
         file.set_len(0)?;
         Ok(Self(file))
     }
@@ -229,6 +232,7 @@ mod tests {
 
         fn aged(&self) {
             let long_ago = SystemTime::now() - UNHELD_AND_UNTOUCHED_FOR * 2;
+
             File::options()
                 .write(true)
                 .open(&self.0)
@@ -248,10 +252,13 @@ mod tests {
         let scratch = Scratch::new("held");
 
         let held = Held::made(&scratch.0).expect("a held file");
+
         scratch.aged();
 
         assert_eq!(writer_of(&scratch.0, NEVER_A_PROCESS), Writer::Living);
+
         drop(held);
+
         assert_eq!(writer_of(&scratch.0, NEVER_A_PROCESS), Writer::Gone);
     }
 
@@ -260,8 +267,11 @@ mod tests {
         let scratch = Scratch::new("unheld");
 
         fs::write(&scratch.0, b"left").expect("a file");
+
         let fresh = writer_of(&scratch.0, INIT);
+
         scratch.aged();
+
         let aged = writer_of(&scratch.0, INIT);
         let ours = writer_of(&scratch.0, process::id());
 
@@ -286,6 +296,7 @@ mod tests {
         let scratch = Scratch::new("taken");
 
         fs::write(&scratch.0, b"what a dead run left").expect("a file");
+
         let taken = Held::taken_over(&scratch.0).expect("taken over");
         let refused = Held::taken_over(&scratch.0).map(drop);
 
@@ -294,6 +305,7 @@ mod tests {
             refused.map_err(|error| error.kind()),
             Err(io::ErrorKind::WouldBlock)
         );
+
         drop(taken);
     }
 
@@ -307,6 +319,7 @@ mod tests {
 
         let made = Scratch::new("made-closed");
         let taken = Scratch::new("taken-closed");
+
         fs::write(&taken.0, b"what a dead run left").expect("a file");
         fs::set_permissions(&taken.0, fs::Permissions::from_mode(OPEN_TO_READERS))
             .expect("a file open to readers");
@@ -319,6 +332,7 @@ mod tests {
         assert_eq!(mode_of(&made.0), OURS_ALONE);
         assert_eq!(mode_of(&taken.0), OURS_ALONE);
         assert_eq!(fs::read(&taken.0).expect("the file"), b"");
+
         drop((made_held, taken_held));
     }
 
@@ -327,6 +341,7 @@ mod tests {
         let scratch = Scratch::new("resumed");
 
         fs::write(&scratch.0, b"what a dead run left").expect("a file");
+
         let resumed = Held::resumed(&scratch.0).expect("resumed");
         let refused = Held::resumed(&scratch.0).map(drop);
 
@@ -338,7 +353,9 @@ mod tests {
             refused.map_err(|error| error.kind()),
             Err(io::ErrorKind::WouldBlock)
         );
+
         drop(resumed);
+
         assert!(Held::resumed(&scratch.0).is_ok());
     }
 

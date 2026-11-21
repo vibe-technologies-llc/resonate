@@ -63,6 +63,7 @@ impl<'a> Bits<'a> {
             .bytes
             .get(self.read / 8)
             .map_or(0, |byte| u32::from(byte >> (7 - self.read % 8)) & 1);
+
         self.read += 1;
         held
     }
@@ -79,9 +80,11 @@ impl<'a> Bits<'a> {
 
     fn rice(&mut self, parameter: u32) -> i32 {
         let mut zeros = 0_u32;
+
         while self.left() > 0 && self.bit() == 0 {
             zeros += 1;
         }
+
         let magnitude = zeros.wrapping_shl(parameter) | self.bits(parameter);
         let magnitude = magnitude as i32;
         if magnitude != 0 && self.bit() == 1 {
@@ -146,6 +149,7 @@ fn read_map(
     for slot in map.iter_mut().take(channels).skip(1) {
         let width = u32::BITS - (table.elements as u32).leading_zeros();
         let element = bits.bits(width) as usize;
+
         if element == table.elements {
             table.elements += 1;
             if table.elements >= MOST_ELEMENTS {
@@ -166,6 +170,7 @@ fn read_plain(bits: &mut Bits<'_>, into: &mut [i32], coefficients: &Coefficients
         } else {
             bits.bits(coefficients.width) as i32
         };
+
         *held = value + coefficients.offset;
     }
 }
@@ -177,19 +182,26 @@ fn read_table(
 ) -> Result<(), Unpacking> {
     for element in 0..table.elements {
         let length = bits.bits(coefficients.length_bits) as usize + 1;
+
         table.length[element] = length;
+
         let held = &mut table.coefficients[element];
+
         if bits.bit() == 0 {
             read_plain(bits, &mut held[..length], coefficients);
             continue;
         }
 
         let method = bits.bits(PREDICTION_METHOD_BITS);
+
         if method == UNUSED_PREDICTION_METHOD {
             return Err(Unpacking::UnusedPredictionMethod);
         }
+
         let order = method as usize + 1;
+
         read_plain(bits, &mut held[..order], coefficients);
+
         let parameter = bits.bits(RICE_PARAMETER_BITS);
         let predictor = coefficients.predictors[method as usize];
 
@@ -201,6 +213,7 @@ fn read_table(
                     sum.wrapping_add(weight.wrapping_mul(held[at - back - 1]))
                 });
             let mut value = bits.rice(parameter);
+
             if predicted >= 0 {
                 value = value.wrapping_sub(predicted.wrapping_add(4) / 8);
             } else {
@@ -236,6 +249,7 @@ impl Coder {
         let below = step * probability;
         let above = self.range.wrapping_sub(below);
         let one = self.code < above;
+
         if one {
             self.range = above;
         } else {
@@ -244,6 +258,7 @@ impl Coder {
         }
         if self.range < CODER_HALF {
             let shift = CODER_PRECISION_BITS - 1 - self.range.checked_ilog2().unwrap_or(0);
+
             self.range <<= shift;
             self.code = (self.code << shift) | bits.bits(shift);
         }
@@ -286,6 +301,7 @@ impl Unpacker {
         if frame.len() <= 1 {
             return Err(Unpacking::Empty);
         }
+
         let into = &mut into[..self.frame_bytes()];
         let mut bits = Bits::over(frame);
 
@@ -294,8 +310,10 @@ impl Unpacker {
             if bits.bits(PLAIN_FRAME_PADDING_BITS) != 0 {
                 return Err(Unpacking::PaddingNotZero);
             }
+
             let plain = frame.get(1..).unwrap_or_default();
             let copied = plain.len().min(into.len());
+
             into[..copied].copy_from_slice(&plain[..copied]);
             into[copied..].fill(DSD_SILENCE);
             return Ok(());
@@ -307,8 +325,11 @@ impl Unpacker {
 
         let same_map = bits.bit() == 1;
         let mut filter_of = [0_usize; MOST_CHANNELS];
+
         read_map(&mut bits, &mut self.filters, &mut filter_of, self.channels)?;
+
         let mut probability_of = filter_of;
+
         if same_map {
             self.probabilities.elements = self.filters.elements;
         } else {
@@ -321,6 +342,7 @@ impl Unpacker {
         }
 
         let mut half = [false; MOST_CHANNELS];
+
         for held in half.iter_mut().take(self.channels) {
             *held = bits.bit() == 1;
         }
@@ -331,11 +353,15 @@ impl Unpacker {
         if bits.bit() == 1 {
             return Err(Unpacking::CoderNotStarted);
         }
+
         let mut coder = Coder::start(&mut bits);
+
         self.build_lookups()?;
 
         into.fill(0);
+
         let mut history = [FIRST_HISTORY; MOST_CHANNELS];
+
         coder.decode(
             &mut bits,
             first_probability(self.filters.coefficients[0][0]),
@@ -346,6 +372,7 @@ impl Unpacker {
                 let filter = filter_of[channel];
                 let lookup = &self.lookups[filter];
                 let past = history[channel].to_le_bytes();
+
                 let predicted = lookup.iter().zip(past).fold(0_i32, |sum, (table, byte)| {
                     sum + i32::from(table[usize::from(byte)])
                 }) as i16;
@@ -361,6 +388,7 @@ impl Unpacker {
 
                 let residual = coder.decode(&mut bits, probability);
                 let heard = (u32::from(predicted < 0) ^ residual) & 1;
+
                 into[(sample >> 3) * self.channels + channel] |=
                     (heard as u8) << (7 - (sample & 7));
                 history[channel] = (history[channel] << 1) | u128::from(heard);
@@ -380,6 +408,7 @@ impl Unpacker {
                         let sign = if (pattern >> bit) & 1 == 1 { 1 } else { -1 };
                         sum + sign * i64::from(coefficients[byte * 8 + bit])
                     });
+
                     *held = i16::try_from(sum).map_err(|_| Unpacking::FilterOverflows)?;
                 }
             }
@@ -429,6 +458,7 @@ impl Unpacked {
         let held = vec![DSD_SILENCE; unpacker.frame_bytes()];
         let end = packed.at.saturating_add(packed.bytes);
         let end = source.byte_len().map_or(end, |len| end.min(len));
+
         let mut unpacked = Self {
             source,
             frames: Vec::new(),
@@ -440,6 +470,7 @@ impl Unpacked {
             held_frame: None,
             packed: Vec::new(),
         };
+
         if unpacked.declared.is_none() {
             while unpacked.discover() {}
         }
@@ -489,9 +520,11 @@ impl Unpacked {
         if self.held_frame == Some(frame) {
             return Ok(true);
         }
+
         let Some(packed) = self.known(frame) else {
             return Ok(false);
         };
+
         self.held_frame = None;
         if let Some(refusal) = self.unpack(packed)? {
             tracing::debug!(
@@ -509,16 +542,21 @@ impl Unpacked {
 impl Read for Unpacked {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let frame_bytes = self.unpacker.frame_bytes() as u64;
+
         if buf.is_empty() || self.position >= self.length() || frame_bytes == 0 {
             return Ok(0);
         }
+
         let frame = (self.position / frame_bytes) as usize;
         let within = (self.position % frame_bytes) as usize;
+
         if !self.hold(frame)? {
             return Ok(0);
         }
+
         let from = &self.held[within..];
         let taken = from.len().min(buf.len());
+
         buf[..taken].copy_from_slice(&from[..taken]);
         self.position += taken as u64;
         Ok(taken)
@@ -539,6 +577,7 @@ impl Seek for Unpacked {
                 "a seek before the start of the unpacked stream",
             ));
         };
+
         self.position = target;
         Ok(target)
     }
@@ -592,6 +631,7 @@ mod tests {
 
         fn rice(&mut self, value: i32, parameter: u32) {
             let magnitude = value.unsigned_abs();
+
             for _ in 0..magnitude >> parameter {
                 self.bits.push(0);
             }
@@ -633,6 +673,7 @@ mod tests {
             let step = (self.range >> 8) | ((self.range >> 7) & 1);
             let below = step * probability;
             let above = self.range - below;
+
             if one {
                 self.range = above;
             } else {
@@ -669,6 +710,7 @@ mod tests {
 
     fn lookups() -> [[i16; 256]; HISTORY_BYTES] {
         let mut lookup = [[0_i16; 256]; HISTORY_BYTES];
+
         for (byte, table) in lookup.iter_mut().enumerate() {
             let taps = FILTER.len().saturating_sub(byte * 8).min(8);
             for (pattern, held) in table.iter_mut().enumerate() {
@@ -685,6 +727,7 @@ mod tests {
 
     fn packed(dsd: &[u8], channels: usize) -> Vec<u8> {
         let mut head = Writer::default();
+
         head.put(1, 1);
         head.put(0b111, 3);
         head.put(1, 1);
@@ -701,7 +744,9 @@ mod tests {
         head.put(1, 1);
         head.put(0, PREDICTION_METHOD_BITS);
         head.put((ODDS[0] - PROBABILITY_OFFSET) as u32, PROBABILITY_BITS);
+
         let parameter = 3;
+
         head.put(parameter, RICE_PARAMETER_BITS);
         for at in 1..ODDS.len() {
             let predicted = -8 * ODDS[at - 1];
@@ -710,14 +755,18 @@ mod tests {
             } else {
                 ODDS[at] - (-predicted + 3) / 8
             };
+
             head.rice(sent, parameter);
         }
         head.put(0, 1);
 
         let lookup = lookups();
         let mut encoder = Encoder::new(head);
+
         encoder.encode(false, first_probability(FILTER[0]));
+
         let mut history = [FIRST_HISTORY; MOST_CHANNELS];
+
         for sample in 0..SAMPLES_A_FRAME {
             for channel in 0..channels {
                 let past = history[channel].to_le_bytes();
@@ -729,7 +778,9 @@ mod tests {
                 let index = (i32::from(predicted).unsigned_abs() >> 3) as usize;
                 let probability = ODDS[index.min(ODDS.len() - 1)] as u32;
                 let heard = (dsd[(sample >> 3) * channels + channel] >> (7 - (sample & 7))) & 1;
+
                 let residual = u32::from(heard) ^ u32::from(predicted < 0);
+
                 encoder.encode(residual == 1, probability);
                 history[channel] = (history[channel] << 1) | u128::from(heard);
             }
@@ -741,17 +792,22 @@ mod tests {
         let mut error = [0.0_f64; MOST_CHANNELS];
         let mut bytes = vec![0_u8; SAMPLES_A_FRAME / 8 * channels * frames];
         let mut noise = seed;
+
         for sample in 0..SAMPLES_A_FRAME * frames {
             for channel in 0..channels {
                 noise ^= noise << 13;
                 noise ^= noise >> 17;
                 noise ^= noise << 5;
+
                 let tone = 0.5
                     * (std::f64::consts::TAU * 1_000.0 * (channel + 1) as f64 * sample as f64
                         / f64::from(DSD64))
                     .sin();
+
                 error[channel] += tone + f64::from(noise % 64) / 4_096.0;
+
                 let high = error[channel] > 0.0;
+
                 error[channel] -= if high { 1.0 } else { -1.0 };
                 if high {
                     bytes[(sample >> 3) * channels + channel] |= 1 << (7 - (sample & 7));
@@ -768,10 +824,13 @@ mod tests {
             let frame = packed(&dsd, channels);
 
             let mut unpacker = Unpacker::new(channels, SAMPLES_A_FRAME);
+
             let mut held = vec![0; unpacker.frame_bytes()];
+
             unpacker
                 .unpack(&frame, &mut held)
                 .expect("a well-formed frame");
+
             assert_eq!(
                 held, dsd,
                 "{channels} channels did not come back bit for bit"
@@ -782,10 +841,13 @@ mod tests {
     #[test]
     fn a_plain_frame_is_copied_and_a_short_one_padded_with_silence() {
         let mut unpacker = Unpacker::new(2, SAMPLES_A_FRAME);
+
         let mut held = vec![0; unpacker.frame_bytes()];
         let mut frame = vec![0_u8];
+
         frame.extend_from_slice(&[0x12, 0x34, 0x56]);
         unpacker.unpack(&frame, &mut held).expect("a plain frame");
+
         assert_eq!(&held[..3], &[0x12, 0x34, 0x56]);
         assert!(held[3..].iter().all(|byte| *byte == DSD_SILENCE));
 
@@ -798,6 +860,7 @@ mod tests {
 
     fn chunk(id: &[u8; 4], body: &[u8]) -> Vec<u8> {
         let mut held = id.to_vec();
+
         held.extend_from_slice(&(body.len() as u64).to_be_bytes());
         held.extend_from_slice(body);
         if body.len() % 2 == 1 {
@@ -808,22 +871,30 @@ mod tests {
 
     fn dsdiff(channels: u16, compression: &[u8; 4], sound: &[u8]) -> Vec<u8> {
         let mut prop = b"SND ".to_vec();
+
         prop.extend(chunk(b"FS  ", &DSD64.to_be_bytes()));
+
         let mut named = channels.to_be_bytes().to_vec();
+
         for lane in 0..channels {
             named.extend_from_slice(format!("C{lane:03}").as_bytes());
         }
         prop.extend(chunk(b"CHNL", &named));
+
         let mut kind = compression.to_vec();
+
         kind.push(0);
         kind.push(0);
         prop.extend(chunk(b"CMPR", &kind));
 
         let mut body = b"DSD ".to_vec();
+
         body.extend(chunk(b"FVER", &0x0105_0000_u32.to_be_bytes()));
         body.extend(chunk(b"PROP", &prop));
         body.extend_from_slice(sound);
+
         let mut file = b"FRM8".to_vec();
+
         file.extend_from_slice(&(body.len() as u64).to_be_bytes());
         file.extend(body);
         file
@@ -835,6 +906,7 @@ mod tests {
                 .expect("a DSDIFF opens");
         let mut block = AudioBuffer::empty(info.spec);
         let mut samples = Vec::new();
+
         while decoder.next_block(&mut block).expect("a clean decode") == DecodeStatus::Decoded {
             if let SampleData::S24(held) = block.data() {
                 samples.extend_from_slice(held);
@@ -851,11 +923,13 @@ mod tests {
 
         let mut dst = Vec::new();
         let mut info = (frames as u32).to_be_bytes().to_vec();
+
         info.extend_from_slice(&(FRAMES_A_SECOND as u16).to_be_bytes());
         dst.extend(chunk(b"FRTE", &info));
         for (at, frame) in dsd.chunks(frame_bytes).enumerate() {
             if at == 1 {
                 let mut plain = vec![0_u8];
+
                 plain.extend_from_slice(frame);
                 dst.extend(chunk(b"DSTF", &plain));
             } else {
@@ -866,6 +940,7 @@ mod tests {
 
         let compressed = drained(dsdiff(2, b"DST ", &chunk(b"DST ", &dst)), "packed.dff");
         let plain = drained(dsdiff(2, b"DSD ", &chunk(b"DSD ", &dsd)), "plain.dff");
+
         assert!(!plain.is_empty());
         assert_eq!(compressed, plain, "a DST stream decoded to other samples");
     }
@@ -904,6 +979,7 @@ mod tests {
     fn frames_chunk(dsd: &[u8]) -> Vec<u8> {
         let mut body = Vec::new();
         let mut info = ((dsd.len() / FRAME_BYTES) as u32).to_be_bytes().to_vec();
+
         info.extend_from_slice(&(FRAMES_A_SECOND as u16).to_be_bytes());
         body.extend(chunk(b"FRTE", &info));
         for frame in dsd.chunks(FRAME_BYTES) {
@@ -934,7 +1010,9 @@ mod tests {
         unpacked
             .seek(SeekFrom::Start((frame * FRAME_BYTES) as u64))
             .expect("a seek inside the stream");
+
         let mut bytes = vec![0; FRAME_BYTES];
+
         unpacked.read_exact(&mut bytes).expect("a whole frame");
         bytes
     }
@@ -943,6 +1021,7 @@ mod tests {
     fn an_open_walks_no_frame_header_before_the_frame_that_is_read() {
         let frames = 40;
         let dsd = signal(CHANNELS, frames, 0xBEEF_0001);
+
         let (mut unpacked, seeks) = counted(frames_chunk(&dsd), frames as u64);
 
         assert_eq!(seeks.load(Ordering::Relaxed), 0);
@@ -958,10 +1037,12 @@ mod tests {
     fn a_frame_far_ahead_and_the_frames_behind_it_read_as_they_were_packed() {
         let frames = 40;
         let dsd = signal(CHANNELS, frames, 0xBEEF_0002);
+
         let (mut unpacked, seeks) = counted(frames_chunk(&dsd), frames as u64);
         let frame = |at: usize| &dsd[at * FRAME_BYTES..(at + 1) * FRAME_BYTES];
 
         assert_eq!(read_frame(&mut unpacked, 37), frame(37));
+
         let walked = seeks.load(Ordering::Relaxed);
 
         assert_eq!(read_frame(&mut unpacked, 3), frame(3));
@@ -980,6 +1061,7 @@ mod tests {
         let (mut unpacked, _) = counted(frames_chunk(&dsd), 9);
 
         let mut all = Vec::new();
+
         unpacked.read_to_end(&mut all).expect("what is there reads");
 
         assert_eq!(all, dsd);
@@ -989,6 +1071,7 @@ mod tests {
     fn whole_stream(body: Vec<u8>, declared: u64) -> Vec<u8> {
         let (mut unpacked, _) = counted(body, declared);
         let mut all = Vec::new();
+
         unpacked.read_to_end(&mut all).expect("every frame reads");
         all
     }
@@ -998,6 +1081,7 @@ mod tests {
         let mut info = (((dsd.len() / FRAME_BYTES) + 1) as u32)
             .to_be_bytes()
             .to_vec();
+
         info.extend_from_slice(&(FRAMES_A_SECOND as u16).to_be_bytes());
         body.extend(chunk(b"FRTE", &info));
         body.extend(chunk(b"DSTF", &packed(&dsd[..FRAME_BYTES], CHANNELS)));
@@ -1027,6 +1111,7 @@ mod tests {
     fn a_frame_longer_than_any_frame_could_be_is_silence_and_is_never_read_into_memory() {
         let dsd = signal(CHANNELS, 2, 0xBEEF_0005);
         let hostile = vec![0xFF; 9 * FRAME_BYTES];
+
         let body = frames_chunk_around(&dsd, hostile);
         let (mut unpacked, _) = counted(body, 3);
 

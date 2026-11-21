@@ -81,6 +81,7 @@ impl Timed {
         if self.is_whole() {
             return None;
         }
+
         let start = self
             .from
             .map_or(Frames::ZERO, |from| Frames::from_duration(from, rate));
@@ -169,6 +170,7 @@ pub struct Described {
 pub fn read(path: &Path) -> Result<Reading> {
     let (text, encoding) = decoded(path)?;
     let beside = path.parent().unwrap_or_else(|| Path::new("."));
+
     let (sheet, format) = parse(&text, beside);
 
     Ok(Reading {
@@ -229,6 +231,7 @@ pub(crate) fn write(
 ) -> Result<PlaylistFormat> {
     let beside = path.parent().unwrap_or_else(|| Path::new("."));
     let format = PlaylistFormat::of(path);
+
     let text = text_of(format, name, &rows_of(entries), beside)?;
 
     read_back_within(path, &text, LARGEST_PLAYLIST_FILE)?;
@@ -238,6 +241,7 @@ pub(crate) fn write(
 
 fn landing_of(path: &Path) -> Result<PathBuf> {
     let mut landing = path.to_path_buf();
+
     for _ in 0..LINKS_FOLLOWED_AT_MOST {
         match fs::canonicalize(&landing) {
             Ok(found) => return Ok(found),
@@ -345,6 +349,7 @@ pub fn scheme_of(line: &str) -> Option<&str> {
     {
         return Some(scheme);
     }
+
     let (scheme, _) = line.split_once(SCHEME_SEPARATOR)?;
     let named = scheme.starts_with(|first: char| first.is_ascii_alphabetic())
         && scheme.chars().all(|character| {
@@ -356,13 +361,16 @@ pub fn scheme_of(line: &str) -> Option<&str> {
 
 pub fn local_file(line: &str) -> Option<PathBuf> {
     let (scheme, rest) = line.split_once(':')?;
+
     if !scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME) {
         return None;
     }
+
     let reference = path_of_reference(rest);
     let encoded = match reference.strip_prefix(AUTHORITY_MARK) {
         Some(named) => {
             let (authority, path) = named.split_at(named.find('/')?);
+
             if !authority.is_empty() && !authority.eq_ignore_ascii_case(LOCAL_AUTHORITY) {
                 return path_on_a_share(&forward_escaped(named));
             }
@@ -371,6 +379,7 @@ pub fn local_file(line: &str) -> Option<PathBuf> {
         None => reference,
     };
     let encoded = forward_escaped(encoded);
+
     if !encoded.starts_with('/') {
         return None;
     }
@@ -421,8 +430,10 @@ pub fn unescaped(encoded: &str) -> Option<PathBuf> {
             decoded.push(byte);
             continue;
         }
+
         let high = hex(bytes.next()?)?;
         let low = hex(bytes.next()?)?;
+
         decoded.push(high << 4 | low);
     }
     if decoded.contains(&NOTHING_TEXT_HOLDS) {
@@ -442,6 +453,7 @@ pub fn beside_or_absolute(file: &Path, beside: &Path) -> PathBuf {
 
 pub fn as_a_row(file: &Path, beside: &Path) -> Result<String> {
     let named = beside_or_absolute(file, beside);
+
     if let Some(row) = named.to_str()
         && reads_back_as_itself(row)
     {
@@ -513,6 +525,7 @@ fn decoded(path: &Path) -> Result<(String, TextEncoding)> {
         TextEncoding::Utf16Le | TextEncoding::Utf16Be => bytes.len() % encoding.unit_bytes() != 0,
         TextEncoding::Legacy(_) => declares_utf8(path) || bytes.contains(&NOTHING_TEXT_HOLDS),
     };
+
     if unreadable {
         return Err(Error::UnreadablePlaylistFile {
             path: path.to_path_buf(),
@@ -545,11 +558,13 @@ fn within_the_limit(path: &Path) -> Result<Vec<u8>> {
             source,
         })?
         .len();
+
     if declared > LARGEST_PLAYLIST_FILE {
         return Err(too_large(path, declared));
     }
 
     let mut taken = Vec::new();
+
     File::open(path)
         .and_then(|sheet| {
             sheet
@@ -562,6 +577,7 @@ fn within_the_limit(path: &Path) -> Result<Vec<u8>> {
         })?;
 
     let read = taken.len() as u64;
+
     if read > LARGEST_PLAYLIST_FILE {
         return Err(too_large(path, declared.max(read)));
     }
@@ -570,6 +586,7 @@ fn within_the_limit(path: &Path) -> Result<Vec<u8>> {
 
 fn read_back_within(path: &Path, text: &str, limit: u64) -> Result<()> {
     let held = text.len() as u64;
+
     if held > limit {
         return Err(Error::PlaylistFileTooLarge {
             path: path.to_path_buf(),
@@ -595,9 +612,11 @@ fn staged_over(library: &Library, path: &Path, text: &str) -> Result<()> {
         });
     };
     let staged = path.with_file_name(staging_name_for(name));
+
     library.staging(&staged)?;
 
     let landed = staged_into(path, &staged, text);
+
     organise::staged_left(library, &staged);
     landed
 }
@@ -684,6 +703,7 @@ mod tests {
 
             for (text, format) in [(m3u, PlaylistFormat::M3u), (pls, PlaylistFormat::Pls)] {
                 let (sheet, read_as) = parse(&text, beside);
+
                 assert_eq!(read_as, format, "{ending:?}");
                 assert_eq!(sheet.locations.len(), 2, "{format:?} ended by {ending:?}");
             }
@@ -696,12 +716,16 @@ mod tests {
         use std::os::unix::fs::PermissionsExt as _;
 
         let folder = std::env::temp_dir().join(format!("resonate-sheet-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a writable temporary directory");
+
         let path = folder.join("favourites.m3u");
+
         fs::write(&path, "#EXTM3U\n").expect("a playlist");
         fs::set_permissions(&path, fs::Permissions::from_mode(0o640)).expect("a mode");
 
         let staged = folder.join(staging_name_for(OsStr::new("favourites.m3u")));
+
         staged_into(&path, &staged, "#EXTM3U\na.flac\n").expect("the playlist is rewritten");
 
         assert_eq!(
@@ -742,6 +766,7 @@ mod tests {
         let file = Path::new("/music/AC\\DC.wav");
 
         let row = as_a_row(file, beside).expect("a row");
+
         assert!(
             row.starts_with(FILE_SCHEME),
             "{row} reads back as a Windows path"

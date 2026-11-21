@@ -287,6 +287,7 @@ fn jellyfin(
                 user,
                 device,
             });
+
     if session.is_some() {
         return Some(Reachable::Jellyfin(JellyfinLogin {
             url,
@@ -312,6 +313,7 @@ where
     T: Clone,
 {
     let mut planned: Vec<(T, Reachable)> = Vec::new();
+
     for (tag, account) in accounts {
         for service in account.services(hosted) {
             if planned

@@ -51,6 +51,7 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Riff {
         return Riff::default();
     };
     let found = scan(source).unwrap_or_default();
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("a RIFF INFO scan could not restore the stream position");
     }
@@ -60,6 +61,7 @@ pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Riff {
 fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
     let start = past_id3(source)?;
     let (layout, header) = riff_header_at(source, start)?;
+
     source
         .seek(SeekFrom::Start(header + layout.header_bytes()))
         .ok()?;
@@ -67,6 +69,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
     let mut found = Riff::default();
     let mut sizes = Sizes::default();
     let mut info_left = MAX_INFO_BYTES;
+
     for walked in 0..MAX_CHUNKS {
         let Some(chunk) = layout.next_chunk(source, &sizes) else {
             break;
@@ -88,6 +91,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
             && found.channels.is_none()
         {
             let fmt = read_fmt(source, size);
+
             found.channels = fmt.channels;
             found.mask = fmt.mask;
             found.valid_bits = fmt.valid_bits;
@@ -95,6 +99,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Riff> {
         if ID3_CHUNKS.iter().any(|id| chunk.is(id)) {
             found.id3 = read_id3_chunk(source, size).or(found.id3);
         }
+
         let Some(next) = body.checked_add(layout.padded(size)) else {
             break;
         };
@@ -138,7 +143,9 @@ impl Layout {
             }
             Self::Wide(wide) => {
                 let mut header = [0_u8; WIDEST_CHUNK_HEADER];
+
                 let header = header.get_mut(..wide.chunk_header_bytes())?;
+
                 source.read_exact(header).ok()?;
                 wide.chunk(header, sizes)
             }
@@ -148,6 +155,7 @@ impl Layout {
 
 fn read_bounded<S: Read + ?Sized>(source: &mut S, size: u64, most: u64) -> Vec<u8> {
     let mut bytes = Vec::new();
+
     if source.take(size.min(most)).read_to_end(&mut bytes).is_err() {
         bytes.clear();
     }
@@ -165,6 +173,7 @@ fn read_id3_chunk<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<Vec<u8>
     }
 
     let mut bytes = Vec::new();
+
     source.take(size).read_to_end(&mut bytes).ok()?;
     (bytes.len() as u64 == size && bytes.starts_with(ID3)).then_some(bytes)
 }
@@ -185,9 +194,11 @@ fn read_fmt<S: Read + ?Sized>(source: &mut S, size: u64) -> Fmt {
         FMT_PLAIN_BYTES
     };
     let mut fields = [0_u8; FMT_MASKED_BYTES as usize];
+
     let Some(fields) = fields.get_mut(..wanted as usize) else {
         return Fmt::default();
     };
+
     if source.read_exact(fields).is_err() {
         return Fmt::default();
     }
@@ -203,6 +214,7 @@ fn channel_mask(fields: &[u8]) -> Option<u32> {
     if field(fields, FMT_FORMAT_TAG_AT)? != WAVE_FORMAT_EXTENSIBLE {
         return None;
     }
+
     let bytes: [u8; 4] = fields
         .get(FMT_CHANNEL_MASK_AT..FMT_CHANNEL_MASK_AT + 4)?
         .try_into()
@@ -241,6 +253,7 @@ fn read_info_list<S: Read + Seek + ?Sized>(
     let Some(form) = read_exact::<4, S>(source) else {
         return;
     };
+
     if !form.starts_with(INFO) {
         return;
     }
@@ -248,6 +261,7 @@ fn read_info_list<S: Read + Seek + ?Sized>(
     let mut entries = Vec::new();
     let mut read = 0;
     let within = size.min(*left);
+
     while read < within {
         let Some(header) = read_exact::<8, S>(source) else {
             break;
@@ -256,6 +270,7 @@ fn read_info_list<S: Read + Seek + ?Sized>(
             break;
         };
         let taken = padded(value_size);
+
         if read + 8 + taken > size {
             break;
         }
@@ -270,12 +285,15 @@ fn read_info_list<S: Read + Seek + ?Sized>(
         let Some(next) = body.checked_add(taken) else {
             break;
         };
+
         if source.seek(SeekFrom::Start(next)).is_err() {
             break;
         }
+
         let Some(name) = four_cc(&header) else {
             break;
         };
+
         entries.push((name, value));
     }
     *left = left.saturating_sub(read);
@@ -285,6 +303,7 @@ fn read_info_list<S: Read + Seek + ?Sized>(
         all.push(b'\n');
         all
     }));
+
     into.extend(entries.into_iter().filter_map(|(name, value)| {
         let value = decoded_as(&value, encoding).trim().to_owned();
         (!value.is_empty()).then_some(InfoTag { name, value })
@@ -293,18 +312,21 @@ fn read_info_list<S: Read + Seek + ?Sized>(
 
 fn read_value<S: Read + ?Sized>(source: &mut S, size: u64) -> Option<Vec<u8>> {
     let mut bytes = vec![0_u8; usize::try_from(size.min(MAX_VALUE_BYTES)).ok()?];
+
     source.read_exact(&mut bytes).ok()?;
 
     let end = bytes
         .iter()
         .position(|byte| *byte == 0)
         .unwrap_or(bytes.len());
+
     bytes.truncate(end);
     Some(bytes)
 }
 
 fn four_cc(header: &[u8; 8]) -> Option<TagName> {
     let id = header.get(..4)?;
+
     if !id.iter().all(u8::is_ascii_graphic) {
         return None;
     }
@@ -351,8 +373,10 @@ mod tests {
 
     fn info_list(entries: &[(&[u8; 4], &str)]) -> Vec<u8> {
         let mut body = INFO.to_vec();
+
         for (id, value) in entries {
             let mut terminated = value.as_bytes().to_vec();
+
             terminated.push(0);
             chunk(&mut body, id, &terminated);
         }
@@ -361,11 +385,13 @@ mod tests {
 
     fn wave(chunks: &[(&[u8; 4], Vec<u8>)]) -> Vec<u8> {
         let mut body = WAVE.to_vec();
+
         for (id, payload) in chunks {
             chunk(&mut body, id, payload);
         }
 
         let mut file = RIFF.to_vec();
+
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
         file
@@ -380,6 +406,7 @@ mod tests {
 
     fn fmt(channels: u16) -> Vec<u8> {
         let mut fields = vec![0_u8; FMT_PLAIN_BYTES as usize];
+
         fields[FMT_FORMAT_TAG_AT] = 1;
         fields[FMT_CHANNELS_AT..FMT_CHANNELS_AT + 2].copy_from_slice(&channels.to_le_bytes());
         fields[FMT_BITS_PER_SAMPLE_AT] = 16;
@@ -389,10 +416,12 @@ mod tests {
     #[test]
     fn an_extensible_fmt_chunk_names_its_channel_mask() {
         let mut fields = vec![0_u8; FMT_MASKED_BYTES as usize];
+
         fields[..2].copy_from_slice(&WAVE_FORMAT_EXTENSIBLE.to_le_bytes());
         fields[FMT_CHANNELS_AT] = 6;
         fields[FMT_CHANNEL_MASK_AT..FMT_CHANNEL_MASK_AT + 4]
             .copy_from_slice(&0x3F_u32.to_le_bytes());
+
         let found = read(&mut Cursor::new(wave(&[(b"fmt ", fields)])));
 
         assert_eq!(found.channels, Some(6));
@@ -449,8 +478,10 @@ mod tests {
     fn an_info_list_in_a_legacy_code_page_is_read_in_it() {
         let cyrillic = TextEncoding::Legacy(LegacyEncoding::WINDOWS_1251);
         let mut body = INFO.to_vec();
+
         for (id, value) in [(b"INAM", "Группа крови"), (b"IART", "Кино")] {
             let mut terminated = encoded(value, cyrillic).expect("Cyrillic letters");
+
             terminated.push(0);
             chunk(&mut body, id, &terminated);
         }
@@ -498,6 +529,7 @@ mod tests {
         let found = read(&mut Cursor::new(file)).info;
 
         let entry_bytes = 8 + padded(value.len() as u64 + 1);
+
         assert!(!found.is_empty());
         assert!(
             found.len() as u64 * entry_bytes <= MAX_INFO_BYTES + entry_bytes,
@@ -509,7 +541,9 @@ mod tests {
     #[test]
     fn a_list_that_is_not_an_info_list_contributes_nothing() {
         let mut adtl = b"adtl".to_vec();
+
         chunk(&mut adtl, b"labl", b"a cue point\0");
+
         let file = wave(&[(b"LIST", adtl), (b"data", vec![0; 8])]);
 
         assert!(read(&mut Cursor::new(file)).info.is_empty());
@@ -528,6 +562,7 @@ mod tests {
     #[test]
     fn a_leading_id3_tag_does_not_hide_the_riff_header() {
         let mut file = b"ID3\x04\x00\x00\x00\x00\x00\x0a".to_vec();
+
         file.extend_from_slice(&[0; 10]);
         file.extend_from_slice(&wave(&[(b"LIST", info_list(&[(b"INAM", "Echoes")]))]));
 
@@ -540,6 +575,7 @@ mod tests {
     #[test]
     fn a_riff_header_behind_bytes_that_are_not_one_is_still_found() {
         let mut file = b"ft".to_vec();
+
         file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
 
         assert_eq!(read(&mut Cursor::new(file)).channels, Some(3));
@@ -548,6 +584,7 @@ mod tests {
     #[test]
     fn a_leading_id3_tag_whose_size_cannot_be_read_does_not_hide_the_riff_header() {
         let mut file = b"ID3\x04\x00\x00\x00\x00\x00\xff".to_vec();
+
         file.extend_from_slice(&[0xff; 64]);
         file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
 
@@ -557,6 +594,7 @@ mod tests {
     #[test]
     fn a_riff_header_further_in_than_the_search_reaches_is_not_found() {
         let mut file = vec![0_u8; PROBED_WITHIN as usize];
+
         file.extend_from_slice(&wave(&[(b"fmt ", fmt(3))]));
 
         assert_eq!(read(&mut Cursor::new(file)), Riff::default());
@@ -586,11 +624,13 @@ mod tests {
     #[test]
     fn a_value_claiming_a_gigabyte_the_file_does_not_hold_allocates_none_of_it() {
         let mut body = INFO.to_vec();
+
         body.extend_from_slice(b"INAM");
         body.extend_from_slice(&(1_u32 << 30).to_le_bytes());
         body.extend_from_slice(b"Echoes\0");
 
         let mut file = RIFF.to_vec();
+
         file.extend_from_slice(&u32::MAX.to_le_bytes());
         file.extend_from_slice(WAVE);
         file.extend_from_slice(LIST);
@@ -602,6 +642,7 @@ mod tests {
 
     fn id3_tag() -> Vec<u8> {
         let mut tag = b"ID3\x04\x00\x00\x00\x00\x00\x0b".to_vec();
+
         tag.extend_from_slice(b"TIT2\x00\x00\x00\x01\x00\x00\x03");
         tag
     }
@@ -622,21 +663,26 @@ mod tests {
     #[test]
     fn an_id3_chunk_that_holds_no_tag_or_claims_more_than_the_file_holds_is_passed_over() {
         let empty = wave(&[(b"id3 ", b"not a tag".to_vec())]);
+
         assert_eq!(read(&mut Cursor::new(empty)).id3, None);
 
         let mut file = wave(&[(b"fmt ", vec![0; 16])]);
+
         file.extend_from_slice(b"id3 ");
         file.extend_from_slice(&(1_u32 << 24).to_le_bytes());
         file.extend_from_slice(&id3_tag());
+
         assert_eq!(read(&mut Cursor::new(file)).id3, None);
     }
 
     #[test]
     fn a_chunk_that_claims_more_than_the_list_holds_stops_the_walk() {
         let mut body = INFO.to_vec();
+
         body.extend_from_slice(b"INAM");
         body.extend_from_slice(&u32::MAX.to_le_bytes());
         body.extend_from_slice(b"Echoes\0");
+
         let file = wave(&[(b"LIST", body), (b"data", vec![0; 8])]);
 
         assert!(read(&mut Cursor::new(file)).info.is_empty());

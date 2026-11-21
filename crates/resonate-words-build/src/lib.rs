@@ -110,18 +110,22 @@ pub fn generated(words: &Path) -> Result<String> {
         .clone();
 
     let mut areas = Vec::new();
+
     for (area, path) in areas_in(&english)? {
         areas.push((area, read_area(&path)?));
     }
 
     let mut kept_in: BTreeMap<String, Vec<(String, PathBuf)>> = BTreeMap::new();
+
     for (tag, folder) in &languages {
         let found = areas_in(folder)?;
+
         for (area, read) in &areas {
             let path = found.get(area).ok_or_else(|| Error::AreaMissing {
                 language: folder.clone(),
                 area: area.clone(),
             })?;
+
             if tag != ENGLISH {
                 agrees_with(read, &read_area(path)?, path)?;
             }
@@ -140,6 +144,7 @@ pub fn generated(words: &Path) -> Result<String> {
     }
 
     let mut written = String::new();
+
     for (area, read) in &areas {
         written.push_str(&module_of(area, read, &kept_in[area])?);
     }
@@ -148,6 +153,7 @@ pub fn generated(words: &Path) -> Result<String> {
 
 fn languages_in(words: &Path) -> Result<BTreeMap<String, PathBuf>> {
     let mut languages = BTreeMap::new();
+
     for entry in listed(words)? {
         if entry.is_dir()
             && let Some(tag) = entry.file_name().and_then(|name| name.to_str())
@@ -160,15 +166,18 @@ fn languages_in(words: &Path) -> Result<BTreeMap<String, PathBuf>> {
 
 fn areas_in(folder: &Path) -> Result<BTreeMap<String, PathBuf>> {
     let mut areas = BTreeMap::new();
+
     for path in listed(folder)? {
         if path.extension().and_then(|ending| ending.to_str()) != Some(ENDING) {
             continue;
         }
+
         let area = path
             .file_stem()
             .and_then(|stem| stem.to_str())
             .filter(|stem| names_an_area(stem))
             .ok_or_else(|| Error::UnnamedArea { path: path.clone() })?;
+
         areas.insert(area.to_owned(), path);
     }
     Ok(areas)
@@ -189,6 +198,7 @@ fn listed(folder: &Path) -> Result<Vec<PathBuf>> {
         source,
     };
     let mut listed = Vec::new();
+
     for entry in fs::read_dir(folder).map_err(unreadable)? {
         listed.push(entry.map_err(unreadable)?.path());
     }
@@ -217,10 +227,12 @@ fn read_area(path: &Path) -> Result<Vec<Message>> {
     })?;
 
     let mut own: Vec<(String, BTreeSet<String>, BTreeSet<String>)> = Vec::new();
+
     for entry in &resource.body {
         match entry {
             Entry::Message(message) => {
                 let id = message.id.name.to_owned();
+
                 if message.comment.is_some() {
                     return Err(Error::Commented {
                         path: path.to_owned(),
@@ -244,6 +256,7 @@ fn read_area(path: &Path) -> Result<Vec<Message>> {
                         id,
                     });
                 }
+
                 let value = message.value.as_ref().ok_or_else(|| Error::Valueless {
                     path: path.to_owned(),
                     id: id.clone(),
@@ -251,6 +264,7 @@ fn read_area(path: &Path) -> Result<Vec<Message>> {
 
                 let mut takes = BTreeSet::new();
                 let mut refers_to = BTreeSet::new();
+
                 walk_pattern(value, &mut takes, &mut refers_to);
                 for variable in &takes {
                     if !names_a_function(variable) {
@@ -294,6 +308,7 @@ fn taken_through(
     let mut takes = BTreeSet::new();
     let mut seen = BTreeSet::new();
     let mut waiting = vec![id.to_owned()];
+
     while let Some(next) = waiting.pop() {
         if !seen.insert(next.clone()) {
             continue;
@@ -443,6 +458,7 @@ fn module_of(area: &str, messages: &[Message], kept_in: &[(String, PathBuf)]) ->
         .map(|message| format!("{:?}", message.id))
         .collect();
     let mut sources = Vec::new();
+
     for (tag, path) in kept_in {
         sources.push(format!(
             "(::resonate_words::Language::by_tag({tag:?}), include_str!({}))",
@@ -456,6 +472,7 @@ fn module_of(area: &str, messages: &[Message], kept_in: &[(String, PathBuf)]) ->
         ids.join(", "),
         sources.join(", ")
     );
+
     for (index, message) in messages.iter().enumerate() {
         let name = raised(&message.id);
         match message.takes.is_empty() {
@@ -476,6 +493,7 @@ fn module_of(area: &str, messages: &[Message], kept_in: &[(String, PathBuf)]) ->
                     .iter()
                     .map(|variable| format!("({variable:?}, {}.into())", raised(variable)))
                     .collect();
+
                 written.push_str(&format!(
                     "\n    pub(crate) fn {name}<'a>({}) -> String {{\n        AREA.formatted({index}, \
                      [{}])\n    }}\n",
@@ -502,12 +520,14 @@ mod tests {
             let path =
                 env::temp_dir().join(format!("resonate-words-{}-{name}", std::process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(&path).expect("a temporary folder");
             Self(path)
         }
 
         fn holding(self, language: &str, area: &str, text: &str) -> Self {
             let folder = self.0.join(language);
+
             fs::create_dir_all(&folder).expect("a language folder");
             fs::write(folder.join(format!("{area}.ftl")), text).expect("an area written");
             self

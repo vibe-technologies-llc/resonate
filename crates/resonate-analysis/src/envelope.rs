@@ -124,6 +124,7 @@ impl Enveloping {
         if self.in_unit > 0 {
             self.columns.push(self.unit);
         }
+
         let frames_per_column = self.columns.per_column() * FRAMES_PER_UNIT;
         let columns = self
             .columns
@@ -160,6 +161,7 @@ impl Envelope {
 
     pub fn condensed(&self, lane: usize, wanted: usize) -> Vec<Reach> {
         let drawn = lane < self.lanes.min(ENVELOPE_LANES) && self.frames_per_column > 0;
+
         if self.frames == 0 || wanted == 0 || !drawn || self.columns.is_empty() {
             return Vec::new();
         }
@@ -183,6 +185,7 @@ fn merged(reaches: impl Iterator<Item = Reach>) -> Reach {
     let mut high = f32::NEG_INFINITY;
     let mut squares = 0.0_f64;
     let mut count = 0_u32;
+
     for reach in reaches {
         low = low.min(reach.low);
         high = high.max(reach.high);
@@ -206,6 +209,7 @@ mod tests {
 
     fn enveloped(channels: usize, interleaved: &[f32]) -> Envelope {
         let mut enveloping = Enveloping::new(channels);
+
         for block in interleaved.chunks(1_000 * channels) {
             enveloping.note(block);
         }
@@ -227,6 +231,7 @@ mod tests {
 
         let left = envelope.condensed(0, 4);
         let right = envelope.condensed(1, 4);
+
         assert_eq!(left.len(), 4);
         assert!(left.windows(2).all(|pair| pair[1].high > pair[0].high));
         assert!(left[3].high > 0.99 && left[0].low < 0.01);
@@ -244,6 +249,7 @@ mod tests {
         assert!(envelope.columns.len() <= ENVELOPE_COLUMNS);
         for wanted in [1, 7, 640, 5_000] {
             let condensed = envelope.condensed(0, wanted);
+
             assert_eq!(condensed.len(), wanted);
             assert!(condensed.iter().all(|reach| {
                 reach.low == -0.5 && reach.high == 0.5 && (reach.rms - 0.5).abs() < 1e-4
@@ -254,6 +260,7 @@ mod tests {
     #[test]
     fn nothing_heard_condenses_to_nothing() {
         let envelope = enveloped(2, &[]);
+
         assert!(envelope.condensed(0, 100).is_empty());
     }
 }

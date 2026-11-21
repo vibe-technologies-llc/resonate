@@ -181,7 +181,9 @@ impl Shared {
             poll_due: Instant::now(),
             retry_after: FIRST_RETRY,
         };
+
         running.publish();
+
         let thread = thread::Builder::new()
             .name("resonate-shared".to_owned())
             .spawn(move || {
@@ -257,6 +259,7 @@ impl Shared {
 
     fn asked<T>(&self, work: impl FnOnce(blocking::Sender<Result<T>>) -> Work) -> Result<T> {
         let (answer, answered) = blocking::channel();
+
         self.work
             .send(work(answer))
             .map_err(|_| Error::SharedStopped)?;
@@ -345,6 +348,7 @@ impl Running {
     async fn run(mut self, mut asked: mpsc::UnboundedReceiver<Work>) {
         loop {
             let wait = self.poll_due.saturating_duration_since(Instant::now());
+
             tokio::select! {
                 work = asked.recv() => {
                     let Some(work) = work else {
@@ -371,8 +375,11 @@ impl Running {
         match work {
             Work::Share { at, answer } => {
                 let shared = self.share(at);
+
                 self.publish();
+
                 let _ = answer.send(shared);
+
                 self.poll_due = Instant::now();
             }
             Work::Join {
@@ -381,17 +388,22 @@ impl Running {
                 answer,
             } => {
                 let joined = self.join(&code, server);
+
                 self.poll_due = Instant::now();
                 if joined.is_ok() {
                     self.exchange().await;
                 }
                 self.publish();
+
                 let _ = answer.send(joined);
             }
             Work::Leave { space, answer } => {
                 let left = self.leave(space);
+
                 self.publish();
+
                 let _ = answer.send(left);
+
                 self.poll_due = Instant::now();
             }
             Work::Reset {
@@ -400,8 +412,11 @@ impl Running {
                 answer,
             } => {
                 let reset = self.reset(space, removing).await;
+
                 self.publish();
+
                 let _ = answer.send(reset);
+
                 self.poll_due = Instant::now();
             }
             Work::Adopt(share) => {
@@ -462,23 +477,28 @@ impl Running {
         let device = DeviceId::minted()?;
         let me = self.me.clone();
         let mut clock = Clock::from_last(0);
+
         let mut stamped = || clock.now(device);
 
         let mut ops = vec![SharedOp::Renamed {
             name: local.name.clone(),
             stamp: stamped(),
         }];
+
         ops.push(SharedOp::Member {
             member: me.member,
             name: self.name.clone(),
             public: me.personal.public(),
             stamp: stamped(),
         });
+
         let mut written = Vec::with_capacity(local.entries.len());
         let mut place: Option<Place> = None;
+
         for recording in local.entries.iter().flatten() {
             let entry = EntryId(random_bytes()?);
             let here = place.as_ref().map_or_else(Place::first, Place::after);
+
             ops.push(SharedOp::Added {
                 entry,
                 recording: recording.clone(),
@@ -491,9 +511,11 @@ impl Running {
         }
 
         let mut list = SharedList::default();
+
         for op in &ops {
             list.apply(op);
         }
+
         let kept = Kept {
             space: keys.space,
             access: access.clone(),
@@ -512,6 +534,7 @@ impl Running {
             owed: vec![(1, ops)],
             clock,
         };
+
         self.store.keep(&kept)?;
         self.lists.push(kept);
         self.standings.insert(keys.space, SharedStanding::Waiting);
@@ -525,6 +548,7 @@ impl Running {
             personal: Personal::from_bytes(share.personal),
         };
         let space = self.joined_as(&share.code, share.server.clone(), me)?;
+
         if let Some(at) = share.at
             && let Some(position) = self.lists.iter().position(|kept| kept.space == space)
             && self.lists[position].at.is_none()
@@ -537,7 +561,9 @@ impl Running {
                 .is_some()
             {
                 self.lists[position].at = Some(at);
+
                 let kept = self.lists[position].clone();
+
                 self.store.keep(&kept)?;
             }
         }
@@ -555,6 +581,7 @@ impl Running {
         if self.server.is_none() && server.is_none() {
             return Err(Error::SharedNeedsAServer);
         }
+
         let access = Access::from_code(code)?;
         let keys = access.keys()?;
         let server = server.filter(|server| self.server.as_deref() != Some(server.as_str()));
@@ -562,11 +589,15 @@ impl Running {
         if let Some(at) = self.lists.iter().position(|kept| kept.space == keys.space) {
             if access.may_edit() && !self.lists[at].access.may_edit() {
                 self.lists[at].access = access;
+
                 let kept = &mut self.lists[at];
                 let op = who_i_am(&self.name, kept);
+
                 kept.list.apply(&op);
                 kept.owe(vec![op]);
+
                 let kept = self.lists[at].clone();
+
                 self.store.keep(&kept)?;
             }
             return Ok(keys.space);
@@ -591,8 +622,10 @@ impl Running {
             owed: Vec::new(),
             clock: Clock::from_last(0),
         };
+
         if may_edit {
             let op = who_i_am(&self.name, &mut kept);
+
             kept.list.apply(&op);
             kept.owe(vec![op]);
         }
@@ -608,13 +641,18 @@ impl Running {
             if !self.lists[at].access.may_edit() || self.lists[at].leaving {
                 continue;
             }
+
             let kept = &mut self.lists[at];
+
             if kept.list.is_named(kept.me.member, &self.name) {
                 continue;
             }
+
             let op = who_i_am(&self.name, kept);
+
             kept.list.apply(&op);
             kept.owe(vec![op]);
+
             let kept = kept.clone();
             if let Err(error) = self.store.keep(&kept) {
                 tracing::warn!(%error, "a name could not be kept");
@@ -626,6 +664,7 @@ impl Running {
         let Some(at) = self.lists.iter().position(|kept| kept.space == space) else {
             return Ok(());
         };
+
         if let Some(local) = self.lists[at].at {
             self.catalog.shared_unflag(local).map_err(Error::Catalog)?;
         }
@@ -636,6 +675,7 @@ impl Running {
     fn leaving_at(&mut self, at: usize) -> Result<()> {
         if !self.lists[at].access.may_edit() {
             let space = self.lists[at].space;
+
             self.store.forget(space)?;
             self.lists.remove(at);
             self.standings.remove(&space);
@@ -648,10 +688,12 @@ impl Running {
             member: kept.me.member,
             stamp: kept.stamped(),
         };
+
         kept.list.apply(&op);
         kept.leaving = true;
         kept.at = None;
         kept.owe(vec![op]);
+
         let kept = kept.clone();
 
         self.store.keep(&kept)
@@ -659,12 +701,14 @@ impl Running {
 
     fn look(&mut self) -> Result<()> {
         let revision = self.catalog.shared_revision();
+
         if self.revision == Some(revision) {
             return Ok(());
         }
         self.revision = Some(revision);
 
         let mut any_moved = false;
+
         for at in (0..self.lists.len()).rev() {
             let Some(local) = self.lists[at].at else {
                 continue;
@@ -675,6 +719,7 @@ impl Running {
                 continue;
             };
             let digest = digest_of(&listed);
+
             if self.lists[at].seen.as_deref() == Some(digest.as_slice()) {
                 continue;
             }
@@ -699,6 +744,7 @@ impl Running {
         let member = self.lists[at].me.member;
         let catalog = Arc::clone(&self.catalog);
         let kept = &mut self.lists[at];
+
         let mut doing = Doing {
             catalog: catalog.as_ref(),
             clock: &mut kept.clock,
@@ -714,6 +760,7 @@ impl Running {
             },
             &mut doing,
         )?;
+
         if kept.alias.as_deref() != Some(listed.name.as_str())
             && kept.list.name() != Some(listed.name.as_str())
         {
@@ -731,6 +778,7 @@ impl Running {
         if !ops.is_empty() {
             kept.owe(ops);
         }
+
         let kept = kept.clone();
 
         self.store.keep(&kept)
@@ -755,11 +803,14 @@ impl Running {
             clock: &mut kept.clock,
             device,
         };
+
         kept.written = written_order(&rows, &written.entries, &mut doing)?;
         kept.at = Some(written.at);
         kept.alias = Some(written.name.clone());
         kept.seen = Some(digest_of(&written));
+
         let kept = kept.clone();
+
         self.store.keep(&kept)?;
         self.revision = None;
 
@@ -781,10 +832,12 @@ impl Running {
         let servers: Vec<Option<String>> = {
             let mut servers: Vec<Option<String>> =
                 self.lists.iter().map(|kept| kept.server.clone()).collect();
+
             servers.sort();
             servers.dedup();
             servers
         };
+
         for server in servers {
             let address = server.clone().or_else(|| self.server.clone());
             let on_it: Vec<usize> = (0..self.lists.len())
@@ -819,8 +872,10 @@ impl Running {
                 let kept = &self.lists[at];
                 let moved = head.is_some_and(|(head, _)| head > kept.cursor);
                 let closed = head.is_some_and(|(_, closed)| closed);
+
                 let unknown_to_it = head.is_none() && kept.access.may_edit();
                 let first_read = kept.at.is_none() && !kept.leaving;
+
                 if !(moved || closed || unknown_to_it || first_read || !kept.owed.is_empty()) {
                     self.standings.insert(space, SharedStanding::Reached);
                     continue;
@@ -845,6 +900,7 @@ impl Running {
 
         self.lists.retain(|kept| {
             let done = kept.leaving && kept.owed.is_empty();
+
             if done && let Err(error) = self.store.forget(kept.space) {
                 tracing::warn!(%error, "a shared playlist left could not be forgotten");
             }
@@ -861,6 +917,7 @@ impl Running {
             } else {
                 self.retry_after
             };
+
             self.retry_after = (self.retry_after * 2).min(LAST_RETRY);
             self.poll_due = Instant::now() + wait;
         }
@@ -872,10 +929,12 @@ impl Running {
         on_it: &[usize],
     ) -> std::result::Result<BTreeMap<SpaceId, (u64, bool)>, SharedStanding> {
         let mut asked = Vec::with_capacity(on_it.len());
+
         for at in on_it {
             let Ok(keys) = self.lists[*at].access.keys() else {
                 continue;
             };
+
             asked.push(SpaceAsked {
                 space: keys.space,
                 token: keys.write_token.unwrap_or(keys.read_token),
@@ -886,6 +945,7 @@ impl Running {
             .reached(address)
             .await
             .map_err(|_| SharedStanding::Unreached)?;
+
         send.send(
             &ToServer::Heads {
                 version: PROTOCOL_VERSION,
@@ -902,6 +962,7 @@ impl Running {
             Ok(Ok(None)) => return Err(self.closed_before_answering(address)),
             Ok(Err(_)) | Err(_) => return Err(SharedStanding::Unreached),
         };
+
         self.closes_before_answer.remove(address);
         send.finish().await;
 
@@ -920,6 +981,7 @@ impl Running {
             .closes_before_answer
             .entry(address.to_owned())
             .or_default();
+
         *closes += 1;
 
         if *closes >= CLOSES_BEFORE_ANSWER_FOR_TOO_OLD {
@@ -935,10 +997,13 @@ impl Running {
         }
 
         let (address, host) = within(resolve(server)).await?;
+
         if self.endpoint.is_none() {
             let any = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
+
             self.endpoint = Some(Endpoint::client(any).map_err(Error::QuicEndpoint)?);
         }
+
         let Some(endpoint) = self.endpoint.as_ref() else {
             return Err(Error::SharedStopped);
         };
@@ -986,11 +1051,13 @@ impl Running {
                 after,
             },
         };
+
         send.send(&hello.encoded()).await?;
 
         let mut changed = false;
         let mut target = None;
         let mut heard_closed = None;
+
         loop {
             if let Some(target) = target
                 && self.lists[at].cursor >= target
@@ -999,6 +1066,7 @@ impl Running {
             {
                 break;
             }
+
             let frame = within(async { recv.read().await }).await?;
             let Some(frame) = frame else {
                 break;
@@ -1018,6 +1086,7 @@ impl Running {
         }
 
         let mut closed_now = None;
+
         if !viewing {
             closed_now = self
                 .pushed(at, &keys, &mut send, &mut recv, &mut changed)
@@ -1039,6 +1108,7 @@ impl Running {
             self.materialised(at)?;
         } else {
             let kept = self.lists[at].clone();
+
             self.store.keep(&kept)?;
         }
 
@@ -1056,8 +1126,11 @@ impl Running {
             FromServer::Welcome { head, .. } => {
                 if head < self.lists[at].cursor {
                     let kept = &mut self.lists[at];
+
                     kept.cursor = 0;
+
                     let whole = kept.list.as_ops();
+
                     kept.owed.clear();
                     kept.owe(whole);
                 }
@@ -1066,10 +1139,13 @@ impl Running {
             }
             FromServer::Snapshot { through, parts } => {
                 let mut changed = false;
+
                 for part in &parts {
                     changed |= self.heard_a_record(at, keys, part)?;
                 }
+
                 let kept = &mut self.lists[at];
+
                 kept.cursor = through;
                 kept.records_since = 0;
                 kept.bytes_since = 0;
@@ -1091,12 +1167,15 @@ impl Running {
         entries: Vec<crate::wire::Record>,
     ) -> Result<bool> {
         let mut changed = false;
+
         for entry in entries {
             if let Some(blob) = &entry.blob {
                 changed |= self.heard_a_record(at, keys, blob)?;
                 self.lists[at].bytes_since += blob.len() as u64;
             }
+
             let kept = &mut self.lists[at];
+
             kept.cursor = entry.seq;
             kept.records_since += 1;
         }
@@ -1141,6 +1220,7 @@ impl Running {
         let frames = append_frames(ops.chunks(BUNDLE_OPS_AT_MOST), |bundle, sealed| {
             sealed_within(&keys.sealer, keys.space, bundle, sealed)
         })?;
+
         for frame in frames {
             if let Some(closed) = self.appended(at, keys, frame, send, recv, changed).await? {
                 return Ok(Some(closed));
@@ -1191,10 +1271,12 @@ impl Running {
     ) -> Result<()> {
         let kept = &self.lists[at];
         let records_since = kept.records_since;
+
         let waits = self
             .oversized
             .get(&kept.space)
             .is_some_and(|oversized| oversized.waits(records_since));
+
         if (records_since < COMPACT_PAST_RECORDS && kept.bytes_since < COMPACT_PAST_BYTES) || waits
         {
             return Ok(());
@@ -1205,8 +1287,11 @@ impl Running {
         let pieces = compaction_pieces(ops.chunks(BUNDLE_OPS_AT_MOST), |bundle, parts| {
             sealed_within(&keys.sealer, keys.space, bundle, parts)
         })?;
+
         self.oversized.remove(&keys.space);
+
         let mut in_parts = InParts::default();
+
         send.send(&in_parts.asked(through, records_since, pieces).encoded())
             .await?;
 
@@ -1223,6 +1308,7 @@ impl Running {
                 }
                 CompactionAnswered::Compacted => {
                     let kept = &mut self.lists[at];
+
                     kept.records_since = 0;
                     kept.bytes_since = 0;
                     return Ok(());
@@ -1257,6 +1343,7 @@ impl Running {
     ) -> Result<Option<SpaceId>> {
         let seats = seats_in(keys, sealed_seats);
         let me = self.lists[at].me.clone();
+
         let mine = seats.iter().find(|seat| seat.member == me.member);
 
         if let Some(seat) = mine
@@ -1266,6 +1353,7 @@ impl Running {
         }
 
         let kept = self.lists.remove(at);
+
         if let Some(local) = kept.at {
             self.catalog.shared_unflag(local).map_err(Error::Catalog)?;
         }
@@ -1279,15 +1367,19 @@ impl Running {
         let keys = access.keys()?;
         let old = self.lists[at].space;
         let kept = &mut self.lists[at];
+
         kept.access = access;
         kept.space = keys.space;
         kept.cursor = 0;
         kept.device = DeviceId::minted()?;
         kept.records_since = 0;
         kept.bytes_since = 0;
+
         let whole = kept.list.as_ops();
+
         kept.owed.clear();
         kept.owe(whole);
+
         let kept = kept.clone();
 
         self.store.keep(&kept)?;
@@ -1301,12 +1393,14 @@ impl Running {
 
     async fn reset(&mut self, space: SpaceId, removing: Option<MemberId>) -> Result<Invites> {
         let mut space = space;
+
         for _ in 0..RESETS_OVERTAKEN_AT_MOST {
             match self.reset_once(space, removing).await? {
                 Reset::Made(moved) => {
                     let Some(kept) = self.lists.iter().find(|kept| kept.space == moved) else {
                         return Err(Error::Catalog(Refused::Unavailable));
                     };
+
                     return invites_of(
                         &kept.access,
                         self.named_in_a_link(kept.server.as_ref()).as_deref(),
@@ -1323,9 +1417,11 @@ impl Running {
         let Some(at) = self.lists.iter().position(|kept| kept.space == space) else {
             return Err(Error::Catalog(Refused::NotHere));
         };
+
         if !self.lists[at].access.may_edit() {
             return Err(Error::Catalog(Refused::Unwritable));
         }
+
         let address = self
             .address_of(&self.lists[at])
             .ok_or(Error::SharedNeedsAServer)?;
@@ -1336,6 +1432,7 @@ impl Running {
         let device = self.lists[at].device;
 
         let (mut send, mut recv) = self.reached(&address).await?;
+
         send.send(
             &ToServer::Share {
                 version: PROTOCOL_VERSION,
@@ -1348,7 +1445,9 @@ impl Running {
             .encoded(),
         )
         .await?;
+
         let mut changed = false;
+
         if let Some(earlier) = self
             .caught_up(at, &old_keys, &mut recv, &mut changed)
             .await?
@@ -1363,6 +1462,7 @@ impl Running {
             old_keys.space,
             &encoded_seats(&self.seats_after(at, removing)?),
         )?;
+
         send.send(
             &ToServer::Close {
                 sealed: told.clone(),
@@ -1370,7 +1470,9 @@ impl Running {
             .encoded(),
         )
         .await?;
+
         let mut target = None;
+
         let word = loop {
             let frame = within(async { recv.read().await }).await?;
             let Some(frame) = frame else {
@@ -1386,6 +1488,7 @@ impl Running {
                 Heard::Closed(word) => break word,
             }
         };
+
         send.finish().await;
 
         self.written_if(at, changed)?;
@@ -1395,6 +1498,7 @@ impl Running {
         if let Some(removing) = removing {
             let kept = &mut self.lists[at];
             let stamp = kept.stamped();
+
             kept.list.apply(&SharedOp::Left {
                 member: removing,
                 stamp,
@@ -1418,6 +1522,7 @@ impl Running {
             if target.is_some_and(|target| self.lists[at].cursor >= target) {
                 return Ok(None);
             }
+
             let frame = within(async { recv.read().await }).await?;
             let Some(frame) = frame else {
                 return Err(Error::ServerSilent);
@@ -1466,8 +1571,10 @@ impl Running {
             .filter(|member| !seated.contains(member))
             .collect();
         let kept = &mut self.lists[at];
+
         for member in left_out {
             let stamp = kept.stamped();
+
             kept.list.apply(&SharedOp::Left { member, stamp });
         }
 
@@ -1484,6 +1591,7 @@ impl Running {
 
     fn publish(&self) {
         let mut shown = Vec::with_capacity(self.lists.len());
+
         for kept in self.lists.iter().filter(|kept| !kept.leaving) {
             let named = self.named_in_a_link(kept.server.as_ref());
             let Ok(invites) = invites_of(&kept.access, named.as_deref()) else {
@@ -1593,8 +1701,10 @@ fn heard_sealed(
 
 fn heard_ops(list: &mut SharedList, clock: &mut Clock, ops: &[SharedOp], wall: i64) -> bool {
     let mut changed = false;
+
     for op in ops {
         let stamp = op.stamp();
+
         if stamp.too_far_ahead_of(wall) {
             tracing::warn!(
                 nanos = stamp.nanos,
@@ -1618,12 +1728,14 @@ fn sealed_within(
 ) -> Result<()> {
     let plain = encoded_ops(ops);
     let blob = sealed(sealer, space, &plain)?;
+
     if blob.len() <= LARGEST_BUNDLE || ops.len() <= 1 {
         blobs.push(blob);
         return Ok(());
     }
 
     let (first, second) = ops.split_at(ops.len() / 2);
+
     sealed_within(sealer, space, first, blobs)?;
     sealed_within(sealer, space, second, blobs)
 }
@@ -1643,6 +1755,7 @@ mod tests {
 
     fn a_list_of_one_song() -> SharedList {
         let mut list = SharedList::default();
+
         list.apply(&SharedOp::Added {
             entry: EntryId([1; 16]),
             recording: Recording {
@@ -1693,8 +1806,11 @@ mod tests {
 
         let changed = heard_ops(&mut list, &mut clock, &[hostile], wall);
         let first = moved_to(20, clock.now(device(1)));
+
         list.apply(&first);
+
         let second = moved_to(30, clock.now(device(1)));
+
         list.apply(&second);
 
         assert!(!changed);
@@ -1748,6 +1864,7 @@ mod tests {
                 device: device(2),
             },
         };
+
         compacted.apply(&renamed_at_the_end_of_time);
         compacted.apply(&moved_to(
             40,
@@ -1758,11 +1875,14 @@ mod tests {
         ));
 
         sealed_within(&keys.sealer, keys.space, &compacted.as_ops(), &mut parts).expect("sealed");
+
         let mut folded = SharedList::default();
+
         let changed = parts.iter().fold(false, |changed, part| {
             heard_sealed(&mut folded, &mut clock, &keys, part, wall) | changed
         });
         let unnamed = folded.name().map(str::to_owned);
+
         folded.apply(&SharedOp::Renamed {
             name: "Ours".to_owned(),
             stamp: clock.now(device(1)),

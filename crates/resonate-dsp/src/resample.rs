@@ -158,7 +158,7 @@ const LIMITS: RatioLimits = RatioLimits {
     max: ratio(32, 1),
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Quality {
     LowLatency,
     Balanced,
@@ -277,9 +277,12 @@ pub(crate) fn bessel_i0(x: f64) -> f64 {
     let half = x / 2.0;
     let mut term = 1.0;
     let mut sum = 1.0;
+
     for k in 1..96 {
         term *= half / f64::from(k);
+
         let square = term * term;
+
         sum += square;
         if square < sum * 1e-18 {
             break;
@@ -292,6 +295,7 @@ fn sinc(x: f64) -> f64 {
     if x == 0.0 {
         return 1.0;
     }
+
     let scaled = PI * x;
     scaled.sin() / scaled
 }
@@ -320,11 +324,15 @@ fn even_legendre_series(series: &[f64], along: f64) -> f64 {
     let mut even = 1.0;
     let mut odd = along;
     let mut sum = 0.0;
+
     for (index, coefficient) in series.iter().enumerate() {
         sum += coefficient * even;
+
         let odd_order = (2 * index + 1) as f64;
         let even_order = odd_order + 1.0;
+
         let next_even = ((2.0 * odd_order + 1.0) * along * odd - odd_order * even) / even_order;
+
         odd =
             ((2.0 * even_order + 1.0) * along * next_even - even_order * odd) / (even_order + 1.0);
         even = next_even;
@@ -348,6 +356,7 @@ impl WindowedSinc {
         if tau >= self.half_taps {
             return 0.0;
         }
+
         let along = tau / self.half_taps;
         let window = if self.series.is_empty() {
             bessel_i0(self.beta * (1.0 - along * along).max(0.0).sqrt()) / self.window_peak
@@ -424,6 +433,7 @@ impl Kernel {
         let row = offset as usize;
         let columns = self.columns;
         let skipped = 1 - rising;
+
         let nodes: [&[f64]; LAGRANGE_NODES] = array::from_fn(|node| {
             let start = (row + node) * columns + skipped;
             self.table
@@ -432,7 +442,9 @@ impl Kernel {
         });
         let [earlier, low, high, later] = nodes;
         let [a, b, c, d] = lagrange_weights(offset - row as f64);
+
         let taps = earlier.iter().zip(low).zip(high).zip(later);
+
         for (weight, (((earlier, low), high), later)) in weights.iter_mut().zip(taps) {
             *weight = a * earlier + b * low + c * high + d * later;
         }
@@ -488,10 +500,13 @@ static LAST_PLANNED: Mutex<Option<(TableFor, Arc<Plan>)>> = Mutex::new(None);
 impl Tabulated {
     fn kept_for(wanted: TableFor, build: impl FnOnce() -> Self) -> Arc<Self> {
         let mut last = LAST_TABULATED.lock();
+
         if let Some((_, kept)) = last.as_ref().filter(|(held, _)| *held == wanted) {
             return Arc::clone(kept);
         }
+
         let built = Arc::new(build());
+
         *last = (built.bytes() <= KEPT_TABLE_BYTES_AT_MOST).then(|| (wanted, Arc::clone(&built)));
         built
     }
@@ -510,7 +525,9 @@ impl Tabulated {
     fn new(shape: &Shape, scale: f64, reach: Reach, phases: u32) -> Self {
         let stride = padded_row(reach);
         let count = phases as usize;
+
         let mut table = Aligned::zeroed(stride * count);
+
         let weights = table.as_mut_slice();
 
         match shape {
@@ -556,6 +573,7 @@ impl Tabulated {
 
             for tap in 0..half_width + rising {
                 let weight = windowed.at((tap as f64 + fraction) * scale);
+
                 if let Some(slot) = weights.get_mut(behind - tap) {
                     *slot = weight;
                 }
@@ -622,6 +640,7 @@ impl Aligned {
         if start + len > self.len {
             return &[];
         }
+
         let from = self.origin + start;
         self.samples.get(from..from + len).unwrap_or_default()
     }
@@ -685,6 +704,7 @@ fn conversion_for(
     let band_hz = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
     let widest_hz = input_hz.max(f64::from(output_hz));
     let clear_taps = f64::from(params.clear_taps);
+
     let hop_taps = if widest_hz >= STEEP_FROM_RATIO * band_hz {
         params.steep_hop_taps
     } else {
@@ -746,8 +766,10 @@ impl Stage {
         };
         let shape = Shape::of(params, config.phase);
         let oversampled_hz = config.input_rate.hz().checked_mul(up as u32)?;
+
         let conversion = conversion_for(config, params, &shape, oversampled_hz);
         let blocks = Blocks::fitting(conversion)?;
+
         let plan = planned(config, params, &shape, blocks, conversion);
         let channels = config.channels.count().get() as usize;
         let prerolled_units = preroll.div_ceil(blocks.unit_out());
@@ -765,7 +787,9 @@ impl Stage {
 
     fn reset(&mut self) {
         self.spectral.reset();
+
         let unit = self.spectral.blocks().unit_out();
+
         self.skipping = self.preroll.div_ceil(unit) * unit - self.preroll;
         self.taken = 0;
         self.appended = 0;
@@ -775,11 +799,14 @@ impl Stage {
     fn release(&mut self, planes: &mut [f64], stride: usize, filled: &mut usize) {
         let run = self.spectral.due();
         let skipped = self.skipping.min(run.len());
+
         self.skipping -= skipped;
+
         let left = self
             .wanted
             .map_or(usize::MAX, |wanted| wanted.saturating_sub(self.appended));
         let kept = (run.len() - skipped).min(left);
+
         if kept > 0 {
             let start = run.start + skipped;
             for (channel, plane) in planes.chunks_exact_mut(stride).enumerate() {
@@ -808,6 +835,7 @@ impl Whole {
         let shape = Shape::of(params, config.phase);
         let conversion = conversion_for(config, params, &shape, config.output_rate.hz());
         let blocks = Blocks::fitting(conversion)?;
+
         let plan = planned(config, params, &shape, blocks, conversion);
         let channels = config.channels.count().get() as usize;
         Some(Self {
@@ -831,6 +859,7 @@ impl Whole {
         let kept = run.len().min(left);
         let channels = self.channels;
         let from = *made * channels;
+
         if let Some(room) = output.get_mut(from..from + kept * channels) {
             self.spectral
                 .interleaved_into(run.start..run.start + kept, room, channels);
@@ -846,16 +875,22 @@ impl Whole {
         let room = output.len() / channels;
         let mut taken = 0;
         let mut made = 0;
+
         while taken < frames {
             let run = (frames - taken)
                 .min(self.spectral.frames_fitting(room - made))
                 .min(self.spectral.room());
+
             if run == 0 {
                 break;
             }
+
             let rest = input.get(taken * channels..).unwrap_or_default();
+
             self.spectral.gather(rest, channels, run);
+
             let left = room - made;
+
             self.release(output, &mut made, left);
             taken += run;
         }
@@ -873,11 +908,15 @@ impl Whole {
             .wanted
             .get_or_insert(self.spectral.blocks().outputs_of(self.taken));
         let mut made = 0;
+
         while self.emitted < wanted && made < room {
             let run = self.spectral.frames_fitting(room - made).max(1);
             let run = run.min(self.spectral.room());
+
             self.spectral.gather_silence(run);
+
             let left = (room - made).min(wanted - self.emitted);
+
             self.release(output, &mut made, left);
         }
         made
@@ -931,6 +970,7 @@ impl Resampler {
         }
 
         let ratio = ratio_between(config.input_rate, config.output_rate);
+
         if ratio < LIMITS.min.as_f64() || ratio > LIMITS.max.as_f64() {
             return Err(Error::RatioOutOfRange {
                 from: config.input_rate,
@@ -978,19 +1018,23 @@ impl Polyphase {
         let stage = staged
             .then(|| Stage::new(config, params, reach_of_the_short.behind))
             .flatten();
+
         let (interpolator, interpolated_at, interpolated_phase) = if stage.is_some() {
             (short, 1.0, FilterPhase::Linear)
         } else {
             (params, scale, config.phase)
         };
+
         let shape = Shape::of(interpolator, interpolated_phase);
         let reach = Reach::of(&shape, interpolated_at);
         let up = stage.as_ref().map_or(1, |stage| stage.up);
         let channels = config.channels.count().get() as usize;
         let cycle = config.input_rate.ratio_to(config.output_rate);
+
         let advanced = u64::from(cycle.denom.get()) * up as u64;
         let common = greatest_common_divisor(u64::from(cycle.numer.get()), advanced);
         let phases = (u64::from(cycle.numer.get()) / common) as u32;
+
         let advance = (advanced / common) as u32;
         let tabulated = Tabulated::fits(phases, reach);
         let taps = if tabulated {
@@ -1047,13 +1091,16 @@ impl Polyphase {
         };
         let channels = *channels;
         let stride = history.stride;
+
         let room = (history.capacity - *filled) / stage.up;
         let frames = (input.len() / channels).min(room);
         let planes = history.planes_mut();
 
         let mut rest = input.get(..frames * channels).unwrap_or_default();
+
         while !rest.is_empty() {
             let run = stage.spectral.room().min(rest.len() / channels);
+
             stage.spectral.gather(rest, channels, run);
             stage.release(planes, stride, filled);
             rest = rest.get(run * channels..).unwrap_or_default();
@@ -1076,9 +1123,11 @@ impl Polyphase {
         let capacity = history.capacity;
         let planes = history.planes_mut();
         let mut stepped = 0;
+
         while stage.wanted.is_some_and(|wanted| stage.appended < wanted) && *filled < capacity {
             let open = capacity - *filled + stage.skipping;
             let run = stage.spectral.room().min(open / stage.up);
+
             if run == 0 {
                 break;
             }
@@ -1093,11 +1142,13 @@ impl Polyphase {
         let behind = self.reach.behind;
         let ahead = self.reach.ahead;
         let channels = self.channels;
+
         if let Some(stage) = self.stage.as_mut() {
             let whole_track = match stage.taken.checked_sub(1) {
                 Some(last) => behind + stage.up * last + 1 + ahead,
                 None => stage.appended,
             };
+
             stage.wanted.get_or_insert(whole_track);
         }
 
@@ -1105,6 +1156,7 @@ impl Polyphase {
         loop {
             let stepped = self.silence_until_wanted();
             let made = self.emit(output.get_mut(produced * channels..).unwrap_or_default());
+
             produced += made;
             self.compact();
             if stepped == 0 && made == 0 {
@@ -1185,8 +1237,10 @@ impl Polyphase {
     fn summed(lanes: f64x8) -> f64 {
         let mut partial = lanes.to_array();
         let mut width = ACCUMULATORS;
+
         while width > 1 {
             width /= 2;
+
             let (low, high) = partial.split_at_mut(width);
             for (low, high) in low.iter_mut().zip(high.iter()) {
                 *low += *high;
@@ -1230,6 +1284,7 @@ impl Polyphase {
     fn convolve_one(&self, frame: &mut [f64], first: usize, weights: &[f64]) {
         for (channel, slot) in frame.iter_mut().enumerate() {
             let [history] = self.histories([first], channel, weights.len());
+
             *slot = Self::summed(Self::dot_one(history, weights));
         }
     }
@@ -1293,6 +1348,7 @@ impl Polyphase {
             whole: self.whole,
             phase: self.phase,
         };
+
         let count = self.frames_fitting_from(start).min(capacity);
         let end = self.after_frames(start, count);
 
@@ -1300,6 +1356,7 @@ impl Polyphase {
             Taps::Tabulated(tabulated) => self.emit_by_phase(tabulated, start, count, output),
             Taps::Interpolated(kernel) => {
                 let mut weights = mem::take(&mut self.weights);
+
                 self.emit_tapering(kernel, &mut weights, start, count, output);
                 self.weights = weights;
             }
@@ -1322,6 +1379,7 @@ impl Polyphase {
             let frames_in_the_group = (count - group).div_ceil(phases);
 
             let mut taken = 0;
+
             while taken < frames_in_the_group {
                 let index = group + taken * phases;
                 let first = first + taken * cycle;
@@ -1330,19 +1388,23 @@ impl Polyphase {
                 if left >= FRAMES_AT_ONCE {
                     let frames = Self::every_cycle(rest, channels, phases);
                     let firsts = array::from_fn(|frame| first + frame * cycle);
+
                     self.convolve_many(frames, firsts, weights, Self::dot_four);
                     taken += FRAMES_AT_ONCE;
                 } else if left == 3 {
                     let frames = Self::every_cycle(rest, channels, phases);
                     let firsts = array::from_fn(|frame| first + frame * cycle);
+
                     self.convolve_many(frames, firsts, weights, Self::dot_three);
                     taken += 3;
                 } else if left == 2 {
                     let frames = Self::every_cycle(rest, channels, phases);
+
                     self.convolve_many(frames, [first, first + cycle], weights, Self::dot_two);
                     taken += 2;
                 } else {
                     let frame = rest.get_mut(..channels).unwrap_or_default();
+
                     self.convolve_one(frame, first, weights);
                     taken += 1;
                 }
@@ -1360,7 +1422,9 @@ impl Polyphase {
         array::from_fn(|_| {
             let taken = mem::take(&mut rest);
             let (frame, after) = taken.split_at_mut(channels.min(taken.len()));
+
             let skipped = (phases * channels - frame.len()).min(after.len());
+
             rest = after.get_mut(skipped..).unwrap_or_default();
             frame
         })
@@ -1384,12 +1448,14 @@ impl Polyphase {
             let shaped = weights
                 .get_mut(LANES_PER_VECTOR..LANES_PER_VECTOR + taps_now)
                 .unwrap_or_default();
+
             kernel.taper(shaped, fraction, rising);
             if let Some(stale) = weights.get_mut(LANES_PER_VECTOR + taps_now) {
                 *stale = 0.0;
             }
             if let Some(frame) = output.get_mut(index * channels..(index + 1) * channels) {
                 let taken = self.weights_of(read.phase, weights);
+
                 self.convolve_one(frame, self.first_of(read), taken);
             }
             read = self.after(read);
@@ -1398,12 +1464,15 @@ impl Polyphase {
 
     fn compact(&mut self) {
         let drop_from = self.whole.saturating_sub(self.reach.behind);
+
         if drop_from == 0 {
             return;
         }
+
         let filled = self.filled;
         let kept = filled - drop_from;
         let stride = self.history.stride;
+
         for plane in self.history.planes_mut().chunks_exact_mut(stride) {
             plane.copy_within(drop_from..filled, 0);
             if let Some(vacated) = plane.get_mut(kept..filled) {
@@ -1418,9 +1487,11 @@ impl Polyphase {
         if self.stage.is_some() {
             return self.append_staged(input);
         }
+
         let channels = self.channels;
         let stride = self.history.stride;
         let room = self.history.capacity - self.filled;
+
         let frames = (input.len() / channels).min(room);
         let filled = self.filled;
 
@@ -1495,6 +1566,7 @@ impl Polyphase {
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let frames_in = self.append(input);
         let frames_out = self.emit(output);
+
         self.compact();
         ProcessCount {
             frames_in,
@@ -1506,6 +1578,7 @@ impl Polyphase {
         if self.stage.is_some() {
             return self.flush_staged(output);
         }
+
         let stride = self.history.stride;
         let room = self.history.capacity - self.filled;
         let pad = self.reach.ahead.min(room);
@@ -1518,7 +1591,9 @@ impl Polyphase {
         }
 
         self.filled += pad;
+
         let produced = self.emit(output);
+
         self.compact();
         produced
     }
@@ -1649,12 +1724,15 @@ mod tests {
     fn run(config: ResamplerConfig, input: &[f64]) -> Vec<f64> {
         let mut resampler = Resampler::new(config).expect("a valid resampler configuration");
         let channels = config.channels.count().get() as usize;
+
         let mut scratch = vec![0.0; resampler.max_output_frames(BLOCK) * channels];
         let mut output = Vec::new();
 
         for block in input.chunks(BLOCK * channels) {
             let count = resampler.process(block, &mut scratch);
+
             assert_eq!(count.frames_in, block.len() / channels);
+
             output.extend_from_slice(&scratch[..count.frames_out * channels]);
         }
         output
@@ -1684,6 +1762,7 @@ mod tests {
     fn spanned(config: ResamplerConfig) -> f64 {
         let params = config.quality.params_for(config.phase);
         let band = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
+
         let span = 2.0 * f64::from(params.half_taps) * f64::from(config.output_rate.hz()) / band;
         latency(config) + span
     }
@@ -1793,6 +1872,7 @@ mod tests {
 
     fn impulse_through(config: ResamplerConfig) -> Vec<f64> {
         let mut input = vec![0.0; BLOCK * 4];
+
         if let Some(slot) = input.get_mut(BLOCK * 2) {
             *slot = 1.0;
         }
@@ -1806,11 +1886,14 @@ mod tests {
     fn resampled_and_flushed_once(config: ResamplerConfig, input: &[f64]) -> usize {
         let mut resampler = Resampler::new(config).expect("a valid resampler configuration");
         let channels = config.channels.count().get() as usize;
+
         let mut scratch = vec![0.0; resampler.max_output_frames(BLOCK) * channels];
         let mut frames = 0;
+
         for block in input.chunks(BLOCK * channels) {
             frames += resampler.process(block, &mut scratch).frames_out;
         }
+
         let mut tail = vec![0.0; resampler.max_flush_frames() * channels];
         frames + resampler.flush(&mut tail)
     }
@@ -1819,6 +1902,7 @@ mod tests {
     fn a_minimum_phase_filter_rings_only_after_what_it_answers() {
         for quality in [Quality::High, Quality::VeryHigh] {
             let mut before_the_peak = Vec::new();
+
             for phase in EVERY_PHASE {
                 let config = shaped(SampleRate::HZ_44100, SampleRate::HZ_48000, quality, phase);
                 let output = impulse_through(config);
@@ -1828,10 +1912,13 @@ mod tests {
                     .max_by(|(_, left), (_, right)| left.abs().total_cmp(&right.abs()))
                     .map_or(0, |(index, _)| index);
                 let early = peak.saturating_sub(RINGS_BEFORE_WITHIN_FRAMES);
+
                 let ringing = energy(&output[..early]) / energy(&output);
+
                 before_the_peak.push((phase, decibels(ringing.sqrt())));
 
                 let expected = (BLOCK * 2) as f64 * 48_000.0 / 44_100.0;
+
                 assert!(
                     (peak as f64 - expected).abs() <= 2.0,
                     "{quality:?} {phase:?} answered an impulse at {peak} where it sits at {expected}"
@@ -1841,6 +1928,7 @@ mod tests {
             let [(_, linear), (_, minimum), (_, intermediate)] = before_the_peak[..] else {
                 panic!("three phases were measured");
             };
+
             assert!(
                 minimum < linear - MINIMUM_RINGS_QUIETER_BY_DB,
                 "{quality:?} minimum phase rang at {minimum:.1} dB before the peak, linear {linear:.1}"
@@ -1875,11 +1963,13 @@ mod tests {
                 let config = shaped(SampleRate::HZ_44100, SampleRate::HZ_48000, quality, phase);
                 let tone_in_the_passband =
                     tone(SampleRate::HZ_44100, 1_000.0, settling_frames(config));
+
                 let output = run(config, &tone_in_the_passband);
                 let ripple = decibels(
                     rms(settled(&output, spanned(config))) / rms(steady(&tone_in_the_passband)),
                 )
                 .abs();
+
                 assert!(
                     ripple < 0.01,
                     "{quality:?} {phase:?} rippled {ripple:.4} dB"
@@ -1888,10 +1978,12 @@ mod tests {
                 let config = shaped(SampleRate::HZ_44100, SampleRate::HZ_22050, quality, phase);
                 let tone_past_nyquist =
                     tone(SampleRate::HZ_44100, 15_000.0, settling_frames(config));
+
                 let output = run(config, &tone_past_nyquist);
                 let rejection = decibels(
                     rms(settled(&output, spanned(config))) / rms(steady(&tone_past_nyquist)),
                 );
+
                 assert!(
                     rejection < floor,
                     "{quality:?} {phase:?} rejected only {rejection:.1} dB"
@@ -1914,6 +2006,7 @@ mod tests {
                     resampled_and_flushed_once(config, &input)
                 })
                 .collect();
+
             assert!(
                 lengths.windows(2).all(|pair| pair[0] == pair[1]),
                 "{quality:?} came out {lengths:?} long across the phases"
@@ -1936,6 +2029,7 @@ mod tests {
             FilterPhase::Minimum,
         ));
         let half_the_kernel = f64::from(Quality::VeryHigh.params().half_taps) * 48_000.0 / 44_100.0;
+
         assert!(
             minimum < linear - half_the_kernel * 0.75,
             "minimum phase waits {minimum} frames past its hop, linear {linear}"
@@ -1947,6 +2041,7 @@ mod tests {
         for (from, to) in ORACLE_PAIRS {
             let mut resampler = Resampler::new(config(from, to, Quality::LowLatency))
                 .expect("a valid resampler configuration");
+
             let Route::Polyphase(polyphase) = &mut resampler.route else {
                 panic!("low latency sums its taps a frame at a time");
             };
@@ -1967,10 +2062,12 @@ mod tests {
                     let start = Read { whole, phase };
                     let mut stepped = start;
                     let mut counted = 0;
+
                     while stepped.whole + ahead + usize::from(stepped.phase != 0) < filled {
                         stepped = polyphase.after(stepped);
                         counted += 1;
                     }
+
                     let jumped = polyphase.after_frames(start, counted);
 
                     assert_eq!(
@@ -2000,6 +2097,7 @@ mod tests {
     fn a_cycle_too_long_to_tabulate_still_resamples_through_the_interpolated_kernel() {
         let config = config(SampleRate::HZ_44100, an_odd_rate(), Quality::High);
         let resampler = Resampler::new(config).expect("a valid configuration");
+
         assert!(
             matches!(
                 polyphase_of(&resampler).map(|polyphase| &polyphase.taps),
@@ -2012,6 +2110,7 @@ mod tests {
         let output = run(config, &input);
 
         let gain = decibels(rms(settled(&output, spanned(config))) / rms(steady(&input)));
+
         assert!(gain.abs() < 0.2, "1 kHz changed level by {gain:.3} dB");
     }
 
@@ -2065,6 +2164,7 @@ mod tests {
                 .zip(table_of(&again))
                 .is_some_and(|(first, again)| Arc::ptr_eq(first, again))
         };
+
         assert!(
             (0..TRIES_WHILE_OTHER_TESTS_BUILD).any(|_| built_back_to_back()),
             "the same conversion built its table twice"
@@ -2078,6 +2178,7 @@ mod tests {
             Quality::LowLatency,
         ))
         .expect("a supported conversion");
+
         assert!(
             table_of(&first)
                 .zip(table_of(&elsewhere))
@@ -2096,6 +2197,7 @@ mod tests {
                 .zip(plan_of(&again))
                 .is_some_and(|(first, again)| Arc::ptr_eq(first, again))
         };
+
         assert!(
             (0..TRIES_WHILE_OTHER_TESTS_BUILD).any(|_| built_back_to_back()),
             "the same conversion planned its transforms twice"
@@ -2106,6 +2208,7 @@ mod tests {
     fn every_rate_pair_is_tabulated_or_converted_in_blocks_at_every_quality() {
         for quality in QUALITIES {
             let mut interpolated = Vec::new();
+
             for from in EVERY_RATE {
                 for to in EVERY_RATE {
                     let config = config(from, to, quality);
@@ -2113,6 +2216,7 @@ mod tests {
                         continue;
                     };
                     let in_blocks = matches!(resampler.route, Route::Whole(_));
+
                     assert_eq!(
                         in_blocks,
                         quality.params().converts_in_blocks(),
@@ -2141,9 +2245,11 @@ mod tests {
             Quality::Balanced,
         );
         let input = tone(SampleRate::HZ_44100, 1_000.0, BLOCK * 16);
+
         let output = run(config, &input);
 
         let gain = decibels(rms(steady(&output)) / rms(steady(&input)));
+
         assert!(gain.abs() < 0.1, "1 kHz changed level by {gain:.3} dB");
     }
 
@@ -2200,9 +2306,11 @@ mod tests {
             )
         };
         let mut input = vec![0.0; BLOCK * 8 * 2];
+
         for (index, sample) in input.iter_mut().enumerate() {
             *sample = if index % 2 == 0 { 1.0 } else { -1.0 };
         }
+
         let output = run(config, &input);
         let frames = output.as_chunks::<2>().0;
 
@@ -2230,11 +2338,13 @@ mod tests {
 
     fn drained(config: ResamplerConfig, blocks: usize) -> Resampler {
         let mut resampler = Resampler::new(config).expect("a valid resampler configuration");
+
         let mut scratch = vec![0.0; resampler.max_output_frames(BLOCK)];
         let input = tone(config.input_rate, 1_000.0, BLOCK * blocks);
 
         for block in input.chunks(BLOCK) {
             let count = resampler.process(block, &mut scratch);
+
             assert_eq!(
                 count.frames_in,
                 block.len(),
@@ -2249,10 +2359,13 @@ mod tests {
         for (from, to) in RATE_PAIRS {
             for quality in QUALITIES {
                 let mut resampler = drained(config(from, to, quality), 8);
+
                 let bound = resampler.max_flush_frames();
 
                 let mut tail = vec![0.0; bound * 4 + BLOCK];
+
                 let produced = resampler.flush(&mut tail);
+
                 assert!(
                     produced <= bound,
                     "{from} -> {to} {quality:?} flushed {produced} against a bound of {bound}"
@@ -2287,17 +2400,22 @@ mod tests {
         for (from, to) in RATE_PAIRS {
             let config = config(from, to, Quality::High);
             let mut resampler = drained(config, 8);
+
             let bound = resampler.max_flush_frames();
 
             let mut tail = vec![0.0; bound];
+
             let produced = resampler.flush(&mut tail);
+
             assert!(
                 produced > 0,
                 "{from} -> {to} emitted nothing from a full history"
             );
 
             let mut again = vec![0.0; bound * 4];
+
             let second = resampler.flush(&mut again);
+
             assert!(
                 second <= bound,
                 "{from} -> {to} left {second} frames behind a bounded flush"
@@ -2332,7 +2450,9 @@ mod tests {
         ] {
             let config = config(SampleRate::HZ_44100, SampleRate::HZ_22050, quality);
             let input = tone(SampleRate::HZ_44100, 15_000.0, settling_frames(config));
+
             let rejection = alias_level(config, &input);
+
             assert!(
                 rejection < floor,
                 "{quality:?} rejected only {rejection:.1} dB, needs better than {floor:.1} dB"
@@ -2363,8 +2483,10 @@ mod tests {
             let config = config(SampleRate::HZ_44100, SampleRate::HZ_48000, quality);
             let input = tone(SampleRate::HZ_44100, 1_000.0, settling_frames(config));
             let reference = rms(steady(&input));
+
             let output = run(config, &input);
             let ripple = decibels(rms(settled(&output, spanned(config))) / reference).abs();
+
             assert!(ripple < 0.01, "{quality:?} rippled {ripple:.4} dB at 1 kHz");
         }
     }
@@ -2381,6 +2503,7 @@ mod tests {
         let mut term = 1.0;
         let mut sum = 1.0;
         let mut k = 1.0;
+
         while term > sum * f64::EPSILON {
             term *= quarter_square / (k * k);
             sum += term;
@@ -2391,12 +2514,14 @@ mod tests {
 
     fn legendre_of_order(order: usize, along: f64) -> f64 {
         let (mut before, mut at) = (1.0, along);
+
         if order == 0 {
             return before;
         }
         for degree in 1..order {
             let degree = degree as f64;
             let next = ((2.0 * degree + 1.0) * along * at - degree * before) / (degree + 1.0);
+
             before = at;
             at = next;
         }
@@ -2405,9 +2530,11 @@ mod tests {
 
     fn analytic_tap(params: SincParams, tau: f64) -> f64 {
         let half_taps = f64::from(params.half_taps);
+
         if tau >= half_taps {
             return 0.0;
         }
+
         let cutoff = f64::from(params.cutoff);
         let beta = f64::from(params.kaiser_beta);
         let argument = PI * cutoff * tau;
@@ -2417,6 +2544,7 @@ mod tests {
             argument.sin() / argument
         };
         let along = tau / half_taps;
+
         let window = if params.window.is_empty() {
             modified_bessel_of_order_zero(beta * (1.0 - along * along).sqrt())
                 / modified_bessel_of_order_zero(beta)
@@ -2457,6 +2585,7 @@ mod tests {
             let cycle = config.input_rate.ratio_to(config.output_rate);
             let scale =
                 (f64::from(config.output_rate.hz()) / f64::from(config.input_rate.hz())).min(1.0);
+
             let gain = params
                 .converts_in_blocks()
                 .then(|| dc_of_a_block_kernel(params, scale));
@@ -2475,6 +2604,7 @@ mod tests {
             let cycle = config.input_rate.ratio_to(config.output_rate);
             let numer = i64::from(cycle.numer.get());
             let advanced = i64::from(cycle.denom.get()) * up;
+
             let common = greatest_common_divisor(numer as u64, advanced as u64) as i64;
             Self::of(
                 move |tau| analytic_tap(params, tau),
@@ -2518,6 +2648,7 @@ mod tests {
                 rows,
                 ..
             } = self;
+
             let row = rows.entry(fraction).or_insert_with(|| {
                 let raw: Vec<f64> = (-*reach..=*reach)
                     .map(|offset| {
@@ -2539,9 +2670,11 @@ mod tests {
             .map(|index| {
                 let frame = (index / channels) as f64;
                 let channel = (index % channels) as f64;
+
                 noise ^= noise << 13;
                 noise ^= noise >> 7;
                 noise ^= noise << 17;
+
                 let hiss = (noise >> 40) as f64 / 8_388_608.0 - 1.0;
                 let low = (TAU * (440.0 + 330.0 * channel) * frame / hz + channel).sin();
                 let high = (TAU * 0.41 * frame + 2.0 * channel).sin();
@@ -2554,16 +2687,21 @@ mod tests {
         let mut resampler = Resampler::new(config).expect("a valid resampler configuration");
         let channels = config.channels.count().get() as usize;
         let mut output = Vec::new();
+
         let mut scratch = vec![0.0; resampler.max_output_frames(BLOCK) * channels];
 
         for block in input.chunks(BLOCK * channels) {
             let count = resampler.process(block, &mut scratch);
+
             assert_eq!(count.frames_in, block.len() / channels);
+
             output.extend_from_slice(&scratch[..count.frames_out * channels]);
         }
         for _ in 0..2 {
             let mut tail = vec![0.0; resampler.max_flush_frames() * channels];
+
             let produced = resampler.flush(&mut tail);
+
             output.extend_from_slice(&tail[..produced * channels]);
         }
         output
@@ -2586,6 +2724,7 @@ mod tests {
             let band_hz = f64::from(config.input_rate.hz().min(config.output_rate.hz()));
             let scale = band_hz / f64::from(config.input_rate.hz());
             let reach_taps = f64::from(params.half_taps);
+
             let lead = (reach_taps * up as f64 / scale).ceil() as i64;
             let mut taps: Vec<f64> = (0..=2 * lead)
                 .map(|tap| {
@@ -2594,6 +2733,7 @@ mod tests {
                 })
                 .collect();
             let gain = dc_of_a_block_kernel(params, scale / up as f64) / up as f64;
+
             for tap in &mut taps {
                 *tap /= gain;
             }
@@ -2620,6 +2760,7 @@ mod tests {
         let wanted = config(from, to, quality);
         let built = Resampler::new(wanted).expect("a valid resampler configuration");
         let staged = polyphase_of(&built).is_some_and(|polyphase| polyphase.stage.is_some());
+
         let prefiltered = staged.then(|| Prefiltered::of(wanted));
         let mut oracle = match &prefiltered {
             Some(stage) => Oracle::interpolating(wanted, stage.up),
@@ -2638,6 +2779,7 @@ mod tests {
             };
             let channels = layout.count().get() as usize;
             let input = oracle_signal(from, channels, frames);
+
             let output = resampled_and_flushed(config, &input);
 
             let mut filtered: Vec<BTreeMap<i64, f64>> = vec![BTreeMap::new(); channels];
@@ -2664,6 +2806,7 @@ mod tests {
                             })
                             .sum(),
                     };
+
                     assert!(
                         (*sample - exact).abs() < within,
                         "{from} -> {to} {quality:?} {layout:?} frame {index} channel {channel}: {sample} against {exact}"
@@ -2692,6 +2835,7 @@ mod tests {
         for quality in QUALITIES {
             let resampler = Resampler::new(config(SampleRate::HZ_44100, an_odd_rate(), quality))
                 .expect("a valid configuration");
+
             assert!(
                 matches!(
                     polyphase_of(&resampler).map(|polyphase| &polyphase.taps),
@@ -2717,10 +2861,12 @@ mod tests {
         let points = f64::from(SAMPLED_PER_TAP);
         let reach = i64::from(params.half_taps) * i64::from(SAMPLED_PER_TAP);
         let (mut real, mut imaginary, mut sum) = (0.0, 0.0, 0.0);
+
         for index in -reach..=reach {
             let tau = index as f64 / points;
             let weight = analytic_tap(params, tau.abs());
             let angle = PI * nyquists * tau;
+
             real += weight * angle.cos();
             imaginary += weight * angle.sin();
             sum += weight;
@@ -2732,6 +2878,7 @@ mod tests {
     fn very_high_stays_flat_past_the_steepest_sox_recipe_and_is_closed_at_nyquist() {
         let params = Quality::VeryHigh.params();
         let width = f64::from(params.kaiser_beta) / (PI * f64::from(params.half_taps));
+
         let starts = f64::from(params.cutoff) - width;
 
         assert!(
@@ -2746,6 +2893,7 @@ mod tests {
         let at = |nyquists: f64| continuous_response(params, nyquists);
         let flat_through = decibels(at(starts)).abs();
         let closed_by = decibels(at(1.0 + width / 4.0));
+
         assert!(flat_through < 1e-7, "{flat_through:e} dB where it starts");
         assert!(closed_by < -190.0, "{closed_by:.1} dB past the edge");
     }
@@ -2754,10 +2902,13 @@ mod tests {
         let wanted = config(SampleRate::HZ_44100, SampleRate::HZ_48000, quality);
         let mut input = vec![0.0; BLOCK * 32];
         let at = BLOCK * 16;
+
         input[at] = 1.0;
+
         let output = resampled_and_flushed(wanted, &input);
         let peak = output.iter().map(|sample| sample.abs()).fold(0.0, f64::max);
         let heard = |sample: &f64| sample.abs() > peak * RINGS_UNTIL_DOWN_BY;
+
         let first = output.iter().position(heard).unwrap_or_default();
         let last = output.iter().rposition(heard).unwrap_or_default();
         (last - first) as f64 / 2.0 / 48.0
@@ -2771,6 +2922,7 @@ mod tests {
             (Quality::VeryHigh, SOX_STEEP_RINGS_MILLISECONDS),
         ] {
             let rings = ringing_milliseconds(quality);
+
             assert!(
                 rings < recipe_rings,
                 "{quality:?} rings {rings:.2} ms either side against {recipe_rings} ms"
@@ -2798,7 +2950,9 @@ mod tests {
         for quality in [Quality::Balanced, Quality::High, Quality::VeryHigh] {
             let params = quality.params();
             let halfway = f64::from(params.kaiser_beta) / (PI * f64::from(params.half_taps));
+
             let stop = f64::from(params.cutoff) + halfway;
+
             assert!(
                 (stop - 1.0).abs() < 1e-5,
                 "{quality:?} ends its transition at {stop} of Nyquist"
@@ -2823,6 +2977,7 @@ mod tests {
             let flattest = (0..=500)
                 .map(|step| at(PASSES_TO_NYQUISTS * f64::from(step) / 500.0).abs())
                 .fold(0.0, f64::max);
+
             assert!(
                 flattest < flat_within_db,
                 "{quality:?}'s interpolator strays {flattest:e} dB where the prefilter passes"
@@ -2833,6 +2988,7 @@ mod tests {
                     at(REJECTS_FROM_NYQUISTS + f64::from(step) / f64::from(STOPBAND_STEPS) * 4.0)
                 })
                 .fold(f64::NEG_INFINITY, f64::max);
+
             assert!(
                 loudest < promised - QUIETER_BY_DB,
                 "{quality:?}'s interpolator reaches {loudest:.1} dB where images sit, the prefilter {promised:.1} dB"

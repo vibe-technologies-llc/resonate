@@ -118,6 +118,7 @@ impl PartySeat for ZoneSeat {
             return (None, Vec::new());
         };
         let library = self.library.as_deref();
+
         let song = queued
             .rows
             .get(at)
@@ -143,6 +144,7 @@ impl PartySeat for ZoneSeat {
 
         for (row, item) in queued.rows.iter().enumerate().rev() {
             let stamp = QueueStamp::of([(&item.location, item.span)]).value();
+
             if known.contains(&stamp) {
                 continue;
             }
@@ -241,6 +243,7 @@ impl Finder {
                 .ok()
                 .flatten()
         };
+
         let held = by_the_tags(&song.recording)
             .or_else(|| by_the_tags(&anywhere))
             .or_else(|| {
@@ -366,8 +369,10 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
 
     let library = crate::catalog(cli, config);
     let served = crate::Served::of(config, crate::settings_path(cli).ok());
+
     let sources = crate::playing_from(library.as_deref(), &served);
     let sink = crate::sinks::wanted_sink(cli, config);
+
     let player = Arc::new(
         crate::rendering::Rendering::of(config, sink.as_ref(), crate::rendering::Asked::Nothing)
             .player(
@@ -375,13 +380,16 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
                 Arc::clone(&sources),
             )?,
     );
+
     crate::sinks::confirm_sink(&player, sink.as_ref());
 
     let name = config.shared_name.clone().unwrap_or_default();
     let trusted = config.sync_server_certificate.clone();
+
     let party = match wanted {
         PartyWanted::Start { files } => {
             let items = crate::arguments::queue_items_served(files, &served);
+
             if items.is_empty() {
                 return Err(Error::NoFileNamed);
             }
@@ -424,16 +432,19 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
         seat: Seat::on(Arc::clone(&player)),
         library,
     };
+
     let mut going = Going::begin(party, seat, finder).map_err(Error::Party)?;
 
     let (asked_to_quit, quitting) = bounded(1);
     let silenced = Arc::clone(&player);
+
     crate::signals::quit_when_told(
         asked_to_quit,
         crate::signals::silencing(move || vec![Arc::clone(&silenced)]),
     );
 
     let shown = going.shown();
+
     if shown.hosting {
         said!("{}", words::party::invite(shown.page.unwrap_or(shown.link)));
     }
@@ -448,6 +459,7 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
     let mut said = String::new();
     let mut apart_said: Option<PartyApart> = None;
     let mut lines_heard = Vec::new();
+
     loop {
         if quitting.recv_timeout(LOOK_AT_THE_PARTY_EVERY).is_ok() {
             break;
@@ -461,12 +473,14 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
         }
 
         let shown = going.shown();
+
         for line in &shown.chat {
             if !lines_heard.contains(&line.id) {
                 said!("{}", line_said(line, line.from == shown.me));
                 lines_heard.push(line.id);
             }
         }
+
         let now = reach_said(shown.reach).map_or_else(
             || {
                 if shown.hosting {
@@ -477,6 +491,7 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
             },
             str::to_owned,
         );
+
         if now != said {
             said!("{now}");
             said = now;
@@ -570,6 +585,7 @@ mod tests {
         Arc::new(
             Player::with_backend(EngineConfig::default(), |_| {
                 let (announce, changes) = unbounded();
+
                 drop(announce);
                 Ok(Box::new(NoSinks { changes }))
             })
@@ -596,7 +612,9 @@ mod tests {
         let moved_to = a_row("filed/second.flac");
 
         seat.take_up(&rows, 0, Moment::now().nanos(), false);
+
         let known: Vec<u64> = rows.iter().map(|row| seat.stamp_of(row)).collect();
+
         player
             .request(Command::Relocate(vec![(
                 rows[1].location.clone(),
@@ -610,11 +628,13 @@ mod tests {
         let moved = seat.moved();
         let known_now = [known[0], seat.stamp_of(&moved_to)];
         let asked = seat.added_here(&known_now);
+
         player
             .request(Command::SetRepeat(RepeatMode::Off))
             .expect("a command after any removal")
             .wait()
             .expect("every command before it settled");
+
         let queued: Vec<MediaLocation> = player
             .queued()
             .rows

@@ -175,8 +175,10 @@ impl<T: Copy + PartialEq> Flipping<T> {
         if to == self.shown {
             return;
         }
+
         let done = self.share(now, over);
         let turned_back = to == self.from && done < 1.0;
+
         let started = if turned_back {
             now.checked_sub(over.mul_f32(1.0 - done)).unwrap_or(now)
         } else {
@@ -271,9 +273,11 @@ impl<E: IntoElement + 'static, T: Copy + PartialEq + 'static> Element for Flip<E
             window.with_element_state(global_id, |state: Option<Flipping<T>>, _| {
                 let now = Instant::now();
                 let mut flipping = state.unwrap_or_else(|| Flipping::still(value));
+
                 flipping.moves_to(value, now, over, reduced);
                 (flipping.at(now, over), flipping)
             });
+
         if share < 1.0 {
             window.request_animation_frame();
         }
@@ -281,6 +285,7 @@ impl<E: IntoElement + 'static, T: Copy + PartialEq + 'static> Element for Flip<E
         let (Some(element), Some(animator)) = (self.element.take(), self.animator.take()) else {
             unreachable!("a flip is laid out once");
         };
+
         let mut drawn = animator(element, from, to, (self.easing)(share)).into_any_element();
 
         (drawn.request_layout(window, cx), drawn)
@@ -389,6 +394,7 @@ mod tests {
 
         handover.show("echoes", "echoes", start);
         handover.show("time", "time", start);
+
         let leaving = handover.leaving().map(|leaving| leaving.what);
         let serial = handover.serial();
 
@@ -409,6 +415,7 @@ mod tests {
         handover.show("echoes", "echoes", start);
         handover.show("time", "time", start);
         handover.show("echoes", "echoes", start + HANDS_OVER / 3);
+
         let leaving = handover.leaving().map(|leaving| leaving.what);
 
         assert_eq!(leaving, Some("time"));
@@ -469,6 +476,7 @@ mod tests {
 
         flipping.towards(true, now, FLIPS_OVER);
         flipping.towards(false, quarter, FLIPS_OVER);
+
         let (from, to, share) = flipping.at(quarter, FLIPS_OVER);
 
         assert_eq!((from, to), (true, false));

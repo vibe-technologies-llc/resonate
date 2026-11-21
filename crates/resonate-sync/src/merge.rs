@@ -14,6 +14,7 @@ pub fn one_recording_a_song(recordings: impl IntoIterator<Item = Recording>) -> 
     let mut identified = BTreeSet::new();
     let mut named = BTreeSet::new();
     let mut kept: Vec<Recording> = Vec::new();
+
     for recording in recordings {
         if recording.mbid.is_some() {
             if identified.insert(recording.key()) {
@@ -23,11 +24,13 @@ pub fn one_recording_a_song(recordings: impl IntoIterator<Item = Recording>) -> 
             kept.push(recording);
         }
     }
+
     let named_by_an_mbid = kept
         .iter()
         .filter(|recording| recording.mbid.is_some())
         .map(Recording::named_key)
         .collect::<BTreeSet<RecordingKey>>();
+
     kept.retain(|recording| {
         recording.mbid.is_some() || !named_by_an_mbid.contains(&recording.named_key())
     });
@@ -43,6 +46,7 @@ pub fn spliced(local: &[Recording], synced: &[Synced<'_>]) -> Vec<Recording> {
     let mut leading = Vec::new();
     let mut following: Vec<Vec<&Recording>> = vec![Vec::new(); synced.len()];
     let mut anchor = None;
+
     for (at, entry) in synced.iter().enumerate() {
         if entry.here {
             anchor = Some(at);
@@ -57,6 +61,7 @@ pub fn spliced(local: &[Recording], synced: &[Synced<'_>]) -> Vec<Recording> {
     let mut taken = vec![false; synced.len()];
     let mut placed: Vec<(Recording, Option<usize>)> =
         Vec::with_capacity(local.len() + synced.len());
+
     for recording in local {
         let matched = synced.iter().enumerate().position(|(at, entry)| {
             entry.here && !taken[at] && entry.recording.names_the_same_song_as(recording)
@@ -75,6 +80,7 @@ pub fn spliced(local: &[Recording], synced: &[Synced<'_>]) -> Vec<Recording> {
         if taken[anchor] || held.is_empty() {
             continue;
         }
+
         let after = placed
             .iter()
             .rposition(|(_, from)| from.is_some_and(|from| from < anchor))
@@ -97,6 +103,7 @@ pub fn spliced(local: &[Recording], synced: &[Synced<'_>]) -> Vec<Recording> {
 
 pub fn query_digest(body: &QueryBody) -> [u8; DIGEST_BYTES] {
     let mut writer = Writer::new();
+
     writer.text(&body.name);
     match &body.text {
         Some(text) => {
@@ -114,14 +121,17 @@ pub fn query_digest(body: &QueryBody) -> [u8; DIGEST_BYTES] {
         }
         None => writer.flag(false),
     }
+
     let hashed = digest(&SHA256, &writer.finish());
     let mut out = [0; DIGEST_BYTES];
+
     out.copy_from_slice(hashed.as_ref());
     out
 }
 
 pub fn projection_digest(name: &str, entries: &[Option<Recording>]) -> [u8; DIGEST_BYTES] {
     let mut writer = Writer::new();
+
     writer.text(name);
     writer.length(entries.len());
     for entry in entries {
@@ -133,7 +143,9 @@ pub fn projection_digest(name: &str, entries: &[Option<Recording>]) -> [u8; DIGE
             None => writer.flag(false),
         }
     }
+
     let mut digested = [0; DIGEST_BYTES];
+
     digested.copy_from_slice(digest(&SHA256, &writer.finish()).as_ref());
     digested
 }
@@ -146,6 +158,7 @@ pub fn named_as_a_free_alias_of(name: &str, written: &str) -> bool {
     let Some(numbered) = written.strip_prefix(name.trim()) else {
         return written == name;
     };
+
     if numbered.is_empty() {
         return true;
     }
@@ -160,6 +173,7 @@ pub fn named_as_a_free_alias_of(name: &str, written: &str) -> bool {
 pub fn absorbed(kept: &[Recording], folded: &[Recording]) -> Vec<Recording> {
     let mut taken = vec![false; kept.len()];
     let mut entries = kept.to_vec();
+
     for entry in folded {
         match (0..kept.len()).find(|at| !taken[*at] && kept[*at].names_the_same_song_as(entry)) {
             Some(at) => taken[at] = true,
@@ -178,6 +192,7 @@ pub struct Folds {
 impl Folds {
     pub fn of(pairs: impl IntoIterator<Item = (PlaylistKey, PlaylistKey)>) -> Self {
         let mut folds = Self::default();
+
         for (folded, into) in pairs {
             folds.folded.insert(folded);
             folds.beside.entry(folded).or_default().push(into);
@@ -190,8 +205,10 @@ impl Folds {
         if !self.beside.contains_key(&key) {
             return None;
         }
+
         let mut class = BTreeSet::from([key]);
         let mut reached = vec![key];
+
         while let Some(at) = reached.pop() {
             for next in self.beside.get(&at).into_iter().flatten() {
                 if class.insert(*next) {
@@ -218,6 +235,7 @@ mod tests {
     #[test]
     fn a_class_of_folds_survives_as_its_one_unfolded_key_and_a_cycle_as_its_lowest() {
         let [a, b, c, d] = [1, 2, 3, 4].map(|byte| PlaylistKey([byte; 16]));
+
         let chained = Folds::of([(c, b), (b, a)]);
         let crossed = Folds::of([(c, a), (c, b)]);
         let cycled = Folds::of([(a, d), (d, a)]);

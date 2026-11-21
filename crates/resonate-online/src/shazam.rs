@@ -119,6 +119,7 @@ impl Shazam {
             );
             return None;
         }
+
         let bytes = self
             .client
             .bytes(Host::AppleArtwork, LookupOp::Cover, url, LARGEST_PICTURE)
@@ -145,6 +146,7 @@ impl Recogniser for Shazam {
         else {
             return Ok(None);
         };
+
         heard.picture = cover.and_then(|url| self.picture(&url));
         Ok(Some(heard))
     }
@@ -160,6 +162,7 @@ impl Shazam {
             host: Host::Shazam,
             source: Box::new(source),
         })?;
+
         if !signature.is_worth_asking() {
             tracing::debug!(
                 peaks = signature.peaks(),
@@ -167,10 +170,12 @@ impl Shazam {
             );
             return Ok(None);
         }
+
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_millis() as u64);
         let uri = signature.uri();
+
         let asked = Asked {
             geolocation: Somewhere {
                 altitude: 0.0,
@@ -195,6 +200,7 @@ impl Shazam {
             Uuid::new_v4().hyphenated().to_string().to_uppercase(),
             Uuid::new_v4().hyphenated()
         );
+
         let answer: Option<Answer> = self.client.posted(
             Host::Shazam,
             LookupOp::Recognise,
@@ -217,9 +223,11 @@ fn served_by_the_picture_host(url: &str) -> bool {
 
 fn heard_in(answer: Option<Answer>, service: &SourceId) -> Option<(Heard, Option<String>)> {
     let answer = answer?;
+
     if answer.matches.is_empty() {
         return None;
     }
+
     let track = answer.track?;
     let told = |wanted: &str| {
         track
@@ -236,6 +244,7 @@ fn heard_in(answer: Option<Answer>, service: &SourceId) -> Option<(Heard, Option
             .clone()
             .or_else(|| images.coverart.clone())
     });
+
     let heard = Heard {
         title: track.title.clone(),
         artist: track.subtitle.clone().filter(|artist| !artist.is_empty()),
@@ -278,6 +287,7 @@ mod tests {
     #[test]
     fn a_match_names_the_song_its_album_its_year_and_where_its_cover_is() {
         let (heard, cover) = answered(MATCHED).expect("a match");
+
         assert_eq!(heard.title, "Hymn for the Weekend");
         assert_eq!(heard.artist.as_deref(), Some("Coldplay"));
         assert_eq!(heard.album.as_deref(), Some("A Head Full of Dreams"));
@@ -288,16 +298,20 @@ mod tests {
             Some("https://www.shazam.com/track/300945736/hymn-for-the-weekend")
         );
         assert_eq!(heard.by, service());
+
         let cover = cover.expect("a cover");
+
         assert!(served_by_the_picture_host(&cover), "{cover}");
     }
 
     #[test]
     fn a_link_off_shazams_own_pages_is_not_taken() {
         let mut answer: Answer = serde_json::from_str(MATCHED).expect("a shazam answer");
+
         if let Some(track) = answer.track.as_mut() {
             track.url = Some("http://www.shazam.com/track/300945736".to_owned());
         }
+
         let (heard, _) = heard_in(Some(answer), &service()).expect("a match");
 
         assert_eq!(heard.link, None);
@@ -313,7 +327,9 @@ mod tests {
     #[test]
     fn a_steady_tone_is_never_sent_to_be_matched() {
         let client = Arc::new(Client::new(crate::Identity::of_this_build()));
+
         client.reach(false);
+
         let shazam = Shazam::new(Arc::clone(&client));
         let rate = SampleRate::HZ_48000;
         let steady: Vec<f32> = (0..12 * rate.hz())
@@ -333,10 +349,13 @@ mod tests {
     #[test]
     fn a_clip_at_a_rate_far_above_sixteen_kilohertz_is_still_signed_and_asked() {
         let client = Arc::new(Client::new(crate::Identity::of_this_build()));
+
         client.reach(false);
+
         let shazam = Shazam::new(Arc::clone(&client));
         let rate = SampleRate::new(768_000).expect("a rate");
         let seconds = 6;
+
         let frames = seconds * rate.hz() as usize;
         let played: Vec<f32> = (0..frames)
             .map(|n| {

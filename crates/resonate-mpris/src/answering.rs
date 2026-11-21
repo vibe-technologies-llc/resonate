@@ -72,6 +72,7 @@ impl Answering {
             let Some(reply) = self.reply_to(&bytes) else {
                 return Ok(());
             };
+
             write_frame(&mut stream, &reply)?;
         }
         Ok(())
@@ -81,6 +82,7 @@ impl Answering {
         if self.closed.load(Ordering::Acquire) {
             return None;
         }
+
         let reply = match Request::decode(bytes) {
             Ok(request) => self.answer(request),
             Err(fault) => Self::unreadable(&fault),

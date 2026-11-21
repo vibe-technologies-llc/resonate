@@ -39,6 +39,7 @@ impl Moved {
         };
         for (path, heard) in left.gone {
             let at = self.gone.entry(path).or_insert(heard);
+
             *at = (*at).max(heard);
         }
     }
@@ -62,6 +63,7 @@ impl RootsWatch {
         let moved = Arc::new(Mutex::new(Moved::default()));
         let heard = Arc::clone(&moved);
         let under: Vec<PathBuf> = roots.to_vec();
+
         let watcher =
             notify::recommended_watcher(move |event: notify::Result<Event>| match event {
                 Ok(event) => heard_under(&under, &event, &heard),
@@ -77,6 +79,7 @@ impl RootsWatch {
 
         let mut uncovered = Vec::new();
         let mut out_of_watches = false;
+
         for root in roots {
             if let Err(error) = watcher.watch(root, RecursiveMode::Recursive) {
                 out_of_watches |= wants_more_watches(&error);
@@ -111,10 +114,13 @@ impl RootsWatch {
             watcher: stopped,
             ..
         } = previous;
+
         drop(stopped);
+
         let left = std::mem::take(&mut *left.lock());
 
         let laid = Self::over(roots)?;
+
         laid.moved.lock().carry(left);
         Some(laid)
     }
@@ -150,9 +156,11 @@ impl RootsWatch {
 
     fn settled_or_deferred_too_long(&self, quiet: Duration, at_most: Duration) -> Vec<PathBuf> {
         let mut moved = self.moved.lock();
+
         let still = moved.last.is_some_and(|last| last.elapsed() >= quiet);
         let deferred_long =
             moved.last.is_some() && moved.since.is_some_and(|since| since.elapsed() >= at_most);
+
         if !still && !deferred_long {
             return Vec::new();
         }
@@ -163,15 +171,18 @@ impl RootsWatch {
 
     pub fn taken_away(&self, quiet: Duration) -> Vec<PathBuf> {
         let mut moved = self.moved.lock();
+
         if moved.last.is_some() {
             return Vec::new();
         }
+
         let still: Vec<PathBuf> = moved
             .gone
             .iter()
             .filter(|(_, heard)| heard.elapsed() >= quiet)
             .map(|(path, _)| path.clone())
             .collect();
+
         for path in &still {
             moved.gone.remove(path);
         }
@@ -182,22 +193,28 @@ impl RootsWatch {
 fn heard_under(roots: &[PathBuf], event: &Event, into: &Mutex<Moved>) {
     if event.need_rescan() {
         let mut moved = into.lock();
+
         moved.roots.extend(roots.iter().cloned());
+
         let now = Instant::now();
+
         moved.last = Some(now);
         moved.since.get_or_insert(now);
         return;
     }
 
     let heard = heard_as(event);
+
     if matches!(heard, Heard::Unread) {
         return;
     }
+
     let under: Vec<&PathBuf> = event
         .paths
         .iter()
         .filter(|path| roots.iter().any(|root| path.starts_with(root)))
         .collect();
+
     if under.is_empty() {
         return;
     }
@@ -214,6 +231,7 @@ fn heard_under(roots: &[PathBuf], event: &Event, into: &Mutex<Moved>) {
             let touched = roots
                 .iter()
                 .filter(|root| under.iter().any(|path| path.starts_with(root)));
+
             moved.roots.extend(touched.cloned());
             moved.last = Some(now);
             moved.since.get_or_insert(now);
@@ -232,6 +250,7 @@ fn heard_as(event: &Event) -> Heard {
         .paths
         .iter()
         .all(|path| path.symlink_metadata().is_err());
+
     let taken_away = match event.kind {
         EventKind::Remove(RemoveKind::Folder)
         | EventKind::Modify(ModifyKind::Name(RenameMode::From)) => true,
@@ -296,6 +315,7 @@ mod tests {
         fn new(named: &str) -> Self {
             let path = env::temp_dir().join(format!("resonate-watch-{}-{named}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(path.join("album")).expect("a writable temporary directory");
             Self { path }
         }
@@ -309,13 +329,17 @@ mod tests {
 
     fn heard_a_write_first(watch: &RootsWatch, scratch: &Scratch) {
         let proof = scratch.path.join("album/heard first.flac");
+
         fs::write(&proof, b"fLaC").expect("a file");
+
         let started = Instant::now();
+
         while watch.moved.lock().roots.is_empty() {
             assert!(
                 started.elapsed() < HEARD_WITHIN,
                 "the watch never heard the write that proves it listens"
             );
+
             thread::sleep(LOOKED_EVERY);
         }
         thread::sleep(EVERY_EVENT_OF_ONE_WRITE_LANDS_WITHIN);
@@ -324,8 +348,10 @@ mod tests {
 
     fn settled_within(watch: &RootsWatch, wait: Duration) -> Vec<PathBuf> {
         let started = Instant::now();
+
         while started.elapsed() < wait {
             let settled = watch.settled(QUIET);
+
             if !settled.is_empty() {
                 return settled;
             }
@@ -342,12 +368,15 @@ mod tests {
         let never_quiet = Duration::from_secs(3_600);
 
         fs::write(&file, b"fLaC").expect("a file");
+
         let started = Instant::now();
+
         while watch.moved.lock().roots.is_empty() {
             assert!(
                 started.elapsed() < HEARD_WITHIN,
                 "the write was never heard"
             );
+
             thread::sleep(LOOKED_EVERY);
         }
         thread::sleep(EVERY_EVENT_OF_ONE_WRITE_LANDS_WITHIN);
@@ -373,10 +402,12 @@ mod tests {
     fn a_root_the_watch_could_lay_leaves_none_uncovered_and_one_it_could_not_is_said() {
         let scratch = Scratch::new("covered");
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
         assert!(!watch.leaves_a_root_uncovered());
 
         let missing = scratch.path.join("not-there");
         let watch = RootsWatch::over(&[scratch.path.clone(), missing]).expect("a watch");
+
         assert!(watch.leaves_a_root_uncovered());
     }
 
@@ -390,12 +421,15 @@ mod tests {
         assert_eq!(watch.tried_again_after(at_first, at_first), at_first);
 
         watch.out_of_watches = true;
+
         let mut waited = Vec::new();
         let mut wait = Duration::ZERO;
+
         for _ in 0..8 {
             wait = watch.tried_again_after(wait, at_first);
             waited.push(wait.as_secs() / 60);
         }
+
         assert_eq!(waited, [10, 20, 40, 80, 160, 240, 240, 240]);
     }
 
@@ -407,6 +441,7 @@ mod tests {
         if env::var_os(CAPPED_AT).is_some() {
             return false;
         }
+
         let capped = format!(
             "echo {WATCHES_LEFT} > /proc/sys/user/max_inotify_watches && exec \"$0\" \"$@\""
         );
@@ -423,11 +458,14 @@ mod tests {
                     status.code().is_some(),
                     "the run under a capped namespace died: {status}"
                 );
+
                 let refused = process::Command::new("unshare")
                     .args(["--user", "--map-root-user", "true"])
                     .status()
                     .is_ok_and(|status| !status.success());
+
                 assert!(refused, "the run under a capped namespace failed");
+
                 eprintln!("skipped: no user namespace to cap inotify in");
                 true
             }
@@ -446,24 +484,30 @@ mod tests {
         ) {
             return;
         }
+
         let covered = Scratch::new("under-the-cap");
         let crowded = Scratch::new("past-the-cap");
+
         for folder in 0..FOLDERS_PAST_THE_CAP {
             fs::create_dir_all(crowded.path.join(format!("disc {folder}"))).expect("a folder");
         }
 
         let mut watch = RootsWatch::over(&[covered.path.clone(), crowded.path.clone()])
             .expect("a watch with watches left to lay");
+
         assert!(
             watch.leaves_a_root_uncovered(),
             "a root of {FOLDERS_PAST_THE_CAP} folders fit under a cap of {WATCHES_LEFT} watches"
         );
         assert_eq!(watch.uncovered, std::slice::from_ref(&crowded.path));
         assert!(watch.ran_out_of_watches());
+
         watch.cover_again();
+
         assert!(watch.ran_out_of_watches(), "the cap still stands");
 
         fs::write(covered.path.join("album/echoes.flac"), b"fLaC").expect("a file");
+
         assert_eq!(
             settled_within(&watch, HEARD_WITHIN),
             vec![covered.path.clone()],
@@ -476,7 +520,9 @@ mod tests {
         let scratch = Scratch::new("undirected");
         let before = scratch.path.join("album/echoes.flac");
         let after = scratch.path.join("album/06 Echoes.flac");
+
         fs::write(&after, b"fLaC").expect("a file");
+
         let roots = std::slice::from_ref(&scratch.path);
         let renamed = EventKind::Modify(ModifyKind::Name(RenameMode::Any));
         let heard = Mutex::new(Moved::default());
@@ -486,6 +532,7 @@ mod tests {
             &Event::new(EventKind::Create(CreateKind::File)).add_path(before.clone()),
             &heard,
         );
+
         assert!(
             heard.lock().last.is_none(),
             "a file made and taken away before it was heard held back what was taken away"
@@ -495,6 +542,7 @@ mod tests {
         heard_under(roots, &Event::new(renamed).add_path(after), &heard);
 
         let moved = heard.lock();
+
         assert_eq!(moved.gone.keys().collect::<Vec<_>>(), [&before]);
         assert_eq!(
             moved.roots.iter().collect::<Vec<_>>(),
@@ -523,8 +571,10 @@ mod tests {
 
     fn taken_away_within(watch: &RootsWatch, wait: Duration) -> Vec<PathBuf> {
         let started = Instant::now();
+
         while started.elapsed() < wait {
             let gone = watch.taken_away(QUIET);
+
             if !gone.is_empty() {
                 return gone;
             }
@@ -538,17 +588,22 @@ mod tests {
         let scratch = Scratch::new("gone");
         let first = scratch.path.join("album/echoes.flac");
         let second = scratch.path.join("album/time.flac");
+
         fs::write(&first, b"fLaC").expect("a file");
         fs::write(&second, b"fLaC").expect("a file");
+
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
         heard_a_write_first(&watch, &scratch);
 
         fs::remove_file(&first).expect("the file taken away");
         fs::remove_file(&second).expect("the file taken away");
 
         let mut gone = taken_away_within(&watch, HEARD_WITHIN);
+
         gone.extend(watch.taken_away(Duration::ZERO));
         gone.sort();
+
         assert_eq!(gone, vec![first, second]);
         assert!(
             watch.settled(Duration::ZERO).is_empty(),
@@ -561,13 +616,17 @@ mod tests {
         let scratch = Scratch::new("renamed");
         let before = scratch.path.join("album/echoes.flac");
         let after = scratch.path.join("album/06 Echoes.flac");
+
         fs::write(&before, b"fLaC").expect("a file");
+
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
         heard_a_write_first(&watch, &scratch);
 
         fs::rename(&before, &after).expect("the file renamed");
 
         thread::sleep(QUIET * 2);
+
         assert!(
             watch.taken_away(Duration::ZERO).is_empty(),
             "a renamed file was forgotten before the scan could follow it"
@@ -584,13 +643,16 @@ mod tests {
         let scratch = Scratch::new("dotted");
         let before = scratch.path.join("Dr. Dre");
         let after = scratch.path.join("Dr. Dre (2001)");
+
         fs::create_dir_all(&before).expect("a folder");
         fs::write(before.join("still.flac"), b"fLaC").expect("a file");
+
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
 
         fs::rename(&before, &after).expect("the folder renamed");
 
         thread::sleep(QUIET * 2);
+
         assert!(
             watch.taken_away(Duration::ZERO).is_empty(),
             "a renamed folder was forgotten before the scan could follow it"
@@ -606,7 +668,9 @@ mod tests {
     fn a_sheet_taken_away_is_scanned_for_rather_than_forgotten() {
         let scratch = Scratch::new("sheet");
         let sheet = scratch.path.join("album/rip.cue");
+
         fs::write(&sheet, b"FILE \"rip.flac\" WAVE").expect("a sheet");
+
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
 
         fs::remove_file(&sheet).expect("the sheet taken away");
@@ -620,8 +684,10 @@ mod tests {
 
     fn heard_anything(watch: &RootsWatch, wait: Duration) -> bool {
         let started = Instant::now();
+
         while started.elapsed() < wait {
             let moved = watch.moved.lock();
+
             if moved.last.is_some() || !moved.gone.is_empty() {
                 return true;
             }
@@ -635,11 +701,15 @@ mod tests {
     fn a_watch_laid_again_hands_out_what_the_one_it_replaced_had_heard() {
         let scratch = Scratch::new("laid-again");
         let taken = scratch.path.join("album/echoes.flac");
+
         fs::write(&taken, b"fLaC").expect("a file");
+
         let first = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
 
         fs::remove_file(&taken).expect("the file taken away");
+
         assert!(heard_anything(&first, HEARD_WITHIN));
+
         fs::write(scratch.path.join("album/time.flac"), b"fLaC").expect("a file");
         thread::sleep(QUIET / 2);
 
@@ -658,11 +728,15 @@ mod tests {
         let scratch = Scratch::new("covered-late");
         let elsewhere = Scratch::new("covered-late-elsewhere");
         let late = elsewhere.path.join("late");
+
         let mut watch = RootsWatch::over(&[scratch.path.clone(), late.clone()]).expect("a watch");
+
         assert!(watch.leaves_a_root_uncovered());
+
         heard_a_write_first(&watch, &scratch);
 
         watch.cover_again();
+
         assert!(
             watch.leaves_a_root_uncovered(),
             "a folder not there was covered"
@@ -670,9 +744,11 @@ mod tests {
 
         fs::create_dir_all(&late).expect("the folder appears");
         watch.cover_again();
+
         assert!(!watch.leaves_a_root_uncovered());
 
         fs::write(late.join("echoes.flac"), b"fLaC").expect("a file");
+
         let until = Instant::now() + HEARD_WITHIN;
         while !settled_within(&watch, until.saturating_duration_since(Instant::now()))
             .contains(&late)

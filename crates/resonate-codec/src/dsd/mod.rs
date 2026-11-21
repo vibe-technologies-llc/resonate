@@ -39,13 +39,13 @@ pub(crate) const DSD_CODEC_ID: symphonia::core::codecs::audio::AudioCodecId =
         *b"DSD ",
     ));
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum BitOrder {
     LeastSignificantFirst,
     MostSignificantFirst,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Interleave {
     Blocked(u64),
     PerByte,
@@ -107,7 +107,7 @@ impl Layout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Container {
     Dsf,
     Dff,
@@ -118,6 +118,7 @@ pub(crate) fn sniff(bytes: &mut dyn MediaStream) -> Option<Container> {
         return None;
     };
     let mut magic = [0_u8; SNIFF_BYTES];
+
     let read = bytes.read_exact(&mut magic).is_ok();
     let _ = bytes.seek(SeekFrom::Start(origin));
 
@@ -154,6 +155,7 @@ pub(crate) fn placed(
     location: &resonate_core::MediaLocation,
 ) -> Result<Placed> {
     let count = u16::try_from(count).unwrap_or(u16::MAX);
+
     if count == 0 || count > MAX_DSD_CHANNELS {
         return Err(Error::DsdFieldNotUsable {
             location: location.clone(),
@@ -161,6 +163,7 @@ pub(crate) fn placed(
             value: u64::from(count),
         });
     }
+
     let count = ChannelCount::new(count)?;
 
     let positions = positions.filter(|held| held.bits().count_ones() == u32::from(count.get()));
@@ -182,6 +185,7 @@ pub(crate) fn placed(
 
 pub(crate) fn in_order(named: impl IntoIterator<Item = Position>) -> Option<Position> {
     let mut placed = Position::empty();
+
     for position in named {
         if position.bits() <= placed.bits() || placed.intersects(position) {
             return None;
@@ -191,7 +195,7 @@ pub(crate) fn in_order(named: impl IntoIterator<Item = Position>) -> Option<Posi
     Some(placed)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DsdField {
     FormatVersion,
     FormatId,
@@ -215,7 +219,7 @@ impl std::fmt::Display for DsdField {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DsdChunk {
     Format,
     Data,
@@ -301,11 +305,13 @@ impl Planes {
 
     fn read_blocked(&mut self, block: u64, taking: u64) -> Result<()> {
         let lanes = self.layout.lanes() as u64;
+
         for plane in &mut self.planes {
             plane.clear();
         }
 
         let mut done = 0;
+
         while done < taking {
             let at = self.at.saturating_add(done);
             let index = at / block;
@@ -323,6 +329,7 @@ impl Planes {
                     .planes
                     .get_mut(lane as usize)
                     .expect("a lane per plane");
+
                 read_at(self.bytes.as_mut(), offset, step as usize, into)
                     .map_err(|source| self.unread(source))?;
             }
@@ -335,6 +342,7 @@ impl Planes {
         let lanes = self.layout.lanes();
         let wanted = taking as usize;
         let held = &mut self.interleaved;
+
         held.clear();
         held.resize(wanted.saturating_mul(lanes), 0);
 
@@ -355,6 +363,7 @@ impl Planes {
                 });
             }
         };
+
         held.truncate(read);
 
         for (lane, plane) in self.planes.iter_mut().enumerate() {
@@ -372,18 +381,23 @@ fn read_at(
     into: &mut Vec<u8>,
 ) -> io::Result<()> {
     bytes.seek(SeekFrom::Start(offset))?;
+
     let from = into.len();
+
     into.resize(from.saturating_add(wanted), 0);
+
     let read = match into.get_mut(from..) {
         Some(held) => fill(bytes, held)?,
         None => 0,
     };
+
     into.truncate(from.saturating_add(read));
     Ok(())
 }
 
 fn fill(bytes: &mut dyn MediaStream, into: &mut [u8]) -> io::Result<usize> {
     let mut read = 0;
+
     while read < into.len() {
         let Some(rest) = into.get_mut(read..) else {
             break;
@@ -445,6 +459,7 @@ pub(crate) struct Described {
 pub(crate) fn described(bytes: &mut dyn MediaStream, layout: &Layout) -> Described {
     let mut described = embedded(bytes, layout).unwrap_or_default();
     let Edited { artist, title } = layout.edited.clone();
+
     described.tags.artist = described.tags.artist.or(artist);
     described.tags.title = described.tags.title.or(title);
     described
@@ -457,10 +472,15 @@ fn embedded(bytes: &mut dyn MediaStream, layout: &Layout) -> Option<Described> {
     };
 
     let at = layout.metadata_at?;
+
     bytes.seek(SeekFrom::Start(at)).ok()?;
+
     let mut header = [0_u8; ID3_HEADER_BYTES as usize];
+
     bytes.read_exact(&mut header).ok()?;
+
     let whole = id3_length(&header)?;
+
     if whole > MAX_METADATA_BYTES {
         tracing::debug!(
             bytes = whole,
@@ -471,6 +491,7 @@ fn embedded(bytes: &mut dyn MediaStream, layout: &Layout) -> Option<Described> {
     }
 
     let mut held = header.to_vec();
+
     bytes
         .take(whole - ID3_HEADER_BYTES)
         .read_to_end(&mut held)
@@ -482,6 +503,7 @@ fn embedded(bytes: &mut dyn MediaStream, layout: &Layout) -> Option<Described> {
     );
     let mut reader =
         symphonia::default::meta::Id3v2Reader::try_new(stream, MetadataOptions::default()).ok()?;
+
     let buffered = reader.read_all().ok()?;
 
     Some(Described {
@@ -494,6 +516,7 @@ fn id3_length(header: &[u8; ID3_HEADER_BYTES as usize]) -> Option<u64> {
     if !header.starts_with(ID3_MAGIC) {
         return None;
     }
+
     let size = header
         .get(ID3_SIZE_AT..)?
         .iter()
@@ -550,6 +573,7 @@ impl Stream {
     pub(crate) fn deliver(&mut self, packing: Packing) {
         let rate = self.rate;
         let bits = self.bits;
+
         self.packing = packing;
         self.decimator = matches!(packing, Packing::Samples)
             .then(|| Decimator::new(rate.hz(), rate.carrier().hz(), self.lanes, bits));
@@ -569,6 +593,7 @@ impl Stream {
 
     pub(crate) fn mark_next_with(&mut self, marker: DopMarker) {
         let carried = DopMarker::carried_by(self.frame);
+
         self.marked_ahead_by = u64::from(carried != marker);
     }
 
@@ -594,6 +619,7 @@ impl Stream {
             .planes
             .seek_to_byte(before.saturating_add(frames.saturating_mul(BYTES_PER_DOP_FRAME)));
         let moved = self.planes.at().saturating_sub(before) / BYTES_PER_DOP_FRAME;
+
         self.frame = self.frame.saturating_add(moved);
         moved
     }
@@ -605,10 +631,12 @@ impl Stream {
         block_frames: u64,
     ) -> Result<usize> {
         let frames = wanted.map_or(block_frames, |left| left.min(block_frames));
+
         self.planes
             .read(frames.saturating_mul(BYTES_PER_DOP_FRAME))?;
 
         let taking = self.planes.shortest() / BYTES_PER_DOP_FRAME;
+
         if taking == 0 {
             return Ok(0);
         }
@@ -652,6 +680,7 @@ fn pack(
                 continue;
             };
             let at = frame * BYTES_PER_DOP_FRAME as usize;
+
             let earlier = plane.get(at).copied().unwrap_or(DSD_SILENCE);
             let later = plane.get(at + 1).copied().unwrap_or(DSD_SILENCE);
 
@@ -735,6 +764,7 @@ mod tests {
     fn a_read_that_fails_mid_track_is_an_error_rather_than_the_end_of_the_track() {
         let block = DSD_BLOCK_FRAMES * BYTES_PER_DOP_FRAME;
         let held = block * 4;
+
         let failing = Failing {
             held: Cursor::new(vec![DSD_SILENCE; held as usize]),
             fails_past: block,
@@ -768,6 +798,7 @@ mod tests {
     fn first_block_in_s24(plane: u8) -> Vec<i32> {
         let mut stream = decimating(plane, 1);
         let mut out = twenty_four_bit();
+
         stream
             .next_block(&mut out, None, DSD_BLOCK_FRAMES)
             .expect("a block decimates");
@@ -796,6 +827,7 @@ mod tests {
 
         leaving.deliver(Packing::DopMarked(rate));
         entering.deliver(Packing::DopMarked(rate));
+
         let odd = leaving
             .next_block(&mut out, Some(DSD_BLOCK_FRAMES - 1), DSD_BLOCK_FRAMES)
             .expect("a block packs");
@@ -813,6 +845,7 @@ mod tests {
         entering
             .next_block(&mut out, None, DSD_BLOCK_FRAMES)
             .expect("a block packs");
+
         let joined: Vec<u8> = left.into_iter().chain(markers_of(&out)).collect();
 
         assert!(
@@ -837,6 +870,7 @@ mod tests {
     #[test]
     fn decimating_a_block_writes_into_the_samples_the_last_block_left_behind() {
         let mut stream = decimating(DSD_SILENCE, 2);
+
         let store = stream.decimated.as_ptr();
         let mut out = twenty_four_bit();
 
@@ -844,6 +878,7 @@ mod tests {
             let taken = stream
                 .next_block(&mut out, None, DSD_BLOCK_FRAMES)
                 .expect("a block decimates");
+
             assert_eq!(taken, DSD_BLOCK_FRAMES as usize);
             assert_eq!(
                 stream.decimated.as_ptr(),

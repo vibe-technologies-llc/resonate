@@ -22,6 +22,7 @@ pub(crate) fn learn(
 ) -> Result<Learning> {
     let hold = lanes.idle(device.at()).ok_or(Error::InUse(sink))?;
     let learnt = trials(device, sink, server, &hold);
+
     hold.let_go(|| ());
     learnt
 }
@@ -30,6 +31,7 @@ fn trials(device: &Device, sink: SinkId, server: &Arc<Server>, hold: &Hold) -> R
     let link = Link::connect(device.at())?;
     let session = device::launched(&link)?;
     let mut learning = Learning::default();
+
     for trial in Trial::ALL {
         let wanted_unplayed = trial.is_wanting_in(&learning);
         let verdict = if wanted_unplayed {
@@ -46,6 +48,7 @@ fn trials(device: &Device, sink: SinkId, server: &Arc<Server>, hold: &Hold) -> R
             };
             tried.verdict()?
         };
+
         tracing::info!(receiver = %device.id(), ?trial, ?verdict, "a Cast receiver was tried");
         learning.heard(trial, verdict);
     }
@@ -77,7 +80,9 @@ impl Tried<'_> {
         ));
         let token = self.server.offer(Arc::clone(&feed));
         let mut played = None;
+
         let verdict = self.offered(&feed, token, &carriage, &mut played);
+
         feed.close();
         self.server.withdraw(token);
         if let Some(played) = &played
@@ -107,7 +112,9 @@ impl Tried<'_> {
             kind: carriage.kind_of(self.spec),
             title: words::casting::a_format_tried().to_owned(),
         };
+
         feed.set_active(true);
+
         let entry = match self.steer(|| stream::loaded(self.link, self.transport, &offered))? {
             Ok(entry) => entry,
             Err(Error::Refused { .. }) => return Ok(TrialVerdict::Unplayed(Unplayed::Refused)),
@@ -117,6 +124,7 @@ impl Tried<'_> {
             transport: self.transport.to_owned(),
             session: entry.session,
         };
+
         *played = Some(mine.clone());
         self.watched(feed, &mine)
     }
@@ -126,6 +134,7 @@ impl Tried<'_> {
         let mut signals = Signals::default();
         loop {
             thread::sleep(TRIAL_ASKED_EVERY);
+
             let answer = self.steer(|| stream::media(self.link, played, Asked::MediaStatus))?;
             let entry = answer
                 .ok()
@@ -136,6 +145,7 @@ impl Tried<'_> {
                         .into_iter()
                         .find(|entry| entry.session == played.session)
                 });
+
             match entry {
                 Some(entry) if entry.idle == Some(Idle::Errored) => {
                     return Ok(TrialVerdict::Unplayed(Unplayed::Errored));

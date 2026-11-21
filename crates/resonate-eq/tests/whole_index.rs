@@ -10,7 +10,9 @@ fn the_whole_index_reads_and_matches_the_way_the_sample_did() {
     };
     let text = fs::read_to_string(path).expect("the index reads");
     let catalogue = Catalogue::read(&text);
+
     eprintln!("catalogue holds {} devices", catalogue.len());
+
     assert!(catalogue.len() > 8_000);
 
     let named = |description: &str| {
@@ -58,5 +60,6 @@ fn the_whole_index_reads_and_matches_the_way_the_sample_did() {
         .filter_map(|found| catalogue.device(found))
         .map(|device| device.label.as_str())
         .collect();
+
     assert_eq!(hits.first(), Some(&"Sennheiser HD 650"));
 }

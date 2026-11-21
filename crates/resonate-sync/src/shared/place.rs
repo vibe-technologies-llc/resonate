@@ -4,7 +4,7 @@ const STEP_AT: usize = 2;
 
 const FIRST: [u8; WIDTH] = [0x80, 0, 0, 1];
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Place(pub Vec<u8>);
 
 impl Place {
@@ -14,16 +14,20 @@ impl Place {
 
     pub fn after(low: &Self) -> Self {
         let mut bytes = low.0.clone();
+
         if bytes.len() < WIDTH {
             bytes.resize(WIDTH, 0);
         }
         bytes.truncate(WIDTH);
         for at in (0..=STEP_AT).rev() {
             let (stepped, carried) = bytes[at].overflowing_add(1);
+
             bytes[at] = stepped;
             if !carried {
                 *bytes.last_mut().unwrap_or(&mut 1) = 1;
+
                 let place = Self(bytes);
+
                 return if place > *low {
                     place
                 } else {
@@ -37,16 +41,20 @@ impl Place {
 
     pub fn before(high: &Self) -> Self {
         let mut bytes = high.0.clone();
+
         if bytes.len() < WIDTH {
             bytes.resize(WIDTH, 0);
         }
         bytes.truncate(WIDTH);
         for at in (0..=STEP_AT).rev() {
             let (stepped, borrowed) = bytes[at].overflowing_sub(1);
+
             bytes[at] = stepped;
             if !borrowed {
                 *bytes.last_mut().unwrap_or(&mut 1) = 1;
+
                 let place = Self(bytes);
+
                 return if place < *high && place.0.iter().any(|byte| *byte != 0) {
                     place
                 } else {
@@ -67,11 +75,13 @@ impl Place {
             if high.is_some_and(|high| at >= high.len()) {
                 high = None;
             }
+
             let from = u16::from(low.get(at).copied().unwrap_or(0));
             let to = match high {
                 Some(high) => u16::from(high.get(at).copied().unwrap_or(0)),
                 None => 256,
             };
+
             if to > from + 1 {
                 bytes.push(((from + to) / 2).min(255) as u8);
                 return Self(bytes);
@@ -97,8 +107,10 @@ mod tests {
         let mut place = Place::first();
         for _ in 0..20_000 {
             let next = Place::after(&place);
+
             assert!(next > place);
             assert_eq!(next.0.len(), WIDTH);
+
             place = next;
         }
     }
@@ -107,6 +119,7 @@ mod tests {
     fn places_before_the_first_stand_ahead_of_it_and_leave_room_between() {
         let first = Place::first();
         let ahead = Place::before(&first);
+
         let between = Place::between(Some(&ahead), Some(&first));
 
         assert!(ahead < first);
@@ -118,8 +131,10 @@ mod tests {
         let mut place = Place::first();
         for _ in 0..1_000 {
             let lower = Place::between(None, Some(&place));
+
             assert!(lower < place, "{lower:?} is not below {place:?}");
             assert!(lower.0.iter().any(|byte| *byte != 0));
+
             place = lower;
         }
     }

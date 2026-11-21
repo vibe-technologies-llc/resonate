@@ -41,6 +41,7 @@ pub(crate) fn learn(
 ) -> Result<Learning> {
     let hold = holders.idle(renderer.udn()).ok_or(Error::InUse(sink))?;
     let learnt = trials(renderer, sink, server, &hold);
+
     hold.let_go(|| ());
     learnt
 }
@@ -52,6 +53,7 @@ fn trials(
     hold: &Hold,
 ) -> Result<Learning> {
     let mut learning = Learning::default();
+
     for trial in Trial::ALL {
         let wanted_unplayed = trial.is_wanting_in(&learning);
         let verdict = match carriage::tried_in(renderer.said(), trial) {
@@ -68,6 +70,7 @@ fn trials(
             }
             Some(_) | None => TrialVerdict::Untried,
         };
+
         tracing::info!(renderer = %renderer.udn(), ?trial, ?verdict, "a renderer was tried");
         learning.heard(trial, verdict);
     }
@@ -92,7 +95,9 @@ impl Tried<'_> {
             Arc::new(StreamClock::behind_by(Frames::ZERO)),
         ));
         let token = self.server.offer(Arc::clone(&feed));
+
         let verdict = self.offered(&feed, token);
+
         feed.close();
         self.server.withdraw(token);
         if let Some(Err(error)) = self.hold.steer(|| self.renderer.stop()) {
@@ -115,15 +120,19 @@ impl Tried<'_> {
             .server
             .address_toward(reached, token, self.carriage.extension())?;
         let title = words::network::a_format_tried();
+
         let offered = self.steer(|| {
             self.renderer
                 .set_uri(&self.carriage, &address, title, self.spec)
         })?;
+
         if let Some(refused) = refusal(offered)? {
             return Ok(refused);
         }
         feed.set_active(true);
+
         let played = self.steer(|| self.renderer.play())?;
+
         if let Some(refused) = refusal(played)? {
             return Ok(refused);
         }
@@ -232,12 +241,14 @@ mod tests {
     #[test]
     fn a_clock_never_read_passes_and_one_read_must_move_a_second_while_playing() {
         let mut unread = Signals::default();
+
         unread.heard_playing(true);
 
         assert!(unread.moved());
         assert!(unread.sounding());
 
         let mut still = Signals::default();
+
         still.heard_playing(true);
         still.clocked(Duration::from_millis(200));
         still.clocked(Duration::from_millis(900));
@@ -249,6 +260,7 @@ mod tests {
         assert!(still.moved());
 
         let mut stopped = Signals::default();
+
         stopped.heard_playing(false);
         stopped.clocked(Duration::from_secs(4));
 

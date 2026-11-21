@@ -47,6 +47,7 @@ mod tests {
         for thousandth in 1..=1_000_u16 {
             let sent = gain_of(f32::from(thousandth) / 1_000.0);
             let heard = gain_of(scalar_of(sent));
+
             assert!(
                 decibels_apart(sent, heard) < 0.01,
                 "{thousandth}: {sent:?} came back as {heard:?}"

@@ -55,8 +55,10 @@ pub fn seat_for(member: MemberId, public: &[u8; PUBLIC_BYTES], access: &Access) 
     let once = Personal::minted()?;
     let once_public = once.public();
     let shared = once.0.diffie_hellman(&PublicKey::from(*public));
+
     let key = sealing_key(shared.as_bytes(), &once_public, public)?;
     let mut in_out = access.code().into_bytes();
+
     key.seal_in_place_append_tag(
         Nonce::assume_unique_for_key([0; NONCE_BYTES]),
         Aad::empty(),
@@ -65,6 +67,7 @@ pub fn seat_for(member: MemberId, public: &[u8; PUBLIC_BYTES], access: &Access) 
     .map_err(|_| Error::Unsealed)?;
 
     let mut sealed = Vec::with_capacity(PUBLIC_BYTES + in_out.len());
+
     sealed.extend_from_slice(&once_public);
     sealed.extend_from_slice(&in_out);
 
@@ -79,6 +82,7 @@ pub fn seats_after(
     access: &Access,
 ) -> Result<Vec<Seat>> {
     let mut seats = Vec::new();
+
     for (member, person) in list.people() {
         if member == me || Some(member) == removing {
             continue;
@@ -97,11 +101,15 @@ pub fn access_from(seat: &Seat, personal: &Personal) -> Result<Access> {
         return Err(Error::Unsealed);
     };
     let mut once = [0; PUBLIC_BYTES];
+
     once.copy_from_slice(once_public);
+
     let public = personal.public();
     let shared = personal.0.diffie_hellman(&PublicKey::from(once));
+
     let key = sealing_key(shared.as_bytes(), &once, &public)?;
     let mut in_out = sealed.to_vec();
+
     let code = key
         .open_in_place(
             Nonce::assume_unique_for_key([0; NONCE_BYTES]),
@@ -121,9 +129,12 @@ fn sealing_key(
 ) -> Result<LessSafeKey> {
     let prk = Salt::new(HKDF_SHA256, DERIVATION_SALT).extract(shared);
     let mut info = [0; PUBLIC_BYTES * 2];
+
     info[..PUBLIC_BYTES].copy_from_slice(once);
     info[PUBLIC_BYTES..].copy_from_slice(to);
+
     let mut key = [0; SEAL_KEY_BYTES];
+
     expand(&prk, &info, &mut key)?;
 
     UnboundKey::new(&CHACHA20_POLY1305, &key)
@@ -133,6 +144,7 @@ fn sealing_key(
 
 pub fn encoded_seats(seats: &[Seat]) -> Vec<u8> {
     let mut writer = Writer::new();
+
     writer.length(seats.len());
     for seat in seats {
         writer.fixed(&seat.member.0);
@@ -144,8 +156,10 @@ pub fn encoded_seats(seats: &[Seat]) -> Vec<u8> {
 
 pub fn decoded_seats(bytes: &[u8]) -> Result<Vec<Seat>> {
     let mut reader = Reader::new(bytes);
+
     let count = reader.count_of(SEAT_AT_LEAST)?;
     let mut seats = crate::wire::reserved(count);
+
     for _ in 0..count {
         seats.push(Seat {
             member: MemberId(reader.fixed()?),
@@ -183,7 +197,9 @@ mod tests {
         let ada = Personal::minted().expect("a secret");
         let mut seat =
             seat_for(ADA, &ada.public(), &Access::minted().expect("a key")).expect("sealed");
+
         let last = seat.sealed.len() - 1;
+
         seat.sealed[last] ^= 1;
 
         assert!(access_from(&seat, &ada).is_err());
@@ -223,6 +239,7 @@ mod tests {
         joined(&mut list, grace_member, grace.public(), 2);
         joined(&mut list, grace_member, mallory.public(), 3);
         joined(&mut list, mallory_member, mallory.public(), 4);
+
         let seats = seats_after(&list, ADA, &ada, Some(mallory_member), &access).expect("sealed");
         let seat_of = |member: MemberId| {
             seats

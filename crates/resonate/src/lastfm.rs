@@ -24,6 +24,7 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
     if !config.is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let given = |held: &Option<String>| {
         held.as_deref()
             .map(str::trim)
@@ -40,6 +41,7 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
         Err(resonate_library::Error::Refused { .. }) => return Err(Error::LastfmRefused),
         Err(error) => return Err(error.into()),
     };
+
     said!("{}", words::lastfm::open_and_allow(approving.address()));
     opened_in_a_browser(approving.address());
 
@@ -49,6 +51,7 @@ pub fn sign_in(config: &Config, settings: &Path, forget: bool) -> Result<()> {
     let Some(session) = approving.approved(&|| cancelled.load(Ordering::Relaxed))? else {
         return Err(Error::LastfmSignInEnded);
     };
+
     config::store(settings, ConfigKey::LastfmSession, session.key)?;
     said!(
         "{}",

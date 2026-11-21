@@ -60,6 +60,7 @@ pub(crate) fn xml_text(text: &str, into: &mut String) {
 
 pub(crate) fn escaped(text: &str) -> String {
     let mut into = String::with_capacity(text.len());
+
     xml_text(text, &mut into);
     into
 }
@@ -122,6 +123,7 @@ impl<'a> Didl<'a> {
             Shelf::Album(_) => ALBUM,
             Shelf::Playlist(_) => PLAYLIST,
         };
+
         self.container(&Container {
             id: Object::Shelf(held.shelf),
             parent: Some(parent),
@@ -143,12 +145,15 @@ impl<'a> Didl<'a> {
              childCount=\"{}\"><dc:title>",
             container.id, container.children,
         );
+
         xml_text(container.title, &mut self.written);
+
         let _ = write!(
             self.written,
             "</dc:title><upnp:class>{}</upnp:class>",
             container.class
         );
+
         if let Some(artist) = container.artist {
             self.element("upnp:artist", artist);
         }
@@ -164,8 +169,11 @@ impl<'a> Didl<'a> {
             "<item id=\"{}\" parentID=\"{parent}\" restricted=\"1\"><dc:title>",
             Object::Song(song.id),
         );
+
         xml_text(&song.title, &mut self.written);
+
         let _ = write!(self.written, "</dc:title><upnp:class>{TRACK}</upnp:class>");
+
         if let Some(artist) = &song.artist {
             self.element("dc:creator", artist);
             self.element("upnp:artist", artist);
@@ -185,11 +193,13 @@ impl<'a> Didl<'a> {
         if let Some(album) = song.cover {
             self.cover(album);
         }
+
         let _ = write!(
             self.written,
             "<res protocolInfo=\"{}\"",
             protocol_of(song.kind, song.content)
         );
+
         if let Some(size) = song.size {
             let _ = write!(self.written, " size=\"{size}\"");
         }
@@ -205,6 +215,7 @@ impl<'a> Didl<'a> {
         if let Some(bits) = song.bits {
             let _ = write!(self.written, " bitsPerSample=\"{bits}\"");
         }
+
         let _ = write!(
             self.written,
             ">{}{}</res></item>",
@@ -215,7 +226,9 @@ impl<'a> Didl<'a> {
 
     fn element(&mut self, name: &str, text: &str) {
         let _ = write!(self.written, "<{name}>");
+
         xml_text(text, &mut self.written);
+
         let _ = write!(self.written, "</{name}>");
     }
 
@@ -275,7 +288,9 @@ mod tests {
     #[test]
     fn a_song_is_written_escaped_and_reads_back_as_a_document_naming_its_file() {
         let mut didl = Didl::new("http://10.0.0.2:8200");
+
         didl.song(&song(), Object::Shelf(Shelf::Songs));
+
         let written = didl.finished();
 
         let read = document(&written, crate::Asked::Description).expect("a document");
@@ -310,7 +325,9 @@ mod tests {
             ..song()
         };
         let mut didl = Didl::new("http://10.0.0.2:8200");
+
         didl.song(&unsized_song, Object::Shelf(Shelf::Songs));
+
         let written = didl.finished();
 
         let read = document(&written, crate::Asked::Description).expect("a document");
@@ -327,7 +344,9 @@ mod tests {
     fn a_converted_song_says_so_in_its_flags_and_an_untouched_one_does_not() {
         let protocol = |song: &Song| {
             let mut didl = Didl::new("http://10.0.0.2:8200");
+
             didl.song(song, Object::Shelf(Shelf::Songs));
+
             let written = didl.finished();
             let read = document(&written, crate::Asked::Description).expect("a document");
             read.descendants()

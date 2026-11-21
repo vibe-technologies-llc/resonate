@@ -151,6 +151,7 @@ impl Syncing {
         Arc::new(move |recording| {
             let catalog = catalog.as_ref()?;
             let connection = catalog.catalog.0.lock();
+
             let id = catalog.resolved_in(&connection, recording).ok()??;
 
             connection
@@ -355,14 +356,18 @@ pub fn sync_code_in_link(link: String) -> Option<String> {
 impl MobilePlayer {
     pub fn sync_start(&self, mut config: SyncConfig) -> Result<SyncStatus> {
         *self.syncing.reaching.lock() = Reaching::of(&config, &self.syncing.folder);
+
         let mut running = self.syncing.running.lock();
+
         if let Some(previous) = running.take() {
             if config.key.trim().is_empty() {
                 config.key = previous.sync.code().to_owned();
             }
             previous.sync.leave();
         }
+
         let keeps_a_copy = config.enabled && config.musicbrainz_copy;
+
         if config.enabled {
             if !config.nearby_only {
                 self.require_online()?;
@@ -392,6 +397,7 @@ impl MobilePlayer {
 
     pub fn sync_stop(&self) {
         self.syncing.copied.keep(false, self.copy_reaching());
+
         let previous = self.syncing.running.lock().take();
         if let Some(previous) = previous {
             previous.sync.leave();
@@ -521,12 +527,15 @@ impl MobilePlayer {
 
     pub fn sync_received(&self) -> Result<Vec<ReceivedSong>> {
         let waiting = self.waiting_songs()?;
+
         if waiting.is_empty() {
             return Ok(Vec::new());
         }
+
         let indexed = Indexed::read(&self.catalog.0.lock()).map_err(read_error)?;
 
         let mut still = Vec::with_capacity(waiting.len());
+
         for song in waiting {
             match self.held_already(&song, &indexed) {
                 Ok(Some(track)) => self.settled(&song, track),
@@ -543,17 +552,20 @@ impl MobilePlayer {
     pub fn sync_receive(&self, id: u64, descriptor: i32, uri: String) -> Result<Track> {
         let mut output = fresh_destination(descriptor)?;
         let waiting = self.waiting_song(id)?;
+
         let landed = copied(&waiting.path, &mut output).and_then(|_| {
             drop(output);
             self.indexed_download(uri, waiting.received.name.clone(), &waiting.received.song)
         });
         let track = landed?;
+
         self.settled(&waiting, track.id);
         Ok(track)
     }
 
     pub fn sync_standing_folders(&self, id: u64, layout: String) -> Result<Vec<Vec<String>>> {
         let waiting = self.waiting_song(id)?;
+
         self.syncing.files_by(&layout);
         Ok(standing::folders_filed_in(
             &self.sources,
@@ -570,20 +582,25 @@ impl MobilePlayer {
         standing: Vec<StandingDocument>,
     ) -> Result<Option<Track>> {
         let waiting = self.waiting_song(id)?;
+
         self.syncing.files_by(&layout);
+
         let folders =
             standing::folders_filed_in(&self.sources, &waiting, &layout, &self.layouts_synced());
+
         for document in standing::weighed(&waiting, &folders, &standing) {
             if !self.holds_the_same_bytes(&document.uri, &waiting.path)
                 && !self.holds_the_same_audio(&document.uri, waiting.file)
             {
                 continue;
             }
+
             let track = self.indexed_download(
                 document.uri.clone(),
                 document.name.clone(),
                 &waiting.received.song,
             )?;
+
             self.settled(&waiting, track.id);
             return Ok(Some(track));
         }
@@ -592,6 +609,7 @@ impl MobilePlayer {
 
     pub fn sync_refuse_received(&self, id: u64) -> Result<()> {
         let waiting = self.waiting_song(id)?;
+
         self.forget_received(id, &waiting.path)?;
         self.refused_to_land(&waiting.received.song);
         Ok(())
@@ -615,11 +633,13 @@ impl MobilePlayer {
         let running = self.syncing.running.lock();
         let running = running.as_ref().ok_or(Error::SyncOff)?;
         let device = the_device(&running.sync, &device).ok_or(Error::UnknownSyncDevice)?;
+
         let missing = running
             .sync
             .missing_from(at)
             .map_err(|source| Error::sync(SyncOp::Missing, source))?;
         let asked = counted(missing.len());
+
         if !missing.is_empty() {
             running.sync.fetch(missing, device.id);
         }
@@ -751,6 +771,7 @@ impl MobilePlayer {
             filed_as: Arc::clone(&self.syncing.filed_as),
             takes_deletions: config.takes_deletions,
         });
+
         let settings = Settings {
             server: if config.nearby_only {
                 Server::Nowhere
@@ -773,8 +794,10 @@ impl MobilePlayer {
             nearby: Some(nearby()),
             relay_only: false,
         };
+
         *self.syncing.resolving.lock() = Some(Arc::clone(&catalog));
         *self.syncing.server.lock() = (!config.nearby_only).then(|| config.server.clone());
+
         let shared = (!config.nearby_only)
             .then(|| {
                 Shared::start(
@@ -789,9 +812,12 @@ impl MobilePlayer {
             })
             .transpose()
             .map_err(|source| Error::sync(SyncOp::Start, source))?;
+
         *self.syncing.shared.lock() = shared.map(Arc::new);
+
         let sync =
             Sync::start(settings, catalog).map_err(|source| Error::sync(SyncOp::Start, source))?;
+
         if let Some(driven) = self.driven() {
             sync.control_with(Arc::new(driven), config.control.into());
         }
@@ -896,6 +922,7 @@ impl MobilePlayer {
     fn held_already(&self, waiting: &Waiting, indexed: &Indexed) -> Result<Option<u64>> {
         let keys = self.keys_waiting(&waiting.received)?;
         let mut held = Vec::new();
+
         {
             let connection = self.catalog.0.lock();
             for key in &keys {
@@ -926,11 +953,13 @@ impl MobilePlayer {
                 "SELECT recording FROM received_also WHERE received = ?1 ORDER BY recording",
             )
             .map_err(read_error)?;
+
         let also = query
             .query_map([received.id as i64], |row| row.get::<_, String>(0))
             .map_err(read_error)?
             .collect::<rusqlite::Result<Vec<_>>>()
             .map_err(read_error)?;
+
         for key in also {
             if !keys.contains(&key) {
                 keys.push(key);
@@ -947,11 +976,14 @@ impl MobilePlayer {
 
     fn landed(&self, waiting: &Waiting, track: u64) -> Result<()> {
         let keys = self.keys_waiting(&waiting.received)?;
+
         {
             let mut connection = self.catalog.0.lock();
+
             let transaction = connection
                 .transaction()
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+
             note_received(&transaction, &keys, track)
                 .and_then(|()| {
                     transaction.execute(
@@ -976,6 +1008,7 @@ impl MobilePlayer {
             return false;
         };
         let size = file.metadata().map(|metadata| metadata.len()).ok();
+
         if media
             .stream
             .byte_len()
@@ -1013,6 +1046,7 @@ impl MobilePlayer {
         let first = usize::try_from(handoff.at).unwrap_or_default();
         let mut tracks = Vec::new();
         let mut handed_row_held = false;
+
         {
             let indexed = Indexed::read(&self.catalog.0.lock()).map_err(read_error)?;
             for (row, recording) in handoff.rows.iter().enumerate().skip(first) {
@@ -1025,6 +1059,7 @@ impl MobilePlayer {
         if tracks.is_empty() {
             return Err(Error::NothingHandedOff);
         }
+
         let tracks = tracks
             .into_iter()
             .map(|id| self.catalog.track(id))
@@ -1048,6 +1083,7 @@ impl MobilePlayer {
                 })
             })
             .collect::<Result<Vec<_>>>()?;
+
         self.command(Command::Resume(Resumption {
             rows,
             row: 0,
@@ -1066,12 +1102,15 @@ impl DocumentCatalog {
     fn indexed(&self, connection: &Connection) -> rusqlite::Result<Arc<Indexed>> {
         let revision = self.catalog.revision();
         let mut held = self.indexed.lock();
+
         if let Some((read_at, indexed)) = held.as_ref()
             && *read_at == revision
         {
             return Ok(Arc::clone(indexed));
         }
+
         let indexed = Arc::new(Indexed::read(connection)?);
+
         *held = Some((revision, Arc::clone(&indexed)));
         Ok(indexed)
     }
@@ -1080,11 +1119,13 @@ impl DocumentCatalog {
         let connection = self.catalog.0.lock();
         let indexed = self.indexed(&connection).map_err(unavailable)?;
         let mut found = Vec::new();
+
         let mut add = |held: Found| {
             if !found.contains(&held) {
                 found.push(held);
             }
         };
+
         for id in indexed.visible.resolved(recording) {
             add(Found::Visible(id));
         }
@@ -1152,16 +1193,20 @@ impl DocumentCatalog {
         let mut query = connection.prepare_cached(
             "SELECT title, artist, album, recording, duration_ms FROM received ORDER BY id",
         )?;
+
         let named = query
             .query_map([], |row| recording_at(row, 0))?
             .collect::<rusqlite::Result<Vec<_>>>()?
             .iter()
             .any(|waiting| waiting.names_the_same_song_as(recording));
+
         if named {
             return Ok(true);
         }
+
         let mut also = connection
             .prepare_cached("SELECT EXISTS(SELECT 1 FROM received_also WHERE recording = ?1)")?;
+
         for key in keys_of(recording) {
             if also.query_row([key], |row| row.get::<_, bool>(0))? {
                 return Ok(true);
@@ -1198,6 +1243,7 @@ impl DocumentCatalog {
 
     fn folded_into_the_waiting(&self, waiting: i64, recording: &Recording) -> Answered<()> {
         let connection = self.catalog.0.lock();
+
         for key in keys_of(recording) {
             connection
                 .execute(
@@ -1274,11 +1320,14 @@ impl Catalog for DocumentCatalog {
         entries: &[Recording],
     ) -> Answered<LocalPlaylist> {
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(unavailable)?;
         let mut rows = Vec::with_capacity(entries.len());
+
         for entry in entries {
             rows.extend(self.resolved_in(&transaction, entry)?);
         }
+
         let held = match at {
             Some(at) => transaction
                 .query_row(
@@ -1294,6 +1343,7 @@ impl Catalog for DocumentCatalog {
             Some(id) => id,
             None => {
                 let named = a_free_name(&transaction, name, None).map_err(unavailable)?;
+
                 transaction
                     .execute(
                         "INSERT INTO playlists(name, folded, created) VALUES (?1, ?2, ?3)",
@@ -1304,6 +1354,7 @@ impl Catalog for DocumentCatalog {
             }
         };
         let name = a_free_name(&transaction, name, Some(id)).map_err(unavailable)?;
+
         transaction
             .execute(
                 "UPDATE playlists SET name = ?2, folded = ?3, revision = revision + 1 WHERE id = ?1",
@@ -1314,12 +1365,14 @@ impl Catalog for DocumentCatalog {
             tracing::warn!(%error, "a synced playlist could not be written");
             Refused::Unavailable
         })?;
+
         let created: i64 = transaction
             .query_row("SELECT created FROM playlists WHERE id = ?1", [id], |row| {
                 row.get(0)
             })
             .map_err(unavailable)?;
         let entries = entries_of(&transaction, id).map_err(unavailable)?;
+
         transaction.commit().map_err(unavailable)?;
         self.arrived();
         Ok(LocalPlaylist {
@@ -1339,6 +1392,7 @@ impl Catalog for DocumentCatalog {
                 params![at.id, at.created],
             )
             .map_err(unavailable)?;
+
         if removed > 0 {
             self.arrived();
         }
@@ -1386,11 +1440,13 @@ impl Catalog for DocumentCatalog {
             reading: body.reading,
             rows: body.rows,
         };
+
         if stored.query().is_none() {
             return Err(Refused::Unwritable);
         }
 
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(unavailable)?;
         let held = match at {
             Some(at) => transaction
@@ -1403,10 +1459,12 @@ impl Catalog for DocumentCatalog {
                 .map_err(unavailable)?,
             None => None,
         };
+
         let id = match held {
             Some(id) => id,
             None => {
                 let named = a_free_name(&transaction, &body.name, None).map_err(unavailable)?;
+
                 transaction
                     .execute(
                         "INSERT INTO playlists(name, folded, created) VALUES (?1, ?2, ?3)",
@@ -1417,6 +1475,7 @@ impl Catalog for DocumentCatalog {
             }
         };
         let name = a_free_name(&transaction, &body.name, Some(id)).map_err(unavailable)?;
+
         transaction
             .execute(
                 "UPDATE playlists SET name = ?2, folded = ?3, revision = revision + 1 WHERE id = ?1",
@@ -1424,11 +1483,13 @@ impl Catalog for DocumentCatalog {
             )
             .map_err(unavailable)?;
         write_stored_query(&transaction, id as u64, &stored).map_err(unavailable)?;
+
         let created: i64 = transaction
             .query_row("SELECT created FROM playlists WHERE id = ?1", [id], |row| {
                 row.get(0)
             })
             .map_err(unavailable)?;
+
         transaction.commit().map_err(unavailable)?;
         self.arrived();
         Ok(LocalQuery {
@@ -1459,12 +1520,14 @@ impl Catalog for DocumentCatalog {
         let Some(id) = self.resolved_in(&connection, recording)? else {
             return Ok(false);
         };
+
         let changed = connection
             .execute(
                 "UPDATE documents SET favourite = ?2 WHERE id = ?1 AND favourite != ?2",
                 params![id as i64, favoured],
             )
             .map_err(unavailable)?;
+
         if changed > 0 {
             self.arrived();
         }
@@ -1508,6 +1571,7 @@ impl Catalog for DocumentCatalog {
             })
             .map_err(unavailable)?;
         let mut listens = Vec::with_capacity(rows.len());
+
         for (id, began, heard_ms, newest, recording) in rows {
             if newest && began > settled_before {
                 break;
@@ -1527,6 +1591,7 @@ impl Catalog for DocumentCatalog {
         let Some(id) = self.resolved_in(&connection, &listen.recording)? else {
             return Ok(false);
         };
+
         let inserted = connection
             .execute(
                 "INSERT OR IGNORE INTO listens(track, began, heard_ms, counted, elsewhere, origin_device, origin_id) VALUES (?1, ?2, ?3, 1, 1, ?4, ?5)",
@@ -1539,6 +1604,7 @@ impl Catalog for DocumentCatalog {
                 ],
             )
             .map_err(unavailable)?;
+
         if inserted > 0 {
             self.arrived();
         }
@@ -1549,6 +1615,7 @@ impl Catalog for DocumentCatalog {
         let zone = ZoneId::new(self.shown.load(Ordering::Acquire)).unwrap_or(ZoneId::FIRST);
         let kept = catalog::QueueKept::of(zone);
         let connection = self.catalog.0.lock();
+
         let Some((row_at, position_ms)) = connection
             .query_row(kept.read_place, [zone.get()], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
@@ -1562,6 +1629,7 @@ impl Catalog for DocumentCatalog {
             .query_row(kept.held, [zone.get()], |row| row.get(0))
             .map_err(unavailable)?;
         let held = usize::try_from(held).unwrap_or_default();
+
         let (playing, position_ms) =
             catalog::place_among_documents(&connection, zone, row_at, position_ms.max(0) as u64)
                 .map_err(unavailable)?;
@@ -1577,9 +1645,11 @@ impl Catalog for DocumentCatalog {
                     .collect::<rusqlite::Result<Vec<_>>>()
             })
             .map_err(unavailable)?;
+
         if rows.is_empty() {
             return Ok(None);
         }
+
         let at = playing.saturating_sub(window.start).min(rows.len() - 1);
         Ok(Some(Resumed {
             rows,
@@ -1600,6 +1670,7 @@ impl Catalog for DocumentCatalog {
                 }
             }
         }
+
         let connection = self.catalog.0.lock();
         self.waiting_as(&connection, recording).map_err(unavailable)
     }
@@ -1710,32 +1781,43 @@ impl Catalog for DocumentCatalog {
         staged: &Path,
     ) -> Answered<bool> {
         let extension = extension.to_ascii_lowercase();
+
         if !AUDIO_EXTENSIONS.contains(&extension.as_str()) {
             return Err(Refused::Unwritable);
         }
         if self.holds(recording)? {
             let _ = fs::remove_file(staged);
+
             return Ok(true);
         }
         fs::create_dir_all(&self.received).map_err(|_| Refused::Unwritable)?;
+
         let path = self.landed_name(&extension);
         let text = path.to_str().ok_or(Refused::Unwritable)?.to_owned();
+
         fs::rename(staged, &path).map_err(|_| Refused::Unwritable)?;
+
         let file = file_of(&self.sources, &path);
+
         if let Some(file) = file {
             if let Some(track) = self.held_as_the_same_file(file)? {
                 note_received(&self.catalog.0.lock(), &keys_of(recording), track)
                     .map_err(unavailable)?;
+
                 let _ = fs::remove_file(&path);
+
                 self.arrived();
                 return Ok(true);
             }
             if let Some(waiting) = self.waiting_as_the_same_file(file)? {
                 self.folded_into_the_waiting(waiting, recording)?;
+
                 let _ = fs::remove_file(&path);
+
                 return Ok(true);
             }
         }
+
         let kept = self.catalog.0.lock().execute(
             "INSERT INTO received(path, extension, title, artist, album, recording, duration_ms, packets, frames, rate) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
             params![
@@ -1753,8 +1835,10 @@ impl Catalog for DocumentCatalog {
                 file.map(|file| file.rate),
             ],
         );
+
         if let Err(error) = kept {
             let _ = fs::remove_file(&path);
+
             return Err(unavailable(error));
         }
         self.arrived();
@@ -1767,6 +1851,7 @@ impl Catalog for DocumentCatalog {
 
     fn answers_after(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
         let mut learnt = self.lyrics_to_share(mark, most)?;
+
         learnt.extend(self.studies_to_share(mark, most)?);
         learnt.extend(self.band_peaks_to_share(mark, most)?);
         learnt.sort_by_key(|learnt| learnt.at);
@@ -1861,8 +1946,10 @@ impl Indexed {
             "SELECT id, recording, title, artist, album, duration_ms, withdrawn FROM documents
               WHERE missing = 0 OR withdrawn = 1 ORDER BY id",
         )?;
+
         let mut rows = query.query([])?;
         let mut indexed = Self::default();
+
         while let Some(row) = rows.next()? {
             let index = if row.get::<_, bool>(6)? {
                 &mut indexed.withdrawn
@@ -1870,10 +1957,13 @@ impl Indexed {
                 &mut indexed.visible
             };
             let id = row.get::<_, i64>(0)? as u64;
+
             if let Some(recording) = row.get::<_, Option<String>>(1)? {
                 index.recordings.entry(recording).or_default().push(id);
             }
+
             let artist = folded_letters(row.get::<_, String>(3)?.trim());
+
             index.artists.entry(artist).or_default().push(Entry {
                 id,
                 words: title_words(&row.get::<_, String>(2)?),
@@ -1894,9 +1984,11 @@ impl Index {
             .cloned()
             .unwrap_or_default();
         let words = title_words(&recording.title);
+
         if words.is_empty() {
             return found;
         }
+
         let album = folded_letters(recording.album.trim());
         let named = self
             .artists
@@ -1908,6 +2000,7 @@ impl Index {
                     && (album.is_empty() || held.album == album)
                     && lasts_alike(held.length, recording.length)
             });
+
         for held in named {
             if !found.contains(&held.id) {
                 found.push(held.id);
@@ -1981,6 +2074,7 @@ fn a_free_name(
                 |row| row.get(0),
             )
             .optional()?;
+
         if holder.is_none_or(|holder| Some(holder) == keeping) {
             return Ok(candidate);
         }
@@ -1990,6 +2084,7 @@ fn a_free_name(
 
 fn within(text: &str, bytes: usize) -> &str {
     let mut end = bytes.min(text.len());
+
     while !text.is_char_boundary(end) {
         end -= 1;
     }
@@ -2017,6 +2112,7 @@ fn received_as(
     withdrawn: bool,
 ) -> rusqlite::Result<Vec<u64>> {
     let mut found = Vec::new();
+
     for key in keys_of(recording) {
         for id in received_under(connection, &key, withdrawn)? {
             if !found.contains(&id) {
@@ -2089,9 +2185,11 @@ fn file_of(sources: &Sources, path: &Path) -> Option<WholeFile> {
 fn named_alike(name: &str, candidate: &str) -> bool {
     let name = name.nfc().collect::<String>();
     let candidate = candidate.nfc().collect::<String>();
+
     if candidate == name {
         return true;
     }
+
     let path = Path::new(&name);
     let Some(stem) = path.file_stem().and_then(OsStr::to_str) else {
         return false;
@@ -2114,6 +2212,7 @@ fn bytes_alike(mut held: impl Read, mut received: impl Read) -> io::Result<bool>
     let mut theirs = vec![0_u8; COMPARED_AT_ONCE];
     loop {
         let read = filled(&mut held, &mut ours)?;
+
         if filled(&mut received, &mut theirs)? != read || ours[..read] != theirs[..read] {
             return Ok(false);
         }
@@ -2125,6 +2224,7 @@ fn bytes_alike(mut held: impl Read, mut received: impl Read) -> io::Result<bool>
 
 fn filled(from: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
     let mut read = 0;
+
     while read < buffer.len() {
         match from.read(&mut buffer[read..]) {
             Ok(0) => break,
@@ -2196,6 +2296,7 @@ fn copied(from: &Path, into: &mut File) -> Result<u64> {
         op: ReceivedOp::Copy,
         source,
     })?;
+
     into.flush().map_err(|source| Error::Received {
         op: ReceivedOp::Finish,
         source,
@@ -2276,6 +2377,7 @@ mod tests {
             "resonate-mobile-sync-{name}-{}",
             playlists::created_now()
         ));
+
         fs::create_dir_all(&folder).expect("a test folder");
         folder
     }
@@ -2300,6 +2402,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("an indexed song");
+
         player
             .catalog
             .learned(track.id, recording, None, None, "")
@@ -2323,6 +2426,7 @@ mod tests {
         let player = player(&folder);
         let joga = song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
         let bachelorette = song(&player, "content://test/b.flac", "Bachelorette", None);
+
         let documents = documents_of(&player, &folder);
 
         let id = player
@@ -2373,6 +2477,7 @@ mod tests {
         documents.remove_playlist(made.at).expect("a removal");
 
         assert_eq!(player.playlists().expect("the playlists").len(), 1);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2381,6 +2486,7 @@ mod tests {
         let folder = folder("listens");
         let player = player(&folder);
         let joga = song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
+
         let documents = documents_of(&player, &folder);
         let an_hour_ago = unix_seconds(SystemTime::now()) - 3600;
 
@@ -2393,6 +2499,7 @@ mod tests {
                 params![joga.id as i64, an_hour_ago, unix_seconds(SystemTime::now())],
             )
             .expect("two of this device's listens");
+
         let credited = documents
             .credit(&RemoteListen {
                 from: DeviceId([1; 16]),
@@ -2432,6 +2539,7 @@ mod tests {
         assert_eq!(sent[0].heard, Duration::from_secs(300));
         assert_eq!(scrobbled, 2);
         assert_eq!(player.statistics(0).expect("statistics").plays, 3);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2439,7 +2547,9 @@ mod tests {
     fn a_listen_credited_twice_counts_once_and_two_devices_at_one_moment_count_twice() {
         let folder = folder("credited-twice");
         let player = player(&folder);
+
         song(&player, "content://test/joga.flac", "Jóga", Some(RECORDING));
+
         let documents = documents_of(&player, &folder);
         let at = unix_seconds(SystemTime::now()) * NANOS_A_SECOND;
         let from = |device: u8, id: u64| RemoteListen {
@@ -2457,6 +2567,7 @@ mod tests {
 
         assert!(first && again && another_device && another_listen);
         assert_eq!(player.statistics(0).expect("statistics").plays, 3);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2464,8 +2575,11 @@ mod tests {
     fn a_saved_query_from_another_device_is_held_as_a_saved_search_apart_from_the_lists() {
         let folder = folder("queries");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
+
         song(&player, "content://test/joga.flac", "Jóga", None);
+
         let list = player.create_playlist("Mix".into()).expect("a list");
         let body = |name: &str, sort: u8| QueryBody {
             name: name.into(),
@@ -2498,11 +2612,13 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![list_at]
         );
+
         let shown = player.playlists().expect("the playlists");
         let held = shown
             .iter()
             .find(|playlist| playlist.id == written.at.id as u64)
             .expect("the saved search");
+
         assert_eq!(held.songs, 1);
         assert_eq!(
             held.search.as_ref().map(|search| search.text.as_str()),
@@ -2523,6 +2639,7 @@ mod tests {
         documents.remove_playlist(written.at).expect("removed");
 
         assert!(documents.queries().expect("the queries").is_empty());
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2530,6 +2647,7 @@ mod tests {
     fn a_saved_search_revised_on_the_phone_is_offered_to_the_other_devices_in_its_new_form() {
         let folder = folder("revised-query");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let id = player
             .save_search(
@@ -2564,6 +2682,7 @@ mod tests {
             .expect("revised");
 
         let revised = documents.queries().expect("the queries");
+
         assert_eq!(revised.len(), 1);
         assert_eq!(revised[0].at, offered[0].at);
         assert_eq!(
@@ -2577,6 +2696,7 @@ mod tests {
             }
         );
         assert!(documents.revision() > revision);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2585,6 +2705,7 @@ mod tests {
         let folder = folder("migrated");
         let path = folder.join("documents.sqlite");
         let connection = rusqlite::Connection::open(&path).expect("a database");
+
         connection
             .create_scalar_function(
                 "folded",
@@ -2625,6 +2746,7 @@ mod tests {
 
         assert_eq!(columns, 2);
         assert_eq!(queries, 1);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2632,9 +2754,12 @@ mod tests {
     fn a_song_from_another_device_waits_for_its_document_and_is_held_meanwhile() {
         let folder = folder("received");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let staged = folder.join("staged.part");
+
         fs::write(&staged, b"fLaC").expect("a staged song");
+
         let hunter = Recording {
             mbid: Mbid::new(RECORDING).ok(),
             ..named("Hunter", "Björk", 255)
@@ -2672,6 +2797,7 @@ mod tests {
         ));
 
         fs::write(&staged, b"fLaC").expect("the same song again");
+
         assert!(
             documents
                 .land(&hunter, &SongTags::default(), "flac", &staged)
@@ -2680,6 +2806,7 @@ mod tests {
 
         assert!(!staged.exists());
         assert_eq!(player.sync_received().expect("the waiting songs").len(), 1);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2703,13 +2830,18 @@ mod tests {
 
         let folder = folder("unlanded");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let staged = folder.join("staged.part");
+
         fs::write(&staged, b"fLaC").expect("a damaged song");
+
         let hunter = named("Hunter", "Björk", 255);
+
         documents
             .land(&hunter, &SongTags::default(), "flac", &staged)
             .expect("a landing");
+
         let waiting = player.sync_received().expect("the waiting songs");
         let descriptor = File::create(folder.join("unlanded.flac"))
             .expect("a destination")
@@ -2729,6 +2861,7 @@ mod tests {
         player.sync_refuse_received(still[0].id).expect("given up");
 
         assert!(player.sync_received().expect("none waiting").is_empty());
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2742,11 +2875,14 @@ mod tests {
                     .expect("a granted provider"),
             )),
         );
+
         let documents = DocumentCatalog {
             sources,
             ..documents_of(&player, &folder)
         };
+
         fs::write(folder.join("landed.flac"), b"fLaC").expect("a landed file");
+
         let landed = song(
             &player,
             "content://test/landed.flac",
@@ -2778,6 +2914,7 @@ mod tests {
         fs::remove_file(folder.join("landed.flac")).expect("deleted by hand");
 
         assert!(!documents.holds(&hunter).expect("once the file is gone"));
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2789,14 +2926,17 @@ mod tests {
         let there = folder("sender");
         let sender = player(&there);
         let hunter = song(&sender, "content://test/hunter.flac", "Hunter", None);
+
         sender
             .make_playlist("Evening".into(), vec![hunter.id])
             .expect("a playlist");
         sender.favourite(hunter.id, true).expect("a favourite");
+
         let sending_documents = documents_of(&sender, &there);
 
         let here = folder("receiver");
         let receiver = player(&here);
+
         let documents = DocumentCatalog {
             sources: Arc::new(
                 Sources::local().and(Arc::new(
@@ -2806,13 +2946,16 @@ mod tests {
             ),
             ..documents_of(&receiver, &here)
         };
+
         fs::write(here.join("landed.flac"), b"fLaC").expect("a landed file");
+
         let landed = song(
             &receiver,
             "content://test/landed.flac",
             "Hunter (2015 Remaster)",
             None,
         );
+
         receiver
             .note_received_as(
                 &SearchSong {
@@ -2825,12 +2968,14 @@ mod tests {
                 landed.id,
             )
             .expect("noted as the one asked for");
+
         let me = |name: &str| Me {
             name: name.into(),
             platform: Platform::Android,
         };
         let ledger = || {
             let mut ledger = Ledger::in_memory().expect("a ledger");
+
             ledger.enter_space(SpaceId([9; 16])).expect("a space");
             ledger
         };
@@ -2840,16 +2985,21 @@ mod tests {
         sending
             .look(&sending_documents, &me("Phone"))
             .expect("a look");
+
         let told = sending
             .owed()
             .expect("owed")
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
+
         receiving.arrived(&documents, &told).expect("arrived");
+
         let written_at = documents.revision();
         let settled = receiving.settle(&documents).expect("settled");
+
         receiving.look(&documents, &me("Tablet")).expect("a look");
+
         let echoed = receiving
             .owed()
             .expect("owed")
@@ -2868,6 +3018,7 @@ mod tests {
 
         let _ = fs::remove_dir_all(there);
         let _ = fs::remove_dir_all(here);
+
         assert_eq!(rows, [landed.id]);
         assert_eq!((settled, settled_again), (0, 0));
         assert_eq!(documents.revision(), written_at);
@@ -2900,6 +3051,7 @@ mod tests {
                     .expect("a granted provider"),
             )),
         );
+
         let player = MobilePlayer {
             sources: Arc::clone(&sources),
             ..player(&folder)
@@ -2909,7 +3061,9 @@ mod tests {
             ..documents_of(&player, &folder)
         };
         let tagged = folder.join("tagged.wav");
+
         fs::write(&tagged, crate::harness::silence()).expect("a song");
+
         let edits = [
             (TagField::Title, "Hunter (2015 Remaster)"),
             (TagField::Artist, "Björk"),
@@ -2919,6 +3073,7 @@ mod tests {
             field,
             value: value.into(),
         });
+
         FileTags::default()
             .write(
                 &MediaLocation::local(tagged.clone()),
@@ -2931,8 +3086,11 @@ mod tests {
                 },
             )
             .expect("a tagged file");
+
         let staged = folder.join("staged.part");
+
         fs::copy(&tagged, &staged).expect("a staged song");
+
         let hunter = Recording {
             mbid: None,
             title: "Hunter".into(),
@@ -2947,10 +3105,12 @@ mod tests {
                 .land(&hunter, &SongTags::default(), "wav", &staged)
                 .expect("a landing")
         );
+
         let waiting = player.sync_received().expect("the waiting songs");
         let descriptor = File::create(folder.join("landed.wav"))
             .expect("a destination")
             .into_raw_fd();
+
         player
             .sync_receive(
                 waiting[0].id,
@@ -2958,6 +3118,7 @@ mod tests {
                 "content://test/landed.wav".into(),
             )
             .expect("a landed song");
+
         let by_name = {
             let connection = player.catalog.0.lock();
             Indexed::read(&connection)
@@ -2970,6 +3131,7 @@ mod tests {
         assert!(player.sync_received().expect("none waiting").is_empty());
         assert!(documents.holds(&hunter).expect("held once landed"));
         assert!(documents.open(&hunter).expect("an answer").is_some());
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -2987,6 +3149,7 @@ mod tests {
             sources: Arc::clone(&sources),
             ..player(folder)
         };
+
         let documents = DocumentCatalog {
             sources,
             ..documents_of(&player, folder)
@@ -2996,7 +3159,9 @@ mod tests {
 
     fn landed_waiting(documents: &DocumentCatalog, folder: &Path, recording: &Recording) {
         let staged = folder.join(format!("{}.part", recording.title));
+
         fs::write(&staged, crate::harness::silence()).expect("a staged song");
+
         assert!(
             documents
                 .land(recording, &SongTags::default(), "wav", &staged)
@@ -3030,13 +3195,17 @@ mod tests {
         let folder = folder("standing");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let waiting = player.sync_received().expect("the waiting songs");
         let name = waiting[0].name.clone();
         let numbered = name.replace(".wav", " (1).wav");
+
         fs::write(folder.join(&name), b"RIFF of another song").expect("another file");
         fs::write(folder.join(&numbered), crate::harness::silence()).expect("the same bytes");
         fs::write(folder.join("Elsewhere.wav"), crate::harness::silence()).expect("a copy");
+
         let standing = |names: &[&str]| {
             names
                 .iter()
@@ -3067,6 +3236,7 @@ mod tests {
         let held = documents.holds(&hunter).expect("held once taken");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(unlike.is_none());
         assert_eq!(still.len(), 1);
         assert_eq!(taken.uri, format!("content://test/{numbered}"));
@@ -3080,6 +3250,7 @@ mod tests {
             let mut folders = player
                 .sync_standing_folders(received.id, DEFAULT_LAYOUT.to_owned())
                 .expect("the folders a copy may be filed in");
+
             folders.insert(0, Vec::new());
             folders
         })
@@ -3093,11 +3264,13 @@ mod tests {
         use std::os::fd::IntoRawFd;
 
         let mut landed = Vec::new();
+
         for received in player.sync_received().expect("the waiting songs") {
             let standing = looked_in(&received)
                 .into_iter()
                 .flat_map(|within| documents_in(folder, within))
                 .collect();
+
             if let Some(track) = player
                 .sync_receive_standing(received.id, DEFAULT_LAYOUT.to_owned(), standing)
                 .expect("compared")
@@ -3105,10 +3278,12 @@ mod tests {
                 landed.push(track);
                 continue;
             }
+
             let name = free_name_in(folder, &received.name);
             let descriptor = File::create(folder.join(&name))
                 .expect("a destination")
                 .into_raw_fd();
+
             landed.push(
                 player
                     .sync_receive(received.id, descriptor, format!("content://test/{name}"))
@@ -3149,8 +3324,10 @@ mod tests {
     fn every_folder_under(root: &Path) -> Vec<Vec<String>> {
         let mut found = vec![Vec::new()];
         let mut at = 0;
+
         while let Some(within) = found.get(at).cloned() {
             at += 1;
+
             let path = within
                 .iter()
                 .fold(root.to_path_buf(), |at, part| at.join(part));
@@ -3178,10 +3355,13 @@ mod tests {
 
     fn retagged(mut song: Vec<u8>) -> Vec<u8> {
         let tag = b"retagged";
+
         song.extend_from_slice(b"JUNK");
         song.extend_from_slice(&(tag.len() as u32).to_le_bytes());
         song.extend_from_slice(tag);
+
         let riff = (song.len() - 8) as u32;
+
         song[4..8].copy_from_slice(&riff.to_le_bytes());
         song
     }
@@ -3199,24 +3379,32 @@ mod tests {
         let folder = folder("landed-again");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let first = landed_by_the_front_end(&player, &folder);
+
         fs::remove_file(folder.join(&first[0].name)).expect("deleted by the front end");
 
         let lacked = !documents.holds(&hunter).expect("an answer");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let again = landed_by_the_front_end(&player, &folder);
         let forgotten = player
             .forget_deleted_songs(vec![first[0].id])
             .expect("a deletion");
         let held = documents.holds(&hunter).expect("an answer");
         let marked = documents.deleted_here(&hunter).expect("an answer");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let spread_again = player.sync_received().expect("the waiting songs");
         let songs = player.song_uris().expect("the songs");
         let files = files_in(&folder);
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(lacked);
         assert_eq!(again[0].uri, first[0].uri);
         assert_eq!(forgotten.forgotten, 0);
@@ -3235,10 +3423,13 @@ mod tests {
         let folder = folder("standing-audio");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let name = player.sync_received().expect("the waiting songs")[0]
             .name
             .clone();
+
         fs::write(folder.join(&name), retagged(crate::harness::silence()))
             .expect("the same audio retagged");
 
@@ -3247,6 +3438,7 @@ mod tests {
         let files = files_in(&folder);
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(landed.len(), 1);
         assert_eq!(landed[0].uri, format!("content://test/{name}"));
         assert!(held);
@@ -3259,8 +3451,11 @@ mod tests {
         let folder = folder("standing-filed");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let filed = folder.join("Björk").join("Homogenic");
+
         fs::create_dir_all(&filed).expect("an album folder");
         fs::write(
             filed.join("02 Hunter.wav"),
@@ -3275,6 +3470,7 @@ mod tests {
         let songs = player.song_uris().expect("the songs");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(landed.len(), 1);
         assert_eq!(
             landed[0].uri,
@@ -3380,14 +3576,18 @@ mod tests {
         let desk_folder = self::folder("standing-desk-ledger");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let filed = folder.join("Björk - Homogenic");
+
         fs::create_dir_all(&filed).expect("the desk's album folder");
         fs::write(
             filed.join("Hunter.wav"),
             retagged(crate::harness::silence()),
         )
         .expect("the same audio filed by the desk and retagged");
+
         let received = player.sync_received().expect("the waiting songs");
         let before = player
             .sync_standing_folders(received[0].id, DEFAULT_LAYOUT.to_owned())
@@ -3412,6 +3612,7 @@ mod tests {
                 takes_deletions: true,
             })
             .expect("sync started");
+
         let told = player
             .syncing
             .running
@@ -3447,6 +3648,7 @@ mod tests {
             Arc::new(FilesAs(DESK_FILES_AS)),
         )
         .expect("the desk started");
+
         eventually("the desk's layout on the phone", || {
             player.layouts_synced() == [DESK_FILES_AS]
         });
@@ -3457,6 +3659,7 @@ mod tests {
         let landed = landed_by_the_front_end(&player, &folder);
         let held = documents.holds(&hunter).expect("an answer");
         let wavs = wavs_in(&folder);
+
         eventually("the phone's own layout on the desk", || {
             desk.layouts()
                 .expect("layouts")
@@ -3467,9 +3670,11 @@ mod tests {
 
         player.sync_stop();
         drop(desk);
+
         let _ = fs::remove_dir_all(&folder);
         let _ = fs::remove_dir_all(&desk_folder);
         let desk_album = vec!["Björk - Homogenic".to_owned()];
+
         assert!(!before.contains(&desk_album));
         assert!(after.contains(&desk_album));
         assert!(after.contains(&vec!["Björk".to_owned(), "Homogenic".to_owned()]));
@@ -3484,9 +3689,12 @@ mod tests {
         let folder = folder("standing-elsewhere");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let received = player.sync_received().expect("the waiting songs");
         let elsewhere = folder.join("Björk").join("Debut");
+
         fs::create_dir_all(&elsewhere).expect("another album's folder");
         fs::write(elsewhere.join("Hunter.wav"), crate::harness::silence())
             .expect("the same bytes in another album's folder");
@@ -3498,6 +3706,7 @@ mod tests {
         let files = files_in(&folder);
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(folders.contains(&vec!["Björk".to_owned(), "Homogenic".to_owned()]));
         assert!(folders.contains(&vec!["Homogenic".to_owned()]));
         assert!(!folders.contains(&vec!["Björk".to_owned(), "Debut".to_owned()]));
@@ -3514,6 +3723,7 @@ mod tests {
     fn a_song_out_of_reach_for_now_is_held_and_only_one_not_found_is_fetched_again() {
         let folder = folder("away");
         let (player, documents) = granted(&folder);
+
         song(
             &player,
             "content://card/hunter.flac",
@@ -3521,6 +3731,7 @@ mod tests {
             Some(RECORDING),
         );
         song(&player, "content://test/joga.flac", "Jóga", None);
+
         let hunter = Recording {
             mbid: Mbid::new(RECORDING).ok(),
             ..named("Hunter", "Björk", 305)
@@ -3534,6 +3745,7 @@ mod tests {
         let gone = documents.holds(&joga).expect("an answer");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(away);
         assert!(!gone);
     }
@@ -3543,6 +3755,7 @@ mod tests {
 
         fs::create_dir_all(at.parent().expect("a folder")).expect("a folder");
         fs::write(at, crate::harness::silence()).expect("a song");
+
         let edits = [
             (TagField::Title, "Hunter"),
             (TagField::Artist, "Björk"),
@@ -3552,6 +3765,7 @@ mod tests {
             field,
             value: value.into(),
         });
+
         FileTags::default()
             .write(
                 &MediaLocation::local(at.to_path_buf()),
@@ -3570,13 +3784,17 @@ mod tests {
     fn a_song_of_a_withdrawn_folder_stays_held_and_only_a_scan_of_another_folder_takes_its_place() {
         let folder = folder("withdrawn");
         let (player, documents) = granted(&folder);
+
         for place in ["a/hunter.wav", "b/hunter.wav", "landed/hunter.wav"] {
             tagged_silence(&folder.join(place));
         }
+
         let held = player
             .index_document("content://test/a/hunter.wav".into(), "hunter.wav".into())
             .expect("a scanned song");
+
         player.favourite(held.id, true).expect("a favourite");
+
         let hunter = two_seconds_of("Hunter");
         let asked = SearchSong {
             title: "Hunter".into(),
@@ -3602,6 +3820,7 @@ mod tests {
         player
             .hide_songs_under("content://test/a/".into())
             .expect("withdrawn");
+
         let withdrawn_held = documents.holds(&hunter).expect("an answer");
         let landed = player
             .indexed_download(
@@ -3615,6 +3834,7 @@ mod tests {
             .index_document("content://test/b/hunter.wav".into(), "hunter.wav".into())
             .expect("a scan of another folder");
         let after_scan = still_withdrawn(&player);
+
         let favoured = (
             player
                 .catalog
@@ -3629,6 +3849,7 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(withdrawn_held);
         assert_eq!(after_landing, Some(true));
         assert_eq!(after_scan, None);
@@ -3640,10 +3861,12 @@ mod tests {
     {
         let folder = folder("untagged");
         let (player, _) = granted(&folder);
+
         for place in ["a/Carry Potter - Enes.opus.wav", "landed/Enes (1).wav"] {
             fs::create_dir_all(folder.join(place).parent().expect("a folder")).expect("a folder");
             fs::write(folder.join(place), crate::harness::silence()).expect("a song");
         }
+
         let asked = SearchSong {
             title: "Enes".into(),
             artist: "Carry Potter".into(),
@@ -3671,6 +3894,7 @@ mod tests {
             .expect("a rescan");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(
             (scanned.title.as_str(), scanned.artist.as_str()),
             ("Enes.opus", "Carry Potter")
@@ -3689,11 +3913,13 @@ mod tests {
     fn a_landed_song_indexed_again_under_another_spelling_of_its_file_stays_one_row() {
         let folder = folder("respelled");
         let (player, _) = granted(&folder);
+
         player
             .services
             .files
             .reach_through(Arc::new(Here(folder.clone())));
         tagged_silence(&folder.join("landed/hunter.wav"));
+
         let asked = SearchSong {
             title: "Hunter".into(),
             artist: "Björk".into(),
@@ -3735,6 +3961,7 @@ mod tests {
         let after_scan = rows(&player);
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(landed_again.id, landed.id);
         assert_eq!(landed_again.uri, "content://test/landed/hunter.wav");
         assert_eq!(after_landing, 1);
@@ -3769,11 +3996,13 @@ mod tests {
             "Hunter",
             None,
         );
+
         player.favourite(held.id, true).expect("a favourite");
 
         player
             .hide_songs_under("content://test/tree/document/".into())
             .expect("withdrawn");
+
         let regranted = song(
             &player,
             "content://test/tree/document/hunter.flac",
@@ -3792,6 +4021,7 @@ mod tests {
             .expect("the row");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(regranted.id, held.id);
         assert!(player.catalog.track(held.id).expect("the song").favourite);
         assert!(!withdrawn);
@@ -3801,6 +4031,7 @@ mod tests {
     fn every_copy_a_song_resolves_to_is_tried_so_an_unreadable_one_hides_no_readable_one() {
         let folder = folder("copies");
         let (player, documents) = granted(&folder);
+
         song(
             &player,
             "content://test/gone.flac",
@@ -3817,6 +4048,7 @@ mod tests {
         song(&player, "content://test/kept-joga.flac", "Jóga", None);
         fs::write(folder.join("kept.flac"), b"fLaC").expect("a kept file");
         fs::write(folder.join("kept-joga.flac"), b"fLaC").expect("a kept file");
+
         let hunter = Recording {
             mbid: Mbid::new(RECORDING).ok(),
             ..named("Hunter", "Björk", 305)
@@ -3836,6 +4068,7 @@ mod tests {
         );
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(held, (true, true));
         assert_eq!(opened, (true, true));
     }
@@ -3850,11 +4083,14 @@ mod tests {
         let hunter = two_seconds_of("Hunter");
         let renamed = two_seconds_of("Hunter (Remastered)");
         let elsewhere = two_seconds_of("Hunter (Live at Shepherd's Bush)");
+
         landed_waiting(&documents, &first, &hunter);
+
         let waiting = player.sync_received().expect("the waiting songs");
         let descriptor = File::create(first.join("landed.wav"))
             .expect("a destination")
             .into_raw_fd();
+
         player
             .sync_receive(
                 waiting[0].id,
@@ -3864,21 +4100,27 @@ mod tests {
             .expect("a landed song");
 
         let unheld_before = documents.holds(&renamed).expect("an answer");
+
         landed_waiting(&documents, &first, &renamed);
+
         let after_renamed = player.sync_received().expect("the waiting songs").len();
         let held_renamed = documents.holds(&renamed).expect("an answer");
 
         let (waiting_player, waiting_documents) = granted(&second);
+
         landed_waiting(&waiting_documents, &second, &hunter);
         landed_waiting(&waiting_documents, &second, &elsewhere);
+
         let folded = waiting_player.sync_received().expect("the waiting songs");
         let held_while_waiting = waiting_documents.holds(&elsewhere).expect("an answer");
         let descriptor = File::create(second.join("landed.wav"))
             .expect("a destination")
             .into_raw_fd();
+
         waiting_player
             .sync_receive(folded[0].id, descriptor, "content://test/landed.wav".into())
             .expect("a landed song");
+
         let held_once_landed = (
             waiting_documents.holds(&hunter).expect("an answer"),
             waiting_documents.holds(&elsewhere).expect("an answer"),
@@ -3886,6 +4128,7 @@ mod tests {
 
         let _ = fs::remove_dir_all(&first);
         let _ = fs::remove_dir_all(&second);
+
         assert!(!unheld_before);
         assert_eq!(after_renamed, 0);
         assert!(held_renamed);
@@ -3906,10 +4149,14 @@ mod tests {
         let folder = folder("another-encode");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let waiting = player.sync_received().expect("the waiting songs");
         let kept = player.waiting_song(waiting[0].id).expect("its file").path;
+
         fs::write(folder.join("downloaded.flac"), b"another encode").expect("a download");
+
         let downloaded = player
             .catalog
             .upsert(Track {
@@ -3931,6 +4178,7 @@ mod tests {
             .expect("an answer");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(
             still.is_empty(),
             "a song already held was left to land again"
@@ -3944,9 +4192,12 @@ mod tests {
         let folder = folder("killed");
         let (player, documents) = granted(&folder);
         let hunter = two_seconds_of("Hunter");
+
         landed_waiting(&documents, &folder, &hunter);
+
         let waiting = player.sync_received().expect("the waiting songs");
         let kept = player.waiting_song(waiting[0].id).expect("its file").path;
+
         fs::copy(&kept, folder.join("landed.wav")).expect("the bytes copied");
         player
             .indexed_download(
@@ -3960,6 +4211,7 @@ mod tests {
         let held = documents.holds(&hunter).expect("an answer");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert!(still.is_empty());
         assert!(!kept.exists());
         assert!(held);
@@ -3988,10 +4240,12 @@ mod tests {
                 .id
             })
             .collect();
+
         player
             .catalog
             .save_queue(&songs, 600, 90_000)
             .expect("a saved queue");
+
         let documents = documents_of(&player, &folder);
 
         let resumed = documents
@@ -4000,6 +4254,7 @@ mod tests {
             .expect("a resumption");
 
         let _ = fs::remove_dir_all(folder);
+
         assert_eq!(resumed.rows[resumed.at as usize].title, "Song 600");
         assert_eq!(resumed.position, Duration::from_secs(90));
         assert!(resumed.rows.len() <= 500);
@@ -4034,6 +4289,7 @@ mod tests {
             })
             .collect();
         let zone = ZoneId::new(2).expect("a second zone");
+
         player
             .catalog
             .keep_zone(&crate::zoning::KeptZone {
@@ -4052,24 +4308,30 @@ mod tests {
             .catalog
             .save_queue_of(zone, &kitchen, 2, 40_000)
             .expect("the kitchen's queue");
+
         let documents = documents_of(&player, &folder);
 
         let from_the_first = documents
             .resumption()
             .expect("answered")
             .expect("a resumption");
+
         player
             .playing
             .shown_zone_cell()
             .store(zone.get(), Ordering::Release);
+
         let from_the_kitchen = documents
             .resumption()
             .expect("answered")
             .expect("a resumption");
+
         player.playing.shown_zone_cell().store(9, Ordering::Release);
+
         let from_a_zone_without_a_queue = documents.resumption().expect("answered");
 
         let _ = fs::remove_dir_all(folder);
+
         assert_eq!(
             from_the_first
                 .rows

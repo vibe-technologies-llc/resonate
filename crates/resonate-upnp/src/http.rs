@@ -58,6 +58,7 @@ pub(crate) fn exchange_before(
     let address = asking.to.reached_at().map_err(reached)?;
     let mut stream = TcpStream::connect_timeout(&address, time_left(deadline).map_err(reached)?)
         .map_err(reached)?;
+
     stream
         .set_write_timeout(Some(time_left(deadline).map_err(reached)?))
         .map_err(reached)?;
@@ -65,6 +66,7 @@ pub(crate) fn exchange_before(
     stream.write_all(&request(asking)).map_err(reached)?;
 
     let mut held = Vec::new();
+
     let head_ends = loop {
         if let Some(at) = head_end(&held) {
             break at;
@@ -79,16 +81,20 @@ pub(crate) fn exchange_before(
 
     let (status, length) = {
         let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
         let mut response = httparse::Response::new(&mut headers);
+
         match response.parse(&held) {
             Ok(httparse::Status::Complete(_)) => {}
             Ok(httparse::Status::Partial) | Err(_) => return Err(Error::NotHttp { asked }),
         }
+
         let status = response.code.ok_or(Error::NotHttp { asked })?;
         (status, length_of(response.headers))
     };
 
     let mut body = held.split_off(head_ends);
+
     loop {
         if body.len() > ANSWER_BYTES_AT_MOST {
             return Err(Error::TooLong {
@@ -96,6 +102,7 @@ pub(crate) fn exchange_before(
                 at_most: ANSWER_BYTES_AT_MOST,
             });
         }
+
         let whole = match length {
             Length::Declared(length) => body.len() >= length,
             Length::Chunked => body.ends_with(LAST_CHUNK),
@@ -142,6 +149,7 @@ fn request(asking: &Asking<'_>) -> Vec<u8> {
         asking.to.path(),
         asking.to.authority(),
     );
+
     for (name, value) in asking.headers {
         head.push_str(name);
         head.push_str(": ");
@@ -154,6 +162,7 @@ fn request(asking: &Asking<'_>) -> Vec<u8> {
     head.push_str("\r\n");
 
     let mut request = head.into_bytes();
+
     request.extend_from_slice(asking.body);
     request
 }
@@ -166,7 +175,9 @@ pub(crate) fn head_end(held: &[u8]) -> Option<usize> {
 
 pub(crate) fn read_more(stream: &mut impl Read, held: &mut Vec<u8>) -> io::Result<usize> {
     let mut buffer = [0; READ_IN];
+
     let read = stream.read(&mut buffer)?;
+
     held.extend_from_slice(buffer.get(..read).unwrap_or_default());
     Ok(read)
 }
@@ -179,6 +190,7 @@ pub(crate) fn length_of(headers: &[httparse::Header<'_>]) -> Length {
             .and_then(|header| std::str::from_utf8(header.value).ok())
             .map(str::trim)
     };
+
     if named("Transfer-Encoding").is_some_and(|coding| coding.eq_ignore_ascii_case("chunked")) {
         return Length::Chunked;
     }
@@ -194,6 +206,7 @@ pub(crate) fn unchunked(mut chunked: &[u8]) -> Option<Vec<u8>> {
         let line = std::str::from_utf8(chunked.get(..line_ends)?).ok()?;
         let size = line.split(';').next()?.trim();
         let size = usize::from_str_radix(size, 16).ok()?;
+
         chunked = chunked.get(line_ends + 2..)?;
         if size == 0 {
             return Some(body);
@@ -224,6 +237,7 @@ mod tests {
         let dripping = thread::spawn(move || {
             let (mut stream, _) = listener.accept().expect("accepted");
             let mut asked = [0; 1024];
+
             let _ = stream.read(&mut asked);
             let head = b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\n";
             for byte in head.iter().chain(&[b'x'; 1000]) {
@@ -248,6 +262,7 @@ mod tests {
             started + Duration::from_millis(400),
         );
         let took = started.elapsed();
+
         drop(dripping);
 
         assert!(matches!(

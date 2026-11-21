@@ -70,6 +70,7 @@ fn a_media_server_answering_the_search_is_listed_by_its_name_and_browsed_page_by
 fn a_song_found_on_a_server_is_fetched_as_served_and_seeks_by_range() {
     let started = started_as(None);
     let servers = MediaServers::searching(started.server.heard_at(), ANSWERED_WITHIN);
+
     let server = servers
         .server(started.server.udn())
         .expect("the server is found");
@@ -81,9 +82,12 @@ fn a_song_found_on_a_server_is_fetched_as_served_and_seeks_by_range() {
     let played = song.played_from().expect("a resource");
     let mut fetched = server.fetched(&played.at).expect("the song is fetched");
     let mut whole = Vec::new();
+
     fetched.read_to_end(&mut whole).expect("read whole");
+
     let landed = fetched.seek(SeekFrom::Start(600)).expect("a seek");
     let mut after = Vec::new();
+
     fetched.read_to_end(&mut after).expect("read from there");
 
     assert_eq!(song.title, "Two & Three");
@@ -99,6 +103,7 @@ fn a_song_found_on_a_server_is_fetched_as_served_and_seeks_by_range() {
 fn a_search_on_a_server_finds_the_songs_named() {
     let started = started_as(None);
     let servers = MediaServers::searching(started.server.heard_at(), ANSWERED_WITHIN);
+
     let server = servers
         .server(started.server.udn())
         .expect("the server is found");
@@ -121,6 +126,7 @@ fn a_server_that_leaves_is_gone_after_two_searches_miss_it_and_then_is_said_not_
     let udn = started.server.udn().clone();
     let servers = MediaServers::searching(started.server.heard_at(), ANSWERED_WITHIN);
     let found = servers.found().expect("the search is answered");
+
     drop(started);
 
     let once = servers.found().expect("a search hearing nothing");

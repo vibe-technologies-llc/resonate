@@ -42,6 +42,7 @@ impl<T: Iconing> Worn<T> {
                 return Err(refused(Op::MakeIcon)(source));
             }
         };
+
         let windows = match self.iconing.top_level_windows() {
             Ok(windows) => windows,
             Err(source) => {
@@ -56,6 +57,7 @@ impl<T: Iconing> Worn<T> {
             .filter(|(_, owner)| *owner == process::id())
             .map(|(window, _)| window)
             .collect();
+
         for window in &ours {
             self.iconing.set(*window, Size::Big, big);
             self.iconing.set(*window, Size::Small, small);
@@ -115,10 +117,13 @@ mod real {
 
     unsafe extern "system" fn listed(window: HWND, into: LPARAM) -> BOOL {
         let mut owner = 0;
+
         unsafe { GetWindowThreadProcessId(window, Some(&raw mut owner)) };
+
         let listing = unsafe {
             &mut *ptr::with_exposed_provenance_mut::<Vec<(isize, u32)>>(into.0.cast_unsigned())
         };
+
         listing.push((window.0.expose_provenance().cast_signed(), owner));
         BOOL::from(true)
     }
@@ -136,7 +141,9 @@ mod real {
 
         fn top_level_windows(&self) -> Raw<Vec<(isize, u32)>> {
             let mut listing: Vec<(isize, u32)> = Vec::new();
+
             let into = LPARAM((&raw mut listing).expose_provenance().cast_signed());
+
             unsafe { EnumWindows(Some(listed), into) }.map_err(hresult)?;
             Ok(listing)
         }
@@ -146,6 +153,7 @@ mod real {
                 Size::Big => ICON_BIG,
                 Size::Small => ICON_SMALL,
             };
+
             unsafe {
                 SendMessageTimeoutW(
                     HWND(ptr::with_exposed_provenance_mut(window.cast_unsigned())),
@@ -207,6 +215,7 @@ mod tests {
 
         fn icon_of(&self, png: &[u8]) -> Raw<u8> {
             let icon = png[0];
+
             self.calls.lock().push(Call::Made(icon));
             if self.refusing_the_icon == Some(icon) {
                 return Err(HResult(-3));
@@ -261,6 +270,7 @@ mod tests {
         worn.wear(&[10], &[11]).expect("the first worn");
         fake.calls.lock().clear();
         worn.wear(&[20], &[21]).expect("the second worn");
+
         let calls = fake.calls();
 
         assert_eq!(

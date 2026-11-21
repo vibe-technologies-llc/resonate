@@ -5,7 +5,7 @@ use crossbeam_channel::{Receiver, bounded};
 
 use crate::{QueueItem, seed};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum ShuffleStyle {
     Random,
     #[default]
@@ -29,7 +29,7 @@ impl ShuffleStyle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct SmartShuffle {
     pub style: ShuffleStyle,
     pub spreads_artists: bool,
@@ -65,7 +65,7 @@ impl Default for SmartShuffle {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Kin {
     pub artist: Option<u64>,
     pub album: Option<u64>,
@@ -145,13 +145,13 @@ pub(crate) struct Kindred {
     pub kin: Option<Kin>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Level {
     Artist,
     Album,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 enum Belonging {
     Artist(u64),
     Album(u64),
@@ -177,6 +177,7 @@ pub(crate) fn arranged(
             .into_iter()
             .flatten()
             .collect();
+
             if !smart.fresh_first {
                 return spread_apart(rows, all, &levels, shuffler);
             }
@@ -186,6 +187,7 @@ pub(crate) fn arranged(
                 .partition(|row| rows[*row].kin.is_some_and(|kin| kin.heard_lately));
 
             let mut arranged = spread_apart(rows, fresh, &levels, shuffler);
+
             arranged.extend(spread_apart(rows, heard_lately, &levels, shuffler));
             arranged
         }
@@ -198,8 +200,10 @@ pub(crate) fn album_of(row: &Kindred) -> Option<u64> {
 
 fn shuffled(mut rows: Vec<usize>, shuffler: &mut Shuffler) -> Vec<usize> {
     let mut remaining = rows.len();
+
     while remaining > 1 {
         let pick = shuffler.next_below(remaining);
+
         remaining -= 1;
         rows.swap(pick, remaining);
     }
@@ -217,12 +221,14 @@ fn belonging(row: usize, of: &Kindred, level: Level) -> Belonging {
 fn grouped(rows: &[Kindred], chosen: Vec<usize>, level: Level) -> Vec<Vec<usize>> {
     let mut found: AHashMap<Belonging, usize> = AHashMap::new();
     let mut groups: Vec<Vec<usize>> = Vec::new();
+
     for row in chosen {
         let belongs = belonging(row, &rows[row], level);
         let at = *found.entry(belongs).or_insert_with(|| {
             groups.push(Vec::new());
             groups.len() - 1
         });
+
         groups[at].push(row);
     }
     groups
@@ -240,12 +246,14 @@ fn spread_apart(
 
     let count = chosen.len();
     let mut placed: Vec<(f64, usize)> = Vec::with_capacity(count);
+
     for group in grouped(rows, chosen, *level) {
         let inner = spread_apart(rows, group, deeper, shuffler);
         let stride = 1.0 / inner.len() as f64;
         let offset = shuffler.unit() * stride;
         for (nth, row) in inner.into_iter().enumerate() {
             let jitter = (shuffler.unit() - 0.5) * stride * JITTER_OF_A_STRIDE;
+
             placed.push((offset + nth as f64 * stride + jitter, row));
         }
     }
@@ -256,6 +264,7 @@ fn spread_apart(
 
 fn album_by_album(rows: &[Kindred], chosen: Vec<usize>, shuffler: &mut Shuffler) -> Vec<usize> {
     let mut groups = grouped(rows, chosen, Level::Album);
+
     for group in &mut groups {
         group.sort_unstable_by_key(|row| rows[*row].place);
     }
@@ -341,6 +350,7 @@ mod tests {
 
     fn is_a_permutation(arranged: &[usize], count: usize) -> bool {
         let mut sorted = arranged.to_vec();
+
         sorted.sort_unstable();
         sorted == (0..count).collect::<Vec<_>>()
     }
@@ -363,6 +373,7 @@ mod tests {
 
         for (seed, smart) in styles.into_iter().enumerate() {
             let mut shuffler = Shuffler::seeded(seed as u64 + 7);
+
             let arranged = arranged(&rows, smart, &mut shuffler);
 
             assert!(is_a_permutation(&arranged, rows.len()), "{smart:?}");
@@ -373,6 +384,7 @@ mod tests {
         (0..seeds)
             .map(|seed| {
                 let mut shuffler = Shuffler::seeded(seed);
+
                 let arranged = arranged(rows, smart, &mut shuffler);
                 artists_in(rows, &arranged)
                     .windows(2)
@@ -458,6 +470,7 @@ mod tests {
             .collect();
 
         let runs = albums.windows(2).filter(|pair| pair[0] != pair[1]).count();
+
         assert_eq!(runs, 2, "{albums:?}");
         for album in
             arranged.chunk_by(|ours, theirs| album_of(&rows[*ours]) == album_of(&rows[*theirs]))
@@ -478,6 +491,7 @@ mod tests {
             },
         ] {
             let mut shuffler = Shuffler::seeded(5);
+
             let arranged = arranged(&rows, smart, &mut shuffler);
 
             assert!(is_a_permutation(&arranged, rows.len()));
@@ -492,6 +506,7 @@ mod tests {
                 vec![None; rows.len()]
             }
         }
+
         let given = KinSource::by(Arc::new(Nobody));
 
         assert_eq!(given, given.clone());

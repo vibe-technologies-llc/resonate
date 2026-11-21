@@ -59,6 +59,7 @@ impl MobilePlayer {
         let listed = listed.iter().map(String::as_str).collect::<BTreeSet<_>>();
         let mut hide = Vec::new();
         let mut restore = Vec::new();
+
         for (id, uri, missing) in documents {
             let gone = if listed.contains(uri.as_str()) {
                 false
@@ -77,6 +78,7 @@ impl MobilePlayer {
             }
         }
         self.catalog.mark_missing(&hide, &restore)?;
+
         let folded = self.fold_rows_naming_one_file().unwrap_or_else(|error| {
             tracing::warn!(%error, "the rows naming one file could not be folded");
             0
@@ -97,6 +99,7 @@ impl MobilePlayer {
             .into_iter()
             .filter_map(|(id, _, missing)| (!missing).then_some(id))
             .collect::<Vec<_>>();
+
         self.catalog.withdraw(&hide)?;
 
         Ok(MissingSongs {
@@ -133,11 +136,13 @@ impl MobilePlayer {
     fn drop_from_queue_in(&self, zone: ZoneId, missing: &BTreeSet<String>) -> usize {
         for _ in 0..QUEUE_EDITS_AT_MOST {
             let mut dropped = 0;
+
             let edited = self.edit_queue_in(zone, |queued, _| {
                 let gone = |row: usize| {
                     document_uri(&queued.rows[row].location).is_ok_and(|uri| missing.contains(&uri))
                 };
                 let mut runs: Vec<Span> = Vec::new();
+
                 for row in (0..queued.rows.len()).filter(|row| gone(*row)) {
                     match runs.last_mut() {
                         Some(run) if run.last() + 1 == row => {
@@ -164,6 +169,7 @@ impl MobilePlayer {
     pub(crate) fn take_the_place_of_missing(&self, id: u64, absorbing: Absorbing) -> Result<()> {
         let replaced = self.catalog.take_the_place_of_missing(id, absorbing)?;
         let mut analyses = self.services.analyses.lock();
+
         for old in replaced {
             analyses.remove(&old);
         }
@@ -177,6 +183,7 @@ impl Catalog {
         let mut query = connection
             .prepare("SELECT id, uri, missing FROM documents ORDER BY id")
             .map_err(read_error)?;
+
         let documents = query
             .query_map([], |row| {
                 Ok((
@@ -212,9 +219,11 @@ impl Catalog {
         absorbing: Absorbing,
     ) -> Result<Vec<u64>> {
         let mut connection = self.0.lock();
+
         if !any_missing(&connection)? {
             return Ok(Vec::new());
         }
+
         let Some(arrived) = recording_of(&connection, id as i64)? else {
             return Ok(Vec::new());
         };
@@ -223,12 +232,14 @@ impl Catalog {
             .filter(|(_, recording)| recording.names_the_same_song_as(&arrived))
             .map(|(old, _)| old)
             .collect::<Vec<_>>();
+
         if twins.is_empty() {
             return Ok(Vec::new());
         }
 
         let referring = referring_tables(&connection)?;
         let transaction = connection.transaction().map_err(write_error)?;
+
         for old in &twins {
             handed_over(&transaction, &referring, *old, id as i64).map_err(write_error)?;
         }
@@ -240,8 +251,11 @@ impl Catalog {
         if hide.is_empty() {
             return Ok(());
         }
+
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
+
         for id in hide {
             transaction
                 .execute(
@@ -257,8 +271,11 @@ impl Catalog {
         if hide.is_empty() && restore.is_empty() {
             return Ok(());
         }
+
         let mut connection = self.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
+
         for (ids, flag) in [(hide, 1), (restore, 0)] {
             for id in ids {
                 transaction
@@ -330,6 +347,7 @@ pub(crate) fn vacated(
         (Some(held), Some(taking)) => held.names_the_same_song_as(&taking),
         _ => false,
     };
+
     if names_the_same_song {
         handed_over(transaction, referring, holder, taker).map_err(write_error)?;
         return Ok(Vacated::HandedOver(holder as u64));
@@ -424,7 +442,9 @@ mod tests {
     #[test]
     fn a_missing_song_leaves_the_lists_and_returns_when_its_file_does() {
         let folder = std::env::temp_dir().join(format!("resonate-vanished-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let catalog = Catalog::open(&folder.join("catalog.sqlite")).expect("opened");
         let kept = track(&catalog, "kept.flac");
         let lost = track(&catalog, "lost.flac");
@@ -434,13 +454,16 @@ mod tests {
             .expect("hidden");
 
         let shown = catalog.tracks("", 0, 10).expect("listed");
+
         assert_eq!(
             shown.iter().map(|song| song.id).collect::<Vec<_>>(),
             [kept.id]
         );
 
         track(&catalog, "lost.flac");
+
         let shown = catalog.tracks("", 0, 10).expect("listed");
+
         assert_eq!(shown.len(), 2);
 
         let _ = std::fs::remove_dir_all(&folder);
@@ -464,10 +487,13 @@ mod tests {
     fn a_song_fetched_again_under_another_name_takes_over_the_missing_one() {
         let folder =
             std::env::temp_dir().join(format!("resonate-vanished-twin-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let catalog = Catalog::open(&folder.join("catalog.sqlite")).expect("opened");
         let lost = song(&catalog, "Hunter.flac", "Hunter");
         let other = song(&catalog, "Joga.flac", "Jóga");
+
         catalog.favourite(lost.id, true).expect("favoured");
         catalog
             .0
@@ -492,6 +518,7 @@ mod tests {
         assert_eq!(replaced, [lost.id]);
         assert!(catalog.track(back.id).expect("the song").favourite);
         assert!(catalog.track(lost.id).is_err());
+
         let connection = catalog.0.lock();
         let rows = connection
             .prepare("SELECT track FROM playlist_rows WHERE playlist = 1 ORDER BY position")
@@ -504,6 +531,7 @@ mod tests {
         let listened = connection
             .query_row("SELECT track FROM listens", [], |row| row.get::<_, i64>(0))
             .expect("the listen");
+
         drop(connection);
 
         assert_eq!(rows, [back.id as i64, other.id as i64]);

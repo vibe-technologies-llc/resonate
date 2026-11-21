@@ -43,6 +43,7 @@ pub(crate) fn synced(cli: &Cli, config: &Config, args: &SyncArgs) -> Result<()> 
         sync::Asked::Join(_) | sync::Asked::Leave => None,
         _ => Some(Arc::new(open_library(cli, config)?)),
     };
+
     let Some(handed) = reloading::delivering(&settings, Some(Reloadable::Sync), || {
         sync::asked(config, &settings, library.clone(), asked)
     })?
@@ -72,6 +73,7 @@ fn remote_command(args: &SyncArgs) -> Result<Option<resonate_sync::RemoteCommand
     use resonate_sync::{Permille, RemoteCommand};
 
     let row = |given: u32| usize::try_from(given.saturating_sub(1)).unwrap_or(usize::MAX);
+
     if let Some(key) = args.press {
         return Ok(Some(match key {
             cli::PressArg::Play => RemoteCommand::Play,
@@ -86,6 +88,7 @@ fn remote_command(args: &SyncArgs) -> Result<Option<resonate_sync::RemoteCommand
             lasting::lasting(given, lasting::Bare::Seconds).ok_or_else(|| Error::NotAPlace {
                 given: given.trim().into(),
             })?;
+
         return Ok(Some(RemoteCommand::Seek(at)));
     }
     if let Some(percent) = args.set_volume {

@@ -68,23 +68,28 @@ fn noted(connection: &Connection, note: &DeletionNote, owed: Owed, settled: Sett
 impl Ledger {
     pub(super) fn look_at_deletions(&mut self, catalog: &dyn Catalog) -> Result<()> {
         let told = catalog.deleted_everywhere().map_err(Error::Catalog)?;
+
         if !told.is_empty() {
             let transaction = self
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+
             for deleted in &told {
                 let note = DeletionNote {
                     recording: deleted.recording.clone(),
                     deleted: true,
                     stamp: self.clock.now(self.device),
                 };
+
                 noted(&transaction, &note, Owed::ToTell, Settled::Already)?;
             }
             transaction
                 .commit()
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+
             let ids: Vec<i64> = told.iter().map(|deleted| deleted.id).collect();
+
             catalog.deletions_told(&ids).map_err(Error::Catalog)?;
         }
         self.look_for_songs_added_again(catalog)
@@ -92,22 +97,26 @@ impl Ledger {
 
     fn look_for_songs_added_again(&mut self, catalog: &dyn Catalog) -> Result<()> {
         let revision = catalog.revision();
+
         if self.deletions_tried_at == Some(revision) {
             return Ok(());
         }
         for (standing, heard) in self.heard_where("deleted = 1")? {
             let since = standing.stamp.nanos.max(heard);
+
             if !catalog
                 .added_by_hand_since(&standing.recording, since)
                 .map_err(Error::Catalog)?
             {
                 continue;
             }
+
             let answered = DeletionNote {
                 recording: standing.recording,
                 deleted: false,
                 stamp: self.clock.now(self.device),
             };
+
             noted(&self.connection, &answered, Owed::ToTell, Settled::Already)?;
         }
         self.deletions_tried_at = Some(revision);
@@ -120,17 +129,21 @@ impl Ledger {
 
     pub(super) fn settle_deletions(&mut self, catalog: &dyn Catalog) -> Result<usize> {
         let waiting = self.deletions_where("settled = 0")?;
+
         if waiting.is_empty() {
             return Ok(0);
         }
+
         let joined = self.joined()?;
         let mut removed = 0;
+
         for note in waiting {
             let taken = if note.deleted {
                 self.taken_here(catalog, &note, joined)
             } else {
                 catalog.forgive_deletion(&note.recording).map(|()| 0)
             };
+
             match taken {
                 Ok(copies) => removed += usize::try_from(copies).unwrap_or(usize::MAX),
                 Err(Refused::Unavailable) => continue,
@@ -166,6 +179,7 @@ impl Ledger {
             .newest_word_on(&note.recording)
             .map_err(|_| Refused::Unavailable)?
             .is_some_and(|newest| newest.stamp > note.stamp);
+
         if told_before_this_device_joined || answered_since || !catalog.takes_deletions() {
             return Ok(0);
         }
@@ -184,12 +198,14 @@ impl Ledger {
             .into_iter()
             .filter(|note| note.deleted)
             .collect();
+
         for note in &standing {
             let answered = DeletionNote {
                 recording: note.recording.clone(),
                 deleted: false,
                 stamp: self.clock.now(self.device),
             };
+
             noted(&self.connection, &answered, Owed::ToTell, Settled::Already)?;
         }
         if !standing.is_empty() {
@@ -213,6 +229,7 @@ impl Ledger {
                   WHERE key IN (?1, ?2) OR named = ?2",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map(
                 params![recording.key().as_str(), recording.named_key().as_str()],
@@ -221,6 +238,7 @@ impl Ledger {
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut alike = Vec::with_capacity(rows.len());
+
         for row in rows {
             let note = row.into_note()?;
             if note.recording.names_the_same_song_as(recording) {
@@ -245,6 +263,7 @@ impl Ledger {
                 "SELECT recording, deleted, nanos, stamped_by, heard FROM deletions WHERE {condition} ORDER BY nanos, key"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], deletion_row)
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())

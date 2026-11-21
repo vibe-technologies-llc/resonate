@@ -55,6 +55,7 @@ mod tests {
             let path =
                 env::temp_dir().join(format!("resonate-unreplacing-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(&path).expect("a writable temporary directory");
             Self(path)
         }
@@ -71,6 +72,7 @@ mod tests {
         let scratch = Scratch::new("refused");
         let from = scratch.0.join("from.flac");
         let to = scratch.0.join("to.flac");
+
         fs::write(&from, b"moving").expect("written");
         fs::write(&to, b"standing").expect("written");
 
@@ -89,6 +91,7 @@ mod tests {
         let scratch = Scratch::new("landed");
         let from = scratch.0.join("from.flac");
         let to = scratch.0.join("to.flac");
+
         fs::write(&from, b"moving").expect("written");
 
         renamed_over_nothing(&from, &to).expect("the rename lands");
@@ -108,13 +111,17 @@ mod tests {
         let scratch = Scratch::new("unlink-refused");
         let standing = scratch.0.join("standing");
         let landing = scratch.0.join("landing");
+
         fs::create_dir_all(&standing).expect("a folder to move from");
         fs::create_dir_all(&landing).expect("a folder to move to");
+
         let from = standing.join("from.flac");
         let to = landing.join("to.flac");
+
         fs::write(&from, b"moving").expect("written");
         fs::set_permissions(&standing, fs::Permissions::from_mode(READ_AND_ENTER_ONLY))
             .expect("the source's folder made read-only");
+
         let unlinks_anyway = fs::write(standing.join("probe"), b"").is_ok();
 
         let refused = (!unlinks_anyway).then(|| linked_over_nothing(&from, &to));

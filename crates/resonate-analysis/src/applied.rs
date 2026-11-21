@@ -77,12 +77,14 @@ impl Applied {
             .iter()
             .map(|channel| {
                 let mut input = vec![0.0; frames];
+
                 for (slot, tap) in input.iter_mut().zip(channel) {
                     *slot = *tap;
                 }
                 self.profile.filtered(&input, rate).into_iter()
             })
             .collect();
+
         let groups = by_correction.first().map_or(0, ExactSizeIterator::len);
         Ok((0..groups)
             .flat_map(|_| {
@@ -106,6 +108,7 @@ impl Applied {
         if self.correction.is_none() {
             return Ok(self.profile.peak_db(rate));
         }
+
         let centres = self
             .profile
             .bands()
@@ -186,6 +189,7 @@ mod tests {
     fn the_response_of_a_correction_multiplies_into_the_response_of_the_profile() {
         let profile = boosting(200.0, 6.0);
         let taps = vec![0.5, 0.25, -0.125];
+
         let applied = Applied::from(Arc::clone(&profile))
             .corrected_by(correcting_with(vec![taps.clone(), vec![1.0]]));
         let hertz = [60.0, 200.0, 3_000.0];
@@ -195,6 +199,7 @@ mod tests {
 
         for (at, hertz) in hertz.iter().enumerate() {
             assert_eq!(heard[at].len(), shaped[at].len() * 2);
+
             let angle = std::f64::consts::TAU * hertz / f64::from(RATE.hz());
             let corrected =
                 taps.iter()
@@ -206,6 +211,7 @@ mod tests {
                         )
                     });
             let expected = product(shaped[at][0], corrected);
+
             assert!((heard[at][0].0 - expected.0).abs() < 1e-12);
             assert!((heard[at][0].1 - expected.1).abs() < 1e-12);
             assert_eq!(heard[at][1], shaped[at][0]);
@@ -224,6 +230,7 @@ mod tests {
         assert_eq!(composed.len(), ring.len());
         for at in 0..200 {
             let expected = ring[0][at] + if at >= 2 { 0.5 * ring[0][at - 2] } else { 0.0 };
+
             assert!((composed[0][at] - expected).abs() < 1e-12, "frame {at}");
         }
     }

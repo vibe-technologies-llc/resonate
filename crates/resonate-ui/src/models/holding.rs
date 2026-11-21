@@ -43,8 +43,10 @@ impl LibraryModel {
             .named
             .get(&item.id)
             .is_some_and(|held| held.names(item));
+
         if !stands {
             let found = self.scanned(item);
+
             self.naming.named.insert(
                 item.id,
                 Named {
@@ -83,6 +85,7 @@ impl LibraryModel {
     pub(crate) fn scanned_playing_stamp(&mut self, item: &QueueItem) -> Option<u64> {
         let mut stamp = AHasher::default();
         let track = self.named_track(item)?;
+
         (
             track.id,
             &track.title,
@@ -94,6 +97,7 @@ impl LibraryModel {
             track.added,
         )
             .hash(&mut stamp);
+
         let (id, album, stored) = (track.id, track.album_id, track.favourite.is_some());
 
         self.favours(Favoured::Track(id), stored).hash(&mut stamp);
@@ -134,11 +138,13 @@ impl LibraryModel {
         if let Some(held) = self.naming.read_albums.get(&id) {
             return held.as_ref().map(from);
         }
+
         let read = self.library.album(id).unwrap_or_else(|error| {
             tracing::warn!(%error, album = %id, "an album the listing does not hold could not be read");
             None
         });
         let answer = read.as_ref().map(from);
+
         self.naming.read_albums.insert(id, read);
         answer
     }

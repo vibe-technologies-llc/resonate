@@ -22,18 +22,22 @@ pub fn run(
     microphones: bool,
 ) -> Result<()> {
     let listener = Listener::new(APP_NAME);
+
     if microphones {
         for found in listener.microphones()? {
             let marked = if found.is_default { "*" } else { " " };
+
             said!("{marked} {}  {}", found.name, found.description);
         }
         return Ok(());
     }
 
     let recognisers = online::recognisers(config);
+
     if recognisers.is_empty() {
         return Err(Error::NoRecogniser);
     }
+
     let from = match microphone {
         None => config.listen_from.clone().unwrap_or_default(),
         Some("") => Listening::Microphone(None),
@@ -48,6 +52,7 @@ pub fn run(
         Listening::Microphone(None) => words::listen::the_default_microphone().to_owned(),
         Listening::Microphone(Some(name)) => name.to_string(),
     };
+
     told!("{}", words::listen::listening(heard_from, length.as_secs()));
 
     let clip = listener.record(&from, length, &Hearing::new())?;
@@ -58,10 +63,12 @@ pub fn run(
             .iter()
             .map(ToString::to_string)
             .collect();
+
         said!("{}", words::listen::nothing_known(asked.join(", ")));
         return Ok(());
     };
     let told = |value: Option<String>| value.unwrap_or_else(|| "—".to_owned());
+
     pairs(vec![
         (words::listen::title(), heard.title),
         (words::listen::artist(), told(heard.artist)),

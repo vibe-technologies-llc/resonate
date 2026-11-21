@@ -17,6 +17,7 @@ impl Engine {
     pub(super) fn start_what_was_jumped_to(&mut self) -> Result<()> {
         self.failures = 0;
         self.playing = true;
+
         let started = self.start(Frames::ZERO);
         self.past_what_will_not_open(started)
     }
@@ -34,6 +35,7 @@ impl Engine {
     pub(super) fn play(&mut self) -> Result<()> {
         let nothing_to_start =
             self.track.is_none() && self.opening.is_none() && self.queue.current().is_none();
+
         if nothing_to_start {
             return Err(Error::QueueEmpty);
         }
@@ -43,6 +45,7 @@ impl Engine {
         }
         if self.track.is_none() {
             let started = self.start(Frames::ZERO);
+
             return self.past_what_will_not_open(started);
         }
         if let Some(at) = self.unbound {
@@ -91,10 +94,12 @@ impl Engine {
         {
             self.transport = TransportState::Paused;
         }
+
         let keeps_the_link_awake = self.keeps_the_link_awake();
         let Some(output) = self.output.as_mut() else {
             return Ok(());
         };
+
         output.note_the_pulls();
         if output.holds_seconds_downstream() {
             return output.activate(false);
@@ -126,11 +131,14 @@ impl Engine {
         let Some(mut output) = self.output.take() else {
             return;
         };
+
         output.note_the_pulls();
         self.close_what_was_retiring();
         self.close_what_was_kept();
+
         let hands_on_its_stream =
             how == Retire::HandingOnItsStream && output.can_hand_on_its_stream();
+
         if !output.is_sounding() {
             if hands_on_its_stream {
                 self.kept = output.kept();
@@ -163,12 +171,15 @@ impl Engine {
         let Some(retiring) = self.retiring.take() else {
             return;
         };
+
         if retiring.hands_on_its_stream {
             self.close_what_was_kept();
             self.kept = retiring.output.kept();
             return;
         }
+
         let mut output = retiring.output;
+
         output.close();
     }
 
@@ -177,16 +188,21 @@ impl Engine {
             retiring.output.note_the_pulls();
             retiring.output.has_gone_quiet(retiring.since)
         });
+
         if retired {
             self.hand_on_what_has_retired();
         }
+
         let Some(output) = self.output.as_mut() else {
             return;
         };
+
         output.note_the_pulls();
+
         let quiet = output
             .quietening_since
             .is_some_and(|since| output.has_gone_quiet(since));
+
         if !quiet {
             return;
         }

@@ -39,6 +39,7 @@ pub(crate) fn follow_profile(
             ProfileLink::Deezer(_) => Error::NoProfileAtTheLink,
         })?;
     let mut playlists = Vec::with_capacity(followed.playlists.len());
+
     for read in &followed.playlists {
         playlists.push(answered(library, reference, read)?);
     }
@@ -59,6 +60,7 @@ pub(crate) fn stop_following(library: &Library, link: &ProfileLink) -> Result<Va
         .profiles_followed()?
         .iter()
         .any(|(held, _)| held == link);
+
     library.stop_following(link)?;
 
     Ok(json!({ "stopped": followed }))

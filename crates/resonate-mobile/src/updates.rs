@@ -72,14 +72,18 @@ mod tests {
     #[test]
     fn a_phone_offline_is_told_what_was_heard_and_asks_nothing() {
         let mut player = player();
+
         player.releases = kept_in_a_scratch_folder("offline");
+
         let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
 
         let unheard = player.newer_release_of(repository(), now);
+
         player.releases.heard_now(
             Some(released("99.0.0")),
             now - Duration::from_secs(3 * 24 * 60 * 60),
         );
+
         let heard = player.newer_release_of(repository(), now);
 
         assert!(!player.services.online.client().is_reaching());
@@ -96,7 +100,9 @@ mod tests {
     #[test]
     fn a_release_no_newer_than_this_build_is_not_told() {
         let mut player = player();
+
         player.releases = kept_in_a_scratch_folder("older");
+
         let now = UNIX_EPOCH + Duration::from_secs(1_800_000_000);
 
         player.releases.heard_now(Some(released("0.0.1")), now);

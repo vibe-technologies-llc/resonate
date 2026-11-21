@@ -39,6 +39,7 @@ impl DocumentCatalog {
     pub(super) fn documents_held_after(&self, mark: i64, most: usize) -> Answered<Vec<HeldSince>> {
         let most = i64::try_from(most).unwrap_or(i64::MAX);
         let connection = self.catalog.0.lock();
+
         let mut arrived = connection
             .prepare_cached(&format!(
                 "SELECT d.id, d.added, d.packets, d.frames, d.rate, {RECORDING_COLUMNS}
@@ -74,6 +75,7 @@ impl DocumentCatalog {
         let mut received = connection
             .prepare_cached("SELECT recording FROM songs_received WHERE track = ?1")
             .map_err(unavailable)?;
+
         for document in &mut arrived {
             document.held.received_under = received
                 .query_map(params![document.id], |row| row.get(0))
@@ -197,6 +199,7 @@ impl DocumentCatalog {
         }
 
         let mut same_file = false;
+
         for copy in the_same_file(&self.catalog, &self.sources, shared.file)? {
             same_file = true;
             self.catalog
@@ -218,6 +221,7 @@ impl DocumentCatalog {
             .ok()
             .and_then(|source| read_lyrics(source, &lyrics.text).ok().flatten())
             .is_some();
+
         if !reads {
             return Ok(true);
         }
@@ -237,6 +241,7 @@ impl DocumentCatalog {
                 })
             })
             .is_some_and(|held| held.detail() >= told.detail());
+
         if as_rich_already {
             return Ok(true);
         }
@@ -259,11 +264,13 @@ impl DocumentCatalog {
                 None => return Ok(true),
             },
         };
+
         if study.judged_under != JUDGED_UNDER || study.band_levels.len() != BANDS {
             return Ok(true);
         }
 
         let mut same_file = false;
+
         for copy in the_same_file(&self.catalog, &self.sources, study.file)? {
             same_file = true;
             self.catalog
@@ -365,6 +372,7 @@ impl DocumentCatalog {
         }
 
         let mut landed = false;
+
         for (id, unprinted, unrecognised) in self.studied_copies_of(file)? {
             if unprinted {
                 landed |= self.catalog.land_print(id, &shared.print).map_err(failed)?;
@@ -421,6 +429,7 @@ impl DocumentCatalog {
         let Some(id) = self.resolved_in(&connection, recording)? else {
             return Ok(None);
         };
+
         let held = connection
             .query_row(
                 &format!("SELECT {RECORDING_COLUMNS} FROM documents d WHERE d.id = ?1"),
@@ -489,12 +498,15 @@ fn identity_of(catalog: &Catalog, sources: &Sources, copy: &Alike) -> Option<(u6
     if let (Some(packets), Some(frames)) = (copy.packets, copy.frames) {
         return Some((packets.cast_unsigned(), frames.cast_unsigned()));
     }
+
     let scanned = location(&copy.uri)
         .ok()
         .and_then(|at| probe_scanned(sources, &at).ok())?;
+
     if let Err(error) = catalog.keep_identity(copy.id, &scanned) {
         tracing::warn!(%error, "the identity of a document could not be kept");
     }
+
     let packets = scanned.packets?.0;
     let frames = scanned.info.duration?.get();
     Some((packets, frames))
@@ -629,6 +641,7 @@ mod tests {
 
     fn with_a_tone(harness: &Harness) -> u64 {
         let mut bytes = silence();
+
         for byte in &mut bytes[WAV_HEADER_BYTES..] {
             *byte = 0x11;
         }
@@ -695,12 +708,14 @@ mod tests {
     fn kept_lyrics_are_listed_for_sending_with_their_timing_and_the_song_they_belong_to() {
         let folder = folder("lyrics-listed");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let timed = song(&player, "content://a/timed", "Joga", Some(RECORDING));
         let plain = song(&player, "content://a/plain", "Hunter", None);
         let missed = song(&player, "content://a/missed", "Bachelorette", None);
         let long = song(&player, "content://a/long", "Pluto", None);
         let oversized = "la ".repeat(11_000);
+
         for (track, text) in [
             (&timed, Some(TIMED)),
             (&plain, Some(PLAIN)),
@@ -731,7 +746,9 @@ mod tests {
                 }
             })
             .collect();
+
         told.sort();
+
         assert_eq!(
             told,
             vec![
@@ -741,6 +758,7 @@ mod tests {
         );
         assert!(after_now.is_empty());
         assert!(documents.takes_answers());
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -748,11 +766,14 @@ mod tests {
     fn a_song_is_listed_as_held_from_when_it_was_added_with_every_name_it_was_received_under() {
         let folder = folder("held-after");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let old = song(&player, "content://a/old", "Joga", Some(RECORDING));
         let new = song(&player, "content://a/new", "Hunter", None);
+
         {
             let connection = player.catalog.0.lock();
+
             connection
                 .execute(
                     "UPDATE documents SET added = CASE id WHEN ?1 THEN 100 ELSE 200 END",
@@ -775,6 +796,7 @@ mod tests {
         assert_eq!(listed[0].recording.title, "Hunter");
         assert_eq!(listed[0].received_under, ["named:asked"]);
         assert_eq!(every.len(), 2);
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -782,6 +804,7 @@ mod tests {
     fn words_land_only_on_a_song_held_strictly_and_never_over_as_rich_words() {
         let folder = folder("lyrics-landed");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let held = song(&player, "content://a/joga", "Joga", Some(RECORDING));
         let by_name = named("Joga", "Björk", 305);
@@ -819,6 +842,7 @@ mod tests {
         assert_eq!(timed_kept.as_deref(), Some(TIMED));
         assert_eq!(plainer_later, Ok(true));
         assert_eq!(still_timed.as_deref(), Some(TIMED));
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -826,16 +850,20 @@ mod tests {
     fn words_landed_are_listed_again_as_they_arrived() {
         let folder = folder("lyrics-echo");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
+
         song(&player, "content://a/joga", "Joga", Some(RECORDING));
 
         documents
             .take_lyrics(&named("Joga", "Björk", 305), &lyrics_of(TIMED, true))
             .expect("landed");
+
         let listed = documents.lyrics_to_share(0, 10).expect("listed");
 
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].answer, Answer::Lyrics(lyrics_of(TIMED, true)));
+
         let _ = fs::remove_dir_all(folder);
     }
 
@@ -889,8 +917,10 @@ mod tests {
         let documents = documents_over(&harness);
         let file = whole_file_of(&harness, "a.wav");
         let [a, b] = [0, 1].map(|nth| harness.songs[nth].id);
+
         study_row(&harness, a, "genuine", Some(JUDGED_UNDER));
         study_row(&harness, b, "genuine", Some(JUDGED_UNDER));
+
         let first = peaks_of(file, 0.5);
         let second = peaks_of(file, 0.9);
 
@@ -909,7 +939,9 @@ mod tests {
         let documents = documents_over(&harness);
         let file = whole_file_of(&harness, "a.wav");
         let a = harness.songs[0].id;
+
         study_row(&harness, a, "genuine", Some(JUDGED_UNDER));
+
         let other_digest = WholeFile {
             packets: file.packets ^ 1,
             ..file
@@ -938,9 +970,11 @@ mod tests {
         let documents = documents_over(&harness);
         let tone = with_a_tone(&harness);
         let at = location(&format!("{FOLDER}e.wav")).expect("a document");
+
         let study = resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
             .expect("a study");
         let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
+
         harness
             .player
             .catalog
@@ -955,9 +989,11 @@ mod tests {
         let listed = documents.band_peaks_to_share(0, 10).expect("listed");
 
         assert_eq!(listed.len(), 1);
+
         let Answer::BandPeaks(told) = &listed[0].answer else {
             panic!("band peaks");
         };
+
         assert_eq!(told.file, whole_file_of(&harness, "e.wav"));
         assert_eq!(told.judged_under, JUDGED_UNDER);
         assert_eq!(told.peaks, study.band_peaks.to_bytes().to_vec());
@@ -999,6 +1035,7 @@ mod tests {
         let documents = documents_over(&harness);
         let file = whole_file_of(&harness, "a.wav");
         let [a, b, c, d] = [0, 1, 2, 3].map(|nth| harness.songs[nth].id);
+
         study_row(&harness, a, "genuine", Some(JUDGED_UNDER));
         study_row(&harness, b, "genuine", Some(JUDGED_UNDER + 7));
         study_row(&harness, c, "genuine", None);
@@ -1050,6 +1087,7 @@ mod tests {
         let file = whole_file_of(&harness, "a.wav");
         let study = study_of(file, "fake");
         let [a, b, c] = [0, 1, 2].map(|nth| harness.songs[nth].id);
+
         harness
             .player
             .catalog
@@ -1080,6 +1118,7 @@ mod tests {
             .iter()
             .filter(|learnt| matches!(learnt.answer, Answer::Lyrics(_)))
             .count();
+
         assert_eq!(studies, vec![study.clone(), study]);
         assert_eq!(words, 1);
         assert!(listed.windows(2).all(|pair| pair[0].at <= pair[1].at));
@@ -1092,6 +1131,7 @@ mod tests {
         let documents = documents_over(&harness);
         let tone = with_a_tone(&harness);
         let at = location(&format!("{FOLDER}e.wav")).expect("a document");
+
         let study = resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
             .expect("a study");
         let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
@@ -1101,19 +1141,24 @@ mod tests {
             .catalog
             .keep_studied(tone, &study)
             .expect("kept");
+
         let before_it_was_known = documents.studies_to_share(0, 10).expect("listed");
+
         harness
             .player
             .catalog
             .keep_identity(tone, &scanned)
             .expect("identified");
+
         let listed = documents.studies_to_share(0, 10).expect("listed");
 
         assert!(before_it_was_known.is_empty());
         assert_eq!(listed.len(), 1);
+
         let Answer::Study(told) = &listed[0].answer else {
             panic!("a study");
         };
+
         assert_eq!(told.file, whole_file_of(&harness, "e.wav"));
         assert_eq!(told.verdict, study.judgement.verdict.as_str());
         assert_eq!(told.judged_under, JUDGED_UNDER);
@@ -1127,9 +1172,11 @@ mod tests {
         let documents = documents_over(&harness);
         let [a, b] = [0, 1].map(|nth| harness.songs[nth].id);
         let at = location(&format!("{FOLDER}a.wav")).expect("a document");
+
         let study = resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
             .expect("a study");
         let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
+
         for id in [a, b] {
             harness
                 .player
@@ -1137,6 +1184,7 @@ mod tests {
                 .keep_identity(id, &scanned)
                 .expect("identified");
         }
+
         let report = AnalysisReport {
             track_id: b,
             verdict: study.judgement.verdict.as_str().to_owned(),
@@ -1163,12 +1211,15 @@ mod tests {
             .catalog
             .keep_study(b, &report, &study.band_figures())
             .expect("kept by the pane");
+
         let listed = documents.studies_to_share(0, 10).expect("listed");
+
         change(
             &harness,
             "UPDATE documents SET size = 99, modified = 99 WHERE id = ?1",
             a,
         );
+
         let after_the_file_changed = documents.studies_to_share(0, 10).expect("listed");
 
         assert_eq!(listed.len(), 1);
@@ -1216,8 +1267,11 @@ mod tests {
         let mut study =
             resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
                 .expect("a study");
+
         study.print = print;
+
         let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
+
         harness
             .player
             .catalog
@@ -1261,6 +1315,7 @@ mod tests {
 
     fn desktop_over(harness: &Harness) -> Library {
         let library = Library::open_in_memory().expect("a library");
+
         library
             .scan(ScanOptions {
                 roots: vec![harness.folder.clone()],
@@ -1283,6 +1338,7 @@ mod tests {
             .expect("a held track");
         let study = resonate_analysis::study(&library.sources(), &at, None, &Watch::default())
             .expect("a study");
+
         library.note_study(track, &study).expect("a kept study");
         at
     }
@@ -1295,6 +1351,7 @@ mod tests {
         let desktop = desktop_over(&harness);
         let [agreeing, disagreeing, unstudied] = [0, 1, 2].map(|nth| harness.songs[nth].id);
         let tone = with_a_tone(&harness);
+
         let at = studied_on_the_desktop(&desktop, &harness, "a.wav");
         let track = desktop
             .track_held(&at, None)
@@ -1302,6 +1359,7 @@ mod tests {
             .expect("a held track");
         let mut study = resonate_analysis::study(&desktop.sources(), &at, None, &Watch::default())
             .expect("a study");
+
         study.print = Some(a_print());
         desktop.note_study(track, &study).expect("a printed study");
         desktop
@@ -1317,6 +1375,7 @@ mod tests {
         let file = whole_file_of(&harness, "a.wav");
         let shared = desktop.print_to_share(file).expect("a read");
         let given = shared.as_ref().expect("a print to give");
+
         let taken = Catalog::take_print(&documents, file, given).expect("taken");
         let again = Catalog::take_print(&documents, file, given).expect("taken again");
 
@@ -1334,14 +1393,17 @@ mod tests {
                     )
                     .expect("a count")
             });
+
         assert_eq!(wanted.len(), 2);
         assert!(wanted.contains(&file));
         assert!(taken);
         assert!(!again);
         assert_eq!((agreed, disagreed, never_studied, other_file), (1, 1, 0, 1));
+
         let agreed = heard_on_the_phone(&harness, agreeing);
         let disagreed = heard_on_the_phone(&harness, disagreeing);
         let untouched = heard_on_the_phone(&harness, tone);
+
         assert_eq!(agreed.print.as_deref(), Some(a_print().encoded()));
         assert_eq!(agreed.heard_as.as_deref(), Some(ECHOES));
         assert_eq!(agreed.agreement.as_deref(), Some("agrees"));
@@ -1362,18 +1424,22 @@ mod tests {
         let documents = documents_over(&harness);
         let desktop = desktop_over(&harness);
         let [printed, recognised] = [0, 1].map(|nth| harness.songs[nth].id);
+
         named_as(&harness, printed, "Echoes", "Pink Floyd");
         studied_on_the_phone(&harness, printed, Some(a_print()));
+
         let file = whole_file_of(&harness, "a.wav");
         let at = studied_on_the_desktop(&desktop, &harness, "a.wav");
 
         let printed_only = Catalog::print(&documents, file).expect("a read");
+
         studied_on_the_phone(&harness, recognised, Some(a_print()));
         harness
             .player
             .catalog
             .keep_recognition(recognised, Some(&heard_as_echoes()), Agreement::Agrees)
             .expect("a recognition");
+
         let wanted = desktop.prints_wanted(0, 10).expect("wanted");
         let told = Catalog::print(&documents, wanted[0]).expect("a read");
         let elsewhere = Catalog::print(
@@ -1385,12 +1451,14 @@ mod tests {
         )
         .expect("a read");
         let given = told.clone().expect("a print to give");
+
         let taken = desktop.take_shared_print(wanted[0], &given).expect("taken");
 
         let (_, landed) = desktop
             .study_of(&at, None)
             .expect("a read")
             .expect("a study");
+
         assert_eq!(wanted, vec![file]);
         assert_eq!(
             printed_only.map(|print| (print.print, print.recognition)),
@@ -1419,8 +1487,10 @@ mod tests {
         let harness = Harness::new();
         let documents = documents_over(&harness);
         let id = harness.songs[0].id;
+
         named_as(&harness, id, "Echoes", "Pink Floyd");
         studied_on_the_phone(&harness, id, None);
+
         let file = whole_file_of(&harness, "a.wav");
 
         let printed = Catalog::take_print(
@@ -1471,20 +1541,24 @@ mod tests {
         let harness = Harness::new();
         let documents = documents_over(&harness);
         let id = harness.songs[0].id;
+
         studied_on_the_phone(&harness, id, Some(a_print()));
         harness
             .player
             .catalog
             .keep_recognition(id, Some(&heard_as_echoes()), Agreement::Agrees)
             .expect("a recognition");
+
         let file = whole_file_of(&harness, "a.wav");
 
         let before = Catalog::print(&documents, file).expect("a read");
+
         change(
             &harness,
             "UPDATE documents SET size = 99, modified = 99 WHERE id = ?1",
             id,
         );
+
         let after = heard_on_the_phone(&harness, id);
 
         assert!(before.is_some());

@@ -77,11 +77,14 @@ impl Blank {
     fn lay_over(&self, read: &mut [u8], from: u64) {
         let over = from..from + read.len() as u64;
         let span = self.span();
+
         let start = span.start.max(over.start);
         let end = span.end.min(over.end);
+
         if start >= end {
             return;
         }
+
         let (Ok(into), Ok(to)) = (usize::try_from(start - from), usize::try_from(end - from))
         else {
             return;
@@ -93,6 +96,7 @@ impl Blank {
                 else {
                     return;
                 };
+
                 read[into..to].copy_from_slice(&bytes[first..last]);
             }
             Self::Zeros(_) => read[into..to].fill(0),
@@ -113,6 +117,7 @@ pub(crate) fn blanked_movie<S: Read + Seek + ?Sized>(stream: &mut S) -> Walked {
         .map_err(|_| Unwalked::Unreadable)?;
     let mut blanks = Vec::new();
     let mut walked = 0;
+
     boxes(stream, 0..end, Within::TheFile, &mut blanks, &mut walked)?;
     Ok(blanks)
 }
@@ -125,6 +130,7 @@ fn boxes<S: Read + Seek + ?Sized>(
     walked: &mut usize,
 ) -> Result<(), Unwalked> {
     let mut at = within.start;
+
     while at + BOX_HEADER_BYTES <= within.end {
         *walked += 1;
         if *walked > BOXES_WALKED_AT_MOST {
@@ -133,16 +139,20 @@ fn boxes<S: Read + Seek + ?Sized>(
         stream
             .seek(SeekFrom::Start(at))
             .map_err(|_| Unwalked::Unreadable)?;
+
         let mut header = [0_u8; BOX_HEADER_BYTES as usize];
+
         stream
             .read_exact(&mut header)
             .map_err(|_| Unwalked::Unreadable)?;
+
         let declared = u32::from_be_bytes([header[0], header[1], header[2], header[3]]);
         let kind: [u8; 4] = [header[4], header[5], header[6], header[7]];
         let (size, header_bytes) = match declared {
             TO_THE_END => (within.end - at, BOX_HEADER_BYTES),
             LARGE => {
                 let mut large = [0_u8; 8];
+
                 stream
                     .read_exact(&mut large)
                     .map_err(|_| Unwalked::Unreadable)?;
@@ -150,13 +160,16 @@ fn boxes<S: Read + Seek + ?Sized>(
             }
             declared => (u64::from(declared), BOX_HEADER_BYTES),
         };
+
         if size < header_bytes {
             return Err(Unwalked::Misformed);
         }
         if at.checked_add(size).is_none_or(|past| past > within.end) {
             return Err(Unwalked::RunsPast);
         }
+
         let body = at + header_bytes..at + size;
+
         match (inside, &kind) {
             (Within::TheFile, MOVIE) => boxes(stream, body, Within::TheMovie, blanks, walked)?,
             (Within::TheMovie, TRACK) => boxes(stream, body, Within::ATrack, blanks, walked)?,
@@ -201,16 +214,20 @@ pub(crate) fn blanked_segment<S: Read + Seek + ?Sized>(stream: &mut S) -> Walked
         walked: 0,
         blanks: Vec::new(),
     };
+
     let first = walking.element_at(0)?.ok_or(Unwalked::NotThisContainer)?;
+
     if first.id != EBML {
         return Err(Unwalked::NotThisContainer);
     }
 
     let mut at = 0;
+
     while at < end {
         let Some(element) = walking.element_at(at)? else {
             break;
         };
+
         at = match element.id {
             SEGMENT => walking.segment(element)?,
             EBML | VOID_ELEMENT | CHECKSUM => sized_past(element, end)?,
@@ -229,6 +246,7 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
         self.stream
             .seek(SeekFrom::Start(at))
             .map_err(|_| Unwalked::Unreadable)?;
+
         let Some((id, size)) = element(self.stream)? else {
             return Ok(None);
         };
@@ -244,13 +262,16 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
             segment.body.saturating_add(size).min(self.end)
         });
         let mut at = segment.body;
+
         while at < ends {
             let Some(element) = self.element_at(at)? else {
                 return Ok(self.end);
             };
+
             if segment.size.is_none() && matches!(element.id, EBML | SEGMENT) {
                 return Ok(at);
             }
+
             let past = match element.size {
                 Some(size) => match element.body.checked_add(size) {
                     Some(past) if past <= ends => past,
@@ -261,6 +282,7 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
                 },
                 None => self.unsized_ends(element.body, ends)?,
             };
+
             self.blank(element, past)?;
             at = past;
         }
@@ -269,13 +291,16 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
 
     fn unsized_ends(&mut self, from: u64, within: u64) -> Result<u64, Unwalked> {
         let mut at = from;
+
         while at < within {
             let Some(child) = self.element_at(at)? else {
                 return Ok(self.end);
             };
+
             if SEGMENT_CHILDREN.contains(&child.id) || matches!(child.id, EBML | SEGMENT) {
                 return Ok(at);
             }
+
             let size = child.size.ok_or(Unwalked::UnsizedWithinUnsized)?;
             match child.body.checked_add(size) {
                 Some(past) if past <= within => at = past,
@@ -289,6 +314,7 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
     fn blank(&mut self, element: Element, past: u64) -> Result<(), Unwalked> {
         if VOIDED_WHOLE.contains(&element.id) {
             let voided = void(element.at..past).ok_or(Unwalked::Unvoidable)?;
+
             self.blanks.extend(voided);
         } else if element.id == INFO {
             self.voided_within(element.body..past, TITLE)?;
@@ -297,6 +323,7 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
             while at < past {
                 let entry = self.element_at(at)?.ok_or(Unwalked::RunsPast)?;
                 let entry_past = sized_past(entry, past)?;
+
                 if entry.id == TRACK_ENTRY {
                     self.voided_within(entry.body..entry_past, TRACK_NAME)?;
                 }
@@ -308,11 +335,14 @@ impl<S: Read + Seek + ?Sized> Segments<'_, S> {
 
     fn voided_within(&mut self, within: Range<u64>, named: u32) -> Result<(), Unwalked> {
         let mut at = within.start;
+
         while at < within.end {
             let child = self.element_at(at)?.ok_or(Unwalked::RunsPast)?;
             let past = sized_past(child, within.end)?;
+
             if child.id == named {
                 let voided = void(at..past).ok_or(Unwalked::Unvoidable)?;
+
                 self.blanks.extend(voided);
             }
             at = past;
@@ -337,8 +367,11 @@ fn void(whole: Range<u64>) -> Option<[Blank; 2]> {
         (payload < (1_u64 << (7 * width)) - 1).then_some((width, payload))
     })?;
     let mut header = vec![VOID];
+
     let marked = payload | (1_u64 << (7 * width));
+
     header.extend_from_slice(&marked.to_be_bytes()[LONGEST_SIZE - width..]);
+
     let written = whole.start + header.len() as u64;
     Some([
         Blank::Bytes {
@@ -351,14 +384,19 @@ fn void(whole: Range<u64>) -> Option<[Blank; 2]> {
 
 fn element<S: Read + ?Sized>(stream: &mut S) -> Result<Option<(u32, Option<u64>)>, Unwalked> {
     let mut first = [0_u8; 1];
+
     if !read_one(stream, &mut first)? {
         return Ok(None);
     }
+
     let id_width = first[0].leading_zeros() as usize + 1;
+
     if id_width > LONGEST_ID {
         return Err(Unwalked::Misformed);
     }
+
     let mut id = u32::from(first[0]);
+
     for _ in 1..id_width {
         if !read_one(stream, &mut first)? {
             return Ok(None);
@@ -369,13 +407,17 @@ fn element<S: Read + ?Sized>(stream: &mut S) -> Result<Option<(u32, Option<u64>)
     if !read_one(stream, &mut first)? {
         return Ok(None);
     }
+
     let size_width = first[0].leading_zeros() as usize + 1;
+
     if size_width > LONGEST_SIZE {
         return Err(Unwalked::Misformed);
     }
+
     let bits_in_the_first = (0xff_u16 >> size_width) as u8;
     let mut size = u64::from(first[0] & bits_in_the_first);
     let mut unknown = first[0] & bits_in_the_first == bits_in_the_first;
+
     for _ in 1..size_width {
         if !read_one(stream, &mut first)? {
             return Ok(None);
@@ -412,6 +454,7 @@ impl<R: Read> Read for Blanked<R> {
         let Some(held) = buffer.get_mut(..read) else {
             return Ok(0);
         };
+
         for blank in &self.blanks {
             blank.lay_over(held, self.at);
         }
@@ -428,6 +471,7 @@ mod tests {
 
     fn atom(kind: &[u8; 4], body: &[u8]) -> Vec<u8> {
         let mut held = ((body.len() + 8) as u32).to_be_bytes().to_vec();
+
         held.extend_from_slice(kind);
         held.extend_from_slice(body);
         held
@@ -435,6 +479,7 @@ mod tests {
 
     fn laid(file: &[u8], blanks: Vec<Blank>) -> Vec<u8> {
         let mut copied = Vec::new();
+
         Blanked::over(Cursor::new(file.to_vec()), 0, blanks)
             .read_to_end(&mut copied)
             .expect("a copy");
@@ -453,6 +498,7 @@ mod tests {
             ]
             .concat(),
         );
+
         let movie = atom(MOVIE, &[atom(b"mvhd", &[2; 20]), track, tags].concat());
         let file = [atom(b"ftyp", b"M4A mp42"), movie, atom(b"mdat", &[7; 64])].concat();
 
@@ -476,14 +522,17 @@ mod tests {
             atom(b"mdat", &[7; 64]),
         ]
         .concat();
+
         assert_eq!(blanked_movie(&mut Cursor::new(file)), Ok(Vec::new()));
     }
 
     #[test]
     fn a_box_running_past_the_file_is_not_walked() {
         let mut file = atom(b"ftyp", b"M4A mp42");
+
         file.extend_from_slice(&1_000_u32.to_be_bytes());
         file.extend_from_slice(MOVIE);
+
         assert_eq!(
             blanked_movie(&mut Cursor::new(file)),
             Err(Unwalked::RunsPast)
@@ -514,6 +563,7 @@ mod tests {
             .into_iter()
             .skip_while(|byte| *byte == 0)
             .collect();
+
         held.push(0x01);
         held.extend_from_slice(&(body.len() as u64).to_be_bytes()[1..]);
         held.extend_from_slice(body);
@@ -526,6 +576,7 @@ mod tests {
             .into_iter()
             .skip_while(|byte| *byte == 0)
             .collect();
+
         held.extend_from_slice(&[0x01, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]);
         held.extend_from_slice(body);
         held
@@ -539,6 +590,7 @@ mod tests {
     fn a_cluster_of_unknown_size_is_walked_through_to_the_tags_after_it() {
         const SIMPLE_BLOCK: u32 = 0xa3;
         const TIMESTAMP: u32 = 0xe7;
+
         let cluster = of_unknown_size(
             CLUSTER,
             &[
@@ -560,6 +612,7 @@ mod tests {
     #[test]
     fn a_track_name_and_the_chapters_become_void_and_the_rest_of_the_entry_stays() {
         const CODEC_ID: u32 = 0x86;
+
         let entry = ebml(
             TRACK_ENTRY,
             &[ebml(TRACK_NAME, b"Commentary"), ebml(CODEC_ID, b"A_OPUS")].concat(),
@@ -585,9 +638,12 @@ mod tests {
     #[test]
     fn a_segment_whose_tags_run_past_it_or_whose_bytes_name_nothing_is_not_called_blanked() {
         let mut cut = matroska(&[ebml(CLUSTER, &[9; 16]), ebml(TAGS, b"an artist")].concat());
+
         cut.truncate(cut.len() - 3);
+
         let nested = matroska(&of_unknown_size(CLUSTER, &of_unknown_size(0xa0, &[1; 8])));
         let mut misformed = matroska(&ebml(TAGS, b"an artist"));
+
         misformed.extend_from_slice(&[0x00, 0x00]);
 
         assert_eq!(
@@ -607,6 +663,7 @@ mod tests {
     #[test]
     fn a_last_cluster_cut_short_ends_the_walk_with_everything_before_it_blanked() {
         let mut file = matroska(&[ebml(TAGS, b"an artist"), ebml(CLUSTER, &[9; 64])].concat());
+
         file.truncate(file.len() - 10);
 
         let blanks = blanked_segment(&mut Cursor::new(file.clone())).expect("a walk to the end");
@@ -645,10 +702,13 @@ mod tests {
         assert!(copied.ends_with(&ebml(0x1f43_b675, &[9; 32])));
 
         let mut read = Cursor::new(copied);
+
         read.set_position((file.len() - segment.len()) as u64 + ebml(INFO, &info).len() as u64);
+
         let (id, size) = element(&mut read)
             .expect("a readable element")
             .expect("a void where the tags stood");
+
         assert_eq!(id, u32::from(VOID));
         assert_eq!(
             read.position() + size.expect("a known size"),
@@ -668,6 +728,7 @@ mod tests {
             let (id, size) = element(&mut Cursor::new(bytes.clone()))
                 .expect("a readable element")
                 .expect("a readable void");
+
             assert_eq!(id, u32::from(VOID));
             assert_eq!(bytes.len() as u64 + size.expect("a known size"), length);
             assert_eq!(rest.end, length);

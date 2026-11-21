@@ -81,6 +81,7 @@ impl Errands {
 
     pub(crate) fn follow(&self, playback: PlaybackState) {
         let wanted = sounding(playback);
+
         if self.noted.replace(wanted) == wanted {
             return;
         }

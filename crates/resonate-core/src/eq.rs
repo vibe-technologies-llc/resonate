@@ -16,7 +16,7 @@ const MILLI_PER_UNIT: f64 = 1_000.0;
 pub const RESPONSE_FROM_HZ: f64 = 20.0;
 pub const RESPONSE_TO_HZ: f64 = 20_000.0;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Frequency(u32);
 
 impl Frequency {
@@ -37,7 +37,9 @@ impl Frequency {
         if !hertz.is_finite() || hertz < 0.0 {
             return Err(Error::BandFrequencyOutOfRange(0));
         }
+
         let centihertz = (hertz * CENTIHERTZ_PER_HERTZ).round();
+
         if centihertz > f64::from(Self::HIGHEST_CENTIHERTZ) {
             return Err(Error::BandFrequencyOutOfRange(Self::HIGHEST_CENTIHERTZ + 1));
         }
@@ -73,7 +75,7 @@ impl fmt::Display for Frequency {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct BandGain(i32);
 
 impl BandGain {
@@ -93,7 +95,9 @@ impl BandGain {
         if !decibels.is_finite() {
             return Err(Error::BandGainOutOfRange(Self::WIDEST_MILLI_DECIBELS + 1));
         }
+
         let milli_decibels = (decibels * MILLI_DECIBELS_PER_DECIBEL).round();
+
         if milli_decibels.abs() > f64::from(Self::WIDEST_MILLI_DECIBELS) {
             return Err(Error::BandGainOutOfRange(Self::WIDEST_MILLI_DECIBELS + 1));
         }
@@ -119,7 +123,7 @@ impl fmt::Display for BandGain {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Q(u32);
 
 impl Q {
@@ -140,7 +144,9 @@ impl Q {
         if !units.is_finite() || units < 0.0 {
             return Err(Error::BandQOutOfRange(0));
         }
+
         let milli = (units * MILLI_PER_UNIT).round();
+
         if milli > f64::from(Self::NARROWEST_MILLI) {
             return Err(Error::BandQOutOfRange(Self::NARROWEST_MILLI + 1));
         }
@@ -168,7 +174,7 @@ impl fmt::Display for Q {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpeakerAngle(u8);
 
 impl SpeakerAngle {
@@ -201,7 +207,7 @@ impl fmt::Display for SpeakerAngle {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SpeakerElevation(i8);
 
 impl SpeakerElevation {
@@ -234,7 +240,7 @@ impl fmt::Display for SpeakerElevation {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HeadYaw(i8);
 
 impl HeadYaw {
@@ -267,7 +273,7 @@ impl fmt::Display for HeadYaw {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Speakers {
     pub angle: SpeakerAngle,
     pub elevation: SpeakerElevation,
@@ -304,7 +310,7 @@ impl From<SpeakerAngle> for Speakers {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Preamp(i32);
 
 impl Preamp {
@@ -343,6 +349,7 @@ impl Preamp {
         if !peak_db.is_finite() || peak_db <= 0.0 {
             return Self::NONE;
         }
+
         let deepest = -f64::from(BandGain::WIDEST_MILLI_DECIBELS) / MILLI_DECIBELS_PER_DECIBEL;
         Self::from_decibels((-peak_db).max(deepest)).unwrap_or(Self::NONE)
     }
@@ -354,7 +361,7 @@ impl fmt::Display for Preamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BandKind {
     #[default]
     Peaking,
@@ -420,7 +427,7 @@ impl fmt::Display for BandKind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ChannelSet(u8);
 
 impl ChannelSet {
@@ -430,8 +437,10 @@ impl ChannelSet {
     pub const fn of(channels: &[usize]) -> Option<Self> {
         let mut held = 0_u8;
         let mut at = 0;
+
         while at < channels.len() {
             let channel = channels[at];
+
             if channel >= Self::NAMED_AT_MOST {
                 return None;
             }
@@ -490,7 +499,7 @@ impl Default for ChannelSet {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Band {
     pub kind: BandKind,
     pub frequency: Frequency,
@@ -634,6 +643,7 @@ impl Biquad {
             alpha,
             amplitude,
         } = *shaping;
+
         let skirt = 2.0 * amplitude.sqrt() * alpha;
         let (up, down) = (amplitude + 1.0, amplitude - 1.0);
         Self::normalised(
@@ -652,6 +662,7 @@ impl Biquad {
             alpha,
             amplitude,
         } = *shaping;
+
         let skirt = 2.0 * amplitude.sqrt() * alpha;
         let (up, down) = (amplitude + 1.0, amplitude - 1.0);
         Self::normalised(
@@ -726,7 +737,9 @@ impl Biquad {
     fn response_at(self, turned: Turned) -> (f64, f64) {
         let (above_real, above_imaginary) = turned.parts(self.b0, self.b1, self.b2);
         let (below_real, below_imaginary) = turned.parts(1.0, self.a1, self.a2);
+
         let below = below_real * below_real + below_imaginary * below_imaginary;
+
         if below <= 0.0 {
             return (0.0, 0.0);
         }
@@ -739,6 +752,7 @@ impl Biquad {
     fn magnitude_db_at(self, turned: Turned) -> f64 {
         let above = turned.squared_modulus(self.b0, self.b1, self.b2);
         let below = turned.squared_modulus(1.0, self.a1, self.a2);
+
         if above <= 0.0 || below <= 0.0 {
             return SILENT_DB;
         }
@@ -782,14 +796,14 @@ impl Turned {
     }
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Profile {
     preamp: Preamp,
     bands: Vec<Band>,
     curve: Option<Curve>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct Curve {
     target: Arc<Target>,
     fitted_at: SampleRate,
@@ -828,6 +842,7 @@ impl Profile {
         let Some(curve) = self.curve.as_ref() else {
             return Arc::clone(self);
         };
+
         if rate == curve.fitted_at {
             return Arc::clone(self);
         }
@@ -864,6 +879,7 @@ impl Profile {
 
     pub fn band_mut(&mut self, at: usize) -> Option<&mut Band> {
         let band = self.bands.get_mut(at)?;
+
         self.curve = None;
         Some(band)
     }
@@ -925,6 +941,7 @@ impl Profile {
             .filter(|band| !band.channels.is_every())
             .flat_map(|band| band.channels.held())
             .collect();
+
         apart.sort_unstable();
         apart.dedup();
         apart
@@ -952,6 +969,7 @@ impl Profile {
 
     pub fn responses(&self, rate: SampleRate, points: usize) -> Vec<Traced> {
         let apart = self.channels_apart();
+
         if apart.is_empty() {
             return vec![Traced {
                 on: TracedOn::EveryChannel,
@@ -1001,6 +1019,7 @@ impl Profile {
     fn points_across(&self, from_hz: f64, to_hz: f64, rate: SampleRate) -> Vec<f64> {
         let nyquist = f64::from(rate.hz()) / 2.0;
         let to_hz = to_hz.min(nyquist);
+
         if from_hz.partial_cmp(&to_hz) != Some(Ordering::Less) {
             return Vec::new();
         }
@@ -1038,6 +1057,7 @@ impl Profile {
 
     pub fn impulse_responses(&self, frames: usize, rate: SampleRate) -> Vec<Vec<f64>> {
         let mut impulse = vec![0.0; frames];
+
         if let Some(first) = impulse.first_mut() {
             *first = 1.0;
         }
@@ -1058,7 +1078,7 @@ impl Profile {
 
 const EVERY_CHANNEL_NOT_NAMED: usize = ChannelSet::NAMED_AT_MOST;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum TracedOn {
     EveryChannel,
     Channel(usize),
@@ -1108,8 +1128,10 @@ fn filtered_through(sections: &[Biquad], input: &[f64]) -> Vec<f64> {
         .iter()
         .map(|input| {
             let mut sample = *input;
+
             for (section, (first, second)) in sections.iter().zip(held.iter_mut()) {
                 let output = section.b0 * sample + *first;
+
                 *first = section.b1 * sample - section.a1 * output + *second;
                 *second = section.b2 * sample - section.a2 * output;
                 sample = output;
@@ -1144,7 +1166,7 @@ pub const THIRD_OCTAVE_CENTRES: [u32; 31] = [
     400_000, 500_000, 630_000, 800_000, 1_000_000, 1_250_000, 1_600_000, 2_000_000,
 ];
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct TargetPoint {
     pub frequency: Frequency,
     pub gain: BandGain,
@@ -1163,6 +1185,7 @@ pub const FITS_KEPT_FOR: [SampleRate; 8] = [
 
 fn thinned(points: Vec<TargetPoint>) -> Vec<TargetPoint> {
     let held = points.len();
+
     if held <= TARGET_POINTS_AT_MOST {
         return points;
     }
@@ -1202,6 +1225,7 @@ impl Target {
     pub fn new(mut points: Vec<TargetPoint>) -> Option<Self> {
         points.sort();
         points.dedup_by_key(|point| point.frequency);
+
         let points = thinned(points);
         (points.len() >= TARGET_POINTS_AT_LEAST).then(|| Self {
             points: points.into_boxed_slice(),
@@ -1236,6 +1260,7 @@ impl Target {
         let (Some(first), Some(last)) = (self.points.first(), self.points.last()) else {
             return 0.0;
         };
+
         if hertz <= first.frequency.hertz() {
             return first.gain.decibels();
         }
@@ -1252,7 +1277,9 @@ impl Target {
         ) else {
             return last.gain.decibels();
         };
+
         let (from, to) = (below.frequency.hertz(), above.frequency.hertz());
+
         let along = (hertz / from).ln() / (to / from).ln();
         below.gain.decibels() + along * (above.gain.decibels() - below.gain.decibels())
     }
@@ -1263,6 +1290,7 @@ impl Target {
             .filter_map(|centihertz| Frequency::from_centihertz(centihertz).ok())
             .filter(|centre| centre.is_under_nyquist(rate))
             .collect();
+
         let mut gains = self.fitted(&centres, rate);
 
         let worth_it: Vec<bool> = gains
@@ -1272,8 +1300,10 @@ impl Target {
                     .is_ok_and(|held| held.milli_decibels().abs() >= WORTH_A_BAND_MILLI_DECIBELS)
             })
             .collect();
+
         if worth_it.contains(&false) {
             let mut kept = worth_it.iter();
+
             centres.retain(|_| kept.next().copied().unwrap_or_default());
             gains = self.fitted(&centres, rate);
         }
@@ -1287,6 +1317,7 @@ impl Target {
             .map(|centre| self.at(centre.hertz()))
             .collect();
         let mut gains = wanted.clone();
+
         for _ in 0..FITTING_PASSES {
             let realised = third_octave_bank(centres, &gains);
             for ((gain, centre), target) in gains.iter_mut().zip(centres).zip(&wanted) {
@@ -1326,6 +1357,7 @@ mod tests {
     fn a_speaker_elevation_holds_whole_degrees_from_below_the_ears_to_well_above_them() {
         for held in [-30, -1, 0, 1, 45, 60] {
             let elevation = SpeakerElevation::from_degrees(held).expect("an elevation");
+
             assert_eq!(i16::from(elevation.degrees()), held);
         }
 
@@ -1335,6 +1367,7 @@ mod tests {
                 Err(Error::SpeakerElevationOutOfRange(refused))
             );
         }
+
         assert_eq!(SpeakerElevation::default(), SpeakerElevation::LEVEL);
         assert_eq!(Speakers::default(), Speakers::STANDARD);
     }
@@ -1343,6 +1376,7 @@ mod tests {
     fn a_head_yaw_holds_whole_degrees_a_quarter_turn_either_way() {
         for held in [-90, -1, 0, 1, 45, 90] {
             let yaw = HeadYaw::from_degrees(held).expect("a yaw");
+
             assert_eq!(i16::from(yaw.degrees()), held);
         }
 
@@ -1352,6 +1386,7 @@ mod tests {
                 Err(Error::HeadYawOutOfRange(refused))
             );
         }
+
         assert_eq!(HeadYaw::default(), HeadYaw::AHEAD);
         assert_eq!(Speakers::STANDARD.yaw, HeadYaw::AHEAD);
     }
@@ -1471,6 +1506,7 @@ mod tests {
         for rate in RATES {
             for kind in [BandKind::Peaking, BandKind::LowShelf, BandKind::HighShelf] {
                 let designed = band(kind, 1_000.0, 0.0, 1.0).design(rate);
+
                 assert_eq!(designed, Biquad::IDENTITY, "{kind} at {rate}");
             }
         }
@@ -1484,6 +1520,7 @@ mod tests {
                     for q in [0.5, 1.41, 3.9, 10.0] {
                         let designed = band(BandKind::Peaking, centre, gain, q).design(rate);
                         let measured = designed.magnitude_db(centre, rate);
+
                         assert!(
                             (measured - gain).abs() < 1e-9,
                             "{gain} dB at {centre} Hz, Q {q}, {rate} measured {measured}"
@@ -1499,11 +1536,13 @@ mod tests {
         let rate = SampleRate::HZ_48000;
 
         let low = band(BandKind::LowShelf, 105.0, 6.4, 0.7).design(rate);
+
         assert!((low.magnitude_db(0.001, rate) - 6.4).abs() < 1e-9);
         assert!((low.magnitude_db(105.0, rate) - 3.2).abs() < 1e-9);
         assert!(low.magnitude_db(10_000.0, rate).abs() < 1e-3);
 
         let high = band(BandKind::HighShelf, 10_000.0, -2.1, 0.7).design(rate);
+
         assert!(high.magnitude_db(0.001, rate).abs() < 1e-9);
         assert!((high.magnitude_db(10_000.0, rate) + 1.05).abs() < 1e-9);
         assert!((high.magnitude_db(20_000.0, rate) + 2.1).abs() < 0.02);
@@ -1514,6 +1553,7 @@ mod tests {
         let rate = SampleRate::HZ_48000;
 
         let all_pass = band(BandKind::AllPass, 1_000.0, 0.0, 1.0).design(rate);
+
         for point in sweep(64) {
             assert!(
                 all_pass.magnitude_db(point, rate).abs() < 1e-9,
@@ -1522,9 +1562,11 @@ mod tests {
         }
 
         let notch = band(BandKind::Notch, 1_000.0, 0.0, 4.0).design(rate);
+
         assert!(notch.magnitude_db(1_000.0, rate) <= SILENT_DB);
 
         let band_pass = band(BandKind::BandPass, 1_000.0, 0.0, 4.0).design(rate);
+
         assert!(band_pass.magnitude_db(1_000.0, rate).abs() < 1e-9);
     }
 
@@ -1532,7 +1574,9 @@ mod tests {
     fn a_low_pass_is_three_decibels_down_at_its_corner() {
         let rate = SampleRate::HZ_48000;
         let designed = band(BandKind::LowPass, 1_000.0, 0.0, 0.707).design(rate);
+
         let measured = designed.magnitude_db(1_000.0, rate);
+
         assert!((measured + 3.0103).abs() < 0.01, "got {measured}");
     }
 
@@ -1546,6 +1590,7 @@ mod tests {
         assert!(above.applies_at(SampleRate::HZ_96000));
 
         let folded_to = 44_100.0 - 30_000.0;
+
         assert!(
             above.design(rate).magnitude_db(folded_to, rate).abs() < 1e-12,
             "a band above Nyquist reached {folded_to} Hz"
@@ -1555,10 +1600,12 @@ mod tests {
     #[test]
     fn a_kind_that_reads_no_gain_is_never_built_carrying_one() {
         let carried = band(BandKind::Notch, 1_000.0, 9.0, 4.0);
+
         assert_eq!(carried.gain, BandGain::FLAT);
         assert!(carried.shapes());
 
         let peaking = band(BandKind::Peaking, 1_000.0, 9.0, 4.0);
+
         assert_eq!(peaking.gain.milli_decibels(), 9_000);
     }
 
@@ -1566,12 +1613,14 @@ mod tests {
     fn a_disabled_band_is_still_a_band_but_shapes_nothing() {
         let rate = SampleRate::HZ_48000;
         let mut quiet = band(BandKind::Peaking, 1_000.0, 6.0, 1.0);
+
         quiet.on = false;
 
         assert!(!quiet.shapes());
         assert_eq!(quiet.design(rate), Biquad::IDENTITY);
 
         let profile = Profile::new(Preamp::NONE, vec![quiet]).expect("one band");
+
         assert!(!profile.is_transparent());
     }
 
@@ -1584,6 +1633,7 @@ mod tests {
             vec![band(BandKind::Peaking, 1_000.0, 0.0, 1.0)],
         )
         .expect("one band");
+
         assert!(
             !flat.is_transparent(),
             "a profile holding a band must keep its stage so a change reaches it"
@@ -1596,15 +1646,18 @@ mod tests {
         for tenth in -400..=400 {
             let written = f64::from(tenth) / 10.0;
             let read = decibels(written).decibels();
+
             assert_eq!(format!("{read:.1}"), format!("{written:.1}"));
         }
         for hundredth in 100..=4_000 {
             let written = f64::from(hundredth) / 100.0;
             let read = quality(written).units();
+
             assert_eq!(format!("{read:.2}"), format!("{written:.2}"));
         }
         for whole in [1_u32, 20, 105, 1_227, 8_800, 20_000] {
             let read = hertz(f64::from(whole)).hertz();
+
             assert_eq!(format!("{read:.0}"), format!("{whole}"));
         }
     }
@@ -1620,6 +1673,7 @@ mod tests {
         assert!(Preamp::from_decibels(-41.0).is_err());
 
         let too_many = vec![band(BandKind::Peaking, 1_000.0, 1.0, 1.0); MAX_BANDS + 1];
+
         assert!(matches!(
             Profile::new(Preamp::NONE, too_many),
             Err(Error::TooManyBands(_))
@@ -1649,6 +1703,7 @@ mod tests {
 
         let peak = profile.peak_db(rate);
         let declared = -profile.preamp().decibels();
+
         assert!(
             (peak - declared).abs() < 0.1,
             "AutoEq declared a preamp of {declared} dB against a computed peak of {peak} dB"
@@ -1670,11 +1725,14 @@ mod tests {
         .expect("two bands");
 
         let fitted = boosting.fitted_preamp(rate);
+
         assert!(fitted.decibels() < -9.0, "{fitted}");
 
         let held = Profile::new(fitted, boosting.bands().to_vec()).expect("two bands");
+
         for point in sweep(RESPONSE_POINTS) {
             let level = held.magnitude_db(point, rate);
+
             assert!(level <= 0.01, "{level} dB at {point} Hz");
         }
 
@@ -1727,8 +1785,11 @@ mod tests {
 
         let boosted = 10_f64.powf(6.0 / 20.0);
         let (real, imaginary) = heard[0][0];
+
         assert!((real.hypot(imaginary) - boosted).abs() < 1e-6, "{heard:?}");
+
         let (real, imaginary) = heard[1][0];
+
         assert!((real.hypot(imaginary) - 1.0).abs() < 0.01, "{heard:?}");
         assert_eq!(apart[0].len(), 2);
         assert!((apart[0][1].0 - 1.0).abs() < 1e-12 && apart[0][1].1.abs() < 1e-12);
@@ -1752,11 +1813,14 @@ mod tests {
         let ringing = narrow.impulse_responses(48_000, rate);
 
         let at_rest: f64 = shelved[0].iter().sum();
+
         assert!(
             (at_rest - 10_f64.powf(6.0 / 20.0)).abs() < 1e-3,
             "{at_rest}"
         );
+
         let late: f64 = ringing[0][24_000..].iter().map(|sample| sample.abs()).sum();
+
         assert!(late > 0.1, "{late}");
         assert_eq!(
             Profile::flat().impulse_responses(3, rate),
@@ -1777,6 +1841,7 @@ mod tests {
         let impulse = peaking.impulse_responses(input.len(), rate);
 
         assert_eq!(filtered.len(), impulse.len());
+
         for (at, heard) in filtered[0].iter().enumerate() {
             let convolved: f64 = input
                 .iter()
@@ -1784,8 +1849,10 @@ mod tests {
                 .filter(|(lag, _)| *lag <= at)
                 .map(|(lag, sample)| sample * impulse[0][at - lag])
                 .sum();
+
             assert!((heard - convolved).abs() < 1e-12, "frame {at}");
         }
+
         assert_eq!(Profile::flat().filtered(&input, rate), vec![input.to_vec()]);
     }
 
@@ -1812,9 +1879,13 @@ mod tests {
     fn a_band_shaping_one_channel_is_heard_on_that_channel_alone() {
         let rate = SampleRate::HZ_48000;
         let mut left = band(BandKind::Peaking, 1_000.0, 6.0, 1.0);
+
         left.channels = ChannelSet::of(&[0]).expect("a named channel");
+
         let mut right = band(BandKind::Peaking, 1_000.0, 6.0, 1.0);
+
         right.channels = ChannelSet::of(&[1]).expect("a named channel");
+
         let every = band(BandKind::Peaking, 60.0, -3.0, 4.0);
         let apart = Profile::new(Preamp::NONE, vec![left, right, every]).expect("three bands");
 
@@ -1837,10 +1908,12 @@ mod tests {
         let every_alone = Profile::new(Preamp::NONE, vec![every])
             .expect("one band")
             .response(rate, RESPONSE_POINTS);
+
         assert_eq!(drawn, every_alone);
 
         let traced = apart.responses(rate, RESPONSE_POINTS);
         let on: Vec<TracedOn> = traced.iter().map(|traced| traced.on).collect();
+
         assert_eq!(
             on,
             [
@@ -1854,9 +1927,11 @@ mod tests {
             apart.response_on(rate, RESPONSE_POINTS, 0)
         );
         assert_eq!(traced[2].decibels, every_alone);
+
         let alone = Profile::new(Preamp::NONE, vec![every])
             .expect("one band")
             .responses(rate, RESPONSE_POINTS);
+
         assert_eq!(alone.len(), 1);
         assert_eq!(alone[0].on, TracedOn::EveryChannel);
         assert_eq!(alone[0].decibels, every_alone);
@@ -1871,12 +1946,14 @@ mod tests {
     #[test]
     fn a_response_runs_from_the_bottom_of_the_band_to_the_top_of_it() {
         let points: Vec<f64> = sweep(RESPONSE_POINTS).collect();
+
         assert_eq!(points.len(), RESPONSE_POINTS);
         assert!((points[0] - RESPONSE_FROM_HZ).abs() < 1e-9);
         assert!((points[RESPONSE_POINTS - 1] - RESPONSE_TO_HZ).abs() < 1e-6);
         assert!(points.windows(2).all(|pair| pair[1] > pair[0]));
 
         let drawn = sennheiser_hd_650().response(SampleRate::HZ_48000, RESPONSE_POINTS);
+
         assert_eq!(drawn.len(), RESPONSE_POINTS);
         assert!(drawn.iter().all(|level| level.is_finite()));
     }
@@ -1903,6 +1980,7 @@ mod tests {
         for kind in BandKind::ALL {
             assert_eq!(BandKind::parse(kind.as_str()), Some(kind));
         }
+
         assert_eq!(BandKind::parse("shelving"), None);
     }
 }

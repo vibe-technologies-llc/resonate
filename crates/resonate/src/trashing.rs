@@ -58,6 +58,7 @@ fn taken_by_the_file_manager(file: &Path) -> Result<(), trash::Error> {
     use trash::macos::{DeleteMethod, TrashContextExtMacos as _};
 
     let mut context = trash::TrashContext::default();
+
     context.set_delete_method(DeleteMethod::NsFileManager);
     context.delete(file)
 }
@@ -171,7 +172,9 @@ mod portal_tests {
     #[test]
     fn the_portal_trashes_only_where_a_flatpak_sandbox_says_it_holds_the_process() {
         let folder = std::env::temp_dir().join(format!("resonate-trashing-{}", std::process::id()));
+
         fs::create_dir_all(&folder).expect("a folder");
+
         let info = folder.join("flatpak-info");
 
         assert!(through_the_portal_where_sandboxed_by(&info).is_none());
@@ -179,6 +182,7 @@ mod portal_tests {
         fs::write(&info, "[Application]\n").expect("a sandbox's info");
 
         assert!(through_the_portal_where_sandboxed_by(&info).is_some());
+
         fs::remove_dir_all(&folder).expect("the folder goes");
     }
 }

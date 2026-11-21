@@ -67,6 +67,7 @@ pub(crate) fn owned(descriptor: i32) -> io::Result<File> {
             DOCUMENT_NOT_FOUND => io::ErrorKind::NotFound,
             _ => io::ErrorKind::PermissionDenied,
         };
+
         return Err(kind.into());
     }
     Ok(unsafe { File::from_raw_fd(descriptor) })
@@ -80,6 +81,7 @@ pub(crate) fn location(uri: &str) -> Result<MediaLocation> {
             key.starts_with("//").then_some((scheme, key))
         })
         .ok_or(Error::InvalidUri)?;
+
     if *scheme == FOLDER_SCHEME && !stays_within_its_root(key) {
         return Err(Error::InvalidUri);
     }
@@ -105,6 +107,7 @@ fn unescaped(piece: &str) -> Vec<u8> {
     let bytes = piece.as_bytes();
     let mut decoded = Vec::with_capacity(bytes.len());
     let mut at = 0;
+
     while at < bytes.len() {
         let hex = bytes
             .get(at + 1..at + 3)
@@ -302,9 +305,11 @@ mod tests {
             .filter_map(|entry| entry.split_once("</string>"))
             .map(|(extension, _)| extension.to_owned())
             .collect::<Vec<_>>();
+
         extensions.sort();
 
         let mut admitted = audio_extensions();
+
         admitted.sort();
 
         assert_eq!(extensions, admitted);

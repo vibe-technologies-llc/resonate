@@ -2,7 +2,7 @@ use resonate_core::{AppliedGain, Gain, StreamSpec, Volume};
 
 use crate::{ProcessCount, Processor, Result};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum ReplayGainMode {
     #[default]
     Off,
@@ -110,6 +110,7 @@ impl GainStage {
 
     fn step_off_the_first(&mut self) -> Option<Step> {
         let first = self.next_step()?;
+
         self.steps.rotate_left(1);
         if let Some(last) = self.steps.last_mut() {
             *last = None;
@@ -135,8 +136,10 @@ impl GainStage {
         let amplitude = f64::from(self.amplitude);
         if self.limits {
             let mut past = 0_u64;
+
             for (sample, slot) in taken.iter().zip(made.iter_mut()) {
                 let scaled = sample * amplitude;
+
                 past += u64::from(scaled.abs() > 1.0);
                 *slot = scaled.clamp(-1.0, 1.0);
             }
@@ -187,6 +190,7 @@ impl Processor for GainStage {
             volume,
             replay_gain,
         };
+
         for waiting in &mut self.steps {
             if waiting.is_some_and(|waiting| waiting.at >= step.at) {
                 *waiting = None;
@@ -226,6 +230,7 @@ impl Processor for GainStage {
     fn process(&mut self, input: &[f64], output: &mut [f64]) -> ProcessCount {
         let channels = self.channels;
         let frames = (input.len() / channels).min(output.len() / channels);
+
         let samples = frames * channels;
         let (Some(mut taken), Some(mut made)) = (input.get(..samples), output.get_mut(..samples))
         else {
@@ -246,6 +251,7 @@ impl Processor for GainStage {
             ) else {
                 break;
             };
+
             self.scaled(now, into);
             self.passed = self.passed.saturating_add(run as u64);
             self.take_the_steps_due();
@@ -276,6 +282,7 @@ mod tests {
 
     fn prepared(config: GainConfig) -> GainStage {
         let mut stage = GainStage::new(config);
+
         stage
             .prepare(spec(ChannelLayout::Stereo), 512)
             .expect("gain always prepares");
@@ -313,6 +320,7 @@ mod tests {
 
         let input = [0.98, -0.98, 0.25, -0.5];
         let mut output = [0.0; 4];
+
         stage.process(&input, &mut output);
 
         assert_eq!(output, input);
@@ -328,6 +336,7 @@ mod tests {
 
         let input = [1.0, 1.0, 1.0, 1.0];
         let mut output = [0.0; 4];
+
         stage.process(&input, &mut output);
 
         for sample in output {
@@ -338,10 +347,12 @@ mod tests {
     #[test]
     fn a_new_volume_applies_from_the_next_frame() {
         let mut stage = prepared(GainConfig::default());
+
         stage.set_volume(Volume::MUTE);
 
         let input = [1.0, 1.0];
         let mut output = [0.0; 2];
+
         stage.process(&input, &mut output);
 
         assert_eq!(output, [0.0, 0.0]);
@@ -366,14 +377,18 @@ mod tests {
     #[test]
     fn a_gain_set_after_what_the_chain_holds_steps_on_that_frame_across_blocks() {
         let mut stage = prepared(GainConfig::default());
+
         stage.set_gain_after(Volume::MAX, halved(), 3);
 
         assert_eq!(stage.frames_before_the_gain_settles(), 3);
         assert!((stage.gain_amplitude().expect("a gain") - 0.5).abs() < 1e-4);
 
         let mut first = [0.0; 4];
+
         stage.process(&[1.0; 4], &mut first);
+
         let mut second = [0.0; 6];
+
         stage.process(&[1.0; 6], &mut second);
 
         assert_eq!(left_of(&first), [1.0, 1.0]);
@@ -384,10 +399,12 @@ mod tests {
     #[test]
     fn a_volume_asked_while_a_step_waits_joins_the_step_and_leaves_the_frames_before_it() {
         let mut stage = prepared(GainConfig::default());
+
         stage.set_gain_after(Volume::MAX, halved(), 2);
         stage.set_gain(Volume::MUTE, halved());
 
         let mut output = [1.0; 8];
+
         stage.process(&[1.0; 8], &mut output);
 
         assert_eq!(left_of(&output), [1.0, 1.0, 0.0, 0.0]);
@@ -396,10 +413,12 @@ mod tests {
     #[test]
     fn steps_set_one_behind_another_each_land_on_their_own_frame() {
         let mut stage = prepared(GainConfig::default());
+
         stage.set_gain_after(Volume::MAX, halved(), 1);
         stage.set_gain_after(Volume::MAX, AppliedGain::default(), 3);
 
         let mut output = [0.0; 10];
+
         stage.process(&[1.0; 10], &mut output);
 
         assert_eq!(left_of(&output), [1.0, 0.5, 0.5, 1.0, 1.0]);
@@ -408,10 +427,12 @@ mod tests {
     #[test]
     fn a_reset_takes_every_waiting_step_at_once() {
         let mut stage = prepared(GainConfig::default());
+
         stage.set_gain_after(Volume::MAX, halved(), 100);
         stage.reset();
 
         let mut output = [0.0; 2];
+
         stage.process(&[1.0; 2], &mut output);
 
         assert_eq!(left_of(&output), [0.5]);
@@ -435,6 +456,7 @@ mod tests {
 
         let input = [0.9, -0.9];
         let mut output = [0.0; 2];
+
         stage.process(&input, &mut output);
 
         assert_eq!(output, [1.0, -1.0]);
@@ -449,6 +471,7 @@ mod tests {
         });
 
         let mut output = [0.0; 4];
+
         stage.process(&[0.9, -0.9, 0.1, 0.0], &mut output);
 
         assert_eq!(stage.overs(), 2);
@@ -465,6 +488,7 @@ mod tests {
 
         let input = [0.9, -0.9];
         let mut output = [0.0; 2];
+
         stage.process(&input, &mut output);
 
         assert!(
@@ -485,6 +509,7 @@ mod tests {
 
         for (mut stage, fed) in [(unity, 1.2), (attenuating, 9.6)] {
             let mut output = [0.0; 2];
+
             stage.process(&[fed, -fed], &mut output);
 
             assert!(
@@ -504,6 +529,7 @@ mod tests {
 
         let input = [0.9, -0.9, 0.45, -0.45];
         let mut output = [0.0; 4];
+
         stage.process(&input, &mut output);
 
         assert!((output[0] - 1.0).abs() < 1e-6, "got {}", output[0]);
@@ -525,6 +551,7 @@ mod tests {
 
         let input = [0.9, 0.9];
         let mut output = [0.0; 2];
+
         stage.process(&input, &mut output);
 
         assert!(
@@ -544,11 +571,13 @@ mod tests {
             prevent_clipping: true,
             ..GainConfig::default()
         };
+
         assert!(!GainStage::new(config).is_transparent());
 
         let mut stage = prepared(config);
         let input = [1.25, -1.25];
         let mut output = [0.0; 2];
+
         stage.process(&input, &mut output);
 
         assert!((output[0] - 1.0).abs() < 1e-6, "got {}", output[0]);

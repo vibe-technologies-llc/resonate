@@ -128,6 +128,7 @@ enum Turn {
 impl Casting {
     pub fn start(searching: Searching, first: FirstSearch) -> Result<Self> {
         let casting = Self::resting(searching)?;
+
         casting.look(first)?;
         Ok(casting)
     }
@@ -158,6 +159,7 @@ impl Casting {
 
     pub fn look(&self, first: FirstSearch) -> Result<()> {
         let mut looking = self.looking.lock();
+
         match looking.take() {
             Some(held) if held.browsing => {
                 *looking = Some(held);
@@ -173,6 +175,7 @@ impl Casting {
 
     pub fn look_at_addresses(&self, first: FirstSearch) -> Result<()> {
         let mut looking = self.looking.lock();
+
         if looking.is_some() {
             return Ok(());
         }
@@ -181,6 +184,7 @@ impl Casting {
 
     pub fn stop_browsing(&self) {
         let mut looking = self.looking.lock();
+
         if !looking.as_ref().is_some_and(|held| held.browsing) {
             return;
         }
@@ -192,7 +196,9 @@ impl Casting {
         if let Some(held) = looking.take() {
             Self::stop(held);
         }
+
         let gone = self.shared.forget_unlocated();
+
         self.shared.announce(&gone);
         if let Err(error) = self.begin(&mut looking, FirstSearch::Behind, false) {
             tracing::warn!(%error, "the Cast receivers given by address could not be reached");
@@ -203,9 +209,12 @@ impl Casting {
         let Some(looking) = self.looking.lock().take() else {
             return;
         };
+
         Self::stop(looking);
+
         let gone: Vec<SinkChange> = {
             let mut known = self.shared.known.lock();
+
             known.named.clear();
             known.addressed.clear();
             mem::take(&mut known.held)
@@ -213,6 +222,7 @@ impl Casting {
                 .map(SinkChange::Removed)
                 .collect()
         };
+
         self.shared.announce(&gone);
     }
 
@@ -229,7 +239,9 @@ impl Casting {
 
     pub fn teach(&self, learnt: Learnt) {
         *self.shared.learnt.lock() = learnt;
+
         let changes = self.shared.taught_again();
+
         self.shared.announce(&changes);
     }
 
@@ -241,20 +253,25 @@ impl Casting {
             .lock()
             .clone()
             .ok_or(Error::NoSuchReceiver(sink))?;
+
         let learning = learning::learn(&device, sink, &server, &self.shared.lanes)?;
         let named = self
             .receivers()
             .into_iter()
             .find(|(id, _)| *id == sink)
             .map_or_else(|| device.node_name(), |(_, now)| now.node_name());
+
         self.shared.learnt.lock().insert(named, learning.plays());
+
         let changes = self.shared.taught_again();
+
         self.shared.announce(&changes);
         Ok(learning)
     }
 
     pub fn locate(&self, given: impl Into<Given>) -> Result<()> {
         let given = given.into();
+
         self.shared.located.lock().given.insert(given.clone());
         if !self.is_reaching() {
             return Ok(());
@@ -263,6 +280,7 @@ impl Casting {
             Given::Address(at) => self.shared.reach_address(at),
             named => {
                 let shared = Arc::clone(&self.shared);
+
                 thread::Builder::new()
                     .name("resonate-cast-resolve".to_owned())
                     .spawn(move || {
@@ -280,14 +298,17 @@ impl Casting {
         let given = given.into();
         let forgotten = {
             let mut located = self.shared.located.lock();
+
             if !located.given.remove(&given) {
                 return;
             }
+
             let at = given.address().or_else(|| located.resolved.remove(&given));
             at.filter(|at| !located.addresses().contains(at))
         };
         if let Some(at) = forgotten {
             let gone = self.shared.forget_at(at);
+
             self.shared.announce(&gone);
         }
     }
@@ -321,6 +342,7 @@ impl Casting {
                     source: Box::new(source),
                 };
                 let daemon = ServiceDaemon::new().map_err(browsed)?;
+
                 let browsing = daemon.browse(CAST_SERVICE).map_err(browsed)?;
                 (Some(daemon), Some(browsing))
             }
@@ -330,7 +352,9 @@ impl Casting {
         if first == FirstSearch::Awaited {
             self.shared.first_round(browsing.as_ref(), browse);
         }
+
         let searched = Arc::clone(&self.shared);
+
         thread::Builder::new()
             .name("resonate-cast-browse".to_owned())
             .spawn(move || {
@@ -364,6 +388,7 @@ impl Casting {
             .into_iter()
             .map(|(id, device)| {
                 let mut sink = sink_of(id, &device);
+
                 if located.contains(&device.at()) && device.id() != &CastId::at(device.at()) {
                     sink.aliases.push(device.address_node_name());
                 }
@@ -398,6 +423,7 @@ impl Neighbours for Casting {
 
     fn subscribe(&self) -> Receiver<SinkChange> {
         let (announce, changes) = unbounded();
+
         self.shared.listeners.lock().push(announce);
         changes
     }
@@ -447,6 +473,7 @@ impl Shared {
             (Finding::Listed(listed), _) => {
                 for found in listed.clone() {
                     let heard_as = found.id.to_string();
+
                     self.reach(found, Some(heard_as));
                 }
             }
@@ -503,6 +530,7 @@ impl Shared {
         let at = given.resolve(matches!(self.searching.finding, Finding::Bonjour))?;
         let moved_from = {
             let mut located = self.located.lock();
+
             if !located.given.contains(given) {
                 return Ok(());
             }
@@ -515,8 +543,10 @@ impl Shared {
                     .filter(|before| !located.addresses().contains(before)),
             }
         };
+
         if let Some(before) = moved_from {
             let gone = self.forget_at(before);
+
             self.announce(&gone);
         }
         self.reach_address(at)
@@ -532,7 +562,9 @@ impl Shared {
         {
             return Ok(());
         }
+
         let device = Device::reached(Found::at(at))?;
+
         self.admit(device, None, true);
         Ok(())
     }
@@ -540,13 +572,16 @@ impl Shared {
     fn forget_unlocated(&self) -> Vec<SinkChange> {
         let located = self.located.lock().addresses();
         let mut known = self.known.lock();
+
         known.named.clear();
+
         let gone: Vec<SinkId> = known
             .held
             .iter()
             .filter(|(_, device)| !located.contains(&device.at()))
             .map(|(id, _)| *id)
             .collect();
+
         for id in &gone {
             known.held.remove(id);
             known.addressed.remove(id);
@@ -556,6 +591,7 @@ impl Shared {
 
     fn forget_at(&self, at: SocketAddr) -> Vec<SinkChange> {
         let mut known = self.known.lock();
+
         let browsed: BTreeSet<CastId> = known.named.values().cloned().collect();
         let gone: Vec<SinkId> = known
             .held
@@ -565,6 +601,7 @@ impl Shared {
             })
             .map(|(id, _)| *id)
             .collect();
+
         for id in &gone {
             known.held.remove(id);
             known.addressed.remove(id);
@@ -589,6 +626,7 @@ impl Shared {
             tracing::debug!(receiver = %found.id, at = %found.at, "a Cast receiver answering the browse was passed over: enough are held");
             return;
         }
+
         let held_here = self
             .known
             .lock()
@@ -596,6 +634,7 @@ impl Shared {
             .iter()
             .find(|(_, device)| device.at() == found.at)
             .map(|(sink, device)| (*sink, device.id().clone()));
+
         if let Some((sink, id)) = held_here {
             if id == found.id {
                 self.remember(fullname, &found.id);
@@ -606,6 +645,7 @@ impl Shared {
                 return;
             }
         }
+
         let device = match Device::reached(found.clone()) {
             Ok(device) => device,
             Err(error) => {
@@ -626,9 +666,11 @@ impl Shared {
     fn relabel(&self, sink: SinkId, found: Found, fullname: Option<String>) {
         let changed = {
             let mut known = self.known.lock();
+
             if let Some(fullname) = fullname {
                 known.remember(fullname, found.id.clone());
             }
+
             let learnt = self.learnt.lock();
             let renamed = known.held.get(&sink).map(|device| {
                 let renamed = device.renamed(found);
@@ -640,15 +682,18 @@ impl Shared {
                 SinkChange::Reformatted(sink)
             })
         };
+
         self.announce(changed.as_slice());
     }
 
     fn admit(&self, device: Device, fullname: Option<String>, by_address: bool) {
         let change = {
             let mut known = self.known.lock();
+
             if let Some(fullname) = fullname {
                 known.remember(fullname, device.id().clone());
             }
+
             let same = known
                 .held
                 .iter()
@@ -658,18 +703,23 @@ impl Shared {
                 Some(id) => (id, None),
                 None => {
                     let id = SinkId::new(RECEIVER_IDS_FROM.saturating_add(known.next));
+
                     known.next = known.next.saturating_add(1);
                     (id, Some(SinkChange::Added(id)))
                 }
             };
+
             if by_address {
                 known.addressed.insert(id);
             }
+
             let names = [device.node_name(), device.address_node_name()];
             let device = device.taught(self.learnt.lock().of(&names));
+
             known.held.insert(id, Arc::new(device));
             change
         };
+
         self.announce(change.as_slice());
     }
 
@@ -677,6 +727,7 @@ impl Shared {
         let located = self.located.lock().addresses();
         let change = {
             let mut known = self.known.lock();
+
             let Some(id) = known.named.remove(fullname) else {
                 return;
             };
@@ -696,6 +747,7 @@ impl Shared {
                 Some(SinkChange::Removed(sink))
             }
         };
+
         self.announce(change.as_slice());
     }
 
@@ -703,9 +755,11 @@ impl Shared {
         let learnt = self.learnt.lock().clone();
         let mut known = self.known.lock();
         let mut changes = Vec::new();
+
         for (id, device) in &mut known.held {
             let names = [device.node_name(), device.address_node_name()];
             let plays = learnt.of(&names).filter(|plays| !plays.is_empty());
+
             if device.plays() == plays {
                 continue;
             }
@@ -763,6 +817,7 @@ fn turn_when_told(turned: &Receiver<Turn>) {
     while let Ok(first) = turned.recv() {
         let mut volumes: BTreeMap<SocketAddr, (Arc<Device>, Volume)> = BTreeMap::new();
         let mut mutes: BTreeMap<SocketAddr, (Arc<Device>, bool)> = BTreeMap::new();
+
         for turn in iter::once(first).chain(turned.try_iter()) {
             match turn {
                 Turn::Volume(device, volume) => {
@@ -789,9 +844,11 @@ fn turned_on(
     turn: impl FnOnce(&Link) -> Result<()>,
 ) {
     let stale = links.get(&device.at()).is_some_and(|link| !link.is_alive());
+
     if stale {
         links.remove(&device.at());
     }
+
     let link = match links.entry(device.at()) {
         Entry::Occupied(held) => held.into_mut(),
         Entry::Vacant(free) => match Link::connect(device.at()) {
@@ -840,6 +897,7 @@ mod tests {
 
     fn casting_holding_the_address() -> Casting {
         let casting = Casting::resting(browsing()).expect("rests");
+
         casting
             .shared
             .located
@@ -854,6 +912,7 @@ mod tests {
 
     fn the_receiver(casting: &Casting) -> SinkInfo {
         let mut sinks = casting.sinks();
+
         assert_eq!(sinks.len(), 1);
         sinks.remove(0)
     }
@@ -861,6 +920,7 @@ mod tests {
     #[test]
     fn receivers_resolved_past_the_cap_are_passed_over_without_being_reached() {
         let casting = Casting::resting(browsing()).expect("rests");
+
         for number in 0..RECEIVERS_AT_MOST {
             let at = SocketAddr::from(([192, 168, 2, 1], 9000 + number as u16));
             let found = Found {
@@ -868,6 +928,7 @@ mod tests {
                 name: format!("Speaker {number}"),
                 at,
             };
+
             casting.shared.admit(
                 Device::held_unreached(found),
                 Some(format!("n{number}")),
@@ -895,9 +956,12 @@ mod tests {
         let by_address = NodeName::new(format!("cast:{}", CastId::at(address())));
 
         casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+
         let changes = Neighbours::subscribe(&casting);
         let named = the_receiver(&casting);
+
         casting.shared.forget(FULLNAME);
+
         let kept = the_receiver(&casting);
 
         assert_eq!(named.name, by_id);
@@ -911,9 +975,13 @@ mod tests {
     #[test]
     fn a_receiver_the_browse_stopped_hearing_is_heard_again_under_the_same_name_and_sink() {
         let casting = casting_holding_the_address();
+
         casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+
         let named = the_receiver(&casting);
+
         casting.shared.forget(FULLNAME);
+
         let changes = Neighbours::subscribe(&casting);
 
         casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
@@ -925,9 +993,13 @@ mod tests {
     #[test]
     fn a_receiver_the_browse_stopped_hearing_goes_with_its_address() {
         let casting = casting_holding_the_address();
+
         casting.shared.reach(heard(), Some(FULLNAME.to_owned()));
+
         let named = the_receiver(&casting);
+
         casting.shared.forget(FULLNAME);
+
         let changes = Neighbours::subscribe(&casting);
 
         casting.unlocate(address());
@@ -939,11 +1011,13 @@ mod tests {
     #[test]
     fn a_receiver_only_the_browse_held_goes_when_the_browse_stops_hearing_it() {
         let casting = Casting::resting(browsing()).expect("rests");
+
         casting.shared.admit(
             Device::held_unreached(heard()),
             Some(FULLNAME.to_owned()),
             false,
         );
+
         let named = the_receiver(&casting);
         let changes = Neighbours::subscribe(&casting);
 

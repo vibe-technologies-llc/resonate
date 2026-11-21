@@ -78,6 +78,7 @@ pub fn kept() -> Option<Arc<Kept>> {
 
 fn held_mirror() -> Option<Arc<Mirror>> {
     let path = mirror_in(&folder().ok()?);
+
     if !path.is_file() {
         return None;
     }
@@ -109,6 +110,7 @@ fn landed(config: &Config, mirrored: &Mirrored, held: impl FnOnce() -> Option<Ar
 pub fn mirrored(config: &Config) -> Arc<Mirrored> {
     Arc::clone(MIRRORED.get_or_init(|| {
         let mirrored = Mirrored::default();
+
         if config.is_on(Switch::MusicbrainzMirror) {
             mirrored.hold(held_mirror());
         }
@@ -149,6 +151,7 @@ pub fn stop_this_build() -> bool {
     let Some(building) = running.as_ref() else {
         return false;
     };
+
     STOP_ASKED.store(true, Ordering::Relaxed);
     building.cancel();
     true
@@ -202,6 +205,7 @@ pub fn layered(
     fallback: Option<Arc<dyn Reference>>,
 ) -> Option<Arc<dyn Reference>> {
     let mirrored = mirrored(config);
+
     if fallback.is_none() && mirrored.held().is_none() {
         return None;
     }
@@ -248,23 +252,30 @@ fn build_naming(
     if from.is_none() && !current(config).is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let keeping = keeping(config);
     let folder = folder()?;
     let held = held_for_building(&folder).map_err(failed)?;
+
     let archives = match from {
         Some(from) => given(from),
         None => {
             let agent = download::agent();
             let latest = download::latest(&agent).map_err(failed)?;
+
             *dump = Some(latest.clone());
+
             let gate = metered::for_downloads(config);
             download::fetched(&agent, &latest, &folder, &gate, building, &held).map_err(failed)?
         }
     };
     let built = built_from(&archives, &folder, keeping, building, &held).map_err(failed)?;
     let mirrored = mirrored(config);
+
     mirrored.hold(None);
+
     let path = settled(&built, &folder).map_err(failed)?;
+
     if from.is_none() {
         download::forget_downloads(&folder);
     }
@@ -278,6 +289,7 @@ fn token_of(config: &Config) -> Result<String> {
         .musicbrainz_replication_token()
         .map(str::to_owned)
         .ok_or(Error::NoReplicationToken)?;
+
     if !download::is_a_replication_token(&token) {
         return Err(Error::MalformedReplicationToken);
     }
@@ -288,11 +300,13 @@ pub fn replicate(config: &Config, following: &Building) -> Result<Replicated> {
     if !current(config).is_on(Switch::Online) {
         return Err(Error::OnlineOff);
     }
+
     let token = token_of(config)?;
     let mirror = held_mirror().ok_or(Error::NoMusicbrainzCopy)?;
     let folder = folder()?;
     let held = held_for_building(&folder).map_err(failed)?;
     let agent = download::agent();
+
     let done = replicated(
         &folder,
         &mirror,
@@ -301,6 +315,7 @@ pub fn replicate(config: &Config, following: &Building) -> Result<Replicated> {
         &held,
     )
     .map_err(failed)?;
+
     drop(held);
     if done.to != done.from {
         landed(config, &mirrored(config), held_mirror);
@@ -328,13 +343,17 @@ pub fn reached(config: &Config, on: bool) {
 #[cfg(feature = "ui")]
 fn begun_following(config: &Config) -> Option<Arc<Building>> {
     let mut current = FOLLOWING.lock();
+
     let living = current
         .as_ref()
         .is_some_and(|following| !following.is_cancelled());
+
     if living || !follows_the_changes(config) {
         return None;
     }
+
     let following = Arc::new(Building::default());
+
     *current = Some(Arc::clone(&following));
     Some(following)
 }
@@ -342,6 +361,7 @@ fn begun_following(config: &Config) -> Option<Arc<Building>> {
 #[cfg(feature = "ui")]
 fn still_following(following: &Arc<Building>, config: &Config) -> bool {
     let mut current = FOLLOWING.lock();
+
     if !following.is_cancelled() && follows_the_changes(config) {
         return true;
     }
@@ -366,6 +386,7 @@ pub fn follow_the_changes(config: &Config) {
     };
     let held = Arc::clone(&following);
     let config = config.clone();
+
     let spawned = thread::Builder::new()
         .name("resonate-musicbrainz-follow".to_owned())
         .spawn(move || {
@@ -378,6 +399,7 @@ pub fn follow_the_changes(config: &Config) {
                     && folder().is_ok_and(|folder| {
                         folder.join(resonate_musicbrainz::TABLES_FILE).is_file()
                     });
+
                 if due && ready {
                     last = Some(Instant::now());
                     match replicate(&config, &following) {
@@ -409,22 +431,29 @@ pub fn follow_the_changes(config: &Config) {
 #[cfg(feature = "ui")]
 pub fn build_in_the_background(config: &Config) -> bool {
     let mut current = BUILDING.lock();
+
     if current.is_some() {
         return false;
     }
+
     let building = Arc::new(Building::default());
+
     *current = Some(Arc::clone(&building));
     *FAILED.lock() = None;
     STOP_ASKED.store(false, Ordering::Relaxed);
+
     let config = config.clone();
     let spawned = thread::Builder::new()
         .name("resonate-musicbrainz".to_owned())
         .spawn(move || {
             let mut dump = None;
+
             let built = build_naming(&config, None, &building, &mut dump);
+
             ended(built, dump.as_deref(), folder().ok().as_deref());
             *BUILDING.lock() = None;
         });
+
     if let Err(error) = spawned {
         tracing::warn!(%error, "the copy of MusicBrainz could not begin to be built");
         *current = None;
@@ -482,6 +511,7 @@ fn was_cancelled(error: &Error) -> bool {
 fn said_of(error: &Error) -> String {
     let mut said = error.to_string();
     let mut cause = std::error::Error::source(error);
+
     while let Some(under) = cause {
         said.push_str(": ");
         said.push_str(&under.to_string());
@@ -512,13 +542,17 @@ pub fn keep_fresh(config: &Config) {
     if BUILDING.lock().is_some() {
         return;
     }
+
     let built = mirrored(config).held().map(|mirror| mirror.made().clone());
     let lookups = metered::for_lookups(config);
+
     if !due_for_a_look(config, &lookups, built.as_ref(), now()) {
         return;
     }
+
     let stopped = folder().ok().and_then(|folder| stopped_in(&folder));
     let config = config.clone();
+
     let spawned = thread::Builder::new()
         .name("resonate-musicbrainz-look".to_owned())
         .spawn(move || {
@@ -549,9 +583,11 @@ pub fn keep_fresh(config: &Config) {
 pub fn remove(config: &Config) -> Result<bool> {
     let folder = folder()?;
     let _held = held_for_building(&folder).map_err(failed)?;
+
     mirrored(config).hold(None);
     download::forget_downloads(&folder);
     removed_beside_the_mirror(&folder).map_err(failed)?;
+
     let path = mirror_in(&folder);
     match fs::remove_file(&path) {
         Ok(()) => Ok(true),
@@ -588,8 +624,11 @@ fn replicated_now(config: &Config) -> Result<()> {
     let cancelling = Arc::clone(&following);
     let interrupting = crate::signals::cancel_when_told(move || cancelling.cancel());
     let done = replicate(config, &following);
+
     drop(interrupting);
+
     let done = done?;
+
     if done.to == done.from {
         said!(
             "{}",
@@ -612,6 +651,7 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
         remove: removing,
         search,
     } = asked;
+
     if replicate {
         return replicated_now(config);
     }
@@ -627,12 +667,14 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
         let building = Arc::new(Building::default());
         let watched = Arc::clone(&building);
         let began = Instant::now();
+
         let built = thread::scope(|scope| {
             let telling = scope.spawn(|| {
                 let mut last = Phase::Waiting;
                 let mut written = 0;
                 while watched.phase() != Phase::Done && !watched.is_cancelled() {
                     thread::sleep(TOLD_EVERY);
+
                     let phase = watched.phase();
                     let (read, of) = watched.bytes();
                     let documents = watched.documents();
@@ -653,11 +695,14 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
             let cancelling = Arc::clone(&building);
             let interrupting = crate::signals::cancel_when_told(move || cancelling.cancel());
             let built = build(config, from, &building);
+
             drop(interrupting);
             building.cancel();
+
             let _ = telling.join();
             built
         })?;
+
         said!(
             "{}",
             words::musicbrainz::built(
@@ -671,10 +716,12 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
         }
         return Ok(());
     }
+
     let Some(mirror) = held_mirror() else {
         said!("{}", words::musicbrainz::none_held());
         return Ok(());
     };
+
     if let Some(asked) = search {
         let found = mirror
             .find_recording(&RecordingAsked {
@@ -686,12 +733,14 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
                 wording: Wording::Words,
             })
             .map_err(failed)?;
+
         for recording in found.iter().take(RECORDINGS_SHOWN) {
             let credited: String = recording
                 .credit
                 .iter()
                 .map(|named| format!("{}{}", named.name, named.joined_by))
                 .collect();
+
             said!(
                 "{:>3}  {}  {}",
                 recording.score,
@@ -701,6 +750,7 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
         }
         return Ok(());
     }
+
     let made = mirror.made();
     let dump = made.dump.to_string();
     let path = mirror.path().display().to_string();
@@ -716,6 +766,7 @@ pub fn run(config: &Config, asked: Asked<'_>) -> Result<()> {
     );
     if let Some(amended) = mirror.amended_to() {
         let applied = std::time::UNIX_EPOCH + Duration::from_secs(amended.at);
+
         said!(
             "{}",
             words::musicbrainz::amended(
@@ -770,6 +821,7 @@ fn told_of(
 ) -> resonate_ui::MirrorTold {
     if let Some(building) = building {
         let (read, of) = building.bytes();
+
         return resonate_ui::MirrorTold::Building {
             step: step_of(building.phase()),
             done: (of > 0).then_some((read, of)),
@@ -934,6 +986,7 @@ where
 {
     fn devices(&self) -> Vec<String> {
         let mut devices = Vec::new();
+
         (self.0)(&mut |sync| {
             let mut online: Vec<resonate_sync::SyncDevice> = sync
                 .shown()
@@ -941,6 +994,7 @@ where
                 .into_iter()
                 .filter(|device| device.online && !device.this)
                 .collect();
+
             online.sort_by_key(|device| !device.nearby);
             devices = online.iter().map(|device| device.id.to_string()).collect();
         });
@@ -952,6 +1006,7 @@ where
             return resonate_musicbrainz::Asking::Unanswered;
         };
         let mut asking = None;
+
         (self.0)(&mut |sync| asking = Some(sync.ask_to_consult(id, asked.clone())));
         match asking.map(|asking| asking.answer(ASKED_OF_A_DEVICE_WITHIN)) {
             Some(resonate_sync::Consulting::Answered { answer, at }) => {
@@ -970,6 +1025,7 @@ where
 #[cfg(feature = "sync")]
 fn device_named(hex: &str) -> Option<resonate_sync::DeviceId> {
     let mut id = resonate_sync::DeviceId([0; resonate_sync::DEVICE_BYTES]);
+
     if hex.len() != id.0.len() * 2 {
         return None;
     }
@@ -1002,6 +1058,7 @@ mod tests {
             process::id(),
             SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::write(&path, text).expect("a settings file");
         path
     }
@@ -1063,8 +1120,11 @@ mod tests {
         };
 
         landed(&started_with(true, true, &off), &mirrored, held);
+
         let after_off = looked_at.load(Ordering::Relaxed);
+
         landed(&started_with(true, false, &on), &mirrored, held);
+
         let after_on = looked_at.load(Ordering::Relaxed);
         let _ = fs::remove_file(&off);
         let _ = fs::remove_file(&on);
@@ -1077,20 +1137,28 @@ mod tests {
     #[test]
     fn switching_online_or_the_mirror_off_cancels_the_build_running() {
         let running = Arc::new(Building::default());
+
         *BUILDING.lock() = Some(Arc::clone(&running));
 
         let before = running.is_cancelled();
+
         stop_building();
+
         let after = running.is_cancelled();
 
         let following = Arc::new(Building::default());
+
         *BUILDING.lock() = Some(Arc::clone(&following));
         follow(&Config::default(), false);
+
         let followed = following.is_cancelled();
 
         let kept_on = Arc::new(Building::default());
+
         *BUILDING.lock() = Some(Arc::clone(&kept_on));
+
         let untouched = !kept_on.is_cancelled();
+
         *BUILDING.lock() = None;
 
         assert!(!before);
@@ -1114,16 +1182,24 @@ mod tests {
         let file = settings_file(FOLLOWING_THE_CHANGES);
         let config = started_with(true, true, &file);
         let a_build_keeps_any_follower_from_replicating = Arc::new(Building::default());
+
         *BUILDING.lock() = Some(Arc::clone(&a_build_keeps_any_follower_from_replicating));
 
         reached(&config, true);
+
         let first = followed().expect("following begun");
+
         reached(&config, false);
+
         let first_stopped = first.is_cancelled();
+
         reached(&config, true);
+
         let successor = followed().expect("following begun again");
         let successor_living = !successor.is_cancelled();
+
         stop_building();
+
         let _ = fs::remove_file(&file);
 
         assert!(first_stopped);
@@ -1138,12 +1214,16 @@ mod tests {
         let config = started_with(true, true, &file);
 
         let first = begun_following(&config).expect("following begun");
+
         stop_building();
+
         let successor = begun_following(&config).expect("following begun again");
         let first_goes_on = still_following(&first, &config);
         let held_after_the_first_left = followed();
         let successor_goes_on = still_following(&successor, &config);
+
         stop_building();
+
         let successor_goes_on_once_stopped = still_following(&successor, &config);
         let held_after_the_successor_left = followed();
         let _ = fs::remove_file(&file);
@@ -1162,6 +1242,7 @@ mod tests {
             process::id(),
             SERIAL.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -1180,15 +1261,21 @@ mod tests {
         let mirroring = Mirroring {
             config: Config::default(),
         };
+
         *BUILDING.lock() = Some(Arc::clone(&running));
 
         resonate_ui::Mirroring::cancel(&mirroring);
+
         let cancelled_by_the_pane = running.is_cancelled();
+
         ended(cancelled(), Some(dump), Some(&folder));
         *BUILDING.lock() = None;
+
         let told = told_of(None, FAILED.lock().clone(), || None, stopped_here);
         let remembered = stopped_in(&folder);
+
         forget_stopped(&folder);
+
         let forgotten = stopped_in(&folder);
         let _ = fs::remove_dir_all(&folder);
 
@@ -1203,11 +1290,13 @@ mod tests {
     fn a_build_cancelled_by_a_switch_is_not_remembered_as_stopped() {
         let folder = a_folder("switched");
         let running = Arc::new(Building::default());
+
         *BUILDING.lock() = Some(Arc::clone(&running));
 
         stop_building();
         ended(cancelled(), Some("20261111-002335"), Some(&folder));
         *BUILDING.lock() = None;
+
         let remembered = stopped_in(&folder);
         let failed = FAILED.lock().clone();
         let _ = fs::remove_dir_all(&folder);
@@ -1312,7 +1401,9 @@ mod tests {
         let fresh_is_not = !due_for_a_look(&wanting, &gate, Some(&old), later - 1);
         let offline_is_not = !due_for_a_look(&silent, &gate, None, later);
         let not_mirroring_is_not = !due_for_a_look(&not_mirroring, &gate, None, later);
+
         metering.report(Meter::Metered);
+
         let metered_is_not = !due_for_a_look(&wanting, &gate, None, later)
             && !due_for_a_look(&wanting, &gate, Some(&old), later);
 

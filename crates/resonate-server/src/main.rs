@@ -202,6 +202,7 @@ fn main() -> ExitCode {
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
         .init();
+
     let args = Args::parse();
     let outcome = if args.hifi_key { mint() } else { run(args) };
     match outcome {
@@ -215,6 +216,7 @@ fn main() -> ExitCode {
 
 fn mint() -> Result<(), Error> {
     let minted = Minted::new()?;
+
     println!("secret: {}", minted.secret);
     println!("digest: {}", minted.digest.hex());
     Ok(())
@@ -254,6 +256,7 @@ fn run(args: Args) -> Result<(), Error> {
         searches_for: Duration::from_secs(args.search_minutes.saturating_mul(SECONDS_PER_MINUTE)),
         ..Keeping::default()
     };
+
     let gateway_acceptor = hifi
         .as_ref()
         .map(|_| gateway_tls(chain.clone(), key.clone_key()))
@@ -289,11 +292,14 @@ fn run(args: Args) -> Result<(), Error> {
         .map_err(Error::Runtime)?;
     runtime.block_on(async {
         let endpoint = listening(config, args.listen)?;
+
         tracing::info!(listen = %args.listen, "serving sync");
+
         let server = Server::new(store, limits);
         let gateway = match (hifi, gateway_acceptor) {
             (Some(hifi), Some(acceptor)) => {
                 let listener = TcpListener::bind(hifi.listen).await.map_err(Error::Listen)?;
+
                 tracing::info!(listen = %hifi.listen, upstream = %hifi.upstream, keys = hifi.keys.len(), "serving hifi-api");
                 Some(Gateway::keeping(hifi.keys, hifi.upstream, keeping).serve(listener, acceptor))
             }
@@ -304,6 +310,7 @@ fn run(args: Args) -> Result<(), Error> {
             match web {
                 Some(web) => {
                     let listener = TcpListener::bind(web.listen).await.map_err(Error::Listen)?;
+
                     tracing::info!(listen = %web.listen, forwarded_by = ?web.forwarded_by, "serving sync over web sockets");
                     if web.forwarded_by.is_some() && !web.listen.ip().is_loopback() {
                         tracing::warn!(listen = %web.listen, "the proxy's header is trusted only from a peer on this machine; others are counted by their own address");
@@ -323,6 +330,7 @@ fn run(args: Args) -> Result<(), Error> {
             }
         };
         let terminated = termination()?;
+
         tokio::select! {
             () = server.serve(endpoint.clone()) => {}
             () = serving_hifi => {}

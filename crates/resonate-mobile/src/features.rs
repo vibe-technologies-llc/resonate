@@ -62,13 +62,16 @@ impl Default for Services {
         let lookups = Gate::new(metering.clone(), true);
         let downloads = Gate::new(metering.clone(), false);
         let spotify_grants = Arc::new(crate::spotify::KeptByThePhone::default());
+
         let online = Online::with_client(Arc::new(
             Client::new(Identity::of_this_build()).gated_by(lookups.clone()),
         ))
         .with_spotify(Arc::new(resonate_online::SpotifyAccount::new(
             Arc::clone(&spotify_grants) as Arc<dyn resonate_online::SpotifyGrants>,
         )));
+
         online.client().reach(false);
+
         let auto_eq = resonate_online::AutoEq::new(Arc::clone(online.client()), None);
         Self {
             online,
@@ -294,6 +297,7 @@ pub(crate) fn recognised_through(
         Printed::Nothing => &[][..],
         Printed::Recognised(songs) => songs.as_slice(),
     };
+
     catalog.keep_recognition(
         id,
         HeardAs::top_of(heard).as_ref(),
@@ -333,6 +337,7 @@ impl MobilePlayer {
     pub fn select_output(&self, device: i32) -> Result<()> {
         let shown = self.playing.shown();
         let routing = self.playing.zoned(shown)?.routing.clone();
+
         if device < 0 {
             return Err(Error::OutputUnavailable);
         }
@@ -356,6 +361,7 @@ impl MobilePlayer {
         if rebind {
             for zone in self.playing.listed() {
                 let sink = self.playing.wanted_sink(zone.id)?;
+
                 self.playing
                     .send_to(zone.id, resonate_engine::Command::SetSink(sink))?;
             }
@@ -510,9 +516,11 @@ impl MobilePlayer {
     pub fn analyse_track(&self, id: u64) -> Result<AnalysisReport> {
         let track = self.catalog.track(id)?;
         let watch = Arc::new(Watch::default());
+
         if let Some(previous) = self.services.analysis.lock().replace(Arc::clone(&watch)) {
             previous.stop();
         }
+
         let cached = self.services.analyses.lock().get(&id).cloned();
         let analysis = match cached {
             Some(analysis) => analysis,
@@ -524,6 +532,7 @@ impl MobilePlayer {
                     watch.as_ref(),
                 )?);
                 let mut held = self.services.analyses.lock();
+
                 if held.len() >= 8 {
                     held.pop_first();
                 }
@@ -532,6 +541,7 @@ impl MobilePlayer {
             }
         };
         let study = &analysis.study;
+
         let report = AnalysisReport {
             track_id: id,
             verdict: study.judgement.verdict.as_str().to_owned(),
@@ -552,6 +562,7 @@ impl MobilePlayer {
             spectrum_step_hz: study.spectrum.bin_hz(),
             findings: study.judgement.findings.iter().map(Finding::told).collect(),
         };
+
         self.catalog
             .keep_study(id, &report, &study.band_figures())?;
         Ok(report)
@@ -573,10 +584,14 @@ impl MobilePlayer {
 
     pub fn visualizer(&self, enabled: bool) -> Result<Vec<f32>> {
         let player = self.playing.player()?;
+
         player.listen_in(enabled);
+
         let mut left = vec![0.0; 256];
+
         if enabled && let Tapped::Samples(tap) = player.tap() {
             let mut right = vec![0.0; 256];
+
             tap.around(Instant::now(), &mut left, &mut right);
             for (left, right) in left.iter_mut().zip(right) {
                 *left = (*left + right) / 2.0;
@@ -601,6 +616,7 @@ impl MobilePlayer {
                     })
                     .and_then(|songs| self.offered(songs, Listing::Searched));
             }
+
             let Some(named) = self
                 .services
                 .online
@@ -609,6 +625,7 @@ impl MobilePlayer {
             else {
                 return Ok(Vec::new());
             };
+
             for isrc in &named.isrcs {
                 let recordings = self
                     .services
@@ -620,12 +637,15 @@ impl MobilePlayer {
                         .into_iter()
                         .map(|song| search_song(song.into(), &[]))
                         .collect();
+
                     return self.offered(songs, Listing::Searched);
                 }
             }
+
             let Some(title) = named.title else {
                 return Ok(Vec::new());
             };
+
             return self
                 .services
                 .online
@@ -647,6 +667,7 @@ impl MobilePlayer {
                 })
                 .and_then(|songs| self.offered(songs, Listing::Searched));
         }
+
         let Some(asked) = resonate_library::songs_asked(&text) else {
             return Ok(Vec::new());
         };
@@ -667,6 +688,7 @@ impl MobilePlayer {
         if !self.services.analyses.lock().contains_key(&id) {
             self.analyse_track(id)?;
         }
+
         let track = self.catalog.track(id)?;
         let analysis = self.services.analyses.lock().get(&id).cloned();
         let Some(print) = analysis.and_then(|analysis| analysis.study.print.clone()) else {
@@ -684,6 +706,7 @@ impl MobilePlayer {
                 acoustid_key,
             ))
         };
+
         let recognised = recognised_through(&self.catalog, printer.as_ref(), id, track, print)?;
         Ok(match recognised {
             Printed::Nothing => Vec::new(),
@@ -717,13 +740,16 @@ impl MobilePlayer {
         else {
             return Ok(None);
         };
+
         if let Some(kept) = self.catalog.kept_artist(artist.as_str())? {
             return Ok(Some(kept));
         }
         self.require_online()?;
+
         let Some(found) = self.online_artist(artist.to_string())? else {
             return Ok(None);
         };
+
         self.catalog
             .keep_artist(artist.as_str(), &found, SystemTime::now())?;
         Ok(Some(found))
@@ -731,6 +757,7 @@ impl MobilePlayer {
 
     pub fn online_artist(&self, id: String) -> Result<Option<ArtistInformation>> {
         self.require_online()?;
+
         let id = Mbid::new(&id)?;
         let Some(artist) = self
             .services
@@ -780,6 +807,7 @@ impl MobilePlayer {
     ) -> Result<()> {
         let zoned = self.playing.zoned(zone)?;
         let mut listening = zoned.listening.lock();
+
         let counted = listening.0.heard(state, queue);
         self.store_counting(&mut listening.1, counted)
     }
@@ -794,6 +822,7 @@ impl MobilePlayer {
 
     pub(crate) fn settle_listening(&self, zoned: &crate::zoning::Zoned) -> Result<()> {
         let mut listening = zoned.listening.lock();
+
         let counted = listening.0.leaves();
         self.store_counting(&mut listening.1, counted)
     }
@@ -812,7 +841,9 @@ impl MobilePlayer {
         if counted.is_none() {
             return Ok(());
         }
+
         let connection = self.catalog.0.lock();
+
         match counted {
             Some(Counting::Counts(played)) => {
                 let now = SystemTime::now()
@@ -822,6 +853,7 @@ impl MobilePlayer {
                     .min(i64::MAX as u64) as i64;
                 let began = now.saturating_sub(played.heard.as_secs() as i64);
                 let heard_ms = milliseconds(played.heard).min(i64::MAX as u64) as i64;
+
                 let inserted = if crate::served::Served::names(&played.location) {
                     connection.execute(
                         "INSERT INTO listens(track, began, heard_ms, counted, served) VALUES (NULL, ?2, ?3, 1, ?1)",
@@ -834,6 +866,7 @@ impl MobilePlayer {
                     )
                 }
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+
                 *visit = (inserted > 0).then(|| connection.last_insert_rowid());
             }
             Some(Counting::Hears(played) | Counting::Settles(played)) => {
@@ -934,6 +967,7 @@ pub(crate) enum Listing {
 
 pub(crate) fn distinct_takes(songs: Vec<SearchSong>) -> Vec<SearchSong> {
     let mut kept: Vec<SearchSong> = Vec::with_capacity(songs.len());
+
     for song in songs {
         match kept.iter_mut().find(|held| same_take(held, &song)) {
             Some(held) if identity_held(&song) > identity_held(held) => *held = song,
@@ -1074,6 +1108,7 @@ mod tests {
             ("morning after dark", "Morning After Dark", "Timbaland"),
         ] {
             let mut original = joga();
+
             original.title = title.to_owned();
             original.credit[0].name = artist.to_owned();
             original.isrcs = vec![resonate_library::Isrc::new("USUM70907072").expect("an isrc")];
@@ -1087,9 +1122,11 @@ mod tests {
                     )
                 })
                 .collect();
+
             let mut answers: Vec<RecordingMatch> = (0..99)
                 .map(|index| {
                     let mut variant = original.clone();
+
                     variant.recording =
                         Mbid::new(&format!("{index:08x}-0000-4000-8000-000000000001"))
                             .expect("an mbid");
@@ -1097,9 +1134,12 @@ mod tests {
                     variant
                 })
                 .collect();
+
             answers.insert(90, original.clone());
+
             let asked = resonate_library::songs_asked(query).expect("a search");
             let found = searched_songs(&asked, answers);
+
             assert_eq!(
                 found[0].recording,
                 original.recording.to_string(),
@@ -1197,11 +1237,14 @@ mod tests {
         #[test]
         fn half_a_song_heard_is_one_counted_listen_and_what_is_heard_after_it_settles_on_leaving() {
             let harness = Harness::new();
+
             harness.resumed("ab", 0, 0);
+
             let rows = rows(&harness);
             let song = harness.song('a').id as i64;
 
             walked(&harness, &rows, 0, &[0.0, 0.5, 1.0], Some(2.0));
+
             assert_eq!(heard(&harness), [(Some(song), 1_000, 1)]);
 
             walked(&harness, &rows, 0, &[1.5, 2.0], Some(2.0));
@@ -1213,7 +1256,9 @@ mod tests {
         #[test]
         fn a_stretch_heard_without_being_counted_is_a_pass_naming_no_song() {
             let harness = Harness::new();
+
             harness.resumed("ab", 0, 0);
+
             let rows = rows(&harness);
 
             walked(&harness, &rows, 0, &[0.0, 1.0, 2.0, 3.0], None);
@@ -1225,7 +1270,9 @@ mod tests {
         #[test]
         fn a_listen_is_told_again_as_it_grows_and_never_makes_a_second_row() {
             let harness = Harness::new();
+
             harness.resumed("ab", 0, 0);
+
             let rows = rows(&harness);
             let song = harness.song('a').id as i64;
             let positions: Vec<f64> = (0..=300).step_by(4).map(f64::from).collect();
@@ -1233,6 +1280,7 @@ mod tests {
             walked(&harness, &rows, 0, &positions, None);
 
             let stored = heard(&harness);
+
             assert_eq!(stored.len(), 1, "{stored:?}");
             assert_eq!(stored[0].0, Some(song));
             assert_eq!(stored[0].2, 1);
@@ -1242,12 +1290,15 @@ mod tests {
         #[test]
         fn a_listen_counted_for_a_song_the_catalog_lost_does_not_settle_over_another_listen() {
             let harness = Harness::new();
+
             harness.resumed("ab", 0, 0);
+
             let rows = rows(&harness);
             let (kept, lost) = (harness.song('a').id as i64, harness.song('b').id);
 
             walked(&harness, &rows, 0, &[0.0, 0.5, 1.0], Some(2.0));
             harness.player.finish_listening().expect("a listen settled");
+
             assert_eq!(heard(&harness), [(Some(kept), 1_000, 1)]);
 
             harness
@@ -1272,8 +1323,10 @@ mod tests {
 
         fn with_info(wave: &[u8], entries: &[(&[u8; 4], &str)]) -> Vec<u8> {
             let mut list = b"INFO".to_vec();
+
             for (id, text) in entries {
                 let mut value = text.as_bytes().to_vec();
+
                 value.push(0);
                 list.extend_from_slice(*id);
                 list.extend_from_slice(&(value.len() as u32).to_le_bytes());
@@ -1282,7 +1335,9 @@ mod tests {
                     list.push(0);
                 }
             }
+
             let mut chunk = b"LIST".to_vec();
+
             chunk.extend_from_slice(&(list.len() as u32).to_le_bytes());
             chunk.extend_from_slice(&list);
 
@@ -1291,9 +1346,12 @@ mod tests {
                 .position(|window| window == b"data")
                 .expect("a data chunk");
             let mut whole = wave[..data_at].to_vec();
+
             whole.extend_from_slice(&chunk);
             whole.extend_from_slice(&wave[data_at..]);
+
             let riff = (whole.len() - 8) as u32;
+
             whole[4..8].copy_from_slice(&riff.to_le_bytes());
             whole
         }
@@ -1302,6 +1360,7 @@ mod tests {
         fn the_inspector_reads_the_container_the_sample_word_and_the_tags_the_file_declares() {
             let harness = Harness::new();
             let song = harness.song('a').clone();
+
             fs::write(
                 harness.folder.join("a.wav"),
                 with_info(
@@ -1363,12 +1422,16 @@ mod tests {
             assert!(report.waveform.iter().all(|height| *height == 0.0));
 
             fs::remove_file(harness.folder.join("c.wav")).expect("a file gone");
+
             let again = harness.player.analyse_track(song).expect("a cached report");
 
             assert_eq!(again.verdict, report.verdict);
             assert_eq!(harness.player.services.analyses.lock().len(), 1);
+
             let gone = harness.song('d').id;
+
             fs::remove_file(harness.folder.join("d.wav")).expect("a file gone");
+
             assert!(harness.player.analyse_track(gone).is_err());
             assert!(harness.player.analyse_track(song + 1_000).is_err());
         }
@@ -1377,15 +1440,19 @@ mod tests {
         fn a_failure_the_engine_reports_is_told_by_one_snapshot_and_by_no_other() {
             let harness = Harness::new();
             let ids = harness.ids("ab");
+
             fs::remove_file(harness.folder.join("a.wav")).expect("a file gone");
 
             harness.player.load(ids, 0, false).expect("a queue loaded");
+
             let began = Instant::now();
             let told = loop {
                 if let Some(told) = harness.player.snapshot().expect("a snapshot").failure {
                     break told;
                 }
+
                 assert!(began.elapsed() < SETTLED_WITHIN, "no failure was told");
+
                 thread::sleep(LOOKED_AGAIN_AFTER);
             };
 

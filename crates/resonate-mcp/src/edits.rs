@@ -79,6 +79,7 @@ pub(crate) fn remove_from_playlist(
     dropping: &Dropping,
 ) -> Result<Value> {
     let found = catalog::playlist_called(library, name)?;
+
     match dropping {
         Dropping::Rows(rows) => {
             if !library.remove_from_playlist(found.id, *rows)? {
@@ -92,6 +93,7 @@ pub(crate) fn remove_from_playlist(
             library.remove_matching(found.id, matching)?;
         }
     }
+
     let left = catalog::playlist_called(library, &found.name)?;
 
     Ok(json!({
@@ -102,7 +104,9 @@ pub(crate) fn remove_from_playlist(
 
 pub(crate) fn rename_playlist(library: &Library, name: &str, to: &str) -> Result<Value> {
     let found = catalog::playlist_called(library, name)?;
+
     library.rename_playlist(found.id, to)?;
+
     let renamed = library
         .playlist(found.id)?
         .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(to)))?;
@@ -112,6 +116,7 @@ pub(crate) fn rename_playlist(library: &Library, name: &str, to: &str) -> Result
 
 pub(crate) fn discard_playlist(library: &Library, name: &str) -> Result<Value> {
     let found = catalog::playlist_called(library, name)?;
+
     if !library.remove_playlist(found.id)? {
         return Err(Error::NoSuchPlaylist(PlaylistName::new(found.name)));
     }

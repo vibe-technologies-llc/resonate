@@ -11,7 +11,7 @@ use resonate_core::{Frames, Ratio, SampleRate, StreamSpec};
 
 use crate::{AudioSource, DeviceTime, Error, Moment, Operation, Result, SinkId, Stamp, Words};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct GraphTime {
     pub delay: i64,
     pub buffered: u64,
@@ -39,6 +39,7 @@ impl GraphTime {
         if self.delay <= 0 {
             return 0;
         }
+
         let seconds = (self.delay as u64).saturating_mul(self.tick.numer.get() as u64);
         seconds.saturating_mul(stream.hz() as u64) / self.tick.denom.get() as u64
     }
@@ -89,7 +90,7 @@ impl StreamClock {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StreamState {
     Unconnected,
     Connecting,
@@ -98,13 +99,13 @@ pub enum StreamState {
     Failed,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum LatencyRequest {
     Auto,
     Duration(Duration),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum MediaRole {
     Music,
     Notification,
@@ -122,21 +123,21 @@ pub struct StreamRequest {
     pub realtime: bool,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StreamCommand {
     SetActive(bool),
     Drain,
     Close,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Downstream {
     #[default]
     Moments,
     Seconds,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum StreamVolume {
     #[default]
     Unity,
@@ -163,7 +164,7 @@ pub enum StreamEvent {
     Drained,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Unreshapable {
     Unsupported,
     AnotherTarget,
@@ -284,12 +285,14 @@ mod tests {
     #[test]
     fn a_graph_on_the_streams_own_rate_reports_the_ticks_it_counted() {
         let time = ticking(44_100, 4_410);
+
         assert_eq!(time.downstream(SampleRate::HZ_44100), Frames(4_410));
     }
 
     #[test]
     fn a_graph_on_another_rate_reports_the_delay_in_the_streams_frames() {
         let ten_milliseconds = ticking(48_000, 480);
+
         assert_eq!(
             ten_milliseconds.downstream(SampleRate::HZ_44100),
             Frames(441),
@@ -319,6 +322,7 @@ mod tests {
             buffered: 128,
             ..ticking(48_000, 480)
         };
+
         assert_eq!(
             held.downstream(SampleRate::HZ_48000),
             Frames(608),
@@ -373,9 +377,11 @@ mod tests {
     #[test]
     fn the_clock_says_the_rate_the_graph_ticks_at_and_only_where_a_tick_is_one_frame() {
         let clock = StreamClock::default();
+
         assert_eq!(clock.graph_rate(), None);
 
         clock.note(ticking(48_000, 480), SampleRate::HZ_44100);
+
         assert_eq!(clock.graph_rate(), Some(SampleRate::HZ_48000));
         assert_eq!(clock.latency(), Frames(441));
 
@@ -386,13 +392,16 @@ mod tests {
             },
             ..ticking(48_000, 0)
         };
+
         clock.note(coarse, SampleRate::HZ_48000);
+
         assert_eq!(clock.graph_rate(), None);
     }
 
     #[test]
     fn a_delay_no_graph_could_report_saturates_rather_than_wrapping() {
         let absurd = ticking(1, i64::MAX);
+
         assert_eq!(absurd.downstream(SampleRate::HZ_384000), Frames(u64::MAX));
     }
 }

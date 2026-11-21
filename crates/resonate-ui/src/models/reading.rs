@@ -29,6 +29,7 @@ impl LibraryModel {
 
     fn forget_albums_the_catalog_moved_under(&mut self) {
         let now = self.library.rows_stamp();
+
         if !self
             .naming
             .read_albums_at
@@ -59,11 +60,13 @@ impl LibraryModel {
                 (item, named.track.clone())
             })
             .collect();
+
         if held.is_empty() {
             return;
         }
 
         let library = Arc::clone(&self.library);
+
         self.naming._again = cx.spawn(async move |this, cx| {
             let (held, read) = cx
                 .background_executor()
@@ -73,8 +76,10 @@ impl LibraryModel {
                     (held, read)
                 })
                 .await;
+
             let landed = this.update(cx, |this, cx| {
                 let mut changed = false;
+
                 for ((item, before), track) in held.into_iter().zip(read) {
                     let standing = this
                         .naming
@@ -151,13 +156,16 @@ impl LibraryModel {
         let wanted = self
             .in_flight
             .map_or(wanted, |reading| reading.with(wanted));
+
         self.in_flight = Some(wanted);
+
         let library = Arc::clone(&self.library);
         let asked = self.asked();
         let asked_for = self.query.clone();
         let read_ahead = self.first_read.take().filter(|first| {
             wanted == Wanted::Everything && settling.is_zero() && first.asked == asked
         });
+
         if let Some(first) = read_ahead.as_ref()
             && let Ok(read) = first.read.try_recv()
         {
@@ -170,6 +178,7 @@ impl LibraryModel {
             if !settling.is_zero() {
                 cx.background_executor().timer(settling).await;
             }
+
             let loaded = cx
                 .background_executor()
                 .spawn(async move {
@@ -199,8 +208,10 @@ impl LibraryModel {
                 if loaded.browsed.is_some() {
                     self.listed_for = asked_for;
                 }
+
                 let shelved = loaded.shelves.is_some();
                 let gone = loaded.browsed.as_ref().and_then(|browsed| browsed.gone);
+
                 if self.take(loaded) == Grew::Moved {
                     self.read(Wanted::ThePage, cx);
                 }
@@ -254,10 +265,12 @@ impl LibraryModel {
             self.take_the_listing(browsed);
             return Grew::Renewed;
         }
+
         let Some(grown) = loaded.grown else {
             return Grew::Same;
         };
         let grew = self.take_the_growth(grown);
+
         match grew {
             Grew::Same => {}
             Grew::Moved => self.browse.page_moved = true,
@@ -310,14 +323,18 @@ impl LibraryModel {
 
     fn take_the_growth(&mut self, grown: Grown) -> Grew {
         let Grown { from, page } = grown;
+
         let albums = grew(&mut self.browse.albums, from.albums, page.albums);
+
         if albums == Grew::Renewed {
             self.index_the_albums();
         }
+
         let grew = albums
             .and(grew(&mut self.browse.artists, from.artists, page.artists))
             .and(grew(&mut self.browse.tracks, from.tracks.rows, page.tracks))
             .and(grew(&mut self.browse.scoped, from.scoped.rows, page.scoped));
+
         if from == Held::default() {
             self.browse.page_moved = false;
         }
@@ -440,12 +457,14 @@ impl LibraryModel {
             .map(|album| album.id)
             .take(COVERS_WARMED)
             .collect();
+
         if wanted.is_empty() {
             self.warmed = false;
             return;
         }
 
         let library = Arc::clone(&self.library);
+
         self._warming = cx.spawn(async move |this, cx| {
             for id in wanted {
                 let Ok(sized) = this.update(cx, |this, _| {
@@ -464,6 +483,7 @@ impl LibraryModel {
 
                 let reading = Arc::clone(&library);
                 let side = sized.side;
+
                 let Ok(drawing) = this.update(cx, |_, cx| {
                     cx.global::<Drawer>()
                         .draw(move || drawn_cover(&reading, id, side))
@@ -474,6 +494,7 @@ impl LibraryModel {
 
                 let landed = this.update(cx, |this, cx| {
                     let decoded = picture_or_trouble(read, words::models::read_a_cover(), cx);
+
                     this.pictures.covers.insert(sized, decoded).forget(cx);
                     cx.notify();
                 });

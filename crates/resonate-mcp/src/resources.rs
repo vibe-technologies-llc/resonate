@@ -27,7 +27,7 @@ const MISSING: &str = "resonate://library/missing";
 const ONE_PLAYLIST: &str = "resonate://library/playlist/";
 const ONE_PLAYLIST_TEMPLATE: &str = "resonate://library/playlist/{name}";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Resource {
     NowPlaying,
     Queue,
@@ -55,6 +55,7 @@ impl Resource {
     pub fn at(uri: &str) -> Option<Self> {
         if let Some(escaped) = uri.strip_prefix(ONE_PLAYLIST) {
             let name = String::from_utf8(uri_unescaped(escaped)?).ok()?;
+
             return (!name.trim().is_empty()).then(|| Self::Playlist(PlaylistName::new(name)));
         }
         if let Some(named) = uri.strip_prefix(STATISTICS_OVER) {
@@ -194,7 +195,7 @@ impl Resource {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Template {
     Playlist,
     Statistics,
@@ -288,7 +289,9 @@ pub(crate) fn page_from(library: &Library, from: usize) -> Result<Page> {
         playlists_from,
         Some(room + 1),
     )?;
+
     let more = named.len() > room;
+
     named.truncate(room);
 
     let resources: Vec<Resource> = fixed
@@ -307,6 +310,7 @@ pub(crate) fn page_from(library: &Library, from: usize) -> Result<Page> {
 pub(crate) fn fingerprint(library: &Library) -> Result<u64> {
     let named = library.playlist_names(PlaylistOrder::Name, Direction::Ascending, 0, None)?;
     let mut hasher = DefaultHasher::new();
+
     named
         .iter()
         .for_each(|playlist| playlist.name.hash(&mut hasher));

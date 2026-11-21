@@ -69,6 +69,7 @@ pub(crate) fn playlist_called(library: &Library, name: &str) -> Result<resonate_
 pub(crate) fn search(library: &Library, query: &str, most: usize) -> Result<Value> {
     let found = library.search(query, most)?;
     let mut titles = AlbumTitles::over(library);
+
     let tracks = found
         .tracks
         .iter()
@@ -113,6 +114,7 @@ pub(crate) fn playlist_tracks(
     let found = playlist_called(library, name)?;
     let (entries, matched) = library.playlist_entries_within(found.id, matching, most)?;
     let mut titles = AlbumTitles::over(library);
+
     let rows = entries
         .iter()
         .map(|entry| {
@@ -120,6 +122,7 @@ pub(crate) fn playlist_tracks(
                 Some(track) => titles.track(track)?,
                 None => json!({ "uri": entry.cut.location.to_uri_within(entry.cut.span) }),
             };
+
             if let Value::Object(fields) = &mut row {
                 fields.insert("row".to_owned(), Value::from(entry.position));
             }

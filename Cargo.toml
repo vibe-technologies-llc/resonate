@@ -119,7 +119,7 @@ icu_datetime = { version = "2.4.0", default-features = false, features = ["compi
 icu_calendar = { version = "2.4.0", default-features = false }
 icu_locale_core = { version = "2.4.0", default-features = false }
 jiff = {
-    version = "1.0.1",
+    version = "1.0.2",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
@@ -196,7 +196,7 @@ rusqlite = {
     features = ["bundled", "cache", "functions", "hooks"]
 }
 
-toml_edit = { version = "0.25.19", default-features = false, features = ["parse", "display"] }
+toml_edit = { version = "0.25.20", default-features = false, features = ["parse", "display"] }
 
 md-5 = { version = "0.11.0", default-features = false }
 sha2 = { version = "0.11.1", default-features = false }
@@ -233,7 +233,7 @@ serde_json = { version = "1.0.154", default-features = false, features = ["std"]
 serde-saphyr = { version = "2.2.0", default-features = false, features = ["deserialize"] }
 
 zbus = {
-    version = "6.4.0",
+    version = "6.5.0",
     default-features = false,
     features = ["default-rt", "proxy", "service"]
 }

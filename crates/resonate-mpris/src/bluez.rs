@@ -62,6 +62,7 @@ impl Headsets {
             .map_err(|source| Error::bus(BusOp::Listen, source))?;
 
         let listening = connection.clone();
+
         thread::Builder::new()
             .name("resonate-headsets".to_owned())
             .spawn(move || register_with_every_adapter(&listening, &adapters, arriving))
@@ -77,6 +78,7 @@ impl Headsets {
     pub(crate) fn rest(self) {
         if let Err(source) = self.connection.close() {
             let error = Error::bus(BusOp::Shutdown, source);
+
             tracing::debug!(%error, "BlueZ was left to notice the player gone on its own");
         }
     }
@@ -109,6 +111,7 @@ fn register_with_every_adapter(
             }
             Err(source) => {
                 let error = Error::bus(BusOp::Find, source.into());
+
                 tracing::debug!(%error, "the Bluetooth adapters already standing could not be listed");
             }
         }
@@ -162,6 +165,7 @@ fn register(
         }
         Err(source) => {
             let error = Error::bus(BusOp::Register, source);
+
             tracing::debug!(%error, %adapter, "BlueZ did not take the player for a headset's controls");
         }
     }

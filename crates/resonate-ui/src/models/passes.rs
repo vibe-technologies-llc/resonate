@@ -24,6 +24,7 @@ pub struct Identified {
 impl Identified {
     pub fn of(copies: Copies) -> Self {
         let mut by_song: BTreeMap<PathBuf, Vec<PathBuf>> = BTreeMap::new();
+
         for identical in &copies.identical {
             by_song
                 .entry(identical.kept.clone())
@@ -133,6 +134,7 @@ impl LibraryModel {
 
     pub(super) fn take_down_what_moved(&mut self) {
         let now = self.library.plans_stamp();
+
         if self.passes.previewed.outdated_at(now) {
             self.passes.organised = None;
             self.passes.previewed = Planned::Outdated;

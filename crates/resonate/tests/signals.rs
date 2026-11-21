@@ -21,6 +21,7 @@ struct Home(PathBuf);
 impl Home {
     fn new(name: &str) -> Self {
         let path = env::temp_dir().join(format!("resonate-{name}-{}", std::process::id()));
+
         fs::create_dir_all(&path).expect("a temporary home");
         Self(path)
     }
@@ -50,14 +51,17 @@ fn serving(home: &Home) -> Child {
 
 fn answered_once(child: &mut Child) {
     let stdin = child.stdin.as_mut().expect("a piped stdin");
+
     writeln!(stdin, "{INITIALIZE}").expect("the request to be written");
     stdin.flush().expect("the request to be sent");
 
     let stdout = child.stdout.take().expect("a piped stdout");
     let mut line = String::new();
+
     BufReader::new(stdout)
         .read_line(&mut line)
         .expect("an answer to be read");
+
     assert!(line.contains("\"id\":1"), "the server answered {line:?}");
 }
 
@@ -68,18 +72,22 @@ fn signalled(child: &Child, signal: &str) {
         .arg(child.id().to_string())
         .status()
         .expect("kill to run");
+
     assert!(sent.success(), "kill -{signal} failed");
 }
 
 fn left(child: &mut Child) -> ExitStatus {
     let deadline = Instant::now() + LEAVES_WITHIN;
+
     while Instant::now() < deadline {
         if let Some(status) = child.try_wait().expect("the child to be waited on") {
             return status;
         }
         thread::sleep(Duration::from_millis(20));
     }
+
     let _ = child.kill();
+
     panic!("the server did not leave within {LEAVES_WITHIN:?} of the signal");
 }
 
@@ -88,9 +96,11 @@ fn left(child: &mut Child) -> ExitStatus {
 fn a_hang_up_is_heard_as_a_request_to_leave_rather_than_killing_the_process() {
     let home = Home::new("hang-up");
     let mut child = serving(&home);
+
     answered_once(&mut child);
 
     signalled(&child, "HUP");
+
     let status = left(&mut child);
 
     assert_ne!(
@@ -104,9 +114,11 @@ fn a_hang_up_is_heard_as_a_request_to_leave_rather_than_killing_the_process() {
 fn closing_the_input_ends_the_server_with_a_clean_exit() {
     let home = Home::new("input-closed");
     let mut child = serving(&home);
+
     answered_once(&mut child);
 
     drop(child.stdin.take());
+
     let status = left(&mut child);
 
     assert!(status.success(), "the server left with {status}");

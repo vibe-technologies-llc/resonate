@@ -136,6 +136,7 @@ pub fn web_link_to(to: Invited, code: &str, server: &str) -> Option<String> {
 
 fn percent_encoded(text: &str) -> String {
     let mut encoded = String::with_capacity(text.len());
+
     for byte in text.bytes() {
         if byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'.' | b'_' | b'~') {
             encoded.push(char::from(byte));

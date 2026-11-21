@@ -158,7 +158,9 @@ impl SuggestionsPane {
             return;
         }
         self.explore.blueprints_key = Some((day, revision));
+
         let library = Arc::clone(&self.catalog);
+
         self.explore.blueprints_task = Some(cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
@@ -184,6 +186,7 @@ impl SuggestionsPane {
             self.explore.playlists_page = PlaylistsPage::Offline;
             return PlaylistsPage::Offline;
         };
+
         if self
             .explore
             .playlists_asked
@@ -192,10 +195,12 @@ impl SuggestionsPane {
         {
             return self.explore.playlists_page.clone();
         }
+
         let refresh = std::mem::take(&mut self.explore.playlists_retry);
         let library = Arc::clone(&self.catalog);
         let cache = Arc::clone(&self.explore.cache);
         let sources = request.sources.clone();
+
         self.explore.playlists_asked = Some(request);
         if refresh || !matches!(self.explore.playlists_page, PlaylistsPage::Ready(_)) {
             self.explore.playlists_page = PlaylistsPage::Loading;
@@ -226,6 +231,7 @@ impl SuggestionsPane {
             self.explore.mix_page = MixPage::Offline;
             return MixPage::Offline;
         };
+
         if self
             .explore
             .mix_asked
@@ -234,11 +240,13 @@ impl SuggestionsPane {
         {
             return self.explore.mix_page.clone();
         }
+
         let refresh = std::mem::take(&mut self.explore.mix_retry);
         let library = Arc::clone(&self.catalog);
         let cache = Arc::clone(&self.explore.cache);
         let mix = request.mix.clone();
         let sources = request.sources.clone();
+
         self.explore.mix_asked = Some(request);
         if refresh || !matches!(self.explore.mix_page, MixPage::Ready(_)) {
             self.explore.mix_page = MixPage::Loading;
@@ -325,6 +333,7 @@ impl RootView {
     ) -> (MixPage, Vec<ExploreOffer>) {
         let app = cx.global::<ResonateApp>();
         let revision = self.library.read(cx).revision();
+
         let request = app.online.enabled.then(|| MixRequest {
             day: Calendar::local().day_of(SystemTime::now()),
             revision,
@@ -405,8 +414,10 @@ impl RootView {
                     ))
                     .child(kit::figure(text)),
             );
+
         if retry {
             let label = words::suggestions::explore_retry();
+
             bar = bar.child(self.in_the_pane_ring(
                 kit::button("mix-explore-retry", None, label, label, Tone::Ghost),
                 |this, _, cx| {
@@ -559,6 +570,7 @@ impl RootView {
         let app = cx.global::<ResonateApp>();
         let day = Calendar::local().day_of(SystemTime::now());
         let revision = self.library.read(cx).revision();
+
         let request = app.online.enabled.then(|| PlaylistsRequest {
             day,
             revision,
@@ -570,6 +582,7 @@ impl RootView {
         });
         let (page, blueprints) = self.suggestions.update(cx, |pane, cx| {
             pane.read_blueprints(day, revision, cx);
+
             let page = pane.read_explore_playlists(request, cx);
             (page, Arc::clone(&pane.explore.blueprints))
         });
@@ -618,6 +631,7 @@ impl RootView {
                                 .into_any_element()
                         })
                         .collect();
+
                     shelf = shelf.child(
                         div()
                             .flex()
@@ -649,6 +663,7 @@ impl RootView {
                                     .into_any_element()
                             })
                             .collect();
+
                         shelf = shelf.child(
                             div()
                                 .flex()
@@ -682,6 +697,7 @@ impl RootView {
                 pane.explore.playlists_page.clone(),
             )
         };
+
         let playlist = match page {
             PlaylistsPage::Ready(found) => found
                 .playlists
@@ -753,6 +769,7 @@ impl RootView {
                         .filter(|offer| this.explore_can_open(offer, cx))
                         .cloned()
                         .collect();
+
                     this.library
                         .update(cx, |library, cx| library.keep_explored_all(allowed, cx));
                 },
@@ -813,6 +830,7 @@ impl RootView {
             .flex_1()
             .overflow_y_scroll()
             .track_scroll(&scroll);
+
         for (index, offer) in offers.iter().enumerate() {
             rows = rows.child(self.explore_playlist_row(index, &offers, offer, cx));
         }
@@ -1087,6 +1105,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let mut seen = BTreeSet::new();
+
         let drawn: Vec<Picture> = playlist
             .songs
             .iter()
@@ -1129,17 +1148,21 @@ impl RootView {
 
     pub(crate) fn mix_suggestions_into_queue(&mut self, cx: &mut Context<Self>) {
         let app = cx.global::<ResonateApp>();
+
         if app.online.explore_disabled || !app.online.enabled {
             return;
         }
+
         let sources = app
             .sourcing
             .providers(&app.online, crate::settings::Asking::EveryProvider)
             .song_catalogs()
             .to_vec();
+
         if sources.is_empty() {
             return;
         }
+
         let queued = self.player.read(cx).queued();
         let position = self.player.read(cx).state().queue_position.unwrap_or(0);
         let revision = queued.revision;
@@ -1149,6 +1172,7 @@ impl RootView {
             .map(|item| item.location.clone())
             .collect();
         let mut artist_names = Vec::new();
+
         for item in queued.rows.iter() {
             if let Some(track) = self.library.update(cx, |library, _| library.track_of(item))
                 && let Some(artist) = track.artist
@@ -1156,7 +1180,9 @@ impl RootView {
                 artist_names.push(artist);
             }
         }
+
         let direct = artists_for_explore(artist_names.iter().map(String::as_str));
+
         if direct.is_empty() {
             self.report(
                 Notice::Noted(words::queue::no_queue_suggestions().to_owned()),
@@ -1164,10 +1190,12 @@ impl RootView {
             );
             return;
         }
+
         let catalog = self.library.read(cx).catalog();
         let cache = self.suggestions.read(cx).explore.cache();
         let zone = self.zone_acted_on();
         let upcoming_len = queued.rows.len().saturating_sub(position + 1);
+
         cx.spawn(async move |this, cx| {
             let found = cx
                 .background_executor()
@@ -1183,6 +1211,7 @@ impl RootView {
                     .filter(|offer| !already_queued.contains(&offer.location))
                     .take(QUEUE_SUGGESTIONS_AT_MOST)
                     .collect();
+
                 if fresh.is_empty() {
                     this.report(
                         Notice::Noted(words::queue::no_queue_suggestions().to_owned()),
@@ -1192,10 +1221,13 @@ impl RootView {
                 }
                 this.server
                     .update(cx, |server, _| server.remember_explored(&fresh));
+
                 let current_queue = this.player.read(cx).queued();
+
                 if current_queue.revision != revision {
                     return;
                 }
+
                 let mut minting = Unclaimed::beside(current_queue.rows.iter().map(Arc::as_ref));
                 let mut inserted = 0usize;
                 let step = if upcoming_len >= QUEUE_WEAVE_EVERY {
@@ -1203,10 +1235,12 @@ impl RootView {
                 } else {
                     1
                 };
+
                 for (nth, offer) in fresh.into_iter().enumerate() {
                     let target = (position + 1 + (nth + 1) * step + inserted)
                         .min(current_queue.rows.len() + inserted);
                     let item = QueueItem::whole(minting.mint(), offer.location);
+
                     this.act_on_the_zone(zone, |this| {
                         this.send(
                             Command::Insert {
@@ -1241,6 +1275,7 @@ pub(super) fn weave_suggestion_tracks(
 
 fn explore_measured(playlist: &ExplorePlaylist) -> String {
     let mut parts = vec![words::suggestions::tracks(playlist.songs.len() as u64)];
+
     if let Some(length) = playlist.length {
         parts.push(format::spanned(length));
     }

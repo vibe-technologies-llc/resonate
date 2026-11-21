@@ -42,6 +42,7 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
     pub(crate) fn get(&mut self, key: &K) -> Option<&V> {
         let now = self.tick();
         let held = self.held.get_mut(key)?;
+
         self.order.remove(&held.used);
         held.used = now;
         self.order.insert(now, key.clone());
@@ -51,6 +52,7 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
     pub(crate) fn insert(&mut self, key: K, value: V) -> Leaving<V> {
         let now = self.tick();
         let mut leaving = Leaving::new();
+
         match self.held.get(&key) {
             Some(held) => {
                 self.order.remove(&held.used);
@@ -68,8 +70,10 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
 
     pub(crate) fn forget_where(&mut self, forgotten: impl Fn(&V) -> bool) {
         let order = &mut self.order;
+
         self.held.retain(|_, held| {
             let keeps = !forgotten(&held.value);
+
             if !keeps {
                 order.remove(&held.used);
             }
@@ -82,6 +86,7 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
             let Some((_, stale)) = self.order.pop_first() else {
                 return;
             };
+
             leaving.extend(self.held.remove(&stale).map(|held| held.value));
         }
     }
@@ -102,6 +107,7 @@ mod tests {
 
     fn filled(limit: usize, keys: &[u32]) -> Recent<u32, u32> {
         let mut cache = Recent::new(bound(limit));
+
         for key in keys {
             cache.insert(*key, key * 10);
         }
@@ -116,8 +122,10 @@ mod tests {
 
         assert_eq!(cache.get(&2), None);
         assert_eq!(cache.get(&1), Some(&10));
+
         cache.insert(4, 40);
         cache.insert(5, 50);
+
         assert_eq!(
             cache.get(&3),
             Some(&30),
@@ -131,6 +139,7 @@ mod tests {
 
         assert_eq!(cache.peek(&1), Some(&10));
         assert_eq!(cache.peek(&9), None);
+
         cache.insert(4, 40);
 
         assert_eq!(cache.peek(&1), None, "a peek counted as a use");
@@ -149,6 +158,7 @@ mod tests {
     #[test]
     fn the_entry_nothing_has_looked_at_is_the_one_that_goes() {
         let mut cache = filled(3, &[1, 2, 3]);
+
         assert_eq!(cache.get(&1), Some(&10));
 
         cache.insert(4, 40);
@@ -183,6 +193,7 @@ mod tests {
     #[test]
     fn writing_over_a_held_key_evicts_nothing() {
         let mut cache = filled(3, &[1, 2, 3]);
+
         cache.insert(2, 99);
 
         assert_eq!(
@@ -197,6 +208,7 @@ mod tests {
     #[test]
     fn the_order_keeps_one_entry_for_every_key_held() {
         let mut cache = filled(8, &(0..64).collect::<Vec<_>>());
+
         for key in 0..64 {
             cache.get(&key);
         }

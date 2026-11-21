@@ -33,6 +33,7 @@ pub(crate) fn tag(library: &Library, roots: &[PathBuf], apply: bool, undo: bool)
 
 pub(crate) fn lyrics_into_tags(library: &Library, files: &[PathBuf], apply: bool) -> Result<()> {
     let mut tracks = Vec::new();
+
     for file in files {
         let path = from_here(&local_path(file));
         match library.track_at(&path, None)? {
@@ -63,6 +64,7 @@ fn retagged(library: &Library, options: RetagOptions) -> Result<()> {
 
     said_on!("{}", tagged(&summary, &library.roots()?, apply));
     finished(PassKind::Retag, summary.cancelled)?;
+
     let failed = summary
         .retagging
         .passed_over
@@ -84,6 +86,7 @@ pub(crate) fn lyrics_beside(
     };
     let mut failed = 0;
     let mut planned = 0;
+
     for file in files {
         let path = from_here(&local_path(file));
         let named = path.display().to_string();
@@ -112,6 +115,7 @@ pub(crate) fn lyrics_beside(
                 words::beside::unwritten(named, error.to_string())
             }
         };
+
         said!("{told}");
     }
     if !apply && planned > 0 {
@@ -133,9 +137,11 @@ fn sheeted(library: &Library, path: &Path, standing: Standing, apply: bool) -> R
     let Some(track) = library.track_at(path, None)? else {
         return Ok(Sheeted::NotInTheCatalog);
     };
+
     if track.span.is_some() || !track.location.is_local() {
         return Ok(Sheeted::NotAFileOfItsOwn);
     }
+
     let Some(sung) = library
         .kept_lyrics(&track.location, None)?
         .and_then(|kept| kept.sung)
@@ -156,6 +162,7 @@ fn sheeted(library: &Library, path: &Path, standing: Standing, apply: bool) -> R
 
 pub(crate) fn dedupe(library: &Library, apply: bool) -> Result<()> {
     let copies = library.identical_copies()?;
+
     for copy in &copies.identical {
         said!(
             "{}",
@@ -172,7 +179,9 @@ pub(crate) fn dedupe(library: &Library, apply: bool) -> Result<()> {
         said!("{}", words::main::to_fold(copies.identical.len()));
         return Ok(());
     }
+
     let deleted = library.fold_copies(&copies.identical)?;
+
     said!("{}", words::main::folded(deleted.files));
     if deleted.kept > 0 {
         said!("{}", words::main::trash_refused(deleted.kept));
@@ -206,6 +215,7 @@ fn shown(edit: &TagEdit) -> String {
 
 fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     let retagging = &summary.retagging;
+
     if retagging.writes.is_empty()
         && retagging.sheets.is_empty()
         && retagging.passed_over.is_empty()
@@ -214,10 +224,13 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
     }
 
     let mut told = String::new();
+
     if !retagging.writes.is_empty() || !retagging.sheets.is_empty() {
         let mut table = Table::new(vec![columns::file(), columns::field(), columns::value()]);
+
         for write in &retagging.writes {
             let mut named = under_its_root(&write.path, roots);
+
             for edit in &write.edits {
                 table.push(vec![
                     mem::take(&mut named),
@@ -263,6 +276,7 @@ fn tagged(summary: &RetagSummary, roots: &[PathBuf], apply: bool) -> String {
                         words::main::sheet_track(edit.field.to_string(), format!("{number:02}"))
                     }
                 };
+
                 table.push(vec![
                     mem::take(&mut named),
                     field,
@@ -346,8 +360,11 @@ mod tests {
     fn kept_beside(name: &str) -> (Library, PathBuf) {
         let root = scratch(name).canonicalize().expect("a canonical folder");
         let track = root.join("Eclipse.wav");
+
         fs::write(&track, silent_wave(10)).expect("a track");
+
         let library = scanned(&root);
+
         library
             .keep_lyrics(
                 &MediaLocation::local(&track),
@@ -378,6 +395,7 @@ mod tests {
         assert!(matches!(written, Sheeted::Beside(Beside::Written(ref at)) if *at == sheet));
         assert_eq!(fs::read_to_string(&sheet).expect("the sheet"), KEPT);
         assert!(matches!(again, Sheeted::Beside(Beside::AlreadySaid(_))));
+
         lyrics_beside(&library, &[track], true, false).expect("nothing failed");
     }
 
@@ -385,6 +403,7 @@ mod tests {
     fn a_sheet_of_the_listeners_beside_the_file_is_left_alone_until_replace_is_asked() {
         let (library, track) = kept_beside("lyrics-left-alone");
         let sheet = track.with_extension("lrc");
+
         fs::write(&sheet, "[00:02.00]their own").expect("a sheet of their own");
 
         let left = sheeted(&library, &track, Standing::LeftAlone, true).expect("a refusal");
@@ -404,6 +423,7 @@ mod tests {
     fn a_file_outside_the_catalog_writes_nothing() {
         let (library, track) = kept_beside("lyrics-none");
         let other = track.with_file_name("Other.wav");
+
         fs::write(&other, silent_wave(10)).expect("a track");
 
         let outside = sheeted(&library, &other, Standing::LeftAlone, true).expect("an answer");
@@ -417,12 +437,15 @@ mod tests {
         let (library, track) = kept_beside("lyrics-into-tags");
 
         lyrics_into_tags(&library, slice::from_ref(&track), false).expect("a plan");
+
         let planned = FileTags::default()
             .read(&MediaLocation::local(&track), Picturing::Whether)
             .expect("its tags")
             .tags
             .lyrics;
+
         lyrics_into_tags(&library, slice::from_ref(&track), true).expect("a write");
+
         let written = FileTags::default()
             .read(&MediaLocation::local(&track), Picturing::Whether)
             .expect("its tags")
@@ -480,6 +503,7 @@ mod tests {
         else {
             panic!("tag was not read");
         };
+
         assert_eq!(lyrics, [PathBuf::from("a.flac"), PathBuf::from("b.flac")]);
         assert!(replace && apply);
     }

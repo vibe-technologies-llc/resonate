@@ -294,6 +294,7 @@ impl ListeningTest {
             Hear::B => Arm::B,
             Hear::X => self.session.x()?,
         };
+
         self.heard = match hear {
             Hear::X => None,
             Hear::A => Some(Arm::A),
@@ -335,9 +336,11 @@ impl ListeningTest {
 
     fn standing(&self) -> String {
         let score = self.session.score();
+
         if score.answered == 0 {
             return words::settings_abx::trial_of(self.session.planned(), 1);
         }
+
         let trial = if self.session.is_finished() {
             words::settings_abx::finished().to_owned()
         } else {
@@ -386,6 +389,7 @@ fn begin_the_audition(
     } else {
         engine.levels_of_the_contest(contest, stop)?.lowered()?
     };
+
     engine
         .request(Command::Audition(Some(Audition {
             contest,
@@ -690,6 +694,7 @@ impl RootView {
 
         for (index, value) in T::ALL.iter().enumerate() {
             let value = *value;
+
             row = row.child(self.option_in_the_ring(
                 kit::segment((id, index), value.label(), held == value),
                 id,
@@ -735,6 +740,7 @@ impl RootView {
             return;
         };
         let zone = self.zone_acted_on();
+
         let Some(test) = ListeningTest::of_the_equaliser(trials, &chain, rate, sink, zone) else {
             self.report(
                 Notice::Trouble(words::settings_abx::not_levellable().to_owned()),
@@ -742,6 +748,7 @@ impl RootView {
             );
             return;
         };
+
         self.settings_pane
             .update(cx, |pane, _| pane.shown.audition = Some(test));
         cx.notify();
@@ -752,6 +759,7 @@ impl RootView {
         let zone = self.zone_acted_on();
         let set = engine.output_settings();
         let setup = &self.settings_pane.read(cx).shown.test_setup;
+
         let Some(contest) = setup.chosen.contest(setup.testing, &set) else {
             return;
         };
@@ -794,6 +802,7 @@ impl RootView {
         } else {
             words::settings_abx::measuring()
         };
+
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.test_setup.measuring = Measuring::under(stop, zone, what, landing);
         });
@@ -803,10 +812,12 @@ impl RootView {
     fn stop_measuring(&mut self, cx: &mut Context<Self>) {
         let measured = self.settings_pane.update(cx, |pane, _| {
             let measured = pane.shown.test_setup.measuring.zone();
+
             pane.shown.test_setup.measuring = Measuring::idle();
             measured
         });
         let zone = measured.unwrap_or_else(|| self.zone_acted_on());
+
         self.send_to(zone, Command::Audition(None), cx);
         cx.notify();
     }
@@ -821,6 +832,7 @@ impl RootView {
         let Some((zone, command)) = heard else {
             return;
         };
+
         self.send_to(zone, command, cx);
         cx.notify();
     }
@@ -828,10 +840,12 @@ impl RootView {
     fn answer_the_test(&mut self, said: Arm, cx: &mut Context<Self>) {
         let answered = self.settings_pane.update(cx, |pane, _| {
             let test = pane.shown.audition.as_mut()?;
+
             test.last = test.session.answer(said).ok();
             test.heard = None;
             Some(())
         });
+
         if answered.is_none() {
             return;
         }
@@ -845,6 +859,7 @@ impl RootView {
         else {
             return;
         };
+
         match test.subject {
             Subject::Equaliser { .. } => self.tell_the_engine(cx),
             Subject::Setting { .. } => self.send_to(test.zone, Command::Audition(None), cx),
@@ -871,6 +886,7 @@ mod tests {
 
     fn set_as(configure: impl FnOnce(&mut EngineConfig)) -> OutputSettings {
         let mut config = EngineConfig::default();
+
         configure(&mut config);
         OutputSettings::of(&config)
     }
@@ -881,16 +897,19 @@ mod tests {
 
         let off = set_as(|config| config.restoration = Restoration::Off);
         let extended = set_as(|config| config.restoration = Restoration::Extend);
+
         assert_eq!(chosen.restoration_against(&off), Restoration::Extend);
         assert_eq!(chosen.restoration_against(&extended), Restoration::Off);
 
         let fast = set_as(|config| config.quality = Quality::LowLatency);
         let high = set_as(|config| config.quality = Quality::High);
+
         assert_eq!(chosen.quality_against(&fast), Quality::VeryHigh);
         assert_eq!(chosen.quality_against(&high), Quality::LowLatency);
 
         let plain = set_as(|config| config.dither = DitherKind::None);
         let triangular = set_as(|config| config.dither = DitherKind::Triangular);
+
         assert_eq!(chosen.dither_against(&plain), DitherKind::Triangular);
         assert_eq!(chosen.dither_against(&triangular), DitherKind::None);
     }
@@ -908,6 +927,7 @@ mod tests {
 
         chosen.phase = Some(FilterPhase::Linear);
         chosen.shaping = Some(NoiseShaping::None);
+
         assert_eq!(chosen.phase_against(&set), FilterPhase::Linear);
         assert_eq!(chosen.shaping_against(&set), NoiseShaping::None);
     }
@@ -978,6 +998,7 @@ mod tests {
             },
         };
         let session = Session::new(4, 7).expect("a session");
+
         let test = ListeningTest::of_a_setting(session, contest, Lowered::NOTHING, ZoneId::FIRST);
 
         for arm in [Arm::A, Arm::B] {
@@ -987,6 +1008,7 @@ mod tests {
                     if heard == arm && lowered == Lowered::NOTHING
             ));
         }
+
         assert_eq!(test.testing(), Testing::Dither);
         assert_eq!(test.levels_said(), "Both play at one level");
     }
@@ -1015,6 +1037,7 @@ mod tests {
             Lowered::NOTHING,
             ZoneId::FIRST,
         );
+
         assert_eq!(
             equal.levels_said(),
             "Measured through both, the two play at one level"
@@ -1062,6 +1085,7 @@ mod tests {
     ) {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
         let mut driven = Driven::open(cx, library);
+
         driven.click("tab-settings");
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
@@ -1109,6 +1133,7 @@ mod tests {
     fn a_test_being_measured_shows_it_and_can_be_stopped_before_it_begins(cx: &mut TestAppContext) {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
         let mut driven = Driven::open(cx, library);
+
         driven.click("tab-settings");
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
@@ -1118,6 +1143,7 @@ mod tests {
 
         let stop = Arc::new(AtomicBool::new(false));
         let watched = Arc::clone(&stop);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.settings_pane.update(cx, |pane, _| {
                 pane.shown.test_setup.measuring = Measuring::under(
@@ -1153,6 +1179,7 @@ mod tests {
     ) {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
         let mut driven = Driven::open(cx, library);
+
         let root = driven.root.clone();
         let contest = Contest::Restoration {
             a: Restoration::Off,
@@ -1163,13 +1190,16 @@ mod tests {
             root.update(cx, |root, cx| {
                 let zone = root.zone_acted_on();
                 let session = Session::new(4, 7).expect("a session");
+
                 let test = ListeningTest::of_a_setting(session, contest, Lowered::NOTHING, zone);
+
                 root.settings_pane
                     .update(cx, |pane, _| pane.shown.audition = Some(test));
                 root.add_a_zone(cx);
             });
         });
         driven.until(|root, _| root.zones.len() == 2);
+
         let shown = driven.read(|root, _| root.switcher.selected());
         let heard = driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {

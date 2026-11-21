@@ -107,11 +107,14 @@ pub const fn played_in_the_background() -> bool {
 impl KeyAtATime {
     pub fn where_a_terminal() -> Option<Self> {
         let stdin = io::stdin();
+
         if !termios::isatty(&stdin) {
             return None;
         }
+
         let saved = termios::tcgetattr(&stdin).ok()?;
         let mut keyed = saved.clone();
+
         keyed
             .local_modes
             .remove(LocalModes::ICANON | LocalModes::ECHO);
@@ -148,6 +151,7 @@ impl Drop for KeyAtATime {
 fn restore_the_terminal_on_a_panic() {
     HOOKED.call_once(|| {
         let reported = panic::take_hook();
+
         panic::set_hook(Box::new(move |panicked| {
             restore_without_waiting();
             reported(panicked);
@@ -207,7 +211,9 @@ fn volume_step(rest: &str) -> Option<i32> {
     if rest.is_empty() {
         return Some(VOLUME_STEP);
     }
+
     let digits = unsigned(rest);
+
     if !digits.bytes().all(|byte| byte.is_ascii_digit()) {
         return None;
     }
@@ -216,11 +222,13 @@ fn volume_step(rest: &str) -> Option<i32> {
 
 pub fn parse(line: &str) -> Option<Action> {
     let line = line.trim();
+
     if line.is_empty() {
         return Some(Action::Toggle);
     }
 
     let mut characters = line.chars();
+
     let head = characters.next()?;
     let rest = characters.as_str().trim();
 
@@ -283,6 +291,7 @@ pub fn typed_lines() -> Receiver<String> {
 pub fn keys() -> Receiver<Pressed> {
     listening(|send| {
         let mut keyed = Keyed::default();
+
         chunks(|read| {
             keyed
                 .read(read)
@@ -295,6 +304,7 @@ pub fn keys() -> Receiver<Pressed> {
 pub fn strokes() -> Receiver<char> {
     listening(|send| {
         let mut struck = Struck::default();
+
         chunks(|read| {
             read.iter()
                 .filter_map(|byte| struck.stroke(*byte))
@@ -314,6 +324,7 @@ fn stdin_chunks(mut feed: impl FnMut(&[u8]) -> bool) {
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
             Err(_) => return,
         };
+
         stdin.consume(taken);
         if !kept_going {
             return;
@@ -343,6 +354,7 @@ fn key_events_as_bytes(mut feed: impl FnMut(&[u8]) -> bool) {
         let Event::Key(key) = event else {
             continue;
         };
+
         if key.kind == KeyEventKind::Release {
             continue;
         }
@@ -350,6 +362,7 @@ fn key_events_as_bytes(mut feed: impl FnMut(&[u8]) -> bool) {
             crate::signals::interrupted();
             continue;
         }
+
         let bytes = bytes_of(&key);
         if !bytes.is_empty() && !feed(&bytes) {
             return;
@@ -502,6 +515,7 @@ impl Keyed {
 
         if byte == TYPED || byte.is_ascii_digit() {
             let typed = char::from(byte).to_string();
+
             self.typing = Some(typed.clone());
             return vec![Pressed::Typing(typed)];
         }
@@ -721,6 +735,7 @@ mod tests {
         assert_eq!(keyed(b"\x1b[17~n"), vec![Pressed::Acted(Action::Next)]);
 
         let mut split = Keyed::default();
+
         assert!(split.read(b"\x1b[1").is_empty());
         assert_eq!(
             split.read(b";5A"),

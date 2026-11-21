@@ -57,11 +57,13 @@ impl Table {
         let mut out = String::new();
         let line = |out: &mut String, cells: &mut dyn Iterator<Item = &str>| {
             let mut rendered = String::new();
+
             for (column, cell) in cells.enumerate() {
                 if column > 0 {
                     rendered.push_str(GAP);
                 }
                 rendered.push_str(cell);
+
                 let width = widths.get(column).copied().unwrap_or_default();
                 for _ in cell.width()..width {
                     rendered.push(' ');
@@ -85,6 +87,7 @@ mod tests {
 
     fn table() -> Table {
         let mut table = Table::new(vec!["NAME", "RATE"]);
+
         table.push(vec!["auto_null".to_owned(), "48 kHz".to_owned()]);
         table.push(vec!["a".to_owned(), "44.1 kHz".to_owned()]);
         table
@@ -93,6 +96,7 @@ mod tests {
     #[test]
     fn a_cell_carrying_a_control_or_a_reordering_mark_is_laid_on_one_plain_line() {
         let mut table = Table::new(vec!["TITLE", "ARTIST"]);
+
         table.push(vec![
             "Echoes\x1b]0;owned\x07".to_owned(),
             "Pink\nFloyd  forged\u{202e}".to_owned(),
@@ -122,13 +126,16 @@ mod tests {
     #[test]
     fn a_header_wider_than_its_column_sets_the_width() {
         let mut table = Table::new(vec!["NODE NAME", "RATE"]);
+
         table.push(vec!["a".to_owned(), "48 kHz".to_owned()]);
+
         assert_eq!(table.render(), "NODE NAME  RATE\na          48 kHz\n");
     }
 
     #[test]
     fn trailing_padding_is_never_written() {
         let mut table = Table::new(vec!["A", "B"]);
+
         table.push(vec!["wide".to_owned(), String::new()]);
         table.push(vec!["x".to_owned(), "y".to_owned()]);
 
@@ -140,31 +147,39 @@ mod tests {
     #[test]
     fn a_row_wider_than_the_header_still_renders_every_cell() {
         let mut table = Table::new(vec!["A"]);
+
         table.push(vec!["one".to_owned(), "two".to_owned()]);
+
         assert_eq!(table.render(), "A\none  two\n");
     }
 
     #[test]
     fn width_is_measured_as_the_terminal_draws_it_rather_than_in_bytes() {
         let mut table = Table::new(vec!["A", "B"]);
+
         table.push(vec!["Café".to_owned(), "x".to_owned()]);
         table.push(vec!["abcde".to_owned(), "y".to_owned()]);
+
         assert_eq!(table.render(), "A      B\nCafé   x\nabcde  y\n");
     }
 
     #[test]
     fn a_combining_mark_takes_no_room_of_its_own() {
         let mut table = Table::new(vec!["A", "B"]);
+
         table.push(vec!["Cafe\u{301}".to_owned(), "x".to_owned()]);
         table.push(vec!["abcde".to_owned(), "y".to_owned()]);
+
         assert_eq!(table.render(), "A      B\nCafe\u{301}   x\nabcde  y\n");
     }
 
     #[test]
     fn a_double_width_name_takes_two_columns_a_character() {
         let mut table = Table::new(vec!["A", "B"]);
+
         table.push(vec!["東京".to_owned(), "x".to_owned()]);
         table.push(vec!["abcde".to_owned(), "y".to_owned()]);
+
         assert_eq!(table.render(), "A      B\n東京   x\nabcde  y\n");
     }
 }

@@ -74,6 +74,7 @@ impl Copied {
     pub(crate) fn under(folder: PathBuf) -> Self {
         let mirrored = Arc::new(Mirrored::default());
         let path = mirror_in(&folder);
+
         if path.is_file() {
             match Mirror::open(&path) {
                 Ok(mirror) => mirrored.hold(Some(Arc::new(mirror))),
@@ -102,6 +103,7 @@ impl Copied {
 
     pub(crate) fn keep(self: &Arc<Self>, on: bool, reaching: Reaching) {
         let mut looking = self.looking.lock();
+
         self.keeping.store(on, Ordering::Release);
         if !on {
             *self.standing.lock() = MusicbrainzCopyStanding::Off;
@@ -114,12 +116,14 @@ impl Copied {
         }
         *looking = true;
         drop(looking);
+
         let copied = Arc::clone(self);
         let spawned = thread::Builder::new()
             .name("resonate-musicbrainz-copy".to_owned())
             .spawn(move || {
                 loop {
                     copied.follow(&reaching);
+
                     let mut looking = copied.looking.lock();
                     if !copied.keeps() || reaching.running.strong_count() == 0 {
                         *looking = false;
@@ -212,10 +216,12 @@ impl Copied {
                 return;
             };
             let waited = self.waited_on_the_last_ask();
+
             if !waited {
                 self.rest(LOOKED_AT_AGAIN_AFTER);
                 continue;
             }
+
             let devices = {
                 let guard = running.lock();
                 guard.as_ref().and_then(|held| {
@@ -224,7 +230,9 @@ impl Copied {
                     allowed.then(|| devices_online(held))
                 })
             };
+
             drop(running);
+
             let Some(devices) = devices else {
                 self.stand(MusicbrainzCopyStanding::WaitingForTransfers);
                 self.rest(LOOKED_AT_AGAIN_AFTER);
@@ -257,10 +265,12 @@ impl Copied {
 
     fn waited_on_the_last_ask(&self) -> bool {
         let mut outstanding = self.outstanding.lock();
+
         let Some(asked) = outstanding.as_ref() else {
             return true;
         };
         let answered = asked.answer_within(WAITED_ON_AN_ANSWER).is_some();
+
         if answered {
             *outstanding = None;
         }
@@ -273,17 +283,22 @@ impl Copied {
                 dump: mirror.made().dump.clone(),
                 sequence: 0,
             });
+
             if held.is_none() && !self.has_room() {
                 return Looked::NoRoom;
             }
             self.stand(MusicbrainzCopyStanding::Looking);
+
             let fetched = self.asked(reaching, *device, ExportPart::Copy, held);
             match fetched {
                 Some(ExportFetched::Whole(_)) => {
                     let staged = self.folder.join(COPY_RECEIVED);
+
                     if let Err(error) = received_copy(&self.folder, &staged) {
                         tracing::warn!(%error, "the copy of MusicBrainz received could not be kept");
+
                         let _ = std::fs::remove_file(&staged);
+
                         continue;
                     }
                     self.reopened();
@@ -320,6 +335,7 @@ impl Copied {
             Ok(()) => self.reopened(),
             Err(error) => {
                 tracing::warn!(%error, "the changes MusicBrainz's copy follows could not be kept");
+
                 let _ = std::fs::remove_file(&staged);
             }
         }
@@ -337,6 +353,7 @@ impl Copied {
             ExportPart::Amendments => (AMENDMENTS_RECEIVED, AMENDMENTS_NOTED),
         };
         let running = reaching.running.upgrade()?;
+
         let asked = {
             let guard = running.lock();
             let held_sync = guard.as_ref()?;
@@ -351,6 +368,7 @@ impl Copied {
                 Arc::clone(&self.receiving),
             )
         };
+
         drop(running);
         if part == ExportPart::Copy {
             self.stand(MusicbrainzCopyStanding::Receiving);
@@ -399,6 +417,7 @@ fn devices_online(running: &Running) -> Vec<DeviceId> {
         .into_iter()
         .filter(|device| device.online && !device.this)
         .collect::<Vec<_>>();
+
     online.sort_by_key(|device| !device.nearby);
     online.into_iter().map(|device| device.id).collect()
 }
@@ -467,6 +486,7 @@ mod tests {
     fn a_copy_of_nothing(folder: &Path) -> Vec<u8> {
         let path = folder.join("desk-musicbrainz.sqlite");
         let connection = Connection::open(&path).expect("a copy");
+
         connection
             .execute_batch(&format!(
                 "CREATE TABLE made (format INTEGER, dump TEXT, built INTEGER);
@@ -505,7 +525,9 @@ mod tests {
         let player = &harness.player;
         let folder = env::temp_dir().join(format!("resonate-copied-{name}-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a test folder");
+
         let key = SyncKey::minted().expect("a key");
         let copy = a_copy_of_nothing(&folder);
 
@@ -528,6 +550,7 @@ mod tests {
                 takes_deletions: true,
             })
             .expect("sync started");
+
         let told = player
             .syncing
             .running
@@ -563,6 +586,7 @@ mod tests {
             Arc::new(NothingHeld),
         )
         .expect("the desk started");
+
         desk.consult_with(Arc::new(OffersACopy(copy.clone())));
         player.syncing.copied.wake();
 
@@ -583,6 +607,7 @@ mod tests {
             player.syncing.copied.wake();
             player.musicbrainz_copy().standing == MusicbrainzCopyStanding::Held
         });
+
         let told = player.musicbrainz_copy();
         let kept =
             fs::read(mirror_in(&offered.harness.folder.join("musicbrainz"))).expect("the copy");
@@ -602,6 +627,7 @@ mod tests {
 
         player.sync_stop();
         player.remove_musicbrainz_copy().expect("the copy removed");
+
         let removed = player.musicbrainz_copy();
 
         assert_eq!(removed.standing, MusicbrainzCopyStanding::Off);
@@ -628,6 +654,7 @@ mod tests {
                 .join(COPY_RECEIVED)
                 .exists()
         );
+
         player.sync_stop();
     }
 }

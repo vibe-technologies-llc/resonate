@@ -51,18 +51,22 @@ impl Mp2 {
         let peak = part
             .iter()
             .fold(0.0_f32, |peak, value| peak.max(value.abs()));
+
         if peak < PEAK_COUNTED_FROM {
             return None;
         }
+
         let full_scale = LOUDEST_SCALE_FACTOR * SIXTEEN_BIT_STEPS;
         let reached = SCALE_FACTOR_STEPS_AN_OCTAVE * (full_scale / peak).log2();
         let highest = (reached + SCALE_FACTOR_SLACK)
             .floor()
             .min((SCALE_FACTORS - 1) as f32);
         let lowest = (reached - SCALE_FACTORS_ABOVE_THE_PEAK).ceil().max(0.0);
+
         if highest < 0.0 {
             return Some(false);
         }
+
         let found = self.steps_by_factor[lowest as usize..=highest as usize]
             .iter()
             .any(|steps| self.a_step_holds(part, peak, steps));
@@ -71,9 +75,11 @@ impl Mp2 {
 
     fn a_step_holds(&self, part: &[f32], peak: f32, steps: &[f32; CLASSES]) -> bool {
         let mut reaching = [false; CLASSES];
+
         for ((reaching, step), top) in reaching.iter_mut().zip(steps).zip(&self.tops) {
             let at = peak / step;
             let reaches = at.round_ties_even();
+
             *reaching =
                 (at - reaches).abs() <= OFF_THE_STEP_AT_MOST && reaches >= 1.0 && reaches <= *top;
         }
@@ -117,6 +123,7 @@ impl Grid for Mp2 {
     fn tally(&self, lines: Range<usize>, left: &[f32], right: Option<&[f32]>) -> Tally {
         let mut on = 0;
         let mut count = 0;
+
         for lane in [Some(left), right].into_iter().flatten() {
             for part in lane[lines.clone()].as_chunks::<PART>().0 {
                 if let Some(stepped) = self.on_the_steps(part) {
@@ -181,6 +188,7 @@ mod tests {
         let mut synthesis = Synthesis::default();
         let mut out = Vec::with_capacity(frames * HOP * PARTS_A_FRAME);
         let mut subbands = vec![[0.0_f64; PART * PARTS_A_FRAME]; SUBBANDS];
+
         for _ in 0..frames {
             for samples in subbands.iter_mut().take(CODED_SUBBANDS) {
                 let levels = LEVELS[(wandering.next() * LEVELS_DRAWN as f64) as usize];
@@ -198,10 +206,12 @@ mod tests {
                         } else {
                             drawn
                         };
+
                         samples[part * PART + nth] = level * step;
                     }
                 }
             }
+
             let vectors: Vec<[f64; SUBBANDS]> = (0..PART * PARTS_A_FRAME)
                 .map(|at| std::array::from_fn(|subband| subbands[subband][at]))
                 .collect();
@@ -218,6 +228,7 @@ mod tests {
     fn subband_samples_on_a_scale_factors_levels_are_found_at_any_offset_and_free_ones_are_not() {
         let left = synthesised(11, true);
         let right = synthesised(23, true);
+
         for skipped in [0, 300] {
             let steps = stepped::<Mp2>(&left, &right, skipped).expect("weighed");
 
@@ -229,6 +240,7 @@ mod tests {
 
         let left = synthesised(11, false);
         let right = synthesised(23, false);
+
         let steps = stepped::<Mp2>(&left, &right, 0).expect("weighed");
 
         assert!(steps.lattice < 0.01, "{steps:?}");

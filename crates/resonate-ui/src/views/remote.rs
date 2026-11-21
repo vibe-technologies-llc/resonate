@@ -48,6 +48,7 @@ impl RemoteSong {
             album: String::new(),
             length: zone.length,
         };
+
         zone.rows.clear();
         Some(Self {
             device,
@@ -65,6 +66,7 @@ impl RemoteSong {
         let Some(path) = cut.location.as_path() else {
             return Ok(());
         };
+
         self.track = library.track_at(path, cut.span)?;
         if let Some(album) = self.track.as_ref().and_then(|track| track.album_id) {
             self.album = library.album(album)?.map(|album| album.title);
@@ -80,10 +82,13 @@ impl SettingsPane {
             let mut previous_syncing: Option<Arc<dyn crate::Syncing>> = None;
             let mut previous_songs: Vec<RemoteSong> = Vec::new();
             let mut previous_stamp = None;
+
             loop {
                 cx.background_executor().timer(READ_EVERY).await;
+
                 let Ok((mut songs, library)) = this.update(cx, |_, cx| {
                     let syncing = cx.global::<ResonateApp>().syncing.clone();
+
                     if let Some(previous) = previous_syncing.as_ref()
                         && syncing
                             .as_ref()
@@ -93,9 +98,12 @@ impl SettingsPane {
                             previous.unwatch(&id);
                         }
                     }
+
                     let mut songs = Vec::new();
+
                     if let Some(syncing) = syncing.as_ref() {
                         let mut current = Vec::new();
+
                         for device in syncing
                             .shown()
                             .devices
@@ -121,10 +129,12 @@ impl SettingsPane {
                 }) else {
                     break;
                 };
+
                 let (enriched, stamp) = cx
                     .background_executor()
                     .spawn(async move {
                         let stamp = library.names_stamp();
+
                         for song in &mut songs {
                             if previous_stamp == Some(stamp)
                                 && let Some(previous) = previous_songs
@@ -140,6 +150,7 @@ impl SettingsPane {
                         (songs, stamp)
                     })
                     .await;
+
                 previous_songs = enriched.clone();
                 previous_stamp = Some(stamp);
                 if this
@@ -167,10 +178,12 @@ impl SettingsPane {
 impl RootView {
     pub(super) fn remote_playback(&self, window: &Window, cx: &mut Context<Self>) -> Option<Div> {
         let remotely = &self.settings_pane.read(cx).remotely;
+
         remotely.controls.opening();
         if remotely.songs.is_empty() {
             return None;
         }
+
         let songs = remotely.songs.clone();
         let collapsed = remotely.collapsed;
         let floating = self.remote_floats(window, cx);
@@ -178,6 +191,7 @@ impl RootView {
             - px(theme::header_height() + theme::transport_height()))
             * 0.45;
         let room = room.min(px(theme::sidebar_width() * 2.0));
+
         let room = if floating {
             room.min(
                 (self.window_scrolls.sidebar.bounds().size.height - FLOATS_CLEAR_OF_THE_TOP_BY)
@@ -208,7 +222,9 @@ impl RootView {
             heading.aria_expanded(!collapsed)
         });
         let controls = &self.settings_pane.read(cx).remotely.controls;
+
         controls.captioned_by_its_name("toggle-other-devices", &mut heading);
+
         let handle = controls.at("toggle-other-devices", cx);
         let heading = Self::ringed(
             &handle,
@@ -287,6 +303,7 @@ impl RootView {
             .occlude()
             .on_mouse_down_out(cx.listener(|_, press: &MouseDownEvent, window, cx| {
                 let at = press.position;
+
                 cx.defer_in(window, move |this, _, cx| {
                     let on_the_heading = this.settings_pane.update(cx, |pane, _| {
                         pane.remotely.heading_pressed_at.take() == Some(at)
@@ -328,9 +345,11 @@ impl RootView {
                 if !open_in_flow {
                     return;
                 }
+
                 let overflow = scroll.max_offset().y;
                 if overflow > px(0.0) {
                     let fits_from = window.viewport_size().height + overflow;
+
                     cx.defer(move |cx| {
                         let _ = this.update(cx, |this, cx| {
                             this.settings_pane.update(cx, |pane, _| {
@@ -407,18 +426,21 @@ impl RootView {
                     .text_size(px(theme::text_sm()))
                     .font_weight(FontWeight::MEDIUM),
             );
+
         if !song.recording.artist.is_empty() {
             words = words.child(remote_line(&song.recording.artist, theme::muted()));
         }
         if let Some(album) = &song.album {
             words = words.child(remote_line(album, theme::faint()));
         }
+
         let mut controls = div()
             .flex()
             .flex_none()
             .items_center()
             .h(px(theme::row_control()))
             .gap_1();
+
         for (which, icon, label, key) in [
             (
                 "previous",
@@ -449,6 +471,7 @@ impl RootView {
         ] {
             let named = format!("{id}-{which}");
             let saying = words::remote::control_on(&device.name, label, &song.zone.name);
+
             let button = if key == RemoteKey::Toggle {
                 kit::lit_mark(SharedString::from(named.clone()), icon, saying)
                     .rounded_full()
@@ -458,12 +481,15 @@ impl RootView {
             };
             let handle = self.settings_pane.read(cx).remotely.controls.at(&named, cx);
             let mut button = button;
+
             self.settings_pane
                 .read(cx)
                 .remotely
                 .controls
                 .captioned_by_its_name(&named, &mut button);
+
             let device = device.id.clone();
+
             controls = controls.child(Self::ringed(
                 &handle,
                 button,
@@ -471,6 +497,7 @@ impl RootView {
                 cx,
             ));
         }
+
         let place = song.zone.length.map_or_else(
             || elapsed::clock(song.zone.position),
             |length| {
@@ -598,6 +625,7 @@ pub(crate) mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
+
         driven.settle();
 
         assert!(driven.cx.debug_bounds("toggle-other-devices").is_none());
@@ -627,15 +655,18 @@ pub(crate) mod tests {
     #[gpui::test]
     fn other_devices_can_be_collapsed_and_expanded(cx: &mut gpui::TestAppContext) {
         let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.settings_pane
                 .update(cx, |pane, _| pane.remotely.songs = vec![song()]);
             cx.notify();
         });
         driven.settle();
+
         assert!(driven.cx.debug_bounds("remote-devices").is_some());
 
         driven.click("toggle-other-devices");
+
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_none());
 
@@ -646,9 +677,11 @@ pub(crate) mod tests {
                 .controls
                 .at("toggle-other-devices", cx)
         });
+
         driven.cx.update(|window, cx| handle.focus(window, cx));
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
+
         assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
         assert!(driven.cx.debug_bounds("remote-devices").is_some());
     }
@@ -658,19 +691,27 @@ pub(crate) mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         let mut driven = Driven::open(cx, Arc::new(Library::open_in_memory().expect("a catalog")));
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.settings_pane
                 .update(cx, |pane, _| pane.remotely.songs = vec![song()]);
             cx.notify();
         });
         driven.settle();
+
         assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
+
         let available = driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
+
         driven.click("toggle-other-devices");
+
         let categories = driven.read(|root, _| root.window_scrolls.sidebar.bounds().size.height);
         let cards = categories - available;
+
         assert!(cards > px(0.0));
+
         driven.click("toggle-other-devices");
+
         let content = driven.read(|root, _| {
             root.window_scrolls
                 .sidebar
@@ -680,6 +721,7 @@ pub(crate) mod tests {
                 .height
         });
         let height = crate::driven::TALL - f32::from(available - content) - f32::from(cards) / 2.0;
+
         driven
             .cx
             .simulate_resize(gpui::size(px(crate::driven::WIDE), px(height)));
@@ -716,9 +758,12 @@ pub(crate) mod tests {
 
         driven.click("toggle-other-devices");
         driven.settle();
+
         assert!(!driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
+
         driven.click("toggle-other-devices");
         driven.settle();
+
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.collapsed));
 
         driven
@@ -737,15 +782,23 @@ pub(crate) mod tests {
     #[test]
     fn a_remote_song_reads_the_playing_row_relative_to_the_mirrored_window() {
         let song = song();
+
         assert_eq!(song.recording.title, "Echoes");
         assert_eq!(song.recording.artist, "Pink Floyd");
+
         let mut outside = song.zone.clone();
+
         outside.playing = Some(499);
+
         let outside = RemoteSong::new(song.device.clone(), outside).expect("a billed song");
+
         assert_eq!(outside.recording.title, "Echoes — Pink Floyd");
         assert!(outside.recording.artist.is_empty());
+
         let mut idle = song.zone;
+
         idle.song = None;
+
         assert!(RemoteSong::new(song.device, idle).is_none());
     }
 
@@ -753,6 +806,7 @@ pub(crate) mod tests {
     fn a_remote_song_finds_its_local_album_and_leaves_an_unheld_recording_unpictured() {
         let library = Library::open_in_memory().expect("a catalog");
         let folder = Folder::new();
+
         folder.tagged(
             "echoes.wav",
             1,
@@ -763,14 +817,19 @@ pub(crate) mod tests {
             ],
         );
         Driven::scanned(&library, &folder);
+
         let mut held = song();
+
         held.read_album(&library).expect("the matched album");
+
         assert_eq!(held.album.as_deref(), Some("Meddle"));
         assert!(held.track.is_some());
 
         let mut unheld = song();
+
         unheld.recording.artist = "Another artist".to_owned();
         unheld.read_album(&library).expect("an unheld recording");
+
         assert!(unheld.album.is_none());
         assert!(unheld.track.is_none());
     }

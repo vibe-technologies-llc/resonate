@@ -78,11 +78,13 @@ impl Client {
 
     fn carried<T>(&self, io: impl FnOnce(&mut &Stream) -> io::Result<T>) -> io::Result<T> {
         self.traffic.moving.store(true, Ordering::SeqCst);
+
         let carried = if self.traffic.severed.load(Ordering::SeqCst) {
             Err(io::ErrorKind::BrokenPipe.into())
         } else {
             io(&mut &*self.stream)
         };
+
         self.traffic.moving.store(false, Ordering::SeqCst);
 
         carried
@@ -166,6 +168,7 @@ pub(crate) fn serving() -> Result<Vec<(WellKnownName<'static>, Arc<dyn Peer>)>> 
         .map_err(|source| Error::pipe(PipeOp::List, source))?;
 
     let mut found = Vec::new();
+
     for player in names {
         let Ok(name) = WellKnownName::try_from(player.clone()) else {
             continue;
@@ -176,6 +179,7 @@ pub(crate) fn serving() -> Result<Vec<(WellKnownName<'static>, Arc<dyn Peer>)>> 
         match reached {
             Ok(peer) => {
                 let peer: Arc<dyn Peer> = Arc::new(peer);
+
                 found.push((name, peer));
             }
             Err(error) => {
@@ -203,6 +207,7 @@ impl Serving {
 
         let names = std::iter::once(bus_name_of(zone))
             .chain((1..=INSTANCES).map(|attempt| instance_name(zone, attempt)));
+
         for player in names {
             let name = WellKnownName::try_from(player.clone())
                 .map_err(|source| Error::bus(crate::BusOp::ClaimName, source))?;
@@ -320,21 +325,28 @@ mod tests {
             thread::spawn(move || accepting(|| accepted(&listener), severed, &serving, &stop))
         };
         let mut client = connect(&player).expect("connected");
+
         write_frame(&mut client, &[1]).expect("a frame sent");
+
         let echoed = read_frame(&mut client).expect("a reply");
 
         assert_eq!(echoed, Some(vec![1]));
 
         stop.store(true, Ordering::Release);
+
         let _ = Stream::connect_by_path_with_wait_mode(
             pipe_path(&player),
             ConnectWaitMode::Timeout(WAKE_WITHIN),
         );
+
         accepting_thread.join().expect("the accept loop ends");
+
         let (heard, ending) = mpsc::channel();
+
         thread::spawn(move || {
             let _ = heard.send(read_frame(&mut client).map(|frame| frame.is_none()));
         });
+
         let ended = ending.recv_timeout(Duration::from_secs(5));
 
         assert!(
@@ -348,12 +360,16 @@ mod tests {
         let player = format!("org.mpris.MediaPlayer2.resonate.silent{}", process::id());
         let listener = listen(&player).expect("a pipe");
         let (heard, gone) = mpsc::channel();
+
         thread::spawn(move || {
             let mut held = accepted(&listener).expect("a client");
+
             let asked = read_frame(&mut held).is_ok_and(|frame| frame.is_some());
             let after = read_frame(&mut held);
+
             let _ = heard.send((asked, !matches!(after, Ok(Some(_)))));
         });
+
         let peer = PipePeer::over(connect(&player).expect("connected")).expect("a peer");
 
         let asked = peer.zone();

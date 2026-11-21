@@ -26,6 +26,7 @@ struct Asked {
 
 fn main() {
     tracing_subscriber::fmt().with_writer(io::stderr).init();
+
     let asked = Asked::parse();
     match sign_in(asked.jar, asked.profile) {
         Ok(never) => match never {},

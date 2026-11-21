@@ -102,9 +102,11 @@ impl LastfmAccount {
         Self::ALL.map(|account| {
             let field = cx.new(|cx| {
                 let mut field = Field::new(move || account.placeholder(), window, cx).masked();
+
                 field.hold(account.held(online), cx);
                 field
             });
+
             SettingsFields::says_when_entered(&field, Entered::Lastfm(account), cx);
             field
         })
@@ -123,6 +125,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         self.keep_the_typed_application(cx);
+
         let said = if self
             .lastfm_field(account, cx)
             .read(cx)
@@ -134,6 +137,7 @@ impl RootView {
         } else {
             words::settings_lastfm::kept_for_signing_in_to_last()
         };
+
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);
         cx.notify();
@@ -147,6 +151,7 @@ impl RootView {
                 .text()
                 .trim()
                 .to_owned();
+
             if given == account.held(&cx.global::<ResonateApp>().online) {
                 continue;
             }
@@ -239,17 +244,21 @@ impl RootView {
             );
             return;
         };
+
         if self.settings_pane.read(cx).accounts.lastfm.asking {
             return;
         }
 
         self.keep_the_typed_application(cx);
+
         let stopped = Arc::new(AtomicBool::new(false));
+
         self.settings_pane.update(cx, |pane, _| {
             pane.accounts.lastfm.stopped = Arc::clone(&stopped);
             pane.accounts.lastfm.asking = true;
         });
         cx.notify();
+
         let task = Some(cx.spawn(async move |this, cx| {
             let asked_for = cx
                 .background_executor()
@@ -260,6 +269,7 @@ impl RootView {
                 Err(error) => {
                     let told = this.update(cx, |this, cx| this.lastfm_signed_in(Err(error), cx));
                     let _ = told;
+
                     return;
                 }
             };
@@ -271,9 +281,11 @@ impl RootView {
                 cx.open_url(&address);
                 cx.notify();
             });
+
             if shown.is_err() {
                 return;
             }
+
             let answered = cx
                 .background_executor()
                 .spawn(async move { approval.approved(&|| stopped.load(Ordering::SeqCst)) })
@@ -281,6 +293,7 @@ impl RootView {
             let told = this.update(cx, |this, cx| this.lastfm_signed_in(answered, cx));
             let _ = told;
         }));
+
         self.settings_pane
             .update(cx, |pane, _| pane.accounts.lastfm.task = task);
     }
@@ -309,6 +322,7 @@ impl RootView {
             pane.accounts.lastfm.asking = false;
             pane.accounts.lastfm.waiting = None;
         });
+
         let notice = match answered {
             Ok(Some(LastfmSession { name, key })) => {
                 cx.update_global::<ResonateApp, _>(|global, _| {
@@ -338,6 +352,7 @@ impl RootView {
                 Notice::Trouble(words::settings_lastfm::unreached().to_owned())
             }
         };
+
         self.report(notice, cx);
         cx.notify();
     }
@@ -361,6 +376,7 @@ impl RootView {
         let asking = self.settings_pane.read(cx).accounts.lastfm.asking;
 
         let mut body = kit::rows();
+
         for account in LastfmAccount::ALL {
             body = body.child(kit::field(
                 account.label(),
@@ -411,6 +427,7 @@ impl RootView {
                 )
                 .note(words::settings_lastfm::waiting_note());
         }
+
         let held_back = !reachable || asking || self.lastfm_sign_in(cx).is_none();
         body.child(kit::action_row().child(action(
             "lastfm-sign-in",

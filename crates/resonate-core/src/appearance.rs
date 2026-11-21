@@ -6,7 +6,7 @@ const FNV_OFFSET_BASIS: u64 = 0xcbf2_9ce4_8422_2325;
 
 const FNV_PRIME: u64 = 0x0100_0000_01b3;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Theme {
     Resonate,
     Midnight,
@@ -129,7 +129,7 @@ impl Theme {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Ground {
     Dark,
     Light,
@@ -141,7 +141,7 @@ impl fmt::Display for Theme {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Accent {
     Mauve,
     Blue,
@@ -168,6 +168,7 @@ impl Accent {
             (hashed ^ u64::from(byte)).wrapping_mul(FNV_PRIME)
         });
         let accents = Self::ALL.len() as u64;
+
         let first = (hashed % accents) as usize;
         let apart = 1 + ((hashed / accents) % (accents - 1)) as usize;
 
@@ -212,7 +213,7 @@ impl fmt::Display for Accent {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum TextSize {
     Small,
     Medium,
@@ -288,7 +289,7 @@ impl fmt::Display for TextSize {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum ArtistsDrawn {
     #[default]
     Grid,
@@ -310,7 +311,7 @@ impl ArtistsDrawn {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum ScrollbarMode {
     Shown,
     #[default]
@@ -368,7 +369,7 @@ macro_rules! spoken {
     };
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SpectrumTilt {
     Flat,
     #[default]
@@ -388,7 +389,7 @@ impl SpectrumTilt {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SpectrumFloor {
     Shallow,
     #[default]
@@ -408,7 +409,7 @@ impl SpectrumFloor {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SpectrumBands {
     Thirds,
     #[default]
@@ -428,7 +429,7 @@ impl SpectrumBands {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SpectrumFalls {
     Slowly,
     #[default]
@@ -452,7 +453,7 @@ impl SpectrumFalls {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Spectral {
     pub tilt: SpectrumTilt,
     pub floor: SpectrumFloor,
@@ -460,7 +461,7 @@ pub struct Spectral {
     pub falls: SpectrumFalls,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Following {
     pub scheme: bool,
     pub text: bool,
@@ -479,7 +480,7 @@ pub struct DesktopLook {
     pub text_scale: Option<f32>,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Appearance {
     pub theme: Theme,
     pub accent: Option<Accent>,
@@ -563,6 +564,7 @@ mod tests {
         for mode in ScrollbarMode::ALL {
             assert_eq!(ScrollbarMode::parse(mode.as_str()), Some(mode));
         }
+
         assert_eq!(ScrollbarMode::parse("sometimes"), None);
     }
 
@@ -580,6 +582,7 @@ mod tests {
         for falls in SpectrumFalls::ALL {
             assert_eq!(SpectrumFalls::parse(falls.as_str()), Some(falls));
         }
+
         assert_eq!(SpectrumFloor::parse("-78"), None);
         assert_eq!(Spectral::default().tilt.db_per_octave(), 3.0);
         assert_eq!(Spectral::default().floor.db(), -78.0);
@@ -604,6 +607,7 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.as_str() == theme.as_str())
                 .count();
+
             assert_eq!(sharing, 1, "{theme} is written under a name another claims");
         }
         for accent in Accent::ALL {
@@ -611,6 +615,7 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.as_str() == accent.as_str())
                 .count();
+
             assert_eq!(
                 sharing, 1,
                 "{accent} is written under a name another claims"
@@ -621,6 +626,7 @@ mod tests {
                 .into_iter()
                 .filter(|other| other.as_str() == size.as_str())
                 .count();
+
             assert_eq!(sharing, 1, "{size} is written under a name another claims");
         }
     }
@@ -667,6 +673,7 @@ mod tests {
                 "{theme}"
             );
         }
+
         assert_eq!(Theme::HighContrast.counterpart(), Theme::HighContrastLight);
         assert_eq!(Theme::HighContrastLight.counterpart(), Theme::HighContrast);
         assert_eq!(Theme::Nord.counterpart(), Theme::Light);

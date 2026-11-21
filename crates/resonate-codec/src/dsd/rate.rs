@@ -8,7 +8,7 @@ pub const DOP_DECIMATION: u32 = 16;
 
 const CD_DSD_RATE: u32 = 2_822_400;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DsdRate(NonZeroU32);
 
 impl DsdRate {
@@ -47,7 +47,7 @@ impl fmt::Display for DsdRate {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Packing {
     #[default]
     Samples,

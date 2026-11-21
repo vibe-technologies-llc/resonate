@@ -118,9 +118,11 @@ mod tests {
         let (ready, started) = bounded(2);
 
         ready.send(Ok(())).unwrap();
+
         assert!(opened_within(&started, OPEN_WITHIN, &claim).is_ok());
 
         ready.send(Err(Error::FormatRefused)).unwrap();
+
         assert!(matches!(
             opened_within(&started, OPEN_WITHIN, &claim),
             Err(Error::FormatRefused)

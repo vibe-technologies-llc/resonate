@@ -114,6 +114,7 @@ impl Response {
         let (Some(first), Some(last)) = (self.points.first(), self.points.last()) else {
             return 0.0;
         };
+
         if hertz <= first.hertz {
             return first.decibels;
         }
@@ -128,6 +129,7 @@ impl Response {
         ) else {
             return last.decibels;
         };
+
         let along = (hertz / below.hertz).ln() / (above.hertz / below.hertz).ln();
         below.decibels + along * (above.decibels - below.decibels)
     }
@@ -140,7 +142,9 @@ impl Response {
         let to = self
             .points
             .partition_point(|point| point.hertz <= hertz * reach);
+
         let within = self.points.get(from..to).unwrap_or_default();
+
         if within.is_empty() {
             return self.at(hertz);
         }
@@ -162,6 +166,7 @@ fn fields_of(line: &str) -> Vec<&str> {
     }
 
     let one_token = line.split_whitespace().nth(1).is_none();
+
     if line.contains(',') && (one_token || line.contains(", ")) {
         return line.split(',').map(str::trim).collect();
     }
@@ -233,6 +238,7 @@ pub fn read_response(bytes: &[u8]) -> Result<Reading> {
 
     let found = points.len();
     let response = Response::from_points(points).ok_or(Error::NoMeasuredPoints)?;
+
     if response.points().len() < POINTS_AT_LEAST {
         return Err(Error::TooFewMeasuredPoints {
             found,
@@ -355,6 +361,7 @@ mod tests {
     #[test]
     fn a_file_in_utf16_is_read_as_the_text_it_holds() {
         let mut bytes = vec![0xFF, 0xFE];
+
         for unit in REW.encode_utf16() {
             bytes.extend_from_slice(&unit.to_le_bytes());
         }
@@ -370,6 +377,7 @@ mod tests {
         let reading = read("100 1\n50 2\n50 9\n200 3\n400 4\n800 5\n1600 6\n3200 7\n6400 8\n");
 
         let hertz: Vec<f64> = reading.response.points().iter().map(|p| p.hertz).collect();
+
         assert_eq!(
             hertz,
             [50.0, 100.0, 200.0, 400.0, 800.0, 1600.0, 3200.0, 6400.0]
@@ -429,6 +437,7 @@ mod tests {
             },
         ])
         .expect("two points");
+
         assert!((sparse.smoothed_at(200.0, 1.0 / 12.0) - 6.0).abs() < 1e-9);
     }
 
@@ -448,6 +457,7 @@ mod tests {
                 "{empty:?} was taken"
             );
         }
+
         assert!(matches!(
             read_response(b"this is not a measurement\nnor is this one\n"),
             Err(Error::NoMeasuredPoints)

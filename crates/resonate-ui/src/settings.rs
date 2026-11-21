@@ -31,7 +31,7 @@ use resonate_words::{LanguageChoice, RegionChoice};
 
 use crate::{Launcher, Notice, Result, equaliser::Curve, words};
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SettingsCategory {
     #[default]
     Output,
@@ -148,6 +148,7 @@ impl WindowSize {
     pub fn from_pixels(size: Size<Pixels>) -> Option<Self> {
         let width = f64::from(f32::from(size.width).round());
         let height = f64::from(f32::from(size.height).round());
+
         if !width.is_finite()
             || !height.is_finite()
             || width < f64::from(Self::MIN_WIDTH)
@@ -1279,6 +1280,7 @@ impl SettingsWriter {
     pub(crate) fn over(settings: Arc<dyn Settings>) -> Self {
         let (sent, heard) = crossbeam_channel::unbounded::<Batch>();
         let writing = Arc::clone(&settings);
+
         let worker = thread::Builder::new()
             .name(SETTINGS_WRITER_THREAD.to_owned())
             .spawn(move || {
@@ -1308,6 +1310,7 @@ impl SettingsWriter {
         if self.writing || self.pending.is_empty() {
             return None;
         }
+
         let (landed, heard) = oneshot::channel();
         let batch = Batch {
             changes: mem::take(&mut self.pending),
@@ -1317,6 +1320,7 @@ impl SettingsWriter {
             Some(sent) => sent.send(batch).err().map(|unsent| unsent.0),
             None => Some(batch),
         };
+
         if let Some(batch) = unsent {
             batch.written_by(self.settings.as_ref());
         }
@@ -1341,6 +1345,7 @@ impl Drop for SettingsWriter {
             (None, batch) => batch,
             (Some(_), None) => None,
         };
+
         if let Some(batch) = unsent {
             batch.written_by(self.settings.as_ref());
         }
@@ -1394,6 +1399,7 @@ mod tests {
         for category in SettingsCategory::ALL {
             assert_eq!(SettingsCategory::parse(category.as_str()), Some(category));
         }
+
         assert_eq!(SettingsCategory::parse("Output"), None);
         assert_eq!(SettingsCategory::parse("scrobble"), None);
     }
@@ -1422,8 +1428,10 @@ mod tests {
     fn a_binding_held_under_an_alias_is_carried_to_the_sinks_name_unless_the_name_holds_one() {
         let address = NodeName::new("cast:at-192-168-1-20-8009");
         let id = NodeName::new("cast:abc123");
+
         let sinks = [sink_answering_to(id.as_str(), &[address.as_str()])];
         let mut bindings = Bindings::default();
+
         bindings.bind(Some(&address), Some(kept("HD 650")));
 
         assert_eq!(
@@ -1435,9 +1443,11 @@ mod tests {
         );
 
         bindings.bind(Some(&id), Some(Binding::Own));
+
         assert_eq!(bindings.carried_to(&sinks), Vec::new());
 
         let apart = [sink_answering_to("alsa_output.dac", &[])];
+
         assert_eq!(Bindings::default().carried_to(&apart), Vec::new());
     }
 
@@ -1445,8 +1455,10 @@ mod tests {
     fn a_measurer_held_under_an_alias_is_carried_to_the_sinks_name() {
         let address = NodeName::new("cast:at-192-168-1-20-8009");
         let id = NodeName::new("cast:abc123");
+
         let sinks = [sink_answering_to(id.as_str(), &[address.as_str()])];
         let mut measurers = Measurers::default();
+
         measurers.prefer_for(address.clone(), Some("crinacle".to_owned()));
 
         assert_eq!(
@@ -1524,6 +1536,7 @@ mod tests {
 
         bindings.bind(Some(&headphones), Some(Binding::Own));
         bindings.bind(None, Some(Binding::Own));
+
         assert_eq!(
             bindings.bound_to(Some(&headphones)),
             Some(Curve::Own(Some(headphones.clone())))
@@ -1532,6 +1545,7 @@ mod tests {
         assert_eq!(bindings.bound_to(None), Some(Curve::Own(None)));
 
         bindings.bind(Some(&speakers), Some(kept("HD 650")));
+
         assert_eq!(
             bindings.bound_to(Some(&speakers)),
             Some(Curve::Kept(
@@ -1541,11 +1555,13 @@ mod tests {
         assert_eq!(bindings.named(Some(&headphones)), Some(&Binding::Own));
 
         let curves: Vec<Curve> = bindings.curves().collect();
+
         assert_eq!(curves.len(), 3);
         assert!(curves.contains(&Curve::Own(Some(headphones.clone()))));
         assert!(curves.contains(&Curve::Own(None)));
 
         bindings.bind(Some(&headphones), None);
+
         assert_eq!(bindings.bound_to(Some(&headphones)), Some(Curve::Own(None)));
     }
 }

@@ -317,6 +317,7 @@ impl Clock {
         let over =
             now.saturating_duration_since(self.at).as_secs_f32() / STEERED_OVER.as_secs_f32();
         let share = 1.0 - (-over).exp();
+
         let steered = if heard >= ran {
             ran.saturating_add((heard - ran).mul_f32(share))
         } else {
@@ -422,6 +423,7 @@ impl Growth {
     pub fn of(pane: Size<Pixels>) -> Self {
         let across = pane.width / PANE_AT_RESTING_SIZE.width;
         let down = pane.height / PANE_AT_RESTING_SIZE.height;
+
         let grown = across.min(down);
 
         if grown.is_finite() {
@@ -567,6 +569,7 @@ impl Glide {
         let into = self.leg.elapsed(now);
         let was = self.leg.after(into);
         let reach = (lands - was).abs() * LAUNCHED_AT_MOST;
+
         let launch = self.leg.pace_after(into).clamp(-reach, reach);
 
         Self {
@@ -669,16 +672,19 @@ impl LyricsModel {
         cx: &mut Context<Self>,
     ) {
         let nudged = wanted.as_ref().map(Nudged::of);
+
         if self.ahead_for == nudged {
             return;
         }
         self.ahead_for = nudged;
         self.ahead = LyricsAhead::ZERO;
+
         let Some(wanted) = wanted else {
             self.reading_ahead = Task::ready(());
             return;
         };
         let asked = wanted.clone();
+
         self.reading_ahead = cx.spawn(async move |this, cx| {
             let ahead = cx
                 .background_executor()
@@ -755,6 +761,7 @@ impl LyricsModel {
             return heard.at;
         };
         let kept = clock.steered_by(heard.at, now);
+
         self.clock = Some(Clock {
             from: kept,
             at: now,
@@ -784,6 +791,7 @@ impl LyricsModel {
                 .breathing_for
                 .filter(|breathing| breathing.line == index)
                 .map_or(1.0, |breathing| breathing.opacity(now));
+
             return Some(Breath {
                 through: waiting.through,
                 opacity,
@@ -834,6 +842,7 @@ impl LyricsModel {
 
     pub fn open_out(&mut self, opened: bool) -> bool {
         let was = self.opened_out;
+
         self.opened_out = opened;
         self.spread_out(Instant::now()) || was != opened
     }
@@ -860,6 +869,7 @@ impl LyricsModel {
 
     pub fn follow_the_track(&mut self, position: Duration, now: Instant) {
         self.spread_out(now);
+
         let Some(lyrics) = self.found() else {
             self.turn.onto(Reads::Evenly, now);
             self.light.onto([None; 2], now);
@@ -868,11 +878,13 @@ impl LyricsModel {
         let waiting = lyrics.waiting_at(position);
         let lit = lyrics.voices_in_play(position);
         let ended = lyrics.has_ended(position).then(|| self.end_of_the_sheet());
+
         let read_at = waiting
             .map(|waiting| waiting.next)
             .or(ended)
             .or_else(|| lyrics.line_at(position));
         let timing = lyrics.timing();
+
         match waiting {
             Some(waiting) => {
                 if self
@@ -898,6 +910,7 @@ impl LyricsModel {
                     .or_else(|| self.fading_breath.filter(|breath| !breath.settled(now)));
             }
         }
+
         let reads = if timing == Timing::Unsynced {
             Reads::Evenly
         } else {
@@ -955,6 +968,7 @@ impl LyricsModel {
         if self.stilled {
             return px(0.0);
         }
+
         let rises_from = self.measures().rise;
         let Some(arrived) = self.arrived else {
             return rises_from;
@@ -962,6 +976,7 @@ impl LyricsModel {
         let read = self.read_at.map_or(0, |read| self.ordinal(read));
         let away = self.ordinal(index).abs_diff(read);
         let lag = lagged(away, RISE_PER_LINE, RISES_AT_MOST);
+
         let risen = now.saturating_duration_since(arrived).saturating_sub(lag);
 
         rises_from * (1.0 - landed(share_of(risen, RISE)))
@@ -1000,9 +1015,11 @@ impl LyricsModel {
     pub fn centre_of(&self, index: usize) -> Option<Pixels> {
         let line = self.scroll.bounds_for_item(index)?;
         let pane = self.scroll.bounds();
+
         if pane.size.height <= px(0.0) {
             return None;
         }
+
         let middle = pane.top() + (pane.size.height - line.size.height) / 2.0;
 
         Some(middle - line.top())
@@ -1010,12 +1027,15 @@ impl LyricsModel {
 
     pub fn resting_height(&self, index: usize) -> Option<Pixels> {
         let pane = self.scroll.bounds();
+
         if !self.steady || pane.size.height <= px(0.0) {
             return None;
         }
+
         let line = self.scroll.bounds_for_item(index)?;
         let scrolled = self.scroll.offset().y;
         let reach = pane.size.height * DRAWN_WITHIN_PANES;
+
         let far_above = line.bottom() + scrolled < pane.top() - reach;
         let far_below = line.top() + scrolled > pane.bottom() + reach;
 
@@ -1064,6 +1084,7 @@ impl LyricsModel {
 
     pub fn place(&mut self, now: Instant) -> bool {
         let laid_out = Some((self.scroll.bounds().size, self.measures()));
+
         self.steady = self.laid_out == laid_out;
         self.laid_out = laid_out;
 
@@ -1114,6 +1135,7 @@ impl LyricsModel {
         let Some(glide) = self.glide else {
             return false;
         };
+
         self.scroll.set_offset(point(
             self.scroll.offset().x,
             self.scale.snapped(glide.at(now)),
@@ -1150,16 +1172,19 @@ impl LyricsModel {
         if self.reached == Some(index) {
             return false;
         }
+
         let Some(line) = self.scroll.bounds_for_item(index) else {
             return false;
         };
         let pane = self.scroll.bounds();
+
         if pane.size.height <= px(0.0) {
             return false;
         }
 
         let offset = self.scroll.offset();
         let moved = moved_to_show(line, offset.y, pane, self.measures().dissolve);
+
         self.reached = Some(index);
         self.led_by_hand(now);
         if moved != px(0.0) {
@@ -1195,7 +1220,9 @@ impl LyricsModel {
         if self.asked_about == asked {
             return;
         }
+
         let moved_on = self.asked_about.map(|held| held.track) != asked.map(|asked| asked.track);
+
         self.asked_about = asked;
 
         let Some(wanted) = wanted else {
@@ -1219,6 +1246,7 @@ impl LyricsModel {
         self.looked_for = Some(wanted.clone());
 
         let lyricists = Arc::clone(&self.lyricists);
+
         self._find = cx.spawn(async move |this, cx| {
             let found = cx
                 .background_executor()
@@ -1234,6 +1262,7 @@ impl LyricsModel {
                         Look::Refused
                     }
                 };
+
                 if moved_on || !this.already_shows(&look) {
                     this.rewind();
                 }
@@ -1260,6 +1289,7 @@ impl LyricsModel {
         let Some(lyrics) = self.found() else {
             return;
         };
+
         self.sheet = Sheet::of(lyrics);
     }
 
@@ -1306,11 +1336,13 @@ impl Sheet {
             .map(|line| lyrics.breathes_before(line))
             .collect();
         let mut standing = 0;
+
         let mut written: Vec<usize> = lyrics
             .lines()
             .iter()
             .map(|line| {
                 let ordinal = standing;
+
                 if !line.is_blank() {
                     standing += 1;
                 }
@@ -1318,6 +1350,7 @@ impl Sheet {
                 ordinal
             })
             .collect();
+
         written.push(standing);
 
         Self {
@@ -1381,6 +1414,7 @@ mod tests {
             model.worth_looking_again(true, &wanting(None)),
             "a track that has just started was not looked up"
         );
+
         model.looked_for = Some(wanting(None));
 
         assert!(
@@ -1424,6 +1458,7 @@ mod tests {
             .map(|(text, line)| LyricLine::sung(at(line), *text))
             .collect();
         let mut model = model();
+
         model.look = Look::Found(Arc::new(
             Lyrics::synced(source, sung).expect("every line is timed"),
         ));
@@ -1436,6 +1471,7 @@ mod tests {
     fn a_plain_sheet_is_placed_at_its_top_once_and_then_left_where_it_was_read_to() {
         let source = resonate_core::SourceId::new("held").expect("a lowercase name");
         let mut model = model();
+
         model.look = Look::Found(Arc::new(Lyrics::plain(
             source,
             vec!["one".to_owned(), "two".to_owned()],
@@ -1453,6 +1489,7 @@ mod tests {
         );
 
         let mut synced = verse(3);
+
         synced.placed = true;
 
         assert_eq!(
@@ -1489,6 +1526,7 @@ mod tests {
     fn a_line_crossfades_from_where_it_stood_to_where_it_is_going() {
         let start = Instant::now();
         let mut model = verse(6);
+
         model.read_as(Reading::Whole);
         spread_settled(&mut model);
         model.placed = true;
@@ -1510,6 +1548,7 @@ mod tests {
         let mut model = verse(8);
 
         model.follow_the_track(at(4), now);
+
         let settled = now + TURN;
 
         assert!((model.standing(4, settled) - LIT).abs() < f32::EPSILON);
@@ -1524,6 +1563,7 @@ mod tests {
         let mut model = verse(8);
 
         model.follow_the_track(at(4), now);
+
         let settled = now + TURN;
 
         assert!(model.standing(3, settled).abs() < f32::EPSILON);
@@ -1531,6 +1571,7 @@ mod tests {
 
         model.read_as(Reading::Whole);
         spread_settled(&mut model);
+
         assert!((model.standing(3, settled) - Falloff::Across.ahead(1)).abs() < f32::EPSILON);
         assert!(model.standing(0, settled) > 0.0);
     }
@@ -1539,13 +1580,16 @@ mod tests {
     fn the_pointer_opens_an_in_play_reading_out_without_changing_the_choice() {
         let now = Instant::now();
         let mut model = verse(8);
+
         model.follow_the_track(at(4), now);
+
         let settled = now + TURN;
 
         assert!(model.standing(7, settled).abs() < f32::EPSILON);
 
         model.open_out(true);
         spread_settled(&mut model);
+
         assert!(model.shows_every_line(now));
         assert_eq!(model.reading(), Reading::InPlay);
         assert!(model.standing(7, settled) > 0.0);
@@ -1555,10 +1599,13 @@ mod tests {
     fn opening_the_pane_out_crossfades_the_lines_in_rather_than_snapping_them() {
         let now = Instant::now();
         let mut model = verse(8);
+
         model.follow_the_track(at(4), now);
+
         let settled = now + TURN;
 
         model.open_out(true);
+
         let opened = Instant::now();
         let across = Falloff::Across.ahead(3);
 
@@ -1590,7 +1637,9 @@ mod tests {
         let mut was = 0.0;
         for step in 1..=1_000 {
             let through = landed(step as f32 / 1_000.0);
+
             assert!(through >= was && through <= 1.0);
+
             was = through;
         }
     }
@@ -1609,12 +1658,15 @@ mod tests {
             let glide = Glide::from_rest(px(0.0), travel, start);
             let mut drawn = px(0.0);
             let mut stepped = [Duration::ZERO; 2];
+
             for elapsed in frames_through(GLIDE) {
                 let now = Scale::ONE.snapped(glide.at(start + elapsed));
+
                 assert!(
                     (travel - now).abs() <= (travel - drawn).abs(),
                     "a glide of {travel:?} turned back at {elapsed:?}"
                 );
+
                 if now != drawn {
                     stepped = [stepped[1], elapsed];
                 }
@@ -1636,11 +1688,14 @@ mod tests {
         let start = Instant::now();
         let first = Glide::from_rest(px(0.0), px(-400.0), start);
         let turned = start + GLIDE / 3;
+
         let then = first.redirected(px(-466.0), turned);
 
         assert!((then.at(turned) - first.at(turned)).abs() < px(1e-3));
+
         for lines in 0..=LAGS_AT_MOST {
             let lag = lagged(lines, LAG_PER_LINE, LAGS_AT_MOST);
+
             assert!(
                 (then.lagging(lag, turned) - first.lagging(lag, turned)).abs() < px(1e-3),
                 "a line {lines} ahead jumped when the glide turned"
@@ -1649,6 +1704,7 @@ mod tests {
 
         let before = first.at(turned) - first.at(turned - FRAME_AT_240_HZ);
         let after = then.at(turned + FRAME_AT_240_HZ) - then.at(turned);
+
         assert!(
             (after - before).abs() < before.abs() * 0.1,
             "the glide went from {before:?} to {after:?} a frame as it turned"
@@ -1662,6 +1718,7 @@ mod tests {
 
     fn arrived_and_placed(lines: usize, scale: Scale, now: Instant) -> LyricsModel {
         let mut model = verse(lines);
+
         model.scaled_by(scale);
         model.placed = true;
         model.arrived = Some(now);
@@ -1682,13 +1739,17 @@ mod tests {
         model.glide_to(px(-266.4), start);
 
         let mut drawn = [px(f32::MAX); 11];
+
         for elapsed in frames_through(GLIDE + LAG_PER_LINE * 8) {
             let now = start + elapsed;
+
             model.glide(now);
+
             let offset = model.scroll.offset().y;
             for (line, was) in drawn.iter_mut().enumerate() {
                 let at = offset + model.inset(line, now);
                 let pixels = f32::from(at) * factor;
+
                 assert!(
                     (pixels - pixels.round()).abs() < 1e-3,
                     "line {line} was drawn {pixels} pixels down at {elapsed:?}"
@@ -1697,12 +1758,15 @@ mod tests {
                     at <= *was + px(1e-3),
                     "line {line} stepped back from {was:?} to {at:?} at {elapsed:?}"
                 );
+
                 *was = at;
             }
         }
 
         assert!(!model.glide(start + GLIDE + LAG_PER_LINE * 8));
+
         let home = scale.snapped(px(-266.4));
+
         assert!(drawn.iter().all(|at| (*at - home).abs() < px(1e-3)));
     }
 
@@ -1743,6 +1807,7 @@ mod tests {
         model.arrived = Some(now);
 
         let soon = now + Duration::from_millis(100);
+
         assert!(model.rise(3, soon) < model.rise(4, soon));
         assert!(model.rise(4, soon) < model.rise(7, soon));
         assert!(model.rise(2, soon) < model.rise(0, soon));
@@ -1750,6 +1815,7 @@ mod tests {
         assert!(model.is_turning(soon));
 
         let there = now + RISE + RISE_PER_LINE * 8;
+
         assert_eq!(model.rise(7, there), px(0.0));
         assert!((model.arrival(there) - 1.0).abs() < f32::EPSILON);
         assert!(!model.is_turning(there));
@@ -1763,19 +1829,23 @@ mod tests {
         let mut model = verse(4);
 
         model.place(now);
+
         assert!(!model.steady, "a first layout was taken as measured");
 
         model.place(now);
+
         assert!(model.steady);
 
         model.scaled_by(Scale::of(1.5));
         model.place(now);
+
         assert!(
             !model.steady,
             "lines were held open at heights measured at another scale"
         );
 
         model.place(now);
+
         assert!(model.steady);
     }
 
@@ -1798,6 +1868,7 @@ mod tests {
                     measures.end_padding,
                 ] {
                     let pixels = f32::from(length) * factor;
+
                     assert!(
                         (pixels - pixels.round()).abs() < 1e-3,
                         "{length:?} is {pixels} pixels at {factor} grown {growth}"
@@ -1858,6 +1929,7 @@ mod tests {
     fn a_look_that_has_only_just_started_is_kept_quiet_before_it_is_announced() {
         let now = Instant::now();
         let mut model = model();
+
         model.look = Look::Searching;
         model.asked_at = now;
 
@@ -1866,6 +1938,7 @@ mod tests {
         assert!(!model.looks_quietly(now + LOOKS_QUIETLY_FOR));
 
         model.look = Look::Missing;
+
         assert!(!model.looks_quietly(now));
     }
 
@@ -1877,6 +1950,7 @@ mod tests {
     fn the_dots_of_a_pause_fade_in_and_out_in_a_room_of_their_own_that_never_moves() {
         let source = resonate_core::SourceId::new("held").expect("a lowercase name");
         let mut model = model();
+
         model.look = Look::Found(Arc::new(
             Lyrics::synced(
                 source,
@@ -1888,42 +1962,60 @@ mod tests {
             .expect("every line is timed"),
         ));
         model.hold();
+
         assert_eq!(model.breathes().as_ref(), [true, true]);
+
         let frame = Duration::from_millis(16);
         let frames = u32::try_from(TURN.as_millis() / 16 + 1).expect("few frames");
 
         let began = Instant::now();
+
         model.follow_the_track(at(20), began);
+
         let mut was = 0.0;
+
         for step in 0..=frames {
             let now = began + frame * step;
+
             model.follow_the_track(at(20), now);
+
             let shown = a_pause(&model, at(20), now)
                 .expect("the pause breathes")
                 .opacity;
+
             assert!(
                 shown >= was && shown - was < 0.1,
                 "the dots popped in by {}",
                 shown - was
             );
+
             was = shown;
         }
+
         assert!((was - 1.0).abs() < f32::EPSILON);
 
         let sung = began + TURN * 3;
+
         model.follow_the_track(at(60), sung);
+
         let mut was = 1.0;
+
         for step in 0..=frames {
             let now = sung + frame * step;
+
             model.follow_the_track(at(60), now);
+
             let shown = a_pause(&model, at(60), now).map_or(0.0, |breath| breath.opacity);
+
             assert!(
                 shown <= was && was - shown < 0.1,
                 "the dots popped out by {}",
                 was - shown
             );
+
             was = shown;
         }
+
         assert_eq!(a_pause(&model, at(60), sung + TURN), None);
         assert_eq!(model.breathes().as_ref(), [true, true]);
     }
@@ -1947,19 +2039,23 @@ mod tests {
             let frames = u32::try_from(at(4).as_nanos() / frame.as_nanos()).expect("few");
 
             let mut was = model.keep_time(heard(starts, Seeks::default(), true), began);
+
             assert_eq!(was, starts);
             for step in 1..=frames {
                 let elapsed = frame * step;
                 let blocks = u32::try_from(elapsed.as_nanos() / block.as_nanos()).expect("few");
                 let sampled = starts + block * blocks;
+
                 let kept = model.keep_time(heard(sampled, Seeks::default(), true), began + elapsed);
                 let stepped = kept.saturating_sub(was);
+
                 assert!(kept >= was, "the clock ran backwards at frame {step}");
                 assert!(
                     stepped.abs_diff(frame) < frame / 4,
                     "a frame of {frame:?} moved the clock by {stepped:?}"
                 );
                 assert!((starts + elapsed).abs_diff(kept) < block);
+
                 was = kept;
             }
         }
@@ -1969,7 +2065,9 @@ mod tests {
     fn a_clock_steered_back_by_a_position_behind_it_slows_rather_than_running_backwards() {
         let mut model = model();
         let began = Instant::now();
+
         model.keep_time(heard(at(10), Seeks::default(), true), began);
+
         let stalled = began + Duration::from_millis(200);
 
         let kept = model.keep_time(
@@ -1986,12 +2084,16 @@ mod tests {
         let mut model = model();
         let frame = Duration::from_micros(16_667);
         let began = Instant::now();
+
         model.keep_time(heard(at(10), Seeks::default(), true), began);
 
         let later = began + frame * 241;
         let sought = model.keep_time(heard(at(90), Seeks::default().stepped(), true), later);
+
         assert_eq!(sought, at(90), "a seek was smoothed rather than followed");
+
         let paused = model.keep_time(heard(at(91), Seeks::default().stepped(), false), later);
+
         assert_eq!(paused, at(91));
         assert_eq!(
             model.keep_time(
@@ -2007,7 +2109,9 @@ mod tests {
     fn a_blank_line_between_verses_costs_a_written_line_no_standing() {
         let now = Instant::now();
         let mut model = holding(&["one", "two", "", "three", "four"]);
+
         model.follow_the_track(at(1), now);
+
         let settled = now + TURN;
 
         assert!((model.standing(3, settled) - Falloff::Around.ahead(1)).abs() < f32::EPSILON);
@@ -2021,11 +2125,14 @@ mod tests {
         let mut model = verse(4);
 
         model.follow_the_track(at(3), now);
+
         assert!((model.standing(3, now + TURN) - LIT).abs() < f32::EPSILON);
         assert!((model.lead(3, now + TURN) - 1.0).abs() < f32::EPSILON);
 
         let over = now + TURN;
+
         model.follow_the_track(at(60), over);
+
         assert_eq!(model.read_at(), Some(model.end_of_the_sheet()));
         assert!(model.standing(3, over + TURN).abs() < f32::EPSILON);
         assert!(model.lead(3, over + TURN).abs() < f32::EPSILON);
@@ -2039,10 +2146,12 @@ mod tests {
     fn a_spent_set_is_still_readable_where_the_whole_of_it_was_asked_for() {
         let now = Instant::now();
         let mut model = verse(6);
+
         model.read_as(Reading::Whole);
         spread_settled(&mut model);
 
         model.follow_the_track(at(60), now);
+
         let settled = now + TURN;
 
         assert!((model.standing(5, settled) - Falloff::Across.ahead(1)).abs() < f32::EPSILON);
@@ -2056,16 +2165,22 @@ mod tests {
     fn a_scroll_of_your_own_after_the_last_word_brings_the_whole_set_back() {
         let now = Instant::now();
         let mut model = verse(6);
+
         model.follow_the_track(at(60), now);
+
         let over = now + TURN;
+
         assert!(model.standing(1, over).abs() < f32::EPSILON);
 
         model.led_by_hand(over);
+
         assert!(model.shows_every_line(over));
         assert!((model.standing(1, over + TURN) - Falloff::Across.ahead(5)).abs() < f32::EPSILON);
 
         let let_go = over + HANDS_OFF;
+
         model.follow_the_track(at(61), let_go);
+
         assert!(!model.shows_every_line(let_go));
         assert!(model.standing(1, let_go + TURN).abs() < f32::EPSILON);
     }
@@ -2074,12 +2189,16 @@ mod tests {
     fn the_pointer_opens_out_a_spent_set_it_is_held_over() {
         let now = Instant::now();
         let mut model = verse(4);
+
         model.follow_the_track(at(60), now);
+
         let over = now + TURN;
+
         assert!(model.standing(3, over).abs() < f32::EPSILON);
 
         model.open_out(true);
         spread_settled(&mut model);
+
         assert!(model.standing(3, over) >= Falloff::Across.ahead(1));
         assert!(model.standing(0, over) >= Falloff::Across.ahead(4));
     }
@@ -2090,10 +2209,12 @@ mod tests {
         let mut model = holding(&["one", "two"]);
 
         model.follow_the_track(at(1), now);
+
         assert_eq!(model.read_at(), Some(1));
 
         let mut wider = LyricsModel::new(Arc::new(Lyricists::unsourced()));
         let source = resonate_core::SourceId::new("held").expect("a lowercase name");
+
         wider.look = Look::Found(Arc::new(
             Lyrics::synced(
                 source,
@@ -2107,6 +2228,7 @@ mod tests {
         wider.hold();
 
         wider.follow_the_track(at(30), now);
+
         assert_eq!(wider.read_at(), Some(1));
         assert!(wider.standing(0, now + TURN).abs() < f32::EPSILON);
     }
@@ -2114,6 +2236,7 @@ mod tests {
     fn sung(lines: Vec<LyricLine>) -> LyricsModel {
         let source = resonate_core::SourceId::new("held").expect("a lowercase name");
         let mut model = model();
+
         model.look = Look::Found(Arc::new(
             Lyrics::synced(source, lines).expect("every line is timed"),
         ));
@@ -2193,6 +2316,7 @@ mod tests {
         let now = Instant::now();
         let source = resonate_core::SourceId::new("held").expect("a lowercase name");
         let mut model = model();
+
         model.look = Look::Found(Arc::new(Lyrics::plain(
             source,
             vec!["one".to_owned(), "two".to_owned()],
@@ -2224,6 +2348,7 @@ mod tests {
         );
 
         model.follow_the_track(at(2), now);
+
         assert!(
             (model.standing(2, now) - LIT).abs() < f32::EPSILON,
             "an unplaced pane arrives at its standing rather than fading into it"
@@ -2235,6 +2360,7 @@ mod tests {
         let _worn = crate::theme::alongside();
 
         let mut model = verse(4);
+
         model.placed = true;
         model.steady = true;
         model.laid_out = Some((
@@ -2257,18 +2383,24 @@ mod tests {
     fn a_landing_moved_by_less_than_half_a_pixel_leaves_the_glide_alone() {
         let now = Instant::now();
         let mut model = verse(4);
+
         model.placed = true;
 
         model.glide_to(px(400.0), now);
+
         let half = now + GLIDE / 2;
+
         model.glide_to(px(400.2), half);
+
         let glide = model.glide.expect("a glide is in flight");
 
         assert!(glide.before.is_none(), "a sub-pixel move turned the glide");
         assert_eq!(glide.leg.lands, px(400.0));
 
         model.glide_to(px(-900.0), half);
+
         let turned = model.glide.expect("a glide is in flight");
+
         assert_eq!(turned.leg.lands, px(-900.0));
         assert!((turned.at(half) - glide.at(half)).abs() < px(1e-3));
     }
@@ -2296,6 +2428,7 @@ mod tests {
         let mut model = arrived_and_placed(8, Scale::ONE, now);
 
         model.glide_to(px(-300.0), now);
+
         assert!(model.glide.is_some());
 
         model.keep_still(true);
@@ -2324,12 +2457,14 @@ mod tests {
         assert!(model.following(now));
 
         model.led_by_hand(now);
+
         assert!(!model.following(now));
         assert!(!model.following(now + HANDS_OFF / 2));
         assert!(model.following(now + HANDS_OFF));
 
         model.led_by_hand(now);
         model.follow_again();
+
         assert!(model.following(now));
     }
 
@@ -2337,9 +2472,11 @@ mod tests {
     fn the_bar_is_shown_only_for_a_moment_after_a_scroll_of_your_own() {
         let now = Instant::now();
         let mut model = model();
+
         assert!(!model.moved_by_hand_lately(now));
 
         model.led_by_hand(now);
+
         assert!(model.moved_by_hand_lately(now));
         assert!(model.is_turning(now));
         assert!(model.moved_by_hand_lately(now + BAR_LINGERS / 2));

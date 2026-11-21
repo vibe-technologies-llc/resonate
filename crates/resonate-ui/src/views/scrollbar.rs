@@ -86,9 +86,11 @@ impl Target {
         let handle = self.handle();
         let furthest = axis.along(handle.max_offset());
         let viewport = axis.length(handle.bounds().size);
+
         if furthest <= 0.0 || viewport <= 0.0 || track <= 0.0 {
             return None;
         }
+
         let length = (track * viewport / (viewport + furthest))
             .max(SHORTEST_THUMB)
             .min(track);
@@ -101,12 +103,15 @@ impl Target {
             return;
         };
         let travel = track - thumb.length;
+
         if travel <= 0.0 {
             return;
         }
+
         let handle = self.handle();
         let reached = px(-(start / travel).clamp(0.0, 1.0) * axis.along(handle.max_offset()));
         let mut offset = handle.offset();
+
         match axis {
             Axis::Vertical => offset.y = reached,
             Axis::Horizontal => offset.x = reached,
@@ -284,6 +289,7 @@ impl Scrolled {
                 0.0
             };
         }
+
         let (Some(at), Some(since)) = (self.at, self.since) else {
             return 0.0;
         };
@@ -312,6 +318,7 @@ fn scrolled_presence(target: &Target, window: &mut Window, cx: &App) -> f32 {
             )
         })
     });
+
     if fresh {
         hide_once_it_settles(window, cx);
     }
@@ -379,9 +386,11 @@ fn bar(
                 move |grip, cursor, _, cx| {
                     let length = axis.length(track.get().size);
                     let at = axis.along(cursor);
+
                     let held_at = target
                         .thumb(axis, length)
                         .map_or(0.0, |thumb| (at - thumb.start).clamp(0.0, thumb.length));
+
                     grip.held_at.set(held_at);
                     cx.new(|_| EmptyDrag)
                 }
@@ -391,11 +400,14 @@ fn bar(
             let target = target.clone();
             move |event: &DragMoveEvent<Grip>, window, cx| {
                 let grip = event.drag(cx);
+
                 if grip.id != id || grip.axis != axis {
                     return;
                 }
+
                 let length = axis.length(event.bounds.size);
                 let at = axis.along(event.event.position) - axis.along(event.bounds.origin);
+
                 target.move_thumb(axis, at - grip.held_at.get(), length);
                 window.refresh();
             }
@@ -405,20 +417,25 @@ fn bar(
                 |_, _, _| (),
                 move |bounds, _, window, cx| {
                     track.set(bounds);
+
                     let lit = bounds.contains(&window.mouse_position());
                     let scrolled = if shown.follows_the_offset() {
                         scrolled_presence(&target, window, cx)
                     } else {
                         0.0
                     };
+
                     let presence = shown.presence(lit, cx.has_active_drag(), scrolled);
+
                     if presence <= 0.0 {
                         return;
                     }
+
                     let Some(thumb) = target.thumb(axis, axis.length(bounds.size)) else {
                         return;
                     };
                     let inset = px((TRACK_BREADTH - THUMB_BREADTH) / 2.0);
+
                     let (origin, extent) = match axis {
                         Axis::Vertical => (
                             point(bounds.origin.x + inset, bounds.origin.y + px(thumb.start)),
@@ -430,8 +447,11 @@ fn bar(
                         ),
                     };
                     let mut colour = rgb(if lit { theme::text() } else { theme::muted() });
+
                     colour.a = presence;
+
                     let mut quad = fill(Bounds::new(origin, extent), colour);
+
                     quad.corner_radii = px(THUMB_BREADTH / 2.0).into();
                     window.paint_quad(quad);
                 },
@@ -448,6 +468,7 @@ mod tests {
     fn a_scrolled_thumb_fades_in_stays_and_fades_out() {
         let start = Instant::now();
         let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
+
         let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
 
         assert!(still.presence(start, false).abs() < 1e-6);
@@ -468,6 +489,7 @@ mod tests {
     fn a_scrolled_thumb_under_reduced_motion_is_whole_at_once_and_gone_when_it_would_leave() {
         let start = Instant::now();
         let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
+
         let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
         let leaves_at = start + SCROLLED_LINGERS - THUMB_LEAVES_OVER;
 
@@ -482,6 +504,7 @@ mod tests {
         let start = Instant::now();
         let later = start + THUMB_ARRIVES_OVER * 3;
         let still = Scrolled::seen(None, point(px(0.0), px(0.0)), start);
+
         let moved = Scrolled::seen(Some(still), point(px(0.0), px(-40.0)), start);
         let moved_on = Scrolled::seen(Some(moved), point(px(0.0), px(-80.0)), later);
 

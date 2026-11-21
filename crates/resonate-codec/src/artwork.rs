@@ -51,6 +51,7 @@ impl Raster {
     pub fn of(rgba: RgbaImage) -> Self {
         let (width, height) = rgba.dimensions();
         let mut bgra = rgba.into_raw();
+
         for pixel in bgra.as_chunks_mut::<RGBA>().0 {
             pixel.swap(0, 2);
         }
@@ -100,6 +101,7 @@ impl Drawing {
 
     pub fn no_larger_than(&self, side: NonZeroU32) -> Option<Raster> {
         let plane = self.plane();
+
         if plane.width == 0 || plane.height == 0 {
             return None;
         }
@@ -114,9 +116,11 @@ impl Drawing {
     pub fn squared(&self, side: NonZeroU32) -> Option<Raster> {
         let plane = self.plane();
         let square = plane.width.min(plane.height);
+
         if square == 0 {
             return None;
         }
+
         let cropped = plane.cropped(
             (plane.width - square) / 2,
             (plane.height - square) / 2,
@@ -133,6 +137,7 @@ impl Drawing {
 
     pub fn likeness(&self) -> Option<Likeness> {
         let plane = self.plane();
+
         if plane.width < LIKENESS_SIDE || plane.height < LIKENESS_SIDE {
             return None;
         }
@@ -140,13 +145,16 @@ impl Drawing {
         let mut summed = [[0.0_f32; RGB]; LIKENESS_CELLS];
         let mut counted = [0_u32; LIKENESS_CELLS];
         let mut row = vec![[0.0; RGBA]; plane.width as usize];
+
         for y in 0..plane.height {
             plane.linear(y, &mut row);
+
             let down = (y * LIKENESS_SIDE / plane.height) as usize;
             for (x, pixel) in (0_u32..).zip(&row) {
                 let cell =
                     down * LIKENESS_SIDE as usize + (x * LIKENESS_SIDE / plane.width) as usize;
                 let alpha = pixel[RGB];
+
                 for (sum, channel) in summed[cell].iter_mut().zip(&pixel[..RGB]) {
                     *sum += channel * alpha;
                 }
@@ -155,6 +163,7 @@ impl Drawing {
         }
 
         let mut likeness = [0; LIKENESS_BYTES];
+
         for ((into, sums), count) in likeness
             .as_chunks_mut::<RGB>()
             .0
@@ -224,6 +233,7 @@ impl<'a> Plane<'a> {
                 Some(&alpha) => f32::from(alpha) / EIGHT_BIT_FULL_SCALE,
                 None => OPAQUE,
             };
+
             *held = [
                 linear[usize::from(pixel[0])],
                 linear[usize::from(pixel[1])],
@@ -245,6 +255,7 @@ impl<'a> Plane<'a> {
 
     fn to_rgba(self) -> RgbaImage {
         let mut rgba = RgbaImage::new(self.width, self.height);
+
         for (y, into) in (0..self.height).zip(rgba.rows_mut()) {
             for (drawn, pixel) in into.zip(self.row(y)) {
                 drawn.0[..RGB].copy_from_slice(&pixel[..RGB]);
@@ -269,6 +280,7 @@ fn taps(from: u32, to: u32) -> Vec<Taps> {
         .map(|out| {
             let centre = (out as f32 + 0.5) * ratio;
             let first = ((centre - reach).floor() as i64).clamp(0, i64::from(from) - 1) as u32;
+
             let last = ((centre + reach).ceil() as i64).clamp(i64::from(first) + 1, i64::from(from))
                 as u32;
             let centre = centre - 0.5;
@@ -276,7 +288,9 @@ fn taps(from: u32, to: u32) -> Vec<Taps> {
             let mut weights: Vec<f32> = (first..last)
                 .map(|at| catmull_rom((at as f32 - centre) / widened))
                 .collect();
+
             let sum: f32 = weights.iter().fold(0.0, |sum, weight| sum + weight);
+
             for weight in &mut weights {
                 *weight /= sum;
             }
@@ -329,6 +343,7 @@ impl Held {
 
     fn row(&mut self, plane: &Plane<'_>, y: u32) -> &[Linear] {
         let slot = y as usize % self.rows.len();
+
         if y >= self.reached {
             plane.premultiplied(y, &mut self.rows[slot]);
             self.reached = y + 1;
@@ -355,12 +370,15 @@ fn drawn_smaller(plane: Plane<'_>, width: u32, height: u32) -> RgbaImage {
         }
         for (tap, pixel) in across.iter().zip(into) {
             let mut sum = [0.0; RGBA];
+
             for (value, &weight) in column[tap.first as usize..].iter().zip(&tap.weights) {
                 for (channel, value) in sum.iter_mut().zip(value) {
                     *channel += value * weight;
                 }
             }
+
             let alpha = sum[RGB].clamp(0.0, 1.0);
+
             for (drawn, &value) in pixel.0.iter_mut().zip(&sum[..RGB]) {
                 *drawn = eight_bit(srgb_from_linear(unpremultiplied(value, alpha)));
             }
@@ -398,6 +416,7 @@ struct DecodePermit;
 impl DecodeGate {
     fn enter(&'static self) -> DecodePermit {
         let mut running = self.running.lock();
+
         while *running >= COVERS_DECODED_AT_ONCE {
             self.freed.wait(&mut running);
         }
@@ -419,6 +438,7 @@ pub fn decode_cover(art: &CoverArt) -> image::ImageResult<DynamicImage> {
         read_as(art.format_of_its_bytes()),
     );
     let mut limits = image::Limits::default();
+
     limits.max_image_width = Some(LARGEST_COVER_SIDE);
     limits.max_image_height = Some(LARGEST_COVER_SIDE);
     reader.limits(limits);
@@ -439,6 +459,7 @@ fn read_art(art: &CoverArt) -> Option<DynamicImage> {
 
 const fn sides_within(width: u32, height: u32, side: u32) -> Option<(u32, u32)> {
     let longest = if width > height { width } else { height };
+
     if longest <= side || width == 0 || height == 0 {
         return None;
     }
@@ -500,6 +521,7 @@ mod tests {
 
     fn written_as_png(drawn: &RgbaImage) -> Option<CoverArt> {
         let mut bytes = Vec::new();
+
         drawn
             .write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png)
             .ok()?;
@@ -539,12 +561,14 @@ mod tests {
             let Rgba(from) = *resized.get_pixel(x, y);
             let alpha = from[RGB].clamp(0.0, 1.0);
             let mut into = [0; 4];
+
             for (drawn, value) in into.iter_mut().zip(&from[..RGB]) {
                 let straight = if alpha > 0.0 {
                     (*value / alpha).clamp(0.0, 1.0)
                 } else {
                     0.0
                 };
+
                 *drawn = eight_bit(srgb_from_linear(straight));
             }
             into[RGB] = eight_bit(alpha);
@@ -691,6 +715,7 @@ mod tests {
         const QOI_HEADER: &[u8] = b"qoif\x00\x00\x00\x01\x00\x00\x00\x01\x03\x00";
         const QOI_ONE_RGB_PIXEL: &[u8] = &[0xfe, 0x10, 0x20, 0x30];
         const QOI_END: &[u8] = &[0, 0, 0, 0, 0, 0, 0, 1];
+
         let qoi = [QOI_HEADER, QOI_ONE_RGB_PIXEL, QOI_END].concat();
 
         for format in [
@@ -726,6 +751,7 @@ mod tests {
         let [blue, green, red, alpha] = drawn.bgra[..4] else {
             panic!("a pixel holds four bytes");
         };
+
         assert!((100..=155).contains(&alpha), "alpha {alpha}");
         assert!(red >= 250, "red {red}");
         assert!(blue <= 5 && green <= 5, "blue {blue} green {green}");
@@ -771,9 +797,11 @@ mod tests {
 
     fn drawn(picture: &RgbImage, format: image::ImageFormat) -> Drawing {
         let mut bytes = Vec::new();
+
         picture
             .write_to(&mut std::io::Cursor::new(&mut bytes), format)
             .expect("an in-memory encode");
+
         let art = CoverArt {
             format: if format == image::ImageFormat::Jpeg {
                 ImageFormat::Jpeg
@@ -847,13 +875,16 @@ mod tests {
         let (entered, waiting) = std::sync::mpsc::channel();
         let late = std::thread::spawn(move || {
             let _permit = super::DECODE_GATE.enter();
+
             entered.send(()).expect("a listener");
         });
 
         assert!(waiting.recv_timeout(HELD_BACK_FOR).is_err());
 
         drop(permits);
+
         assert!(waiting.recv_timeout(GIVEN_UP_AFTER).is_ok());
+
         late.join().expect("a finished thread");
     }
 }

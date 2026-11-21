@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 pub(crate) const LONGEST_SLEEP: Duration = Duration::from_secs(24 * 60 * 60);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Until {
     After(Duration),
     EndOfTrack,
@@ -18,7 +18,7 @@ impl Until {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Asleep {
     pub until: Until,
     pub left: Option<Duration>,

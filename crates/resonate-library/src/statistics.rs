@@ -88,7 +88,7 @@ const WHAT_WAS_HEARD_EACH_QUARTER_HOUR: &str = "SELECT quarter, sum(plays), sum(
       GROUP BY quarter
       ORDER BY quarter";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Window {
     Week,
     Month,
@@ -319,6 +319,7 @@ fn quarters_heard(connection: &Connection, since: i64) -> Result<Vec<Counted>> {
 
 fn into_days(quarters: &[Counted], calendar: &Calendar) -> Vec<Counted> {
     let mut days: BTreeMap<i64, Counted> = BTreeMap::new();
+
     for quarter in quarters {
         let day = calendar.day_of(store::from_nanos(
             quarter.period.saturating_mul(NANOS_PER_QUARTER_HOUR),
@@ -328,6 +329,7 @@ fn into_days(quarters: &[Counted], calendar: &Calendar) -> Vec<Counted> {
             plays: 0,
             listened: 0,
         });
+
         held.plays = held.plays.saturating_add(quarter.plays);
         held.listened = held.listened.saturating_add(quarter.listened);
     }
@@ -354,6 +356,7 @@ fn listened<Id>(
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held = statement
         .query_map(params![since, most], |row| {
             Ok(Reading {
@@ -406,6 +409,7 @@ fn filled(counted: &[Counted], from: Option<i64>, today: i64, calendar: &Calenda
 
     for day in from..=today {
         let heard = held.next_if(|heard| heard.period == day);
+
         days.push(Day {
             at: calendar.midnight_of(day),
             plays: heard.map_or(0, |heard| how_many(heard.plays)),
@@ -455,6 +459,7 @@ mod tests {
                         [],
                     )
                     .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
                 let track: i64 = transaction
                     .query_row(
                         "INSERT INTO tracks (root_id, path, title, sample_rate, channels,
@@ -496,6 +501,7 @@ mod tests {
     #[test]
     fn a_window_reaches_back_as_far_as_it_is_named_for() {
         let now = SystemTime::now();
+
         for (window, ago) in [
             (Window::Week, A_WEEK),
             (Window::Month, A_MONTH),
@@ -505,24 +511,28 @@ mod tests {
             let reached = now
                 .duration_since(since)
                 .expect("a bounded window begins before now");
+
             assert!(
                 reached.abs_diff(ago) < A_MINUTE,
                 "{} reached back {reached:?} rather than {ago:?}",
                 window.name()
             );
         }
+
         assert_eq!(Window::Everything.since(), None);
     }
 
     #[test]
     fn what_was_heard_this_week_counts_only_this_week() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         counted_at(&library, "Lately", &[(TWO_DAYS, A_MINUTE)]);
         counted_at(&library, "Once", &[(A_FORTNIGHT, A_MINUTE)]);
 
         let week = library
             .statistics(Window::Week)
             .expect("the catalog answers for a week");
+
         assert_eq!(week.plays, 1);
         assert_eq!(week.tracks, 1);
         assert_eq!(week.listened, A_MINUTE);
@@ -530,6 +540,7 @@ mod tests {
         let everything = library
             .statistics(Window::Everything)
             .expect("the catalog answers for everything");
+
         assert_eq!(everything.plays, 2);
         assert_eq!(everything.tracks, 2);
         assert_eq!(everything.listened, A_MINUTE * 2);
@@ -538,6 +549,7 @@ mod tests {
     #[test]
     fn time_spent_passing_through_tracks_is_listening_time_and_no_play() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         counted_at(&library, "Echoes", &[(Duration::ZERO, A_MINUTE)]);
         library
             .passed(Duration::from_secs(40))
@@ -549,6 +561,7 @@ mod tests {
         let week = library
             .statistics(Window::Week)
             .expect("the catalog answers for a week");
+
         assert_eq!(week.plays, 1, "a passing listen was counted as a play");
         assert_eq!(week.listened, A_MINUTE * 2);
 
@@ -558,12 +571,14 @@ mod tests {
             .last()
             .copied()
             .expect("the chart draws today");
+
         assert_eq!(today.plays, 1);
         assert_eq!(today.listened, A_MINUTE * 2);
 
         let most = library
             .most_listened(Window::Week, 10)
             .expect("the catalog answers for a week");
+
         assert_eq!(most.tracks.len(), 1);
         assert_eq!(most.tracks[0].listened, A_MINUTE);
     }
@@ -571,6 +586,7 @@ mod tests {
     #[test]
     fn the_days_a_chart_draws_have_no_gaps_in_them() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         counted_at(
             &library,
             "Echoes",
@@ -584,6 +600,7 @@ mod tests {
             SystemTime::now(),
         )
         .expect("the catalog answers for a week");
+
         assert_eq!(drawn.len(), 8, "a week is the day it began and seven since");
         assert!(
             drawn.windows(2).all(|pair| {
@@ -618,11 +635,13 @@ mod tests {
                     / SECONDS_PER_DAY
                     * SECONDS_PER_DAY,
             );
+
         let late_yesterday = now
             .duration_since(
                 today_began_in_utc - Duration::from_secs(SECONDS_PER_DAY) + LATE_IN_A_UTC_DAY,
             )
             .expect("late yesterday was before now");
+
         counted_at(&library, "Late", &[(late_yesterday, A_MINUTE)]);
 
         let east = Calendar::fixed(TWO_HOURS_EAST).expect("a fixed offset is a zone");
@@ -639,6 +658,7 @@ mod tests {
                 .map(|day| calendar.day_of(day.at))
         };
         let yesterday_in_utc = Calendar::utc().day_of(now) - 1;
+
         assert_eq!(
             played_on(&drawn_in_utc, &Calendar::utc()),
             Some(yesterday_in_utc)
@@ -660,6 +680,7 @@ mod tests {
         let new_years_midnight =
             UNIX_EPOCH + Duration::from_secs(THE_FIRST_OF_JANUARY_2024 * SECONDS_PER_DAY - AN_HOUR);
         let half_past_midnight = new_years_midnight + Duration::from_secs(AN_HOUR / 2);
+
         counted_at(
             &library,
             "New Year",
@@ -691,6 +712,7 @@ mod tests {
     #[test]
     fn a_ranked_row_says_who_made_it_and_what_pictures_it() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         counted_at(&library, "Echoes", &[(Duration::ZERO, A_MINUTE)]);
         library
             .inner()
@@ -725,8 +747,10 @@ mod tests {
     #[test]
     fn the_days_and_the_habits_read_together_are_the_ones_read_apart() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         counted_at(&library, "Lately", &[(TWO_DAYS, A_MINUTE)]);
         counted_at(&library, "Once", &[(A_FORTNIGHT, A_MINUTE * 3)]);
+
         let (calendar, now) = (Calendar::utc(), SystemTime::now());
 
         for window in [Window::Week, Window::Everything] {
@@ -749,8 +773,10 @@ mod tests {
     #[test]
     fn habits_keep_to_the_window_and_fold_each_listen_into_its_hour_and_weekday() {
         let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
         counted_at(&library, "Lately", &[(TWO_DAYS, A_MINUTE)]);
         counted_at(&library, "Once", &[(A_FORTNIGHT, A_MINUTE * 3)]);
+
         let lately = SystemTime::now()
             .checked_sub(TWO_DAYS)
             .expect("two days ago is a time");
@@ -794,6 +820,7 @@ mod tests {
     #[test]
     fn a_chart_of_nothing_at_all_draws_nothing() {
         let calendar = Calendar::utc();
+
         assert!(filled(&[], None, 10, &calendar).is_empty());
         assert!(filled(&[], Some(11), 10, &calendar).is_empty());
     }

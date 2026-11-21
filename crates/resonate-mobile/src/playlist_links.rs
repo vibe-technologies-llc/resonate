@@ -62,6 +62,7 @@ impl MobilePlayer {
             (false, _) if matched.tracks.is_empty() => return Err(Error::NoLocalMatches),
             (false, _) => self.make_playlist_named_free(&name, matched.tracks)?.0,
         };
+
         self.remember_link(id, &link, kept_in_step)?;
         if kept_in_step && !matched.unmatched.is_empty() {
             self.save_wanted(matched.unmatched)?;
@@ -89,6 +90,7 @@ impl MobilePlayer {
                 params![id as i64, kept_in_step],
             )
             .map_err(write_error)?;
+
         if changed == 0 {
             return Err(Error::NoPlaylistLink);
         }
@@ -109,6 +111,7 @@ impl MobilePlayer {
 
     pub fn refresh_linked_playlist(&self, id: u64) -> Result<RefreshedPlaylist> {
         self.require_online()?;
+
         let stored = link_of(&self.catalog.0.lock(), id)?.ok_or(Error::NoPlaylistLink)?;
         let link = stored.link()?;
         let Some((_, songs)) = self.songs_of_a_playlist(&link)? else {
@@ -125,6 +128,7 @@ impl MobilePlayer {
             true => self.save_wanted(matched.unmatched)? as u32,
             false => 0,
         };
+
         self.catalog
             .0
             .lock()
@@ -166,6 +170,7 @@ impl MobilePlayer {
             tracks: Vec::new(),
             unmatched: Vec::new(),
         };
+
         for song in songs.iter().take(SONGS_MATCHED_AT_MOST) {
             match local_match(&self.catalog.0.lock(), song)? {
                 Some(track) => matched.tracks.push(track),
@@ -192,10 +197,13 @@ impl MobilePlayer {
 
     fn mirrored(&self, id: u64, tracks: &[u64]) -> Result<(u32, u32)> {
         let held = rows_of(&self.catalog.0.lock(), id)?;
+
         if held == tracks {
             return Ok((0, 0));
         }
+
         let moved = (beyond(tracks, &held), beyond(&held, tracks));
+
         self.edit_playlist(id, None, |connection| replace_rows(connection, id, tracks))?;
         Ok(moved)
     }
@@ -207,10 +215,13 @@ impl MobilePlayer {
             .filter(|track| !held.contains(track))
             .copied()
             .collect::<Vec<_>>();
+
         if lacking.is_empty() {
             return Ok(0);
         }
+
         let mut rows = held;
+
         rows.extend_from_slice(&lacking);
         self.edit_playlist(id, None, |connection| replace_rows(connection, id, &rows))?;
         Ok(lacking.len() as u32)
@@ -415,6 +426,7 @@ mod tests {
     fn a_song_is_held_by_its_isrc_within_its_length_whatever_its_name_reads() {
         let player = player();
         let tagged = held(&player, "one", "A name of its own");
+
         player
             .catalog
             .0
@@ -424,6 +436,7 @@ mod tests {
                 [tagged as i64],
             )
             .expect("a code");
+
         let coded = |length: u64| SearchSong {
             isrcs: vec!["USRC17607839".to_owned()],
             duration_ms: Some(length),
@@ -484,7 +497,9 @@ mod tests {
     #[test]
     fn a_link_is_kept_in_step_due_once_its_hours_pass_and_forgotten_on_asking() {
         let player = player();
+
         held(&player, "one", "La femme d'argent");
+
         let imported = player
             .import_linked_playlist(
                 LINK.into(),
@@ -497,14 +512,18 @@ mod tests {
         player
             .keep_playlist_in_step(imported.id, true)
             .expect("kept in step");
+
         let due_now = player.playlists_due_a_refresh().expect("the due list");
+
         player
             .catalog
             .0
             .lock()
             .execute("UPDATE playlist_links SET refreshed = 0", [])
             .expect("an old refresh");
+
         let due_later = player.playlists_due_a_refresh().expect("the due list");
+
         player
             .forget_playlist_link(imported.id)
             .expect("the link forgotten");

@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::Udn;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Action {
     SetAvTransportUri,
     Play,
@@ -62,7 +62,7 @@ impl Action {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Asked {
     Description,
     Action(Action),
@@ -80,21 +80,21 @@ impl Asked {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum SearchOp {
     Bind,
     Send,
     Receive,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ServeOp {
     Bind,
     Listen,
     Route,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum FlacOp {
     Configure,
     Shape,

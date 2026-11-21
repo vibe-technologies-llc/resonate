@@ -6,7 +6,7 @@ const KEY_SEPARATOR: char = '\u{1f}';
 const MBID_PREFIX: &str = "mbid:";
 const NAMED_PREFIX: &str = "named:";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Recording {
     pub mbid: Option<Mbid>,
     pub title: String,
@@ -15,7 +15,7 @@ pub struct Recording {
     pub length: Option<Duration>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct RecordingKey(Box<str>);
 
 impl Recording {
@@ -88,6 +88,7 @@ mod tests {
     fn a_recording_with_an_mbid_is_keyed_by_it_alone() {
         let mut first = song("Echoes", "Pink Floyd", "Meddle");
         let mut second = song("echoes (live)", "Floyd", "Pompeii");
+
         first.mbid = Some(Mbid::new(ECHOES).expect("an mbid"));
         second.mbid = first.mbid.clone();
 
@@ -108,6 +109,7 @@ mod tests {
     fn one_side_knowing_the_mbid_still_matches_by_names() {
         let named = song("Echoes", "Pink Floyd", "Meddle");
         let mut identified = named.clone();
+
         identified.mbid = Some(Mbid::new(ECHOES).expect("an mbid"));
 
         assert!(named.names_the_same_song_as(&identified));

@@ -9,6 +9,7 @@ use crate::{toast, words};
 impl LibraryModel {
     pub fn track_heard(&mut self, heard: Played, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
+
         self.counted = None;
 
         self._counted = cx.spawn(async move |this, cx| {
@@ -50,6 +51,7 @@ impl LibraryModel {
 
         self._settled = cx.spawn(async move |this, cx| {
             before.await;
+
             let kept = cx
                 .background_executor()
                 .spawn(async move { library.listened(listen, heard) })
@@ -67,6 +69,7 @@ impl LibraryModel {
 
         self.running._passed = cx.spawn(async move |this, cx| {
             before.await;
+
             let kept = cx
                 .background_executor()
                 .spawn(async move { library.passed(heard) })
@@ -87,6 +90,7 @@ impl LibraryModel {
 
         self._settled = cx.spawn(async move |this, cx| {
             before.await;
+
             let kept = cx
                 .background_executor()
                 .spawn(async move { library.listened(listen, heard) })

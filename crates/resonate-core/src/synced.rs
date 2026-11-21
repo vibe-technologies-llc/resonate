@@ -1,4 +1,4 @@
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct SyncedSongs {
     pub favourites: bool,
     pub playlists: bool,
@@ -12,6 +12,7 @@ impl SyncedSongs {
 
     pub fn parse(named: &[&str]) -> Option<Self> {
         let mut songs = Self::default();
+
         for name in named {
             match name.trim() {
                 Self::FAVOURITES => songs.favourites = true,

@@ -114,6 +114,7 @@ impl Library {
         let library = self.shared();
         let progress = Arc::new(VaultWeighingProgress::default());
         let owned = Arc::clone(&progress);
+
         let thread = thread::Builder::new()
             .name("resonate-weigh".to_owned())
             .spawn(move || library.weigh(mending, &progress))
@@ -131,22 +132,26 @@ impl Library {
 
         let objects = self.vault_objects()?;
         let covers = vault.covers().map_err(refused)?;
+
         let mut weighed = VaultWeighing {
             objects: objects.len() as u64,
             covers: covers.len() as u64,
             ..VaultWeighing::default()
         };
+
         if weighed.held_nothing() {
             return Ok(weighed);
         }
         progress.counted(weighed.objects + weighed.covers);
 
         let mut moved_keys = Vec::new();
+
         for object in &objects {
             if progress.is_cancelled() {
                 weighed.cancelled = true;
                 return Ok(weighed);
             }
+
             let reads_back = match vault.verify(&object.path, object.form) {
                 Ok(reads_back) => reads_back,
                 Err(error) if vault.failed_itself(&error) => {
@@ -162,6 +167,7 @@ impl Library {
                     false
                 }
             };
+
             self.note_validated(&object.key, reads_back)?;
             if reads_back {
                 weighed.objects_held += 1;
@@ -176,6 +182,7 @@ impl Library {
         }
 
         let mut covers_moved_keys = Vec::new();
+
         for cover in &covers {
             if progress.is_cancelled() {
                 weighed.cancelled = true;
@@ -243,10 +250,12 @@ fn reframe(
     progress: &VaultWeighingProgress,
 ) -> Result<VaultReframed> {
     let mut reframed = VaultReframed::default();
+
     for path in unframed {
         if progress.is_cancelled() {
             break;
         }
+
         let outcome = vault.reframe(path).map_err(|source| Error::Vault {
             path: path.clone(),
             source: Box::new(source),

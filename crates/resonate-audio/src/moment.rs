@@ -9,7 +9,7 @@ static EPOCH: LazyLock<Instant> = LazyLock::new(Instant::now);
 
 const NANOS_A_SECOND: f64 = 1_000_000_000.0;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Moment(u64);
 
 impl Moment {
@@ -47,7 +47,7 @@ impl Moment {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Stamp {
     pub at: Moment,
     pub ahead: Frames,
@@ -59,7 +59,7 @@ impl Stamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct DeviceTime {
     pub clock_now: u64,
     pub read_at: u64,

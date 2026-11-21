@@ -171,6 +171,7 @@ mod tests {
         let whole = StatusKept::EVERYTHING.width(STATUS);
 
         let first = status_kept(whole - 1.0, STATUS);
+
         assert_eq!(
             first,
             StatusKept {
@@ -180,6 +181,7 @@ mod tests {
         );
 
         let least = status_kept(1.0, STATUS);
+
         assert_eq!(
             least,
             StatusKept {

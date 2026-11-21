@@ -66,6 +66,7 @@ impl Bench {
 
     fn report(&self, name: &str, elapsed: Duration) {
         let per_second = elapsed.as_secs_f64() / f64::from(AUDIO_SECONDS);
+
         println!(
             "{name:<52} {:>12.1} µs per s {:>9.3} % of a core",
             per_second * 1e6,
@@ -80,6 +81,7 @@ impl Bench {
         if env::var_os(HELD_TO_THE_CEILINGS).is_none() {
             return true;
         }
+
         let ceilings: Vec<(f64, &str)> = CEILINGS
             .lines()
             .filter_map(|line| {
@@ -88,6 +90,7 @@ impl Bench {
             })
             .collect();
         let mut held = true;
+
         for (name, share) in self.measured.borrow().iter() {
             let Some((ceiling, _)) = ceilings.iter().find(|(_, held)| held == name) else {
                 continue;
@@ -132,14 +135,17 @@ impl Bench {
         if !self.runs(name) {
             return;
         }
+
         let fastest = (0..CONSTRUCTIONS)
             .map(|_| {
                 let started = Instant::now();
+
                 build();
                 started.elapsed()
             })
             .min()
             .unwrap_or_default();
+
         println!(
             "{name:<52} {:>12.1} µs to build",
             fastest.as_secs_f64() * 1e6
@@ -150,15 +156,19 @@ impl Bench {
         if !self.runs(name) {
             return;
         }
+
         let fastest = (0..CONSTRUCTIONS)
             .map(|_| {
                 first();
+
                 let started = Instant::now();
+
                 build();
                 started.elapsed()
             })
             .min()
             .unwrap_or_default();
+
         println!(
             "{name:<52} {:>12.1} µs to build",
             fastest.as_secs_f64() * 1e6
@@ -169,7 +179,9 @@ impl Bench {
         if !self.runs(name) {
             return;
         }
+
         let started = Instant::now();
+
         build();
         println!(
             "{name:<52} {:>12.1} ms the first time",
@@ -204,9 +216,11 @@ fn signal(spec: StreamSpec) -> Vec<f64> {
         .map(|index| {
             let frame = (index / channels) as f64;
             let channel = (index % channels) as f64;
+
             noise ^= noise << 13;
             noise ^= noise >> 7;
             noise ^= noise << 17;
+
             let hiss = (noise >> 40) as f64 / 16_777_216.0 - 0.5;
             let low = (TAU * 440.0 * frame / rate + channel).sin();
             let high = (TAU * 3_100.0 * frame / rate + 2.0 * channel).sin();
@@ -228,11 +242,14 @@ fn through_stage(mut stage: Box<dyn Processor>, spec: StreamSpec, input: &[f64])
     let most = stage
         .prepare(spec, BLOCK)
         .expect("every benchmarked stage prepares");
+
     let mut output = vec![0.0; most.max(BLOCK) * widened];
 
     fastest(|| {
         stage.reset();
+
         let started = Instant::now();
+
         for block in input.chunks(BLOCK * channels) {
             black_box(stage.process(black_box(block), &mut output));
         }
@@ -247,7 +264,9 @@ fn through_chain(mut chain: Chain, spec: StreamSpec) -> Duration {
 
     fastest(|| {
         chain.reset();
+
         let started = Instant::now();
+
         for block in input.chunks(BLOCK * channels) {
             black_box(chain.process(black_box(block), &mut output));
         }
@@ -266,6 +285,7 @@ fn converting_into(format: SampleFormat) -> Duration {
 
     fastest(|| {
         let started = Instant::now();
+
         for _ in 0..blocks {
             staged.data_mut().write_f64(black_box(&carrier));
             black_box(&staged);
@@ -314,6 +334,7 @@ fn band(hertz: f64, decibels: f64, q: f64) -> Band {
 fn profile(bands: usize) -> Arc<Profile> {
     let lowest: f64 = 31.0;
     let highest: f64 = 16_000.0;
+
     let step = (highest / lowest).powf(1.0 / (bands.max(2) - 1) as f64);
     let shaped = (0..bands)
         .map(|index| {
@@ -348,6 +369,7 @@ fn dither(shaping: NoiseShaping) -> Box<dyn Processor> {
 
 fn main() {
     let bench = Bench::from_arguments();
+
     println!(
         "resonate-dsp stages over {AUDIO_SECONDS} s of audio, fastest of {RUNS}, built for {}",
         built_for()
@@ -356,6 +378,7 @@ fn main() {
     for (quality, named) in QUALITIES {
         for (from, to) in RATE_PAIRS {
             let name = format!("resample {named} {} to {}", kilohertz(from), kilohertz(to));
+
             bench.stage(&name, stereo(from), || {
                 Box::new(
                     Resampler::new(resampler(from, to, quality))
@@ -374,6 +397,7 @@ fn main() {
                 Quality::VeryHigh,
             )
         };
+
         bench.first_construction(&format!("design very high {named} phase"), || {
             black_box(Resampler::new(black_box(config)).expect("a benchmarked configuration"));
         });
@@ -390,6 +414,7 @@ fn main() {
                 phase,
                 ..resampler(from, to, Quality::VeryHigh)
             };
+
             bench.stage(&name, stereo(from), || {
                 Box::new(Resampler::new(config).expect("a benchmarked configuration"))
             });
@@ -401,10 +426,12 @@ fn main() {
         SampleRate::HZ_96000,
         Quality::LowLatency,
     );
+
     for (quality, named) in QUALITIES {
         for (from, to) in RATE_PAIRS {
             let pair = format!("{} to {}", kilohertz(from), kilohertz(to));
             let config = resampler(from, to, quality);
+
             bench.construction_after(
                 &format!("build {named} {pair}"),
                 || {
@@ -423,9 +450,11 @@ fn main() {
     }
 
     let rate = SampleRate::HZ_48000;
+
     for at in [rate, SampleRate::HZ_192000] {
         for bands in [10, MAX_BANDS] {
             let name = format!("equalise {bands} bands at {}", kilohertz(at));
+
             bench.stage(&name, stereo(at), || {
                 Box::new(Equaliser::new(profile(bands), at))
             });
@@ -445,6 +474,7 @@ fn main() {
             )
             .expect("a benchmarked response"),
         );
+
         bench.stage(
             &format!("convolve a second's response at {}", kilohertz(at)),
             stereo(at),
@@ -472,6 +502,7 @@ fn main() {
         )
         .expect("a benchmarked response"),
     );
+
     bench.stage(
         "convolve a quarter second two by two at 48k",
         stereo(rate),
@@ -480,6 +511,7 @@ fn main() {
 
     for at in [rate, SampleRate::HZ_192000] {
         let named = kilohertz(at);
+
         bench.stage(&format!("true peak guard at {named}"), stereo(at), || {
             Box::new(TruePeak::new())
         });
@@ -529,8 +561,10 @@ fn main() {
     );
     for designed_at in [SampleRate::HZ_44100, SampleRate::HZ_192000] {
         let name = format!("prepare threshold dither at {}", kilohertz(designed_at));
+
         bench.construction(&name, || {
             let mut stage = dither(black_box(NoiseShaping::Threshold));
+
             black_box(
                 stage
                     .prepare(black_box(stereo(designed_at)), BLOCK)

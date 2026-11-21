@@ -41,14 +41,14 @@ const SILENT_PACKETS_BEFORE_REFUSING: u64 = 64;
 const SILENCE_HANDED_OUT_AT_ONCE: usize = 8_192;
 
 #[must_use]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum DecodeStatus {
     Decoded,
     EndOfStream,
     Reformatted(StreamSpec),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Container {
     Wave,
     Aiff,
@@ -136,7 +136,7 @@ impl fmt::Display for Container {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Codec {
     Flac,
     Alac,
@@ -324,7 +324,7 @@ impl MediaInfo {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Delivery {
     pub format: SampleFormat,
     pub packing: Packing,
@@ -489,6 +489,7 @@ impl Coded {
     fn relink(&mut self, location: &MediaLocation) -> Result<()> {
         let (track, params) = container::audio_track(self.reader.as_ref(), location)?;
         let id = StreamTrackId(track.id);
+
         let spec = container::stream_spec(params, location, id)?;
 
         self.successor = Some(decoder_for(params, id, location)?);
@@ -510,7 +511,9 @@ impl Coded {
 
     fn rewind_to_the_head(&mut self, location: &MediaLocation) -> Result<()> {
         let spent = mem::replace(&mut self.reader, Box::new(Spent::default()));
+
         self.reader = container::reopened(spent, location)?;
+
         let (track, params) = container::audio_track(self.reader.as_ref(), location)?;
         let id = StreamTrackId(track.id);
 
@@ -537,9 +540,11 @@ impl Coded {
         if let Some(successor) = self.successor.take() {
             self.decoder = successor;
         }
+
         let Some(shape) = mpa::shape_of(self.params.codec, &packet.data) else {
             return Ok(());
         };
+
         if self.framing.is_some_and(|seen| seen != shape) {
             tracing::debug!(%location, "an MPEG audio frame changes its rate or channels; its decoder is made afresh");
             self.decoder = decoder_for(&self.params, self.track, location)?;
@@ -632,6 +637,7 @@ impl Decoder {
         match opened {
             Ok((mut decoder, _)) => {
                 stood.told_over(&mut decoder.info);
+
                 let info = decoder.info.clone();
                 Some((decoder, info))
             }
@@ -650,8 +656,10 @@ impl Decoder {
         if let Some(stood) = Self::stood_in(sources, location, Some(span)) {
             return Ok(stood);
         }
+
         let (mut decoder, _) = Self::build(container::open_media(sources, location)?, location)?;
         let cut = cue::cut_for(sources, location, &decoder.info);
+
         let info = decoder.confine(span, cut.as_ref())?;
         Ok((decoder, info))
     }
@@ -678,6 +686,7 @@ impl Decoder {
     {
         let (mut decoder, _) = Self::open_reader(reader, location)?;
         let cut = decoder.info.cue.clone();
+
         let info = decoder.confine(span, cut.as_ref())?;
         Ok((decoder, info))
     }
@@ -691,6 +700,7 @@ impl Decoder {
         } else {
             if self.info.is_seekable {
                 let landed = self.seek_reader(start)?;
+
                 self.restart(landed)?;
             }
             if self.position < start {
@@ -728,6 +738,7 @@ impl Decoder {
             Opened::Coded(coded) => {
                 let (track, params) = container::audio_track(coded.reader.as_ref(), location)?;
                 let id = StreamTrackId(track.id);
+
                 let decoder = decoder_for(params, id, location)?;
                 let params = params.clone();
 
@@ -780,6 +791,7 @@ impl Decoder {
             origins,
             in_full: None,
         };
+
         decoder.open_on_the_music()?;
 
         Ok((decoder, info))
@@ -817,6 +829,7 @@ impl Decoder {
         if !self.spool.as_ref().is_some_and(|spool| spool.is_whole()) {
             return None;
         }
+
         let media = self.spool.take()?.whole()?;
         match self.settled_over(media) {
             Ok(settled) => {
@@ -833,6 +846,7 @@ impl Decoder {
     fn settled_over(&self, media: Media) -> Result<Self> {
         let (mut settled, whole) =
             Self::build(container::open(media, &self.location)?, &self.location)?;
+
         settled.deliver(self.delivery);
         settled.changes = self.changes;
         settled.announced = self.announced;
@@ -840,6 +854,7 @@ impl Decoder {
 
         let open_ended = self.limit.is_none() && self.origin == Frames::ZERO;
         let mut info = self.info.clone();
+
         info.is_seekable = whole.is_seekable;
         if open_ended {
             info.duration = whole.duration;
@@ -857,6 +872,7 @@ impl Decoder {
                 settled.splice_to(self.position)?;
             } else {
                 let landed = settled.seek_reader(self.position)?;
+
                 settled.restart(landed)?;
                 settled.discard_to(self.position)?;
             }
@@ -918,6 +934,7 @@ impl Decoder {
                 Packing::Samples => Delivery::samples(delivery.format),
             },
         };
+
         if wanted == self.delivery {
             return;
         }
@@ -979,6 +996,7 @@ impl Decoder {
             Held::Coded(_) => self.coded_block(out, wanted)?,
             Held::Dsd(_) => {
                 let frames = self.dsd_block(out, wanted)?;
+
                 if let Some(in_full) = &mut self.in_full {
                     widened_in_full(out.data(), in_full);
                 }
@@ -990,7 +1008,9 @@ impl Decoder {
             out.set_frames(0);
             return Ok(DecodeStatus::EndOfStream);
         }
+
         let kept = self.on_the_clock(frames);
+
         self.position = self.position.saturating_add(kept);
         Ok(DecodeStatus::Decoded)
     }
@@ -1002,10 +1022,12 @@ impl Decoder {
         if self.pending() == 0 && self.fill()? == DecodeStatus::EndOfStream {
             return Ok(None);
         }
+
         let Held::Coded(coded) = &self.reading else {
             return Ok(None);
         };
         let sounding = coded.sounding;
+
         if sounding.rate == self.announced.rate && sounding.channels == self.announced.channels {
             return Ok(None);
         }
@@ -1029,11 +1051,14 @@ impl Decoder {
     fn on_the_clock(&mut self, frames: usize) -> Frames {
         let heard = self.announced.rate;
         let clock = self.clock();
+
         if heard == clock {
             return Frames(frames as u64);
         }
+
         let whole = u128::from(frames as u64) * u128::from(clock.hz()) + u128::from(self.carried);
         let per = u128::from(heard.hz());
+
         self.carried = u64::try_from(whole % per).unwrap_or(0);
         Frames(u64::try_from(whole / per).unwrap_or(u64::MAX))
     }
@@ -1050,6 +1075,7 @@ impl Decoder {
         if self.pending() == 0 && self.fill()? == DecodeStatus::EndOfStream {
             return Ok(0);
         }
+
         let wanted = self.heard_within(wanted);
 
         let Held::Coded(coded) = &mut self.reading else {
@@ -1062,6 +1088,7 @@ impl Decoder {
 
         let frames = if coded.silent {
             let taking = taking.min(SILENCE_HANDED_OUT_AT_ONCE);
+
             out.set_frames(taking);
             silence_out(out.data_mut());
             if let Some(in_full) = &mut self.in_full {
@@ -1071,6 +1098,7 @@ impl Decoder {
         } else {
             let decoded = coded.decoder.last_decoded();
             let block = decoded.slice(coded.consumed..coded.consumed + taking);
+
             out.set_frames(block.frames());
             copy_out(&block, out.data_mut());
             if let Some(in_full) = &mut self.in_full {
@@ -1097,6 +1125,7 @@ impl Decoder {
                 into: Frames::ZERO,
             };
             let left = splicing.left.get();
+
             if left == 0 {
                 self.enter(next)?;
                 continue;
@@ -1108,6 +1137,7 @@ impl Decoder {
                     let taking = usize::try_from(taking)
                         .unwrap_or(usize::MAX)
                         .min(SILENCE_HANDED_OUT_AT_ONCE);
+
                     out.set_frames(taking);
                     silence_out(out.data_mut());
                     if let Some(in_full) = &mut self.in_full {
@@ -1117,6 +1147,7 @@ impl Decoder {
                 }
                 Edit::Music { .. } => self.coded_block(out, Some(taking))?,
             };
+
             if frames == 0 {
                 self.enter(next)?;
                 continue;
@@ -1124,6 +1155,7 @@ impl Decoder {
 
             if let Some(splicing) = self.splicing.as_mut() {
                 let handed = Frames(frames as u64);
+
                 splicing.left = splicing.left.saturating_sub(handed);
                 if matches!(heard, Edit::Music { .. }) {
                     splicing.music = splicing.music.saturating_add(handed);
@@ -1198,9 +1230,12 @@ impl Decoder {
         }
         if self.info.is_seekable {
             let landed = self.seek_reader(to)?;
+
             self.reset();
             self.skip(landed.short_of_the_music.get())?;
+
             let skipped = self.skip(to.get().saturating_sub(landed.at.get()))?;
+
             return Ok(Some(landed.at.saturating_add(Frames(skipped))));
         }
         if to < standing {
@@ -1241,10 +1276,12 @@ impl Decoder {
         }
 
         let wanted = self.origin.saturating_add(to);
+
         if self.splicing.is_some() {
             self.splice_to(wanted)?;
         } else {
             let landed = self.seek_reader(wanted)?;
+
             self.restart(landed)?;
             self.discard_to(wanted)?;
         }
@@ -1317,6 +1354,7 @@ impl Decoder {
                 None if origins.len() > 1 => Trims::of(&packet).tail_alone(),
                 None => Trims::NONE,
             };
+
             coded.take_on(&packet, location)?;
 
             let (mut frames, silent) = match coded.decoder.decode(&packet) {
@@ -1342,10 +1380,13 @@ impl Decoder {
                     } else {
                         span
                     };
+
                     coded.holes = coded.holes.noted(span.frames);
+
                     let refused = coded.undecodable == Undecodable::Refused
                         || (!coded.sounded
                             && coded.holes.packets >= SILENT_PACKETS_BEFORE_REFUSING);
+
                     if refused {
                         return Err(Error::PacketUndecodable {
                             location: location.clone(),
@@ -1353,7 +1394,9 @@ impl Decoder {
                             holes: coded.holes.packets,
                         });
                     }
+
                     let lasted = usize::try_from(span.frames.get()).unwrap_or(usize::MAX);
+
                     tracing::debug!(
                         reason,
                         lasted,
@@ -1366,6 +1409,7 @@ impl Decoder {
                 }
             };
             let lead = trims.lead.min(frames);
+
             frames = frames.saturating_sub(lead).saturating_sub(trims.tail);
             if frames == 0 {
                 continue;
@@ -1387,6 +1431,7 @@ impl Decoder {
 
     fn discard_to(&mut self, to: Frames) -> Result<()> {
         let skipped = self.skip(to.get().saturating_sub(self.position.get()))?;
+
         self.position = self.position.saturating_add(Frames(skipped));
         Ok(())
     }
@@ -1401,13 +1446,16 @@ impl Decoder {
                     if self.pending() == 0 && self.fill()? == DecodeStatus::EndOfStream {
                         break;
                     }
+
                     let clock = self.clock();
                     let Held::Coded(coded) = &mut self.reading else {
                         break;
                     };
                     let heard = coded.sounding.rate;
+
                     let wanted = Frames(left).rescaled(clock, heard).get().max(1);
                     let taking = wanted.min(coded.pending as u64) as usize;
+
                     coded.consumed += taking;
                     coded.pending -= taking;
                     Frames(taking as u64)
@@ -1452,6 +1500,7 @@ impl Decoder {
             coded.rewind_to_the_head(location)?;
         }
         coded.walk_to_link(index, location)?;
+
         let Some(linked) = coded.linked.filter(|linked| linked.index == index) else {
             return self.seek_the_first_link(to);
         };
@@ -1495,6 +1544,7 @@ impl Decoder {
         {
             coded.rewind_to_the_head(&self.location)?;
         }
+
         let Self {
             location,
             reading,
@@ -1520,6 +1570,7 @@ impl Decoder {
             .iter()
             .find(|track| track.id == coded.track.0)
             .map(|track| track.start_ts);
+
         let asked = timeline.timestamp(to).map(|ts| {
             let rolled = timeline.rolled_back(ts, lead_in);
             starts_at.map_or(rolled, |start| rolled.max(start))
@@ -1528,6 +1579,7 @@ impl Decoder {
             Some(_) => to,
             None => to.saturating_sub(lead_in),
         };
+
         let seek_to = match asked {
             Some(ts) => SeekTo::Timestamp {
                 ts,
@@ -1634,11 +1686,13 @@ fn sounding_of(
     track: StreamTrackId,
 ) -> Result<Option<StreamSpec>> {
     let channels = spec.channels();
+
     if spec.rate() == sounding.rate.hz()
         && channels.count() == usize::from(sounding.channel_count().get())
     {
         return Ok(None);
     }
+
     let rate = SampleRate::new(spec.rate()).map_err(|_| Error::RateNotRepresentable {
         location: location.clone(),
         track,
@@ -1780,7 +1834,9 @@ mod tests {
             if self.info.is_empty() {
                 self.info.extend_from_slice(b"INFO");
             }
+
             let mut terminated = value.as_bytes().to_vec();
+
             terminated.push(0);
             chunk(&mut self.info, id, &terminated);
             self
@@ -1788,6 +1844,7 @@ mod tests {
 
         fn with_text(mut self, id: &[u8; 4], value: &str) -> Self {
             let mut data = vec![UTF8];
+
             data.extend_from_slice(value.as_bytes());
             frame(&mut self.id3, id, &data);
             self
@@ -1795,6 +1852,7 @@ mod tests {
 
         fn with_user_text(mut self, description: &str, value: &str) -> Self {
             let mut data = vec![UTF8];
+
             data.extend_from_slice(description.as_bytes());
             data.push(0);
             data.extend_from_slice(value.as_bytes());
@@ -1805,11 +1863,13 @@ mod tests {
         fn build(&self, samples: &[i32]) -> Cursor<Vec<u8>> {
             let bytes_per_sample = usize::from(self.bits / 8);
             let mut data = Vec::with_capacity(samples.len() * bytes_per_sample);
+
             for sample in samples {
                 if self.float {
                     data.extend_from_slice(&(*sample as f32).to_le_bytes());
                 } else {
                     let encoded = sample.to_le_bytes();
+
                     data.extend_from_slice(&encoded[..bytes_per_sample]);
                 }
             }
@@ -1820,10 +1880,13 @@ mod tests {
             };
 
             let mut fmt = Vec::new();
+
             fmt.extend_from_slice(&tag.to_le_bytes());
             fmt.extend_from_slice(&CHANNELS.to_le_bytes());
             fmt.extend_from_slice(&RATE.to_le_bytes());
+
             let block_align = CHANNELS * self.bits / 8;
+
             fmt.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
             fmt.extend_from_slice(&block_align.to_le_bytes());
             fmt.extend_from_slice(&self.bits.to_le_bytes());
@@ -1835,6 +1898,7 @@ mod tests {
             }
 
             let mut body = Vec::new();
+
             body.extend_from_slice(b"WAVE");
             chunk(&mut body, b"fmt ", &fmt);
             if !self.info.is_empty() && !self.info_trails {
@@ -1846,6 +1910,7 @@ mod tests {
             }
 
             let mut file = Vec::new();
+
             if !self.id3.is_empty() {
                 file.extend_from_slice(b"ID3\x04\x00\x00");
                 file.extend_from_slice(&synchsafe(self.id3.len() as u32));
@@ -1918,6 +1983,7 @@ mod tests {
 
     fn drain(decoder: &mut Decoder, out: &mut AudioBuffer) -> Vec<i32> {
         let mut collected = Vec::new();
+
         while decoder.next_block(out).expect("a well-formed wav decodes") == DecodeStatus::Decoded {
             collected.extend(integers(out));
         }
@@ -1944,6 +2010,7 @@ mod tests {
         assert!(info.is_seekable);
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(drain(&mut decoder, &mut out), samples);
         assert_eq!(decoder.position(), Frames(FRAMES as u64));
     }
@@ -1957,6 +2024,7 @@ mod tests {
         assert_eq!(info.bits_per_coded_sample, Some(24));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(drain(&mut decoder, &mut out), samples);
     }
 
@@ -1975,6 +2043,7 @@ mod tests {
         let (mut decoder, info) = open(Wav::pcm(16).build(&samples));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(
             decoder.next_block(&mut out).expect("a first block"),
             DecodeStatus::Decoded
@@ -1983,6 +2052,7 @@ mod tests {
             decoder.next_block(&mut out).expect("a second block"),
             DecodeStatus::Decoded
         );
+
         let store = out.as_bytes().as_ptr();
 
         for _ in 0..8 {
@@ -2002,6 +2072,7 @@ mod tests {
 
         for target in [1_u64, 999, 4_097, 31_337] {
             let landed = decoder.seek(Frames(target)).expect("a seekable wav seeks");
+
             assert_eq!(landed, Frames(target));
             assert_eq!(decoder.position(), Frames(target));
 
@@ -2011,8 +2082,10 @@ mod tests {
                     .expect("a block after the seek"),
                 DecodeStatus::Decoded
             );
+
             let first = integers(&out);
             let expected = target as usize * usize::from(CHANNELS);
+
             assert_eq!(
                 first.first().copied(),
                 samples.get(expected).copied(),
@@ -2026,6 +2099,7 @@ mod tests {
         let (mut decoder, _) = open(Wav::pcm(16).build(&ramp(16)));
 
         let refused = decoder.seek(Frames(FRAMES as u64 + 1));
+
         assert!(matches!(refused, Err(Error::SeekOutOfRange { .. })));
     }
 
@@ -2033,17 +2107,21 @@ mod tests {
     fn the_output_format_can_be_forced_to_f32_for_the_dsp_chain() {
         let samples = ramp(16);
         let (mut decoder, info) = open(Wav::pcm(16).build(&samples));
+
         decoder.set_output_format(SampleFormat::F32);
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(
             decoder.next_block(&mut out).expect("a block"),
             DecodeStatus::Decoded
         );
 
         assert_eq!(out.spec().format, SampleFormat::F32);
+
         let decoded = out.as_f32().expect("an f32 buffer");
         let expected = samples[0] as f32 / SampleFormat::S16.full_scale();
+
         assert!((decoded[0] - expected).abs() < 1e-6, "got {}", decoded[0]);
     }
 
@@ -2100,6 +2178,7 @@ mod tests {
     fn a_decoder_confined_to_a_span_remembers_how_long_the_whole_file_runs() {
         let span = FrameSpan::between(Frames(1_000), Frames(4_000));
         let samples = ramp(16);
+
         let (_, info) = spanned(Wav::pcm(16).build(&samples), span);
         let (_, whole) = Decoder::open_reader(
             Wav::pcm(16).build(&samples),
@@ -2115,9 +2194,11 @@ mod tests {
     fn a_decoder_confined_to_a_span_hands_back_exactly_those_frames() {
         let samples = ramp(16);
         let span = FrameSpan::between(Frames(1_000), Frames(4_000));
+
         let (mut decoder, info) = spanned(Wav::pcm(16).build(&samples), span);
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(drain(&mut decoder, &mut out), slice_of(&samples, span));
         assert_eq!(decoder.position(), Frames(3_000));
     }
@@ -2126,11 +2207,13 @@ mod tests {
     fn a_span_with_no_end_runs_to_the_end_of_the_file() {
         let samples = ramp(16);
         let span = FrameSpan::starting(Frames(FRAMES as u64 - 500));
+
         let (mut decoder, info) = spanned(Wav::pcm(16).build(&samples), span);
 
         assert_eq!(info.duration, Some(Frames(500)));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(drain(&mut decoder, &mut out), slice_of(&samples, span));
     }
 
@@ -2138,11 +2221,13 @@ mod tests {
     fn a_span_reaching_past_the_file_is_cut_back_to_what_it_holds() {
         let samples = ramp(16);
         let span = FrameSpan::between(Frames(FRAMES as u64 - 200), Frames(FRAMES as u64 + 9_000));
+
         let (mut decoder, info) = spanned(Wav::pcm(16).build(&samples), span);
 
         assert_eq!(info.duration, Some(Frames(200)));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(
             drain(&mut decoder, &mut out).len(),
             200 * usize::from(CHANNELS)
@@ -2168,11 +2253,13 @@ FILE "Meddle.wav" WAVE
     impl Rip {
         fn cut_by(sheet: &str) -> Self {
             static NEXT: AtomicU32 = AtomicU32::new(0);
+
             let folder = env::temp_dir().join(format!(
                 "resonate-rip-{}-{}",
                 process::id(),
                 NEXT.fetch_add(1, atomic::Ordering::Relaxed)
             ));
+
             fs::create_dir_all(&folder).expect("a writable temporary folder");
             fs::write(
                 folder.join("Meddle.wav"),
@@ -2250,6 +2337,7 @@ FILE "Meddle.wav" WAVE
     fn a_seek_inside_a_span_is_measured_from_where_the_span_starts() {
         let samples = ramp(16);
         let span = FrameSpan::between(Frames(1_000), Frames(4_000));
+
         let (mut decoder, info) = spanned(Wav::pcm(16).build(&samples), span);
 
         assert_eq!(
@@ -2259,8 +2347,10 @@ FILE "Meddle.wav" WAVE
         assert_eq!(decoder.position(), Frames(500));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         let rest = drain(&mut decoder, &mut out);
         let wanted = slice_of(&samples, FrameSpan::between(Frames(1_500), Frames(4_000)));
+
         assert_eq!(rest, wanted);
     }
 
@@ -2300,10 +2390,12 @@ FILE "Meddle.wav" WAVE
     fn heard_as(samples: &[i32], edits: &[Edit]) -> Vec<i32> {
         let channels = usize::from(CHANNELS);
         let mut heard = Vec::new();
+
         for edit in edits {
             match *edit {
                 Edit::Music { from, lasting } => {
                     let start = SPLICE_PRIMING + from.get();
+
                     heard.extend(slice_of(
                         samples,
                         FrameSpan::between(Frames(start), Frames(start + lasting.get())),
@@ -2333,12 +2425,14 @@ FILE "Meddle.wav" WAVE
     fn a_spliced_file_plays_its_edits_in_the_order_they_are_listed() {
         let samples = ramp(24);
         let edits = cut_reordered_and_silenced();
+
         let (mut decoder, info) = spliced(&samples, edits.clone());
 
         assert_eq!(info.duration, Some(Frames(21_000)));
         assert_eq!(info.priming(), Frames(SPLICE_PRIMING));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(drain(&mut decoder, &mut out), heard_as(&samples, &edits));
         assert_eq!(decoder.position(), Frames(21_000));
     }
@@ -2347,6 +2441,7 @@ FILE "Meddle.wav" WAVE
     fn a_seek_into_a_later_edit_lands_where_that_edit_reads() {
         let samples = ramp(24);
         let edits = cut_reordered_and_silenced();
+
         let (mut decoder, info) = spliced(&samples, edits.clone());
         let mut out = AudioBuffer::empty(info.spec);
         let whole = heard_as(&samples, &edits);
@@ -2363,6 +2458,7 @@ FILE "Meddle.wav" WAVE
                 "a seek to {target} heard something else"
             );
         }
+
         assert_eq!(
             decoder.seek(Frames(21_000)).expect("a seek to the end"),
             Frames(21_000)
@@ -2374,14 +2470,17 @@ FILE "Meddle.wav" WAVE
     fn a_span_of_a_spliced_file_is_cut_from_what_the_edits_play() {
         let samples = ramp(24);
         let edits = cut_reordered_and_silenced();
+
         let (mut decoder, _) = spliced(&samples, edits.clone());
         let span = FrameSpan::between(Frames(2_000), Frames(16_000));
         let channels = usize::from(CHANNELS);
 
         let info = decoder.confine(span, None).expect("a span inside");
+
         assert_eq!(info.duration, Some(Frames(14_000)));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(
             drain(&mut decoder, &mut out),
             heard_as(&samples, &edits)[2_000 * channels..16_000 * channels]
@@ -2397,11 +2496,14 @@ FILE "Meddle.wav" WAVE
             music(0, 4_000),
             music(8_000, 1_000),
         ];
+
         let (mut decoder, info) = spliced(&samples, edits.clone());
+
         decoder.info.is_seekable = false;
 
         let mut out = AudioBuffer::empty(info.spec);
         let kept = [edits[0], edits[1], edits[3]];
+
         assert_eq!(drain(&mut decoder, &mut out), heard_as(&samples, &kept));
     }
 
@@ -2424,19 +2526,23 @@ FILE "Meddle.wav" WAVE
     fn a_pipe_too_long_to_hold_is_spooled_on_disc_and_seeks_once_it_has_all_arrived() {
         let samples = ramp(16);
         let location = MediaLocation::local("long.wav");
+
         let media = Media {
             stream: Box::new(SourceReading::new(Piped(Wav::pcm(16).build(&samples)))),
             hint: FormatHint::of(&location),
         };
         let opened = container::open_spooling(media, &location, 1_024).expect("a pipe opens");
         let (mut decoder, info) = Decoder::build(opened, &location).expect("a pipe decodes");
+
         assert!(!info.is_seekable, "a long pipe was read whole into memory");
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(
             decoder.next_block(&mut out).expect("a block decodes"),
             DecodeStatus::Decoded
         );
+
         let mut heard = integers(&out);
 
         let waited = std::time::Instant::now();
@@ -2444,16 +2550,20 @@ FILE "Meddle.wav" WAVE
             if let Some(settled) = decoder.settle_the_spool() {
                 break settled.clone();
             }
+
             assert!(
                 waited.elapsed() < std::time::Duration::from_secs(10),
                 "the spool never had it all"
             );
+
             std::thread::sleep(std::time::Duration::from_millis(5));
         };
+
         assert!(settled.is_seekable);
         assert_eq!(settled.duration, Some(Frames(FRAMES as u64)));
 
         heard.extend(drain(&mut decoder, &mut out));
+
         assert_eq!(
             heard, samples,
             "the stream skipped or repeated as it settled"
@@ -2494,6 +2604,7 @@ FILE "Meddle.wav" WAVE
         let (mut decoder, info) = piped(Wav::pcm(16).build(&samples));
 
         let mut out = AudioBuffer::empty(info.spec);
+
         assert_eq!(drain(&mut decoder, &mut out), samples);
     }
 
@@ -2567,6 +2678,7 @@ FILE "Meddle.wav" WAVE
     #[test]
     fn probing_a_file_reports_the_same_stream_the_decoder_will_produce() {
         let path = std::env::temp_dir().join("resonate-probe-agreement.wav");
+
         std::fs::write(
             &path,
             Wav::pcm(24)
@@ -2578,6 +2690,7 @@ FILE "Meddle.wav" WAVE
 
         let sources = Sources::local();
         let location = MediaLocation::local(&path);
+
         let probed = crate::probe(&sources, &location).expect("a well-formed wav probes");
         let (_, opened) = Decoder::open(&sources, &location).expect("a well-formed wav opens");
         let _ = std::fs::remove_file(&path);
@@ -2615,12 +2728,15 @@ FILE "Meddle.wav" WAVE
     #[test]
     fn a_row_something_stands_in_for_is_decoded_from_it_under_the_tags_it_was_given() {
         const SOURCE_BITS: u8 = 12;
+
         let object = std::env::temp_dir().join(format!("resonate-stood-in-{}.wav", process::id()));
         let samples = ramp(16);
+
         fs::write(&object, Wav::pcm(16).build(&samples).into_inner()).expect("a writable temp dir");
 
         let row = MediaLocation::local("/music/gone/Meddle.flac");
         let span = FrameSpan::between(Frames(44_100), Frames(88_200));
+
         let sources = Sources::local().standing_in(std::sync::Arc::new(Standing {
             row: row.clone(),
             span: Some(span),
@@ -2632,6 +2748,7 @@ FILE "Meddle.wav" WAVE
             Decoder::open_span(&sources, &row, span).expect("the object stands in");
         let probed = crate::probe_span(&sources, &row, span).expect("the object stands in");
         let mut out = AudioBuffer::empty(info.spec);
+
         let decoded = drain(&mut decoder, &mut out);
         let _ = fs::remove_file(&object);
 
@@ -2657,12 +2774,14 @@ FILE "Meddle.wav" WAVE
     fn a_stream_that_ends_mid_packet_ends_the_track_rather_than_failing_it() {
         let samples = ramp(16);
         let mut truncated = Wav::pcm(16).build(&samples).into_inner();
+
         truncated.truncate(truncated.len() / 2);
 
         let (mut decoder, info) = open(Cursor::new(truncated));
         let mut out = AudioBuffer::empty(info.spec);
 
         let decoded = drain(&mut decoder, &mut out);
+
         assert!(!decoded.is_empty(), "nothing decoded before the truncation");
         assert!(decoded.len() < samples.len());
         assert_eq!(decoded.as_slice(), &samples[..decoded.len()]);

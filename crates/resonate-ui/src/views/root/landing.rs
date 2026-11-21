@@ -45,6 +45,7 @@ impl RootView {
             TopEntry::Found(at) => {
                 if let Some(found) = library.found().get(at).cloned() {
                     let zone = self.zone_acted_on();
+
                     self.library
                         .update(cx, |library, cx| library.fetch_and_play(found, zone, cx));
                 }
@@ -121,12 +122,14 @@ impl RootView {
             }
             LiftedTo::Playlist(playlist) => {
                 let cuts = tracks.iter().map(Cut::of).collect();
+
                 self.library.update(cx, |library, cx| {
                     library.add_to_playlist(playlist, cuts, cx)
                 });
             }
             LiftedTo::PlaylistAt(playlist, at) => {
                 let cuts = tracks.iter().map(Cut::of).collect();
+
                 self.library.update(cx, |library, cx| {
                     library.insert_into_playlist(playlist, cuts, at, drawn, cx);
                 });
@@ -162,6 +165,7 @@ impl RootView {
         match self.search_in_front(cx) {
             Some(SearchShows::Top) => {
                 let rows = TopRun::of(self.library.read(cx)).len();
+
                 return (rows > 0).then_some((Shift::Listing(Listed::Top), rows));
             }
             Some(SearchShows::Songs | SearchShows::Albums | SearchShows::Artists) | None => {}
@@ -176,6 +180,7 @@ impl RootView {
                 let library = self.library.read(cx);
                 let Some(opened) = library.opened() else {
                     let rows = library.playlists().len();
+
                     return (rows > 0).then_some((Shift::Listing(Listed::Playlists), rows));
                 };
                 let rows = library.entries().len();
@@ -204,6 +209,7 @@ impl RootView {
                     Shift::Listing(listed) if shelved.rows_of(listed) > 0 => Some(listed),
                     _ => None,
                 });
+
                 let listed = reached.or_else(|| shelved.opening())?;
 
                 Some((Shift::Listing(listed), shelved.rows_of(listed)))
@@ -216,11 +222,13 @@ impl RootView {
             Pane::Suggestions => {
                 let pane = self.suggestions.read(cx);
                 let offered = pane.offered();
+
                 let Some(opened) = pane
                     .opened()
                     .filter(|opened| offered.iter().any(|held| held.query == opened.query))
                 else {
                     let rows = offered.len();
+
                     return (rows > 0).then_some((Shift::Listing(Listed::Offered), rows));
                 };
                 let rows = opened.tracks.len();
@@ -285,6 +293,7 @@ impl RootView {
                     ArtistsDrawn::List => row,
                     ArtistsDrawn::Grid => row / self.grid_columns(),
                 };
+
                 self.scrolls(cx)
                     .artist_rows
                     .scroll_to_item(at, ScrollStrategy::Center);
@@ -294,6 +303,7 @@ impl RootView {
                     PlaylistsDrawn::List => row,
                     PlaylistsDrawn::Grid => row / self.grid_columns(),
                 };
+
                 self.scrolls(cx)
                     .all_playlist_rows
                     .scroll_to_item(at, ScrollStrategy::Center);

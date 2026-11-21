@@ -94,6 +94,7 @@ impl HifiApi {
     fn routed(&self, route: &str) -> Result<Option<Value>> {
         let op = ProviderOp::Browse;
         let url = format!("{}{route}", self.server);
+
         let asked = self.asked(op, &url)?;
         let Some(bytes) = self.waited_out(op, asked)? else {
             return Ok(None);
@@ -115,6 +116,7 @@ impl HifiApi {
                 .collect(),
             ..Found::default()
         };
+
         if self.is_keyed() {
             return Ok(found);
         }
@@ -125,6 +127,7 @@ impl HifiApi {
             );
             let held: V1Found = part(Some(&answered.data));
             let held = held.found();
+
             found.artists.extend(held.artists);
             found.albums.extend(held.albums);
         }
@@ -139,6 +142,7 @@ impl HifiApi {
         let mut held = album_of(id, songs_of_entries(entries.items));
         let named: Option<V1Album> =
             data.and_then(|data| serde_json::from_value(data.clone()).ok());
+
         if let Some(named) = named.and_then(V1Album::album) {
             held.album = Album {
                 id: id.clone(),
@@ -194,6 +198,7 @@ impl HifiApi {
         let op = ProviderOp::Stream;
         let url = format!("{}/file/?id={}", self.server, track.0);
         let bearer = keyed.bearer();
+
         let response = keyed
             .relay
             .get(&url)
@@ -201,12 +206,14 @@ impl HifiApi {
             .call()
             .map_err(|error| unreached(self.asker.source.clone(), op, error))?;
         let status = response.status().as_u16();
+
         if status != WHOLE {
             return Err(self.refusal(op, status));
         }
         if is_a_document(response.body().mime_type()) {
             return Err(self.asker.unreadable(op));
         }
+
         let reader = Seeking::continuing(
             keyed.relay.clone(),
             url,
@@ -270,9 +277,11 @@ impl PlaysInPlace for HifiApi {
 
     fn streamed(&self, song: &Id) -> Result<Streamed> {
         let track = TrackId(track_id(&self.asker.source, ProviderOp::Stream, song)?);
+
         if let Some(keyed) = &self.secret {
             return self.relayed_stream(keyed, track);
         }
+
         let media = self.media(track)?;
         self.player().streamed(media)
     }
@@ -304,6 +313,7 @@ impl PlaysInPlace for HifiApi {
             Named::Album(id) => Ok(self.album(id)?.songs),
             Named::Artist(id) => {
                 let mut songs = Vec::new();
+
                 for album in self.artist(id)?.albums {
                     songs.extend(self.album(&album.id)?.songs);
                 }

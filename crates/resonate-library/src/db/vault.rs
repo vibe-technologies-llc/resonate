@@ -70,6 +70,7 @@ impl Library {
         };
 
         let mut pruned = Pruned::default();
+
         for object in self.vault_objects_nothing_names()? {
             match applying.forgets(&vault, &object.path) {
                 Ok(taken) => {
@@ -89,6 +90,7 @@ impl Library {
         let landed_before = SystemTime::now()
             .checked_sub(LANDING_GRACE)
             .unwrap_or(UNIX_EPOCH);
+
         for object in vault
             .objects()
             .map_err(|source| refused(vault.root(), source))?
@@ -127,6 +129,7 @@ impl Library {
             .collect();
 
         let root = vault.root().to_path_buf();
+
         for cover in vault.covers().map_err(|source| refused(&root, source))? {
             if named.contains(&cover.key) {
                 continue;
@@ -164,6 +167,7 @@ impl Library {
         })?;
 
         let mut compacted = Compacted::default();
+
         for cover in covers {
             let compacting = match applying {
                 Applying::Yes => vault.compact_cover(&cover.path),
@@ -192,6 +196,7 @@ impl Library {
                     continue;
                 }
             };
+
             compacted.covers += 1;
             compacted.was += was;
             compacted.now += now;
@@ -202,6 +207,7 @@ impl Library {
     fn settle_the_cover(&self, vault: &Vault, cover: &HeldFile, jxl: &Path) -> Result<()> {
         let within = self.inner.within_the_vault(jxl)?;
         let key = cover.key.to_string();
+
         self.inner.write(|transaction| {
             transaction
                 .execute(
@@ -247,6 +253,7 @@ impl Library {
     fn releasing_from_the_vault(&self, roots: &[PathBuf], applying: Applying) -> Result<Released> {
         let _walk = self.walk_the_tree()?;
         let known = self.roots()?;
+
         if let Some(stranger) = roots.iter().find(|root| !known.contains(root)) {
             return Err(Error::NotARoot {
                 path: stranger.clone(),
@@ -255,6 +262,7 @@ impl Library {
 
         let named = rooted(roots)?;
         let sql = and_roots(TRACKS_IN_THE_VAULT, named.len());
+
         let vaulted: Vec<(i64, PathBuf)> = self.inner.read(|connection| {
             rows(connection, &sql, named.clone(), |row| {
                 Ok(Ok((row.get(0)?, store::path_of(&row.get::<_, String>(1)?))))
@@ -281,6 +289,7 @@ impl Library {
     pub(super) fn released(&self, standing: &[(i64, PathBuf)]) -> Result<u64> {
         self.inner.write(|transaction| {
             let mut released = 0;
+
             for (id, _) in standing {
                 released += transaction
                     .execute(
@@ -300,8 +309,10 @@ impl Library {
     pub fn release_the_rows_of(&self, keys: &[VaultKey]) -> Result<Released> {
         let _walk = self.walk_the_tree()?;
         let mut vaulted: Vec<(i64, PathBuf)> = Vec::new();
+
         for key in keys {
             let named = key.to_string();
+
             vaulted.extend(self.inner.read(|connection| {
                 rows(
                     connection,
@@ -311,6 +322,7 @@ impl Library {
                 )
             })?);
         }
+
         let (standing, stranded): (Vec<_>, Vec<_>) =
             vaulted.into_iter().partition(|(_, path)| path.exists());
 
@@ -325,6 +337,7 @@ impl Library {
     pub fn let_go_of_vault_covers(&self, keys: &[VaultKey]) -> Result<u64> {
         self.inner.write(|transaction| {
             let mut let_go = 0;
+
             for key in keys {
                 let_go += transaction
                     .execute(
@@ -533,6 +546,7 @@ impl Library {
                     )
                     .map_err(|source| Error::store(StoreOp::Query, source))?,
             };
+
             transaction
                 .execute(
                     "UPDATE release_tracks SET track_id = ?1 WHERE id = ?2 AND track_id IS NULL",
@@ -575,6 +589,7 @@ impl Library {
             let album = album_title
                 .map(|title| store::album_received_in(transaction, title, artist_name, declared))
                 .transpose()?;
+
             let landed: Option<i64> = transaction
                 .query_row(
                     "INSERT INTO tracks (
@@ -625,6 +640,7 @@ impl Library {
             let Some(id) = landed else {
                 return Ok(None);
             };
+
             store::index_row(
                 transaction,
                 id,

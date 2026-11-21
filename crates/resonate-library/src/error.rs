@@ -8,7 +8,7 @@ use thiserror::Error;
 
 use crate::{ListenFault, LookupOp, PassKind};
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct TagName(Box<str>);
 
 impl TagName {
@@ -27,7 +27,7 @@ impl fmt::Display for TagName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct PlaylistName(Box<str>);
 
 impl PlaylistName {
@@ -46,7 +46,7 @@ impl fmt::Display for PlaylistName {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct FieldName(Box<str>);
 
 impl FieldName {
@@ -65,7 +65,7 @@ impl fmt::Display for FieldName {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum LayoutFault {
     Empty,
     EmptySegment,
@@ -74,7 +74,7 @@ pub enum LayoutFault {
     EmptyField,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum OrderedColumn {
     Sort,
     Reading,
@@ -82,7 +82,7 @@ pub enum OrderedColumn {
     KeptReading,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum EncodedColumn {
     SampleFormat,
     Codec,
@@ -90,7 +90,7 @@ pub enum EncodedColumn {
     Service,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum MoveOp {
     MakeFolder,
     Rename,
@@ -103,7 +103,7 @@ pub enum MoveOp {
     Sweep,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum TrashOp {
     Stat,
     MakeFolder,
@@ -113,7 +113,7 @@ pub enum TrashOp {
     Rename,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum StoreOp {
     Open,
     LayOut,
@@ -126,13 +126,13 @@ pub enum StoreOp {
     Transaction,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum KeyColumn {
     AlbumCover,
     VaultObject,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SchemaFingerprint(pub u32);
 
 impl fmt::Display for SchemaFingerprint {
@@ -423,6 +423,7 @@ mod tests {
     #[test]
     fn an_error_travels_to_whichever_thread_asked() {
         const fn carried<T: Send + Sync>() {}
+
         carried::<Error>();
     }
 

@@ -24,7 +24,7 @@ const CONVERTED: &str = "DLNA.ORG_CI=1";
 
 const HOURS_AT_MOST: u64 = 9_999;
 
-#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ObjectId(Box<str>);
 
 impl ObjectId {
@@ -72,9 +72,12 @@ impl Listing {
     pub(crate) fn extend(&mut self, more: Self) {
         let room = ENTRIES_A_LISTING_AT_MOST.saturating_sub(self.len());
         let containers = more.containers.len().min(room);
+
         self.containers
             .extend(more.containers.into_iter().take(containers));
+
         let room = room - containers;
+
         self.items.extend(more.items.into_iter().take(room));
     }
 }
@@ -142,11 +145,13 @@ impl Origin<'_> {
 pub(crate) fn read_from(text: &str, origin: &Origin<'_>) -> Result<Listing> {
     let document = document(text, Asked::Action(crate::Action::Browse))?;
     let root = document.root_element();
+
     if root.tag_name().name() != "DIDL-Lite" {
         return Err(Error::NotAListing);
     }
 
     let mut listing = Listing::default();
+
     for entry in root.children().filter(Node::is_element) {
         if listing.len() >= ENTRIES_A_LISTING_AT_MOST {
             break;
@@ -185,9 +190,11 @@ fn container_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Container> {
 
 fn item_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Item> {
     let class = said(node, "class")?;
+
     if !class.starts_with(AUDIO_CLASS) {
         return None;
     }
+
     let id = ObjectId::new(node.attribute("id")?)?;
     let title = said(node, "title")?;
     let resources: Vec<Resource> = node
@@ -196,6 +203,7 @@ fn item_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Item> {
         .filter_map(|res| resource_of(res, origin))
         .take(RESOURCES_AN_ITEM_AT_MOST)
         .collect();
+
     if resources.is_empty() {
         return None;
     }
@@ -237,10 +245,13 @@ fn cover_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Located> {
 fn resource_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Resource> {
     let protocol = node.attribute("protocolInfo").unwrap_or_default();
     let mut fields = protocol.split(':');
+
     let transport = fields.next().unwrap_or_default().trim();
+
     if !transport.eq_ignore_ascii_case(HTTP_GET) {
         return None;
     }
+
     let _network = fields.next();
     let mime = fields
         .next()
@@ -265,6 +276,7 @@ fn resource_of(node: Node<'_, '_>, origin: &Origin<'_>) -> Option<Resource> {
 
 fn on_the_server(address: &str, origin: &Origin<'_>) -> Option<Located> {
     let at = origin.served_from.join(address).ok()?;
+
     if !origin.admits(&at) {
         tracing::debug!(%at, served_from = %origin.served_from, "a media server's listing names an address that is not the server's");
         return None;
@@ -278,12 +290,15 @@ pub(crate) fn length_of(clock: &str) -> Option<Duration> {
         None => (clock, None),
     };
     let mut parts = whole.split(':');
+
     let hours = digits(parts.next()?)?;
     let minutes = digits(parts.next()?)?;
     let seconds = digits(parts.next()?)?;
+
     if parts.next().is_some() || hours > HOURS_AT_MOST || minutes >= 60 || seconds >= 60 {
         return None;
     }
+
     let fraction = match fraction {
         None => Duration::ZERO,
         Some(fraction) => fraction_of(fraction)?,
@@ -301,15 +316,19 @@ fn fraction_of(text: &str) -> Option<Duration> {
     if let Some((above, below)) = text.split_once('/') {
         let above = digits(above)?;
         let below = digits(below)?;
+
         if below == 0 || above >= below {
             return None;
         }
         return Some(Duration::from_secs_f64(above as f64 / below as f64));
     }
+
     let all_digits = !text.is_empty() && text.bytes().all(|b| b.is_ascii_digit());
+
     if !all_digits {
         return None;
     }
+
     let millis: String = text.chars().chain("000".chars()).take(3).collect();
     Some(Duration::from_millis(millis.parse().ok()?))
 }
@@ -375,8 +394,10 @@ mod tests {
         );
 
         assert_eq!(listing.items.len(), 1);
+
         let song = &listing.items[0];
         let played = song.played_from().expect("a resource");
+
         assert_eq!(song.title, "So What");
         assert_eq!(song.album.as_deref(), Some("Kind of Blue"));
         assert_eq!(song.track, Some(1));

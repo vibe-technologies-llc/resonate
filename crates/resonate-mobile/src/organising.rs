@@ -59,6 +59,7 @@ pub fn organise_layout_problem(layout: String) -> Option<String> {
 impl MobilePlayer {
     pub fn plan_organise(&self, folder: String, layout: String) -> Result<OrganisePlan> {
         self.syncing.files_by(&layout);
+
         let layout = Layout::read(&layout).map_err(|source| Error::LayoutUnreadable {
             source: Box::new(source),
         })?;
@@ -81,9 +82,11 @@ impl MobilePlayer {
         if moved.is_empty() {
             return Ok(());
         }
+
         let rekeyed = self.catalog.rekeyed(&moved)?;
 
         let mut analyses = self.services.analyses.lock();
+
         for old in &rekeyed.handed_over {
             analyses.remove(old);
         }
@@ -132,11 +135,13 @@ struct Rekeyed {
 impl crate::catalog::Catalog {
     fn rekeyed(&self, moved: &[MovedDocument]) -> Result<Rekeyed> {
         let mut connection = self.0.lock();
+
         let referring = referring_tables(&connection)?;
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         let mut rekeyed = Rekeyed::default();
+
         for document in moved {
             let left = transaction
                 .query_row(
@@ -154,6 +159,7 @@ impl crate::catalog::Catalog {
                 )
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Read, source))?;
+
             if let Some(holder) = holder
                 && let Vacated::HandedOver(old) =
                     vacated(&transaction, &referring, holder, document.id as i64)?
@@ -190,8 +196,10 @@ fn within_of(folder: &str) -> String {
 
 fn planned(layout: &Layout, within: &str, held: &[Track]) -> OrganisePlan {
     let mut discs: BTreeMap<String, u32> = BTreeMap::new();
+
     for track in held {
         let discs_held = discs.entry(album_of(track)).or_default();
+
         *discs_held = (*discs_held).max(track.disc_number.unwrap_or(1));
     }
 
@@ -201,6 +209,7 @@ fn planned(layout: &Layout, within: &str, held: &[Track]) -> OrganisePlan {
         .filter_map(|track| relative(&track.uri, within))
         .collect();
     let mut claimed: BTreeSet<String> = BTreeSet::new();
+
     for track in held {
         let Some(now) = relative(&track.uri, within) else {
             plan.unplaced += 1;
@@ -215,6 +224,7 @@ fn planned(layout: &Layout, within: &str, held: &[Track]) -> OrganisePlan {
             continue;
         };
         let joined = to.join("/");
+
         if joined == now {
             plan.unchanged += 1;
             claimed.insert(joined);
@@ -294,6 +304,7 @@ fn unescaped(text: &str) -> String {
     let bytes = text.as_bytes();
     let mut kept = Vec::with_capacity(bytes.len());
     let mut at = 0;
+
     while at < bytes.len() {
         let escaped = (bytes[at] == b'%')
             .then(|| bytes.get(at + 1..at + 3))
@@ -399,6 +410,7 @@ mod tests {
     #[test]
     fn a_granted_tree_holds_its_songs_beneath_the_encoded_id_of_their_folder() {
         const TREE: &str = "content://com.android.externalstorage.documents/tree/primary%3AMusic/document/primary%3AMusic";
+
         let within = within_of(TREE);
         let layout = Layout::default();
         let held = [
@@ -443,7 +455,9 @@ mod tests {
     fn catalogued(name: &str) -> (std::path::PathBuf, crate::catalog::Catalog) {
         let folder =
             std::env::temp_dir().join(format!("resonate-organise-{name}-{}", std::process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
+
         let catalog =
             crate::catalog::Catalog::open(&folder.join("catalog.sqlite")).expect("opened");
         (folder, catalog)
@@ -468,6 +482,7 @@ mod tests {
         let (folder, catalog) = catalogued("other");
         let gone = filed(&catalog, "Pink%20Floyd/The%20Wall/01.flac", "Mother");
         let moving = filed(&catalog, "a.flac", "Goodbye");
+
         catalog.favourite(gone.id, true).expect("favoured");
         catalog
             .mark_missing(&[gone.id as i64], &[])
@@ -499,6 +514,7 @@ mod tests {
         let (folder, catalog) = catalogued("same");
         let gone = filed(&catalog, "Pink%20Floyd/The%20Wall/01.flac", "Mother");
         let moving = filed(&catalog, "a.flac", "Mother");
+
         catalog.favourite(gone.id, true).expect("favoured");
         catalog
             .mark_missing(&[gone.id as i64], &[])
@@ -513,7 +529,9 @@ mod tests {
 
         assert_eq!(handed.handed_over, [gone.id]);
         assert!(catalog.track(gone.id).is_err());
+
         let song = catalog.track(moving.id).expect("the song");
+
         assert_eq!(song.uri, gone.uri);
         assert!(song.favourite);
 
@@ -534,6 +552,7 @@ mod tests {
 
         fn moved(harness: &Harness, name: char, to: &str) -> MovedDocument {
             let song = harness.song(name);
+
             fs::rename(
                 harness.folder.join(format!("{name}.wav")),
                 harness.folder.join(to),
@@ -548,11 +567,14 @@ mod tests {
         #[test]
         fn a_moved_song_in_the_queue_is_requeued_at_its_row_and_position_under_its_new_name() {
             let harness = Harness::new();
+
             harness.resumed("abcd", 1, 500);
+
             let before = harness.playing();
             let id = harness.song('b').id;
 
             let moving = moved(&harness, 'b', "e.wav");
+
             harness
                 .player
                 .documents_moved(vec![moving])
@@ -562,7 +584,9 @@ mod tests {
                 harness.player.catalog.track(id).expect("the song").uri,
                 format!("{FOLDER}e.wav")
             );
+
             let began = std::time::Instant::now();
+
             while harness
                 .player
                 .queue()
@@ -572,6 +596,7 @@ mod tests {
                     began.elapsed() < crate::harness::SETTLED_WITHIN,
                     "the queue never named the moved song"
                 );
+
                 std::thread::sleep(crate::harness::LOOKED_AGAIN_AFTER);
             }
             harness.settled(|snapshot| snapshot.position_ms == before.2);
@@ -585,12 +610,15 @@ mod tests {
             use crate::Transport;
 
             let harness = Harness::sounding();
+
             harness.resumed("abcd", 2, 500);
             harness.player.play().expect("play");
             harness.settled(|snapshot| snapshot.transport == Transport::Playing);
+
             let id = harness.song('c').id;
 
             let moving = moved(&harness, 'c', "e.wav");
+
             harness
                 .player
                 .documents_moved(vec![moving])
@@ -599,6 +627,7 @@ mod tests {
             let after = harness.settled(|snapshot| {
                 snapshot.transport == Transport::Playing && snapshot.current.is_some()
             });
+
             assert_eq!(after.queue_index, 2);
             assert_eq!(harness.queued(), "abcd");
             assert_eq!(
@@ -611,6 +640,7 @@ mod tests {
         fn a_moved_song_in_a_queue_a_party_is_followed_through_moves_there_and_the_kept_queue_stays_as_saved()
          {
             let harness = Harness::sounding();
+
             harness.resumed("abcd", 2, 500);
             harness.player.play().expect("play");
             harness.settled(|snapshot| snapshot.transport == crate::Transport::Playing);
@@ -618,11 +648,13 @@ mod tests {
             harness.resumed("dcba", 1, 0);
             harness.player.play().expect("play");
             harness.settled(|snapshot| snapshot.transport == crate::Transport::Playing);
+
             let before = harness.settled(|snapshot| snapshot.current.is_some());
             let id = harness.song('b').id;
             let saved = harness.ids("abcd");
 
             let moving = moved(&harness, 'b', "e.wav");
+
             harness
                 .player
                 .documents_moved_while(vec![moving], |_| true)
@@ -667,7 +699,9 @@ mod tests {
         #[test]
         fn a_zone_a_party_is_followed_in_or_a_row_is_opening_in_saves_no_place() {
             let harness = Harness::new();
+
             harness.resumed("abc", 0, 0);
+
             let player = harness.player.playing.player().expect("an open player");
             let queue = player.queued();
             let state = |playback| PlayerState {
@@ -710,6 +744,7 @@ mod tests {
             let harness = Harness::new();
             let player = harness.player.playing.player().expect("an open player");
             let ids = harness.ids("abcd");
+
             let opening = || {
                 let state = player.state();
                 let queue = player.queued();
@@ -726,12 +761,15 @@ mod tests {
 
             let opened = moved(&harness, 'b', "e.wav");
             let later = moved(&harness, 'c', "f.wav");
+
             harness
                 .player
                 .documents_moved(vec![opened, later])
                 .expect("documents moved");
             harness.let_opens_through();
+
             let heard = harness.settled(|snapshot| snapshot.current.is_some());
+
             player
                 .request(Command::Stop)
                 .expect("a stop sent")
@@ -773,6 +811,7 @@ mod tests {
             let began = std::time::Instant::now();
             while !until() {
                 assert!(began.elapsed() < crate::harness::SETTLED_WITHIN, "{never}");
+
                 std::thread::sleep(crate::harness::LOOKED_AGAIN_AFTER);
             }
         }
@@ -780,7 +819,9 @@ mod tests {
         #[test]
         fn a_moved_song_the_queue_does_not_hold_leaves_the_queue_as_it_stood() {
             let harness = Harness::new();
+
             harness.resumed("ab", 1, 500);
+
             let revision = harness
                 .player
                 .snapshot()
@@ -788,6 +829,7 @@ mod tests {
                 .queue_revision;
 
             let moving = moved(&harness, 'd', "e.wav");
+
             harness
                 .player
                 .documents_moved(vec![moving])
@@ -807,7 +849,9 @@ mod tests {
         #[test]
         fn nothing_moved_changes_nothing() {
             let harness = Harness::new();
+
             harness.resumed("ab", 0, 0);
+
             let revision = harness
                 .player
                 .snapshot()
@@ -833,6 +877,7 @@ mod tests {
         fn a_song_taking_the_place_of_its_hidden_twin_lets_the_twins_analysis_go() {
             let harness = Harness::new();
             let (taker, twin) = (harness.song('a').id, harness.song('d').id);
+
             harness.player.analyse_track(taker).expect("an analysis");
             harness.player.analyse_track(twin).expect("an analysis");
             harness
@@ -850,6 +895,7 @@ mod tests {
                 .catalog
                 .mark_missing(&[twin as i64], &[])
                 .expect("hidden");
+
             let twin_uri = harness.player.catalog.track(twin).expect("the twin").uri;
 
             harness
@@ -868,6 +914,7 @@ mod tests {
                 .keys()
                 .copied()
                 .collect();
+
             assert_eq!(held, [taker]);
             assert!(harness.player.catalog.track(twin).is_err());
         }

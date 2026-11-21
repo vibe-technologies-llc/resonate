@@ -17,6 +17,7 @@ fn classed(error: ureq::Error) -> Failure {
     if trust::certificate_refused(&error) {
         return Failure::Untrusted;
     }
+
     let unreached = |kind: ErrorKind| Failure::Unreached(io::Error::from(kind));
     match error {
         ureq::Error::StatusCode(status) => Failure::Refused(status),

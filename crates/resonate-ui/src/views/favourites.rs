@@ -170,6 +170,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let mut stacked = div().flex().flex_col().flex_none();
+
         if held.artists > 0 {
             stacked = stacked.child(self.artist_shelf_of(
                 "favourite-artists",
@@ -224,11 +225,13 @@ impl RootView {
                         held,
                         cx.processor(move |this, range: Range<usize>, _, cx| {
                             let mut drawn = Vec::new();
+
                             for index in range {
                                 let Some(track) = rows.get(index) else {
                                     continue;
                                 };
                                 let shift = Shift::Listing(Listed::Favourites);
+
                                 let row = this.track_row(
                                     &rows,
                                     index,
@@ -241,6 +244,7 @@ impl RootView {
                                     },
                                     cx,
                                 );
+
                                 drawn.push(this.marked_where_reached(shift, index, row, cx));
                             }
                             drawn

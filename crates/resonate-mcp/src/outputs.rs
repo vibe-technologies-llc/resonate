@@ -56,6 +56,7 @@ fn track() -> Value {
 
 fn playlist_row() -> Value {
     let mut properties = track_properties();
+
     properties.push(("row", whole()));
     object(properties, &["row"])
 }
@@ -107,6 +108,7 @@ fn playlist() -> Value {
 
 fn lossy_song() -> Value {
     let mut properties = track_properties();
+
     properties.extend([
         ("codec", text()),
         ("standing", text()),
@@ -197,6 +199,7 @@ fn row() -> Value {
 
 fn queue_row() -> Value {
     let mut properties = row_properties();
+
     properties.push(("playing", flag()));
     properties.push(("play_position", whole()));
     object(properties, &["queue_id"])
@@ -228,6 +231,7 @@ fn zone_named() -> Value {
 
 fn zone() -> Value {
     let mut properties = zone_properties();
+
     properties.push(("device", text()));
     properties.push(("status", text()));
     properties.push(("track", row()));

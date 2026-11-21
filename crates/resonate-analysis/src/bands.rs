@@ -66,6 +66,7 @@ fn band_of(hertz: f64) -> usize {
     if hertz <= LOWEST_EDGE_HZ {
         return 0;
     }
+
     let band = ((hertz / LOWEST_EDGE_HZ).log2() * BANDS_AN_OCTAVE).floor();
     (band as usize).min(BANDS - 1)
 }
@@ -101,6 +102,7 @@ impl BandLevels {
     pub fn of(spectrum: &Spectrum) -> Self {
         let mut powers = [0.0_f64; BANDS];
         let bin_hz = f64::from(spectrum.bin_hz());
+
         for (bin, level) in spectrum.levels().iter().enumerate().skip(1) {
             if *level > FLOOR_DB {
                 powers[band_of(bin as f64 * bin_hz)] += 10_f64.powf(f64::from(*level) / 10.0);
@@ -108,6 +110,7 @@ impl BandLevels {
         }
 
         let loudest = powers.iter().copied().fold(0.0, f64::max);
+
         if loudest <= 0.0 {
             return Self::SILENT;
         }
@@ -135,6 +138,7 @@ fn steps_below(loudest: f64, power: f64) -> u8 {
     if power <= 0.0 {
         return SILENT;
     }
+
     let steps = (10.0 * (loudest / power).log10() * STEPS_A_DECIBEL).round();
     if steps >= f64::from(SILENT) {
         SILENT
@@ -182,6 +186,7 @@ impl Hints {
 
     fn keep(&self, hint: Hint) {
         let mut hints = self.0.lock();
+
         if hints.len() >= HINTS_KEPT {
             hints.pop_back();
         }
@@ -206,9 +211,11 @@ impl BandGains {
         let at_the_rate = applied.at_rate(rate);
         let hertz = points_across(at_the_rate.profile(), rate);
         let shares: Vec<Heights> = hertz.iter().map(|hertz| shares_at(*hertz, rate)).collect();
+
         let heard = at_the_rate.heard_at(&hertz, rate)?;
         let reached = TILES_REACHED_EACH_WAY * (rate.hz() as usize / TILES_A_SECOND).max(1);
         let lasting = at_the_rate.correction_frames(rate)? + 2 * reached + 1;
+
         let soon = Soon::within(&at_the_rate.impulse_responses(lasting, rate)?, reached);
         let (near, held) = soon.heard_at(&hertz, rate);
         let later: Vec<Vec<Heard>> = heard
@@ -225,6 +232,7 @@ impl BandGains {
 
         let tones = Tones::across(rate);
         let levels = levels_of(&heard);
+
         let spread = soon.spread_over(&levels, tones.spans(), rate);
 
         Ok(Self {
@@ -234,13 +242,16 @@ impl BandGains {
                 .map(|(level, mut apart)| {
                     let swung = soon.swung_by(level);
                     let mut reach = reach_of(&near, &shares, level);
+
                     reach[WHOLE] = reach[WHOLE].max(swung);
+
                     let steady = apart.iter().copied().fold(0.0, f64::max);
                     let transient = if steady > 0.0 {
                         (swung / steady).max(1.0)
                     } else {
                         1.0
                     };
+
                     apart.push(level.abs());
                     Anchor {
                         level,
@@ -272,12 +283,15 @@ impl BandGains {
             .iter()
             .map(|heights| (self.partitioned(heights), heights))
             .collect();
+
         ranked.sort_by(|left, right| right.0.total_cmp(&left.0));
+
         let ring = cheapest(&self.ringing, &whole);
         let floor = loudest_yet - ring;
         let together = self.stays_together.then(|| peaks.together()).flatten();
         let together = together.as_ref();
         let mut held: f64 = 0.0;
+
         for (partitioned, heights) in ranked {
             if partitioned <= held.max(floor) {
                 held = held.max(partitioned);
@@ -305,6 +319,7 @@ impl BandGains {
             .filter_map(|hint| {
                 let anchor = self.anchors.get(hint.anchor)?;
                 let mut prices = prices_of(heights, together);
+
                 prices[WHOLE] *= anchor.transient;
                 Some(self.tones.paid_by(&hint.weights, &prices, &anchor.apart))
             })
@@ -319,6 +334,7 @@ impl BandGains {
         floor: f64,
     ) -> f64 {
         let mut solving = Solving::over(&self.tones, &prices_of(heights, together));
+
         let mut ranked: Vec<(f64, f64, (usize, &Anchor))> = self
             .anchors
             .iter()
@@ -326,6 +342,7 @@ impl BandGains {
             .map(|(index, anchor)| {
                 let level = anchor.level.abs() * heights[WHOLE];
                 let alone = solving.heard_alone(&anchor.apart, anchor.transient);
+
                 let at_least = if together.is_some() {
                     alone
                 } else {
@@ -334,9 +351,12 @@ impl BandGains {
                 (level + alone, at_least, (index, anchor))
             })
             .collect();
+
         ranked.sort_by(|left, right| left.0.total_cmp(&right.0));
+
         let mut least = partitioned;
         let mut solved_by = None;
+
         for (_, at_least, (index, anchor)) in ranked {
             if least <= floor || at_least >= least {
                 continue;
@@ -367,9 +387,11 @@ fn levels_of(heard: &[Vec<Heard>]) -> Vec<f64> {
             (low.min(gain), high.max(gain))
         });
     let mut levels = vec![0.0, 1.0];
+
     if loudest.is_finite() && loudest > 0.0 {
         let from = quietest.clamp(QUIETEST_LEVEL, loudest);
         let ratio = loudest / from;
+
         levels.extend(
             (0..LEVELS_BETWEEN)
                 .map(|step| from * ratio.powf(step as f64 / (LEVELS_BETWEEN - 1) as f64)),
@@ -409,6 +431,7 @@ fn ringing_of(
                 .zip(&enveloped)
                 .map(|((real, imaginary), enveloped)| real.hypot(*imaginary).max(enveloped[point]))
                 .fold(0.0, f64::max);
+
             for (reach, share) in reach.iter_mut().zip(shares) {
                 *reach = reach.max(share * apart);
             }
@@ -437,6 +460,7 @@ impl Rung {
             let responses = applied.impulse_responses(frames, rate)?;
             let block = settling / SETTLING_BLOCKS;
             let swung = |taps: &[f64]| taps.iter().map(|tap| tap.abs()).sum::<f64>();
+
             let tails: Vec<(f64, f64, f64)> = responses
                 .iter()
                 .map(|response| {
@@ -450,16 +474,19 @@ impl Rung {
             let settled = tails
                 .iter()
                 .all(|(last, _, whole)| *last <= RING_SETTLED_WITHIN * whole);
+
             if !settled && settling < longest {
                 settling *= 2;
                 continue;
             }
+
             let beyond: Vec<f64> = tails
                 .iter()
                 .map(|(last, before, whole)| {
                     if *last == 0.0 {
                         return 0.0;
                     }
+
                     let falling = last / before;
                     if falling < 1.0 {
                         last * falling / (1.0 - falling)
@@ -478,10 +505,12 @@ impl Rung {
                     for (whole, near) in response.iter_mut().skip(soon.from).zip(near) {
                         *whole -= near;
                     }
+
                     let (held, cut) = trimmed(&response);
                     (response[held].to_vec(), beyond + cut)
                 })
                 .unzip();
+
             return Ok(Self { taps, beyond });
         }
     }
@@ -492,14 +521,17 @@ fn trimmed(taps: &[f64]) -> (std::ops::Range<usize>, f64) {
     let budget = RING_SETTLED_WITHIN * whole / 2.0;
     let mut cut = 0.0;
     let mut first = 0;
+
     while let Some(tap) = taps.get(first)
         && cut + tap.abs() <= budget
     {
         cut += tap.abs();
         first += 1;
     }
+
     let mut cut_after = 0.0;
     let mut last = taps.len();
+
     while last > first && cut_after + taps[last - 1].abs() <= budget {
         cut_after += taps[last - 1].abs();
         last -= 1;
@@ -515,8 +547,10 @@ fn enveloped_between(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<f64> 
         .max((2 * frames).next_power_of_two());
     let fft = FftPlanner::<f64>::new().plan_fft_forward(size);
     let centre = (frames - 1) as f64 / 2.0;
+
     let sizes_of = |power: i32| -> Vec<f64> {
         let mut heard = vec![Complex::new(0.0, 0.0); size];
+
         for (at, (into, tap)) in heard.iter_mut().zip(taps).enumerate() {
             *into = Complex::new(tap * (at as f64 - centre).powi(power), 0.0);
         }
@@ -527,6 +561,7 @@ fn enveloped_between(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<f64> 
     let loudest = sizes.iter().copied().fold(0.0, f64::max);
     let half_cell = std::f64::consts::PI / size as f64;
     let degree = frames.div_ceil(2) as f64;
+
     let turned = half_cell * degree;
     let twisted = turned.powi(3) / 6.0 * loudest / turned.cos();
     let near: Vec<f64> = sizes
@@ -536,6 +571,7 @@ fn enveloped_between(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<f64> 
         .map(|((size, slope), bend)| size + half_cell * slope + half_cell * half_cell / 2.0 * bend)
         .collect();
     let bent = turned * turned / 2.0 * loudest / turned.cos();
+
     let cells: Vec<f64> = near
         .windows(2)
         .zip(sizes.windows(2))
@@ -544,8 +580,11 @@ fn enveloped_between(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<f64> 
     let bins_a_hertz = size as f64 / f64::from(rate.hz());
     let nyquist = f64::from(rate.hz()) / 2.0;
     let mut order: Vec<usize> = (0..hertz.len()).collect();
+
     order.sort_by(|left, right| hertz[*left].total_cmp(&hertz[*right]));
+
     let mut enveloped = vec![0.0; hertz.len()];
+
     for (place, point) in order.iter().enumerate() {
         let below = place
             .checked_sub(1)
@@ -554,7 +593,9 @@ fn enveloped_between(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<f64> 
             .get(place + 1)
             .map_or(nyquist, |after| (hertz[*after] + hertz[*point]) / 2.0);
         let first = ((below * bins_a_hertz).floor() as usize).min(cells.len() - 1);
+
         let last = ((above * bins_a_hertz).ceil() as usize).clamp(first + 1, cells.len());
+
         enveloped[*point] = cells[first..last].iter().copied().fold(0.0, f64::max);
     }
     enveloped
@@ -569,6 +610,7 @@ fn reach_of(heard: &[Vec<Heard>], shares: &[Heights], level: f64) -> Heights {
                 .iter()
                 .map(|(real, imaginary)| (real - level).hypot(*imaginary))
                 .fold(0.0, f64::max);
+
             for (reach, share) in reach.iter_mut().zip(shares) {
                 *reach = reach.max(share * apart);
             }
@@ -592,6 +634,7 @@ impl Soon {
                 .filter_map(|response| response.get(frame))
                 .fold(0.0_f64, |loudest, tap| loudest.max(tap.abs()))
         };
+
         let centre = (0..frames).fold(0, |loudest, frame| {
             if loudest_at(frame) > loudest_at(loudest) {
                 frame
@@ -600,18 +643,22 @@ impl Soon {
             }
         });
         let mut energy = vec![0.0; frames + 1];
+
         for frame in 0..frames {
             let here: f64 = responses
                 .iter()
                 .filter_map(|response| response.get(frame))
                 .map(|tap| tap * tap)
                 .sum();
+
             energy[frame + 1] = energy[frame] + here;
         }
+
         let held_from =
             |from: usize| energy[(from + span + 1).min(frames)] - energy[from.min(frames)];
         let earliest = centre.saturating_sub(span - span / TAPERED_SHARE);
         let latest = centre.saturating_sub(span / TAPERED_SHARE);
+
         let from = (earliest..=latest).fold(earliest, |best, from| {
             if held_from(from) > held_from(best) {
                 from
@@ -624,6 +671,7 @@ impl Soon {
             .map(|response| {
                 let mut taps: Vec<f64> =
                     response.iter().skip(from).take(span + 1).copied().collect();
+
                 faded(&mut taps, from > 0);
                 taps
             })
@@ -664,6 +712,7 @@ impl Soon {
         let half_bin = std::f64::consts::PI / size as f64;
         let bins_a_hertz = size as f64 / f64::from(rate.hz());
         let last_bin = size / 2;
+
         let ranges: Vec<(usize, usize)> = spans
             .iter()
             .map(|(from, to)| {
@@ -673,19 +722,23 @@ impl Soon {
             })
             .collect();
         let mut spread = vec![vec![0.0_f64; spans.len()]; levels.len()];
+
         for taps in &self.taps {
             let mut heard = vec![Complex::new(0.0, 0.0); size];
             let mut turning = vec![Complex::new(0.0, 0.0); size];
             let mut bending = 0.0;
+
             for (into, tap) in taps.iter().enumerate() {
                 let offset = (self.from + into) as f64 - self.centre as f64;
                 let at = (self.from + into + size - self.centre % size) % size;
+
                 heard[at] = Complex::new(*tap, 0.0);
                 turning[at] = Complex::new(offset * tap, 0.0);
                 bending += offset * offset * tap.abs();
             }
             fft.process(&mut heard);
             fft.process(&mut turning);
+
             let bent = half_bin * half_bin / 2.0 * bending;
             let margins: Vec<f64> = turning[..=last_bin]
                 .iter()
@@ -699,6 +752,7 @@ impl Soon {
                     .collect();
                 for ((first, last), widest) in ranges.iter().zip(spread.iter_mut()) {
                     let here = apart[*first..=*last].iter().copied().fold(0.0, f64::max);
+
                     *widest = widest.max(here);
                 }
             }
@@ -717,6 +771,7 @@ impl Soon {
             let (imaginary, real) = angle.sin_cos();
             (real, imaginary)
         };
+
         let (near, held) = hertz
             .iter()
             .enumerate()
@@ -747,6 +802,7 @@ fn faded(taps: &mut [f64], cut_before: bool) {
     let frames = taps.len();
     let across = (frames / TAPERED_SHARE).max(1);
     let fade = |into: usize| 0.5 - 0.5 * (std::f64::consts::PI * into as f64 / across as f64).cos();
+
     for (into, tap) in taps.iter_mut().rev().take(across).enumerate() {
         *tap *= fade(into);
     }
@@ -759,8 +815,10 @@ fn faded(taps: &mut [f64], cut_before: bool) {
 
 fn cheapest(reach: &Heights, heights: &Heights) -> f64 {
     let mut costs = [0.0; NODES];
+
     for index in (0..NODES).rev() {
         let own = reach[index] * heights[index];
+
         costs[index] = match TREE[index].halves {
             Some((lower, upper)) => own.min(costs[lower] + costs[upper]),
             None => own,
@@ -787,6 +845,7 @@ fn points_across(profile: &Profile, rate: SampleRate) -> Vec<f64> {
 fn shares_at(hertz: f64, rate: SampleRate) -> Heights {
     let passed: [f64; BANDS + 1] = std::array::from_fn(|edge| passed_below(edge, hertz, rate));
     let held_whole = |share: f64| (share / SHARE_HELD_WHOLE_FROM).min(1.0);
+
     let weighed: [f64; BANDS] = std::array::from_fn(|band| {
         let share = (passed[band + 1] - passed[band]).max(0.0);
         held_whole(share) * share
@@ -797,6 +856,7 @@ fn shares_at(hertz: f64, rate: SampleRate) -> Heights {
         let share = (passed[node.to] - passed[node.from]).max(0.0);
         let own = held_whole(share);
         let elsewhere = all_weighed - weighed[node.from..node.to].iter().sum::<f64>();
+
         let spread = own * share + elsewhere;
         if spread > 0.0 { own / spread } else { 0.0 }
     })
@@ -818,20 +878,25 @@ pub fn band_figures(
 ) -> Result<BandFigures> {
     let (mut decoder, info) = opened(sources, location, span)?;
     let codec = resonate_codec::Codec::from_id(info.codec);
+
     let format = native_format(&info, codec);
+
     decoder.set_output_format(format);
     decoder.follow_format_changes();
 
     let rate = info.spec.rate;
     let placements = info.speakers.placements(info.spec.channels.count().get());
+
     let mut transforming = Transforming::new(rate.hz(), &placements);
     let mut splitting = Splitting::new(rate, usize::from(info.spec.channels.count().get()));
     let mut walking = Walking::new(StreamSpec::new(rate, info.spec.channels, format));
     let mut transformed = Transformed(&mut transforming);
+
     let stages: Vec<&mut dyn Noting> = std::iter::once(&mut transformed as &mut dyn Noting)
         .chain(splitting.stages())
         .collect();
     let samples_a_second = rate.hz() as usize * usize::from(info.spec.channels.count().get());
+
     Crew::for_watch(watch).fanned(
         samples_a_second,
         stages,
@@ -841,9 +906,11 @@ pub fn band_figures(
                 if watch.stopped() {
                     return Err(Error::Stopped);
                 }
+
                 let Some(heard) = walking.step(&mut decoder)? else {
                     return Ok(());
                 };
+
                 feed(heard.samples);
             }
         },
@@ -868,6 +935,7 @@ mod tests {
 
     fn spectrum_sounding_at(hertz: f32, level_db: f32) -> Spectrum {
         let mut levels = vec![FLOOR_DB; 2_049];
+
         levels[(hertz / BIN_HZ) as usize] = level_db;
         Spectrum::new(BIN_HZ, levels, Duration::from_secs(10))
     }
@@ -895,9 +963,12 @@ mod tests {
     fn every_frequency_falls_in_the_band_whose_span_holds_it() {
         for band in 0..BANDS {
             let (from, to) = span_of_band(band);
+
             let inside = (from * to.min(from * 2.0)).sqrt();
+
             assert_eq!(band_of(inside), band, "{from} to {to} Hz");
         }
+
         assert_eq!(band_of(0.0), 0);
         assert_eq!(band_of(96_000.0), BANDS - 1);
     }
@@ -989,6 +1060,7 @@ mod tests {
         let gains = gains_under(&boosting(110.0, 6.0));
         let loud_elsewhere = tone_of(5_000.0, 0.9);
         let quiet_on_the_boost = tone_of(110.0, 0.3);
+
         let moments: Vec<Heights> = loud_elsewhere
             .moments()
             .chain(quiet_on_the_boost.moments())
@@ -1070,11 +1142,14 @@ mod tests {
     fn a_correction_whose_energy_comes_late_is_bounded_where_its_main_lobe_meets_the_music() {
         let flat = Arc::new(Profile::flat());
         let mut late = vec![0.0; 22_052];
+
         late[22_050] = 1.0;
         late[22_051] = 1.0;
+
         let gains = corrected_by(&flat, late);
         let bass = tone_of(60.0, 0.45);
         let treble = tone_of(5_000.0, 0.9);
+
         let moments: Vec<Heights> = bass.moments().chain(treble.moments()).collect();
         let apart = BandPeaks::of_moments(&moments);
         let treble_raised =
@@ -1084,7 +1159,9 @@ mod tests {
         let bound = gains.bound(&apart);
 
         assert!(alone > 0.5 * 1.9 && alone < 0.5 * 2.0 * 1.05, "{alone}");
+
         let heard = (0.9 * treble_raised).max(0.45 * 2.0);
+
         assert!(bound >= heard * 0.99, "{bound} under {heard}");
         assert!(bound < heard * 1.05, "{bound} against {heard}");
     }
@@ -1109,6 +1186,7 @@ mod tests {
         let boost_db = 6.0;
         let raised = 10_f64.powf(boost_db / 20.0);
         let averaged = corrected_by(&bell(1_000.0, boost_db, 1.0), vec![1.0 / 24.0; 24]);
+
         for hertz in [100.0, 1_000.0, 5_000.0] {
             let boosted = gains_under(&bell(hertz, boost_db, 1.0));
             for peak in [0.5, 0.9] {
@@ -1155,11 +1233,13 @@ mod tests {
             .expect("a profile in range"),
         );
         let mut seed = 0x5eed_u64;
+
         let burst: Vec<f64> = (0..2_000)
             .map(|at| {
                 seed ^= seed << 13;
                 seed ^= seed >> 7;
                 seed ^= seed << 17;
+
                 let white = seed as f64 / u64::MAX as f64 - 0.5;
                 white * (-f64::from(at) / 700.0).exp()
             })
@@ -1169,6 +1249,7 @@ mod tests {
         for profile in &ordinary {
             assert!(gains_under(profile).stays_together);
         }
+
         assert!(corrected_by(&flat, vec![1.0, 1.0]).stays_together);
         assert!(!gains_under(&turning).stays_together);
         assert!(!corrected_by(&flat, burst).stays_together);

@@ -87,6 +87,7 @@ impl MissingPane {
                 pane.take_what_landed(&library, cx);
             }),
         };
+
         pane.take_what_landed(library, cx);
 
         pane
@@ -96,6 +97,7 @@ impl MissingPane {
         let Some(short) = library.update(cx, |library, _| library.take_what_is_short()) else {
             return;
         };
+
         if renewed(&mut self.tracks, short.tracks) {
             self.track_rows =
                 missing_track_rows(self.tracks.iter().map(|track| (track.album, track.disc)))
@@ -145,6 +147,7 @@ impl RootView {
         let can_enrich = library.can_enrich();
         let narrowed = library.narrowing().is_some();
         let reads = library.search().reads();
+
         let both = !tracks.is_empty() && !releases.is_empty();
         let summary = match shows {
             MissingShows::Tracks => words::missing::tracks_missing_from_albums(
@@ -237,6 +240,7 @@ impl RootView {
                             rows.len(),
                             cx.processor(move |this, range: Range<usize>, _, cx| {
                                 let mut drawn = Vec::new();
+
                                 for index in range {
                                     let listed = match rows.get(index).copied() {
                                         Some(MissingRow::Album(first)) => {
@@ -282,6 +286,7 @@ impl RootView {
                                             index,
                                             cx,
                                         );
+
                                         drawn.push(
                                             in_a_card(
                                                 reorder::marked(listed, reached),
@@ -391,6 +396,7 @@ impl RootView {
                 ),
                 move |this, _, cx| {
                     let release = mbid.clone();
+
                     this.library.update(cx, |library, cx| {
                         library.dismiss_release(artist, release, cx);
                     });
@@ -727,7 +733,9 @@ mod tests {
                 ],
             );
         }
+
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
 
         let album = library
@@ -740,6 +748,7 @@ mod tests {
             .expect("the scanned artists")
             .remove(0)
             .id;
+
         library
             .land_release(album, &orbits())
             .expect("the release lands");
@@ -764,6 +773,7 @@ mod tests {
     fn missing_shown(cx: &mut TestAppContext, folder: &Folder) -> (Driven, AlbumId, Arc<Library>) {
         let (library, album) = short_of_two_songs_and_an_ep(folder);
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), folder);
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|app, _| app.tabs.missing = true);
         });
@@ -784,6 +794,7 @@ mod tests {
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
         const TAB_STOPS_AT_MOST: usize = 64;
+
         let root = driven.root.clone();
         (0..TAB_STOPS_AT_MOST).any(|_| {
             driven.cx.simulate_keystrokes("tab");
@@ -872,6 +883,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (mut driven, _, _) = missing_shown(cx, &folder);
+
         driven.click("missing-shows-1");
 
         driven.click("dismiss-release-0");
@@ -890,11 +902,14 @@ mod tests {
         let (mut driven, album, _) = missing_shown(cx, &folder);
 
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(
             reached_at(&mut driven),
             Some((Shift::Listing(Listed::Missing), 0))
         );
+
         driven.cx.simulate_keystrokes("down down");
+
         assert_eq!(
             reached_at(&mut driven),
             Some((Shift::Listing(Listed::Missing), 2))
@@ -918,6 +933,7 @@ mod tests {
             tabbed_onto(&mut driven, "missing-shows-1"),
             "tab never reached the releases tab"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
 

@@ -6,13 +6,14 @@ const SHORTEST_SNOWFLAKE: usize = 17;
 const LONGEST_SNOWFLAKE: usize = 20;
 const LONGEST_ICON: usize = 256;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct AppId(u64);
 
 impl AppId {
     pub fn parse(text: &str) -> Option<Self> {
         let digits = text.trim();
         let sized = (SHORTEST_SNOWFLAKE..=LONGEST_SNOWFLAKE).contains(&digits.len());
+
         if !sized || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
             return None;
         }
@@ -30,7 +31,7 @@ impl fmt::Display for AppId {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Icon(Box<str>);
 
 impl Icon {
@@ -55,7 +56,7 @@ impl fmt::Display for Icon {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Shown {
     Application,
     Track,
@@ -92,7 +93,7 @@ impl fmt::Display for Shown {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Pictured {
     Cover,
     Icon,
@@ -131,7 +132,7 @@ impl fmt::Display for Pictured {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Presence {
     pub enabled: bool,
     pub app: Option<AppId>,
@@ -176,18 +177,21 @@ mod tests {
             enabled: true,
             ..Presence::OFF
         };
+
         assert!(!switched_on.active());
 
         let named = Presence {
             app: AppId::parse("1234567890123456789"),
             ..Presence::OFF
         };
+
         assert!(!named.active());
 
         let both = Presence {
             enabled: true,
             ..named
         };
+
         assert!(both.active());
     }
 
@@ -212,6 +216,7 @@ mod tests {
     #[test]
     fn an_application_id_is_written_as_the_digits_it_was_read_from() {
         let id = AppId::parse("1234567890123456789").expect("a snowflake");
+
         assert_eq!(id.to_string(), "1234567890123456789");
     }
 
@@ -235,6 +240,7 @@ mod tests {
         for pictured in Pictured::ALL {
             assert_eq!(Pictured::parse(pictured.as_str()), Some(pictured));
         }
+
         assert_eq!(Shown::parse("everything"), None);
         assert_eq!(Pictured::parse("portrait"), None);
     }

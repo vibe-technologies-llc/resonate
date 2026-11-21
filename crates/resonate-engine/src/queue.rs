@@ -12,7 +12,7 @@ use crate::{
     shuffling::{Kin, KinAsk, Kindred, ShuffleStyle, Shuffler, SmartShuffle, album_of, arranged},
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct QueueItem {
     pub id: TrackId,
     pub location: MediaLocation,
@@ -107,9 +107,11 @@ impl QueueRows {
 
     pub fn in_load_order(&self) -> Vec<usize> {
         let mut by_place: Vec<usize> = (0..self.len()).collect();
+
         by_place.sort_unstable_by_key(|row| self.0.get(*row).map_or(0, |held| held.place));
 
         let mut loaded = vec![0; self.len()];
+
         for (at, row) in by_place.into_iter().enumerate() {
             if let Some(slot) = loaded.get_mut(row) {
                 *slot = at;
@@ -171,12 +173,14 @@ impl Queued {
 
     fn listed(&self) -> Option<Vec<&Held>> {
         let listing = &self.listing;
+
         if !listing.shuffled {
             return None;
         }
 
         let mut unlisted: AHashSet<usize> = self.rows.0.iter().map(|held| held.place).collect();
         let (heard, to_come) = listing.unshuffled.around(listing.last_heard);
+
         let listed: Vec<&Held> = heard
             .chain(&listing.waiting)
             .chain(to_come)
@@ -187,13 +191,13 @@ impl Queued {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Removal {
     Playing,
     Queued,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Placement {
     Next,
     Queued,
@@ -243,6 +247,7 @@ impl Unclaimed {
         }
 
         let minted = TrackId::new(self.next).unwrap_or(TrackId::MAX);
+
         self.next = self.next.saturating_sub(1);
         self.claim(minted);
         minted
@@ -301,6 +306,7 @@ impl Lifted {
 
 fn spliced(into: &mut Vector<Held>, at: usize, run: Vector<Held>) {
     let rest = into.split_off(at.min(into.len()));
+
     into.append(run);
     into.append(rest);
 }
@@ -327,6 +333,7 @@ impl Standing {
         let rows: Vec<Held> = rows.into_iter().collect();
         let stride = Label::MAX / (rows.len() as Label + 1);
         let mut standing = Self::default();
+
         for (at, held) in rows.into_iter().enumerate() {
             standing.put(stride * (at as Label + 1), held);
         }
@@ -376,6 +383,7 @@ impl Standing {
         if run.is_empty() {
             return;
         }
+
         let low = match anchor {
             Anchor::Front => Label::MIN,
             Anchor::After(place) => self
@@ -390,6 +398,7 @@ impl Standing {
             .range((Bound::Excluded(low), Bound::Unbounded))
             .next()
             .map_or(Label::MAX, |(label, _)| *label);
+
         let step = (high - low) / (run.len() as Label + 1);
 
         if step < ROOM_BETWEEN_LABELS {
@@ -433,8 +442,10 @@ impl Standing {
                     .map_or(Label::MAX, |(after, _)| *after),
                 _ => Label::MAX,
             };
+
             let step = (ceiling - floor) / ((left.len() + run.len() + right.len()) as Label + 1);
             let everything = left.len() < width && right.len() < width;
+
             if step < ROOM_BETWEEN_LABELS && !everything {
                 width *= 2;
                 continue;
@@ -443,12 +454,14 @@ impl Standing {
             for (label, _) in left.iter().chain(&right) {
                 self.rows.remove(label);
             }
+
             let respaced = left
                 .into_iter()
                 .rev()
                 .map(|(_, held)| held)
                 .chain(run.iter().cloned())
                 .chain(right.into_iter().map(|(_, held)| held));
+
             for (at, held) in respaced.enumerate() {
                 self.put(floor + step.max(1) * (at as Label + 1), held);
             }
@@ -536,13 +549,16 @@ impl Queue {
             .map(|held| Arc::clone(&held.item))
             .collect();
         let mut minting = Unclaimed::beside(kept.iter().map(Arc::as_ref));
+
         let loaded = one_id_each(items, &mut minting);
         let count = loaded.len();
 
         self.places = 0;
         self.forget_the_kin();
+
         let order: Vector<Held> = loaded.into_iter().map(|item| self.held(item)).collect();
         let next: Vector<Held> = kept.into_iter().map(|item| self.held(item)).collect();
+
         self.ids = minting;
         self.unshuffled = self.standing_of(&order);
         self.order = order;
@@ -580,6 +596,7 @@ impl Queue {
 
         self.places = 0;
         self.forget_the_kin();
+
         let rows: Vec<Held> = resumption
             .rows
             .into_iter()
@@ -595,6 +612,7 @@ impl Queue {
                 self.held(item)
             })
             .collect();
+
         self.ids = minting;
         self.shuffle = shuffle;
 
@@ -604,12 +622,15 @@ impl Queue {
             Some(next) if next.holds(row) => {
                 let rest = next.last() + 1;
                 let mut order = drawn[..row].to_vec();
+
                 order.extend_from_slice(&drawn[rest..]);
                 (order, drawn[row..rest].to_vec(), row, Seat::Next)
             }
             Some(next) => {
                 let mut order = drawn[..next.first()].to_vec();
+
                 order.extend_from_slice(&drawn[next.last() + 1..]);
+
                 let heard = if row < next.first() {
                     row
                 } else {
@@ -633,6 +654,7 @@ impl Queue {
 
         self.unshuffled = if shuffle {
             let mut unshuffled = order.clone();
+
             unshuffled.sort_unstable();
             Standing::of(of(&unshuffled))
         } else {
@@ -652,6 +674,7 @@ impl Queue {
         if items.is_empty() {
             return None;
         }
+
         let arrived = one_id_each(items, &mut self.ids);
         let row = self.landing(at);
         let before_the_queued = self.seat == Seat::Next
@@ -686,6 +709,7 @@ impl Queue {
                 .filter(|held| run.contains(&held.place))
                 .cloned()
                 .collect();
+
             self.next
                 .retain(|held| held.place == head || !run.contains(&held.place));
             spliced(&mut self.next, 1, rest);
@@ -700,6 +724,7 @@ impl Queue {
 
     pub fn remove_all(&mut self, runs: &[Span]) -> Result<Removal, Span> {
         let len = self.len();
+
         if let Some(outside) = runs.iter().copied().find(|rows| rows.last() >= len) {
             return Err(outside);
         }
@@ -707,6 +732,7 @@ impl Queue {
         let heard = self.heard_place();
         let mut from_order = Vec::new();
         let mut from_next = Vec::new();
+
         for row in runs.iter().flat_map(|rows| rows.range()) {
             match self.row(row) {
                 Some(Row::InOrder(at)) => from_order.push(at),
@@ -718,16 +744,20 @@ impl Queue {
             positions.sort_unstable();
             positions.dedup();
         }
+
         let heard_before = from_order.iter().filter(|at| **at < self.after).count();
 
         let mut dropped = AHashSet::with_capacity(from_order.len() + from_next.len());
+
         for at in from_order.into_iter().rev() {
             let held = self.order.remove(at);
+
             self.left(&held, Waits::InOrder);
             dropped.insert(held.place);
         }
         for at in from_next.into_iter().rev() {
             let held = self.next.remove(at);
+
             self.left(&held, Waits::Next);
             dropped.insert(held.place);
         }
@@ -746,6 +776,7 @@ impl Queue {
 
     pub fn move_rows(&mut self, rows: Span, to: usize) -> Option<()> {
         let last = self.len().checked_sub(1)?;
+
         if rows.last() > last || to > last {
             return None;
         }
@@ -757,6 +788,7 @@ impl Queue {
         let landing = rows.landing(to);
         let lifted = self.lift(rows);
         let carries_the_heard = heard.is_some_and(|heard| lifted.carries(heard));
+
         let waits = (!carries_the_heard).then(|| self.waits_beside(landing, &lifted, heard));
         let kept_passed = lifted.kept_passed;
         let kept_queued = self.next.len();
@@ -823,6 +855,7 @@ impl Queue {
             upcoming,
             ..
         } = lifted;
+
         let (order_run, next_run) = match waits {
             None => {
                 passed.append(upcoming);
@@ -839,6 +872,7 @@ impl Queue {
         };
 
         let moved = (order_run.clone(), next_run.clone());
+
         if !order_run.is_empty() {
             spliced(&mut self.order, order_at, order_run);
         }
@@ -847,11 +881,13 @@ impl Queue {
         }
         if carries_the_heard && self.seat == Seat::Next && next_at > 0 {
             let held = self.next.remove(next_at);
+
             self.next.push_front(held);
         }
 
         if self.shuffle && crosses {
             let (into_order, into_next) = moved;
+
             self.unshuffle_moved(order_at, &into_order, &into_next);
         }
         self.after = after;
@@ -866,8 +902,10 @@ impl Queue {
         }
 
         let mut named = vec![false; rows.len()];
+
         for row in rows {
             let once = named.get_mut(*row)?;
+
             if *once {
                 return None;
             }
@@ -880,6 +918,7 @@ impl Queue {
             .filter_map(|row| drawn.get(*row))
             .cloned()
             .collect();
+
         self.split(reordered, self.heard_place());
 
         Some(())
@@ -908,6 +947,7 @@ impl Queue {
 
     pub fn relocate(&mut self, moved: &[(MediaLocation, MediaLocation)]) -> bool {
         let mut relocated = relocated_in(&mut self.order, moved);
+
         relocated |= relocated_in(&mut self.next, moved);
         if !relocated {
             return false;
@@ -956,7 +996,9 @@ impl Queue {
 
     pub fn in_play_order(&self) -> QueueRows {
         let mut drawn = self.order.clone();
+
         let rest = drawn.split_off(self.after.min(drawn.len()));
+
         drawn.append(self.next.clone());
         drawn.append(rest);
         QueueRows(drawn)
@@ -991,6 +1033,7 @@ impl Queue {
             return;
         }
         self.shuffle = shuffle;
+
         let last_heard = self.last_heard().map(|held| held.place);
 
         if shuffle {
@@ -1032,6 +1075,7 @@ impl Queue {
             self.respread_owed = false;
             return None;
         }
+
         let rows: Vec<(usize, Arc<QueueItem>)> = self
             .order
             .iter()
@@ -1040,6 +1084,7 @@ impl Queue {
             .map(|held| (held.place, Arc::clone(&held.item)))
             .collect();
         let respread_at = std::mem::take(&mut self.respread_owed).then_some(self.revision);
+
         if rows.is_empty() {
             return None;
         }
@@ -1079,6 +1124,7 @@ impl Queue {
 
     fn shuffle_afresh(&mut self) {
         let last_heard = self.last_heard().map(|held| held.place);
+
         match (self.seat, last_heard) {
             (Seat::InOrder | Seat::Next, Some(heard)) => self.reshuffle_keeping(heard),
             _ => self.reshuffle(),
@@ -1116,6 +1162,7 @@ impl Queue {
             after: self.after,
             let_go: 0,
         };
+
         if self.repeat == RepeatMode::Track {
             return Some(reckoning);
         }
@@ -1193,11 +1240,13 @@ impl Queue {
         if self.repeat == RepeatMode::Track {
             return self.current();
         }
+
         let reckoning = self.reckoned_after(rows_ahead)?;
         let waiting = match reckoning.seat {
             Seat::Next => self.next.get(reckoning.let_go + 1),
             Seat::Nowhere | Seat::InOrder => self.next.get(reckoning.let_go),
         };
+
         let held = waiting
             .or_else(|| self.order.get(reckoning.after))
             .or_else(|| {
@@ -1230,13 +1279,16 @@ impl Queue {
             Row::Next(0) if self.seat == Seat::Next => {}
             Row::Next(waiting) => {
                 let mut wanted = waiting;
+
                 if self.seat == Seat::Next && self.let_go_of_what_was_heard().is_some() {
                     wanted -= 1;
                 }
                 if wanted >= self.next.len() {
                     return None;
                 }
+
                 let held = self.next.remove(wanted);
+
                 self.next.push_front(held);
                 self.seat = Seat::Next;
                 self.revision = self.revision.wrapping_add(1);
@@ -1254,6 +1306,7 @@ impl Queue {
 
     fn held(&mut self, item: Arc<QueueItem>) -> Held {
         let place = self.places;
+
         self.places += 1;
         Held::at(place, item)
     }
@@ -1276,6 +1329,7 @@ impl Queue {
     fn landing(&self, at: Placement) -> Row {
         let Some(playing) = self.cursor() else {
             let end = self.order.len();
+
             return Row::InOrder(match at {
                 Placement::At(row) => row.min(end),
                 Placement::Next | Placement::Queued => end,
@@ -1296,8 +1350,10 @@ impl Queue {
 
     fn land_in_order(&mut self, at: usize, landed: Vector<Held>, before_the_queued: bool) {
         let count = landed.len();
+
         if self.shuffle {
             let anchor = self.unshuffled_anchor(at);
+
             self.unshuffled.insert(anchor, &landed);
         }
         spliced(&mut self.order, at, landed);
@@ -1341,6 +1397,7 @@ impl Queue {
         let queued = self.next.len();
         let end = self.order.len() + queued;
         let (first, past) = (rows.first(), rows.last() + 1);
+
         let within = |from: usize, to: usize, offset: usize| {
             first.clamp(from, to) - offset..past.clamp(from, to) - offset
         };
@@ -1362,6 +1419,7 @@ impl Queue {
             return Waits::InOrder;
         };
         let kept_queued = self.next.len();
+
         let held = if before < lifted.kept_passed {
             self.order.get(before)
         } else if before < lifted.kept_passed + kept_queued {
@@ -1427,7 +1485,9 @@ impl Queue {
         for held in into_next {
             self.unshuffled.remove(held.place);
         }
+
         let order = self.order.clone();
+
         self.unshuffled_in(&order, order_at..order_at + into_order.len());
     }
 
@@ -1438,19 +1498,24 @@ impl Queue {
 
         for at in rows {
             let Some(held) = order.get(at) else { break };
+
             if self.unshuffled.contains(held.place) {
                 self.unshuffled.insert(anchor, &absent);
                 absent.clear();
                 continue;
             }
+
             let after_before = match at.checked_sub(1).and_then(|before| order.get(before)) {
                 None => Anchor::Front,
                 Some(before) => Anchor::After(before.place),
             };
+
             if Some(at) == last {
                 self.unshuffled.insert(anchor, &absent);
                 absent.clear();
+
                 let landing = if at == 0 { Anchor::Front } else { Anchor::Back };
+
                 self.unshuffled.insert(landing, &Vector::unit(held.clone()));
                 continue;
             }
@@ -1464,6 +1529,7 @@ impl Queue {
 
     fn let_go_of_what_was_heard(&mut self) -> Option<usize> {
         let heard = self.next.pop_front()?;
+
         self.left(&heard, Waits::Next);
         self.rows_moved();
         Some(heard.place)
@@ -1519,10 +1585,13 @@ impl Queue {
         if drawn < self.after {
             return Some(Row::InOrder(drawn));
         }
+
         let past = drawn - self.after;
+
         if past < self.next.len() {
             return Some(Row::Next(past));
         }
+
         let at = drawn - self.next.len();
         (at < self.order.len()).then_some(Row::InOrder(at))
     }
@@ -1539,6 +1608,7 @@ impl Queue {
         let Some(before) = at.checked_sub(1) else {
             return Anchor::Front;
         };
+
         if at >= self.order.len() {
             return Anchor::Back;
         }
@@ -1570,6 +1640,7 @@ impl Queue {
 
     fn reshuffle_keeping(&mut self, playing: usize) {
         self.reshuffle();
+
         let Some(at) = self.order.iter().position(|held| held.place == playing) else {
             self.after = 1;
             return;
@@ -1580,6 +1651,7 @@ impl Queue {
             .flatten();
         let Some(album) = album else {
             let held = self.order.remove(at);
+
             self.order.push_front(held);
             self.after = 1;
             return;
@@ -1590,6 +1662,7 @@ impl Queue {
             .iter()
             .cloned()
             .partition(|held| album_of(&self.kindred(held)) == Some(album));
+
         leading.sort_unstable_by_key(|held| held.place);
         self.after = leading
             .iter()
@@ -1600,13 +1673,17 @@ impl Queue {
 
     fn reshuffle_after_a_pass(&mut self) {
         let last_heard = self.order.back().map(|held| held.place);
+
         self.reshuffle();
 
         let later = self.order.len().saturating_sub(1);
+
         if later == 0 || self.order.front().map(|held| held.place) != last_heard {
             return;
         }
+
         let elsewhere = 1 + self.shuffler.next_below(later);
+
         self.order.swap(0, elsewhere);
     }
 
@@ -1619,13 +1696,16 @@ impl Queue {
 
     fn reshuffle(&mut self) {
         self.revision = self.revision.wrapping_add(1);
+
         let rows: Vec<Held> = self.order.iter().cloned().collect();
         let kindred: Vec<Kindred> = rows.iter().map(|held| self.kindred(held)).collect();
+
         if self.smart.reads_kin() && kindred.iter().any(|row| row.kin.is_none()) {
             self.kin_owed = true;
         }
 
         let arranged = arranged(&kindred, self.smart, &mut self.shuffler);
+
         self.order = arranged
             .into_iter()
             .filter_map(|row| rows.get(row).cloned())
@@ -1653,6 +1733,7 @@ fn stamped(rows: &Vector<Held>) -> QueueStamp {
 
 fn relocated_in(rows: &mut Vector<Held>, moved: &[(MediaLocation, MediaLocation)]) -> bool {
     let mut relocated = false;
+
     for held in rows.iter_mut() {
         if let Some(to) = landed_at(&held.item.location, moved) {
             Arc::make_mut(&mut held.item).location = to;
@@ -1667,6 +1748,7 @@ pub(crate) fn landed_at(
     moved: &[(MediaLocation, MediaLocation)],
 ) -> Option<MediaLocation> {
     let mut at = location;
+
     for (from, to) in moved {
         if from == at {
             at = to;
@@ -1695,12 +1777,14 @@ mod tests {
 
     fn loaded(count: u64, start_at: usize) -> Queue {
         let mut queue = Queue::new();
+
         queue.load(items(count), start_at);
         queue
     }
 
     fn held_rows(queue: &Queue) -> Vec<Arc<QueueItem>> {
         let mut held: Vec<&Held> = queue.order.iter().chain(&queue.next).collect();
+
         held.sort_unstable_by_key(|held| held.place);
         held.into_iter()
             .map(|held| Arc::clone(&held.item))
@@ -1777,6 +1861,7 @@ mod tests {
     #[test]
     fn loading_starts_at_the_requested_item() {
         let queue = loaded(5, 2);
+
         assert_eq!(current(&queue), Some(3));
         assert_eq!(queue.position(), Some(2));
         assert_eq!(queue.len(), 5);
@@ -1785,6 +1870,7 @@ mod tests {
     #[test]
     fn an_empty_queue_has_no_current_item() {
         let queue = loaded(0, 0);
+
         assert_eq!(queue.len(), 0);
         assert_eq!(current(&queue), None);
         assert_eq!(queue.position(), None);
@@ -1793,12 +1879,14 @@ mod tests {
     #[test]
     fn a_start_index_past_the_end_lands_on_the_last_item() {
         let queue = loaded(3, 99);
+
         assert_eq!(queue.position(), Some(2));
     }
 
     #[test]
     fn repeat_off_runs_off_the_end() {
         let mut queue = loaded(3, 0);
+
         assert_eq!(queue.advance(true), Some(1));
         assert_eq!(queue.advance(true), Some(2));
         assert_eq!(queue.advance(true), None);
@@ -1808,13 +1896,16 @@ mod tests {
     #[test]
     fn repeat_queue_wraps_to_the_start() {
         let mut queue = loaded(3, 2);
+
         queue.set_repeat(RepeatMode::Queue);
+
         assert_eq!(queue.advance(true), Some(0));
     }
 
     #[test]
     fn repeat_track_holds_a_track_that_ended_but_yields_to_an_explicit_next() {
         let mut queue = loaded(3, 0);
+
         queue.set_repeat(RepeatMode::Track);
 
         assert_eq!(queue.advance(true), Some(0));
@@ -1824,15 +1915,18 @@ mod tests {
     #[test]
     fn previous_stops_at_the_first_item_unless_the_queue_repeats() {
         let mut queue = loaded(3, 0);
+
         assert_eq!(queue.retreat(), Some(0));
 
         queue.set_repeat(RepeatMode::Queue);
+
         assert_eq!(queue.retreat(), Some(2));
     }
 
     #[test]
     fn shuffling_keeps_playing_the_track_that_was_playing() {
         let mut queue = loaded(64, 20);
+
         queue.set_shuffle(true);
 
         assert_eq!(queue.position(), Some(20));
@@ -1842,10 +1936,13 @@ mod tests {
     #[test]
     fn unshuffling_restores_the_load_order_from_wherever_it_stopped() {
         let mut queue = loaded(64, 0);
+
         queue.set_shuffle(true);
+
         let playing = queue.advance(true).expect("64 items outlast one advance");
 
         queue.set_shuffle(false);
+
         assert_eq!(queue.position(), Some(playing));
         assert_eq!(
             queue.advance(true),
@@ -1864,11 +1961,14 @@ mod tests {
     #[test]
     fn a_hand_order_made_unshuffled_comes_back_when_shuffling_is_turned_off() {
         let mut queue = loaded(8, 0);
+
         queue
             .move_rows(Span::one(7), 0)
             .expect("the last row moves to the front");
         queue.reorder(&[1, 0, 2, 3, 4, 5, 6, 7]).expect("a swap");
+
         let by_hand = numbered(&queue);
+
         assert_eq!(by_hand, [1, 8, 2, 3, 4, 5, 6, 7]);
 
         queue.set_shuffle(true);
@@ -1882,8 +1982,10 @@ mod tests {
     #[test]
     fn a_row_played_next_under_shuffle_follows_the_playing_row_once_unshuffled() {
         let mut queue = loaded(32, 0);
+
         queue.set_shuffle(true);
         queue.advance(true).expect("32 rows outlast one advance");
+
         let playing = current(&queue).expect("a row is playing");
 
         queue.insert(vec![item(90)], Placement::Next);
@@ -1895,6 +1997,7 @@ mod tests {
             .iter()
             .position(|id| *id == playing)
             .expect("the playing row is still queued");
+
         assert_eq!(order.get(at + 1), Some(&90));
         assert_eq!(order.get(at + 2), Some(&91));
         assert_eq!(current(&queue), Some(playing));
@@ -1912,12 +2015,15 @@ mod tests {
     #[test]
     fn the_list_a_shuffle_leaves_is_the_order_the_rows_stand_in_unshuffled() {
         let mut queue = loaded(32, 4);
+
         let before = listed(&queue);
         let rows_were = queue.published().rows_revision;
         let drawn_was = queue.revision();
+
         assert_eq!(before, numbered(&queue));
 
         queue.set_shuffle(true);
+
         assert_ne!(
             numbered(&queue),
             before,
@@ -1928,18 +2034,23 @@ mod tests {
         assert_ne!(queue.revision(), drawn_was);
 
         queue.advance(true).expect("32 rows outlast one advance");
+
         let playing = current(&queue).expect("a row is playing");
+
         queue.insert(vec![item(90)], Placement::Next);
+
         let list = listed(&queue);
         let at = list
             .iter()
             .position(|id| *id == playing)
             .expect("the playing row is listed");
+
         assert_eq!(list.get(at + 1), Some(&90), "{list:?}");
         assert_ne!(queue.published().rows_revision, rows_were);
         assert_eq!(list.len(), 33);
 
         queue.set_shuffle(false);
+
         assert_eq!(listed(&queue), numbered(&queue));
         assert_eq!(listed(&queue), list, "unshuffling moved the list");
     }
@@ -1947,7 +2058,9 @@ mod tests {
     #[test]
     fn a_row_removed_under_shuffle_stays_gone_once_unshuffled() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
+
         let dropped = numbered(&queue)[3];
 
         queue
@@ -1956,10 +2069,14 @@ mod tests {
         queue.set_shuffle(false);
 
         let order = numbered(&queue);
+
         assert_eq!(order.len(), 15);
         assert!(!order.contains(&dropped));
+
         let mut sorted = order.clone();
+
         sorted.sort_unstable();
+
         assert_eq!(
             order, sorted,
             "unshuffling lost the load order around a removal"
@@ -1991,6 +2108,7 @@ mod tests {
     #[test]
     fn kin_landing_after_a_shuffle_spreads_the_artists_and_keeps_the_playing_row() {
         let mut queue = loaded(30, 4);
+
         queue.shuffler = Shuffler::seeded(SPREAD_SEED);
         queue.set_smart_shuffle(SmartShuffle {
             fresh_first: false,
@@ -1998,20 +2116,26 @@ mod tests {
         });
 
         queue.set_shuffle(true);
+
         let ask = queue
             .kin_wanted()
             .expect("a smart shuffle asks for the kin");
         let revision = ask
             .respread_at
             .expect("a fresh shuffle is spread once kin lands");
+
         assert!(queue.know_kin(ask.epoch, kin_by_artist(&ask)));
+
         queue.respread_unless_moved_since(revision);
 
         let order = loaded_at(&queue);
+
         assert_eq!(current(&queue), Some(5));
         assert_eq!(order.first(), Some(&4));
+
         let artists: Vec<u64> = order[1..].iter().map(|place| artist_of(*place)).collect();
         let alike = artists.windows(2).filter(|pair| pair[0] == pair[1]).count();
+
         assert!(alike <= 2, "{artists:?}");
         assert!(
             queue.kin_wanted().is_none(),
@@ -2024,12 +2148,17 @@ mod tests {
         let mut queue = loaded(10, 0);
 
         queue.set_shuffle(true);
+
         let ask = queue
             .kin_wanted()
             .expect("a smart shuffle asks for the kin");
+
         queue.remove_rows(Span::between(5, 5));
+
         let before = loaded_at(&queue);
+
         assert!(queue.know_kin(ask.epoch, kin_by_artist(&ask)));
+
         queue.respread_unless_moved_since(ask.respread_at.expect("a respread is owed"));
 
         assert_eq!(loaded_at(&queue), before);
@@ -2040,9 +2169,11 @@ mod tests {
         let mut queue = loaded(10, 0);
 
         queue.set_shuffle(true);
+
         let ask = queue
             .kin_wanted()
             .expect("a smart shuffle asks for the kin");
+
         queue.load(items(4), 0);
 
         assert!(!queue.know_kin(ask.epoch, kin_by_artist(&ask)));
@@ -2052,6 +2183,7 @@ mod tests {
     #[test]
     fn a_random_shuffle_asks_for_no_kin() {
         let mut queue = loaded(10, 0);
+
         queue.set_smart_shuffle(SmartShuffle::RANDOM);
 
         queue.set_shuffle(true);
@@ -2062,11 +2194,14 @@ mod tests {
     #[test]
     fn album_by_album_plays_on_through_the_album_the_playing_row_is_in() {
         let mut queue = loaded(12, 5);
+
         queue.set_smart_shuffle(SmartShuffle {
             style: ShuffleStyle::Albums,
             ..SmartShuffle::default()
         });
+
         let album = |place: usize| (place / 4) as u64;
+
         queue.kin = (0..12)
             .map(|place| {
                 (
@@ -2083,6 +2218,7 @@ mod tests {
         queue.set_shuffle(true);
 
         let order = loaded_at(&queue);
+
         assert_eq!(&order[..4], &[4, 5, 6, 7]);
         assert_eq!(current(&queue), Some(6));
         assert_eq!(queue.cursor(), Some(1));
@@ -2098,24 +2234,29 @@ mod tests {
     #[test]
     fn a_shuffled_pass_visits_every_item_exactly_once() {
         let mut queue = loaded(32, 0);
+
         queue.set_shuffle(true);
 
         let mut seen = vec![queue.position().expect("the queue is not empty")];
+
         while let Some(position) = queue.advance(true) {
             seen.push(position);
         }
 
         seen.sort_unstable();
+
         assert_eq!(seen, (0..32).collect::<Vec<_>>());
     }
 
     #[test]
     fn a_new_shuffled_pass_never_opens_on_the_row_the_last_one_ended_on() {
         let mut queue = loaded(2, 0);
+
         queue.set_shuffle(true);
         queue.set_repeat(RepeatMode::Queue);
 
         let mut heard = vec![queue.position().expect("the queue is not empty")];
+
         for _ in 0..256 {
             heard.push(
                 queue
@@ -2133,9 +2274,11 @@ mod tests {
     #[test]
     fn shuffling_reorders_a_queue_long_enough_for_that_to_be_certain() {
         let mut queue = loaded(256, 0);
+
         queue.set_shuffle(true);
 
         let mut order = vec![queue.position().expect("the queue is not empty")];
+
         while let Some(position) = queue.advance(true) {
             order.push(position);
         }
@@ -2146,9 +2289,11 @@ mod tests {
     #[test]
     fn jumping_selects_the_row_the_queue_pane_shows_not_the_load_order() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
 
         let shown = queue.in_play_order();
+
         assert_eq!(
             queue.jump_to(9),
             shown.get(9).map(|item| item.id.get() as usize - 1)
@@ -2161,35 +2306,46 @@ mod tests {
     #[test]
     fn the_play_order_holds_every_item_once_however_it_is_shuffled() {
         let mut queue = loaded(16, 0);
+
         let loaded_order: Vec<u64> = queue
             .in_play_order()
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(loaded_order, (1..=16).collect::<Vec<_>>());
 
         queue.set_shuffle(true);
+
         let mut shuffled: Vec<u64> = queue
             .in_play_order()
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(shuffled.len(), 16);
+
         shuffled.sort_unstable();
+
         assert_eq!(shuffled, (1..=16).collect::<Vec<_>>());
     }
 
     #[test]
     fn the_revision_moves_only_when_the_order_a_pane_would_draw_changes() {
         let mut queue = loaded(8, 0);
+
         let loaded_at = queue.revision();
 
         queue.set_repeat(RepeatMode::Queue);
+
         assert_eq!(queue.revision(), loaded_at, "repeat reordered nothing");
+
         queue.advance(true);
+
         assert_eq!(queue.revision(), loaded_at, "advancing reordered nothing");
 
         queue.set_shuffle(true);
+
         assert_ne!(
             queue.revision(),
             loaded_at,
@@ -2197,9 +2353,13 @@ mod tests {
         );
 
         let shuffled_at = queue.revision();
+
         queue.set_shuffle(true);
+
         assert_eq!(queue.revision(), shuffled_at, "shuffling twice reshuffled");
+
         queue.set_shuffle(false);
+
         assert_ne!(
             queue.revision(),
             shuffled_at,
@@ -2210,6 +2370,7 @@ mod tests {
     #[test]
     fn inserting_puts_a_row_where_it_is_told_and_keeps_the_one_playing() {
         let mut queue = loaded(4, 1);
+
         assert_eq!(queue.insert(vec![item(90)], Placement::At(0)), Some(0));
 
         assert_eq!(queue.len(), 5);
@@ -2224,6 +2385,7 @@ mod tests {
     #[test]
     fn playing_next_lands_the_row_after_the_one_playing() {
         let mut queue = loaded(4, 1);
+
         assert_eq!(queue.insert(vec![item(90)], Placement::Next), Some(2));
 
         assert_eq!(queue.cursor(), Some(1), "the playing row moved");
@@ -2235,7 +2397,9 @@ mod tests {
     #[test]
     fn playing_next_under_shuffle_lands_after_the_row_the_pane_drew() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
+
         let playing = current(&queue);
 
         assert_eq!(queue.insert(vec![item(90)], Placement::Next), Some(1));
@@ -2249,7 +2413,9 @@ mod tests {
     #[test]
     fn playing_next_with_nothing_playing_lands_at_the_end() {
         let mut queue = loaded(3, 2);
+
         while queue.advance(true).is_some() {}
+
         assert_eq!(queue.cursor(), None);
 
         assert_eq!(queue.insert(vec![item(90)], Placement::Next), Some(3));
@@ -2260,8 +2426,10 @@ mod tests {
     #[test]
     fn a_row_asked_for_past_the_end_lands_after_the_queued_rows_while_one_of_them_plays() {
         let mut queue = loaded(1, 0);
+
         queue.insert(vec![item(91), item(92)], Placement::Queued);
         queue.advance(false);
+
         assert_eq!(current(&queue), Some(91));
 
         assert_eq!(queue.insert(vec![item(90)], Placement::At(10)), Some(3));
@@ -2273,6 +2441,7 @@ mod tests {
     #[test]
     fn a_row_asked_for_just_before_the_queued_row_playing_lands_before_it() {
         let mut queue = loaded(1, 0);
+
         queue.insert(vec![item(91), item(92)], Placement::Queued);
         queue.advance(false);
 
@@ -2285,6 +2454,7 @@ mod tests {
     #[test]
     fn a_row_asked_for_past_the_end_lands_at_the_end() {
         let mut queue = loaded(3, 0);
+
         assert_eq!(queue.insert(vec![item(90)], Placement::At(99)), Some(3));
         assert_eq!(
             queue.in_play_order().last().map(|item| item.id.get()),
@@ -2295,6 +2465,7 @@ mod tests {
     #[test]
     fn adding_to_the_queue_lands_before_the_rest_of_what_plays_and_leaves_the_cursor() {
         let mut queue = loaded(4, 1);
+
         assert_eq!(queue.insert(vec![item(90)], Placement::Queued), Some(2));
 
         assert_eq!(queue.cursor(), Some(1));
@@ -2305,6 +2476,7 @@ mod tests {
     #[test]
     fn inserting_into_an_empty_queue_leaves_a_row_for_play_to_start_on() {
         let mut queue = Queue::new();
+
         assert_eq!(queue.insert(items(2), Placement::Queued), Some(0));
 
         assert_eq!(queue.cursor(), Some(0));
@@ -2319,6 +2491,7 @@ mod tests {
     #[test]
     fn removing_a_row_before_the_playing_one_keeps_the_track_playing() {
         let mut queue = loaded(4, 2);
+
         assert_eq!(queue.remove_rows(Span::one(0)), Some(Removal::Queued));
 
         assert_eq!(queue.len(), 3);
@@ -2329,6 +2502,7 @@ mod tests {
     #[test]
     fn removing_the_playing_row_hands_the_position_to_the_row_that_slides_in() {
         let mut queue = loaded(4, 1);
+
         assert_eq!(queue.remove_rows(Span::one(1)), Some(Removal::Playing));
 
         assert_eq!(queue.cursor(), Some(1));
@@ -2338,6 +2512,7 @@ mod tests {
     #[test]
     fn removing_the_playing_row_at_the_end_runs_the_queue_off_it() {
         let mut queue = loaded(3, 2);
+
         assert_eq!(queue.remove_rows(Span::one(2)), Some(Removal::Playing));
 
         assert_eq!(queue.cursor(), None);
@@ -2353,6 +2528,7 @@ mod tests {
     #[test]
     fn removing_the_playing_row_at_the_end_wraps_to_the_start_when_the_queue_repeats() {
         let mut queue = loaded(3, 2);
+
         queue.set_repeat(RepeatMode::Queue);
 
         assert_eq!(queue.remove_rows(Span::one(2)), Some(Removal::Playing));
@@ -2365,6 +2541,7 @@ mod tests {
     #[test]
     fn removing_the_only_row_under_repeat_queue_leaves_nothing_playing() {
         let mut queue = loaded(1, 0);
+
         queue.set_repeat(RepeatMode::Queue);
 
         assert_eq!(queue.remove_rows(Span::one(0)), Some(Removal::Playing));
@@ -2376,12 +2553,15 @@ mod tests {
     #[test]
     fn removing_a_shuffled_row_drops_that_row_and_no_other() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
+
         let shown = queue.in_play_order();
         let dropped = shown.get(5).expect("sixteen rows outlast one removal").id;
         let playing = current(&queue);
 
         queue.remove_rows(Span::one(5));
+
         let left = queue.in_play_order();
 
         assert_eq!(left.len(), 15);
@@ -2389,6 +2569,7 @@ mod tests {
         assert_eq!(current(&queue), playing);
         for (row, item) in left.iter().enumerate() {
             let expected = shown.get(if row < 5 { row } else { row + 1 });
+
             assert_eq!(Some(item), expected, "row {row} came out reordered");
         }
     }
@@ -2396,6 +2577,7 @@ mod tests {
     #[test]
     fn removing_a_span_drops_every_row_in_it_and_no_other() {
         let mut queue = loaded(6, 0);
+
         assert_eq!(
             queue.remove_rows(Span::between(1, 3)),
             Some(Removal::Queued)
@@ -2406,6 +2588,7 @@ mod tests {
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(left, vec![1, 5, 6]);
         assert_eq!(queue.len(), 3);
         assert_eq!(queue.cursor(), Some(0));
@@ -2415,6 +2598,7 @@ mod tests {
     #[test]
     fn removing_a_span_before_the_playing_row_pulls_the_track_back_by_its_length() {
         let mut queue = loaded(6, 4);
+
         assert_eq!(
             queue.remove_rows(Span::between(0, 2)),
             Some(Removal::Queued)
@@ -2427,6 +2611,7 @@ mod tests {
     #[test]
     fn removing_a_span_holding_the_playing_row_hands_the_position_on() {
         let mut queue = loaded(6, 2);
+
         assert_eq!(
             queue.remove_rows(Span::between(1, 3)),
             Some(Removal::Playing)
@@ -2439,6 +2624,7 @@ mod tests {
     #[test]
     fn a_span_running_past_the_end_removes_nothing() {
         let mut queue = loaded(3, 0);
+
         assert_eq!(queue.remove_rows(Span::between(2, 3)), None);
         assert_eq!(queue.len(), 3);
     }
@@ -2446,17 +2632,20 @@ mod tests {
     #[test]
     fn two_runs_removed_together_leave_the_rows_between_them_and_a_stray_run_removes_nothing() {
         let mut queue = loaded(6, 0);
+
         assert_eq!(
             queue.remove_all(&[Span::one(1), Span::between(3, 4)]),
             Ok(Removal::Queued)
         );
 
         assert_eq!(queue.len(), 3);
+
         let left: Vec<u64> = queue
             .in_play_order()
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(left, [1, 3, 6]);
 
         assert_eq!(
@@ -2469,15 +2658,19 @@ mod tests {
     #[test]
     fn removing_a_shuffled_span_drops_the_rows_the_pane_drew() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
+
         let shown = queue.in_play_order();
 
         queue.remove_rows(Span::between(5, 7));
+
         let left = queue.in_play_order();
 
         assert_eq!(left.len(), 13);
         for (row, item) in left.iter().enumerate() {
             let expected = shown.get(if row < 5 { row } else { row + 3 });
+
             assert_eq!(Some(item), expected, "row {row} came out reordered");
         }
     }
@@ -2485,6 +2678,7 @@ mod tests {
     #[test]
     fn moving_a_span_down_ends_it_on_the_row_it_landed_on() {
         let mut queue = loaded(6, 0);
+
         assert_eq!(queue.move_rows(Span::between(0, 1), 4), Some(()));
 
         let shown: Vec<u64> = queue
@@ -2492,12 +2686,14 @@ mod tests {
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(shown, vec![3, 4, 5, 1, 2, 6]);
     }
 
     #[test]
     fn moving_a_span_up_starts_it_on_the_row_it_landed_on() {
         let mut queue = loaded(6, 0);
+
         assert_eq!(queue.move_rows(Span::between(3, 4), 1), Some(()));
 
         let shown: Vec<u64> = queue
@@ -2505,12 +2701,14 @@ mod tests {
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(shown, vec![1, 4, 5, 2, 3, 6]);
     }
 
     #[test]
     fn moving_a_span_carries_the_playing_row_inside_it() {
         let mut queue = loaded(6, 1);
+
         assert_eq!(queue.move_rows(Span::between(0, 2), 5), Some(()));
 
         assert_eq!(queue.cursor(), Some(4));
@@ -2520,6 +2718,7 @@ mod tests {
     #[test]
     fn a_span_dropped_on_itself_stays_where_it_is() {
         let mut queue = loaded(6, 0);
+
         let held = queue.revision();
 
         assert_eq!(queue.move_rows(Span::between(1, 3), 2), Some(()));
@@ -2533,6 +2732,7 @@ mod tests {
     #[test]
     fn moving_a_row_lands_it_where_it_was_told_and_leaves_the_rest_in_order() {
         let mut queue = loaded(4, 0);
+
         assert_eq!(queue.move_rows(Span::one(0), 2), Some(()));
 
         let shown: Vec<u64> = queue
@@ -2540,20 +2740,24 @@ mod tests {
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(shown, vec![2, 3, 1, 4]);
 
         assert_eq!(queue.move_rows(Span::one(2), 0), Some(()));
+
         let back: Vec<u64> = queue
             .in_play_order()
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         assert_eq!(back, vec![1, 2, 3, 4]);
     }
 
     #[test]
     fn moving_the_playing_row_carries_the_track_with_it() {
         let mut queue = loaded(4, 1);
+
         assert_eq!(queue.move_rows(Span::one(1), 3), Some(()));
 
         assert_eq!(queue.cursor(), Some(3));
@@ -2564,6 +2768,7 @@ mod tests {
     #[test]
     fn moving_a_row_over_the_playing_one_keeps_the_track_playing() {
         let mut queue = loaded(4, 2);
+
         assert_eq!(queue.move_rows(Span::one(0), 3), Some(()));
         assert_eq!(queue.cursor(), Some(1));
         assert_eq!(current(&queue), Some(3));
@@ -2576,11 +2781,13 @@ mod tests {
     #[test]
     fn a_row_that_is_not_there_cannot_be_moved() {
         let mut queue = loaded(3, 0);
+
         assert_eq!(queue.move_rows(Span::one(0), 3), None);
         assert_eq!(queue.move_rows(Span::one(3), 0), None);
         assert_eq!(Queue::new().move_rows(Span::one(0), 0), None);
 
         let held = queue.revision();
+
         assert_eq!(queue.move_rows(Span::one(1), 1), Some(()));
         assert_eq!(
             queue.revision(),
@@ -2592,14 +2799,18 @@ mod tests {
     #[test]
     fn moving_a_shuffled_row_moves_the_row_the_pane_drew_and_no_other() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
+
         let shown = queue.in_play_order();
 
         queue.move_rows(Span::one(5), 11);
+
         let left = queue.in_play_order();
 
         assert_eq!(left.len(), 16);
         assert_eq!(left.get(11), shown.get(5), "the row did not land on row 11");
+
         for row in 0..5 {
             assert_eq!(
                 left.get(row),
@@ -2626,23 +2837,30 @@ mod tests {
     #[test]
     fn editing_the_queue_moves_the_revision_a_pane_redraws_on() {
         let mut queue = loaded(4, 0);
+
         let loaded_at = queue.revision();
 
         queue.insert(vec![item(90)], Placement::Queued);
+
         let inserted_at = queue.revision();
+
         assert_ne!(inserted_at, loaded_at, "an insert redrew nothing");
 
         queue.remove_rows(Span::one(0));
+
         assert_ne!(queue.revision(), inserted_at, "a removal redrew nothing");
     }
 
     #[test]
     fn the_stamp_moves_when_the_rows_do_and_a_reordering_leaves_it() {
         let mut queue = loaded(4, 0);
+
         let loaded_at = queue.published().stamp;
+
         assert_eq!(Queue::new().published().stamp, QueueStamp::default());
 
         queue.move_rows(Span::one(0), 3);
+
         assert_eq!(
             queue.published().stamp,
             loaded_at,
@@ -2650,6 +2868,7 @@ mod tests {
         );
 
         queue.set_shuffle(true);
+
         assert_eq!(
             queue.published().stamp,
             loaded_at,
@@ -2657,14 +2876,18 @@ mod tests {
         );
 
         queue.insert(vec![item(90)], Placement::Queued);
+
         let inserted_at = queue.published().stamp;
+
         assert_ne!(inserted_at, loaded_at, "an arriving row stamped the same");
 
         let arrived = numbered(&queue)
             .iter()
             .position(|id| *id == 90)
             .expect("the queued row is drawn");
+
         queue.remove_rows(Span::one(arrived));
+
         assert_eq!(
             queue.published().stamp,
             loaded_at,
@@ -2676,9 +2899,11 @@ mod tests {
     fn one_file_queued_twice_is_two_rows_under_two_ids() {
         let twice = vec![item(7), item(7)];
         let mut queue = Queue::new();
+
         queue.load(twice, 0);
 
         let rows = queue.in_play_order();
+
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].location, rows[1].location);
         assert_ne!(
@@ -2691,9 +2916,11 @@ mod tests {
     #[test]
     fn a_row_arriving_under_an_id_the_queue_holds_is_given_one_of_its_own() {
         let mut queue = loaded(4, 0);
+
         let held: Vec<TrackId> = queue.in_play_order().iter().map(|item| item.id).collect();
 
         queue.insert(vec![item(2)], Placement::Queued);
+
         let rows = queue.in_play_order();
         let arrived = rows.get(1).expect("the row arrived after the one playing");
 
@@ -2707,7 +2934,9 @@ mod tests {
     #[test]
     fn a_queue_stamps_by_the_rows_it_holds_rather_than_the_ids_they_arrived_under() {
         let mut queue = Queue::new();
+
         queue.load(items(3), 0);
+
         let loaded_at = queue.published().stamp;
 
         let renamed: Vec<QueueItem> = items(3)
@@ -2719,6 +2948,7 @@ mod tests {
             })
             .collect();
         let mut again = Queue::new();
+
         again.load(renamed, 0);
 
         assert_eq!(
@@ -2736,6 +2966,7 @@ mod tests {
         queue.insert(batch, Placement::Queued);
 
         let ids: AHashSet<u64> = held_rows(&queue).iter().map(|item| item.id.get()).collect();
+
         assert_eq!(ids.len(), 50_000);
         assert!(ids.contains(&1));
     }
@@ -2745,6 +2976,7 @@ mod tests {
         assert_eq!(unclaimed_id(&[]), TrackId::MAX);
 
         let mut queue = items(4);
+
         queue.push(QueueItem {
             id: TrackId::MAX,
             location: MediaLocation::local("/music/opened.flac"),
@@ -2752,6 +2984,7 @@ mod tests {
         });
 
         let minted = unclaimed_id(&queue);
+
         assert_eq!(minted.get(), u64::MAX - 1);
         assert!(!queue.iter().any(|item| item.id == minted));
 
@@ -2760,12 +2993,14 @@ mod tests {
             location: MediaLocation::local("/music/opened-again.flac"),
             span: None,
         });
+
         assert_eq!(unclaimed_id(&queue).get(), u64::MAX - 2);
     }
 
     #[test]
     fn a_run_of_ids_is_minted_from_one_walk_over_what_the_queue_holds() {
         let mut queue = items(4);
+
         queue.push(QueueItem {
             id: TrackId::MAX,
             location: MediaLocation::local("/music/opened.flac"),
@@ -2773,6 +3008,7 @@ mod tests {
         });
 
         let mut minting = Unclaimed::beside(&queue);
+
         let minted: Vec<u64> = (0..3).map(|_| minting.mint().get()).collect();
 
         assert_eq!(minted, vec![u64::MAX - 1, u64::MAX - 2, u64::MAX - 3]);
@@ -2786,9 +3022,11 @@ mod tests {
     #[test]
     fn what_a_drawn_row_says_it_was_loaded_at_names_the_row_the_queue_holds() {
         let mut queue = loaded(8, 0);
+
         assert_eq!(loaded_at(&queue), (0..8).collect::<Vec<_>>());
 
         queue.set_shuffle(true);
+
         let shown = queue.in_play_order();
         for (row, loaded_at) in loaded_at(&queue).into_iter().enumerate() {
             assert_eq!(
@@ -2834,6 +3072,7 @@ mod tests {
     fn unshuffling_a_restored_queue_gives_back_the_order_it_was_loaded_in() {
         let mut queue = Queue::new();
         let rows = vec![kept(1), kept(2), kept(3), kept(4)];
+
         queue.restore(resumption(rows, vec![2, 0, 3, 1], 2, true));
 
         queue.set_shuffle(false);
@@ -2859,10 +3098,13 @@ mod tests {
     #[test]
     fn a_restored_row_past_the_end_lands_on_the_last_one_and_nothing_restored_plays_nothing() {
         let mut queue = Queue::new();
+
         queue.restore(resumption(vec![kept(1), kept(2)], vec![0, 1], 9, false));
+
         assert_eq!(queue.cursor(), Some(1));
 
         let mut emptied = loaded(3, 0);
+
         assert_eq!(
             emptied.restore(resumption(Vec::new(), Vec::new(), 0, false)),
             None
@@ -2875,6 +3117,7 @@ mod tests {
     #[test]
     fn a_restored_queue_mints_an_id_for_every_row_it_takes() {
         let mut queue = Queue::new();
+
         queue.restore(resumption(
             vec![kept(1), kept(2), kept(3)],
             vec![0, 1, 2],
@@ -2887,16 +3130,20 @@ mod tests {
             .iter()
             .map(|item| item.id.get())
             .collect();
+
         minted.sort_unstable();
         minted.dedup();
+
         assert_eq!(minted.len(), 3, "two restored rows share an id");
     }
 
     #[test]
     fn a_shuffled_queue_kept_and_restored_draws_the_same_rows_and_unshuffles_the_same_way() {
         let mut queue = loaded(16, 0);
+
         queue.set_shuffle(true);
         queue.advance(true);
+
         let shown = drawn(&queue);
         let order = loaded_at(&queue);
         let rows: Vec<Resumable> = held_rows(&queue)
@@ -2910,6 +3157,7 @@ mod tests {
         let cursor = queue.cursor().expect("sixteen rows outlast one advance");
 
         let mut back = Queue::new();
+
         back.restore(resumption(rows, order, cursor, queue.shuffle()));
 
         assert_eq!(drawn(&back), shown, "a kept queue came back reordered");
@@ -2917,6 +3165,7 @@ mod tests {
         assert!(back.shuffle());
 
         back.set_shuffle(false);
+
         assert_eq!(
             drawn(&back),
             (1..=16)
@@ -2928,6 +3177,7 @@ mod tests {
 
     fn heard_in_turn(queue: &mut Queue) -> Vec<u64> {
         let mut heard: Vec<u64> = current(queue).into_iter().collect();
+
         while queue.advance(true).is_some() {
             heard.extend(current(queue));
         }
@@ -2937,6 +3187,7 @@ mod tests {
     #[test]
     fn what_is_queued_plays_after_the_row_playing_and_before_the_rest_of_what_plays() {
         let mut queue = loaded(4, 0);
+
         queue.insert(vec![item(90)], Placement::Queued);
         queue.insert(vec![item(91)], Placement::Queued);
         queue.insert(vec![item(80)], Placement::Next);
@@ -2949,9 +3200,11 @@ mod tests {
     #[test]
     fn a_queued_row_leaves_the_queue_once_it_has_played() {
         let mut queue = loaded(3, 0);
+
         queue.insert(vec![item(90)], Placement::Queued);
 
         queue.advance(true);
+
         assert_eq!(current(&queue), Some(90));
         assert_eq!(queue.cursor(), Some(1));
         assert_eq!(
@@ -2961,6 +3214,7 @@ mod tests {
         );
 
         queue.advance(true);
+
         assert_eq!(current(&queue), Some(2));
         assert_eq!(numbered(&queue), [1, 2, 3]);
         assert_eq!(queue.playing_next(), None);
@@ -2969,19 +3223,23 @@ mod tests {
     #[test]
     fn what_is_playing_from_stamps_the_same_however_much_is_queued() {
         let mut queue = loaded(3, 0);
+
         let playing_from = queue.playing_from();
 
         queue.insert(vec![item(90), item(91)], Placement::Queued);
+
         assert_eq!(queue.playing_from(), playing_from);
         assert_ne!(queue.published().stamp, stamp_of(&items(3)));
 
         queue.advance(true);
         queue.advance(true);
         queue.advance(true);
+
         assert_eq!(current(&queue), Some(2));
         assert_eq!(queue.playing_from(), playing_from);
 
         queue.insert(vec![item(92)], Placement::At(3));
+
         assert_ne!(
             queue.playing_from(),
             playing_from,
@@ -2992,13 +3250,16 @@ mod tests {
     #[test]
     fn shuffling_leaves_what_is_queued_in_the_order_it_was_queued() {
         let mut queue = loaded(64, 0);
+
         queue.insert(vec![item(90), item(91), item(92)], Placement::Queued);
 
         queue.set_shuffle(true);
+
         assert_eq!(current(&queue), Some(1));
         assert_eq!(numbered(&queue)[1..4], [90, 91, 92]);
 
         queue.set_shuffle(false);
+
         assert_eq!(numbered(&queue)[..4], [1, 90, 91, 92]);
         assert_eq!(numbered(&queue)[4], 2);
     }
@@ -3006,6 +3267,7 @@ mod tests {
     #[test]
     fn loading_something_else_keeps_what_is_queued_to_play_next() {
         let mut queue = loaded(3, 0);
+
         queue.insert(vec![item(90)], Placement::Queued);
         queue.advance(true);
         queue.insert(vec![item(91)], Placement::Queued);
@@ -3020,15 +3282,19 @@ mod tests {
     #[test]
     fn going_back_from_a_queued_row_keeps_it_queued() {
         let mut queue = loaded(3, 1);
+
         queue.insert(vec![item(90)], Placement::Queued);
         queue.advance(false);
+
         assert_eq!(current(&queue), Some(90));
 
         queue.retreat();
+
         assert_eq!(current(&queue), Some(2));
         assert_eq!(numbered(&queue), [1, 2, 90, 3]);
 
         queue.retreat();
+
         assert_eq!(current(&queue), Some(1));
         assert_eq!(
             numbered(&queue),
@@ -3040,13 +3306,16 @@ mod tests {
     #[test]
     fn choosing_a_queued_row_hears_it_and_keeps_the_rest_queued() {
         let mut queue = loaded(3, 0);
+
         queue.insert(vec![item(90), item(91), item(92)], Placement::Queued);
 
         queue.jump_to(2);
+
         assert_eq!(current(&queue), Some(91));
         assert_eq!(numbered(&queue), [1, 91, 90, 92, 2, 3]);
 
         queue.jump_to(5);
+
         assert_eq!(current(&queue), Some(3));
         assert_eq!(
             numbered(&queue),
@@ -3058,18 +3327,22 @@ mod tests {
     #[test]
     fn a_row_dragged_among_the_queued_rows_joins_them_and_one_dragged_out_leaves() {
         let mut queue = loaded(4, 0);
+
         queue.insert(vec![item(90)], Placement::Queued);
+
         assert_eq!(numbered(&queue), [1, 90, 2, 3, 4]);
 
         queue
             .move_rows(Span::one(4), 1)
             .expect("the last row moves up");
+
         assert_eq!(numbered(&queue), [1, 4, 90, 2, 3]);
         assert_eq!(queue.playing_next(), Some(Span::between(1, 2)));
 
         queue
             .move_rows(Span::one(1), 4)
             .expect("the row moves back down");
+
         assert_eq!(numbered(&queue), [1, 90, 2, 3, 4]);
         assert_eq!(queue.playing_next(), Some(Span::one(1)));
     }
@@ -3077,15 +3350,20 @@ mod tests {
     #[test]
     fn jumping_from_one_queued_row_to_another_keeps_both_out_of_what_is_playing_from() {
         let mut queue = loaded(3, 0);
+
         queue.insert(vec![item(90), item(91), item(92)], Placement::Queued);
+
         let playing_from = queue.playing_from();
+
         queue.advance(false);
 
         queue.jump_to(3);
+
         assert_eq!(current(&queue), Some(92));
         assert_eq!(queue.playing_from(), playing_from);
 
         queue.jump_to(2);
+
         assert_eq!(current(&queue), Some(91));
         assert_eq!(queue.playing_from(), playing_from);
     }
@@ -3093,13 +3371,17 @@ mod tests {
     #[test]
     fn a_drag_across_the_queued_rows_moves_what_is_playing_from_and_a_drag_back_restores_it() {
         let mut queue = loaded(4, 0);
+
         queue.insert(vec![item(90)], Placement::Queued);
+
         let playing_from = queue.playing_from();
 
         queue
             .move_rows(Span::one(4), 1)
             .expect("an album row moves up into the queued rows");
+
         let joined = queue.playing_from();
+
         assert_ne!(
             joined, playing_from,
             "an album row left and the stamp stood"
@@ -3108,11 +3390,13 @@ mod tests {
         queue
             .move_rows(Span::one(1), 4)
             .expect("the row moves back down into the album");
+
         assert_eq!(queue.playing_from(), playing_from);
 
         queue
             .move_rows(Span::one(4), 3)
             .expect("an album row moves within the album");
+
         assert_eq!(numbered(&queue), [1, 90, 2, 4, 3]);
         assert_eq!(queue.playing_next(), Some(Span::one(1)));
         assert_eq!(queue.playing_from(), playing_from);
@@ -3120,6 +3404,7 @@ mod tests {
         queue
             .move_rows(Span::one(1), 3)
             .expect("the queued row moves down into the album");
+
         assert_eq!(queue.playing_next(), None);
         assert_ne!(
             queue.playing_from(),
@@ -3131,6 +3416,7 @@ mod tests {
     #[test]
     fn taking_out_the_row_playing_hands_on_to_what_is_queued() {
         let mut queue = loaded(3, 0);
+
         queue.insert(vec![item(90)], Placement::Queued);
 
         assert_eq!(queue.remove_rows(Span::one(0)), Some(Removal::Playing));
@@ -3142,14 +3428,19 @@ mod tests {
     #[test]
     fn a_queue_played_to_its_end_wraps_only_once_nothing_is_queued() {
         let mut queue = loaded(2, 1);
+
         queue.set_repeat(RepeatMode::Queue);
         queue.insert(vec![item(90)], Placement::Queued);
 
         assert!(!queue.wraps_next());
+
         queue.advance(true);
+
         assert_eq!(current(&queue), Some(90));
         assert!(queue.wraps_next());
+
         queue.advance(true);
+
         assert_eq!(current(&queue), Some(1));
         assert_eq!(numbered(&queue), [1, 2]);
     }
@@ -3160,6 +3451,7 @@ mod tests {
             for queued in 0..3 {
                 for start_at in 0..3 {
                     let mut queue = loaded(3, start_at);
+
                     queue.set_repeat(repeat);
                     queue.insert(
                         (0..queued).map(|n| item(90 + n)).collect(),
@@ -3182,10 +3474,12 @@ mod tests {
                             advanced.wraps_next(),
                             advanced.ends_with_this_row(),
                         );
+
                         assert_eq!(
                             said, found,
                             "{repeat:?}, {queued} queued, from {start_at}, {rows_ahead} ahead"
                         );
+
                         if found.0.is_none() {
                             break;
                         }
@@ -3200,6 +3494,7 @@ mod tests {
     fn what_was_queued_comes_back_queued() {
         let mut queue = Queue::new();
         let rows = vec![kept(1), kept(2), kept(90), kept(3)];
+
         queue.restore(Resumption {
             next: Some(Span::one(2)),
             ..resumption(rows.clone(), vec![0, 1, 2, 3], 1, false)
@@ -3210,21 +3505,27 @@ mod tests {
             Some(kept(2).location)
         );
         assert_eq!(queue.playing_next(), Some(Span::one(2)));
+
         queue.advance(true);
         queue.advance(true);
+
         assert_eq!(
             drawn(&queue),
             ["/music/1.flac", "/music/2.flac", "/music/3.flac"]
         );
 
         let mut heard_then = Queue::new();
+
         heard_then.restore(Resumption {
             next: Some(Span::one(2)),
             ..resumption(rows, vec![0, 1, 2, 3], 2, false)
         });
+
         assert_eq!(heard_then.cursor(), Some(2));
         assert_eq!(heard_then.position(), None);
+
         heard_then.advance(true);
+
         assert_eq!(
             heard_then.len(),
             3,
@@ -3301,6 +3602,7 @@ mod tests {
         let mut queue = loaded(5, 3);
 
         queue.remove_rows(Span::one(0));
+
         let rows = queue.in_play_order();
 
         assert_eq!(current(&queue), Some(4));
@@ -3312,9 +3614,11 @@ mod tests {
     #[test]
     fn a_row_published_twice_is_the_same_row_and_not_a_copy() {
         let mut queue = loaded(3, 0);
+
         let before = queue.in_play_order();
 
         queue.insert(vec![item(90)], Placement::Next);
+
         let after = queue.in_play_order();
 
         assert!(Arc::ptr_eq(&before[0], &after[0]));
@@ -3328,6 +3632,7 @@ mod tests {
 
         queue.remove_rows(Span::one(2));
         queue.insert(vec![item(3)], Placement::Queued);
+
         let ids: AHashSet<u64> = held_rows(&queue).iter().map(|row| row.id.get()).collect();
 
         assert!(ids.contains(&item(3).id.get()));
@@ -3345,11 +3650,13 @@ mod tests {
         }
 
         let ids: AHashSet<u64> = held_rows(&queue).iter().map(|row| row.id.get()).collect();
+
         assert_eq!(ids.len(), queue.len());
     }
 
     fn moved_by_rebuilding(queue: &mut Queue, rows: Span, to: usize) -> Option<()> {
         let last = queue.len().checked_sub(1)?;
+
         if rows.last() > last || to > last {
             return None;
         }
@@ -3363,6 +3670,7 @@ mod tests {
         let moved: Flagged = drawn.drain(rows.range()).collect();
         let carries_the_heard =
             heard.is_some_and(|heard| moved.iter().any(|(held, _)| held.place == heard));
+
         let moved = if carries_the_heard {
             moved
         } else {
@@ -3373,6 +3681,7 @@ mod tests {
             let waits = if waits { Waits::Next } else { Waits::InOrder };
             moved.into_iter().map(|(held, _)| (held, waits)).collect()
         };
+
         drawn.splice(landing..landing, moved);
         queue.split(drawn, heard);
 
@@ -3400,6 +3709,7 @@ mod tests {
         for round in 0..300 {
             let count = 1 + round % 3;
             let run = run_of(next..next + count);
+
             standing.insert(Anchor::After(1), &run);
             model.splice(2..2, next..next + count);
             next += count;
@@ -3445,6 +3755,7 @@ mod tests {
         standing.remove(1000);
 
         let kept: Vec<usize> = (0..50).filter(|place| place % 3 != 0).collect();
+
         assert_eq!(standing.places(), kept);
         assert!(standing.contains(1));
         assert!(!standing.contains(3));
@@ -3452,6 +3763,7 @@ mod tests {
         let (heard, to_come) = standing.around(Some(25));
         let heard: Vec<usize> = heard.map(|held| held.place).collect();
         let to_come: Vec<usize> = to_come.map(|held| held.place).collect();
+
         assert_eq!(
             heard,
             kept.iter()
@@ -3478,7 +3790,9 @@ mod tests {
                         if heard_next && queued == 0 {
                             continue;
                         }
+
                         let mut queue = loaded(6, start);
+
                         if shuffle {
                             queue.set_shuffle(true);
                         }
@@ -3496,6 +3810,7 @@ mod tests {
         }
 
         let mut ended = loaded(6, 0);
+
         while ended.advance(false).is_some() {}
         states.push(ended);
 
@@ -3520,6 +3835,7 @@ mod tests {
                             "{rows} to {to} in a queue of {len} at {:?} after {}, shuffled {}",
                             state.seat, state.after, state.shuffle
                         );
+
                         assert_eq!(answered, expected, "{case}");
                         assert_eq!(places(&spliced.order), places(&rebuilt.order), "{case}");
                         assert_eq!(places(&spliced.next), places(&rebuilt.next), "{case}");
@@ -3567,11 +3883,13 @@ mod tests {
         let mut queue = loaded(8, 3);
 
         queue.move_rows(Span::between(0, 1), 6);
+
         assert_eq!(numbered(&queue), [3, 4, 5, 6, 7, 1, 2, 8]);
         assert_eq!(current(&queue), Some(4));
         assert_eq!(queue.cursor(), Some(1));
 
         queue.move_rows(Span::between(5, 6), 0);
+
         assert_eq!(numbered(&queue), [1, 2, 3, 4, 5, 6, 7, 8]);
         assert_eq!(current(&queue), Some(4));
         assert_eq!(queue.cursor(), Some(3));
@@ -3592,11 +3910,14 @@ mod tests {
     #[test]
     fn a_span_dragged_among_the_rows_played_next_joins_them_and_leaves_with_a_drag_out() {
         let mut queue = loaded(6, 1);
+
         queue.insert(vec![item(90), item(91)], Placement::Queued);
+
         let playing_from = queue.playing_from();
         let stamp = queue.stamp;
 
         queue.move_rows(Span::between(5, 6), 3);
+
         assert_eq!(numbered(&queue), [1, 2, 90, 4, 5, 91, 3, 6]);
         assert_eq!(queue.playing_next(), Some(Span::between(2, 5)));
         assert_ne!(queue.playing_from(), playing_from);
@@ -3604,6 +3925,7 @@ mod tests {
         assert_eq!(stamped_afresh(&queue), (queue.stamp, queue.playing_from));
 
         queue.move_rows(Span::between(3, 4), 7);
+
         assert_eq!(numbered(&queue), [1, 2, 90, 91, 3, 6, 4, 5]);
         assert_eq!(queue.playing_next(), Some(Span::between(2, 3)));
         assert_eq!(queue.playing_from(), playing_from);
@@ -3613,8 +3935,10 @@ mod tests {
     #[test]
     fn the_row_playing_next_is_dragged_past_its_neighbours_and_stays_the_one_heard() {
         let mut queue = loaded(4, 0);
+
         queue.insert(vec![item(90), item(91)], Placement::Queued);
         queue.advance(false);
+
         assert_eq!(current(&queue), Some(90));
 
         queue.move_rows(Span::one(1), 4);
@@ -3628,7 +3952,9 @@ mod tests {
     #[test]
     fn a_shuffled_drag_inside_the_play_order_leaves_the_list_order_alone() {
         let mut queue = loaded(12, 0);
+
         queue.set_shuffle(true);
+
         let listed = queue.unshuffled.places();
         let played = places(&queue.order);
 
@@ -3636,16 +3962,21 @@ mod tests {
 
         assert_eq!(queue.unshuffled.places(), listed);
         assert_ne!(places(&queue.order), played);
+
         let mut drawn = places(&queue.order);
+
         drawn.sort_unstable();
+
         assert_eq!(drawn, (0..12).collect::<Vec<_>>());
     }
 
     #[test]
     fn a_shuffled_drag_into_the_rows_played_next_takes_them_out_of_the_list_order() {
         let mut queue = loaded(8, 0);
+
         queue.set_shuffle(true);
         queue.insert(vec![item(90)], Placement::Queued);
+
         let moved = queue.order.get(4).map(|held| held.place).expect("a row");
 
         queue.move_rows(Span::one(5), 1);
@@ -3654,6 +3985,7 @@ mod tests {
         assert!(!queue.unshuffled.places().contains(&moved));
 
         queue.move_rows(Span::one(1), 5);
+
         assert!(queue.unshuffled.places().contains(&moved));
         assert_eq!(queue.next.len(), 1);
     }

@@ -52,6 +52,7 @@ impl Crew {
     fn pool(self) -> Option<&'static ThreadPool> {
         static WHOLE: OnceLock<Option<ThreadPool>> = OnceLock::new();
         static BACKGROUND: OnceLock<Option<ThreadPool>> = OnceLock::new();
+
         let (held, name) = match self {
             Self::AsTheMachineAllows => (&WHOLE, "resonate-analyse"),
             Self::Background => (&BACKGROUND, "resonate-studying"),
@@ -82,13 +83,16 @@ impl Crew {
         if self != Self::Background {
             return;
         }
+
         let rest = began.elapsed() * BACKGROUND_REST_PER_BUSY;
         let mut rested = Duration::ZERO;
         while let Some(left) = rest.checked_sub(rested).filter(|left| !left.is_zero()) {
             if stopped() {
                 break;
             }
+
             let step = left.min(STOPPED_LOOKED_FOR_EVERY);
+
             sleep(step);
             rested += step;
         }
@@ -110,12 +114,15 @@ impl Crew {
     ) -> T {
         let Some(pool) = self.pool() else {
             let mut stages = stages;
+
             return walk(&mut |samples| {
                 for stage in &mut stages {
                     if self == Self::Background {
                         resonate_core::gaming::wait(stopped);
                     }
+
                     let began = Instant::now();
+
                     stage.note(samples);
                     self.rest(began, stopped);
                 }
@@ -133,6 +140,7 @@ impl Crew {
             (samples_a_second / self.slabs_a_second()).max(SAMPLES_A_SLAB_AT_LEAST);
         pool.in_place_scope(|scope| {
             let mut gathering = Slab::gathering(Arc::clone(&fan.queued));
+
             let answer = walk(&mut |samples| {
                 if self == Self::Background {
                     resonate_core::gaming::wait(stopped);
@@ -140,9 +148,11 @@ impl Crew {
                 gathering.hold(samples);
                 if gathering.samples.len() >= samples_a_slab {
                     let next = Slab::gathering(Arc::clone(&fan.queued));
+
                     fan.send(std::mem::replace(&mut gathering, next), scope);
                 }
             });
+
             fan.send(gathering, scope);
             fan.settled(stopped);
             answer
@@ -179,12 +189,15 @@ impl<'stages> Lane<'stages> {
         if (fan.stopped)() {
             fan.cancelled.store(true, Ordering::Relaxed);
         }
+
         let mut stage = self.stage.lock();
         let slab = self.waiting.lock().slabs.pop_front();
+
         if let Some(slab) = slab
             && !fan.cancelled.load(Ordering::Relaxed)
         {
             let began = Instant::now();
+
             if stage.hears_any_pieces_alike() {
                 stage.note(&slab.samples);
             } else {
@@ -223,9 +236,11 @@ impl<'stages> Fan<'stages> {
         }
         self.queued.wait_for_room(slab.bytes());
         slab.charged = true;
+
         let slab = Arc::new(slab);
         for lane in &self.lanes {
             let mut waiting = lane.waiting.lock();
+
             waiting.slabs.push_back(Arc::clone(&slab));
             if !waiting.draining {
                 waiting.draining = true;
@@ -252,6 +267,7 @@ struct Queued {
 impl Queued {
     fn wait_for_room(&self, more: usize) {
         let mut bytes = self.bytes.lock();
+
         while *bytes > 0 && *bytes + more > BYTES_QUEUED_AT_MOST {
             self.freed.wait(&mut bytes);
         }
@@ -265,6 +281,7 @@ impl Queued {
 
     fn is_empty_within(&self, patience: Duration) -> bool {
         let mut bytes = self.bytes.lock();
+
         if *bytes > 0 {
             self.freed.wait_for(&mut bytes, patience);
         }
@@ -302,6 +319,7 @@ impl Slab {
         let mut from = 0;
         self.ends.iter().map(move |end| {
             let piece = &self.samples[from..*end];
+
             from = *end;
             piece
         })
@@ -339,6 +357,7 @@ mod tests {
     #[test]
     fn background_uses_one_thread_and_rests_between_slabs() {
         assert_eq!(Crew::Background.threads(), 1);
+
         let began = Instant::now();
         let busy = began - Duration::from_millis(10);
         let mut steps = Vec::new();

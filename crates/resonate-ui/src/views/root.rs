@@ -159,7 +159,7 @@ pub(crate) enum Magnified {
     Served(MediaLocation),
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum Pane {
     Albums,
     Artists,
@@ -218,12 +218,14 @@ impl Eq for LeftAt {}
 impl LeftAt {
     fn read_off(offset: Pixels, row_height: f32) -> Self {
         let past = f32::from(-offset).max(0.0);
+
         if row_height <= 0.0 {
             return Self {
                 row: 0,
                 into_the_row: 0.0,
             };
         }
+
         let row = (past / row_height).floor();
         Self {
             row: row as usize,
@@ -293,6 +295,7 @@ impl Following {
             self.shown = None;
             return None;
         };
+
         if !queue_is_shown {
             return None;
         }
@@ -738,6 +741,7 @@ impl Focusable for RootView {
 impl RootView {
     fn follow_the_scale(&mut self, window: &Window, cx: &mut Context<Self>) {
         let scale = Scale::of(window.scale_factor());
+
         if scale == self.scale {
             return;
         }
@@ -753,20 +757,27 @@ impl RootView {
 impl Render for RootView {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let right_to_left = resonate_words::spoken().is_right_to_left();
+
         spoken::listened_to(window.is_a11y_active());
         self.hand_the_reader_the_menu(window, cx);
         self.keep_the_focus_with_the_sheets(window, cx);
         self.keep_the_announcements(cx);
+
         let moved = self.moved_under_a_still_pointer(window, cx);
+
         hint::asking(self.hints_are_wanted(cx) && !moved);
+
         let opened = menu::Opened(self.menu.as_ref().and_then(|menu| menu.owner().cloned()));
+
         if cx.try_global::<menu::Opened>() != Some(&opened) {
             cx.set_global(opened);
         }
         self.drawn_at = SystemTime::now();
         self.follow_the_scale(window, cx);
+
         let mouse_navigation = cx.global::<ResonateApp>().mouse_navigation;
         let grain = self.grain(window, cx);
+
         self.player.update(cx, |player, _| player.draw_at(grain));
         self.name_the_window(window, cx);
 
@@ -837,6 +848,7 @@ impl Render for RootView {
             }))
             .on_action(cx.listener(|this, _: &ToggleShuffle, _, cx| {
                 let shuffle = this.player.read(cx).state().shuffle;
+
                 this.send(Command::SetShuffle(!shuffle), cx);
             }))
             .on_action(cx.listener(|this, _: &CycleRepeat, _, cx| {
@@ -845,6 +857,7 @@ impl Render for RootView {
                     RepeatMode::Queue => RepeatMode::Track,
                     RepeatMode::Track => RepeatMode::Off,
                 };
+
                 this.send(Command::SetRepeat(repeat), cx);
             }))
             .on_action(cx.listener(|this, _: &VolumeUp, _, cx| this.volume_by(VOLUME_STEP, cx)))
@@ -975,7 +988,9 @@ impl Render for RootView {
                     if this.is_already_weighing(event.drag(cx).paths()) {
                         return;
                     }
+
                     let paths = event.drag(cx).paths().to_vec();
+
                     this.dragged_over(&paths, cx);
                 },
             ))
@@ -1159,6 +1174,7 @@ impl Deleting {
 
 fn read_each(library: &Library, scopes: Vec<Selection>) -> resonate_library::Result<Vec<Track>> {
     let mut read = Vec::new();
+
     for scoped in scopes {
         read.extend(library.tracks(&whole_of(scoped))?);
     }
@@ -1243,6 +1259,7 @@ fn stepped_pane(from: Pane, step: Step, tabs: Tabs, serving: bool) -> Pane {
         .iter()
         .position(|pane| *pane == from)
         .unwrap_or_default();
+
     let next = match step {
         Step::Below => (at + 1) % listed.len(),
         Step::Above => (at + listed.len() - 1) % listed.len(),

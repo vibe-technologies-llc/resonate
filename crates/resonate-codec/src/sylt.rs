@@ -57,6 +57,7 @@ impl Encoding {
                 .chain(text.encode_utf16().flat_map(u16::to_le_bytes))
                 .collect(),
         };
+
         bytes.extend_from_slice(if self.is_wide() { &[0, 0] } else { &[0] });
         Some(bytes)
     }
@@ -124,6 +125,7 @@ impl Voiced {
 
     pub(crate) fn new(language: [u8; LANGUAGE_BYTES], encoding: u8) -> Option<Self> {
         Encoding::of(encoding)?;
+
         let language = if language.iter().all(u8::is_ascii_alphabetic) {
             language
         } else {
@@ -168,6 +170,7 @@ pub(crate) fn timed(sheet: &str, voiced: Voiced) -> Option<Timed> {
 fn framed(syllables: &[Syllable], language: [u8; LANGUAGE_BYTES], encoding: u8) -> Option<Vec<u8>> {
     let encoded_as = Encoding::of(encoding)?;
     let mut frame = vec![encoding];
+
     frame.extend_from_slice(&language);
     frame.extend_from_slice(&[MILLISECONDS, CONTENT_OF_LYRICS]);
     frame.extend(encoded_as.encoded("")?);
@@ -180,6 +183,7 @@ fn framed(syllables: &[Syllable], language: [u8; LANGUAGE_BYTES], encoding: u8) 
 
 fn syllables_of_a_sheet(sheet: &str) -> Option<Vec<Syllable>> {
     let mut read = Vec::new();
+
     for line in sheet.lines() {
         let (at, said) = line.strip_prefix('[')?.split_once(']')?;
         let Some(marked) = said.strip_prefix('<') else {
@@ -192,6 +196,7 @@ fn syllables_of_a_sheet(sheet: &str) -> Option<Vec<Syllable>> {
         for (place, piece) in marked.split('<').enumerate() {
             let (at, text) = piece.split_once('>')?;
             let opening = if place == 0 { "\n" } else { "" };
+
             read.push(Syllable {
                 text: format!("{opening}{text}"),
                 at: stamped(at)?,
@@ -222,6 +227,7 @@ fn words_of(syllables: &[Syllable]) -> String {
         .iter()
         .any(|syllable| starts_a_line(&syllable.text));
     let mut lines: Vec<String> = Vec::new();
+
     for syllable in syllables {
         match lines.last_mut() {
             Some(line) if marked && !starts_a_line(&syllable.text) => line.push_str(&syllable.text),
@@ -246,10 +252,13 @@ pub(crate) fn as_lrc(frame: &[u8], mpeg: Option<FrameClock>) -> Option<String> {
         _ => return None,
     };
     let (&content, rest) = rest.split_first()?;
+
     if content != CONTENT_OF_LYRICS && content != CONTENT_OF_A_TRANSCRIPTION {
         return None;
     }
+
     let (descriptor, after_descriptor) = encoding.text_at(rest)?;
+
     encoding.read(&rest[..descriptor]);
 
     let syllables = syllables(encoding, &rest[after_descriptor..], counted_in);
@@ -262,6 +271,7 @@ fn syllables(
     counted_in: Option<FrameClock>,
 ) -> Vec<Syllable> {
     let mut read = Vec::new();
+
     loop {
         if read.len() == MOST_SYLLABLES {
             tracing::warn!(
@@ -270,6 +280,7 @@ fn syllables(
             );
             break;
         }
+
         let Some((end, after)) = encoding.text_at(rest) else {
             break;
         };
@@ -279,6 +290,7 @@ fn syllables(
         let Ok(stamp) = <[u8; STAMP_BYTES]>::try_from(stamp) else {
             break;
         };
+
         read.push(Syllable {
             text: encoding.read(&rest[..end]),
             at: milliseconds(u32::from_be_bytes(stamp), counted_in),
@@ -301,6 +313,7 @@ fn written(syllables: &[Syllable]) -> Option<String> {
         .iter()
         .any(|syllable| starts_a_line(&syllable.text));
     let mut lines: Vec<(u32, String)> = Vec::new();
+
     for syllable in syllables {
         match lines.last_mut() {
             Some((_, line)) if marked && !starts_a_line(&syllable.text) => {
@@ -319,6 +332,7 @@ fn written(syllables: &[Syllable]) -> Option<String> {
     }
 
     let mut sheet = String::new();
+
     for (at, line) in &lines {
         let _ = writeln!(sheet, "[{}]{}", stamp(*at), line.trim());
     }
@@ -356,6 +370,7 @@ mod tests {
         terminator: &[u8],
     ) -> Vec<u8> {
         let mut bytes = vec![encoding, b'e', b'n', b'g', stamps, content];
+
         bytes.extend_from_slice(terminator);
         for (text, at) in entries {
             bytes.extend_from_slice(text);
@@ -418,6 +433,7 @@ mod tests {
     fn wide_text_carries_its_order_from_the_mark_before_it() {
         let first = utf16le("Überall");
         let second: Vec<u8> = "wo".encode_utf16().flat_map(u16::to_le_bytes).collect();
+
         let bytes = frame(1, MILLISECONDS, &[(&first, 0), (&second, 2_000)], &[0, 0]);
 
         assert_eq!(
@@ -509,6 +525,7 @@ mod tests {
     #[test]
     fn a_frame_cut_short_keeps_the_entries_it_holds_whole() {
         let mut bytes = frame(3, MILLISECONDS, &[(b"Overhead", 1_000)], &[0]);
+
         bytes.extend_from_slice(b"Hangs\0\0\0");
 
         assert_eq!(

@@ -77,6 +77,7 @@ impl Awake {
         if self.request.is_some() {
             return;
         }
+
         let options: HashMap<&str, Variant<'_>> =
             HashMap::from([("reason", Variant::from(self.reason.as_str()))]);
         let asked = self
@@ -87,6 +88,7 @@ impl Awake {
             Ok(request) => self.request = Some(request),
             Err(source) => {
                 let error = Error::bus(BusOp::Inhibit, source);
+
                 tracing::debug!(%error, "the session was not asked to stay awake");
             }
         }

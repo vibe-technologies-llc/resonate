@@ -55,14 +55,17 @@ impl Pitch {
 
     pub(crate) fn period(&mut self, lanes: &[&[f32]]) -> (usize, f32) {
         self.downsample(lanes);
+
         let found = self.search();
         let (period, gain) = self.undoubled(LONGEST_PERIOD - found);
+
         self.period = period.min(LONGEST_CODED_PERIOD);
         (self.period, ENCODER_GAIN_SHARE * gain)
     }
 
     fn downsample(&mut self, lanes: &[&[f32]]) {
         let half = lanes[0].len() / 2;
+
         self.buffer.clear();
         self.buffer.resize(half, 0.0);
         for lane in lanes {
@@ -71,10 +74,12 @@ impl Pitch {
                 *slot += 0.5 * (0.5 * (lane[2 * nth - 1] + lane[2 * nth + 1]) + lane[2 * nth]);
             }
         }
+
         let whitening = whitening(&self.buffer);
         let mut held = [0.0_f32; LPC_ORDER + 1];
         for value in &mut self.buffer {
             let sample = *value;
+
             *value = sample
                 + whitening
                     .iter()
@@ -91,14 +96,17 @@ impl Pitch {
         let reach = LONGEST_PERIOD - SEARCHED_SHORT_OF;
         let x = &self.buffer[LONGEST_PERIOD / 2..];
         let y = &self.buffer;
+
         self.coarse.clear();
         self.coarse.extend((0..reach / 4).map(|lag| {
             (0..length / 4)
                 .map(|nth| x[2 * nth] * y[2 * (lag + nth)])
                 .sum::<f32>()
         }));
+
         let every_other: Vec<f32> = y.iter().step_by(2).copied().collect();
         let best = best_of(&self.coarse, &every_other, length / 4);
+
         self.fine.clear();
         self.fine.extend((0..reach / 2).map(|lag| {
             if lag.abs_diff(2 * best[0]) > NEIGHBOURS_KEPT
@@ -109,6 +117,7 @@ impl Pitch {
                 inner(x, &y[lag..], length / 2).max(-1.0)
             }
         }));
+
         let best = best_of(&self.fine, y, length / 2)[0];
         let offset = if best > 0 && best < reach / 2 - 1 {
             leaning(self.fine[best - 1], self.fine[best], self.fine[best + 1])
@@ -123,6 +132,7 @@ impl Pitch {
         let shortest = SHORTEST_PERIOD / 2;
         let length = self.frame / 2;
         let buffer = &self.buffer;
+
         let back = |lag: usize| &buffer[longest - lag..longest - lag + length];
         let x = back(0);
         let first = (period / 2).clamp(1, longest - 1);
@@ -130,24 +140,30 @@ impl Pitch {
 
         let xx = inner(x, x, length);
         let mut yy = xx;
+
         self.lookup[0] = xx;
         for lag in 1..=longest {
             let entering = buffer[longest - lag];
             let leaving = buffer[longest + length - lag];
+
             yy += entering * entering - leaving * leaving;
             self.lookup[lag] = yy.max(0.0);
         }
+
         let first_correlation = inner(x, back(first), length);
         let first_gain = gain_of(first_correlation, xx, self.lookup[first]);
         let mut chosen = first;
         let mut chosen_gain = first_gain;
         let mut chosen_correlation = first_correlation;
         let mut chosen_energy = self.lookup[first];
+
         for (k, second) in SECOND_CHECK.iter().enumerate().skip(2) {
             let lag = (2 * first + k) / (2 * k);
+
             if lag < shortest {
                 break;
             }
+
             let other = match k {
                 2 if lag + first > longest => first,
                 2 => first + lag,
@@ -155,6 +171,7 @@ impl Pitch {
             };
             let xy = 0.5 * (inner(x, back(lag), length) + inner(x, back(other), length));
             let yy = 0.5 * (self.lookup[lag] + self.lookup[other]);
+
             let gain = gain_of(xy, xx, yy);
             let continued = if lag.abs_diff(before) <= 1 {
                 self.gain
@@ -175,6 +192,7 @@ impl Pitch {
                 chosen_energy = yy;
             }
         }
+
         let correlation = chosen_correlation.max(0.0);
         let held = if chosen_energy <= correlation {
             1.0
@@ -190,16 +208,20 @@ impl Pitch {
 
 fn whitening(signal: &[f32]) -> [f32; LPC_ORDER + 1] {
     let mut correlation = [0.0_f32; LPC_ORDER + 1];
+
     for (lag, slot) in correlation.iter_mut().enumerate() {
         *slot = inner(signal, &signal[lag..], signal.len() - lag);
     }
     correlation[0] *= NOISE_FLOOR;
     for (lag, slot) in correlation.iter_mut().enumerate().skip(1) {
         let windowed = LAG_WINDOW * lag as f32;
+
         *slot -= *slot * windowed * windowed;
     }
+
     let mut lpc = levinson(&correlation);
     let mut shrink = 1.0;
+
     for tap in &mut lpc {
         shrink *= LPC_BANDWIDTH;
         *tap *= shrink;
@@ -216,6 +238,7 @@ fn whitening(signal: &[f32]) -> [f32; LPC_ORDER + 1] {
 fn levinson(correlation: &[f32; LPC_ORDER + 1]) -> [f32; LPC_ORDER] {
     let mut lpc = [0.0_f32; LPC_ORDER];
     let mut error = correlation[0];
+
     if correlation[0] <= 1e-10 {
         return lpc;
     }
@@ -225,9 +248,11 @@ fn levinson(correlation: &[f32; LPC_ORDER + 1]) -> [f32; LPC_ORDER] {
                 .map(|nth| lpc[nth] * correlation[order - nth])
                 .sum::<f32>();
         let reflection = -reflected / error;
+
         lpc[order] = reflection;
         for nth in 0..order.div_ceil(2) {
             let (one, other) = (lpc[nth], lpc[order - 1 - nth]);
+
             lpc[nth] = one + reflection * other;
             lpc[order - 1 - nth] = other + reflection * one;
         }
@@ -266,6 +291,7 @@ fn best_of(correlations: &[f32], signal: &[f32], length: usize) -> [usize; 2] {
     let mut numerators = [-1.0_f32; 2];
     let mut denominators = [0.0_f32; 2];
     let mut best = [0, 1];
+
     for (lag, correlation) in correlations.iter().enumerate() {
         if *correlation > 0.0 {
             let scaled = correlation * 1e-12;

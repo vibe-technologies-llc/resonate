@@ -37,6 +37,7 @@ impl RootView {
             .map(|download| library.fetching(download))
             .collect();
         let keeping = library.keeps_left();
+
         let underway = keeping.is_some() || fetching.iter().copied().any(Fetching::is_underway);
         let arriving = library.downloads().iter().any(|download| {
             library
@@ -102,6 +103,7 @@ impl RootView {
                     .downloads_pressed_off
                     .take()
                     .is_some_and(|pressed| pressed.elapsed() < DOWNLOADS_TOGGLE_PRESS);
+
                 if closed_by_this_press {
                     return;
                 }
@@ -118,9 +120,11 @@ impl RootView {
     ) -> Option<AnimationElement<Stateful<Div>>> {
         let library = self.library.read(cx);
         let keeping = library.keeps_left();
+
         if !self.downloads_open || (library.downloads().is_empty() && keeping.is_none()) {
             return None;
         }
+
         let rows: Vec<(Download, Fetching)> = library
             .downloads()
             .iter()
@@ -137,6 +141,7 @@ impl RootView {
             .overflow_y_scroll()
             .track_scroll(&self.window_scrolls.downloads)
             .when_some(keeping, |list, left| list.child(self.keep_row(left, cx)));
+
         for (at, (download, fetching)) in rows.into_iter().enumerate() {
             list = list.child(self.download_row(at, &download, fetching, cx));
         }
@@ -368,6 +373,7 @@ impl RootView {
                     ),
                     move |this, _, cx| {
                         let zone = this.zone_acted_on();
+
                         this.play_what_was_downloaded(track, zone, cx);
                     },
                     cx,
@@ -382,6 +388,7 @@ impl RootView {
                     ),
                     move |this, _, cx| {
                         let wanted = again.clone();
+
                         this.library
                             .update(cx, |library, cx| library.want_found(wanted, cx));
                     },

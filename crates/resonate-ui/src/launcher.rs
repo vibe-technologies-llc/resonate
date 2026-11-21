@@ -125,6 +125,7 @@ mod tests {
                 "{appearance:?}"
             );
         }
+
         assert_ne!(
             AppIcon::of(Appearance::DEFAULT).drawing(),
             PACKAGED,
@@ -155,6 +156,7 @@ mod tests {
     #[test]
     fn the_icon_is_drawn_as_a_square_picture_of_the_side_asked_for() {
         const PNG_SIGNATURE: [u8; 8] = [0x89, b'P', b'N', b'G', b'\r', b'\n', 0x1a, b'\n'];
+
         let icon = AppIcon::of(Appearance::DEFAULT);
 
         for side in [16_u32, 32, 64] {

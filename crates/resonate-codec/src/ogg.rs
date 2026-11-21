@@ -98,6 +98,7 @@ pub(crate) fn headers<S: Read + ?Sized>(codec: Codec, source: &mut S) -> Option<
 
     for sequence in 0..MOST_PAGES {
         let mut fixed = [0_u8; FIXED_HEADER_BYTES];
+
         source.read_exact(&mut fixed).ok()?;
         if fixed[..CAPTURE.len()] != CAPTURE || fixed[VERSION_AT] != 0 {
             return None;
@@ -108,11 +109,14 @@ pub(crate) fn headers<S: Read + ?Sized>(codec: Codec, source: &mut S) -> Option<
         let page_sequence =
             u32::from_le_bytes(fixed[SEQUENCE_AT..SEQUENCE_AT + 4].try_into().ok()?);
         let first = sequence == 0;
+
         if first {
             serial = page_serial;
         }
+
         let begins_stream = flags & FIRST_OF_STREAM != 0;
         let continues = flags & CONTINUED != 0;
+
         if begins_stream != first
             || page_serial != serial
             || usize::try_from(page_sequence).ok()? != sequence
@@ -122,21 +126,26 @@ pub(crate) fn headers<S: Read + ?Sized>(codec: Codec, source: &mut S) -> Option<
         }
 
         let mut lacing = vec![0_u8; usize::from(fixed[SEGMENT_COUNT_AT])];
+
         source.read_exact(&mut lacing).ok()?;
+
         let body_bytes: usize = lacing.iter().map(|lace| usize::from(*lace)).sum();
         let mut body = vec![0_u8; body_bytes];
+
         source.read_exact(&mut body).ok()?;
         length += (FIXED_HEADER_BYTES + lacing.len() + body_bytes) as u64;
 
         let mut rest = body.as_slice();
         for (index, lace) in lacing.iter().enumerate() {
             let (taken, after) = rest.split_at(usize::from(*lace));
+
             open.extend_from_slice(taken);
             rest = after;
             if usize::from(*lace) < LACING_FULL {
                 packets.push(std::mem::take(&mut open));
                 if packets.len() == wanted {
                     let ends_the_page = index + 1 == lacing.len();
+
                     return ends_the_page
                         .then(|| signed(codec, &packets))
                         .flatten()
@@ -177,6 +186,7 @@ impl Chain {
             .iter()
             .map(|link| {
                 let this = origin;
+
                 origin = origin.saturating_add(link.frames.rescaled(link.rate, clock));
                 this
             })
@@ -218,11 +228,16 @@ impl PageHead {
 
 fn page_at<S: Read + Seek + ?Sized>(source: &mut S, at: u64) -> Option<PageHead> {
     source.seek(SeekFrom::Start(at)).ok()?;
+
     let mut fixed = [0_u8; FIXED_HEADER_BYTES];
+
     source.read_exact(&mut fixed).ok()?;
+
     let page = PageHead::read(&fixed)?;
     let mut lacing = vec![0_u8; usize::from(fixed[SEGMENT_COUNT_AT])];
+
     source.read_exact(&mut lacing).ok()?;
+
     let body = lacing.iter().map(|lace| u64::from(*lace)).sum();
     Some(PageHead { body, ..page })
 }
@@ -238,6 +253,7 @@ impl Sounding {
     fn named_by(serial: u32, identification: &[u8]) -> Option<Self> {
         if identification.starts_with(VORBIS_IDENTIFICATION) {
             let hz = identification.get(VORBIS_RATE_AT..VORBIS_RATE_AT + 4)?;
+
             return Some(Self {
                 serial,
                 rate: SampleRate::new(u32::from_le_bytes(hz.try_into().ok()?)).ok()?,
@@ -246,6 +262,7 @@ impl Sounding {
         }
         if identification.starts_with(OPUS_IDENTIFICATION) {
             let skip = identification.get(OPUS_PRE_SKIP_AT..OPUS_PRE_SKIP_AT + 2)?;
+
             return Some(Self {
                 serial,
                 rate: SampleRate::new(OPUS_DECODED_HZ).ok()?,
@@ -276,6 +293,7 @@ impl Walking {
 pub(crate) fn chain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Chain> {
     let origin = source.stream_position().ok()?;
     let first = page_at(source, origin)?;
+
     if !first.begins_a_stream() || !ends_in_another_stream(source, first.serial) {
         return None;
     }
@@ -283,10 +301,12 @@ pub(crate) fn chain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Chain> {
     let mut links = Vec::new();
     let mut walking: Option<Walking> = None;
     let mut at = origin;
+
     for _ in 0..MOST_PAGES_WALKED {
         let Some(page) = page_at(source, at) else {
             break;
         };
+
         if page.begins_a_stream() {
             if walking.is_none_or(|link| link.past_its_heads) {
                 if let Some(finished) = walking.take() {
@@ -294,9 +314,11 @@ pub(crate) fn chain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Chain> {
                 }
                 walking = Some(Walking::default());
             }
+
             let mut identification = [0_u8; IDENTIFICATION_READ];
             let read = usize::try_from(page.body)
                 .map_or(IDENTIFICATION_READ, |body| body.min(IDENTIFICATION_READ));
+
             source.read_exact(identification.get_mut(..read)?).ok()?;
             if let Some(link) = walking.as_mut()
                 && link.sounding.is_none()
@@ -305,6 +327,7 @@ pub(crate) fn chain<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Chain> {
             }
         } else if let Some(link) = walking.as_mut() {
             link.past_its_heads = true;
+
             let sounds = link
                 .sounding
                 .is_some_and(|sounding| sounding.serial == page.serial);
@@ -328,10 +351,13 @@ fn ends_in_another_stream<S: Read + Seek + ?Sized>(source: &mut S, serial: u32) 
 
 fn last_page_within<S: Read + Seek + ?Sized>(source: &mut S, looked_at: u64) -> Option<PageHead> {
     let end = source.seek(SeekFrom::End(0)).ok()?;
+
     source
         .seek(SeekFrom::Start(end.saturating_sub(looked_at)))
         .ok()?;
+
     let mut tail = Vec::new();
+
     source.take(looked_at).read_to_end(&mut tail).ok()?;
     tail.windows(CAPTURE.len())
         .enumerate()
@@ -354,9 +380,11 @@ fn signed(codec: Codec, packets: &[Vec<u8>]) -> Option<()> {
 pub(crate) fn paginated(serial: u32, packets: &[&[u8]]) -> Vec<u8> {
     let mut pages = Vec::new();
     let mut sequence = 0_u32;
+
     for packet in packets {
         let chunks: Vec<&[u8]> = packet.chunks(PAGE_BODY_AT_MOST).collect();
         let last = chunks.len().saturating_sub(1);
+
         for (index, body) in chunks.iter().enumerate() {
             let flags = match (sequence, index) {
                 (0, _) => FIRST_OF_STREAM,
@@ -365,6 +393,7 @@ pub(crate) fn paginated(serial: u32, packets: &[&[u8]]) -> Vec<u8> {
             };
             let granule = if index == last { 0 } else { NO_PACKET_ENDS };
             let mut lacing = vec![LACING_FULL as u8; body.len() / LACING_FULL];
+
             if lacing.len() != SEGMENTS_A_PAGE {
                 lacing.push((packet.len() % LACING_FULL) as u8);
             }
@@ -388,6 +417,7 @@ pub(crate) fn page(
     body: &[u8],
 ) -> Vec<u8> {
     let mut bytes = Vec::with_capacity(FIXED_HEADER_BYTES + lacing.len() + body.len());
+
     bytes.extend_from_slice(&CAPTURE);
     bytes.push(0);
     bytes.push(flags);
@@ -404,7 +434,9 @@ pub(crate) fn page(
 
 fn seal(page: &mut [u8]) {
     page[CHECKSUM_AT..CHECKSUM_AT + 4].fill(0);
+
     let checksum = checksum_of(page);
+
     page[CHECKSUM_AT..CHECKSUM_AT + 4].copy_from_slice(&checksum.to_le_bytes());
 }
 
@@ -413,9 +445,11 @@ const POLYNOMIAL: u32 = 0x04C1_1DB7;
 const CHECKSUMS: [u32; 256] = {
     let mut table = [0_u32; 256];
     let mut byte = 0;
+
     while byte < 256 {
         let mut value = (byte as u32) << 24;
         let mut bit = 0;
+
         while bit < 8 {
             value = if value & 0x8000_0000 != 0 {
                 (value << 1) ^ POLYNOMIAL
@@ -449,6 +483,7 @@ impl Paged {
         if length == 0 {
             return Self::NOTHING;
         }
+
         let chunks = length.div_ceil(PAGE_BODY_AT_MOST);
         let last = length - (chunks - 1) * PAGE_BODY_AT_MOST;
         let last_segments = if last == PAGE_BODY_AT_MOST {
@@ -456,11 +491,13 @@ impl Paged {
         } else {
             last / LACING_FULL + 1
         };
+
         let segments = (chunks - 1) * SEGMENTS_A_PAGE + last_segments;
         let paged = Self {
             pages: chunks,
             bytes: length + FIXED_HEADER_BYTES * chunks + segments,
         };
+
         if length.is_multiple_of(PAGE_BODY_AT_MOST) {
             return Self {
                 pages: paged.pages + 1,
@@ -493,8 +530,10 @@ pub(crate) fn renumbered<R: Read + ?Sized>(
     let mut page = Vec::with_capacity(LARGEST_PAGE);
     loop {
         page.clear();
+
         let whole = page_read(from, &mut page)?;
         let ended = whole && page_renumbered(&mut page, renumbering, &mut shift);
+
         through(&page)?;
         if !whole || ended {
             return Ok(());
@@ -512,6 +551,7 @@ fn page_read<R: Read + ?Sized>(from: &mut R, page: &mut Vec<u8>) -> io::Result<b
     if !taken(from, page, usize::from(page[SEGMENT_COUNT_AT]))? {
         return Ok(false);
     }
+
     let body = page[FIXED_HEADER_BYTES..]
         .iter()
         .map(|lace| usize::from(*lace))
@@ -531,9 +571,11 @@ fn page_renumbered(page: &mut [u8], renumbering: Renumbering, shift: &mut Option
         page[SERIAL_AT + 2],
         page[SERIAL_AT + 3],
     ]);
+
     if serial != renumbering.serial {
         return false;
     }
+
     let sequence = u32::from_le_bytes([
         page[SEQUENCE_AT],
         page[SEQUENCE_AT + 1],
@@ -541,6 +583,7 @@ fn page_renumbered(page: &mut [u8], renumbering: Renumbering, shift: &mut Option
         page[SEQUENCE_AT + 3],
     ]);
     let by = *shift.get_or_insert(renumbering.from.wrapping_sub(sequence));
+
     page[SEQUENCE_AT..SEQUENCE_AT + 4].copy_from_slice(&sequence.wrapping_add(by).to_le_bytes());
     seal(page);
     page[FLAGS_AT] & LAST_OF_STREAM != 0
@@ -549,12 +592,15 @@ fn page_renumbered(page: &mut [u8], renumbering: Renumbering, shift: &mut Option
 #[cfg(test)]
 fn page_length_at(bytes: &[u8], at: usize) -> Option<usize> {
     let header = bytes.get(at..at + FIXED_HEADER_BYTES)?;
+
     if header[..CAPTURE.len()] != CAPTURE || header[VERSION_AT] != 0 {
         return None;
     }
+
     let segments = usize::from(header[SEGMENT_COUNT_AT]);
     let lacing = bytes.get(at + FIXED_HEADER_BYTES..at + FIXED_HEADER_BYTES + segments)?;
     let body: usize = lacing.iter().map(|lace| usize::from(*lace)).sum();
+
     let length = FIXED_HEADER_BYTES + segments + body;
     (at + length <= bytes.len()).then_some(length)
 }
@@ -565,16 +611,20 @@ pub(crate) fn renumbered_whole(tail: &mut [u8], renumbering: Renumbering) {
     let mut shift = None;
     while let Some(length) = page_length_at(tail, at) {
         let page = &mut tail[at..at + length];
+
         at += length;
+
         let serial = u32::from_le_bytes([
             page[SERIAL_AT],
             page[SERIAL_AT + 1],
             page[SERIAL_AT + 2],
             page[SERIAL_AT + 3],
         ]);
+
         if serial != renumbering.serial {
             continue;
         }
+
         let sequence = u32::from_le_bytes([
             page[SEQUENCE_AT],
             page[SEQUENCE_AT + 1],
@@ -582,6 +632,7 @@ pub(crate) fn renumbered_whole(tail: &mut [u8], renumbering: Renumbering) {
             page[SEQUENCE_AT + 3],
         ]);
         let by = *shift.get_or_insert(renumbering.from.wrapping_sub(sequence));
+
         page[SEQUENCE_AT..SEQUENCE_AT + 4]
             .copy_from_slice(&sequence.wrapping_add(by).to_le_bytes());
         seal(page);
@@ -595,14 +646,19 @@ pub(crate) fn renumbered_whole(tail: &mut [u8], renumbering: Renumbering) {
 pub(crate) fn pages_are_whole(bytes: &[u8]) -> bool {
     let mut at = 0;
     let mut sequence = 0_u32;
+
     while at < bytes.len() {
         let Some(length) = page_length_at(bytes, at) else {
             return false;
         };
         let mut page = bytes[at..at + length].to_vec();
+
         let stored = page[CHECKSUM_AT..CHECKSUM_AT + 4].to_vec();
+
         seal(&mut page);
+
         let numbered = page[SEQUENCE_AT..SEQUENCE_AT + 4] == sequence.to_le_bytes();
+
         if page[CHECKSUM_AT..CHECKSUM_AT + 4] != stored[..] || !numbered {
             return false;
         }
@@ -626,6 +682,7 @@ mod tests {
     fn streamed(tail: &[u8], renumbering: Renumbering) -> Vec<u8> {
         let mut from = tail;
         let mut written = Vec::new();
+
         renumbered(&mut from, renumbering, |page| {
             written.extend_from_slice(page);
             Ok(())
@@ -646,6 +703,7 @@ mod tests {
             page(FIRST_OF_STREAM, 0, 7, 0, &[10], &[5; 10]),
             page(0, 960, 7, 1, &[10], &[6; 10]),
         ];
+
         let linked: Vec<u8> = first_link
             .iter()
             .chain(&next_link)
@@ -654,7 +712,9 @@ mod tests {
             .collect();
         let unended: Vec<u8> = first_link[..2].iter().flatten().copied().collect();
         let mut trailing = unended.clone();
+
         trailing.extend_from_slice(b"not a page");
+
         let lengths = [
             0,
             1,
@@ -663,10 +723,13 @@ mod tests {
             FIXED_HEADER_BYTES + 2,
         ];
         let mut tails = vec![linked.clone(), unended.clone(), trailing, Vec::new()];
+
         for cut in lengths {
             tails.push(linked[..first_link[0].len() + cut].to_vec());
         }
+
         let mut spoilt = linked;
+
         spoilt[first_link[0].len() + VERSION_AT] = 1;
         tails.push(spoilt);
 
@@ -674,6 +737,7 @@ mod tests {
             for from in [0, 4, u32::MAX] {
                 let renumbering = Renumbering { serial: 7, from };
                 let mut whole = tail.clone();
+
                 renumbered_whole(&mut whole, renumbering);
 
                 assert_eq!(
@@ -688,8 +752,11 @@ mod tests {
 
     fn opus_packets(comment: &[u8]) -> Vec<Vec<u8>> {
         let mut identification = b"OpusHead".to_vec();
+
         identification.extend_from_slice(&[1, 2, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 0]);
+
         let mut tags = b"OpusTags".to_vec();
+
         tags.extend_from_slice(comment);
         vec![identification, tags]
     }
@@ -697,6 +764,7 @@ mod tests {
     fn comment_of(length: usize) -> Vec<u8> {
         let vendor = b"test";
         let mut comment = (vendor.len() as u32).to_le_bytes().to_vec();
+
         comment.extend_from_slice(vendor);
         comment.extend_from_slice(&0_u32.to_le_bytes());
         comment.resize(length.max(comment.len()), 0);
@@ -711,8 +779,11 @@ mod tests {
 
     fn lofty_saved(head: &[u8], title: &str) -> Vec<u8> {
         let mut tag = Tag::new(TagType::VorbisComments);
+
         tag.insert_text(ItemKey::TrackTitle, title.to_owned());
+
         let mut cursor = Cursor::new(head.to_vec());
+
         tag.save_to(&mut cursor, WriteOptions::default().preferred_padding(0))
             .expect("lofty writes the head");
         cursor.into_inner()
@@ -745,12 +816,15 @@ mod tests {
             let counted = Paged::of_packet(length);
 
             assert_eq!(counted.bytes, written.len(), "{length} bytes counted apart");
+
             let mut pages = 0;
             let mut at = 0;
+
             while let Some(page) = page_length_at(&written, at) {
                 at += page;
                 pages += 1;
             }
+
             assert_eq!(counted.pages, pages, "{length} bytes paged apart");
         }
     }
@@ -759,6 +833,7 @@ mod tests {
     fn headers_read_back_what_was_paged_and_know_where_the_audio_begins() {
         let head = head_with(500);
         let mut stream = head.clone();
+
         stream.extend_from_slice(&page(0, 960, 0xABCD, 2, &[40], &[7; 40]));
 
         let parsed = headers(Codec::Opus, &mut Cursor::new(&stream)).expect("the headers");
@@ -773,9 +848,11 @@ mod tests {
     fn a_stream_whose_headers_share_a_page_with_audio_is_not_taken_for_a_head() {
         let packets = opus_packets(&comment_of(40));
         let mut shared = Vec::new();
+
         shared.extend_from_slice(&packets[0]);
         shared.extend_from_slice(&packets[1]);
         shared.extend_from_slice(&[1; 30]);
+
         let lacing = [19, 48, 30];
         let stream = page(FIRST_OF_STREAM, 0, 1, 0, &lacing, &shared);
 
@@ -793,6 +870,7 @@ mod tests {
     #[test]
     fn renumbering_pages_makes_them_a_run_from_the_number_asked_with_their_sums_mended() {
         let mut tail = Vec::new();
+
         for sequence in 0..3_u32 {
             tail.extend_from_slice(&page(
                 0,
@@ -804,11 +882,13 @@ mod tests {
             ));
         }
         tail.extend_from_slice(b"not a page");
+
         let trailing = b"not a page".len();
 
         let tail = streamed(&tail, Renumbering { serial: 7, from: 9 });
 
         let mut expected = Vec::new();
+
         for sequence in 0..3_u32 {
             expected.extend_from_slice(&page(
                 0,
@@ -820,6 +900,7 @@ mod tests {
             ));
         }
         expected.extend_from_slice(b"not a page");
+
         assert_eq!(tail, expected);
         assert_eq!(tail.len() - trailing, 3 * (FIXED_HEADER_BYTES + 1 + 10));
     }
@@ -835,6 +916,7 @@ mod tests {
             page(FIRST_OF_STREAM, 0, 7, 0, &[10], &[5; 10]),
             page(0, 960, 9, 1, &[10], &[6; 10]),
         ];
+
         let tail: Vec<u8> = first_link
             .iter()
             .chain(&next_link)
@@ -854,6 +936,7 @@ mod tests {
         .flatten()
         .copied()
         .collect();
+
         assert_eq!(tail, expected);
     }
 }

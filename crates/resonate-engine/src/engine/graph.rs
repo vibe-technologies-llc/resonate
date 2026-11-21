@@ -16,13 +16,17 @@ impl Engine {
             self.wait_for_the_graph(since);
             return;
         }
+
         let Some(output) = self.output.as_ref() else {
             return;
         };
+
         if output.stream.is_none() || !output.producer.is_abandoned() {
             return;
         }
+
         let again = self.graph_lost_again();
+
         if again {
             self.fail(Error::Sink(resonate_audio::Error::LoopStopped));
             return;
@@ -30,7 +34,9 @@ impl Engine {
 
         tracing::warn!("the graph let go of the stream; the row waits for it to come back");
         self.take_the_boundary_back();
+
         let at = self.heard_position();
+
         if let Some(output) = self.output.as_mut() {
             output.close();
         }
@@ -44,6 +50,7 @@ impl Engine {
         let again = self
             .graph_last_lost
             .is_some_and(|last| last.elapsed() < GRAPH_BACK_WITHIN);
+
         self.graph_last_lost = Some(Instant::now());
         again
     }
@@ -57,21 +64,25 @@ impl Engine {
         if self.opening.is_some() || self.waits_on_a_stream() {
             return;
         }
+
         let Some(at) = self.row_the_graph_let_go() else {
             self.graph_lost = None;
             self.graph_still_away = None;
             return;
         };
+
         if !self.the_survey_runs() {
             self.wait_for_the_graph_in_line(since, at);
             return;
         }
         if since.elapsed() >= GRAPH_BACK_WITHIN {
             self.graph_lost = None;
+
             let away = self
                 .graph_still_away
                 .take()
                 .unwrap_or(Error::Sink(resonate_audio::Error::Disconnected));
+
             self.fail(away);
             return;
         }
@@ -85,6 +96,7 @@ impl Engine {
         if self.graph_lost.is_none() {
             return;
         }
+
         let Some(at) = self.row_the_graph_let_go() else {
             return;
         };
@@ -149,15 +161,18 @@ impl Engine {
         let Some(output) = self.output.as_mut() else {
             return;
         };
+
         output.note_the_overs();
 
         let mut seen = 0;
+
         while let Some(fault) = output.monitor.next_fault() {
             match fault {
                 RtFault::Underrun => seen += 1,
                 RtFault::Dropped { count } => seen += u64::from(count),
             }
         }
+
         let missing = output.monitor.went_without();
 
         if !playing || output.ended {
@@ -176,7 +191,9 @@ impl Engine {
             return;
         }
         self.underruns_told_at = Some(Instant::now());
+
         let missing = mem::replace(&mut self.missing_untold, Frames::ZERO);
+
         self.emit(Event::Underrun { missing });
     }
 
@@ -189,10 +206,12 @@ impl Engine {
         let Some(stream) = output.stream.as_ref() else {
             return;
         };
+
         output.status.latency = stream.latency();
         output.status.holds_seconds_downstream = stream.downstream() == Downstream::Seconds;
         output.status.graph_rate = stream.graph_rate();
         output.status.hears(output.plan.mode);
+
         let events = Self::drain_events(output);
 
         let mut renegotiated = None;
@@ -249,6 +268,7 @@ impl Engine {
             tracing::warn!(
                 "the graph never settled the format a reshaped stream asked for; it is reopened"
             );
+
             let at = self.position();
             if let Err(error) = self.rebind_on_a_new_stream(Some(at), None) {
                 self.fail(error);
@@ -286,6 +306,7 @@ impl Engine {
             let Some(track) = self.track.as_ref().map(|track| track.id) else {
                 return;
             };
+
             self.fail(Error::Renegotiation {
                 track,
                 requested,
@@ -300,6 +321,7 @@ impl Engine {
             %negotiated,
             "the graph negotiated a different format; rebuilding around it"
         );
+
         let at = self.position();
         if let Err(error) = self.rebind(Some(at), Some(negotiated)) {
             self.fail(error);
@@ -312,6 +334,7 @@ impl Engine {
             let Some(output) = self.output.as_mut() else {
                 return;
             };
+
             at_a_change = output.ends_at_a_change;
             if !output.ended {
                 return;
@@ -375,9 +398,12 @@ impl Engine {
                         }
                 )
             );
+
         if the_graph_is_away && self.track.is_some() {
             tracing::warn!(%error, "the graph is away; the row waits for it to come back");
+
             let at = self.unbound.unwrap_or_else(|| self.heard_position());
+
             if let Some(output) = self.output.as_mut() {
                 output.close();
             }
@@ -401,10 +427,12 @@ impl Engine {
         let Some(track) = self.track.as_ref().map(|track| track.id) else {
             return Err(error);
         };
+
         if had_a_stream {
             let again = self
                 .device_last_lost
                 .is_some_and(|last| last.elapsed() < GRAPH_BACK_WITHIN);
+
             if again {
                 return Err(error);
             }
@@ -412,7 +440,9 @@ impl Engine {
         }
 
         tracing::warn!(%error, "the device went; the row waits for one to play on");
+
         let at = self.unbound.unwrap_or_else(|| self.heard_position());
+
         if let Some(output) = self.output.as_mut() {
             output.close();
         }
@@ -433,6 +463,7 @@ impl Engine {
         if !self.waiting_for_a_device {
             return;
         }
+
         let at = self
             .unbound
             .filter(|_| self.track.is_some() && self.output.is_none());
@@ -440,6 +471,7 @@ impl Engine {
             self.waiting_for_a_device = false;
             return;
         };
+
         if !self.playing {
             return;
         }
@@ -490,6 +522,7 @@ impl Engine {
                 self.take_the_boundary_back();
             }
         }
+
         let mut error = error;
         loop {
             error = match self.parked_for_a_device(error) {

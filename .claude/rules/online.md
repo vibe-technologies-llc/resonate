@@ -647,7 +647,7 @@ gate's metered rule holds, `android.md`) are the two callers.
 
 ## Public file sharing
 
-`Reference::share_file` is an explicit listener action implemented by Catbox anonymous multipart uploads. The client streams at most 200 MiB with a generic filename retaining only an alphanumeric extension, never the local path. Online and metering gates apply before sending. Uploads have a ten-minute deadline, follow no redirects and are never retried automatically, so a lost response does not duplicate a public upload. Only HTTPS file URLs on files.catbox.moe are accepted, under a 4096-byte response cap. No account or deletion token is kept.
+`Reference::share_file` is an explicit listener action implemented by 0x0.st (`Host::NullPointer`) anonymous multipart uploads with `secret` for hard-to-guess paths. The client streams at most 512 MiB with a generic filename retaining only an alphanumeric extension, never the local path. Online and metering gates apply before sending. Uploads have a ten-minute deadline, follow no redirects and are never retried automatically, so a lost response does not duplicate a public upload. Only HTTPS file URLs on 0x0.st are accepted, under a 4096-byte response cap. No account or deletion token is kept.
 
 Pacing and retry sleeps are bounded separately from HTTP's deadline. A turn beyond `PACING_WITHIN`
 or a Retry-After longer than that ends the call as unreachable with a timed-out cause, preserving

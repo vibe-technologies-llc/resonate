@@ -43,6 +43,7 @@ impl DocumentCatalog {
         let mut forgetting = connection
             .prepare_cached("DELETE FROM songs_deleted_everywhere WHERE id = ?1")
             .map_err(unavailable)?;
+
         for id in told {
             forgetting.execute(params![id]).map_err(unavailable)?;
         }
@@ -55,14 +56,18 @@ impl DocumentCatalog {
         before: i64,
     ) -> Answered<u64> {
         let mut waiting = 0;
+
         for id in self.visible_copies(recording)? {
             let Some(added) = self.added_at(id)? else {
                 continue;
             };
+
             if added.saturating_mul(NANOS_A_SECOND) >= before {
                 continue;
             }
+
             let connection = self.catalog.0.lock();
+
             waiting += connection
                 .execute(
                     "INSERT OR IGNORE INTO deletions_from_other_devices (track, told) VALUES (?1, ?2)",
@@ -150,6 +155,7 @@ mod tests {
     fn a_song_deleted_from_every_device_waits_to_be_told_and_one_deleted_here_does_not() {
         let folder = folder("deleted-everywhere");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let hunter = song(&player, "content://test/hunter.flac", "Hunter", None);
         let joga = song(&player, "content://test/joga.flac", "Jóga", None);
@@ -157,16 +163,20 @@ mod tests {
         player
             .forget_deleted_songs(vec![joga.id])
             .expect("deleted here");
+
         let deleted = player
             .forget_songs_deleted_everywhere(vec![hunter.id])
             .expect("deleted everywhere");
         let waiting = documents.deleted_everywhere().expect("the waiting");
+
         documents
             .deletions_told(&waiting.iter().map(|told| told.id).collect::<Vec<_>>())
             .expect("told");
+
         let told = documents.deleted_everywhere().expect("the waiting");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(deleted.forgotten, 1);
         assert_eq!(
             waiting
@@ -183,6 +193,7 @@ mod tests {
     fn a_deletion_another_device_told_waits_for_the_platform_only_for_a_copy_older_than_it() {
         let folder = folder("deleted-elsewhere");
         let player = player(&folder);
+
         let documents = documents_of(&player, &folder);
         let bachelorette = song(&player, "content://test/b.flac", "Bachelorette", None);
         let told = homogenic("Bachelorette");
@@ -209,6 +220,7 @@ mod tests {
             .expect("the waiting");
 
         let _ = fs::remove_dir_all(&folder);
+
         assert_eq!(too_old, 0);
         assert!(added_since_a_minute_ago);
         assert!(!added_since_a_minute_on);
@@ -225,6 +237,7 @@ mod tests {
 
     fn ledger() -> Ledger {
         let mut ledger = Ledger::in_memory().expect("a ledger");
+
         ledger.enter_space(SpaceId([4; 16])).expect("a space");
         ledger
     }
@@ -234,13 +247,16 @@ mod tests {
             name: "Phone".into(),
             platform: Platform::Android,
         };
+
         ledger.look(documents, &me).expect("a look");
+
         let told = ledger
             .owed()
             .expect("owed")
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
+
         ledger.sent(&told).expect("sent");
         told
     }
@@ -250,16 +266,20 @@ mod tests {
         let here = folder("deleting-phone");
         let there = folder("deleted-on-phone");
         let refusing = folder("refusing-phone");
+
         let (deleting, kept, refused) = (player(&here), player(&there), player(&refusing));
         let hunter = song(&deleting, "content://test/hunter.flac", "Hunter", None);
         let copy = song(&kept, "content://test/hunter.flac", "Hunter", None);
+
         song(&refused, "content://test/hunter.flac", "Hunter", None);
+
         let (from, to) = (documents_of(&deleting, &here), documents_of(&kept, &there));
         let unwilling = DocumentCatalog {
             takes_deletions: false,
             ..documents_of(&refused, &refusing)
         };
         let (mut from_ledger, mut to_ledger, mut unwilling_ledger) = (ledger(), ledger(), ledger());
+
         told_by(&mut from_ledger, &from);
         told_by(&mut to_ledger, &to);
         told_by(&mut unwilling_ledger, &unwilling);
@@ -267,11 +287,14 @@ mod tests {
         deleting
             .forget_songs_deleted_everywhere(vec![hunter.id])
             .expect("deleted everywhere");
+
         let told = told_by(&mut from_ledger, &from);
+
         to_ledger.arrived(&to, &told).expect("arrived");
         unwilling_ledger
             .arrived(&unwilling, &told)
             .expect("arrived");
+
         let for_the_platform = kept.take_deletions_from_other_devices().expect("waiting");
         let refused_waiting = refused
             .take_deletions_from_other_devices()
@@ -283,6 +306,7 @@ mod tests {
         for folder in [here, there, refusing] {
             let _ = fs::remove_dir_all(&folder);
         }
+
         assert_eq!(
             for_the_platform
                 .iter()

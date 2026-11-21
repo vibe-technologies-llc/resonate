@@ -86,6 +86,7 @@ impl Hosted {
         for stale in [SOCKET, "pipewire-0.lock"] {
             let _ = fs::remove_file(folder.join(stale));
         }
+
         let daemon = Command::new("pipewire")
             .arg("-c")
             .arg(folder.join("hosted.conf"))
@@ -97,6 +98,7 @@ impl Hosted {
             .ok()?;
 
         let deadline = Instant::now() + PATIENCE;
+
         while !folder.join(SOCKET).exists() && Instant::now() < deadline {
             thread::sleep(POLL_EVERY);
         }
@@ -111,6 +113,7 @@ impl Hosted {
             .args([signal, &self.daemon.id().to_string()])
             .status()
             .expect("kill runs");
+
         assert!(
             sent.success(),
             "the hosted daemon could not be sent {signal}"
@@ -126,6 +129,7 @@ impl Hosted {
 
 fn the_hosted_sink(pipewire: &PipeWire) -> Option<SinkInfo> {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if let Ok(sinks) = pipewire.enumerate_sinks(ASKED_WITHIN)
             && let Some(sink) = sinks.into_iter().find(|sink| sink.name.as_str() == SINK)
@@ -143,6 +147,7 @@ fn told_it_is_disconnected(pipewire: &PipeWire) -> bool {
 
 fn told_it_is_disconnected_within(pipewire: &PipeWire, patience: Duration) -> bool {
     let deadline = Instant::now() + patience;
+
     while Instant::now() < deadline {
         if matches!(
             pipewire.enumerate_sinks(ASKED_WITHIN),
@@ -174,6 +179,7 @@ fn request(sink: &SinkInfo) -> StreamRequest {
 
 fn a_folder_of_its_own(tag: &str) -> PathBuf {
     let folder = env::temp_dir().join(format!("rpw-{}-{tag}", std::process::id()));
+
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
     folder
@@ -187,13 +193,16 @@ fn a_daemon_restarting_under_the_client(folder: &Path) {
 
     let pipewire = PipeWire::start("resonate-reconnect-test").expect("the hosted daemon answers");
     let before = the_hosted_sink(&pipewire).expect("the hosted daemon's sink is found");
+
     let opened = pipewire
         .open(&request(&before), Box::new(Silence))
         .expect("a stream opens on the hosted sink");
 
     let folder = hosted.kill();
     let gone_between = told_it_is_disconnected(&pipewire);
+
     drop(opened);
+
     let hosted = Hosted::start(&folder).expect("the hosted daemon starts again");
 
     let after = the_hosted_sink(&pipewire).expect("the sink is found once the daemon is back");
@@ -201,7 +210,9 @@ fn a_daemon_restarting_under_the_client(folder: &Path) {
     let opens_again = reopened.is_ok();
 
     drop(reopened);
+
     let _ = pipewire.shutdown();
+
     hosted.kill();
 
     assert!(
@@ -221,14 +232,19 @@ fn a_daemon_hanging_under_the_client(folder: &Path) {
     };
 
     let pipewire = PipeWire::start("resonate-reconnect-test").expect("the hosted daemon answers");
+
     the_hosted_sink(&pipewire).expect("the hosted daemon's sink is found");
 
     hosted.signalled("-STOP");
+
     let taken_as_lost = told_it_is_disconnected_within(&pipewire, HUNG_PATIENCE);
+
     hosted.signalled("-CONT");
+
     let found_again = the_hosted_sink(&pipewire);
 
     let _ = pipewire.shutdown();
+
     hosted.kill();
 
     assert!(
@@ -256,6 +272,7 @@ fn a_daemon_coming_after_the_client(folder: &Path) {
         .map(|sink| pipewire.open(&request(sink), Box::new(Silence)).is_ok());
 
     let _ = pipewire.shutdown();
+
     hosted.kill();
 
     assert!(gone_at_first, "the client did not say it had no daemon");

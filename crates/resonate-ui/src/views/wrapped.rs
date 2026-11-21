@@ -82,6 +82,7 @@ impl Deck {
             return false;
         };
         let moved = to != self.at;
+
         self.at = to;
 
         moved
@@ -96,6 +97,7 @@ fn reviewed(
     let calendar = Calendar::local();
     let years = library.years_heard(&calendar)?;
     let today = calendar.date_at(SystemTime::now());
+
     let Some(year) = year.or_else(|| year_worth_showing(&years, today)) else {
         return Ok(None);
     };
@@ -121,6 +123,7 @@ impl RootView {
         let Some(deck) = self.social.wrapped.as_mut() else {
             return false;
         };
+
         if deck.turned_by(slides) {
             cx.notify();
         }
@@ -131,6 +134,7 @@ impl RootView {
     fn read_wrapped(&mut self, year: Option<i64>, cx: &mut Context<Self>) {
         let library = self.library.read(cx).catalog();
         let history = cx.global::<ResonateApp>().history_kept;
+
         let read = cx.background_spawn(async move { reviewed(&library, year, history) });
 
         self.social.reading_wrapped = Some(cx.spawn(async move |this, cx| {
@@ -180,6 +184,7 @@ impl RootView {
         };
         let beside = env::home_dir().unwrap_or_else(|| PathBuf::from(LAST_RESORT_FOLDER));
         let named = format!("resonate-wrapped-{}.png", review.year);
+
         let picked = cx.prompt_for_new_path(&beside, Some(&named));
 
         cx.spawn(async move |this, cx| {
@@ -188,6 +193,7 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the file picker could not be opened");
+
                     let told = this.update(cx, |_, cx| {
                         toast::tell(
                             Notice::Trouble(words::wrapped::no_file_picker().to_owned()),
@@ -195,6 +201,7 @@ impl RootView {
                         );
                     });
                     let _ = told;
+
                     return;
                 }
             };
@@ -214,6 +221,7 @@ impl RootView {
                     }
                 })
                 .await;
+
             let told = this.update(cx, |_, cx| {
                 toast::tell(
                     match written {
@@ -275,12 +283,14 @@ impl RootView {
             .flex_1()
             .items_center()
             .gap_1();
+
         for at in 0..count {
             let colour = if at <= deck.at {
                 theme::accent()
             } else {
                 theme::soft_edge()
             };
+
             progress = progress.child(
                 div()
                     .flex_1()
@@ -317,6 +327,7 @@ impl RootView {
         } else {
             Tone::Ghost
         };
+
         if !takes {
             return kit::button_when(kit::Press::Greyed, id, None, label, saying, tone);
         }
@@ -335,8 +346,10 @@ impl RootView {
         let holds_anything = deck.review.holds_anything();
 
         let mut years = div().flex().flex_1().items_center();
+
         if deck.years.len() > 1 {
             let mut offered = kit::segmented();
+
             for (index, year) in deck.years.iter().copied().enumerate() {
                 offered = offered.child(
                     self.in_the_pane_ring(
@@ -530,6 +543,7 @@ fn rows_drawn(rows: &[SlideRow]) -> Stateful<Div> {
         .flex()
         .flex_col()
         .gap_0p5();
+
     for (at, row) in rows.iter().enumerate() {
         let said = row.by.as_ref().map_or_else(
             || format!("{}, {}", row.name, row.figure),
@@ -604,6 +618,7 @@ fn bars_drawn(bars: &[SlideBar]) -> Stateful<Div> {
         .items_end()
         .h(px(theme::chart_height()))
         .gap(px(theme::CHART_BAR_GAP));
+
     for (at, bar) in bars.iter().enumerate() {
         let said = bar.said.clone();
         let named = bar.said.clone();
@@ -671,6 +686,7 @@ mod tests {
     ) {
         let library = Arc::new(Library::open_in_memory().expect("an in-memory catalog opens"));
         let mut driven = crate::driven::Driven::open(cx, library);
+
         let root = driven.root.clone();
         let pane = driven.read(|root, _| root.pane);
 
@@ -687,6 +703,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("right");
         driven.settle();
+
         assert_eq!(
             driven.read(|root, _| root.social.wrapped.as_ref().map(|deck| deck.at)),
             Some(1)
@@ -694,12 +711,14 @@ mod tests {
 
         driven.cx.simulate_keystrokes("left left");
         driven.settle();
+
         assert_eq!(
             driven.read(|root, _| root.social.wrapped.as_ref().map(|deck| deck.at)),
             Some(0)
         );
 
         driven.click("wrapped-next");
+
         assert_eq!(
             driven.read(|root, _| root.social.wrapped.as_ref().map(|deck| deck.at)),
             Some(1)
@@ -715,6 +734,7 @@ mod tests {
     #[test]
     fn a_deck_says_the_slide_shown_before_how_many_it_holds() {
         let mut deck = a_deck();
+
         let count = deck.slides.len();
 
         assert!(count > 1);
@@ -728,6 +748,7 @@ mod tests {
     #[test]
     fn a_deck_turns_within_its_slides_and_says_whether_it_moved() {
         let mut deck = a_deck();
+
         let last = deck.slides.len() - 1;
 
         assert!(!deck.turned_by(-1));

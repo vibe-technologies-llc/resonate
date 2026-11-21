@@ -93,10 +93,12 @@ pub fn embed() -> Result<(), Error> {
     let out = PathBuf::from(variable("OUT_DIR")?).join(RESOURCE_FILE);
 
     let mut version = ResourceFile::new();
+
     version.insert_version_info(&version_info()?)?;
 
     let icons = icon_resources::records(&read_icon(&manifest_directory)?, WINDOW_ICON)?;
     let resources = icon_resources::joined(&icons, &version.to_res())?;
+
     fs::write(&out, resources).map_err(|source| Error::Io {
         path: out.clone(),
         source,

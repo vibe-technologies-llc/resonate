@@ -29,7 +29,7 @@ pub(crate) const FIRST_OFFSET_VERSION: u8 = 1;
 pub(crate) const SECOND_OFFSET_VERSION: u8 = 2;
 pub(crate) const WIDE_DATA_VERSION: u8 = 5;
 
-#[derive(Debug, Error, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Error)]
 pub enum ClassicFault {
     #[error("the file ends before the {wanted} bytes wanted at byte {at}")]
     Truncated { at: u64, wanted: u64 },
@@ -161,6 +161,7 @@ impl<'a> Cursor<'a> {
                 wanted: count as u64,
             })?;
         let taken = &self.bytes[self.at..end];
+
         self.at = end;
         Ok(taken)
     }
@@ -173,6 +174,7 @@ impl<'a> Cursor<'a> {
     fn wide(&mut self) -> Result<u64, ClassicFault> {
         let taken = self.take(8)?;
         let mut whole = [0; 8];
+
         whole.copy_from_slice(taken);
         Ok(u64::from_be_bytes(whole))
     }
@@ -180,6 +182,7 @@ impl<'a> Cursor<'a> {
     fn padded(&mut self, count: usize) -> Result<&'a [u8], ClassicFault> {
         let taken = self.take(count)?;
         let slack = (PADDED_TO - count % PADDED_TO) % PADDED_TO;
+
         self.take(slack)?;
         Ok(taken)
     }
@@ -197,13 +200,16 @@ impl<'a> Cursor<'a> {
     fn list(&mut self, tag: u32, at_least: u64) -> Result<usize, ClassicFault> {
         let found = self.word()?;
         let count = self.count()?;
+
         if found == ABSENT && count == 0 {
             return Ok(0);
         }
         if found != tag {
             return Err(ClassicFault::ListTag { found });
         }
+
         let left = self.left();
+
         if count.saturating_mul(at_least) > left {
             return Err(ClassicFault::CountPastFile { count, left });
         }
@@ -247,6 +253,7 @@ impl Store {
         let end = begin
             .checked_add(length)
             .ok_or(ClassicFault::SizeOverflow)?;
+
         if end > size {
             return Err(ClassicFault::DataPastFile {
                 begin,
@@ -268,12 +275,14 @@ fn read_range(stream: &mut dyn MediaStream, at: u64, wanted: u64) -> Result<Vec<
             at_most: RANGE_BYTES_AT_MOST,
         });
     }
+
     let unread = |source: io::Error| ClassicFault::Unread {
         at,
         wanted,
         kind: source.kind(),
     };
     let mut held = vec![0; wanted as usize];
+
     stream.seek(SeekFrom::Start(at)).map_err(unread)?;
     stream.read_exact(&mut held).map_err(unread)?;
     Ok(held)
@@ -350,10 +359,13 @@ impl Classic {
 impl Layout {
     fn of(bytes: &[u8]) -> Result<Self, ClassicFault> {
         let mut cursor = Cursor::new(bytes, MAGIC.len());
+
         let version = cursor.take(1)?[0];
         let wide_offsets = matches!(version, SECOND_OFFSET_VERSION | WIDE_DATA_VERSION);
         let extended = version == WIDE_DATA_VERSION;
+
         cursor.wide_counts = extended;
+
         let streaming = if extended {
             STREAMING_WIDE_RECORDS
         } else {
@@ -365,7 +377,9 @@ impl Layout {
         };
 
         let dimensions = dimensions_of(&mut cursor)?;
+
         attributes_of(&mut cursor, ATTRIBUTES_TAG, extended)?;
+
         let variables = variables_of(&mut cursor, &dimensions, wide_offsets, extended)?;
         let record_bytes = record_bytes_of(&dimensions, &variables)?;
 
@@ -381,9 +395,12 @@ impl Layout {
 fn dimensions_of(cursor: &mut Cursor<'_>) -> Result<Vec<Dimension>, ClassicFault> {
     let count = cursor.list(DIMENSIONS_TAG, DIMENSION_BYTES_AT_LEAST)?;
     let mut dimensions = Vec::with_capacity(count);
+
     for _ in 0..count {
         cursor.name()?;
+
         let length = cursor.count()?;
+
         dimensions.push(Dimension { length });
     }
     Ok(dimensions)
@@ -396,10 +413,12 @@ fn attributes_of(
 ) -> Result<Vec<Attribute>, ClassicFault> {
     let count = cursor.list(tag, ATTRIBUTE_BYTES_AT_LEAST)?;
     let mut attributes = Vec::with_capacity(count);
+
     for _ in 0..count {
         let name = cursor.name()?;
         let kind = Kind::of(cursor.word()?, extended)?;
         let elements = cursor.count()?;
+
         let length = elements
             .checked_mul(kind.bytes())
             .filter(|length| *length <= cursor.left())
@@ -413,6 +432,7 @@ fn attributes_of(
                 .trim_end_matches('\0')
                 .to_owned()
         });
+
         attributes.push(Attribute { name, text });
     }
     Ok(attributes)
@@ -426,16 +446,20 @@ fn variables_of(
 ) -> Result<Vec<Header>, ClassicFault> {
     let count = cursor.list(VARIABLES_TAG, VARIABLE_BYTES_AT_LEAST)?;
     let mut variables = Vec::with_capacity(count);
+
     for _ in 0..count {
         let name = cursor.name()?;
         let rank = cursor.count()?;
+
         if rank.saturating_mul(WORD_BYTES) > cursor.left() {
             return Err(ClassicFault::CountPastFile {
                 count: rank,
                 left: cursor.left(),
             });
         }
+
         let mut shape = Vec::with_capacity(rank as usize);
+
         for place in 0..rank {
             let id = cursor.word()?;
             let dimension = dimensions
@@ -444,19 +468,24 @@ fn variables_of(
                     id,
                     declared: dimensions.len(),
                 })?;
+
             if dimension.is_record() && place != 0 {
                 return Err(ClassicFault::RecordNotFirst);
             }
             shape.push(id as usize);
         }
+
         let attributes = attributes_of(cursor, ATTRIBUTES_TAG, extended)?;
         let kind = Kind::of(cursor.word()?, extended)?;
+
         cursor.count()?;
+
         let begin = if wide_offsets {
             cursor.wide()?
         } else {
             u64::from(cursor.word()?)
         };
+
         variables.push(Header {
             name,
             dimensions: shape,
@@ -493,6 +522,7 @@ fn is_record(dimensions: &[Dimension], header: &Header) -> bool {
 
 fn record_bytes_of(dimensions: &[Dimension], variables: &[Header]) -> Result<u64, ClassicFault> {
     let mut total = 0_u64;
+
     for header in variables
         .iter()
         .filter(|header| is_record(dimensions, header))
@@ -500,6 +530,7 @@ fn record_bytes_of(dimensions: &[Dimension], variables: &[Header]) -> Result<u64
         let each = inner_elements(dimensions, header)?
             .checked_mul(header.kind.bytes())
             .ok_or(ClassicFault::SizeOverflow)?;
+
         total = total
             .checked_add(padded_to_word(each)?)
             .ok_or(ClassicFault::SizeOverflow)?;
@@ -543,6 +574,7 @@ impl Variable<'_> {
 
     pub(crate) fn numbers(&self, picks: &[Pick]) -> Result<Vec<f64>, ClassicFault> {
         let kind = self.header.kind;
+
         if !matches!(kind, Kind::Float | Kind::Double) {
             return Err(ClassicFault::NotFloating);
         }
@@ -555,9 +587,11 @@ impl Variable<'_> {
             .iter()
             .try_fold(1_u64, |held, (start, end)| held.checked_mul(end - start))
             .ok_or(ClassicFault::SizeOverflow)?;
+
         let wanted = elements
             .checked_mul(size)
             .ok_or(ClassicFault::SizeOverflow)?;
+
         if wanted > file {
             return Err(ClassicFault::DataPastFile {
                 begin: self.header.begin,
@@ -568,6 +602,7 @@ impl Variable<'_> {
 
         let strides = self.strides(&shape, size)?;
         let mut values = Vec::with_capacity(elements as usize);
+
         if elements == 0 {
             return Ok(values);
         }
@@ -580,6 +615,7 @@ impl Variable<'_> {
         let mut at: Vec<u64> = ranges.iter().map(|(start, _)| *start).collect();
         loop {
             let mut offset = self.header.begin;
+
             for (place, index) in at.iter().enumerate() {
                 offset = index
                     .checked_mul(strides[place])
@@ -606,13 +642,16 @@ impl Variable<'_> {
     fn strides(&self, shape: &[u64], size: u64) -> Result<Vec<u64>, ClassicFault> {
         let mut strides = vec![0; shape.len()];
         let mut inner = size;
+
         for place in (0..shape.len()).rev() {
             strides[place] = inner;
+
             let length = if place == 0 && is_record(&self.classic.dimensions, self.header) {
                 1
             } else {
                 shape[place]
             };
+
             inner = inner
                 .checked_mul(length)
                 .ok_or(ClassicFault::SizeOverflow)?;
@@ -627,6 +666,7 @@ impl Variable<'_> {
         let size = self.header.kind.bytes();
         let length = count.checked_mul(size).ok_or(ClassicFault::SizeOverflow)?;
         let raw = self.classic.store.range(begin, length, self.classic.size)?;
+
         match self.header.kind {
             Kind::Float => values.extend(
                 raw.as_chunks::<4>()
@@ -733,6 +773,7 @@ pub(crate) mod written {
                 count(bytes, wide, 0);
             };
             let mut bytes = MAGIC.to_vec();
+
             bytes.push(self.version);
             count(&mut bytes, wide, self.records as usize);
 
@@ -790,17 +831,23 @@ pub(crate) mod written {
 
             let mut begins = Vec::new();
             let mut at = header_length;
+
             for variable in self.variables.iter().filter(|held| !self.is_record(held)) {
                 begins.push((variable.name, at));
+
                 let size = if variable.doubles { 8 } else { 4 };
+
                 at += (variable.values.len() * size).div_ceil(PADDED_TO) as u64 * PADDED_TO as u64;
             }
+
             let records_at = at;
             let mut within = 0_u64;
+
             for variable in self.variables.iter().filter(|held| self.is_record(held)) {
                 begins.push((variable.name, records_at + within));
                 within += self.per_record(variable) as u64;
             }
+
             let ordered: Vec<u64> = self
                 .variables
                 .iter()
@@ -813,16 +860,20 @@ pub(crate) mod written {
                 .collect();
 
             let mut bytes = self.header(&ordered);
+
             for variable in self.variables.iter().filter(|held| !self.is_record(held)) {
                 for value in &variable.values {
                     Self::push(&mut bytes, variable.doubles, *value);
                 }
                 padded(&mut bytes);
             }
+
             let records = self.records as usize;
+
             for record in 0..records {
                 for variable in self.variables.iter().filter(|held| self.is_record(held)) {
                     let inner = variable.values.len() / records.max(1);
+
                     for value in &variable.values[record * inner..(record + 1) * inner] {
                         Self::push(&mut bytes, variable.doubles, *value);
                     }
@@ -892,6 +943,7 @@ mod tests {
     fn wide_offsets_and_wide_data_read_as_narrow_ones_do() {
         let versioned = |version| {
             let mut file = grid();
+
             file.version = version;
             Classic::of(file.bytes()).expect("a classic file")
         };
@@ -901,6 +953,7 @@ mod tests {
         let data = versioned(5);
 
         let heard = |classic: &Classic| classic.variable("single").unwrap().numbers(&[]).unwrap();
+
         assert_eq!(heard(&narrow), heard(&wide));
         assert_eq!(heard(&narrow), heard(&data));
         assert_eq!(
@@ -954,7 +1007,9 @@ mod tests {
     #[test]
     fn the_integer_types_only_a_wide_data_file_has_are_known_to_it_alone() {
         let mut extended = grid().bytes();
+
         extended[3] = WIDE_DATA_VERSION;
+
         assert_eq!(Kind::of(10, true), Ok(Kind::Int64));
         assert_eq!(Kind::of(7, true).map(Kind::bytes), Ok(1));
         assert_eq!(Kind::of(8, true).map(Kind::bytes), Ok(2));
@@ -970,7 +1025,9 @@ mod tests {
     #[test]
     fn a_wide_data_file_cut_short_or_marked_never_panics() {
         let mut file = grid();
+
         file.version = 5;
+
         let whole = file.bytes();
 
         for length in 0..whole.len() {
@@ -979,6 +1036,7 @@ mod tests {
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80, 0x7f] {
                 let mut marked = whole.clone();
+
                 marked[index] = pattern;
                 if let Ok(classic) = Classic::of(marked) {
                     for held in ["single", "double"] {
@@ -1059,6 +1117,7 @@ mod tests {
             Classic::of(b"CDF\x01".to_vec()),
             Err(ClassicFault::Truncated { .. })
         ));
+
         for length in 0..whole.len() {
             let cut = Classic::of(whole[..length].to_vec());
             if let Ok(classic) = cut
@@ -1070,6 +1129,7 @@ mod tests {
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80, 0x7f] {
                 let mut marked = whole.clone();
+
                 marked[index] = pattern;
                 if let Ok(classic) = Classic::of(marked) {
                     for held in ["single", "double"] {
@@ -1091,7 +1151,9 @@ mod tests {
     fn a_file_read_by_ranges_reads_back_as_the_whole_one_does() {
         for version in [1, 2, 5] {
             let mut file = grid();
+
             file.version = version;
+
             let bytes = file.bytes();
 
             let whole = Classic::of(bytes.clone()).expect("a classic file");
@@ -1102,9 +1164,11 @@ mod tests {
                     whole.variable(name).unwrap(),
                     by_ranges.variable(name).unwrap(),
                 );
+
                 assert_eq!(one.shape(), other.shape());
                 assert_eq!(one.numbers(&[]), other.numbers(&[]));
             }
+
             assert_eq!(
                 by_ranges
                     .variable("single")
@@ -1118,6 +1182,7 @@ mod tests {
     #[test]
     fn a_header_longer_than_the_first_read_is_read_by_reading_more() {
         let mut file = grid();
+
         file.variables[0].attributes = vec![("Notes", "x".repeat(3 * HEADER_FIRST_READ as usize))];
 
         let classic = ranged(file.bytes()).expect("a classic file");
@@ -1131,6 +1196,7 @@ mod tests {
     #[test]
     fn a_header_past_what_one_is_held_to_is_refused() {
         let mut file = grid();
+
         file.variables[0].attributes =
             vec![("Notes", "x".repeat(HEADER_BYTES_AT_MOST as usize + 1))];
 
@@ -1151,6 +1217,7 @@ mod tests {
         for index in 0..whole.len() {
             for pattern in [0x00, 0xff, 0x80, 0x7f] {
                 let mut marked = whole.clone();
+
                 marked[index] = pattern;
                 if let Ok(classic) = ranged(marked) {
                     for held in ["single", "double"] {

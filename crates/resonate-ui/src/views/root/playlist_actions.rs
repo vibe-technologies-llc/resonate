@@ -27,6 +27,7 @@ impl RootView {
             then(self, held, cx);
             return;
         }
+
         let library = self.library.read(cx).catalog();
         let zone = self.zone_acted_on();
 
@@ -89,6 +90,7 @@ impl RootView {
                 .background_executor()
                 .spawn(async move {
                     let mut entries = Vec::new();
+
                     for playlist in playlists {
                         entries.extend(library.playlist_entries(playlist, None)?);
                     }
@@ -125,15 +127,18 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         let items = playlists::queue_items(entries, &QueueRows::default());
+
         if items.is_empty() {
             return;
         }
+
         let scanned: Vec<Track> = entries
             .iter()
             .filter_map(|entry| entry.track.clone())
             .collect();
 
         let queue = stamp_of(&items);
+
         self.library.update(cx, |library, _| {
             library.remember(&scanned);
             library.set_playing_playlist(whole.then_some(Playing { playlist, queue }));
@@ -180,9 +185,11 @@ impl RootView {
     ) {
         let items = playlists::queue_items(entries, &self.player_acted_on().read(cx).queue());
         let rows = items.len();
+
         if rows == 0 {
             return;
         }
+
         let scanned: Vec<Track> = entries
             .iter()
             .filter_map(|entry| entry.track.clone())
@@ -196,6 +203,7 @@ impl RootView {
             None => self.send(Command::Insert { items, at, play }, cx),
             Some(drawn_at) => {
                 let items = self.with_the_versions_chosen(items, cx);
+
                 self.send_by_position_at(drawn_at, Command::Insert { items, at, play }, cx);
             }
         }
@@ -239,6 +247,7 @@ impl RootView {
             .as_ref()
             .and_then(|found| found.query.clone())
             .unwrap_or_default();
+
         self.change_the_orders(cx, |orders| {
             orders.query_sort = query.sort;
             orders.query_reading = query.reading;
@@ -246,6 +255,7 @@ impl RootView {
         });
 
         let held = found.map_or_else(String::new, |found| found.name);
+
         self.typed.name.update(cx, |name, cx| {
             name.set_text(held, cx);
             name.take_focus(window, cx);
@@ -290,6 +300,7 @@ impl RootView {
         let kept = playlist
             .and_then(|playlist| self.saved(playlist, cx))
             .and_then(|found| found.kept);
+
         self.browsing
             .update(cx, |browsing, _| browsing.read_the_kept_order(kept));
     }
@@ -324,6 +335,7 @@ impl RootView {
         if self.orders(cx).keeping == keeping {
             return;
         }
+
         let kept = self.change_the_orders(cx, |orders| {
             orders.keeping = keeping;
             keeping.then_some(Kept {
@@ -392,6 +404,7 @@ impl RootView {
 
     pub(super) fn name_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let given = self.typed.name.read(cx).text().trim().to_owned();
+
         if given.is_empty() {
             return;
         }
@@ -411,12 +424,14 @@ impl RootView {
                     .trim()
                     .to_owned();
                 let orders = self.orders(cx);
+
                 let query = SavedQuery {
                     text: (!text.is_empty()).then_some(text),
                     sort: orders.query_sort,
                     reading: orders.query_reading,
                     limit: orders.query_cap,
                 };
+
                 self.library.update(cx, |library, cx| match saved {
                     Some(playlist) => library.revise_query(playlist, given, query, cx),
                     None => library.save_query(given, query, cx),

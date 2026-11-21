@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -31,6 +31,7 @@ pub(crate) fn heard_by_the_device(
     if presented.at <= 0 || presented.frame < 0 {
         return None;
     }
+
     let after = i128::from(written)
         .saturating_sub(i128::from(presented.frame))
         .saturating_mul(NANOS_A_SECOND)
@@ -104,11 +105,13 @@ pub(crate) fn rendered<F: Frame>(
     stamp: Stamp,
 ) -> bool {
     let mut ahead = stamp.ahead;
+
     for chunk in frames.chunks_mut(FRAME_CAPACITY) {
         let Some(bytes) = bytes.get_mut(..chunk.len().saturating_mul(F::BYTES)) else {
             return false;
         };
         let filled = source.fill_stamped(bytes, Stamp { ahead, ..stamp });
+
         ahead = Frames(ahead.get().saturating_add(chunk.len() as u64));
         empty.store(filled == 0, Ordering::Release);
         if let Some(unfilled) = bytes.get_mut(filled..) {
@@ -118,6 +121,7 @@ pub(crate) fn rendered<F: Frame>(
             let Some(read) = F::read(encoded) else {
                 return false;
             };
+
             *frame = read;
         }
     }
@@ -138,6 +142,7 @@ mod tests {
     impl AudioSource for Bytes {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             let taken = dst.len().min(self.left.len());
+
             for (into, from) in dst.iter_mut().zip(self.left.drain(..taken)) {
                 *into = from;
             }
@@ -184,6 +189,7 @@ mod tests {
             .iter()
             .flat_map(|word| word.to_le_bytes())
             .collect();
+
         assert_eq!(
             rendered_from::<(i16, i16)>(words.clone(), 2).0,
             vec![(1, -2), (3, -4)]
@@ -194,6 +200,7 @@ mod tests {
             .iter()
             .flat_map(|word| word.to_le_bytes())
             .collect();
+
         assert_eq!(
             rendered_from::<(i32, i32)>(wide, 1).0,
             vec![(i32::MAX, i32::MIN)]
@@ -203,6 +210,7 @@ mod tests {
             .iter()
             .flat_map(|word| word.to_le_bytes())
             .collect();
+
         assert_eq!(rendered_from::<f32>(floats, 2).0, vec![0.5, -0.25]);
     }
 
@@ -213,10 +221,12 @@ mod tests {
             .flat_map(|word| word.to_le_bytes())
             .collect();
         let (frames, empty) = rendered_from::<(i16, i16)>(one_frame, 3);
+
         assert_eq!(frames, vec![(7, 8), (0, 0), (0, 0)]);
         assert!(!empty);
 
         let (frames, empty) = rendered_from::<(f32, f32)>(Vec::new(), 2);
+
         assert_eq!(frames, vec![(0.0, 0.0), (0.0, 0.0)]);
         assert!(empty);
     }

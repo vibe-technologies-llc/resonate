@@ -15,6 +15,7 @@ impl LibraryModel {
         let Some(progress) = self.running.work.polling() else {
             return;
         };
+
         progress.cancel();
         cx.notify();
     }
@@ -23,6 +24,7 @@ impl LibraryModel {
         let Some((_, progress)) = self.running.work.importing() else {
             return;
         };
+
         progress.cancel();
         cx.notify();
     }
@@ -31,6 +33,7 @@ impl LibraryModel {
         let Some((_, progress)) = self.running.work.organising() else {
             return;
         };
+
         progress.cancel();
         cx.notify();
     }
@@ -39,6 +42,7 @@ impl LibraryModel {
         let Some((_, progress)) = self.running.work.tagging() else {
             return;
         };
+
         progress.cancel();
         cx.notify();
     }
@@ -90,6 +94,7 @@ impl LibraryModel {
             cx.notify();
             return;
         }
+
         let read_at = self.library.plans_stamp();
         let handle = match self.library.retag(Arc::new(FileTags::default()), options) {
             Ok(handle) => handle,
@@ -180,6 +185,7 @@ impl LibraryModel {
             cx.notify();
             return;
         }
+
         let read_at = self.library.plans_stamp();
         let handle = match self.library.organise(options) {
             Ok(handle) => handle,
@@ -242,8 +248,10 @@ impl LibraryModel {
             );
             return;
         }
+
         let read_at = self.library.plans_stamp();
         let library = Arc::clone(&self.library);
+
         self.running.work = Work::Identical(Pass::Preview);
         self.passes.identical = None;
         self.passes.previewed_identical = Planned::Not;
@@ -287,6 +295,7 @@ impl LibraryModel {
             );
             return;
         }
+
         let Some(copies) = self
             .passes
             .identical
@@ -297,6 +306,7 @@ impl LibraryModel {
         };
         let library = Arc::clone(&self.library);
         let before = mem::replace(&mut self._edit, Task::ready(()));
+
         self.running.work = Work::Identical(Pass::Apply);
         self.passes.identical = None;
         self.passes.previewed_identical = Planned::Not;
@@ -304,6 +314,7 @@ impl LibraryModel {
 
         self.running._scan = cx.spawn(async move |this, cx| {
             before.await;
+
             let folded = cx
                 .background_executor()
                 .spawn(async move { library.fold_copies(&copies.copies.identical) })
@@ -322,6 +333,7 @@ impl LibraryModel {
     pub fn forget_root(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         if self.running.work.is_busy() {
             let waiting = RootWaiting::ToForget(root);
+
             if !self.running.roots_waiting.contains(&waiting) {
                 self.running.roots_waiting.push(waiting);
             }
@@ -332,6 +344,7 @@ impl LibraryModel {
         cx.notify();
 
         let library = Arc::clone(&self.library);
+
         self.running._scan = cx.spawn(async move |this, cx| {
             let dropped = cx
                 .background_executor()

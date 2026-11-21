@@ -99,7 +99,9 @@ pub(crate) fn enumerate(remembered: &Mutex<Remembered>) -> SinkResult<Vec<SinkIn
         .filter_map(|device| seen(device, remembered))
         .collect();
     let present: Vec<&str> = seen.iter().map(|device| device.uid.as_str()).collect();
+
     remembered.lock().keep_only(&present);
+
     let default = Device::default_output()
         .ok()
         .flatten()

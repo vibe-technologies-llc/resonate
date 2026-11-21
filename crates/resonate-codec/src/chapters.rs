@@ -55,6 +55,7 @@ pub(crate) fn of_group(group: &ChapterGroup) -> Vec<Marked> {
         })
         .take(MOST_CHAPTERS)
         .collect();
+
     if !marked.is_empty() {
         return marked;
     }
@@ -81,9 +82,11 @@ pub(crate) fn of_comments(comments: &[(String, String)]) -> Vec<Marked> {
         .iter()
         .filter_map(|(key, value)| {
             let number = key.strip_prefix(COMMENT_PREFIX)?;
+
             if !number.bytes().all(|byte| byte.is_ascii_digit()) {
                 return None;
             }
+
             let title = comments
                 .iter()
                 .find(|(named, _)| {
@@ -103,6 +106,7 @@ pub(crate) fn of_comments(comments: &[(String, String)]) -> Vec<Marked> {
         })
         .take(MOST_CHAPTERS)
         .collect();
+
     marked.sort_by_key(|(number, _)| *number);
     marked.into_iter().map(|(_, held)| held).collect()
 }
@@ -110,12 +114,16 @@ pub(crate) fn of_comments(comments: &[(String, String)]) -> Vec<Marked> {
 fn clock_nanos(value: &str) -> Option<u64> {
     let (clock, fraction) = value.trim().split_once('.').unwrap_or((value.trim(), ""));
     let mut fields = clock.split(':');
+
     let (hours, minutes, seconds) = (fields.next()?, fields.next()?, fields.next()?);
+
     if fields.next().is_some() || fraction.len() > FRACTION_DIGITS {
         return None;
     }
+
     let minutes = minutes.parse::<u64>().ok().filter(|held| *held < 60)?;
     let seconds = seconds.parse::<u64>().ok().filter(|held| *held < 60)?;
+
     let whole = hours
         .parse::<u64>()
         .ok()?
@@ -140,6 +148,7 @@ pub(crate) fn cut(marked: &[Marked], rate: SampleRate, file: &TagSet) -> Option<
         .iter()
         .map(|held| (held.start.at(rate), held.title.as_deref()))
         .collect();
+
     starts.sort_by_key(|(at, _)| *at);
     starts.dedup_by_key(|(at, _)| *at);
     if starts.len() < FEWEST_CHAPTERS_CUT {
@@ -165,6 +174,7 @@ pub(crate) fn cut(marked: &[Marked], rate: SampleRate, file: &TagSet) -> Option<
             .collect(),
     }
     .billed_by(&whole);
+
     cut.heard_from_the_head();
     for (track, (_, title)) in cut.tracks.iter_mut().zip(&starts) {
         track.tags.title = title.map(str::to_owned);
@@ -213,6 +223,7 @@ mod tests {
             })
             .collect();
         let book = Some("The Hobbit".to_owned());
+
         assert_eq!(
             rows,
             vec![
@@ -248,6 +259,7 @@ mod tests {
         .map(|(key, value)| (key.to_owned(), value.to_owned()));
 
         let marked = of_comments(&comments);
+
         assert_eq!(
             marked
                 .iter()

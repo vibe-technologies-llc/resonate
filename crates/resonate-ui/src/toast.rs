@@ -134,6 +134,7 @@ impl Toaster {
 
 pub(crate) fn tell(notice: Notice, cx: &mut App) {
     let toaster = cx.default_global::<Toaster>();
+
     if toaster.counts_a_repeat_of(&notice) {
         cx.refresh_windows();
         return;
@@ -208,6 +209,7 @@ fn show(Waiting { notice, times }: Waiting, cx: &mut App) {
     let focus = Some(cx.focus_handle().tab_stop(true));
 
     let toaster = cx.default_global::<Toaster>();
+
     toaster.told = serial;
     toaster.hovered = false;
     toaster.focused = false;
@@ -227,6 +229,7 @@ fn withdraw(cx: &mut App) {
         .try_global::<Toaster>()
         .and_then(|toaster| toaster.showing.as_ref())
         .is_some_and(|toast| !toast.leaving);
+
     if !standing {
         return;
     }
@@ -235,6 +238,7 @@ fn withdraw(cx: &mut App) {
         cx.background_executor().timer(WITHDRAWAL).await;
         cx.update(|cx| {
             let toaster = cx.default_global::<Toaster>();
+
             toaster.showing = None;
             if let Some(waiting) = toaster.waiting.pop_front() {
                 show(waiting, cx);
@@ -243,6 +247,7 @@ fn withdraw(cx: &mut App) {
     });
 
     let toaster = cx.default_global::<Toaster>();
+
     if let Some(toast) = toaster.showing.as_mut() {
         toast.leaving = true;
     }
@@ -264,6 +269,7 @@ pub(crate) fn drawn(
     if toaster.focused != focused {
         cx.default_global::<Toaster>().focused = focused;
     }
+
     let (icon, ink, urgency) = match toast.notice.tone() {
         Tone::Trouble => (Icon::Alert, theme::failure(), Urgency::Warned),
         Tone::Done => (Icon::Check, theme::done(), Urgency::Told),
@@ -499,6 +505,7 @@ mod tests {
         assert!(!toaster.counts_a_repeat_of(&trouble("Couldn't read a portrait")));
 
         let showing = toaster.showing.expect("the toast still shows");
+
         assert_eq!(showing.times, 3);
         assert_eq!(
             said_with_its_count(&showing.notice, showing.times),
@@ -509,6 +516,7 @@ mod tests {
     #[test]
     fn a_trouble_told_again_while_it_waits_is_counted_on_the_one_waiting() {
         let mut toaster = standing(trouble("first"));
+
         wait(&mut toaster.waiting, trouble("second"));
 
         assert!(toaster.counts_a_repeat_of(&trouble("second")));
@@ -520,6 +528,7 @@ mod tests {
     #[test]
     fn a_toast_on_its_way_out_does_not_take_a_repeat_and_a_plain_notice_shows_no_count() {
         let mut toaster = standing(trouble("leaving"));
+
         toaster.showing.as_mut().expect("showing").leaving = true;
 
         assert!(!toaster.counts_a_repeat_of(&trouble("leaving")));
@@ -530,6 +539,7 @@ mod tests {
     #[test]
     fn a_full_line_drops_its_oldest_plain_notice_for_a_newer_one_and_never_a_trouble() {
         let mut waiting = VecDeque::new();
+
         for told in [trouble("a"), noted("b"), noted("c"), trouble("d")] {
             wait(&mut waiting, told);
         }
@@ -545,15 +555,18 @@ mod tests {
     #[test]
     fn a_full_line_of_troubles_turns_a_plain_notice_away_and_keeps_every_trouble() {
         let mut waiting = VecDeque::new();
+
         for told in ["a", "b", "c", "d"] {
             wait(&mut waiting, trouble(told));
         }
 
         wait(&mut waiting, noted("plain"));
+
         assert_eq!(waiting.len(), WAITING_AT_MOST);
         assert!(!notices_of(&waiting).contains(&noted("plain")));
 
         wait(&mut waiting, trouble("e"));
+
         assert_eq!(waiting.len(), WAITING_AT_MOST + 1);
         assert_eq!(waiting.back(), Some(&Waiting::once(trouble("e"))));
         assert_eq!(waiting.front(), Some(&Waiting::once(trouble("a"))));
@@ -581,6 +594,7 @@ mod tests {
     #[test]
     fn a_notice_told_over_a_standing_toast_waits_for_the_floor_instead_of_withdrawing_it() {
         let mut toaster = standing(trouble("first"));
+
         wait(&mut toaster.waiting, trouble("second"));
 
         let steps = steps_until_over(&mut toaster);
@@ -596,10 +610,13 @@ mod tests {
     fn a_trouble_nothing_waits_behind_stands_its_full_time_and_a_late_arrival_shortens_it_to_the_floor()
      {
         let mut alone = standing(trouble("first"));
+
         let alone_for = LINGERS_IN_STEPS_OF * steps_until_over(&mut alone);
+
         assert_eq!(alone_for, TROUBLE_LINGERS_AT_LEAST);
 
         let mut overtaken = standing(trouble("first"));
+
         for _ in 0..30 {
             assert_eq!(overtaken.linger_a_step(1), Lingering::Free);
         }
@@ -611,6 +628,7 @@ mod tests {
     #[test]
     fn a_toast_held_by_the_pointer_does_not_run_down_its_floor() {
         let mut toaster = standing(trouble("first"));
+
         wait(&mut toaster.waiting, trouble("second"));
         toaster.hovered = true;
 
@@ -619,6 +637,7 @@ mod tests {
         }
 
         toaster.hovered = false;
+
         assert_eq!(steps_until_over(&mut toaster), 20);
     }
 
@@ -700,6 +719,7 @@ mod tests {
             Cause::NothingToCompare,
         ] {
             let said = would_not_do(CommandKind::Play, cause);
+
             assert!(
                 !said.ends_with('.'),
                 "{said} reads as a sentence, not a notice"

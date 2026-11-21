@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::{
@@ -62,6 +62,7 @@ impl Hardware for Playing {
             Some(reading) => reading.frames_ahead(self.written, self.rate),
             None => u64::from(self.padding(available)),
         };
+
         self.clock.note(
             GraphTime {
                 delay: i64::try_from(ahead).unwrap_or(i64::MAX),
@@ -74,8 +75,10 @@ impl Hardware for Playing {
             },
             self.rate,
         );
+
         let played = self.written.saturating_sub(ahead);
         let wanted = usize::try_from(available).unwrap_or_default();
+
         if wanted == 0 {
             return Ok(self.cycled(0, played));
         }
@@ -95,6 +98,7 @@ impl Hardware for Playing {
         let Some(window) = self.scratch.get(..bytes) else {
             return Ok(self.cycled(0, played));
         };
+
         self.render.write_to_device(window, None)?;
 
         if filled.heard > 0 {

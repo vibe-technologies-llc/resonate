@@ -66,6 +66,7 @@ impl Chain {
         let back_from = front.stages.len();
         let mut stages = front.stages;
         let mut specs = front.specs;
+
         stages.extend(back.stages);
         specs.extend(back.specs);
         assembled(front.input, stages, specs, max_frames_in, 0, back_from)
@@ -99,6 +100,7 @@ impl Chain {
             specs: self.specs.drain(..taken).collect(),
             input: self.input,
         };
+
         self.widths.drain(..taken);
         self.input = front.output();
         self.input_channels = self.input.channel_count().get() as usize;
@@ -224,6 +226,7 @@ impl Chain {
 
     fn copy(source: &[f64], destination: &mut [f64]) -> usize {
         let samples = source.len().min(destination.len());
+
         if let (Some(from), Some(into)) = (source.get(..samples), destination.get_mut(..samples)) {
             into.copy_from_slice(from);
         }
@@ -256,6 +259,7 @@ impl Chain {
 
         let Some((last, leading)) = self.stages.split_last_mut() else {
             let frames = Self::copy(input, output) / self.input_channels;
+
             if let Some(recall) = recall {
                 recall.enter(output.get(..frames * output_channels).unwrap_or_default());
             }
@@ -277,6 +281,7 @@ impl Chain {
                 Some(_) => source.get(..frames * channels).unwrap_or_default(),
             };
             let count = stage.process(taken, destination);
+
             if at == back_from
                 && let Some(recall) = recall.as_deref_mut()
             {
@@ -293,6 +298,7 @@ impl Chain {
             Some(_) => source.get(..frames * channels).unwrap_or_default(),
         };
         let count = last.process(taken, output);
+
         if let Some(recall) = recall {
             if back_from == leading.len() {
                 recall.enter(taken.get(..count.frames_in * channels).unwrap_or_default());
@@ -321,6 +327,7 @@ impl Chain {
 
     fn flushed(&mut self, output: &mut [f64], recall: Option<&mut Recall>) -> Result<usize> {
         let capacity = output.len() / self.output_channels;
+
         if capacity < self.max_flush_frames {
             return Err(Error::OutputTooSmall {
                 capacity,
@@ -342,6 +349,7 @@ impl Chain {
         };
         let Some((first, middle)) = leading.split_first_mut() else {
             let drained = last.flush(output);
+
             if back_from >= stage_count
                 && let Some(recall) = recall
             {
@@ -355,10 +363,12 @@ impl Chain {
 
         let mut frames = first.flush(destination);
         let mut channels = widths.first().copied().unwrap_or(self.input_channels);
+
         mem::swap(&mut source, &mut destination);
 
         for (at, (stage, width)) in middle.iter_mut().zip(widths.iter().skip(1)).enumerate() {
             let taken = source.get(..frames * channels).unwrap_or_default();
+
             if at + 1 == back_from
                 && let Some(recall) = recall.as_deref_mut()
             {
@@ -370,13 +380,16 @@ impl Chain {
         }
 
         let taken = source.get(..frames * channels).unwrap_or_default();
+
         if back_from + 1 == stage_count
             && let Some(recall) = recall.as_deref_mut()
         {
             recall.enter(taken);
         }
+
         let width = widths.last().copied().unwrap_or(channels);
         let drained = Self::drained_through(last.as_mut(), taken, output, width);
+
         if back_from >= stage_count
             && let Some(recall) = recall
         {
@@ -441,7 +454,9 @@ impl Measure {
             .max_output_frames(self.draining)
             .saturating_add(stage.max_flush_frames());
         self.frames = stage.max_output_frames(self.frames);
+
         let channels = next.channel_count().get() as usize;
+
         self.samples = self
             .samples
             .max(self.frames.max(self.draining).saturating_mul(channels));
@@ -471,12 +486,14 @@ fn assembled(
     let input_channels = input.channel_count().get() as usize;
     let mut measure = Measure::from(input, max_frames_in, draining_in);
     let mut back = None;
+
     for (at, (stage, next)) in stages.iter().zip(&specs).enumerate() {
         if at == back_from {
             back = Some(measure.back_from_here(at));
         }
         measure.through(stage.as_ref(), *next);
     }
+
     let back = back.unwrap_or_else(|| measure.back_from_here(stages.len()));
 
     let widths: Vec<usize> = specs
@@ -540,7 +557,9 @@ impl ChainBuilder {
                 specs.push(next);
             }
         }
+
         let mut back_from = None;
+
         for (at, mut stage) in self.stages.into_iter().enumerate() {
             if self.back_from == Some(at) {
                 back_from = Some(stages.len());
@@ -548,12 +567,15 @@ impl ChainBuilder {
             if stage.is_transparent() {
                 continue;
             }
+
             let next = stage.output_spec(measure.spec);
+
             stage.prepare(measure.spec, measure.frames.max(measure.draining))?;
             measure.through(stage.as_ref(), next);
             stages.push(stage);
             specs.push(next);
         }
+
         let back_from = back_from.unwrap_or(stages.len());
 
         Ok(assembled(
@@ -610,6 +632,7 @@ mod tests {
     #[test]
     fn a_chain_split_at_its_resampler_goes_on_exactly_where_the_resampler_left_off() {
         const BLOCKS: usize = 8;
+
         let input: Vec<f64> = (0..BLOCK * BLOCKS * 2)
             .map(|sample| (sample as f64 * 0.01).sin() * 0.8)
             .collect();
@@ -622,35 +645,43 @@ mod tests {
         let run = |chain: &mut Chain, blocks: &[&[f64]]| {
             let mut heard = Vec::new();
             let mut output = vec![0.0; chain.max_output_frames() * 2];
+
             for block in blocks {
                 let count = chain.process(block, &mut output);
+
                 heard.extend_from_slice(&output[..count.frames_out * 2]);
             }
             heard
         };
 
         let mut whole = resampled().build().expect("a resampler builds");
+
         let straight = run(&mut whole, &blocks);
 
         let mut attenuated = resampled()
             .push(attenuator())
             .build()
             .expect("a resampler and a gain build");
+
         let before = run(&mut attenuated, &blocks[..BLOCKS / 2]);
         let front = attenuated
             .take_the_front()
             .expect("a resampling chain has a front to carry");
         let mut held = vec![0.0; attenuated.max_flush_frames() * 2 + 2];
+
         assert_eq!(
             attenuated.flush(&mut held).expect("the back flushes"),
             0,
             "a gain stage behind the resampler held frames"
         );
+
         let mut carried = Chain::builder_after(front)
             .max_frames_in(BLOCK)
             .build()
             .expect("the carried resampler builds alone");
+
         assert_eq!(carried.latency_frames(), whole.latency_frames());
+
         let after = run(&mut carried, &blocks[BLOCKS / 2..]);
 
         assert_eq!(
@@ -681,16 +712,20 @@ mod tests {
             .expect("a resampler builds")
             .latency_frames()
             .round() as usize;
+
         let mut whole = backed(fronted());
+
         let mut output = vec![0.0; whole.max_output_frames() * 2];
 
         for _ in 0..4 {
             whole.process(&[0.25; BLOCK * 2], &mut output);
         }
+
         let warmed = whole.frames_it_holds();
         let whole_latency = whole.latency_frames().round() as usize;
         let front = whole.take_the_front().expect("a resampler is carried");
         let mut carried = backed(Chain::builder_after(front).max_frames_in(BLOCK));
+
         carried.set_gain_after_what_it_holds(Volume::MAX, AppliedGain::default());
 
         assert_eq!(warmed, whole_latency);
@@ -710,6 +745,7 @@ mod tests {
     #[test]
     fn a_back_run_again_over_what_entered_it_renders_what_the_chain_did_and_joins_its_front() {
         const BLOCKS: usize = 8;
+
         let input: Vec<f64> = (0..BLOCK * BLOCKS * 2)
             .map(|sample| (sample as f64 * 0.01).sin() * 0.8)
             .collect();
@@ -727,6 +763,7 @@ mod tests {
                 .build()
                 .expect("a resampler, a gain and a guard build")
         };
+
         let mut whole = backed(fronted());
         let mut recall = Recall::new(
             std::num::NonZeroUsize::new(2).expect("two channels"),
@@ -734,14 +771,18 @@ mod tests {
         );
         let mut output = vec![0.0; whole.max_output_frames() * 2];
         let mut straight = Vec::new();
+
         for block in &blocks[..BLOCKS / 2] {
             let count = whole.process_recalled(block, &mut output, &mut recall);
+
             straight.extend_from_slice(&output[..count.frames_out * 2]);
         }
 
         let edge = whole.back();
+
         assert_eq!(edge.from, 1);
         assert_eq!(edge.spec.rate, SampleRate::HZ_48000);
+
         let mut again = backed(
             Chain::builder(edge.spec)
                 .max_frames_in(edge.frames_in)
@@ -752,12 +793,17 @@ mod tests {
         let mut rendered = vec![0.0; again.max_output_frames() * 2];
         let mut heard_again = Vec::new();
         let mut next = 0;
+
         while next < recall.entered() {
             let frames = recall.recalled(next, &mut entering);
+
             next += frames as u64;
+
             let count = again.process(&entering[..frames * 2], &mut rendered);
+
             heard_again.extend_from_slice(&rendered[..count.frames_out * 2]);
         }
+
         assert_eq!(
             heard_again, straight,
             "the back run again over what entered it rendered something else"
@@ -768,13 +814,18 @@ mod tests {
         let mut reference = backed(fronted());
         let mut expected = Vec::new();
         let mut output = vec![0.0; reference.max_output_frames() * 2];
+
         for block in &blocks {
             let count = reference.process(block, &mut output);
+
             expected.extend_from_slice(&output[..count.frames_out * 2]);
         }
+
         let mut output = vec![0.0; joined.max_output_frames() * 2];
+
         for block in &blocks[BLOCKS / 2..] {
             let count = joined.process_recalled(block, &mut output, &mut recall);
+
             heard_again.extend_from_slice(&output[..count.frames_out * 2]);
         }
 
@@ -789,6 +840,7 @@ mod tests {
     #[test]
     fn a_convolver_is_carried_across_a_reshape_and_picks_up_where_it_left_off() {
         const BLOCKS: usize = 16;
+
         let input: Vec<f64> = (0..BLOCK * BLOCKS * 2)
             .map(|at| ((at as f64) * 0.013).sin() * 0.5)
             .collect();
@@ -805,23 +857,28 @@ mod tests {
         let run = |chain: &mut Chain, blocks: &[&[f64]]| {
             let mut heard = Vec::new();
             let mut output = vec![0.0; chain.max_output_frames() * 2];
+
             for block in blocks {
                 let count = chain.process(block, &mut output);
+
                 heard.extend_from_slice(&output[..count.frames_out * 2]);
             }
             heard
         };
 
         let mut whole = convolved().build().expect("a convolver builds");
+
         let straight = run(&mut whole, &blocks);
 
         let mut attenuated = convolved()
             .push(attenuator())
             .build()
             .expect("a convolver and a gain build");
+
         assert_eq!(attenuated.max_process_frames(), BLOCK);
         assert!(attenuated.max_flush_frames() > 3_000);
         assert_eq!(attenuated.max_flush_frames_behind_the_front(), 0);
+
         let before = run(&mut attenuated, &blocks[..BLOCKS / 2]);
         let front = attenuated
             .take_the_front()
@@ -830,6 +887,7 @@ mod tests {
             .max_frames_in(BLOCK)
             .build()
             .expect("the carried convolver builds alone");
+
         let after = run(&mut carried, &blocks[BLOCKS / 2..]);
 
         for (heard, expected) in after.iter().zip(&straight[before.len()..]) {
@@ -838,6 +896,7 @@ mod tests {
                 "the carried convolver did not pick up where it left off"
             );
         }
+
         assert_eq!(after.len(), straight.len() - before.len());
     }
 
@@ -868,6 +927,7 @@ mod tests {
             },
             ..GainConfig::default()
         });
+
         assert_eq!(
             cancelled.amplitude(),
             1.0,
@@ -898,6 +958,7 @@ mod tests {
 
         let input: Vec<f64> = (0..BLOCK * 2).map(|n| n as f64 / 1_000.0).collect();
         let mut output = vec![0.0; input.len()];
+
         let count = chain.process(&input, &mut output);
 
         assert_eq!(count.frames_in, BLOCK);
@@ -942,8 +1003,10 @@ mod tests {
                 .expect("a valid chain")
                 .latency_frames()
         };
+
         let restoring = alone(restorer());
         let resampling = alone(resampler(SampleRate::HZ_44100, SampleRate::HZ_192000));
+
         assert!(restoring > 0.0 && resampling > 0.0);
 
         let both = Chain::builder(spec(SampleRate::HZ_44100))
@@ -955,6 +1018,7 @@ mod tests {
             .latency_frames();
 
         let wanted = restoring * 192_000.0 / 44_100.0 + resampling;
+
         assert!(
             (both - wanted).abs() < 1e-9,
             "the chain said {both} frames where {wanted} are held"
@@ -971,6 +1035,7 @@ mod tests {
 
         let input = vec![1.0; BLOCK * 2];
         let mut output = vec![0.0; BLOCK * 2];
+
         chain.process(&input, &mut output);
 
         for sample in output {
@@ -992,6 +1057,7 @@ mod tests {
         let input = vec![1.0; BLOCK * 2];
         let mut output = vec![0.0; chain.max_output_frames() * 2];
         let mut produced = 0;
+
         for _ in 0..8 {
             produced = chain.process(&input, &mut output).frames_out;
         }
@@ -1000,6 +1066,7 @@ mod tests {
             produced > BLOCK,
             "upsampling produced only {produced} frames"
         );
+
         let settled = output.get(..produced * 2).expect("produced frames fit");
         for sample in settled {
             assert!((sample - 0.125).abs() < 1e-3, "got {sample}");
@@ -1014,6 +1081,7 @@ mod tests {
             .expect("an empty chain always builds");
 
         let mut output = vec![0.0; BLOCK * 2];
+
         assert_eq!(chain.flush(&mut output), Ok(0));
     }
 
@@ -1053,8 +1121,10 @@ mod tests {
 
         let mut consumed = 0;
         let mut produced = 0;
+
         while consumed < BLOCK * 16 {
             let count = chain.process(&input, &mut output);
+
             consumed += count.frames_in;
             produced += count.frames_out;
         }
@@ -1063,6 +1133,7 @@ mod tests {
             .expect("the chain's own bound fits");
 
         let expected = consumed as f64 * 96_000.0 / 44_100.0;
+
         assert!(
             (produced as f64 - expected).abs() < 8.0,
             "{produced} frames left the chain where about {expected} were fed in"
@@ -1091,11 +1162,13 @@ mod tests {
         let input = vec![1.0; BLOCK * 6];
         let mut output = vec![0.0; chain.max_output_frames() * 2];
         let mut produced = 0;
+
         for _ in 0..8 {
             produced = chain.process(&input, &mut output).frames_out;
         }
 
         assert!(produced > BLOCK, "upsampling produced {produced} frames");
+
         let settled = output
             .get(..produced * 2)
             .expect("the produced frames are two channels wide");
@@ -1118,6 +1191,7 @@ mod tests {
 
         let input = vec![1.0; BLOCK * 6];
         let mut output = vec![0.0; chain.max_output_frames() * 2];
+
         chain.process(&input, &mut output);
 
         assert!(
@@ -1138,6 +1212,7 @@ mod tests {
 
         let input = vec![1.0; BLOCK * 2];
         let mut output = vec![0.0; chain.max_output_frames() * 2];
+
         chain.process(&input, &mut output);
 
         assert!(
@@ -1158,11 +1233,15 @@ mod tests {
 
         let input = vec![1.0; BLOCK * 2];
         let mut output = vec![0.0; chain.max_output_frames() * 2];
+
         chain.process(&input, &mut output);
 
         let bound = chain.max_flush_frames();
+
         assert!(bound > 0, "a resampler drains a tail");
+
         let mut short = vec![0.0; (bound - 1) * 2];
+
         assert_eq!(
             chain.flush(&mut short),
             Err(Error::OutputTooSmall {
@@ -1195,10 +1274,12 @@ mod tests {
 
         guarded.process(&vec![0.25; 2 * few], &mut output);
         unattenuated.process(&vec![0.25; 2 * few], &mut output);
+
         assert_eq!(guarded.frames_held_after_the_gain(), few);
         assert_eq!(unattenuated.frames_held_after_the_gain(), 0);
 
         guarded.process(&vec![0.25; 2 * BLOCK], &mut output);
+
         assert_eq!(guarded.frames_held_after_the_gain(), delay);
     }
 
@@ -1210,10 +1291,13 @@ mod tests {
         let mut samples: Vec<f32> = (0..frames * 2)
             .map(|at| ((at / 2) as f32 * 0.013).sin() * 0.5)
             .collect();
+
         samples[frames] = which;
+
         let decoded = SampleData::F32(samples);
 
         let mut wide = vec![0.0; frames * 2];
+
         decoded.widen_into(0, &mut wide);
         wide
     }
@@ -1221,8 +1305,10 @@ mod tests {
     fn heard_through(chain: &mut Chain, input: &[f64]) -> Vec<f64> {
         let mut heard = Vec::new();
         let mut output = vec![0.0; chain.max_output_frames() * 2];
+
         for block in input.chunks(BLOCK * 2) {
             let count = chain.process(block, &mut output);
+
             heard.extend_from_slice(&output[..count.frames_out * 2]);
         }
         heard
@@ -1247,6 +1333,7 @@ mod tests {
                     .skip(channel)
                     .step_by(2)
                     .fold(0.0_f64, |most, sample| most.max(sample.abs()));
+
                 assert!(
                     loudest > AUDIBLE_AT_LEAST,
                     "window {at} of channel {channel} fell silent around the non-finite sample"

@@ -58,6 +58,7 @@ pub fn comments_of(source: &str, tongue: Tongue) -> Vec<Comment> {
 pub fn comments_in(roots: &[PathBuf], skipped: &[&str]) -> Result<BTreeMap<PathBuf, Vec<Comment>>> {
     let mut found = BTreeMap::new();
     let mut waiting: Vec<PathBuf> = roots.iter().rev().cloned().collect();
+
     while let Some(path) = waiting.pop() {
         if path.is_dir() {
             let named = |entry: &PathBuf| {
@@ -70,10 +71,12 @@ pub fn comments_in(roots: &[PathBuf], skipped: &[&str]) -> Result<BTreeMap<PathB
                 .into_iter()
                 .filter(|entry| !named(entry))
                 .collect();
+
             inside.reverse();
             waiting.extend(inside);
             continue;
         }
+
         let Some(tongue) = Tongue::of(&path) else {
             continue;
         };
@@ -81,6 +84,7 @@ pub fn comments_in(roots: &[PathBuf], skipped: &[&str]) -> Result<BTreeMap<PathB
             path: path.clone(),
             source,
         })?;
+
         let comments = comments_of(&source, tongue);
         if !comments.is_empty() {
             found.insert(path, comments);
@@ -158,11 +162,13 @@ impl Slashed {
                         }
                         '/' if next == Some('/') => {
                             let end = self.line_end(&letters, at);
+
                             comments.push(Comment::at(line, &letters[at..end]));
                             at = end;
                         }
                         '/' if next == Some('*') => {
                             let end = self.block_end(&letters, at);
+
                             comments.push(Comment::at(line, &letters[at..end]));
                             line += self.newlines(&letters[at..end]);
                             at = end;
@@ -170,6 +176,7 @@ impl Slashed {
                         '"' => {
                             let long = letters.get(at + 1) == Some(&'"')
                                 && letters.get(at + 2) == Some(&'"');
+
                             stack.push(Inside::Text { hashes: 0, long });
                             at += if long { 3 } else { 1 };
                         }
@@ -178,6 +185,7 @@ impl Slashed {
                             if letters.get(at + hashes) == Some(&'"') {
                                 let long = letters.get(at + hashes + 1) == Some(&'"')
                                     && letters.get(at + hashes + 2) == Some(&'"');
+
                                 stack.push(Inside::Text { hashes, long });
                                 at += hashes + if long { 3 } else { 1 };
                             } else {
@@ -223,11 +231,13 @@ impl Slashed {
     fn in_text(&self, letters: &[char], at: usize, hashes: usize, long: bool) -> Step {
         let letter = letters[at];
         let quotes = if long { 3 } else { 1 };
+
         if letter == '"'
             && (0..quotes).all(|offset| letters.get(at + offset) == Some(&'"'))
             && (0..hashes).all(|offset| letters.get(at + quotes + offset) == Some(&'#'))
         {
             let run_goes_on = long && hashes == 0 && letters.get(at + quotes) == Some(&'"');
+
             return if run_goes_on {
                 Step::Skip(1)
             } else {
@@ -248,6 +258,7 @@ impl Slashed {
                     && (1..=hashes).all(|offset| letters.get(at + offset) == Some(&'#'))
                 {
                     let after = at + 1 + hashes;
+
                     return match letters.get(after) {
                         Some('(') => Step::Interpolate(hashes + 2),
                         Some(_) => Step::Skip(hashes + 2),
@@ -269,6 +280,7 @@ impl Slashed {
     fn block_end(&self, letters: &[char], from: usize) -> usize {
         let mut depth = 0usize;
         let mut at = from;
+
         while at < letters.len() {
             if letters[at] == '/' && letters.get(at + 1) == Some(&'*') {
                 depth += 1;
@@ -301,6 +313,7 @@ impl Slashed {
         match (letters.get(at + 1), letters.get(at + 2)) {
             (Some('\\'), _) => {
                 let mut end = at + 3;
+
                 while end < letters.len() && letters[end] != '\'' && letters[end] != '\n' {
                     end += 1;
                 }
@@ -323,6 +336,7 @@ fn marked_up(source: &str) -> Vec<Comment> {
     let mut comments = Vec::new();
     let mut line = 0;
     let mut at = 0;
+
     while at < letters.len() {
         if letters[at] == '\n' {
             line += 1;
@@ -330,6 +344,7 @@ fn marked_up(source: &str) -> Vec<Comment> {
         if letters[at..].starts_with(&['<', '!', '-', '-']) {
             let from = at;
             let started = line;
+
             while at < letters.len() && !letters[at..].starts_with(&['-', '-', '>']) {
                 if letters[at] == '\n' {
                     line += 1;
@@ -361,6 +376,7 @@ fn hashed_across_lines(source: &str, shebang_allowed: bool) -> Vec<Comment> {
             '#' => {
                 let shebang = shebang_allowed && at == 0 && source.starts_with(SHEBANG);
                 let from = at;
+
                 while at < letters.len() && letters[at] != '\n' {
                     at += 1;
                 }
@@ -372,6 +388,7 @@ fn hashed_across_lines(source: &str, shebang_allowed: bool) -> Vec<Comment> {
                 let long =
                     letters.get(at + 1) == Some(&letter) && letters.get(at + 2) == Some(&letter);
                 let quotes = if long { 3 } else { 1 };
+
                 at += quotes;
                 while at < letters.len() {
                     if letters[at] == '\\' && letter == '"' || letters[at] == '\\' && !long {
@@ -402,10 +419,12 @@ fn hashed_across_lines(source: &str, shebang_allowed: bool) -> Vec<Comment> {
 
 fn hashed_by_line(source: &str, shebang_allowed: bool) -> Vec<Comment> {
     let mut comments = Vec::new();
+
     for (line, text) in source.lines().enumerate() {
         if shebang_allowed && line == 0 && text.starts_with(SHEBANG) {
             continue;
         }
+
         let letters: Vec<char> = text.chars().collect();
         let mut quote: Option<char> = None;
         for (at, letter) in letters.iter().enumerate() {

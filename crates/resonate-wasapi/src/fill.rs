@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::num::NonZeroUsize;
@@ -33,6 +33,7 @@ pub fn fill_buffer(
     };
 
     let filled = source.fill_stamped(window, stamp).min(bytes);
+
     if let Some(rest) = window.get_mut(filled..) {
         rest.fill(0);
     }
@@ -60,6 +61,7 @@ mod tests {
     impl AudioSource for Ramp {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             let mut written = 0;
+
             for (slot, word) in dst
                 .as_chunks_mut::<4>()
                 .0

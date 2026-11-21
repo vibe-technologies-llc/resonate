@@ -16,7 +16,7 @@ use crate::{
     sheeted, store,
 };
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct Likeness {
     size: i64,
     duration: Option<i64>,
@@ -25,7 +25,7 @@ struct Likeness {
     artist: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct Sound {
     frames: i64,
     codec: i64,
@@ -47,7 +47,7 @@ struct Row {
     print: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 struct CutLikeness {
     size: i64,
     codec: i64,
@@ -175,6 +175,7 @@ impl<'v> Spelled<'v> {
             return true;
         };
         let mut listings = self.listings.borrow_mut();
+
         let listing = listings
             .entry(folder.to_path_buf())
             .or_insert_with(|| self.volume.names_in(folder));
@@ -207,7 +208,9 @@ pub(crate) fn to_be_heard(
     if roots.is_empty() {
         return Ok(Vec::new());
     }
+
     let asked = RefCell::new(Vec::new());
+
     wholes_moved(connection, &scoped(roots), generation, &|path| {
         asked.borrow_mut().push(path.to_path_buf());
         None
@@ -232,13 +235,16 @@ pub(crate) fn follow_the_moved(
     if roots.is_empty() {
         return Ok(Followed::default());
     }
+
     let scoped = scoped(roots);
 
     let mut paired = wholes_moved(tx, &scoped, generation, heard)?;
+
     paired.extend(cuts_moved(tx, &scoped, generation)?);
     if paired.is_empty() {
         return Ok(Followed::default());
     }
+
     let moves = follow(tx, &paired, generation)?;
     Ok(Followed {
         rows: paired.iter().map(|pair| pair.rows() as u64).sum(),
@@ -266,9 +272,11 @@ fn wholes_moved(
         )?,
         &Spelled::over(&Disc),
     );
+
     if gone.is_empty() {
         return Ok(Vec::new());
     }
+
     let arrived = rows(
         tx,
         &format!("seen = ?1 AND added >= ?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
@@ -276,6 +284,7 @@ fn wholes_moved(
     )?;
 
     let (mut paired, gone, arrived) = pairs(gone, arrived);
+
     paired.extend(pairs_by_sound(gone, arrived, heard));
     Ok(paired)
 }
@@ -290,9 +299,11 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
     .into_iter()
     .filter(|cut| !spelled.stands(&store::path_of(&cut.path)))
     .collect();
+
     if gone.is_empty() {
         return Ok(Vec::new());
     }
+
     let arrived = cuts(rows(
         tx,
         &format!(
@@ -303,10 +314,13 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
     )?);
 
     let mut left: AHashMap<CutLikeness, Vec<Cut>> = AHashMap::new();
+
     for cut in gone {
         left.entry(cut.likeness()).or_default().push(cut);
     }
+
     let mut came: AHashMap<CutLikeness, Vec<Cut>> = AHashMap::new();
+
     for cut in arrived {
         came.entry(cut.likeness()).or_default().push(cut);
     }
@@ -317,6 +331,7 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
             let to = came.remove(&likeness)?;
             let [from] = <[Cut; 1]>::try_from(from).ok()?;
             let [to] = <[Cut; 1]>::try_from(to).ok()?;
+
             if !from.named_alike(&to) {
                 return None;
             }
@@ -327,6 +342,7 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
 
 fn cuts(rows: Vec<Row>) -> Vec<Cut> {
     let mut by_path: AHashMap<String, Vec<Row>> = AHashMap::new();
+
     for row in rows {
         by_path.entry(row.path.clone()).or_default().push(row);
     }
@@ -378,26 +394,32 @@ fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
 
 fn pairs(gone: Vec<Row>, arrived: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>) {
     let mut left: AHashMap<Likeness, Vec<Row>> = AHashMap::new();
+
     for row in gone {
         left.entry(row.likeness.clone()).or_default().push(row);
     }
+
     let mut came: AHashMap<Likeness, Vec<Row>> = AHashMap::new();
+
     for row in arrived {
         came.entry(row.likeness.clone()).or_default().push(row);
     }
 
     let mut paired = Vec::new();
     let mut unpaired_gone = Vec::new();
+
     for (likeness, from) in left {
         let Some(to) = came.remove(&likeness) else {
             unpaired_gone.extend(from);
             continue;
         };
         let (found, from_left, to_left) = told_apart(from, to);
+
         paired.extend(found);
         unpaired_gone.extend(from_left);
         came.insert(likeness, to_left);
     }
+
     let unpaired_arrived = came.into_values().flatten().collect();
 
     (paired, unpaired_gone, unpaired_arrived)
@@ -409,12 +431,15 @@ fn pairs_by_sound(
     heard: &dyn Fn(&Path) -> Option<String>,
 ) -> Vec<Paired> {
     let mut left: AHashMap<Sound, Vec<Row>> = AHashMap::new();
+
     for row in gone {
         if let Some(sound) = row.sound() {
             left.entry(sound).or_default().push(row);
         }
     }
+
     let mut came: AHashMap<Sound, Vec<Row>> = AHashMap::new();
+
     for row in arrived {
         if let Some(sound) = row.sound() {
             came.entry(sound).or_default().push(row);
@@ -437,6 +462,7 @@ fn sounds_alike(from: &Row, to: &Row, heard: &dyn Fn(&Path) -> Option<String>) -
     if from.packets.is_some() && to.packets.is_some() {
         return from.packets == to.packets;
     }
+
     let Some(studied) = from.print.as_deref() else {
         return false;
     };
@@ -450,6 +476,7 @@ fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
             .zip(to)
             .map(|(from, to)| Paired::whole(from, to))
             .collect();
+
         return (paired, Vec::new(), Vec::new());
     }
 
@@ -462,6 +489,7 @@ fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
         })
         .collect();
     let mut taken: Vec<(usize, usize)> = Vec::new();
+
     for (was, scores) in shared.iter().enumerate() {
         let Some(is) = the_one_best(scores.iter().copied()) else {
             continue;
@@ -473,6 +501,7 @@ fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
 
     let mut from: Vec<Option<Row>> = from.into_iter().map(Some).collect();
     let mut to: Vec<Option<Row>> = to.into_iter().map(Some).collect();
+
     let paired = taken
         .into_iter()
         .filter_map(|(was, is)| Some(Paired::whole(from[was].take()?, to[is].take()?)))
@@ -488,6 +517,7 @@ fn told_apart(from: Vec<Row>, to: Vec<Row>) -> (Vec<Paired>, Vec<Row>, Vec<Row>)
 fn the_one_best(scores: impl Iterator<Item = usize>) -> Option<usize> {
     let mut best: Option<(usize, usize)> = None;
     let mut tied = false;
+
     for (at, score) in scores.enumerate() {
         match best {
             Some((_, held)) if score < held => {}
@@ -522,6 +552,7 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<Ve
             sidecars: Vec::new(),
         })
         .collect();
+
     for pair in paired {
         for &(was, is) in &pair.followed {
             refresh_from_the_arrival(tx, was, is)?;
@@ -541,6 +572,7 @@ fn follow(tx: &Transaction<'_>, paired: &[Paired], generation: i64) -> Result<Ve
     }
 
     let mut into_album: AHashMap<Option<i64>, Vec<&Paired>> = AHashMap::new();
+
     for pair in paired {
         into_album.entry(pair.to.album).or_default().push(pair);
     }
@@ -651,6 +683,7 @@ fn refresh_from_the_arrival(tx: &Transaction<'_>, was: i64, is: i64) -> Result<(
 
 fn settle_the_album(tx: &Transaction<'_>, album: Option<i64>, came: &[&Paired]) -> Result<()> {
     let from: AHashSet<Option<i64>> = came.iter().map(|pair| pair.from.album).collect();
+
     if let (Some(album), [Some(from)]) = (album, from.into_iter().collect::<Vec<_>>().as_slice())
         && *from != album
         && holds_nothing(tx, album)?

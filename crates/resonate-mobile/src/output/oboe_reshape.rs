@@ -54,6 +54,7 @@ pub(crate) fn reshaper(
     let handing = Mutex::new(handing);
     Box::new(move |request, source| {
         let mut handing = handing.lock();
+
         handing.let_go_of_the_spent();
         if let Some(because) = opened.refuses(request, &routing) {
             return Reshaped::Refused { source, because };
@@ -128,6 +129,7 @@ mod tests {
         let routing = Arc::new(Routing::new());
         let (fed, handing) = fed_from(Box::new(Marked(1)));
         let (sender, orders) = unbounded();
+
         let reshaper = reshaper(opened, Arc::clone(&routing), handing, sender);
         Held {
             routing,
@@ -160,6 +162,7 @@ mod tests {
 
     fn mark_read(fed: &mut Fed) -> u8 {
         let mut bytes = [0_u8; 2];
+
         fed.source().fill(&mut bytes);
         bytes.first().copied().unwrap_or_default()
     }
@@ -183,6 +186,7 @@ mod tests {
         ));
 
         drop(orders);
+
         assert!(matches!(
             control(StreamCommand::Close),
             Err(Error::Disconnected)
@@ -206,6 +210,7 @@ mod tests {
 
         for mark in 2..=4 {
             let reshaped = (held.reshaper)(&request(MIXED), Box::new(Marked(mark)));
+
             assert!(matches!(reshaped, Reshaped::Kept), "source {mark}");
             assert_eq!(mark_read(&mut held.fed), mark);
         }
@@ -214,6 +219,7 @@ mod tests {
     #[test]
     fn a_source_not_yet_taken_keeps_the_stream_from_taking_another() {
         let mut held = held(mixed());
+
         assert!(matches!(
             (held.reshaper)(&request(MIXED), Box::new(Marked(2))),
             Reshaped::Kept
@@ -232,8 +238,10 @@ mod tests {
 
         for spec in [CD, mono] {
             let reshaped = (held.reshaper)(&request(spec), Box::new(Marked(2)));
+
             assert_eq!(refused_for(reshaped), Some(Unreshapable::AnotherFormat));
         }
+
         assert!(held.orders.try_recv().is_err());
     }
 
@@ -247,13 +255,16 @@ mod tests {
             panic!("a stream held in another shape was reshaped");
         };
         let mut bytes = [0_u8; 2];
+
         source.fill(&mut bytes);
+
         assert_eq!(bytes, [9, 9]);
     }
 
     #[test]
     fn a_device_chosen_since_the_stream_opened_is_refused_so_the_stream_opens_on_it() {
         let held = held(mixed());
+
         held.routing.select(USB);
 
         let reshaped = (held.reshaper)(&request(MIXED), Box::new(Marked(2)));
@@ -268,6 +279,7 @@ mod tests {
             way: Way::Mixed,
             requested: 0,
         });
+
         held.routing.offer(
             USB,
             &[OutputFormat {
@@ -289,6 +301,7 @@ mod tests {
         let Held {
             reshaper, orders, ..
         } = held;
+
         drop(orders);
 
         let reshaped = reshaper(&request(MIXED), Box::new(Marked(2)));

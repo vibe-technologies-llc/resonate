@@ -60,6 +60,7 @@ fn steps_for(asked: &Asked, root: &Path) -> Result<Vec<Step>, Error> {
             let selection = selection(asked, root)?;
 
             let mut steps = plan::format(true);
+
             steps.extend(plan::lint(&selection, None, asked.locked));
             steps.extend(plan::test(&selection, asked.locked, &[], host));
             steps

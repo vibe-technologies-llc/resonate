@@ -72,6 +72,7 @@ impl Lanes {
                 .or_insert_with(|| Arc::new(AtomicU64::new(NOBODY))),
         );
         let mine = self.minted.fetch_add(1, Ordering::Relaxed);
+
         lane.store(mine, Ordering::Release);
         Hold { lane, mine }
     }
@@ -84,6 +85,7 @@ impl Lanes {
                 .or_insert_with(|| Arc::new(AtomicU64::new(NOBODY))),
         );
         let mine = self.minted.fetch_add(1, Ordering::Relaxed);
+
         lane.compare_exchange(NOBODY, mine, Ordering::AcqRel, Ordering::Acquire)
             .ok()?;
         Some(Hold { lane, mine })
@@ -161,9 +163,11 @@ pub(crate) fn open(
 ) -> SinkResult<SinkStream> {
     let spec = request.spec;
     let carriage = device.carriage();
+
     if !carriage.carries(spec) {
         return Err(Error::FormatRefused(spec).into());
     }
+
     let link = Link::connect(device.at())?;
 
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
@@ -189,6 +193,7 @@ pub(crate) fn open(
         SampleFormat::S24 => Words::Packed,
         SampleFormat::S16 | SampleFormat::S32 | SampleFormat::F32 => Words::Whole,
     };
+
     let _ = announce.send(StreamEvent::FormatChanged { spec, words });
 
     let watched = Watch {
@@ -207,6 +212,7 @@ pub(crate) fn open(
         },
         announce,
     };
+
     apart(move || watched.run(&steered), a_thread)?;
 
     let steering = Steering(steer);
@@ -308,7 +314,9 @@ impl Watch {
             if state == StreamState::Failed {
                 continue;
             }
+
             let told: Vec<Told> = self.link.told().try_iter().collect();
+
             for told in told {
                 let reading = played
                     .as_ref()
@@ -316,6 +324,7 @@ impl Watch {
                 match reading {
                     Some(Reading::Drained) if !drained => {
                         drained = true;
+
                         let _ = self.announce.send(StreamEvent::Drained);
                     }
                     Some(Reading::Gone) if self.offer.hold.steer(|| ()).is_some() => {
@@ -345,6 +354,7 @@ impl Watch {
                 continue;
             }
             asked_at = Instant::now();
+
             let Some(played) = played.as_ref() else {
                 continue;
             };
@@ -367,6 +377,7 @@ impl Watch {
                     match reading {
                         Reading::Drained if !drained => {
                             drained = true;
+
                             let _ = self.announce.send(StreamEvent::Drained);
                         }
                         Reading::Gone => {
@@ -403,11 +414,15 @@ impl Watch {
         if let Some(played) = played {
             return self.media(played, Asked::Play).map(|_| true);
         }
+
         let session = device::launched(&self.link)?;
+
         if !self.offer.hold.is_mine() {
             return Ok(false);
         }
+
         let entry = loaded(&self.link, &session.transport, &self.offered)?;
+
         *played = Some(Played {
             transport: session.transport,
             session: entry.session,
@@ -441,12 +456,14 @@ impl Watch {
         let entries = entries_in(said)?;
         let Some(entry) = entries.iter().find(|entry| entry.session == played.session) else {
             let ended = drain_asked && self.offer.feed.ended_at().is_some();
+
             return match (ended, asked) {
                 (true, _) => Some(Reading::Drained),
                 (false, true) => Some(Reading::Gone),
                 (false, false) => Some(Reading::Heard),
             };
         };
+
         if let Some(heard) = entry.heard {
             self.offer.feed.heard_through(heard);
         }
@@ -482,6 +499,7 @@ impl Watch {
 
     fn failed(&self, from: StreamState, error: &Error) -> StreamState {
         tracing::warn!(%error, receiver = %self.device.id(), "a Cast receiver stopped taking the stream");
+
         let event = match error {
             Error::Refused { asked, .. } => StreamEvent::Refused {
                 from,
@@ -515,6 +533,7 @@ pub(crate) fn loaded(link: &Link, transport: &str, offered: &Offered) -> Result<
             ("origin", Json::Object(Vec::new())),
         ]),
     );
+
     let loaded = link.ask(
         Namespace::Media,
         transport,
@@ -558,6 +577,7 @@ pub(crate) fn entries_in(said: &Json) -> Option<Vec<Entry>> {
     if said.kind() != Some("MEDIA_STATUS") {
         return None;
     }
+
     let entries = said
         .get("status")
         .and_then(Json::as_list)?
@@ -635,6 +655,7 @@ mod tests {
         let server = Server::start(IpAddr::V4(Ipv4Addr::LOCALHOST)).expect("a stream server");
         let lanes = Lanes::default();
         let feed = silent_feed();
+
         let offer = Offer {
             server: Arc::clone(&server),
             token: server.offer(Arc::clone(&feed)),
@@ -666,13 +687,16 @@ mod tests {
                     finished.recv().expect("the call is let finish");
                 })
             });
+
             running.recv().expect("the call began");
 
             let new = lanes.taken(receiver());
 
             assert!(new.is_mine());
             assert!(!old.is_mine());
+
             finish.send(()).expect("the call finishes");
+
             assert_eq!(call.join().expect("the call ends"), Some(()));
             assert_eq!(old.steer(|| ()), None);
             assert_eq!(old.let_go(|| ()), None);

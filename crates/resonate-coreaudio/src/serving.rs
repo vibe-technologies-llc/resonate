@@ -66,8 +66,10 @@ fn reshaper(reshaping: Reshaping, orders: Sender<Order>) -> Reshaper {
     let reshaping = Mutex::new(reshaping);
     Box::new(move |asked, source| {
         let mut reshaping = reshaping.lock();
+
         let handing = Arc::clone(&reshaping.handing);
         let mut handing = handing.lock();
+
         handing.let_go_of_the_spent();
         if let Some(because) = refusal_of(&reshaping.open, asked) {
             return Reshaped::Refused { source, because };
@@ -127,6 +129,7 @@ where
     let clock = Arc::new(StreamClock::behind_by(Frames::ZERO));
     let empty = Arc::new(AtomicBool::new(false));
     let past_the_host_time = Arc::new(AtomicU64::new(0));
+
     let shaped = Shaped {
         frame: frame_of(spec),
         laid: laid_of(spec.format),
@@ -145,6 +148,7 @@ where
         looks,
         spent: Arc::clone(&handing),
     };
+
     thread::Builder::new()
         .name("resonate-coreaudio-stream".into())
         .spawn(move || {
@@ -152,6 +156,7 @@ where
                 Ok(hardware) => hardware,
                 Err(refused) => {
                     let _ = ready.send(Err(refused));
+
                     return;
                 }
             };
@@ -160,8 +165,10 @@ where
                 words: words_of(served.spec.format),
             });
             let _ = ready.send(Ok(()));
+
             serve(&hardware, &served);
             drop(hardware);
+
             let _ = disposed.send(());
         })
         .map_err(|source| Error::Backend {
@@ -173,6 +180,7 @@ where
         Err(RecvTimeoutError::Timeout) => return Err(Error::OpenUnanswered),
         Err(RecvTimeoutError::Disconnected) => return Err(Error::LoopStopped),
     }
+
     let reshaping = Reshaping {
         open: request.clone(),
         handing,
@@ -208,6 +216,7 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
     let mut drain = Drain::new();
     loop {
         served.let_go_of_the_spent();
+
         let latency = match hardware.standing() {
             Standing::Gone => {
                 if state != StreamState::Failed {
@@ -215,6 +224,7 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
                         from: state,
                         to: StreamState::Failed,
                     });
+
                     state = StreamState::Failed;
                 }
                 Duration::ZERO
@@ -224,6 +234,7 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
                 latencies,
             } => {
                 let rate = served.spec.rate;
+
                 served.clock.note(latencies.graph_time(device_hz), rate);
                 served.past_the_host_time.store(
                     latencies.heard_past_the_host_time(device_hz, rate),
@@ -232,6 +243,7 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
                 served.clock.latency().to_duration(rate)
             }
         };
+
         if drain.settled(
             served.empty.load(Ordering::Acquire),
             latency,
@@ -239,6 +251,7 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
         ) {
             let _ = served.announced.send(StreamEvent::Drained);
         }
+
         let wait = if drain.is_requested() {
             served.looks.looked_at_while_draining_every
         } else {
@@ -253,15 +266,18 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
             Ok(Order::Command(StreamCommand::Drain)) => drain.request(),
             Ok(Order::Command(StreamCommand::SetActive(active))) => {
                 let settled = active && state == StreamState::Streaming;
+
                 if settled || state == StreamState::Failed {
                     continue;
                 }
+
                 let status = if active {
                     hardware.start()
                 } else {
                     drain = Drain::new();
                     hardware.stop()
                 };
+
                 if status != 0 {
                     let op = if active {
                         Operation::Start
@@ -273,9 +289,11 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
                         op,
                         status,
                     });
+
                     state = StreamState::Failed;
                     continue;
                 }
+
                 let next = if active {
                     StreamState::Streaming
                 } else {
@@ -285,6 +303,7 @@ fn serve<H: Hardware>(hardware: &H, served: &Served) {
                     from: state,
                     to: next,
                 });
+
                 state = next;
             }
         }
@@ -463,6 +482,7 @@ mod tests {
         let started = Instant::now();
         while !holds() {
             assert!(started.elapsed() < WAIT, "the stream never got there");
+
             thread::sleep(Duration::from_millis(2));
         }
     }
@@ -478,6 +498,7 @@ mod tests {
                 words: Words::Padded,
             }
         );
+
         quiet(&opened);
     }
 
@@ -492,6 +513,7 @@ mod tests {
                 words: Words::Whole,
             }
         );
+
         quiet(&opened);
     }
 
@@ -541,7 +563,9 @@ mod tests {
                 status: 560_227_702
             }
         );
+
         quiet(&opened);
+
         assert_eq!(*opened.calls.lock(), [Call::Start]);
     }
 
@@ -549,7 +573,9 @@ mod tests {
     fn a_device_that_went_is_told_once_as_a_failed_stream() {
         let opened = opened();
         let _ = event(&opened);
+
         opened.stream.set_active(true).expect("started");
+
         let _ = event(&opened);
 
         *opened.standing.lock() = Standing::Gone;
@@ -561,6 +587,7 @@ mod tests {
                 to: StreamState::Failed
             }
         );
+
         quiet(&opened);
     }
 
@@ -569,6 +596,7 @@ mod tests {
         let opened = opened();
 
         wait_until(|| opened.stream.latency() == Frames(480));
+
         assert_eq!(opened.stream.graph_rate(), Some(SampleRate::HZ_48000));
 
         *opened.standing.lock() = Standing::Here {
@@ -577,6 +605,7 @@ mod tests {
         };
 
         wait_until(|| opened.stream.graph_rate() == Some(SampleRate::HZ_96000));
+
         assert_eq!(opened.stream.latency(), Frames(240));
     }
 
@@ -584,7 +613,9 @@ mod tests {
     fn a_drain_is_told_once_the_source_has_nothing_left_and_the_latency_has_passed() {
         let opened = opened();
         let _ = event(&opened);
+
         opened.stream.set_active(true).expect("started");
+
         let _ = event(&opened);
 
         opened.stream.drain().expect("asked to drain");
@@ -592,7 +623,9 @@ mod tests {
         opened.rendering.lock().fill(&mut [0_u8; 16], None);
 
         assert_eq!(event(&opened), StreamEvent::Drained);
+
         quiet(&opened);
+
         assert_eq!(*opened.calls.lock(), [Call::Start]);
     }
 
@@ -600,6 +633,7 @@ mod tests {
     fn a_stream_asked_for_the_shape_it_holds_takes_the_new_source_and_calls_off_a_drain() {
         let opened = opened();
         let _ = event(&opened);
+
         opened.stream.drain().expect("asked to drain");
 
         let reshaped = opened
@@ -607,9 +641,13 @@ mod tests {
             .reshape(&request(SampleFormat::F32), Box::new(Marked(0x5A)));
 
         assert!(matches!(reshaped, Reshaped::Kept));
+
         let mut bytes = [0_u8; 16];
+
         opened.rendering.lock().fill(&mut bytes, None);
+
         assert_eq!(bytes, [0x5A; 16]);
+
         quiet(&opened);
     }
 
@@ -625,9 +663,11 @@ mod tests {
         let reshaped = opened
             .stream
             .reshape(&request(SampleFormat::F32), Box::new(Marked(0x5A)));
+
         opened.rendering.lock().fill(&mut [0_u8; 16], None);
 
         assert!(matches!(reshaped, Reshaped::Kept));
+
         wait_until(|| dropped.load(Ordering::Acquire) == 1);
     }
 
@@ -695,6 +735,7 @@ mod tests {
         );
 
         assert!(matches!(made, Err(Error::OpenUnanswered)));
+
         release.send(()).expect("the opening thread is waiting");
         wait_until(|| disposed.load(Ordering::Acquire) == 1);
     }

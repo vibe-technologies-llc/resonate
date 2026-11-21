@@ -110,6 +110,7 @@ pub(crate) fn filed_for(
         reader,
         extension,
     )?;
+
     if want.replacing.is_some()
         && let Err(unfiled) = lossless(&filed.path)
     {
@@ -124,6 +125,7 @@ pub(crate) fn filed_for(
         &keys_for(&filed.path, &filed.root, &album, want),
     ) {
         let _ = fs::remove_file(&filed.path);
+
         return Err(Unfiled::Catalog(error));
     }
     Ok(filed)
@@ -159,6 +161,7 @@ pub(crate) fn filed(
         extension: Some(extension),
     };
     let volume = Volume::of(&folder);
+
     let relative = into
         .layout
         .rendered_within(&named, volume.naming, &volume.reach)
@@ -168,18 +171,24 @@ pub(crate) fn filed(
         })?;
     let whole = folder.join(relative);
     let parent = whole.parent().unwrap_or(&folder);
+
     fs::create_dir_all(parent)?;
 
     let staged = staged_beside(&whole);
+
     library.staging(&staged).map_err(Unfiled::Catalog)?;
+
     let landed = staged_from(reader, &staged).and_then(|held| {
         placed(&staged, &whole, Standing::PassedOver).map(|landed| (landed.path(), held))
     });
+
     staged_away(library, &staged);
+
     let path = landed.map(|(path, _)| path)?;
 
     if let Err(unfiled) = weighed(&path, song.length) {
         let _ = fs::remove_file(&path);
+
         return Err(unfiled);
     }
     tagged(&path, &song.tags, song.picture);
@@ -201,11 +210,16 @@ pub(crate) fn landed_beside(
     reader: &mut dyn Read,
 ) -> std::result::Result<Beside, Unfiled> {
     let parent = whole.parent().ok_or(Unfiled::Unnamed)?;
+
     fs::create_dir_all(parent)?;
+
     let staged = staged_beside(whole);
+
     library.staging(&staged).map_err(Unfiled::Catalog)?;
+
     let landed =
         staged_from(reader, &staged).and_then(|_held| placed(&staged, whole, Standing::Weighed));
+
     staged_away(library, &staged);
     match landed? {
         Landed::Standing(path) => Ok(Beside::Standing(path)),
@@ -214,6 +228,7 @@ pub(crate) fn landed_beside(
                 resonate_codec::probe_scanned(&Sources::local(), &MediaLocation::local(&path))
             else {
                 let _ = fs::remove_file(&path);
+
                 return Err(Unfiled::Undecodable);
             };
             let file = scanned
@@ -231,6 +246,7 @@ pub(crate) fn landed_beside(
 
 fn weighed(path: &Path, listed: Option<Duration>) -> std::result::Result<(), Unfiled> {
     let location = MediaLocation::local(path);
+
     if listed.is_none() {
         return resonate_codec::probe(&Sources::local(), &location)
             .map(drop)
@@ -259,7 +275,9 @@ pub(crate) fn lossless(path: &Path) -> std::result::Result<(), Unfiled> {
 
 fn heard_whole(location: &MediaLocation) -> Option<(Frames, SampleRate)> {
     let (mut decoder, info) = Decoder::open(&Sources::local(), location).ok()?;
+
     decoder.follow_format_changes();
+
     let mut block = AudioBuffer::empty(info.spec);
 
     loop {
@@ -299,7 +317,9 @@ fn staged_beside(whole: &Path) -> PathBuf {
 fn staged_from(reader: &mut dyn Read, staged: &Path) -> std::result::Result<Held, Unfiled> {
     let held = Held::made(staged)?;
     let mut file = held.file();
+
     let copied = io::copy(&mut reader.take(LARGEST_FILED + 1), &mut file)?;
+
     if copied > LARGEST_FILED {
         return Err(Unfiled::TooLarge);
     }
@@ -395,10 +415,12 @@ fn edits(want: &Want, album: &AlbumToFile) -> Vec<TagEdit> {
 fn tagged(path: &Path, edits: &[TagEdit], picture: Option<&CoverArt>) {
     let tags = FileTags::over(Sources::local());
     let location = MediaLocation::local(path);
+
     if !tags.writes(&location) {
         tracing::debug!(path = %path.display(), "a filed delivery is in a format this build writes no tags into");
         return;
     }
+
     let written = |picture| {
         tags.write(
             &location,
@@ -431,6 +453,7 @@ fn keys_for(path: &Path, root: &Path, album: &AlbumToFile, want: &Want) -> Vec<S
     }
 
     let mut keys = Vec::new();
+
     if let Some(owner) = album.owner.as_deref() {
         keys.push(store::album_key(&album.title, Some(owner)));
     }
@@ -445,6 +468,7 @@ fn keys_for(path: &Path, root: &Path, album: &AlbumToFile, want: &Want) -> Vec<S
 
 pub(crate) fn roots_of(filed: &[Filed]) -> Vec<PathBuf> {
     let mut roots: Vec<PathBuf> = filed.iter().map(|filed| filed.root.clone()).collect();
+
     roots.sort();
     roots.dedup();
     roots

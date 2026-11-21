@@ -46,8 +46,10 @@ impl FavouritesTold {
 impl MobilePlayer {
     pub fn tell_loves(&self, account: ScrobbleAccount) -> Result<FavouritesTold> {
         self.require_online()?;
+
         let mut told = FavouritesTold::default();
         let mut failure = None;
+
         for client in self.scrobblers(account) {
             match self.catalog.tell_loves(client.as_ref()) {
                 Ok(said) => told = told.and(said),
@@ -66,6 +68,7 @@ impl Catalog {
         let owed = self.loves_owed(service)?;
 
         let mut said = FavouritesTold::default();
+
         for (loved, love) in &owed {
             match client.love(loved, *love) {
                 Ok(()) => match love {
@@ -129,6 +132,7 @@ fn recordings(connection: &Connection, sql: &str, binds: &[&str]) -> Result<BTre
     let mut query = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Read, source))?;
+
     let held = query
         .query_map(rusqlite::params_from_iter(binds), |row| {
             row.get::<_, String>(0)
@@ -218,6 +222,7 @@ mod tests {
                 ..Track::default()
             })
             .expect("a song");
+
         catalog
             .0
             .lock()
@@ -236,13 +241,16 @@ mod tests {
         let told = Told::default();
 
         let one = song(&catalog, "One", ONE, true);
+
         song(&catalog, "Two", TWO, false);
 
         let first = catalog.tell_loves(&told).expect("loves told");
         let again = catalog.tell_loves(&told).expect("nothing owed");
+
         catalog
             .favourite(one, false)
             .expect("a favourite taken back");
+
         let back = catalog.tell_loves(&told).expect("a love taken back");
 
         assert_eq!(first.loved, 1);

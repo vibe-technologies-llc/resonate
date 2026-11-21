@@ -148,8 +148,10 @@ mod tests {
             let total = (heard_for.as_secs_f64() * f64::from(sweep.rate().hz())) as usize;
             let mut held = 0.0_f64;
             let mut heard = vec![0.0_f32; DELAY_FRAMES];
+
             for at in 0..total - DELAY_FRAMES {
                 let sample = sweep.samples().get(at).copied().unwrap_or(0.0);
+
                 held = SMOOTHING * f64::from(sample) + (1.0 - SMOOTHING) * held;
                 heard.push(held as f32);
             }
@@ -179,8 +181,10 @@ mod tests {
 
         for hertz in [100.0, 250.0, 1_000.0, 3_000.0, 6_000.0, 10_000.0] {
             let off = (measured.at(hertz) - lowpass_db(hertz)).abs();
+
             assert!(off < 0.5, "{hertz} Hz is {off:.2} dB off the filter's");
         }
+
         assert!(measured.lowest_hertz() <= 21.0 && measured.highest_hertz() >= 19_900.0);
     }
 
@@ -231,6 +235,7 @@ mod tests {
 
         for hertz in [100.0, 1_000.0, 6_000.0, 10_000.0] {
             let off = calibrated.at(hertz).abs();
+
             assert!(off < 0.5, "{hertz} Hz is {off:.2} dB off flat");
         }
     }

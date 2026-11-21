@@ -37,10 +37,12 @@ impl Scripted {
         let answer: Arc<Answering> = Arc::new(answer);
 
         let kept = Arc::clone(&heard);
+
         runtime.spawn(async move {
             while let Ok((stream, _)) = listener.accept().await {
                 let heard = Arc::clone(&kept);
                 let answer = Arc::clone(&answer);
+
                 tokio::spawn(async move {
                     let Ok(mut session) = accepted(stream, None).await else {
                         return;
@@ -50,6 +52,7 @@ impl Scripted {
                             return;
                         };
                         let answers = answer(&frame);
+
                         heard.lock().push(frame);
                         for answered in answers {
                             if session.outgoing.send(&answered.encoded()).await.is_err() {

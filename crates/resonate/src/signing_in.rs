@@ -86,6 +86,7 @@ pub fn names_the_jar(setting: &str, kept: &Kept) -> bool {
 
 pub fn sign_in(program: &Path, kept: &Kept) -> Result<()> {
     owner_only(&kept.profile).map_err(|source| Error::YoutubeMusicSignInNotStarted { source })?;
+
     let child = Command::new(program)
         .arg("--jar")
         .arg(&kept.jar)
@@ -96,6 +97,7 @@ pub fn sign_in(program: &Path, kept: &Kept) -> Result<()> {
         .spawn()
         .map_err(|source| Error::YoutubeMusicSignInNotStarted { source })?;
     let id = child.id();
+
     SIGNING_IN.lock().push(child);
     match Outcome::of(waited(id)?) {
         Outcome::SignedIn => {
@@ -111,10 +113,12 @@ fn waited(id: u32) -> Result<std::process::ExitStatus> {
     loop {
         let looked = {
             let mut held = SIGNING_IN.lock();
+
             let Some(at) = held.iter().position(|child| child.id() == id) else {
                 return Err(Error::YoutubeMusicSignInFailed { code: None });
             };
             let looked = held[at].try_wait();
+
             if !matches!(looked, Ok(None)) {
                 let _ = held.swap_remove(at).wait();
             }
@@ -236,6 +240,7 @@ mod tests {
     fn scratch(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-signing-in-{}-{name}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a folder");
         folder
     }
@@ -249,7 +254,9 @@ mod tests {
         };
 
         static MADE: AtomicUsize = AtomicUsize::new(0);
+
         let program = folder.join(format!("program-{}", MADE.fetch_add(1, Ordering::Relaxed)));
+
         fs::write(
             &program,
             format!("#!/bin/sh\n[ \"$1\" = --runs ] && exit 0\n{says}\n"),
@@ -274,14 +281,18 @@ mod tests {
         let beside = scratch("beside");
         let on_the_path = scratch("on-the-path");
         let elsewhere = scratch("elsewhere");
+
         fs::write(on_the_path.join(PROGRAM), "").expect("one on the path");
+
         let path = env::join_paths([elsewhere.clone(), on_the_path.clone()]).expect("a path");
 
         assert_eq!(
             found(Some(&beside), Some(path.clone())),
             Some(on_the_path.join(PROGRAM))
         );
+
         fs::write(beside.join(PROGRAM), "").expect("one beside");
+
         assert_eq!(found(Some(&beside), Some(path)), Some(beside.join(PROGRAM)));
         assert_eq!(found(Some(&elsewhere), None), None);
     }
@@ -295,16 +306,20 @@ mod tests {
         let kept = Kept::under(&folder);
 
         let signing = a_program(&folder, "printf 'jar' > \"$2\"; exit 0");
+
         sign_in(&signing, &kept).expect("signed in");
+
         assert_eq!(fs::read_to_string(&kept.jar).expect("the jar"), "jar");
 
         let closing = a_program(&folder, "exit 3");
+
         assert!(matches!(
             sign_in(&closing, &kept),
             Err(Error::YoutubeMusicSignInClosed)
         ));
 
         let failing = a_program(&folder, "exit 1");
+
         assert!(matches!(
             sign_in(&failing, &kept),
             Err(Error::YoutubeMusicSignInFailed { code: Some(1) })
@@ -325,8 +340,10 @@ mod tests {
 
         let folder = scratch("profile");
         let kept = Kept::under(&folder.join("data"));
+
         fs::create_dir_all(&kept.profile).expect("a profile left open");
         fs::set_permissions(&kept.profile, fs::Permissions::from_mode(0o755)).expect("opened");
+
         let looking = a_program(
             &folder,
             "{ stat -c %a \"$4\" 2>/dev/null || stat -f %Lp \"$4\"; } > \"$(dirname \
@@ -336,6 +353,7 @@ mod tests {
         sign_in(&looking, &kept).expect("signed in");
 
         let seen = fs::read_to_string(folder.join("data").join("mode-seen")).expect("a mode seen");
+
         assert_eq!(seen.trim(), "700");
     }
 
@@ -345,6 +363,7 @@ mod tests {
 
         let folder = scratch("out");
         let kept = Kept::under(&folder);
+
         fs::write(&kept.jar, "jar").expect("a jar");
         fs::create_dir_all(kept.profile.join("WebKit")).expect("a profile");
 
@@ -376,7 +395,9 @@ mod tests {
         assert_eq!(window(None).sign_in(), YoutubeMusicSignIn::ProgramMissing);
         assert_eq!(window(Some(closing)).sign_in(), YoutubeMusicSignIn::Closed);
         assert_eq!(window(Some(failing)).sign_in(), YoutubeMusicSignIn::Failed);
+
         let signed = window(Some(signing));
+
         assert!(signed.is_offered());
         assert_eq!(
             signed.sign_in(),

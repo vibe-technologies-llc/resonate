@@ -293,6 +293,7 @@ impl Grain {
             return Self::Stepped(CLOCK_STEP);
         };
         let steps = pixels * STEPS_PER_PIXEL;
+
         if steps < 1.0 {
             return Self::EveryPoll;
         }
@@ -309,6 +310,7 @@ impl Grain {
         let (Some(was), Some(now)) = (before.current, after.current) else {
             return true;
         };
+
         if held_still(after, before) != *before {
             return true;
         }
@@ -322,6 +324,7 @@ impl Grain {
 
 fn held_still(state: &PlayerState, like: &PlayerState) -> PlayerState {
     let mut still = state.clone();
+
     if let (Some(track), Some(was)) = (still.current.as_mut(), like.current) {
         track.position = was.position;
     }
@@ -380,6 +383,7 @@ impl PlayerModel {
                 } else {
                     POLL_INTERVAL
                 };
+
                 cx.background_executor().timer(interval).await;
                 match this.update(cx, Self::refresh) {
                     Ok(Poll::Quiet) => quiet = quiet.saturating_add(1),
@@ -429,6 +433,7 @@ impl PlayerModel {
         let Some(track) = self.state.current else {
             return;
         };
+
         match self.player.request(Command::Seek(position)) {
             Ok(outcome) => {
                 self.seeking = Some(Seeking {
@@ -448,6 +453,7 @@ impl PlayerModel {
 
     fn seek_refused(error: resonate_engine::Error, cx: &mut Context<Self>) {
         let command = CommandKind::Seek;
+
         tracing::warn!(%error, ?command, "the engine refused a command");
         toast::tell(
             Notice::Trouble(toast::would_not_do(command, error.cause())),
@@ -522,6 +528,7 @@ impl PlayerModel {
             .map(|profile| profile.condensed(columns))
             .unwrap_or_default()
             .into();
+
         self.graphed = Some(Graphed {
             columns,
             series: Arc::clone(&series),
@@ -576,18 +583,21 @@ impl PlayerModel {
             key: location.clone(),
             side: drawn.side(self.scale),
         };
+
         if let Some(held) = self.pictures.get(&wanted) {
             return held.clone();
         }
         if !self.decoding.may_ask(&wanted) || self.unsettled.get(&wanted) == Some(&self.reads) {
             return None;
         }
+
         let ask = self.decoding.begin(wanted.clone());
 
         let player = Arc::clone(&self.player);
         let asked = location.clone();
         let asked_at = self.reads;
         let side = wanted.side;
+
         let drawing = cx
             .global::<Drawer>()
             .draw(move || match player.art_read(&asked) {
@@ -596,6 +606,7 @@ impl PlayerModel {
                 ArtRead::NotYet => Drew::NotYet,
                 ArtRead::Failed => Drew::Failed,
             });
+
         cx.spawn(async move |this, cx| {
             let drawn = drawing.await.unwrap_or(Drew::Settled(None));
             let landed = this.update(cx, |this, cx| {
@@ -638,11 +649,13 @@ impl PlayerModel {
         let player = Arc::clone(&self.player);
         let wanted = location.clone();
         let asked = location.clone();
+
         let drawing = cx.global::<Drawer>().draw(move || {
             player
                 .art(&asked)
                 .and_then(|art| magnified_of(art.as_ref()))
         });
+
         cx.spawn(async move |this, cx| {
             let read = drawing.await.flatten();
             let landed = this.update(cx, |this, cx| {
@@ -722,6 +735,7 @@ impl PlayerModel {
             match event {
                 Event::Failed { track, error } => {
                     tracing::error!(%error, %track, "playback failed");
+
                     let said = match self
                         .title_of(track)
                         .or_else(|| error.location().map(format::stem))
@@ -729,6 +743,7 @@ impl PlayerModel {
                         Some(title) => toast::would_not_play(error.cause(), &title),
                         None => toast::would_not_do(CommandKind::Play, error.cause()),
                     };
+
                     toast::tell(Notice::Trouble(said), cx);
                 }
                 Event::Waiting { track, error } => {
@@ -754,6 +769,7 @@ impl PlayerModel {
         }
 
         let state = read_to_the_second(self.player.state());
+
         if self
             .seeking
             .as_ref()
@@ -770,20 +786,24 @@ impl PlayerModel {
         }
 
         let settings = self.player.output_settings();
+
         if !Arc::ptr_eq(&settings, &self.settings) {
             self.settings = settings;
             moved = Some(Moved::More);
         }
 
         let sinks = self.player.sinks();
+
         if !Arc::ptr_eq(&sinks, &self.sinks) {
             self.sinks = sinks;
             moved = Some(Moved::More);
         }
 
         let digest = self.player.digest();
+
         if !is_same_digest(digest.as_ref(), self.digest.as_ref()) {
             let grown = only_the_profile_grew(self.digest.as_deref(), digest.as_deref());
+
             self.digest = digest;
             self.graphed = None;
             if !grown {
@@ -793,12 +813,14 @@ impl PlayerModel {
         }
 
         let queued = self.player.queued();
+
         if queued.revision != self.queued.revision {
             self.queued = queued;
             moved = Some(Moved::More);
         }
 
         let reads = self.player.media_revision();
+
         if reads != self.reads {
             self.reads = reads;
             moved = Some(Moved::More);
@@ -808,6 +830,7 @@ impl PlayerModel {
             || self.seeking.is_some()
             || self.state.playback == PlaybackState::Playing
             || self.state.sleeping.is_some();
+
         if let Some(moved) = moved {
             self.moved = moved;
             cx.notify();
@@ -1042,6 +1065,7 @@ pub(crate) fn bindings(system: OperatingSystem) -> Vec<KeyBinding> {
     } else {
         answering_to_the_keys_a_keyboard_carries()
     };
+
     bindings.extend(answering_anywhere(system));
     bindings.extend(answering_away_from_a_field(Some(&away_from_search), system));
     bindings.extend(answering_where_the_caret_is(Some(CONTROL_CONTEXT), system));
@@ -1171,6 +1195,7 @@ pub fn run(
     let winding_down = Arc::clone(&library);
     let copying = Copying::default();
     let copying_when_closed = copying.clone();
+
     theme::wear(appearance);
     theme::hear_the_desktop(bus.look);
     stored.launcher.show(AppIcon::of(theme::worn()));
@@ -1191,6 +1216,7 @@ pub fn run(
 
     let application = gpui_platform::application().with_assets(icons::Embedded);
     let opened = bus.opened.clone();
+
     application.on_open_urls(move |links| {
         if opened.send(links).is_err() {
             tracing::warn!("nothing takes what the system opens any more");
@@ -1203,7 +1229,9 @@ pub fn run(
             future::ready(())
         })
         .detach();
+
         let carried = crate::fonts::bundled();
+
         if !carried.is_empty()
             && let Err(error) = cx.text_system().add_fonts(carried)
         {
@@ -1691,6 +1719,7 @@ mod tests {
         let window = KeyContext::parse(WINDOW_CONTEXT).expect("the window names itself");
         let pop_up = KeyContext::parse(ORDER_CONTEXT).expect("the pop-up names itself");
         let control = KeyContext::parse(CONTROL_CONTEXT).expect("the control names itself");
+
         let on_the_pop_up = [window.clone(), pop_up.clone()];
         let on_one_of_its_orders = [window, pop_up, control];
 
@@ -1708,6 +1737,7 @@ mod tests {
                 let first = found
                     .first()
                     .unwrap_or_else(|| panic!("{key} does nothing in the sort pop-up"));
+
                 assert!(
                     first.action().name().ends_with(wanted),
                     "{key} in the sort pop-up is {}",
@@ -1719,6 +1749,7 @@ mod tests {
         let enter = [Keystroke::parse("enter").expect("a key gpui reads")];
         let (on_the_panel, _) = keymap.bindings_for_input(&enter, &on_the_pop_up);
         let (on_an_order, _) = keymap.bindings_for_input(&enter, &on_one_of_its_orders);
+
         assert!(on_the_panel[0].action().name().ends_with("TakeTheOrder"));
         assert!(on_an_order[0].action().name().ends_with("PressControl"));
     }
@@ -1732,6 +1763,7 @@ mod tests {
             let first = found
                 .first()
                 .unwrap_or_else(|| panic!("{key} does nothing in a field"));
+
             assert!(
                 first.action().name().ends_with(wanted),
                 "{key} in a field is {}",
@@ -1746,6 +1778,7 @@ mod tests {
         let window = KeyContext::parse(WINDOW_CONTEXT).expect("the window names itself");
         let palette = KeyContext::parse(PALETTE_CONTEXT).expect("the palette names itself");
         let search = KeyContext::parse(SEARCH_CONTEXT).expect("the field names itself");
+
         let in_palette_field = [window, palette, search];
 
         for (key, wanted) in [
@@ -1759,6 +1792,7 @@ mod tests {
             let first = found
                 .first()
                 .unwrap_or_else(|| panic!("{key} does nothing in the command palette"));
+
             assert!(
                 first.action().name().ends_with(wanted),
                 "{key} in the command palette is {}",

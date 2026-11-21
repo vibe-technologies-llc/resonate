@@ -228,6 +228,7 @@ impl Served {
     ) -> Result<Vec<(resonate_library::ExploreOffer, ServedSong)>> {
         let standing = self.slot.read();
         let current = Self::catalogs_of(&standing);
+
         if current.len() != expected.len()
             || !current
                 .iter()
@@ -236,13 +237,16 @@ impl Served {
         {
             return Err(Error::NoServedServer);
         }
+
         let mut rows = Vec::with_capacity(offers.len());
+
         for offer in offers {
             let service = standing
                 .iter()
                 .find(|service| service.plays.scheme() == offer.location.source())
                 .ok_or(Error::NoServedServer)?;
             let mut song = service.song_of(offer.song.clone());
+
             self.remember(std::slice::from_mut(&mut song));
             rows.push((offer, song));
         }
@@ -260,6 +264,7 @@ impl Served {
 
     fn serving(&self, uri: &str) -> Result<Service> {
         let location = MediaLocation::from_uri(uri).ok_or(Error::InvalidUri)?;
+
         if !Self::names(&location) {
             return Err(Error::InvalidUri);
         }
@@ -272,7 +277,9 @@ impl Served {
         made: impl Fn(&Reachable) -> Option<Arc<dyn PlaysInPlace>>,
     ) {
         let mut held = self.slot.write();
+
         let standing: Vec<&Reachable> = held.iter().map(|service| &service.reachable).collect();
+
         if standing
             == planned
                 .iter()
@@ -281,7 +288,9 @@ impl Served {
         {
             return;
         }
+
         let mut services: Vec<Service> = Vec::new();
+
         for (account, reachable) in planned {
             let kept = held
                 .iter()
@@ -290,6 +299,7 @@ impl Served {
             let Some(plays) = kept.or_else(|| made(&reachable)) else {
                 continue;
             };
+
             services.push(Service {
                 account,
                 reachable,
@@ -323,6 +333,7 @@ impl Served {
             let Some(location) = MediaLocation::from_uri(&song.uri) else {
                 continue;
             };
+
             if let (Some(favourite), Some(mark)) = (&mut song.favourite, marked.get(&location)) {
                 *favourite = *mark;
             }
@@ -365,11 +376,13 @@ impl Served {
         catalog: Option<&str>,
     ) -> Result<(resonate_providers::Streamed, MusicProvider)> {
         let service = self.named(location.source().as_str())?;
+
         if let Some(catalog) = catalog
             && service.reachable.song_catalog_namespace().as_deref() != Some(catalog)
         {
             return Err(Error::NoServedServer);
         }
+
         let Some(Named::Song(id)) = service.plays.named_by(location) else {
             return Err(Error::InvalidUri);
         };
@@ -442,22 +455,27 @@ impl MobilePlayer {
 
     pub fn served_first_page(&self, service: String) -> Result<ServedFound> {
         self.require_online()?;
+
         let service = self.served.named(&service)?;
         let first = service
             .plays
             .first_page()
             .map_err(|error| service.refused(&error))?;
+
         let mut found = service.found_of(first);
+
         self.served.remember(&mut found.songs);
         Ok(found)
     }
 
     pub fn served_albums(&self, artist: String) -> Result<Vec<ServedAlbum>> {
         self.require_online()?;
+
         let service = self.served.serving(&artist)?;
         let Named::Artist(id) = service.named(&artist)? else {
             return Err(Error::InvalidUri);
         };
+
         let held = service
             .plays
             .artist(&id)
@@ -471,40 +489,50 @@ impl MobilePlayer {
 
     pub fn served_songs(&self, album: String) -> Result<Vec<ServedSong>> {
         self.require_online()?;
+
         let service = self.served.serving(&album)?;
         let named = service.named(&album)?;
+
         if !matches!(named, Named::Album(_) | Named::Mix(_)) {
             return Err(Error::InvalidUri);
         }
+
         let held = service
             .plays
             .songs_of(&named)
             .map_err(|error| service.refused(&error))?;
         let mut songs: Vec<ServedSong> =
             held.into_iter().map(|song| service.song_of(song)).collect();
+
         self.served.remember(&mut songs);
         Ok(songs)
     }
 
     pub fn served_search(&self, service: String, words: String) -> Result<ServedFound> {
         self.require_online()?;
+
         let service = self.served.named(&service)?;
         let found = service
             .plays
             .search(&words)
             .map_err(|error| service.refused(&error))?;
+
         let mut found = service.found_of(found);
+
         self.served.remember(&mut found.songs);
         Ok(found)
     }
 
     pub fn served_song_uris(&self, uri: String) -> Result<Vec<String>> {
         self.require_online()?;
+
         let service = self.served.serving(&uri)?;
         let named = service.named(&uri)?;
+
         if let Named::Song(_) = named {
             return Ok(vec![uri]);
         }
+
         let songs = service
             .plays
             .songs_of(&named)
@@ -513,12 +541,14 @@ impl MobilePlayer {
             .into_iter()
             .map(|song| service.song_of(song))
             .collect();
+
         self.served.remember(&mut songs);
         Ok(songs.into_iter().map(|song| song.uri).collect())
     }
 
     pub fn served_cover(&self, uri: String, known: Option<String>, side: u32) -> Result<Vec<u8>> {
         self.require_online()?;
+
         let service = self.served.serving(&uri)?;
         let cover = match known.as_deref().and_then(Id::new) {
             Some(known) => known,
@@ -535,11 +565,13 @@ impl MobilePlayer {
 
     pub fn favour_served_song(&self, uri: String, favoured: bool) -> Result<()> {
         self.require_online()?;
+
         let service = self.served.serving(&uri)?;
         let Named::Song(id) = service.named(&uri)? else {
             return Err(Error::InvalidUri);
         };
         let location = MediaLocation::from_uri(&uri).ok_or(Error::InvalidUri)?;
+
         service
             .plays
             .favour(&id, favoured)
@@ -550,6 +582,7 @@ impl MobilePlayer {
 
     pub fn load_served(&self, uris: Vec<String>, start_at: u32, autoplay: bool) -> Result<()> {
         let items = self.served_items(uris, &QueueRows::default())?;
+
         if !autoplay {
             return self.command_landed(Command::Resume(paused(items, start_at as usize)));
         }
@@ -582,6 +615,7 @@ impl MobilePlayer {
         let held = self.as_chosen(held)?;
         let mut minting = Unclaimed::beside(&held);
         let mut held = held.into_iter();
+
         let items = songs
             .into_iter()
             .filter_map(|song| match song {
@@ -589,6 +623,7 @@ impl MobilePlayer {
                 QueueSong::Served { uri } => Some(self.served_item(&uri, &mut minting)),
             })
             .collect::<Result<Vec<_>>>()?;
+
         if !autoplay {
             return self.command_landed(Command::Resume(paused(items, start_at as usize)));
         }
@@ -630,9 +665,12 @@ impl MobilePlayer {
         self.edit_queue(|queued, _| {
             let mut existing: Vec<QueueItem> =
                 queued.rows.iter().map(|item| (**item).clone()).collect();
+
             existing.extend(held.iter().cloned());
+
             let mut minting = Unclaimed::beside(&existing);
             let mut held_iter = held.iter().cloned();
+
             let items = songs
                 .iter()
                 .filter_map(|song| match song {
@@ -640,12 +678,14 @@ impl MobilePlayer {
                     QueueSong::Served { uri } => Some(self.served_item(uri, &mut minting)),
                 })
                 .collect::<Result<Vec<_>>>()?;
+
             if items.is_empty() {
                 return Ok(None);
             }
             if queued.rows.is_empty() {
                 return Ok(Some(Command::Resume(paused(items, 0))));
             }
+
             let at = if play_next {
                 Placement::Next
             } else {
@@ -680,6 +720,7 @@ impl MobilePlayer {
     fn queue_served(&self, uris: Vec<String>, placed: impl Fn(usize) -> Placement) -> Result<()> {
         self.edit_queue(|queued, _| {
             let items = self.served_items(uris, &queued.rows)?;
+
             if items.is_empty() {
                 return Ok(None);
             }
@@ -752,10 +793,13 @@ mod tests {
     fn answered(stream: TcpStream, asked_log: &Mutex<Vec<String>>) {
         let mut reader = BufReader::new(stream);
         let mut asked = String::new();
+
         if reader.read_line(&mut asked).is_err() {
             return;
         }
+
         let mut body_bytes = 0;
+
         loop {
             let mut header = String::new();
             match reader.read_line(&mut header) {
@@ -774,6 +818,7 @@ mod tests {
             return;
         }
         asked_log.lock().push(asked.clone());
+
         let (kind, body): (&str, Vec<u8>) = if asked.contains("/Users/AuthenticateByName") {
             ("application/json", JELLYFIN_SIGNED_IN.into())
         } else if asked.contains("/Artists/AlbumArtists") || asked.contains("/Artists?") {
@@ -806,6 +851,7 @@ mod tests {
             ("audio/wav", silence())
         };
         let mut stream = reader.into_inner();
+
         let _ = write!(
             stream,
             "HTTP/1.1 200 OK\r\nContent-Type: {kind}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
@@ -816,6 +862,7 @@ mod tests {
 
     fn online() -> Harness {
         let harness = Harness::new();
+
         harness.player.configure_online(true);
         harness
     }
@@ -829,6 +876,7 @@ mod tests {
         let server = format!("http://{}", listener.local_addr().expect("a bound address"));
         let asked = Arc::new(Mutex::new(Vec::new()));
         let log = Arc::clone(&asked);
+
         thread::spawn(move || {
             for stream in listener.incoming().flatten() {
                 while held.load(Ordering::Acquire) {
@@ -879,8 +927,11 @@ mod tests {
         let harness = online();
         let (server, asked) = fake_asked();
         let account = of(MusicProvider::Jellyfin, server);
+
         harness.player.serve_from(vec![account.clone()]);
+
         let mut local = harness.songs[0].clone();
+
         local.artist = "Pink Floyd".to_owned();
         local.title = "A Local Song".to_owned();
         harness.player.catalog.upsert(local).expect("a seed");
@@ -889,26 +940,35 @@ mod tests {
             .player
             .explore(ExploreScope::Library, String::new(), 0, false)
             .expect("recommendations are read");
+
         assert_eq!(feed.services, 1);
         assert_eq!(feed.failed, 0);
         assert_eq!(feed.songs.len(), 1);
+
         let offer = &feed.songs[0];
+
         assert_eq!(offer.song.title, "One of These Days");
         assert_eq!(offer.song.uri, "jellyfin:track/jso-1");
         assert!(!asked.lock().iter().any(|path| path.contains("/stream")));
+
         let location = MediaLocation::from_uri(&offer.song.uri).expect("a location");
+
         probe(&harness.player.sources, &location).expect("the stream plays");
+
         let path = harness.folder.join("explore.wav");
+
         assert!(!path.exists());
 
         let (another_server, another_asked) = fake_asked();
         let another_server = of(MusicProvider::Jellyfin, another_server);
         let stale = harness.player.begin_download(offer.download.clone());
+
         assert!(matches!(
             harness.player.find_download(stale, vec![another_server]),
             Err(Error::NoServedServer)
         ));
         assert!(another_asked.lock().is_empty());
+
         let before_download = asked.lock().len();
 
         let job = harness.player.begin_download(offer.download.clone());
@@ -917,6 +977,7 @@ mod tests {
             .find_download(job, vec![account])
             .expect("the exact song is offered");
         let file = File::create(&path).expect("a destination");
+
         assert!(
             harness
                 .player
@@ -924,30 +985,38 @@ mod tests {
                 .expect("the song is received")
                 > 0
         );
+
         let track = harness
             .player
             .index_download(job, "content://test/explore.wav".to_owned(), download.name)
             .expect("the song is indexed");
+
         assert_eq!(track.title, "One of These Days");
+
         let requests = asked.lock();
         let streamed: Vec<_> = requests[before_download..]
             .iter()
             .filter(|path| path.contains("/stream"))
             .collect();
+
         assert!(!streamed.is_empty());
         assert!(
             streamed
                 .iter()
                 .all(|path| path.contains("/Audio/jso-1/stream"))
         );
+
         drop(requests);
 
         let found = harness
             .player
             .explore(ExploreScope::Library, String::new(), 0, false)
             .expect("the collected song is read");
+
         assert!(found.songs.is_empty());
+
         harness.player.configure_online(false);
+
         assert!(matches!(
             harness
                 .player
@@ -970,6 +1039,7 @@ mod tests {
     #[test]
     fn a_server_is_browsed_from_its_artists_to_its_songs_and_each_has_its_cover() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
 
         let artists = harness
@@ -1019,6 +1089,7 @@ mod tests {
     fn a_jellyfin_server_is_browsed_and_its_song_is_queued_and_played_and_is_never_asked_for_a_want()
      {
         let harness = online();
+
         harness
             .player
             .serve_from(vec![of(MusicProvider::Jellyfin, fake())]);
@@ -1050,12 +1121,14 @@ mod tests {
         assert_eq!(songs[0].uri, "jellyfin:track/jso-1");
         assert_eq!(songs[0].duration_ms, Some(2000));
         assert_eq!(songs[0].format.as_deref(), Some("wav"));
+
         loaded.expect("a paused load");
     }
 
     #[test]
     fn every_service_set_is_offered_and_each_is_searched_and_played_from_its_own_uris() {
         let harness = online();
+
         harness
             .player
             .serve_from(vec![account(), monochrome(), account()]);
@@ -1069,10 +1142,12 @@ mod tests {
             .player
             .served_search("monochrome".to_owned(), "echoes".to_owned())
             .expect("a search");
+
         harness
             .player
             .add_served_to_queue(vec![found.songs[0].uri.clone()])
             .expect("a song queued");
+
         let queue = harness.player.queue().expect("the queue");
         let info = probe(
             &harness.player.sources,
@@ -1120,6 +1195,7 @@ mod tests {
             server: String::new(),
             ..monochrome()
         };
+
         harness.player.configure_hosted_services(false);
         harness.player.serve_from(vec![account(), hosted.clone()]);
 
@@ -1143,6 +1219,7 @@ mod tests {
     #[test]
     fn a_blank_account_serves_nothing_and_a_uri_of_another_kind_is_invalid() {
         let harness = online();
+
         harness.player.serve_from(vec![DownloadAccount {
             password: " ".to_owned(),
             ..account()
@@ -1172,7 +1249,9 @@ mod tests {
     #[test]
     fn library_and_served_songs_are_loaded_together_in_the_order_asked() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
+
         let songs = harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1199,6 +1278,7 @@ mod tests {
                 false,
             )
             .expect("a mixed load");
+
         let queue = harness.player.queue().expect("the queue");
         let snapshot = harness.player.snapshot().expect("a snapshot");
         let rows: std::collections::BTreeSet<Option<u64>> =
@@ -1219,7 +1299,9 @@ mod tests {
     #[test]
     fn served_songs_are_queued_named_and_opened_by_the_players_sources() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
+
         let songs = harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1243,6 +1325,7 @@ mod tests {
             .player
             .play_served_next(vec![uris[0].clone()])
             .expect("a play next");
+
         let queue = harness.player.queue().expect("the queue");
         let info = probe(
             &harness.player.sources,
@@ -1267,6 +1350,7 @@ mod tests {
         assert_eq!(queue[0].artist, "Pink Floyd");
         assert_eq!(queue[0].duration_ms, 2000);
         assert_eq!(info.spec.rate.hz(), RATE);
+
         harness
             .player
             .save()
@@ -1276,11 +1360,14 @@ mod tests {
     #[test]
     fn a_queue_holding_served_songs_is_kept_with_their_names_and_resumed_from_their_uris() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
+
         let songs = harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
             .expect("the songs");
+
         harness
             .player
             .load_served(vec![songs[0].uri.clone()], 0, false)
@@ -1304,6 +1391,7 @@ mod tests {
                 .0
                 .is_empty()
         });
+
         let (arranged, _) = harness
             .player
             .catalog
@@ -1311,12 +1399,14 @@ mod tests {
             .expect("the kept queue");
         let row = arranged.row;
         let kept: Vec<KeptRow> = arranged.rows.into_iter().map(|laid| laid.row).collect();
+
         harness.player.serve_from(Vec::new());
         harness.player.serve_from(vec![account()]);
         harness
             .player
             .resume_saved_in(ZoneId::FIRST)
             .expect("a resumption");
+
         let queue = harness.player.queue().expect("the queue");
 
         assert_eq!(kept.len(), 3);
@@ -1344,10 +1434,12 @@ mod tests {
     fn a_song_played_in_place_lands_where_a_jump_or_a_seek_while_it_opens_asks() {
         let held = Arc::new(AtomicBool::new(false));
         let harness = online();
+
         harness.player.serve_from(vec![of(
             MusicProvider::Subsonic,
             fake_held_by(Arc::clone(&held)).0,
         )]);
+
         let uris: Vec<String> = harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1374,15 +1466,20 @@ mod tests {
             .player
             .jump_to_at(1, 700)
             .expect("a jump with a place");
+
         let jumped = harness.settled(landed_at(1));
+
         held.store(true, Ordering::Release);
         harness.player.jump_to(0).expect("a jump back");
+
         let opening = harness.settled(|_| engine.state().current.is_none());
+
         harness
             .player
             .seek(1_200)
             .expect("a seek while the song opens");
         held.store(false, Ordering::Release);
+
         let sought = harness.settled(landed_at(0));
 
         assert_eq!(
@@ -1406,6 +1503,7 @@ mod tests {
     #[test]
     fn a_uri_that_is_not_a_song_is_refused_to_the_queue() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
 
         let loaded = harness
@@ -1439,11 +1537,13 @@ mod tests {
                 queue_position: Some(0),
                 ..PlayerState::default()
             };
+
             harness
                 .player
                 .count_listening(ZoneId::FIRST, &state, &rows)
                 .expect("a listen counted");
         }
+
         assert_eq!(
             harness.player.queue().expect("the queue")[0].uri,
             uri,
@@ -1454,8 +1554,11 @@ mod tests {
     #[test]
     fn a_song_played_in_place_is_a_counted_listen_in_the_totals_and_the_days_and_told_to_no_one() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
+
         let uri = "subsonic:track/so-1".to_owned();
+
         harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1513,6 +1616,7 @@ mod tests {
     #[test]
     fn a_service_with_an_account_marks_its_songs_and_one_without_draws_no_star() {
         let harness = online();
+
         harness.player.serve_from(vec![account(), monochrome()]);
 
         let services = harness.player.served_services();
@@ -1548,10 +1652,13 @@ mod tests {
      {
         let harness = online();
         let (server, asked) = fake_asked();
+
         harness
             .player
             .serve_from(vec![of(MusicProvider::Subsonic, server)]);
+
         let uri = "subsonic:track/so-1".to_owned();
+
         harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1566,6 +1673,7 @@ mod tests {
             .player
             .favour_served_song(uri.clone(), true)
             .expect("a star");
+
         let starred = harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1576,6 +1684,7 @@ mod tests {
             .player
             .favour_served_song(uri.clone(), false)
             .expect("a star taken out");
+
         let unstarred = harness
             .player
             .served_songs("subsonic:album/al-1".to_owned())
@@ -1606,6 +1715,7 @@ mod tests {
     #[test]
     fn a_star_is_refused_for_a_uri_that_is_no_song_and_while_online_is_off() {
         let harness = online();
+
         harness.player.serve_from(vec![account()]);
 
         let album = harness
@@ -1614,7 +1724,9 @@ mod tests {
         let document = harness
             .player
             .favour_served_song("content://test/a.wav".to_owned(), true);
+
         harness.player.configure_online(false);
+
         let offline = harness
             .player
             .favour_served_song("subsonic:track/so-1".to_owned(), true);
@@ -1731,8 +1843,11 @@ mod tests {
         let mut harness = online();
         let (server, asked) = fake_asked();
         let account = of(MusicProvider::Jellyfin, server);
+
         harness.player.serve_from(vec![account.clone()]);
+
         let mut local = harness.songs[0].clone();
+
         local.artist = "Pink Floyd".to_owned();
         local.title = "A Local Song".to_owned();
         local.genre = "Progressive Rock".to_owned();
@@ -1747,20 +1862,26 @@ mod tests {
             .explore_playlists(String::new(), 0, false)
             .expect("explore playlists are generated");
         let calls_after_first = asked.lock().len();
+
         assert!(calls_after_first > 0);
         assert_eq!(feed.services, 1);
         assert_eq!(feed.failed, 0);
         assert!(!feed.playlists.is_empty());
+
         let first = &feed.playlists[0];
+
         assert_eq!(first.id, "discover-mix");
         assert_eq!(first.songs.len(), 1);
+
         let offer = &first.songs[0];
+
         assert_eq!(offer.song.uri, "jellyfin:track/jso-1");
 
         let remembered = harness
             .player
             .explore_download_for(offer.song.uri.clone())
             .expect("the download offer is remembered for queue and now playing");
+
         assert_eq!(remembered.song.title, "One of These Days");
         assert_eq!(
             remembered.download.served.as_deref(),
@@ -1771,6 +1892,7 @@ mod tests {
             .player
             .weave_mix_queue(vec![local.id], vec![offer.clone()], false)
             .expect("local and streamed songs weave together");
+
         assert_eq!(
             woven,
             vec![
@@ -1783,10 +1905,12 @@ mod tests {
 
         harness.player.served = Arc::new(Served::default());
         harness.player.serve_from(vec![account]);
+
         let cached = harness
             .player
             .explore_playlists(String::new(), 0, false)
             .expect("fresh in-memory cache reads persisted explore playlists from catalog");
+
         assert_eq!(cached, feed);
         assert_eq!(asked.lock().len(), calls_after_first);
 
@@ -1794,6 +1918,7 @@ mod tests {
             .player
             .explore_playlists(String::new(), 0, true)
             .expect("explicit refresh queries the service again");
+
         assert_eq!(refreshed, feed);
         assert!(asked.lock().len() > calls_after_first);
     }

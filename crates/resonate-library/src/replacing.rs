@@ -93,7 +93,9 @@ pub(crate) fn kept_beside(
     at: SystemTime,
 ) -> Result<()> {
     chosen::choose(transaction, song, copy, at)?;
+
     let id = song.get() as i64;
+
     for (sql, op) in [
         (THE_WANT_OF_THE_REPLACEMENT_GOES, StoreOp::Delete),
         (THE_REPLACEMENT_GOES, StoreOp::Delete),

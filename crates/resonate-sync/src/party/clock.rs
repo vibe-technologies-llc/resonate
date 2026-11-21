@@ -23,6 +23,7 @@ impl ServerClock {
             return;
         };
         let gap = u64::try_from(A_GAP_FORGETS_THE_WINDOW_PAST.as_nanos()).unwrap_or(u64::MAX);
+
         if self
             .samples
             .back()
@@ -32,6 +33,7 @@ impl ServerClock {
         }
 
         let midway = i128::from(sent_at) + i128::from(round_trip / 2);
+
         self.samples.push_back(Sample {
             heard_at,
             round_trip,
@@ -141,7 +143,9 @@ mod tests {
         let mut clock = ServerClock::default();
 
         clock.answered(0, 2 * MS, 2 * MS);
+
         let mut at = 5_000 * MS;
+
         while at < 70_000 * MS {
             clock.answered(at, at + 50 * MS, at + 100 * MS);
             at += 5_000 * MS;
@@ -153,6 +157,7 @@ mod tests {
     #[test]
     fn a_correction_moves_both_ways_of_reading_the_clock_and_never_what_was_measured() {
         let mut clock = ServerClock::default();
+
         clock.answered(0, 1_000 * MS + 5 * MS, 10 * MS);
 
         clock.correct_by(i128::from(30 * MS));

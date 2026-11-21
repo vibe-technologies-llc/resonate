@@ -97,9 +97,11 @@ pub fn asked_of(request: &[u8]) -> Option<Asked> {
     let line = request.split(|byte| *byte == b'\r').next()?;
     let line = std::str::from_utf8(line).ok()?;
     let mut words = line.split(' ');
+
     if words.next()? != "GET" {
         return None;
     }
+
     let target = words.next()?;
     let target = target.split(['?', '#']).next()?;
 
@@ -225,6 +227,7 @@ fn said_to_the_reader() -> String {
 
 fn in_json(text: &str) -> String {
     let mut written = String::with_capacity(text.len() + 2);
+
     written.push('"');
     for letter in text.chars() {
         match letter {
@@ -302,6 +305,7 @@ mod tests {
             .map(|(at, _)| {
                 let opened = at + body[at..].find('>').expect("the tag closes") + 1;
                 let closed = opened + body[opened..].find("</script>").expect("the script ends");
+
                 let hash = digest(&SHA256, &body.as_bytes()[opened..closed]);
                 format!("'sha256-{}'", STANDARD.encode(hash))
             })

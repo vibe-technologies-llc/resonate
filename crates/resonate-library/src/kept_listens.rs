@@ -39,6 +39,7 @@ impl Iterator for HistoryLines<'_> {
             if let Some(heard) = self.page.next() {
                 return Some(Ok(line_of(&heard)));
             }
+
             let from = self.from.take()?;
             match self.kept.history_from(from, LISTENS_READ_AT_ONCE) {
                 Ok(read) => {
@@ -67,6 +68,7 @@ pub fn bring_in_lines(
     let heard = heard_in_lines(bytes)?;
 
     let mut brought = BroughtIn::default();
+
     for page in heard.chunks(LISTENS_READ_AT_ONCE) {
         brought = brought.and(kept.bring_in(LINES_READ_AS, page)?);
         so_far(brought);
@@ -85,6 +87,7 @@ pub fn bring_in_history(
     let mut from = None;
     loop {
         let page = history.page(from)?;
+
         brought = brought.and(kept.bring_in(service, &page.heard)?);
         so_far(brought);
         match page.next {
@@ -128,6 +131,7 @@ mod tests {
                 .take(most)
                 .cloned()
                 .collect::<Vec<_>>();
+
             let next = (after + heard.len() < self.held.len())
                 .then(|| HistoryFrom::Held((after + heard.len()) as u64));
             Ok(HistoryRead { heard, next })

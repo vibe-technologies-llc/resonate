@@ -188,6 +188,7 @@ impl Offered {
             query,
             ..
         } = &self.candidate;
+
         let (from, to) = reason.accents(name);
 
         SuggestedList {
@@ -244,6 +245,7 @@ pub(crate) fn offer(
 ) -> Result<Arc<[Offered]>> {
     let index = searching.index(catalog)?;
     let today = calendar.day_of(now);
+
     if let Some(kept) = searching.offering.lock().as_ref()
         && Arc::ptr_eq(&kept.index, &index)
         && kept.today == today
@@ -262,11 +264,14 @@ pub(crate) fn offer(
         Kinship::of(&index.genres_of_artists()),
     );
     let played_most = genres_ranked_by(index.genres_played());
+
     let candidates = lists_to_offer(&filing, &heard, &lately, &played_most, today, now);
 
     let mut pictured: HashMap<String, Vec<u64>> = HashMap::new();
+
     let mut offered: Vec<Offered> = worth_offering(candidates, |query| -> Result<Weighed> {
         let measured = searching.measured(catalog, query)?;
+
         pictured.insert(id_of(query), measured.covers);
 
         Ok(Weighed {
@@ -283,9 +288,11 @@ pub(crate) fn offer(
         weighed,
     })
     .collect();
+
     offered.sort_by_key(shelf_position);
 
     let offered: Arc<[Offered]> = offered.into();
+
     *searching.offering.lock() = Some(KeptOffer {
         index,
         today,
@@ -401,6 +408,7 @@ mod tests {
                 })
                 .expect("a song");
             let connection = catalog.0.lock();
+
             connection
                 .execute(
                     "UPDATE documents SET genre = ?2 WHERE id = ?1",
@@ -420,6 +428,7 @@ mod tests {
 
     fn a_listeners_catalog(now: SystemTime) -> Catalog {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+
         shelve(&catalog, "Played Lately", "Krautrock", 12, 3, A_WEEK, now);
         shelve(&catalog, "Played Lately", "Krautrock", 6, 0, A_WEEK, now);
         shelve(&catalog, "A Neighbour", "Krautrock", 7, 0, A_WEEK, now);
@@ -484,6 +493,7 @@ mod tests {
             let opened = searching
                 .saved_page(&catalog, &held.candidate.query, 0, 500)
                 .expect("the list opens");
+
             assert_eq!(
                 opened.len() as u32,
                 held.weighed.rows.min(500),
@@ -502,7 +512,9 @@ mod tests {
         let shelves: Vec<usize> = offered.iter().map(shelf_position).collect();
 
         let mut in_order = shelves.clone();
+
         in_order.sort_unstable();
+
         assert_eq!(shelves, in_order);
         assert_eq!(shelves.first(), Some(&0));
     }
@@ -548,10 +560,13 @@ mod tests {
         let now = SystemTime::now();
         let catalog = a_listeners_catalog(now);
         let searching = Searching::default();
+
         let before = offer(&searching, &catalog, &Calendar::utc(), now).expect("lists");
+
         assert_eq!(songs_of(&before, "On repeat"), 12);
 
         shelve(&catalog, "Brand New", "Dub", 10, 3, A_DAY, now);
+
         let after = offer(&searching, &catalog, &Calendar::utc(), now).expect("lists");
 
         assert_eq!(songs_of(&after, "On repeat"), 22);
@@ -580,6 +595,7 @@ mod tests {
     fn the_eras_genres_artists_and_sounds_of_the_catalog_are_offered_as_the_desktop_offers_them() {
         let now = SystemTime::now();
         let catalog = a_listeners_catalog(now);
+
         dated(&catalog, "Played Lately", "1975-03-01");
         dated(&catalog, "A Neighbour", "1976");
         dated(&catalog, "Long Gone", "1989-05-05");
@@ -593,6 +609,7 @@ mod tests {
                 [],
             )
             .expect("short songs");
+
         let searching = Searching::default();
 
         let offered = offer(&searching, &catalog, &Calendar::utc(), now).expect("lists");
@@ -611,6 +628,7 @@ mod tests {
             let opened = searching
                 .saved_page(&catalog, &held.candidate.query, 0, 500)
                 .expect("the list opens");
+
             assert_eq!(
                 opened.len() as u32,
                 held.weighed.rows.min(500),
@@ -624,6 +642,7 @@ mod tests {
     fn a_catalog_too_small_to_fill_a_list_is_offered_none() {
         let now = SystemTime::now();
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+
         shelve(&catalog, "Few", "Dub", 3, 3, A_DAY, now);
 
         let offered = offer(&Searching::default(), &catalog, &Calendar::utc(), now).expect("lists");

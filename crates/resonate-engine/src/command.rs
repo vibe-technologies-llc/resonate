@@ -12,7 +12,7 @@ use crate::{
     Result, SmartShuffle, Until, Within,
 };
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum RepeatMode {
     #[default]
     Off,
@@ -20,14 +20,14 @@ pub enum RepeatMode {
     Queue,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum SkipUnderRepeat {
     #[default]
     RepeatsTheQueue,
     KeepsRepeatingTheTrack,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum PreviousRestarts {
     #[default]
     RestartsTheTrack,
@@ -46,6 +46,7 @@ impl PreviousRestarts {
         if self != Self::RestartsTheTrack {
             return false;
         }
+
         let opening = Frames::from_duration(Self::OPENING, rate);
         let past_a_short_track = match duration {
             Some(length) => length > opening,
@@ -120,7 +121,7 @@ pub enum Command {
     Audition(Option<Audition>),
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum CommandKind {
     Load,
     Resume,
@@ -460,6 +461,7 @@ mod tests {
         assert!(restarts.starts_the_track_over(Frames(opening.get() + 1), long, rate));
 
         let just_past = Some(Frames(opening.get() + 1));
+
         assert!(!restarts.starts_the_track_over(opening, just_past, rate));
         assert!(restarts.starts_the_track_over(Frames(opening.get() + 1), just_past, rate));
         assert!(!restarts.starts_the_track_over(Frames(opening.get() + 1), Some(opening), rate));

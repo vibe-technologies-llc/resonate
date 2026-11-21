@@ -124,12 +124,14 @@ mod tests {
         assert!(second.is_none(), "a second launch started beside the first");
 
         drop(first);
+
         let after = taken(&path, Duration::ZERO);
 
         assert!(
             after.is_some(),
             "the lock was not let go of once the first was reachable"
         );
+
         let _ = fs::remove_file(&path);
     }
 
@@ -142,6 +144,7 @@ mod tests {
         fn scratch(name: &str) -> PathBuf {
             let path = env::temp_dir().join(format!("resonate-starting-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(&path).expect("a scratch folder");
             path
         }
@@ -154,9 +157,11 @@ mod tests {
             let lock = private_lock_in(&shared, ours).expect("a private lock path");
 
             let folder = lock.parent().expect("its folder");
+
             assert_eq!(fs::metadata(folder).expect("made").mode() & 0o777, 0o700);
             assert!(taken(&lock, Duration::ZERO).is_some());
             assert_eq!(fs::metadata(&lock).expect("taken").mode() & 0o777, 0o600);
+
             let _ = fs::remove_dir_all(&shared);
         }
 
@@ -165,7 +170,9 @@ mod tests {
             let shared = scratch("refused");
             let ours = Owner::this_user();
             let theirs = Owner::user(ours.id().wrapping_add(1));
+
             let folder = shared.join(format!("resonate-{}", ours.id()));
+
             fs::create_dir(&folder).expect("a planted folder");
             fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).expect("opened");
 
@@ -175,6 +182,7 @@ mod tests {
 
             assert!(private_lock_in(&shared, ours).is_some());
             assert!(private_lock_in(&shared, theirs).is_none());
+
             let _ = fs::remove_dir_all(&shared);
         }
 
@@ -183,11 +191,13 @@ mod tests {
             let shared = scratch("linked");
             let target = shared.join("victim");
             let planted = shared.join("lock");
+
             fs::write(&target, b"untouched").expect("a file");
             symlink(&target, &planted).expect("a link");
 
             assert!(taken(&planted, Duration::ZERO).is_none());
             assert_eq!(fs::read(&target).expect("the file"), b"untouched");
+
             let _ = fs::remove_dir_all(&shared);
         }
     }

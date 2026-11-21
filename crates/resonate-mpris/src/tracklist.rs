@@ -48,6 +48,7 @@ pub(crate) fn change(before: &[Arc<QueueItem>], after: &[Arc<QueueItem>]) -> Cha
         .enumerate()
         .map(|(at, item)| (item.id, at))
         .collect();
+
     if was_at.len() != before.len() || is_at.len() != after.len() {
         return Change::Replaced;
     }
@@ -57,6 +58,7 @@ pub(crate) fn change(before: &[Arc<QueueItem>], after: &[Arc<QueueItem>]) -> Cha
         .enumerate()
         .filter_map(|(at, item)| was_at.get(&item.id).map(|&was| (at, was)))
         .collect();
+
     if kept.iter().any(|&(at, was)| before[was] != after[at]) {
         return Change::Replaced;
     }
@@ -66,13 +68,17 @@ pub(crate) fn change(before: &[Arc<QueueItem>], after: &[Arc<QueueItem>]) -> Cha
 
     let rows_were: Vec<usize> = kept.iter().map(|&(_, was)| was).collect();
     let in_order = longest_rising(&rows_were);
+
     if kept.len() - in_order.len() > in_order.len() {
         return Change::Replaced;
     }
+
     let mut stays_before = vec![false; before.len()];
     let mut stays_after = vec![false; after.len()];
+
     for held in in_order {
         let (at, was) = kept[held];
+
         stays_before[was] = true;
         stays_after[at] = true;
     }
@@ -83,7 +89,9 @@ pub(crate) fn change(before: &[Arc<QueueItem>], after: &[Arc<QueueItem>]) -> Cha
     let added = (0..after.len())
         .filter(|&at| !stays_after[at])
         .map(|at| Edit::Added { at });
+
     let edits: Vec<Edit> = removed.chain(added).collect();
+
     if edits.len() > EDITS_ANNOUNCED_AT_MOST {
         return Change::Replaced;
     }
@@ -106,8 +114,10 @@ pub(crate) fn change_between(before: Sample<'_>, after: Sample<'_>) -> Change {
 fn longest_rising(values: &[usize]) -> Vec<usize> {
     let mut ends: Vec<usize> = Vec::new();
     let mut beneath: Vec<Option<usize>> = vec![None; values.len()];
+
     for (at, value) in values.iter().enumerate() {
         let place = ends.partition_point(|&end| values[end] < *value);
+
         beneath[at] = place.checked_sub(1).map(|below| ends[below]);
         if place == ends.len() {
             ends.push(at);
@@ -118,6 +128,7 @@ fn longest_rising(values: &[usize]) -> Vec<usize> {
 
     let mut rising = Vec::with_capacity(ends.len());
     let mut next = ends.last().copied();
+
     while let Some(at) = next {
         rising.push(at);
         next = beneath[at];
@@ -157,6 +168,7 @@ impl TrackList {
         let queue = self.shared.player.queue();
         let state = self.shared.player.state();
         let digest = self.shared.player.digest();
+
         let art = self.shared.art(&state, digest.as_ref());
         let until = Instant::now() + READ_BUDGET;
 
@@ -173,6 +185,7 @@ impl TrackList {
                     until.saturating_duration_since(Instant::now()),
                 );
                 let cover = self.shared.row_art(item, &state, art.as_ref());
+
                 if media.is_none() || matches!(cover, RowArt::NotYet) {
                     self.shared.owed.note(item.id);
                 }
@@ -319,6 +332,7 @@ mod tests {
                 edited(&[Edit::Added { at }])
             );
         }
+
         assert_eq!(change(&[], &queue(&[9])), edited(&[Edit::Added { at: 0 }]));
     }
 
@@ -330,6 +344,7 @@ mod tests {
                 edited(&[Edit::Removed { at }])
             );
         }
+
         assert_eq!(
             change(&queue(&[9]), &[]),
             edited(&[Edit::Removed { at: 0 }])
@@ -448,6 +463,7 @@ mod tests {
     #[test]
     fn an_added_row_names_the_row_it_follows_or_no_track_at_all() {
         let queue = queue(&[1, 2, 3]);
+
         assert_eq!(after_row(&queue, 0).as_str(), NO_TRACK);
         assert_eq!(after_row(&queue, 1), track_path(queue[0].id));
         assert_eq!(after_row(&queue, 3), track_path(queue[2].id));

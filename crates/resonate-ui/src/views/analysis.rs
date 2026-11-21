@@ -72,6 +72,7 @@ impl RootView {
         let model = self.player.read(cx);
         let state = model.state().clone();
         let digest = model.digest();
+
         if state.current.is_none() {
             return kit::empty(
                 Icon::Analysis,
@@ -79,6 +80,7 @@ impl RootView {
                 Some(words::analysis::nothing_playing_more()),
             );
         }
+
         let Some(row) = self.queued_row(&state, cx) else {
             return kit::empty(
                 Icon::Analysis,
@@ -99,6 +101,7 @@ impl RootView {
                 cx,
             );
         });
+
         let (studying, hearing, recognises) = {
             let model = self.analysis.read(cx);
             (model.studying(), model.hearing(), model.recognises())
@@ -113,6 +116,7 @@ impl RootView {
             )),
             Studying::Idle | Studying::Failed => None,
         };
+
         let heading = self.analysis_heading(&playing, readback, cx);
 
         let body = match studying {
@@ -220,10 +224,13 @@ impl RootView {
                             cx.listener(move |this, event: &MouseDownEvent, _, cx| {
                                 let bounds = plotted.get();
                                 let wide = f32::from(bounds.size.width);
+
                                 if wide <= 0.0 {
                                     return;
                                 }
+
                                 let across = f32::from(event.position.x - bounds.origin.x) / wide;
+
                                 this.seek_to(across.clamp(0.0, 1.0), cx);
                             }),
                         )
@@ -262,6 +269,7 @@ impl RootView {
         let taking = self
             .analysis
             .update(cx, |analysis, cx| analysis.take_the_name(cx));
+
         cx.spawn(async move |this, cx| {
             let taken = taking.await;
             let _ = this.update(cx, |this, cx| {
@@ -277,6 +285,7 @@ impl RootView {
                         toast::could_not(words::analysis::rename_the_track(), &error)
                     }
                 };
+
                 this.report(notice, cx);
                 cx.notify();
             });
@@ -467,6 +476,7 @@ fn filled_between(
     let (left, wide, middle, reach) = place;
     let (upper, lower) = edges;
     let steps = reaches.len().saturating_sub(1).max(1) as f32;
+
     let at = |nth: usize, level: f32| -> Point<Pixels> {
         point(
             px(left + nth as f32 / steps * wide),
@@ -483,6 +493,7 @@ fn filled_between(
         .enumerate()
         .map(|(nth, one)| at(nth, lower(one)))
         .collect();
+
     plot::between(window, &over, &under, colour);
 }
 
@@ -510,9 +521,11 @@ fn waveform(
 
             let count = lanes.len().max(1) as f32;
             let lane_tall = tall / count;
+
             for (nth, lane) in lanes.iter().enumerate() {
                 let middle = top + lane_tall * (nth as f32 + HALF);
                 let reach = lane_tall * HALF * WAVE_FILLS;
+
                 window.paint_quad(fill(
                     Bounds::from_corners(
                         point(px(left), px(middle)),
@@ -537,6 +550,7 @@ fn waveform(
             }
 
             let x = left + played.clamp(0.0, 1.0) * wide;
+
             window.paint_quad(fill(
                 Bounds::from_corners(
                     point(px(x - PLAYHEAD_WIDTH * HALF), px(top)),
@@ -579,6 +593,7 @@ fn spectrogram_card(
         .rounded_md()
         .overflow_hidden()
         .bg(rgb(theme::surface()));
+
     if let Some(image) = painted {
         plot = plot.child(img(image).size_full().object_fit(ObjectFit::Fill));
     }
@@ -643,6 +658,7 @@ fn spectrum_said(judgement: &Judgement, spectrum: &Spectrum) -> String {
             .band_db(from, to.min(nyquist))
             .map(|db| named(format!("{db:.0}")))
     };
+
     let averages: Vec<String> = [
         level(0.0, 1_000.0, words::analysis::level_under_one_kilohertz),
         level(
@@ -698,6 +714,7 @@ fn waveform_said(levels: &Levels, loudness: &Loudness) -> String {
 fn spectrum_card(drawn: &Drawn) -> Div {
     let analysis = &drawn.analysis;
     let nyquist = analysis.study.spectrum.nyquist_hz();
+
     let cutoff = cutoff_share(analysis, nyquist);
     let colour = verdict_colour(analysis.study.judgement.verdict);
     let series = Arc::clone(&drawn.spectrum);
@@ -728,6 +745,7 @@ fn spectrum_card(drawn: &Drawn) -> Div {
                         .left(relative(mark.share))
                 }),
         );
+
     if let Some(cutoff) = analysis.study.judgement.cutoff {
         plot = plot.child(
             axis_label(words::analysis::kilohertz(format!(
@@ -752,11 +770,14 @@ fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas
             let wide = f32::from(bounds.size.width);
             let top = f32::from(bounds.top());
             let tall = f32::from(bounds.size.height);
+
             let bottom = top + tall;
 
             let mut level = SPECTRUM_CEILING_DB;
+
             while level >= SPECTRUM_FLOOR_DB {
                 let y = bottom - height_of(level) * tall;
+
                 window.paint_quad(fill(
                     Bounds::from_corners(
                         point(px(left), px(y)),
@@ -779,6 +800,7 @@ fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas
                     )
                 })
                 .collect();
+
             plot::wash(
                 window,
                 &points,
@@ -789,6 +811,7 @@ fn spectrum_line(series: Arc<[f32]>, cutoff: Option<f32>, colour: u32) -> Canvas
 
             if let Some(share) = cutoff {
                 let x = left + share * wide;
+
                 window.paint_quad(fill(
                     Bounds::from_corners(
                         point(px(x - CUTOFF_WIDTH * HALF), px(top)),
@@ -822,6 +845,7 @@ fn levels_card(analysis: &Analysis) -> Div {
             (false, Some(correlation)) => format!("{correlation:+.2}"),
             (false, None) => words::analysis::silent().to_owned(),
         });
+
     let rows: Vec<(&'static str, Option<Cow<'_, str>>)> = vec![
         (
             words::analysis::peak(),
@@ -889,6 +913,7 @@ fn levels_card(analysis: &Analysis) -> Div {
 fn source_card(analysis: &Analysis) -> Div {
     let study = &analysis.study;
     let examined = &study.examined;
+
     let rows: Vec<(&'static str, Option<Cow<'_, str>>)> = vec![
         (
             words::analysis::codec(),
@@ -1125,7 +1150,9 @@ mod tests {
     #[test]
     fn an_average_spectrum_is_heard_with_its_level_in_each_stretch_of_the_band() {
         let mut levels = vec![-30.0; 10];
+
         levels.resize(23, -90.0);
+
         let spectrum = Spectrum::new(1_000.0, levels, Duration::from_secs(60));
 
         let said = spectrum_said(&walled_at_16_khz(), &spectrum);
@@ -1177,7 +1204,9 @@ mod tests {
             &[(b"INAM", "Track 03"), (b"IART", "Somebody")],
         );
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, &folder);
+
         let printers = Fingerprinters::none().and(Arc::new(HearsEchoes {
             source: SourceId::new("hears-echoes").expect("a source name"),
         }));
@@ -1199,14 +1228,18 @@ mod tests {
             .tracks(&TrackQuery::default())
             .expect("the catalog reads")
             .remove(0);
+
         assert_eq!(track.artist.as_deref(), Some("Pink Floyd"));
     }
 
     fn studying_what_plays(cx: &mut TestAppContext, folder: &Folder) -> Driven {
         let track = folder.tone("one.wav", 5);
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
+
         let mut driven = Driven::opened_in(cx, library, folder);
+
         driven.play(&[track]);
 
         driven
@@ -1237,6 +1270,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = studying_what_plays(cx, &folder);
+
         driven.settle();
 
         assert!(
@@ -1258,6 +1292,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = studying_what_plays(cx, &folder);
+
         driven
             .cx
             .simulate_resize(gpui::size(gpui::px(crate::driven::WIDE), gpui::px(520.0)));
@@ -1269,7 +1304,9 @@ mod tests {
         assert_eq!(scrolled(&mut driven), gpui::px(0.0));
 
         let within = drawn_within(&mut driven).center();
+
         driven.scroll_at(within, 240.0);
+
         let left_at = scrolled(&mut driven);
 
         assert!(left_at < gpui::px(0.0), "the pane did not scroll");

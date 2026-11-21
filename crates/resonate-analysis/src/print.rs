@@ -23,6 +23,7 @@ impl Printing {
     pub(crate) fn new(rate: u32, channels: usize) -> Self {
         let configuration = Configuration::preset_test2();
         let mut printer = Fingerprinter::new(&configuration);
+
         let started = match printer.start(rate, channels as u32) {
             Ok(()) => Some(printer),
             Err(error) => {
@@ -47,11 +48,13 @@ impl Printing {
         let Some(printer) = &mut self.printer else {
             return;
         };
+
         if self.left == 0 {
             return;
         }
 
         let frames = (interleaved.len() / self.channels).min(self.left as usize);
+
         self.scratch.clear();
         self.scratch.extend(
             interleaved[..frames * self.channels]
@@ -64,8 +67,11 @@ impl Printing {
 
     pub(crate) fn finished(self, length: Duration) -> Option<Chromaprint> {
         let mut printer = self.printer?;
+
         printer.finish();
+
         let points = printer.fingerprint();
+
         if points.is_empty() {
             return None;
         }
@@ -91,13 +97,16 @@ pub(crate) fn standard_base64(bytes: &[u8]) -> String {
 
 fn base64(bytes: &[u8], alphabet: &[u8; 64], padded: bool) -> String {
     let mut written = String::with_capacity(bytes.len().div_ceil(3) * 4);
+
     for group in bytes.chunks(3) {
         let joined = group.iter().enumerate().fold(0_u32, |joined, (nth, byte)| {
             joined | u32::from(*byte) << (16 - 8 * nth)
         });
         let letters = group.len() + 1;
+
         for nth in 0..letters {
             let index = (joined >> (18 - 6 * nth)) & 0x3f;
+
             written.push(char::from(alphabet[index as usize]));
         }
         if padded {
@@ -138,6 +147,7 @@ mod tests {
         let rate = 44_100;
         let mut printing = Printing::new(rate, 2);
         let tones = [220.0, 277.18, 329.63, 440.0];
+
         let interleaved: Vec<f32> = (0..rate * 60)
             .flat_map(|frame| {
                 let second = (frame / rate) as usize;
@@ -146,9 +156,11 @@ mod tests {
                 [sample, sample]
             })
             .collect();
+
         for block in interleaved.chunks(8_192) {
             printing.note(block);
         }
+
         let length = Duration::from_secs(60);
         let print = printing.finished(length).expect("a print");
 

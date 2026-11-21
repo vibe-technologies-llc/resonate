@@ -9,12 +9,15 @@ use super::{Change, Edited, LibraryModel, Wanted, arranged::Named};
 impl LibraryModel {
     pub fn favour(&mut self, what: Favoured, favourite: bool, cx: &mut Context<Self>) {
         self.favours.favoured.insert(what, favourite);
+
         let mut named_before = None;
+
         if let Favoured::Track(id) = what
             && let Some(before) = self.naming.named.get(&id).cloned()
             && before.track.is_some()
         {
             let mut named = before.clone();
+
             if let Some(track) = named.track.as_mut() {
                 track.favourite = favourite.then(SystemTime::now);
             }

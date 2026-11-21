@@ -54,6 +54,7 @@ impl Spectrographing {
                 .min(bins);
             powers[first..past].iter().copied().fold(0.0, f32::max)
         });
+
         self.columns.push(Slice {
             power,
             transforms: 1,
@@ -111,6 +112,7 @@ impl Ramp {
                 _ => {
                     let at = level as f32 / (LEVELS - 1) as f32 * (stops.len() - 1) as f32;
                     let lower = (at.floor() as usize).min(stops.len() - 2);
+
                     let share = at - lower as f32;
                     let (from, to) = (stops[lower], stops[lower + 1]);
                     [0, 1, 2].map(|channel| {
@@ -171,9 +173,11 @@ impl Spectrogram {
     pub fn painted(&self, ramp: &Ramp) -> Raster {
         let width = self.columns.max(1);
         let mut bgra = Vec::with_capacity(width * SPECTROGRAM_ROWS * OPAQUE_BGRA.len());
+
         for row in (0..SPECTROGRAM_ROWS).rev() {
             for column in 0..width {
                 let [red, green, blue] = ramp.colour(self.level(column, row).unwrap_or(0));
+
                 bgra.extend([blue, green, red, OPAQUE_BGRA[3]]);
             }
         }
@@ -193,9 +197,12 @@ mod tests {
     #[test]
     fn a_ramp_runs_through_its_stops_evenly() {
         let ramp = Ramp::through(&[[0, 0, 0], [255, 0, 0], [255, 255, 255]]);
+
         assert_eq!(ramp.colour(0), [0, 0, 0]);
         assert_eq!(ramp.colour(255), [255, 255, 255]);
+
         let middle = ramp.colour(128);
+
         assert!(middle[0] >= 254 && middle[1] <= 2);
 
         assert_eq!(Ramp::through(&[]).colour(200), [0, 0, 0]);
@@ -213,12 +220,16 @@ mod tests {
     #[test]
     fn a_spectrogram_paints_one_pixel_per_column_and_row() {
         let mut graphing = Spectrographing::new(4_096, 48_000);
+
         for nth in 0..10 {
             let mut powers = vec![0.0; 2_049];
+
             powers[nth * 100] = 1.0;
             graphing.note(&powers);
         }
+
         let spectrogram = graphing.finished();
+
         assert_eq!(spectrogram.columns(), 10);
         assert_eq!(spectrogram.nyquist_hz(), 24_000);
         assert_eq!(spectrogram.frames(), Frames(40_960));
@@ -230,6 +241,7 @@ mod tests {
         assert_eq!(spectrogram.level(3, SPECTROGRAM_ROWS), None);
 
         let painted = spectrogram.painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]));
+
         assert_eq!(
             (painted.width, painted.height),
             (10, SPECTROGRAM_ROWS as u32)

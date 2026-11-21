@@ -244,6 +244,7 @@ impl Library {
             return Ok(Replaced::default());
         }
         self.rejoin_the_replacements()?;
+
         let beside = self.settled_beside()? + self.settle_the_versions_kept()?;
         Ok(Replaced { beside })
     }
@@ -264,12 +265,15 @@ impl Library {
                 },
             )?;
             let mut settled = AHashSet::new();
+
             for (kept, song, copy) in landed {
                 if !settled.insert(kept) {
                     continue;
                 }
+
                 let song = TrackId::new(song.cast_unsigned())?;
                 let copy = TrackId::new(copy.cast_unsigned())?;
+
                 chosen::choose(transaction, song, copy, now)?;
                 transaction
                     .execute(A_VERSION_KEPT_IS_SETTLED, params![kept])
@@ -289,9 +293,11 @@ impl Library {
                 |row| Ok(Ok((row.get::<_, i64>(0)?, row.get::<_, Option<i64>>(1)?))),
             )?;
             let mut joined = 0;
+
             for (lossy, row) in rejoined {
                 let Some(row) = row else { continue };
                 let lossy = TrackId::new(lossy.cast_unsigned())?;
+
                 wanted_again_unless_it_delivered(transaction, row, lossy, now)?;
                 joined += 1;
             }
@@ -301,9 +307,11 @@ impl Library {
 
     fn settled_beside(&self) -> Result<u64> {
         let evidenced = self.evidenced()?;
+
         if evidenced.is_empty() {
             return Ok(0);
         }
+
         let vault = self.inner.vault.as_deref();
         let now = SystemTime::now();
         self.inner
@@ -314,9 +322,12 @@ impl Library {
         let vault = self.inner.vault.as_deref();
         let awaiting = self.inner.read(awaiting)?;
         let mut found = Vec::new();
+
         for one in awaiting {
             let mut recorded = self.tracks_with_ids(&one.recorded)?;
+
             recorded.sort_by_key(|copy| Quality::of(copy).best_first());
+
             let candidates: Vec<TrackId> = one
                 .delivered
                 .into_iter()
@@ -344,24 +355,30 @@ impl Library {
     pub fn songs_to_better_in(&self, playlist: PlaylistId) -> Result<Vec<Replaceable>> {
         let mut seen = AHashSet::new();
         let mut found = Vec::new();
+
         for entry in self.playlist_entries(playlist, None)? {
             let Some(track) = entry.track else { continue };
+
             if track.span.is_some() || !seen.insert(track.id) {
                 continue;
             }
+
             let held = self.better_copy_held_for(&track)?;
             let plays_it_already = match &held {
                 Some(best) => self.plays_as_well_already(track.id, best)?,
                 None => false,
             };
+
             if plays_it_already || (track.codec.is_lossless() && held.is_none()) {
                 continue;
             }
+
             let (release_track, pending, looked) = self.inner.read(|connection| {
                 let (release_track, pending) = release_track_and_pending(connection, track.id)?;
                 let looked = what_a_look_found(connection, track.id, release_track)?;
                 Ok((release_track, pending, looked))
             })?;
+
             found.push(Replaceable {
                 track,
                 held,
@@ -381,12 +398,15 @@ impl Library {
     ) -> Result<()> {
         let providers = providers.without_last_resorts();
         let asked: Vec<&Replaceable> = rows.iter().filter(|row| row.can_be_looked_for()).collect();
+
         if asked.is_empty() || !providers.has_a_source() {
             return Ok(());
         }
+
         let forgotten = self.forgotten_deliveries()?;
         let next = AtomicUsize::new(0);
         let away = Mutex::new(Away::default());
+
         let lane = || {
             while !(looking.cancelled)() {
                 let Some(row) = asked.get(next.fetch_add(1, Ordering::Relaxed)) else {
@@ -402,6 +422,7 @@ impl Library {
                 }
             }
         };
+
         thread::scope(|scope| {
             let lanes = WANTS_ASKED_AT_ONCE.get().min(asked.len());
             for _ in 0..lanes {
@@ -452,6 +473,7 @@ impl Library {
                 || self.a_keep_holds_the_offer(delivered)
         };
         let mut held_away = away.lock().clone();
+
         let answer = providers.first(
             &asked.identity,
             &Asking {
@@ -466,24 +488,29 @@ impl Library {
             },
             &mut held_away,
         );
+
         away.lock().join(&held_away);
         if answer.cancelled {
             return Ok(None);
         }
+
         let heard_from_everyone = answer.heard_from_every_provider();
         let unheard = Unheard {
             refused: answer.refused,
             late: answer.late,
             passed_over: answer.passed_over,
         };
+
         let looked = match answer.delivered {
             Some(delivered) => {
                 let looked = Looked::Offered {
                     by: delivered.provider.clone(),
                     at: delivered.taken_from(),
                 };
+
                 if let Some(recording) = asked.identity.recording.clone() {
                     let offers = iter::once(delivered).chain(answer.held_back).collect();
+
                     self.foresight()
                         .keep(recording, answer.heard, offers, unheard);
                 }
@@ -497,6 +524,7 @@ impl Library {
             Looked::Unoffered | Looked::Unheard => (None, None),
         };
         let now = store::to_nanos(SystemTime::now());
+
         self.inner.write(|transaction| {
             transaction
                 .execute(
@@ -529,11 +557,13 @@ impl Library {
         let beside = self
             .inner
             .read(|connection| chosen::held_for(connection, lossy.id))?;
+
         candidates.extend(self.tracks_with_ids(&related.ids)?);
         candidates.extend(self.tracks_with_ids(&beside)?);
         candidates.extend(found);
 
         let mut offered: Vec<Track> = Vec::new();
+
         for copy in candidates {
             let fits = copy.span.is_none()
                 && copy.id != lossy.id
@@ -576,8 +606,10 @@ fn related_ids(connection: &Connection, track: TrackId) -> Result<Related> {
         ids: Vec::new(),
         sharing: AHashSet::new(),
     };
+
     for (id, shares) in found {
         let id = TrackId::new(id.cast_unsigned())?;
+
         related.ids.push(id);
         if shares {
             related.sharing.insert(id);
@@ -671,6 +703,7 @@ fn kept_for(
     let length = lossy
         .duration
         .map(|frames| frames.to_duration(lossy.spec.rate).as_millis() as i64);
+
     let kept: i64 = transaction
         .query_row(
             A_SONG_IS_KEPT_FOR_A_LOSSY_ONE,
@@ -714,6 +747,7 @@ fn row_asked(
         album: i64,
         want: Option<i64>,
     }
+
     let read = connection
         .query_row(
             THE_ROW_A_REPLACEMENT_LOOKS_FOR,
@@ -793,14 +827,18 @@ fn settled(
 ) -> Result<Replacing> {
     let mut seen = AHashSet::new();
     let mut replacing = Replacing::default();
+
     for one in chosen {
         if !seen.insert(one.track.id) {
             continue;
         }
+
         let stands = standing(transaction, vault, &one.track)?;
+
         if stands == Standing::Gone {
             continue;
         }
+
         let held = match &one.held {
             Some(copy)
                 if copy.id != one.track.id
@@ -812,9 +850,11 @@ fn settled(
             }
             Some(_) | None => None,
         };
+
         if stands == Standing::Lossless && held.is_none() {
             continue;
         }
+
         let release_track = match one.release_track {
             Some(row) if still_held_by(transaction, row, one.track.id)? => Some(row),
             Some(_) | None => None,
@@ -834,7 +874,9 @@ fn settled(
                     ],
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
             let want = elsewhere::rearmed(transaction, row, now)?;
+
             replacing.wanted += 1;
             replacing.wants.push((row, want));
         } else if let Some((by, at)) = one.offer() {
@@ -905,6 +947,7 @@ fn awaiting(connection: &Connection) -> Result<Vec<Awaiting>> {
         )))
     })?;
     let mut found = Vec::with_capacity(waiting.len());
+
     for (taken, offered) in waiting {
         let taken = TrackId::new(taken.cast_unsigned())?;
         let delivered = delivered_for(connection, taken, offered.as_deref())?
@@ -928,6 +971,7 @@ fn awaiting(connection: &Connection) -> Result<Vec<Awaiting>> {
         .into_iter()
         .map(|id| Ok(TrackId::new(id.cast_unsigned())?))
         .collect::<Result<Vec<_>>>()?;
+
         found.push(Awaiting {
             taken,
             delivered,
@@ -1003,6 +1047,7 @@ fn wanted_again_unless_it_delivered(
     now: SystemTime,
 ) -> Result<()> {
     elsewhere::wanted(transaction, row, now)?;
+
     let offered: Option<String> = transaction
         .query_row(WHAT_THE_ROWS_WANT_WAS_OFFERED, params![row], |found| {
             found.get(0)
@@ -1011,6 +1056,7 @@ fn wanted_again_unless_it_delivered(
         .map_err(|source| Error::store(StoreOp::Query, source))?
         .flatten();
     let lossy_at = MediaLocation::local(replacing::path_of(transaction, lossy)?).to_uri();
+
     if offered.as_deref() == Some(lossy_at.as_str()) {
         elsewhere::rearmed(transaction, ReleaseTrackId::new(row.cast_unsigned())?, now)?;
     }
@@ -1049,6 +1095,7 @@ fn kept_beside_on(
     now: SystemTime,
 ) -> Result<u64> {
     let mut beside = 0;
+
     for &Evidenced { taken: lossy, kept } in evidenced {
         if !may_be_kept_beside(transaction, vault, lossy, kept)? {
             continue;

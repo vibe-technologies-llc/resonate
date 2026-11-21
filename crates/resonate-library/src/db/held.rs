@@ -73,6 +73,7 @@ impl Library {
         };
         let sql = format!("{MISSING_TRACKS}{}{MISSING_TRACKS_IN_ORDER}", scoped.from);
         let mut binds = scoped.binds;
+
         binds.push(Value::Integer(limit(at_most)));
 
         self.inner.read(|connection| {
@@ -84,12 +85,14 @@ impl Library {
 
     pub fn unheld_matching(&self, text: &str, at_most: Option<usize>) -> Result<Vec<MissingTrack>> {
         let words = elsewhere::words_asked(text);
+
         if words.is_empty() {
             return Ok(Vec::new());
         }
         self.inner.read(|connection| {
             let mut sql = format!("{MISSING_TRACKS}{SHORT_OF_WHAT_IS_HELD_OR_WANTED}");
             let mut binds = Vec::with_capacity(words.len() + 1);
+
             for word in &words {
                 for piece in word.split_whitespace() {
                     sql.push_str(" AND ");
@@ -141,10 +144,12 @@ impl Library {
         text: &str,
     ) -> Result<Vec<ArtistFound>> {
         let mut unheld = Vec::new();
+
         for named in elsewhere::artists_named_by(matches, text) {
             if unheld.len() == ARTISTS_FOUND_ELSEWHERE_AT_MOST {
                 break;
             }
+
             let held: bool = self.inner.read(|connection| {
                 connection
                     .query_row(
@@ -170,10 +175,12 @@ impl Library {
         text: &str,
     ) -> Result<Vec<AlbumFound>> {
         let mut unheld = Vec::new();
+
         for named in elsewhere::albums_named_by(matches, text) {
             if unheld.len() == ALBUMS_FOUND_ELSEWHERE_AT_MOST {
                 break;
             }
+
             let held: bool = self.inner.read(|connection| {
                 connection
                     .query_row(
@@ -208,15 +215,18 @@ impl Library {
         let artist = self
             .inner
             .write(|transaction| elsewhere::artist_of_found(transaction, found))?;
+
         if let Some(profile) = reference.artist(&found.mbid)? {
             self.land_artist(artist, &profile)?;
         }
+
         let discography = reference.release_groups_of(&found.mbid, 0)?;
         let kept: Vec<ArtistRelease> = discography
             .releases
             .into_iter()
             .filter(enrich::worth_keeping)
             .collect();
+
         self.land_artist_releases(artist, &kept, (discography.unread, discography.read_to))?;
 
         Ok(artist)
@@ -238,6 +248,7 @@ impl Library {
         if matches.is_empty() {
             return Ok(AHashSet::new());
         }
+
         let asked = vec!["?"; matches.len()].join(", ");
         let sql = format!(
             "SELECT mbid FROM tracks WHERE mbid IN ({asked})

@@ -87,6 +87,7 @@ fn weight_at(hertz: f64) -> f64 {
     if hertz <= WEIGHT_FALLS_FROM_HZ {
         return 1.0;
     }
+
     let along = (hertz / WEIGHT_FALLS_FROM_HZ).log2() / (TOP_HZ / WEIGHT_FALLS_FROM_HZ).log2();
     1.0 - (1.0 - WEIGHT_AT_THE_TOP) * along.min(1.0)
 }
@@ -125,6 +126,7 @@ fn atoms_for(fitting: &Fitting, grid: &[f64]) -> Vec<Atom> {
         .collect();
 
     let mut atoms = Vec::new();
+
     for frequency in frequencies {
         let hertz = frequency.hertz();
         let kinds = [
@@ -152,6 +154,7 @@ fn atoms_for(fitting: &Fitting, grid: &[f64]) -> Vec<Atom> {
                     continue;
                 };
                 let unit = band_at(kind, frequency, UNIT_GAIN_DB, q);
+
                 atoms.push(Atom {
                     kind,
                     frequency,
@@ -238,9 +241,11 @@ fn best_atom<'a>(
         .filter_map(|atom| {
             let along = inner(weights, residual, &atom.shape);
             let within = inner(weights, &atom.shape, &atom.shape);
+
             if within <= 0.0 {
                 return None;
             }
+
             let gain_db = (along / within).clamp(-fitting.cut_at_most_db, fitting.boost_at_most_db);
             Some(Pick {
                 atom,
@@ -259,14 +264,19 @@ fn settled(
     fitting: &Fitting,
 ) -> Placed {
     let mut band = band;
+
     let mut response = response_of(band, grid);
+
     for _ in 0..REFINING_STEPS {
         let along = inner(weights, residual_without_it, &response);
         let within = inner(weights, &response, &response);
+
         if within <= 0.0 || band.gain.decibels() == 0.0 {
             break;
         }
+
         let scaled = band.gain.decibels() * (along / within);
+
         band = band_at(
             band.kind,
             band.frequency,
@@ -280,6 +290,7 @@ fn settled(
 
 fn nudged_around(band: Band, fitting: &Fitting) -> Vec<Band> {
     let mut around = Vec::new();
+
     for steps in NUDGES_OF_FREQUENCY {
         let hertz =
             band.frequency.hertz() * 2.0_f64.powf(f64::from(steps) * NUDGE_OF_FREQUENCY_OCTAVES);
@@ -291,6 +302,7 @@ fn nudged_around(band: Band, fitting: &Fitting) -> Vec<Band> {
             let Ok(q) = Q::from_units(units) else {
                 continue;
             };
+
             around.push(band_at(band.kind, frequency, band.gain.decibels(), q));
         }
     }
@@ -368,6 +380,7 @@ pub fn fit(measured: &Response, goal: &Response, fitting: &Fitting) -> Result<Fi
         let Some(pick) = best_atom(&atoms, &residual, &weights, &taken, fitting) else {
             break;
         };
+
         if pick.gain_db.abs() < WORTH_A_BAND_DB
             || pick.reduction < WORTH_A_BAND_OF_THE_ERROR * first_sum
         {
@@ -381,6 +394,7 @@ pub fn fit(measured: &Response, goal: &Response, fitting: &Fitting) -> Result<Fi
             pick.atom.q,
         );
         let one = settled(band, &residual, &weights, &grid, fitting);
+
         subtract(&mut residual, &one.response);
         taken.take(pick.atom);
         placed.push(one);
@@ -397,12 +411,15 @@ pub fn fit(measured: &Response, goal: &Response, fitting: &Fitting) -> Result<Fi
     placed.retain(|one| one.band.gain.decibels().abs() >= WORTH_A_BAND_DB);
 
     let mut remaining = wanted;
+
     for one in &placed {
         subtract(&mut remaining, &one.response);
     }
+
     let off_by_db_after = weighted_rms(&remaining, &weights);
 
     let mut bands: Vec<Band> = placed.into_iter().map(|one| one.band).collect();
+
     bands.sort_by_key(|band| band.frequency.centihertz());
     if bands.is_empty() {
         return Err(Error::NothingToCorrect {
@@ -411,6 +428,7 @@ pub fn fit(measured: &Response, goal: &Response, fitting: &Fitting) -> Result<Fi
     }
 
     let mut profile = Profile::new(Preamp::NONE, bands)?;
+
     profile.set_preamp(profile.fitted_preamp(FITTED_AT));
     Ok(Fitted {
         profile,
@@ -473,6 +491,7 @@ mod tests {
     fn measured_text(goal: &Response, error: &Profile, level_offset_db: f64) -> String {
         let mut text = String::from("* measured\n");
         let mut hertz = 10.0_f64;
+
         while hertz < 30_000.0 {
             text.push_str(&format!(
                 "{hertz:.3}\t{:.4}\t0\n",
@@ -509,6 +528,7 @@ mod tests {
         let fitted = fitted_against(&Response::flat(), &error, &Fitting::default());
 
         let miss = worst_miss_db(&fitted, &error);
+
         assert!(miss < WITHIN_DB, "{miss} dB left");
         assert!(fitted.off_by_db_after < fitted.off_by_db_before / 4.0);
         assert!(fitted.off_by_db_after < 0.3, "{}", fitted.off_by_db_after);
@@ -518,9 +538,11 @@ mod tests {
     fn a_known_error_against_the_harman_over_ear_curve_is_fitted_away_the_same_way() {
         let error = known_error();
         let goal = BuiltIn::HarmanOverEar2018.response().expect("a built-in");
+
         let fitted = fitted_against(&goal, &error, &Fitting::default());
 
         let miss = worst_miss_db(&fitted, &error);
+
         assert!(miss < WITHIN_DB, "{miss} dB left");
     }
 
@@ -550,11 +572,13 @@ mod tests {
             cut_at_most_db: 3.0,
             ..Fitting::default()
         };
+
         let fitted = fitted_against(&Response::flat(), &error, &fitting);
 
         assert!(fitted.profile.bands().len() <= 3);
         for band in fitted.profile.bands() {
             let gain = band.gain.decibels();
+
             assert!((-3.0..=2.0).contains(&gain), "{gain} dB");
         }
     }
@@ -567,6 +591,7 @@ mod tests {
             q_most: 2.0,
             ..Fitting::default()
         };
+
         let fitted = fitted_against(&Response::flat(), &error, &fitting);
 
         for kind in [BandKind::LowShelf, BandKind::HighShelf] {
@@ -576,6 +601,7 @@ mod tests {
                 .iter()
                 .filter(|band| band.kind == kind)
                 .count();
+
             assert!(held <= 1, "{kind} held {held} times");
         }
         for band in fitted.profile.bands() {
@@ -617,6 +643,7 @@ mod tests {
     fn the_level_a_measurement_was_taken_at_does_not_change_the_fit() {
         let error = known_error();
         let goal = Response::flat();
+
         let quiet = read_response(measured_text(&goal, &error, -30.0).as_bytes())
             .expect("readable")
             .response;

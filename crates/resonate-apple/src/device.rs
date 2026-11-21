@@ -31,10 +31,10 @@ const AN_AGGREGATE_THE_SYSTEM_MADE: u32 = u32::from_be_bytes(*b"fgrp");
 const HELD_BY_NOBODY: i32 = -1;
 const SUPPORTS_MIXING: u32 = u32::from_be_bytes(*b"mix?");
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Device(u32);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Stream(u32);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -238,6 +238,7 @@ impl Device {
 
     pub fn set_mixing(self, mixes: bool) -> Result<()> {
         let mixing = Address::global(SUPPORTS_MIXING);
+
         if !property::settable(self.0, mixing) {
             return Err(Error::Unsettable { op: Op::SetMixing });
         }
@@ -253,9 +254,11 @@ impl Device {
 
     pub fn hogged_by(self) -> Result<Option<Pid>> {
         let hog = Address::global(kAudioDevicePropertyHogMode);
+
         if !property::has(self.0, hog) {
             return Ok(None);
         }
+
         let holder = property::read::<i32>(self.0, hog, Op::ReadHog)?;
         Ok((holder != HELD_BY_NOBODY).then_some(Pid::of(holder)))
     }

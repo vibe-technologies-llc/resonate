@@ -88,6 +88,7 @@ fn person_said(person: &SharedPerson) -> SharedString {
 impl RootView {
     pub(crate) fn open_sharing(&mut self, playlist: PlaylistId, cx: &mut Context<Self>) {
         let together = together_of(cx);
+
         self.social.sharing = Some(Sharing {
             playlist,
             armed: Armed::Nothing,
@@ -99,6 +100,7 @@ impl RootView {
         self.social.reading_the_shares = together.map(|together| {
             cx.spawn(async move |this, cx| {
                 let watching = Arc::clone(&together);
+
                 cx.background_spawn(async move { watching.watch(Some(playlist)) })
                     .await;
                 loop {
@@ -108,6 +110,7 @@ impl RootView {
                             SharesRead::of(reading.as_ref(), Some(playlist))
                         })
                         .await;
+
                     if this
                         .update(cx, |this, cx| this.land_the_shares(read, cx))
                         .is_err()
@@ -147,6 +150,7 @@ impl RootView {
 
     fn land_the_shares(&mut self, read: SharesRead, cx: &mut Context<Self>) {
         let mut moved = self.social.shared_lists != read.lists;
+
         self.social.shared_lists = read.lists;
         if let (Some(sharing), Some((playlist, seen))) = (self.social.sharing.as_mut(), read.seen)
             && sharing.playlist == playlist
@@ -266,6 +270,7 @@ impl RootView {
                 .flex_col()
                 .gap_1()
                 .child(kit::eyebrow(words::sharing::people()));
+
             for (at, person) in seen.people.iter().enumerate() {
                 people = people.child(self.person_row(at, person, sharing, seen.may_edit, cx));
             }
@@ -281,11 +286,13 @@ impl RootView {
                 .collect::<Vec<_>>()
                 .join(", ");
             let more = seen.unheld.len().saturating_sub(UNHELD_NAMED_AT_MOST);
+
             let line = if more > 0 {
                 words::sharing::unheld_and_more(more, named)
             } else {
                 words::sharing::unheld(named)
             };
+
             body = body.child(said(line));
         }
 
@@ -434,6 +441,7 @@ impl RootView {
         if !self.arming(Armed::Reset, cx) {
             return;
         }
+
         let Some(together) = together_of(cx) else {
             return;
         };
@@ -450,6 +458,7 @@ impl RootView {
         if !self.arming(Armed::Leave, cx) {
             return;
         }
+
         let Some(together) = together_of(cx) else {
             return;
         };
@@ -467,6 +476,7 @@ impl RootView {
         if !self.arming(Armed::Person(person), cx) {
             return;
         }
+
         let Some(together) = together_of(cx) else {
             return;
         };
@@ -483,6 +493,7 @@ impl RootView {
         let Some(sharing) = self.social.sharing.as_mut() else {
             return false;
         };
+
         if sharing.armed == wanted {
             sharing.armed = Armed::Nothing;
             return true;

@@ -22,6 +22,7 @@ pub fn unpacked(packed: &[u8]) -> Result<Vec<u8>> {
 
 pub fn bounded(reader: impl Read) -> Result<Vec<u8>> {
     let mut unpacked = Vec::new();
+
     reader
         .take(LARGEST_UNPACKED as u64 + 1)
         .read_to_end(&mut unpacked)

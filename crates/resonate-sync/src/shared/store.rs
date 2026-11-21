@@ -91,6 +91,7 @@ impl Kept {
 
     pub fn owe(&mut self, ops: Vec<SharedOp>) {
         let seq = self.owed.last().map_or(1, |(seq, _)| seq + 1);
+
         self.owed.push((seq, ops));
     }
 
@@ -102,6 +103,7 @@ impl Kept {
             .chain(stamps_owed(&mut self.owed).map(|stamp| *stamp))
             .filter(|stamp| stamp.too_far_ahead_of(wall))
             .collect();
+
         if past.is_empty() {
             return false;
         }
@@ -112,11 +114,13 @@ impl Kept {
             .map(|(stamp, nanos)| (stamp, Stamp { nanos, ..stamp }))
             .collect();
         let before = self.list.as_ops();
+
         for stamp in self.list.stamps_mut().chain(stamps_owed(&mut self.owed)) {
             if let Some(back) = brought_back.get(stamp) {
                 *stamp = *back;
             }
         }
+
         let restamped: Vec<SharedOp> = self
             .list
             .as_ops()
@@ -165,6 +169,7 @@ impl Store {
         connection
             .pragma_update(None, "foreign_keys", true)
             .map_err(|source| Error::store(StoreOp::Open, source))?;
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
@@ -172,6 +177,7 @@ impl Store {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
         let laid = usize::try_from(version).unwrap_or(usize::MAX);
+
         if laid > MIGRATIONS.len() {
             return Err(Error::LedgerVersion { found: version });
         }
@@ -202,6 +208,7 @@ impl Store {
             })
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if let Some((member, personal)) = held {
             let member: [u8; MEMBER_BYTES] = member.try_into().map_err(|_| malformed())?;
             let personal: [u8; 32] = personal.try_into().map_err(|_| malformed())?;
@@ -216,6 +223,7 @@ impl Store {
             member: MemberId(random_bytes()?),
             personal: Personal::minted()?,
         };
+
         self.keep_me(&me)?;
 
         Ok(me)
@@ -242,6 +250,7 @@ impl Store {
                    FROM lists",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok(Raw {
@@ -267,6 +276,7 @@ impl Store {
             .map_err(|source| Error::store(StoreOp::Read, source))?;
 
         drop(statement);
+
         let mut lists = rows
             .into_iter()
             .filter_map(|raw| match self.read(raw) {
@@ -280,6 +290,7 @@ impl Store {
             .collect::<Result<Vec<_>>>()?;
 
         let wall = wall_nanos();
+
         for kept in &mut lists {
             if kept.restamped_past_the_bound(wall) {
                 self.keep(kept)?;
@@ -295,9 +306,11 @@ impl Store {
         let member: [u8; MEMBER_BYTES] = raw.member.try_into().map_err(|_| malformed())?;
         let personal: [u8; 32] = raw.personal.try_into().map_err(|_| malformed())?;
         let mut list = SharedList::default();
+
         for op in decoded_kept_ops(&raw.state)? {
             list.apply(&op);
         }
+
         let written = raw
             .written
             .as_chunks::<ENTRY_BYTES>()
@@ -311,6 +324,7 @@ impl Store {
             .connection
             .prepare("SELECT seq, ops FROM owed WHERE space = ?1 ORDER BY seq")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let owed = statement
             .query_map(params![space.as_slice()], |row| {
                 Ok((row.get::<_, i64>(0)?, row.get::<_, Vec<u8>>(1)?))
@@ -354,6 +368,7 @@ impl Store {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         transaction
             .execute(
                 "INSERT INTO lists (space, code, server, device, local_id, local_created, alias,
@@ -477,6 +492,7 @@ mod tests {
         let access = Access::minted().expect("a key");
         let space = access.keys().expect("derived").space;
         let mut list = SharedList::default();
+
         list.apply(&added());
 
         Kept {
@@ -508,6 +524,7 @@ mod tests {
         let kept = a_list();
 
         store.keep(&kept).expect("kept");
+
         let read = store.lists().expect("read");
 
         assert_eq!(read.len(), 1);
@@ -529,6 +546,7 @@ mod tests {
         kept.owed.clear();
         kept.cursor = 10;
         store.keep(&kept).expect("kept again");
+
         let read = store.lists().expect("read");
 
         assert_eq!(read.len(), 1);
@@ -536,6 +554,7 @@ mod tests {
         assert!(read[0].owed.is_empty());
 
         store.forget(kept.space).expect("forgotten");
+
         assert!(store.lists().expect("read").is_empty());
     }
 
@@ -552,6 +571,7 @@ mod tests {
         let mut store = Store::in_memory().expect("a store");
         let mut kept = a_list();
         let entry = EntryId([2; ENTRY_BYTES]);
+
         kept.owed.clear();
         kept.list.apply(&SharedOp::Moved {
             entry,
@@ -566,6 +586,7 @@ mod tests {
 
         let wall = wall_nanos();
         let mut loaded = store.lists().expect("read").remove(0);
+
         let restamped = loaded.list.clone();
         let owed: Vec<SharedOp> = loaded
             .owed
@@ -606,6 +627,7 @@ mod tests {
         let mut kept = a_list();
         let gone = MemberId([4; MEMBER_BYTES]);
         let back = MemberId([5; MEMBER_BYTES]);
+
         kept.access = kept.access.viewing().expect("a view key");
         kept.owed.clear();
         for op in [

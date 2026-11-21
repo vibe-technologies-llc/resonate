@@ -48,6 +48,7 @@ impl Opened {
 impl Read for Opened {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.file.read_at(into, self.at)?;
+
         self.at += read as u64;
         Ok(read)
     }
@@ -61,6 +62,7 @@ impl Seek for Opened {
             SeekFrom::Current(by) => self.at.checked_add_signed(by),
         }
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+
         self.at = target;
         Ok(target)
     }
@@ -93,11 +95,15 @@ impl Unpacking {
         let file = Arc::new(File::open(path)?);
         let mut unpacked = unpacked_from(&file, 0)?;
         let mut head = [0_u8; RIFF_HEADER as usize];
+
         unpacked.read_exact(&mut head)?;
+
         let (named, declared) = head.split_at(RIFF.len());
+
         if named != RIFF {
             return Err(io::Error::from(io::ErrorKind::InvalidData));
         }
+
         let declared: [u8; 4] = declared
             .try_into()
             .map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
@@ -119,6 +125,7 @@ impl Unpacking {
     fn catch_up(&mut self) -> io::Result<()> {
         let behind = self.at < self.unpacked_to;
         let far_ahead = self.at.saturating_sub(self.unpacked_to) > FAR_AHEAD;
+
         if behind || far_ahead {
             match self.frame_holding(self.at) {
                 Some(framed) if behind || framed.unpacked_at > self.unpacked_to => {
@@ -133,7 +140,9 @@ impl Unpacking {
                 None => {}
             }
         }
+
         let behind = self.at - self.unpacked_to;
+
         self.unpacked_to += io::copy(&mut (&mut self.unpacked).take(behind), &mut io::sink())?;
         self.at = self.unpacked_to;
         Ok(())
@@ -146,6 +155,7 @@ impl Unpacking {
                 .flatten()
                 .map_or(Index::Unheld, Index::Held);
         }
+
         let Index::Held(framed) = &self.index else {
             return None;
         };
@@ -167,6 +177,7 @@ impl Walking {
     fn to(&mut self, at: u64) -> io::Result<()> {
         let by = i64::try_from(at).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?
             - i64::try_from(self.at).map_err(|_| io::Error::from(io::ErrorKind::InvalidData))?;
+
         self.file.seek_relative(by)?;
         self.at = at;
         Ok(())
@@ -174,6 +185,7 @@ impl Walking {
 
     fn read<const N: usize>(&mut self) -> io::Result<[u8; N]> {
         let mut bytes = [0_u8; N];
+
         self.file.read_exact(&mut bytes)?;
         self.at += N as u64;
         Ok(bytes)
@@ -181,8 +193,10 @@ impl Walking {
 
     fn little_endian(&mut self, bytes: u64) -> io::Result<u64> {
         let mut value = 0_u64;
+
         for shift in 0..bytes {
             let [byte] = self.read::<1>()?;
+
             value |= u64::from(byte) << (8 * shift);
         }
         Ok(value)
@@ -205,8 +219,10 @@ fn frames_in(file: &Arc<File>) -> io::Result<Option<Vec<Framed>>> {
     while walking.at < length {
         let packed_at = walking.at;
         let magic = u32::from_le_bytes(walking.read::<4>()?);
+
         if magic & !SKIPPABLE_KINDS == SKIPPABLE_MAGIC {
             let size = walking.little_endian(SKIPPABLE_SIZE_BYTES)?;
+
             walking.to(packed_at + MAGIC_BYTES + SKIPPABLE_SIZE_BYTES + size)?;
             continue;
         }
@@ -217,6 +233,7 @@ fn frames_in(file: &Arc<File>) -> io::Result<Option<Vec<Framed>>> {
         let [descriptor] = walking.read::<1>()?;
         let single_segment = descriptor & SINGLE_SEGMENT != 0;
         let dictionary_bytes = DICTIONARY_ID_BYTES[usize::from(descriptor & DICTIONARY_FLAG)];
+
         let content_bytes = match (descriptor >> CONTENT_FLAG_AT, single_segment) {
             (0, false) => return Ok(None),
             (0, true) => 1,
@@ -225,21 +242,27 @@ fn frames_in(file: &Arc<File>) -> io::Result<Option<Vec<Framed>>> {
             _ => 8,
         };
         let window_bytes = if single_segment { 0 } else { WINDOW_BYTES };
+
         walking.to(packed_at + MAGIC_BYTES + DESCRIPTOR_BYTES + window_bytes + dictionary_bytes)?;
+
         let mut content = walking.little_endian(content_bytes)?;
+
         if content_bytes == 2 {
             content += TWO_BYTE_CONTENT_OFFSET;
         }
 
         loop {
             let [low, middle, high] = walking.read::<BLOCK_HEADER_BYTES>()?;
+
             let header = u32::from_le_bytes([low, middle, high, 0]);
             let kind = (header >> 1) & 0b11;
+
             let carried = match kind {
                 RESERVED_BLOCK => return Ok(None),
                 RLE_BLOCK => 1,
                 _ => u64::from(header >> 3),
             };
+
             walking.to(walking.at + carried)?;
             if header & LAST_BLOCK != 0 {
                 break;
@@ -253,9 +276,11 @@ fn frames_in(file: &Arc<File>) -> io::Result<Option<Vec<Framed>>> {
             packed_at,
             unpacked_at,
         });
+
         let Some(next) = unpacked_at.checked_add(content) else {
             return Ok(None);
         };
+
         unpacked_at = next;
     }
     Ok(Some(framed))
@@ -267,7 +292,9 @@ impl Read for Unpacking {
             return Ok(0);
         }
         self.catch_up()?;
+
         let read = self.unpacked.read(into)?;
+
         self.unpacked_to += read as u64;
         self.at = self.unpacked_to;
         Ok(read)
@@ -282,6 +309,7 @@ impl Seek for Unpacking {
             SeekFrom::Current(by) => self.at.checked_add_signed(by),
         }
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+
         self.at = target;
         Ok(target)
     }
@@ -296,11 +324,14 @@ mod tests {
     #[test]
     fn a_packed_wave_reads_and_seeks_both_ways_like_the_bytes_it_holds() {
         let folder = env::temp_dir().join(format!("resonate-unpacking-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let path = folder.join("held.wav.zst");
 
         let body: Vec<u8> = (0..300_000_u32).map(|at| (at % 251) as u8).collect();
         let mut whole = RIFF.to_vec();
+
         whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
         whole.extend_from_slice(&body);
         fs::write(
@@ -310,6 +341,7 @@ mod tests {
         .expect("written");
 
         let mut reading = Unpacking::open(&path).expect("an unpacking");
+
         assert_eq!(
             reading.seek(SeekFrom::End(0)).expect("the end"),
             whole.len() as u64
@@ -317,21 +349,28 @@ mod tests {
 
         for at in [200_000_u64, 10, 150_000, 0] {
             reading.seek(SeekFrom::Start(at)).expect("a seek");
+
             let mut read = [0_u8; 64];
+
             reading.read_exact(&mut read).expect("a read");
+
             assert_eq!(&read[..], &whole[at as usize..at as usize + 64]);
         }
+
         let _ = fs::remove_dir_all(&folder);
     }
 
     #[test]
     fn measuring_a_packed_wave_unpacks_none_of_it() {
         let folder = env::temp_dir().join(format!("resonate-measuring-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let path = folder.join("held.wav.zst");
 
         let body = vec![7_u8; 1 << 20];
         let mut whole = RIFF.to_vec();
+
         whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
         whole.extend_from_slice(&body);
         fs::write(
@@ -341,6 +380,7 @@ mod tests {
         .expect("written");
 
         let mut reading = Unpacking::open(&path).expect("an unpacking");
+
         assert_eq!(
             reading.seek(SeekFrom::End(0)).expect("the end"),
             whole.len() as u64
@@ -353,8 +393,11 @@ mod tests {
         );
 
         let mut head = [0_u8; 4];
+
         reading.read_exact(&mut head).expect("a read");
+
         assert_eq!(&head, RIFF);
+
         let _ = fs::remove_dir_all(&folder);
     }
 
@@ -363,12 +406,15 @@ mod tests {
         const FRAME_BYTES: u64 = 64 << 10;
 
         let folder = env::temp_dir().join(format!("resonate-unpacking-framed-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let from = folder.join("held.wav");
         let path = folder.join("held.wav.zst");
 
         let body: Vec<u8> = (0..300_000_u32).map(|at| (at % 251) as u8).collect();
         let mut whole = RIFF.to_vec();
+
         whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
         whole.extend_from_slice(&body);
         fs::write(&from, &whole).expect("written");
@@ -380,12 +426,18 @@ mod tests {
             .expect("frames it can name");
         let starts: Vec<u64> = framed.iter().map(|framed| framed.unpacked_at).collect();
         let mut reading = Unpacking::open(&path).expect("an unpacking");
+
         reading.seek(SeekFrom::Start(290_000)).expect("a seek");
+
         let mut late = [0_u8; 64];
+
         reading.read_exact(&mut late).expect("a read");
         reading.seek(SeekFrom::Start(200_000)).expect("a seek back");
+
         let mut earlier = [0_u8; 64];
+
         reading.read_exact(&mut earlier).expect("a read");
+
         let held = reading.frame_holding(200_000);
         let _ = fs::remove_dir_all(&folder);
 
@@ -406,31 +458,41 @@ mod tests {
         const FRAME_BYTES: u64 = 64 << 10;
 
         let folder = env::temp_dir().join(format!("resonate-unpacking-renewed-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let path = folder.join("held.wav.zst");
         let packed = |name: &str, step: u32| {
             let from = folder.join(name);
             let body: Vec<u8> = (0..300_000_u32).map(|at| (at * step % 251) as u8).collect();
             let mut whole = RIFF.to_vec();
+
             whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
             whole.extend_from_slice(&body);
             fs::write(&from, &whole).expect("written");
+
             let into = folder.join(format!("{name}.zst"));
+
             crate::wave::compressed_in_frames(&from, &into, None, FRAME_BYTES, crate::Halt::NEVER)
                 .expect("packed");
             (whole, into)
         };
         let (opened, first) = packed("first.wav", 1);
         let (_, renewal) = packed("renewal.wav", 7);
+
         fs::rename(&first, &path).expect("landed");
 
         let mut reading = Unpacking::open(&path).expect("an unpacking");
+
         reading.seek(SeekFrom::Start(290_000)).expect("a seek");
         reading.read_exact(&mut [0_u8; 64]).expect("a read");
         fs::rename(&renewal, &path).expect("the renewal landed over it");
         reading.seek(SeekFrom::Start(70_000)).expect("a seek back");
+
         let mut earlier = [0_u8; 64];
+
         reading.read_exact(&mut earlier).expect("a read");
+
         let _ = fs::remove_dir_all(&folder);
 
         assert_eq!(&earlier[..], &opened[70_000..70_064]);
@@ -439,13 +501,18 @@ mod tests {
     #[test]
     fn a_wave_packed_as_one_frame_naming_no_length_is_read_back_from_its_start() {
         let folder = env::temp_dir().join(format!("resonate-unpacking-whole-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let path = folder.join("held.wav.zst");
 
         let mut whole = RIFF.to_vec();
+
         whole.extend_from_slice(&(1_u32 << 16).to_le_bytes());
         whole.extend_from_slice(&[9_u8; 1 << 16]);
+
         let mut packing = zstd::Encoder::new(Vec::new(), 3).expect("an encoder");
+
         packing.include_contentsize(false).expect("no length named");
         packing.write_all(&whole).expect("packed");
         fs::write(&path, packing.finish().expect("a frame")).expect("written");
@@ -459,10 +526,13 @@ mod tests {
     #[test]
     fn frames_naming_more_content_between_them_than_a_count_holds_are_not_indexed() {
         let folder = env::temp_dir().join(format!("resonate-unpacking-overflow-{}", process::id()));
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let path = folder.join("held.wav.zst");
 
         let mut frame = FRAME_MAGIC.to_le_bytes().to_vec();
+
         frame.extend_from_slice(&[0xC0, 0]);
         frame.extend_from_slice(&(1_u64 << 63).to_le_bytes());
         frame.extend_from_slice(&[LAST_BLOCK as u8, 0, 0]);

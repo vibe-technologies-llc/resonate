@@ -57,12 +57,14 @@ mod real {
     impl Counting for Windows {
         fn frequency(&self) -> Raw<i64> {
             let mut per_second = 0_i64;
+
             unsafe { QueryPerformanceFrequency(&raw mut per_second) }.map_err(hresult)?;
             Ok(per_second)
         }
 
         fn ticks(&self) -> Raw<i64> {
             let mut ticks = 0_i64;
+
             unsafe { QueryPerformanceCounter(&raw mut ticks) }.map_err(hresult)?;
             Ok(ticks)
         }

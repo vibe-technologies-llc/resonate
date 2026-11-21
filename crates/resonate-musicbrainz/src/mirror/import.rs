@@ -134,6 +134,7 @@ impl Building {
             .iter()
             .position(|held| *held == phase)
             .unwrap_or(0);
+
         self.phase
             .store(u8::try_from(at).unwrap_or(0), Ordering::Relaxed);
         self.read.store(0, Ordering::Relaxed);
@@ -182,6 +183,7 @@ impl Building {
 
 pub fn held_for_building(folder: &Path) -> Result<Held> {
     fs::create_dir_all(folder).map_err(Error::archive(folder, ArchiveOp::Stage))?;
+
     let lock = folder.join(BUILDING_LOCK);
     Held::taken_over(&lock).map_err(|source| {
         if source.kind() == io::ErrorKind::WouldBlock {
@@ -215,6 +217,7 @@ pub fn built_from(
     let placed_path = folder.join(PLACED_FILE);
     let building_path = folder.join(BUILDING_FILE);
     let tables_path = folder.join(TABLES_BUILDING_FILE);
+
     for leftover in [&staging_path, &placed_path, &building_path, &tables_path] {
         removed(leftover)?;
     }
@@ -222,7 +225,9 @@ pub fn built_from(
     let outcome = (|| {
         let staging = staged(&staging_path)?;
         let mut tally = Tally::new();
+
         building.enter(Phase::Importing);
+
         let sequenced = imported(
             &archives.core,
             Archive::Core,
@@ -230,6 +235,7 @@ pub fn built_from(
             building,
             &mut tally,
         )?;
+
         imported(
             &archives.derived,
             Archive::Derived,
@@ -250,7 +256,9 @@ pub fn built_from(
         staging
             .execute_batch("PRAGMA locking_mode = NORMAL;")
             .map_err(Error::store(Store::Staging, StoreOp::Configure))?;
+
         let looked_up = Shared::read(&staging, building)?;
+
         written(
             &staging_path,
             &looked_up,
@@ -264,6 +272,7 @@ pub fn built_from(
             let Some(sequenced) = sequenced else {
                 return Err(Error::Unsequenced);
             };
+
             building.enter(Phase::Settling);
             kept_beside_the_build(&staging, &archives.dump, sequenced)?;
             drop(staging);
@@ -295,6 +304,7 @@ pub fn built_from(
 pub fn settled(built: &Built, folder: &Path) -> Result<PathBuf> {
     let settled = folder.join(MIRROR_FILE);
     let tables = folder.join(TABLES_FILE);
+
     removed(&folder.join(AMENDED_FILE))?;
     match &built.tables {
         Some(kept) => {
@@ -317,6 +327,7 @@ pub fn removed_beside_the_mirror(folder: &Path) -> Result<()> {
 pub(crate) fn removed(path: &Path) -> Result<()> {
     for suffix in ["", "-journal", "-wal", "-shm"] {
         let mut named = path.as_os_str().to_owned();
+
         named.push(suffix);
         match fs::remove_file(PathBuf::from(named)) {
             Ok(()) => {}
@@ -329,6 +340,7 @@ pub(crate) fn removed(path: &Path) -> Result<()> {
 
 fn scratch(path: &Path, store: Store) -> Result<Connection> {
     let connection = Connection::open(path).map_err(Error::store(store, StoreOp::Open))?;
+
     connection
         .execute_batch(&format!(
             "PRAGMA journal_mode = OFF; PRAGMA synchronous = OFF; \
@@ -341,6 +353,7 @@ fn scratch(path: &Path, store: Store) -> Result<Connection> {
 
 fn staged(path: &Path) -> Result<Connection> {
     let staging = scratch(path, Store::Staging)?;
+
     for table in TABLES {
         staging
             .execute_batch(&format!("CREATE TABLE {} ({});", table.name, table.laid))
@@ -358,6 +371,7 @@ struct Counted<R> {
 impl<R: Read> Read for Counted<R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.inner.read(into)?;
+
         self.read += read as u64;
         self.building.store(self.read, Ordering::Relaxed);
         Ok(read)
@@ -366,6 +380,7 @@ impl<R: Read> Read for Counted<R> {
 
 fn sequence_in(entry: impl Read, path: &Path) -> Result<Option<u64>> {
     let mut text = String::new();
+
     entry
         .take(LONGEST_SEQUENCE_FILE)
         .read_to_string(&mut text)
@@ -382,8 +397,10 @@ fn imported(
 ) -> Result<Option<Sequenced>> {
     let file = File::open(path).map_err(Error::archive(path, ArchiveOp::Open))?;
     let total = file.metadata().map(|meta| meta.len()).unwrap_or(0);
+
     building.of(total);
     building.reached(0);
+
     let progress = Arc::new(AtomicU64::new(0));
     let counted = Counted {
         inner: BufReader::with_capacity(READ_AT_ONCE, file),
@@ -392,12 +409,14 @@ fn imported(
     };
     let decoded = bzipped::decoded_across(counted, all_cores_but(THREADS_THE_READ_KEEPS));
     let mut archive = tar::Archive::new(decoded);
+
     let entries = archive
         .entries()
         .map_err(Error::archive(path, ArchiveOp::Entry))?;
     let mut seen = BTreeSet::new();
     let mut replication = None;
     let mut schema = None;
+
     for entry in entries {
         let entry = entry.map_err(Error::archive(path, ArchiveOp::Entry))?;
         let name = entry
@@ -405,6 +424,7 @@ fn imported(
             .map_err(Error::archive(path, ArchiveOp::Entry))?
             .to_string_lossy()
             .into_owned();
+
         if name == REPLICATION_SEQUENCE {
             replication = sequence_in(entry, path)?;
             continue;
@@ -413,10 +433,13 @@ fn imported(
             schema = sequence_in(entry, path)?.and_then(|schema| u32::try_from(schema).ok());
             continue;
         }
+
         let Some(table) = table_named(&name).filter(|table| table.from == from) else {
             continue;
         };
+
         tracing::info!(table = table.name, "reading a table of the dump");
+
         let counted = loaded(
             table,
             BufReader::with_capacity(READ_AT_ONCE, entry),
@@ -425,6 +448,7 @@ fn imported(
             building,
             &progress,
         )?;
+
         tally.insert(table.name, counted);
         seen.insert(table.name);
     }
@@ -452,6 +476,7 @@ fn loaded(
     let wanted = table.columns.iter().max().map_or(0, |last| last + 1);
     let placeholders = vec!["?"; table.columns.len()].join(", ");
     let mut counted = 0_u64;
+
     staging
         .execute_batch("BEGIN")
         .map_err(Error::store(Store::Staging, StoreOp::Write))?;
@@ -464,11 +489,14 @@ fn loaded(
             .map_err(Error::store(Store::Staging, StoreOp::Write))?;
         let mut line = Vec::new();
         let mut values: Vec<Option<String>> = Vec::with_capacity(table.columns.len());
+
         loop {
             line.clear();
+
             let read = rows
                 .read_until(b'\n', &mut line)
                 .map_err(Error::archive(path, ArchiveOp::Read))?;
+
             if read == 0 {
                 break;
             }
@@ -476,7 +504,9 @@ fn loaded(
                 return Err(Error::CutRow { table: table.name });
             }
             line.pop();
+
             let mut split = Vec::with_capacity(wanted);
+
             fields(&line, &mut split);
             if split.len() < wanted {
                 return Err(Error::Columns {
@@ -511,8 +541,11 @@ fn loaded(
 
 fn indexed(staging: &Connection, building: &Building) -> Result<()> {
     let indexes: usize = TABLES.iter().map(|table| table.indexed.len()).sum();
+
     building.of(indexes as u64 + 1);
+
     let mut made = 0_u64;
+
     for table in TABLES {
         for (at, columns) in table.indexed.iter().enumerate() {
             building.looked_at()?;
@@ -569,6 +602,7 @@ type TrackRow = (
 fn placed_with_their_recordings(staging: &Connection, building: &Building) -> Result<()> {
     let failed = store_read(Store::Staging);
     let write = || Error::store(Store::Staging, StoreOp::Write);
+
     staging.execute_batch(TRACKS_PLACED).map_err(write())?;
     staging.execute_batch("BEGIN").map_err(write())?;
     {
@@ -608,6 +642,7 @@ fn placed_with_their_recordings(staging: &Connection, building: &Building) -> Re
                 row.get(7).map_err(&failed)?,
             );
             let wanted = track.0;
+
             while recording.as_ref().is_none_or(|(id, ..)| *id < wanted) {
                 match recordings.next().map_err(&failed)? {
                     Some(row) => {
@@ -633,9 +668,11 @@ fn placed_with_their_recordings(staging: &Connection, building: &Building) -> Re
                             None => Some((i64::MAX, None)),
                         };
                     }
+
                     let Some((at, isrc)) = &code else {
                         break;
                     };
+
                     if *at > wanted {
                         break;
                     }
@@ -650,10 +687,12 @@ fn placed_with_their_recordings(staging: &Connection, building: &Building) -> Re
                     code = None;
                 }
             }
+
             let (gid, length) = match &recording {
                 Some((id, gid, length)) if *id == wanted => (gid.clone(), *length),
                 _ => (None, None),
             };
+
             insert
                 .execute(params![
                     track.1,
@@ -736,10 +775,14 @@ impl<'a> Packer<'a> {
         if self.block_len == 0 {
             self.first = self.ordinal;
         }
+
         let mut entry = Writer::new();
+
         entry.signed(self.ordinal);
         entry.bytes(&document);
+
         let entry = entry.finish();
+
         self.block_len += entry.len();
         self.block.raw(&entry);
         if let Some(samples) = &mut self.samples {
@@ -757,6 +800,7 @@ impl<'a> Packer<'a> {
 
     fn cut(&mut self) -> Result<()> {
         let block = std::mem::take(&mut self.block).finish();
+
         self.block_len = 0;
         if self.samples.is_some() {
             self.waiting.push((self.first, block));
@@ -781,6 +825,7 @@ impl<'a> Packer<'a> {
 
     fn trained(&mut self) -> Result<()> {
         let samples = self.samples.take().unwrap_or_default();
+
         self.dictionary = match zstd::dict::from_samples(&samples, DICTIONARY_BYTES) {
             Ok(dictionary) => {
                 self.mirror
@@ -842,18 +887,22 @@ fn written(
     building: &Building,
 ) -> Result<()> {
     let mirror = scratch(building_path, Store::Mirror)?;
+
     mirror
         .execute_batch(SCHEMA)
         .map_err(Error::store(Store::Mirror, StoreOp::LayOut))?;
     for kind in Entity::ALL {
         let table = words_of(kind);
+
         mirror
             .execute_batch(&format!(
                 "INSERT INTO {table}({table}, rank) VALUES ('hashsize', {WORDS_HELD_BEFORE_A_FLUSH});"
             ))
             .map_err(Error::store(Store::Mirror, StoreOp::LayOut))?;
     }
+
     let placed = scratch(placed_path, Store::Staging)?;
+
     placed
         .execute_batch(
             "CREATE TABLE placed (mbid BLOB NOT NULL, kind INTEGER NOT NULL, ordinal INTEGER NOT NULL);
@@ -879,10 +928,12 @@ fn written(
     let (jobs, taken) = mpsc::sync_channel::<Job>(workers * 2);
     let (done, packed) = mpsc::channel::<io::Result<Packed>>();
     let taken = Arc::new(parking_lot::Mutex::new(taken));
+
     let outcome = thread::scope(|scope| {
         for _ in 0..workers {
             let taken = Arc::clone(&taken);
             let done = done.clone();
+
             scope.spawn(move || {
                 loop {
                     let job = taken.lock().recv();
@@ -902,6 +953,7 @@ fn written(
             });
         }
         drop(done);
+
         let writing = Writing {
             staging,
             looked_up,
@@ -912,13 +964,17 @@ fn written(
         let wrote = (|| {
             for kind in Entity::ALL {
                 let mut packer = Packer::new(kind, &jobs, &mirror);
+
                 writing.every(&mut packer, &packed)?;
                 packer.finish()?;
             }
             Ok::<_, Error>(())
         })();
+
         drop(jobs);
+
         let mut kept = wrote;
+
         for block in packed.iter() {
             if kept.is_ok() {
                 kept = block_kept(&mirror, block);
@@ -926,21 +982,27 @@ fn written(
         }
         kept
     });
+
     outcome?;
 
     building.enter(Phase::Settling);
     building.of(SETTLING_STEPS);
+
     let mut settled = 0_u64;
+
     let mut stepped = || {
         settled += 1;
         building.reached(settled);
         building.looked_at()
     };
+
     placed
         .execute_batch("COMMIT")
         .map_err(Error::store(Store::Staging, StoreOp::Write))?;
     drop(placed);
+
     let placed_text = placed_path.to_string_lossy().into_owned();
+
     mirror
         .execute("ATTACH DATABASE ?1 AS placed", [placed_text])
         .map_err(Error::store(Store::Mirror, StoreOp::Write))?;
@@ -960,6 +1022,7 @@ fn written(
     stepped()?;
     for kind in Entity::ALL {
         let table = words_of(kind);
+
         mirror
             .execute_batch(&format!(
                 "INSERT INTO {table} (rowid, words) \
@@ -971,6 +1034,7 @@ fn written(
     }
     for kind in Entity::ALL {
         let table = words_of(kind);
+
         mirror
             .execute_batch(&format!(
                 "INSERT INTO {table}({table}) VALUES ('optimize');"
@@ -1017,6 +1081,7 @@ fn block_kept(mirror: &Connection, block: io::Result<Packed>) -> Result<()> {
         op: PackOp::Pack,
         source,
     })?;
+
     mirror
         .prepare_cached(
             "INSERT INTO blocks (kind, first, unpacked, packed) VALUES (?1, ?2, ?3, ?4)",
@@ -1050,17 +1115,21 @@ impl Writing<'_> {
         let kind = packer.kind;
         let ordinal = packer.add(built.bytes)?;
         let write = || Error::store(Store::Staging, StoreOp::Write);
+
         self.placed
             .prepare_cached("INSERT INTO placed (mbid, kind, ordinal) VALUES (?1, ?2, ?3)")
             .and_then(|mut statement| {
                 statement.execute(params![built.gid.to_vec(), kind.code(), ordinal])
             })
             .map_err(write())?;
+
         let placed_by_weight = placed_by_weight(kind, ordinal, built.weight)?;
+
         self.placed
             .prepare_cached(words_placed(kind))
             .and_then(|mut statement| statement.execute(params![placed_by_weight, built.words]))
             .map_err(write())?;
+
         let coded = match kind {
             Entity::Release => {
                 Some("INSERT INTO placed_barcodes (barcode, ordinal) VALUES (?1, ?2)")
@@ -1068,6 +1137,7 @@ impl Writing<'_> {
             Entity::Recording => Some("INSERT INTO placed_isrcs (isrc, ordinal) VALUES (?1, ?2)"),
             Entity::Group | Entity::Artist => None,
         };
+
         if let Some(coded) = coded {
             for code in &built.codes {
                 self.placed
@@ -1076,7 +1146,9 @@ impl Writing<'_> {
                     .map_err(write())?;
             }
         }
+
         let documents = self.building.documents.fetch_add(1, Ordering::Relaxed) + 1;
+
         if documents.is_multiple_of(ROWS_BETWEEN_LOOKS) {
             self.building.reached(documents);
             self.drained(packed)?;
@@ -1098,9 +1170,11 @@ impl Writing<'_> {
         let Some(first) = readers.first() else {
             return Ok(());
         };
+
         let Some((lowest, highest)) = id_span(first, kind)? else {
             return Ok(());
         };
+
         let count = usize::try_from((highest - lowest) / IDS_A_CHUNK + 1).unwrap_or(0);
         let chunk = |at: usize| {
             let from = i64::try_from(at)
@@ -1118,26 +1192,33 @@ impl Writing<'_> {
         let (told, heard) = mpsc::channel::<(usize, Result<Vec<Document>>)>();
         thread::scope(|scope| {
             let ask = ask;
+
             for reader in readers {
                 let told = told.clone();
                 let shared = self.looked_up.clone();
                 let asked = &asked;
+
                 scope.spawn(move || built_by_a_builder(&reader, kind, &shared, asked, &told));
             }
             drop(told);
+
             let ahead = builders * CHUNKS_AHEAD_A_BUILDER;
             let mut sent = 0;
             let mut waiting = BTreeMap::new();
+
             for next in 0..count {
                 while sent < count && sent < next + ahead {
                     ask.send(chunk(sent)).map_err(|_| Error::BuildersStopped)?;
                     sent += 1;
                 }
+
                 let built = loop {
                     if let Some(built) = waiting.remove(&next) {
                         break built;
                     }
+
                     let (at, built) = heard.recv().map_err(|_| Error::BuildersStopped)?;
+
                     waiting.insert(at, built);
                 };
                 for document in built? {
@@ -1161,6 +1242,7 @@ fn reader_of(staging: &Path) -> Result<Connection> {
         OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
     )
     .map_err(Error::store(Store::Staging, StoreOp::Open))?;
+
     reader
         .execute_batch(&format!(
             "PRAGMA cache_size = -{BUILDER_CACHE_KIB}; PRAGMA temp_store = MEMORY;"
@@ -1192,6 +1274,7 @@ fn built_between(
         .query(params![chunk.from, chunk.to])
         .map_err(&failed)?;
     let mut built = Vec::new();
+
     while let Some(row) = rows.next().map_err(&failed)? {
         if let Some(document) = builders.built(kind, looked_up, row)? {
             built.push(document);
@@ -1252,6 +1335,7 @@ mod tests {
 
     fn laid_out() -> Connection {
         let staging = Connection::open_in_memory().expect("a staging store");
+
         staging
             .execute_batch(&format!("CREATE TABLE area ({});", area().laid))
             .expect("the area table laid out");

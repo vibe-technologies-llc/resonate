@@ -77,14 +77,17 @@ impl Doorway {
 
         let mut listener =
             TcpListener::bind(SocketAddr::new(serving_on, 0)).map_err(failed(ServeOp::Bind))?;
+
         let port = listener
             .local_addr()
             .map_err(failed(ServeOp::Listen))?
             .port();
         let poll = Poll::new().map_err(failed(ServeOp::Listen))?;
+
         poll.registry()
             .register(&mut listener, LISTENER, Interest::READABLE)
             .map_err(failed(ServeOp::Listen))?;
+
         let waker = Waker::new(poll.registry(), WAKER).map_err(failed(ServeOp::Listen))?;
         Ok((Self { poll, listener }, Opened { port, waker }))
     }
@@ -116,7 +119,9 @@ impl Answering {
     fn begin(slots: &Arc<Mutex<Slots>>, peer: IpAddr, limits: &Limits) -> Option<Self> {
         let peer = peer.to_canonical();
         let mut held = slots.lock();
+
         let peer_holds = held.by_peer.get(&peer).copied().unwrap_or(0);
+
         if held.taken >= limits.answers_at_most || peer_holds >= limits.answers_a_peer_holds_at_most
         {
             return None;
@@ -133,6 +138,7 @@ impl Answering {
 impl Drop for Answering {
     fn drop(&mut self) {
         let mut held = self.slots.lock();
+
         held.taken = held.taken.saturating_sub(1);
         if let Entry::Occupied(mut holding) = held.by_peer.entry(self.peer) {
             *holding.get_mut() = holding.get().saturating_sub(1);
@@ -229,6 +235,7 @@ impl Heads {
         peer: IpAddr,
     ) -> Option<Source> {
         let source = Source(self.next);
+
         if let Err(error) = registry.register(&mut stream, source, Interest::READABLE) {
             tracing::debug!(%error, "a connection could not be read");
             return None;
@@ -328,6 +335,7 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
         .into_iter()
         .flatten()
         .min();
+
         match poll.poll(&mut events, timeout) {
             Ok(()) => {}
             Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
@@ -336,13 +344,16 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
                 return;
             }
         }
+
         let Some(door) = held.upgrade() else {
             return;
         };
+
         door.polled();
 
         let mut ready: Vec<Source> = Vec::new();
         let mut accepting = retry_at.is_some_and(|at| Instant::now() >= at);
+
         for event in &events {
             match event.token() {
                 LISTENER => accepting = true,
@@ -358,6 +369,7 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
                 door.as_ref(),
                 limits.heads_at_most,
             );
+
             retry_at = admission
                 .starved
                 .then(|| Instant::now() + ACCEPT_RETRIED_AFTER);
@@ -381,6 +393,7 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
                 }
                 Next::Taken(task) => {
                     let peer = asking.peer;
+
                     handed(asking, &poll, |stream, held| {
                         match Answering::begin(&answering, peer, &limits) {
                             Some(slot) => begin_answer::<D>(stream, task, held, slot),
@@ -472,6 +485,7 @@ mod tests {
         for kind in starved {
             assert_eq!(accepted_after(&io::Error::from(kind)), Accepted::Starved);
         }
+
         assert_eq!(
             accepted_after(&io::Error::other("no file descriptors left")),
             Accepted::Starved
@@ -507,7 +521,9 @@ mod tests {
         assert!(past_its_share.is_none());
         assert!(mapped.is_none(), "a mapped address escaped its share");
         assert!(another.is_some());
+
         drop(first);
+
         assert!(Answering::begin(&slots, peer(1), &SHARED).is_some());
     }
 
@@ -521,7 +537,9 @@ mod tests {
 
         assert!(held.iter().all(Option::is_some));
         assert!(Answering::begin(&slots, peer(5), &SHARED).is_none());
+
         drop(held);
+
         assert!(slots.lock().by_peer.is_empty());
         assert_eq!(slots.lock().taken, 0);
     }

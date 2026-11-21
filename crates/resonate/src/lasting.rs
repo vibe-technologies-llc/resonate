@@ -40,14 +40,17 @@ fn digits(written: &str) -> Option<u64> {
 
 fn on_a_clock(written: &str) -> Option<u64> {
     let fields: Vec<&str> = written.split(':').collect();
+
     if fields.len() > MOST_CLOCK_FIELDS {
         return None;
     }
 
     let (leading, within) = fields.split_first()?;
     let mut seconds = digits(leading)?;
+
     for field in within {
         let field = digits(field)?;
+
         if field >= SECONDS_A_MINUTE {
             return None;
         }
@@ -67,9 +70,11 @@ fn in_units(written: &str) -> Option<u64> {
         let unit_ends = after
             .find(|letter: char| letter.is_ascii_digit())
             .unwrap_or(after.len());
+
         let (unit, after) = after.split_at(unit_ends);
 
         let each = unit_seconds(unit)?;
+
         if each >= coarsest_left {
             return None;
         }

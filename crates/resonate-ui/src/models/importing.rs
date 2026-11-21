@@ -76,6 +76,7 @@ impl LibraryModel {
             cx.notify();
             return;
         }
+
         let read_at = self.library.plans_stamp();
         let handle = match self.library.import(
             Arc::new(Sources::local()),

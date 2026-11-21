@@ -33,6 +33,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
         let Some((key, value)) = line.split_once('=') else {
             continue;
         };
+
         let (key, value) = (key.trim(), value.trim());
 
         if key.eq_ignore_ascii_case(NAME_KEY) {
@@ -45,6 +46,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
             sheet.promised = value.parse().ok();
             continue;
         }
+
         let Some(at) = numbering(key, FILE_KEY) else {
             continue;
         };
@@ -68,6 +70,7 @@ pub fn write(name: &str, rows: &[SheetRow<'_>], beside: &Path) -> Result<String>
 
     for row in rows {
         let described = &row.described;
+
         written += 1;
 
         text.push_str(&format!(

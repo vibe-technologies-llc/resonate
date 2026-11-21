@@ -29,7 +29,7 @@ pub const HEARD_AT_LEAST: u8 = 80;
 const STUDY_WORKERS_AT_MOST: usize = 1;
 const CORES_A_HURRIED_WORKER: usize = 4;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Agreement {
     Agrees,
     Disagrees,
@@ -274,6 +274,7 @@ pub(crate) fn write_study(
     now: SystemTime,
 ) -> Result<()> {
     let judgement = &study.judgement;
+
     tx.execute(
         "INSERT OR REPLACE INTO track_studies (
              track_id, studied, studied_under, verdict, cutoff_hz, cutoff_drop, lossy_guess,
@@ -343,6 +344,7 @@ pub(crate) fn loudest_kept(connection: &Connection, gains: &BandGains) -> Result
     let mut statement = connection
         .prepare_cached("SELECT band_peaks FROM track_studies WHERE length(band_peaks) IN (?1, ?2)")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(
             params![
@@ -354,11 +356,13 @@ pub(crate) fn loudest_kept(connection: &Connection, gains: &BandGains) -> Result
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut loudest = Loudest::default();
+
     for row in rows {
         let kept = row.map_err(|source| Error::store(StoreOp::Query, source))?;
         let Some(peaks) = BandPeaks::from_kept(&kept) else {
             continue;
         };
+
         loudest.weigh(gains, &peaks);
     }
     Ok(loudest)
@@ -375,6 +379,7 @@ pub(crate) fn unmeasured(connection: &Connection, cuts: &[Cut]) -> Result<Vec<Cu
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let mut owed = Vec::new();
+
     for cut in cuts {
         let held = match cut.location.as_path() {
             Some(path) => statement
@@ -502,6 +507,7 @@ pub(crate) fn album_loudness(connection: &Connection, track: TrackId) -> Result<
                 AND t.alternative_of IS NULL",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(params![track.get() as i64], |row| {
             Ok((
@@ -516,20 +522,25 @@ pub(crate) fn album_loudness(connection: &Connection, track: TrackId) -> Result<
 
     let mut energy = 0.0;
     let mut seconds = 0.0;
+
     for (frames, rate, studied, loudness) in rows {
         if !studied {
             return Ok(None);
         }
+
         let Some(loudness) = loudness else {
             continue;
         };
         let Some(frames) = frames.filter(|frames| *frames > 0) else {
             return Ok(None);
         };
+
         if rate <= 0 {
             return Ok(None);
         }
+
         let lasting = frames as f64 / rate as f64;
+
         energy += lasting * 10_f64.powf(loudness / 10.0);
         seconds += lasting;
     }
@@ -561,6 +572,7 @@ pub(crate) fn track_held(
 
 pub(crate) fn studied(connection: &Connection, filter: StudyFilter) -> Result<Vec<StudiedTrack>> {
     let mut narrowed = Vec::new();
+
     if filter.fakes {
         narrowed.push(format!("s.verdict = '{}'", Verdict::Fake.as_str()));
     }
@@ -570,6 +582,7 @@ pub(crate) fn studied(connection: &Connection, filter: StudyFilter) -> Result<Ve
     if filter.misnamed {
         narrowed.push(format!("s.agreement = '{}'", Agreement::Disagrees.as_str()));
     }
+
     let narrowing = if narrowed.is_empty() {
         String::new()
     } else {
@@ -584,6 +597,7 @@ pub(crate) fn studied(connection: &Connection, filter: StudyFilter) -> Result<Ve
               ORDER BY t.artist COLLATE NOCASE, t.album_id, t.disc_number, t.track_number, t.id"
         ))
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], |row| {
             Ok((
@@ -636,6 +650,7 @@ pub(crate) fn to_study(connection: &Connection, again: bool) -> Result<Vec<ToStu
               ORDER BY t.id",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(
             params![
@@ -719,6 +734,7 @@ impl Drop for Claim<'_> {
 impl Claims {
     pub(crate) fn claim(&self, track: TrackId) -> Option<Claim<'_>> {
         let mut held = self.held.lock();
+
         if !held.ever.insert(track) {
             return None;
         }
@@ -830,6 +846,7 @@ fn study_one(
             return;
         }
     }
+
     let held = if asked.print_held {
         library.print_held(asked.id).unwrap_or_else(|error| {
             tracing::warn!(%error, track = %asked.id, "a kept print could not be read, so the track is studied again");
@@ -899,6 +916,7 @@ fn studied_now(
             return None;
         }
     };
+
     if let Err(error) = library.note_study(asked.id, &study) {
         tracing::warn!(%error, track = %asked.id, "a study was not kept");
         return None;
@@ -935,6 +953,7 @@ pub(crate) fn heard_and_noted(
         }
     };
     let recognition = fingerprinters.recognise(&sounded(&track, print));
+
     if recognition.refused && recognition.matches.is_empty() {
         return Some(Heard {
             matches: Vec::new(),
@@ -945,6 +964,7 @@ pub(crate) fn heard_and_noted(
 
     let agreement = enrich::agreement(&recognition.matches, &track);
     let heard = HeardAs::top_of(&recognition.matches);
+
     if let Err(error) = library.note_recognition(id, heard.as_ref(), agreement) {
         tracing::warn!(%error, track = %id, "a recognition was not kept");
     }
@@ -963,6 +983,7 @@ pub(crate) fn recognised_and_noted(
     print: Chromaprint,
 ) -> Option<Vec<RecordingMatch>> {
     let heard = heard_and_noted(library, fingerprinters, id, print)?;
+
     if heard.refused {
         progress.refuse_recognition();
         return None;
@@ -1007,6 +1028,7 @@ mod tests {
         for agreement in Agreement::ALL {
             assert_eq!(Agreement::named(agreement.as_str()), Some(agreement));
         }
+
         assert_eq!(Agreement::named("perhaps"), None);
     }
 

@@ -268,6 +268,7 @@ mod tests {
         let deadline = Instant::now() + WAITS_AT_MOST;
         while !ready() {
             assert!(Instant::now() < deadline, "{what}");
+
             thread::sleep(Duration::from_millis(5));
         }
     }
@@ -301,6 +302,7 @@ mod tests {
             || cancelled.load(Ordering::Relaxed) == 1,
             "the first signal never cancelled the pass",
         );
+
         assert!(
             left_with.lock().is_empty(),
             "the first signal left the process"
@@ -330,6 +332,7 @@ mod tests {
             |_| {},
         )
         .expect("a watch over the signal");
+
         drop(interrupting);
 
         assert_eq!(cancelled.load(Ordering::Relaxed), 0);
@@ -366,9 +369,11 @@ mod tests {
     fn the_first_signal_asks_to_quit_and_a_second_leaves_with_its_number() {
         let silenced = Arc::new(AtomicUsize::new(0));
         let left_with = Arc::new(Mutex::new(Vec::new()));
+
         let farewell = slow_farewell(&silenced, &left_with);
         let (asked_to_quit, quit_asked) = bounded(1);
         let watched = Signals::new([SIGWINCH]).expect("a watch over the signal");
+
         let relaying = thread::spawn(move || relay(watched, &asked_to_quit, &farewell));
 
         raise(SIGWINCH).expect("a signal raised");
@@ -376,6 +381,7 @@ mod tests {
             || quit_asked.try_recv().is_ok(),
             "the first signal never asked to quit",
         );
+
         assert!(
             left_with.lock().is_empty(),
             "the first signal left the process"
@@ -392,6 +398,7 @@ mod tests {
     fn a_front_end_that_never_answers_is_silenced_and_then_left() {
         let silenced = Arc::new(AtomicUsize::new(0));
         let left_with = Arc::new(Mutex::new(Vec::new()));
+
         let farewell = farewell_recording(
             &silenced,
             &left_with,
@@ -400,6 +407,7 @@ mod tests {
         );
         let (asked_to_quit, quit_asked) = bounded(1);
         let watched = Signals::new([SIGPROF]).expect("a watch over the signal");
+
         thread::spawn(move || relay(watched, &asked_to_quit, &farewell));
 
         raise(SIGPROF).expect("a signal raised");
@@ -407,6 +415,7 @@ mod tests {
             || silenced.load(Ordering::Relaxed) == 1,
             "the graph was never silenced",
         );
+
         assert!(
             left_with.lock().is_empty(),
             "the process left before its drain time was up"
@@ -426,9 +435,12 @@ mod tests {
     fn a_signal_with_no_front_end_listening_leaves_at_once() {
         let silenced = Arc::new(AtomicUsize::new(0));
         let left_with = Arc::new(Mutex::new(Vec::new()));
+
         let farewell = slow_farewell(&silenced, &left_with);
         let (asked_to_quit, quit_asked) = bounded(1);
+
         drop(quit_asked);
+
         let watched = Signals::new([SIGIO]).expect("a watch over the signal");
         let relaying = thread::spawn(move || relay(watched, &asked_to_quit, &farewell));
 
@@ -449,6 +461,7 @@ mod tests {
             leaving.lock().push(exit_code_after(signal));
         })
         .expect("a watch over the signal");
+
         raise(SIGALRM).expect("a signal raised");
         waited_for(
             || !left_with.lock().is_empty(),
@@ -469,6 +482,7 @@ mod tests {
             leaving.lock().push(exit_code_after(signal));
         })
         .expect("a watch over the signal");
+
         drop(interrupting);
 
         assert!(left_with.lock().is_empty());

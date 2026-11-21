@@ -120,6 +120,7 @@ impl RootView {
         let graphing = self.inspector.read(cx).graphing;
         let scroll = self.inspector.read(cx).scroll.clone();
         let state = model.state().clone();
+
         let heard = self.playing(&state, Some(&digest), cx).heard;
         let heading = self.inspected(&state, &digest, cx);
 
@@ -138,6 +139,7 @@ impl RootView {
             let series = self
                 .player
                 .update(cx, |model, _| model.condensed(GRAPH_COLUMNS));
+
             column = column.child(graph(&digest, &series));
         }
 
@@ -279,6 +281,7 @@ fn stage(label: &'static str, figure: String, colour: u32, lines: Vec<String>) -
                 .ends_in_an_ellipsis()
                 .child(SharedString::from(figure)),
         );
+
     for line in lines {
         column = column.child(
             div()
@@ -543,6 +546,7 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
         .iter()
         .map(|rate| rate.get())
         .fold(f64::INFINITY, f64::min);
+
     let span = (top - floor).max(f64::EPSILON);
     let rate = digest.info.spec.rate;
 
@@ -550,6 +554,7 @@ fn graph(digest: &StreamDigest, series: &[BitRate]) -> Div {
         .iter()
         .map(|point| (((point.get() - floor) / span) as f32).clamp(0.0, 1.0))
         .collect();
+
     if let [level] = shares.as_slice() {
         shares.push(*level);
     }
@@ -591,6 +596,7 @@ fn traced(shares: Vec<f32>) -> Canvas<()> {
         |_, _, _| (),
         move |bounds, (), window, _| {
             let plotted = plotted(&shares, bounds);
+
             plot::wash(
                 window,
                 &plotted,
@@ -639,6 +645,7 @@ fn container(layout: &BoxLayout) -> Div {
         summary(words::inspector::container_layout()),
         vec![(words::inspector::faststart(), Some(verdict))],
     );
+
     for entry in &layout.boxes {
         panel = panel.child(atom(*entry));
     }
@@ -785,6 +792,7 @@ fn margin() -> Div {
 pub(crate) fn beside(cards: Vec<AnyElement>) -> Div {
     let mut left = column();
     let mut right = column();
+
     for (at, card) in cards.into_iter().enumerate() {
         if at % 2 == 0 {
             left = left.child(card);
@@ -817,6 +825,7 @@ pub(crate) fn fields<'a, Told: Into<Cow<'a, str>>>(
         .into_iter()
         .filter_map(|(name, value)| value.map(|value| (name, SharedString::new(value.into()))))
         .collect();
+
     if told.is_empty() {
         return panel.child(
             div()
@@ -945,7 +954,9 @@ mod tests {
         let folder = Folder::new();
         let song = folder.tone("one.wav", 5);
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::open(cx, library);
 
         driven.play(&[song]);
@@ -953,8 +964,10 @@ mod tests {
             root.set_pane(Pane::Inspector, cx);
         });
         driven.until(|root, cx| root.player.read(cx).digest().is_some());
+
         let measured = driven.read(|root, cx| root.inspector.read(cx).room.get());
         let closed_at_first = driven.read(|root, cx| !root.inspector.read(cx).graphing);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.inspector
                 .update(cx, |inspector, cx| inspector.toggle_the_graph(cx));
@@ -965,6 +978,7 @@ mod tests {
             root.set_pane(Pane::Inspector, cx);
         });
         driven.settle();
+
         let still_open = driven.read(|root, cx| root.inspector.read(cx).graphing);
 
         assert!(measured > gpui::px(0.0));

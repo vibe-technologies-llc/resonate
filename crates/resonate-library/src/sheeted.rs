@@ -62,6 +62,7 @@ pub(crate) fn cutting(file: &Path) -> Option<Cutting> {
         .skip(1)
         .take(DEEPEST_FOLDER_A_SHEET_NAMES)
         .collect();
+
     above.reverse();
 
     above.into_iter().chain([folder]).find_map(|at| {
@@ -97,6 +98,7 @@ fn cut_of(
 
 fn read_whole(sheet: &Path) -> io::Result<Vec<u8>> {
     let mut held = Vec::new();
+
     fs::File::open(sheet)?
         .take(LARGEST_SHEET_ON_DISC.saturating_add(1))
         .read_to_end(&mut held)?;
@@ -115,6 +117,7 @@ fn sheets_in(folder: &Path) -> Vec<PathBuf> {
         .map(|entry| entry.path())
         .filter(|path| scan::is_a_sheet(path) && !scan::is_passed_over(path) && path.is_file())
         .collect();
+
     sheets.sort();
     sheets
 }
@@ -134,9 +137,11 @@ pub(crate) fn planned(rows: &[TrackToTag]) -> Planned {
     let Some(first) = rows.first() else {
         return Planned::Unchanged;
     };
+
     if rows.iter().any(|row| row.sheet_modified.is_none()) {
         return Planned::PassedOver(Unwritten::Cut);
     }
+
     let Some(found) = cutting(&first.path) else {
         return Planned::PassedOver(Unwritten::Cut);
     };
@@ -144,12 +149,14 @@ pub(crate) fn planned(rows: &[TrackToTag]) -> Planned {
         .and_then(|held| held.modified())
         .map(store::to_nanos)
         .ok();
+
     if rows.iter().any(|row| row.sheet_modified != stamped) {
         return Planned::PassedOver(Unwritten::SheetChanged);
     }
 
     let text = SheetText::read(&found.bytes);
     let mut placing = Placings::default();
+
     for row in rows {
         let Some(track) = SampleRate::new(row.rate)
             .ok()
@@ -157,6 +164,7 @@ pub(crate) fn planned(rows: &[TrackToTag]) -> Planned {
         else {
             return Planned::PassedOver(Unwritten::SheetChanged);
         };
+
         if !text.names_the_track_once(track.number) {
             tracing::debug!(
                 sheet = %found.sheet.display(),
@@ -170,9 +178,11 @@ pub(crate) fn planned(rows: &[TrackToTag]) -> Planned {
             let Some((said, placed)) = SheetField::of(field) else {
                 continue;
             };
+
             if field.read(&track.tags).as_deref() == Some(value.as_str()) {
                 continue;
             }
+
             let own = SheetScope::Track(track.number);
             let wanted = SheetWanted {
                 track: track.number,
@@ -188,9 +198,11 @@ pub(crate) fn planned(rows: &[TrackToTag]) -> Planned {
     }
 
     let (edits, wanted) = placing.settled();
+
     if edits.is_empty() {
         return Planned::Unchanged;
     }
+
     let was = edits
         .iter()
         .map(|edit| text.own(edit.scope, edit.field))
@@ -294,6 +306,7 @@ pub(crate) fn written(
             path: write.sheet.clone(),
             source,
         };
+
         tracing::warn!(%error, "a cue sheet could not be read to be written");
         Unwritten::Unreadable
     })?;
@@ -303,6 +316,7 @@ pub(crate) fn written(
         .iter()
         .zip(&write.was)
         .all(|(edit, was)| text.own(edit.scope, edit.field) == *was);
+
     if !standing {
         let error = Error::Tags {
             path: write.sheet.clone(),
@@ -310,6 +324,7 @@ pub(crate) fn written(
                 location: location.clone(),
             }),
         };
+
         tracing::warn!(%error, "a cue sheet edited since it was read is not written to");
         return Err(Unwritten::Refused);
     }
@@ -319,9 +334,11 @@ pub(crate) fn written(
             path: write.sheet.clone(),
             source: Box::new(source),
         };
+
         tracing::warn!(%error, "a cue sheet could not be written");
         Unwritten::Refused
     })?;
+
     if let Err(error) = landed(library, &write.sheet, &held, &rewritten) {
         tracing::warn!(%error, "a cue sheet could not be written");
         return Err(Unwritten::Refused);
@@ -337,14 +354,17 @@ fn landed(library: &Library, sheet: &Path, held: &[u8], rewritten: &[u8]) -> Res
         source,
     })?;
     let named = target.file_name().unwrap_or_default();
+
     let staged = target.with_file_name(named_within(
         ".",
         named,
         format!(".{}{STAGED}", process::id()),
     ));
+
     library.staging(&staged)?;
 
     let outcome = staged_into(&target, &staged, held, rewritten);
+
     organise::staged_left(library, &staged);
     outcome
 }
@@ -363,10 +383,13 @@ fn staged_into(target: &Path, staged: &Path, held: &[u8], rewritten: &[u8]) -> R
 
     let copy = Held::made(staged).map_err(staging)?;
     let mut file = copy.file();
+
     file.write_all(rewritten)
         .and_then(|()| file.sync_all())
         .map_err(staging)?;
+
     let standing = fs::metadata(target).map_err(landing)?;
+
     carries_what_the_file_did(&standing, target, staged);
 
     if read_whole(target).map_err(landing)? != held {
@@ -401,6 +424,7 @@ fn read_back(
 
     let back = read_whole(&write.sheet).map_err(|_| unconfirmed("unreadable"))?;
     let text = SheetText::read(&back);
+
     if write
         .edits
         .iter()
@@ -412,6 +436,7 @@ fn read_back(
     let Some(found) = cutting(&write.file).filter(|found| found.sheet == write.sheet) else {
         return Err(unconfirmed("the cut"));
     };
+
     for wanted in &write.wanted {
         let read = found
             .cut
@@ -466,6 +491,7 @@ pub(crate) struct KeptLine {
 pub(crate) fn undone(kept: &[KeptSheet]) -> (Vec<SheetWrite>, Vec<(PathBuf, Unwritten)>) {
     let mut writes = Vec::new();
     let mut passed = Vec::new();
+
     for sheet in kept {
         let Ok(held) = read_whole(&sheet.sheet) else {
             passed.push((sheet.sheet.clone(), Unwritten::Unreadable));
@@ -477,6 +503,7 @@ pub(crate) fn undone(kept: &[KeptSheet]) -> (Vec<SheetWrite>, Vec<(PathBuf, Unwr
             .iter()
             .filter(|line| text.own(line.scope, line.field) == line.wrote)
             .collect();
+
         if standing.len() < sheet.fields.len() {
             tracing::debug!(
                 sheet = %sheet.sheet.display(),
@@ -535,6 +562,7 @@ pub(crate) fn note_what_was_there(tx: &Transaction<'_>, writes: &[SheetWrite]) -
                 })
                 .collect(),
         };
+
         note(tx, &kept)?;
     }
     Ok(())
@@ -543,6 +571,7 @@ pub(crate) fn note_what_was_there(tx: &Transaction<'_>, writes: &[SheetWrite]) -
 fn note(tx: &Transaction<'_>, kept: &KeptSheet) -> Result<()> {
     let sheet = store::path_text(&kept.sheet);
     let file = store::path_text(&kept.file);
+
     for line in &kept.fields {
         tx.prepare_cached(
             "INSERT OR REPLACE INTO retagged_sheets (sheet, file, scope, field, was, wrote)
@@ -628,6 +657,7 @@ fn is_a_file(path: &Path) -> bool {
 fn sheet_moved_with(sheet: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
     let mut stood: Vec<_> = from.parent()?.components().collect();
     let mut stands: Vec<_> = to.parent()?.components().collect();
+
     while stood.last().is_some() && stood.last() == stands.last() {
         stood.pop();
         stands.pop();
@@ -635,6 +665,7 @@ fn sheet_moved_with(sheet: &Path, from: &Path, to: &Path) -> Option<PathBuf> {
 
     let left: PathBuf = stood.into_iter().collect();
     let landed: PathBuf = stands.into_iter().collect();
+
     if left == landed {
         return None;
     }
@@ -681,6 +712,7 @@ pub(crate) fn last_resheet(connection: &Connection) -> Result<Vec<KeptSheet>> {
               ORDER BY sheet, scope, field",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], |row| {
             Ok((
@@ -696,8 +728,10 @@ pub(crate) fn last_resheet(connection: &Connection) -> Result<Vec<KeptSheet>> {
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
     let mut kept: Vec<KeptSheet> = Vec::new();
+
     for (sheet, file, scope, field, was, wrote) in rows {
         let sheet = store::path_of(&sheet);
+
         if kept.last().is_none_or(|last| last.sheet != sheet) {
             kept.push(KeptSheet {
                 sheet,
@@ -728,6 +762,7 @@ pub(crate) fn rows_cut_from(
     let mut statement = connection
         .prepare_cached("SELECT id, span_start, sample_rate FROM tracks WHERE path = ?1")
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map(params![store::path_text(file)], |row| {
             Ok((

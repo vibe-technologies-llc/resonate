@@ -154,6 +154,7 @@ fn finished(fetching: &[Fetching]) -> SharedString {
         .filter(|each| **each == Fetching::Downloaded)
         .count();
     let unfinished = fetching.len() - downloaded;
+
     let counted: [(usize, SaidOfACount); 2] = [
         (downloaded, words::downloads::counted_downloaded),
         (unfinished, words::downloads::counted_not_downloaded),
@@ -235,7 +236,9 @@ impl WantStanding {
         if self.delivered {
             return Some(Fetching::Downloaded);
         }
+
         let tried = self.tried.filter(|tried| *tried >= queued)?;
+
         if self.gave_up {
             return Some(Fetching::GaveUp);
         }
@@ -327,16 +330,19 @@ impl Downloads {
 
     pub(crate) fn followed(&mut self, standings: &AHashMap<WantId, WantStanding>) -> bool {
         let mut moved = false;
+
         for download in &mut self.held {
             let Some(want) = download.want else {
                 continue;
             };
+
             if !matches!(
                 download.fetching,
                 Fetching::Queued | Fetching::Retrying { .. }
             ) {
                 continue;
             }
+
             let Some(fetching) = standings
                 .get(&want)
                 .and_then(|standing| standing.fetching_since(download.queued))
@@ -406,6 +412,7 @@ impl Downloads {
 
     pub(crate) fn provided(&mut self) -> bool {
         let mut moved = false;
+
         for download in &mut self.held {
             if download.fetching == Fetching::NoProvider && download.want.is_some() {
                 download.fetching = Fetching::Queued;
@@ -513,6 +520,7 @@ mod tests {
         let mut downloads = Downloads::default();
         let found = found(recording);
         let named = found.recording.clone();
+
         downloads.landing(found, at);
         downloads.wanted(&named, id, Fetcher::AProvider);
         downloads
@@ -540,7 +548,9 @@ mod tests {
         let mut downloads = Downloads::default();
 
         downloads.landing(found(ECHOES), now);
+
         let landing = fetching(&downloads, None);
+
         downloads.wanted(&found(ECHOES).recording, want(7), Fetcher::AProvider);
 
         assert_eq!(landing, vec![Fetching::Landing]);
@@ -822,6 +832,7 @@ mod tests {
             fetching: Fetching::GaveUp,
         };
         let mut downloads = queued(ECHOES, want(1), now);
+
         downloads.dismiss(&found(ECHOES).recording);
 
         downloads.restored(vec![underway.clone(), given_up]);
@@ -837,6 +848,7 @@ mod tests {
     fn a_song_nobody_could_fetch_is_queued_once_a_provider_is_set_up() {
         let now = SystemTime::now();
         let mut downloads = Downloads::default();
+
         downloads.landing(found(ECHOES), now);
         downloads.wanted(&found(ECHOES).recording, want(1), Fetcher::Nobody);
 
@@ -853,11 +865,14 @@ mod tests {
     fn clearing_keeps_what_is_underway_and_a_song_landed_again_starts_over() {
         let now = SystemTime::now();
         let mut downloads = queued(ECHOES, want(1), now);
+
         downloads.landing(found(SEAMUS), now);
         downloads.unwanted(&found(SEAMUS).recording);
 
         downloads.clear_finished();
+
         let cleared = fetching(&downloads, None);
+
         downloads.landing(found(ECHOES), now);
 
         assert_eq!(cleared, vec![Fetching::Queued]);

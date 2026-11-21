@@ -69,15 +69,18 @@ impl<'a> Parser<'a> {
     fn hex(&mut self) -> Option<u32> {
         let digits = self.bytes.get(self.at..self.at + 4)?;
         let value = u32::from_str_radix(std::str::from_utf8(digits).ok()?, 16).ok()?;
+
         self.at += 4;
         Some(value)
     }
 
     fn text(&mut self) -> Option<String> {
         self.eat(b'"')?;
+
         let mut text = String::new();
         loop {
             let start = self.at;
+
             while let Some(byte) = self.bytes.get(self.at) {
                 if *byte == b'"' || *byte == b'\\' {
                     break;
@@ -92,7 +95,9 @@ impl<'a> Parser<'a> {
                 }
                 _ => {
                     self.at += 1;
+
                     let escaped = *self.bytes.get(self.at)?;
+
                     self.at += 1;
                     match escaped {
                         b'"' => text.push('"'),
@@ -107,7 +112,9 @@ impl<'a> Parser<'a> {
                             let high = self.hex()?;
                             let point = if (0xd800..0xdc00).contains(&high) {
                                 self.word(b"\\u")?;
+
                                 let low = self.hex()?;
+
                                 if !(0xdc00..0xe000).contains(&low) {
                                     return None;
                                 }
@@ -115,6 +122,7 @@ impl<'a> Parser<'a> {
                             } else {
                                 high
                             };
+
                             text.push(char::from_u32(point).unwrap_or('\u{fffd}'));
                         }
                         _ => return None,
@@ -126,6 +134,7 @@ impl<'a> Parser<'a> {
 
     fn number(&mut self) -> Option<String> {
         let start = self.at;
+
         while self
             .bytes
             .get(self.at)
@@ -170,13 +179,17 @@ impl<'a> Parser<'a> {
 
     fn object(mut self) -> std::result::Result<Vec<(String, Json)>, usize> {
         let mut fields = Vec::new();
+
         self.eat(b'{').ok_or(self.at)?;
         self.space();
         if self.eat(b'}').is_none() {
             loop {
                 let name = self.text().ok_or(self.at)?;
+
                 self.eat(b':').ok_or(self.at)?;
+
                 let value = self.value().ok_or(self.at)?;
+
                 fields.push((name, value));
                 if self.eat(b',').is_some() {
                     continue;
@@ -229,6 +242,7 @@ fn projected(
         at,
     })?;
     let mut row = Vec::with_capacity(table.named.len());
+
     for column in table.named {
         let Some((_, value)) = fields.iter().find(|(name, _)| name == column) else {
             return Err(Error::PacketColumn {
@@ -237,6 +251,7 @@ fn projected(
                 column,
             });
         };
+
         row.push(valued(value));
     }
     Ok(Some(row))
@@ -256,6 +271,7 @@ impl Packet {
 
 fn sequence_in(entry: impl Read) -> Option<u64> {
     let mut text = String::new();
+
     entry
         .take(LONGEST_SEQUENCE_FILE)
         .read_to_string(&mut text)
@@ -272,12 +288,14 @@ type Pending = (i64, i64, Change);
 
 fn pending_in(rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
     let mut pending: Vec<Pending> = Vec::new();
+
     for line in rows.split(b'\n') {
         let mut split = Vec::with_capacity(PENDING_COLUMNS_AT_LEAST + 2);
         let line = line.map_err(|_| Error::PacketPart {
             sequence,
             part: PENDING_DATA,
         })?;
+
         if line.is_empty() {
             continue;
         }
@@ -289,6 +307,7 @@ fn pending_in(rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
                 wanted: PENDING_COLUMNS_AT_LEAST,
             });
         }
+
         let Some(table) = unescaped(split[1]).as_deref().and_then(table_of) else {
             continue;
         };
@@ -305,11 +324,15 @@ fn pending_in(rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
             .ok_or_else(malformed)?;
         let old = projected(table, unescaped(split[4]), sequence)?;
         let new = projected(table, unescaped(split[5]), sequence)?;
+
         pending.push((xid, seq, Change { table, old, new }));
     }
+
     let mut last_of: BTreeMap<i64, i64> = BTreeMap::new();
+
     for (xid, seq, _) in &pending {
         let last = last_of.entry(*xid).or_insert(*seq);
+
         *last = (*last).max(*seq);
     }
     pending.sort_by_key(|(xid, seq, _)| (last_of.get(xid).copied().unwrap_or(*seq), *seq));
@@ -327,6 +350,7 @@ pub(crate) fn read_pending_changes(rows: &[u8]) {
 pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
     let decoded = bzipped::decoded(packed);
     let mut archive = tar::Archive::new(decoded);
+
     let entries = archive.entries().map_err(|_| Error::PacketPart {
         sequence: asked,
         part: PENDING_DATA,
@@ -335,6 +359,7 @@ pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
     let mut schema = None;
     let mut form = None;
     let mut changes = None;
+
     for entry in entries {
         let entry = entry.map_err(|_| Error::PacketPart {
             sequence: asked,
@@ -352,10 +377,12 @@ pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
             _ => {}
         }
     }
+
     let sequence = sequence.ok_or(Error::PacketPart {
         sequence: asked,
         part: REPLICATION_SEQUENCE,
     })?;
+
     if sequence != asked {
         return Err(Error::PacketSequence {
             asked,
@@ -365,6 +392,7 @@ pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
     if form != Some(DBMIRROR2) {
         return Err(Error::PacketForm { sequence });
     }
+
     let schema = schema
         .and_then(|schema| u32::try_from(schema).ok())
         .ok_or(Error::PacketPart {
@@ -420,6 +448,7 @@ fn ids(tables: &Connection, sql: &str, id: Option<i64>) -> Result<Vec<i64>> {
     };
     let failed = store_read(Store::Tables);
     let mut statement = tables.prepare_cached(sql).map_err(&failed)?;
+
     let found = statement
         .query_map([id], |row| row.get::<_, Option<i64>>(0))
         .map_err(&failed)?;
@@ -504,6 +533,7 @@ fn the_artists_of_a_group(
     touched: &mut Touched,
 ) -> Result<()> {
     let credit = one(tables, CREDIT_OF_A_GROUP, group)?;
+
     touched.touch_all(Entity::Artist, ids(tables, ARTISTS_OF_A_CREDIT, credit)?);
     Ok(())
 }
@@ -539,6 +569,7 @@ pub(crate) fn touched_by(
         "release_group" => Some(Entity::Group),
         _ => None,
     };
+
     if let (Some(kind), Some(id), Some(gid)) = (main, id, gid) {
         touched.gids.insert((kind.code(), id), gid);
     }
@@ -584,6 +615,7 @@ pub(crate) fn touched_by(
         }
         "artist_credit_name" => {
             let credit = integer(table, row, "artist_credit");
+
             touched.touch(Entity::Artist, integer(table, row, "artist"));
             touched.touch_all(
                 Entity::Recording,
@@ -609,6 +641,7 @@ pub(crate) fn touched_by(
         }
         "medium" => {
             let release = integer(table, row, "release");
+
             touched.touch(Entity::Release, release);
             touched.touch(Entity::Group, one(tables, GROUP_OF_A_RELEASE, release)?);
             touched.touch_all(Entity::Recording, ids(tables, RECORDINGS_OF_A_MEDIUM, id)?);
@@ -632,7 +665,9 @@ pub(crate) fn touched_by(
                     ids(tables, RECORDINGS_OF_A_RELEASE, Some(release))?,
                 );
             }
+
             let credit = integer(table, row, "artist_credit");
+
             touched.touch_all(Entity::Artist, ids(tables, ARTISTS_OF_A_CREDIT, credit)?);
         }
         "release_group_meta" => {
@@ -641,6 +676,7 @@ pub(crate) fn touched_by(
         }
         "release_group_secondary_type_join" => {
             let group = integer(table, row, "release_group");
+
             touched.touch(Entity::Group, group);
             for release in ids(tables, RELEASES_OF_A_GROUP, group)? {
                 touched.touch_all(
@@ -677,6 +713,7 @@ pub(crate) fn rewritten(
     let looked_up = LookedUp::asking(tables)?;
     let mut builders = Builders::prepared(tables)?;
     let mut rewritten = 0_u64;
+
     for (code, id) in &touched.documents {
         let Some(kind) = Entity::coded(*code) else {
             continue;
@@ -685,17 +722,20 @@ pub(crate) fn rewritten(
             let mut statement = tables
                 .prepare_cached(&format!("{} WHERE id = ?1", rows_of(kind)))
                 .map_err(&failed)?;
+
             let mut rows = statement.query([id]).map_err(&failed)?;
             match rows.next().map_err(&failed)? {
                 Some(row) => builders.built(kind, &looked_up, row)?,
                 None => None,
             }
         };
+
         match document {
             Some(document) => amending.rewritten(kind, &document)?,
             None => {
                 if let Some(gid) = touched.gids.get(&(*code, *id)) {
                     let built_holds = mirror.holds_built(&mbid_of(*gid), kind)?;
+
                     amending.gone(kind, gid, built_holds)?;
                 }
             }
@@ -724,13 +764,16 @@ pub fn replicated(
     _held: &Held,
 ) -> Result<Replicated> {
     let (tables, kept) = opened(&folder.join(TABLES_FILE))?;
+
     if kept.dump != mirror.made().dump {
         return Err(Error::TablesOfAnotherExport {
             tables: kept.dump,
             mirror: mirror.made().dump.clone(),
         });
     }
+
     let amended_path = folder.join(AMENDED_FILE);
+
     made_at(&amended_path, &kept.dump, kept.sequence, now())?;
     tables
         .execute(
@@ -738,6 +781,7 @@ pub fn replicated(
             [amended_path.to_string_lossy().into_owned()],
         )
         .map_err(Error::store(Store::Amended, StoreOp::Open))?;
+
     let dictionaries = prepared_for_amending(mirror.dictionaries());
     let amending = Amending {
         connection: &tables,
@@ -749,9 +793,12 @@ pub fn replicated(
         ..Replicated::default()
     };
     let mut ended = false;
+
     while !ended {
         building.looked_at()?;
+
         let mut batch = Vec::new();
+
         while batch.len() < PACKETS_A_BATCH {
             match packet(done.to + 1 + batch.len() as u64)? {
                 Some(read) => {
@@ -774,15 +821,19 @@ pub fn replicated(
                 }
             }
         }
+
         let Some(last) = batch.last().map(|read| read.sequence) else {
             break;
         };
+
         tables
             .execute_batch("BEGIN IMMEDIATE")
             .map_err(Error::store(Store::Tables, StoreOp::Write))?;
+
         let outcome = (|| {
             let mut touched = Touched::default();
             let mut changes = 0_u64;
+
             for read in &batch {
                 for change in &read.changes {
                     changed(&tables, change, &mut touched)?;
@@ -790,7 +841,9 @@ pub fn replicated(
                 }
                 building.looked_at()?;
             }
+
             let documents = rewritten(&tables, mirror, &amending, &touched, building)?;
+
             sequenced_at(&tables, last)?;
             amending.sequenced_at(last, now())?;
             Ok::<_, Error>((changes, documents))
@@ -812,6 +865,7 @@ pub fn replicated(
             }
             Err(error) => {
                 let _ = tables.execute_batch("ROLLBACK");
+
                 return Err(error);
             }
         }
@@ -873,6 +927,7 @@ mod tests {
             .iter()
             .map(|change| change.new.as_ref().and_then(|row| row.get(1).cloned()))
             .collect();
+
         assert_eq!(
             names,
             [

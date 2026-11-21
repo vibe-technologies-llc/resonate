@@ -105,6 +105,7 @@ fn fitted(text: &str, room: usize) -> &str {
     if text.len() <= room {
         return text;
     }
+
     let end = (0..=room)
         .rev()
         .find(|&at| text.is_char_boundary(at))
@@ -158,7 +159,9 @@ impl Edit {
             self.history.keep(self.snapshot());
         }
         self.content = content;
+
         let end = self.content.len();
+
         self.selection = end..end;
         self.reversed = false;
         self.history.close();
@@ -167,7 +170,9 @@ impl Edit {
     pub(crate) fn start_over(&mut self, content: String) {
         self.history = History::default();
         self.content = content;
+
         let end = self.content.len();
+
         self.selection = end..end;
         self.reversed = false;
     }
@@ -204,6 +209,7 @@ impl Edit {
             return false;
         };
         let current = self.snapshot();
+
         self.history.undone.push(current);
         self.history.close();
         self.restore(previous);
@@ -215,6 +221,7 @@ impl Edit {
             return false;
         };
         let current = self.snapshot();
+
         self.history.done.push_back(current);
         self.history.close();
         self.restore(next);
@@ -227,8 +234,10 @@ impl Edit {
             text,
             LONGEST_CONTENT.saturating_sub(self.content.len() - range.len()),
         );
+
         if self.slice(range.clone()) == text {
             let at = range.end;
+
             self.selection = at..at;
             self.reversed = false;
             return range;
@@ -238,12 +247,15 @@ impl Edit {
         }
 
         let mut next = String::with_capacity(self.content.len() + text.len());
+
         next.push_str(self.slice(0..range.start));
         next.push_str(text);
         next.push_str(self.slice(range.end..self.content.len()));
 
         self.content = next;
+
         let at = range.start.saturating_add(text.len());
+
         self.selection = at..at;
         self.reversed = false;
         self.history.settle(span, self.selection.clone());
@@ -290,6 +302,7 @@ impl Edit {
             Removal::WordBackward => self.previous_word(at)..at,
             Removal::WordForward => at..self.next_word(at),
         };
+
         self.edited(Span::Removing, range, "");
     }
 
@@ -305,12 +318,14 @@ impl Edit {
 
     pub(crate) fn move_to(&mut self, offset: usize) {
         let at = self.snapped(offset);
+
         self.selection = at..at;
         self.reversed = false;
     }
 
     pub(crate) fn select_to(&mut self, offset: usize) {
         let to = self.snapped(offset);
+
         if self.reversed {
             self.selection.start = to;
         } else {
@@ -417,9 +432,11 @@ impl Edit {
             .rev()
             .find_map(|(start, _)| (start <= at).then_some(start))
             .unwrap_or(0);
+
         if before == at {
             return at;
         }
+
         let after = self.next_grapheme(at);
 
         if at - before <= after - at {
@@ -431,6 +448,7 @@ impl Edit {
 
     fn boundary(&self, offset: usize) -> usize {
         let mut at = offset.min(self.content.len());
+
         while !self.content.is_char_boundary(at) {
             at = at.saturating_sub(1);
         }
@@ -448,18 +466,21 @@ mod tests {
 
     fn edit(content: &str) -> Edit {
         let mut edit = Edit::default();
+
         edit.set_content(content.to_owned());
         edit
     }
 
     fn at(content: &str, cursor: usize) -> Edit {
         let mut edit = edit(content);
+
         edit.move_to(cursor);
         edit
     }
 
     fn typed(text: &str) -> Edit {
         let mut edit = Edit::default();
+
         for character in text.chars() {
             edit.insert(character.encode_utf8(&mut [0; 4]));
         }
@@ -477,10 +498,12 @@ mod tests {
     #[test]
     fn a_selection_is_anchored_where_it_began_and_the_caret_is_where_it_ends() {
         let mut forward = at("dark side", 2);
+
         forward.go(Motion::Right, Anchor::Extend);
         forward.go(Motion::Right, Anchor::Extend);
 
         let mut backward = at("dark side", 6);
+
         backward.go(Motion::Left, Anchor::Extend);
         backward.go(Motion::Left, Anchor::Extend);
 
@@ -492,6 +515,7 @@ mod tests {
     #[test]
     fn typing_lands_where_the_caret_is_rather_than_at_the_end() {
         let mut edit = at("dark side", 4);
+
         edit.insert("er");
 
         assert_eq!(edit.content(), "darker side");
@@ -501,6 +525,7 @@ mod tests {
     #[test]
     fn typing_over_a_selection_replaces_it() {
         let mut edit = edit("dark side");
+
         edit.select(0..4);
         edit.insert("bright");
 
@@ -514,15 +539,18 @@ mod tests {
         let mut edit = at("e\u{301}cho", 0);
 
         edit.go(Motion::Right, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 3);
 
         edit.go(Motion::Left, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 0);
     }
 
     #[test]
     fn backspace_takes_a_whole_grapheme_with_it() {
         let mut edit = edit("e\u{301}cho");
+
         edit.remove(Removal::Backward);
         edit.remove(Removal::Backward);
         edit.remove(Removal::Backward);
@@ -535,13 +563,16 @@ mod tests {
     #[test]
     fn a_collapsing_motion_lands_on_the_edge_of_a_selection_rather_than_past_it() {
         let mut edit = edit("dark side");
+
         edit.select(2..6);
 
         edit.go(Motion::Left, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 2);
 
         edit.select(2..6);
         edit.go(Motion::Right, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 6);
     }
 
@@ -551,11 +582,13 @@ mod tests {
 
         edit.go(Motion::Left, Anchor::Extend);
         edit.go(Motion::Left, Anchor::Extend);
+
         assert_eq!(edit.selected(), "rk");
         assert!(edit.is_reversed());
 
         edit.go(Motion::Right, Anchor::Extend);
         edit.go(Motion::Right, Anchor::Extend);
+
         assert!(edit.selected().is_empty());
         assert_eq!(edit.cursor(), 4);
     }
@@ -565,15 +598,19 @@ mod tests {
         let mut edit = at("dark side of the moon", 0);
 
         edit.go(Motion::WordRight, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 4);
 
         edit.go(Motion::WordRight, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 9);
 
         edit.go(Motion::WordLeft, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 5);
 
         edit.go(Motion::WordLeft, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 0);
     }
 
@@ -582,37 +619,45 @@ mod tests {
         let mut edit = at("wish.you-were", 0);
 
         edit.go(Motion::WordRight, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 4);
 
         edit.go(Motion::WordRight, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 5);
     }
 
     #[test]
     fn a_word_motion_at_the_edges_stops_rather_than_wrapping() {
         let mut edit = at("dark side", 0);
+
         edit.go(Motion::WordLeft, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 0);
 
         edit.go(Motion::End, Anchor::Collapse);
         edit.go(Motion::WordRight, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 9);
     }
 
     #[test]
     fn deleting_a_word_backward_takes_the_space_before_it_too() {
         let mut edit = edit("dark side of");
+
         edit.remove(Removal::WordBackward);
 
         assert_eq!(edit.content(), "dark side ");
 
         edit.remove(Removal::WordBackward);
+
         assert_eq!(edit.content(), "dark ");
     }
 
     #[test]
     fn deleting_a_word_forward_leaves_what_is_behind_the_caret() {
         let mut edit = at("dark side of", 5);
+
         edit.remove(Removal::WordForward);
 
         assert_eq!(edit.content(), "dark  of");
@@ -628,6 +673,7 @@ mod tests {
             Removal::WordForward,
         ] {
             let mut edit = edit("dark side");
+
             edit.select(0..5);
             edit.remove(removal);
 
@@ -642,17 +688,21 @@ mod tests {
     #[test]
     fn a_removal_at_the_edge_of_the_content_changes_nothing() {
         let mut edit = at("dark", 0);
+
         edit.remove(Removal::Backward);
+
         assert_eq!(edit.content(), "dark");
 
         edit.go(Motion::End, Anchor::Collapse);
         edit.remove(Removal::Forward);
+
         assert_eq!(edit.content(), "dark");
     }
 
     #[test]
     fn selecting_everything_covers_the_content_whatever_the_caret_was_doing() {
         let mut edit = at("dark side", 3);
+
         edit.select_all();
 
         assert_eq!(edit.selected(), "dark side");
@@ -675,9 +725,11 @@ mod tests {
         let mut edit = at("cafe\u{301} noir", 0);
 
         edit.go(Motion::WordRight, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), "cafe\u{301}".len());
 
         edit.go(Motion::WordLeft, Anchor::Collapse);
+
         assert_eq!(edit.cursor(), 0);
         assert_eq!(edit.word_at(3), 0.."cafe\u{301}".len());
     }
@@ -712,16 +764,20 @@ mod tests {
     #[test]
     fn an_offset_past_the_content_is_pulled_back_to_its_end() {
         let mut edit = edit("dark");
+
         edit.move_to(99);
+
         assert_eq!(edit.cursor(), 4);
 
         edit.select(2..99);
+
         assert_eq!(edit.selected(), "rk");
     }
 
     #[test]
     fn an_offset_inside_a_character_is_pulled_back_to_its_start() {
         let mut edit = edit("\u{e9}cho");
+
         edit.move_to(1);
 
         assert_eq!(edit.cursor(), 0);
@@ -734,20 +790,26 @@ mod tests {
         let end = content.len() - 1;
 
         let mut edit = edit(content);
+
         edit.move_to(1);
+
         assert_eq!(edit.cursor(), 0);
 
         edit.move_to(2);
+
         assert_eq!(edit.cursor(), 0);
 
         edit.move_to(family + 1);
+
         assert_eq!(edit.cursor(), family);
 
         edit.move_to(end - 1);
+
         assert_eq!(edit.cursor(), end);
 
         edit.move_to(0);
         edit.select_to(family + 8);
+
         assert_eq!(edit.selection(), 0..end);
     }
 
@@ -786,9 +848,11 @@ mod tests {
     #[test]
     fn a_run_of_deleting_comes_back_in_one_undo() {
         let mut edit = typed("dark");
+
         for _ in 0..4 {
             edit.remove(Removal::Backward);
         }
+
         assert_eq!(edit.content(), "");
 
         assert!(edit.undo());
@@ -798,8 +862,10 @@ mod tests {
     #[test]
     fn moving_the_caret_between_keystrokes_starts_a_new_step() {
         let mut edit = typed("dark");
+
         edit.move_to(0);
         edit.insert("x");
+
         assert_eq!(edit.content(), "xdark");
 
         assert!(edit.undo());
@@ -809,8 +875,10 @@ mod tests {
     #[test]
     fn undo_restores_what_typing_over_everything_replaced() {
         let mut edit = typed("darkside");
+
         edit.select_all();
         edit.insert("x");
+
         assert_eq!(edit.content(), "x");
 
         assert!(edit.undo());
@@ -821,7 +889,9 @@ mod tests {
     #[test]
     fn undo_restores_what_clearing_the_field_threw_away() {
         let mut edit = typed("dark side");
+
         edit.set_content(String::new());
+
         assert_eq!(edit.content(), "");
 
         assert!(edit.undo());
@@ -831,7 +901,9 @@ mod tests {
     #[test]
     fn a_paste_is_its_own_step_rather_than_joining_the_typing() {
         let mut edit = typed("dark");
+
         edit.paste("side");
+
         assert_eq!(edit.content(), "darkside");
 
         assert!(edit.undo());
@@ -841,6 +913,7 @@ mod tests {
     #[test]
     fn redo_puts_back_what_undo_took() {
         let mut edit = typed("dark");
+
         assert!(edit.undo());
 
         assert!(edit.redo());
@@ -851,7 +924,9 @@ mod tests {
     #[test]
     fn an_edit_after_an_undo_forgets_what_was_undone() {
         let mut edit = typed("dark");
+
         assert!(edit.undo());
+
         edit.insert("x");
 
         assert!(!edit.redo());
@@ -867,6 +942,7 @@ mod tests {
     #[test]
     fn the_history_stops_growing_at_the_depth_it_bounds_itself_to() {
         let mut edit = Edit::default();
+
         for _ in 0..UNDO_DEPTH * 2 {
             edit.paste("x");
         }
@@ -877,16 +953,19 @@ mod tests {
                 "step {step} of the bounded history was missing"
             );
         }
+
         assert!(!edit.undo());
     }
 
     #[test]
     fn a_preedit_the_input_method_keeps_revising_is_one_undo_step() {
         let mut edit = typed("dark ");
+
         for (range, text) in [(5..5, "k"), (5..6, "ka"), (5..7, "\u{304b}")] {
             edit.replace(range, text);
             edit.select(edit.selection());
         }
+
         assert_eq!(edit.content(), "dark \u{304b}");
 
         assert!(edit.undo());
@@ -897,11 +976,13 @@ mod tests {
     fn a_key_typed_over_everything_is_its_own_step_though_the_keys_before_it_were_typed_the_same_way()
      {
         let mut edit = Edit::default();
+
         for key in ["d", "a", "r", "k"] {
             edit.type_over(edit.selection(), key);
         }
         edit.select_all();
         edit.type_over(edit.selection(), "x");
+
         assert_eq!(edit.content(), "x");
 
         assert!(edit.undo());
@@ -914,10 +995,12 @@ mod tests {
     #[test]
     fn a_preedit_begun_after_the_last_one_ended_is_a_step_of_its_own() {
         let mut edit = typed("dark ");
+
         edit.replace(5..5, "k");
         edit.end_the_composing();
         edit.move_to(0);
         edit.replace(0..0, "j");
+
         assert_eq!(edit.content(), "jdark k");
 
         assert!(edit.undo());
@@ -930,6 +1013,7 @@ mod tests {
     #[test]
     fn content_started_over_has_nothing_to_take_back() {
         let mut edit = typed("dark");
+
         edit.start_over("side".to_owned());
 
         assert_eq!(edit.content(), "side");
@@ -941,6 +1025,7 @@ mod tests {
     #[test]
     fn a_replacement_the_input_method_asks_for_lands_where_it_named() {
         let mut edit = edit("kana");
+
         edit.replace(0..4, "\u{304b}\u{306a}");
 
         assert_eq!(edit.content(), "\u{304b}\u{306a}");
@@ -950,7 +1035,9 @@ mod tests {
     #[test]
     fn a_removal_changing_nothing_is_no_step_and_leaves_what_was_undone_to_redo() {
         let mut edit = edit("dark");
+
         edit.insert(" side");
+
         assert!(edit.undo());
 
         edit.move_to(0);
@@ -964,7 +1051,9 @@ mod tests {
     #[test]
     fn content_set_to_what_it_already_is_is_no_step() {
         let mut edit = edit("dark");
+
         edit.insert(" side");
+
         assert!(edit.undo());
 
         edit.set_content("dark".to_owned());
@@ -980,6 +1069,7 @@ mod tests {
     #[test]
     fn pasting_over_a_selection_what_it_already_holds_moves_the_caret_and_keeps_no_step() {
         let mut edit = edit("dark side");
+
         edit.select(5..9);
         edit.paste("side");
 
@@ -1002,11 +1092,14 @@ mod tests {
     #[test]
     fn a_cut_never_splits_a_character_and_a_replaced_selection_makes_room() {
         let mut held = edit(&"a".repeat(LONGEST_CONTENT - 1));
+
         held.paste("é");
+
         assert_eq!(held.content().len(), LONGEST_CONTENT - 1);
 
         held.select(0..LONGEST_CONTENT - 1);
         held.paste("é");
+
         assert_eq!(held.content(), "é");
     }
 }

@@ -211,6 +211,7 @@ impl RootView {
         self.sheet_panels.opening();
 
         let now = self.sheet_in_front(cx);
+
         match Change::of(self.sheets.sheet, now) {
             Change::Unchanged => {}
             Change::Opened => self.sheets.opened(window.focused(cx)),
@@ -228,6 +229,7 @@ impl RootView {
         let Some(sheet) = now else {
             return;
         };
+
         if self.sheets.welcomed {
             return;
         }

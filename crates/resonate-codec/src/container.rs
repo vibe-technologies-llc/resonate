@@ -173,6 +173,7 @@ impl Probed {
         let read_end = self.at.saturating_add(read.len() as u64);
         let void_end = voided.at.saturating_add(voided.header.len() as u64);
         let from = self.at.max(voided.at);
+
         let to = read_end.min(void_end);
         for position in from..to {
             let (Ok(into), Ok(held)) = (
@@ -191,6 +192,7 @@ impl Probed {
 impl Read for Probed {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         let read = self.bytes.read(buf)?;
+
         if self.voided.is_some() {
             self.lay_the_void_over(buf.get_mut(..read).unwrap_or_default());
             self.at = self.at.saturating_add(read as u64);
@@ -202,6 +204,7 @@ impl Read for Probed {
 impl Seek for Probed {
     fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
         let landed = self.bytes.seek(to)?;
+
         self.at = landed;
         Ok(landed)
     }
@@ -294,6 +297,7 @@ fn open_spooling_within(
     } = media;
     let mut seekable = bytes.is_seekable();
     let mut spool = None;
+
     let mut prescan = if seekable {
         Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
     } else {
@@ -331,6 +335,7 @@ fn open_spooling_within(
             }
             Spooled::Head(head) => {
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
+
                 bytes = match Spool::beginning_in(
                     &head,
                     bytes,
@@ -340,6 +345,7 @@ fn open_spooling_within(
                 ) {
                     Ok(held) => {
                         let streamed = Box::new(held.streamed());
+
                         spool = Some(held);
                         streamed
                     }
@@ -356,6 +362,7 @@ fn open_spooling_within(
     if let Some(container) = dsd::sniff(bytes.as_mut()) {
         let layout = dsd::layout(bytes.as_mut(), container, location)?;
         let dsd::Described { tags, visuals } = dsd::described(bytes.as_mut(), &layout);
+
         return Ok(Opened::Dsd(Box::new(OpenedDsd {
             bytes,
             layout,
@@ -370,6 +377,7 @@ fn open_spooling_within(
     refuse_what_the_caf_reader_would_overflow_on(prescan.caf, location)?;
 
     let mut hint = Hint::new();
+
     match named {
         Some(FormatHint::Extension(extension)) => {
             hint.with_extension(&extension);
@@ -439,6 +447,7 @@ fn refuse_what_the_wave_reader_would_overflow_on(
     let Some(channels) = riff.channels else {
         return Ok(());
     };
+
     if u32::from(channels) > NAMEABLE_WAVE_CHANNELS {
         return Err(Error::TooManyChannels {
             location: location.clone(),
@@ -502,9 +511,11 @@ fn spooled(bytes: &mut dyn MediaStream, at_most: u64, within: Duration) -> Spool
     let mut reading = vec![0_u8; SPOOLED_A_READ_AT_A_TIME];
     loop {
         let room = at_most.saturating_sub(held.len() as u64);
+
         if room == 0 || began.elapsed() >= within {
             return Spooled::Head(held);
         }
+
         let wanted = usize::try_from(room)
             .unwrap_or(usize::MAX)
             .min(reading.len());
@@ -525,6 +536,7 @@ pub(crate) fn reopened(
     location: &MediaLocation,
 ) -> Result<Box<dyn FormatReader>> {
     let mut stream = reader.into_inner();
+
     stream
         .seek(SeekFrom::Start(0))
         .map_err(|source| Error::Io {
@@ -571,11 +583,13 @@ pub(crate) fn coded_info(
     let prescan = &opened.prescan;
     let carrying = Carrying::of(opened.reader.format_info().format, params.codec);
     let noted = itunes_priming(opened, track, params);
+
     let primed = priming(track, params, carrying, prescan, spec.rate).or(noted);
     let chained = prescan
         .chain
         .as_ref()
         .map(|chain| chain.length_at(spec.rate));
+
     let playable = primed
         .as_ref()
         .and_then(Priming::window)
@@ -656,6 +670,7 @@ fn chaptered(opened: &Coded, rate: SampleRate, tags: &TagSet) -> Option<CueFile>
         .chapters()
         .map(chapters::of_group)
         .unwrap_or_default();
+
     if marked.is_empty() {
         marked = opened.prescan.chapters();
     }
@@ -744,6 +759,7 @@ fn priming_counted_inside_the_granules(track: &Track) -> Option<Priming> {
 fn priming_the_reader_read(track: &Track) -> Option<Priming> {
     let delay = track.delay.unwrap_or(0);
     let padding = track.padding.unwrap_or(0);
+
     if delay == 0 && padding == 0 {
         return None;
     }
@@ -858,12 +874,15 @@ pub(crate) fn positioned_layout(positions: Position, count: ChannelCount) -> Cha
     if matches!(count, ChannelCount::MONO | ChannelCount::STEREO) {
         return discrete_layout(count);
     }
+
     let known = PLACED_BY_POSITION
         .iter()
         .fold(Position::empty(), |known, (position, _)| known | *position);
+
     if !known.contains(positions) {
         return ChannelLayout::Discrete(count);
     }
+
     let places = Places::of(
         PLACED_BY_POSITION
             .iter()
@@ -920,6 +939,7 @@ fn flac_bit_depth(params: &AudioCodecParameters) -> Option<u32> {
     }
 
     let block = params.extra_data.as_deref()?;
+
     if block.len() < STREAMINFO_BYTES {
         return None;
     }
@@ -930,9 +950,11 @@ fn flac_bit_depth(params: &AudioCodecParameters) -> Option<u32> {
 
 fn bits_at(block: &[u8], at: usize, width: u32) -> Option<u32> {
     let mut value = 0_u32;
+
     for offset in 0..width {
         let bit = at + offset as usize;
         let byte = *block.get(bit / 8)?;
+
         value = (value << 1) | u32::from((byte >> (7 - bit % 8)) & 1);
     }
     Some(value)
@@ -944,6 +966,7 @@ fn alac_bit_depth(params: &AudioCodecParameters) -> Option<u32> {
     }
 
     let mut cookie = params.extra_data.as_deref()?;
+
     for atom in ALAC_ATOM_IDS {
         if cookie.get(4..8) == Some(atom.as_slice()) {
             cookie = cookie.get(ALAC_ATOM_BYTES..)?;
@@ -1022,16 +1045,21 @@ mod tests {
 
     fn wave_of(channels: u16) -> Vec<u8> {
         let mut fmt = vec![0_u8; 16];
+
         fmt[0] = 1;
         fmt[2..4].copy_from_slice(&channels.to_le_bytes());
         fmt[14] = 32;
+
         let mut body = b"WAVE".to_vec();
+
         body.extend_from_slice(b"fmt ");
         body.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
         body.extend_from_slice(&fmt);
         body.extend_from_slice(b"data");
         body.extend_from_slice(&0_u32.to_le_bytes());
+
         let mut file = b"RIFF".to_vec();
+
         file.extend_from_slice(&(body.len() as u32).to_le_bytes());
         file.extend_from_slice(&body);
         file
@@ -1061,19 +1089,23 @@ mod tests {
     #[test]
     fn a_pipe_longer_than_the_spool_is_replayed_from_its_head_and_cannot_seek() {
         let mut wave = wave_of(2);
+
         wave.extend(std::iter::repeat_n(0, 4_096));
+
         let location = MediaLocation::local("long.wav");
 
         let long = open_spooling(piped(wave.clone()), &location, 1_024)
             .expect("a pipe opens")
             .into_coded()
             .expect("a coded stream");
+
         assert!(!long.seekable);
 
         let short = open_spooling(piped(wave), &location, SPOOLED_AT_MOST)
             .expect("a pipe opens")
             .into_coded()
             .expect("a coded stream");
+
         assert!(short.seekable, "a pipe under the spool was not read whole");
     }
 
@@ -1083,6 +1115,7 @@ mod tests {
 
         let data = vec![0x69_u8; blocks * BLOCK * CHANNELS as usize];
         let mut fmt = b"fmt ".to_vec();
+
         fmt.extend_from_slice(&52_u64.to_le_bytes());
         fmt.extend_from_slice(&1_u32.to_le_bytes());
         fmt.extend_from_slice(&0_u32.to_le_bytes());
@@ -1095,11 +1128,13 @@ mod tests {
         fmt.extend_from_slice(&0_u32.to_le_bytes());
 
         let mut chunk = b"data".to_vec();
+
         chunk.extend_from_slice(&((data.len() + 12) as u64).to_le_bytes());
         chunk.extend_from_slice(&data);
 
         let total = (28 + fmt.len() + chunk.len()) as u64;
         let mut file = b"DSD ".to_vec();
+
         file.extend_from_slice(&28_u64.to_le_bytes());
         file.extend_from_slice(&total.to_le_bytes());
         file.extend_from_slice(&0_u64.to_le_bytes());
@@ -1132,6 +1167,7 @@ mod tests {
         let Opened::Dsd(dsd) = opened else {
             panic!("a DSF was not opened as DSD");
         };
+
         assert!(dsd.seekable, "a DSF spooled whole cannot seek");
         assert!(dsd.spool.is_none(), "a spool held whole was left to settle");
     }
@@ -1141,6 +1177,7 @@ mod tests {
         let location = MediaLocation::local("long.dsf");
         for (magic, container) in READ_BY_SEEKING {
             let mut bytes = magic.to_vec();
+
             bytes.extend(std::iter::repeat_n(0, 4_096));
 
             let opened = open_spooling_within(piped(bytes), &location, spooled_at_most(2_048));
@@ -1165,9 +1202,12 @@ mod tests {
         fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
             if self.bytes.position() >= self.prompt_for {
                 std::thread::sleep(self.then_every_read_waits);
+
                 let short = buf.len().min(64);
+
                 return self.bytes.read(&mut buf[..short]);
             }
+
             let prompt = usize::try_from(self.prompt_for - self.bytes.position())
                 .unwrap_or(usize::MAX)
                 .min(buf.len());
@@ -1184,8 +1224,11 @@ mod tests {
     #[test]
     fn a_stream_that_arrives_slowly_opens_from_what_came_within_the_wait_rather_than_its_whole() {
         const WAITED_AT_MOST: Duration = Duration::from_millis(40);
+
         let mut wave = wave_of(2);
+
         wave.extend(std::iter::repeat_n(0, 4_096));
+
         let head = wave_of(2).len() as u64 + 256;
         let location = MediaLocation::local("remote.wav");
         let trickling = Media {
@@ -1244,7 +1287,9 @@ mod tests {
     fn a_wave_behind_bytes_that_are_not_one_is_refused_as_one_at_the_start_is() {
         let location = MediaLocation::local("junk.wav");
         let mut file = b"ft".to_vec();
+
         file.extend_from_slice(&wave_of(20_000));
+
         let opened = open(
             Media {
                 stream: Box::new(Reading::new(Cursor::new(file))),
@@ -1266,7 +1311,9 @@ mod tests {
     fn a_wave_behind_more_junk_than_a_tag_would_hold_is_still_refused_as_symphonia_would_open_it() {
         let location = MediaLocation::local("junk.wav");
         let mut file = vec![0x55_u8; 100 * 1024];
+
         file.extend_from_slice(&wave_of(20_000));
+
         let opened = open(
             Media {
                 stream: Box::new(Reading::new(Cursor::new(file))),
@@ -1288,8 +1335,10 @@ mod tests {
     fn a_wave_behind_another_containers_marker_is_left_to_the_container_symphonia_opens_first() {
         let location = MediaLocation::local("ogg-first.wav");
         let mut file = b"OggS".to_vec();
+
         file.extend_from_slice(&[0_u8; 60]);
         file.extend_from_slice(&wave_of(20_000));
+
         let opened = open(
             Media {
                 stream: Box::new(Reading::new(Cursor::new(file))),
@@ -1308,12 +1357,14 @@ mod tests {
     fn a_caf_whose_packets_overflow_the_reader_is_refused_before_symphonia_reads_it() {
         let location = MediaLocation::local("wide.caf");
         let mut file = b"caff\x00\x01\x00\x00desc".to_vec();
+
         file.extend_from_slice(&32_i64.to_be_bytes());
         file.extend_from_slice(&8_000.0_f64.to_be_bytes());
         file.extend_from_slice(b"lpcm");
         for word in [2_u32, 0xd400_0000, 0, 6, 16] {
             file.extend_from_slice(&word.to_be_bytes());
         }
+
         let opened = open(
             Media {
                 stream: Box::new(Reading::new(Cursor::new(file))),
@@ -1333,6 +1384,7 @@ mod tests {
 
     fn params(codec: AudioCodecId) -> AudioCodecParameters {
         let mut params = AudioCodecParameters::new();
+
         params.for_codec(codec);
         params
     }
@@ -1351,13 +1403,16 @@ mod tests {
             (32, SampleFormat::S32),
         ] {
             let mut params = params(CODEC_ID_ALAC);
+
             params.with_bits_per_sample(bits);
+
             assert_eq!(format(&params).expect("representable"), expected, "{bits}");
         }
     }
 
     fn cookie(depth: u8, prefix: &[u8]) -> Vec<u8> {
         let mut bytes = prefix.to_vec();
+
         bytes.extend_from_slice(&4_096_u32.to_be_bytes());
         bytes.push(0);
         bytes.push(depth);
@@ -1371,6 +1426,7 @@ mod tests {
 
     fn alac(depth: u8, prefix: &[u8]) -> AudioCodecParameters {
         let mut params = params(CODEC_ID_ALAC);
+
         params.with_extra_data(cookie(depth, prefix).into_boxed_slice());
         params
     }
@@ -1398,9 +1454,11 @@ mod tests {
         let mut bits = vec![0_u8; STREAMINFO_BYTES];
         let at = STREAMINFO_BIT_DEPTH_AT;
         let value = depth - 1;
+
         for offset in 0..STREAMINFO_BIT_DEPTH_BITS {
             let set = (value >> (STREAMINFO_BIT_DEPTH_BITS - 1 - offset)) & 1;
             let bit = at + offset as usize;
+
             bits[bit / 8] |= (set as u8) << (7 - bit % 8);
         }
         bits
@@ -1408,6 +1466,7 @@ mod tests {
 
     fn flac(depth: u32) -> AudioCodecParameters {
         let mut params = params(CODEC_ID_FLAC);
+
         params.with_extra_data(streaminfo(depth).into_boxed_slice());
         params
     }
@@ -1426,20 +1485,26 @@ mod tests {
     #[test]
     fn a_streaminfo_shorter_than_the_block_leaves_the_depth_undeclared() {
         let mut short = params(CODEC_ID_FLAC);
+
         short.with_extra_data(vec![0; STREAMINFO_BYTES - 1].into_boxed_slice());
+
         assert_eq!(flac_bit_depth(&short), None);
 
         let mut other = params(CODEC_ID_ALAC);
+
         other.with_extra_data(streaminfo(24).into_boxed_slice());
+
         assert_eq!(flac_bit_depth(&other), None);
     }
 
     #[test]
     fn a_wav_declares_the_bits_it_uses_rather_than_the_ones_it_pads_to() {
         let mut params = params(AudioCodecId::default());
+
         params.with_bits_per_sample(24);
 
         let mut prescan = Prescan::default();
+
         prescan.riff.valid_bits = Some(20);
 
         assert_eq!(declared_bits(&params, &prescan), Some(20));
@@ -1450,8 +1515,11 @@ mod tests {
     fn an_opus_stream_is_billed_at_the_rate_it_decodes_at_whatever_its_container_says() {
         let location = MediaLocation::local("a.mka");
         let mut opus = params(CODEC_ID_OPUS);
+
         opus.with_sample_rate(8_000);
+
         let mut flac = params(CODEC_ID_FLAC);
+
         flac.with_sample_rate(8_000);
 
         assert_eq!(
@@ -1471,6 +1539,7 @@ mod tests {
     #[test]
     fn a_matroska_bit_depth_answers_where_nothing_nearer_the_codec_does() {
         let mut prescan = Prescan::default();
+
         prescan.segment.bit_depth = Some(24);
 
         assert_eq!(
@@ -1482,21 +1551,28 @@ mod tests {
     #[test]
     fn a_magic_cookie_that_is_not_one_leaves_the_depth_undeclared() {
         let mut short = params(CODEC_ID_ALAC);
+
         short.with_extra_data(vec![0; 12].into_boxed_slice());
+
         assert_eq!(alac_bit_depth(&short), None);
 
         let mut zero = params(CODEC_ID_ALAC);
+
         zero.with_extra_data(cookie(0, b"").into_boxed_slice());
+
         assert_eq!(alac_bit_depth(&zero), None);
 
         let mut flac = params(AudioCodecId::default());
+
         flac.with_extra_data(cookie(24, b"").into_boxed_slice());
+
         assert_eq!(alac_bit_depth(&flac), None);
     }
 
     #[test]
     fn float_pcm_is_not_read_as_an_integer_format_despite_declaring_a_depth() {
         let mut params = params(CODEC_ID_PCM_F32LE);
+
         params.with_bits_per_sample(32);
 
         assert_eq!(format(&params).expect("representable"), SampleFormat::F32);
@@ -1517,6 +1593,7 @@ mod tests {
     #[test]
     fn sixty_four_bit_float_samples_are_decoded_as_thirty_two_bit_float() {
         let mut params = params(CODEC_ID_PCM_F64LE);
+
         params.with_bits_per_sample(64);
 
         assert_eq!(format(&params).expect("representable"), SampleFormat::F32);
@@ -1537,6 +1614,7 @@ mod tests {
     #[test]
     fn an_unmappable_channel_set_is_rejected_rather_than_guessed_at() {
         let mut params = params(CODEC_ID_ALAC);
+
         params.with_channels(Channels::Ambisonic(1));
 
         let layout = channel_layout(
@@ -1544,11 +1622,13 @@ mod tests {
             &MediaLocation::local("/music/a.m4a"),
             StreamTrackId(0),
         );
+
         assert!(matches!(layout, Err(Error::LayoutNotRepresentable { .. })));
     }
 
     fn layout_of(channels: Channels) -> ChannelLayout {
         let mut params = params(CODEC_ID_ALAC);
+
         params.with_channels(channels);
         channel_layout(
             &params,
@@ -1581,6 +1661,7 @@ mod tests {
         use ChannelPosition::{
             FrontCenter, FrontLeft, FrontRight, RearCenter, RearLeft, RearRight,
         };
+
         let six = ChannelCount::new(6).expect("six channels");
 
         assert_eq!(
@@ -1676,6 +1757,7 @@ mod tests {
             ),
         ] {
             let layout = layout_of(Channels::Positioned(positions));
+
             assert!(
                 matches!(layout, ChannelLayout::Placed(_)),
                 "{positions:?} was read as {layout}"
@@ -1687,6 +1769,7 @@ mod tests {
     #[test]
     fn discrete_channel_counts_map_to_the_matching_named_layout() {
         let mut params = params(CODEC_ID_ALAC);
+
         params.with_channels(Channels::Discrete(2));
 
         let layout = channel_layout(
@@ -1694,6 +1777,7 @@ mod tests {
             &MediaLocation::local("/music/a.m4a"),
             StreamTrackId(0),
         );
+
         assert_eq!(
             layout.expect("stereo is representable"),
             ChannelLayout::Stereo

@@ -67,8 +67,11 @@ fn band(seed: u32, tempo: f64, level: f64) -> Vec<f64> {
                 * 0.5;
             let white = noise.white();
             let off = (seconds + beat_seconds / 2.0) % beat_seconds;
+
             let hat = (white - hiss) * (-off * 60.0).exp() * 0.4;
+
             hiss = white;
+
             let bass = (TAU * 82.0 * seconds).sin() * 0.15;
             let pad: f64 = pads
                 .iter()
@@ -85,6 +88,7 @@ fn noise(seed: u32, smoothing: f64, level: f64) -> Vec<f64> {
     (0..frames())
         .map(|frame| {
             let seconds = frame as f64 / f64::from(RATE);
+
             held = held * smoothing + noise.white() * (1.0 - smoothing);
             held * enveloped(seconds) * level / (1.0 - smoothing).sqrt()
         })
@@ -105,12 +109,14 @@ fn wave(samples: &[f64]) -> Vec<u8> {
     let channels = 2_u16;
     let block_align = channels * 2;
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
     format.extend_from_slice(&(RATE * u32::from(block_align)).to_le_bytes());
     format.extend_from_slice(&block_align.to_le_bytes());
     format.extend_from_slice(&16_u16.to_le_bytes());
+
     let data: Vec<u8> = samples
         .iter()
         .flat_map(|sample| {
@@ -120,13 +126,16 @@ fn wave(samples: &[f64]) -> Vec<u8> {
         .flat_map(i16::to_le_bytes)
         .collect();
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     for (id, payload) in [(b"fmt ", &format), (b"data", &data)] {
         body.extend_from_slice(id);
         body.extend_from_slice(&(payload.len() as u32).to_le_bytes());
         body.extend_from_slice(payload);
     }
+
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -135,6 +144,7 @@ fn wave(samples: &[f64]) -> Vec<u8> {
 
 fn songs() -> Vec<(String, Vec<f64>)> {
     let mut songs = Vec::new();
+
     for seed in 0..6_u32 {
         songs.push((
             format!("band {seed}"),
@@ -156,13 +166,17 @@ fn songs() -> Vec<(String, Vec<f64>)> {
 
 fn measured(songs: &[(String, Vec<f64>)]) -> Vec<(String, BandPeaks)> {
     let root = env::temp_dir().join(format!("resonate-bound-bench-{}", process::id()));
+
     fs::create_dir_all(&root).expect("a scratch folder");
+
     let peaks = songs
         .iter()
         .enumerate()
         .map(|(index, (name, samples))| {
             let path: PathBuf = root.join(format!("{index}.wav"));
+
             fs::write(&path, wave(samples)).expect("a written song");
+
             let figures = band_figures(
                 &Sources::local(),
                 &MediaLocation::local(path),
@@ -246,6 +260,7 @@ fn curves() -> Vec<(&'static str, Arc<Profile>)> {
 fn reverberant() -> Arc<Impulse> {
     let mut noise = Noise(0x7a11);
     let frames = RATE as usize * ROOM_SECONDS;
+
     let taps = (0..frames)
         .map(|frame| {
             let seconds = frame as f64 / f64::from(RATE);
@@ -263,9 +278,11 @@ fn per_song(elapsed: Duration, songs: usize) -> f64 {
 fn fastest<T>(runs: usize, mut run: impl FnMut() -> T) -> (Duration, T) {
     let mut fastest = Duration::MAX;
     let mut last = None;
+
     for _ in 0..runs {
         let started = Instant::now();
         let made = run();
+
         fastest = fastest.min(started.elapsed());
         last = Some(made);
     }
@@ -282,10 +299,13 @@ fn weighed_against_their_decodes(folder: PathBuf) {
         .filter_map(|entry| Some(entry.ok()?.path()))
         .filter(|path| path.is_file())
         .collect();
+
     paths.sort();
+
     let sources = Sources::local();
     let watch = Watch::default();
     let started = Instant::now();
+
     let measured: Vec<(MediaLocation, SampleRate, BandPeaks)> = paths
         .into_iter()
         .filter_map(|path| {
@@ -295,11 +315,14 @@ fn weighed_against_their_decodes(folder: PathBuf) {
             Some((location, rate, figures.peaks))
         })
         .collect();
+
     println!(
         "figures: {:.0} ms a song",
         started.elapsed().as_secs_f64() * 1e3 / measured.len().max(1) as f64
     );
+
     let mut over = Vec::new();
+
     for (curve, profile) in curves() {
         let applied = Applied::from(Arc::clone(&profile));
         for (location, rate, peaks) in &measured {
@@ -307,16 +330,20 @@ fn weighed_against_their_decodes(folder: PathBuf) {
             let decode =
                 peak_through(&sources, location, None, &applied, &watch).expect("a decode");
             let bound = gains.bound(peaks);
+
             let apart = decibels_over(bound, decode);
+
             println!(
                 "{curve:>16} {location}: decode {decode:.4}, bound {bound:.4}, {apart:+.2} dB"
             );
             over.push(apart);
         }
     }
+
     let mean = over.iter().sum::<f64>() / over.len().max(1) as f64;
     let least = over.iter().copied().fold(f64::INFINITY, f64::min);
     let most = over.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+
     println!(
         "{} cases: {mean:+.2} dB over the decode on average, {least:+.2} to {most:+.2}",
         over.len()
@@ -328,10 +355,12 @@ fn main() {
         weighed_against_their_decodes(PathBuf::from(folder));
         return;
     }
+
     let songs = measured(&songs());
     let mut kept = String::new();
     let mut bounding = Duration::ZERO;
     let mut folding = Duration::ZERO;
+
     for (curve, profile) in curves() {
         let (made, gains) = fastest(1, || {
             BandGains::of(&Applied::from(Arc::clone(&profile)), SampleRate::HZ_44100)
@@ -345,6 +374,7 @@ fn main() {
         });
         let (folded, loudest) = fastest(RUNS, || {
             let mut loudest = Loudest::default();
+
             for (_, peaks) in songs.iter().cycle().take(SONGS_FOLDED) {
                 loudest.weigh(&gains, peaks);
             }
@@ -376,6 +406,7 @@ fn main() {
         per_song(bounding, songs.len() * curves().len()),
         per_song(folding, SONGS_FOLDED * curves().len()),
     );
+
     let (heard, _) = fastest(1, || {
         BandGains::of(
             &Applied::from(octaves([
@@ -386,6 +417,7 @@ fn main() {
         )
         .expect("gains under a curve and a response")
     });
+
     println!(
         "{:>16}: gains {:7.1} ms",
         "ten-second room",

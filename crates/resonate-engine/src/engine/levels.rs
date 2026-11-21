@@ -19,14 +19,17 @@ impl Engine {
         let Some(track) = self.track.as_mut() else {
             return;
         };
+
         if track.info.is_seekable {
             return;
         }
+
         let Some(settled) = track.decoding.home().and_then(Decoder::settle_the_spool) else {
             return;
         };
         let seekable = settled.is_seekable;
         let info = Arc::make_mut(&mut track.info);
+
         info.is_seekable = seekable;
         info.duration = settled.duration;
         info.playable = settled.playable;
@@ -45,6 +48,7 @@ impl Engine {
             .track
             .as_mut()
             .is_some_and(|track| track.heed_what_was_measured(&self.config));
+
         if !heeded {
             return;
         }

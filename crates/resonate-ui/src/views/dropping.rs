@@ -141,6 +141,7 @@ pub(crate) fn verdict(
     if folder.is_none() {
         return Verdict::NoFolder;
     }
+
     let (Some(weighed), Some(there)) = (weighed, folder_is_there) else {
         return match folder_is_there {
             Some(false) => Verdict::FolderGone,
@@ -176,6 +177,7 @@ pub(crate) fn told_of(summary: &TakeInSummary, into: &Path) -> Notice {
     }
     if stats.copied > 0 {
         let copied = format::bytes(stats.bytes);
+
         return Notice::Done(match stats.held {
             0 => words::dropping::copied_into(copied, stats.copied, folder),
             held => {
@@ -249,6 +251,7 @@ impl RootView {
         }
 
         let first = self.dropped.incoming.is_none();
+
         self.dropped.incoming = Some(Incoming {
             paths: paths.to_vec(),
             weighed: None,
@@ -284,6 +287,7 @@ impl RootView {
 
     pub(crate) fn music_folder_is_there(&mut self, cx: &mut Context<Self>) -> Option<bool> {
         let folder = cx.global::<ResonateApp>().music_folder.clone()?;
+
         if self
             .settings_pane
             .read(cx)
@@ -304,6 +308,7 @@ impl RootView {
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.music_folder_standing.looking = true;
         });
+
         let looking_at_the_music_folder = cx.spawn(async move |this, cx| {
             let looked = folder.clone();
             let there = cx
@@ -314,6 +319,7 @@ impl RootView {
                 let moved = this.settings_pane.update(cx, |pane, _| {
                     let standing = &mut pane.shown.music_folder_standing;
                     let moved = standing.of(&folder) != Some(there);
+
                     *standing = FolderStanding {
                         seen: Some(Seen {
                             folder,
@@ -329,6 +335,7 @@ impl RootView {
                 }
             });
         });
+
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.looking_at_the_music_folder = looking_at_the_music_folder;
         });
@@ -338,6 +345,7 @@ impl RootView {
         self.dropped.watching_the_drag = cx.spawn(async move |this, cx| {
             loop {
                 cx.background_executor().timer(DRAG_LOOKED_AT_EVERY).await;
+
                 let left = this.update(cx, |this, cx| {
                     if cx.has_active_drag() {
                         return false;
@@ -360,12 +368,15 @@ impl RootView {
             .take()
             .filter(|incoming| incoming.paths == paths)
             .and_then(|incoming| incoming.weighed);
+
         cx.notify();
 
         let folder = cx.global::<ResonateApp>().music_folder.clone();
+
         cx.spawn(async move |this, cx| {
             let held = paths.clone();
             let looked = folder.clone();
+
             let (weighed, there) = cx
                 .background_executor()
                 .spawn(async move {
@@ -374,9 +385,11 @@ impl RootView {
                     (weighed, there)
                 })
                 .await;
+
             let _ = this.update(cx, |this, cx| {
                 let busy = this.dropped.taking_in.is_some();
                 let landed = verdict(Some(&weighed), folder.as_deref(), there, busy);
+
                 this.land_the_drop(landed, paths, cx);
             });
         })
@@ -438,7 +451,9 @@ impl RootView {
             into: into.clone(),
         });
         cx.notify();
+
         let copying = cx.global::<ResonateApp>().copying.clone();
+
         copying.hold(handle);
 
         self.dropped._taking_in = cx.spawn(async move |this, cx| {
@@ -479,9 +494,11 @@ impl RootView {
         }
 
         let global = cx.global::<ResonateApp>();
+
         if global.file_dropped {
             let layout = Layout::read(&global.organise_as).unwrap_or_default();
             let songs = songs_landed(summary);
+
             self.library.update(cx, |library, cx| {
                 library.file_once_scanned(layout, songs, cx)
             });
@@ -492,6 +509,7 @@ impl RootView {
             .into_iter()
             .find(|root| into.starts_with(root))
             .unwrap_or_else(|| into.to_path_buf());
+
         self.library
             .update(cx, |library, cx| library.add_roots(vec![reached], cx));
     }
@@ -507,6 +525,7 @@ impl RootView {
         let incoming = self.dropped.incoming.clone()?;
         let there = self.music_folder_is_there(cx);
         let folder = cx.global::<ResonateApp>().music_folder.clone();
+
         let verdict = verdict(
             incoming.weighed.as_deref(),
             folder.as_deref(),
@@ -638,6 +657,7 @@ impl RootView {
             0 => 0.0,
             found => (stats.bytes as f32 / found as f32).clamp(0.0, 1.0),
         };
+
         let says = if stopping {
             SharedString::new_static(words::dropping::stopping())
         } else {
@@ -704,6 +724,7 @@ impl RootView {
 
     fn stop_button(&self, stopping: bool, cx: &mut Context<Self>) -> Stateful<Div> {
         let button = kit::icon_button("stop-copying", Icon::Stop, words::dropping::stop_copying());
+
         if stopping {
             return button;
         }

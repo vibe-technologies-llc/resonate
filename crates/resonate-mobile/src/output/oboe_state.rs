@@ -32,6 +32,7 @@ pub(crate) struct Claim {
 impl Claim {
     pub(crate) fn abandon(&self) -> bool {
         let mut standing = self.standing.lock();
+
         if *standing == Standing::Answered {
             return false;
         }
@@ -120,6 +121,7 @@ impl Routing {
 
     pub(crate) fn follow_song_rate(&self, follows: bool) -> bool {
         let moved = self.follows.swap(follows, Ordering::Relaxed) != follows;
+
         if moved {
             self.announced();
         }
@@ -132,8 +134,10 @@ impl Routing {
 
     pub(crate) fn offer(&self, device: i32, bit_perfect: &[OutputFormat]) -> bool {
         let offered = Offers::of(device, bit_perfect);
+
         {
             let mut held = self.offers.lock();
+
             if held.device == offered.device && held.bit_perfect == offered.bit_perfect {
                 return false;
             }
@@ -147,10 +151,12 @@ impl Routing {
     pub(crate) fn offered(&self, probe: impl FnOnce(i32) -> Option<StreamSpec>) -> Vec<StreamSpec> {
         let follows = self.follows();
         let requested = self.requested();
+
         if follows {
             let mut probed_for = self.probed_for.lock();
             if *probed_for != Some(requested) {
                 let exclusive = probe(requested);
+
                 self.offers.lock().exclusive = exclusive;
                 *probed_for = Some(requested);
             }
@@ -182,11 +188,14 @@ impl Routing {
         tell: impl FnOnce(),
     ) -> Option<u64> {
         let mut standing = claim.standing.lock();
+
         if *standing == Standing::Abandoned {
             return None;
         }
         self.opened_on(device);
+
         let which = self.opened(stream);
+
         tell();
         *standing = Standing::Answered;
         Some(which)
@@ -194,6 +203,7 @@ impl Routing {
 
     pub(crate) fn opened(&self, stream: OutputStream) -> u64 {
         let which = self.streams_opened.fetch_add(1, Ordering::Relaxed);
+
         *self.opened.lock() = Some((which, stream));
         which
     }
@@ -201,7 +211,9 @@ impl Routing {
     pub(crate) fn closed(&self, which: u64) {
         let was_current = {
             let mut opened = self.opened.lock();
+
             let current = opened.is_some_and(|(held, _)| held == which);
+
             if current {
                 *opened = None;
             }
@@ -228,14 +240,17 @@ impl Routing {
             return false;
         };
         let mut held = self.preferred.lock();
+
         if claim.abandoned() {
             return false;
         }
+
         let preferred = answered(Callback::PreferBitPerfect, || {
             mixer.prefer_bit_perfect(device, format)
         })
         .unwrap_or(false);
         let before = held.take();
+
         *held = preferred.then_some(Preference {
             device,
             held_by: claim.ticket,
@@ -260,10 +275,13 @@ impl Routing {
 
     fn given_back(&self, whose: impl FnOnce(Preference) -> bool) {
         let mut held = self.preferred.lock();
+
         let Some(preference) = held.filter(|preference| whose(*preference)) else {
             return;
         };
+
         *held = None;
+
         let mixer = self.mixer.lock().clone();
         if let Some(mixer) = mixer {
             answered(Callback::MixFreely, || mixer.mix_freely(preference.device));
@@ -272,6 +290,7 @@ impl Routing {
 
     fn usable(&self, requested: i32) -> Offers {
         let mut offers = self.offers.lock().clone();
+
         if requested != SYSTEM_DEFAULT && requested != offers.device {
             offers.bit_perfect.clear();
         }
@@ -357,6 +376,7 @@ mod tests {
         let routing = Routing::new();
 
         assert_eq!(routing.actual(), 0);
+
         routing.opened_on(USB);
 
         assert_eq!(routing.actual(), USB);
@@ -388,11 +408,13 @@ mod tests {
         let probes = Cell::new(0);
         let probe = |device: i32| {
             assert_eq!(device, 0);
+
             probes.set(probes.get() + 1);
             Some(NATIVE)
         };
 
         routing.offer(USB, &[cd()]);
+
         assert!(routing.follow_song_rate(true));
         assert!(!routing.follow_song_rate(true));
 
@@ -411,8 +433,10 @@ mod tests {
             probes.set(probes.get() + 1);
             None
         };
+
         routing.follow_song_rate(true);
         routing.offered(probe);
+
         let _ = announced(&routing);
 
         assert!(!routing.offer(0, &[]));
@@ -420,10 +444,12 @@ mod tests {
 
         assert!(routing.offer(USB, &[cd()]));
         assert_eq!(announced(&routing), 1);
+
         routing.offered(probe);
 
         assert!(routing.select(USB));
         assert_eq!(announced(&routing), 1);
+
         routing.offered(probe);
 
         assert_eq!(probes.get(), 3);
@@ -432,6 +458,7 @@ mod tests {
     #[test]
     fn a_bit_perfect_offer_is_not_used_while_another_output_is_chosen() {
         let routing = Routing::new();
+
         routing.offer(USB, &[cd()]);
         routing.follow_song_rate(true);
         routing.select(2);
@@ -440,6 +467,7 @@ mod tests {
         assert_eq!(routing.way_for(CD), Way::Mixed);
 
         routing.select(USB);
+
         assert_eq!(routing.offered(|_| None), vec![MIXED, CD]);
     }
 
@@ -451,8 +479,10 @@ mod tests {
             probes.set(probes.get() + 1);
             Some(NATIVE)
         };
+
         routing.follow_song_rate(true);
         routing.offered(probe);
+
         let _ = announced(&routing);
 
         routing.exclusive_refused();
@@ -482,6 +512,7 @@ mod tests {
         routing.watch_mixer(Arc::new(Throwing));
 
         assert!(!routing.prefer_bit_perfect(&routing.claim(), USB, CD));
+
         routing.mix_freely();
     }
 
@@ -495,6 +526,7 @@ mod tests {
         assert!(!routing.prefer_bit_perfect(&claim, USB, CD));
 
         routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
+
         assert!(routing.prefer_bit_perfect(&claim, USB, CD));
         assert!(routing.prefer_bit_perfect(&claim, USB, CD));
         assert!(mixer.freed.lock().is_empty());
@@ -513,7 +545,9 @@ mod tests {
             refuses: true,
             ..Mixer::default()
         });
+
         routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
+
         let claim = routing.claim();
 
         assert!(!routing.prefer_bit_perfect(&claim, USB, CD));
@@ -526,6 +560,7 @@ mod tests {
                 SampleFormat::S24
             )
         ));
+
         routing.mix_freely();
 
         assert_eq!(mixer.preferred.lock().len(), 1);
@@ -545,13 +580,17 @@ mod tests {
         };
 
         let first = routing.opened(bit_perfect);
+
         assert_eq!(routing.stream(), Some(bit_perfect));
 
         let second = routing.opened(mixed);
+
         routing.closed(first);
+
         assert_eq!(routing.stream(), Some(mixed));
 
         routing.closed(second);
+
         assert_eq!(routing.stream(), None);
     }
 
@@ -560,15 +599,19 @@ mod tests {
      {
         let routing = Routing::new();
         let mixer = Arc::new(Mixer::default());
+
         routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
+
         let bit_perfect = OutputStream {
             format: cd(),
             path: OutputPath::BitPerfect,
         };
 
         assert!(routing.prefer_bit_perfect(&routing.claim(), USB, CD));
+
         let first = routing.opened(bit_perfect);
         let second = routing.opened(bit_perfect);
+
         routing.closed(first);
 
         assert!(mixer.freed.lock().is_empty());
@@ -587,6 +630,7 @@ mod tests {
 
     fn watched(routing: &Routing) -> Arc<Mixer> {
         let mixer = Arc::new(Mixer::default());
+
         routing.watch_mixer(Arc::new(Arc::clone(&mixer)));
         mixer
     }
@@ -601,10 +645,13 @@ mod tests {
 
         assert!(late.abandon());
         assert!(routing.prefer_bit_perfect(&next, USB, CD));
+
         let told = routing.answer(&next, USB, bit_perfect(), || ());
 
         let mut said = false;
+
         let late_told = routing.answer(&late, 2, bit_perfect(), || said = true);
+
         routing.mix_freely_for(&late);
         routing.give_back(&late);
 
@@ -647,6 +694,7 @@ mod tests {
         let claim = routing.claim();
 
         assert!(routing.prefer_bit_perfect(&claim, USB, CD));
+
         routing.give_back(&claim);
         routing.give_back(&claim);
 
@@ -663,6 +711,7 @@ mod tests {
 
         assert!(routing.prefer_bit_perfect(&first, USB, CD));
         assert!(routing.prefer_bit_perfect(&second, USB, CD));
+
         routing.give_back(&first);
 
         assert!(mixer.freed.lock().is_empty());

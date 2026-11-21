@@ -95,6 +95,7 @@ pub(crate) fn queue_items_served(arguments: &[OsString], served: &Served) -> Vec
                 continue;
             }
         };
+
         if span.is_some() {
             items.push(QueueItem {
                 id: minting.mint(),
@@ -120,6 +121,7 @@ fn items_of(sources: &Sources, location: MediaLocation, minting: &mut Unclaimed)
     let Some(path) = location.as_path().map(Path::to_path_buf) else {
         return vec![QueueItem::whole(minting.mint(), location)];
     };
+
     if path.is_dir() {
         return folder_items(sources, &path, minting, FOLDERS_DEEP, &mut BTreeSet::new());
     }
@@ -161,6 +163,7 @@ fn listed_in_order(folder: &Path) -> Vec<PathBuf> {
             Vec::new()
         }
     };
+
     listed.sort();
     listed
 }
@@ -179,10 +182,12 @@ fn folder_items(
     let first_time_through = folder
         .canonicalize()
         .map_or(true, |canonical| walked.insert(canonical));
+
     if !first_time_through {
         tracing::debug!(folder = %folder.display(), "a folder reached again through a link was queued once");
         return Vec::new();
     }
+
     let (folders, files): (Vec<PathBuf>, Vec<PathBuf>) = listed_in_order(folder)
         .into_iter()
         .partition(|path| path.is_dir());
@@ -198,6 +203,7 @@ fn folder_items(
         .collect();
 
     let mut items = Vec::new();
+
     for file in &files {
         if let Some(cuts) = sheets.get(file.as_path()) {
             items.extend(cuts.iter().map(|(location, span)| QueueItem {
@@ -246,6 +252,7 @@ pub(crate) fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, 
     };
 
     let mut cuts = Vec::new();
+
     for cut in &sheet.files {
         let Some(file) = path
             .parent()
@@ -264,6 +271,7 @@ pub(crate) fn sheet_cuts(sources: &Sources, path: &Path) -> Vec<(MediaLocation, 
             let Some(span) = cut.span_of(index, info.spec.rate, info.duration) else {
                 continue;
             };
+
             cuts.push((location.clone(), span));
         }
     }
@@ -324,6 +332,7 @@ mod tests {
             )
         };
         let queued = queue_items(&[OsString::from(uri)]);
+
         assert_eq!(queued.len(), 1);
         assert_eq!(queued[0].location, MediaLocation::local(path));
         assert_eq!(
@@ -342,6 +351,7 @@ mod tests {
     fn a_folder_is_queued_as_the_audio_inside_it_and_its_sheet_as_the_rows_it_cuts() {
         let folder = env::temp_dir().join(format!("resonate-queued-folder-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(folder.join("Album/CD2")).expect("a scratch folder");
         for name in [
             "Album/02.wav",
@@ -360,6 +370,7 @@ mod tests {
              AUDIO\n    INDEX 01 00:00:30\n",
         )
         .expect("a sheet");
+
         let named = |items: Vec<QueueItem>| {
             items
                 .into_iter()
@@ -376,6 +387,7 @@ mod tests {
         let rip = named(queue_items(&[folder.join("Rip").into_os_string()]));
 
         let at = |name: &str| Some(from_here(&folder.join(name)));
+
         assert_eq!(
             album,
             [
@@ -397,6 +409,7 @@ mod tests {
     fn a_folder_linked_back_to_itself_or_to_a_sibling_is_queued_once() {
         let folder = env::temp_dir().join(format!("resonate-queued-loop-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(folder.join("Music/Album")).expect("a scratch folder");
         fs::write(
             folder.join("Music/Album/01.wav"),
@@ -410,6 +423,7 @@ mod tests {
         let queued = queue_items(&[folder.join("Music").into_os_string()]);
 
         fs::remove_dir_all(&folder).expect("the scratch folder goes");
+
         assert_eq!(queued.len(), 1);
     }
 
@@ -417,10 +431,13 @@ mod tests {
     fn a_playlist_is_queued_as_the_rows_it_lists() {
         let folder = env::temp_dir().join(format!("resonate-queued-list-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(&folder).expect("a scratch folder");
+
         let folder = folder
             .canonicalize()
             .expect("the scratch folder is canonical");
+
         for name in ["one.wav", "two.wav"] {
             fs::write(folder.join(name), analyse::tests::silent_wave()).expect("a wave file");
         }
@@ -442,9 +459,11 @@ mod tests {
     #[test]
     fn a_sheet_finds_its_audio_as_the_scan_does_whatever_case_or_extension_it_wrote() {
         let folder = env::temp_dir().join(format!("resonate-sheet-names-{}", process::id()));
+
         fs::create_dir_all(folder.join("CD1")).expect("a scratch folder");
         fs::write(folder.join("album.wav"), analyse::tests::silent_wave()).expect("a wave file");
         fs::write(folder.join("CD1/01.wav"), analyse::tests::silent_wave()).expect("a wave file");
+
         let one_track = |named: &str| {
             format!("FILE \"{named}\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n")
         };
@@ -455,6 +474,7 @@ mod tests {
             ("CD1\\01.wav", "CD1/01.wav"),
         ] {
             let sheet = folder.join("sheet.cue");
+
             fs::write(&sheet, one_track(written)).expect("a sheet");
 
             let cuts = sheet_cuts(&Sources::local(), &sheet);
@@ -497,6 +517,7 @@ mod tests {
                 "/music/Pink Floyd/Echoes.flac",
             )
         };
+
         assert_eq!(located(uri), Some(MediaLocation::local(path)));
     }
 
@@ -545,13 +566,17 @@ mod tests {
     fn a_uri_names_the_same_file_a_path_through_the_same_link_does() {
         let folder = env::temp_dir().join(format!("resonate-uri-{}", process::id()));
         let real = folder.join("real");
+
         fs::create_dir_all(&real).expect("a scratch folder");
         fs::write(real.join("a.flac"), b"").expect("a file");
+
         let linked = folder.join("linked");
+
         symlink(&real, &linked).expect("a link to the folder");
 
         let through_the_link = linked.join("../linked/a.flac");
         let uri = MediaLocation::local(&through_the_link).to_uri();
+
         assert_eq!(
             located(&uri),
             located(through_the_link.to_str().expect("a UTF-8 path"))

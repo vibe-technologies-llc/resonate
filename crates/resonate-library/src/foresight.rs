@@ -72,6 +72,7 @@ impl Foresight {
         unheard: Unheard,
     ) {
         let mut held = self.held.lock();
+
         held.retain(|_, foreseen| foreseen.is_fresh());
         held.insert(
             recording,
@@ -112,6 +113,7 @@ impl Library {
         if providers.is_narrowed() || !providers.has_a_source() {
             return false;
         }
+
         let foresight = self.foresight();
         let Some(_searching) = foresight.begin() else {
             return false;
@@ -134,12 +136,14 @@ impl Library {
         let Some(delivered) = answer.delivered else {
             return false;
         };
+
         let offers = iter::once(delivered).chain(answer.held_back).collect();
         let unheard = Unheard {
             refused: answer.refused,
             late: answer.late,
             passed_over: answer.passed_over,
         };
+
         foresight.keep(found.recording.clone(), answer.heard, offers, unheard);
         true
     }

@@ -48,20 +48,25 @@ impl Drop for Scratch {
 
 fn filled(catalog: &Path) {
     let mut connection = Connection::open(catalog).expect("the catalog opens beside the library");
+
     let filling = connection.transaction().expect("a transaction begins");
     let mut noise = Noise(SEED);
+
     {
         let mut artist = filling
             .prepare("INSERT INTO artists (id, key, name) VALUES (?1, ?2, ?3)")
             .expect("artists are written");
+
         for id in 1..=ARTISTS as i64 {
             artist
                 .execute(params![id, format!("artist {id}"), format!("Artist {id}")])
                 .expect("an artist is written");
         }
+
         let mut album = filling
             .prepare("INSERT INTO albums (id, title, artist_id) VALUES (?1, ?2, ?3)")
             .expect("albums are written");
+
         for id in 1..=ALBUMS as i64 {
             album
                 .execute(params![
@@ -71,6 +76,7 @@ fn filled(catalog: &Path) {
                 ])
                 .expect("an album is written");
         }
+
         let mut track = filling
             .prepare(
                 "INSERT INTO tracks (path, title, artist, artist_id, album_id, track_number,
@@ -85,6 +91,7 @@ fn filled(catalog: &Path) {
                 0 => noise.below(40),
                 _ => 0,
             };
+
             track
                 .execute(params![
                     format!("/music/{at}.flac"),
@@ -127,6 +134,7 @@ fn by_offset(library: &Library, sort: SortOrder, reading: Direction) -> usize {
             })
             .expect("a page is read");
         let grown = page.len().saturating_sub(usize::from(held > 0));
+
         held += grown;
         if page.len() < PAGE + 1 {
             return held;
@@ -149,6 +157,7 @@ fn by_key(library: &Library, sort: SortOrder, reading: Direction) -> usize {
         }
         .expect("a page is read");
         let grown = page.len().saturating_sub(usize::from(last.is_some()));
+
         held += grown;
         last = page.last().map(|track| track.id);
         if page.len() < PAGE + 1 {
@@ -161,6 +170,7 @@ fn timed(what: &str, run: impl FnOnce() -> usize) {
     let started = Instant::now();
     let rows = black_box(run());
     let took: Duration = started.elapsed();
+
     println!(
         "{what:<48} {rows:>8} rows {:>10.1} ms",
         took.as_secs_f64() * 1e3
@@ -169,10 +179,13 @@ fn timed(what: &str, run: impl FnOnce() -> usize) {
 
 fn main() {
     let scratch = Scratch(std::env::temp_dir().join(format!("resonate-paging-{}", process::id())));
+
     fs::create_dir_all(&scratch.0).expect("a scratch folder is made");
+
     let catalog = scratch.0.join("library.db");
 
     let started = Instant::now();
+
     drop(Library::open(&catalog).expect("the library opens"));
     filled(&catalog);
     println!(
@@ -184,6 +197,7 @@ fn main() {
     let library = Library::open(&catalog).expect("the library opens again");
     for (sort, reading) in ORDERS {
         let order = format!("{sort:?} {reading:?}");
+
         timed(&format!("to the end by key: {order}"), || {
             by_key(&library, sort, reading)
         });

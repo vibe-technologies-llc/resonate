@@ -66,6 +66,7 @@ pub async fn dialled_within(
     within: Duration,
 ) -> Result<Connection> {
     let mut attempts = JoinSet::new();
+
     for candidate in candidates {
         let connecting = endpoint
             .connect_with(config.clone(), *candidate, PEER_NAME)
@@ -130,6 +131,7 @@ pub async fn serve(connection: Connection, answering: Arc<Answering>, met: Optio
             answering: Arc::clone(&answering),
             met: Arc::clone(&met),
         };
+
         tokio::spawn(async move {
             if let Err(error) = answer(send, recv, asked).await {
                 tracing::debug!(%error, "a peer's request could not be answered");
@@ -143,13 +145,17 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
         return Ok(());
     };
     let catalog = Arc::clone(&asked.answering.catalog);
+
     match ToPeer::decoded(&request)? {
         ToPeer::Meet { device, records } => {
             *asked.met.lock() = Some(device);
+
             let met = FromPeer::Met {
                 device: asked.answering.device,
             };
+
             send_frame(&mut send, &met.encoded()).await?;
+
             let _ = asked.answering.heard.send(Heard::Met {
                 device,
                 connection: asked.connection,
@@ -160,7 +166,9 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             if asked.met.lock().is_none() {
                 return Err(Error::Unintroduced);
             }
+
             let ledger = Arc::clone(&asked.answering.ledger);
+
             blocking(move || {
                 ledger
                     .lock()
@@ -169,14 +177,17 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             })
             .await?;
             send_frame(&mut send, &FromPeer::Taken.encoded()).await?;
+
             let _ = asked.answering.heard.send(Heard::Told { whole });
         }
         ToPeer::Holdings => {
             let holdings = blocking(move || catalog.holdings().map_err(Error::Catalog)).await?;
+
             for items in holdings.chunks(HELD_PER_FRAME) {
                 let frame = FromPeer::Held {
                     items: items.to_vec(),
                 };
+
                 send_frame(&mut send, &frame.encoded()).await?;
             }
             send_frame(&mut send, &FromPeer::HeldEnd.encoded()).await?;
@@ -193,6 +204,7 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             } else {
                 FromPeer::Missing
             };
+
             send_frame(&mut send, &answer.encoded()).await?;
         }
         ToPeer::Covers { releases } => {
@@ -219,6 +231,7 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             queue_seen,
         } => {
             let answer = controlled_here(&asked.answering, zone, command, queue_seen).await;
+
             send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
         }
         ToPeer::Watch { revisions } => send_mirror(&mut send, &asked.answering, revisions).await?,
@@ -227,6 +240,7 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             dates,
         } => {
             let answer = consulted_here(&asked.answering, question, dates).await;
+
             send_frame(&mut send, &answer.encoded()).await?;
         }
         ToPeer::Kept { asker, after, most } => {
@@ -294,6 +308,7 @@ async fn send_kept(
         None => Vec::new(),
     };
     let mut mark = after;
+
     for answer in kept {
         mark = mark.max(answer.seq);
         if answer.key.len() <= LARGEST_KEPT_KEY && answer.packed.len() <= LARGEST_KEPT_ANSWER {
@@ -339,8 +354,10 @@ async fn consulted_as(
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
+
     send_frame(&mut send, &ToPeer::Consult { asked, dates }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
+
     let Some(frame) = read_frame(&mut recv).await? else {
         return Ok(None);
     };
@@ -358,6 +375,7 @@ pub async fn kept_from(
     consulted: Arc<dyn Consultable>,
 ) -> Result<usize> {
     let mut taken = 0;
+
     for _ in 0..KEPT_PAGES_A_MEETING {
         let marking = Arc::clone(&consulted);
         let after = blocking(move || Ok(marking.kept_mark(device))).await?;
@@ -369,10 +387,13 @@ pub async fn kept_from(
         })
         .await?;
         let most = u32::try_from(KEPT_ASKED_AT_MOST).unwrap_or(u32::MAX);
+
         send_frame(&mut send, &ToPeer::Kept { asker, after, most }.encoded()).await?;
         send.finish().map_err(|_| Error::StreamClosed)?;
+
         let mut answers = Vec::new();
         let mut mark = None;
+
         while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
             match FromPeer::decoded(&frame)? {
                 FromPeer::KeptAnswer(answer) => answers.push(answer),
@@ -383,11 +404,13 @@ pub async fn kept_from(
                 _ => {}
             }
         }
+
         let Some(mark) = mark else {
             break;
         };
         let told = answers.len();
         let taking = Arc::clone(&consulted);
+
         blocking(move || {
             taking.take_kept(device, answers, mark);
             Ok(())
@@ -410,9 +433,11 @@ async fn controlled_here(
     let Some((controlled, trust)) = answering.controlled() else {
         return Controlling::Uncontrollable;
     };
+
     if !command.trusted_by(trust) {
         return Controlling::Untrusted;
     }
+
     let applied = blocking(move || {
         Ok(match queue_seen {
             Some(revision) => controlled.control_if_the_queue_is_still(zone, revision, command),
@@ -440,19 +465,25 @@ async fn send_mirror(
             Some(held) => held,
             None => {
                 let refusal = FromPeer::Controlled(Controlling::Uncontrollable);
+
                 return send_frame(send, &refusal.encoded()).await;
             }
         };
+
         if !trust.shows() {
             let refusal = FromPeer::Controlled(Controlling::Untrusted);
+
             return send_frame(send, &refusal.encoded()).await;
         }
+
         let zones = blocking(move || Ok(controlled.zones())).await?;
         let now = Instant::now();
+
         let alike = told.as_ref().is_some_and(|(was, at)| {
             now.saturating_duration_since(*at) < MIRROR_TOLD_AGAIN_AFTER
                 && told_alike(was, *at, &zones, now)
         });
+
         if !alike {
             send_frame(
                 send,
@@ -485,6 +516,7 @@ pub async fn control(
             command,
             queue_seen,
         };
+
         send_frame(&mut send, &asked.encoded()).await?;
         send.finish().map_err(|_| Error::StreamClosed)?;
         Ok::<_, Error>(match read_frame(&mut recv).await? {
@@ -519,6 +551,7 @@ pub async fn watch(
     still_watched: impl Fn() -> bool,
 ) -> Result<()> {
     let mut watching = Watching::NothingHeard;
+
     let revised = watched_as(
         connection,
         device,
@@ -528,6 +561,7 @@ pub async fn watch(
         &mut watching,
     )
     .await;
+
     if watching == Watching::Heard || !still_watched() || connection.close_reason().is_some() {
         return revised;
     }
@@ -554,9 +588,12 @@ async fn watched_as(
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
+
     send_frame(&mut send, &ToPeer::Watch { revisions }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
+
     let mut heard_at = Instant::now();
+
     while still_watched() && connection.close_reason().is_none() {
         let frame = match timeout(MIRROR_LOOKED_AT_EVERY * 4, read_frame(&mut recv)).await {
             Err(_) if heard_at.elapsed() < MIRROR_GOES_STALE_AFTER => continue,
@@ -566,6 +603,7 @@ async fn watched_as(
         let Some(frame) = frame else {
             break;
         };
+
         heard_at = Instant::now();
         *watching = Watching::Heard;
         match FromPeer::decoded(&frame)? {
@@ -581,6 +619,7 @@ async fn watched_as(
             _ => {}
         }
     }
+
     let _ = recv.stop(0_u32.into());
     Ok(())
 }
@@ -593,6 +632,7 @@ async fn send_covers(
     for release in releases {
         let reading = Arc::clone(&catalog);
         let asked = release.clone();
+
         let picture = match blocking(move || reading.cover(&asked).map_err(Error::Catalog)).await {
             Ok(picture) => picture,
             Err(error) => {
@@ -603,6 +643,7 @@ async fn send_covers(
         let Some(picture) = picture.filter(|picture| sendable_cover(picture)) else {
             continue;
         };
+
         send_frame(send, &FromPeer::Covered { release, picture }.encoded()).await?;
     }
     Ok(())
@@ -616,6 +657,7 @@ async fn send_lyricsfiles(
     for recording in recordings {
         let reading = Arc::clone(&catalog);
         let asked = recording.clone();
+
         let kept = match blocking(move || reading.lyricsfile(&asked).map_err(Error::Catalog)).await
         {
             Ok(kept) => kept,
@@ -627,6 +669,7 @@ async fn send_lyricsfiles(
         let Some(lyricsfile) = kept.filter(SharedLyricsfile::travels) else {
             continue;
         };
+
         send_frame(
             send,
             &FromPeer::Documented {
@@ -652,10 +695,12 @@ pub async fn lyricsfiles_from(
             .map_err(|source| Error::Connection(Box::new(source)))
     })
     .await?;
+
     send_frame(&mut send, &ToPeer::Lyricsfiles { recordings }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
     let mut landed = 0;
+
     while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
         match FromPeer::decoded(&frame)? {
             FromPeer::Documented {
@@ -718,6 +763,7 @@ async fn send_prints(
         let Some(print) = kept.filter(SharedPrint::travels) else {
             continue;
         };
+
         send_frame(send, &FromPeer::Printed { file, print }.encoded()).await?;
     }
     Ok(())
@@ -735,10 +781,12 @@ pub async fn prints_from(
             .map_err(|source| Error::Connection(Box::new(source)))
     })
     .await?;
+
     send_frame(&mut send, &ToPeer::Prints { files }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
     let mut landed = 0;
+
     while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
         match FromPeer::decoded(&frame)? {
             FromPeer::Printed { file, print } => {
@@ -793,10 +841,12 @@ pub async fn covers_from(
             .map_err(|source| Error::Connection(Box::new(source)))
     })
     .await?;
+
     send_frame(&mut send, &ToPeer::Covers { releases }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
     let mut landed = 0;
+
     while let Some(frame) = quietly_short(read_frame(&mut recv)).await? {
         match FromPeer::decoded(&frame)? {
             FromPeer::Covered { release, picture } => {
@@ -853,6 +903,7 @@ async fn send_song(
         size: opened.size,
         extension: opened.extension.clone(),
     };
+
     send_frame(send, &header.encoded()).await?;
     streamed_from(send, opened.reader, offset).await
 }
@@ -877,6 +928,7 @@ async fn send_export(
         sequence: offered.sequence,
         size: offered.size,
     };
+
     send_frame(send, &header.encoded()).await?;
     if offset >= offered.size {
         return Ok(());
@@ -893,6 +945,7 @@ async fn streamed_from<R: Read + Seek + Send + 'static>(
     let reading = tokio::task::spawn_blocking(move || {
         if let Err(error) = reader.seek(SeekFrom::Start(offset)) {
             let _ = chunks.blocking_send(Err(error));
+
             return;
         }
         loop {
@@ -908,17 +961,21 @@ async fn streamed_from<R: Read + Seek + Send + 'static>(
                 Err(error) if error.kind() == std::io::ErrorKind::Interrupted => {}
                 Err(error) => {
                     let _ = chunks.blocking_send(Err(error));
+
                     return;
                 }
             }
         }
     });
+
     while let Some(chunk) = arriving.recv().await {
         let chunk = chunk.map_err(|source| Error::stream(StreamOp::Read, source))?;
+
         send.write_all(&chunk)
             .await
             .map_err(|source| Error::stream(StreamOp::Write, source))?;
     }
+
     let _ = reading.await;
     Ok(())
 }
@@ -928,9 +985,12 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
+
     send_frame(&mut send, &ToPeer::Holdings.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
+
     let mut holdings = Vec::new();
+
     while let Some(frame) = read_frame(&mut recv).await? {
         match FromPeer::decoded(&frame)? {
             FromPeer::Held { items } => holdings.extend(items),
@@ -963,8 +1023,10 @@ pub async fn meet(connection: &Connection, device: DeviceId, records: bool) -> R
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
+
     send_frame(&mut send, &ToPeer::Meet { device, records }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
+
     let Some(answer) = read_frame(&mut recv).await? else {
         return Err(Error::Unmet);
     };
@@ -1002,6 +1064,7 @@ pub async fn tell(
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
+
     send_frame(&mut send, &ToPeer::Changes { whole, changes }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
     match read_frame(&mut recv).await? {
@@ -1025,6 +1088,7 @@ pub async fn fetch(
 ) -> Result<Fetched> {
     let noted = staged.with_extension(NOTED_EXTENSION);
     let offset = resumable(staged, &noted, device).await;
+
     let fetched = match fetched_from(
         connection, device, recording, staged, &noted, offset, &received,
     )
@@ -1062,6 +1126,7 @@ async fn asked_for_tags(connection: &Connection, recording: &Recording) -> Resul
     let request = ToPeer::Tags {
         recording: recording.clone(),
     };
+
     send_frame(&mut send, &request.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
@@ -1077,9 +1142,11 @@ async fn resumable(staged: &Path, noted: &Path, device: DeviceId) -> u64 {
         note.split_once(' ')
             .is_some_and(|(from, _)| from == device.to_string())
     });
+
     if !from_here {
         let _ = fs::remove_file(staged).await;
         let _ = fs::remove_file(noted).await;
+
         return 0;
     }
     fs::metadata(staged)
@@ -1124,6 +1191,7 @@ async fn fetched_from(
         recording: recording.clone(),
         offset,
     };
+
     send_frame(&mut send, &request.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
@@ -1154,14 +1222,17 @@ async fn fetched_from(
             return Err(Error::Missing(device));
         }
     };
+
     if size > LARGEST_SONG_FETCHED {
         let _ = recv.stop(0_u32.into());
+
         return Err(Error::SongTooLarge { device, size });
     }
     if offset > 0 && noted_size(noted).await != Some(size) {
         let _ = recv.stop(0_u32.into());
         let _ = fs::remove_file(staged).await;
         let _ = fs::remove_file(noted).await;
+
         return Ok(None);
     }
     fs::write(noted, format!("{device} {size}"))
@@ -1176,6 +1247,7 @@ async fn fetched_from(
         .map_err(|source| file_failed(FileOp::Stage, staged, source))?;
     let mut have = offset;
     let mut chunk = vec![0; CHUNK_BYTES];
+
     loop {
         let read = quietly_short(async {
             recv.read(&mut chunk)
@@ -1186,6 +1258,7 @@ async fn fetched_from(
         let Some(read) = read else {
             break;
         };
+
         file.write_all(&chunk[..read])
             .await
             .map_err(|source| file_failed(FileOp::Write, staged, source))?;
@@ -1198,9 +1271,12 @@ async fn fetched_from(
     file.sync_all()
         .await
         .map_err(|source| file_failed(FileOp::Write, staged, source))?;
+
     let _ = fs::remove_file(noted).await;
+
     if have != size {
         let _ = fs::remove_file(staged).await;
+
         return Err(Error::stream(
             StreamOp::Read,
             std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
@@ -1260,6 +1336,7 @@ async fn export_once(
         part: asked.part,
         offset,
     };
+
     send_frame(&mut send, &request.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
@@ -1274,16 +1351,22 @@ async fn export_once(
     else {
         return Ok(Some(ExportFetched::NotHeld));
     };
+
     let offered = ExportHeld { dump, sequence };
+
     if asked.held == Some(&offered) {
         let _ = recv.stop(0_u32.into());
+
         return Ok(Some(ExportFetched::AlreadyHeld));
     }
+
     let note = export_note(device, size, &offered);
+
     if offset > 0 && fs::read_to_string(asked.noted).await.ok().as_deref() != Some(note.as_str()) {
         let _ = recv.stop(0_u32.into());
         let _ = fs::remove_file(asked.staged).await;
         let _ = fs::remove_file(asked.noted).await;
+
         return Ok(None);
     }
     fs::write(asked.noted, &note)
@@ -1297,16 +1380,21 @@ async fn export_once(
         .await
         .map_err(|source| file_failed(FileOp::Stage, asked.staged, source))?;
     let mut have = offset;
+
     receiving.heard(have, size);
+
     let mut chunk = vec![0; CHUNK_BYTES];
+
     while have < size {
         if !allowed() {
             let _ = recv.stop(0_u32.into());
+
             file.sync_all()
                 .await
                 .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
             return Ok(Some(ExportFetched::Failed));
         }
+
         let read = quietly_short(async {
             recv.read(&mut chunk)
                 .await
@@ -1316,6 +1404,7 @@ async fn export_once(
         let Some(read) = read else {
             break;
         };
+
         file.write_all(&chunk[..read])
             .await
             .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
@@ -1328,11 +1417,13 @@ async fn export_once(
     if have != size {
         let _ = fs::remove_file(asked.staged).await;
         let _ = fs::remove_file(asked.noted).await;
+
         return Err(Error::stream(
             StreamOp::Read,
             std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
         ));
     }
+
     let _ = fs::remove_file(asked.noted).await;
     Ok(Some(ExportFetched::Whole(offered)))
 }
@@ -1361,6 +1452,7 @@ mod tests {
 
     fn staged_in(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-peer-{name}-{}", process::id()));
+
         std::fs::create_dir_all(&folder).expect("a folder");
         folder.join("song.part")
     }
@@ -1371,6 +1463,7 @@ mod tests {
         let noted = staged.with_extension(NOTED_EXTENSION);
         let sender = DeviceId([1; 16]);
         let other = DeviceId([2; 16]);
+
         std::fs::write(&staged, [0_u8; 100]).expect("a partial");
         std::fs::write(&noted, format!("{sender} 4000")).expect("a note");
 
@@ -1396,10 +1489,13 @@ mod tests {
         )
         .expect("a device listening");
         let mut asking = Endpoint::client(SocketAddr::from(([127, 0, 0, 1], 0))).expect("a client");
+
         asking.set_default_client_config(identity.dialling().expect("dialling"));
+
         let address = answering.local_addr().expect("an address");
 
         let listening = answering.clone();
+
         tokio::spawn(async move {
             let Some(incoming) = listening.accept().await else {
                 return;
@@ -1419,6 +1515,7 @@ mod tests {
                 let _ = send.finish();
             }
         });
+
         let connection = asking
             .connect(address, PEER_NAME)
             .expect("dialled")
@@ -1450,6 +1547,7 @@ mod tests {
             .expect("a frame")
             .to_be_bytes()
             .to_vec();
+
         framed.extend_from_slice(payload);
         framed
     }
@@ -1465,6 +1563,7 @@ mod tests {
                 }
                 .encoded(),
             );
+
             told.extend_from_slice(&[0; 4096]);
             Some(told)
         })
@@ -1527,6 +1626,7 @@ mod tests {
         .expect("watched");
 
         let held = mirrors.read().get(&device).cloned();
+
         assert_eq!(
             held.as_ref()
                 .and_then(Watched::mirror)
@@ -1570,6 +1670,7 @@ mod tests {
     async fn a_partial_no_note_names_is_started_over() {
         let staged = staged_in("unnoted");
         let noted = staged.with_extension(NOTED_EXTENSION);
+
         std::fs::write(&staged, [0_u8; 100]).expect("a partial");
 
         let offset = resumable(&staged, &noted, DeviceId([1; 16])).await;

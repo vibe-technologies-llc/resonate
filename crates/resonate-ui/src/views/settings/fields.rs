@@ -88,6 +88,7 @@ fn holding(
 ) -> Entity<Field> {
     cx.new(|cx| {
         let mut field = Field::new(placeholder, window, cx);
+
         field.hold(held, cx);
         field
     })
@@ -101,6 +102,7 @@ fn holding_a_secret(
 ) -> Entity<Field> {
     cx.new(|cx| {
         let mut field = Field::new(placeholder, window, cx).masked();
+
         field.hold(held, cx);
         field
     })

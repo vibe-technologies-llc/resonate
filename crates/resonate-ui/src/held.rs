@@ -19,6 +19,7 @@ impl<T> Rows<T> {
         if at >= self.len {
             return None;
         }
+
         let chunk = self.starts.partition_point(|start| *start <= at) - 1;
         self.chunks[chunk].get(at - self.starts[chunk])
     }
@@ -51,6 +52,7 @@ impl<T> Rows<T> {
         if more.is_empty() {
             return self.clone();
         }
+
         let added = more.len();
         let chunks: Arc<[Arc<[T]>]> = self
             .chunks
@@ -107,6 +109,7 @@ impl<T> From<Arc<[T]>> for Rows<T> {
         if rows.is_empty() {
             return Self::default();
         }
+
         let len = rows.len();
 
         Self {

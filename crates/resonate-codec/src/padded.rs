@@ -72,6 +72,7 @@ pub(crate) struct Head {
 impl Head {
     pub(crate) fn of<S: Read + Seek + ?Sized>(kind: FileType, source: &mut S) -> Option<Self> {
         source.rewind().ok()?;
+
         let padded = match kind {
             FileType::Flac => Padded::Flac,
             FileType::Mpeg | FileType::Aac => Padded::Id3,
@@ -145,9 +146,11 @@ fn id3_rebuilt(written: &[u8], standing: u64, room: Room) -> Option<Rebuilt> {
 
 fn ogg_rebuilt(layout: Layout, standing: u64, written: &[u8], room: Room) -> Option<Rebuilt> {
     let parsed = ogg::headers(layout.codec, &mut Cursor::new(written))?;
+
     if parsed.length != written.len() as u64 {
         return None;
     }
+
     let comment = parsed.packets.get(1)?;
     let others: Vec<&Vec<u8>> = parsed
         .packets
@@ -183,13 +186,18 @@ fn ogg_rebuilt(layout: Layout, standing: u64, written: &[u8], room: Room) -> Opt
     };
 
     let mut padded = comment.clone();
+
     padded.resize(padded_to, 0);
+
     let mut packets: Vec<&[u8]> = parsed.packets.iter().map(Vec::as_slice).collect();
+
     packets[1] = &padded;
+
     let head = ogg::paginated(parsed.serial, &packets);
     let pages = fixed.with(Paged::of_packet(padded.len())).pages;
 
     let held = matches!(room, Room::Held);
+
     if (held || matches!(room, Room::Blocks(_)))
         && (pages != usize::try_from(layout.pages).ok()? || (held && head.len() as u64 != standing))
     {
@@ -209,6 +217,7 @@ fn ogg_rebuilt(layout: Layout, standing: u64, written: &[u8], room: Room) -> Opt
 
 fn flac_metadata_end<S: Read + Seek + ?Sized>(source: &mut S) -> Option<u64> {
     let mut at = past_id3(source)?;
+
     source.seek(std::io::SeekFrom::Start(at)).ok()?;
     if read_exact::<4, S>(source)? != FLAC_MAGIC {
         return None;
@@ -218,6 +227,7 @@ fn flac_metadata_end<S: Read + Seek + ?Sized>(source: &mut S) -> Option<u64> {
     for _ in 0..MOST_BLOCKS {
         let header = read_exact::<4, S>(source)?;
         let length = block_length(header);
+
         at = at.checked_add(BLOCK_HEADER_BYTES + length)?;
         if header[0] & LAST_BLOCK != 0 {
             return Some(at);
@@ -254,16 +264,19 @@ fn flac_content(written: &[u8]) -> Option<u64> {
 fn flac_blocks(written: &[u8]) -> Option<FlacBlocks<'_>> {
     let lead = usize::try_from(past_id3(&mut Cursor::new(written))?).ok()?;
     let body = lead.checked_add(FLAC_MAGIC.len())?;
+
     if written.get(lead..body)? != FLAC_MAGIC {
         return None;
     }
 
     let mut kept: Vec<&[u8]> = Vec::new();
     let mut at = body;
+
     loop {
         let header: [u8; 4] = written.get(at..at + 4)?.try_into().ok()?;
         let end = at.checked_add(4 + usize::try_from(block_length(header)).ok()?)?;
         let block = written.get(at..end)?;
+
         if header[0] & BLOCK_KIND != PADDING {
             kept.push(block);
         }
@@ -294,10 +307,14 @@ fn flac_absorbed(written: &[u8], length: u64) -> Option<Vec<u8>> {
     };
 
     let mut absorbed = Vec::with_capacity(usize::try_from(length).ok()?);
+
     absorbed.extend_from_slice(&written[..body]);
+
     let blocks = kept.len();
+
     for (index, block) in kept.into_iter().enumerate() {
         let last = index + 1 == blocks && padding.is_none();
+
         absorbed.push(match last {
             true => block[0] | LAST_BLOCK,
             false => block[0] & !LAST_BLOCK,
@@ -306,6 +323,7 @@ fn flac_absorbed(written: &[u8], length: u64) -> Option<Vec<u8>> {
     }
     if let Some(padding) = padding {
         let [_, high, middle, low] = u32::try_from(padding).ok()?.to_be_bytes();
+
         absorbed.extend_from_slice(&[PADDING | LAST_BLOCK, high, middle, low]);
         absorbed.resize(usize::try_from(length).ok()?, 0);
     }
@@ -316,6 +334,7 @@ fn id3_content(written: &[u8]) -> Option<u64> {
     if !written.starts_with(ID3) || written.len() < ID3_HEADER_BYTES {
         return None;
     }
+
     let version = written[ID3_VERSION_AT];
     let (header, id_bytes, size_len) = match version {
         2 => (
@@ -331,6 +350,7 @@ fn id3_content(written: &[u8]) -> Option<u64> {
         _ => return None,
     };
     let mut at = ID3_HEADER_BYTES;
+
     while at < written.len() && written[at] != 0 {
         let size_bytes = written.get(at + id_bytes..at + id_bytes + size_len)?;
         let size = match version {
@@ -339,6 +359,7 @@ fn id3_content(written: &[u8]) -> Option<u64> {
                 .fold(0_u64, |size, byte| (size << 8) | u64::from(*byte)),
             _ => synchsafe(size_bytes)?,
         };
+
         at = at
             .checked_add(header)?
             .checked_add(usize::try_from(size).ok()?)?;
@@ -353,22 +374,28 @@ fn id3_absorbed(written: &[u8], length: u64) -> Option<Vec<u8>> {
     if !written.starts_with(ID3) || written.len() < ID3_HEADER_BYTES {
         return None;
     }
+
     let flags = written[ID3_FLAGS_AT];
+
     if flags & (ID3_EXTENDED_HEADER | ID3_FOOTER) != 0 {
         return None;
     }
+
     let declared = synchsafe(&written[ID3_SIZE_AT..ID3_HEADER_BYTES])?;
+
     if ID3_HEADER_BYTES as u64 + declared != written.len() as u64 {
         return None;
     }
 
     let content = usize::try_from(id3_content(written)?).ok()?;
     let size = length.checked_sub(ID3_HEADER_BYTES as u64)?;
+
     if content as u64 > length || size > LARGEST_SYNCHSAFE {
         return None;
     }
 
     let mut absorbed = Vec::with_capacity(usize::try_from(length).ok()?);
+
     absorbed.extend_from_slice(&written[..ID3_SIZE_AT]);
     absorbed.extend_from_slice(&synchsafe_bytes(size));
     absorbed.extend_from_slice(&written[ID3_HEADER_BYTES..content]);
@@ -394,13 +421,16 @@ mod tests {
         let [_, high, middle, low] = u32::try_from(payload.len())
             .expect("a small block")
             .to_be_bytes();
+
         let mut bytes = vec![kind | if last { LAST_BLOCK } else { 0 }, high, middle, low];
+
         bytes.extend_from_slice(payload);
         bytes
     }
 
     fn flac_head(blocks: &[Vec<u8>]) -> Vec<u8> {
         let mut head = FLAC_MAGIC.to_vec();
+
         for block in blocks {
             head.extend_from_slice(block);
         }
@@ -410,12 +440,15 @@ mod tests {
     fn blocks_of(head: &[u8]) -> Vec<(u8, bool, usize)> {
         let mut at = FLAC_MAGIC.len();
         let mut blocks = Vec::new();
+
         while at < head.len() {
             let header: [u8; 4] = head[at..at + 4].try_into().expect("a header");
             let length = block_length(header) as usize;
+
             blocks.push((header[0] & BLOCK_KIND, header[0] & LAST_BLOCK != 0, length));
             at += 4 + length;
         }
+
         assert_eq!(at, head.len(), "the blocks did not end where the head does");
         blocks
     }
@@ -451,6 +484,7 @@ mod tests {
         let written = flac_head(&[block(0, false, &[0; 34]), block(4, true, &[1; 60])]);
 
         let absorbed = flac_absorbed(&written, written.len() as u64).expect("an exact fit");
+
         assert_eq!(blocks_of(&absorbed), vec![(0, false, 34), (4, true, 60)]);
 
         assert_eq!(
@@ -464,12 +498,14 @@ mod tests {
     #[test]
     fn a_leading_id3_tag_of_its_own_is_kept_ahead_of_the_blocks() {
         let mut written = b"ID3\x04\x00\x00\x00\x00\x00\x02\x00\x00".to_vec();
+
         written.extend_from_slice(&flac_head(&[
             block(0, false, &[0; 34]),
             block(4, true, &[1; 10]),
         ]));
 
         let absorbed = flac_absorbed(&written, written.len() as u64 + 20).expect("room");
+
         assert_eq!(absorbed[..12], written[..12]);
         assert_eq!(
             flac_metadata_end(&mut Cursor::new(&absorbed)),
@@ -479,6 +515,7 @@ mod tests {
 
     fn id3_frame(id: &[u8; 4], payload: &[u8]) -> Vec<u8> {
         let mut frame = id.to_vec();
+
         frame.extend_from_slice(&synchsafe_bytes(payload.len() as u64));
         frame.extend_from_slice(&[0, 0]);
         frame.extend_from_slice(payload);
@@ -491,6 +528,7 @@ mod tests {
 
     fn id3(size: u64, flags: u8, frames: &[u8]) -> Vec<u8> {
         let mut tag = b"ID3\x04\x00".to_vec();
+
         tag.push(flags);
         tag.extend_from_slice(&synchsafe_bytes(size));
         tag.extend_from_slice(frames);
@@ -535,7 +573,9 @@ mod tests {
         let frames_end = ID3_HEADER_BYTES + 40 + ID3_FRAME_HEADER_BYTES + 6;
 
         assert_eq!(id3_content(&written), Some(frames_end as u64));
+
         let absorbed = id3_absorbed(&written, 400).expect("room to spare");
+
         assert_eq!(
             absorbed[ID3_HEADER_BYTES..frames_end],
             written[ID3_HEADER_BYTES..frames_end]
@@ -545,6 +585,7 @@ mod tests {
     #[test]
     fn a_frame_declaring_more_than_the_tag_holds_has_no_content_end() {
         let mut frame = id3_frame(b"TIT2", b"short");
+
         frame[4..8].copy_from_slice(&synchsafe_bytes(5_000));
 
         assert_eq!(id3_content(&id3(400, 0, &frame)), None);
@@ -552,8 +593,11 @@ mod tests {
 
     fn opus_head(comment_bytes: usize) -> Vec<u8> {
         let mut identification = b"OpusHead".to_vec();
+
         identification.extend_from_slice(&[1, 2, 0x38, 0x01, 0x80, 0xBB, 0, 0, 0, 0, 0]);
+
         let mut comments = b"OpusTags".to_vec();
+
         comments.extend_from_slice(&4_u32.to_le_bytes());
         comments.extend_from_slice(b"test");
         comments.extend_from_slice(&0_u32.to_le_bytes());
@@ -652,8 +696,11 @@ mod tests {
         let rebuilt = head.rebuilt(&written, Room::Blocks(4096)).expect("blocks");
 
         let grown = rebuilt.head.len() - standing.len();
+
         assert!(grown > 0 && grown.is_multiple_of(4096));
+
         let blocks = blocks_of(&rebuilt.head);
+
         assert_eq!(blocks.last().map(|block| block.0), Some(PADDING));
         assert!(blocks.last().map_or(0, |block| block.2) as u64 >= PADDING_LEFT_FOR_THE_NEXT_EDIT);
 
@@ -664,6 +711,7 @@ mod tests {
         let id3_rebuilt = tag
             .rebuilt(&id3(300, 0, &id3_frames_of(300)), Room::Blocks(4096))
             .expect("blocks");
+
         assert!(id3_rebuilt.head.len().is_multiple_of(4096));
         assert!(id3_rebuilt.head.len() as u64 >= 310 + PADDING_LEFT_FOR_THE_NEXT_EDIT);
     }

@@ -63,6 +63,7 @@ impl Library {
         let Some(found) = reference.release(release)? else {
             return Ok(false);
         };
+
         self.inner.write(|transaction| {
             enriched::forgive(transaction, album, &found.id)?;
             enriched::land_release(
@@ -147,6 +148,7 @@ impl Library {
         release: Option<&RecordingRelease>,
     ) -> Result<bool> {
         self.land_recording(track, recording, certainty, release)?;
+
         let Some(release) = release else {
             return Ok(true);
         };
@@ -214,6 +216,7 @@ impl Library {
     pub fn land_release_group(&self, album: AlbumId, group: &ReleaseGroup) -> Result<()> {
         self.inner.write(|transaction| {
             let now = SystemTime::now();
+
             enriched::stamp_album_asked(transaction, album, Fruitless::Missed, now)?;
             enriched::land_release_group(transaction, album, group, now)
         })
@@ -311,6 +314,7 @@ impl Library {
         let Some(mbid) = store::mbid_in(Some(&mbid)) else {
             return Ok(0);
         };
+
         let further = reference.release_groups_of(&mbid, read_to)?;
         let kept: Vec<ArtistRelease> = further
             .releases

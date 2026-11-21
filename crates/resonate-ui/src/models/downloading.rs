@@ -57,6 +57,7 @@ impl LibraryModel {
         else {
             return;
         };
+
         if self.asking_for().contains(&want) {
             self.stop_poll(cx);
             self.fetch_what_was_wanted(PollOptions::default(), cx);

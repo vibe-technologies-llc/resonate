@@ -63,9 +63,11 @@ impl Conforming {
     fn segment_for(&self, sounding: StreamSpec) -> Result<Option<Segment>> {
         let same_rate = sounding.rate == self.opened.rate;
         let same_layout = sounding.channels == self.opened.channels;
+
         if same_rate && same_layout {
             return Ok(None);
         }
+
         let refused = |source: resonate_dsp::Error| Error::Conformity {
             from: self.opened,
             to: sounding,
@@ -107,6 +109,7 @@ impl Conforming {
             let remixed: &[f64] = match &mut segment.remix {
                 Some(remix) => {
                     let frames = chunk.len() / segment.sounding_channels;
+
                     self.remixed.clear();
                     self.remixed.resize(frames * segment.opened_channels, 0.0);
                     remix.process(&self.widened, &mut self.remixed);
@@ -117,13 +120,16 @@ impl Conforming {
             match &mut segment.resampler {
                 Some(resampler) => {
                     let room = resampler.max_output_frames(FRAMES_AT_A_TIME);
+
                     self.resampled.clear();
                     self.resampled.resize(room * segment.opened_channels, 0.0);
+
                     let made = resampler.process(remixed, &mut self.resampled).frames_out;
                     let written = self
                         .resampled
                         .get(..made * segment.opened_channels)
                         .unwrap_or_default();
+
                     self.conformed
                         .extend(written.iter().map(|sample| *sample as f32));
                 }
@@ -141,13 +147,16 @@ impl Conforming {
         let Some(resampler) = &mut segment.resampler else {
             return;
         };
+
         self.resampled
             .resize(resampler.max_flush_frames() * segment.opened_channels, 0.0);
+
         let made = resampler.flush(&mut self.resampled);
         let written = self
             .resampled
             .get(..made * segment.opened_channels)
             .unwrap_or_default();
+
         self.conformed
             .extend(written.iter().map(|sample| *sample as f32));
     }
@@ -179,12 +188,14 @@ impl Walking {
         if self.ended {
             return Ok(None);
         }
+
         let status = decoder
             .next_block(&mut self.block)
             .map_err(|source| Error::codec(AnalysisOp::Decode, source))?;
         match status {
             DecodeStatus::EndOfStream => {
                 self.ended = true;
+
                 let tail = self.conforming.finish();
                 Ok((!tail.is_empty()).then_some(Heard {
                     native: None,
@@ -197,6 +208,7 @@ impl Walking {
             })),
             DecodeStatus::Decoded => {
                 normalise(self.block.data(), &mut self.normalised);
+
                 let native = (!self.conforming.turned).then(|| self.block.data());
                 Ok(Some(Heard {
                     native,

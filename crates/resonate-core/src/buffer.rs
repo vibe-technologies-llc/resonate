@@ -200,6 +200,7 @@ impl AudioBuffer {
         }
 
         let previous = mem::replace(&mut self.data, SampleData::empty(format));
+
         self.data = match (previous, format) {
             (SampleData::S24(mut samples), SampleFormat::S32) => {
                 for sample in &mut samples {
@@ -215,6 +216,7 @@ impl AudioBuffer {
             }
             (previous, format) => {
                 let mut next = SampleData::silence(format, previous.len());
+
                 convert(&previous, &mut next);
                 next
             }
@@ -239,6 +241,7 @@ fn finite_or_silent(sample: f32) -> f64 {
 
 fn widened<S: Copy>(src: &[S], from: usize, wide: &mut [f64], widen: impl Fn(S) -> f64) -> usize {
     let taken = src.get(from..).unwrap_or_default();
+
     each(taken, wide, widen);
     taken.len().min(wide.len())
 }
@@ -296,6 +299,7 @@ mod tests {
 
     fn from_s16(values: &[i16]) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(mono(SampleFormat::S16), values.len());
+
         match buffer.data_mut() {
             SampleData::S16(store) => store.copy_from_slice(values),
             other => panic!("expected S16, got {other:?}"),
@@ -305,6 +309,7 @@ mod tests {
 
     fn from_i32(format: SampleFormat, values: &[i32]) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(mono(format), values.len());
+
         match buffer.data_mut() {
             SampleData::S24(store) | SampleData::S32(store) => store.copy_from_slice(values),
             other => panic!("expected an integer format, got {other:?}"),
@@ -314,6 +319,7 @@ mod tests {
 
     fn from_f32(values: &[f32]) -> AudioBuffer {
         let mut buffer = AudioBuffer::silence(mono(SampleFormat::F32), values.len());
+
         match buffer.data_mut() {
             SampleData::F32(store) => store.copy_from_slice(values),
             other => panic!("expected F32, got {other:?}"),
@@ -337,8 +343,11 @@ mod tests {
 
     fn through(source: &AudioBuffer, via: SampleFormat, back: SampleFormat) -> AudioBuffer {
         let mut intermediate = AudioBuffer::empty(mono(via));
+
         source.convert_into(&mut intermediate);
+
         let mut result = AudioBuffer::empty(mono(back));
+
         intermediate.convert_into(&mut result);
         result
     }
@@ -346,6 +355,7 @@ mod tests {
     #[test]
     fn silence_sizes_the_backing_store_by_frames_times_channels() {
         let buffer = AudioBuffer::silence(spec(SampleFormat::S24), 128);
+
         assert_eq!(buffer.frames(), 128);
         assert_eq!(buffer.data().len(), 256);
     }
@@ -360,6 +370,7 @@ mod tests {
         ] {
             let spec = spec(format);
             let buffer = AudioBuffer::silence(spec, 64);
+
             assert_eq!(
                 buffer.as_bytes().len() as u64,
                 spec.frames_to_bytes(crate::Frames(64)),
@@ -371,9 +382,13 @@ mod tests {
     #[test]
     fn set_frames_keeps_the_store_and_the_frame_count_in_step() {
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), 16);
+
         buffer.set_frames(4);
+
         assert_eq!(buffer.data().len(), 8);
+
         buffer.set_frames(32);
+
         assert_eq!(buffer.data().len(), 64);
     }
 
@@ -408,11 +423,15 @@ mod tests {
         let source = from_s16(&values);
 
         let mut wide = AudioBuffer::empty(mono(SampleFormat::S32));
+
         source.convert_into(&mut wide);
+
         assert_eq!(as_i32(&wide), &[32_767 << 16, -32_768 << 16, 0, 1 << 16]);
 
         let mut narrow = AudioBuffer::empty(mono(SampleFormat::S16));
+
         wide.convert_into(&mut narrow);
+
         assert_eq!(as_s16(&narrow), values.as_slice());
     }
 
@@ -421,11 +440,15 @@ mod tests {
         let source = from_f32(&[2.0, -2.0, 1.0, -1.0]);
 
         let mut narrowed = AudioBuffer::empty(mono(SampleFormat::S24));
+
         source.convert_into(&mut narrowed);
+
         assert_eq!(as_i32(&narrowed), &[S24_MAX, S24_MIN, S24_MAX, S24_MIN]);
 
         let mut narrowed = AudioBuffer::empty(mono(SampleFormat::S16));
+
         source.convert_into(&mut narrowed);
+
         assert_eq!(as_s16(&narrowed), &[i16::MAX, i16::MIN, i16::MAX, i16::MIN]);
     }
 
@@ -436,6 +459,7 @@ mod tests {
             let source = from_f32(&[three_quarters_of_a_step, -three_quarters_of_a_step]);
 
             let mut converted = AudioBuffer::empty(mono(format));
+
             source.convert_into(&mut converted);
 
             let rounded = match converted.data() {
@@ -443,6 +467,7 @@ mod tests {
                 SampleData::S24(store) | SampleData::S32(store) => store.clone(),
                 other => panic!("expected an integer format, got {other:?}"),
             };
+
             assert_eq!(rounded, [1, -1], "{format}");
         }
     }
@@ -452,7 +477,9 @@ mod tests {
         let source = from_f32(&[2.0, -2.0, 1.0, -1.0, f32::NAN]);
 
         let mut narrowed = AudioBuffer::empty(mono(SampleFormat::S32));
+
         source.convert_into(&mut narrowed);
+
         assert_eq!(
             as_i32(&narrowed),
             &[i32::MAX, i32::MIN, i32::MAX, i32::MIN, 0]
@@ -462,9 +489,11 @@ mod tests {
     #[test]
     fn retyping_between_s24_and_s32_keeps_the_allocation() {
         let mut buffer = from_i32(SampleFormat::S24, &[1_000, -1_000]);
+
         let store = as_i32(&buffer).as_ptr();
 
         buffer.retype(SampleFormat::S32);
+
         assert_eq!(buffer.spec().format, SampleFormat::S32);
         assert_eq!(as_i32(&buffer), &[256_000, -256_000]);
         assert_eq!(
@@ -474,6 +503,7 @@ mod tests {
         );
 
         buffer.retype(SampleFormat::S24);
+
         assert_eq!(as_i32(&buffer), &[1_000, -1_000]);
         assert_eq!(
             as_i32(&buffer).as_ptr(),
@@ -485,6 +515,7 @@ mod tests {
     #[test]
     fn set_spec_retargets_a_reused_buffer_without_moving_its_store() {
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S24), 64);
+
         let store = as_i32(&buffer).as_ptr();
 
         buffer.set_spec(StreamSpec::new(
@@ -507,6 +538,7 @@ mod tests {
     #[test]
     fn set_spec_resizes_the_store_when_the_channel_count_changes() {
         let mut buffer = AudioBuffer::silence(spec(SampleFormat::S16), 32);
+
         buffer.set_spec(mono(SampleFormat::S16));
 
         assert_eq!(buffer.frames(), 32);
@@ -516,6 +548,7 @@ mod tests {
     #[test]
     fn retyping_to_the_current_format_is_a_no_op() {
         let mut buffer = from_i32(SampleFormat::S32, &[7, 8, 9]);
+
         buffer.retype(SampleFormat::S32);
 
         assert_eq!(as_i32(&buffer), &[7, 8, 9]);
@@ -527,9 +560,11 @@ mod tests {
         let mut destination = AudioBuffer::empty(mono(SampleFormat::S32));
 
         source.convert_into(&mut destination);
+
         let store = as_i32(&destination).as_ptr();
 
         source.convert_into(&mut destination);
+
         assert_eq!(as_i32(&destination).as_ptr(), store);
         assert_eq!(as_i32(&destination), &[1 << 16, 2 << 16, 3 << 16, 4 << 16]);
     }
@@ -574,18 +609,25 @@ mod tests {
         ];
         let source = SampleData::S32(words.to_vec());
         let mut wide = vec![0.0; words.len()];
+
         assert_eq!(source.widen_into(0, &mut wide), words.len());
 
         let mut back = SampleData::S32(vec![0; words.len()]);
+
         back.write_f64(&wide);
+
         assert_eq!(back, source, "a 32-bit word lost its low byte");
 
         let every_s16: Vec<i16> = (i16::MIN..=i16::MAX).collect();
         let source = SampleData::S16(every_s16.clone());
         let mut wide = vec![0.0; every_s16.len()];
+
         source.widen_into(0, &mut wide);
+
         let mut back = SampleData::S16(vec![0; every_s16.len()]);
+
         back.write_f64(&wide);
+
         assert_eq!(back, source);
     }
 
@@ -593,7 +635,9 @@ mod tests {
     fn a_wide_sample_rounds_half_to_even_and_saturates_like_a_narrow_one() {
         let step = 1.0 / f64::from(SampleFormat::S16.full_scale());
         let mut words = SampleData::S16(vec![0; 6]);
+
         words.write_f64(&[0.5 * step, 1.5 * step, -2.5 * step, 2.0, -2.0, f64::NAN]);
+
         assert_eq!(
             words,
             SampleData::S16(vec![0, 2, -2, i16::MAX, i16::MIN, 0])
@@ -622,9 +666,11 @@ mod tests {
     #[test]
     fn a_nan_or_an_infinity_never_reaches_a_float_word() {
         let mut wide = SampleData::F32(vec![0.0; 5]);
+
         wide.write_f64(&[f64::NAN, f64::INFINITY, f64::NEG_INFINITY, 1e300, 0.25]);
 
         let mut narrow = SampleData::F32(vec![0.0; 4]);
+
         narrow.write_f32(&[f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 1.5]);
 
         assert_eq!(wide, SampleData::F32(vec![0.0, 1.0, -1.0, 1.0, 0.25]));

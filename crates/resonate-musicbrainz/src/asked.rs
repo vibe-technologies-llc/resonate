@@ -77,6 +77,7 @@ impl Entity {
 impl Asked {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         writer.byte(ENCODED_AS);
         self.write(&mut writer);
         writer.finish()
@@ -84,11 +85,15 @@ impl Asked {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let version = reader.byte()?;
+
         if version != ENCODED_AS {
             return Err(Error::Malformed(Malformed::Tag { tag: version }));
         }
+
         let asked = Self::read(&mut reader)?;
+
         reader.done()?;
         Ok(asked)
     }
@@ -263,6 +268,7 @@ impl Asked {
 impl Answer {
     pub fn encoded(&self) -> Vec<u8> {
         let mut writer = Writer::new();
+
         writer.byte(ENCODED_AS);
         match self {
             Self::Release(release) => {
@@ -327,10 +333,13 @@ impl Answer {
 
     pub fn decoded(bytes: &[u8]) -> Result<Self> {
         let mut reader = Reader::new(bytes);
+
         let version = reader.byte()?;
+
         if version != ENCODED_AS {
             return Err(Error::Malformed(Malformed::Tag { tag: version }));
         }
+
         let answer = match reader.byte()? {
             0 => Self::Release(reader.maybe(Reader::release)?),
             1 => Self::Releases(reader.release_matches()?),
@@ -348,6 +357,7 @@ impl Answer {
             13 => Self::ArtistPressings(reader.pressings()?),
             tag => return Err(Error::Malformed(Malformed::Tag { tag })),
         };
+
         reader.done()?;
         Ok(answer)
     }

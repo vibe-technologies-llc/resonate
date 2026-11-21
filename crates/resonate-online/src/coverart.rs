@@ -132,6 +132,7 @@ mod tests {
     ) -> (Result<Option<CoverArt>>, Vec<String>) {
         let fronts = ["1200", "uploaded", "500"].map(str::to_owned);
         let mut asked = Vec::new();
+
         let found = front_among(&fronts, |url| {
             asked.push(url.to_owned());
             answer(url)
@@ -193,6 +194,7 @@ mod tests {
     fn bytes_that_are_no_picture_are_unreadable_rather_than_stored() {
         let png = b"\x89PNG\r\n\x1a\n rest".to_vec();
         let picture = picture(Host::CoverArtArchive, LookupOp::Cover, png).expect("a png");
+
         assert_eq!(picture.format, ImageFormat::Png);
 
         assert!(matches!(

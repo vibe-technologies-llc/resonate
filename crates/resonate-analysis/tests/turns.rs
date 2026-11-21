@@ -32,6 +32,7 @@ impl Tree {
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a scratch tree");
         Self { root }
     }
@@ -60,6 +61,7 @@ const STEREO_AT_THE_TURNED_RATE: Link = Link {
 
 fn chained(tree: &Tree, name: &str, links: &[Link]) -> Option<PathBuf> {
     let mut whole = Vec::new();
+
     for (index, link) in links.iter().enumerate() {
         let part = tree.root.join(format!("{index}-{name}"));
         let tone = format!(
@@ -67,6 +69,7 @@ fn chained(tree: &Tree, name: &str, links: &[Link]) -> Option<PathBuf> {
             link.rate,
             TONE_AMPLITUDE / SINE_SOURCE_AMPLITUDE
         );
+
         let made = Command::new("ffmpeg")
             .args(["-y", "-v", "error", "-f", "lavfi", "-i", &tone])
             .args(["-af", twinned(link.channels)])
@@ -76,13 +79,16 @@ fn chained(tree: &Tree, name: &str, links: &[Link]) -> Option<PathBuf> {
             .stderr(Stdio::null())
             .status()
             .is_ok_and(|status| status.success());
+
         if !made {
             eprintln!("skipped: no ffmpeg with libvorbis to write a link of {name}");
             return None;
         }
         whole.extend_from_slice(&fs::read(&part).ok()?);
     }
+
     let path = tree.root.join(name);
+
     fs::write(&path, whole).ok()?;
     Some(path)
 }
@@ -163,6 +169,7 @@ fn a_stream_that_turns_is_as_loud_as_the_same_tone_that_never_does() {
     let loudness = |path: &Path| studied(path).loudness.integrated.expect("a loudness");
 
     let (turned, held) = (loudness(&turning), loudness(&steady));
+
     assert!(
         (turned - held).abs() < LOUDNESS_AGREES_WITHIN,
         "{turned} against {held}"

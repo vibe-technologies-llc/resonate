@@ -11,7 +11,7 @@ use crate::{Described, Error, PipeOp, PlaylistInfo, PlaylistOrder, Result};
 pub(crate) const FRAME_AT_MOST: usize = 64 << 20;
 const HEADER_BYTES: usize = 4;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Call {
     CanRaise = 1,
@@ -77,7 +77,7 @@ impl Call {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Fault {
     InvalidArgs = 1,
@@ -93,7 +93,7 @@ impl Fault {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 #[repr(u8)]
 pub(crate) enum Act {
     Raise = 1,
@@ -239,6 +239,7 @@ impl Request {
 
     pub(crate) fn encode(&self) -> Vec<u8> {
         let mut out = Writer::default();
+
         out.u8(self.call() as u8);
         match self {
             Self::CanRaise
@@ -298,6 +299,7 @@ impl Request {
 
     pub(crate) fn decode(bytes: &[u8]) -> std::result::Result<Self, WireFault> {
         let mut reader = Reader::new(bytes);
+
         let tag = reader.u8()?;
         let call = Call::of(tag).ok_or(WireFault::NoSuchRequest { tag })?;
         let request = match call {
@@ -338,6 +340,7 @@ impl Request {
             },
             Call::AddTracks => {
                 let mut uris = Vec::new();
+
                 for _ in 0..reader.count()? {
                     uris.push(reader.text()?);
                 }
@@ -358,6 +361,7 @@ impl Request {
             Call::Waiting => Self::Waiting,
             Call::Device => Self::Device,
         };
+
         reader.end()?;
         Ok(request)
     }
@@ -395,6 +399,7 @@ impl Reply {
 
     pub(crate) fn encode(&self) -> Vec<u8> {
         let mut out = Writer::default();
+
         match self {
             Self::Done => out.u8(Self::DONE),
             Self::Flag(flag) => {
@@ -458,6 +463,7 @@ impl Reply {
 
     pub(crate) fn decode(bytes: &[u8]) -> std::result::Result<Self, WireFault> {
         let mut reader = Reader::new(bytes);
+
         let tag = reader.u8()?;
         let reply = match tag {
             Self::DONE => Self::Done,
@@ -469,6 +475,7 @@ impl Reply {
             Self::TRACKS => Self::Tracks(reader.tracks()?),
             Self::ROWS => {
                 let mut rows = Vec::new();
+
                 for _ in 0..reader.count()? {
                     rows.push(reader.described()?);
                 }
@@ -480,6 +487,7 @@ impl Reply {
             }),
             Self::LISTED => {
                 let mut playlists = Vec::new();
+
                 for _ in 0..reader.count()? {
                     playlists.push(PlaylistInfo {
                         id: reader.playlist()?,
@@ -498,6 +506,7 @@ impl Reply {
             }
             tag => return Err(WireFault::NoSuchReply { tag }),
         };
+
         reader.end()?;
         Ok(reply)
     }
@@ -660,10 +669,12 @@ impl Writer {
 
     fn described(&mut self, row: &Described) {
         self.u64(row.track.get());
+
         let url = row
             .location
             .as_ref()
             .map(|location| location.to_uri_within(row.span));
+
         self.maybe_text(url.as_deref());
         self.maybe_text(row.title.as_deref());
         self.maybe_text(row.artist.as_deref());
@@ -697,12 +708,14 @@ impl<'a> Reader<'a> {
             .left
             .split_at_checked(length)
             .ok_or(WireFault::Truncated)?;
+
         self.left = left;
         Ok(taken)
     }
 
     fn array<const N: usize>(&mut self) -> std::result::Result<[u8; N], WireFault> {
         let mut array = [0; N];
+
         array.copy_from_slice(self.take(N)?);
         Ok(array)
     }
@@ -768,6 +781,7 @@ impl<'a> Reader<'a> {
 
     fn tracks(&mut self) -> std::result::Result<Vec<TrackId>, WireFault> {
         let mut tracks = Vec::new();
+
         for _ in 0..self.count()? {
             tracks.push(self.track()?);
         }
@@ -776,6 +790,7 @@ impl<'a> Reader<'a> {
 
     fn pairs(&mut self) -> std::result::Result<Vec<(String, String)>, WireFault> {
         let mut pairs = Vec::new();
+
         for _ in 0..self.count()? {
             pairs.push((self.text()?, self.text()?));
         }
@@ -830,6 +845,7 @@ pub(crate) fn write_frame(to: &mut impl Write, body: &[u8]) -> Result<()> {
 pub(crate) fn read_frame(from: &mut impl Read) -> Result<Option<Vec<u8>>> {
     let mut header = [0; HEADER_BYTES];
     let mut filled = 0;
+
     while filled < HEADER_BYTES {
         match from.read(&mut header[filled..]) {
             Ok(0) if filled == 0 => return Ok(None),
@@ -855,6 +871,7 @@ pub(crate) fn read_frame(from: &mut impl Read) -> Result<Option<Vec<u8>>> {
     }
 
     let length = usize::try_from(u32::from_le_bytes(header)).unwrap_or(usize::MAX);
+
     if length > FRAME_AT_MOST {
         return Err(WireFault::TooLong {
             length: u64::try_from(length).unwrap_or(u64::MAX),
@@ -863,6 +880,7 @@ pub(crate) fn read_frame(from: &mut impl Read) -> Result<Option<Vec<u8>>> {
     }
 
     let mut body = Vec::new();
+
     from.by_ref()
         .take(u64::try_from(length).unwrap_or(u64::MAX))
         .read_to_end(&mut body)
@@ -1036,8 +1054,11 @@ mod tests {
             Request::decode(&whole[..whole.len() - 1]),
             Err(WireFault::Truncated)
         );
+
         let mut longer = whole;
+
         longer.push(0);
+
         assert_eq!(Request::decode(&longer), Err(WireFault::Trailing));
     }
 
@@ -1064,8 +1085,11 @@ mod tests {
     #[test]
     fn a_zero_id_and_text_that_is_not_utf8_are_refused() {
         let mut zero = vec![Call::RemoveTrack as u8];
+
         zero.extend_from_slice(&0u64.to_le_bytes());
+
         let mut garbled = vec![Reply::TEXT];
+
         garbled.extend_from_slice(&1u32.to_le_bytes());
         garbled.push(0xff);
 
@@ -1076,6 +1100,7 @@ mod tests {
     #[test]
     fn a_count_larger_than_the_frame_could_hold_is_refused_before_anything_is_reserved() {
         let mut lying = vec![Call::Described as u8];
+
         lying.extend_from_slice(&u32::MAX.to_le_bytes());
 
         assert_eq!(Request::decode(&lying), Err(WireFault::Truncated));
@@ -1104,9 +1129,11 @@ mod tests {
     #[test]
     fn frames_are_read_back_whole_in_the_order_they_were_written_and_end_cleanly() {
         let mut wire = Vec::new();
+
         write_frame(&mut wire, b"first").expect("a frame");
         write_frame(&mut wire, b"").expect("an empty frame");
         write_frame(&mut wire, b"third").expect("a frame");
+
         let mut read = Cursor::new(wire);
 
         assert_eq!(
@@ -1124,8 +1151,10 @@ mod tests {
     #[test]
     fn a_frame_cut_short_is_an_error_and_one_too_long_is_refused_unread() {
         let mut cut = Vec::new();
+
         write_frame(&mut cut, b"whole").expect("a frame");
         cut.truncate(cut.len() - 1);
+
         let announced = u32::try_from(FRAME_AT_MOST + 1)
             .expect("fits")
             .to_le_bytes();

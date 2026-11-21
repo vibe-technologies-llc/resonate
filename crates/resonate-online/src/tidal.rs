@@ -78,6 +78,7 @@ impl Embed {
 
     fn coded_by(mut self, client: &Client) -> Result<LinkedPlaylist> {
         let mut answering = true;
+
         for song in &mut self.songs {
             let Some(track) = song.track.as_deref().filter(|_| answering) else {
                 continue;
@@ -144,14 +145,17 @@ fn track_of(head: &str) -> Option<String> {
 
 fn listed(item: &str) -> Option<Listed> {
     let (head, body) = item.split_once('>')?;
+
     if !head.contains(A_TRACK) {
         return None;
     }
+
     let title = stated(Some(&unescaped(between(body, A_TITLE, A_SPAN_CLOSES)?)))?;
     let artists: Vec<String> = texts_of_anchors(between(body, AN_ARTIST, A_SPAN_CLOSES)?)
         .iter()
         .filter_map(|artist| stated(Some(&unescaped(artist))))
         .collect();
+
     if artists.is_empty() {
         return None;
     }

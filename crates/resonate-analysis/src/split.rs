@@ -80,6 +80,7 @@ impl Coefficients {
             a1: [[0.0; EDGES]; SECTIONS_AN_EDGE],
             a2: [[0.0; EDGES]; SECTIONS_AN_EDGE],
         };
+
         for edge in 0..EDGES {
             for (section, Biquad { b0, b1, b2, a1, a2 }) in sections_at(edge + 1, rate).enumerate()
             {
@@ -109,6 +110,7 @@ pub(crate) fn passed_below(edge: usize, hertz: f64, rate: SampleRate) -> f64 {
     if edge >= BANDS {
         return 1.0;
     }
+
     let decibels: f64 = sections_at(edge, rate)
         .map(|section| section.magnitude_db(hertz, rate))
         .sum();
@@ -144,6 +146,7 @@ impl Cascades {
             for edge in 0..EDGES {
                 let input = heard[edge];
                 let output = b0[edge] * input + first[edge];
+
                 first[edge] = b1[edge] * input - a1[edge] * output + second[edge];
                 second[edge] = b2[edge] * input - a2[edge] * output;
                 heard[edge] = output;
@@ -173,6 +176,7 @@ impl<const WIDTH: usize> Tiles<WIDTH> {
 
     fn holding(&mut self, frame: usize) -> &mut [f64; WIDTH] {
         let mut tile = frame / self.frames;
+
         while tile >= self.loudest.len() {
             self.loudest.push([0.0; WIDTH]);
             if self.loudest.len() > TILES_AT_MOST {
@@ -235,6 +239,7 @@ impl Ranged {
 impl Holding for Ranged {
     fn holding(&mut self, frame: usize) -> &mut [f64; NODES] {
         let tile = frame / self.frames - self.first;
+
         if tile >= self.loudest.len() {
             self.loudest.resize(tile + 1, [0.0; NODES]);
         }
@@ -262,15 +267,19 @@ fn loudest_apart(
         .zip(from.as_chunks::<READ_LANES>().0)
         .zip(midway_to.as_chunks::<READ_LANES>().0)
         .zip(midway_from.as_chunks::<READ_LANES>().0);
+
     for (((to, from), midway_to), midway_from) in chunks {
         for lane in 0..READ_LANES {
             let at = (to[lane] - from[lane]).abs();
             let between = (midway_to[lane] - midway_from[lane]).abs();
+
             lanes[lane] = larger(lanes[lane], larger(at, between));
         }
     }
+
     let mut loudest = lanes.into_iter().fold(start, larger);
     let read = to.len() / READ_LANES * READ_LANES;
+
     for at in read..to.len() {
         loudest = larger(loudest, (to[at] - from[at]).abs());
         loudest = larger(loudest, (midway_to[at] - midway_from[at]).abs());
@@ -297,12 +306,14 @@ impl Reading {
 
     fn primed(settled: &[Plane], heard: &[f64], at: usize) -> Self {
         let mut reading = Self::silent();
+
         reading.remember(settled, heard, at);
         reading
     }
 
     fn remember(&mut self, settled: &[Plane], heard: &[f64], at: usize) {
         let before = at - HISTORY..at;
+
         for (back, plane) in settled[before.clone()].iter().enumerate() {
             for (column, lane) in self.levels[1..BANDS].iter_mut().zip(plane) {
                 column[back] = *lane;
@@ -332,6 +343,7 @@ impl Reading {
             let older = &column[1..=frames];
             let newer = &column[2..frames + 2];
             let levels = &column[HISTORY..HISTORY + frames];
+
             let reads = oldest.iter().zip(older).zip(newer).zip(levels);
             for (slot, (((oldest, older), newer), level)) in midway[..frames].iter_mut().zip(reads)
             {
@@ -411,6 +423,7 @@ impl Bank {
 
     fn note(&mut self, interleaved: &[f32]) {
         let width = self.width;
+
         self.heard.extend(
             interleaved
                 .iter()
@@ -430,8 +443,10 @@ impl Bank {
 
     fn begin(&mut self) {
         let before = self.margin.min(self.heard.len().saturating_sub(1));
+
         for back in (1..=before).rev() {
             let mut lanes = [self.heard[back]; EDGES];
+
             self.forward.step(&self.coefficients, &mut lanes);
         }
         self.begun = true;
@@ -440,7 +455,9 @@ impl Bank {
     fn pass_and_settle(&mut self) {
         let passed = self.passed.len();
         let chunks = passed.saturating_sub(self.margin) / self.chunk;
+
         self.passed.resize(self.heard.len(), [0.0; EDGES]);
+
         let (settling, fresh) = self.passed.split_at_mut(passed);
 
         let Self {
@@ -454,6 +471,7 @@ impl Bank {
             base,
             ..
         } = self;
+
         together(
             || {
                 for (lanes, sample) in fresh.iter_mut().zip(&heard[passed..]) {
@@ -463,12 +481,15 @@ impl Bank {
             },
             || {
                 settle_chunks(coefficients, settling, chunks, *chunk, *margin);
+
                 let frames = chunks * *chunk;
+
                 read_settled_across(reading, tiles, &settling[..frames], &heard[..frames], *base);
             },
         );
 
         let frames = chunks * self.chunk;
+
         self.heard.drain(..frames);
         self.passed.drain(..frames);
         self.base += frames;
@@ -483,14 +504,17 @@ impl Bank {
 
         let held = self.heard.len();
         let after = self.margin.min(held.saturating_sub(1));
+
         self.passed.reserve(after);
         for ahead in 1..=after {
             let mut lanes = [self.heard[held - 1 - ahead]; EDGES];
+
             self.forward.step(&self.coefficients, &mut lanes);
             self.passed.push(lanes);
         }
         if held > 0 {
             let (settled, ahead) = self.passed.split_at_mut(held);
+
             backward_over(&self.coefficients, settled, ahead);
             read_settled(
                 &mut self.reading,
@@ -502,6 +526,7 @@ impl Bank {
         }
 
         let last = (self.base + held).saturating_sub(1);
+
         self.reading.take_in_silence(LAST_MIDPOINT_FRAMES);
         self.reading
             .read_into(LAST_MIDPOINT_FRAMES, self.tiles.holding(last));
@@ -524,8 +549,10 @@ fn together(one: impl FnOnce() + Send, other: impl FnOnce() + Send) {
 
 fn state_before(coefficients: &Coefficients, ahead: &[Plane]) -> Cascades {
     let mut backward = Cascades::SILENT;
+
     for lanes in ahead.iter().rev() {
         let mut lanes = *lanes;
+
         backward.step(coefficients, &mut lanes);
     }
     backward
@@ -533,6 +560,7 @@ fn state_before(coefficients: &Coefficients, ahead: &[Plane]) -> Cascades {
 
 fn backward_over(coefficients: &Coefficients, settled: &mut [Plane], ahead: &[Plane]) {
     let backward = state_before(coefficients, ahead);
+
     finish_backward(coefficients, settled, backward);
 }
 
@@ -558,6 +586,7 @@ fn settle_chunks(
             .into_par_iter()
             .map(|nth| state_before(coefficients, &held[nth * chunk..nth * chunk + margin]))
             .collect();
+
         passed[..chunks * chunk]
             .par_chunks_mut(chunk)
             .zip(states)
@@ -565,6 +594,7 @@ fn settle_chunks(
     } else {
         for nth in 0..chunks {
             let (settled, ahead) = passed[nth * chunk..].split_at_mut(chunk);
+
             backward_over(coefficients, settled, &ahead[..margin]);
         }
     }
@@ -574,9 +604,11 @@ fn reading_ranges(tile_frames: usize, base: usize, frames: usize) -> Vec<Range<u
     let each = TILES_A_READING_RANGE * tile_frames;
     let mut ranges = Vec::new();
     let mut at = 0;
+
     while at < frames {
         let boundary = ((base + at) / each + 1) * each - base;
         let end = boundary.max(at + HISTORY).min(frames);
+
         ranges.push(at..end);
         at = end;
     }
@@ -608,6 +640,7 @@ fn read_in_ranges(
         return;
     };
     let frames_a_tile = tiles.frames;
+
     let (_, apart) = rayon::join(
         || {
             read_settled(
@@ -622,6 +655,7 @@ fn read_in_ranges(
             rest.par_iter()
                 .map(|range| {
                     let mut tiles = Ranged::from_frame(frames_a_tile, base + range.start);
+
                     read_settled(
                         &mut Reading::primed(settled, heard, range.start),
                         &mut tiles,
@@ -634,6 +668,7 @@ fn read_in_ranges(
                 .collect::<Vec<_>>()
         },
     );
+
     for ranged in apart {
         ranged.merge_into(tiles);
     }
@@ -655,6 +690,7 @@ fn read_settled(
             .frames_left_of_the_tile_holding(frame)
             .min(FRAMES_READ_AT_ONCE)
             .min(frames - at);
+
         reading.take_in(&settled[at..at + run], &heard[at..at + run]);
         reading.read_into(run, tiles.holding(frame));
         at += run;
@@ -691,9 +727,11 @@ impl Metered {
             if self.metered.is_empty() {
                 self.metered_from = self.noted;
             }
+
             let room = self.tile_frames - self.noted % self.tile_frames;
             let taken = room.min(left.len() / self.width);
             let (these, rest) = left.split_at(taken * self.width);
+
             self.metered.extend_from_slice(these);
             self.noted += taken;
             left = rest;
@@ -706,6 +744,7 @@ impl Metered {
     fn read_what_was_metered(&mut self) {
         let peak = self.meter.take(&self.metered);
         let [whole] = self.tiles.holding(self.metered_from);
+
         *whole = whole.max(peak);
         self.metered.clear();
     }
@@ -714,8 +753,10 @@ impl Metered {
         if !self.metered.is_empty() {
             self.read_what_was_metered();
         }
+
         let ringing = self.meter.finish();
         let [whole] = self.tiles.holding(self.noted.saturating_sub(1));
+
         *whole = whole.max(ringing);
         self.tiles
     }
@@ -772,6 +813,7 @@ impl Splitting {
         }
 
         let mut tiles = Vec::new();
+
         for bank in self.banks {
             let finished = bank.finished();
             if tiles.is_empty() {
@@ -785,10 +827,12 @@ impl Splitting {
                 }
             }
         }
+
         let metered = self.metered.finished().loudest;
         let metered_peak = metered
             .iter()
             .fold(0.0, |loudest, [whole]| f64::max(loudest, *whole));
+
         for (heights, [whole]) in tiles.iter_mut().zip(metered) {
             heights[WHOLE] = whole;
         }
@@ -798,6 +842,7 @@ impl Splitting {
                 *height /= self.shortfalls[node.to - 1];
             }
         }
+
         let true_peak = tiles
             .iter()
             .fold(0.0, |loudest, heights| f64::max(loudest, heights[WHOLE]));
@@ -866,6 +911,7 @@ mod tests {
 
     fn peaks_of(signal: &[f32], channels: usize, piece: usize) -> BandPeaks {
         let mut splitting = Splitting::new(RATE, channels);
+
         for part in signal.chunks(piece * channels) {
             splitting.note(part);
         }
@@ -874,6 +920,7 @@ mod tests {
 
     fn peaks_on_a_crew(signal: &[f32], channels: usize, crew: Crew) -> BandPeaks {
         let mut splitting = Splitting::new(RATE, channels);
+
         crew.fanned(
             RATE.hz() as usize * channels,
             splitting.stages().collect(),
@@ -911,12 +958,14 @@ mod tests {
 
     fn noisy_planes(frames: usize) -> (Vec<Plane>, Vec<f64>) {
         let mut state = 0x9e37_79b9_u32;
+
         let mut next = move || {
             state ^= state << 13;
             state ^= state >> 17;
             state ^= state << 5;
             f64::from(state) / f64::from(u32::MAX) * 2.0 - 1.0
         };
+
         let planes = (0..frames)
             .map(|frame| {
                 let swell = (frame as f64 / 3_000.0).sin().abs();
@@ -963,6 +1012,7 @@ mod tests {
 
             for (from, to) in [(0, 17_001), (17_001, 17_003), (17_003, 40_000)] {
                 let (planes, heard) = (&planes[from..to], &heard[from..to]);
+
                 read_settled(&mut whole_reading, &mut whole, planes, heard, from);
                 pool.install(|| {
                     read_settled_across(&mut parted_reading, &mut parted, planes, heard, from);
@@ -1030,6 +1080,7 @@ mod tests {
                 state ^= state << 13;
                 state ^= state >> 17;
                 state ^= state << 5;
+
                 let hiss = f64::from(state) / f64::from(u32::MAX) - 0.5;
                 let swell = 0.2 + 0.7 * (PI * frame as f64 / frames as f64).sin().powi(2);
                 (0..channels).map(move |channel| {
@@ -1048,15 +1099,19 @@ mod tests {
             let signal = loud_and_bright(channels);
             let mut meter =
                 TruePeakMeter::at(RATE, NonZeroUsize::new(channels).expect("a channel"));
+
             meter.note(&signal);
+
             let read_whole = meter.finish();
             let sampled = signal.iter().fold(0.0_f64, |loudest, sample| {
                 loudest.max(f64::from(sample.abs()))
             });
+
             assert!(read_whole > sampled, "{read_whole} against {sampled}");
 
             for piece in [signal.len() / channels, 1_000, 7_919] {
                 let mut splitting = Splitting::new(RATE, channels);
+
                 for part in signal.chunks(piece * channels) {
                     splitting.note(part);
                 }
@@ -1106,12 +1161,14 @@ mod tests {
     #[test]
     fn the_louder_of_two_channels_sets_the_peak_of_each_band_and_silence_has_none() {
         let mut stereo = Vec::new();
+
         for (loud, quiet) in faded_tone(500.0, 0.7, 1)
             .into_iter()
             .zip(faded_tone(500.0, 0.1, 1))
         {
             stereo.extend([quiet, loud]);
         }
+
         let silence = vec![0.0_f32; RATE.hz() as usize * 2];
 
         let heard = peaks_of(&stereo, 2, 4_096);

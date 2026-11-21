@@ -29,6 +29,7 @@ impl Write for Logged {
 
 fn listed_by(tool: &Tool) {
     let song = VideoId::read("abc").expect("a video id");
+
     tool.formats(&song).expect("an answer");
 }
 
@@ -36,11 +37,13 @@ fn listed_by(tool: &Tool) {
 fn a_cookie_value_a_tool_says_back_is_withheld_from_the_log() {
     let logged = Logged::default();
     let writer = logged.clone();
+
     tracing_subscriber::fmt()
         .with_max_level(Level::DEBUG)
         .with_ansi(false)
         .with_writer(move || writer.clone())
         .init();
+
     let fake = Fake::answering(
         "echo 'ERROR: could not find firefox cookies database in /home/a/zen' >&2\n\
          echo 'WARNING: firefox:/home/a/zen::work was read' >&2\n\
@@ -59,6 +62,7 @@ fn a_cookie_value_a_tool_says_back_is_withheld_from_the_log() {
     listed_by(&file.tool(Cookies::read("/home/a/cookies.txt")));
 
     let log = String::from_utf8_lossy(&logged.0.lock()).into_owned();
+
     assert!(
         log.contains("could not find firefox cookies database"),
         "{log}"

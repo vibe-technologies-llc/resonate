@@ -62,6 +62,7 @@ impl RootView {
         let global = cx.global::<ResonateApp>();
         let tabs = global.tabs;
         let remember_tab = global.remember_tab;
+
         let pane = global
             .last_tab
             .filter(|pane| remember_tab && pane.is_shown(tabs) && *pane != Pane::Server)
@@ -137,19 +138,28 @@ impl RootView {
         let reaching = cx.global::<ResonateApp>().online.enabled;
         let analysis =
             cx.new(|_| AnalysisModel::new(engine, catalog, Arc::clone(&fingerprinters), reaching));
+
         cx.observe(&analysis, |_, _, cx| cx.notify()).detach();
+
         let listens = cx.global::<ResonateApp>().listens.clone();
         let listen = cx.new(|_| ListenModel::new(listens));
+
         cx.observe(&listen, |_, _, cx| cx.notify()).detach();
+
         let party = cx.new(|cx| PartyPane::new(window, cx));
+
         cx.observe(&party, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&party, |this, _, _: &Beat, cx| {
             this.parts.the_pane_moved(cx)
         })
         .detach();
+
         let inspector = cx.new(|_| InspectorPane::default());
+
         cx.observe(&inspector, |_, _, cx| cx.notify()).detach();
+
         let queue = cx.new(|_| QueuePane::new());
+
         cx.observe(&queue, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&queue, |this, _, _: &NamesRead, cx| {
             this.jump_where_typed(cx)
@@ -164,9 +174,11 @@ impl RootView {
         cx.observe_in(&library, window, |this, library, window, cx| {
             this.forget_what_has_gone(&library, cx);
             this.let_go_of_a_reach_the_rows_left(cx);
+
             let (relocated, arrived) = library.update(cx, |model, _| {
                 (model.take_relocations(), model.take_arrival())
             });
+
             if !relocated.is_empty() {
                 this.send(Command::Relocate(relocated), cx);
             }
@@ -190,7 +202,9 @@ impl RootView {
         .detach();
 
         let focus = cx.focus_handle();
+
         window.focus(&focus, cx);
+
         let menu_focus = cx.focus_handle();
 
         let search = cx.new(|cx| {
@@ -198,17 +212,21 @@ impl RootView {
                 .catching(|text| is_a_followed_link(text) || is_an_invitation(text))
                 .searching()
         });
+
         cx.observe(&search, |this, search, cx| {
             let typed_anew = {
                 let typed = search.read(cx).text();
                 this.library.read(cx).narrowing().unwrap_or_default() != typed
             };
+
             if !typed_anew {
                 return;
             }
 
             this.typing.waiting_for_the_results = false;
+
             let query = search.read(cx).text().to_owned();
+
             this.set_query(query, cx);
         })
         .detach();
@@ -230,18 +248,21 @@ impl RootView {
         .detach();
 
         let zone_name = cx.new(|cx| Field::new(words::zones::name_this_zone, window, cx));
+
         cx.subscribe_in(&zone_name, window, |this, _, _: &Submitted, window, cx| {
             this.zone_named(window, cx);
         })
         .detach();
 
         let name = cx.new(|cx| Field::new(words::root::name_placeholder, window, cx));
+
         cx.subscribe_in(&name, window, |this, _, _: &Submitted, window, cx| {
             this.name_given(window, cx);
         })
         .detach();
 
         let settings_fields = cx.new(|cx| SettingsFields::new(window, cx));
+
         cx.subscribe_in(
             &settings_fields,
             window,
@@ -256,6 +277,7 @@ impl RootView {
         .detach();
 
         let settings_pane = cx.new(|cx| SettingsPane::new(settings_category, cx));
+
         cx.observe(&settings_pane, |_, _, cx| cx.notify()).detach();
         cx.subscribe(&settings_pane, |this, _, _: &Beat, cx| {
             this.parts.the_pane_moved(cx);
@@ -265,6 +287,7 @@ impl RootView {
         let (typed_words, typed_isrc) = matching::matching_fields(window, cx);
 
         let server = cx.new(ServerModel::new);
+
         cx.observe(&server, |_, _, cx| cx.notify()).detach();
         cx.observe_global::<ResonateApp>(|this, cx| {
             this.server.update(cx, |server, cx| server.refresh(cx));
@@ -275,6 +298,7 @@ impl RootView {
         .detach();
 
         let services = cx.new(|cx| ServicesPane::new(server.clone(), focus.clone(), window, cx));
+
         cx.observe(&services, |_, _, cx| cx.notify()).detach();
 
         let equaliser = cx.new(|cx| {
@@ -284,12 +308,15 @@ impl RootView {
                 bindings,
                 cx,
             );
+
             model.prefer(measurers);
             model
         });
+
         cx.observe(&equaliser, |this, equaliser, cx| {
             let (notice, untold) =
                 equaliser.update(cx, |model, _| (model.take_notice(), model.take_untold()));
+
             if let Some(notice) = notice {
                 toast::tell(notice, cx);
             }
@@ -448,6 +475,7 @@ impl RootView {
                 left_for_the_search: None,
             },
         };
+
         cx.observe_window_bounds(window, |this, window, cx| {
             this.window_bounds_changed(window, cx);
         })
@@ -466,7 +494,9 @@ impl RootView {
         .detach();
         cx.on_release(|this, _| this.keep_what_the_window_leaves())
             .detach();
+
         let opened_on_statistics = view.pane == Pane::Statistics;
+
         view.library.update(cx, |library, cx| {
             library.statistics_shown(opened_on_statistics, cx);
         });
@@ -481,6 +511,7 @@ impl RootView {
         let Some(size) = WindowSize::from_pixels(window.window_bounds().get_bounds().size) else {
             return;
         };
+
         if self.remembered.last_window_size == Some(size) {
             return;
         }
@@ -493,6 +524,7 @@ impl RootView {
 
         self.remembered._window_size_settled = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(WINDOW_SIZE_SETTLE).await;
+
             let stored = this.update(cx, |this, cx| this.keep_the_window_size(cx));
             let _ = stored;
         });

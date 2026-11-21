@@ -14,7 +14,7 @@ const ALBUM_AFTER_ARTIST: &str = " — ";
 const COVER_ART_ARCHIVE: &str = "https://coverartarchive.org";
 const COVER_SIZE: &str = "front-500";
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Cover {
     Release(Mbid),
     Group(Mbid),
@@ -162,6 +162,7 @@ impl Activity {
             return false;
         };
         let apart = |a: u64, b: u64| u128::from(a.abs_diff(b)) > allowed.as_millis();
+
         let ends = match (was.end, now.end) {
             (Some(a), Some(b)) => apart(a, b),
             (None, None) => false,
@@ -190,10 +191,13 @@ fn millis(at: SystemTime) -> Option<u64> {
 
 fn fitted(text: &str) -> Option<String> {
     let trimmed = text.trim();
+
     if trimmed.is_empty() {
         return None;
     }
+
     let mut fitted: String = trimmed.chars().take(LONGEST_TEXT).collect();
+
     while fitted.chars().count() < SHORTEST_TEXT {
         fitted.push(PADDING);
     }
@@ -247,10 +251,12 @@ mod tests {
         let playing = playing();
 
         assert_eq!(Activity::of(&Presence::OFF, &playing, at()), None);
+
         let unnamed = Presence {
             app: None,
             ..presence(Shown::Album, Pictured::Cover)
         };
+
         assert_eq!(Activity::of(&unnamed, &playing, at()), None);
     }
 
@@ -317,6 +323,7 @@ mod tests {
             ..presence(Shown::Album, Pictured::Cover)
         };
         let shown = written(&bare, &uncovered);
+
         assert!(shown.get("assets").is_none());
         assert_eq!(shown["state"], "Pink Floyd — Meddle");
     }
@@ -344,6 +351,7 @@ mod tests {
             paused: true,
             ..playing()
         };
+
         assert_eq!(
             Activity::of(&presence(Shown::Album, Pictured::Cover), &paused, at()),
             None
@@ -354,6 +362,7 @@ mod tests {
             ..presence(Shown::Album, Pictured::Cover)
         };
         let shown = written(&staying, &paused);
+
         assert!(shown.get("timestamps").is_none());
         assert_eq!(shown["assets"]["small_text"], "Paused");
     }
@@ -364,6 +373,7 @@ mod tests {
             progress: false,
             ..presence(Shown::Album, Pictured::Cover)
         };
+
         assert!(written(&barless, &playing()).get("timestamps").is_none());
 
         let endless = Playing {
@@ -371,6 +381,7 @@ mod tests {
             ..playing()
         };
         let shown = written(&presence(Shown::Album, Pictured::Cover), &endless);
+
         assert_eq!(
             shown["timestamps"],
             json!({ "start": 1_799_999_940_000_u64 })
@@ -401,6 +412,7 @@ mod tests {
             position: Duration::from_secs(61),
             ..playing()
         };
+
         let a_second_later =
             Activity::of(&presence, &ticked, at() + Duration::from_secs(1)).expect("an activity");
         let sought = Playing {

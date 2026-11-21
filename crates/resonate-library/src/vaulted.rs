@@ -69,6 +69,7 @@ impl StandIn for Vaulted {
             else {
                 return Ok(None);
             };
+
             fill_what_was_kept(connection, standing.id, &mut standing.tags)?;
             Ok(Some(standing))
         });
@@ -103,10 +104,12 @@ pub(crate) fn keep_what_the_catalog_cannot_fill(
     transaction
         .execute("DELETE FROM kept_tags WHERE track_id = ?1", params![track])
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
+
     let kept = TagField::ALL
         .into_iter()
         .filter(|field| !FILLED_FROM_THE_CATALOG.contains(field))
         .filter_map(|field| Some((field, field.read(declared)?)));
+
     for (field, value) in kept {
         transaction
             .execute(
@@ -122,11 +125,13 @@ fn fill_what_was_kept(connection: &Connection, track: i64, tags: &mut TagSet) ->
     let mut kept = connection
         .prepare_cached(KEPT)
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     let rows = kept
         .query_map(params![track], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     for row in rows {
         let (field, value) = row.map_err(|source| Error::store(StoreOp::Query, source))?;
         if let Some(field) =
@@ -149,6 +154,7 @@ pub(crate) fn declared_by(inner: &Inner, path: &Path) -> crate::Result<Option<Ta
         else {
             return Ok(None);
         };
+
         fill_what_was_kept(connection, standing.id, &mut standing.tags)?;
         Ok(Some(standing.tags))
     })

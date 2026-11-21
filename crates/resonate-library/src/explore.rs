@@ -68,7 +68,7 @@ pub struct ExploreResult {
     pub failed: usize,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ExplorePlaylistKind {
     DiscoverMix,
     BeyondArtist,
@@ -175,14 +175,18 @@ impl ExploreTrack {
 
 pub fn artists_for_explore<'a>(artists: impl IntoIterator<Item = &'a str>) -> Vec<String> {
     let mut counted = BTreeMap::<String, (&str, usize)>::new();
+
     for artist in artists.into_iter().map(str::trim) {
         if let Some(key) = artist_key(artist) {
             let held = counted.entry(key).or_insert((artist, 0));
+
             held.0 = held.0.min(artist);
             held.1 += 1;
         }
     }
+
     let mut ranked: Vec<_> = counted.into_values().collect();
+
     ranked.sort_by(|one, other| other.1.cmp(&one.1).then_with(|| one.0.cmp(other.0)));
     ranked
         .into_iter()
@@ -208,23 +212,28 @@ fn deduplicated_artists(artists: &[String]) -> Vec<String> {
 
 pub fn explore_seeds(direct: &[String], kinship: &Kinship, day: i64) -> Vec<String> {
     let mut seen = BTreeSet::new();
+
     let mut direct: Vec<_> = direct
         .iter()
         .filter(|name| artist_key(name).is_some_and(|key| seen.insert(key)))
         .take(ROTATING_ARTISTS_AT_MOST)
         .cloned()
         .collect();
+
     let mut related: Vec<_> = direct
         .iter()
         .flat_map(|seed| kinship.related(seed))
         .filter(|name| artist_key(name).is_some_and(|key| seen.insert(key)))
         .take(ROTATING_ARTISTS_AT_MOST)
         .collect();
+
     rotate(&mut direct, day);
     rotate(&mut related, day);
+
     let direct_first =
         (ARTISTS_AT_MOST - related.len().min(RELATED_ARTISTS_FIRST)).min(direct.len());
     let mut chosen: Vec<_> = direct.drain(..direct_first).collect();
+
     chosen.extend(related.drain(..(ARTISTS_AT_MOST - chosen.len()).min(related.len())));
     chosen.extend(direct.into_iter().take(ARTISTS_AT_MOST - chosen.len()));
     chosen
@@ -242,6 +251,7 @@ pub fn explore_blueprints(
     } else {
         deduplicated_artists(&profile.top_artists)
     };
+
     if base_artists.is_empty() {
         return Vec::new();
     }
@@ -253,9 +263,11 @@ pub fn explore_blueprints(
         .iter()
         .filter_map(|name| artist_key(name))
         .collect();
+
     let (discover_primary, discover_related): (Vec<_>, Vec<_>) = discover_seeds
         .into_iter()
         .partition(|name| artist_key(name).is_some_and(|key| base_keys.contains(&key)));
+
     blueprints.push(ExploreBlueprint {
         id: "discover-mix".to_owned(),
         kind: ExplorePlaylistKind::DiscoverMix,
@@ -266,16 +278,21 @@ pub fn explore_blueprints(
     });
 
     let mut beyond_pool = base_artists.clone();
+
     rotate(&mut beyond_pool, day.saturating_add(1));
+
     let mut beyond_added = 0;
+
     for seed in beyond_pool {
         if beyond_added >= BEYOND_ARTIST_PLAYLISTS {
             break;
         }
+
         let Some(key) = artist_key(&seed) else {
             continue;
         };
         let mut related = kinship.related(&seed);
+
         rotate(&mut related, day);
         related.truncate(BEYOND_RELATED_SEEDS);
         if related.is_empty() && base_artists.len() == 1 {
@@ -294,16 +311,20 @@ pub fn explore_blueprints(
 
     if !profile.top_genres.is_empty() {
         let mut genres = profile.top_genres.clone();
+
         rotate(&mut genres, day);
         for genre in genres {
             let mut genre_artists = kinship.artists_in_genre(&genre);
+
             if genre_artists.is_empty() {
                 continue;
             }
             rotate(&mut genre_artists, day);
             genre_artists.truncate(GENRE_PLAYLIST_SEEDS);
+
             let billed = suggest::billed_as(&genre);
             let genre_key = store::folded_letters(&genre);
+
             blueprints.push(ExploreBlueprint {
                 id: format!("genre:{genre_key}"),
                 kind: ExplorePlaylistKind::GenreDiscovery,
@@ -317,15 +338,18 @@ pub fn explore_blueprints(
     }
 
     let favourites = deduplicated_artists(&profile.favourite_artists);
+
     if !favourites.is_empty() && favourites != base_artists {
         let seeds = explore_seeds(&favourites, kinship, day.saturating_add(2));
         let fav_keys: BTreeSet<_> = favourites
             .iter()
             .filter_map(|name| artist_key(name))
             .collect();
+
         let (primary, related): (Vec<_>, Vec<_>) = seeds
             .into_iter()
             .partition(|name| artist_key(name).is_some_and(|key| fav_keys.contains(&key)));
+
         blueprints.push(ExploreBlueprint {
             id: "favourites-expansion".to_owned(),
             kind: ExplorePlaylistKind::FavouritesExpansion,
@@ -337,15 +361,18 @@ pub fn explore_blueprints(
     }
 
     let left_behind = deduplicated_artists(&profile.left_behind_artists);
+
     if !left_behind.is_empty() {
         let seeds = explore_seeds(&left_behind, kinship, day);
         let left_keys: BTreeSet<_> = left_behind
             .iter()
             .filter_map(|name| artist_key(name))
             .collect();
+
         let (primary, related): (Vec<_>, Vec<_>) = seeds
             .into_iter()
             .partition(|name| artist_key(name).is_some_and(|key| left_keys.contains(&key)));
+
         blueprints.push(ExploreBlueprint {
             id: "rediscover-beyond".to_owned(),
             kind: ExplorePlaylistKind::RediscoverBeyond,
@@ -373,6 +400,7 @@ pub fn weave_mix<T>(
             .map(|offer| MixEntry::Suggested(Box::new(offer)))
             .collect();
     }
+
     let cadence = if local.len() >= MEDIUM_MIX_AT_LEAST {
         LOCAL_PER_SUGGESTION
     } else if local.len() >= SHORT_MIX_AT_LEAST {
@@ -382,6 +410,7 @@ pub fn weave_mix<T>(
     };
 
     let mut remaining: VecDeque<ExploreOffer> = suggestions.into_iter().collect();
+
     let mut woven = Vec::with_capacity(local.len() + remaining.len());
     let local_keys: Vec<Option<String>> = local
         .iter()
@@ -391,6 +420,7 @@ pub fn weave_mix<T>(
     for (index, track) in local.into_iter().enumerate() {
         let prev_key = local_keys[index].as_deref();
         let next_key = local_keys.get(index + 1).and_then(Option::as_deref);
+
         woven.push(MixEntry::Local(track));
         if (index + 1) % cadence == 0
             && !remaining.is_empty()
@@ -413,6 +443,7 @@ fn take_spaced_offer(
         let key = key_of(offer);
         key.as_deref() != prev_artist && key.as_deref() != next_artist
     });
+
     let away_from_prev = ideal.or_else(|| {
         remaining
             .iter()
@@ -425,6 +456,7 @@ fn take_spaced_offer(
 fn rotate(artists: &mut [String], day: i64) {
     if !artists.is_empty() {
         let by = day.rem_euclid(artists.len() as i64) as usize;
+
         artists.rotate_left(by);
     }
 }
@@ -557,6 +589,7 @@ impl ExploreCache {
     ) -> HydratedBlueprints {
         let mut unique = Vec::new();
         let mut seen = BTreeSet::new();
+
         for blueprint in &blueprints {
             for seed in blueprint.all_seeds() {
                 if unique.len() >= UNIQUE_SEEDS_AT_MOST {
@@ -569,6 +602,7 @@ impl ExploreCache {
                 }
             }
         }
+
         let (by_artist, failed) = self.fetch_unique_artists(day, &unique, sources, refresh, store);
         HydratedBlueprints {
             blueprints,
@@ -605,8 +639,10 @@ impl ExploreCache {
         if let Some(found) = self.cached_for(day, artist_key, source) {
             return Some(found);
         }
+
         let store = store?;
         let service = source.service();
+
         let (cached_day, songs) = store.read_cached(
             source.namespace(),
             service.scheme().as_str(),
@@ -623,6 +659,7 @@ impl ExploreCache {
                 song,
             })
             .collect();
+
         self.store_artist(
             cached_day,
             artist_key.to_owned(),
@@ -640,6 +677,7 @@ impl ExploreCache {
         songs: Arc<[ExploreOffer]>,
     ) {
         let mut artists = self.artists.lock();
+
         artists.retain(|entry| {
             !(entry.artist_key == artist_key && entry.source.same_service(&source))
         });
@@ -662,6 +700,7 @@ impl ExploreCache {
     ) -> (BTreeMap<String, Vec<ExploreOffer>>, usize) {
         let mut by_artist: BTreeMap<String, Vec<ExploreOffer>> = BTreeMap::new();
         let mut missing_any = false;
+
         if !refresh {
             for source in sources {
                 for artist in seeds {
@@ -684,17 +723,21 @@ impl ExploreCache {
         }
 
         let _searching = self.searching.lock();
+
         if let Some(store) = store {
             store.forget_before(earliest_cached_day(day), day);
         }
         by_artist.clear();
+
         let mut failed = 0;
+
         for source in sources {
             let service = source.service();
             for artist in seeds {
                 let Some(key) = artist_key(artist) else {
                     continue;
                 };
+
                 if !refresh && let Some(found) = self.cached_or_stored(day, &key, source, store) {
                     by_artist
                         .entry(key)
@@ -714,6 +757,7 @@ impl ExploreCache {
                             })
                             .take(CANDIDATES_PER_SEARCH)
                             .collect();
+
                         if let Some(store) = store {
                             store.keep_cached(
                                 source.namespace(),
@@ -723,6 +767,7 @@ impl ExploreCache {
                                 &songs,
                             );
                         }
+
                         let matched: Arc<[ExploreOffer]> = songs
                             .into_iter()
                             .map(|song| ExploreOffer {
@@ -732,6 +777,7 @@ impl ExploreCache {
                                 song,
                             })
                             .collect();
+
                         by_artist
                             .entry(key.clone())
                             .or_default()
@@ -784,6 +830,7 @@ impl HydratedBlueprints {
 
         for blueprint in &self.blueprints {
             let mut groups: Vec<(Vec<ExploreOffer>, usize)> = Vec::new();
+
             for seed in &blueprint.primary_seeds {
                 if let Some(key) = artist_key(seed)
                     && let Some(offers) = self.by_artist.get(&key)
@@ -800,13 +847,16 @@ impl HydratedBlueprints {
             }
 
             let songs = curate_groups(&groups, held, &used_across, PLAYLIST_SONGS_AT_MOST);
+
             if songs.is_empty() {
                 continue;
             }
             for offer in &songs {
                 used_across.push(ExploreTrack::of(&offer.song));
             }
+
             let length = total_duration(&songs);
+
             playlists.push(ExplorePlaylist {
                 id: blueprint.id.clone(),
                 kind: blueprint.kind,
@@ -837,7 +887,9 @@ fn curate_groups(
         .map(|(_, max)| *max)
         .max()
         .unwrap_or(SONGS_PER_ARTIST);
+
     let fresh = select_spaced(&raw_groups, held, prefer_avoid, max_per, cap);
+
     if !fresh.is_empty() || prefer_avoid.is_empty() {
         return fresh;
     }
@@ -856,11 +908,13 @@ fn select_spaced(
     let mut located = BTreeSet::new();
     let mut albums = BTreeMap::<String, usize>::new();
     let mut iterators: Vec<_> = groups.iter().map(|group| group.iter()).collect();
+
     for _ in 0..per_group {
         for group in &mut iterators {
             if songs.len() >= cap {
                 return songs;
             }
+
             let chosen = group.find_map(|candidate| {
                 let track = ExploreTrack::of(&candidate.song);
                 let album_key = candidate
@@ -897,6 +951,7 @@ fn select_spaced(
 fn total_duration(songs: &[ExploreOffer]) -> Option<Duration> {
     let mut total = Duration::ZERO;
     let mut any = false;
+
     for song in songs {
         if let Some(length) = song.song.length {
             total += length;
@@ -910,6 +965,7 @@ impl Library {
     pub fn explore_cover(&self, offer: &ExploreOffer, side: NonZeroU32) -> Option<Vec<u8>> {
         let today = Calendar::local().day_of(SystemTime::now());
         let (named, cover) = offer.picture_key();
+
         let read = self.inner().read(|connection| {
             connection
                 .query_row(
@@ -943,8 +999,10 @@ impl Library {
         if picture.is_empty() || picture.len() > EXPLORE_COVER_BYTES_AT_MOST {
             return;
         }
+
         let today = Calendar::local().day_of(SystemTime::now());
         let (named, cover) = offer.picture_key();
+
         let kept = self.inner().write(|transaction| {
             transaction
                 .execute(
@@ -992,6 +1050,7 @@ impl Library {
         let now = SystemTime::now();
         let day = Calendar::local().day_of(now);
         let filing = self.inner().filing()?;
+
         let profile = self.explore_profile(now, &filing)?;
         Ok(explore_blueprints(&profile, filing.kinship(), day))
     }
@@ -1005,9 +1064,11 @@ impl Library {
         if sources.is_empty() {
             return Ok(ExplorePlaylists::default());
         }
+
         let now = SystemTime::now();
         let day = Calendar::local().day_of(now);
         let filing = self.inner().filing()?;
+
         let profile = self.explore_profile(now, &filing)?;
         let blueprints = explore_blueprints(&profile, filing.kinship(), day);
         let hydrated = cache.hydrate_blueprints_with(day, blueprints, sources, refresh, self);
@@ -1029,9 +1090,11 @@ impl Library {
         if sources.is_empty() {
             return Ok(ExploreResult::default());
         }
+
         let now = SystemTime::now();
         let day = Calendar::local().day_of(now);
         let filing = self.inner().filing()?;
+
         let seeds = explore_seeds(direct, filing.kinship(), day);
         let found = cache.find_with(day, seeds, sources, refresh, self);
         let held: Vec<_> = self
@@ -1052,6 +1115,7 @@ impl Library {
         if sources.is_empty() {
             return Ok(ExploreResult::default());
         }
+
         let now = SystemTime::now();
         let direct = match mix {
             Some(query) => read_mix_artists(self, query)?,
@@ -1084,17 +1148,20 @@ impl Library {
         );
         let mut heard = suggest::the_artists_as_heard(self.inner())?;
         let half_a_year_ago = now.checked_sub(HALF_A_YEAR).unwrap_or(UNIX_EPOCH);
+
         let left_behind_artists: Vec<String> = suggest::left_behind_of(&heard, half_a_year_ago)
             .into_iter()
             .take(ROTATING_ARTISTS_AT_MOST)
             .map(str::to_owned)
             .collect();
+
         heard.sort_by(|one, other| {
             other
                 .held
                 .cmp(&one.held)
                 .then_with(|| one.name.cmp(&other.name))
         });
+
         let top_artists = heard
             .into_iter()
             .take(ROTATING_ARTISTS_AT_MOST)
@@ -1128,6 +1195,7 @@ impl Library {
                  WHERE a.key = ?1",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             for key in keys {
                 let read = query
                     .query_map(params![key], |row| {
@@ -1153,6 +1221,7 @@ impl Library {
                 for track in read {
                     let (id, track) =
                         track.map_err(|source| Error::store(StoreOp::Query, source))?;
+
                     tracks.push((TrackId::new(id.cast_unsigned())?, track));
                 }
             }
@@ -1162,19 +1231,24 @@ impl Library {
 
     fn explore_artists(&self, now: SystemTime) -> Result<Vec<String>> {
         let heard = suggest::heard_of_late(self.inner(), now)?;
+
         if !heard.is_empty() {
             return Ok(heard);
         }
+
         let favourites = self.favourite_tracks(&TrackQuery::default())?;
         let artists = artists_for_explore(
             favourites
                 .iter()
                 .filter_map(|track| track.artist.as_deref()),
         );
+
         if !artists.is_empty() {
             return Ok(artists);
         }
+
         let mut heard = suggest::the_artists_as_heard(self.inner())?;
+
         heard.sort_by(|one, other| {
             other
                 .held
@@ -1250,6 +1324,7 @@ impl ExploreStore for Library {
                      ORDER BY position",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let rows = query
                 .query_map(params![artist_id], |row| {
                     Ok((
@@ -1268,6 +1343,7 @@ impl ExploreStore for Library {
                 })
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
             let mut songs = Vec::new();
+
             for row in rows {
                 let (
                     song_id,
@@ -1285,6 +1361,7 @@ impl ExploreStore for Library {
                 let Some(id) = Id::new(&song_id) else {
                     continue;
                 };
+
                 songs.push(Song {
                     id,
                     title,
@@ -1328,6 +1405,7 @@ impl ExploreStore for Library {
                     params![catalog, scheme, artist_key, day],
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
             let artist_id = transaction.last_insert_rowid();
             let mut insert = transaction
                 .prepare_cached(
@@ -1337,10 +1415,12 @@ impl ExploreStore for Library {
                      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             for (position, song) in songs.iter().enumerate() {
                 let length_ms = song
                     .length
                     .and_then(|length| i64::try_from(length.as_millis()).ok());
+
                 insert
                     .execute(params![
                         artist_id,

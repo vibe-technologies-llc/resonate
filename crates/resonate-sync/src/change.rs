@@ -11,16 +11,16 @@ const MINTED_NANOS_TO: usize = MINTED_NANOS_FROM + 8;
 const NANOS_A_SECOND: i64 = 1_000_000_000;
 pub const STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS: i64 = 24 * 60 * 60 * NANOS_A_SECOND;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Stamp {
     pub nanos: i64,
     pub device: DeviceId,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct PlaylistKey(pub [u8; PLAYLIST_KEY_BYTES]);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Platform {
     Linux,
     Android,
@@ -182,6 +182,7 @@ pub struct Clock {
 impl PlaylistKey {
     pub fn minted_at(stamp: Stamp) -> Result<Self> {
         let mut key: [u8; PLAYLIST_KEY_BYTES] = random_bytes()?;
+
         key[..MINTED_NANOS_FROM].copy_from_slice(&MINTED_KEY_MARK);
         key[MINTED_NANOS_FROM..MINTED_NANOS_TO].copy_from_slice(&stamp.nanos.to_be_bytes());
         Ok(Self(key))
@@ -191,7 +192,9 @@ impl PlaylistKey {
         if self.0[..MINTED_NANOS_FROM] != MINTED_KEY_MARK {
             return None;
         }
+
         let mut nanos = [0; 8];
+
         nanos.copy_from_slice(&self.0[MINTED_NANOS_FROM..MINTED_NANOS_TO]);
         Some(i64::from_be_bytes(nanos)).filter(|nanos| *nanos > 0)
     }
@@ -232,12 +235,14 @@ impl Clock {
 
     pub fn now(&mut self, device: DeviceId) -> Stamp {
         let nanos = wall_nanos().max(self.last.saturating_add(1));
+
         self.last = nanos;
         Stamp { nanos, device }
     }
 
     pub fn after(&mut self, nanos: i64, device: DeviceId) -> Stamp {
         let nanos = nanos.max(self.last.saturating_add(1));
+
         self.last = nanos;
         Stamp { nanos, device }
     }
@@ -287,7 +292,9 @@ mod tests {
         };
 
         let first = clock.now(device);
+
         clock.saw(ahead);
+
         let second = clock.now(device);
 
         assert!(second.nanos > ahead.nanos);
@@ -299,6 +306,7 @@ mod tests {
     fn a_key_minted_at_a_stamp_says_when_and_a_random_one_says_nothing() {
         let device = DeviceId([1; 16]);
         let mut clock = Clock::from_last(0);
+
         let earlier = PlaylistKey::minted_at(clock.now(device)).expect("minted");
         let later = PlaylistKey::minted_at(clock.now(device)).expect("minted");
         let random = PlaylistKey([7; PLAYLIST_KEY_BYTES]);

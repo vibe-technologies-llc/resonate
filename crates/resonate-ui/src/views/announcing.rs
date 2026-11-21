@@ -35,6 +35,7 @@ impl Announcer {
             self.said = None;
             return Heard::Quiet;
         };
+
         if self.said.as_ref() == Some(&line) {
             return Heard::Quiet;
         }
@@ -61,6 +62,7 @@ impl Announcer {
 impl RootView {
     fn progress_said(&self, cx: &mut Context<Self>) -> Option<SharedString> {
         let library = self.library.read(cx);
+
         if let Some(stats) = library.stats() {
             return Some(match stats.discovered {
                 0 => SharedString::new_static(words::announcing::scanning()),
@@ -75,11 +77,13 @@ impl RootView {
         if let Some(left) = library.keeps_left() {
             return Some(downloads::keeping_said(left));
         }
+
         let fetching: Vec<_> = library
             .downloads()
             .iter()
             .map(|download| library.fetching(download))
             .collect();
+
         if fetching
             .iter()
             .copied()
@@ -90,6 +94,7 @@ impl RootView {
                     .fetched(download)
                     .is_some_and(|fetched| fetched.is_arriving())
             });
+
             return Some(downloads::summed_up(&fetching, arriving));
         }
 
@@ -175,6 +180,7 @@ mod tests {
     fn a_progress_that_ends_leaves_nothing_standing() {
         let mut announcer = Announcer::default();
         let start = Instant::now();
+
         announcer.hears(line("Scanning"), start);
 
         assert_eq!(announcer.hears(None, start), Heard::Quiet);

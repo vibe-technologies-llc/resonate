@@ -37,11 +37,13 @@ fn identified(title: &str) -> Recording {
 
 fn favourites_as_held(device: &Device) {
     let mut inside = device.shelf.inside.lock();
+
     let held = inside
         .songs
         .iter()
         .map(|(recording, _)| recording.clone())
         .collect::<Vec<_>>();
+
     for favourite in &mut inside.favourites {
         if let Some(own) = held
             .iter()
@@ -65,6 +67,7 @@ impl EditedHere for Shelf {
     fn edit_playlist(&self, id: i64, titles: &[&str]) {
         let mut inside = self.inside.lock();
         let entries = titles.iter().map(|title| song(title)).collect();
+
         inside.playlists.get_mut(&id).expect("a playlist").2 = entries;
         drop(inside);
         self.moved();
@@ -86,7 +89,9 @@ impl EditedHere for Shelf {
 
     fn listen_here(&self, title: &str, at: i64) {
         let mut inside = self.inside.lock();
+
         let id = u64::try_from(inside.listens.len()).expect("a count") + 1;
+
         inside.listens.push(LocalListen {
             id,
             recording: song(title),
@@ -107,6 +112,7 @@ struct Device {
 impl Device {
     fn new(name: &str, titles: &[&str]) -> Self {
         let mut ledger = Ledger::in_memory().expect("a ledger");
+
         ledger.enter_space(SPACE).expect("a space");
         Self {
             ledger,
@@ -124,8 +130,10 @@ impl Device {
 
     fn send(&mut self) -> Vec<Change> {
         self.look();
+
         let bundles = self.ledger.owed().expect("owed");
         let changes = bundles.into_iter().flatten().collect::<Vec<_>>();
+
         self.ledger.sent(&changes).expect("sent");
         changes
     }
@@ -142,6 +150,7 @@ impl Device {
 
 fn sync(from: &mut Device, to: &mut Device) {
     let changes = from.send();
+
     to.receive(&changes);
 }
 
@@ -159,12 +168,14 @@ fn scratch_folder(name: &str) -> PathBuf {
         process::id(),
         days_ago(0)
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
     folder
 }
 
 fn device_over_a_file(name: &str, titles: &[&str], path: &Path) -> Device {
     let mut device = Device::new(name, titles);
+
     device.ledger = Ledger::open(path).expect("a ledger");
     device.ledger.enter_space(SPACE).expect("a space");
     device
@@ -172,10 +183,12 @@ fn device_over_a_file(name: &str, titles: &[&str], path: &Path) -> Device {
 
 fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
     device.ledger = Ledger::in_memory().expect("a ledger standing in while the file is written");
+
     let connection = Connection::open(path).expect("the file");
     let laid: i64 = connection
         .query_row("PRAGMA user_version", [], |row| row.get(0))
         .expect("the steps laid");
+
     connection
         .execute("UPDATE playlists SET nanos = ?1", [i64::MAX])
         .expect("a playlist stamped near the end of time");
@@ -194,6 +207,7 @@ fn a_title_past_the_longest_text_is_cut_and_never_wedges_the_ledger() {
     let overlong = "é".repeat(3000);
     let mut desk = Device::new("Desk", &[overlong.as_str(), "B"]);
     let mut phone = Device::new("Phone", &["B"]);
+
     desk.shelf.make_playlist("Long", &[overlong.as_str(), "B"]);
 
     sync(&mut desk, &mut phone);
@@ -208,12 +222,15 @@ fn a_title_past_the_longest_text_is_cut_and_never_wedges_the_ledger() {
 fn a_playlist_made_on_one_device_arrives_on_the_other_and_is_not_sent_back() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
 
     sync(&mut desk, &mut phone);
 
     assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
+
     let echoed = phone.send();
+
     assert!(
         echoed
             .iter()
@@ -227,10 +244,13 @@ fn songs_a_device_lacks_survive_its_edit_in_their_places() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "C"]);
     let summer = desk.shelf.make_playlist("Summer", &["A", "B", "C"]);
+
     sync(&mut desk, &mut phone);
+
     assert_eq!(titles(&phone, "Summer"), ["A", "C"]);
 
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+
     phone.shelf.edit_playlist(on_phone, &["C", "A"]);
     sync(&mut phone, &mut desk);
 
@@ -242,9 +262,11 @@ fn songs_a_device_lacks_survive_its_edit_in_their_places() {
 fn the_songs_missing_from_a_playlist_are_its_own_and_none_for_one_the_ledger_does_not_hold() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     desk.shelf.make_playlist("Winter", &["A", "C"]);
     sync(&mut desk, &mut phone);
+
     let missing = |name: &str| {
         let (id, _) = phone.shelf.playlist_named(name).expect("arrived");
         phone
@@ -277,8 +299,10 @@ fn the_songs_missing_from_a_playlist_are_its_own_and_none_for_one_the_ledger_doe
 fn a_song_arriving_later_takes_its_place_in_the_playlist() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
     let at = LocalPlaylistId {
         id: on_phone,
@@ -295,11 +319,14 @@ fn a_song_arriving_later_takes_its_place_in_the_playlist() {
             .collect::<Vec<_>>(),
         ["B"]
     );
+
     phone.ledger.keep_songs_of(at, true).expect("kept");
+
     let follow = Follow {
         playlists: true,
         ..Follow::default()
     };
+
     assert_eq!(
         phone
             .ledger
@@ -320,7 +347,9 @@ fn a_song_arriving_later_takes_its_place_in_the_playlist() {
             .expect("wanted")
             .is_empty()
     );
+
     let echoed = phone.send();
+
     assert!(
         !echoed
             .iter()
@@ -332,15 +361,19 @@ fn a_song_arriving_later_takes_its_place_in_the_playlist() {
 fn a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     desk.shelf.favour_here("B", true);
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
     let at = LocalPlaylistId {
         id: on_phone,
         created: on_phone * 1000,
     };
+
     phone.ledger.keep_songs_of(at, true).expect("kept");
+
     let playlists = Follow {
         playlists: true,
         ..Follow::default()
@@ -377,9 +410,11 @@ fn a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay(
             .into_iter()
             .map(|recording| recording.title)
             .collect::<Vec<_>>();
+
         titles.sort();
         titles
     };
+
     assert_eq!(wanted_titles(playlists), ["A", "B"]);
     assert_eq!(wanted_titles(favourites), ["B"]);
     assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
@@ -390,9 +425,12 @@ fn a_song_deleted_by_hand_is_wanted_again_while_its_playlist_and_favourite_stay(
 fn a_song_deleted_from_the_app_stays_off_the_device_and_one_lost_behind_its_back_is_wanted() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+
     phone
         .ledger
         .keep_songs_of(
@@ -403,6 +441,7 @@ fn a_song_deleted_from_the_app_stays_off_the_device_and_one_lost_behind_its_back
             true,
         )
         .expect("kept");
+
     let playlists = Follow {
         playlists: true,
         ..Follow::default()
@@ -430,9 +469,12 @@ fn a_song_deleted_from_the_app_stays_off_the_device_and_one_lost_behind_its_back
 fn a_song_deleted_from_the_app_and_held_again_is_forgiven_and_wanted_when_lost_once_more() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_playlist("Summer", &["A"]);
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+
     phone
         .ledger
         .keep_songs_of(
@@ -443,6 +485,7 @@ fn a_song_deleted_from_the_app_and_held_again_is_forgiven_and_wanted_when_lost_o
             true,
         )
         .expect("kept");
+
     let playlists = Follow {
         playlists: true,
         ..Follow::default()
@@ -475,8 +518,11 @@ fn a_song_deleted_from_the_app_and_held_again_is_forgiven_and_wanted_when_lost_o
 fn a_song_known_by_its_mbid_in_a_playlist_and_by_its_tags_as_a_favourite_is_wanted_once() {
     let mut desk = Device::new("Desk", &[]);
     let mut phone = Device::new("Phone", &[]);
+
     desk.shelf.add_song(identified("A"), b"A".repeat(1000));
+
     let id = desk.shelf.make_playlist("Summer", &[]);
+
     desk.shelf
         .inside
         .lock()
@@ -487,7 +533,9 @@ fn a_song_known_by_its_mbid_in_a_playlist_and_by_its_tags_as_a_favourite_is_want
     desk.shelf.inside.lock().favourites.push(song("A"));
     desk.shelf.moved();
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+
     phone
         .ledger
         .keep_songs_of(
@@ -519,6 +567,7 @@ fn a_playlist_removed_on_one_device_is_removed_on_the_other() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     sync(&mut desk, &mut phone);
 
     desk.shelf.drop_playlist(summer);
@@ -531,6 +580,7 @@ fn a_playlist_removed_on_one_device_is_removed_on_the_other() {
 fn playlists_of_one_name_meeting_for_the_first_time_become_one() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     phone.shelf.make_playlist("summer", &["B", "C"]);
 
@@ -547,8 +597,10 @@ fn an_arriving_name_another_playlist_holds_is_aliased_and_never_renamed_back() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     desk.shelf.make_playlist("Winter", &["A"]);
     sync(&mut desk, &mut phone);
+
     let (winter_on_phone, _) = phone.shelf.playlist_named("Winter").expect("arrived");
     let (summer_on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
 
@@ -560,6 +612,7 @@ fn an_arriving_name_another_playlist_holds_is_aliased_and_never_renamed_back() {
         phone.shelf.playlist_named("Mix (2)").expect("aliased").0,
         summer_on_phone
     );
+
     let echoed = phone.send();
     let playlists = echoed
         .iter()
@@ -568,6 +621,7 @@ fn an_arriving_name_another_playlist_holds_is_aliased_and_never_renamed_back() {
             _ => None,
         })
         .collect::<Vec<_>>();
+
     assert_eq!(playlists, ["Mix"]);
 }
 
@@ -575,6 +629,7 @@ fn an_arriving_name_another_playlist_holds_is_aliased_and_never_renamed_back() {
 fn a_saved_query_made_on_one_device_arrives_as_text_and_is_not_sent_back() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_query("Recent", "added:<30d");
 
     sync(&mut desk, &mut phone);
@@ -584,7 +639,9 @@ fn a_saved_query_made_on_one_device_arrives_as_text_and_is_not_sent_back() {
         Some(Some("added:<30d".to_owned()))
     );
     assert!(phone.shelf.playlist_names().is_empty());
+
     let echoed = phone.send();
+
     assert!(
         echoed
             .iter()
@@ -598,10 +655,12 @@ fn a_saved_query_revised_renamed_and_dropped_follows_on_the_other_device() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
     let recent = desk.shelf.make_query("Recent", "added:<30d");
+
     sync(&mut desk, &mut phone);
 
     desk.shelf.revise_query(recent, "Recent", "added:<7d");
     sync(&mut desk, &mut phone);
+
     assert_eq!(
         phone.shelf.query_named("Recent").map(|(_, text)| text),
         Some(Some("added:<7d".to_owned()))
@@ -609,10 +668,12 @@ fn a_saved_query_revised_renamed_and_dropped_follows_on_the_other_device() {
 
     desk.shelf.revise_query(recent, "Lately", "added:<7d");
     sync(&mut desk, &mut phone);
+
     assert_eq!(phone.shelf.query_names(), ["Lately"]);
 
     desk.shelf.drop_query(recent);
     sync(&mut desk, &mut phone);
+
     assert!(phone.shelf.query_names().is_empty());
 }
 
@@ -620,6 +681,7 @@ fn a_saved_query_revised_renamed_and_dropped_follows_on_the_other_device() {
 fn saved_queries_of_one_name_meeting_for_the_first_time_become_one_the_synced_text_standing() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_query("Recent", "added:<30d");
     phone.shelf.make_query("recent", "plays:0");
 
@@ -638,6 +700,7 @@ fn saved_queries_of_one_name_meeting_for_the_first_time_become_one_the_synced_te
 fn a_query_and_a_list_never_stand_for_one_another() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_query("Mix", "added:<30d");
     phone.shelf.make_playlist("Mix", &["A"]);
 
@@ -655,11 +718,14 @@ fn a_device_keeping_no_queries_passes_them_on_untouched() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut pocket = Device::new("Pocket", &["A"]);
     let mut tablet = Device::new("Tablet", &["A"]);
+
     pocket.shelf.inside.lock().without_queries = true;
     desk.shelf.make_query("Recent", "added:<30d");
 
     sync(&mut desk, &mut pocket);
+
     let snapshot = pocket.ledger.snapshot().expect("snapshot");
+
     tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
 
     assert!(pocket.shelf.query_names().is_empty());
@@ -670,6 +736,7 @@ fn a_device_keeping_no_queries_passes_them_on_untouched() {
 fn a_device_that_begins_keeping_queries_takes_up_those_it_passed_on_and_adopts_its_own_namesake() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut pocket = Device::new("Pocket", &["A"]);
+
     pocket.shelf.inside.lock().without_queries = true;
     desk.shelf.make_query("Recent", "added:<30d");
     desk.shelf.make_query("Unheard", "plays:0");
@@ -677,6 +744,7 @@ fn a_device_that_begins_keeping_queries_takes_up_those_it_passed_on_and_adopts_i
 
     pocket.shelf.inside.lock().without_queries = false;
     pocket.shelf.make_query("unheard", "plays:<2");
+
     let settled = pocket.ledger.settle(&pocket.shelf).expect("settled");
 
     assert_eq!(settled, 2);
@@ -685,7 +753,9 @@ fn a_device_that_begins_keeping_queries_takes_up_those_it_passed_on_and_adopts_i
         pocket.shelf.query_named("Unheard").map(|(_, text)| text),
         Some(Some("plays:0".to_owned()))
     );
+
     let echoed = pocket.send();
+
     assert!(
         echoed
             .iter()
@@ -699,14 +769,18 @@ fn a_device_that_begins_keeping_queries_takes_up_those_it_passed_on_and_adopts_i
 fn a_snapshot_brings_a_new_device_its_saved_queries_and_not_the_dropped_ones() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.make_query("Recent", "added:<30d");
+
     let gone = desk.shelf.make_query("Gone", "plays:0");
+
     sync(&mut desk, &mut phone);
     desk.shelf.drop_query(gone);
     sync(&mut desk, &mut phone);
 
     let mut tablet = Device::new("Tablet", &["A"]);
     let snapshot = phone.ledger.snapshot().expect("snapshot");
+
     tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
 
     assert_eq!(tablet.shelf.query_names(), ["Recent"]);
@@ -717,13 +791,19 @@ fn the_later_edit_wins_where_two_devices_edit_one_playlist() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
 
     desk.shelf.edit_playlist(summer, &["A", "B"]);
+
     let from_desk = desk.send();
+
     phone.shelf.edit_playlist(on_phone, &["A", "C"]);
+
     let from_phone = phone.send();
+
     desk.receive(&from_phone);
     phone.receive(&from_desk);
 
@@ -736,7 +816,9 @@ fn a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_s
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     sync(&mut desk, &mut phone);
+
     let hostile = desk
         .send_edit(summer, &["C"])
         .into_iter()
@@ -750,8 +832,10 @@ fn a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_s
         .collect::<Vec<_>>();
 
     phone.receive(&hostile);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
     let from_phone = phone.send_edit(on_phone, &["B"]);
+
     desk.shelf.edit_playlist(summer, &["A", "B"]);
     sync(&mut desk, &mut phone);
 
@@ -761,6 +845,7 @@ fn a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_s
         .map(|stamp| stamp.nanos)
         .max()
         .expect("a stamped change");
+
     assert!(newest_stamp < i64::MAX);
     assert_eq!(titles(&phone, "Summer"), ["A", "B"]);
 }
@@ -773,6 +858,7 @@ fn a_playlist_an_older_build_stamped_near_the_end_of_time_takes_a_later_honest_e
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = device_over_a_file("Phone", &["A", "B", "C"], &path);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     sync(&mut desk, &mut phone);
     phone.send();
     reopened_as_an_older_build_left_it(&mut phone, &path);
@@ -780,7 +866,9 @@ fn a_playlist_an_older_build_stamped_near_the_end_of_time_takes_a_later_honest_e
     desk.shelf.edit_playlist(summer, &["A", "B"]);
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
+
     let on_the_phone = titles(&phone, "Summer");
+
     drop(phone);
     fs::remove_dir_all(&folder).expect("cleared");
 
@@ -797,24 +885,33 @@ fn two_devices_holding_a_playlist_stamped_near_the_end_of_time_restamp_apart_and
     let mut desk = device_over_a_file("Desk", &["A", "B", "C"], &desk_path);
     let mut phone = device_over_a_file("Phone", &["A", "B", "C"], &phone_path);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     sync(&mut desk, &mut phone);
     phone.send();
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
+
     reopened_as_an_older_build_left_it(&mut desk, &desk_path);
     thread::sleep(Duration::from_millis(5));
     reopened_as_an_older_build_left_it(&mut phone, &phone_path);
 
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
+
     let after_the_restamps = (titles(&desk, "Summer"), titles(&phone, "Summer"));
+
     desk.shelf.edit_playlist(summer, &["A", "B"]);
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
+
     let after_the_desk_edits = (titles(&desk, "Summer"), titles(&phone, "Summer"));
+
     phone.shelf.edit_playlist(on_phone, &["A", "C"]);
     sync(&mut phone, &mut desk);
     sync(&mut desk, &mut phone);
+
     let after_the_phone_edits = (titles(&desk, "Summer"), titles(&phone, "Summer"));
+
     drop((desk, phone));
     fs::remove_dir_all(&folder).expect("cleared");
 
@@ -834,11 +931,15 @@ fn a_playlist_edited_before_its_first_look_outranks_an_older_note_that_arrives()
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "B", "C"]);
     let summer = desk.shelf.make_playlist("Summer", &["A"]);
+
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Summer").expect("arrived");
 
     desk.shelf.edit_playlist(summer, &["A", "B"]);
+
     let from_desk = desk.send();
+
     phone.shelf.edit_playlist(on_phone, &["A", "C"]);
     phone.receive(&from_desk);
     sync(&mut phone, &mut desk);
@@ -851,11 +952,13 @@ fn a_playlist_edited_before_its_first_look_outranks_an_older_note_that_arrives()
 fn a_favourite_removed_before_its_first_look_outranks_an_older_note_that_arrives() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.favour_here("A", true);
     sync(&mut desk, &mut phone);
     desk.shelf.favour_here("A", false);
     desk.send();
     desk.shelf.favour_here("A", true);
+
     let from_desk = desk.send();
 
     phone.shelf.favour_here("A", false);
@@ -870,19 +973,26 @@ fn a_favourite_removed_before_its_first_look_outranks_an_older_note_that_arrives
 fn favourites_travel_both_ways_and_a_tombstone_never_takes_an_unmet_favourite() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.favour_here("A", true);
     sync(&mut desk, &mut phone);
+
     assert_eq!(phone.shelf.favourite_titles(), ["A"]);
 
     phone.shelf.favour_here("A", false);
     sync(&mut phone, &mut desk);
+
     assert!(desk.shelf.favourite_titles().is_empty());
 
     let mut tablet = Device::new("Tablet", &["A"]);
+
     tablet.shelf.favour_here("A", true);
     desk.send();
+
     let everything = desk.ledger.snapshot().expect("snapshot");
+
     tablet.receive(&everything.into_iter().flatten().collect::<Vec<_>>());
+
     assert_eq!(tablet.shelf.favourite_titles(), ["A"]);
 }
 
@@ -890,19 +1000,24 @@ fn favourites_travel_both_ways_and_a_tombstone_never_takes_an_unmet_favourite() 
 fn listens_of_another_device_are_credited_once_their_song_is_here() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.listen_here("A", days_ago(2));
     desk.shelf.listen_here("B", days_ago(1));
     sync(&mut desk, &mut phone);
+
     assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
 
     sync(&mut desk, &mut phone);
+
     assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
 
     phone.shelf.add_song(song("B"), b"B".to_vec());
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     assert_eq!(phone.shelf.inside.lock().credited.len(), 2);
 
     let echoed = phone.send();
+
     assert!(
         !echoed
             .iter()
@@ -914,6 +1029,7 @@ fn listens_of_another_device_are_credited_once_their_song_is_here() {
 fn a_listen_credited_before_the_ledger_could_say_so_is_credited_once() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.listen_here("A", days_ago(2));
     phone.shelf.inside.lock().dies_after_crediting = true;
 
@@ -934,15 +1050,19 @@ fn a_listen_credited_before_the_ledger_could_say_so_is_credited_once() {
 fn a_snapshot_brings_a_new_device_to_the_same_state() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     desk.shelf.favour_here("B", true);
+
     let gone = desk.shelf.make_playlist("Gone", &["A"]);
+
     sync(&mut desk, &mut phone);
     desk.shelf.drop_playlist(gone);
     sync(&mut desk, &mut phone);
 
     let mut tablet = Device::new("Tablet", &["A", "B"]);
     let snapshot = phone.ledger.snapshot().expect("snapshot");
+
     tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
 
     assert_eq!(tablet.shelf.playlist_names(), ["Summer"]);
@@ -963,10 +1083,12 @@ fn a_snapshot_brings_a_new_device_to_the_same_state() {
 #[test]
 fn entering_another_space_forgets_the_last_one() {
     let mut desk = Device::new("Desk", &["A"]);
+
     desk.shelf.make_playlist("Summer", &["A"]);
     desk.send();
 
     assert!(desk.ledger.enter_space(SpaceId([6; 16])).expect("entered"));
+
     let resent = desk.send();
 
     assert!(
@@ -1006,9 +1128,11 @@ fn files_as(device: &Device, layout: &str) {
 fn an_organise_layout_travels_as_its_devices_newest_word_and_is_not_sent_back() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     files_as(&desk, "{artist}/{year} {album}/{track} {title}");
 
     sync(&mut desk, &mut phone);
+
     let first = phone.ledger.layouts().expect("layouts");
     let echoed = phone.send();
     let unchanged = desk.send();
@@ -1035,6 +1159,7 @@ fn an_organise_layout_travels_as_its_devices_newest_word_and_is_not_sent_back() 
 
     let mut tablet = Device::new("Tablet", &["A"]);
     let snapshot = phone.ledger.snapshot().expect("snapshot");
+
     tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
 
     assert_eq!(layouts_known(&tablet), ["{albumartist}/{album}/{title}"]);
@@ -1051,7 +1176,9 @@ fn a_device_names_no_layout_until_its_catalog_tells_one_and_forgetting_the_devic
     assert!(layouts_known(&desk).is_empty());
 
     files_as(&phone, "{album}/{title}");
+
     let told = phone.send();
+
     desk.receive(&told);
 
     assert_eq!(layouts_known(&desk), ["{album}/{title}"]);
@@ -1069,9 +1196,12 @@ fn a_forgotten_device_leaves_every_list_and_its_old_note_does_not_bring_it_back(
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
     let mut old = Device::new("Old phone", &["A"]);
+
     let old_note = old.send();
+
     desk.receive(&old_note);
     phone.receive(&old_note);
+
     let old_id = old.ledger.device();
     let desk_id = desk.ledger.device();
 
@@ -1089,6 +1219,7 @@ fn a_forgotten_device_leaves_every_list_and_its_old_note_does_not_bring_it_back(
 
     let mut tablet = Device::new("Tablet", &["A"]);
     let snapshot = phone.ledger.snapshot().expect("snapshot");
+
     tablet.receive(&old_note);
     tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
 
@@ -1100,7 +1231,9 @@ fn a_forgotten_device_leaves_every_list_and_its_old_note_does_not_bring_it_back(
 fn a_device_forgotten_while_it_still_syncs_speaks_up_and_is_listed_again() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     sync(&mut phone, &mut desk);
+
     let phone_id = phone.ledger.device();
 
     desk.ledger.forget_device(phone_id).expect("forgotten");
@@ -1109,6 +1242,7 @@ fn a_device_forgotten_while_it_still_syncs_speaks_up_and_is_listed_again() {
     assert!(!device_names(&desk).contains(&"Phone".to_owned()));
 
     let spoken = phone.send();
+
     desk.receive(&spoken);
 
     assert!(
@@ -1142,6 +1276,7 @@ fn only_a_device_the_ledger_lists_is_known_and_a_forgotten_one_is_not() {
 fn a_listen_past_what_the_ledger_keeps_is_never_credited_again() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.listen_here("A", days_ago(500));
     desk.shelf.listen_here("A", days_ago(3));
 
@@ -1154,6 +1289,7 @@ fn a_listen_past_what_the_ledger_keeps_is_never_credited_again() {
 fn a_favourite_on_a_copy_known_by_its_mbid_and_one_known_by_its_tags_stays_favoured() {
     let mut desk = Device::new("Desk", &[]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.add_song(identified("A"), b"A".repeat(1000));
     desk.shelf.inside.lock().favourites.push(identified("A"));
     desk.shelf.moved();
@@ -1164,6 +1300,7 @@ fn a_favourite_on_a_copy_known_by_its_mbid_and_one_known_by_its_tags_stays_favou
         sync(&mut phone, &mut desk);
         favourites_as_held(&desk);
     }
+
     let from_desk = desk.send();
     let from_phone = phone.send();
 
@@ -1195,12 +1332,14 @@ fn a_song_a_playlist_names_and_the_catalog_holds_under_other_names_is_written_on
  {
     let mut desk = Device::new("Desk", &["Echoes", "Time"]);
     let mut phone = Device::new("Phone", &["Time"]);
+
     phone
         .shelf
         .receive_named_otherwise(song("Echoes"), remastered("Echoes"));
     desk.shelf.make_playlist("Mix", &["Echoes", "Time"]);
 
     sync(&mut desk, &mut phone);
+
     let written_at = phone.shelf.revision();
     let settled = phone.ledger.settle(&phone.shelf).expect("settled");
     let echoed = phone.send();
@@ -1220,6 +1359,7 @@ fn an_edit_to_a_playlist_holding_a_song_under_other_names_keeps_it_once_under_th
  {
     let mut desk = Device::new("Desk", &["Echoes", "Time", "Money"]);
     let mut phone = Device::new("Phone", &["Time", "Money"]);
+
     phone
         .shelf
         .receive_named_otherwise(song("Echoes"), remastered("Echoes"));
@@ -1228,6 +1368,7 @@ fn an_edit_to_a_playlist_holding_a_song_under_other_names_keeps_it_once_under_th
     phone.ledger.settle(&phone.shelf).expect("settled");
 
     let (on_phone, _) = phone.shelf.playlist_named("Mix").expect("arrived");
+
     phone
         .shelf
         .inside
@@ -1251,8 +1392,10 @@ fn an_edit_to_a_playlist_holding_a_song_under_other_names_keeps_it_once_under_th
 fn a_listeners_edit_made_before_a_song_lands_is_kept_by_the_settle_that_follows() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &["A", "C"]);
+
     desk.shelf.make_playlist("Mix", &["A", "B"]);
     sync(&mut desk, &mut phone);
+
     let (on_phone, _) = phone.shelf.playlist_named("Mix").expect("arrived");
 
     phone.shelf.edit_playlist(on_phone, &["A", "C"]);
@@ -1270,13 +1413,16 @@ fn a_listeners_edit_made_before_a_song_lands_is_kept_by_the_settle_that_follows(
 fn a_favourite_on_a_song_held_under_other_names_stays_one_favourite_under_the_name_it_travels_by() {
     let mut desk = Device::new("Desk", &["Echoes"]);
     let mut phone = Device::new("Phone", &[]);
+
     phone
         .shelf
         .receive_named_otherwise(song("Echoes"), remastered("Echoes"));
     desk.shelf.favour_here("Echoes", true);
 
     sync(&mut desk, &mut phone);
+
     let echoed = phone.send();
+
     desk.receive(&echoed);
 
     assert_eq!(phone.shelf.favourite_titles(), ["Echoes (2011 Remaster)"]);
@@ -1297,6 +1443,7 @@ fn an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_und
     let mut desk = Device::new("Desk", &[]);
     let mut laptop = Device::new("Laptop", &["Echoes"]);
     let mut phone = Device::new("Phone", &["Echoes"]);
+
     desk.shelf.add_song(identified("Echoes"), b"E".repeat(1000));
     desk.shelf
         .inside
@@ -1304,14 +1451,19 @@ fn an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_und
         .favourites
         .push(identified("Echoes"));
     desk.shelf.moved();
+
     let favoured = desk.send();
+
     phone.receive(&favoured);
     desk.shelf.inside.lock().favourites.clear();
     desk.shelf.moved();
+
     let unfavoured = desk.send();
 
     laptop.shelf.favour_here("Echoes", true);
+
     let favoured_again = laptop.send();
+
     phone.receive(&favoured_again);
     phone.receive(&unfavoured);
     phone.ledger.settle(&phone.shelf).expect("settled");
@@ -1322,14 +1474,19 @@ fn an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_und
 #[test]
 fn a_ledger_kept_without_a_server_owes_everything_again_once_it_has_one() {
     let mut desk = Device::new("Desk", &["A"]);
+
     desk.shelf.make_playlist("Summer", &["A"]);
 
     let while_serverless = desk.ledger.through_a_server(false).expect("serverless");
+
     desk.send();
+
     let owed_before = desk.ledger.owed_count().expect("owed");
     let owed_again = desk.ledger.through_a_server(true).expect("a server");
     let owed_after = desk.ledger.owed_count().expect("owed");
+
     desk.send();
+
     let once_more = desk.ledger.through_a_server(true).expect("a server still");
 
     assert!(!while_serverless);
@@ -1408,11 +1565,13 @@ fn answers_in(changes: &[Change]) -> usize {
 fn an_answer_learnt_on_one_device_lands_on_another_holding_the_song_and_is_not_sent_back() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.answer_here("A", sung("[00:01.00] Words", true));
     desk.shelf.answer_here("A", studied(42));
     desk.shelf.answer_here("B", studied(7));
 
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(answers_in(&told), 3);
@@ -1429,8 +1588,10 @@ fn an_answer_learnt_on_one_device_lands_on_another_holding_the_song_and_is_not_s
 fn an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &[]);
+
     desk.shelf.answer_here("A", sung("Words", false));
     sync(&mut desk, &mut phone);
+
     assert!(phone.shelf.answers_of("A").is_empty());
 
     phone.shelf.add_song(song("A"), b"A".repeat(1000));
@@ -1444,17 +1605,22 @@ fn an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives() {
 fn an_answer_for_a_song_not_held_is_offered_again_only_once_its_song_arrives() {
     let mut desk = Device::new("Desk", &["A", "B", "C"]);
     let mut phone = Device::new("Phone", &[]);
+
     for title in ["A", "B", "C"] {
         desk.shelf.answer_here(title, sung(title, false));
     }
     sync(&mut desk, &mut phone);
+
     let offered_on_arrival = phone.shelf.inside.lock().answers_offered;
 
     phone.shelf.listen_here("Elsewhere", days_ago(0));
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     let offered_after_a_play = phone.shelf.inside.lock().answers_offered;
+
     phone.shelf.add_song(song("B"), b"B".repeat(1000));
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     let offered_after_b_arrived = phone.shelf.inside.lock().answers_offered;
 
     assert_eq!(offered_on_arrival, 3);
@@ -1471,10 +1637,13 @@ fn an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew() 
         std::process::id(),
         days_ago(0)
     ));
+
     std::fs::create_dir_all(&folder).expect("a scratch folder");
+
     let path = folder.join("sync.sqlite");
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &[]);
+
     phone.ledger = Ledger::open(&path).expect("a ledger");
     phone.ledger.enter_space(SPACE).expect("a space");
     for title in ["A", "B"] {
@@ -1482,12 +1651,15 @@ fn an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew() 
     }
     sync(&mut desk, &mut phone);
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     let offered_before = phone.shelf.inside.lock().answers_offered;
 
     phone.ledger = Ledger::open(&path).expect("the ledger again");
     phone.shelf.listen_here("Elsewhere", days_ago(0));
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     let offered = phone.shelf.inside.lock().answers_offered - offered_before;
+
     drop(phone);
     std::fs::remove_dir_all(&folder).expect("cleared");
 
@@ -1498,6 +1670,7 @@ fn an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew() 
 fn a_song_received_under_the_name_an_answer_was_told_by_takes_the_answer() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &[]);
+
     desk.shelf.answer_here("A", sung("Words", false));
     sync(&mut desk, &mut phone);
 
@@ -1506,9 +1679,13 @@ fn a_song_received_under_the_name_an_answer_was_told_by_takes_the_answer() {
         album: "Another Album".into(),
         ..song("A")
     };
+
     phone.shelf.receive_named_otherwise(song("A"), own);
+
     let offered_before = phone.shelf.inside.lock().answers_offered;
+
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     let offered = phone.shelf.inside.lock().answers_offered - offered_before;
 
     assert_eq!(offered, 1);
@@ -1521,15 +1698,18 @@ fn a_catalog_that_cannot_say_what_it_came_to_hold_is_offered_every_unheld_answer
         .collect::<Vec<_>>();
     let mut desk = Device::new("Desk", &[]);
     let mut phone = Device::new("Phone", &[]);
+
     phone.shelf.inside.lock().arrivals_untracked = true;
     for title in &titles {
         desk.shelf.answer_here(title, sung(title, false));
     }
     sync(&mut desk, &mut phone);
+
     let offered_on_arrival = phone.shelf.inside.lock().answers_offered;
 
     phone.shelf.add_song(song("Song 1100"), b"S".repeat(1000));
     phone.ledger.settle(&phone.shelf).expect("settled");
+
     let offered = phone.shelf.inside.lock().answers_offered - offered_on_arrival;
 
     assert_eq!(offered_on_arrival, titles.len());
@@ -1544,9 +1724,13 @@ fn a_catalog_that_cannot_say_what_it_came_to_hold_is_offered_every_unheld_answer
 fn plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.answer_here("A", sung("[00:01.00] Words", true));
+
     let timed = desk.send();
+
     phone.shelf.answer_here("A", sung("Words", false));
+
     let plain = phone.send();
 
     desk.receive(&plain);
@@ -1566,11 +1750,14 @@ fn a_catalog_that_takes_no_answers_passes_them_on_untouched() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
     let mut tablet = Device::new("Tablet", &["A"]);
+
     phone.shelf.inside.lock().takes_no_answers = true;
     desk.shelf.answer_here("A", sung("Words", false));
 
     sync(&mut desk, &mut phone);
+
     let snapshot = phone.ledger.snapshot().expect("a snapshot");
+
     tablet.receive(&snapshot.into_iter().flatten().collect::<Vec<_>>());
 
     assert!(phone.shelf.answers_of("A").is_empty());
@@ -1622,10 +1809,12 @@ fn released(title: &str) -> Answer {
 fn a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.answer_here("A", sung("Words", false));
     desk.shelf.answer_here("A", released("Meddle"));
 
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(answers_in(&told), 2);
@@ -1641,10 +1830,12 @@ fn a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back() {
 fn the_peaks_of_a_study_travel_as_an_answer_of_their_own_beside_it_and_are_not_sent_back() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.answer_here("A", studied(42));
     desk.shelf.answer_here("A", peaked(42));
 
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(answers_in(&told), 2);
@@ -1657,10 +1848,12 @@ fn the_peaks_of_a_study_travel_as_an_answer_of_their_own_beside_it_and_are_not_s
 fn the_peaks_of_two_encodes_of_a_song_are_two_answers() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf.answer_here("A", peaked(42));
     desk.shelf.answer_here("A", peaked(43));
 
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(answers_in(&told), 2);
@@ -1671,10 +1864,12 @@ fn the_peaks_of_two_encodes_of_a_song_are_two_answers() {
 fn a_release_heavier_than_the_server_keeps_stays_home() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     desk.shelf
         .answer_here("A", released(&"Meddle ".repeat(10_000)));
 
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(answers_in(&told), 0);
@@ -1683,6 +1878,7 @@ fn a_release_heavier_than_the_server_keeps_stays_home() {
 
 fn sorted_names(device: &Device) -> Vec<String> {
     let mut names = device.shelf.playlist_names();
+
     names.sort();
     names
 }
@@ -1699,6 +1895,7 @@ fn playlists_of_one_name_made_apart_after_both_devices_looked_become_one_whichev
     for desk_first in [true, false] {
         let mut desk = Device::new("Desk", &["A", "B", "C"]);
         let mut phone = Device::new("Phone", &["A", "B", "C"]);
+
         sync(&mut desk, &mut phone);
         sync(&mut phone, &mut desk);
 
@@ -1762,10 +1959,12 @@ fn three_devices_each_making_one_name_apart_converge_on_one_playlist_whatever_th
         for pulling in orders {
             let mut devices =
                 ["Desk", "Phone", "Tablet"].map(|name| Device::new(name, &["A", "B", "C", "D"]));
+
             let mut log = Log {
                 records: Vec::new(),
                 read: vec![0; devices.len()],
             };
+
             for at in 0..devices.len() {
                 log.pushed(&mut devices, at);
             }
@@ -1790,7 +1989,9 @@ fn three_devices_each_making_one_name_apart_converge_on_one_playlist_whatever_th
 
             let first = titles(&devices[0], "Mix");
             let mut held = first.clone();
+
             held.sort();
+
             assert_eq!(held, ["A", "B", "C", "D"], "{pushing:?} {pulling:?}");
             for device in &devices {
                 assert_eq!(sorted_names(device), ["Mix"], "{pushing:?} {pulling:?}");
@@ -1804,6 +2005,7 @@ fn three_devices_each_making_one_name_apart_converge_on_one_playlist_whatever_th
 fn a_playlist_made_beside_a_namesake_already_known_stays_apart_as_an_alias() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.make_playlist("Mix", &["A"]);
     sync(&mut desk, &mut phone);
 
@@ -1823,16 +2025,21 @@ fn an_aliased_arrival_cut_off_between_the_catalog_and_the_ledger_is_taken_up_and
 {
     let mut desk = Device::new("Desk", &["A", "Z"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     phone.shelf.receive_named_otherwise(song("Z"), song("Zed"));
     desk.shelf.make_playlist("Mix", &["A"]);
     sync(&mut desk, &mut phone);
     desk.shelf.make_playlist("Mix", &["A", "Z"]);
+
     let told = desk.send();
 
     phone.shelf.inside.lock().refuses_resolving = true;
+
     assert!(phone.ledger.arrived(&phone.shelf, &told).is_err());
+
     phone.shelf.inside.lock().refuses_resolving = false;
     phone.receive(&told);
+
     let echoed = phone.send();
 
     assert_eq!(sorted_names(&phone), ["Mix", "Mix (2)"]);
@@ -1845,6 +2052,7 @@ fn a_saved_query_once_unwritable_here_folds_the_namesake_made_meanwhile_into_it(
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
     let top = desk.shelf.make_query("Top", "plays:>5");
+
     desk.shelf
         .inside
         .lock()
@@ -1859,6 +2067,7 @@ fn a_saved_query_once_unwritable_here_folds_the_namesake_made_meanwhile_into_it(
     phone.look();
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
+
     assert_eq!(phone.shelf.query_names(), ["Top"]);
 
     phone.shelf.inside.lock().unwritable_sorts_from = None;
@@ -1878,6 +2087,7 @@ fn a_saved_query_once_unwritable_here_folds_the_namesake_made_meanwhile_into_it(
 fn saved_queries_of_one_name_made_apart_after_both_devices_looked_become_one() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
 
@@ -1902,11 +2112,14 @@ fn a_playlist_deleted_and_put_back_after_its_look_keeps_its_key_and_its_songs_ke
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
     let mix = desk.shelf.make_playlist("Mix", &["A"]);
+
     sync(&mut desk, &mut phone);
+
     let at = LocalPlaylistId {
         id: mix,
         created: mix * 1000,
     };
+
     assert!(desk.ledger.keep_songs_of(at, true).expect("kept"));
 
     desk.shelf.drop_playlist(mix);
@@ -1917,7 +2130,9 @@ fn a_playlist_deleted_and_put_back_after_its_look_keeps_its_key_and_its_songs_ke
         .playlists
         .insert(mix, (mix * 1000, "Mix".into(), vec![song("A")]));
     desk.look();
+
     let (on_phone, _) = phone.shelf.playlist_named("Mix").expect("arrived");
+
     phone.shelf.edit_playlist(on_phone, &["A", "B"]);
     sync(&mut phone, &mut desk);
     sync(&mut desk, &mut phone);
@@ -1940,15 +2155,18 @@ fn a_share(at: Option<LocalPlaylistId>) -> resonate_sync::HeldShare {
 
 fn hidden_as_shared(device: &Device, name: &str) -> LocalPlaylistId {
     let mut inside = device.shelf.inside.lock();
+
     let (id, (created, ..)) = inside
         .playlists
         .iter()
         .find(|(_, (_, held, _))| held == name)
         .expect("the playlist stands");
+
     let at = LocalPlaylistId {
         id: *id,
         created: *created,
     };
+
     inside.hidden_as_shared.push(at);
 
     at
@@ -1958,12 +2176,15 @@ fn hidden_as_shared(device: &Device, name: &str) -> LocalPlaylistId {
 fn sharing_a_playlist_tells_no_other_device_to_delete_it_and_a_later_note_writes_nothing_here() {
     let mut desk = Device::new("Desk", &["One"]);
     let mut phone = Device::new("Phone", &["One"]);
+
     desk.shelf.make_playlist("Mix", &["One"]);
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
+
     assert!(phone.shelf.playlist_named("Mix").is_some());
 
     hidden_as_shared(&desk, "Mix");
+
     let told = desk.send();
 
     assert!(
@@ -1972,13 +2193,16 @@ fn sharing_a_playlist_tells_no_other_device_to_delete_it_and_a_later_note_writes
             .any(|change| matches!(change, Change::Playlist(_))),
         "sharing a playlist told the other devices something of it: {told:?}"
     );
+
     phone.receive(&told);
+
     assert!(phone.shelf.playlist_named("Mix").is_some());
 
     let renamed = {
         let inside = phone.shelf.inside.lock();
         *inside.playlists.keys().next().expect("a playlist")
     };
+
     phone
         .shelf
         .inside
@@ -1987,7 +2211,9 @@ fn sharing_a_playlist_tells_no_other_device_to_delete_it_and_a_later_note_writes
         .get_mut(&renamed)
         .expect("a playlist")
         .1 = "Mix edited on the phone".to_owned();
+
     let lists_before = desk.shelf.inside.lock().playlists.len();
+
     sync(&mut phone, &mut desk);
 
     assert_eq!(
@@ -2001,25 +2227,30 @@ fn sharing_a_playlist_tells_no_other_device_to_delete_it_and_a_later_note_writes
 fn a_share_reaches_this_listeners_other_device_which_takes_its_own_copy_over() {
     let mut desk = Device::new("Desk", &["One"]);
     let mut phone = Device::new("Phone", &["One"]);
+
     desk.shelf.make_playlist("Mix", &["One"]);
     sync(&mut desk, &mut phone);
     sync(&mut phone, &mut desk);
 
     let at = hidden_as_shared(&desk, "Mix");
+
     desk.shelf.inside.lock().shares = Some(vec![a_share(Some(at))]);
     sync(&mut desk, &mut phone);
 
     let taken = phone.shelf.inside.lock().shares_taken.clone();
+
     assert_eq!(taken.len(), 1);
     assert_eq!(taken[0].code, "E-CODE");
     assert_eq!(
         taken[0].personal, [2; 32],
         "this listener's other device is the same person"
     );
+
     let own = phone
         .shelf
         .playlist_named("Mix")
         .expect("the phone's copy stands");
+
     assert_eq!(taken[0].at.map(|at| at.id), Some(own.0));
 }
 
@@ -2030,10 +2261,12 @@ fn a_share_left_on_one_device_is_left_on_the_others_and_nothing_known_says_nothi
 
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
     sync(&mut desk, &mut phone);
+
     assert_eq!(phone.shelf.inside.lock().shares_taken.len(), 1);
 
     desk.shelf.inside.lock().shares = None;
     sync(&mut desk, &mut phone);
+
     assert!(
         phone.shelf.inside.lock().shares_dropped.is_empty(),
         "a device whose shared playlists are not running took them all as left"
@@ -2041,6 +2274,7 @@ fn a_share_left_on_one_device_is_left_on_the_others_and_nothing_known_says_nothi
 
     desk.shelf.inside.lock().shares = Some(Vec::new());
     sync(&mut desk, &mut phone);
+
     assert_eq!(
         phone.shelf.inside.lock().shares_dropped.as_slice(),
         ["E-CODE".to_owned()]
@@ -2056,10 +2290,15 @@ fn a_compaction_through_less_than_was_read_still_counts_the_records_read_past_it
         caught_up.passed(seq, 100).expect("passed");
     }
     caught_up.compacted(6).expect("compacted");
+
     let past_through = caught_up.since_snapshot().expect("counted");
+
     caught_up.compacted(10).expect("compacted");
+
     let at_the_cursor = caught_up.since_snapshot().expect("counted");
+
     fresh.compacted(40).expect("compacted");
+
     let from_a_snapshot = fresh.since_snapshot().expect("counted");
 
     assert_eq!(past_through, (4, 400));
@@ -2072,6 +2311,7 @@ fn a_compaction_through_less_than_was_read_still_counts_the_records_read_past_it
 #[test]
 fn a_share_is_told_once_and_a_compaction_elsewhere_owes_it_again() {
     let mut desk = Device::new("Desk", &[]);
+
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
 
     assert_eq!(
@@ -2109,15 +2349,19 @@ fn shares_told(changes: &[Change]) -> usize {
 #[test]
 fn a_share_is_told_again_in_another_space_and_reaches_a_device_met_there() {
     let mut desk = Device::new("Desk", &[]);
+
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
     desk.send();
 
     let mut phone = Device::new("Phone", &[]);
     let elsewhere = SpaceId([6; 16]);
+
     phone.ledger.enter_space(elsewhere).expect("entered");
 
     desk.ledger.enter_space(elsewhere).expect("entered");
+
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(shares_told(&told), 1);
@@ -2137,12 +2381,15 @@ fn a_share_is_told_again_in_another_space_and_reaches_a_device_met_there() {
 #[test]
 fn a_share_is_owed_again_when_the_space_is_made_anew_and_reaches_a_device_joining_it() {
     let mut desk = Device::new("Desk", &[]);
+
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
     desk.send();
 
     desk.ledger.space_made_anew().expect("made anew");
+
     let told = desk.send();
     let mut phone = Device::new("Phone", &[]);
+
     phone.receive(&told);
 
     assert_eq!(shares_told(&told), 1);
@@ -2152,11 +2399,13 @@ fn a_share_is_owed_again_when_the_space_is_made_anew_and_reaches_a_device_joinin
 #[test]
 fn a_share_told_without_a_server_is_owed_again_once_there_is_one() {
     let mut desk = Device::new("Desk", &[]);
+
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
     desk.ledger.through_a_server(false).expect("serverless");
     desk.send();
 
     desk.ledger.through_a_server(true).expect("a server");
+
     let told = desk.send();
 
     assert_eq!(shares_told(&told), 1);
@@ -2165,9 +2414,11 @@ fn a_share_told_without_a_server_is_owed_again_once_there_is_one() {
 #[test]
 fn an_owed_share_is_counted_among_what_is_owed() {
     let mut desk = Device::new("Desk", &[]);
+
     desk.shelf.inside.lock().shares = Some(vec![a_share(None)]);
 
     desk.look();
+
     let counted = desk.ledger.owed_count().expect("owed");
     let owed = desk.ledger.owed().expect("owed").concat();
 
@@ -2177,6 +2428,7 @@ fn an_owed_share_is_counted_among_what_is_owed() {
 
 fn following_playlists(device: &mut Device, name: &str) -> Follow {
     let (id, _) = device.shelf.playlist_named(name).expect("a playlist");
+
     device
         .ledger
         .keep_songs_of(
@@ -2201,6 +2453,7 @@ fn wanted_titles(device: &Device, follow: Follow) -> Vec<String> {
         .into_iter()
         .map(|recording| recording.title)
         .collect::<Vec<_>>();
+
     titles.sort();
     titles
 }
@@ -2219,12 +2472,16 @@ fn deletions(changes: &[Change]) -> Vec<(String, bool)> {
 fn a_song_deleted_from_every_device_leaves_the_other_and_is_not_followed_back() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     sync(&mut desk, &mut phone);
+
     let follow = following_playlists(&mut phone, "Summer");
 
     desk.shelf.delete_everywhere("A");
+
     let told = desk.send();
+
     phone.receive(&told);
 
     assert_eq!(deletions(&told), [("A".to_owned(), true)]);
@@ -2240,12 +2497,15 @@ fn a_song_deleted_from_every_device_leaves_the_other_and_is_not_followed_back() 
 fn a_song_deleted_only_here_tells_no_other_device() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     sync(&mut desk, &mut phone);
 
     desk.shelf.inside.lock().deleted_by_hand = vec!["A".into()];
     desk.shelf.inside.lock().deleted_here = vec!["A".into()];
     desk.shelf.moved();
+
     let told = desk.send();
+
     phone.receive(&told);
 
     assert!(deletions(&told).is_empty());
@@ -2258,16 +2518,21 @@ fn a_device_refusing_deletions_from_others_keeps_the_song_and_no_device_follows_
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
     let mut laptop = Device::new("Laptop", &["B"]);
+
     phone.shelf.inside.lock().refuses_deletions = true;
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     sync(&mut desk, &mut phone);
     laptop.receive(&desk.ledger.snapshot().expect("a snapshot").concat());
+
     let desk_follows = following_playlists(&mut desk, "Summer");
     let laptop_follows = following_playlists(&mut laptop, "Summer");
+
     assert_eq!(wanted_titles(&laptop, laptop_follows), ["A"]);
 
     desk.shelf.delete_everywhere("A");
+
     let told = desk.send();
+
     phone.receive(&told);
     laptop.receive(&told);
 
@@ -2288,12 +2553,17 @@ fn a_song_added_again_after_its_deletion_is_never_deleted_again_and_comes_back()
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
     let mut laptop = Device::new("Laptop", &["B"]);
+
     desk.shelf.make_playlist("Summer", &["A", "B"]);
     sync(&mut desk, &mut phone);
     laptop.receive(&desk.ledger.snapshot().expect("a snapshot").concat());
+
     let follow = following_playlists(&mut phone, "Summer");
+
     desk.shelf.delete_everywhere("A");
+
     let told = desk.send();
+
     phone.receive(&told);
     laptop.shelf.add_song(song("A"), b"A".repeat(1000));
     laptop.receive(&told);
@@ -2303,7 +2573,9 @@ fn a_song_added_again_after_its_deletion_is_never_deleted_again_and_comes_back()
     assert!(deletions(&laptop.send()).is_empty());
 
     desk.shelf.add_song(song("A"), b"A".repeat(1000));
+
     let answered = desk.send();
+
     phone.receive(&answered);
     phone.receive(&told);
     desk.receive(&told);
@@ -2319,9 +2591,11 @@ fn a_song_added_again_after_its_deletion_is_never_deleted_again_and_comes_back()
 fn a_device_paired_after_a_deletion_keeps_the_songs_it_held_and_tells_none_back() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     sync(&mut desk, &mut phone);
     desk.shelf.delete_everywhere("A");
     sync(&mut desk, &mut phone);
+
     let mut laptop = Device::new("Laptop", &["A", "B"]);
 
     laptop.receive(&desk.ledger.snapshot().expect("a snapshot").concat());
@@ -2341,6 +2615,7 @@ fn a_device_paired_after_a_deletion_keeps_the_songs_it_held_and_tells_none_back(
 fn a_deletion_the_trash_refuses_keeps_the_song_and_is_not_tried_again() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);
+
     sync(&mut desk, &mut phone);
     phone.shelf.inside.lock().trash_refuses = true;
 
@@ -2357,12 +2632,15 @@ fn a_deletion_the_trash_refuses_keeps_the_song_and_is_not_tried_again() {
 fn a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device() {
     let mut desk = Device::new("Desk", &["A"]);
     let mut phone = Device::new("Phone", &["A"]);
+
     sync(&mut desk, &mut phone);
     desk.shelf.delete_everywhere("A");
     sync(&mut desk, &mut phone);
 
     assert!(phone.ledger.asked_back(&song("A")).expect("answered"));
+
     let answered = phone.send();
+
     desk.receive(&answered);
 
     assert_eq!(deletions(&answered), [("A".to_owned(), false)]);

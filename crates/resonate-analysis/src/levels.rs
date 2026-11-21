@@ -121,8 +121,10 @@ impl Leveling {
 
         let (frames, unpaired) = samples.as_chunks::<2>();
         let mut identical = pairing.identical;
+
         for [left, right] in frames {
             let (left, right) = (widened(*left), widened(*right));
+
             self.ored |= (left | right).cast_unsigned();
             identical &= left == right;
         }
@@ -137,6 +139,7 @@ impl Leveling {
         for frame in normalised.chunks_exact(width) {
             for (channel, sample) in self.channels.iter_mut().zip(frame) {
                 let size = sample.abs();
+
                 channel.peak = channel.peak.max(size);
                 channel.sum += f64::from(*sample);
                 if size >= WITHIN_A_SIXTEEN_BIT_STEP_OF_FULL_SCALE {
@@ -154,6 +157,7 @@ impl Leveling {
             }
             if let (Some(pairing), [left, right]) = (&mut self.pairing, frame) {
                 let (left, right) = (f64::from(*left), f64::from(*right));
+
                 pairing.left_right += left * right;
                 pairing.left_left += left * left;
                 pairing.right_right += right * right;
@@ -181,6 +185,7 @@ impl Leveling {
         if self.ored == 0 {
             return None;
         }
+
         let container = self.format.valid_bits();
         let unused = (self.ored.trailing_zeros() as u8).min(container);
         Some(container - unused)
@@ -246,6 +251,7 @@ mod tests {
     fn leveled(channels: usize, data: SampleData) -> Levels {
         let mut leveling = Leveling::new(channels, data.format());
         let normalised = normalised(&data);
+
         leveling.note(Some(&data), &normalised);
         leveling.finished()
     }
@@ -274,11 +280,13 @@ mod tests {
         let samples: Vec<i32> = sine(4_800, 0.8)
             .map(|sample| ((sample * 32_767.0) as i32) << 8)
             .collect();
+
         assert_eq!(leveled(1, SampleData::S24(samples)).bits_in_use, Some(16));
 
         let whole: Vec<i32> = sine(4_800, 0.8)
             .map(|sample| (sample * 8_388_607.0) as i32)
             .collect();
+
         assert_eq!(leveled(1, SampleData::S24(whole)).bits_in_use, Some(24));
     }
 
@@ -287,6 +295,7 @@ mod tests {
         let samples: Vec<f32> = sine(4_800, 0.8)
             .map(|sample| (sample * 32_768.0).round() / 32_768.0)
             .collect();
+
         assert_eq!(leveled(1, SampleData::F32(samples)).bits_in_use, Some(16));
         assert_eq!(leveled(1, SampleData::F32(vec![0.0; 64])).bits_in_use, None);
     }
@@ -294,9 +303,11 @@ mod tests {
     #[test]
     fn a_run_held_at_full_scale_is_clipping_and_a_lone_peak_is_not() {
         let mut samples = vec![0_i16; 100];
+
         samples[10] = i16::MAX;
         samples[40..45].fill(i16::MAX);
         samples[60..63].fill(i16::MIN);
+
         let levels = leveled(1, SampleData::S16(samples));
 
         assert_eq!(levels.clipped, 8);
@@ -313,6 +324,7 @@ mod tests {
             .collect();
         let levels = leveled(2, SampleData::S16(mono));
         let stereo = levels.stereo.expect("a stereo reading");
+
         assert!(stereo.identical);
         assert!((stereo.correlation.expect("a correlation") - 1.0).abs() < 1e-6);
 
@@ -325,6 +337,7 @@ mod tests {
         let stereo = leveled(2, SampleData::S16(opposed))
             .stereo
             .expect("a stereo reading");
+
         assert!(!stereo.identical);
         assert!((stereo.correlation.expect("a correlation") + 1.0).abs() < 1e-6);
     }
@@ -332,6 +345,7 @@ mod tests {
     #[test]
     fn an_offset_signal_reads_its_offset() {
         let samples: Vec<f32> = sine(48_000, 0.25).map(|sample| sample + 0.1).collect();
+
         assert!((leveled(1, SampleData::F32(samples)).dc - 0.1).abs() < 1e-3);
     }
 }

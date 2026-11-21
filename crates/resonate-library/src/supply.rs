@@ -84,6 +84,7 @@ impl Want {
         if self.is_answered() {
             return None;
         }
+
         let Some(tried) = self.tried else {
             return Some(self.wanted);
         };
@@ -289,6 +290,7 @@ impl PollProgress {
 
     pub fn wants_changed(&self) -> bool {
         let mut rereading = self.rereading.lock();
+
         if rereading.closed || self.is_cancelled() {
             return false;
         }
@@ -302,6 +304,7 @@ impl PollProgress {
 
     fn close_unless_wants_changed(&self) -> bool {
         let mut rereading = self.rereading.lock();
+
         if std::mem::take(&mut rereading.wanted) {
             return false;
         }
@@ -315,6 +318,7 @@ impl PollProgress {
 
     fn close(&self) {
         let mut rereading = self.rereading.lock();
+
         if rereading.closed {
             return;
         }
@@ -431,7 +435,9 @@ fn landed(
                 Ok(pumped) => pumped,
                 Err(source) => return Err(Error::ThreadSpawn { source }),
             };
+
             let keeping = vault.keep_delivered(&mut pumped, extension.as_str());
+
             if let Some(unopened) = pumped.unopened.take() {
                 return Ok(Landed::Unopened(unopened));
             }
@@ -533,6 +539,7 @@ impl<'a> Pumped<'a> {
         gate: Gate,
     ) -> io::Result<Self> {
         let (sender, chunks) = mpsc::sync_channel(CHUNKS_AHEAD);
+
         thread::Builder::new()
             .name("resonate-delivery".to_owned())
             .spawn(move || opened_and_pumped(opening, &sender))?;
@@ -556,10 +563,13 @@ impl<'a> Pumped<'a> {
         let carried = error
             .get_ref()
             .is_some_and(|carried| carried.is::<resonate_providers::Error>());
+
         if !carried {
             return error;
         }
+
         let kind = error.kind();
+
         if let Some(Ok(refused)) = error
             .into_inner()
             .map(|carried| carried.downcast::<resonate_providers::Error>())
@@ -609,9 +619,12 @@ impl Read for Pumped<'_> {
             if self.progress.is_cancelled() {
                 return Err(io::Error::from(io::ErrorKind::ConnectionAborted));
             }
+
             let left = &self.held[self.read..];
+
             if !left.is_empty() || into.is_empty() {
                 let taken = left.len().min(into.len());
+
                 into[..taken].copy_from_slice(&left[..taken]);
                 self.read += taken;
                 return Ok(taken);
@@ -642,6 +655,7 @@ struct Counted<'a, R> {
 impl<R: Read> Read for Counted<'_, R> {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.reader.read(into)?;
+
         if let Some(want) = self.want {
             self.progress.received_more(want, read);
         }
@@ -664,6 +678,7 @@ fn opened_and_pumped(opening: Opening, into: &SyncSender<Pumping>) {
 fn pump(reader: &mut dyn Read, into: &SyncSender<Pumping>) {
     loop {
         let mut chunk = vec![0; CHUNK_BYTES];
+
         let answered = match reader.read(&mut chunk) {
             Ok(read) => {
                 chunk.truncate(read);
@@ -706,6 +721,7 @@ pub(crate) fn start(
         .spawn(move || {
             let _asking = asking;
             let outcome = run(&library, &providers, options, &progress);
+
             progress.close();
             outcome
         })
@@ -762,7 +778,9 @@ pub(crate) fn drawn(
                 drawing.gate.clone(),
             )
             .map_err(|source| Error::ThreadSpawn { source })?;
+
             let outcome = file(&mut pumped, extension.as_str());
+
             if let Some(unopened) = pumped.unopened.take() {
                 return Ok(Drawn::Unopened(unopened));
             }
@@ -822,7 +840,9 @@ fn filed_in_the_music_folder(
     match outcome {
         Ok(landed) => {
             progress.kept.fetch_add(1, Ordering::Relaxed);
+
             let at = MediaLocation::local(&landed.path);
+
             landing.filed.lock().push(landed);
             Ok(Landed::Kept(at))
         }
@@ -868,6 +888,7 @@ fn scanning(filed: &[Filed]) -> ScanOptions {
 
 fn paired(library: &Library) -> Result<()> {
     let paired = library.pair_what_landed()?;
+
     if paired > 0 {
         tracing::info!(paired, "wants were paired with the tracks filed for them");
     }
@@ -967,9 +988,12 @@ struct Keep<'l, 'a> {
 impl<'a> Lanes<'a> {
     fn refill(&self, queue: &mut Queue) -> Result<()> {
         let now = SystemTime::now();
+
         queue.forgotten = Arc::new(self.library.forgotten_deliveries()?);
         queue.read = true;
+
         let kept = self.library.kept_where();
+
         queue.pending = self
             .library
             .wants_unheld()?
@@ -985,6 +1009,7 @@ impl<'a> Lanes<'a> {
 
     fn claim(&self) -> Result<Claim> {
         let mut queue = self.queue.lock();
+
         if self.progress.take_wants_changed() || !queue.read {
             self.refill(&mut queue)?;
         }
@@ -1033,6 +1058,7 @@ impl<'a> Lanes<'a> {
 
     fn lane(&self, leads: bool) {
         let (handing, handed) = mpsc::sync_channel::<Keep<'_, 'a>>(0);
+
         thread::scope(|scope| {
             let keeper = thread::Builder::new()
                 .name("resonate-keeper".to_owned())
@@ -1042,6 +1068,7 @@ impl<'a> Lanes<'a> {
                 })
                 .ok();
             let handing = keeper.is_some().then_some(handing);
+
             self.ask_until_done(leads, handing.as_ref());
             drop(handing);
             if let Some(keeper) = keeper
@@ -1071,8 +1098,10 @@ impl<'a> Lanes<'a> {
                         self.released();
                         return;
                     }
+
                     let claimed = self.claimed(want, forgotten);
                     let mut rounds = Rounds::first();
+
                     let flow = match self.asked(&claimed, &mut rounds) {
                         Ok(Asked::Offered(offers)) => {
                             let keep = Keep {
@@ -1121,6 +1150,7 @@ impl<'a> Lanes<'a> {
 
     fn pair_what_was_filed(&self) -> Result<()> {
         let filed = std::mem::take(&mut *self.filed.lock());
+
         if filed.is_empty() {
             return Ok(());
         }
@@ -1151,13 +1181,16 @@ impl<'a> Lanes<'a> {
         if self.providers.is_narrowed() {
             return None;
         }
+
         let foreseen = self.library.foresight().take(want.recording.as_ref()?)?;
         let registered = self.providers.names();
+
         let mut offers = foreseen.offers.into_iter().filter(|offer| {
             registered.contains(&offer.provider)
                 && !gone.contains(&offer.taken_from())
                 && !declined(offer)
         });
+
         let delivered = offers.next()?;
         Some(Answer {
             delivered: Some(delivered),
@@ -1178,6 +1211,7 @@ impl<'a> Lanes<'a> {
         let progress = self.progress;
         let want = &claimed.want;
         let cancelled = || progress.is_cancelled();
+
         let turning_to = |provider: &SourceId| progress.turns_to(want.id, Some(provider));
         let forgotten_for_it = claimed
             .forgotten
@@ -1202,6 +1236,7 @@ impl<'a> Lanes<'a> {
         } else {
             self.providers
         };
+
         let answer = foreseen.unwrap_or_else(|| {
             asked_of.first(
                 &identity,
@@ -1219,6 +1254,7 @@ impl<'a> Lanes<'a> {
                 &mut away,
             )
         });
+
         self.away.lock().join(&away);
         self.first_answered.store(true, Ordering::Release);
         progress
@@ -1232,6 +1268,7 @@ impl<'a> Lanes<'a> {
         if answer.cancelled {
             return Ok(Asked::Settled(Flow::Stop));
         }
+
         let Some(delivered) = answer.delivered else {
             if rounds.every_provider_heard {
                 progress.nothing.fetch_add(1, Ordering::Relaxed);
@@ -1248,6 +1285,7 @@ impl<'a> Lanes<'a> {
             }
             return Ok(Asked::Settled(Flow::Onward));
         };
+
         rounds.passing.extend(answer.heard);
 
         Ok(Asked::Offered(
@@ -1285,11 +1323,13 @@ impl<'a> Lanes<'a> {
     fn offer_landed(&self, want: &Want, delivered: Delivered) -> Result<Offer> {
         let progress = self.progress;
         let held_by_the_meter = progress.waits_out_the_meter(&self.library.download_gate());
+
         if held_by_the_meter && progress.is_cancelled() {
             return Ok(Offer::Settled(Flow::Stop));
         }
         progress.opens_from(want.id, &delivered.provider);
         progress.offered.fetch_add(1, Ordering::Relaxed);
+
         let taken_from = delivered.taken_from();
         let provider = delivered.provider.clone();
         let landing = landed(
@@ -1303,6 +1343,7 @@ impl<'a> Lanes<'a> {
                 filed: &self.filed,
             },
         )?;
+
         if let Landed::Kept(at) = &landing
             && self.providers.is_a_last_resort(&provider)
         {
@@ -1373,6 +1414,7 @@ fn run(
     organise::sweep_what_a_dead_writer_staged(library);
     scanned_and_paired(library, &[])?;
     rejoined(library);
+
     let lanes = Lanes {
         library,
         providers,
@@ -1403,6 +1445,7 @@ fn run(
                     .ok()
             })
             .collect();
+
         lanes.lane(true);
         for lane in started {
             let _ = lane.join();
@@ -1413,6 +1456,7 @@ fn run(
         return Err(error);
     }
     scanned_and_paired(library, &lanes.filed.into_inner())?;
+
     let replaced = if progress.is_cancelled() {
         Replaced::default()
     } else {
@@ -1420,6 +1464,7 @@ fn run(
     };
 
     let stats = progress.snapshot();
+
     if stats.kept > 0 {
         library.restate_the_statistics();
     }
@@ -1492,6 +1537,7 @@ impl Library {
 
     pub(crate) fn forgotten_deliveries(&self) -> Result<AHashMap<WantId, Vec<ForgottenDelivery>>> {
         let mut forgotten: AHashMap<WantId, Vec<ForgottenDelivery>> = AHashMap::new();
+
         for (want, delivery) in self.declined_offer_rows(SystemTime::now())? {
             forgotten.entry(want).or_default().push(delivery);
         }
@@ -1596,10 +1642,12 @@ mod tests {
 
         for (misses, wait) in (1..).zip(RETRY_WAITS) {
             let after = 1_000 + wait.as_secs();
+
             assert!(!missed(misses).gave_up());
             assert!(!due(&missed(misses), PollOptions::default(), at(after - 1)));
             assert!(due(&missed(misses), PollOptions::default(), at(after)));
         }
+
         let given_up = missed(TRIES_BEFORE_GIVING_UP);
 
         assert!(given_up.gave_up());
@@ -1618,6 +1666,7 @@ mod tests {
             held: Some(TrackId::new(7).expect("a non-zero id")),
             ..want(None)
         };
+
         assert!(!due(
             &held,
             PollOptions::ASKING_EVERY_WANT,
@@ -1634,6 +1683,7 @@ mod tests {
             replacing: Some(lossy),
             ..want(None)
         };
+
         assert!(!replacing.is_answered());
         assert!(replacing.due_at().is_some());
         assert!(due(&replacing, PollOptions::default(), SystemTime::now()));
@@ -1642,6 +1692,7 @@ mod tests {
             offered: Some("file:///music/a.flac".to_owned()),
             ..replacing.clone()
         };
+
         assert!(offered.is_answered());
         assert_eq!(offered.due_at(), None);
         assert!(!due(
@@ -1657,6 +1708,7 @@ mod tests {
             held: Some(TrackId::new(7).expect("an id")),
             ..want(None)
         };
+
         assert!(held.is_answered());
         assert_eq!(held.due_at(), None);
         assert!(!held.gave_up());

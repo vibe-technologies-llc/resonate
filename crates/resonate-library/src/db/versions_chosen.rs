@@ -50,6 +50,7 @@ impl Library {
             .into_iter()
             .collect();
         let versions = self.versions_chosen_among(&asked)?;
+
         if versions.is_empty() {
             return Ok(Chosen::default());
         }
@@ -85,7 +86,9 @@ impl Library {
         };
 
         let mut held = self.tracks_with_ids(&held)?;
+
         held.sort_by_key(|copy| (Quality::of(copy).best_first(), copy.id));
+
         let chosen = chosen.filter(|copy| held.iter().any(|held| held.id == *copy));
         Ok(Some(Variants { song, held, chosen }))
     }

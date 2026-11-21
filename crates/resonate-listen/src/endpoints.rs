@@ -119,6 +119,7 @@ mod tests {
                 "{way:?}"
             );
         }
+
         assert_eq!(render_endpoint_of(&capture_node_of(ENDPOINT)), None);
         assert_eq!(
             render_endpoint_of(&NodeName::new("alsa_output.pci".to_owned())),

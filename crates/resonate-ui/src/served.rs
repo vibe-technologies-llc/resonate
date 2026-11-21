@@ -5,7 +5,7 @@ use resonate_providers::{ProviderOp, Result, not_offered};
 
 use crate::settings::Online;
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct ServedCover(pub String);
 
 #[derive(Clone, Debug, PartialEq, Eq)]

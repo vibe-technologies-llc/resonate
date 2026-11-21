@@ -380,6 +380,7 @@ impl Previewed {
 
     pub(crate) fn further(&mut self, drawn_to: usize) -> Option<(SavedQuery, usize)> {
         let held = self.tracks.len();
+
         if held < self.asked || drawn_to + LOOK_AHEAD < held {
             return None;
         }
@@ -574,6 +575,7 @@ impl FirstRead {
         let reading = Arc::clone(library);
         let asked = Asked::at_first();
         let handed = asked.clone();
+
         thread::Builder::new()
             .name(FIRST_READ_THREAD.to_owned())
             .spawn(move || {
@@ -1128,7 +1130,9 @@ impl Followed {
         if now == self.seen || self.since < POLLS_PER_REREAD_WHILE_ASKING {
             return None;
         }
+
         let landed = now.kept > self.seen.kept;
+
         self.seen = now;
         self.since = 0;
         Some(if landed {
@@ -1153,6 +1157,7 @@ fn kept(summary: &KeepSummary) -> Option<Notice> {
     if let Some(stopped) = &summary.stopped {
         return Some(Notice::Trouble(stopped_told(stopped)));
     }
+
     let missed = summary.gone + summary.unkept;
     match (summary.landed, missed) {
         (0, 0) => None,
@@ -1215,6 +1220,7 @@ impl LibraryModel {
         } = Asked::at_first();
         let walks_back = library.walks_back().unwrap_or_default();
         let tags_walk_back = library.retag_walks_back().unwrap_or_default();
+
         let mut model = Self {
             first_read,
             unreadable: false,
@@ -1433,6 +1439,7 @@ impl LibraryModel {
                 _passed: Task::ready(()),
             },
         };
+
         model.reload(cx);
         model.carry_on_enriching(cx);
         model.ask_when_due(cx);

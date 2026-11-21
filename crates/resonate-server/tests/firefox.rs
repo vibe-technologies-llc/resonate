@@ -35,12 +35,14 @@ struct Started(Child);
 impl Drop for Started {
     fn drop(&mut self) {
         let deadline = Instant::now() + QUITS_WITHIN;
+
         while Instant::now() < deadline {
             if matches!(self.0.try_wait(), Ok(Some(_))) {
                 return;
             }
             thread::sleep(LOOKED_AT_EVERY);
         }
+
         let _ = self.0.kill();
         let _ = self.0.wait();
     }
@@ -61,6 +63,7 @@ impl Firefox {
             .stderr(Stdio::null())
             .status()
             .is_ok_and(|status| status.success());
+
         if !runs {
             return Some("no firefox to enforce the pages' policy");
         }
@@ -72,10 +75,12 @@ impl Firefox {
 
     pub fn headless(profile: &Path) -> Self {
         fs::create_dir_all(profile).expect("a profile folder");
+
         let preferences = PREFERENCES
             .iter()
             .map(|(name, value)| format!("user_pref(\"{name}\", {value});\n"))
             .collect::<String>();
+
         fs::write(profile.join("user.js"), preferences).expect("the preferences written");
 
         let started = Started(
@@ -93,6 +98,7 @@ impl Firefox {
         let writer = TcpStream::connect(SocketAddr::from((Ipv4Addr::LOCALHOST, port)))
             .expect("marionette reached");
         let reader = BufReader::new(writer.try_clone().expect("a second handle"));
+
         let mut firefox = Self {
             _started: started,
             reader,
@@ -120,20 +126,25 @@ impl Firefox {
         let deadline = Instant::now() + STARTS_WITHIN;
         loop {
             let said = self.page_says(script);
+
             if done(&said) {
                 return said;
             }
+
             assert!(Instant::now() < deadline, "{what} never happened: {said}");
+
             thread::sleep(LOOKED_AT_EVERY);
         }
     }
 
     pub fn policy_violations(&mut self) -> Vec<String> {
         self.command("Marionette:SetContext", &json!({ "value": "chrome" }));
+
         let violations = self.command(
             "WebDriver:ExecuteScript",
             &json!({ "script": VIOLATIONS, "args": [POLICY_REPORTED_AS] }),
         );
+
         self.command("Marionette:SetContext", &json!({ "value": "content" }));
 
         violations
@@ -146,10 +157,13 @@ impl Firefox {
 
     fn command(&mut self, name: &str, parameters: &Value) -> Value {
         self.asked += 1;
+
         let body = json!([A_COMMAND, self.asked, name, parameters]).to_string();
+
         write!(self.writer, "{}:{body}", body.len()).expect("asked marionette");
 
         let answer = self.heard();
+
         assert_eq!(answer[0], AN_ANSWER, "{answer}");
         assert_eq!(answer[1], self.asked, "{answer}");
         assert!(answer[2].is_null(), "{name} failed: {}", answer[2]);
@@ -161,15 +175,18 @@ impl Firefox {
 
     fn heard(&mut self) -> Value {
         let mut length = Vec::new();
+
         self.reader
             .read_until(b':', &mut length)
             .expect("marionette answered");
         length.pop();
+
         let length = std::str::from_utf8(&length)
             .ok()
             .and_then(|length| length.parse::<usize>().ok())
             .expect("a length");
         let mut body = vec![0; length];
+
         self.reader.read_exact(&mut body).expect("the whole answer");
 
         serde_json::from_slice(&body).expect("an answer in JSON")
@@ -179,6 +196,7 @@ impl Firefox {
 impl Drop for Firefox {
     fn drop(&mut self) {
         self.asked += 1;
+
         let body = json!([A_COMMAND, self.asked, "Marionette:Quit", {}]).to_string();
         let _ = write!(self.writer, "{}:{body}", body.len());
     }
@@ -188,10 +206,13 @@ fn port_written_in(profile: &Path) -> u16 {
     let deadline = Instant::now() + STARTS_WITHIN;
     loop {
         let written = fs::read_to_string(profile.join(PORT_FILE)).unwrap_or_default();
+
         if let Ok(port) = written.trim().parse() {
             return port;
         }
+
         assert!(Instant::now() < deadline, "firefox never opened marionette");
+
         thread::sleep(LOOKED_AT_EVERY);
     }
 }
@@ -204,6 +225,7 @@ fn installed_as_a_snap() -> bool {
     let wrapper = fs::File::open(&location)
         .and_then(|file| {
             let mut text = String::new();
+
             file.take(WRAPPER_AT_MOST).read_to_string(&mut text)?;
             Ok(text)
         })

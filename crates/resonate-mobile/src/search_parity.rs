@@ -366,9 +366,11 @@ fn synchsafe(value: u32) -> [u8; 4] {
 
 fn frame(id: &[u8; 4], value: &str) -> Vec<u8> {
     let mut body = vec![UTF8];
+
     body.extend_from_slice(value.as_bytes());
 
     let mut frame = id.to_vec();
+
     frame.extend_from_slice(&synchsafe(body.len() as u32));
     frame.extend_from_slice(&[0, 0]);
     frame.extend_from_slice(&body);
@@ -389,6 +391,7 @@ fn wave_of(song: &Song) -> Vec<u8> {
     let data = vec![0_u8; (song.rate * song.seconds * bytes_a_frame) as usize];
 
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&song.rate.to_le_bytes());
@@ -397,11 +400,13 @@ fn wave_of(song: &Song) -> Vec<u8> {
     format.extend_from_slice(&u16::from(song.bits).to_le_bytes());
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut tags = Vec::new();
+
     tags.extend(frame(TITLE, song.title));
     tags.extend(frame(ARTIST, "Parity"));
     tags.extend(frame(ALBUM, &format!("Album {}", song.title)));
@@ -411,6 +416,7 @@ fn wave_of(song: &Song) -> Vec<u8> {
     }
 
     let mut file = b"ID3\x04\x00\x00".to_vec();
+
     file.extend_from_slice(&synchsafe(tags.len() as u32));
     file.extend_from_slice(&tags);
     file.extend_from_slice(b"RIFF");
@@ -425,6 +431,7 @@ impl Folder {
     fn new() -> Self {
         let folder = env::temp_dir().join(format!("resonate-search-parity-{}", process::id()));
         let _ = fs::remove_dir_all(&folder);
+
         fs::create_dir_all(folder.join("music")).expect("a test folder");
         Self(folder)
     }
@@ -465,6 +472,7 @@ fn scanned(folder: &Folder) {
         .expect("a scan")
         .join()
         .expect("a finished scan");
+
     assert!(!summary.cancelled);
 }
 
@@ -589,6 +597,7 @@ fn comparisons(key: &str, values: &[&str]) -> Vec<String> {
 
 fn queries() -> Vec<(&'static str, String)> {
     let mut asked: Vec<(&'static str, String)> = Vec::new();
+
     let mut ask = |key: &'static str, queries: Vec<String>| {
         asked.extend(queries.into_iter().map(|query| (key, query)));
     };
@@ -715,6 +724,7 @@ fn the_desktops_sql_and_the_phones_memory_answer_every_term_of_the_grammar_alike
 
     scanned(&folder);
     shaped_as_desktop_rows(&folder, now);
+
     let library = Library::open(&folder.catalog()).expect("a library");
     let catalog = the_phone_holding_the_same_songs(now);
     let searching = Searching::default();
@@ -723,8 +733,10 @@ fn the_desktops_sql_and_the_phones_memory_answer_every_term_of_the_grammar_alike
     let mut disagreements = Vec::new();
     let mut told_apart = 0;
     let mut asked = 0;
+
     for (key, query) in queries() {
         let reads = Search::read(&query).reads();
+
         assert!(
             !reads.is_empty()
                 && reads

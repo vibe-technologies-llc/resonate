@@ -85,6 +85,7 @@ impl Keeping {
         let Some((held_row, held_at)) = self.kept else {
             return true;
         };
+
         if held_row != row {
             return true;
         }
@@ -118,6 +119,7 @@ pub fn resumption_of(state: &PlayerState, queued: &Queued) -> Resumption {
 fn in_load_order(queued: &Queued) -> (Vec<Resumable>, Vec<usize>) {
     let order = queued.rows.in_load_order();
     let mut loaded: Vec<Option<Resumable>> = (0..queued.rows.len()).map(|_| None).collect();
+
     for (plays_at, item) in queued.rows.iter().enumerate() {
         loaded[order[plays_at]] = Some(resumable(item));
     }
@@ -182,7 +184,9 @@ mod tests {
             .copied()
             .zip(queue.iter().cloned())
             .collect();
+
         in_load_order.sort_by_key(|(loaded, _)| *loaded);
+
         let in_load_order: Vec<QueueItem> =
             in_load_order.into_iter().map(|(_, item)| item).collect();
 
@@ -237,6 +241,7 @@ mod tests {
         else {
             panic!("a queue nothing has kept is kept whole");
         };
+
         assert_eq!(kept.rows.len(), 3);
         assert_eq!(kept.row, 0);
         assert_eq!(kept.at, Frames::ZERO);
@@ -251,6 +256,7 @@ mod tests {
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
         for quarter in 1..4 {
             let at = Frames(kept_every().get() * quarter / 4);
+
             assert_eq!(
                 keeping.kept(&playing_at(&queue, 0, at), &drawn(&queue, 1)),
                 None
@@ -265,6 +271,7 @@ mod tests {
         let barely = Frames(kept_every().get() / 4);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         assert_eq!(
             keeping.kept(&playing_at(&queue, 0, barely), &drawn(&queue, 1)),
             None
@@ -285,6 +292,7 @@ mod tests {
         let queue = queued(3);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         assert_eq!(
             keeping.kept(&playing_at(&queue, 0, kept_every()), &drawn(&queue, 1)),
             Some(Keep::Place {
@@ -301,10 +309,12 @@ mod tests {
         let barely = Frames(kept_every().get() / 4);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         let paused = PlayerState {
             playback: PlaybackState::Paused,
             ..playing_at(&queue, 0, barely)
         };
+
         assert_eq!(
             keeping.kept(&paused, &drawn(&queue, 1)),
             Some(Keep::Place { row: 0, at: barely }),
@@ -324,6 +334,7 @@ mod tests {
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
         keeping.kept(&playing_at(&queue, 0, seconds(60)), &drawn(&queue, 1));
+
         assert_eq!(
             keeping.kept(&playing_at(&queue, 0, seconds(20)), &drawn(&queue, 1)),
             Some(Keep::Place {
@@ -339,6 +350,7 @@ mod tests {
         let queue = queued(3);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         assert_eq!(
             keeping.kept(&playing_at(&queue, 1, Frames::ZERO), &drawn(&queue, 1)),
             Some(Keep::Place {
@@ -355,6 +367,7 @@ mod tests {
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
         keeping.kept(&playing_at(&queue, 2, seconds(40)), &drawn(&queue, 1));
+
         let finished = PlayerState {
             playback: PlaybackState::Stopped,
             current: None,
@@ -362,6 +375,7 @@ mod tests {
             loaded_position: None,
             ..playing_at(&queue, 2, seconds(40))
         };
+
         assert_eq!(
             keeping.kept(&finished, &drawn(&queue, 1)),
             None,
@@ -383,11 +397,13 @@ mod tests {
         let longer = queued(4);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         let Some(Keep::Queue(kept)) =
             keeping.kept(&playing_at(&longer, 0, Frames::ZERO), &drawn(&longer, 2))
         else {
             panic!("a queue that has gained a row is kept whole");
         };
+
         assert_eq!(kept.rows.len(), 4);
     }
 
@@ -403,12 +419,14 @@ mod tests {
         ];
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         let Some(Keep::Order(kept)) = keeping.kept(
             &playing_at(&queue, 0, Frames::ZERO),
             &reordered(&moved, 2, vec![2, 0, 1, 3]),
         ) else {
             panic!("a queue whose rows were dragged into another order rewrote every row");
         };
+
         assert_eq!(
             kept.order,
             vec![2, 0, 1, 3],
@@ -423,12 +441,14 @@ mod tests {
         let played: Vec<QueueItem> = [3, 1, 0, 2].iter().map(|at| queue[*at].clone()).collect();
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         let Some(Keep::Order(kept)) = keeping.kept(
             &shuffled_at(&queue, 0, Frames::ZERO),
             &reordered(&played, 2, vec![3, 1, 0, 2]),
         ) else {
             panic!("a queue that has been shuffled keeps the order it produced");
         };
+
         assert!(
             kept.shuffle,
             "the shuffle the queue was playing under was lost"
@@ -451,10 +471,12 @@ mod tests {
         let queue = queued(3);
 
         keeping.kept(&playing_at(&queue, 0, Frames::ZERO), &drawn(&queue, 1));
+
         let Some(Keep::Queue(kept)) = keeping.kept(&PlayerState::default(), &Queued::default())
         else {
             panic!("an emptied queue is kept as the nothing it is");
         };
+
         assert!(kept.is_empty());
     }
 
@@ -472,6 +494,7 @@ mod tests {
         else {
             panic!("a queue nothing has kept is kept whole");
         };
+
         assert_eq!(kept.rows[0].span, cut[0].span);
     }
 }

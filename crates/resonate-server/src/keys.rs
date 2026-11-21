@@ -34,17 +34,21 @@ pub struct Minted {
 impl Digest {
     pub fn of(secret: &[u8]) -> Self {
         let mut digested = [0; DIGEST_BYTES];
+
         digested.copy_from_slice(digest(&SHA256, secret).as_ref());
         Self(digested)
     }
 
     pub fn read(text: &str) -> Option<Self> {
         let bytes = text.trim().as_bytes();
+
         if bytes.len() != DIGEST_BYTES * 2 {
             return None;
         }
+
         let mut digested = [0; DIGEST_BYTES];
         let (pairs, _) = bytes.as_chunks::<2>();
+
         for (slot, [high, low]) in digested.iter_mut().zip(pairs) {
             *slot = nibble(*high)? << 4 | nibble(*low)?;
         }
@@ -96,6 +100,7 @@ impl Hifi {
             field: ConfigField::Hifi,
         })?;
         let keys = keys_of(table)?;
+
         if keys.is_empty() {
             return Err(Error::ConfigMissing {
                 field: ConfigField::Keys,
@@ -112,9 +117,11 @@ impl Hifi {
 impl Minted {
     pub fn new() -> Result<Self> {
         let mut secret = [0; SECRET_BYTES];
+
         SystemRandom::new()
             .fill(&mut secret)
             .map_err(|_| Error::Random)?;
+
         let secret = hex(&secret);
         let digest = Digest::of(secret.as_bytes());
         Ok(Self { secret, digest })
@@ -161,6 +168,7 @@ fn nibble(digit: u8) -> Option<u8> {
 
 fn hex(bytes: &[u8]) -> String {
     let mut text = String::with_capacity(bytes.len() * 2);
+
     for byte in bytes {
         text.push(char::from(HEX_DIGITS[usize::from(byte >> 4)]));
         text.push(char::from(HEX_DIGITS[usize::from(byte & 0x0f)]));

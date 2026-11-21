@@ -72,7 +72,9 @@ fn the_third_record() -> FromServer {
 async fn a_compaction_in_one_frame_from_an_older_device_still_replaces_the_log() {
     let serving = serving_with(Limits::default());
     let mut desk = welcomed(&serving, DESK).await;
+
     appended(&mut desk).await;
+
     let parts = snapshot_parts(2);
 
     say(
@@ -87,7 +89,9 @@ async fn a_compaction_in_one_frame_from_an_older_device_still_replaces_the_log()
         *frame == FromServer::Compacted { through: 2 }
     })
     .await;
+
     let mut tablet = welcomed(&serving, TABLET).await;
+
     let snapshot = next_frame(&mut tablet).await;
     let records = next_frame(&mut tablet).await;
 
@@ -100,13 +104,17 @@ async fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_device_joining_
 {
     let serving = serving_with(Limits::default());
     let mut desk = welcomed(&serving, DESK).await;
+
     appended(&mut desk).await;
+
     let parts = snapshot_parts(LARGEST_FRAME / 2 / PART_BYTES + 8);
     let (staged, last) = parts.split_at(parts.len() / 2);
     let (first_staged, second_staged) = staged.split_at(staged.len() / 2);
 
     say(&mut desk, &ToServer::Stage).await;
+
     let staging = heard(&mut desk, |frame| *frame == FromServer::Staging).await;
+
     for staged in [first_staged, second_staged] {
         say(
             &mut desk,
@@ -128,7 +136,9 @@ async fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_device_joining_
         *frame == FromServer::Compacted { through: 2 }
     })
     .await;
+
     let mut tablet = welcomed(&serving, TABLET).await;
+
     let FromServer::Snapshot {
         through: first_through,
         parts: first_parts,
@@ -157,6 +167,7 @@ async fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_device_joining_
 async fn a_device_leaving_part_way_through_a_compaction_leaves_the_old_log_whole() {
     let serving = serving_with(Limits::default());
     let mut desk = welcomed(&serving, DESK).await;
+
     appended(&mut desk).await;
 
     say(&mut desk, &ToServer::Stage).await;
@@ -169,9 +180,12 @@ async fn a_device_leaving_part_way_through_a_compaction_leaves_the_old_log_whole
     )
     .await;
     desk.connection.close(0_u32.into(), b"gone");
+
     let mut tablet = welcomed(&serving, TABLET).await;
+
     let caught_up = next_frame(&mut tablet).await;
     let mut desk_again = welcomed(&serving, DESK).await;
+
     say(
         &mut desk_again,
         &ToServer::CompactStaged {
@@ -180,11 +194,13 @@ async fn a_device_leaving_part_way_through_a_compaction_leaves_the_old_log_whole
         },
     )
     .await;
+
     let finished_by_another_session = heard(&mut desk_again, |frame| {
         matches!(frame, FromServer::Refused(_) | FromServer::Compacted { .. })
     })
     .await;
     let mut reader = welcomed(&serving, 4).await;
+
     let still_whole = next_frame(&mut reader).await;
 
     let whole = FromServer::Records {
@@ -197,6 +213,7 @@ async fn a_device_leaving_part_way_through_a_compaction_leaves_the_old_log_whole
             })
             .collect(),
     };
+
     assert_eq!(caught_up, whole);
     assert_eq!(
         finished_by_another_session,

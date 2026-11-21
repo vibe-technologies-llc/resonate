@@ -27,6 +27,7 @@ impl Library {
             let mut statement = connection
                 .prepare("SELECT path FROM roots ORDER BY path")
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let found = statement
                 .query_map([], |row| row.get::<_, String>(0))
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -42,6 +43,7 @@ impl Library {
                 path: path.to_path_buf(),
             });
         }
+
         let canonical = naming::composed(path.canonicalize().map_err(|source| Error::Io {
             path: path.to_path_buf(),
             source,
@@ -80,12 +82,14 @@ impl Library {
 
         self.inner.write(|transaction| {
             let path = store::path_text(path);
+
             transaction
                 .execute(REMEMBER_THE_DELIVERY_FORGOTTEN, params![path, forgotten_at])
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
             transaction
                 .execute(ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD, params![path])
                 .map_err(|source| Error::store(StoreOp::Update, source))?;
+
             let forgotten = forget_rows(
                 transaction,
                 Forgetting::Delivery,
@@ -97,6 +101,7 @@ impl Library {
 
     pub(super) fn prune_the_emptied(&self, folders: &[PathBuf]) -> Result<()> {
         let roots: AHashSet<PathBuf> = self.roots()?.into_iter().collect();
+
         organise::prune_the_emptied(folders, &roots);
         Ok(())
     }
@@ -116,6 +121,7 @@ impl Library {
             Ok(())
         })?;
         self.inner.playlists_changed();
+
         let copies: Vec<TrackId> = numbered.iter().map(IdenticalCopy::copy_id).collect();
         self.remove_tracks(&copies, Why::Folded)
     }
@@ -134,6 +140,7 @@ impl Library {
             .filter(|copy| copy.whole_file && copy.added < before)
             .map(|copy| copy.track)
             .collect();
+
         if older.is_empty() {
             return Ok(Deleted::default());
         }
@@ -184,6 +191,7 @@ impl Library {
         let mut gone = Vec::with_capacity(files.len());
         let mut emptied = Vec::new();
         let mut refused = Vec::new();
+
         for path in files {
             let sidecars = deleted::sidecars_of(&path);
             match deleted::removed(&path, data_home.as_deref(), through) {
@@ -214,6 +222,7 @@ impl Library {
             }
             deleted::forget_files(transaction, &gone)
         })?;
+
         done.tracks = forgotten.tracks;
         if let Some(vault) = self.vault().cloned() {
             for object in self

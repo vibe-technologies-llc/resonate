@@ -38,10 +38,12 @@ const A_YEAR_AGO: Duration = Duration::from_secs(365 * 24 * 60 * 60);
 fn a_catalog_another_schema_wrote_is_refused_at_the_door_rather_than_on_a_query() {
     let scratch = Scratch::new("another-schema");
     let database = scratch.path.join("library.db");
+
     drop(Library::open(&database).expect("a catalog opens on disk"));
 
     let elsewhere = SchemaFingerprint(schema::SCHEMA_FINGERPRINT.0.wrapping_add(1));
     let connection = Connection::open(&database).expect("the catalog opens");
+
     connection
         .pragma_update(None, "user_version", elsewhere.0.cast_signed())
         .expect("another build's stamp is written");
@@ -66,16 +68,19 @@ fn a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves() {
         .inner
         .measured_saved(&saved)
         .expect("an empty catalog is measured");
+
     let first = library
         .inner
         .measured
         .lock()
         .as_ref()
         .map(|kept| kept.kept_at);
+
     library
         .inner
         .measured_saved(&saved)
         .expect("the same query is measured again");
+
     let second = library
         .inner
         .measured
@@ -90,6 +95,7 @@ fn a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves() {
     );
 
     library.filter_music(MusicFilters::default());
+
     assert!(
         library.inner.measured.lock().is_none(),
         "a change of the music filters kept the counts made under the old ones"
@@ -99,16 +105,20 @@ fn a_saved_query_measured_twice_is_counted_once_until_the_catalog_moves() {
 #[test]
 fn a_listing_measured_twice_is_counted_once_until_a_row_of_the_catalog_moves() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     titled(&library, "First");
+
     let query = TrackQuery::default();
 
     assert_eq!(library.measured(&query)?.rows, 1);
+
     let first = library
         .inner
         .measured
         .lock()
         .as_ref()
         .map(|kept| kept.kept_at);
+
     assert_eq!(library.measured(&query)?.rows, 1);
     assert_eq!(
         library
@@ -122,6 +132,7 @@ fn a_listing_measured_twice_is_counted_once_until_a_row_of_the_catalog_moves() -
     );
 
     titled(&library, "Second");
+
     assert_eq!(
         library.measured(&query)?.rows,
         2,
@@ -145,6 +156,7 @@ fn a_playlists_pictures_are_read_once_until_the_catalog_or_the_playlists_move() 
     );
 
     library.inner.playlists_changed();
+
     assert!(
         library
             .inner
@@ -154,7 +166,9 @@ fn a_playlists_pictures_are_read_once_until_the_catalog_or_the_playlists_move() 
     );
 
     assert!(library.playlist_pictures(playlist, 4)?.is_empty());
+
     titled(&library, "First");
+
     assert!(
         library
             .inner
@@ -164,6 +178,7 @@ fn a_playlists_pictures_are_read_once_until_the_catalog_or_the_playlists_move() 
     );
 
     library.filter_music(MusicFilters::default());
+
     assert!(library.inner.pictured.lock().is_none());
     Ok(())
 }
@@ -176,6 +191,7 @@ impl Scratch {
     fn new(named: &str) -> Self {
         let path = env::temp_dir().join(format!("resonate-db-{}-{named}", process::id()));
         let _ = fs::remove_dir_all(&path);
+
         fs::create_dir_all(&path).expect("a writable temporary directory");
         Self { path }
     }
@@ -228,6 +244,7 @@ fn a_piece_of_a_word_is_looked_up_in_each_trigram_index_and_never_scanned_for() 
         .inner
         .read(|connection| searched::unheld_holding(connection, Some("daybreak")))
         .expect("the releases sought");
+
     unheld_binds.push(Value::Integer(64));
 
     let (kept_songs, kept_binds) = library
@@ -259,6 +276,7 @@ fn a_piece_of_a_word_is_looked_up_in_each_trigram_index_and_never_scanned_for() 
         for lookup in lookups {
             assert!(plan.contains(lookup), "no {lookup}: {plan}");
         }
+
         assert!(
             !plan.split("; ").any(|step| step == "SCAN s"),
             "every kept song is read: {plan}"
@@ -271,6 +289,7 @@ fn a_word_most_kept_songs_hold_is_scanned_for_and_a_rare_one_looked_up_in_the_in
     const SONGS: i64 = 64;
 
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     library
         .inner
         .write(|transaction| {
@@ -283,6 +302,7 @@ fn a_word_most_kept_songs_hold_is_scanned_for_and_a_rare_one_looked_up_in_the_in
                     7 => " zephyr",
                     _ => "",
                 };
+
                 transaction
                     .execute(
                         "INSERT INTO discography_songs
@@ -316,6 +336,7 @@ fn a_word_most_kept_songs_hold_is_scanned_for_and_a_rare_one_looked_up_in_the_in
 
     assert!(!common.contains("discography_songs_fts"), "{common}");
     assert!(common.split("; ").any(|step| step == "SCAN s"), "{common}");
+
     for plan in [&rare, &both, &absent] {
         assert!(
             plan.contains("discography_songs_fts VIRTUAL TABLE INDEX 0:L0"),
@@ -323,6 +344,7 @@ fn a_word_most_kept_songs_hold_is_scanned_for_and_a_rare_one_looked_up_in_the_in
         );
         assert!(!plan.split("; ").any(|step| step == "SCAN s"), "{plan}");
     }
+
     assert!(
         both.contains("0:L0L0"),
         "the rare word left the common one out of the index: {both}"
@@ -354,6 +376,7 @@ fn every_trigram_index_answers_how_many_rows_a_piece_of_a_word_is_in() {
 #[test]
 fn a_word_holding_a_wildcard_is_still_matched_letter_for_letter() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     library
         .inner
         .write(|transaction| {
@@ -385,6 +408,7 @@ fn a_word_holding_a_wildcard_is_still_matched_letter_for_letter() {
             .inner
             .read(|connection| {
                 let mut binds = Vec::new();
+
                 let holding =
                     Infix::OF_A_KEPT_SONG.holding_every(connection, &pieces, &mut binds)?;
                 let sql = format!(
@@ -433,6 +457,7 @@ fn a_tracks_title_words_are_kept_as_it_is_named_and_a_held_song_is_found_by_them
                 .map_err(|source| Error::store(StoreOp::Insert, source))
         })
         .expect("a track is written");
+
     assert_eq!(words(&library).as_deref(), Some("wish you were here"));
 
     library
@@ -444,6 +469,7 @@ fn a_tracks_title_words_are_kept_as_it_is_named_and_a_held_song_is_found_by_them
                 .map_err(|source| Error::store(StoreOp::Update, source))
         })
         .expect("the track is renamed");
+
     assert_eq!(words(&library).as_deref(), Some("hey you"));
 
     for sql in [MISSING_FROM_AN_ARTISTS_ALBUMS, ALBUMS_NOT_HELD_BY_AN_ARTIST] {
@@ -459,6 +485,7 @@ fn a_tracks_title_words_are_kept_as_it_is_named_and_a_held_song_is_found_by_them
                     .map_err(|source| Error::store(StoreOp::Query, source))
             })
             .expect("the planner answers");
+
         assert!(
             steps
                 .iter()
@@ -482,6 +509,7 @@ fn every_order_the_panes_offer_is_read_off_an_index_either_way_round() {
                     ..TrackQuery::default()
                 },
             );
+
             assert!(
                 !steps.iter().any(|step| step.contains(A_TEMPORARY_SORT)),
                 "{sort:?} read {reading:?} sorts the whole table before the limit lands: \
@@ -546,7 +574,9 @@ fn never_null(library: &Library) -> Vec<String> {
 #[test]
 fn every_seek_past_a_key_is_read_off_the_orders_index_either_way_round() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     tied_and_unheld(&library);
+
     let answered_before_reading = never_null(&library);
 
     for sort in SortOrder::HELD_BY_AN_INDEX {
@@ -569,9 +599,12 @@ fn every_seek_past_a_key_is_read_off_the_orders_index_either_way_round() {
                     {
                         continue;
                     }
+
                     let said = format!("{sort:?} read {reading:?} past {:?}", seek.conditions);
                     let (sql, binds) = sought(&matching, seek, Some(PAGED_BY));
+
                     let steps = explained(&library, &sql, binds);
+
                     assert!(
                         !steps.iter().any(|step| step.contains(A_TEMPORARY_SORT)),
                         "{said} sorts before the limit lands: {steps:?}"
@@ -623,6 +656,7 @@ fn paged_by_key(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
         limit: Some(PAGED_BY),
         ..query.clone()
     })?);
+
     while let Some(last) = held.last().copied() {
         let page = library.tracks_from(
             &TrackQuery {
@@ -633,12 +667,15 @@ fn paged_by_key(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
             last,
         )?;
         let mut page = ids(&page).into_iter();
+
         assert_eq!(
             page.next(),
             Some(last),
             "a page begins on the row it was read from"
         );
+
         let after: Vec<TrackId> = page.collect();
+
         if after.is_empty() {
             break;
         }
@@ -650,6 +687,7 @@ fn paged_by_key(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
 #[test]
 fn paging_by_the_last_key_reads_every_row_once_in_the_order_read_whole() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     tied_and_unheld(&library);
 
     for sort in SortOrder::ALL {
@@ -678,12 +716,14 @@ fn paging_by_the_last_key_reads_every_row_once_in_the_order_read_whole() -> Resu
 #[test]
 fn a_sheets_spans_are_counted_and_paged_by_key_beside_the_whole_files() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     tied_and_unheld(&library);
     run(
         &library,
         "UPDATE tracks SET span_start = 4410, span_frames = 4410 WHERE path = '/music/04';
          UPDATE tracks SET span_start = 0, span_frames = 4410 WHERE path = '/music/08';",
     );
+
     let query = TrackQuery::default();
     let every: Vec<TrackId> = ids(&library.tracks(&query)?);
 
@@ -691,6 +731,7 @@ fn a_sheets_spans_are_counted_and_paged_by_key_beside_the_whole_files() -> Resul
         limit: Some(PAGED_BY),
         ..query.clone()
     })?);
+
     while let Some(last) = paged.last().copied() {
         let page = ids(&library.tracks_from(
             &TrackQuery {
@@ -699,7 +740,9 @@ fn a_sheets_spans_are_counted_and_paged_by_key_beside_the_whole_files() -> Resul
             },
             last,
         )?);
+
         assert_eq!(page.first(), Some(&last));
+
         if page.len() == 1 {
             break;
         }
@@ -721,6 +764,7 @@ fn a_sheets_spans_are_counted_and_paged_by_key_beside_the_whole_files() -> Resul
 
 fn sorted_titles(tracks: Vec<Track>) -> Vec<String> {
     let mut titles: Vec<String> = tracks.into_iter().map(|track| track.title).collect();
+
     titles.sort_unstable();
     titles
 }
@@ -730,6 +774,7 @@ fn paged_tracks(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
         limit: Some(PAGED_BY),
         ..query.clone()
     })?);
+
     while let Some(last) = paged.last().copied() {
         let page = ids(&library.tracks_from(
             &TrackQuery {
@@ -738,6 +783,7 @@ fn paged_tracks(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
             },
             last,
         )?);
+
         if page.len() <= 1 {
             break;
         }
@@ -750,6 +796,7 @@ fn paged_tracks(library: &Library, query: &TrackQuery) -> Result<Vec<TrackId>> {
 fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_within_it()
 -> Result<()> {
     let library = Library::open_in_memory()?;
+
     tied_and_unheld(&library);
     run(
         &library,
@@ -764,6 +811,7 @@ fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_wi
          INSERT INTO track_credits (track_id, artist_id)
              SELECT id, 2 FROM tracks WHERE path = '/music/13';",
     );
+
     let every = TrackQuery {
         sort: SortOrder::Title,
         reading: SortOrder::Title.reads(),
@@ -790,6 +838,7 @@ fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_wi
                 ..AlbumQuery::default()
             },
         );
+
         titles.sort_unstable();
         titles
     };
@@ -833,7 +882,9 @@ fn a_track_query_narrows_to_rows_on_an_album_or_by_an_artist_and_pages_by_key_wi
 #[test]
 fn a_page_from_a_row_the_catalog_no_longer_holds_is_empty() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     tied_and_unheld(&library);
+
     let gone = TrackId::new(999).expect("an id");
 
     assert!(
@@ -857,6 +908,7 @@ fn every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie() {
         for reading in Direction::ALL {
             for sort in SortOrder::ALL {
                 let order = order_by(sort, reading, ranked);
+
                 assert!(
                     order.ends_with(", tracks.id") || order.ends_with(", tracks.id DESC"),
                     "{sort:?} read {reading:?} ends on a tie: {order}"
@@ -864,6 +916,7 @@ fn every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie() {
             }
             for sort in AlbumOrder::ALL {
                 let order = album_order_by(sort, reading, ranked);
+
                 assert!(
                     order.ends_with(", a.id") || order.ends_with(", a.id DESC"),
                     "{sort:?} read {reading:?} ends on a tie: {order}"
@@ -871,6 +924,7 @@ fn every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie() {
             }
             for sort in ArtistOrder::ALL {
                 let order = artist_order_by(sort, reading, ranked);
+
                 assert!(
                     order.ends_with(", r.id") || order.ends_with(", r.id DESC"),
                     "{sort:?} read {reading:?} ends on a tie: {order}"
@@ -883,6 +937,7 @@ fn every_order_ends_on_the_rows_own_id_so_a_page_never_splits_a_tie() {
 #[test]
 fn a_saved_query_remembers_which_way_round_it_was_read() {
     let playlist = PlaylistId::new(1).expect("one names a playlist");
+
     for sort in SortOrder::ALL {
         assert_eq!(
             store::sort_of(playlist, store::sort_code(sort))
@@ -939,7 +994,9 @@ fn the_codecs_a_format_order_puts_first_are_the_lossless_ones() {
         .filter(|codec| codec.is_lossless())
         .map(store::codec_code)
         .collect();
+
     lossless.sort_unstable();
+
     let listed = lossless
         .iter()
         .map(i64::to_string)
@@ -952,6 +1009,7 @@ fn the_codecs_a_format_order_puts_first_are_the_lossless_ones() {
 #[test]
 fn a_format_order_puts_lossless_and_deeper_files_first_and_turns_round() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     for title in ["Lossy", "Sixteen", "TwentyFour", "HighRate"] {
         titled(&library, title);
     }
@@ -982,6 +1040,7 @@ fn a_format_order_puts_lossless_and_deeper_files_first_and_turns_round() -> Resu
             .map_err(|source| Error::store(StoreOp::Update, source))?;
         Ok(())
     })?;
+
     let titles = |reading| -> Result<Vec<String>> {
         Ok(library
             .tracks(&TrackQuery {
@@ -1012,6 +1071,7 @@ fn a_format_order_puts_lossless_and_deeper_files_first_and_turns_round() -> Resu
 #[test]
 fn music_filters_apply_before_paging_and_keep_excluded_tracks() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     for title in ["Below", "Boundary", "Long", "Unknown"] {
         titled(&library, title);
     }
@@ -1027,22 +1087,27 @@ fn music_filters_apply_before_paging_and_keep_excluded_tracks() -> Result<()> {
         ).map_err(|source| Error::store(StoreOp::Insert, source))?;
         Ok(())
     })?;
+
     let query = TrackQuery {
         sort: SortOrder::Title,
         ..TrackQuery::default()
     };
     let all = library.tracks(&query)?;
+
     assert_eq!(all.len(), 4);
+
     let boundary = all
         .iter()
         .find(|track| track.title == "Boundary")
         .expect("the boundary track")
         .id;
+
     library.filter_music(MusicFilters {
         extensions: crate::MusicExtensions::parse(&[".flac", ".mp3"])
             .expect("supported extensions"),
         minimum_length: crate::MinimumLength::new(60).expect("a minute"),
     });
+
     assert_eq!(
         library
             .tracks(&query)?
@@ -1065,30 +1130,40 @@ fn music_filters_apply_before_paging_and_keep_excluded_tracks() -> Result<()> {
     assert_eq!(library.albums_counted(&AlbumQuery::default())?, 2);
     assert_eq!(library.artists_counted(&ArtistQuery::default())?, 3);
     assert_eq!(library.artist_totals(ArtistId::new(1)?)?.tracks, 1);
+
     library.filter_music(MusicFilters {
         extensions: crate::MusicExtensions::parse(&["flac"]).expect("FLAC"),
         ..library.music_filters()
     });
+
     assert_eq!(library.tracks(&query)?.len(), 1);
+
     let albums = library.albums(&AlbumQuery::default())?;
+
     assert_eq!(albums.len(), 1);
     assert_eq!(albums[0].track_count, 1);
     assert_eq!(library.albums_counted(&AlbumQuery::default())?, 1);
+
     let artists = library.artists(&ArtistQuery::default())?;
+
     assert_eq!(artists.len(), 2);
     assert_eq!(artists[0].track_count, 1);
     assert_eq!(library.artists_counted(&ArtistQuery::default())?, 2);
     assert!(library.search("Below", 10)?.tracks.is_empty());
     assert!(library.search("Below", 10)?.albums.is_empty());
     assert!(library.track(boundary)?.is_some());
+
     library.filter_music(MusicFilters {
         extensions: crate::MusicExtensions::parse(&[]).expect("none"),
         ..MusicFilters::default()
     });
+
     assert_eq!(library.measured(&query)?.rows, 0);
     assert!(library.albums(&AlbumQuery::default())?.is_empty());
     assert!(library.artists(&ArtistQuery::default())?.is_empty());
+
     library.filter_music(MusicFilters::default());
+
     assert_eq!(library.tracks(&query)?, all);
     Ok(())
 }
@@ -1117,6 +1192,7 @@ fn run(library: &Library, sql: &str) {
 #[test]
 fn an_album_counted_order_reads_the_tracks_the_music_filters_leave() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     for title in [
         "Short one",
         "Short two",
@@ -1134,10 +1210,12 @@ fn an_album_counted_order_reads_the_tracks_the_music_filters_leave() {
          UPDATE tracks SET album_id = 1 WHERE title IN ('Short one', 'Short two', 'Long one');
          UPDATE tracks SET album_id = 2 WHERE title IN ('Long two', 'Long three');",
     );
+
     let by_tracks = AlbumQuery {
         sort: AlbumOrder::Tracks,
         ..AlbumQuery::default()
     };
+
     assert_eq!(titles_of_albums(&library, &by_tracks), ["Beta", "Alpha"]);
 
     library.filter_music(MusicFilters {
@@ -1146,6 +1224,7 @@ fn an_album_counted_order_reads_the_tracks_the_music_filters_leave() {
     });
 
     let albums = library.albums(&by_tracks).expect("the albums are listed");
+
     assert_eq!(
         albums
             .iter()
@@ -1158,6 +1237,7 @@ fn an_album_counted_order_reads_the_tracks_the_music_filters_leave() {
 #[test]
 fn albums_with_no_year_come_last_whichever_way_the_year_is_read() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     for title in ["One", "Two", "Three"] {
         titled(&library, title);
     }
@@ -1185,6 +1265,7 @@ fn albums_with_no_year_come_last_whichever_way_the_year_is_read() {
 #[test]
 fn the_albums_and_artists_panes_match_a_search_only_over_shown_best_copies() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     for title in [
         "Whisper hidden",
         "Whisper copy",
@@ -1206,6 +1287,7 @@ fn the_albums_and_artists_panes_match_a_search_only_over_shown_best_copies() {
          INSERT INTO tracks_fts (rowid, title, artist, album, genre, lyrics)
               SELECT id, title, '', '', '', '' FROM tracks;",
     );
+
     let asking = |text: &str| AlbumQuery {
         text: Some(text.to_owned()),
         ..AlbumQuery::default()
@@ -1232,7 +1314,9 @@ fn suggested(library: &Library, text: &str) -> Option<String> {
 #[test]
 fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
+
     titled(&library, "Echoes");
+
     assert_eq!(suggested(&library, "ekhoes"), Some("Echoes".to_owned()));
 
     library
@@ -1241,6 +1325,7 @@ fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
         .lock()
         .execute("UPDATE resume_rows SET uri = uri", [])
         .expect("a table holding no name is written");
+
     assert_eq!(
         suggested(&library, "ekhoes"),
         Some("Echoes".to_owned()),
@@ -1248,12 +1333,14 @@ fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
     );
 
     let named_before = library.inner.named.load(Ordering::Acquire);
+
     library
         .inner
         .writer
         .lock()
         .execute("UPDATE tracks SET plays = plays + 1, title = title", [])
         .expect("a play is counted and the title written as it stood");
+
     assert_eq!(
         library.inner.named.load(Ordering::Acquire),
         named_before,
@@ -1266,6 +1353,7 @@ fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
         .lock()
         .execute("UPDATE tracks SET title = 'Fearless'", [])
         .expect("the title is rewritten");
+
     assert_eq!(
         suggested(&library, "ekhoes"),
         None,
@@ -1277,8 +1365,10 @@ fn the_vocabulary_is_kept_until_a_name_in_the_catalog_could_have_moved() {
 #[test]
 fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> Result<()> {
     let library = Library::open_in_memory()?;
+
     titled(&library, "Echoes");
     titled(&library, "Time");
+
     let written = |sql: &str| {
         library
             .inner
@@ -1307,6 +1397,7 @@ fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> R
 
     library.measured(&whole)?;
     library.measured(&most_played)?;
+
     let measured = kept(&library);
 
     written("UPDATE tracks SET seen = 7, asked = 1, asks = 1");
@@ -1314,6 +1405,7 @@ fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> R
         "UPDATE tracks SET plays = plays + 1, played = 1, favourite = 1, title = title
          WHERE title = 'Time'",
     );
+
     assert!(
         rows.still_holds_at(library.rows_stamp()),
         "a counted play or a row seen again by a scan moved the rows stamp"
@@ -1324,7 +1416,9 @@ fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> R
         measured,
         "the whole listing was counted again"
     );
+
     library.measured(&most_played)?;
+
     assert_eq!(
         kept(&library),
         measured + 1,
@@ -1336,6 +1430,7 @@ fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> R
     );
 
     written("UPDATE tracks SET duration = 44100 WHERE title = 'Time'");
+
     assert!(
         !rows.still_holds_at(library.rows_stamp()),
         "a length written left the rows stamp standing"
@@ -1346,7 +1441,9 @@ fn a_counted_play_or_a_row_seen_again_moves_only_what_reads_the_listening() -> R
 #[test]
 fn a_plan_is_stamped_stale_by_what_it_reads_and_not_by_a_play_or_a_favourite() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
+
     titled(&library, "Echoes");
+
     let planned = library.plans_stamp();
     let written = |sql: &str| {
         library
@@ -1358,30 +1455,39 @@ fn a_plan_is_stamped_stale_by_what_it_reads_and_not_by_a_play_or_a_favourite() {
     };
 
     written("UPDATE tracks SET plays = plays + 1, played = 1, favourite = 1, title = title");
+
     assert!(
         planned.still_holds_at(library.plans_stamp()),
         "a counted play or a favourite took down a plan nothing it reads moved under"
     );
 
     written("UPDATE tracks SET track_number = 3");
+
     assert!(
         !planned.still_holds_at(library.plans_stamp()),
         "a track number written under a plan left it standing"
     );
 
     let renumbered = library.plans_stamp();
+
     written("INSERT INTO albums (title) VALUES ('Meddle')");
+
     let albumed = library.plans_stamp();
+
     assert!(
         !renumbered.still_holds_at(albumed),
         "an album landed under a plan left it standing"
     );
+
     written("UPDATE albums SET favourite = 2");
+
     assert!(
         albumed.still_holds_at(library.plans_stamp()),
         "an album favoured took down a plan"
     );
+
     written("UPDATE albums SET mbid = 'b1f3'");
+
     assert!(
         !albumed.still_holds_at(library.plans_stamp()),
         "a release matched under a plan left it standing"
@@ -1393,10 +1499,13 @@ fn the_vocabulary_is_read_again_once_another_connection_has_written_the_catalog(
     let scratch = Scratch::new("vocabulary-elsewhere");
     let path = scratch.path.join("catalog.db");
     let window = Library::open(&path).expect("a catalog on disc");
+
     titled(&window, "Echoes");
+
     assert_eq!(suggested(&window, "ekhoes"), Some("Echoes".to_owned()));
 
     let scan = Library::open(&path).expect("the same catalog opened again");
+
     titled(&scan, "Fearless");
 
     assert_eq!(
@@ -1412,9 +1521,11 @@ fn what_another_connection_writes_moves_the_stamp_and_what_this_one_writes_does_
     let path = scratch.path.join("catalog.db");
     let window = Library::open(&path).expect("a catalog on disc");
     let before = window.written_elsewhere();
+
     assert!(before.is_some(), "the stamp went unread");
 
     titled(&window, "Echoes");
+
     assert_eq!(
         window.written_elsewhere(),
         before,
@@ -1422,7 +1533,9 @@ fn what_another_connection_writes_moves_the_stamp_and_what_this_one_writes_does_
     );
 
     let model = Library::open(&path).expect("the same catalog opened again");
+
     titled(&model, "Fearless");
+
     assert_ne!(
         window.written_elsewhere(),
         before,
@@ -1441,6 +1554,7 @@ fn counted_at(library: &Library, title: &str, listens: &[Duration]) {
                     [],
                 )
                 .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
             let track: i64 = transaction
                 .query_row(
                     "INSERT INTO tracks (root_id, path, title, sample_rate, channels,
@@ -1495,6 +1609,7 @@ fn narrowed_to(library: &Library, text: &str) -> Vec<String> {
 #[test]
 fn a_play_older_than_the_window_is_counted_by_the_lifetime_term_alone() {
     let library = Library::open_in_memory().expect("an in-memory catalog opens");
+
     counted_at(&library, "Lately", &[A_MINUTE_AGO]);
     counted_at(&library, "Once", &[A_YEAR_AGO]);
     counted_at(&library, "Both", &[A_MINUTE_AGO, A_YEAR_AGO]);
@@ -1594,6 +1709,7 @@ fn a_scan_refuses_to_start_while_an_organise_is_running() {
         let organising = library
             .organise(OrganiseOptions::default())
             .expect("nothing else is walking the tree");
+
         assert!(
             matches!(library.scan(nothing_to_walk()), Err(Error::AlreadyWalking)),
             "a scan started while an organise was in flight"
@@ -1623,6 +1739,7 @@ fn an_organise_refuses_to_start_while_a_scan_is_running() {
         let scanning = library
             .scan(nothing_to_walk())
             .expect("nothing else is walking the tree");
+
         assert!(
             matches!(
                 library.organise(OrganiseOptions::default()),
@@ -1655,6 +1772,7 @@ fn a_lookup_or_a_poll_in_one_process_refuses_the_same_in_another_on_the_same_cat
     let polling = here
         .asking_alone(PassKind::Poll)
         .expect("a poll is not a lookup");
+
     assert!(matches!(
         elsewhere.asking_alone(PassKind::Enrich),
         Err(Error::AlreadyAsking {
@@ -1679,6 +1797,7 @@ fn a_lookup_or_a_poll_in_one_process_refuses_the_same_in_another_on_the_same_cat
         memory.asking_alone(PassKind::Enrich),
         memory.asking_alone(PassKind::Enrich),
     );
+
     assert!(
         first.is_ok() && second.is_ok(),
         "a catalog in memory has no second process"
@@ -1689,6 +1808,7 @@ fn a_lookup_or_a_poll_in_one_process_refuses_the_same_in_another_on_the_same_cat
 fn a_catalog_with_nothing_to_settle_is_opened_again_without_a_write() {
     let scratch = Scratch::new("opened-quietly");
     let catalog = scratch.path.join("library.db");
+
     drop(Library::open(&catalog).expect("a catalog opens on disc"));
 
     let watching = Connection::open(&catalog).expect("a second connection");
@@ -1700,10 +1820,13 @@ fn a_catalog_with_nothing_to_settle_is_opened_again_without_a_write() {
     let owed: bool = watching
         .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
         .expect("the flag is there");
+
     assert!(!owed, "the first open left what it settled owed");
 
     let before = data_version();
+
     drop(Library::open(&catalog).expect("a catalog opens again"));
+
     assert_eq!(
         data_version(),
         before,
@@ -1713,14 +1836,19 @@ fn a_catalog_with_nothing_to_settle_is_opened_again_without_a_write() {
     watching
         .execute("INSERT INTO artists (key, name) VALUES ('x', 'X')", [])
         .expect("an artist is added");
+
     let owed: bool = watching
         .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
         .expect("the flag is there");
+
     assert!(owed, "an artist added did not owe a settle");
+
     drop(Library::open(&catalog).expect("a catalog opens once more"));
+
     let owed: bool = watching
         .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
         .expect("the flag is there");
+
     assert!(!owed, "an open did not settle what was owed");
 }
 
@@ -1734,6 +1862,7 @@ fn a_walk_in_one_process_refuses_a_walk_in_another_on_the_same_catalog() {
     let walking = here
         .walk_the_tree()
         .expect("nothing else is walking the tree");
+
     assert!(
         matches!(
             elsewhere.scan(nothing_to_walk()),
@@ -1793,12 +1922,14 @@ fn an_edit_that_reads_before_it_writes_is_not_torn_by_another_process_committing
 fn the_tracks_among_some_paths_are_those_the_named_roots_hold_however_many_are_asked() -> Result<()>
 {
     let library = Library::open_in_memory()?;
+
     titled(&library, "Echoes");
     titled(&library, "Days");
 
     let echoes = PathBuf::from("/music/Echoes.wav");
     let days = PathBuf::from("/music/Days.wav");
     let absent = PathBuf::from("/music/Absent.wav");
+
     let asked = [echoes.as_path(), days.as_path(), absent.as_path()];
 
     let everywhere = library.tracks_among(&[], &asked)?;
@@ -1817,6 +1948,7 @@ fn the_tracks_among_some_paths_are_those_the_named_roots_hold_however_many_are_a
         .chain([echoes.clone()])
         .collect();
     let many: Vec<&Path> = many.iter().map(PathBuf::as_path).collect();
+
     assert_eq!(
         library.tracks_among(&[], &many)?,
         AHashSet::from_iter([echoes])
@@ -1833,6 +1965,7 @@ fn a_pass_that_panicked_does_not_hold_the_library_shut() {
         let _walking = inner
             .walk_the_tree()
             .expect("nothing else is walking the tree");
+
         panic!("a pass fell over on its way through the tree");
     });
 
@@ -1840,6 +1973,7 @@ fn a_pass_that_panicked_does_not_hold_the_library_shut() {
         lost.join().is_err(),
         "the pass this test breaks did not panic"
     );
+
     library
         .scan(nothing_to_walk())
         .expect("the tree is walkable after a pass panicked")
@@ -1855,12 +1989,15 @@ fn a_root_is_neither_added_nor_dropped_under_a_pass_walking_the_tree() {
     let walking = library.walk_the_tree().expect("nothing else is walking");
     let added = library.add_root(&root);
     let dropped = library.remove_root(&root);
+
     drop(walking);
 
     assert!(matches!(added, Err(Error::AlreadyWalking)), "{added:?}");
     assert!(matches!(dropped, Err(Error::AlreadyWalking)), "{dropped:?}");
+
     library
         .add_root(&root)
         .expect("a root added once the walk ended");
+
     assert!(library.remove_root(&root).expect("a root dropped"));
 }

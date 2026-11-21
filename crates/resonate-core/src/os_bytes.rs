@@ -59,10 +59,12 @@ const SURROGATE_MASK: u32 = 0x3FF;
 #[cfg(any(windows, test))]
 pub fn wtf8_of_wide(units: impl Iterator<Item = u16>) -> Vec<u8> {
     let mut bytes = Vec::new();
+
     for unit in char::decode_utf16(units) {
         match unit {
             Ok(letter) => {
                 let mut buffer = [0; 4];
+
                 bytes.extend_from_slice(letter.encode_utf8(&mut buffer).as_bytes());
             }
             Err(lone) => push_three_bytes(&mut bytes, u32::from(lone.unpaired_surrogate())),
@@ -85,6 +87,7 @@ fn push_three_bytes(bytes: &mut Vec<u8>, code: u32) {
 pub fn wide_of_wtf8(bytes: &[u8]) -> Vec<u16> {
     let mut units = Vec::with_capacity(bytes.len());
     let mut at = 0;
+
     while let Some(&lead) = bytes.get(at) {
         let (extra, first_bits) = match lead {
             0x00..=0x7F => (0, u32::from(lead)),
@@ -109,6 +112,7 @@ pub fn wide_of_wtf8(bytes: &[u8]) -> Vec<u16> {
             at += 1;
             continue;
         };
+
         at += 1 + extra;
         push_units(&mut units, code);
     }
@@ -121,6 +125,7 @@ fn push_units(units: &mut Vec<u16>, code: u32) {
         Some(astral) => {
             let high = HIGH_SURROGATE_BASE + (astral >> SURROGATE_BITS);
             let low = LOW_SURROGATE_BASE + (astral & SURROGATE_MASK);
+
             units.extend([high, low].map(|unit| u16::try_from(unit).unwrap_or(REPLACEMENT)));
         }
         None => units.push(u16::try_from(code).unwrap_or(REPLACEMENT)),

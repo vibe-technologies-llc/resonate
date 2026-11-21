@@ -72,9 +72,11 @@ mod fallocating {
             let Some(named) = named.to_str() else {
                 return false;
             };
+
             if !named.bytes().all(|byte| byte.is_ascii_digit()) {
                 return false;
             }
+
             let Ok(handles) = fs::read_dir(process.path().join(HANDLES)) else {
                 return !run_by_root(&process.path());
             };
@@ -96,6 +98,7 @@ mod fallocating {
         #[allow(clippy::useless_conversion)]
         fn block_of(&self, file: &File) -> Option<u64> {
             let kind = u64::try_from(fstatfs(file).ok()?.f_type).ok()?;
+
             if ![EXT_MAGIC, XFS_MAGIC, F2FS_MAGIC].contains(&kind) {
                 return None;
             }
@@ -110,6 +113,7 @@ mod fallocating {
             match Lease::taken(file) {
                 Ok(lease) => {
                     let worked = work();
+
                     drop(lease);
                     Some(worked)
                 }
@@ -173,6 +177,7 @@ pub(crate) fn lengthened(
         .filter(|shifted| *shifted > 0)
         .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
     let mut before = vec![0; usize::try_from(standing_head).map_err(io::Error::other)?];
+
     file.read_exact_at(&mut before, 0)?;
 
     let changes = [Change {
@@ -232,9 +237,12 @@ impl Copying {
     fn moved(file: &File, from: u64, to: u64) -> io::Result<()> {
         let length = file.metadata()?.len();
         let mut held = vec![0; usize::try_from(length).map_err(io::Error::other)?];
+
         file.read_exact_at(&mut held, 0)?;
+
         let kept = &held[usize::try_from(from).map_err(io::Error::other)?..];
         let new_length = length - from + to;
+
         file.set_len(new_length)?;
         file.write_all_at(kept, to)
     }
@@ -335,8 +343,11 @@ mod tests {
         fn holding(name: &str, bytes: &[u8]) -> Self {
             let folder = env::temp_dir().join(format!("resonate-insert-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&folder);
+
             fs::create_dir_all(&folder).expect("a scratch folder");
+
             let track = folder.join("Track.flac");
+
             fs::write(&track, bytes).expect("a scratch file");
             Self(track)
         }
@@ -370,8 +381,11 @@ mod tests {
 
     fn lengthened_file(standing: &[u8], head: usize, by: usize) -> (Vec<u8>, Vec<u8>) {
         let mut grown_head = vec![0xEE; head + by];
+
         grown_head[0] = 0xAA;
+
         let mut grown = grown_head.clone();
+
         grown.extend_from_slice(&standing[head..]);
         (grown_head, grown)
     }
@@ -384,6 +398,7 @@ mod tests {
 
         let reader = File::open(&track.0).expect("a reader");
         let while_read = fallocating::held_open_elsewhere(&writing);
+
         drop(reader);
 
         assert!(while_read);
@@ -397,7 +412,9 @@ mod tests {
 
         let reader = File::open(&track.0).expect("a reader");
         let while_read = Fallocate.while_alone(&writing, &mut || Ok(true));
+
         drop(reader);
+
         let alone = Fallocate.while_alone(&writing, &mut || Ok(true));
 
         assert!(while_read.is_none());
@@ -412,6 +429,7 @@ mod tests {
 
         fn process(processes: &Path, pid: &str, uid: u32, readable: bool) -> PathBuf {
             let folder = processes.join(pid);
+
             fs::create_dir_all(folder.join("fd")).expect("a process folder");
             fs::write(
                 folder.join("status"),
@@ -434,13 +452,17 @@ mod tests {
             if !unprivileged() {
                 return;
             }
+
             let track = Scratch::holding("unreadable", &counted(64));
             let writing = track.opened();
             let processes = track.folder().join("proc");
 
             process(&processes, "10", 0, false);
+
             let only_root = fallocating::held_open_in(&processes, &writing);
+
             process(&processes, "11", 1001, false);
+
             let with_another_account = fallocating::held_open_in(&processes, &writing);
 
             for pid in ["10", "11"] {
@@ -460,13 +482,17 @@ mod tests {
             if !unprivileged() {
                 return;
             }
+
             let track = Scratch::holding("no-status", &counted(64));
             let writing = track.opened();
             let processes = track.folder().join("proc");
 
             let folder = process(&processes, "12", 0, false);
+
             fs::remove_file(folder.join("status")).expect("no status");
+
             let held = fallocating::held_open_in(&processes, &writing);
+
             fs::set_permissions(folder.join("fd"), fs::Permissions::from_mode(0o700))
                 .expect("reopened");
 
@@ -481,9 +507,13 @@ mod tests {
             let processes = track.folder().join("proc");
 
             let folder = process(&processes, "13", 1001, true);
+
             symlink(&other.0, folder.join("fd").join("3")).expect("a handle");
+
             let elsewhere = fallocating::held_open_in(&processes, &writing);
+
             symlink(&track.0, folder.join("fd").join("4")).expect("a handle");
+
             let here = fallocating::held_open_in(&processes, &writing);
 
             assert!(!elsewhere);
@@ -562,8 +592,10 @@ mod tests {
             before: standing[..head].to_vec(),
             after: &new_head,
         }];
+
         let undo = Undo::kept_shifting(&track.0, standing.len() as u64, by as u64, &changes)
             .expect("a journal");
+
         drop(undo);
         fs::write(&track.0, state).expect("a state the writer died in");
 
@@ -579,10 +611,13 @@ mod tests {
             .map(|entry| entry.path())
             .filter(|path| path.to_string_lossy().ends_with(".resonate-undo"))
             .collect();
+
         assert_eq!(journals.len(), 1, "{named} left no journal");
+
         let dead = track
             .folder()
             .join(format!(".{named}.999999999-0.resonate-undo"));
+
         fs::rename(&journals[0], &dead).expect("a journal of a dead writer");
         left_long_ago(&dead);
         (track, grown)
@@ -590,6 +625,7 @@ mod tests {
 
     fn opened_but_unwritten(standing: &[u8], by: usize) -> Vec<u8> {
         let mut state = vec![0; by];
+
         state.extend_from_slice(standing);
         state
     }
@@ -609,6 +645,7 @@ mod tests {
     fn a_write_that_died_with_the_room_open_and_empty_is_carried_on_to_the_head_it_meant() {
         let standing = counted(10_000);
         let state = opened_but_unwritten(&standing, 4096);
+
         let (track, grown) = left_part_way("open-empty", &standing, 700, 4096, &state);
 
         mend_what_a_dead_writer_left(&track.0);
@@ -622,7 +659,9 @@ mod tests {
         let standing = counted(10_000);
         let (_, grown) = lengthened_file(&standing, 700, 4096);
         let mut state = opened_but_unwritten(&standing, 4096);
+
         state[..2000].copy_from_slice(&grown[..2000]);
+
         let (track, grown) = left_part_way("half", &standing, 700, 4096, &state);
 
         mend_what_a_dead_writer_left(&track.0);
@@ -634,6 +673,7 @@ mod tests {
     fn a_write_that_died_having_landed_is_left_as_it_stands() {
         let standing = counted(10_000);
         let (_, grown) = lengthened_file(&standing, 700, 4096);
+
         let (track, grown) = left_part_way("landed", &standing, 700, 4096, &grown);
 
         mend_what_a_dead_writer_left(&track.0);
@@ -646,7 +686,9 @@ mod tests {
     fn a_track_another_program_changed_after_the_room_was_opened_is_not_written_over() {
         let standing = counted(10_000);
         let mut state = opened_but_unwritten(&standing, 4096);
+
         state[3000] ^= 0xFF;
+
         let (track, _) = left_part_way("changed", &standing, 700, 4096, &state);
 
         mend_what_a_dead_writer_left(&track.0);
@@ -658,6 +700,7 @@ mod tests {
     fn a_mend_of_a_shifted_write_names_what_it_did() {
         let standing = counted(10_000);
         let state = opened_but_unwritten(&standing, 4096);
+
         let (track, _) = left_part_way("named", &standing, 700, 4096, &state);
         let journal = fs::read_dir(track.folder())
             .expect("the folder")

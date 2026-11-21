@@ -117,10 +117,13 @@ struct Said {
 
 fn on_their_way(downloading: usize, waiting: usize) -> Option<String> {
     let total = downloading + waiting;
+
     if total == 0 {
         return None;
     }
+
     let mut parts = vec![words::settings_sync::songs_on_their_way(total)];
+
     if downloading > 0 {
         parts.push(words::settings_sync::downloading_count(downloading));
     }
@@ -234,6 +237,7 @@ pub(crate) fn scanned(link: &str) -> Div {
                     let across = *width as f32;
                     let wide = f32::from(bounds.size.width);
                     let tall = f32::from(bounds.size.height);
+
                     let module = (wide.min(tall) / across).floor().max(1.0);
                     let drawn = module * across;
                     let left = f32::from(bounds.origin.x) + (wide - drawn) / 2.0;
@@ -245,7 +249,9 @@ pub(crate) fn scanned(link: &str) -> Div {
                                 column += 1;
                                 continue;
                             }
+
                             let start = column;
+
                             while column < *width && dark[row * width + column] {
                                 column += 1;
                             }
@@ -311,6 +317,7 @@ impl RootView {
             .as_ref()
             .map(|syncing| syncing.shown());
         let on = synchronised.enabled;
+
         let said = standing_said(&synchronised, shown.as_ref());
         let colour = said.mood.colour();
 
@@ -334,6 +341,7 @@ impl RootView {
                     )),
             )
             .child(kit::named(said.headline, said.under));
+
         if on && shown.is_some() {
             standing = standing.child(self.in_the_ring(
                 "sync-force",
@@ -362,6 +370,7 @@ impl RootView {
                 cx,
             ))
             .child(standing);
+
         if let Some(on_their_way) = shown
             .as_ref()
             .and_then(|shown| on_their_way(shown.downloading, shown.waiting))
@@ -381,6 +390,7 @@ impl RootView {
         let revealed = self.settings_pane.read(cx).shown.pairing_shown;
 
         let mut body = kit::rows();
+
         if let Some(shown) = shown {
             let tile = if revealed {
                 div()
@@ -423,6 +433,7 @@ impl RootView {
                 covered(&shown.code)
             };
             let copying = shown.code.clone();
+
             let column = div()
                 .flex()
                 .flex_col()
@@ -488,6 +499,7 @@ impl RootView {
                         ))
                         .child(self.regenerate_button(cx)),
                 );
+
             body = body
                 .child(
                     div()
@@ -533,6 +545,7 @@ impl RootView {
             ));
         };
         let mut devices = shown.devices;
+
         devices.sort_by(|first, second| {
             second
                 .this
@@ -540,7 +553,9 @@ impl RootView {
                 .then(second.online.cmp(&first.online))
                 .then_with(|| first.name.to_lowercase().cmp(&second.name.to_lowercase()))
         });
+
         let mut body = kit::rows();
+
         for device in &devices {
             body = body.child(self.device_row(device, cx));
         }
@@ -557,11 +572,13 @@ impl RootView {
         let syncing = cx.global::<ResonateApp>().syncing.clone();
         let held = self.settings_pane.update(cx, |pane, _| {
             let held = pane.remotely.driving.take();
+
             if held.is_some() {
                 pane.remotely.driving_redraws.stop();
             }
             held
         });
+
         if let Some((held, _)) = held {
             if let Some(syncing) = syncing.as_ref() {
                 syncing.unwatch(&held);
@@ -593,6 +610,7 @@ impl RootView {
                 cx,
             );
         });
+
         let shown = cx
             .global::<ResonateApp>()
             .syncing
@@ -635,6 +653,7 @@ impl RootView {
             .unwrap_or_else(|| words::settings_sync::nothing_playing().to_owned());
         let louder = zone.volume.saturating_add(VOLUME_STEP).min(WHOLE_VOLUME);
         let quieter = zone.volume.saturating_sub(VOLUME_STEP);
+
         let keys = [
             (
                 "previous",
@@ -676,10 +695,12 @@ impl RootView {
             ),
         ];
         let mut transport = div().flex().items_center().gap_1();
+
         for (which, icon, saying, key) in keys {
             let control = format!("sync-drive-{which}-{}", zone.zone);
             let device = id.to_owned();
             let at = zone.zone;
+
             transport = transport.child(self.in_the_ring_at(
                 control.clone(),
                 kit::icon_button(SharedString::from(control), icon, saying),
@@ -687,6 +708,7 @@ impl RootView {
                 cx,
             ));
         }
+
         let heading = div()
             .flex()
             .items_center()
@@ -757,6 +779,7 @@ impl RootView {
             device.clone(),
             device.clone(),
         );
+
         let reading = spoken::listening().then(|| Reading {
             share: filled,
             said: words::settings_sync::position_of_length(
@@ -777,10 +800,12 @@ impl RootView {
                 )
                 .on_action(cx.listener(move |this, _: &RailOn, _, cx| {
                     let to = stepped_on(position, length);
+
                     this.press_on_the_device(&forward, at, RemoteKey::Seek(to), None, cx);
                 }))
                 .on_action(cx.listener(move |this, _: &RailBack, _, cx| {
                     let to = position.saturating_sub(DRIVEN_SEEK_STEP);
+
                     this.press_on_the_device(&back, at, RemoteKey::Seek(to), None, cx);
                 }))
                 .when_some(reading, |control, reading| {
@@ -793,9 +818,11 @@ impl RootView {
                             let Some(share) = spoken::share_asked(asked) else {
                                 return;
                             };
+
                             entity
                                 .update(cx, |this, cx| {
                                     let to = length.mul_f32(share.clamp(0.0, 1.0));
+
                                     this.press_on_the_device(
                                         &set,
                                         at,
@@ -809,6 +836,7 @@ impl RootView {
                         .on_a11y_action(AccessibleAction::Increment, move |_, _, cx| {
                             on.update(cx, |this, cx| {
                                 let to = stepped_on(position, length);
+
                                 this.press_on_the_device(
                                     &toward,
                                     at,
@@ -822,6 +850,7 @@ impl RootView {
                         .on_a11y_action(AccessibleAction::Decrement, move |_, _, cx| {
                             off.update(cx, |this, cx| {
                                 let to = position.saturating_sub(DRIVEN_SEEK_STEP);
+
                                 this.press_on_the_device(&away, at, RemoteKey::Seek(to), None, cx);
                             })
                             .ok();
@@ -841,6 +870,7 @@ impl RootView {
                         window.prevent_default();
                         if let Some(fraction) = rail.fraction_at(event.position) {
                             let to = length.mul_f32(fraction);
+
                             this.press_on_the_device(&pressed, at, RemoteKey::Seek(to), None, cx);
                         }
                     }),
@@ -871,11 +901,13 @@ impl RootView {
         let shown = rows_shown(zone, self.settings_pane.read(cx).remotely.driving_rows);
         let more = zone.rows.len().saturating_sub(shown.len());
         let mut list = div().flex().flex_col();
+
         for (row, song) in shown {
             list = list.child(self.driven_row(id, zone, row, song, cx));
         }
         if more > 0 {
             let control = format!("sync-drive-more-{}", zone.zone);
+
             list = list.child(self.in_the_ring_at(
                 control.clone(),
                 kit::button(
@@ -917,6 +949,7 @@ impl RootView {
         let jump = format!("sync-drive-jump-{at}-{row}");
         let device = id.to_owned();
         let named = SharedString::from(jump.clone()).into();
+
         let pressed = div()
             .id(SharedString::from(jump.clone()))
             .found_as(&named)
@@ -986,10 +1019,12 @@ impl RootView {
                 Some(RemoteKey::Remove(row)),
             ),
         ];
+
         for (which, icon, hint, key) in moves {
             let Some(key) = key else { continue };
             let control = format!("sync-drive-{which}-{at}-{row}");
             let device = id.to_owned();
+
             line = line.child(self.in_the_ring_at(
                 control.clone(),
                 kit::icon_button(SharedString::from(control), icon, hint),
@@ -1016,9 +1051,11 @@ impl RootView {
             return;
         };
         let device = id.to_owned();
+
         let pressing = cx
             .background_executor()
             .spawn(async move { syncing.press(&device, zone, key, drawn) });
+
         cx.spawn(async move |this, cx| {
             if !pressing.await {
                 let _ = this.update(cx, |this, cx| {
@@ -1040,6 +1077,7 @@ impl RootView {
         );
 
         let mut routes = kit::segmented();
+
         for (index, route) in Route::ALL.into_iter().enumerate() {
             routes = routes.child(self.option_in_the_ring(
                 kit::segment(("sync-route", index), route.label(), route == chosen),
@@ -1049,6 +1087,7 @@ impl RootView {
                 cx,
             ));
         }
+
         let mut body = kit::rows().child(
             div()
                 .flex()
@@ -1057,6 +1096,7 @@ impl RootView {
                 .child(div().flex().child(routes))
                 .child(note(chosen.meaning())),
         );
+
         if chosen == Route::Own {
             body = body.child(kit::field(
                 words::settings_sync::server(),
@@ -1158,6 +1198,7 @@ impl RootView {
         let takes_deletions = cx.global::<ResonateApp>().synchronised.takes_deletions;
 
         let mut choices = kit::segmented();
+
         for (index, trust) in RemoteTrust::ALL.into_iter().enumerate() {
             choices = choices.child(self.option_in_the_ring(
                 kit::segment(("sync-control", index), trust.label(), trust == chosen),
@@ -1278,10 +1319,12 @@ impl RootView {
             .gap_3()
             .child(device_mark(device.platform, device.online))
             .child(kit::named(device.name.clone(), under));
+
         if device.online {
             if device.this {
                 return row;
             }
+
             let id = device.id.clone();
             let name = device.name.clone();
             let driven = self
@@ -1303,6 +1346,7 @@ impl RootView {
                     words::settings_sync::drive_hint(),
                 )
             };
+
             return row.child(self.in_the_ring_at(
                 control.clone(),
                 kit::button(
@@ -1316,6 +1360,7 @@ impl RootView {
                 cx,
             ));
         }
+
         let id = device.id.clone();
         let name = device.name.clone();
         let control = format!("sync-forget-{}", device.id);
@@ -1360,6 +1405,7 @@ impl RootView {
         } else {
             Notice::Trouble(words::settings_sync::not_taken_off_the_list(name))
         };
+
         self.report(notice, cx);
         cx.notify();
     }
@@ -1368,16 +1414,20 @@ impl RootView {
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.own_server_asked = route == Route::Own;
         });
+
         let nearby_only = route == Route::Nearby;
+
         if cx.global::<ResonateApp>().synchronised.nearby_only != nearby_only {
             self.set_sync_nearby_only(nearby_only, cx);
         }
+
         let given = !cx
             .global::<ResonateApp>()
             .synchronised
             .server
             .trim()
             .is_empty();
+
         if route == Route::Hosted && given {
             self.settings_fields
                 .read(cx)
@@ -1413,11 +1463,13 @@ impl RootView {
             &Setting::Switched(Switch::SyncNearbyOnly, nearby_only),
             cx,
         );
+
         let said = if nearby_only {
             words::settings_sync::devices_sync_only_on_this_network()
         } else {
             words::settings_sync::devices_sync_through_a_server_again()
         };
+
         self.report(Notice::Done(said.to_owned()), cx);
     }
 
@@ -1429,6 +1481,7 @@ impl RootView {
             );
             return;
         };
+
         syncing.force();
         self.report(Notice::Done(words::settings_sync::forced().to_owned()), cx);
         cx.notify();
@@ -1451,16 +1504,19 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .sync_server
             .clone()
             .update(cx, |field, cx| field.hold(typed.clone(), cx));
+
         let said = if typed.is_empty() {
             words::settings_sync::devices_sync_through_resonates_server()
         } else {
             words::settings_sync::devices_sync_through_that_server()
         };
+
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.own_server_asked = !typed.is_empty();
         });
@@ -1482,6 +1538,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .shared_name
@@ -1507,6 +1564,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         self.settings_fields
             .read(cx)
             .sync_device
@@ -1533,13 +1591,16 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         if typed.is_empty() {
             return;
         }
+
         let reads = cx
             .global::<ResonateApp>()
             .reads_as_a_code
             .is_none_or(|reads| reads(&typed));
+
         if !reads {
             self.report(
                 Notice::Trouble(words::settings_sync::not_a_code().to_owned()),
@@ -1569,6 +1630,7 @@ impl RootView {
         ]
         .iter()
         .any(|field| field.read(cx).is_focused(window));
+
         if !focused {
             return;
         }
@@ -1578,6 +1640,7 @@ impl RootView {
 
     pub(crate) fn put_the_connection_back(&mut self, cx: &mut Context<Self>) {
         let built = Synchronised::default();
+
         self.settings_pane
             .update(cx, |pane, _| pane.shown.own_server_asked = false);
         self.settings_fields
@@ -1694,6 +1757,7 @@ mod tests {
                 this: false,
             };
             let mut devices = vec![desk.clone()];
+
             if self.second.load(Ordering::Relaxed) {
                 devices.push(SyncedDevice {
                     id: "phone".to_owned(),
@@ -1739,7 +1803,9 @@ mod tests {
             if device == "phone" && self.refused.load(Ordering::Relaxed) {
                 return RemoteShown::Refused;
             }
+
             let mut zone = a_zone();
+
             zone.sounding = !self.paused.load(Ordering::Relaxed);
             if device == "phone" {
                 zone.zone = 7;
@@ -1786,6 +1852,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let (mut driven, stage) = opened_on_the_sync_group(cx);
+
         stage.second.store(true, Ordering::Relaxed);
         driven.until(|root, cx| root.settings_pane.read(cx).remotely.songs.len() == 2);
 
@@ -1793,7 +1860,9 @@ mod tests {
         driven.click("remote-phone-7-toggle");
         driven.until(|_, _| stage.pressed.lock().len() == 2);
         driven.click("tab-albums");
+
         let root = driven.root.clone();
+
         driven.cx.update(|window, cx| {
             let next = root
                 .read(cx)
@@ -1803,13 +1872,16 @@ mod tests {
                 .controls
                 .handle("remote-phone-7-next")
                 .expect("the remote controls survive a pane change");
+
             window.focus(&next, cx);
         });
         driven.cx.simulate_keystrokes("enter");
         driven.until(|_, _| stage.pressed.lock().len() == 3);
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
+
         let root = driven.root.clone();
+
         assert!(driven.cx.update(|window, cx| {
             !root
                 .read(cx)
@@ -1832,9 +1904,12 @@ mod tests {
         stage.refused.store(true, Ordering::Relaxed);
         driven.until(|root, cx| root.settings_pane.read(cx).remotely.songs.len() == 1);
         driven.settle();
+
         assert!(driven.cx.debug_bounds("remote-phone-7-toggle").is_none());
+
         stage.away.store(true, Ordering::Relaxed);
         driven.until(|root, cx| root.settings_pane.read(cx).remotely.songs.is_empty());
+
         assert!(
             stage
                 .unwatched
@@ -1866,9 +1941,11 @@ mod tests {
                 .iter()
                 .all(|(device, zone, _, _)| device == "desk" && *zone == 1)
         );
+
         let RemoteKey::Seek(sought) = pressed[0].2 else {
             panic!("a seek, not {:?}", pressed[0].2);
         };
+
         assert!(sought > Duration::from_secs(80) && sought < Duration::from_secs(120));
         assert_eq!(pressed[1].2, RemoteKey::Jump(2));
         assert_eq!(pressed[2].2, RemoteKey::Move { from: 2, to: 1 });

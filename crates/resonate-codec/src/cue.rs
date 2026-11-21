@@ -31,7 +31,7 @@ const DRIVE_SEPARATOR: char = ':';
 const MOST_SHEETS_ABOVE: usize = 16;
 pub const DEEPEST_FOLDER_A_SHEET_NAMES: usize = 2;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CueStamp {
     minutes: u32,
     seconds: u8,
@@ -59,9 +59,11 @@ impl CueStamp {
 
     fn read(text: &str) -> Option<Self> {
         let mut fields = text.split(':');
+
         let minutes = fields.next()?.trim().parse().ok()?;
         let seconds = fields.next()?.trim().parse().ok()?;
         let sectors = fields.next()?.trim().parse().ok()?;
+
         if fields.next().is_some() || seconds >= 60 || u64::from(sectors) >= SECTORS_PER_SECOND {
             return None;
         }
@@ -80,7 +82,7 @@ impl fmt::Display for CueStamp {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum CueStart {
     Written(CueStamp),
     Sampled(Frames),
@@ -122,7 +124,7 @@ impl fmt::Display for CueStart {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum CueTrackKind {
     #[default]
     Audio,
@@ -145,6 +147,7 @@ impl CueTrack {
 
     pub fn titled(&self) -> TagSet {
         let mut tags = self.tags.clone();
+
         if tags.title.is_none() {
             tags.title = Some(format!("Track {}", self.number));
         }
@@ -189,6 +192,7 @@ impl CueFile {
         let Some(first) = self.tracks.first_mut() else {
             return;
         };
+
         if first.kind != CueTrackKind::Audio {
             return;
         }
@@ -201,8 +205,10 @@ impl CueFile {
 
     pub(crate) fn billed_by(mut self, file: &TagSet) -> Self {
         let total = self.audio_tracks().count() as u32;
+
         for track in &mut self.tracks {
             let own = std::mem::take(&mut track.tags);
+
             track.tags = TagSet {
                 track_number: Some(track.number),
                 track_total: Some(total),
@@ -325,6 +331,7 @@ fn sheets_in(folder: &Path) -> Vec<PathBuf> {
                 .then(|| entry.path())
         })
         .collect();
+
     sheets.sort();
     sheets.truncate(MOST_SHEETS_ABOVE);
     sheets
@@ -362,10 +369,12 @@ fn the_folders_below(named: &str) -> Option<Vec<&str>> {
     if named.starts_with(PATH_SEPARATORS) {
         return None;
     }
+
     let mut folders: Vec<&str> = named
         .split(PATH_SEPARATORS)
         .filter(|part| !part.is_empty() && *part != THIS_FOLDER)
         .collect();
+
     folders.pop()?;
 
     let out_of_reach = folders.len() > DEEPEST_FOLDER_A_SHEET_NAMES
@@ -377,6 +386,7 @@ fn the_folders_below(named: &str) -> Option<Vec<&str>> {
 
 fn a_folder_in(folder: &Path, named: &str) -> Option<PathBuf> {
     let exactly = folder.join(named);
+
     if !THE_FILESYSTEM_FOLDS_NAMES && fs::symlink_metadata(&exactly).is_ok_and(|held| held.is_dir())
     {
         return Some(exactly);
@@ -394,6 +404,7 @@ fn a_folder_in(folder: &Path, named: &str) -> Option<PathBuf> {
                 .is_some_and(|held| folded(held) == wanted)
         })
         .map(|entry| entry.path());
+
     let one = found.next()?;
     found.next().is_none().then_some(one)
 }
@@ -407,13 +418,16 @@ fn sheets_beside(folder: &Path, named: &str, stem: &str) -> Vec<PathBuf> {
             let entry = entry.ok()?;
             let file = entry.file_name();
             let (lead, extension) = file.to_str()?.rsplit_once('.')?;
+
             if !extension.eq_ignore_ascii_case(SHEET_EXTENSION) {
                 return None;
             }
+
             let by_stem = folded(lead) == folded(stem);
             (by_stem || folded(lead) == folded(named)).then(|| (!by_stem, entry.path()))
         })
         .collect();
+
     sheets.sort();
     sheets.into_iter().map(|(_, sheet)| sheet).collect()
 }
@@ -428,6 +442,7 @@ fn cut_named(sheet: CueSheet, named: &str) -> Option<CueFile> {
     if cut.len() == 1 {
         return cut.pop();
     }
+
     let at = the_best_named(
         cut.iter()
             .enumerate()
@@ -446,6 +461,7 @@ pub enum Naming {
 impl Naming {
     pub fn of(named: &str, file: &str) -> Option<Self> {
         let named = the_name_alone(named);
+
         if named == file {
             return Some(Self::Exactly);
         }
@@ -500,6 +516,7 @@ pub fn the_one_named<'a, T>(
 pub fn the_best_named<T>(candidates: impl IntoIterator<Item = (T, Option<Naming>)>) -> Option<T> {
     let mut best: Option<(Naming, T)> = None;
     let mut tied = false;
+
     for (candidate, naming) in candidates {
         let Some(naming) = naming else {
             continue;
@@ -555,6 +572,7 @@ pub fn renamed(sheet: &[u8], from: &str, to: &str) -> Option<Vec<u8>> {
     };
 
     let mut written = Vec::with_capacity(sheet.len() + naming.len() - named.len());
+
     written.extend_from_slice(&sheet[..at]);
     written.extend_from_slice(&naming);
     written.extend_from_slice(&sheet[at + named.len()..]);
@@ -576,6 +594,7 @@ fn carried_into_unicode(
     let after = decoded_as(sheet.get(named.end..).unwrap_or_default(), encoding);
 
     let mut written = Vec::with_capacity(UTF8_BOM.len() + before.len() + to.len() + after.len());
+
     written.extend_from_slice(&UTF8_BOM);
     written.extend_from_slice(before.as_bytes());
     written.extend_from_slice(to.as_bytes());
@@ -587,6 +606,7 @@ fn the_run_on_the_file_line(sheet: &[u8], named: &[u8], encoding: TextEncoding) 
     let unit = unit_bytes(encoding);
     let last = sheet.len().checked_sub(named.len())?;
     let mut found = None;
+
     for at in (0..=last).step_by(unit) {
         if &sheet[at..at + named.len()] != named || !follows_a_file_command(sheet, at, encoding) {
             continue;
@@ -603,6 +623,7 @@ fn the_run_on_the_file_line(sheet: &[u8], named: &[u8], encoding: TextEncoding) 
 fn follows_a_file_command(sheet: &[u8], at: usize, encoding: TextEncoding) -> bool {
     let unit = unit_bytes(encoding);
     let mut start = at;
+
     while let Some(before) = start.checked_sub(unit) {
         if matches!(
             character(&sheet[before..start], encoding),
@@ -614,6 +635,7 @@ fn follows_a_file_command(sheet: &[u8], at: usize, encoding: TextEncoding) -> bo
     }
 
     let mut lead = String::new();
+
     for piece in sheet[start..at].chunks(unit) {
         match character(piece, encoding) {
             Some(BYTE_ORDER_MARK) if lead.is_empty() => {}
@@ -696,6 +718,7 @@ impl Reading {
             Indexed::Not | Indexed::Provisionally if named.is_empty() => None,
             Indexed::Not | Indexed::Provisionally => self.open.take(),
         };
+
         self.close();
         if named.is_empty() {
             return;
@@ -717,7 +740,9 @@ impl Reading {
 
     fn track(&mut self, rest: &str) {
         self.close();
+
         let mut fields = rest.split_whitespace();
+
         let Some(number) = fields.next().and_then(|held| held.parse().ok()) else {
             return;
         };
@@ -742,6 +767,7 @@ impl Reading {
             return;
         };
         let mut fields = rest.split_whitespace();
+
         let Some(number) = fields.next().and_then(|held| held.parse::<u32>().ok()) else {
             return;
         };
@@ -765,6 +791,7 @@ impl Reading {
 
     fn named(&mut self, rest: &str, field: Named) {
         let value = quoted(rest);
+
         if value.is_empty() {
             return;
         }
@@ -792,6 +819,7 @@ impl Reading {
             return;
         };
         let value = quoted(value);
+
         if value.is_empty() {
             return;
         }
@@ -811,6 +839,7 @@ impl Reading {
             "COMPOSER" => tags.credits.composer = Some(value),
             "DISCNUMBER" => {
                 let (number, total) = numbered(&value);
+
                 tags.disc_number = number.or(tags.disc_number);
                 tags.disc_total = total.or(tags.disc_total);
             }
@@ -831,6 +860,7 @@ impl Reading {
         let Some(file) = self.files.last_mut() else {
             return;
         };
+
         if self.indexed == Indexed::Unreadably {
             tracing::debug!(
                 track = track.number,
@@ -872,14 +902,17 @@ impl Reading {
 
         let album = self.album;
         let mut files = self.files;
+
         let total = files
             .iter()
             .map(|file| file.audio_tracks().count())
             .sum::<usize>() as u32;
+
         for file in &mut files {
             file.heard_from_the_head();
             for track in &mut file.tracks {
                 let number = track.number;
+
                 settle(&mut track.tags, &album, total);
                 track.tags.track_number = Some(number);
             }
@@ -960,6 +993,7 @@ fn the_albums_of(file: &TagSet) -> TagSet {
 
 fn split_command(line: &str) -> Option<(&str, &str)> {
     let line = line.trim();
+
     if line.is_empty() {
         return None;
     }
@@ -971,6 +1005,7 @@ fn split_command(line: &str) -> Option<(&str, &str)> {
 
 fn strip_file_type(rest: &str) -> &str {
     let rest = rest.trim();
+
     if let Some(end) = closing_quote(rest) {
         return rest.get(..=end).unwrap_or(rest);
     }
@@ -1035,6 +1070,7 @@ FILE "Meddle.flac" WAVE
 
     fn meddle() -> CueFile {
         let sheet = read(MEDDLE.as_bytes());
+
         assert_eq!(sheet.files.len(), 1);
         sheet.files.into_iter().next().expect("one file")
     }
@@ -1122,6 +1158,7 @@ FILE "Meddle.flac" WAVE
 
         let first = file.span_of(0, rate, None).expect("the first track");
         let second = file.span_of(1, rate, None).expect("the second track");
+
         assert_eq!(
             first.end(),
             Some(gap),
@@ -1170,11 +1207,13 @@ FILE "Meddle.flac" WAVE
     fn a_span_is_read_back_as_the_row_it_was_cut_for() {
         let file = meddle();
         let rate = SampleRate::HZ_44100;
+
         let echoes = file
             .span_of(2, rate, None)
             .expect("the last track is a span");
 
         let row = file.cut_at(echoes.start(), rate).expect("the row it names");
+
         assert_eq!(row.tags.title.as_deref(), Some("Echoes"));
         assert_eq!(
             row.tags.replay_gain.track_gain,
@@ -1211,6 +1250,7 @@ FILE "Meddle.flac" WAVE
         assert_eq!(cut_named(two, "three.flac"), None);
 
         let one = read(b"FILE \"one.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n");
+
         assert_eq!(
             cut_named(one, "renamed.flac").map(|cut| cut.named),
             Some("one.flac".to_owned()),
@@ -1239,6 +1279,7 @@ FILE "Meddle.flac" WAVE
         let sheet = read(
             b"FILE \"a.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n TRACK 02 AUDIO\n  INDEX 01 5000000000000000:00:00\n",
         );
+
         assert_eq!(
             sheet.files[0]
                 .tracks
@@ -1250,6 +1291,7 @@ FILE "Meddle.flac" WAVE
         );
 
         let longest = CueStamp::new(u32::MAX, 59, 74);
+
         assert_eq!(
             longest.total_sectors(),
             (u64::from(u32::MAX) * 60 + 59) * 75 + 74
@@ -1266,14 +1308,17 @@ FILE "Meddle.flac" WAVE
         let rate = SampleRate::HZ_44100;
 
         let first = file.span_of(0, rate, None).expect("a first span");
+
         assert_eq!(first.start(), Frames::ZERO);
         assert_eq!(first.end(), Some(CueStamp::new(5, 57, 25).at(rate)));
 
         let last = file.span_of(2, rate, None).expect("a last span");
+
         assert_eq!(last.start(), CueStamp::new(21, 10, 0).at(rate));
         assert_eq!(last.end(), None);
 
         let bounded = file.span_of(2, rate, Some(Frames(60_000_000)));
+
         assert_eq!(bounded.and_then(FrameSpan::end), Some(Frames(60_000_000)));
     }
 
@@ -1337,7 +1382,9 @@ FILE "Meddle.flac" WAVE
                 .map(|track| (track.tags.title.clone(), track.start))
                 .collect::<Vec<_>>()
         };
+
         assert_eq!(sheet.files.len(), 3);
+
         for (file, title) in sheet.files.iter().zip(["Twelve", "Thirteen", "Fourteen"]) {
             assert_eq!(
                 titled(file),
@@ -1346,6 +1393,7 @@ FILE "Meddle.flac" WAVE
                 file.named
             );
         }
+
         assert_eq!(
             sheet.files[0].span_of(0, SampleRate::HZ_44100, Some(Frames(11_054_988))),
             Some(FrameSpan::starting(Frames::ZERO).within(Frames(11_054_988)))
@@ -1367,20 +1415,24 @@ FILE "Meddle.flac" WAVE
     fn a_file_name_keeps_its_spaces_and_loses_its_type() {
         let sheet =
             read(b"FILE \"Pink Floyd - Meddle.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n");
+
         assert_eq!(sheet.files[0].named, "Pink Floyd - Meddle.flac");
 
         let bare = read(b"FILE Meddle.flac WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n");
+
         assert_eq!(bare.files[0].named, "Meddle.flac");
     }
 
     #[test]
     fn a_sheet_a_tagger_wrote_in_another_encoding_still_reads() {
         let mut wide = vec![0xFF, 0xFE];
+
         for unit in
             "FILE \"Écoute.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\n".encode_utf16()
         {
             wide.extend_from_slice(&unit.to_le_bytes());
         }
+
         let sheet = read(&wide);
 
         assert_eq!(sheet.encoding, TextEncoding::Utf16Le);
@@ -1402,6 +1454,7 @@ FILE "Meddle.flac" WAVE
             .flat_map(|file| &file.tracks)
             .map(|track| (track.number, track.tags.track_total))
             .collect::<Vec<_>>();
+
         assert_eq!(
             totals,
             vec![(1, Some(3)), (2, Some(3)), (3, Some(3)), (4, Some(3))]
@@ -1463,6 +1516,7 @@ FILE "Meddle.flac" WAVE
         );
         for index in 0..file.tracks.len() {
             let span = file.span_of(index, rate, None).expect("a span");
+
             assert_ne!(
                 span.frames(),
                 Some(Frames::ZERO),
@@ -1495,6 +1549,7 @@ FILE "Meddle.flac" WAVE
         let hidden = read(
             b"FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 03:25:12\n  TRACK 02 AUDIO\n    INDEX 01 07:00:00\n",
         );
+
         assert_eq!(
             hidden.files[0].tracks[0].start,
             CueStart::Written(CueStamp::default())
@@ -1503,6 +1558,7 @@ FILE "Meddle.flac" WAVE
         let prepended = read(
             b"FILE \"01.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\nFILE \"02.flac\" WAVE\n  TRACK 02 AUDIO\n    INDEX 00 00:00:00\n    INDEX 01 00:02:10\n",
         );
+
         assert_eq!(
             prepended.files[1].tracks[0].start,
             CueStart::Written(CueStamp::default()),
@@ -1512,6 +1568,7 @@ FILE "Meddle.flac" WAVE
         let mixed = read(
             b"FILE \"disc.bin\" BINARY\n  TRACK 01 MODE1/2352\n    INDEX 01 00:00:00\n  TRACK 02 AUDIO\n    INDEX 01 00:10:00\n",
         );
+
         assert_eq!(
             mixed.files[0].tracks[1].start,
             CueStart::Written(CueStamp::new(0, 10, 0))
@@ -1551,6 +1608,7 @@ FILE "Meddle.flac" WAVE
             b"REM DISCNUMBER 1/2\nFILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n",
         );
         let tags = &slashed.files[0].tracks[0].tags;
+
         assert_eq!((tags.disc_number, tags.disc_total), (Some(1), Some(2)));
     }
 
@@ -1592,6 +1650,7 @@ FILE "Meddle.flac" WAVE
         .billed_by(&file);
 
         let second = &cut.tracks[1].tags;
+
         assert_eq!(second.album.as_deref(), Some("Meddle"));
         assert_eq!(second.artist.as_deref(), Some("Pink Floyd"));
         assert_eq!(second.date.as_deref(), Some("1971"));
@@ -1620,6 +1679,7 @@ FILE "Meddle.flac" WAVE
         assert_eq!(Naming::of("Album.flac", "Albums.flac"), None);
 
         let beside = [("wav", "album.wav"), ("flac", "Album.flac")];
+
         assert_eq!(the_one_named("Album.flac", beside), Some("flac"));
         assert_eq!(the_one_named("ALBUM.WAV", beside), Some("wav"));
         assert_eq!(
@@ -1632,12 +1692,14 @@ FILE "Meddle.flac" WAVE
     #[test]
     fn a_sheet_beside_a_file_is_found_under_any_case_and_after_its_whole_name() {
         let folder = std::env::temp_dir().join(format!("resonate-cue-{}", std::process::id()));
+
         fs::create_dir_all(&folder).expect("a folder");
         for named in ["Album.flac.Cue", "ALBUM.CUE", "Album.log", "Other.cue"] {
             fs::write(folder.join(named), b"").expect("a file");
         }
 
         let found = sheets_beside(&folder, "Album.flac", "Album");
+
         fs::remove_dir_all(&folder).expect("the folder goes");
 
         assert_eq!(
@@ -1650,6 +1712,7 @@ FILE "Meddle.flac" WAVE
     fn a_file_line_naming_a_folder_below_the_sheet_is_looked_for_there() {
         let folder =
             std::env::temp_dir().join(format!("resonate-cue-below-{}", std::process::id()));
+
         fs::create_dir_all(folder.join("CD1")).expect("a folder");
         fs::create_dir_all(folder.join("Disc 2/Audio")).expect("a folder");
 
@@ -1659,6 +1722,7 @@ FILE "Meddle.flac" WAVE
         let outside = folder_named(&folder, "../CD1/01.flac");
         let driven = folder_named(&folder, "C:\\CD1\\01.flac");
         let beside = folder_named(&folder, "01.flac");
+
         fs::remove_dir_all(&folder).expect("the folder goes");
 
         assert_eq!(below, folder.join("CD1"));
@@ -1675,6 +1739,7 @@ FILE "Meddle.flac" WAVE
     fn a_file_a_sheet_above_it_names_is_cut_by_that_sheet() {
         let folder =
             std::env::temp_dir().join(format!("resonate-cue-above-{}", std::process::id()));
+
         fs::create_dir_all(folder.join("CD1")).expect("a folder");
         fs::create_dir_all(folder.join("CD2")).expect("a folder");
         fs::write(
@@ -1690,6 +1755,7 @@ FILE "Meddle.flac" WAVE
         let sources = Sources::local();
         let second = beside(&sources, &MediaLocation::local(folder.join("CD2/01.flac")));
         let loose = beside(&sources, &MediaLocation::local(folder.join("01.flac")));
+
         fs::remove_dir_all(&folder).expect("the folder goes");
 
         assert_eq!(second.map(|cut| cut.named), Some("CD2\\01.flac".to_owned()));
@@ -1716,15 +1782,18 @@ FILE "Meddle.flac" WAVE
     fn a_sheet_written_in_a_japanese_code_page_is_read_and_renamed_in_it() {
         let japanese = TextEncoding::Legacy(resonate_core::LegacyEncoding::SHIFT_JIS);
         let text = "PERFORMER \"植松伸夫\"\nTITLE \"ファイナルファンタジー オリジナル・サウンドトラック\"\nFILE \"ファイナルファンタジー.flac\" WAVE\n  TRACK 01 AUDIO\n    TITLE \"序曲\"\n    INDEX 01 00:00:00\n";
+
         let bytes = encoded(text, japanese).expect("Japanese letters");
 
         let sheet = read(&bytes);
+
         assert_eq!(sheet.encoding, japanese);
         assert_eq!(sheet.files[0].named, "ファイナルファンタジー.flac");
         assert_eq!(sheet.files[0].tracks[0].tags.title.as_deref(), Some("序曲"));
 
         let written =
             renamed(&bytes, "ファイナルファンタジー.flac", "01 序曲.flac").expect("rewritten");
+
         assert_eq!(read(&written).files[0].named, "01 序曲.flac");
         assert_eq!(read(&written).encoding, japanese);
     }
@@ -1732,12 +1801,15 @@ FILE "Meddle.flac" WAVE
     #[test]
     fn a_sheet_carrying_more_tracks_than_a_disc_could_stops_at_the_bound() {
         let mut text = String::from("FILE \"one.flac\" WAVE\n");
+
         for number in 0..MOST_TRACKS + 10 {
             let (minutes, seconds) = (number / 60, number % 60);
+
             text.push_str(&format!(
                 "  TRACK {number:02} AUDIO\n    INDEX 01 {minutes:02}:{seconds:02}:00\n"
             ));
         }
+
         let sheet = read(text.as_bytes());
 
         assert_eq!(sheet.files[0].tracks.len(), MOST_TRACKS);
@@ -1800,6 +1872,7 @@ FILE "Meddle.flac" WAVE
     #[test]
     fn a_renamed_sheet_is_written_in_the_encoding_it_was_read_in() {
         let mut wide = vec![0xFF, 0xFE];
+
         for unit in
             "FILE \"Écoute.flac\" WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n".encode_utf16()
         {
@@ -1823,6 +1896,7 @@ FILE "Meddle.flac" WAVE
         );
 
         let twice = b"FILE \"one.flac\" WAVE\n TRACK 01 AUDIO\n  INDEX 01 00:00:00\nFILE \"one.flac\" WAVE\n TRACK 02 AUDIO\n  INDEX 01 00:00:00\n";
+
         assert_eq!(renamed(twice, "one.flac", "two.flac"), None);
     }
 
@@ -1844,6 +1918,7 @@ FILE "Meddle.flac" WAVE
         let text = "TITLE \"one.flac\"\r\nfile one.flac WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n";
         let wide = |text: &str| {
             let mut wide = vec![0xFE, 0xFF];
+
             for unit in text.encode_utf16() {
                 wide.extend_from_slice(&unit.to_be_bytes());
             }
@@ -1868,6 +1943,7 @@ FILE "Meddle.flac" WAVE
             b".flac\" WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n",
         ]
         .concat();
+
         assert_eq!(read(&legacy).encoding, TextEncoding::WINDOWS_1252);
 
         let written = renamed(&legacy, "Ecout\u{e9}.flac", "Przybyłowicz.flac")
@@ -1875,8 +1951,11 @@ FILE "Meddle.flac" WAVE
 
         let unicode = "\u{feff}REM COMMENT \"\u{201c}\u{e9}\u{201d}\"\r\nFILE \"Przybyłowicz.flac\" \
                        WAVE\r\n TRACK 01 AUDIO\r\n  INDEX 01 00:00:00\r\n";
+
         assert_eq!(written, unicode.as_bytes());
+
         let reread = read(&written);
+
         assert_eq!(reread.encoding, TextEncoding::Utf8);
         assert_eq!(
             reread.claims().collect::<Vec<_>>(),
@@ -1884,6 +1963,7 @@ FILE "Meddle.flac" WAVE
         );
 
         let kept = renamed(&legacy, "Ecout\u{e9}.flac", "Ecoute.flac").expect("it renames");
+
         assert_eq!(read(&kept).encoding, TextEncoding::WINDOWS_1252);
     }
 }

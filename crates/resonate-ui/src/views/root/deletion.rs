@@ -40,6 +40,7 @@ impl RootView {
         } else {
             Reach::ThisDevice
         };
+
         self.library.update(cx, |library, cx| {
             library.delete_tracks(tracks, title, reach, cx)
         });

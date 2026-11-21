@@ -101,16 +101,19 @@ impl Telling {
         if self.refused.as_ref() == Some(&account) {
             return;
         }
+
         let scrobbler = match &self.scrobbling {
             Some((kept, scrobbler)) if *kept == account => Arc::clone(scrobbler),
             _ => {
                 let made = account.scrobbler(config);
+
                 self.scrobbling = Some((account.clone(), Arc::clone(&made)));
                 made
             }
         };
 
         let playing = playing_row(player);
+
         if lapses(self.told_playing.as_ref(), playing.as_ref())
             && let Some(row) = playing.as_ref()
         {
@@ -138,6 +141,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
     let config = config.clone();
     let library = Arc::clone(library);
     let player = Arc::clone(player);
+
     let started = thread::Builder::new()
         .name("resonate-submit".to_owned())
         .spawn(move || {
@@ -148,6 +152,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
+
                 let held = Account::every(token.current().clone());
                 for (telling, account) in services.iter_mut().zip(held) {
                     if let Some(account) = account {
@@ -156,6 +161,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
                 }
             }
         });
+
     if let Err(error) = started {
         tracing::warn!(%error, "no thread could be started to submit what is heard");
     }
@@ -166,6 +172,7 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>, player: &Arc<Player
 #[cfg(feature = "online")]
 fn told_listens(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Result<()> {
     let submitted = library.submit_listens(scrobbler)?;
+
     if submitted.submitted + submitted.refused > 0 {
         tracing::debug!(
             submitted = submitted.submitted,
@@ -181,6 +188,7 @@ fn told_listens(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_librar
 #[cfg(feature = "online")]
 fn told_loves(library: &Library, scrobbler: &dyn Scrobbler) -> resonate_library::Result<()> {
     let loves = library.tell_loves(scrobbler)?;
+
     if loves.loved + loves.taken_back + loves.refused > 0 {
         tracing::debug!(
             loved = loves.loved,
@@ -263,11 +271,14 @@ fn lapses(told: Option<&Row>, now: Option<&Row>) -> bool {
 #[cfg(feature = "online")]
 fn playing_row(player: &Player) -> Option<Row> {
     let state = player.state();
+
     if state.playback != PlaybackState::Playing {
         return None;
     }
+
     let current = state.current.as_ref()?;
     let queue = player.queue();
+
     let item = state
         .queue_position
         .and_then(|position| queue.get(position))
@@ -426,23 +437,30 @@ mod tests {
     fn a_token_written_into_the_settings_is_followed_and_online_off_holds_it_back() {
         let folder =
             std::env::temp_dir().join(format!("resonate-submitting-{}", std::process::id()));
+
         fs::create_dir_all(&folder).expect("a writable temporary directory");
+
         let path = folder.join("config.toml");
+
         fs::write(&path, "").expect("a writable settings file");
+
         let mut token = Token {
             path: Some(path.clone()),
             seen: None,
             held: Accounts::default(),
         };
+
         assert_eq!(token.current(), &Accounts::default());
 
         fs::write(&path, "listenbrainz-token = \"a token\"\n").expect("a writable settings file");
         token.seen = None;
+
         assert_eq!(token.current().listenbrainz.as_deref(), Some("a token"));
 
         fs::write(&path, "online = false\nlistenbrainz-token = \"a token\"\n")
             .expect("a writable settings file");
         token.seen = None;
+
         assert_eq!(token.current(), &Accounts::default());
 
         let _ = fs::remove_dir_all(&folder);

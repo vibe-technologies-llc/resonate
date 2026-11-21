@@ -5,7 +5,7 @@ use thiserror::Error;
 
 use crate::{SinkId, StreamState};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PwOp {
     MainLoopCreate,
     ContextCreate,
@@ -15,7 +15,7 @@ pub enum PwOp {
     StreamConnect,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum PodParam {
     EnumFormat,
 }

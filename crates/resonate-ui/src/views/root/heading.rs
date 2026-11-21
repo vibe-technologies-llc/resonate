@@ -262,12 +262,14 @@ impl RootView {
         let enriching = library.shows_the_lookup();
         let downloads = !library.downloads().is_empty() || library.keeps_left().is_some();
         let mut browse = div().flex().flex_col().gap_4();
+
         for section in Section::ALL {
             let mut listed = div()
                 .flex()
                 .flex_col()
                 .gap_0p5()
                 .child(kit::eyebrow(section.label()).px_3().pb_1p5());
+
             for pane in Pane::BROWSE
                 .into_iter()
                 .filter(|pane| pane.section() == section && pane.is_there(tabs, serving))
@@ -290,6 +292,7 @@ impl RootView {
                     | Pane::Analysis
                     | Pane::Settings => None,
                 };
+
                 listed = listed.child(self.pane_row(pane, count.filter(|_| tabs.counts), cx));
                 if pane == Pane::Playlists {
                     listed = listed.children(self.pinned_rows(cx));

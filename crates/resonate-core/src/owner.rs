@@ -105,6 +105,7 @@ mod tests {
         fn new(name: &str) -> Self {
             let path = env::temp_dir().join(format!("resonate-owner-{}-{name}", process::id()));
             let _ = fs::remove_dir_all(&path);
+
             fs::create_dir_all(&path).expect("a scratch folder");
             Self(path)
         }
@@ -135,6 +136,7 @@ mod tests {
     fn a_folder_open_to_others_or_made_by_another_user_is_refused() {
         let scratch = Scratch::new("refused");
         let open = scratch.0.join("open");
+
         fs::create_dir(&open).expect("a folder");
         fs::set_permissions(&open, fs::Permissions::from_mode(0o755)).expect("opened");
 
@@ -161,6 +163,7 @@ mod tests {
         let scratch = Scratch::new("linked");
         let real = scratch.0.join("real");
         let link = scratch.0.join("link");
+
         Owner::this_user().keeps_alone(&real).expect("a folder");
         symlink(&real, &link).expect("a link");
 
@@ -173,6 +176,7 @@ mod tests {
         let scratch = Scratch::new("files");
         let file = scratch.0.join("file");
         let link = scratch.0.join("link");
+
         fs::write(&file, b"x").expect("a file");
         symlink(&file, &link).expect("a link");
 

@@ -153,6 +153,7 @@ pub fn shared_formats(nominal: SampleRate, channels: u32) -> Vec<SinkFormats> {
 
 fn hogged_layouts(offered: &[Physical]) -> Vec<ChannelLayout> {
     let mut layouts: Vec<ChannelLayout> = offered.iter().flat_map(Physical::layouts).collect();
+
     layouts.sort_by_key(|layout| {
         (
             *layout != ChannelLayout::Stereo,
@@ -167,6 +168,7 @@ fn hogged_layouts(offered: &[Physical]) -> Vec<ChannelLayout> {
 pub fn hog_formats(offered: &[Physical]) -> Vec<SinkFormats> {
     let layouts = hogged_layouts(offered);
     let mut formats = Vec::new();
+
     for format in HOGGED_WORDS {
         for &layout in &layouts {
             let mut rates: Vec<SampleRate> = offered
@@ -174,6 +176,7 @@ pub fn hog_formats(offered: &[Physical]) -> Vec<SinkFormats> {
                 .filter(|physical| physical.holds(format) && physical.plays(layout))
                 .flat_map(Physical::rates)
                 .collect();
+
             rates.sort_unstable();
             rates.dedup();
             if !rates.is_empty() {
@@ -277,6 +280,7 @@ mod tests {
                 SampleFormat::S24 => Words::Padded,
                 _ => Words::Whole,
             };
+
             assert_eq!(offered.words, expected);
             assert_eq!(offered.channels, [ChannelLayout::Stereo]);
         }

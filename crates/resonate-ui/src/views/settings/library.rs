@@ -95,6 +95,7 @@ impl RootView {
         let mut listed = kit::rows().when(nothing_listed, |body| {
             body.child(note(words::settings_library::no_folders()))
         });
+
         for root in &roots {
             listed = listed.child(self.folder(root, primary.as_deref(), cx));
         }
@@ -154,10 +155,12 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         if typed.is_empty() {
             self.leave_typed_root(window, cx);
             return;
         }
+
         let folder = spelt_out_from_home(&typed);
         let looked = folder.clone();
 
@@ -188,6 +191,7 @@ impl RootView {
                 cx.notify();
             });
         });
+
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.looking_at_the_typed_root = looking_at_the_typed_root;
         });
@@ -200,6 +204,7 @@ impl RootView {
 
         let id: ElementId = (ElementId::Path(Arc::from(root)), "primary").into();
         let named = format!("primary-{}", resonate_core::path_text::shown(root));
+
         let choice = self.in_the_ring_at(
             named,
             self.folder_choice(&path, chosen, id),
@@ -274,6 +279,7 @@ impl RootView {
 
     fn choose_as_primary(&mut self, root: PathBuf, cx: &mut Context<Self>) {
         let held = cx.global::<ResonateApp>().music_folder.clone();
+
         if held.as_deref() == Some(root.as_path()) {
             self.forget_the_music_folder(cx);
             return;
@@ -330,7 +336,9 @@ impl RootView {
         if self.folder_armed(cx) == Some(&root) {
             self.settings_pane
                 .update(cx, |pane, _| pane.shown.armed = None);
+
             let held = cx.global::<ResonateApp>().music_folder.clone();
+
             if held.is_some_and(|primary| primary.starts_with(&root)) {
                 self.forget_the_music_folder(cx);
             }
@@ -422,6 +430,7 @@ impl RootView {
         let enriching = library.is_enriching();
         let stopping = library.is_stopping_enrich();
         let hurried = library.is_hurried();
+
         let unhurriable =
             hurried || stopping || !library.can_enrich() || (!enriching && library.is_busy());
         let breakdown = library.enrich_stats().map(|stats| lookup_lines(&stats));
@@ -621,6 +630,7 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the folder picker could not be opened");
+
                     let reported = this.update(cx, |_, cx| {
                         toast::tell(
                             Notice::Trouble(words::settings_library::no_folder_picker().to_owned()),
@@ -628,6 +638,7 @@ impl RootView {
                         );
                     });
                     let _ = reported;
+
                     return;
                 }
             };
@@ -782,6 +793,7 @@ impl RootView {
 
     fn ask_to_keep_the_history(&mut self, kept: HistoryKept, cx: &mut Context<Self>) {
         let now = cx.global::<ResonateApp>().history_kept;
+
         if forgets_listens(now, kept) && self.history_armed(cx) != Some(kept) {
             self.lower_every_armed_press(cx);
             self.arm(Armed::AgeTheHistory(kept), cx);
@@ -836,6 +848,7 @@ impl RootView {
                 this.shuffle_as(SmartShuffle { style, ..smart }, cx);
             }),
         ));
+
         if !spreads {
             return rows;
         }
@@ -900,6 +913,7 @@ impl RootView {
 
     pub(crate) fn shuffle_as(&mut self, smart: SmartShuffle, cx: &mut Context<Self>) {
         let was = self.player.read(cx).state().smart_shuffle;
+
         if was == smart {
             return;
         }
@@ -965,11 +979,13 @@ impl RootView {
             .to_owned();
         let refused = Layout::read(&typed).err().map(|error| error.to_string());
         let unreadable = refused.is_some();
+
         self.settings_fields
             .read(cx)
             .organising
             .clone()
             .update(cx, |organising, cx| organising.refusing(unreadable, cx));
+
         let library = self.library.read(cx);
         let busy = library.is_busy();
         let organising = library.is_organising();
@@ -1141,6 +1157,7 @@ impl RootView {
 
     fn file_them(&mut self, pass: Pass, cx: &mut Context<Self>) {
         self.lower(&Armed::MoveTheFiles, cx);
+
         let typed = self
             .settings_fields
             .read(cx)
@@ -1194,6 +1211,7 @@ impl RootView {
             .text()
             .trim()
             .to_owned();
+
         if given == cx.global::<ResonateApp>().organise_as {
             return;
         }
@@ -1388,6 +1406,7 @@ impl RootView {
 
 fn listed(summary: &RetagSummary) -> Option<Vec<gpui::AnyElement>> {
     let writes = &summary.retagging.writes;
+
     if writes.is_empty() {
         return None;
     }
@@ -1397,6 +1416,7 @@ fn listed(summary: &RetagSummary) -> Option<Vec<gpui::AnyElement>> {
         .take(WRITES_SHOWN)
         .map(|write| write_row(write).into_any_element())
         .collect();
+
     if let Some(rest) = writes
         .len()
         .checked_sub(WRITES_SHOWN)
@@ -1421,6 +1441,7 @@ fn write_row(write: &Written) -> Div {
 
 fn fields_of(write: &Written) -> String {
     let mut named: Vec<&str> = write.edits.iter().map(|edit| edit.field.as_str()).collect();
+
     if write.picture.is_some() {
         named.push(words::settings_library::cover_art());
     }
@@ -1444,6 +1465,7 @@ fn so_far(stats: RetagStats, writing: bool) -> String {
 fn written(summary: &RetagSummary) -> String {
     let stats = summary.stats;
     let retagging = &summary.retagging;
+
     if retagging.writes.is_empty() && retagging.passed_over.is_empty() && stats.unchanged == 0 {
         return words::settings_library::nothing_to_tag().to_owned();
     }
@@ -1463,6 +1485,7 @@ fn written(summary: &RetagSummary) -> String {
         .iter()
         .filter(|write| write.popularity.is_some())
         .count();
+
     let told = words::settings_library::retag_previewed(
         fields,
         stats.passed_over,
@@ -1594,6 +1617,7 @@ impl RootView {
         let refusal =
             unusable_as_the_vault(&looked, self.library.read(cx).roots(), music.as_deref());
         let folder = looked.folder;
+
         if let Some(refusal) = refusal {
             self.report(Notice::Trouble(refusal.to_owned()), cx);
             return;
@@ -1621,6 +1645,7 @@ impl RootView {
                 }
             });
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.shown.making_the_vault = making_the_vault);
     }
@@ -1717,6 +1742,7 @@ fn kept_so_far(stats: ImportStats) -> f32 {
 
 fn wanted_rows(summary: &ImportSummary) -> Vec<gpui::AnyElement> {
     let wanted = &summary.plan.wanted;
+
     if wanted.is_empty() {
         return vec![note(words::settings_library::nothing_to_keep()).into_any_element()];
     }
@@ -1806,6 +1832,7 @@ impl RootView {
                 Ok(Ok(None)) | Err(_) => return,
                 Ok(Err(error)) => {
                     tracing::error!(%error, "the folder picker could not be opened");
+
                     let reported = this.update(cx, |_, cx| {
                         toast::tell(
                             Notice::Trouble(words::settings_library::no_folder_picker().to_owned()),
@@ -1813,6 +1840,7 @@ impl RootView {
                         );
                     });
                     let _ = reported;
+
                     return;
                 }
             };
@@ -1833,10 +1861,12 @@ impl RootView {
 
     pub(crate) fn set_the_music_folder(&mut self, looked: Looked, cx: &mut Context<Self>) {
         let vault = self.library.read(cx).vault_root();
+
         if let Some(refusal) = unusable_as_the_music_folder(&looked, vault.as_deref()) {
             self.report(Notice::Trouble(refusal.to_owned()), cx);
             return;
         }
+
         let folder = looked.folder;
 
         cx.update_global::<ResonateApp, _>(|global, _| {
@@ -1850,6 +1880,7 @@ impl RootView {
             .roots()
             .iter()
             .any(|root| folder.starts_with(root));
+
         if !reached {
             self.library
                 .update(cx, |library, cx| library.add_roots(vec![folder], cx));
@@ -1873,6 +1904,7 @@ impl RootView {
         let busy = library.is_busy();
         let polling = library.is_polling();
         let stopping = library.is_stopping_poll();
+
         let held_back = busy || !library.can_poll(cx);
         let told = library.poll_stats().map(asked_of_the_inbox);
 
@@ -1947,6 +1979,7 @@ impl RootView {
 
     fn set_inbox(&mut self, looked: Looked, cx: &mut Context<Self>) {
         let folder = looked.folder;
+
         self.store(&Setting::Inbox(folder.clone()), cx);
         self.library
             .update(cx, |library, cx| library.set_inbox(Some(folder), cx));
@@ -2098,6 +2131,7 @@ mod tests {
         let vault = held.join("vault");
         let inside = vault.join("audio");
         let outside = held.join("music");
+
         std::fs::create_dir_all(&inside).expect("a writable temporary directory");
         std::fs::create_dir_all(&outside).expect("a writable temporary directory");
 
@@ -2125,9 +2159,11 @@ mod tests {
         let inside = root.join("archive");
         let dropped_into = music.join("archive");
         let beside = held.join("vault");
+
         for folder in [&inside, &dropped_into, &beside] {
             std::fs::create_dir_all(folder).expect("a writable temporary directory");
         }
+
         let roots = [root.clone()];
 
         let outside =

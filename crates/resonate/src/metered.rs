@@ -61,6 +61,7 @@ mod tests {
     fn a_build_with_no_settings_stops_lookups_on_a_metered_connection_and_holds_no_download() {
         let config = Config::default();
         let metering = Metering::new();
+
         let lookups = Gate::new(metering.clone(), !config.is_on(Switch::EnrichOnMetered));
         let downloads = Gate::new(metering.clone(), !config.is_on(Switch::DownloadOnMetered));
 
@@ -79,6 +80,7 @@ mod tests {
             ..Config::default()
         };
         let metering = Metering::new();
+
         let lookups = Gate::new(metering.clone(), !config.is_on(Switch::EnrichOnMetered));
         let downloads = Gate::new(metering.clone(), !config.is_on(Switch::DownloadOnMetered));
 

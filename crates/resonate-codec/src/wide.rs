@@ -108,10 +108,12 @@ pub(crate) enum Wide {
 impl Wide {
     pub(crate) fn at(from: &[u8]) -> Option<Self> {
         let marker = from.get(..ID_BYTES)?;
+
         if marker == RF64 || marker == BW64 {
             return (from.get(WAVE_AT..WAVE_AT + ID_BYTES) == Some(WAVE.as_slice()))
                 .then_some(Self::Rf64);
         }
+
         let wave = from.get(WAVE64_WAVE_AT..WAVE64_WAVE_AT + GUID_BYTES);
         (from.get(..GUID_BYTES) == Some(WAVE64_RIFF.as_slice())
             && wave == Some(WAVE64_WAVE.as_slice()))
@@ -247,9 +249,11 @@ impl Format {
         let field = |at: usize| -> Option<u16> {
             Some(u16::from_le_bytes(fields.get(at..at + 2)?.try_into().ok()?))
         };
+
         if fields.len() < FMT_PLAIN_BYTES {
             return decode_error("wide: the format chunk is cut short");
         }
+
         let (Some(tag), Some(count), Some(bits)) =
             (field(0), field(FMT_CHANNELS_AT), field(FMT_BITS_AT))
         else {
@@ -263,6 +267,7 @@ impl Format {
         let Some(rate) = rate else {
             return decode_error("wide: the format names no sample rate");
         };
+
         if count == 0 {
             return decode_error("wide: the format names no channels");
         }
@@ -274,14 +279,17 @@ impl Format {
                 if fields.len() < FMT_EXTENSIBLE_BYTES {
                     return decode_error("wide: an extensible format chunk is cut short");
                 }
+
                 let subformat = fields.get(FMT_SUBFORMAT_AT..FMT_EXTENSIBLE_BYTES);
                 let Some((kind, tail)) = subformat.and_then(|held| held.split_first_chunk::<2>())
                 else {
                     return decode_error("wide: an extensible format chunk is cut short");
                 };
+
                 if tail != SUBFORMAT_TAIL {
                     return unsupported_error("wide: the samples are in a form not read here");
                 }
+
                 let floats = match u16::from_le_bytes(*kind) {
                     PCM => false,
                     IEEE_FLOAT => true,
@@ -340,7 +348,9 @@ pub(crate) struct WideReader<'s> {
 impl<'s> WideReader<'s> {
     fn try_new(mut reader: MediaSourceStream<'s>, options: FormatOptions) -> Result<Self> {
         let mut header = [0_u8; WAVE64_HEADER_BYTES as usize];
+
         reader.read_buf_exact(&mut header[..RF64_HEADER_BYTES as usize])?;
+
         let wide = match Wide::at(&header) {
             Some(Wide::Rf64) => Wide::Rf64,
             _ => {
@@ -355,9 +365,12 @@ impl<'s> WideReader<'s> {
         let mut sizes = Sizes::default();
         let mut format = None;
         let mut chunk = [0_u8; WAVE64_CHUNK_HEADER_BYTES];
+
         for walked in 0..MOST_CHUNKS {
             let header = &mut chunk[..wide.chunk_header_bytes()];
+
             reader.read_buf_exact(header)?;
+
             let Some(held) = wide.chunk(header, &sizes) else {
                 return decode_error("wide: a chunk states a size the file cannot mean");
             };
@@ -372,6 +385,7 @@ impl<'s> WideReader<'s> {
                 Some(most) => {
                     let wanted = held.size.min(most);
                     let mut body = vec![0_u8; wanted as usize];
+
                     reader.read_buf_exact(&mut body)?;
                     reader.ignore_bytes(wide.padded(held.size) - wanted)?;
                     Some(body)
@@ -386,6 +400,7 @@ impl<'s> WideReader<'s> {
                     let Some(format) = format else {
                         return decode_error("wide: the data chunk comes before its format");
                     };
+
                     return Ok(Self::over(reader, wide, format, held.size, options));
                 }
                 _ => reader.ignore_bytes(wide.padded(held.size))?,
@@ -409,6 +424,7 @@ impl<'s> WideReader<'s> {
         let frames = data_bytes.min(held_bytes) / format.frame_bytes.max(1);
 
         let mut params = AudioCodecParameters::new();
+
         params
             .for_codec(format.codec)
             .with_sample_rate(format.rate.get())
@@ -422,6 +438,7 @@ impl<'s> WideReader<'s> {
         }
 
         let mut track = Track::new(TRACK);
+
         track
             .with_codec_params(CodecParameters::Audio(params))
             .with_time_base(TimeBase::new(NonZeroU32::MIN, format.rate))
@@ -446,6 +463,7 @@ impl<'s> WideReader<'s> {
 impl Scoreable for WideReader<'_> {
     fn score(mut stream: ScopedStream<&mut MediaSourceStream<'_>>) -> Result<Score> {
         let mut header = [0_u8; WAVE64_HEADER_BYTES as usize];
+
         stream.read_buf_exact(&mut header)?;
         Ok(match Wide::at(&header) {
             Some(_) => Score::Supported(255),
@@ -517,17 +535,20 @@ impl FormatReader for WideReader<'_> {
         let Ok(frame) = u64::try_from(required.get()) else {
             return seek_error(SeekErrorKind::OutOfRange);
         };
+
         if frame > self.frames {
             return seek_error(SeekErrorKind::OutOfRange);
         }
 
         let at = self.data_start + frame * self.frame_bytes;
+
         if self.reader.is_seekable() {
             self.reader.seek(SeekFrom::Start(at))?;
         } else {
             let Some(ahead) = at.checked_sub(self.reader.pos()) else {
                 return seek_error(SeekErrorKind::ForwardOnly);
             };
+
             self.reader.ignore_bytes(ahead)?;
         }
         Ok(SeekedTo {
@@ -544,9 +565,11 @@ impl FormatReader for WideReader<'_> {
     fn next_packet(&mut self) -> Result<Option<Packet>> {
         let at = self.reader.pos();
         let left = self.data_end.saturating_sub(at) / self.frame_bytes;
+
         if left == 0 {
             return Ok(None);
         }
+
         let frames = left
             .min(FRAMES_A_PACKET)
             .min((MOST_PACKET_BYTES / self.frame_bytes).max(1));

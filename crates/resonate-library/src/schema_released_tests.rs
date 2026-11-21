@@ -118,6 +118,7 @@ fn groups_learnt_with_no_length_are_owed_a_lookup_and_timed_ones_keep_theirs() {
 
 fn laid_at(steps: usize) -> Connection {
     let connection = Connection::open_in_memory().expect("a catalog in memory");
+
     configure(&connection, Role::Writing).expect("the pragmas apply");
 
     connection

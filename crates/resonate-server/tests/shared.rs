@@ -64,6 +64,7 @@ struct Shelf {
 impl Shelf {
     fn lacking(titles: &[&str]) -> Self {
         let shelf = Self::default();
+
         shelf.held.lock().holds_nothing_named =
             titles.iter().map(|title| (*title).to_owned()).collect();
 
@@ -72,11 +73,14 @@ impl Shelf {
 
     fn made(&self, name: &str, titles: &[&str]) -> LocalPlaylistId {
         let mut held = self.held.lock();
+
         held.next += 1;
+
         let at = LocalPlaylistId {
             id: held.next,
             created: held.next,
         };
+
         held.lists.push(Row {
             at,
             name: name.to_owned(),
@@ -92,6 +96,7 @@ impl Shelf {
 
     fn edit(&self, at: LocalPlaylistId, titles: &[&str]) {
         let mut held = self.held.lock();
+
         if let Some(row) = held.lists.iter_mut().find(|row| row.at == at) {
             row.entries = titles.iter().map(|title| Some(song(title))).collect();
         }
@@ -101,6 +106,7 @@ impl Shelf {
 
     fn renamed(&self, at: LocalPlaylistId, name: &str) {
         let mut held = self.held.lock();
+
         if let Some(row) = held.lists.iter_mut().find(|row| row.at == at) {
             row.name = name.to_owned();
         }
@@ -169,6 +175,7 @@ impl SharedCatalog for Shelf {
         editable: bool,
     ) -> Result<LocalShared, Refused> {
         let mut held = self.held.lock();
+
         let kept: Vec<Option<Recording>> = entries
             .iter()
             .filter(|recording| !held.holds_nothing_named.contains(&recording.title))
@@ -177,10 +184,12 @@ impl SharedCatalog for Shelf {
             .collect();
         let at = at.unwrap_or_else(|| {
             held.next += 1;
+
             let at = LocalPlaylistId {
                 id: held.next,
                 created: held.next,
             };
+
             held.lists.push(Row {
                 at,
                 name: name.to_owned(),
@@ -196,6 +205,7 @@ impl SharedCatalog for Shelf {
             .iter_mut()
             .find(|row| row.at == at)
             .ok_or(Refused::NotHere)?;
+
         row.name = name.to_owned();
         row.entries.clone_from(&kept);
         row.flagged = true;
@@ -216,9 +226,11 @@ impl SharedCatalog for Shelf {
         editable: bool,
     ) -> Result<Option<LocalShared>, Refused> {
         let mut held = self.held.lock();
+
         let Some(row) = held.lists.iter_mut().find(|row| row.at == at) else {
             return Ok(None);
         };
+
         row.flagged = true;
         row.editable = editable;
 
@@ -264,7 +276,9 @@ fn hosted_over(name: &str, store: impl FnOnce(&Path) -> Store) -> Hosted {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos())
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
+
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -284,6 +298,7 @@ fn hosted_over(name: &str, store: impl FnOnce(&Path) -> Store) -> Hosted {
         ..Limits::default()
     };
     let server = Server::new(store(&folder), limits);
+
     runtime.spawn(server.serve_web(listener, None));
 
     Hosted {
@@ -338,6 +353,7 @@ impl Doorman {
             .expect("listening");
         let address = listener.local_addr().expect("an address");
         let closing = Arc::new(AtomicU32::new(clean_closes));
+
         runtime.spawn(async move {
             while let Ok((client, _)) = listener.accept().await {
                 let closes_cleanly = closing
@@ -394,9 +410,12 @@ impl Hosted {
 fn standing_after_forcing(person: &Person, until: impl Fn(SharedStanding) -> bool) -> bool {
     let deadline = Instant::now() + SETTLES_WITHIN;
     let mut ever_too_old = false;
+
     while Instant::now() < deadline {
         person.shared.force();
+
         let standing = shown_on(person).first().map(|shown| shown.standing);
+
         ever_too_old |= standing == Some(SharedStanding::ServerTooOld);
         if standing.is_some_and(&until) {
             break;
@@ -411,8 +430,10 @@ fn standing_after_forcing(person: &Person, until: impl Fn(SharedStanding) -> boo
 fn one_clean_close_is_a_server_lost_and_not_a_server_too_old() {
     let hosted = hosted("closes");
     let door = Doorman::closing_then_passing_to(hosted.address, 2);
+
     let ada = hosted.person_through("Ada", &door);
     let list = ada.shelf.made("Mix", &["One"]);
+
     ada.shared.share(list).expect("shared");
 
     let ever_too_old = standing_after_forcing(&ada, |standing| standing == SharedStanding::Reached);
@@ -425,8 +446,10 @@ fn one_clean_close_is_a_server_lost_and_not_a_server_too_old() {
 fn a_server_that_closes_every_connection_reads_as_too_old() {
     let hosted = hosted("closes-always");
     let door = Doorman::closing_then_passing_to(hosted.address, u32::MAX);
+
     let ada = hosted.person_through("Ada", &door);
     let list = ada.shelf.made("Mix", &["One"]);
+
     ada.shared.share(list).expect("shared");
 
     let ever_too_old =
@@ -439,7 +462,9 @@ fn eventually(what: &str, person: &Person, done: impl Fn() -> bool) {
     let deadline = Instant::now() + SETTLES_WITHIN;
     while !done() {
         person.shared.force();
+
         assert!(Instant::now() < deadline, "{what} never happened");
+
         thread::sleep(Duration::from_millis(100));
     }
 }
@@ -469,7 +494,9 @@ fn two_sharing(
 ) -> (Person, LocalPlaylistId, Person, LocalPlaylistId) {
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", titles);
+
     let invites = ada.shared.share(list).expect("shared");
+
     assert!(
         invites.view.contains("server="),
         "a list on a server of its own names that server in its link"
@@ -484,12 +511,14 @@ fn two_sharing(
     );
 
     let ben = hosted.person("Ben", Shelf::default());
+
     ben.shared
         .join(&code_in(&invites.edit.expect("an edit link")), None)
         .expect("joined");
     eventually("Ben's copy arriving", &ben, || {
         shown_on(&ben).first().and_then(|shown| shown.at).is_some()
     });
+
     let theirs = local_of(&ben);
 
     (ada, list, ben, theirs)
@@ -503,6 +532,7 @@ fn someone_given_the_edit_link_holds_the_list_and_both_are_named_on_it() {
     eventually("the songs arriving", &ben, || {
         ben.shelf.titles_of(theirs) == Some(vec!["One".to_owned(), "Two".to_owned()])
     });
+
     assert_eq!(ben.shelf.named(theirs).as_deref(), Some("Mix"));
     assert!(ben.shelf.is_flagged(theirs));
     assert!(ada.shelf.is_flagged(list));
@@ -519,6 +549,7 @@ fn someone_given_the_edit_link_holds_the_list_and_both_are_named_on_it() {
 fn a_person_renamed_after_joining_is_renamed_on_the_list_they_joined() {
     let hosted = hosted("named-after-joining");
     let (ada, _list, ben, _theirs) = two_sharing(&hosted, &["One"]);
+
     eventually("Ada seeing Ben", &ada, || {
         shown_on(&ada)[0]
             .people
@@ -541,6 +572,7 @@ fn a_person_renamed_after_joining_is_renamed_on_the_list_they_joined() {
 fn a_name_told_again_is_not_written_again_to_a_list_that_already_carries_it() {
     let hosted = hosted("named-twice");
     let (ada, _list, ben, _theirs) = two_sharing(&hosted, &["One"]);
+
     eventually("Ada seeing Ben", &ada, || {
         shown_on(&ada)[0]
             .people
@@ -559,6 +591,7 @@ fn a_name_told_again_is_not_written_again_to_a_list_that_already_carries_it() {
 fn two_people_editing_at_once_keep_both_edits() {
     let hosted = hosted("merged");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One", "Two"]);
+
     eventually("the songs arriving", &ben, || {
         ben.shelf
             .titles_of(theirs)
@@ -574,6 +607,7 @@ fn two_people_editing_at_once_keep_both_edits() {
         "Two".to_owned(),
         "Ada's".to_owned(),
     ];
+
     eventually("Ada holding both edits", &ada, || {
         ada.shelf.titles_of(list).as_ref() == Some(&both)
     });
@@ -586,6 +620,7 @@ fn two_people_editing_at_once_keep_both_edits() {
 fn a_rename_reaches_the_other_person_and_a_song_removed_goes_from_both() {
     let hosted = hosted("renamed");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One", "Two"]);
+
     eventually("the songs arriving", &ben, || {
         ben.shelf
             .titles_of(theirs)
@@ -608,8 +643,10 @@ fn someone_lacking_a_song_keeps_it_on_the_list_for_everyone_else_and_is_told_of_
     let hosted = hosted("unheld");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One", "Rare", "Two"]);
+
     let invites = ada.shared.share(list).expect("shared");
     let ben = hosted.person("Ben", Shelf::lacking(&["Rare"]));
+
     ben.shared
         .join(&code_in(&invites.edit.expect("an edit link")), None)
         .expect("joined");
@@ -617,10 +654,13 @@ fn someone_lacking_a_song_keeps_it_on_the_list_for_everyone_else_and_is_told_of_
     eventually("Ben's copy arriving", &ben, || {
         shown_on(&ben).first().and_then(|shown| shown.at).is_some()
     });
+
     let theirs = local_of(&ben);
+
     eventually("what Ben holds arriving", &ben, || {
         ben.shelf.titles_of(theirs) == Some(vec!["One".to_owned(), "Two".to_owned()])
     });
+
     assert_eq!(shown_on(&ben)[0].unheld[0].title, "Rare");
 
     ben.shelf.edit(theirs, &["One", "Ben's", "Two"]);
@@ -641,12 +681,15 @@ fn a_view_link_follows_the_list_and_whatever_is_done_to_the_copy_it_comes_back_a
     let hosted = hosted("viewed");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One"]);
+
     let invites = ada.shared.share(list).expect("shared");
+
     eventually("the list reaching the server", &ada, || {
         shown_on(&ada)[0].owed == 0
     });
 
     let viewer = hosted.person("Viewer", Shelf::default());
+
     viewer
         .shared
         .join(&code_in(&invites.view), None)
@@ -657,10 +700,13 @@ fn a_view_link_follows_the_list_and_whatever_is_done_to_the_copy_it_comes_back_a
             .and_then(|shown| shown.at)
             .is_some()
     });
+
     let copy = local_of(&viewer);
+
     eventually("its songs arriving", &viewer, || {
         viewer.shelf.titles_of(copy) == Some(vec!["One".to_owned()])
     });
+
     assert!(!shown_on(&viewer)[0].may_edit);
 
     viewer.shelf.edit(copy, &["Vandalised"]);
@@ -673,6 +719,7 @@ fn a_view_link_follows_the_list_and_whatever_is_done_to_the_copy_it_comes_back_a
     eventually("the edit reaching the viewer", &viewer, || {
         viewer.shelf.titles_of(copy) == Some(vec!["One".to_owned(), "Two".to_owned()])
     });
+
     assert_eq!(
         ada.shelf.titles_of(list),
         Some(vec!["One".to_owned(), "Two".to_owned()]),
@@ -684,16 +731,21 @@ fn a_view_link_follows_the_list_and_whatever_is_done_to_the_copy_it_comes_back_a
 fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held() {
     let hosted = hosted("removed");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One"]);
+
     eventually("Ben holding the song before he is removed", &ben, || {
         ben.shelf.titles_of(theirs) == Some(vec!["One".to_owned()])
     });
+
     let cal = hosted.person("Cal", Shelf::default());
     let edit = ada.shared.shown()[0].invites.edit.clone().expect("a link");
+
     cal.shared.join(&code_in(&edit), None).expect("joined");
     eventually("Cal's copy arriving", &cal, || {
         shown_on(&cal).first().and_then(|shown| shown.at).is_some()
     });
+
     let cals = local_of(&cal);
+
     eventually("Ada seeing them both", &ada, || {
         shown_on(&ada)[0].people.len() == 3
     });
@@ -704,12 +756,15 @@ fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held(
         .iter()
         .find(|person| person.name == "Ben")
         .map(|person| person.member);
+
     let fresh = ada.shared.reset(space, removed).expect("reset");
+
     assert_ne!(fresh.edit.as_deref(), Some(edit.as_str()));
 
     eventually("Ben finding himself out", &ben, || {
         shown_on(&ben).is_empty()
     });
+
     assert!(
         !ben.shelf.is_flagged(theirs),
         "Ben's copy stays his own list"
@@ -726,6 +781,7 @@ fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held(
     eventually("an edit after the reset reaching Cal", &cal, || {
         cal.shelf.titles_of(cals) == Some(vec!["One".to_owned(), "After".to_owned()])
     });
+
     assert_eq!(
         ben.shelf.titles_of(theirs),
         Some(vec!["One".to_owned()]),
@@ -735,6 +791,7 @@ fn removing_someone_moves_everyone_else_and_leaves_them_only_the_copy_they_held(
 
 fn joined_by_edit_link(hosted: &Hosted, name: &str, edit: &str) -> Person {
     let person = hosted.person(name, Shelf::default());
+
     person.shared.join(&code_in(edit), None).expect("joined");
     eventually("the copy arriving", &person, || {
         shown_on(&person)
@@ -761,6 +818,7 @@ fn names_on(person: &Person) -> Vec<String> {
         .iter()
         .map(|shown| shown.name.clone())
         .collect();
+
     names.sort();
 
     names
@@ -771,13 +829,17 @@ fn a_reset_seats_someone_who_joined_since_this_device_last_read_the_list() {
     let hosted = hosted("reset-joined-since");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One"]);
+
     let invites = ada.shared.share(list).expect("shared");
     let edit = invites.edit.expect("an edit link");
 
     let ben = joined_by_edit_link(&hosted, "Ben", &edit);
     let bens = local_of(&ben);
+
     ben.shelf.edit(bens, &["One", "Two"]);
+
     let viewer = hosted.person("Viewer", Shelf::default());
+
     viewer
         .shared
         .join(&code_in(&invites.view), None)
@@ -789,7 +851,9 @@ fn a_reset_seats_someone_who_joined_since_this_device_last_read_the_list() {
     });
 
     let space = shown_on(&ada)[0].space;
+
     ada.shared.reset(space, None).expect("reset");
+
     let fresh = shown_on(&ada)[0].space;
 
     assert_ne!(fresh, space);
@@ -799,6 +863,7 @@ fn a_reset_seats_someone_who_joined_since_this_device_last_read_the_list() {
         Some(vec!["One".to_owned(), "Two".to_owned()]),
         "a song heard while resetting reached the catalog"
     );
+
     eventually("Ben moving to the new list", &ben, || {
         shown_on(&ben).first().map(|shown| shown.space) == Some(fresh)
     });
@@ -809,6 +874,7 @@ fn a_reset_meeting_an_earlier_reset_follows_it_and_still_removes_whom_it_was_ask
     let hosted = hosted("reset-overtaken");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One"]);
+
     let invites = ada.shared.share(list).expect("shared");
     let edit = invites.edit.expect("an edit link");
     let space = shown_on(&ada)[0].space;
@@ -817,15 +883,20 @@ fn a_reset_meeting_an_earlier_reset_follows_it_and_still_removes_whom_it_was_ask
     let cal = joined_by_edit_link(&hosted, "Cal", &edit);
     let dan = joined_by_edit_link(&hosted, "Dan", &edit);
     let eve = joined_by_edit_link(&hosted, "Eve", &edit);
+
     eventually("Cal seeing everyone", &cal, || {
         shown_on(&cal)[0].people.len() == 5
     });
 
     let bens = member_of(&ben);
     let dans = member_of(&dan);
+
     cal.shared.reset(space, Some(bens)).expect("Cal's reset");
+
     let cals_space = shown_on(&cal)[0].space;
+
     ada.shared.reset(space, Some(dans)).expect("Ada's reset");
+
     let adas_space = shown_on(&ada)[0].space;
 
     assert_ne!(cals_space, space);
@@ -854,6 +925,7 @@ fn a_reset_meeting_an_earlier_reset_follows_it_and_still_removes_whom_it_was_ask
 fn a_list_left_or_deleted_here_leaves_the_others_their_copy() {
     let hosted = hosted("left");
     let (ada, list, ben, theirs) = two_sharing(&hosted, &["One"]);
+
     eventually("Ada seeing Ben", &ada, || {
         shown_on(&ada)[0].people.len() == 2
     });
@@ -864,6 +936,7 @@ fn a_list_left_or_deleted_here_leaves_the_others_their_copy() {
         shown_on(&ada)[0].people.len() == 1
     });
     eventually("Ben's store letting go", &ben, || shown_on(&ben).is_empty());
+
     assert!(ada.shelf.titles_of(list).is_some());
 }
 
@@ -876,7 +949,9 @@ fn a_list_shared_with_no_server_reachable_waits_and_arrives_once_one_is() {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_nanos())
     ));
+
     fs::create_dir_all(&folder).expect("a scratch folder");
+
     let shelf = Arc::new(Shelf::default());
     let list = shelf.made("Mix", &["One"]);
     let shared = Shared::start(
@@ -891,11 +966,15 @@ fn a_list_shared_with_no_server_reachable_waits_and_arrives_once_one_is() {
     .expect("started");
 
     let invites = shared.share(list).expect("sharing needs no connection");
+
     assert!(invites.edit.is_some());
+
     let person = Person { shelf, shared };
+
     eventually("being told the server is away", &person, || {
         shown_on(&person)[0].standing == SharedStanding::Unreached
     });
+
     assert!(shown_on(&person)[0].owed > 0);
 }
 
@@ -904,10 +983,13 @@ fn what_is_held_is_shown_the_moment_the_service_starts() {
     let hosted = hosted("started");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One"]);
+
     ada.shared.share(list).expect("shared");
 
     let Person { shelf, shared } = ada;
+
     drop(shared);
+
     let again = hosted.person_on("Ada", shelf);
 
     assert_eq!(
@@ -921,15 +1003,19 @@ fn what_is_held_is_shown_the_moment_the_service_starts() {
             .first()
             .is_some_and(|shown| shown.standing == SharedStanding::Reached)
     });
+
     assert_eq!(shown_on(&again).len(), 1);
 }
 
 fn the_page_of(hosted: &Hosted) -> String {
     let mut asking = std::net::TcpStream::connect(hosted.address).expect("the server answers");
+
     asking
         .write_all(b"GET /s/ HTTP/1.1\r\nHost: resonate.test\r\n\r\n")
         .expect("asked");
+
     let mut answer = String::new();
+
     asking.read_to_string(&mut answer).expect("answered");
 
     answer
@@ -945,6 +1031,7 @@ fn the_reader_on(page: &str) -> &str {
 
 fn read_in_a_browser(hosted: &Hosted, reader: &str, code: &str) -> Option<String> {
     let script = hosted.folder.join("reading.js");
+
     fs::write(
         &script,
         format!(
@@ -953,12 +1040,14 @@ fn read_in_a_browser(hosted: &Hosted, reader: &str, code: &str) -> Option<String
         ),
     )
     .expect("the script written");
+
     let ran = Command::new("node")
         .arg(&script)
         .arg(code)
         .arg(format!("ws://{}/", hosted.address))
         .output()
         .ok()?;
+
     assert!(
         ran.status.success(),
         "{}",
@@ -978,10 +1067,13 @@ fn a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_sha
         eprintln!("skipped: no node to stand in for a browser");
         return;
     }
+
     let hosted = hosted("browsed");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One", "Two", "Three"]);
+
     let invites = ada.shared.share(list).expect("shared");
+
     eventually("the list reaching the server", &ada, || {
         shown_on(&ada)[0].owed == 0
     });
@@ -991,6 +1083,7 @@ fn a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_sha
         ada.shared.force();
         shown_on(&ada)[0].owed == 0 && shown_on(&ada)[0].name == "Road Trip"
     });
+
     let page = the_page_of(&hosted);
     let reader = the_reader_on(&page);
     let stands = format!(
@@ -1013,10 +1106,12 @@ fn a_browser_given_either_link_opens_the_list_as_it_stands_and_a_link_nobody_sha
         .as_deref(),
         Some(stands.as_str())
     );
+
     let nobodys = resonate_sync::shared::Access::minted()
         .and_then(|access| access.viewing())
         .expect("a key")
         .code();
+
     assert_eq!(
         read_in_a_browser(&hosted, reader, &nobodys).as_deref(),
         Some("{\"failed\":\"unknown\"}")
@@ -1033,20 +1128,26 @@ fn a_browser_given_the_link_of_a_list_shared_anew_is_told_it_moved() {
         eprintln!("skipped: no node to stand in for a browser");
         return;
     }
+
     let hosted = hosted("browsed-moved");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One"]);
+
     let invites = ada.shared.share(list).expect("shared");
+
     eventually("the list reaching the server", &ada, || {
         shown_on(&ada)[0].owed == 0
     });
+
     let space = shown_on(&ada)[0].space;
+
     ada.shared.reset(space, None).expect("reset");
     eventually("the list moving", &ada, || {
         shown_on(&ada)
             .first()
             .is_some_and(|shown| shown.space != space)
     });
+
     let page = the_page_of(&hosted);
 
     assert_eq!(
@@ -1059,6 +1160,7 @@ const SONGS_PAST_A_FRAMES_SHARE: usize = 6_000;
 
 fn a_title_deflate_hardly_shortens(seed: usize) -> String {
     const LETTERS: &[u8] = b"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789 ";
+
     let mut state = u64::try_from(seed)
         .expect("a seed")
         .wrapping_mul(0x9e37_79b9_7f4a_7c15)
@@ -1068,6 +1170,7 @@ fn a_title_deflate_hardly_shortens(seed: usize) -> String {
             state ^= state << 13;
             state ^= state >> 7;
             state ^= state << 17;
+
             let at = usize::try_from(state % LETTERS.len() as u64).expect("an index");
             char::from(LETTERS[at])
         })
@@ -1088,6 +1191,7 @@ fn a_list_past_a_frames_share_is_compacted_in_parts_and_someone_joining_reads_it
     let hosted = hosted_over("compacted-in-parts", |folder| {
         Store::open(&folder.join(kept_as)).expect("a store")
     });
+
     let watching =
         Store::open(&hosted.folder.join(kept_as)).expect("the server's store, read beside it");
     let titles = (0..SONGS_PAST_A_FRAMES_SHARE)
@@ -1097,12 +1201,16 @@ fn a_list_past_a_frames_share_is_compacted_in_parts_and_someone_joining_reads_it
 
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Long", &held);
+
     let invites = ada.shared.share(list).expect("shared");
+
     eventually("the list reaching the server", &ada, || {
         shown_on(&ada)[0].owed == 0
     });
+
     let space = shown_on(&ada)[0].space;
     let ben = hosted.person("Ben", Shelf::default());
+
     ben.shared
         .join(&code_in(&invites.edit.expect("an edit link")), None)
         .expect("joined");
@@ -1111,10 +1219,13 @@ fn a_list_past_a_frames_share_is_compacted_in_parts_and_someone_joining_reads_it
         &ben,
         || snapshot_bytes(&watching, space) > LARGEST_FRAME / 2,
     );
+
     let cat = hosted.person("Cat", Shelf::default());
+
     cat.shared
         .join(&code_in(&invites.view), None)
         .expect("joined");
+
     let held_by_cat = || {
         shown_on(&cat)
             .first()
@@ -1122,6 +1233,7 @@ fn a_list_past_a_frames_share_is_compacted_in_parts_and_someone_joining_reads_it
             .and_then(|at| cat.shelf.titles_of(at))
             .unwrap_or_default()
     };
+
     eventually("the whole list reaching Cat", &cat, || {
         held_by_cat().len() == SONGS_PAST_A_FRAMES_SHARE
     });
@@ -1174,8 +1286,10 @@ fn a_full_space(heard: &ToServer) -> Vec<FromServer> {
 fn a_compaction_finding_the_space_full_backs_off_and_the_round_still_ends_well() {
     let scripted = Scripted::answering(a_full_space);
     let hosted = hosted("full");
+
     let ada = hosted.person_reaching("Ada", scripted.address);
     let list = ada.shelf.made("Mix", &["One"]);
+
     ada.shared.share(list).expect("shared");
 
     eventually("a compaction asked", &ada, || {
@@ -1191,6 +1305,7 @@ fn a_compaction_finding_the_space_full_backs_off_and_the_round_still_ends_well()
             .skip_while(|heard| !matches!(heard, ToServer::Compact { .. }))
             .any(|heard| *heard == ToServer::Bye)
     });
+
     let compactions = scripted
         .heard()
         .iter()
@@ -1219,13 +1334,17 @@ fn firefox_runs_both_pages_under_their_policy_and_shows_the_list_a_real_link_nam
         eprintln!("skipped: {reason}");
         return;
     }
+
     let hosted = hosted("firefox");
     let ada = hosted.person("Ada", Shelf::default());
     let list = ada.shelf.made("Mix", &["One", "Two", "Three"]);
+
     let invites = ada.shared.share(list).expect("shared");
+
     eventually("the list reaching the server", &ada, || {
         shown_on(&ada)[0].owed == 0
     });
+
     let list_page = invites.view_page.expect("a page for the list");
     let list_code = code_in(&invites.view);
     let party = PartyKey::FirstToClaim(SyncKey::minted().expect("a key"));
@@ -1234,11 +1353,15 @@ fn firefox_runs_both_pages_under_their_policy_and_shows_the_list_a_real_link_nam
         .expect("a page for the party");
 
     let mut firefox = Firefox::headless(&hosted.folder.join("firefox"));
+
     firefox.open(&list_page);
+
     let listed = firefox.until("the list shown", WHAT_THE_LIST_PAGE_SHOWS, |shown| {
         shown["hidden"] == false
     });
+
     firefox.open(&party_page);
+
     let invited = firefox.page_says(WHAT_THE_PARTY_PAGE_SHOWS);
     let violations = firefox.policy_violations();
 

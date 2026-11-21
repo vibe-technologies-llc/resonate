@@ -11,11 +11,13 @@ const SECONDS_AN_HOUR: u64 = MINUTES_AN_HOUR * SECONDS_A_MINUTE;
 pub fn print(library: &Library, window: WindowArg, most: usize) -> Result<()> {
     let window = window.meaning();
     let counts = library.statistics(window)?;
+
     said!("{}", summarised(counts, window));
 
     if counts.plays == 0 {
         return Ok(());
     }
+
     let listened = library.most_listened(window, most)?;
     let MostListened {
         tracks,
@@ -46,6 +48,7 @@ fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
         words::stats::plays_heading(),
         words::stats::listened_heading(),
     ]);
+
     for row in rows {
         table.push(vec![
             row.name.clone(),
@@ -58,6 +61,7 @@ fn section<Id>(heading: &str, named: &'static str, rows: &[Listened<Id>]) {
 
 fn summarised(counts: Statistics, window: Window) -> String {
     let across = across(window);
+
     if counts.plays == 0 {
         return words::stats::nothing_played_across(across);
     }

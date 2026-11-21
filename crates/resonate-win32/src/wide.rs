@@ -18,6 +18,7 @@ impl Wide {
 
     pub(crate) fn of(text: &OsStr) -> Option<Self> {
         let units = units_of(text);
+
         if units.contains(&0) {
             return None;
         }

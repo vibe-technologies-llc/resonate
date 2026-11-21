@@ -41,6 +41,7 @@ pub(crate) fn playlist_named(client: &Client, list: &str) -> Result<Option<Linke
         return Ok(None);
     };
     let mut linked = first.linked;
+
     if let Some((asking, next)) = first.asking.zip(first.next) {
         continued(client, &asking, next, &mut linked.songs)?;
     }
@@ -105,10 +106,12 @@ fn continued(
     let url = format!("{}{BROWSE}{}", Host::Youtube.base(), asking.key);
     let mut asked = BTreeSet::new();
     let mut next = Some(first);
+
     while let Some(token) = next.take() {
         if songs.len() >= UPLOADS_AT_MOST || !asked.insert(token.clone()) {
             break;
         }
+
         let answered = client.posted_within::<Value>(
             Host::Youtube,
             LookupOp::FollowLink,
@@ -126,6 +129,7 @@ fn continued(
             }
         };
         let (more, after) = continuation_read(&document);
+
         if more.is_empty() {
             break;
         }
@@ -141,6 +145,7 @@ fn continuation_read(document: &Value) -> (Vec<ListedSong>, Option<String>) {
         return (Vec::new(), None);
     };
     let mut songs = Vec::new();
+
     uploads_in(answer, &mut songs);
 
     (songs, token_after(answer))
@@ -187,6 +192,7 @@ fn listed(page: &str) -> Option<Opening> {
     let name = stated(document.pointer(PLAYLIST_TITLE).and_then(Value::as_str))?;
 
     let mut songs = Vec::new();
+
     uploads_in(&document, &mut songs);
 
     Some(Opening {
@@ -267,10 +273,13 @@ fn clock_in(value: &Value) -> Option<Duration> {
 
 pub(crate) fn clock(text: &str) -> Option<Duration> {
     let parts: Vec<&str> = text.trim().split(':').collect();
+
     if !(2..=CLOCK_PARTS_AT_MOST).contains(&parts.len()) {
         return None;
     }
+
     let mut seconds = 0_u64;
+
     for part in parts {
         if part.is_empty() || !part.bytes().all(|digit| digit.is_ascii_digit()) {
             return None;
@@ -334,6 +343,7 @@ mod tests {
             ]
         });
         let mut songs = Vec::new();
+
         uploads_in(&page, &mut songs);
 
         assert_eq!(
@@ -373,7 +383,9 @@ mod tests {
                 version: "2.20261023.01.00".to_owned(),
             })
         );
+
         let next = first.next.expect("a continuation");
+
         assert!(next.starts_with("4qmFsgKBARIkVkxQTEZncXVMbkw1"));
         assert_eq!(
             listed(include_str!("../tests/fixtures/youtube_playlist.html"))

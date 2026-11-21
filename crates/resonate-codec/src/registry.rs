@@ -14,6 +14,7 @@ use crate::{
 
 static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
     let mut registry = CodecRegistry::new();
+
     symphonia::default::register_enabled_codecs(&mut registry);
     registry.register_audio_decoder::<Opus>();
     registry.register_audio_decoder::<Vorbis>();
@@ -24,6 +25,7 @@ static CODECS: LazyLock<CodecRegistry> = LazyLock::new(|| {
 
 static FORMATS: LazyLock<Probe> = LazyLock::new(|| {
     let mut probe = Probe::new();
+
     symphonia::default::register_enabled_formats(&mut probe);
     probe.register_format_at_tier::<Framed<'_, Mpeg>>(Tier::Preferred);
     probe.register_format_at_tier::<Framed<'_, Adts>>(Tier::Preferred);

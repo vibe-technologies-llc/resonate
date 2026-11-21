@@ -62,6 +62,7 @@ pub(crate) fn confirm_sink(player: &Player, wanted: Option<&NodeName>) {
     let Some(wanted) = wanted else {
         return;
     };
+
     if player
         .sinks_once_surveyed(SINK_TIMEOUT)
         .iter()
@@ -113,17 +114,20 @@ fn with_receiver_addresses(
     cast_at: &[String],
 ) -> Result<Config> {
     let mut config = config.clone();
+
     for address in renderers_at {
         let located = Located::parse(address).map_err(|source| Error::RendererAddress {
             address: address.clone(),
             source: Box::new(source),
         })?;
+
         config.renderers_at.insert(located);
     }
     for address in cast_at {
         let receiver = Given::parse(address).ok_or_else(|| Error::CastAddress {
             address: address.clone(),
         })?;
+
         config.cast_at.insert(receiver);
     }
     Ok(config)
@@ -166,7 +170,9 @@ pub(crate) fn learn_what_it_plays(
     };
 
     said!("{}", words::sinks::trying(sink.description.as_str()));
+
     let heard = rendering.learn(&sink.name)?;
+
     for (trial, verdict) in heard.learning.verdicts() {
         said!(
             "{}",
@@ -228,6 +234,7 @@ pub(crate) fn list_sinks(
     let mut sinks = surveyed::sinks()?;
     let config = with_receiver_addresses(config, renderers_at, cast_at)?;
     let asked = asked(renderers, renderers_at, cast_at);
+
     sinks.extend(Rendering::of(&config, wanted_sink(cli, &config).as_ref(), asked).sinks());
 
     let mut table = Table::new(vec![
@@ -251,7 +258,9 @@ pub(crate) fn list_sinks(
         );
 
         let mut formats = sink.formats.iter();
+
         let first = formats.next();
+
         table.push(vec![
             marker.to_owned(),
             sink.description.clone(),
@@ -308,6 +317,7 @@ fn comes_out_of(sink: &SinkInfo) -> String {
         Plugged::No => words::main::nothing_plugged_in(&port.description),
         Plugged::Yes => words::main::plugged_in(&port.description),
     };
+
     let volume = match port.hardware_volume {
         HardwareVolume::Unsaid => plugged,
         HardwareVolume::No => words::main::volume_in_software(plugged),

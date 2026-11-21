@@ -33,10 +33,10 @@ const RENAMED: u8 = 3;
 const MEMBER: u8 = 4;
 const LEFT: u8 = 5;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct EntryId(pub [u8; ENTRY_BYTES]);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct MemberId(pub [u8; MEMBER_BYTES]);
 
 impl fmt::Display for MemberId {
@@ -105,6 +105,7 @@ impl SharedOp {
 
 pub fn encoded_ops(ops: &[SharedOp]) -> Vec<u8> {
     let mut writer = Writer::new();
+
     writer.length(ops.len());
     for op in ops {
         writer.bytes(&encoded_op(op));
@@ -123,11 +124,15 @@ pub fn decoded_kept_ops(bytes: &[u8]) -> Result<Vec<SharedOp>> {
 
 fn decoded_at_most(bytes: &[u8], most: usize) -> Result<Vec<SharedOp>> {
     let mut reader = Reader::new(bytes);
+
     let count = reader.count_of(OP_AT_LEAST)?;
+
     if count > most {
         return Err(Error::Malformed(Malformed::Overlong { length: count }));
     }
+
     let mut ops = reserved(count);
+
     for _ in 0..count {
         if let Some(op) = decoded_op(reader.bytes(LARGEST_OP)?)? {
             ops.push(op);
@@ -140,6 +145,7 @@ fn decoded_at_most(bytes: &[u8], most: usize) -> Result<Vec<SharedOp>> {
 
 fn encoded_op(op: &SharedOp) -> Vec<u8> {
     let mut writer = Writer::new();
+
     match op {
         SharedOp::Added {
             entry,
@@ -202,6 +208,7 @@ fn encoded_op(op: &SharedOp) -> Vec<u8> {
 
 fn decoded_op(bytes: &[u8]) -> Result<Option<SharedOp>> {
     let mut reader = Reader::new(bytes);
+
     let op = match reader.byte()? {
         ADDED => SharedOp::Added {
             entry: EntryId(reader.fixed()?),
@@ -239,6 +246,7 @@ fn decoded_op(bytes: &[u8]) -> Result<Option<SharedOp>> {
         },
         _ => return Ok(None),
     };
+
     reader.done()?;
 
     Ok(Some(op))
@@ -248,6 +256,7 @@ fn placed(bytes: &[u8]) -> Result<Place> {
     let Some(last) = bytes.last() else {
         return Err(Error::Malformed(Malformed::Short { length: 0 }));
     };
+
     if *last == 0 {
         return Err(Error::Malformed(Malformed::NotAPlace));
     }
@@ -311,16 +320,19 @@ impl SharedList {
             | SharedOp::Moved { entry, .. }
             | SharedOp::Removed { entry, .. } => {
                 let before = self.rows.get(entry).cloned();
+
                 self.applied(op);
                 self.rows.get(entry) != before.as_ref()
             }
             SharedOp::Renamed { .. } => {
                 let before = self.name.clone();
+
                 self.applied(op);
                 self.name != before
             }
             SharedOp::Member { member, .. } | SharedOp::Left { member, .. } => {
                 let before = self.people.get(member).cloned();
+
                 self.applied(op);
                 self.people.get(member) != before.as_ref()
             }
@@ -382,6 +394,7 @@ impl SharedList {
                 }) else {
                     return;
                 };
+
                 person.keyed_first(*public);
                 if *stamp >= person.stamp {
                     person.name.clone_from(name);
@@ -400,6 +413,7 @@ impl SharedList {
                 }) else {
                     return;
                 };
+
                 person.left = Some(person.left.map_or(*stamp, |held| held.max(*stamp)));
             }
         }
@@ -408,6 +422,7 @@ impl SharedList {
     fn row_of(&mut self, entry: EntryId) -> Option<&mut Row> {
         if !self.rows.contains_key(&entry) && self.rows.len() >= ENTRIES_KEPT_AT_MOST {
             let largest = *self.rows.last_key_value()?.0;
+
             if entry > largest {
                 return None;
             }
@@ -420,6 +435,7 @@ impl SharedList {
     fn person_of(&mut self, member: MemberId, new: impl FnOnce() -> Person) -> Option<&mut Person> {
         if !self.people.contains_key(&member) && self.people.len() >= PEOPLE_KEPT_AT_MOST {
             let largest = *self.people.last_key_value()?.0;
+
             if member > largest {
                 return None;
             }
@@ -449,6 +465,7 @@ impl SharedList {
                 })
             })
             .collect();
+
         rows.sort_by(|one, other| {
             one.place
                 .cmp(&other.place)
@@ -490,6 +507,7 @@ impl SharedList {
 
     pub fn as_ops(&self) -> Vec<SharedOp> {
         let mut ops = Vec::with_capacity(self.rows.len() + self.people.len() + 1);
+
         if let Some((name, stamp)) = &self.name {
             ops.push(SharedOp::Renamed {
                 name: name.clone(),
@@ -596,6 +614,7 @@ mod tests {
             .map(|at| SharedOp::Added {
                 entry: EntryId({
                     let mut id = [0; ENTRY_BYTES];
+
                     id[..8].copy_from_slice(&u64::try_from(at).expect("a number").to_be_bytes());
                     id
                 }),
@@ -634,11 +653,13 @@ mod tests {
     fn a_list_keeps_only_so_many_entries_the_same_ones_whatever_order_the_ops_arrived_in() {
         let numbered = |at: usize| {
             let mut id = [0; ENTRY_BYTES];
+
             id[..8].copy_from_slice(&u64::try_from(at).expect("a number").to_be_bytes());
             EntryId(id)
         };
         let flood = ENTRIES_KEPT_AT_MOST + 50;
         let mut ops = Vec::new();
+
         for at in 0..flood {
             ops.push(SharedOp::Added {
                 entry: numbered(at),
@@ -661,6 +682,7 @@ mod tests {
                 });
             }
         }
+
         let mut forwards = SharedList::default();
         let mut backwards = SharedList::default();
         let mut interleaved = SharedList::default();
@@ -671,7 +693,9 @@ mod tests {
         for op in ops.iter().rev() {
             backwards.apply(op);
         }
+
         let (front, back) = ops.split_at(ops.len() / 2);
+
         for pair in front.iter().zip(back.iter().rev()) {
             interleaved.apply(pair.1);
             interleaved.apply(pair.0);
@@ -690,11 +714,13 @@ mod tests {
     fn a_list_keeps_only_so_many_people_the_same_ones_whatever_order_the_ops_arrived_in() {
         let numbered = |at: usize| {
             let mut id = [0; MEMBER_BYTES];
+
             id[..8].copy_from_slice(&u64::try_from(at).expect("a number").to_be_bytes());
             MemberId(id)
         };
         let flood = PEOPLE_KEPT_AT_MOST + 50;
         let mut ops = Vec::new();
+
         for at in 0..flood {
             ops.push(SharedOp::Member {
                 member: numbered(at),
@@ -717,6 +743,7 @@ mod tests {
                 });
             }
         }
+
         let mut forwards = SharedList::default();
         let mut backwards = SharedList::default();
         let mut interleaved = SharedList::default();
@@ -727,7 +754,9 @@ mod tests {
         for op in ops.iter().rev() {
             backwards.apply(op);
         }
+
         let (front, back) = ops.split_at(ops.len() / 2);
+
         for pair in front.iter().zip(back.iter().rev()) {
             interleaved.apply(pair.1);
             interleaved.apply(pair.0);
@@ -748,8 +777,11 @@ mod tests {
     #[test]
     fn a_count_of_ops_far_past_what_follows_reserves_no_more_than_a_little() {
         let mut writer = Writer::new();
+
         writer.length(30_000_000);
+
         let mut hostile = writer.finish();
+
         hostile.resize(hostile.len() + 30_000_000, 0);
 
         assert!(decoded_ops(&hostile).is_err());
@@ -818,8 +850,10 @@ mod tests {
         }
 
         let mut orders = Vec::new();
+
         for at in 0..items.len() {
             let mut rest = items.to_vec();
+
             let first = rest.remove(at);
             for mut order in every_order(&rest) {
                 order.insert(0, first.clone());
@@ -834,15 +868,18 @@ mod tests {
     fn however_the_records_cross_every_device_ends_on_the_same_list() {
         let history = a_busy_history();
         let mut merged = SharedList::default();
+
         for op in &history {
             merged.apply(op);
         }
 
         for order in every_order(&history[..7]) {
             let mut list = SharedList::default();
+
             for op in order.iter().chain(&history[7..]) {
                 list.apply(op);
             }
+
             assert_eq!(list, merged);
         }
 
@@ -855,6 +892,7 @@ mod tests {
         let history = a_busy_history();
         let mut once = SharedList::default();
         let mut twice = SharedList::default();
+
         for op in &history {
             once.apply(op);
             twice.apply(op);
@@ -917,11 +955,13 @@ mod tests {
     fn a_snapshot_is_the_list_whole() {
         let history = a_busy_history();
         let mut list = SharedList::default();
+
         for op in &history {
             list.apply(op);
         }
 
         let mut from_a_snapshot = SharedList::default();
+
         for op in decoded_ops(&encoded_ops(&list.as_ops())).expect("the ops read back") {
             from_a_snapshot.apply(&op);
         }
@@ -944,6 +984,7 @@ mod tests {
             member,
             stamp: stamp(2, 1),
         });
+
         assert_eq!(list.people().count(), 0);
 
         list.apply(&SharedOp::Member {
@@ -952,6 +993,7 @@ mod tests {
             public: [1; PUBLIC_BYTES],
             stamp: stamp(3, 1),
         });
+
         assert_eq!(list.people().count(), 1);
     }
 
@@ -973,6 +1015,7 @@ mod tests {
         let mut list = SharedList::default();
 
         list.apply(&theirs);
+
         let changed = list.apply(&forged);
         let (_, person) = list.people().next().expect("Ada is here");
 
@@ -1006,6 +1049,7 @@ mod tests {
         from_a_snapshot.apply(&joined);
         both.apply(&left);
         both.apply(&joined);
+
         let (_, person) = from_a_snapshot.people().next().expect("Ada is here");
 
         assert_eq!(person.public(), Some(&[1; PUBLIC_BYTES]));
@@ -1019,6 +1063,7 @@ mod tests {
             stamp: stamp(1, 1),
         });
         let mut writer = Writer::new();
+
         writer.length(2);
         writer.bytes(&[250, 1, 2, 3]);
         writer.bytes(&known);

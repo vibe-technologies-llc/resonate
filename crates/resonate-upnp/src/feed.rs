@@ -40,6 +40,7 @@ impl Ahead {
     fn narrowed_by(self, reading: Self) -> Self {
         let least = self.least.max(reading.least);
         let most = self.most.min(reading.most);
+
         if least > most {
             return reading;
         }
@@ -126,6 +127,7 @@ impl Feed {
         let served = self.served.load(Ordering::Acquire);
         let ahead = self.ahead_by(served, heard);
         let rate = NonZeroU32::new(self.spec.rate.hz()).unwrap_or(NonZeroU32::MIN);
+
         self.clock.note(
             GraphTime {
                 delay: i64::try_from(ahead).unwrap_or(i64::MAX),
@@ -152,6 +154,7 @@ impl Feed {
         };
         let mut kept = self.ahead.lock();
         let narrowed = kept.map_or(reading, |kept| kept.narrowed_by(reading));
+
         *kept = Some(narrowed);
         narrowed.middle()
     }
@@ -161,22 +164,29 @@ impl Feed {
         if head_only {
             return stream.write_all(self.answer_head().as_bytes());
         }
+
         let mine = self
             .connections
             .fetch_add(1, Ordering::AcqRel)
             .saturating_add(1);
+
         stream.write_all(self.answer_head().as_bytes())?;
+
         let (mut wire, head) = Wire::begin(&self.carriage, self.spec).map_err(io::Error::other)?;
+
         stream.write_all(&head)?;
 
         let Some(mut source) = self.taken(mine) else {
             return Ok(());
         };
+
         self.served.store(0, Ordering::Release);
         self.ended_at.store(NOT_ENDED, Ordering::Release);
         *self.ahead.lock() = None;
         self.pouring.fetch_add(1, Ordering::AcqRel);
+
         let poured = self.pour(stream, source.as_mut(), &mut wire, mine);
+
         self.pouring.fetch_sub(1, Ordering::AcqRel);
         *self.source.lock() = Some(source);
         poured
@@ -218,6 +228,7 @@ impl Feed {
         let rate = u64::from(self.spec.rate.hz());
         let stride = self.spec.bytes_per_frame().get() as usize;
         let quantum = (rate / QUANTA_A_SECOND).max(1);
+
         let mut ring = vec![0; quantum as usize * stride];
         let mut carried = Vec::new();
 
@@ -235,6 +246,7 @@ impl Feed {
             }
 
             let due = frames_in(from.elapsed(), rate);
+
             if sent > due {
                 thread::sleep(lasting(sent - due, rate).min(IDLE_TICK));
                 continue;
@@ -251,6 +263,7 @@ impl Feed {
             let mut written = wire
                 .carry(ring.get(..whole).unwrap_or_default(), pulled, &mut carried)
                 .map_err(io::Error::other)?;
+
             if !self.written(stream, &carried, mine)? {
                 return Ok(());
             }
@@ -261,6 +274,7 @@ impl Feed {
                 }
             }
             sent = sent.saturating_add(pulled);
+
             let served = self.served.fetch_add(written, Ordering::AcqRel) + written;
 
             if ending {
@@ -323,6 +337,7 @@ mod tests {
             TcpStream::connect(listener.local_addr().expect("an address")).expect("connects");
         let (mut served, _) = listener.accept().expect("accepts");
         let feed = Arc::clone(feed);
+
         let fetch = thread::spawn(move || {
             let _ = feed.serve(&mut served, false);
         });
@@ -333,6 +348,7 @@ mod tests {
         let until = Instant::now() + Duration::from_secs(10);
         while !ready() {
             assert!(Instant::now() < until, "never became ready");
+
             thread::sleep(Duration::from_millis(5));
         }
     }
@@ -341,25 +357,33 @@ mod tests {
     fn a_second_fetch_of_the_stream_counts_its_own_frames_from_zero() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("binds");
         let feed = silent_feed();
+
         feed.set_active(true);
 
         let (first, first_fetch) = fetched_by_a_thread(&feed, &listener);
+
         waited_for(|| feed.served.load(Ordering::Acquire) > 10 * A_QUANTUM_OF_BYTES);
+
         let heard_by_the_first = feed.served.load(Ordering::Acquire);
 
         let (mut second, second_fetch) = fetched_by_a_thread(&feed, &listener);
+
         first_fetch.join().expect("the first fetch ends");
+
         let mut buffer = vec![0; 4096];
         let mut read = 0;
+
         while read < 2048 {
             read += second.read(&mut buffer).expect("the second fetch is read");
         }
+
         let counted = feed.served.load(Ordering::Acquire);
 
         assert!(
             counted < heard_by_the_first,
             "{counted} against {heard_by_the_first}"
         );
+
         feed.close();
         drop(first);
         second_fetch.join().expect("the second fetch ends");
@@ -369,27 +393,34 @@ mod tests {
     fn a_head_asked_while_the_stream_pours_is_answered_and_leaves_the_stream_pouring() {
         let listener = TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("binds");
         let feed = silent_feed();
+
         feed.set_active(true);
 
         let (first, first_fetch) = fetched_by_a_thread(&feed, &listener);
+
         waited_for(|| feed.served.load(Ordering::Acquire) > 10 * A_QUANTUM_OF_BYTES);
 
         let mut head =
             TcpStream::connect(listener.local_addr().expect("an address")).expect("connects");
         let (mut served, _) = listener.accept().expect("accepts");
+
         feed.serve(&mut served, true).expect("the head is answered");
         drop(served);
+
         let mut answered = String::new();
+
         head.read_to_string(&mut answered)
             .expect("the head is read");
 
         let before = feed.served.load(Ordering::Acquire);
+
         waited_for(|| feed.served.load(Ordering::Acquire) > before + 10 * A_QUANTUM_OF_BYTES);
 
         assert!(answered.starts_with("HTTP/1.1 200 OK"), "{answered}");
         assert!(!first_fetch.is_finished());
         assert_eq!(feed.fetches(), 1);
         assert!(feed.is_fetched());
+
         feed.close();
         drop(first);
         first_fetch.join().expect("the fetch ends");
@@ -397,6 +428,7 @@ mod tests {
 
     fn heard_by_a_renderer_counting_whole_seconds(feed: &Feed, at: Duration, behind: Duration) {
         let served = feed.frames_of(at.saturating_add(behind));
+
         feed.served.store(served, Ordering::Release);
         feed.heard_through(Duration::from_secs(at.as_secs()));
     }
@@ -412,8 +444,11 @@ mod tests {
         let within = feed.frames_of(HEARD_WITHIN);
 
         let first = Duration::from_millis(ASKED_AT_MILLIS[0]);
+
         heard_by_a_renderer_counting_whole_seconds(&feed, first, BEHIND);
+
         let after_one = feed.clock.latency().get();
+
         for at in ASKED_AT_MILLIS
             .into_iter()
             .skip(1)
@@ -421,6 +456,7 @@ mod tests {
         {
             heard_by_a_renderer_counting_whole_seconds(&feed, at, BEHIND);
         }
+
         let after_all = feed.clock.latency().get();
 
         assert!(
@@ -440,9 +476,12 @@ mod tests {
 
         feed.served.store(10 * rate, Ordering::Release);
         feed.heard_through(Duration::from_millis(8_250));
+
         let finer = feed.clock.latency().get();
+
         feed.served.store(20 * rate, Ordering::Release);
         feed.heard_through(Duration::from_millis(19_500));
+
         let moved = feed.clock.latency().get();
 
         assert_eq!(finer, feed.frames_of(Duration::from_millis(1_750)));

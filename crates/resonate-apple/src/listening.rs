@@ -72,6 +72,7 @@ unsafe extern "C-unwind" fn told(
     token: *mut c_void,
 ) -> i32 {
     let nudge = NUDGES.lock().get(&token.addr()).cloned();
+
     if let Some(nudge) = nudge {
         let _ = panic::catch_unwind(AssertUnwindSafe(|| nudge()));
     }
@@ -89,7 +90,9 @@ impl Listening {
     fn to(object: u32, what: Told, nudge: Nudge) -> Result<Self> {
         let address = what.address();
         let token = NEXT_TOKEN.fetch_add(1, Ordering::Relaxed);
+
         NUDGES.lock().insert(token, nudge);
+
         let status = unsafe {
             AudioObjectAddPropertyListener(
                 object,

@@ -12,6 +12,7 @@ pub(crate) fn terms(order: &str) -> Vec<Term<'_>> {
     let mut terms = Vec::new();
     let mut depth = 0_usize;
     let mut began = 0;
+
     for (at, letter) in order.char_indices() {
         match letter {
             '(' => depth += 1,
@@ -65,6 +66,7 @@ impl Seek {
             order: ordered(untied),
             ..Self::default()
         };
+
         for (term, held) in terms.iter().zip(key) {
             match held {
                 Value::Null => seek.holding(format!("({}) IS NULL", term.expression), None),
@@ -87,6 +89,7 @@ pub(crate) fn seeks(terms: &[Term<'_>], key: &[Value]) -> Vec<Seek> {
         true => "<=",
         false => ">=",
     };
+
     at_the_row.holding(
         format!("({}) {from_the_row} ?", own_term.expression),
         Some(own_key),
@@ -98,6 +101,7 @@ pub(crate) fn seeks(terms: &[Term<'_>], key: &[Value]) -> Vec<Seek> {
         for past in past(term, held) {
             let untied = &terms[at + usize::from(past.ties)..];
             let mut seek = Seek::tied_on(&rest[..at], &rest_key[..at], untied);
+
             seek.holding(past.condition, past.bind);
             seeks.push(seek);
         }
@@ -228,6 +232,7 @@ mod tests {
         );
 
         let unkeyed = [Value::Null, Value::Null, Value::Integer(17)];
+
         assert_eq!(
             seeks(&order, &unkeyed),
             vec![

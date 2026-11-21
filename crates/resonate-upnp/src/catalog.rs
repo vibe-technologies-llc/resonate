@@ -29,7 +29,7 @@ const SONG: &str = "song-";
 
 const DIGITS_AT_MOST: usize = 20;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Shelf {
     Artists,
     Artist(ArtistId),
@@ -60,7 +60,7 @@ impl Shelf {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Object {
     Root,
     Shelf(Shelf),
@@ -144,7 +144,7 @@ impl Page {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Held {
     pub shelf: Shelf,
     pub title: String,
@@ -153,7 +153,7 @@ pub struct Held {
     pub cover: Option<AlbumId>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Song {
     pub id: TrackId,
     pub title: String,
@@ -171,13 +171,13 @@ pub struct Song {
     pub bits: Option<u16>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub enum Entry {
     Shelf(Held),
     Song(Song),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq)]
 pub struct Shelved {
     pub held: Vec<Entry>,
     pub total: u32,
@@ -193,7 +193,7 @@ pub struct Opened {
     pub content: Content,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Content {
     Untouched,
     Converted,
@@ -205,7 +205,7 @@ pub struct Picture {
     pub mime: &'static str,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Kind {
     Artist,
     Album,
@@ -235,7 +235,7 @@ impl Kind {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Field {
     Title,
     Artist,
@@ -243,7 +243,7 @@ pub enum Field {
     Genre,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Test {
     Is,
     IsNot,
@@ -267,7 +267,7 @@ pub enum Query {
     },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Within {
     Catalog,
     Artists,
@@ -320,7 +320,7 @@ pub trait Catalog: Send + Sync + 'static {
     fn revision(&self) -> u32;
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum AudioKind {
     Flac,
     Mp3,

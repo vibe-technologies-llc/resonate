@@ -12,7 +12,7 @@ pub(crate) const STEPS_HELD: usize = 32;
 
 pub(crate) const ROWS_HELD: usize = 50_000;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Edit {
     Started,
     Renamed,
@@ -61,7 +61,7 @@ impl Edit {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Maker {
     ThisRun,
     AModel,
@@ -221,6 +221,7 @@ pub(crate) fn overtaken(inner: &Inner, playlists: &[PlaylistId], names: &[String
                 .iter()
                 .any(|name| *name == playlist::folded(step.named()))
     };
+
     inner.steps().lock().retain(|step| !overtakes(step));
     inner.walked().lock().retain(|step| !overtakes(step));
 }
@@ -267,6 +268,7 @@ pub(crate) fn edited<T>(
         if edit != Edit::Discarded && synced::is_read_only(transaction, id)? {
             return Err(Error::PlaylistReadOnly(id));
         }
+
         let reached = reach.settled(transaction, id)?;
         let before = held_in(transaction, id, reached)?;
 
@@ -322,6 +324,7 @@ pub(crate) fn started_under_a_name_found<T>(
     let (step, value) = inner.write(|transaction| {
         let (id, name, value) = change(transaction)?;
         let left_at = modified_in(transaction, id)?;
+
         let step = offered::offered_if_asked(
             inner,
             transaction,
@@ -375,6 +378,7 @@ pub(crate) fn take_offered(inner: &Inner) -> Result<usize> {
     })?;
 
     let count = taken.len();
+
     for step in taken {
         note(inner, step);
     }
@@ -396,6 +400,7 @@ fn still_standing(transaction: &Transaction<'_>, newest_first: Vec<Step>) -> Res
             Some(at) => at,
             None => {
                 let standing = modified_in(transaction, step.playlist)?;
+
                 expected.push((step.playlist, Expected::At(standing)));
                 expected.len() - 1
             }
@@ -427,6 +432,7 @@ fn walk(
 ) -> Result<Option<Undoable>> {
     let (step, behind) = {
         let mut steps = from.lock();
+
         let Some(step) = steps.pop() else {
             return Ok(None);
         };
@@ -442,6 +448,7 @@ fn walk(
         }
 
         let standing = standing_in(transaction, id, step.named(), back)?;
+
         match &step.standing {
             Standing::Was(held) => restored(transaction, id, held, step.reached)?,
             Standing::Fresh(_) => discarded(transaction, id)?,
@@ -520,6 +527,7 @@ fn restored(
     reached: Reached,
 ) -> Result<()> {
     let name = PlaylistName::new(held.name.as_str());
+
     playlist::refuse_duplicate(transaction, &name, Some(id))?;
 
     let rows = held.rows.as_deref().unwrap_or_default();
@@ -553,6 +561,7 @@ fn rewritten_within(
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
 
     let holds = rows.len() as i64;
+
     if holds != leaves {
         playlist::closed_up(transaction, id, first + leaves, leaves - holds)?;
     }
@@ -576,6 +585,7 @@ fn rewritten_from(
         .map_err(|source| Error::store(StoreOp::Delete, source))?;
 
     let landing = playlist::tail(transaction, id)?;
+
     for (position, row) in (landing..).zip(rows) {
         playlist::insert(transaction, id, position, row)?;
     }

@@ -115,6 +115,7 @@ impl StatisticsPane {
                 pane.take_what_landed(&library, cx);
             }),
         };
+
         pane.take_what_landed(library, cx);
 
         pane
@@ -124,6 +125,7 @@ impl StatisticsPane {
         let (counts, heard) = library.update(cx, |library, _| {
             (library.take_the_counts(), library.take_what_was_heard())
         });
+
         if counts.is_none() && heard.is_none() {
             return;
         }
@@ -163,6 +165,7 @@ impl Chart {
     fn in_calendar(days: &[Day], now: SystemTime, calendar: &Calendar, at_most: usize) -> Self {
         let today = calendar.day_of(now);
         let this_year = CivilDate::of_day(today).year;
+
         let dated = |at: SystemTime| {
             let day = calendar.day_of(at);
             Dated {
@@ -178,6 +181,7 @@ impl Chart {
             let (Some(first), Some(last)) = (run.first(), run.last()) else {
                 continue;
             };
+
             bars.push(Bar {
                 first: dated(first.at),
                 last: dated(last.at),
@@ -197,11 +201,13 @@ impl Chart {
             .max()
             .unwrap_or(Duration::ZERO);
         let ceiling = tallest.as_secs_f32();
+
         if ceiling > 0.0 {
             for bar in &mut bars {
                 bar.share = (bar.listened.as_secs_f32() / ceiling).clamp(0.0, 1.0);
             }
         }
+
         let average = u32::try_from(bars.len())
             .ok()
             .filter(|drawn| *drawn > 0)
@@ -419,6 +425,7 @@ impl RootView {
         let scroll = pane.scroll.clone();
         let window = self.library.read(cx).window();
         let nothing = counts.plays == 0;
+
         let heard = Heard {
             counts,
             listened: &listened,
@@ -470,6 +477,7 @@ impl RootView {
         cx: &mut Context<Self>,
     ) -> Div {
         let mut windows = kit::segmented();
+
         for (index, offered) in Window::ALL.into_iter().enumerate() {
             windows = windows.child(
                 self.in_the_pane_ring(
@@ -488,6 +496,7 @@ impl RootView {
                 ),
             );
         }
+
         let chosen = sorting::shape(words::statistics::window()).child(windows);
 
         kit::heading()
@@ -642,6 +651,7 @@ impl RootView {
             None => framed_cover(None, side).into_any_element(),
         };
         let mut drawn: Vec<AnyElement> = Vec::new();
+
         if let Some(track) = listened.tracks.first() {
             drawn.push(
                 number_one(
@@ -687,6 +697,7 @@ impl RootView {
         if drawn.is_empty() {
             return None;
         }
+
         let across = if wide { NUMBER_ONES_ACROSS } else { 1 };
 
         Some(kit::ledger(across, drawn))
@@ -704,6 +715,7 @@ impl RootView {
         let shares = shares_of(&rows.iter().map(|held| held.listened).collect::<Vec<_>>());
         let scroll = self.statistics.read(cx).scroll.clone();
         let mut listed = div().flex().flex_col().p_1();
+
         for (rank, held) in rows.iter().enumerate() {
             let reached = self.reaches(Shift::Listing(Listed::Heard), reached_from + rank, cx);
             let art = pictured(self, held, cx);
@@ -713,6 +725,7 @@ impl RootView {
                 art,
             };
             let drawn = self.listened_row(kind, placed, held, opens(held.id), cx);
+
             listed = listed.child(reorder::marked(drawn, reached).when(reached, |row| {
                 row.child(kit::brought_into_view(
                     scroll.clone(),
@@ -728,9 +741,11 @@ impl RootView {
 
     pub(crate) fn heard_rows(&self, cx: &App) -> usize {
         let pane = self.statistics.read(cx);
+
         if pane.counts.plays == 0 {
             return 0;
         }
+
         let listened = &pane.most_listened;
 
         listened.tracks.len() + listened.albums.len() + listened.artists.len()
@@ -745,16 +760,20 @@ impl RootView {
     pub(crate) fn open_what_was_heard_at(&mut self, row: usize, cx: &mut Context<Self>) {
         let listened = Arc::clone(&self.statistics.read(cx).most_listened);
         let tracks = listened.tracks.len();
+
         let albums = tracks + listened.albums.len();
+
         if let Some(heard) = listened.tracks.get(row) {
             let ids: Vec<_> = listened.tracks.iter().map(|held| held.id).collect();
             let found = self.library.read(cx).held_tracks(&ids);
             let Some(start) = found.iter().position(|track| track.id == heard.id) else {
                 return;
             };
+
             self.play(&found, start, cx);
             return;
         }
+
         let opened = match row.checked_sub(albums) {
             Some(at) => listened
                 .artists
@@ -780,6 +799,7 @@ impl RootView {
     ) -> Div {
         let Placing { rank, share, art } = placed;
         let name = SharedString::from(held.name.clone());
+
         let named = match opens {
             Some((selection, saying)) => div()
                 .flex()
@@ -876,6 +896,7 @@ fn side_by_side(wide: bool, one: impl IntoElement, other: impl IntoElement) -> D
 fn the_headline(wide: bool, counts: Statistics, habits: &Habits, days_spanned: usize) -> Div {
     let reading = format::heard_for(counts.listened);
     let pace = the_pace_of(counts.listened, habits.rhythm.days_heard, days_spanned);
+
     let listened = div()
         .id("statistics-headline")
         .read_plainly(&words::statistics::time_listened_said(&pace, &reading))
@@ -959,6 +980,7 @@ fn a_count(id: &'static str, named: &'static str, reading: String) -> Stateful<D
 
 fn moments(wide: bool, rhythm: &Rhythm, this_year: i64) -> Option<Div> {
     let mut drawn: Vec<AnyElement> = Vec::new();
+
     if let Some(busiest) = rhythm.busiest_day {
         drawn.push(moment(
             "busiest-day",
@@ -991,6 +1013,7 @@ fn moments(wide: bool, rhythm: &Rhythm, this_year: i64) -> Option<Div> {
             words::statistics::the_day_heard_most().to_owned(),
         ));
     }
+
     let across = if wide {
         drawn.len()
     } else {
@@ -1028,6 +1051,7 @@ fn listed_days(chart: &Chart) -> Stateful<Div> {
         .items_end()
         .h(px(theme::chart_height()))
         .gap(px(theme::CHART_BAR_GAP));
+
     for (index, bar) in chart.bars.iter().copied().enumerate() {
         bars = bars.child(drawn_bar(
             index,
@@ -1068,6 +1092,7 @@ fn charted(chart: &Chart) -> Div {
             ))
         })
         .child(listed_days(chart));
+
     let scale = div()
         .flex()
         .flex_col()
@@ -1204,6 +1229,7 @@ fn listed_columns(
         .items_end()
         .h(px(theme::rhythm_height()))
         .gap(px(theme::CHART_BAR_GAP));
+
     for (at, column) in columns.into_iter().enumerate() {
         bars = bars.child(a_standing_bar(
             (bar_id, at),
@@ -1316,8 +1342,10 @@ fn genres_heard(genres: &[Ranked]) -> Div {
         .id("genres-most-heard")
         .named_as(Role::List, words::statistics::genres_most_heard(), "")
         .gap_3();
+
     for (at, (genre, share)) in genres.iter().zip(shares).enumerate() {
         let heard = format::heard_for(genre.listened);
+
         listed = listed.child(
             div()
                 .id(("genre-heard", at))
@@ -1478,8 +1506,11 @@ mod tests {
         for title in ["Echoes", "Money", "Time"] {
             folder.tone(&format!("{title}.wav"), 1);
         }
+
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, folder);
+
         let track = library
             .tracks(&TrackQuery::default())
             .expect("the scanned tracks")
@@ -1488,6 +1519,7 @@ mod tests {
             .track_played(&track.location, track.span, Duration::ZERO)
             .expect("the catalog counts the play")
             .expect("the catalog holds the row");
+
         library
             .listened(counted.listen, Duration::from_secs(90))
             .expect("the catalog keeps the time");
@@ -1498,6 +1530,7 @@ mod tests {
     fn statistics_shown(cx: &mut TestAppContext, folder: &Folder) -> (Driven, TrackId) {
         let (library, track) = heard_once(folder);
         let mut driven = Driven::opened_in(cx, library, folder);
+
         driven.click("tab-statistics");
         driven.until(|root, cx| root.heard_rows(cx) == 1);
 
@@ -1510,6 +1543,7 @@ mod tests {
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
         const TAB_STOPS_AT_MOST: usize = 64;
+
         let root = driven.root.clone();
         (0..TAB_STOPS_AT_MOST).any(|_| {
             driven.cx.simulate_keystrokes("tab");
@@ -1525,6 +1559,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (library, _) = heard_once(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
 
         assert_eq!(driven.read(|root, cx| root.heard_rows(cx)), 0);
@@ -1552,8 +1587,11 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (library, _) = heard_once(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
+
         driven.settle();
 
         driven.read(|root, cx| {
@@ -1606,6 +1644,7 @@ mod tests {
         let (mut driven, track) = statistics_shown(cx, &folder);
 
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(
             reached_at(&mut driven),
             Some((Shift::Listing(Listed::Heard), 0))
@@ -1626,6 +1665,7 @@ mod tests {
             tabbed_onto(&mut driven, "statistics-window-2"),
             "tab never reached the year's window"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.until(|root, cx| root.library.read(cx).window() == Window::Year);
 
@@ -1633,6 +1673,7 @@ mod tests {
             tabbed_onto(&mut driven, "open-wrapped"),
             "tab never reached Wrapped"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.until(|root, _| {
             root.social.wrapped.is_some() || root.social.reading_wrapped.is_some()
@@ -1642,9 +1683,13 @@ mod tests {
     #[gpui::test]
     fn a_catalog_nothing_was_heard_from_ranks_nothing(cx: &mut TestAppContext) {
         let folder = Folder::new();
+
         folder.tone("Echoes.wav", 1);
+
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
 
         driven.click("tab-statistics");
@@ -1652,7 +1697,9 @@ mod tests {
 
         assert_eq!(driven.read(|root, cx| root.heard_rows(cx)), 0);
         assert!(driven.cx.debug_bounds("open-wrapped").is_some());
+
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(reached_at(&mut driven), None);
     }
 
@@ -1705,6 +1752,7 @@ mod tests {
 
         let east = Calendar::fixed(TWO_HOURS_EAST).expect("a fixed offset is a zone");
         let today = east.day_of(now());
+
         let days = [
             Day {
                 at: east.midnight_of(today - 1),
@@ -1936,13 +1984,16 @@ mod tests {
     #[test]
     fn no_two_windows_are_named_or_read_alike() {
         let mut named: Vec<&str> = Window::ALL.into_iter().map(spelled).collect();
+
         let held = named.len();
+
         named.sort_unstable();
         named.dedup();
 
         assert_eq!(held, named.len(), "two windows answer to one name");
 
         let mut read: Vec<&str> = Window::ALL.into_iter().map(across).collect();
+
         read.sort_unstable();
         read.dedup();
 

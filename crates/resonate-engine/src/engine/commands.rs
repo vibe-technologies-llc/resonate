@@ -81,11 +81,13 @@ impl Engine {
         let kind = command.kind();
         let begun = self.openings_begun;
         let now = self.queue.revision();
+
         let outcome = match queue_seen {
             Some(seen) if seen != now => Err(Error::QueueChanged { seen, now }),
             _ => self.apply(command),
         };
         let outcome = self.carried_on_past_a_stranded_row(outcome);
+
         self.take_away_what_no_longer_follows();
 
         if outcome.is_ok() && self.opening.is_some() && self.openings_begun != begun {
@@ -103,6 +105,7 @@ impl Engine {
         let mut outcome = Some(outcome);
         for Deferred { kind, reply, .. } in mem::take(&mut self.deferred) {
             let outcome = outcome.take().unwrap_or(Ok(()));
+
             self.reply(kind, reply, outcome);
         }
     }
@@ -127,6 +130,7 @@ impl Engine {
         if let Err(error) = outcome.as_ref() {
             tracing::warn!(%error, ?kind, "command rejected");
         }
+
         let reply = match reply {
             Reply::Answered(reply) => Answering::Outcome(reply, outcome),
             Reply::Landed(reply) => {
@@ -138,6 +142,7 @@ impl Engine {
                 return;
             }
         };
+
         self.answers.push(Answer { kind, reply });
     }
 
@@ -187,10 +192,13 @@ impl Engine {
                 autoplay,
             } => {
                 self.stop();
+
                 let loaded = self.queue.load(items, start_at).is_some();
+
                 self.playing = autoplay && loaded;
                 if loaded && autoplay {
                     let started = self.start(Frames::ZERO);
+
                     return self.past_what_will_not_open(started);
                 }
                 Ok(())
@@ -220,8 +228,10 @@ impl Engine {
             }
             Command::Resume(resumption) => {
                 self.stop();
+
                 let at = resumption.at;
                 let resumed = self.queue.restore(resumption).is_some();
+
                 self.playing = false;
                 if resumed {
                     self.start(at)?;
@@ -276,6 +286,7 @@ impl Engine {
                 } else {
                     now.saturating_add(delta.unsigned_abs())
                 });
+
                 if self.lands_past_the_end(to) {
                     self.take_the_boundary_back();
                     return self.next();
@@ -291,6 +302,7 @@ impl Engine {
                 } else {
                     self.skipped_by_hand();
                     self.queue.retreat().ok_or(Error::QueueEmpty)?;
+
                     let started = self.start(Frames::ZERO);
                     self.past_what_will_not_open(started)
                 }

@@ -137,6 +137,7 @@ pub(crate) fn playlist_named(client: &Client, playlist: u64) -> Result<Option<Li
     };
     let counted = held.nb_tracks.unwrap_or_default();
     let mut tracks = held.tracks.map(|page| page.data).unwrap_or_default();
+
     while tracks.len() < counted.min(PLAYLIST_SONGS_AT_MOST) {
         let asked = format!(
             "{PLAYLIST}{playlist}/tracks?index={}&limit={PLAYLIST_SONGS_A_PAGE}",
@@ -146,6 +147,7 @@ pub(crate) fn playlist_named(client: &Client, playlist: u64) -> Result<Option<Li
         let Some(page) = page.filter(|page| !page.data.is_empty()) else {
             break;
         };
+
         tracks.extend(page.data);
     }
     tracks.truncate(PLAYLIST_SONGS_AT_MOST);
@@ -169,6 +171,7 @@ pub(crate) fn profile_named(client: &Client, user: u64) -> Result<Option<LinkedP
         return Ok(None);
     };
     let mut listed = Vec::new();
+
     loop {
         let asked = format!(
             "{USER}{user}/playlists?index={}&limit={PROFILE_PLAYLISTS_A_PAGE}",
@@ -179,6 +182,7 @@ pub(crate) fn profile_named(client: &Client, user: u64) -> Result<Option<LinkedP
             break;
         };
         let last = page.next.is_none();
+
         listed.extend(page.data);
         if last || listed.len() >= PROFILE_PLAYLISTS_AT_MOST {
             break;
@@ -216,10 +220,13 @@ pub(crate) fn artist(url: &str) -> Option<u64> {
         .strip_prefix(SECURE)
         .or_else(|| url.strip_prefix("http://"))?;
     let (host, path) = rest.split_once('/')?;
+
     if host != "deezer.com" && !host.ends_with(".deezer.com") {
         return None;
     }
+
     let mut segments = path.split(['/', '?', '#']);
+
     segments.find(|segment| *segment == "artist")?;
     segments.next()?.parse().ok()
 }
@@ -311,6 +318,7 @@ impl TrackDoc {
             .collect();
         let title = named(self.title.as_deref());
         let artist = named(self.artist.as_ref().map(|credited| credited.name.as_str()));
+
         if isrcs.is_empty() && (title.is_none() || artist.is_none()) {
             return None;
         }
@@ -518,6 +526,7 @@ mod tests {
             artist: Some("The Orbiters".to_owned()),
             ..echoes(None)
         };
+
         assert_eq!(first_answering(&elsewhere), None);
     }
 
@@ -601,6 +610,7 @@ mod tests {
     #[test]
     fn an_artist_deezer_pictured_names_the_picture_on_its_own_host() {
         let held = read(include_str!("../tests/fixtures/deezer_artist.json"));
+
         assert_eq!(
             held.pictured(),
             Some(
@@ -619,10 +629,12 @@ mod tests {
             read(include_str!("../tests/fixtures/deezer_no_data.json")).pictured(),
             None
         );
+
         let elsewhere = ArtistDoc {
             name: None,
             picture_big: Some("https://example.com/picture.jpg".to_owned()),
         };
+
         assert_eq!(elsewhere.pictured(), None);
     }
 }

@@ -165,6 +165,7 @@ pub(crate) fn bindings(system: OperatingSystem) -> Vec<KeyBinding> {
         KeyBinding::new(chord!(redo_also).on(system), Redo, inside),
         KeyBinding::new("enter", Submit, inside),
     ];
+
     if system == OperatingSystem::Mac {
         bindings.extend(edited_as_a_mac_expects(inside));
     }
@@ -222,6 +223,7 @@ impl Field {
         cx: &mut Context<Self>,
     ) -> Self {
         let focus = cx.focus_handle().tab_stop(true);
+
         cx.on_focus(&focus, window, |this, _, cx| this.take_the_caret(cx))
             .detach();
         cx.on_blur(&focus, window, |this, _, cx| this.drop_the_caret(cx))
@@ -309,9 +311,11 @@ impl Field {
             self.blink = cx.spawn(async move |this, cx| {
                 loop {
                     let half = cx.update(|cx| cx.global::<ResonateApp>().caret.half());
+
                     cx.background_executor()
                         .timer(half.unwrap_or(STEADY_LOOKS_AGAIN_AFTER))
                         .await;
+
                     let shown = this.update(cx, |this, cx| {
                         this.lit = half.is_none() || !this.lit;
                         cx.notify();
@@ -421,6 +425,7 @@ impl Field {
                         Removal::WordBackward => Motion::Start,
                         _ => Motion::End,
                     };
+
                     self.edit.go(toward, Anchor::Extend);
                 }
                 self.edit.remove(Removal::Backward);
@@ -452,6 +457,7 @@ impl Field {
         let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) else {
             return;
         };
+
         if self.catches.is_some_and(|catches| catches(&text)) {
             cx.emit(Caught(text.trim().to_owned()));
             return;
@@ -481,6 +487,7 @@ impl Field {
 
     fn put_on_clipboard(&self, cx: &mut Context<Self>) -> bool {
         let selected = self.edit.selected();
+
         if selected.is_empty() || self.shown == Shown::Masked {
             return false;
         }
@@ -490,6 +497,7 @@ impl Field {
 
     fn press(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         window.focus(&self.focus, cx);
+
         let at = self.index_at(event.position);
 
         match event.click_count {
@@ -513,6 +521,7 @@ impl Field {
         }
 
         let to = self.index_at(at);
+
         if to == self.edit.cursor() {
             return;
         }
@@ -528,6 +537,7 @@ impl Field {
         if self.edit.content().is_empty() {
             return 0;
         }
+
         let Some(painted) = self.painted.as_ref() else {
             return 0;
         };
@@ -568,6 +578,7 @@ fn one_line(text: &str) -> String {
 fn offset_of(text: &str, utf16: usize) -> usize {
     let mut counted = 0;
     let mut at = 0;
+
     for character in text.chars() {
         if counted >= utf16 {
             break;
@@ -581,6 +592,7 @@ fn offset_of(text: &str, utf16: usize) -> usize {
 fn utf16_of(text: &str, offset: usize) -> usize {
     let mut counted = 0;
     let mut at = 0;
+
     for character in text.chars() {
         if counted >= offset {
             break;
@@ -691,6 +703,7 @@ impl EntityInputHandler for Field {
         _cx: &mut Context<Self>,
     ) -> Option<String> {
         let range = self.range_from_utf16(&range);
+
         adjusted.replace(self.range_to_utf16(&range));
         self.edit
             .content()
@@ -733,6 +746,7 @@ impl EntityInputHandler for Field {
     ) {
         let target = self.target_of(range);
         let text = one_line(text);
+
         if self.marked.is_some() {
             self.edit.replace(target, &text);
             self.edit.end_the_composing();
@@ -753,14 +767,17 @@ impl EntityInputHandler for Field {
     ) {
         let target = self.target_of(range);
         let text = one_line(text);
+
         if self.marked.is_none() {
             self.edit.end_the_composing();
         }
+
         let placed = self.edit.replace(target, &text);
 
         self.marked = (!placed.is_empty()).then(|| placed.clone());
         if let Some(selected) = selected {
             let within = |utf16| (placed.start + offset_of(&text, utf16)).min(placed.end);
+
             self.edit
                 .select(within(selected.start)..within(selected.end));
         }
@@ -796,6 +813,7 @@ impl EntityInputHandler for Field {
         _cx: &mut Context<Self>,
     ) -> Option<usize> {
         let painted = self.painted.as_ref()?;
+
         painted.bounds.contains(&point).then_some(())?;
         Some(
             self.shown
@@ -951,6 +969,7 @@ impl Element for Line {
         cx: &mut App,
     ) -> (LayoutId, Self::RequestLayoutState) {
         let mut style = Style::default();
+
         style.size.width = relative(1.0).into();
         style.size.height = window.line_height().into();
         (window.request_layout(style, [], cx), ())
@@ -972,6 +991,7 @@ impl Element for Line {
         let focused = field.focus.is_focused(window);
         let lit = field.caret_is_lit();
         let content = field.edit.content();
+
         let drawn = |offset| field.shown.drawn_at(content, offset);
         let selection = drawn(field.edit.selection().start)..drawn(field.edit.selection().end);
         let cursor = drawn(field.edit.cursor());
@@ -987,6 +1007,7 @@ impl Element for Line {
         } else {
             (SharedString::from(field.shown.text(content)), style.color)
         };
+
         let runs = runs_for(&text, colour, marked.as_ref(), &style.font());
 
         let line = window
@@ -1043,6 +1064,7 @@ impl Element for Line {
         cx: &mut App,
     ) {
         let focus = self.field.read(cx).focus.clone();
+
         window.handle_input(
             &focus,
             ElementInputHandler::new(bounds, self.field.clone()),
@@ -1089,6 +1111,7 @@ impl Element for Line {
 impl Line {
     fn follow_the_pointer(&self, window: &mut Window) {
         let moved = self.field.clone();
+
         window.on_mouse_event(move |event: &MouseMoveEvent, phase, _, cx| {
             if phase == DispatchPhase::Bubble {
                 moved.update(cx, |field, cx| {
@@ -1098,6 +1121,7 @@ impl Line {
         });
 
         let released = self.field.clone();
+
         window.on_mouse_event(move |_: &MouseUpEvent, phase, _, cx| {
             if phase == DispatchPhase::Bubble {
                 released.update(cx, |field, _| field.release());
@@ -1169,10 +1193,12 @@ fn spread_of(
     cells.sort_by(|left, right| f32::from(left.0).total_cmp(&f32::from(right.0)));
 
     let mut spans: Vec<Range<Pixels>> = Vec::new();
+
     for (place, &(start, index)) in cells.iter().enumerate() {
         if !selection.contains(&index) {
             continue;
         }
+
         let end = cells.get(place + 1).map_or(width, |next| next.0);
         match spans.last_mut() {
             Some(last) if last.end == start => last.end = end,
@@ -1242,9 +1268,11 @@ mod tests {
 
         for (letter, (offset, _)) in content.char_indices().enumerate() {
             let drawn = letter * MASK.len_utf8();
+
             assert_eq!(masked.drawn_at(content, offset), drawn);
             assert_eq!(masked.content_at(content, drawn), offset);
         }
+
         assert_eq!(masked.drawn_at(content, content.len()), 4 * MASK.len_utf8());
         assert_eq!(
             masked.content_at(content, 4 * MASK.len_utf8()),
@@ -1263,6 +1291,7 @@ mod tests {
         cx: &mut Context<Field>,
     ) -> (Option<String>, Option<Range<usize>>) {
         let mut adjusted = None;
+
         let text = field.text_for_range(range, &mut adjusted, window, cx);
         (text, adjusted)
     }
@@ -1348,10 +1377,12 @@ mod tests {
         let (picked, jumped, removed) = masked
             .update(cx, |field, _, cx| {
                 field.hold(secret.to_owned(), cx);
+
                 let picked = field.word_selected_at(5);
 
                 field.edit.move_to(5);
                 field.go(Motion::WordRight, Anchor::Collapse, cx);
+
                 let jumped = field.edit.cursor();
 
                 field.edit.move_to(5);

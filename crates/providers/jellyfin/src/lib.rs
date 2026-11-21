@@ -110,6 +110,7 @@ struct Session {
 impl Session {
     fn url(&self, path: &str, asked: &[(&str, &str)]) -> String {
         let mut url = format!("{}{path}?api_key={}", self.root, escaped(&self.token));
+
         for (name, value) in asked {
             let _ = write!(url, "&{name}={}", escaped(value));
         }
@@ -337,20 +338,25 @@ impl Jellyfin {
         let mut retried = 0;
         loop {
             self.pacing.paced();
+
             let timeout = deadline
                 .map(|deadline| self.left_before(deadline, op))
                 .transpose()?;
             let response = self
                 .sent(agent, call, url, timeout)
                 .map_err(|error| self.unreachable(op, error))?;
+
             if response.status().is_success() {
                 return Ok(response);
             }
+
             let status = response.status().as_u16();
+
             if retried < RETRIES_AT_MOST && matches!(status, TOO_MANY_REQUESTS | UNAVAILABLE) {
                 let wait = retry_after_of(&response)
                     .unwrap_or(FIRST_RETRY_AFTER * (1 << retried))
                     .min(LONGEST_RETRY_AFTER);
+
                 tracing::debug!(
                     status,
                     ?wait,
@@ -400,6 +406,7 @@ impl Jellyfin {
         })
         .to_string();
         let url = format!("{root}/Users/AuthenticateByName");
+
         let response = self
             .called_within(&self.asking, op, &Call::SigningIn(&body), &url, deadline)
             .map_err(|error| match error {
@@ -424,6 +431,7 @@ impl Jellyfin {
 
     fn sign_in(&self, deadline: Option<Instant>) -> Result<Session> {
         let (plain, emby) = self.roots();
+
         if let Some(kept) = &self.server.kept {
             return Ok(Session {
                 flavour: flavour_of(&plain),
@@ -445,10 +453,13 @@ impl Jellyfin {
 
     fn session(&self, deadline: Option<Instant>) -> Result<Arc<Session>> {
         let mut held = self.session.lock();
+
         if let Some(session) = held.as_ref() {
             return Ok(Arc::clone(session));
         }
+
         let session = Arc::new(self.sign_in(deadline)?);
+
         *held = Some(Arc::clone(&session));
         Ok(session)
     }
@@ -510,6 +521,7 @@ impl Jellyfin {
     fn browsed<T: DeserializeOwned>(&self, url: impl Fn(&Session) -> String) -> Result<T> {
         let op = ProviderOp::Browse;
         let deadline = Instant::now() + self.patience.answered_within;
+
         let response = self.asked(&self.asking, op, &Call::Get, Some(deadline), url)?;
         let bytes = self.read_whole(op, response)?;
         self.document(&bytes, op)
@@ -522,11 +534,14 @@ impl Jellyfin {
 
     fn children(&self, parameters: Vec<(&'static str, String)>, limit: usize) -> Result<ItemsDoc> {
         let mut asked = parameters;
+
         asked.push(("Recursive", "true".to_owned()));
         asked.push(("Fields", ITEM_FIELDS.to_owned()));
         asked.push(("Limit", limit.to_string()));
+
         let op = ProviderOp::Browse;
         let deadline = Instant::now() + self.patience.answered_within;
+
         let response = self.asked(&self.asking, op, &Call::Get, Some(deadline), |session| {
             let asked: Vec<(&str, &str)> = asked
                 .iter()
@@ -540,6 +555,7 @@ impl Jellyfin {
 
     pub fn artists(&self) -> Result<Vec<Artist>> {
         let mut artists = Vec::new();
+
         for page in 0..ARTIST_PAGES_AT_MOST {
             let start = page * ARTISTS_A_PAGE;
             let listed: ItemsDoc = self.browsed(|session| {
@@ -556,10 +572,12 @@ impl Jellyfin {
                 )
             })?;
             let listed_here = listed.listed();
+
             let finished = match listed.total() {
                 Some(total) => start + ARTISTS_A_PAGE >= total,
                 None => listed_here < ARTISTS_A_PAGE,
             };
+
             artists.extend(listed.artists());
             if listed_here == 0 || finished {
                 break;
@@ -644,6 +662,7 @@ impl Jellyfin {
         let id = self.item_id(id, op)?;
         let call = if favoured { Call::Post } else { Call::Delete };
         let deadline = Instant::now() + self.patience.answered_within;
+
         let response = self.asked(&self.asking, op, &call, Some(deadline), |session| {
             session.url(&format!("/Users/{}/FavoriteItems/{id}", session.user), &[])
         })?;
@@ -666,6 +685,7 @@ impl Jellyfin {
         let id = self.item_id(cover, op)?;
         let side = side.to_string();
         let deadline = Instant::now() + self.patience.answered_within;
+
         let response = self.asked(&self.asking, op, &Call::Get, Some(deadline), |session| {
             session.url(
                 &format!("/Items/{id}/Images/Primary"),
@@ -674,6 +694,7 @@ impl Jellyfin {
         })?;
         let media_type = response.body().mime_type().map(str::to_owned);
         let bytes = self.read_whole(op, response)?;
+
         if is_a_document(media_type.as_deref()) {
             return Err(self.unreadable(op));
         }
@@ -686,6 +707,7 @@ impl Jellyfin {
             Named::Album(id) => Ok(self.album(id)?.songs),
             Named::Artist(id) => {
                 let mut songs = Vec::new();
+
                 for album in self.artist(id)?.albums {
                     songs.extend(self.album(&album.id)?.songs);
                 }
@@ -708,11 +730,14 @@ impl Jellyfin {
         let id = self.item_id(id, op)?;
         let url_of =
             |session: &Session| session.url(&format!("/Audio/{id}/stream"), &[("static", "true")]);
+
         let response = self.asked(&self.downloading, op, &Call::Get, None, url_of)?;
         let media_type = response.body().mime_type().map(str::to_owned);
+
         if is_a_document(media_type.as_deref()) {
             return Err(self.unreadable(op));
         }
+
         let session = self.session(None)?;
         let reader = Seeking::continuing(
             self.downloading.clone(),
@@ -886,6 +911,7 @@ mod tests {
             kept: None,
         });
         let url = session(&jellyfin.server.url).url("/Items", &[]);
+
         let refused = jellyfin
             .asking
             .get(&url)
@@ -905,12 +931,15 @@ mod tests {
 
         for odd in ["../Users", "a/b", "a?b", "a b", "%2e"] {
             let id = Id::new(odd).expect("an id");
+
             assert!(matches!(
                 jellyfin.item_id(&id, ProviderOp::Browse),
                 Err(Error::Unreadable { .. })
             ));
         }
+
         let id = Id::new("3f2a-9c_1").expect("an id");
+
         assert_eq!(
             jellyfin.item_id(&id, ProviderOp::Browse).ok(),
             Some("3f2a-9c_1")

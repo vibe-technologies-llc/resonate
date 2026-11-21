@@ -89,6 +89,7 @@ impl Library {
 
     pub fn artist_totals(&self, id: ArtistId) -> Result<ArtistTotals> {
         let mut sql = WHAT_AN_ARTIST_HOLDS.to_owned();
+
         if let Some(predicate) = self.music_filters().predicate("tracks") {
             sql.push_str(" AND ");
             sql.push_str(&predicate);
@@ -183,6 +184,7 @@ impl Library {
         let Some(artist) = self.inner.vocabulary()?.artist_named(&by.artist) else {
             return Ok(None);
         };
+
         let Some(searched) = by.searched_as(&artist) else {
             return Ok(None);
         };

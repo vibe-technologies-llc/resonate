@@ -241,6 +241,7 @@ fn listen(told: &Scrobble) -> Value {
 
 fn metadata(told: &Billed) -> Value {
     let mut additional = Map::new();
+
     additional.insert("media_player".to_owned(), Value::from(NAME));
     additional.insert("submission_client".to_owned(), Value::from(NAME));
     additional.insert(
@@ -270,6 +271,7 @@ fn metadata(told: &Billed) -> Value {
     }
 
     let mut metadata = Map::new();
+
     metadata.insert("artist_name".to_owned(), Value::from(told.artist.as_str()));
     metadata.insert("track_name".to_owned(), Value::from(told.title.as_str()));
     if let Some(album) = &told.album {
@@ -414,6 +416,7 @@ mod tests {
     #[test]
     fn a_listen_says_what_was_heard_when_and_nothing_the_catalog_does_not_hold() {
         let bare = listen(&told("Echoes"));
+
         assert_eq!(
             bare,
             json!({
@@ -453,8 +456,11 @@ mod tests {
             ..told("Echoes")
         });
         let metadata = &whole["track_metadata"];
+
         assert_eq!(metadata["release_name"], "Meddle");
+
         let additional = &metadata["additional_info"];
+
         assert_eq!(
             additional["recording_mbid"],
             "b1a9c0de-1111-4222-8333-444455556666"
@@ -482,6 +488,7 @@ mod tests {
             at: UNIX_EPOCH - Duration::from_secs(5),
             ..told("Echoes")
         });
+
         assert_eq!(early["listened_at"], 0);
     }
 }

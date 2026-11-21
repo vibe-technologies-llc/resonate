@@ -119,6 +119,7 @@ pub(crate) fn history_from(inner: &Inner, from: HistoryFrom, most: usize) -> Res
             .prepare_cached(sql)
             .map_err(|source| Error::store(StoreOp::Prepare, source))?;
         let held = matches!(from, HistoryFrom::Held(_));
+
         let rows = statement
             .query_map(params![after.cast_signed(), most], |row| {
                 let path: String = row.get(4)?;
@@ -175,6 +176,7 @@ pub(crate) fn bring_in(
 ) -> Result<BroughtIn> {
     let brought = inner.write(|transaction| {
         let mut brought = BroughtIn::default();
+
         for listen in heard {
             match credited(transaction, service, listen)? {
                 Landed::Credited => brought.credited += 1,
@@ -184,6 +186,7 @@ pub(crate) fn bring_in(
         }
         Ok(brought)
     })?;
+
     if brought.credited > 0 {
         inner.arrived();
     }
@@ -208,6 +211,7 @@ fn credited(
         return Ok(Landed::Unmatched);
     };
     let (start, _) = store::span_columns(cut.span);
+
     let track = transaction
         .query_row(
             THE_TRACK_CUT,
@@ -228,11 +232,13 @@ fn credited(
 
     let at = store::to_nanos(listen.at);
     let within = i64::try_from(SAME_LISTEN_WITHIN.as_nanos()).unwrap_or(i64::MAX);
+
     let held = transaction
         .query_row(HELD_AT_THAT_MOMENT, params![track, at, within], |row| {
             row.get::<_, bool>(0)
         })
         .map_err(|source| Error::store(StoreOp::Query, source))?;
+
     if held {
         return Ok(Landed::HeldAlready);
     }
@@ -248,12 +254,14 @@ fn credited(
         .at
         .duration_since(UNIX_EPOCH)
         .map_or(0, |since| since.as_secs().cast_signed());
+
     let inserted = transaction
         .execute(
             CREDITED,
             params![track, at, heard, service.name().as_bytes(), moment],
         )
         .map_err(|source| Error::store(StoreOp::Insert, source))?;
+
     if inserted == 0 {
         return Ok(Landed::HeldAlready);
     }

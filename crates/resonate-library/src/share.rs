@@ -234,6 +234,7 @@ fn asked_for<'a>(query: &'a str, name: &str) -> Option<&'a str> {
 
 pub(crate) fn escaped_for_a_path(url: &str) -> String {
     let mut escaped = String::with_capacity(url.len());
+
     for byte in url.bytes() {
         match byte {
             b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => {
@@ -274,6 +275,7 @@ pub(crate) fn shareable(inner: &Inner, track: TrackId) -> Result<Option<Shared>>
 
         let mut links =
             in_the_order_a_share_prefers(linked(connection, THE_RECORDINGS_OWN_LINKS, id)?);
+
         links.extend(in_the_order_a_share_prefers(linked(
             connection,
             THE_ALBUMS_LINKS,
@@ -315,6 +317,7 @@ fn linked(connection: &Connection, sql: &str, track: i64) -> Result<Vec<Link>> {
     let mut statement = connection
         .prepare(sql)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let held = statement
         .query_map(params![track], |row| {
             Ok((
@@ -485,6 +488,7 @@ mod tests {
             }],
             ..echoes()
         };
+
         assert_eq!(
             shared.written().as_deref(),
             Some("https://song.link/https%3A%2F%2Fopen.qobuz.com%2Ftrack%2F1%3Fx%3Dy")
@@ -521,6 +525,7 @@ mod tests {
             service: Service::Spotify,
             url: SPOTIFY.to_owned(),
         };
+
         let ordered = in_the_order_a_share_prefers(vec![deezer, spotify.clone()]);
 
         assert_eq!(ordered.first(), Some(&spotify));

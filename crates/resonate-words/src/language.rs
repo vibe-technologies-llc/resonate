@@ -7,7 +7,7 @@ use unic_langid::{CharacterDirection, LanguageIdentifier};
 
 static SPOKEN: AtomicUsize = AtomicUsize::new(Language::English.index());
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Language {
     #[default]
     English,
@@ -69,7 +69,7 @@ impl fmt::Display for Language {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub enum LanguageChoice {
     #[default]
     System,

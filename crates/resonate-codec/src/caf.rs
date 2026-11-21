@@ -51,6 +51,7 @@ struct Description {
 pub(crate) fn read<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
     let origin = source.stream_position().ok()?;
     let found = scan(source);
+
     if source.seek(SeekFrom::Start(origin)).is_err() {
         tracing::debug!("a CAF scan could not restore the stream position");
     }
@@ -62,10 +63,13 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
     let (Opened::Caf, header) = opened_first(source, start)? else {
         return None;
     };
+
     source
         .seek(SeekFrom::Start(header + CAFF.len() as u64))
         .ok()?;
+
     let version = read_exact::<2, S>(source)?;
+
     if u16::from_be_bytes(version) != FILE_VERSION {
         return None;
     }
@@ -74,10 +78,13 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
         .ok()?;
 
     let (id, size) = chunk_header(source)?;
+
     if id != *DESC || size != DESC_BYTES {
         return None;
     }
+
     let desc = description(source)?;
+
     if desc.bytes_per_packet.checked_mul(BITS_PER_BYTE).is_none() {
         return Some(Overflow::PacketBits {
             bytes_per_packet: desc.bytes_per_packet,
@@ -92,6 +99,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
     for _ in 0..MAX_CHUNKS {
         let (id, size) = chunk_header(source)?;
         let body = source.stream_position().ok()?;
+
         if id == *DATA {
             if size == UNKNOWN_SIZE {
                 return None;
@@ -105,7 +113,9 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S) -> Option<Overflow> {
         {
             return Some(overflow);
         }
+
         let next = body.checked_add(u64::try_from(size).ok()?)?;
+
         source.seek(SeekFrom::Start(next)).ok()?;
     }
 
@@ -135,6 +145,7 @@ fn frame_count(desc: Description, size: i64) -> Option<Overflow> {
     if desc.bytes_per_packet == 0 || desc.frames_per_packet == 0 {
         return None;
     }
+
     let audio = u64::try_from(size.checked_sub(EDIT_COUNT_BYTES)?).ok()?;
     let packets = audio / u64::from(desc.bytes_per_packet);
     packets
@@ -154,9 +165,11 @@ fn packet_table<S: Read + ?Sized>(
     if size < PAKT_HEADER_BYTES {
         return None;
     }
+
     let header = read_exact::<{ PAKT_HEADER_BYTES as usize }, S>(source)?;
     let total: [u8; 8] = header.get(..8)?.try_into().ok()?;
     let total = u64::try_from(i64::from_be_bytes(total)).ok()?;
+
     if desc.bytes_per_packet != 0 && desc.frames_per_packet != 0 {
         return None;
     }
@@ -167,6 +180,7 @@ fn packet_table<S: Read + ?Sized>(
         held,
     };
     let mut offset = 0_u64;
+
     for packets in 1..=total {
         let bytes = match desc.bytes_per_packet {
             0 => match variable_length(&mut entries) {
@@ -176,12 +190,15 @@ fn packet_table<S: Read + ?Sized>(
             },
             fixed => u64::from(fixed),
         };
+
         if desc.frames_per_packet == 0 && variable_length(&mut entries).is_none() {
             return (entries.limit() == 0).then(|| cut(packets - 1));
         }
+
         let Some(next) = offset.checked_add(bytes) else {
             return Some(Overflow::PacketOffset { packets });
         };
+
         offset = next;
     }
 
@@ -190,8 +207,10 @@ fn packet_table<S: Read + ?Sized>(
 
 fn variable_length<S: Read + ?Sized>(source: &mut S) -> Option<u64> {
     let mut value = 0_u64;
+
     for _ in 0..VARIABLE_LENGTH_BYTES_AT_MOST {
         let [byte] = read_exact::<1, S>(source)?;
+
         value |= u64::from(byte & VARIABLE_LENGTH_BITS);
         if byte & VARIABLE_LENGTH_MORE == 0 {
             return Some(value);
@@ -215,6 +234,7 @@ mod tests {
 
     fn desc(bytes_per_packet: u32, frames_per_packet: u32) -> Vec<u8> {
         let mut body = 44_100.0_f64.to_be_bytes().to_vec();
+
         body.extend_from_slice(b"lpcm");
         body.extend_from_slice(&0_u32.to_be_bytes());
         body.extend_from_slice(&bytes_per_packet.to_be_bytes());
@@ -226,6 +246,7 @@ mod tests {
 
     fn caf(bytes_per_packet: u32, frames_per_packet: u32, after: &[u8]) -> Vec<u8> {
         let mut file = CAFF.to_vec();
+
         file.extend_from_slice(&FILE_VERSION.to_be_bytes());
         file.extend_from_slice(&0_u16.to_be_bytes());
         chunk(
@@ -240,15 +261,19 @@ mod tests {
 
     fn data(declared: i64) -> Vec<u8> {
         let mut after = Vec::new();
+
         chunk(&mut after, DATA, declared, &[0; 8]);
         after
     }
 
     fn pakt(total: i64, entries: &[u8]) -> Vec<u8> {
         let mut body = total.to_be_bytes().to_vec();
+
         body.extend_from_slice(&[0; 16]);
         body.extend_from_slice(entries);
+
         let mut after = Vec::new();
+
         chunk(&mut after, PAKT, body.len() as i64, &body);
         after
     }
@@ -326,12 +351,14 @@ mod tests {
     fn a_packet_table_declaring_more_packets_than_its_chunk_holds_is_named() {
         let huge = [0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0x7f];
         let mut after = pakt(1_000, &[0x81, 0x00, 0x7f]);
+
         chunk(
             &mut after,
             DATA,
             4 + huge.len() as i64 * 2,
             &[[0; 4].as_slice(), &huge, &huge].concat(),
         );
+
         let file = caf(0, 1_024, &after);
 
         assert_eq!(
@@ -353,6 +380,7 @@ mod tests {
     #[test]
     fn a_caf_behind_bytes_that_are_not_one_is_still_read() {
         let mut file = b"junk".to_vec();
+
         file.extend_from_slice(&caf(0xd400_0000, 0, &[]));
 
         assert!(matches!(

@@ -92,7 +92,9 @@ impl Prescan {
         let size = byte_length(source, origin);
         let known = known.filter(|walked| Some(walked.size) == size);
         let mut window = Window::over(source, origin);
+
         let mut found = Self::read_knowing(&mut window, known.map(|walked| &walked.clusters));
+
         found.mpeg_frames = match known {
             Some(walked) => walked.mpeg_frames,
             None => window
@@ -141,6 +143,7 @@ impl Prescan {
 
 fn byte_length<S: Seek + ?Sized>(source: &mut S, origin: u64) -> Option<u64> {
     let length = source.seek(SeekFrom::End(0)).ok();
+
     source.seek(SeekFrom::Start(origin)).ok()?;
     length
 }
@@ -186,6 +189,7 @@ impl<'a, S: Read + Seek + ?Sized> Window<'a, S> {
         self.source.seek(SeekFrom::Start(self.position))?;
 
         let mut filled = 0;
+
         while filled < PRESCAN_WINDOW {
             let Some(room) = self.held.get_mut(filled..) else {
                 break;
@@ -209,7 +213,9 @@ impl<'a, S: Read + Seek + ?Sized> Window<'a, S> {
 
     fn straight_through(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         self.source.seek(SeekFrom::Start(self.position))?;
+
         let read = self.source.read(buf)?;
+
         self.position = self.position.saturating_add(read as u64);
         Ok(read)
     }
@@ -226,6 +232,7 @@ impl<S: Read + Seek + ?Sized> Read for Window<'_, S> {
 
         let unread = self.unread();
         let taking = unread.len().min(buf.len());
+
         buf[..taking].copy_from_slice(&unread[..taking]);
         self.position = self.position.saturating_add(taking as u64);
 
@@ -243,6 +250,7 @@ impl<S: Read + Seek + ?Sized> Seek for Window<'_, S> {
                 .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?,
             SeekFrom::End(by) => self.source.seek(SeekFrom::End(by))?,
         };
+
         self.position = landed;
 
         Ok(landed)
@@ -255,6 +263,7 @@ impl<S: Read + Seek + ?Sized> Seek for Window<'_, S> {
 
 pub(crate) fn read_exact<const N: usize, S: Read + ?Sized>(source: &mut S) -> Option<[u8; N]> {
     let mut bytes = [0_u8; N];
+
     source.read_exact(&mut bytes).ok()?;
     Some(bytes)
 }
@@ -264,6 +273,7 @@ pub(crate) fn past_id3<S: Read + Seek + ?Sized>(source: &mut S) -> Option<u64> {
     let Some(header) = read_exact::<10, S>(source) else {
         return Some(origin);
     };
+
     if !header.starts_with(ID3) {
         return Some(origin);
     }
@@ -288,12 +298,15 @@ pub(crate) fn opened_first<S: Read + Seek + ?Sized>(
     start: u64,
 ) -> Option<(Opened, u64)> {
     source.seek(SeekFrom::Start(start)).ok()?;
+
     let mut held: Vec<u8> = Vec::with_capacity(SEARCHED_AT_ONCE + LOOKED_PAST);
     let mut searched: u64 = 0;
     let mut chunk = [0_u8; SEARCHED_AT_ONCE];
     loop {
         let read = filled(source, &mut chunk);
+
         held.extend_from_slice(chunk.get(..read)?);
+
         let ended = read < SEARCHED_AT_ONCE;
         let settled = if ended {
             held.len()
@@ -301,12 +314,15 @@ pub(crate) fn opened_first<S: Read + Seek + ?Sized>(
             held.len().saturating_sub(LOOKED_PAST)
         };
         let within = usize::try_from(PROBED_WITHIN.saturating_sub(searched)).unwrap_or(usize::MAX);
+
         let found = (0..settled.min(within)).find_map(|at| {
             let opened = container_at(held.get(at..)?)?;
             Some((opened, at))
         });
+
         if let Some((opened, at)) = found {
             let at = searched + at as u64;
+
             if at > 0 {
                 tracing::debug!(
                     junk = at,
@@ -326,6 +342,7 @@ pub(crate) fn opened_first<S: Read + Seek + ?Sized>(
 
 fn container_at(from: &[u8]) -> Option<Opened> {
     let marker = from.get(..4)?;
+
     if marker == RIFF {
         return (from.get(WAVE_AT..WAVE_AT + 4) == Some(WAVE.as_slice())).then_some(Opened::Wave);
     }
@@ -380,6 +397,7 @@ fn adts_frame_length(header: &[u8]) -> Option<usize> {
     else {
         return None;
     };
+
     if sync != MPEG_SYNC || flags & ADTS_SYNC_MASK != ADTS_SYNC {
         return None;
     }
@@ -389,6 +407,7 @@ fn adts_frame_length(header: &[u8]) -> Option<usize> {
     if blocks & 0b11 != 0 {
         return None;
     }
+
     let length = (usize::from(channels & 0b11) << 11)
         | (usize::from(length_high) << 3)
         | usize::from(length_low >> 5);
@@ -403,6 +422,7 @@ fn adts_frame_length(header: &[u8]) -> Option<usize> {
 
 fn filled<S: Read + ?Sized>(source: &mut S, buf: &mut [u8]) -> usize {
     let mut filled = 0;
+
     while let Some(room) = buf.get_mut(filled..).filter(|room| !room.is_empty()) {
         match source.read(room) {
             Ok(0) => break,
@@ -464,8 +484,11 @@ mod tests {
         over.iter()
             .map(|(at, bytes)| {
                 source.seek(SeekFrom::Start(*at)).expect("a seek");
+
                 let mut held = vec![0_u8; *bytes];
+
                 let read = source.read(&mut held).expect("a read");
+
                 held.truncate(read);
                 held
             })
@@ -487,6 +510,7 @@ mod tests {
         let bytes = sawtooth(24 * 1024);
         let mut plain = Cursor::new(bytes.clone());
         let mut counting = Counting::over(bytes);
+
         let mut window = Window::over(&mut counting, 0);
 
         assert_eq!(walked(&mut window, &A_WALK), walked(&mut plain, &A_WALK));
@@ -496,10 +520,13 @@ mod tests {
     fn a_window_costs_fewer_reads_than_the_source_it_is_over() {
         let bytes = sawtooth(24 * 1024);
         let mut counting = Counting::over(bytes.clone());
+
         let mut window = Window::over(&mut counting, 0);
+
         let _ = walked(&mut window, &A_WALK);
 
         let mut bare = Counting::over(bytes);
+
         let _ = walked(&mut bare, &A_WALK);
 
         assert!(
@@ -514,10 +541,13 @@ mod tests {
     #[test]
     fn a_window_leaves_the_source_where_it_found_it() {
         let mut counting = Counting::over(sawtooth(4_096));
+
         counting.held.set_position(64);
 
         let mut window = Window::over(&mut counting, 64);
+
         let _ = walked(&mut window, &[(0, 16), (2_000, 16)]);
+
         window.rewind_the_source();
 
         assert_eq!(counting.held.position(), 64);
@@ -526,12 +556,14 @@ mod tests {
     #[test]
     fn a_window_reads_the_same_prescan_the_source_does() {
         let mut flac = b"fLaC".to_vec();
+
         flac.extend_from_slice(&[0x80, 0, 0, 4]);
         flac.extend_from_slice(&[1, 2, 3, 4]);
         flac.extend_from_slice(&sawtooth(64 * 1024));
 
         let length = flac.len() as u64;
         let mut counting = Counting::over(flac.clone());
+
         let buffered = Prescan::buffered(&mut counting, None);
 
         assert_eq!(buffered.walked.as_ref().map(Walked::size), Some(length));
@@ -551,6 +583,7 @@ mod tests {
 
     fn a_variable_rate_stream() -> Vec<u8> {
         let mut file = frames(AT_32, AT_32_LENGTH, 40);
+
         file.extend(frames(AT_320, AT_320_LENGTH, 60));
         file
     }
@@ -559,9 +592,11 @@ mod tests {
     fn a_walk_read_before_spares_the_frame_walk_of_a_file_of_the_same_size() {
         let file = a_variable_rate_stream();
         let mut walking = Counting::over(file.clone());
+
         let walked = Prescan::buffered(&mut walking, None);
 
         let mut sparing = Counting::over(file);
+
         let again = Prescan::buffered(&mut sparing, walked.walked.as_ref());
 
         assert_eq!(walked.mpeg_frames, Some(Frames(100 * 1_152)));
@@ -591,6 +626,7 @@ mod tests {
 
     fn frames(header: [u8; 4], length: usize, count: usize) -> Vec<u8> {
         let mut held = Vec::new();
+
         for _ in 0..count {
             held.extend_from_slice(&header);
             held.resize(held.len() + length - header.len(), 0);
@@ -609,6 +645,7 @@ mod tests {
             0xfc,
         ];
         let mut held = Vec::new();
+
         for _ in 0..count {
             held.extend_from_slice(&header);
             held.resize(held.len() + length - header.len(), 0);
@@ -618,6 +655,7 @@ mod tests {
 
     fn behind(stream: &[u8]) -> Vec<u8> {
         let mut file = stream.to_vec();
+
         file.extend_from_slice(b"RIFF\x24\x00\x00\x00WAVE");
         file
     }
@@ -665,6 +703,7 @@ mod tests {
         ];
         for (named, junk) in refused {
             let at = junk.len() as u64;
+
             assert_eq!(
                 opened(behind(&junk)),
                 Some((Opened::Wave, at)),

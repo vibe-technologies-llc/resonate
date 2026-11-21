@@ -81,6 +81,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return false;
         };
+
         self.edited(
             Wanted::Everything,
             Change::TakePressing,
@@ -117,6 +118,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
+
         self.edited(
             Wanted::Everything,
             Change::PlaceOn,
@@ -152,6 +154,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
+
         self.edited(
             Wanted::Everything,
             Change::TakeRecording,
@@ -196,6 +199,7 @@ impl LibraryModel {
         let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             return;
         };
+
         self.edited(
             Wanted::Everything,
             Change::ReadTheRest,
@@ -226,6 +230,7 @@ impl LibraryModel {
             return;
         };
         let title = track.title.clone();
+
         self.edited(
             Wanted::Everything,
             Change::ForgetDelivered,

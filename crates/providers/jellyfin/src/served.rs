@@ -310,6 +310,7 @@ mod tests {
         assert_eq!(items.total(), Some(3));
 
         let mut listed = items.items.into_iter();
+
         let artist = listed.next().and_then(ItemDoc::artist).expect("an artist");
         let album = listed.next().and_then(ItemDoc::album).expect("an album");
 

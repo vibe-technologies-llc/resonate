@@ -26,6 +26,7 @@ impl LibraryModel {
 
         self._edit = cx.spawn(async move |this, cx| {
             before.await;
+
             let deleted = cx
                 .background_executor()
                 .spawn(async move {

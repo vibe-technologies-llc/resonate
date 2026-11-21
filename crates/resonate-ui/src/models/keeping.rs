@@ -29,6 +29,7 @@ impl LibraryModel {
         let Some(song) = row.song().and_then(song_to_keep) else {
             return;
         };
+
         self.keep_what_was_pressed(
             move |library| {
                 Ok(match library.keep_song(song)? {
@@ -46,6 +47,7 @@ impl LibraryModel {
 
     pub(super) fn read_explored_queued(&mut self, cx: &mut Context<Self>) {
         let library = Arc::clone(&self.library);
+
         self.keeps._explored_queued = cx.spawn(async move |this, cx| {
             let read = cx
                 .background_executor()
@@ -64,10 +66,13 @@ impl LibraryModel {
 
     pub(crate) fn keep_explored(&mut self, song: ExploreOffer, cx: &mut Context<Self>) {
         let location = song.location.clone();
+
         self.keeps.explored_queued.insert(location.clone());
         cx.notify();
         self.library.deliver_into(delivery_folder(cx));
+
         let library = Arc::clone(&self.library);
+
         cx.spawn(async move |this, cx| {
             let pressed = cx
                 .background_executor()
@@ -108,13 +113,16 @@ impl LibraryModel {
         }
         cx.notify();
         self.library.deliver_into(delivery_folder(cx));
+
         let library = Arc::clone(&self.library);
+
         cx.spawn(async move |this, cx| {
             let pressed = cx
                 .background_executor()
                 .spawn(async move {
                     let mut queued = 0usize;
                     let mut held = 0usize;
+
                     for song in songs {
                         match library.keep_explored(song)? {
                             KeptSong::Queued => queued += 1,
@@ -175,6 +183,7 @@ impl LibraryModel {
         let ordered = cx
             .try_global::<ResonateApp>()
             .is_some_and(|app| app.online.youtube_music_keep_order);
+
         self.keep_what_was_pressed(
             move |library| {
                 let kept = library.keep_playlist(PlaylistToKeep {
@@ -194,7 +203,9 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         self.library.deliver_into(delivery_folder(cx));
+
         let library = Arc::clone(&self.library);
+
         cx.spawn(async move |this, cx| {
             let pressed = cx
                 .background_executor()
@@ -221,10 +232,13 @@ impl LibraryModel {
 
     pub(super) fn keep_what_was_left_queued(&mut self, cx: &mut Context<Self>) {
         let (online, youtube_music) = turned_on(cx);
+
         if !online {
             return;
         }
+
         let library = Arc::clone(&self.library);
+
         self.keeps._running = cx.spawn(async move |this, cx| {
             let queued =
                 cx.background_executor()
@@ -258,10 +272,12 @@ impl LibraryModel {
             return;
         }
         self.library.deliver_into(delivery_folder(cx));
+
         let providers = self.providers(cx);
         let stop = Arc::new(AtomicBool::new(false));
         let stopped = Arc::clone(&stop);
         let library = Arc::clone(&self.library);
+
         let began = thread::Builder::new()
             .name(KEEP_THREAD.to_owned())
             .spawn(move || {
@@ -279,6 +295,7 @@ impl LibraryModel {
                 return;
             }
         };
+
         self.keeps.pass = Some(KeepPass {
             stop,
             left: 0,
@@ -294,9 +311,11 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         let library = Arc::clone(&self.library);
+
         self.keeps._running = cx.spawn(async move |this, cx| {
             while !handle.is_finished() {
                 cx.background_executor().timer(KEEPS_LOOKED_AT_EVERY).await;
+
                 let reading = Arc::clone(&library);
                 let left = cx
                     .background_executor()
@@ -310,8 +329,10 @@ impl LibraryModel {
                     return;
                 }
             }
+
             let _ = this.update(cx, |this, cx| {
                 let ended = handle.join();
+
                 this.keep_pass_ended(ended, cx);
             });
         });
@@ -340,7 +361,9 @@ impl LibraryModel {
         let Some(pass) = self.keeps.pass.as_mut() else {
             return;
         };
+
         let settled_one = left < pass.left;
+
         if left != pass.left {
             pass.left = left;
             cx.notify();
@@ -360,6 +383,7 @@ impl LibraryModel {
             .pass
             .take()
             .is_some_and(|pass| pass.stop.load(Ordering::Relaxed));
+
         match ended {
             Ok(Ok(summary)) => {
                 self.keep_pass_answered(
@@ -426,6 +450,7 @@ impl LibraryModel {
     fn keep_again_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
         self.keeps._again = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(waiting).await;
+
             let _ = this.update(cx, |this, cx| this.keep_what_is_owed(cx));
         });
     }
@@ -438,6 +463,7 @@ impl LibraryModel {
         let Some(pass) = &self.keeps.pass else {
             return;
         };
+
         pass.stop.store(true, Ordering::Relaxed);
         self.keeps.owed = false;
         cx.notify();
@@ -446,6 +472,7 @@ impl LibraryModel {
     pub(super) fn ask_what_is_owed_after(&mut self, waiting: Duration, cx: &mut Context<Self>) {
         self.running._owed = cx.spawn(async move |this, cx| {
             cx.background_executor().timer(waiting).await;
+
             let _ = this.update(cx, |this, cx| {
                 if !this.running.work.is_busy() {
                     this.take_up_what_waited(cx);

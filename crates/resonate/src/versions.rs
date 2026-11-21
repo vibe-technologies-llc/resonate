@@ -6,6 +6,7 @@ pub(crate) fn played_as_chosen(library: Option<&Library>, items: Vec<QueueItem>)
         return items;
     };
     let queued: Vec<_> = items.iter().map(|item| item.id).collect();
+
     let chosen = match library.chosen_among(&queued) {
         Ok(chosen) => chosen,
         Err(error) => {
@@ -13,6 +14,7 @@ pub(crate) fn played_as_chosen(library: Option<&Library>, items: Vec<QueueItem>)
             return items;
         }
     };
+
     if chosen.is_empty() {
         return items;
     }
@@ -54,9 +56,11 @@ mod tests {
         let song = root.join("echoes.wav");
         let copy = root.join("elsewhere.wav");
         let other = root.join("time.wav");
+
         fs::write(&song, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a song");
         fs::write(&copy, tagged_wave(&[(TITLE, "Echoes"), (ARTIST, "Ada")])).expect("a copy");
         fs::write(&other, tagged_wave(&[(TITLE, "Time"), (ARTIST, "Ada")])).expect("a song");
+
         let library = fixtures::scanned(&root);
 
         let held = |path| {
@@ -67,10 +71,13 @@ mod tests {
                 .id
         };
         let (song_id, copy_id, other_id) = (held(&song), held(&copy), held(&other));
+
         library
             .choose_version(song_id, copy_id)
             .expect("a version chosen");
+
         let playlist = library.create_playlist("Evening").expect("a playlist");
+
         library
             .add_to_playlist(
                 playlist,
@@ -94,6 +101,7 @@ mod tests {
             queue_items(&library.playlist_entries(playlist, None).expect("the rows")),
         );
         let untouched = played_as_chosen(None, named.clone());
+
         fs::remove_dir_all(&root).expect("the scratch folder removed");
 
         for queued in [&played, &listed] {
@@ -102,6 +110,7 @@ mod tests {
             assert_eq!(queued[1].id, other_id);
             assert_eq!(queued[1].location, MediaLocation::local(&other));
         }
+
         assert_eq!(untouched, named);
     }
 }

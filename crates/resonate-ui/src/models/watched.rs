@@ -47,6 +47,7 @@ impl Watching {
 
     pub(super) fn following(mut self, library: &Library) -> Self {
         self.read_at = Some(Instant::now());
+
         let roots = match library.roots() {
             Ok(roots) => roots,
             Err(error) => {
@@ -56,7 +57,9 @@ impl Watching {
         };
         let (present, absent): (Vec<PathBuf>, Vec<PathBuf>) =
             roots.into_iter().partition(|root| root.is_dir());
+
         self.there = Some(!present.is_empty());
+
         let to_cover_again = self
             .watch
             .as_ref()
@@ -64,6 +67,7 @@ impl Watching {
             && self.laid_at.is_some_and(|at| {
                 at.elapsed() >= self.uncovered_wait.max(UNCOVERED_ROOTS_TRIED_AGAIN_AFTER)
             });
+
         if self.tried.as_deref() == Some(present.as_slice()) && self.watch.is_some() {
             if to_cover_again && let Some(watch) = self.watch.as_mut() {
                 watch.cover_again();
@@ -73,6 +77,7 @@ impl Watching {
             }
             return self;
         }
+
         let laid = match self.watch.take() {
             Some(previous) => RootsWatch::replacing(previous, &present),
             None => RootsWatch::over(&present),
@@ -83,6 +88,7 @@ impl Watching {
 
         if self.tried.is_some() {
             let returned = self.absent.iter().filter(|root| present.contains(root));
+
             self.returned.extend(returned.cloned());
         }
         self.absent = absent;
@@ -168,7 +174,9 @@ pub(super) fn load(
         Some(text) if asked.album.is_none() && asked.artist.is_none() => library.meant(text)?,
         Some(_) | None => None,
     };
+
     asked.meant = meant.as_ref().map(|meant| meant.searched.clone());
+
     let narrowing = asked.text.as_deref();
 
     let (browsed, grown) = match wanted {
@@ -259,11 +267,14 @@ fn pictures_of<'a>(
     playlists: impl Iterator<Item = &'a Playlist>,
 ) -> resonate_library::Result<AHashMap<PlaylistId, Arc<[AlbumId]>>> {
     let mut pictured = AHashMap::new();
+
     for playlist in playlists {
         if pictured.contains_key(&playlist.id) {
             continue;
         }
+
         let albums = library.playlist_pictures(playlist.id, PICTURED_AT_MOST)?;
+
         pictured.insert(playlist.id, Arc::from(albums));
     }
     Ok(pictured)
@@ -382,6 +393,7 @@ pub(super) fn grown(library: &Library, asked: &Asked) -> resonate_library::Resul
     let from = asked.held;
     let overlapping = |held: usize| held.saturating_sub(1);
     let limit = |held: usize| Some(asked.reach.saturating_sub(overlapping(held)).max(1));
+
     let tracks_after = |album, artist, reached: Reached| {
         let query = TrackQuery {
             offset: overlapping(reached.rows),
@@ -420,6 +432,7 @@ pub(super) fn refreshed_where_due(
     reference: &dyn Reference,
 ) -> Vec<(PlaylistId, resonate_library::Result<Option<FromTheLink>>)> {
     let mut read = Vec::new();
+
     match library.profiles_due_a_refresh(SystemTime::now()) {
         Ok(due) => {
             for profile in due {
@@ -485,6 +498,7 @@ pub(super) fn workers_beside(playing: bool) -> Option<NonZeroUsize> {
     if !playing {
         return None;
     }
+
     let cores = thread::available_parallelism().map_or(1, NonZeroUsize::get);
     NonZeroUsize::new(cores / 2).or(Some(NonZeroUsize::MIN))
 }
@@ -511,14 +525,19 @@ pub(super) fn grew<T: PartialEq>(held: &mut Rows<T>, from: usize, read: Vec<T>) 
     if held.len() != from {
         return Grew::Moved;
     }
+
     let mut read = read.into_iter();
+
     let Some(overlap) = read.next() else {
         return Grew::Moved;
     };
+
     if held.last() != Some(&overlap) {
         return Grew::Moved;
     }
+
     let after: Vec<T> = read.collect();
+
     if after.is_empty() {
         return Grew::Same;
     }
@@ -607,6 +626,7 @@ pub(super) fn browsed(
         None => None,
     };
     let paged = paged(library, asked)?;
+
     let matched_nothing = paged.albums.is_empty()
         && paged.artists.is_empty()
         && paged.tracks.is_empty()

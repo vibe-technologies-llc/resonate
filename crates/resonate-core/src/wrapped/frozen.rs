@@ -111,7 +111,9 @@ impl<'a> Reading<'a> {
         if self.0.len() < length {
             return Err(Unfrozen::Truncated);
         }
+
         let (taken, rest) = self.0.split_at(length);
+
         self.0 = rest;
 
         Ok(taken)
@@ -144,6 +146,7 @@ impl<'a> Reading<'a> {
     fn lasting(&mut self) -> Result<Duration, Unfrozen> {
         let seconds = self.large()?;
         let nanos = self.medium()?;
+
         if nanos >= NANOS_IN_A_SECOND {
             return Err(Unfrozen::NanosPastASecond(nanos));
         }
@@ -178,6 +181,7 @@ impl<'a> Reading<'a> {
 
     fn lastings<const N: usize>(&mut self) -> Result<[Duration; N], Unfrozen> {
         let mut spans = [Duration::ZERO; N];
+
         for span in &mut spans {
             *span = self.lasting()?;
         }
@@ -188,6 +192,7 @@ impl<'a> Reading<'a> {
     fn ranked(&mut self) -> Result<Vec<Ranked>, Unfrozen> {
         let count = self.medium()?;
         let mut ranked = Vec::new();
+
         for _ in 0..count {
             ranked.push(Ranked {
                 name: self.text()?,
@@ -253,9 +258,11 @@ impl YearReview {
 
     pub fn unfrozen(bytes: &[u8]) -> Result<Self, Unfrozen> {
         let (layout, rest) = bytes.split_first().ok_or(Unfrozen::Empty)?;
+
         if *layout != FROZEN_LAYOUT {
             return Err(Unfrozen::UnknownLayout(*layout));
         }
+
         let mut reading = Reading(rest);
 
         let year = reading.signed()?;
@@ -363,6 +370,7 @@ mod tests {
             }),
             ..Rhythm::default()
         };
+
         for (at, span) in rhythm.months.iter_mut().enumerate() {
             *span = Duration::from_secs(at as u64 * 3_600 + 1);
         }
@@ -415,7 +423,9 @@ mod tests {
         let mut frozen = a_busy_year().frozen();
 
         assert_eq!(frozen[0], FROZEN_LAYOUT);
+
         frozen[0] = FROZEN_LAYOUT + 1;
+
         assert_eq!(
             YearReview::unfrozen(&frozen),
             Err(Unfrozen::UnknownLayout(FROZEN_LAYOUT + 1))
@@ -438,12 +448,16 @@ mod tests {
     #[test]
     fn bytes_past_the_end_text_that_is_not_text_and_a_choice_of_three_are_refused() {
         let mut frozen = a_busy_year().frozen();
+
         frozen.extend_from_slice(&[0, 0]);
+
         assert_eq!(YearReview::unfrozen(&frozen), Err(Unfrozen::Trailing(2)));
 
         let mut chosen = YearReview::default().frozen();
         let songs_new_at = 1 + 8 + 12 + 8 * 4;
+
         chosen[songs_new_at] = 3;
+
         assert_eq!(YearReview::unfrozen(&chosen), Err(Unfrozen::NotAChoice(3)));
 
         let mut named = YearReview {
@@ -451,11 +465,14 @@ mod tests {
             ..YearReview::default()
         }
         .frozen();
+
         let text_at = named
             .iter()
             .position(|byte| *byte == b'a')
             .expect("the name");
+
         named[text_at] = 0xff;
+
         assert_eq!(YearReview::unfrozen(&named), Err(Unfrozen::NotText));
     }
 
@@ -463,6 +480,7 @@ mod tests {
     fn a_span_of_more_than_a_second_of_nanoseconds_is_refused() {
         let mut frozen = YearReview::default().frozen();
         let nanos_at = 1 + 8 + 8;
+
         frozen[nanos_at..nanos_at + 4].copy_from_slice(&NANOS_IN_A_SECOND.to_le_bytes());
 
         assert_eq!(

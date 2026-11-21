@@ -18,7 +18,9 @@ use crate::downloads::Download;
 impl LibraryModel {
     pub(super) fn restate_the_listing(&mut self) {
         self.restate_what_was_found();
+
         let listing = self.listing();
+
         self.browse.rows = match self.selection {
             Selection::Album(_) => album_rows(
                 &listing.whole(),
@@ -194,6 +196,7 @@ impl LibraryModel {
                 return;
             }
         };
+
         if self.unheld.found_for.as_deref() == Some(text.as_str()) && !self.unheld.found_in_part {
             self.stop_asking_elsewhere();
             return;
@@ -210,6 +213,7 @@ impl LibraryModel {
             if !settling.is_zero() {
                 cx.background_executor().timer(settling).await;
             }
+
             let _ = this.update(cx, |this, cx| this.reach_out(cx));
         });
     }
@@ -234,14 +238,17 @@ impl LibraryModel {
         let Some(words) = songs_asked(&text) else {
             return;
         };
+
         if let Some(answered) = self.outreach.answers.get(&words).cloned() {
             self.show_answer(answered, Shown::Whole, cx);
             return;
         }
+
         let Some(reference) = self.reference.clone().filter(|_| self.choices.online) else {
             self.stop_asking_elsewhere();
             return;
         };
+
         if self.outreach.reaching_out.is_some() {
             self.outreach.owed = Some(text);
             return;
@@ -251,6 +258,7 @@ impl LibraryModel {
         self.unheld._reaching = cx.spawn(async move |this, cx| {
             let asked = words.clone();
             let asking = Arc::clone(&reference);
+
             let songs = cx
                 .background_executor()
                 .spawn(async move { asking.find_songs(&asked) })
@@ -264,6 +272,7 @@ impl LibraryModel {
                 .background_executor()
                 .spawn(async move { reference.find_albums(&asked) })
                 .await;
+
             let _ = this.update(cx, |this, cx| this.albums_reached(words, songs, albums, cx));
         });
     }
@@ -287,6 +296,7 @@ impl LibraryModel {
         match answered {
             Ok(songs) if current => {
                 let songs: Arc<[RecordingMatch]> = weighed_for(words, songs).into();
+
                 self.show_answer(
                     Answer {
                         songs: Arc::clone(&songs),
@@ -327,9 +337,11 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         self.outreach.reaching_out = None;
+
         let albums: Arc<[AlbumMatch]> = match answered {
             Ok(albums) => {
                 let albums: Arc<[AlbumMatch]> = albums.into();
+
                 self.outreach.answers.insert(
                     words.clone(),
                     Answer {
@@ -344,6 +356,7 @@ impl LibraryModel {
                 Arc::default()
             }
         };
+
         if self.is_still_asked(&words) {
             self.outreach.owed = None;
             self.show_answer(Answer { songs, albums }, Shown::Whole, cx);
@@ -354,6 +367,7 @@ impl LibraryModel {
 
     fn reach_out_for_what_is_owed(&mut self, cx: &mut Context<Self>) {
         self.outreach.reaching_out = None;
+
         let owed = self.outreach.owed.take();
         if owed.is_some_and(|owed| self.outreach.asking.as_ref() == Some(&owed)) {
             self.reach_out(cx);

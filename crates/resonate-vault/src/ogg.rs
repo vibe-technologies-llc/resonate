@@ -82,6 +82,7 @@ impl Codec {
     fn untagged(self, headers: &[Vec<u8>]) -> Option<Vec<Vec<u8>>> {
         let (comment, rest) = headers.split_first()?;
         let mut untagged = vec![self.comment_alone(comment)?];
+
         if self != Self::Flac {
             untagged.extend_from_slice(rest);
         }
@@ -92,23 +93,28 @@ impl Codec {
         match self {
             Self::Vorbis => {
                 let mut alone = VORBIS_COMMENT.to_vec();
+
                 alone.extend(vendor_alone(comment.strip_prefix(VORBIS_COMMENT)?)?);
                 alone.push(VORBIS_FRAMED);
                 Some(alone)
             }
             Self::Opus => {
                 let mut alone = OPUS_TAGS.to_vec();
+
                 alone.extend(vendor_alone(comment.strip_prefix(OPUS_TAGS)?)?);
                 Some(alone)
             }
             Self::Flac => {
                 let (header, body) = comment.split_at_checked(FLAC_BLOCK_HEADER_BYTES)?;
+
                 if header[0] & FLAC_BLOCK_KIND != FLAC_VORBIS_COMMENT {
                     return None;
                 }
+
                 let body = vendor_alone(body)?;
                 let length = u32::try_from(body.len()).ok()?.to_be_bytes();
                 let mut alone = vec![FLAC_LAST_BLOCK | FLAC_VORBIS_COMMENT];
+
                 alone.extend_from_slice(&length[1..]);
                 alone.extend(body);
                 Some(alone)
@@ -120,8 +126,10 @@ impl Codec {
         if self != Self::Flac {
             return Some(());
         }
+
         let at = page.body_at + FLAC_HEADERS_AT;
         let counted = page.raw.get_mut(at..at + HEADERS_UNCOUNTED.len())?;
+
         if *counted != HEADERS_UNCOUNTED {
             counted.copy_from_slice(&u16::try_from(headers).ok()?.to_be_bytes());
             stamped(&mut page.raw);
@@ -135,6 +143,7 @@ fn vendor_alone(comments: &[u8]) -> Option<Vec<u8>> {
     let vendor = comments.get(LENGTH_BYTES..LENGTH_BYTES.checked_add(vendor_bytes as usize)?)?;
 
     let mut alone = Vec::with_capacity(2 * LENGTH_BYTES + vendor.len());
+
     alone.extend_from_slice(&vendor_bytes.to_le_bytes());
     alone.extend_from_slice(vendor);
     alone.extend_from_slice(&0_u32.to_le_bytes());
@@ -153,16 +162,21 @@ struct Page {
 impl Page {
     fn read(from: &mut impl Read) -> Option<Self> {
         let mut raw = vec![0_u8; HEADER_BYTES];
+
         from.read_exact(&mut raw).ok()?;
         if !raw.starts_with(CAPTURE) || raw[VERSION_AT] != 0 {
             return None;
         }
+
         let segments = usize::from(raw[SEGMENTS_AT]);
         let mut lacing = vec![0_u8; segments];
+
         from.read_exact(&mut lacing).ok()?;
         raw.extend_from_slice(&lacing);
+
         let body_at = raw.len();
         let body: usize = lacing.iter().map(|lace| usize::from(*lace)).sum();
+
         raw.resize(body_at + body, 0);
         from.read_exact(&mut raw[body_at..]).ok()?;
 
@@ -183,22 +197,27 @@ impl Page {
 
 pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
     let mut first = Page::read(stream)?;
+
     let ends_one_packet = first
         .lacing
         .iter()
         .position(|lace| usize::from(*lace) < SEGMENT_BYTES)
         .is_some_and(|end| end + 1 == first.lacing.len());
+
     if first.flags & FIRST == 0 || first.flags & CONTINUED != 0 || !ends_one_packet {
         return None;
     }
+
     let codec = Codec::of(first.body())?;
 
     let mut packets: Vec<Vec<u8>> = Vec::new();
     let mut open = Vec::new();
     let mut last_sequence = first.sequence;
     let mut read = first.raw.len();
+
     while !codec.headers_are_whole(&packets) {
         let page = Page::read(stream)?;
+
         read += page.raw.len();
         if read > HEADER_BYTES_AT_MOST
             || page.serial != first.serial
@@ -212,6 +231,7 @@ pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
         let mut at = 0;
         for (segment, lace) in page.lacing.iter().enumerate() {
             let lace = usize::from(*lace);
+
             open.extend_from_slice(page.body().get(at..at + lace)?);
             at += lace;
             if lace < SEGMENT_BYTES {
@@ -227,12 +247,15 @@ pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
     }
 
     let rest = codec.untagged(&packets)?;
+
     if rest == packets {
         return None;
     }
 
     codec.identified_anew(&mut first, rest.len())?;
+
     let mut head = first.raw;
+
     let written = paginated(
         &rest,
         first.serial,
@@ -255,9 +278,11 @@ pub(crate) fn bare(stream: &mut impl Read) -> Option<Bared> {
 
 fn paginated(packets: &[Vec<u8>], serial: u32, first_sequence: u32, into: &mut Vec<u8>) -> u32 {
     let mut pieces: Vec<(u8, &[u8])> = Vec::new();
+
     for packet in packets {
         let mut chunks = packet.chunks(SEGMENT_BYTES).peekable();
         let mut ended = false;
+
         while let Some(chunk) = chunks.next() {
             pieces.push((chunk.len() as u8, chunk));
             ended = chunk.len() < SEGMENT_BYTES && chunks.peek().is_none();
@@ -270,6 +295,7 @@ fn paginated(packets: &[Vec<u8>], serial: u32, first_sequence: u32, into: &mut V
     let mut sequence = first_sequence;
     let mut written = 0;
     let mut continued = false;
+
     for page in pieces.chunks(SEGMENTS_AT_MOST) {
         let ends_a_packet = page
             .iter()
@@ -277,6 +303,7 @@ fn paginated(packets: &[Vec<u8>], serial: u32, first_sequence: u32, into: &mut V
         let granule = if ends_a_packet { 0 } else { NO_PACKET_ENDS };
 
         let mut raw = Vec::with_capacity(HEADER_BYTES + page.len() * (SEGMENT_BYTES + 1));
+
         raw.extend_from_slice(CAPTURE);
         raw.push(0);
         raw.push(if continued { CONTINUED } else { 0 });
@@ -304,9 +331,11 @@ fn paginated(packets: &[Vec<u8>], serial: u32, first_sequence: u32, into: &mut V
 const fn checksum_table() -> [u32; 256] {
     let mut table = [0_u32; 256];
     let mut at = 0;
+
     while at < table.len() {
         let mut remainder = (at as u32) << 24;
         let mut bit = 0;
+
         while bit < 8 {
             remainder = if remainder & 0x8000_0000 == 0 {
                 remainder << 1
@@ -334,6 +363,7 @@ fn checksum(page: &[u8]) -> u32 {
 
 fn stamped(page: &mut [u8]) {
     let sum = checksum(page);
+
     page[CHECKSUM_AT..SEGMENTS_AT].copy_from_slice(&sum.to_le_bytes());
 }
 
@@ -361,7 +391,9 @@ impl<R: Read> Renumbered<R> {
         self.at = 0;
 
         let mut header = [0_u8; HEADER_BYTES];
+
         let filled = filled_into(&mut self.inner, &mut header)?;
+
         self.pending.extend_from_slice(&header[..filled]);
         if filled < HEADER_BYTES || !header.starts_with(CAPTURE) {
             self.passing = true;
@@ -370,7 +402,9 @@ impl<R: Read> Renumbered<R> {
 
         let segments = usize::from(header[SEGMENTS_AT]);
         let mut lacing = vec![0_u8; segments];
+
         let laced = filled_into(&mut self.inner, &mut lacing)?;
+
         self.pending.extend_from_slice(&lacing[..laced]);
         if laced < segments {
             self.passing = true;
@@ -379,8 +413,11 @@ impl<R: Read> Renumbered<R> {
 
         let body: usize = lacing.iter().map(|lace| usize::from(*lace)).sum();
         let start = self.pending.len();
+
         self.pending.resize(start + body, 0);
+
         let bodied = filled_into(&mut self.inner, &mut self.pending[start..])?;
+
         self.pending.truncate(start + bodied);
         if bodied < body {
             self.passing = true;
@@ -393,6 +430,7 @@ impl<R: Read> Renumbered<R> {
             header[SERIAL_AT + 2],
             header[SERIAL_AT + 3],
         ]);
+
         if serial == self.renumbering.serial {
             let sequence = u32::from_le_bytes([
                 header[SEQUENCE_AT],
@@ -401,6 +439,7 @@ impl<R: Read> Renumbered<R> {
                 header[SEQUENCE_AT + 3],
             ]);
             let moved = sequence.wrapping_add(self.renumbering.shift);
+
             self.pending[SEQUENCE_AT..CHECKSUM_AT].copy_from_slice(&moved.to_le_bytes());
             stamped(&mut self.pending);
         }
@@ -416,7 +455,9 @@ impl<R: Read> Read for Renumbered<R> {
             }
             self.next_page()?;
         }
+
         let taken = (self.pending.len() - self.at).min(into.len());
+
         into[..taken].copy_from_slice(&self.pending[self.at..self.at + taken]);
         self.at += taken;
         Ok(taken)
@@ -425,6 +466,7 @@ impl<R: Read> Read for Renumbered<R> {
 
 fn filled_into(from: &mut impl Read, into: &mut [u8]) -> io::Result<usize> {
     let mut filled = 0;
+
     while filled < into.len() {
         match from.read(&mut into[filled..]) {
             Ok(0) => break,
@@ -454,6 +496,7 @@ mod tests {
 
     fn page(flags: u8, serial: u32, sequence: u32, lacing: &[u8], body: &[u8]) -> Vec<u8> {
         let mut raw = CAPTURE.to_vec();
+
         raw.push(0);
         raw.push(flags);
         raw.extend_from_slice(&0_u64.to_le_bytes());
@@ -469,12 +512,14 @@ mod tests {
 
     fn laced(length: usize) -> Vec<u8> {
         let mut lacing = vec![255_u8; length / SEGMENT_BYTES];
+
         lacing.push((length % SEGMENT_BYTES) as u8);
         lacing
     }
 
     fn opus_tags(comments: &[&str]) -> Vec<u8> {
         let mut packet = OPUS_TAGS.to_vec();
+
         packet.extend_from_slice(&7_u32.to_le_bytes());
         packet.extend_from_slice(b"encoder");
         packet.extend_from_slice(&(comments.len() as u32).to_le_bytes());
@@ -487,8 +532,10 @@ mod tests {
 
     fn pages_of(mut bytes: &[u8]) -> Vec<Page> {
         let mut pages = Vec::new();
+
         while !bytes.is_empty() {
             let page = Page::read(&mut bytes).expect("a whole page");
+
             pages.push(page);
         }
         pages
@@ -498,6 +545,7 @@ mod tests {
     fn a_page_is_stamped_with_the_checksum_libogg_gives_it() {
         let written = bytes_of(OPUS_FIRST_PAGE);
         let mut restamped = written.clone();
+
         restamped[CHECKSUM_AT..SEGMENTS_AT].copy_from_slice(&[0; 4]);
 
         stamped(&mut restamped);
@@ -519,6 +567,7 @@ mod tests {
             page(0, serial, 4, &[9], &[8; 9]),
         ]
         .concat();
+
         let whole = [
             first.clone(),
             page(0, serial, 1, &[255; 255], early),
@@ -528,23 +577,29 @@ mod tests {
         .concat();
 
         let mut stream = Cursor::new(whole);
+
         let bared = bare(&mut stream).expect("the tags are shed");
         let mut rest = Vec::new();
+
         Renumbered::over(&mut stream, bared.renumbering.expect("the pages move"))
             .read_to_end(&mut rest)
             .expect("the rest");
 
         assert_eq!(&bared.head[..first.len()], first.as_slice());
+
         let written = [bared.head.clone(), rest].concat();
         let pages = pages_of(&written);
         let sequences: Vec<u32> = pages.iter().map(|page| page.sequence).collect();
+
         assert_eq!(sequences, vec![0, 1, 2, 3]);
+
         for page in &pages {
             assert_eq!(
                 checksum(&page.raw).to_le_bytes(),
                 page.raw[CHECKSUM_AT..SEGMENTS_AT]
             );
         }
+
         assert_eq!(
             pages[1].body(),
             Codec::Opus.untagged(&[tags]).expect("tags")[0].as_slice()
@@ -556,6 +611,7 @@ mod tests {
     #[test]
     fn a_vorbis_comment_keeps_its_vendor_and_its_framing_bit_and_loses_every_comment() {
         let mut comment = VORBIS_COMMENT.to_vec();
+
         comment.extend_from_slice(&4_u32.to_le_bytes());
         comment.extend_from_slice(b"Xiph");
         comment.extend_from_slice(&1_u32.to_le_bytes());
@@ -568,10 +624,12 @@ mod tests {
             .expect("a comment packet");
 
         let mut wanted = VORBIS_COMMENT.to_vec();
+
         wanted.extend_from_slice(&4_u32.to_le_bytes());
         wanted.extend_from_slice(b"Xiph");
         wanted.extend_from_slice(&0_u32.to_le_bytes());
         wanted.push(VORBIS_FRAMED);
+
         assert_eq!(untagged, vec![wanted, b"\x05vorbis".to_vec()]);
     }
 
@@ -580,6 +638,7 @@ mod tests {
         let serial = 9;
         let first = bytes_of(OPUS_FIRST_PAGE);
         let tags = opus_tags(&[]);
+
         let whole = [first, page(0, serial, 1, &laced(tags.len()), &tags)].concat();
 
         assert_eq!(bare(&mut Cursor::new(whole)), None);
@@ -591,7 +650,9 @@ mod tests {
         let first = bytes_of(OPUS_FIRST_PAGE);
         let tags = opus_tags(&["TITLE=Echoes"]);
         let mut lacing = laced(tags.len());
+
         lacing.push(3);
+
         let body = [tags.as_slice(), &[1, 2, 3]].concat();
         let whole = [first, page(0, serial, 1, &lacing, &body)].concat();
 
@@ -600,6 +661,7 @@ mod tests {
 
     fn flac_identification(headers: u16) -> Vec<u8> {
         let mut packet = FLAC_IDENTIFICATION.to_vec();
+
         packet.extend_from_slice(&[1, 0]);
         packet.extend_from_slice(&headers.to_be_bytes());
         packet.extend_from_slice(b"fLaC");
@@ -611,6 +673,7 @@ mod tests {
     fn flac_block(kind: u8, last: bool, body: &[u8]) -> Vec<u8> {
         let length = (body.len() as u32).to_be_bytes();
         let mut block = vec![if last { FLAC_LAST_BLOCK | kind } else { kind }];
+
         block.extend_from_slice(&length[1..]);
         block.extend_from_slice(body);
         block
@@ -618,6 +681,7 @@ mod tests {
 
     fn flac_comment(comments: &[&str]) -> Vec<u8> {
         let mut body = 9_u32.to_le_bytes().to_vec();
+
         body.extend_from_slice(b"reference");
         body.extend_from_slice(&(comments.len() as u32).to_le_bytes());
         for comment in comments {
@@ -630,8 +694,10 @@ mod tests {
     fn ogg_flac(headers: u16, blocks: &[Vec<u8>]) -> Vec<u8> {
         let serial = 77;
         let identification = flac_identification(headers);
+
         let mut whole = page(FIRST, serial, 0, &[51], &identification);
         let mut sequence = 1;
+
         for block in blocks {
             whole.extend(page(0, serial, sequence, &laced(block.len()), block));
             sequence += 1;
@@ -653,8 +719,10 @@ mod tests {
         );
 
         let mut stream = Cursor::new(whole);
+
         let bared = bare(&mut stream).expect("the metadata is shed");
         let mut rest = Vec::new();
+
         Renumbered::over(&mut stream, bared.renumbering.expect("the pages move"))
             .read_to_end(&mut rest)
             .expect("the rest");
@@ -662,13 +730,16 @@ mod tests {
         let written = [bared.head, rest].concat();
         let pages = pages_of(&written);
         let sequences: Vec<u32> = pages.iter().map(|page| page.sequence).collect();
+
         assert_eq!(sequences, vec![0, 1, 2]);
+
         for page in &pages {
             assert_eq!(
                 checksum(&page.raw).to_le_bytes(),
                 page.raw[CHECKSUM_AT..SEGMENTS_AT]
             );
         }
+
         assert_eq!(pages[0].body(), flac_identification(1).as_slice());
         assert_eq!(
             pages[1].body(),
@@ -690,6 +761,7 @@ mod tests {
         let bared = bare(&mut Cursor::new(whole)).expect("the metadata is shed");
 
         let pages = pages_of(&bared.head);
+
         assert_eq!(pages[0].body(), flac_identification(0).as_slice());
         assert_eq!(pages.len(), 2);
     }

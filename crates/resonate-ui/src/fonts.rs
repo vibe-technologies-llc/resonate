@@ -79,6 +79,7 @@ fn fonts_in(folder: &Path) -> Vec<Cow<'static, [u8]>> {
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|file| is_a_font_file(file))
         .collect();
+
     files.sort();
 
     files
@@ -148,12 +149,14 @@ mod tests {
     #[test]
     fn the_fonts_a_bundle_carries_are_read_in_name_order_and_nothing_else_is() {
         let folder = env::temp_dir().join(format!("resonate-fonts-{}", std::process::id()));
+
         fs::create_dir_all(&folder).expect("a folder for the fonts");
         fs::write(folder.join("b.ttf"), b"second").expect("a font file");
         fs::write(folder.join("a.OTF"), b"first").expect("a font file");
         fs::write(folder.join("licence.txt"), b"words").expect("a file that is no font");
 
         let read = fonts_in(&folder);
+
         fs::remove_dir_all(&folder).expect("the folder is taken away again");
 
         assert_eq!(

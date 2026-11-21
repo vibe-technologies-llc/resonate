@@ -89,6 +89,7 @@ impl Listening {
 
         let step = track.position.saturating_sub(held.at);
         let seeked = held.seeks != state.seeks;
+
         held.at = track.position;
         held.seeks = state.seeks;
         if state.playback == PlaybackState::Playing && !seeked && step <= listened(track) {
@@ -100,9 +101,11 @@ impl Listening {
             .then(|| playing(state, queue, track.id, so_far))
             .flatten();
         let mut hears = None;
+
         match held.counted.as_mut() {
             Some(played) => {
                 played.heard = so_far;
+
                 let untold = held.heard.saturating_sub(held.told);
                 if untold >= Frames::from_duration(TOLD_EVERY, track.source.rate) {
                     held.told = held.heard;
@@ -288,6 +291,7 @@ mod tests {
 
         for position in [Frames::ZERO, seconds(1), seconds(180), seconds(190)] {
             let state = playing_at(1, position, whole);
+
             assert_eq!(listening.heard(&state, &queue), None);
         }
     }
@@ -300,7 +304,9 @@ mod tests {
 
         for second in 0..=200 {
             let mut state = playing_at(1, seconds(second), whole);
+
             state.playback = PlaybackState::Paused;
+
             assert_eq!(listening.heard(&state, &queue), None);
         }
     }
@@ -346,6 +352,7 @@ mod tests {
 
         for second in 0..=5 {
             let state = playing_at(2, seconds(second), whole);
+
             assert_eq!(listening.heard(&state, &queue), None);
         }
     }
@@ -358,10 +365,12 @@ mod tests {
 
         for second in 0..=99 {
             let state = playing_at(1, seconds(second), whole);
+
             assert_eq!(listening.heard(&state, &queue), None);
         }
 
         let stopped = PlayerState::default();
+
         assert_eq!(
             listening.heard(&stopped, &queue),
             Some(Counting::Passes(Duration::from_secs(99)))
@@ -369,6 +378,7 @@ mod tests {
 
         for second in 100..=101 {
             let state = playing_at(1, seconds(second), whole);
+
             assert_eq!(listening.heard(&state, &queue), None);
         }
     }
@@ -383,6 +393,7 @@ mod tests {
 
         let stopped = PlayerState::default();
         let ended = settled(listening.heard(&stopped, &queue)).expect("a counted visit settles");
+
         assert_eq!(ended.location, MediaLocation::local("/music/1.flac"));
         assert_eq!(ended.heard, Duration::from_secs(150));
     }
@@ -396,6 +407,7 @@ mod tests {
         assert_eq!(walked(&mut listening, 1, whole, 50), 0);
 
         let stopped = PlayerState::default();
+
         assert_eq!(
             listening.heard(&stopped, &queue),
             Some(Counting::Passes(Duration::from_secs(50)))
@@ -423,6 +435,7 @@ mod tests {
         assert_eq!(walked(&mut listening, 1, whole, 150), 1);
 
         let stopped = PlayerState::default();
+
         assert!(settled(listening.heard(&stopped, &queue)).is_some());
         assert_eq!(listening.heard(&stopped, &queue), None);
     }
@@ -476,9 +489,11 @@ mod tests {
         }
 
         let skipped = sought(playing_at(1, seconds(5), whole), 1);
+
         assert_eq!(listening.heard(&skipped, &queue), None);
 
         let ended = listening.heard(&PlayerState::default(), &queue);
+
         assert_eq!(ended, Some(Counting::Passes(Duration::from_secs(2))));
     }
 
@@ -497,10 +512,12 @@ mod tests {
                 counts += 1;
             }
         }
+
         assert_eq!(counts, 0);
 
         let ended = settled(listening.heard(&PlayerState::default(), &queue))
             .expect("a counted visit settles");
+
         assert_eq!(ended.heard, Duration::from_secs(120 + 110));
     }
 
@@ -554,6 +571,7 @@ mod tests {
         assert_eq!(walked(&mut listening, 1, whole, 250), 1);
 
         let left = settled(listening.leaves()).expect("a counted visit settles when it is left");
+
         assert_eq!(left.heard, Duration::from_secs(250));
         assert_eq!(listening.leaves(), None);
     }

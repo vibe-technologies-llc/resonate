@@ -218,7 +218,9 @@ mod tests {
             .and(holding("second"));
 
         assert!(corrected.has_a_source());
+
         let catalogue = corrected.catalogue().expect("nothing failed");
+
         assert_eq!(catalogue.len(), 1);
         assert_eq!(
             catalogue

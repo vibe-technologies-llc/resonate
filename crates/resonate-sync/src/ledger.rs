@@ -329,6 +329,7 @@ struct AnswerSlot {
 impl AnswerSlot {
     fn slot_of(file: WholeFile) -> Vec<u8> {
         let mut slot = Vec::with_capacity(20);
+
         slot.extend_from_slice(&file.packets.to_le_bytes());
         slot.extend_from_slice(&file.frames.to_le_bytes());
         slot.extend_from_slice(&file.rate.to_le_bytes());
@@ -372,6 +373,7 @@ struct WeighedFavourites {
 impl WeighedFavourites {
     fn of(rows: Vec<WeighedFavourite>) -> Self {
         let mut weighed = Self::default();
+
         for row in rows {
             weighed.noted(row);
         }
@@ -486,6 +488,7 @@ impl Ledger {
         connection
             .pragma_update(None, "journal_mode", "WAL")
             .map_err(|source| Error::store(StoreOp::Open, source))?;
+
         let transaction = connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
@@ -493,6 +496,7 @@ impl Ledger {
             .query_row("PRAGMA user_version", [], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
         let laid = usize::try_from(version).unwrap_or(usize::MAX);
+
         if laid > MIGRATIONS.len() {
             return Err(Error::LedgerVersion { found: version });
         }
@@ -522,6 +526,7 @@ impl Ledger {
             Some((device, clock)) => (device_from(&device), clock),
             None => {
                 let device = DeviceId::minted()?;
+
                 transaction
                     .execute(
                         "INSERT INTO state (id, device) VALUES (1, ?1)",
@@ -531,6 +536,7 @@ impl Ledger {
                 (device, 0)
             }
         };
+
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Migrate, source))?;
@@ -553,10 +559,13 @@ impl Ledger {
             .connection
             .query_row("SELECT space FROM state WHERE id = 1", [], |row| row.get(0))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if held.as_deref() == Some(space.0.as_slice()) {
             return Ok(false);
         }
+
         let transaction = self.writing()?;
+
         transaction
             .execute_batch(FORGET_THE_SPACE)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -575,10 +584,13 @@ impl Ledger {
 
     pub fn through_a_server(&mut self, through: bool) -> Result<bool> {
         let serverless = self.state_number("serverless")? != 0;
+
         if serverless != through {
             return Ok(false);
         }
+
         let transaction = self.writing()?;
+
         if through {
             transaction
                 .execute_batch(OWE_EVERYTHING)
@@ -616,6 +628,7 @@ impl Ledger {
 
     pub fn space_made_anew(&mut self) -> Result<()> {
         let transaction = self.writing()?;
+
         transaction
             .execute_batch(OWE_EVERYTHING)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -728,12 +741,15 @@ impl Ledger {
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if held.is_some_and(|(name, platform)| {
             name == me.name && platform == platform_tag(me.platform)
         }) {
             return Ok(());
         }
+
         let stamp = self.clock.now(self.device);
+
         self.connection
             .execute(
                 "INSERT INTO devices (device, name, platform, nanos, stamped_by, owed) VALUES (?1, ?2, ?3, ?4, ?1, 1)
@@ -748,6 +764,7 @@ impl Ledger {
         let Some(held) = catalog.shares_here().map_err(Error::Catalog)? else {
             return Ok(());
         };
+
         for share in &held {
             let known: bool = self
                 .connection
@@ -757,9 +774,11 @@ impl Ledger {
                     |row| row.get(0),
                 )
                 .map_err(|source| Error::store(StoreOp::Read, source))?;
+
             if known {
                 continue;
             }
+
             let released: Option<Vec<u8>> = match share.at {
                 Some(at) => self
                     .connection
@@ -773,6 +792,7 @@ impl Ledger {
                 None => None,
             };
             let stamp = self.clock.now(self.device);
+
             self.connection
                 .execute(
                     "INSERT INTO shares (code, server, member, personal, released, gone, nanos, stamped_by, owed, here)
@@ -803,11 +823,14 @@ impl Ledger {
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                 .map_err(|source| Error::store(StoreOp::Read, source))?
         };
+
         for code in codes {
             if held.iter().any(|share| share.code == code) {
                 continue;
             }
+
             let stamp = self.clock.now(self.device);
+
             self.connection
                 .execute(
                     "UPDATE shares SET gone = 1, here = 0, owed = 1, nanos = ?2, stamped_by = ?3 WHERE code = ?1",
@@ -827,6 +850,7 @@ impl Ledger {
                    FROM shares WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -877,6 +901,7 @@ impl Ledger {
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if let Some((nanos, by)) = held
             && (nanos, by.as_slice()) >= (note.stamp.nanos, note.stamp.device.0.as_slice())
         {
@@ -933,6 +958,7 @@ impl Ledger {
         let locals = catalog.playlists().map_err(Error::Catalog)?;
         let stored = self.stored_playlists()?;
         let mut by_local = BTreeMap::new();
+
         for (at, playlist) in stored.iter().enumerate() {
             if let Some(local) = playlist.local {
                 by_local.insert(local, at);
@@ -940,12 +966,15 @@ impl Ledger {
         }
 
         let mut still_here = vec![false; stored.len()];
+
         for local in &locals {
             let digest = projection_digest(&local.name, &local.entries);
             match by_local.get(&local.at) {
                 Some(&at) => {
                     still_here[at] = true;
+
                     let synced = &stored[at];
+
                     if synced.seen.as_deref() == Some(digest.as_slice()) {
                         continue;
                     }
@@ -958,7 +987,9 @@ impl Ledger {
                         self.revived_here(catalog, &stored[at], local, &digest)?;
                         continue;
                     }
+
                     let mut adoptable = None;
+
                     for (at, synced) in stored.iter().enumerate() {
                         if synced.local.is_none()
                             && !synced.gone
@@ -983,6 +1014,7 @@ impl Ledger {
         for (at, synced) in stored.iter().enumerate() {
             if synced.local.is_some() && !synced.gone && !still_here[at] {
                 let gone_from = synced.local;
+
                 if let Some(local) = gone_from
                     && catalog.hides_as_shared(local).map_err(Error::Catalog)?
                 {
@@ -995,7 +1027,9 @@ impl Ledger {
                         .map_err(|source| Error::store(StoreOp::Write, source))?;
                     continue;
                 }
+
                 let stamp = self.clock.now(self.device);
+
                 self.connection
                     .execute(
                         "UPDATE playlists SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL,
@@ -1034,8 +1068,10 @@ impl Ledger {
         }) {
             return Ok(Some(at));
         }
+
         let folds = self.playlist_folds()?;
         let listed = local.entries.iter().flatten().collect::<Vec<_>>();
+
         for (at, synced) in stored.iter().enumerate() {
             if !synced.gone
                 || still_here[at]
@@ -1047,6 +1083,7 @@ impl Ledger {
             {
                 continue;
             }
+
             let held = synced
                 .entries
                 .iter()
@@ -1074,6 +1111,7 @@ impl Ledger {
                 params![synced.key.0.as_slice(), local.at.id, local.at.created],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         let revived = StoredPlaylist {
             local: Some(local.at),
             gone: false,
@@ -1104,6 +1142,7 @@ impl Ledger {
     ) -> Result<()> {
         let here = held_in(catalog, entries, written)?;
         let alias = (written.name != synced.name).then(|| written.name.clone());
+
         self.connection
             .execute(
                 "UPDATE playlists SET local_id = ?2, local_created = ?3, alias = ?4, entries = ?5, here = ?6, seen = ?7 WHERE key = ?1",
@@ -1126,6 +1165,7 @@ impl Ledger {
         let here = vec![true; entries.len()];
         let stamp = self.clock.now(self.device);
         let key = PlaylistKey::minted_at(stamp)?;
+
         self.connection
             .execute(
                 "INSERT INTO playlists (key, local_id, local_created, name, entries, here, nanos, stamped_by, owed, seen, minted_here)
@@ -1157,6 +1197,7 @@ impl Ledger {
         let pairs = paired(catalog, &synced.entries.iter().collect::<Vec<_>>(), &listed)?;
         let mut entries = synced.entries.clone();
         let mut here = pairs.iter().map(Option::is_some).collect::<Vec<_>>();
+
         for (recording, _) in listed
             .iter()
             .zip(unpaired(&pairs, listed.len()))
@@ -1167,6 +1208,7 @@ impl Ledger {
         }
         if entries.len() == synced.entries.len() {
             let alias = (local.name != synced.name).then(|| local.name.clone());
+
             self.connection
                 .execute(
                     "UPDATE playlists SET local_id = ?2, local_created = ?3, alias = ?4, here = ?5, seen = ?6 WHERE key = ?1",
@@ -1182,7 +1224,9 @@ impl Ledger {
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
             return Ok(());
         }
+
         let stamp = self.clock.now(self.device);
+
         self.connection
             .execute(
                 "UPDATE playlists SET local_id = ?2, local_created = ?3, entries = ?4, here = ?5, nanos = ?6, stamped_by = ?7, owed = 1, seen = ?8 WHERE key = ?1",
@@ -1218,9 +1262,11 @@ impl Ledger {
                 here: *here,
             })
             .collect::<Vec<_>>();
+
         let entries = spliced(&local_entries, &held);
         let mut here = vec![false; entries.len()];
         let mut unmatched = local_entries.iter().collect::<Vec<_>>();
+
         for (entry, held) in entries.iter().zip(here.iter_mut()) {
             if let Some(at) = unmatched
                 .iter()
@@ -1236,6 +1282,7 @@ impl Ledger {
             _ => (local.name.clone(), None),
         };
         let stamp = self.clock.now(self.device);
+
         self.connection
             .execute(
                 "UPDATE playlists SET name = ?2, alias = ?3, entries = ?4, here = ?5, nanos = ?6, stamped_by = ?7, owed = 1, seen = ?8 WHERE key = ?1",
@@ -1258,9 +1305,11 @@ impl Ledger {
         if !catalog.keeps_queries() {
             return Ok(());
         }
+
         let locals = catalog.queries().map_err(Error::Catalog)?;
         let stored = self.stored_queries()?;
         let mut by_local = BTreeMap::new();
+
         for (at, query) in stored.iter().enumerate() {
             if let Some(local) = query.local {
                 by_local.insert(local, at);
@@ -1268,12 +1317,15 @@ impl Ledger {
         }
 
         let mut still_here = vec![false; stored.len()];
+
         for local in &locals {
             let digest = query_digest(&local.body);
             match by_local.get(&local.at) {
                 Some(&at) => {
                     still_here[at] = true;
+
                     let synced = &stored[at];
+
                     if synced.seen.as_deref() == Some(digest.as_slice()) {
                         continue;
                     }
@@ -1308,6 +1360,7 @@ impl Ledger {
             if synced.local.is_some() && !synced.gone && !still_here[at] {
                 let stamp = self.clock.now(self.device);
                 let gone_from = synced.local;
+
                 self.connection
                     .execute(
                         "UPDATE queries SET gone = 1, local_id = NULL, local_created = NULL, nanos = ?2, stamped_by = ?3, owed = 1, seen = NULL,
@@ -1344,6 +1397,7 @@ impl Ledger {
     fn query_made_here(&mut self, local: &LocalQuery, digest: &[u8; DIGEST_BYTES]) -> Result<()> {
         let stamp = self.clock.now(self.device);
         let key = PlaylistKey::minted_at(stamp)?;
+
         self.connection
             .execute(
                 "INSERT INTO queries (key, local_id, local_created, name, text, sort, reading, max_rows, nanos, stamped_by, owed, seen, minted_here)
@@ -1382,6 +1436,7 @@ impl Ledger {
             (local.body.name.clone(), None)
         };
         let stamp = self.clock.now(self.device);
+
         self.connection
             .execute(
                 "UPDATE queries SET name = ?2, alias = ?3, text = ?4, sort = ?5, reading = ?6, max_rows = ?7, nanos = ?8, stamped_by = ?9, owed = 1, seen = ?10 WHERE key = ?1",
@@ -1414,6 +1469,7 @@ impl Ledger {
             Err(refused) => return Err(Error::Catalog(refused)),
         };
         let alias = (written.body.name != synced.body.name).then(|| written.body.name.clone());
+
         self.connection
             .execute(
                 "UPDATE queries SET local_id = ?2, local_created = ?3, alias = ?4, seen = ?5 WHERE key = ?1",
@@ -1434,6 +1490,7 @@ impl Ledger {
         let held = self.held_favourites()?;
         let mut held_by_key = BTreeMap::new();
         let mut held_by_name: BTreeMap<RecordingKey, Vec<usize>> = BTreeMap::new();
+
         for (at, row) in held.iter().enumerate() {
             held_by_key.insert(row.key.as_str(), at);
             if let Some(recording) = &row.recording {
@@ -1443,8 +1500,10 @@ impl Ledger {
                     .push(at);
             }
         }
+
         let mut favoured_by_key = BTreeMap::new();
         let mut favoured_by_name: BTreeMap<RecordingKey, Vec<&Recording>> = BTreeMap::new();
+
         for recording in &favourites {
             favoured_by_key.insert(recording.key().as_str().to_owned(), recording);
             favoured_by_name
@@ -1452,6 +1511,7 @@ impl Ledger {
                 .or_default()
                 .push(recording);
         }
+
         let named_alike = |recording: &Recording| {
             favoured_by_name
                 .get(&recording.named_key())
@@ -1475,6 +1535,7 @@ impl Ledger {
                     })
         });
         let mut held_as = BTreeMap::new();
+
         if unmatched {
             for (at, row) in held.iter().enumerate() {
                 let Some(recording) = row.recording.as_ref().filter(|recording| {
@@ -1487,6 +1548,7 @@ impl Ledger {
                 }
             }
         }
+
         let held_as_one = |at: &usize, recording: &Recording| {
             held_as
                 .get(at)
@@ -1497,6 +1559,7 @@ impl Ledger {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         for (key, recording) in &favoured_by_key {
             let alike = held_by_key
                 .get(key.as_str())
@@ -1522,13 +1585,16 @@ impl Ledger {
                         .copied(),
                 )
                 .collect::<Vec<_>>();
+
             if alike.iter().any(|at| held[*at].here) {
                 continue;
             }
+
             let stamp = self.clock.now(self.device);
             match alike.first().map(|at| &held[*at]) {
                 Some(row) => {
                     let newly = !row.favoured;
+
                     transaction
                         .execute(
                             "UPDATE favourites SET favoured = 1, here = 1, nanos = CASE WHEN ?3 THEN ?2 ELSE nanos END,
@@ -1558,12 +1624,16 @@ impl Ledger {
             if !row.here || favoured_by_key.contains_key(&row.key) {
                 continue;
             }
+
             let still_favoured = row.recording.as_ref().is_some_and(named_alike)
                 || favourites.iter().any(|favoured| held_as_one(&at, favoured));
+
             if still_favoured {
                 continue;
             }
+
             let stamp = self.clock.now(self.device);
+
             transaction
                 .execute(
                     "UPDATE favourites SET favoured = 0, here = 0, nanos = ?2, stamped_by = ?3, owed = 1 WHERE key = ?1",
@@ -1581,6 +1651,7 @@ impl Ledger {
             .connection
             .prepare("SELECT key, recording, favoured, here FROM favourites")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -1592,9 +1663,11 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut held = Vec::new();
+
         for row in rows {
             let (key, recording, favoured, here) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             held.push(HeldFavourite {
                 key,
                 recording: decoded_recording(&recording).ok(),
@@ -1617,6 +1690,7 @@ impl Ledger {
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         for listen in &listens {
             transaction
                 .execute(
@@ -1653,14 +1727,17 @@ impl Ledger {
                 row.get(0)
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if seen.as_deref() == Some(digest.as_slice()) {
             return Ok(());
         }
+
         let stamp = self.clock.now(self.device);
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         transaction
             .execute(
                 "INSERT INTO handoffs (device, rows, at, position, playing, nanos, stamped_by, owed) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?1, 1)
@@ -1699,10 +1776,13 @@ impl Ledger {
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if held.as_deref() == Some(layout.as_str()) {
             return Ok(());
         }
+
         let stamp = self.clock.now(self.device);
+
         self.connection
             .execute(
                 "INSERT INTO layouts (device, layout, nanos, stamped_by, owed) VALUES (?1, ?2, ?3, ?1, 1)
@@ -1717,7 +1797,9 @@ impl Ledger {
         if !catalog.takes_answers() {
             return Ok(());
         }
+
         let mut mark = self.state_number("answers_mark")?.cast_signed();
+
         for _ in 0..ANSWER_PAGES_A_LOOK {
             let answered = catalog
                 .answers_after(mark, ANSWERS_LOOKED_AT_ONCE)
@@ -1731,10 +1813,12 @@ impl Ledger {
                 .connection
                 .transaction_with_behavior(TransactionBehavior::Immediate)
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
+
             for answered in answered.iter().filter(|answered| answered.answer.travels()) {
                 let Answered {
                     recording, answer, ..
                 } = answered;
+
                 let slot = AnswerSlot::of(recording, answer);
                 let encoded = encoded_answer(answer);
                 let held: Option<Vec<u8>> = transaction
@@ -1745,10 +1829,13 @@ impl Ledger {
                     )
                     .optional()
                     .map_err(|source| Error::store(StoreOp::Read, source))?;
+
                 if held.as_deref() == Some(encoded.as_slice()) {
                     continue;
                 }
+
                 let stamp = self.clock.now(self.device);
+
                 transaction
                     .execute(
                         "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by, owed, named)
@@ -1791,6 +1878,7 @@ impl Ledger {
 
     fn age_listens(&mut self) -> Result<()> {
         let horizon = listens_kept_since();
+
         self.connection
             .execute(AGE_LISTENS, params![horizon])
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -1820,6 +1908,7 @@ impl Ledger {
 
     pub fn owed(&self) -> Result<Vec<Vec<Change>>> {
         let mut changes = self.fold_changes_where("owed = 1")?;
+
         changes.extend(self.device_changes_where("owed = 1")?);
         changes.extend(
             self.playlist_notes("owed = 1")?
@@ -1863,6 +1952,7 @@ impl Ledger {
 
     pub fn snapshot(&self) -> Result<Vec<Vec<Change>>> {
         let mut changes = self.fold_changes_where("1")?;
+
         changes.extend(self.device_changes_where("1")?);
         changes.extend(self.playlist_notes("1")?.into_iter().map(Change::Playlist));
         changes.extend(self.query_notes("1")?.into_iter().map(Change::Query));
@@ -1882,6 +1972,7 @@ impl Ledger {
 
     pub fn sent(&mut self, changes: &[Change]) -> Result<()> {
         let transaction = self.writing()?;
+
         for change in changes {
             let cleared = match change {
                 Change::Device(note) => transaction.execute(
@@ -1955,6 +2046,7 @@ impl Ledger {
                     )
                 }
             };
+
             cleared.map_err(|source| Error::store(StoreOp::Write, source))?;
         }
         transaction
@@ -1964,9 +2056,11 @@ impl Ledger {
 
     pub fn arrived(&mut self, catalog: &dyn Catalog, changes: &[Change]) -> Result<Applied> {
         self.look_at_what_is_held(catalog)?;
+
         let mut applied = Applied::default();
         let mut weighed = None;
         let wall = wall_nanos();
+
         for change in changes {
             if let Some(stamp) = change.stamp() {
                 if stamp.too_far_ahead_of(wall) {
@@ -1979,6 +2073,7 @@ impl Ledger {
                 }
                 self.clock.saw(stamp);
             }
+
             let changed = match change {
                 Change::Device(note) => {
                     self.device_arrived(note)?;
@@ -2018,6 +2113,7 @@ impl Ledger {
                     false
                 }
             };
+
             applied.changed_here += usize::from(changed);
         }
         applied.changed_here += self.settle_deletions(catalog)?;
@@ -2052,6 +2148,7 @@ impl Ledger {
         if forgotten.device == self.device {
             return self.speak_up_for_myself();
         }
+
         let transaction = self.writing()?;
         let changed = transaction
             .execute(
@@ -2066,6 +2163,7 @@ impl Ledger {
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         if changed > 0 {
             transaction
                 .execute(
@@ -2087,6 +2185,7 @@ impl Ledger {
 
     fn speak_up_for_myself(&mut self) -> Result<()> {
         let stamp = self.clock.now(self.device);
+
         self.connection
             .execute(
                 "UPDATE devices SET nanos = ?2, stamped_by = ?1, owed = 1, gone = 0 WHERE device = ?1",
@@ -2100,14 +2199,17 @@ impl Ledger {
         if device == self.device {
             return Ok(false);
         }
+
         let stamp = self.clock.now(self.device);
         let transaction = self.writing()?;
+
         let changed = transaction
             .execute(
                 "UPDATE devices SET gone = 1, nanos = ?2, stamped_by = ?3, owed = 1 WHERE device = ?1 AND gone = 0",
                 params![device.0.as_slice(), stamp.nanos, stamp.device.0.as_slice()],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         if changed > 0 {
             transaction
                 .execute(
@@ -2181,10 +2283,13 @@ impl Ledger {
                 |row| row.get(0),
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if released {
             return Ok(false);
         }
+
         let stored = self.stored_playlist(note.key)?;
+
         if stored
             .as_ref()
             .is_some_and(|stored| stored.stamp >= note.stamp)
@@ -2222,6 +2327,7 @@ impl Ledger {
 
         let mut entries = body.entries.clone();
         let mut namesake = None;
+
         if local.is_none() {
             if stored.is_none() {
                 self.fold_a_namesake_made_apart(note.key, body)?;
@@ -2236,6 +2342,7 @@ impl Ledger {
                     .as_ref()
                     .filter(|stored| !stored.gone && stored.local.is_none());
                 let mut unmapped = None;
+
                 for playlist in catalog.playlists().map_err(Error::Catalog)? {
                     let alike = names_alike(&playlist.name, &body.name)
                         || match pending {
@@ -2249,8 +2356,10 @@ impl Ledger {
                 }
                 if let Some(unmapped) = unmapped {
                     local = Some(unmapped.at);
+
                     let listed = unmapped.entries.iter().flatten().collect::<Vec<_>>();
                     let pairs = paired(catalog, &body.entries.iter().collect::<Vec<_>>(), &listed)?;
+
                     let left = unpaired(&pairs, listed.len());
                     for (recording, _) in listed
                         .into_iter()
@@ -2262,6 +2371,7 @@ impl Ledger {
                 }
             }
         }
+
         let merged_locally = entries.len() != body.entries.len();
 
         let wanted_name = match stored.as_ref().and_then(|stored| stored.alias.clone()) {
@@ -2274,6 +2384,7 @@ impl Ledger {
             }
             _ => body.name.clone(),
         };
+
         if local.is_none() {
             self.connection
                 .execute(
@@ -2291,6 +2402,7 @@ impl Ledger {
                 )
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
+
         let written = catalog
             .write_playlist(local, &wanted_name, &entries)
             .map_err(Error::Catalog)?;
@@ -2303,6 +2415,7 @@ impl Ledger {
         } else {
             (note.stamp.nanos, note.stamp.device, false)
         };
+
         self.connection
             .execute(
                 "INSERT INTO playlists (key, local_id, local_created, name, alias, entries, here, gone, nanos, stamped_by, owed, seen)
@@ -2342,6 +2455,7 @@ impl Ledger {
                     && made.key.minted_after(&key)
                     && folds.folds_away(made.key).is_none()
             });
+
         if let Some(made) = made_apart {
             self.playlist_folded(&PlaylistFolded {
                 folded: made.key,
@@ -2382,6 +2496,7 @@ impl Ledger {
             .map_or((String::new(), Vec::new()), |body| {
                 (body.name.clone(), body.entries.clone())
             });
+
         self.connection
             .execute(
                 "INSERT INTO playlists (key, name, entries, here, gone, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4, 1, ?5, ?6)
@@ -2402,6 +2517,7 @@ impl Ledger {
     fn fold_playlists(&mut self, catalog: &dyn Catalog) -> Result<usize> {
         let folds = self.playlist_folds()?;
         let mut changed = 0;
+
         for folded in self.stored_playlists_where("gone = 0")? {
             let Some(survivor) = folds.folds_away(folded.key) else {
                 continue;
@@ -2409,11 +2525,13 @@ impl Ledger {
             let Some(survivor) = self.stored_playlist(survivor)? else {
                 continue;
             };
+
             self.folded_into(catalog, &folded, &survivor)?;
             changed += 1;
         }
         for fold in self.unabsorbed_playlist_folds()? {
             let survivor = folds.survivor_of(fold.into).unwrap_or(fold.into);
+
             if self.stored_playlist(survivor)?.is_none() {
                 continue;
             }
@@ -2440,11 +2558,14 @@ impl Ledger {
             }
             return self.fold_tombstoned(folded);
         }
+
         let entries = absorbed(&survivor.entries, &folded.entries);
         let grew = entries.len() > survivor.entries.len();
         let keeps_the_folded = folded.local.is_some()
             && (survivor.local.is_none() || (survivor.alias.is_some() && folded.alias.is_none()));
+
         self.fold_tombstoned(folded)?;
+
         let written_into = if keeps_the_folded {
             if let Some(at) = survivor.local {
                 catalog.remove_playlist(at).map_err(Error::Catalog)?;
@@ -2456,6 +2577,7 @@ impl Ledger {
             }
             survivor.local.filter(|_| grew)
         };
+
         if grew || written_into.is_some() {
             self.survivor_rewritten(catalog, survivor, written_into, &entries, grew)?;
         }
@@ -2475,6 +2597,7 @@ impl Ledger {
             return Ok(false);
         };
         let entries = absorbed(&survivor.entries, extra);
+
         if entries.len() == survivor.entries.len() {
             return Ok(false);
         }
@@ -2508,6 +2631,7 @@ impl Ledger {
             }
             None => {
                 let mut here = survivor.here.clone();
+
                 here.resize(entries.len(), false);
                 (
                     survivor.local,
@@ -2518,6 +2642,7 @@ impl Ledger {
             }
         };
         let stamp = restamped.then(|| self.clock.now(self.device));
+
         self.connection
             .execute(
                 "UPDATE playlists SET local_id = ?2, local_created = ?3, alias = ?4, entries = ?5, here = ?6, seen = ?7,
@@ -2607,6 +2732,7 @@ impl Ledger {
                 "SELECT folded, kept, entries FROM playlist_folds WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -2617,9 +2743,11 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut folds = Vec::new();
+
         for row in rows {
             let (folded, into, entries) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             folds.push(PlaylistFold {
                 folded: playlist_key_from(&folded),
                 into: playlist_key_from(&into),
@@ -2644,14 +2772,17 @@ impl Ledger {
                 "SELECT folded, kept FROM query_folds WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut folds = Vec::new();
+
         for row in rows {
             let (folded, into) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             folds.push(QueryFolded {
                 folded: playlist_key_from(&folded),
                 into: playlist_key_from(&into),
@@ -2672,6 +2803,7 @@ impl Ledger {
                 })
             })
             .collect::<Vec<_>>();
+
         changes.extend(
             self.query_folds_where(condition)?
                 .into_iter()
@@ -2682,6 +2814,7 @@ impl Ledger {
 
     fn query_arrived(&mut self, catalog: &dyn Catalog, note: &QueryNote) -> Result<bool> {
         let stored = self.stored_query(note.key)?;
+
         if stored
             .as_ref()
             .is_some_and(|stored| stored.stamp >= note.stamp)
@@ -2726,8 +2859,10 @@ impl Ledger {
         };
 
         let mut written = None;
+
         if catalog.keeps_queries() {
             let mut folding = None;
+
             if local.is_none() {
                 if stored.is_none() {
                     folding = self.query_namesake_made_apart(note.key, body)?;
@@ -2744,6 +2879,7 @@ impl Ledger {
                             .as_ref()
                             .filter(|stored| !stored.gone && stored.local.is_none());
                         let mut unmapped = None;
+
                         for query in catalog.queries().map_err(Error::Catalog)? {
                             let alike = names_alike(&query.body.name, &body.name)
                                 || pending.is_some_and(|pending| {
@@ -2758,6 +2894,7 @@ impl Ledger {
                     }
                 };
             }
+
             let aliased = stored
                 .as_ref()
                 .filter(|stored| stored.body.name == body.name)
@@ -2769,6 +2906,7 @@ impl Ledger {
                 },
                 None => body.clone(),
             };
+
             if local.is_none() {
                 self.query_pending(note, body)?;
             }
@@ -2798,6 +2936,7 @@ impl Ledger {
             .filter(|written| written.body.name != body.name)
             .map(|written| written.body.name.clone());
         let digest = written.as_ref().map(|written| query_digest(&written.body));
+
         self.connection
             .execute(
                 "INSERT INTO queries (key, local_id, local_created, name, alias, text, sort, reading, max_rows, gone, nanos, stamped_by, owed, seen)
@@ -2877,8 +3016,10 @@ impl Ledger {
         if !catalog.keeps_queries() {
             return Ok(0);
         }
+
         let folds = self.query_folds()?;
         let mut changed = 0;
+
         for folded in self.stored_queries_where("gone = 0")? {
             let Some(survivor) = folds.folds_away(folded.key) else {
                 continue;
@@ -2890,15 +3031,18 @@ impl Ledger {
                 && folded.local.is_some()
                 && (survivor.local.is_none()
                     || (survivor.alias.is_some() && folded.alias.is_none()));
+
             if keeps_the_folded {
                 if let Some(at) = survivor.local {
                     catalog.remove_playlist(at).map_err(Error::Catalog)?;
                 }
+
                 let written = match catalog.write_query(folded.local, &survivor.body) {
                     Ok(written) => written,
                     Err(Refused::Unwritable) => continue,
                     Err(refused) => return Err(Error::Catalog(refused)),
                 };
+
                 self.query_fold_tombstoned(&folded)?;
                 self.query_written(&survivor, &written)?;
             } else {
@@ -2914,6 +3058,7 @@ impl Ledger {
 
     fn query_written(&mut self, synced: &StoredQuery, written: &LocalQuery) -> Result<()> {
         let alias = (written.body.name != synced.body.name).then(|| written.body.name.clone());
+
         self.connection
             .execute(
                 "UPDATE queries SET local_id = ?2, local_created = ?3, alias = ?4, seen = ?5 WHERE key = ?1",
@@ -2980,6 +3125,7 @@ impl Ledger {
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if let Some((nanos, by, _)) = &held
             && (Stamp {
                 nanos: *nanos,
@@ -2995,6 +3141,7 @@ impl Ledger {
         };
         let outranked = weighed.outranks(&note.recording, key.as_str(), note.favoured, note.stamp);
         let first_meeting = held.is_none();
+
         let here = if !outranked && (note.favoured || !first_meeting) {
             catalog
                 .favour(&note.recording, note.favoured)
@@ -3003,6 +3150,7 @@ impl Ledger {
         } else {
             false
         };
+
         self.connection
             .execute(
                 "INSERT INTO favourites (key, recording, favoured, here, nanos, stamped_by) VALUES (?1, ?2, ?3, ?4, ?5, ?6)
@@ -3032,6 +3180,7 @@ impl Ledger {
             .connection
             .prepare("SELECT key, recording, favoured, here, nanos, stamped_by FROM favourites")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -3045,12 +3194,14 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut weighed = Vec::new();
+
         for row in rows {
             let (key, recording, favoured, here, nanos, by) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
             let Ok(recording) = decoded_recording(&recording) else {
                 continue;
             };
+
             weighed.push(WeighedFavourite {
                 key,
                 recording,
@@ -3069,6 +3220,7 @@ impl Ledger {
         if listen.device == self.device || listen.at < listens_kept_since() {
             return Ok(false);
         }
+
         let inserted = self
             .connection
             .execute(
@@ -3082,9 +3234,11 @@ impl Ledger {
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         if inserted == 0 {
             return Ok(false);
         }
+
         let credited = catalog
             .credit(&RemoteListen {
                 from: listen.device,
@@ -3094,6 +3248,7 @@ impl Ledger {
                 heard: listen.heard,
             })
             .map_err(Error::Catalog)?;
+
         if credited {
             self.connection
                 .execute(
@@ -3109,6 +3264,7 @@ impl Ledger {
         if !note.answer.travels() {
             return Ok(false);
         }
+
         let slot = AnswerSlot::of(&note.recording, &note.answer);
         let encoded = encoded_answer(&note.answer);
         let held: Option<(Vec<u8>, i64, Vec<u8>, bool)> = self
@@ -3120,6 +3276,7 @@ impl Ledger {
             )
             .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         if held
             .as_ref()
             .is_some_and(|(answer, _, _, here)| *answer == encoded && *here)
@@ -3137,6 +3294,7 @@ impl Ledger {
                 device: device_from(by),
             } < note.stamp
         });
+
         if newer {
             self.connection
                 .execute(
@@ -3168,6 +3326,7 @@ impl Ledger {
                 "SELECT recording, answer, nanos, stamped_by FROM answers WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -3179,12 +3338,14 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut notes = Vec::new();
+
         for row in rows {
             let (recording, answer, nanos, by) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
             let Some(answer) = decoded_answer(&answer)? else {
                 continue;
             };
+
             notes.push(AnswerNote {
                 recording: decoded_recording(&recording)?,
                 stamp: Stamp {
@@ -3201,13 +3362,16 @@ impl Ledger {
         let mut settled = 0;
 
         let mut locals = None;
+
         for stored in self.stored_playlists()? {
             let Some(local) = stored.local else {
                 continue;
             };
+
             if stored.gone || stored.here.iter().all(|here| *here) {
                 continue;
             }
+
             let newly = stored
                 .entries
                 .iter()
@@ -3216,12 +3380,14 @@ impl Ledger {
                 .map(|(recording, _)| catalog.holds(recording))
                 .collect::<std::result::Result<Vec<_>, Refused>>()
                 .map_err(Error::Catalog)?;
+
             if !newly.iter().any(|held| *held) {
                 continue;
             }
             if locals.is_none() {
                 locals = Some(catalog.playlists().map_err(Error::Catalog)?);
             }
+
             let unlooked = locals
                 .iter()
                 .flatten()
@@ -3230,15 +3396,18 @@ impl Ledger {
                     stored.seen.as_deref()
                         != Some(projection_digest(&playlist.name, &playlist.entries).as_slice())
                 });
+
             if unlooked {
                 continue;
             }
+
             let name = stored.alias.clone().unwrap_or_else(|| stored.name.clone());
             let written = catalog
                 .write_playlist(Some(local), &name, &stored.entries)
                 .map_err(Error::Catalog)?;
             let here = held_in(catalog, &stored.entries, &written)?;
             let digest = projection_digest(&written.name, &written.entries);
+
             self.connection
                 .execute(
                     "UPDATE playlists SET local_id = ?2, local_created = ?3, here = ?4, seen = ?5 WHERE key = ?1",
@@ -3289,19 +3458,24 @@ impl Ledger {
         if !catalog.keeps_queries() {
             return Ok(0);
         }
+
         let mut settled = self.fold_queries(catalog)?;
         let unwritten = self.stored_queries_where("local_id IS NULL AND gone = 0")?;
+
         if unwritten.is_empty() {
             return Ok(settled);
         }
 
         let folds = self.query_folds()?;
         let mut locals = catalog.queries().map_err(Error::Catalog)?;
+
         for stored in unwritten {
             if folds.folds_away(stored.key).is_some() {
                 continue;
             }
+
             let mut alike = None;
+
             for (at, local) in locals.iter().enumerate() {
                 if (names_alike(&local.body.name, &stored.body.name)
                     || orphaned_by_a_query_write(&stored, local))
@@ -3311,14 +3485,18 @@ impl Ledger {
                     break;
                 }
             }
+
             let mut adopted = alike.map(|at| locals.remove(at).at);
+
             let made_unseen = match adopted {
                 Some(_) => None,
                 None => self.made_beside_an_unwritten(&stored, &folds)?,
             };
+
             if let Some(made) = &made_unseen {
                 adopted = made.local;
             }
+
             let wanted = QueryBody {
                 name: stored
                     .alias
@@ -3331,6 +3509,7 @@ impl Ledger {
                 Err(Refused::Unwritable) => continue,
                 Err(refused) => return Err(Error::Catalog(refused)),
             };
+
             if let Some(made) = &made_unseen {
                 self.query_folded(
                     &QueryFolded {
@@ -3385,6 +3564,7 @@ impl Ledger {
             .connection
             .prepare("SELECT device, id, recording, at, heard FROM listens WHERE credited = 0")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -3397,10 +3577,12 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut listens = Vec::new();
+
         for row in rows {
             let (device, id, recording, at, heard) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
             let from = device_from(&device);
+
             listens.push((
                 device,
                 id,
@@ -3418,6 +3600,7 @@ impl Ledger {
 
     pub fn wanted(&self, follow: Follow, catalog: &dyn Catalog) -> Result<Vec<Recording>> {
         let mut wanted: BTreeMap<RecordingKey, Recording> = BTreeMap::new();
+
         if follow.playlists || follow.everything {
             for stored in self.stored_playlists()? {
                 if stored.gone || !(follow.everything || self.keeps_songs(stored.key)?) {
@@ -3433,7 +3616,9 @@ impl Ledger {
                 wanted.insert(recording.key(), recording);
             }
         }
+
         let mut still_wanted = Vec::with_capacity(wanted.len());
+
         for recording in one_recording_a_song(wanted.into_values()) {
             if !self.deleted_everywhere(&recording)? && lacked(catalog, &recording)? {
                 still_wanted.push(recording);
@@ -3444,6 +3629,7 @@ impl Ledger {
 
     pub fn refused(&mut self, recording: &Recording) -> Result<()> {
         let now = wall_nanos();
+
         for key in [recording.key(), recording.named_key()] {
             self.connection
                 .execute(
@@ -3480,19 +3666,23 @@ impl Ledger {
         waits: Duration,
     ) -> Result<Vec<Recording>> {
         let waited = i64::try_from(waits.as_nanos()).unwrap_or(i64::MAX);
+
         self.connection
             .execute(
                 "DELETE FROM refusals WHERE refused <= ?1",
                 params![wall_nanos().saturating_sub(waited)],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
         let mut refused = self
             .connection
             .prepare_cached("SELECT 1 FROM refusals WHERE key = ?1")
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut kept = Vec::with_capacity(recordings.len());
+
         for recording in recordings {
             let mut held_back = false;
+
             for key in [recording.key(), recording.named_key()] {
                 held_back |= refused
                     .exists(params![key.as_str()])
@@ -3601,6 +3791,7 @@ impl Ledger {
                 "SELECT device, name, platform, nanos, stamped_by FROM devices WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok(DeviceNote {
@@ -3629,6 +3820,7 @@ impl Ledger {
                 "SELECT device, layout, nanos, stamped_by FROM layouts WHERE {condition} ORDER BY device"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = query
             .query_map([], |row| {
                 Ok((
@@ -3640,9 +3832,11 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut layouts = Vec::new();
+
         for row in rows {
             let (device, layout, nanos, stamped_by) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             layouts.push(LayoutNote {
                 device: device_from(&device),
                 layout,
@@ -3662,6 +3856,7 @@ impl Ledger {
                 "SELECT device, rows, at, position, playing, nanos, stamped_by FROM handoffs WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -3676,9 +3871,11 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut handoffs = Vec::new();
+
         for row in rows {
             let (device, rows, at, position, playing, nanos, by) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             handoffs.push(Handoff {
                 device: device_from(&device),
                 stamp: Stamp {
@@ -3747,6 +3944,7 @@ impl Ledger {
                  FROM queries WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map(arguments, |row| {
                 Ok((
@@ -3770,6 +3968,7 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut queries = Vec::new();
+
         for row in rows {
             let (
                 key,
@@ -3789,6 +3988,7 @@ impl Ledger {
                 gone_id,
                 gone_created,
             ) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             queries.push(StoredQuery {
                 key: playlist_key_from(&key),
                 local: id
@@ -3822,6 +4022,7 @@ impl Ledger {
                 "SELECT recording, favoured, nanos, stamped_by FROM favourites WHERE {condition}"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -3833,9 +4034,11 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut notes = Vec::new();
+
         for row in rows {
             let (recording, favoured, nanos, by) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             notes.push(FavouriteNote {
                 recording: decoded_recording(&recording)?,
                 favoured,
@@ -3855,6 +4058,7 @@ impl Ledger {
                 "SELECT device, id, recording, at, heard FROM listens WHERE {condition} ORDER BY at"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map([], |row| {
                 Ok((
@@ -3867,9 +4071,11 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut listens = Vec::new();
+
         for row in rows {
             let (device, id, recording, at, heard) =
                 row.map_err(|source| Error::store(StoreOp::Read, source))?;
+
             listens.push(Listen {
                 device: device_from(&device),
                 id: id.cast_unsigned(),
@@ -3911,6 +4117,7 @@ impl Ledger {
                  FROM playlists WHERE released = 0 AND ({condition})"
             ))
             .map_err(|source| Error::store(StoreOp::Read, source))?;
+
         let rows = statement
             .query_map(arguments, |row| {
                 Ok((
@@ -3933,6 +4140,7 @@ impl Ledger {
             })
             .map_err(|source| Error::store(StoreOp::Read, source))?;
         let mut playlists = Vec::new();
+
         for row in rows {
             let (
                 key,
@@ -3953,6 +4161,7 @@ impl Ledger {
             ) = row.map_err(|source| Error::store(StoreOp::Read, source))?;
             let entries = decoded_recordings(&entries)?;
             let mut here = here.into_iter().map(|held| held != 0).collect::<Vec<_>>();
+
             here.resize(entries.len(), false);
             playlists.push(StoredPlaylist {
                 key: playlist_key_from(&key),
@@ -4009,6 +4218,7 @@ fn as_synced(
         .iter()
         .map(|recording| (*recording).clone())
         .collect::<Vec<_>>();
+
     for (recording, pair) in held.iter().zip(paired(catalog, &held, &listed)?) {
         if let Some(at) = pair {
             entries[at] = (*recording).clone();
@@ -4023,9 +4233,11 @@ fn orphaned_by_a_write(
     local: &LocalPlaylist,
 ) -> Result<bool> {
     let wanted = synced.alias.as_deref().unwrap_or(&synced.name);
+
     if !named_as_a_free_alias_of(wanted, &local.name) {
         return Ok(false);
     }
+
     let listed = local.entries.iter().flatten().collect::<Vec<_>>();
     let pairs = paired(catalog, &synced.entries.iter().collect::<Vec<_>>(), &listed)?;
     Ok(unpaired(&pairs, listed.len())
@@ -4044,6 +4256,7 @@ fn orphaned_by_a_query_write(synced: &StoredQuery, local: &LocalQuery) -> bool {
 
 fn unpaired(pairs: &[Option<usize>], listed: usize) -> Vec<bool> {
     let mut unpaired = vec![true; listed];
+
     for at in pairs.iter().flatten() {
         unpaired[*at] = false;
     }
@@ -4057,9 +4270,11 @@ fn paired(
 ) -> Result<Vec<Option<usize>>> {
     let mut taken = vec![false; listed.len()];
     let mut pairs = Vec::with_capacity(asked.len());
+
     for entry in asked {
         let pair =
             (0..listed.len()).find(|at| !taken[*at] && listed[*at].names_the_same_song_as(entry));
+
         if let Some(at) = pair {
             taken[at] = true;
         }
@@ -4070,9 +4285,11 @@ fn paired(
         if pair.is_some() || taken.iter().all(|taken| *taken) {
             continue;
         }
+
         let Some(own) = catalog.held_as(entry).map_err(Error::Catalog)? else {
             continue;
         };
+
         *pair = (0..listed.len()).find(|at| {
             !taken[*at] && (*listed[*at] == own || listed[*at].names_the_same_song_as(&own))
         });
@@ -4092,8 +4309,10 @@ fn bundled(changes: Vec<Change>) -> Vec<Vec<Change>> {
     let mut bundles = Vec::new();
     let mut bundle = Vec::new();
     let mut bytes = 0;
+
     for change in changes {
         let size = encoded_change(&change).len();
+
         if bytes + size > BUNDLE_BYTES && !bundle.is_empty() {
             bundles.push(std::mem::take(&mut bundle));
             bytes = 0;
@@ -4128,14 +4347,18 @@ fn millis(duration: Duration) -> i64 {
 
 fn device_from(bytes: &[u8]) -> DeviceId {
     let mut device = [0; 16];
+
     let length = bytes.len().min(device.len());
+
     device[..length].copy_from_slice(&bytes[..length]);
     DeviceId(device)
 }
 
 fn playlist_key_from(bytes: &[u8]) -> PlaylistKey {
     let mut key = [0; 16];
+
     let length = bytes.len().min(key.len());
+
     key[..length].copy_from_slice(&bytes[..length]);
     PlaylistKey(key)
 }
@@ -4185,6 +4408,7 @@ mod tests {
     #[test]
     fn a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens() {
         let ledger = Ledger::in_memory().expect("a ledger");
+
         ledger
             .connection
             .execute(
@@ -4192,9 +4416,11 @@ mod tests {
                 params![i64::MAX],
             )
             .expect("a frozen clock");
+
         let before = wall_nanos();
 
         let mut reopened = Ledger::over(ledger.connection).expect("reopened");
+
         let next = reopened.clock.now(reopened.device);
 
         assert!(next.nanos < before + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS);
@@ -4204,6 +4430,7 @@ mod tests {
     fn a_clock_saved_within_a_day_ahead_of_the_wall_clock_is_kept_when_the_ledger_opens() {
         let ledger = Ledger::in_memory().expect("a ledger");
         let ahead = wall_nanos() + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS / 2;
+
         ledger
             .connection
             .execute("UPDATE state SET clock = ?1 WHERE id = 1", params![ahead])
@@ -4261,6 +4488,7 @@ mod tests {
             .iter()
             .position(|step| *step == STAMPS_PAST_THE_BOUND_ARE_RESTAMPED)
             .expect("the step is in the chain");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -4296,11 +4524,13 @@ mod tests {
     #[test]
     fn a_stamp_past_the_bound_is_restamped_to_the_wall_clock_in_every_table_keeping_its_device() {
         let connection = laid_before_the_restamp(i64::MAX);
+
         for (_, insert) in STAMPED_ROWS {
             connection
                 .execute(insert, params![i64::MAX])
                 .expect("a row an older build stamped near the end of time");
         }
+
         let before = wall_nanos();
 
         let ledger = Ledger::over(connection).expect("carried forward");
@@ -4308,6 +4538,7 @@ mod tests {
 
         for (table, _) in STAMPED_ROWS {
             let (nanos, by, owed) = stamp_and_owed_of(&ledger, table);
+
             assert!(
                 (before - A_MILLISECOND_IN_NANOS..=after + A_MILLISECOND_IN_NANOS).contains(&nanos),
                 "{table}: {nanos}"
@@ -4321,6 +4552,7 @@ mod tests {
     fn a_stamp_within_the_bound_keeps_its_stamp_and_owes_nothing_new_when_the_restamp_runs() {
         let connection = laid_before_the_restamp(0);
         let ahead = wall_nanos() + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS / 2;
+
         for (_, insert) in STAMPED_ROWS {
             connection
                 .execute(insert, params![ahead])
@@ -4331,6 +4563,7 @@ mod tests {
 
         for (table, _) in STAMPED_ROWS {
             let (nanos, _, owed) = stamp_and_owed_of(&ledger, table);
+
             assert_eq!(nanos, ahead, "{table}");
             assert_eq!(owed, 0, "{table}");
         }
@@ -4339,11 +4572,13 @@ mod tests {
     #[test]
     fn the_restamp_lifts_a_clock_lagging_behind_it_so_the_next_stamp_outranks_the_restamped_rows() {
         let connection = laid_before_the_restamp(1);
+
         connection
             .execute(STAMPED_ROWS[1].1, params![i64::MAX])
             .expect("a playlist an older build stamped near the end of time");
 
         let mut ledger = Ledger::over(connection).expect("carried forward");
+
         let (restamped, _, _) = stamp_and_owed_of(&ledger, "playlists");
         let next = ledger.clock.now(ledger.device);
 
@@ -4360,6 +4595,7 @@ mod tests {
     #[test]
     fn a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held() {
         let connection = Connection::open_in_memory().expect("a connection");
+
         connection
             .execute_batch(V1)
             .expect("the first release's ledger");
@@ -4388,6 +4624,7 @@ mod tests {
             .iter()
             .position(|step| *step == SHARED_PLAYLISTS_STAND_APART)
             .expect("the step is in the chain");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -4432,6 +4669,7 @@ mod tests {
             .iter()
             .position(|step| *step == LAYOUTS_TRAVEL)
             .expect("the step is in the chain");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -4459,8 +4697,10 @@ mod tests {
             .expect("stamped");
 
         let mut ledger = Ledger::over(connection).expect("carried forward");
+
         let handoffs = ledger.handoffs_where("1").expect("handoffs").len();
         let layouts = ledger.layouts().expect("layouts");
+
         ledger
             .space_made_anew()
             .expect("everything owed, the new table too");
@@ -4477,6 +4717,7 @@ mod tests {
             .iter()
             .position(|step| *step == SONGS_DELETED_EVERYWHERE)
             .expect("the step is in the chain");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -4504,12 +4745,14 @@ mod tests {
             .expect("stamped");
 
         let mut ledger = Ledger::over(connection).expect("carried forward");
+
         let layouts = ledger.layouts().expect("layouts").len();
         let standing = ledger.deletions_where("1").expect("deletions");
         let joined = ledger.joined().expect("joined");
         let entered_again = ledger
             .enter_space(SpaceId([5; 16]))
             .expect("the same space");
+
         ledger
             .space_made_anew()
             .expect("everything owed, the new table too");
@@ -4527,6 +4770,7 @@ mod tests {
             .iter()
             .position(|step| *step == LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED)
             .expect("the step is in the chain");
+
         for step in &MIGRATIONS[..before] {
             connection
                 .execute_batch(step)
@@ -4553,6 +4797,7 @@ mod tests {
             .expect("stamped");
 
         let mut ledger = Ledger::over(connection).expect("carried forward");
+
         let plan = ledger
             .connection
             .prepare(&format!("EXPLAIN QUERY PLAN {AGE_LISTENS}"))
@@ -4561,7 +4806,9 @@ mod tests {
             .expect("read")
             .collect::<rusqlite::Result<Vec<_>>>()
             .expect("every step");
+
         ledger.age_listens().expect("aged");
+
         let left: i64 = ledger
             .connection
             .query_row("SELECT count(*) FROM listens", [], |row| row.get(0))
@@ -4578,12 +4825,14 @@ mod tests {
     #[test]
     fn a_ledger_of_before_refusals_were_kept_gains_them_and_forgets_one_once_it_has_waited() {
         let connection = Connection::open_in_memory().expect("a connection");
+
         connection
             .execute_batch(&format!("{V1}{ANSWERS_TRAVEL}"))
             .expect("the ledger of before");
         connection
             .pragma_update(None, "user_version", 2)
             .expect("stamped");
+
         let song = Recording {
             mbid: None,
             title: "Hunter".into(),
@@ -4593,7 +4842,9 @@ mod tests {
         };
 
         let mut ledger = Ledger::over(connection).expect("carried forward");
+
         ledger.refused(&song).expect("refused");
+
         let waiting = ledger
             .not_refused_within(vec![song.clone()], Duration::from_secs(60))
             .expect("read");
@@ -4609,6 +4860,7 @@ mod tests {
     fn a_ledger_of_before_namesakes_were_folded_gains_the_folds_and_takes_what_it_stamped_as_made_here()
      {
         let connection = Connection::open_in_memory().expect("a connection");
+
         connection
             .execute_batch(&format!(
                 "{V1}{ANSWERS_TRAVEL}{SONGS_REFUSED_ARE_REMEMBERED}"

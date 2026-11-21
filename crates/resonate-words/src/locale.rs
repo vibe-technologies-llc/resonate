@@ -19,6 +19,7 @@ pub fn languages_the_listener_reads() -> Vec<String> {
 #[cfg(any(windows, target_os = "macos"))]
 pub fn languages_the_listener_reads() -> Vec<String> {
     let mut languages: Vec<String> = Vec::new();
+
     for tag in sys_locale::get_locales().filter_map(|locale| tagged(&locale)) {
         if !languages.contains(&tag) {
             languages.push(tag);
@@ -33,6 +34,7 @@ fn read_from(listed: Option<&str>, locale: Option<&str>) -> Vec<String> {
     let listed = listed.filter(|_| !plain);
 
     let mut languages: Vec<String> = Vec::new();
+
     for tag in listed
         .into_iter()
         .flat_map(|listed| listed.split(':'))

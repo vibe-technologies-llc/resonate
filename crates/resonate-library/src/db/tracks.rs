@@ -30,6 +30,7 @@ impl Library {
     pub fn tracks_with_ids(&self, ids: &[TrackId]) -> Result<Vec<Track>> {
         let raw = self.inner.read(|connection| {
             let mut read = Vec::with_capacity(ids.len());
+
             for batch in ids.chunks(IDS_READ_AT_ONCE) {
                 let held = vec!["?"; batch.len()].join(",");
                 let mut statement = connection
@@ -37,6 +38,7 @@ impl Library {
                         "SELECT {TRACK_COLUMNS} FROM tracks WHERE id IN ({held})"
                     ))
                     .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
                 let rows = statement
                     .query_map(
                         params_from_iter(batch.iter().map(|id| id.get() as i64)),
@@ -44,6 +46,7 @@ impl Library {
                     )
                     .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
                 read.extend(rows);
             }
             Ok(read)
@@ -55,6 +58,7 @@ impl Library {
     pub fn album_titles(&self, ids: &[AlbumId]) -> Result<Vec<(AlbumId, String)>> {
         self.inner.read(|connection| {
             let mut read = Vec::with_capacity(ids.len());
+
             for batch in ids.chunks(IDS_READ_AT_ONCE) {
                 let held = vec!["?"; batch.len()].join(",");
                 let mut statement = connection
@@ -62,6 +66,7 @@ impl Library {
                         "SELECT id, title FROM albums WHERE id IN ({held})"
                     ))
                     .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
                 let rows = statement
                     .query_map(
                         params_from_iter(batch.iter().map(|id| id.get() as i64)),
@@ -69,6 +74,7 @@ impl Library {
                     )
                     .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
                 read.extend(rows.into_iter().filter_map(|(id, title)| {
                     Some((AlbumId::new(u64::try_from(id).ok()?).ok()?, title))
                 }));
@@ -80,6 +86,7 @@ impl Library {
     pub fn track_at(&self, path: &Path, span: Option<FrameSpan>) -> Result<Option<Track>> {
         let text = store::path_text(path);
         let (start, _) = store::span_columns(span);
+
         let raw = self.inner.read(|connection| {
             connection
                 .query_row(
@@ -137,6 +144,7 @@ impl Library {
                       ORDER BY title COLLATE NOCASE, id LIMIT ?1",
                 )
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
             let ids = statement
                 .query_map([i64::try_from(at_most).unwrap_or(i64::MAX)], |row| {
                     row.get::<_, i64>(0)
@@ -150,6 +158,7 @@ impl Library {
             .map(|id| TrackId::new(id as u64))
             .collect::<std::result::Result<Vec<_>, _>>()?;
         let mut tracks = self.tracks_with_ids(&ids)?;
+
         tracks.sort_by_key(|track| ids.iter().position(|id| *id == track.id));
         Ok(HiddenTracks {
             counted: u64::try_from(counted).unwrap_or(0),
@@ -190,6 +199,7 @@ impl Library {
 
         self.inner.write(|transaction| {
             let mut changed = 0;
+
             for what in marked {
                 let (table, row) = favoured(*what);
                 let held = transaction
@@ -200,6 +210,7 @@ impl Library {
                     )
                     .optional()
                     .map_err(|source| Error::store(StoreOp::Query, source))?;
+
                 if held.is_none() {
                     return Err(unknown(*what));
                 }

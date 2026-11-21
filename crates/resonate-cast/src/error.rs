@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::Host;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Asked {
     Status,
     Launch,
@@ -44,7 +44,7 @@ impl Asked {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Refusal {
     LaunchError,
     LoadFailed,
@@ -66,7 +66,7 @@ impl Refusal {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum LinkOp {
     Connect,
     Handshake,

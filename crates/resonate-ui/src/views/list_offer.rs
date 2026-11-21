@@ -34,6 +34,7 @@ impl RootView {
         let Some(offered) = self.social.list_offered.take() else {
             return;
         };
+
         cx.notify();
         self.accept_an_invitation(&offered.link, cx);
     }

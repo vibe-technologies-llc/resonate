@@ -27,6 +27,7 @@ impl Heard {
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_secs());
         let mut text = format!("{CHECKED_AT} {seconds}\n");
+
         if let Some(latest) = &self.latest {
             text.push_str(&format!(
                 "{LATEST_VERSION} {}\n{LATEST_PAGE} {}\n",
@@ -40,6 +41,7 @@ impl Heard {
         let mut checked = None;
         let mut version = None;
         let mut page = None;
+
         for line in text.lines() {
             match line.split_once(' ') {
                 Some((CHECKED_AT, seconds)) => {
@@ -50,6 +52,7 @@ impl Heard {
                 _ => {}
             }
         }
+
         let latest = match (version, page) {
             (Some(version), Some(page)) => Some(Release { version, page }),
             (None, None) => None,
@@ -100,6 +103,7 @@ impl KeptRelease {
     ) -> Option<Release> {
         let held = self.heard();
         let fresh = held.as_ref().is_some_and(|held| !held.is_due(now));
+
         if fresh || !reaching {
             return held.and_then(Heard::newer);
         }
@@ -110,6 +114,7 @@ impl KeptRelease {
                     checked: now,
                     latest,
                 };
+
                 self.keep(&heard);
                 heard.newer()
             }
@@ -197,6 +202,7 @@ mod tests {
         ] {
             assert_eq!(Heard::read(&heard.written()), Some(heard));
         }
+
         assert_eq!(Heard::read("latest 1.0.0\n"), None);
         assert_eq!(Heard::read("checked soon\n"), None);
         assert_eq!(Heard::read("checked 5\nlatest 1.0.0\n"), None);
@@ -210,6 +216,7 @@ mod tests {
         let (base, served) = serving("200 OK", NEWER);
         let releases = over_loopback(base);
         let first = kept.newer_lately(morning(), true, || releases.latest());
+
         served.join().expect("the server");
 
         let later = kept.newer_lately(morning() + A_DAY / 2, true, || -> Result<_, Error> {
@@ -219,6 +226,7 @@ mod tests {
         let (base, served) = serving("200 OK", NEWER);
         let releases = over_loopback(base);
         let tomorrow = kept.newer_lately(morning() + A_DAY, true, || releases.latest());
+
         served.join().expect("the server asked again the next day");
 
         assert_eq!(first, Some(released("99.0.0")));
@@ -233,9 +241,11 @@ mod tests {
         let offline = kept.newer_lately(morning(), false, || -> Result<_, Error> {
             panic!("asked while offline")
         });
+
         assert_eq!(offline, None);
 
         kept.newer_lately(morning(), true, || Ok::<_, Error>(Some(released("99.0.0"))));
+
         let failed = kept.newer_lately(morning() + A_DAY, true, || Err(unasked()));
 
         assert_eq!(failed, Some(released("99.0.0")));
@@ -251,6 +261,7 @@ mod tests {
         let kept = kept_in_a_scratch_folder();
 
         kept.heard_now(Some(released("99.0.0")), morning());
+
         let answered = kept.newer_lately(morning() + A_DAY / 2, true, || -> Result<_, Error> {
             panic!("asked again within the day")
         });

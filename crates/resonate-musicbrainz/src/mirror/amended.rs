@@ -74,6 +74,7 @@ pub(crate) fn made_at(path: &Path, dump: &str, sequence: u64, at: u64) -> Result
             |row| row.get(0),
         )
         .map_err(failed(StoreOp::Read))?;
+
     if !laid {
         amended
             .execute_batch(AMENDED_SCHEMA)
@@ -156,6 +157,7 @@ impl Amending<'_> {
 
     fn cleared(&self, kind: Entity, id: i64) -> Result<()> {
         let write = || failed(StoreOp::Write);
+
         if let Some(codes) = codes_of(kind) {
             self.connection
                 .prepare_cached(&format!("DELETE FROM amended.{codes} WHERE id = ?1"))
@@ -175,6 +177,7 @@ impl Amending<'_> {
     pub(crate) fn rewritten(&self, kind: Entity, built: &Document) -> Result<()> {
         let write = || failed(StoreOp::Write);
         let packed = self.packed(kind, &built.bytes)?;
+
         let id = match self.held(kind, &built.gid)? {
             Some(id) => {
                 self.cleared(kind, id)?;
@@ -196,6 +199,7 @@ impl Amending<'_> {
                 self.connection.last_insert_rowid()
             }
         };
+
         if let Some(codes) = codes_of(kind) {
             for code in &built.codes {
                 self.connection
@@ -225,6 +229,7 @@ impl Amending<'_> {
     ) -> Result<()> {
         let write = || failed(StoreOp::Write);
         let held = self.held(kind, gid)?;
+
         if let Some(id) = held {
             self.cleared(kind, id)?;
         }
@@ -277,17 +282,21 @@ impl Amended {
         if !path.is_file() {
             return Ok(None);
         }
+
         let connection = Connection::open_with_flags(
             path,
             OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
         )
         .map_err(failed(StoreOp::Open))?;
+
         connection
             .busy_timeout(WAITED_FOR_A_WRITER)
             .map_err(failed(StoreOp::Configure))?;
+
         let Some(to) = amended_to_in(&connection, "")? else {
             return Ok(None);
         };
+
         if to.dump != dump {
             tracing::info!(
                 amended = %to.dump,
@@ -346,6 +355,7 @@ impl Amended {
                 code_column(kind)
             ))
             .map_err(failed(StoreOp::Read))?;
+
         let rows = statement
             .query_map([code], |row| row.get(0))
             .map_err(failed(StoreOp::Read))?;
@@ -360,6 +370,7 @@ impl Amended {
             .connection
             .prepare_cached(&sql)
             .map_err(failed(StoreOp::Search))?;
+
         let rows = statement
             .query_map(
                 params![query, i64::try_from(most).unwrap_or(i64::MAX)],

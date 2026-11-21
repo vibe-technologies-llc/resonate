@@ -44,6 +44,7 @@ pub fn watch(
             },
             default(pace.surveyed_at_least_every) => Woken::Due,
         };
+
         match woken {
             Woken::Stopped => return,
             Woken::Nudged => match stopped.recv_timeout(pace.settled_after_a_nudge) {
@@ -52,9 +53,11 @@ pub fn watch(
             },
             Woken::Due => {}
         }
+
         let Some(now) = survey() else {
             continue;
         };
+
         for change in changes_between(&before, &now) {
             let _ = told.send(change);
         }
@@ -115,8 +118,10 @@ mod tests {
         let (told, changes) = unbounded();
         let surveys = Arc::new(AtomicUsize::new(0));
         let counted = Arc::clone(&surveys);
+
         let watcher = thread::spawn(move || {
             let mut present = vec![sink(1)];
+
             let survey = move || {
                 while let Ok(now) = plugged.try_recv() {
                     present = now;
@@ -124,6 +129,7 @@ mod tests {
                 counted.fetch_add(1, Ordering::AcqRel);
                 Some(present.clone())
             };
+
             watch(vec![sink(1)], survey, &told, &nudged, &stopped, pace);
         });
         Watched {
@@ -139,6 +145,7 @@ mod tests {
     impl Watched {
         fn stopped(self) {
             let _ = self.stop.send(());
+
             assert!(self.watcher.join().is_ok());
         }
     }
@@ -157,6 +164,7 @@ mod tests {
             watched.changes.recv_timeout(ANSWERED_WITHIN),
             Ok(SinkChange::Added(SinkId::new(2)))
         );
+
         watched.stopped();
     }
 
@@ -176,6 +184,7 @@ mod tests {
             watched.changes.recv_timeout(ANSWERED_WITHIN),
             Ok(SinkChange::Removed(SinkId::new(1)))
         );
+
         watched.stopped();
     }
 
@@ -194,6 +203,7 @@ mod tests {
         thread::sleep(Duration::from_millis(400));
 
         assert_eq!(watched.surveys.load(Ordering::Acquire), 1);
+
         watched.stopped();
     }
 
@@ -222,7 +232,9 @@ mod tests {
             Ok(SinkChange::Added(SinkId::new(3)))
         );
         assert!(surveys.load(Ordering::Acquire) >= 1);
+
         let _ = stop.send(());
+
         assert!(watcher.join().is_ok());
     }
 }

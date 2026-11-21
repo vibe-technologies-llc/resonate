@@ -61,6 +61,7 @@ impl Timeline {
         if self.is_sample_accurate() {
             return Frames(ticks.get());
         }
+
         let Some(time) = self
             .time_base
             .and_then(|time_base| time_base.calc_duration(ticks))

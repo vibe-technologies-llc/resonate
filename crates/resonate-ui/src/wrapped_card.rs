@@ -62,6 +62,7 @@ pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
             )
         })
         .unwrap_or_default();
+
     let said = markup::Said {
         family: escaped(&colours.family),
         eyebrow: escaped(&format!("{REVIEW_NAME} {}", review.year)),
@@ -81,6 +82,7 @@ pub(crate) fn drawn(review: &YearReview, colours: &CardColours) -> String {
 
 pub(crate) fn pictured(review: &YearReview, colours: &CardColours) -> Result<Vec<u8>, CardRefused> {
     let mut fonts = usvg::fontdb::Database::new();
+
     fonts.load_system_fonts();
 
     png_of(&drawn(review, colours), fonts)
@@ -94,6 +96,7 @@ fn png_of(drawing: &str, fonts: usvg::fontdb::Database) -> Result<Vec<u8>, CardR
     let tree = usvg::Tree::from_str(drawing, &options).map_err(CardRefused::Unreadable)?;
     let mut canvas =
         tiny_skia::Pixmap::new(CARD_WIDTH, CARD_HEIGHT).ok_or(CardRefused::NoCanvas)?;
+
     resvg::render(
         &tree,
         tiny_skia::Transform::identity(),

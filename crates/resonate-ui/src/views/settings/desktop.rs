@@ -75,6 +75,7 @@ impl RootView {
     pub(super) fn discord_group(&mut self, cx: &mut Context<Self>) -> Rows {
         let presence = cx.global::<ResonateApp>().presence.clone();
         let on = presence.enabled;
+
         let under = match (on, presence.app.is_some()) {
             (false, _) => words::settings_desktop::off_nothing_reaches_discord(),
             (true, false) => words::settings_desktop::on_and_waiting_for_an_application(),
@@ -203,6 +204,7 @@ impl RootView {
             .trim()
             .to_owned();
         let app = AppId::parse(&typed);
+
         if app.is_none() && !typed.is_empty() {
             self.report(
                 Notice::Trouble(words::settings_desktop::not_an_application().to_owned()),
@@ -210,7 +212,9 @@ impl RootView {
             );
             return;
         }
+
         let held = app.map(|app| app.to_string()).unwrap_or_default();
+
         self.settings_fields
             .read(cx)
             .discord_app
@@ -223,6 +227,7 @@ impl RootView {
         } else {
             words::settings_desktop::discord_is_told_nothing_until_an()
         };
+
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);
     }
@@ -251,6 +256,7 @@ impl RootView {
             .trim()
             .to_owned();
         let icon = resonate_core::Icon::parse(&typed);
+
         if icon.is_none() && !typed.is_empty() {
             self.report(
                 Notice::Trouble(words::settings_desktop::not_an_icon().to_owned()),
@@ -274,6 +280,7 @@ impl RootView {
         } else {
             words::settings_desktop::discord_draws_no_icon()
         };
+
         self.report(Notice::Done(said.to_owned()), cx);
         window.focus(&self.focus, cx);
     }
@@ -316,6 +323,7 @@ impl RootView {
         self.presented(
             |presence| {
                 let off = Presence::OFF;
+
                 presence.shown = off.shown;
                 presence.pictured = off.pictured;
                 presence.icon = off.icon;
@@ -341,6 +349,7 @@ impl RootView {
             change(&mut global.presence);
             (global.presence.clone(), Arc::clone(&global.present))
         });
+
         present.follow(&presence);
         cx.notify();
     }

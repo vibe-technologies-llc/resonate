@@ -26,13 +26,16 @@ fn pid_written_by(fake: &Fake) -> String {
     let began = Instant::now();
     loop {
         let pid = fs::read_to_string(&file).unwrap_or_default();
+
         if pid.ends_with('\n') {
             return pid.trim().to_owned();
         }
+
         assert!(
             began.elapsed() < A_KILL_LANDS_WITHIN,
             "the tool never began"
         );
+
         thread::sleep(LOOKED_AT_EVERY);
     }
 }
@@ -47,15 +50,19 @@ fn a_tool_interrupted_is_dead_and_the_next_one_still_starts() {
 
     let opened = tool.download(&song, Tier::Opus774).expect("a download");
     let pid = pid_written_by(&fake);
+
     assert!(!has_ended(&pid));
 
     interrupt_the_tools();
 
     let began = Instant::now();
+
     while !has_ended(&pid) {
         assert!(began.elapsed() < A_KILL_LANDS_WITHIN, "the tool lives on");
+
         thread::sleep(LOOKED_AT_EVERY);
     }
+
     assert!(matches!(opened, Opened::Reading { .. }));
 
     let _ = tool.formats(&song);

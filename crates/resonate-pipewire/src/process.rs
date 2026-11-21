@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::{
@@ -126,6 +126,7 @@ impl Taking {
             .and_then(NonZeroU16::new)
             .unwrap_or(NonZeroU16::MIN);
         let asking = Asking(u32::try_from(held >> ASKING_HELD_ABOVE).unwrap_or(0));
+
         let taken = match held & VERDICT_BITS {
             PACKED_AS_ASKED => Taken::AsAsked(WireWord::Packed),
             TAKEN_OTHERWISE => Taken::Otherwise { frame },
@@ -156,6 +157,7 @@ impl Hearing {
         let Some(slice) = data.data() else {
             return;
         };
+
         let end = offset.saturating_add(size).min(slice.len());
         if let Some(heard) = slice.get(offset.min(end)..end) {
             sink.take(heard);
@@ -187,7 +189,9 @@ pub(crate) struct Fed {
 impl Fed {
     pub(crate) fn run(&mut self, stream: &Stream) {
         self.take_what_was_handed();
+
         let Feed { cycle, source } = &mut self.feed;
+
         cycle.run(stream, source.as_mut());
     }
 
@@ -195,11 +199,13 @@ impl Fed {
         if self.spent.is_full() {
             return;
         }
+
         let Ok(handed) = self.handed.pop() else {
             return;
         };
         let spent = mem::replace(&mut self.feed, handed);
         let kept_off_this_thread = self.spent.push(spent);
+
         debug_assert!(kept_off_this_thread.is_ok());
     }
 }
@@ -256,6 +262,7 @@ impl Cycle {
         let spec = asked.spec;
         let bytes_per_frame = spec.bytes_per_frame().get() as usize;
         let packed_stride = packed_stride(spec);
+
         let widened = if packs_narrower(spec.format) {
             vec![0; QUANTUM_LIMIT_FRAMES.saturating_mul(bytes_per_frame)]
         } else {
@@ -288,13 +295,16 @@ impl Cycle {
         };
         let taken = self.taken();
         let frame = self.frame_of(taken);
+
         let filled = match data.data() {
             Some(slice) => self.write(taken, asked, slice, source, stamp),
             None => 0,
         };
 
         self.note_filled(filled, frame);
+
         let chunk = data.chunk_mut();
+
         *chunk.offset_mut() = 0;
         *chunk.stride_mut() = frame.get() as i32;
         *chunk.size_mut() = filled as u32;
@@ -315,6 +325,7 @@ impl Cycle {
         if taken == Taken::AsAsked(WireWord::Packed) {
             return self.write_packed(asked, slice, source, stamp);
         }
+
         let frame = self.ring_frame_of(taken);
         let Some(quantum) = slice.get_mut(..asked_for(asked, frame, slice.len())) else {
             return 0;
@@ -379,12 +390,14 @@ impl Cycle {
     fn note_latency(&self, stream: &Stream) -> Option<DeviceTime> {
         let time = stream.time().ok()?;
         let tick = ticking(time.rate())?;
+
         let ahead = GraphTime {
             delay: time.delay(),
             buffered: time.buffered(),
             queued: self.queued_frames(time.queued_buffers()),
             tick,
         };
+
         self.clock.note(ahead, self.rate);
         cycle_began(time.now(), monotonic_now(), ahead.downstream(self.rate))
     }
@@ -410,6 +423,7 @@ fn cycle_began(cycle: i64, now: u64, ahead: Frames) -> Option<DeviceTime> {
 fn asked_for(frames: u64, frame: NonZeroUsize, room: usize) -> usize {
     let quantum = (frames as usize).saturating_mul(frame.get());
     let whole_room = room - room % frame;
+
     if quantum == 0 {
         return whole_room;
     }
@@ -437,6 +451,7 @@ fn pack(slice: &mut [u8], written: usize) -> usize {
         let Some(place) = slice.get_mut(onto..onto.saturating_add(PACKED_WORD)) else {
             break;
         };
+
         place.copy_from_slice(&carried);
         filled = filled.saturating_add(PACKED_WORD);
     }
@@ -465,6 +480,7 @@ fn fill_packed_by_chunks(
         let Some(onto) = slice.get_mut(filled..) else {
             break;
         };
+
         filled = filled.saturating_add(packed_into(quantum, written, onto));
         if written < quantum.len() {
             break;
@@ -485,6 +501,7 @@ fn stamped_after(stamp: Stamp, frames: usize) -> Stamp {
 fn packed_into(widened: &[u8], written: usize, slice: &mut [u8]) -> usize {
     let held = widened.get(..written).unwrap_or_default();
     let mut filled = 0_usize;
+
     for ([low @ .., _], place) in held
         .as_chunks::<PADDED_WORD>()
         .0
@@ -505,7 +522,7 @@ fn ticking(rate: Fraction) -> Option<Ratio> {
 }
 
 #[cfg(test)]
-#[allow(clippy::indexing_slicing, clippy::expect_used)]
+#[allow(clippy::expect_used, clippy::indexing_slicing)]
 mod tests {
     use std::{thread, time::Duration};
 
@@ -570,7 +587,9 @@ mod tests {
     impl AudioSource for Counting {
         fn fill(&mut self, dst: &mut [u8]) -> usize {
             self.asked += dst.len();
+
             let written = dst.len().min(self.handed.len());
+
             dst[..written].copy_from_slice(&self.handed[..written]);
             self.handed.drain(..written);
             written
@@ -604,9 +623,11 @@ mod tests {
         );
 
         cycle.note_filled(1_024 * 8, cycle.frame_of(Taken::AsAsked(WireWord::Padded)));
+
         assert_eq!(cycle.queued_frames(2), 2_048);
 
         cycle.note_filled(1_024 * 6, cycle.frame_of(Taken::AsAsked(WireWord::Packed)));
+
         assert_eq!(
             cycle.queued_frames(1),
             1_024,
@@ -686,6 +707,7 @@ mod tests {
             },
         ] {
             taking.store(took);
+
             assert_eq!(taking.load(), took);
         }
     }
@@ -703,6 +725,7 @@ mod tests {
             word: WireWord::Padded,
         };
         let taking = presumed(was.spec);
+
         let mut still_in_place =
             Cycle::new(was, Arc::clone(&taking), Arc::new(StreamClock::default()));
         let handed = Cycle::new(asked, Arc::clone(&taking), Arc::new(StreamClock::default()));
@@ -710,6 +733,7 @@ mod tests {
         let mut buffer = vec![0xFF; 4_096];
 
         taking.store(settled.took(asked));
+
         let taken = still_in_place.taken();
         let filled = still_in_place.write(taken, 64, &mut buffer, &mut source, now());
 
@@ -789,7 +813,9 @@ mod tests {
             Some(Frames(QUANTUM_LIMIT_FRAMES as u64)),
             "the second chunk was not stamped past the first"
         );
+
         let last_word = frames * 2 - 1;
+
         assert_eq!(
             &buffer[filled - PACKED_WORD..filled],
             &[
@@ -889,6 +915,7 @@ mod tests {
     fn the_ring_is_told_how_far_its_quantum_lies_ahead_of_the_device() {
         let clock = Arc::new(StreamClock::default());
         let spec = stereo(SampleFormat::S16);
+
         let mut cycle = Cycle::new(Asked::first(spec), presumed(spec), Arc::clone(&clock));
         let mut source = Counting::of(vec![0; 256]);
         let mut buffer = vec![0; 256];
@@ -901,7 +928,9 @@ mod tests {
                 denom: NonZeroU32::new(44_100).expect("a graph rate"),
             },
         };
+
         clock.note(ahead, SampleRate::HZ_44100);
+
         let before = Moment::now();
 
         cycle.write(
@@ -913,6 +942,7 @@ mod tests {
         );
 
         let stamped = source.stamped.expect("the ring was handed a stamp");
+
         assert_eq!(stamped.ahead, Frames(505));
         assert!(stamped.at >= before);
     }
@@ -921,15 +951,19 @@ mod tests {
     fn a_fill_is_stamped_at_the_moment_its_cycle_began_however_late_the_callback_runs() {
         const LATE_BY: Duration = Duration::from_millis(3);
         const READS_APART_BY: Duration = Duration::from_micros(50);
+
         let clock = StreamClock::behind_by(Frames(505));
+
         Moment::start_the_clock();
         thread::sleep(LATE_BY);
+
         let began = monotonic_now() - LATE_BY.as_nanos() as u64;
         let called = Moment::now();
 
         let stamp = clock.stamp_by(cycle_began(began as i64, monotonic_now(), clock.latency()));
 
         let late_by = called.nanos().saturating_sub(stamp.at.nanos());
+
         assert_eq!(stamp.ahead, Frames(505));
         assert!(
             late_by + READS_APART_BY.as_nanos() as u64 >= LATE_BY.as_nanos() as u64,
@@ -966,6 +1000,7 @@ mod tests {
     #[test]
     fn a_packed_word_keeps_the_three_bytes_the_sample_lives_in_and_drops_the_padding() {
         let mut buffer = words(4);
+
         let filled = pack(&mut buffer, 16);
 
         assert_eq!(filled, 12);
@@ -990,6 +1025,7 @@ mod tests {
     #[test]
     fn a_read_that_stopped_part_way_through_a_word_packs_only_the_whole_ones() {
         let mut buffer = words(4);
+
         let filled = pack(&mut buffer, 14);
 
         assert_eq!(
@@ -1002,9 +1038,11 @@ mod tests {
     #[test]
     fn a_dop_marker_rides_the_top_byte_of_the_word_the_pack_keeps() {
         let mut buffer = Vec::new();
+
         for marker in DOP_MARKERS {
             buffer.extend_from_slice(&[0x34, 0x12, marker, 0x00]);
         }
+
         let written = buffer.len();
         let filled = pack(&mut buffer, written);
 

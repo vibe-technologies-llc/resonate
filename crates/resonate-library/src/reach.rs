@@ -41,7 +41,9 @@ impl Part {
 
     fn loses_a_letter(&mut self) {
         self.name.pop();
+
         let kept = without_padding(&self.name).len();
+
         self.name.truncate(kept);
     }
 }
@@ -129,6 +131,7 @@ mod tests {
 
     fn whole_path(root: &str, parts: &[Part]) -> String {
         let mut path = root.trim_end_matches(SEPARATORS).to_owned();
+
         for part in parts {
             path.push('\\');
             path.push_str(&part.whole());
@@ -153,6 +156,7 @@ mod tests {
     fn a_path_that_fits_is_left_whole() {
         let reach = Reach::legacy(Path::new(r"C:\Music"));
         let mut kept = parts(&[("Artist", ""), ("Album", ""), ("01 Title", ".flac")]);
+
         let before = kept.clone();
 
         assert!(reach.fit(&mut kept, weighed));
@@ -173,6 +177,7 @@ mod tests {
         assert!(reach.fit(&mut kept, weighed));
 
         let written = whole_path(root, &kept);
+
         assert!(
             written.encode_utf16().count() <= LEGACY_UNITS_AT_MOST,
             "{written}"
@@ -196,7 +201,9 @@ mod tests {
         assert_eq!(kept[1].name, "short");
         assert!(kept[0].name.len() < 200);
         assert!(kept[2].name.len() < 100);
+
         let written = whole_path(root, &kept);
+
         assert_eq!(
             written.encode_utf16().count(),
             LEGACY_UNITS_AT_MOST,
@@ -209,6 +216,7 @@ mod tests {
         let root = r"C:\Music";
         let reach = Reach::legacy(Path::new(root));
         let mut kept = parts(&[(&format!("{} . x", "\u{1d11e}".repeat(100)), ".flac")]);
+
         kept.push(Part::new("b".repeat(150), String::new()));
 
         assert!(reach.fit(&mut kept, weighed));
@@ -216,6 +224,7 @@ mod tests {
         for part in &kept {
             assert_eq!(part.name, without_padding(&part.name));
         }
+
         assert!(whole_path(root, &kept).encode_utf16().count() <= LEGACY_UNITS_AT_MOST);
     }
 
@@ -241,6 +250,7 @@ mod tests {
     #[test]
     fn nothing_is_cut_where_there_is_no_limit() {
         let mut kept = parts(&[(&"a".repeat(255), ""), (&"b".repeat(255), ".flac")]);
+
         let before = kept.clone();
 
         assert!(Reach::UNLIMITED.fit(&mut kept, weighed));

@@ -162,6 +162,7 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
             .reframed
             .as_ref()
             .map_or(0, |reframed| reframed.repacked);
+
         return Told {
             text: words::settings_tending::mended(
                 mended.covers_let_go,
@@ -172,7 +173,9 @@ fn weighing_told(weighed: &VaultWeighing, pass: Pass) -> Told {
             acts: false,
         };
     }
+
     let mut parts = vec![checked_told(weighed)];
+
     if !weighed.unframed.is_empty() {
         parts.push(words::settings_tending::packed_as_one_frame(
             weighed.unframed.len(),
@@ -236,6 +239,7 @@ fn compacting_told(compacted: Compacted, pass: Pass) -> Told {
     let now = format::bytes(compacted.now);
     let saved = format::bytes(compacted.was.saturating_sub(compacted.now));
     let was = format::bytes(compacted.was);
+
     let text = if pass.applies() {
         words::settings_tending::compacted(
             compacted.covers,
@@ -322,6 +326,7 @@ impl RootView {
         let running = self.settings_pane.read(cx).shown.tending.running();
         let previewing = running == Some((tend, Pass::Preview));
         let applying = running == Some((tend, Pass::Apply));
+
         let progress = (tend == Tend::Check && (previewing || applying))
             .then(|| {
                 self.settings_pane
@@ -419,6 +424,7 @@ impl RootView {
             pane.shown.tending.weighing = Some(Arc::clone(handle.progress()));
             pane.shown.tending.running = Some((Tend::Check, pass));
         });
+
         let task = cx.spawn(async move |this, cx| {
             while !handle.is_finished() {
                 cx.background_executor()
@@ -428,9 +434,11 @@ impl RootView {
                     return;
                 }
             }
+
             let done = handle.join().map(Tended::Weighed);
             let _ = this.update(cx, |this, cx| this.tended(Tend::Check, pass, done, cx));
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.shown.tending.task = task);
         cx.notify();
@@ -443,6 +451,7 @@ impl RootView {
         }
 
         let library = self.library.read(cx).catalog();
+
         if tend == Tend::Check {
             self.weigh_the_vault(pass, &library, cx);
             return;
@@ -451,13 +460,16 @@ impl RootView {
         let done = cx
             .background_executor()
             .spawn(async move { tend.run(&library, pass) });
+
         self.settings_pane.update(cx, |pane, _| {
             pane.shown.tending.running = Some((tend, pass));
         });
+
         let task = cx.spawn(async move |this, cx| {
             let done = done.await;
             let _ = this.update(cx, |this, cx| this.tended(tend, pass, done, cx));
         });
+
         self.settings_pane
             .update(cx, |pane, _| pane.shown.tending.task = task);
         cx.notify();
@@ -571,6 +583,7 @@ mod tests {
             .into_iter()
             .flat_map(|tend| [tend.id(Pass::Preview), tend.id(Pass::Apply)])
             .collect();
+
         ids.sort_unstable();
         ids.dedup();
 
@@ -584,12 +597,16 @@ mod tests {
     ) -> (Driven, Arc<Library>, Arc<Vault>, Folder, Folder) {
         let music = Folder::new();
         let held = Folder::new();
+
         music.tone("Echoes.wav", 1);
         music.tone("Time.wav", 2);
+
         let vault = Arc::new(Vault::make(held.path()).expect("a vault"));
         let library =
             Arc::new(Library::open_in_memory_with_vault(Arc::clone(&vault)).expect("a catalog"));
+
         Driven::scanned(&library, &music);
+
         let summary = library
             .import(
                 Arc::new(Sources::local()),
@@ -601,9 +618,11 @@ mod tests {
             .expect("an import starts")
             .join()
             .expect("an import ends");
+
         assert_eq!(summary.stats.vaulted, 2);
 
         let mut driven = Driven::open(cx, Arc::clone(&library));
+
         driven.click("tab-settings");
         driven.click("category-Library");
         (driven, library, vault, music, held)
@@ -654,6 +673,7 @@ mod tests {
         let (mut driven, library, _vault, _music, _held) = a_vault_holding_two_songs(cx);
 
         pressed(&mut driven, "check-the-vault");
+
         let told = counted(&mut driven, Tend::Check);
 
         assert!(
@@ -682,11 +702,14 @@ mod tests {
     ) -> (Driven, Arc<Library>, Folder, Folder) {
         let music = Folder::new();
         let held = Folder::new();
+
         music.tone("Echoes.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS);
         music.tone("Time.wav", LONG_ENOUGH_TO_STOP_IN_SECONDS + 1);
+
         let vault = Arc::new(Vault::make(held.path()).expect("a vault"));
         let library =
             Arc::new(Library::open_in_memory_with_vault(Arc::clone(&vault)).expect("a catalog"));
+
         Driven::scanned(&library, &music);
         library
             .import(
@@ -701,6 +724,7 @@ mod tests {
             .expect("an import ends");
 
         let mut driven = Driven::open(cx, Arc::clone(&library));
+
         driven.click("tab-settings");
         driven.click("category-Library");
         (driven, library, music, held)
@@ -762,6 +786,7 @@ mod tests {
                 .weighing()
                 .is_some_and(|weighing| weighing.snapshot().to_weigh == 2)
         });
+
         let watched = driven.read(|root, cx| {
             root.settings_pane
                 .read(cx)
@@ -771,6 +796,7 @@ mod tests {
                 .cloned()
                 .expect("a weighing")
         });
+
         assert_eq!(
             driven.read(|root, cx| root.settings_pane.read(cx).shown.tending.running()),
             Some((Tend::Check, Pass::Preview))
@@ -778,6 +804,7 @@ mod tests {
         assert!(!watched.is_cancelled());
 
         pressed(&mut driven, "stop-checking-the-vault");
+
         assert!(driven.read(|root, cx| {
             root.settings_pane
                 .read(cx)
@@ -786,6 +813,7 @@ mod tests {
                 .weighing()
                 .is_some_and(|weighing| weighing.is_cancelled())
         }));
+
         let told = counted(&mut driven, Tend::Check);
 
         assert!(!told.acts);
@@ -807,14 +835,18 @@ mod tests {
     ) {
         let (mut driven, library, _vault, _music, _held) = a_vault_holding_two_songs(cx);
         let broken = library.vault_objects().expect("objects").remove(0);
+
         std::fs::write(&broken.path, b"no longer what went in").expect("an object overwritten");
 
         pressed(&mut driven, "check-the-vault");
+
         let told = counted(&mut driven, Tend::Check);
+
         assert!(told.acts);
         assert!(told.text.contains("did not read back 1"));
 
         pressed(&mut driven, "mend-the-vault");
+
         assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
         assert!(driven.read(|root, cx| {
             root.settings_pane
@@ -824,7 +856,9 @@ mod tests {
                 .running()
                 .is_none()
         }));
+
         let standing = ["Echoes", "Time"].map(|title| stands_in(&library, title));
+
         assert_eq!(standing, [true, true]);
 
         pressed(&mut driven, "mend-the-vault");
@@ -845,6 +879,7 @@ mod tests {
         });
 
         let standing = ["Echoes", "Time"].map(|title| stands_in(&library, title));
+
         assert_eq!(standing.iter().filter(|stands| **stands).count(), 1);
         assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Check), cx)));
     }
@@ -856,15 +891,19 @@ mod tests {
         let (mut driven, library, _vault, _music, _held) = a_vault_holding_two_songs(cx);
 
         pressed(&mut driven, "release-from-the-vault");
+
         assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Release), cx)));
 
         pressed(&mut driven, "count-what-release-points-back");
+
         let told = counted(&mut driven, Tend::Release);
+
         assert!(told.acts);
         assert!(told.text.starts_with("would release 2"));
         assert!(stands_in(&library, "Echoes"));
 
         pressed(&mut driven, "release-from-the-vault");
+
         assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Release), cx)));
         assert!(stands_in(&library, "Echoes"));
 
@@ -895,11 +934,15 @@ mod tests {
         let (mut driven, library, vault, _music, _held) = a_vault_holding_two_songs(cx);
 
         pressed(&mut driven, "count-what-prune-takes");
+
         let nothing = counted(&mut driven, Tend::Prune);
+
         assert!(!nothing.acts);
 
         library.release_from_vault(&[]).expect("a release");
+
         let objects = vault.holding().expect("a count").objects;
+
         pressed(&mut driven, "count-what-prune-takes");
         driven.until(|root, cx| {
             root.settings_pane
@@ -909,6 +952,7 @@ mod tests {
                 .counted(Tend::Prune)
                 .is_some_and(|told| told.acts)
         });
+
         assert_eq!(vault.holding().expect("a count").objects, objects);
 
         pressed(&mut driven, "prune-the-vault");
@@ -943,17 +987,21 @@ mod tests {
         let (mut driven, _library, _vault, _music, _held) = a_vault_holding_two_songs(cx);
 
         pressed(&mut driven, "count-the-covers-to-compact");
+
         let told = counted(&mut driven, Tend::Compact);
+
         assert!(!told.acts);
         assert!(told.text.starts_with("would swap covers 0"));
 
         pressed(&mut driven, "compact-the-vault-covers");
+
         assert!(!driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Compact), cx)));
     }
 
     #[gpui::test]
     fn arming_one_action_of_the_vault_lowers_another(cx: &mut TestAppContext) {
         let (mut driven, library, _vault, _music, _held) = a_vault_holding_two_songs(cx);
+
         library.release_from_vault(&[]).expect("a release");
 
         pressed(&mut driven, "count-what-release-points-back");
@@ -967,6 +1015,7 @@ mod tests {
                 .is_some_and(|told| told.acts)
         });
         pressed(&mut driven, "prune-the-vault");
+
         assert!(driven.read(|root, cx| root.is_armed(&Armed::TendTheVault(Tend::Prune), cx)));
 
         pressed(&mut driven, "check-the-vault");

@@ -1,9 +1,9 @@
 #![deny(
-    clippy::unwrap_used,
     clippy::expect_used,
+    clippy::indexing_slicing,
     clippy::panic,
     clippy::unreachable,
-    clippy::indexing_slicing
+    clippy::unwrap_used
 )]
 
 use std::sync::{
@@ -67,18 +67,22 @@ impl Recording {
             .filled
             .load(Ordering::Relaxed)
             .next_multiple_of(channels);
+
         let to = from
             .saturating_add(frames.saturating_mul(channels))
             .min(self.samples.len());
+
         self.filled.store(to, Ordering::Release);
     }
 
     fn keep(&self, bytes: &[u8]) {
         let mut at = self.filled.load(Ordering::Relaxed);
+
         for word in bytes.as_chunks::<BYTES_PER_SAMPLE>().0 {
             let Some(slot) = self.samples.get(at) else {
                 break;
             };
+
             slot.store(f32::from_le_bytes(*word).to_bits(), Ordering::Relaxed);
             at += 1;
         }
@@ -148,9 +152,13 @@ mod tests {
             .iter()
             .flat_map(|sample| sample.to_le_bytes())
             .collect();
+
         recorder.admit(bytes.get(..8).unwrap_or_default());
+
         assert_eq!(recording.taken(), vec![0.5, -0.25]);
+
         recorder.admit(bytes.get(8..).unwrap_or_default());
+
         assert!(recording.is_full());
         assert_eq!(recording.taken(), vec![0.5, -0.25, 1.0]);
     }
@@ -166,13 +174,16 @@ mod tests {
     fn a_gap_is_silence_of_whole_frames_and_never_past_the_end() {
         let recording = Recording::holding(8);
         let mut recorder = Recorder::admitting(Arc::clone(&recording));
+
         recorder.admit(&bytes_of(&[0.5, -0.5, 0.25]));
 
         recording.silence_for(1, 2);
+
         assert_eq!(recording.filled(), 6);
         assert_eq!(recording.taken(), vec![0.5, -0.5, 0.25, 0.0, 0.0, 0.0]);
 
         recording.silence_for(100, 2);
+
         assert!(recording.is_full());
         assert_eq!(recording.filled(), 8);
     }
@@ -183,10 +194,12 @@ mod tests {
         let (mut recorder, admitting) = Recorder::held_back(Arc::clone(&recording));
 
         recorder.pad(1, 2);
+
         assert_eq!(recording.filled(), 0);
 
         admitting.store(true, Ordering::Release);
         recorder.pad(1, 2);
+
         assert_eq!(recording.filled(), 2);
     }
 
@@ -196,10 +209,12 @@ mod tests {
         let (mut recorder, admitting) = Recorder::held_back(Arc::clone(&recording));
 
         recorder.admit(&bytes_of(&[1.0, 1.0]));
+
         assert_eq!(recording.filled(), 0);
 
         admitting.store(true, Ordering::Release);
         recorder.admit(&bytes_of(&[0.5]));
+
         assert_eq!(recording.taken(), vec![0.5]);
     }
 }

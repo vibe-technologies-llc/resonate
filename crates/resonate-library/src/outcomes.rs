@@ -1,6 +1,6 @@
 use crate::{EnrichStats, words};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Section {
     Albums,
     Tracks,
@@ -41,7 +41,7 @@ impl Section {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Outcome {
     Albums,
     Releases,

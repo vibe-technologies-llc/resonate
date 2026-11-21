@@ -91,6 +91,7 @@ pub struct Answer {
 impl Answer {
     fn taking(mut self, offers: Vec<Option<Delivered>>) -> Self {
         let mut offered = offers.into_iter().flatten();
+
         self.delivered = offered.next();
         self.held_back = offered.collect();
         self
@@ -278,6 +279,7 @@ impl Providers {
             .iter()
             .filter(|provider| is_a_source(provider) && !asking.passing.contains(provider.source()))
             .collect();
+
         let mut turns: Vec<Turn> = asked_of
             .iter()
             .map(|provider| {
@@ -296,16 +298,21 @@ impl Providers {
 
         loop {
             let best = offers.iter().position(Option::is_some);
+
             if (asking.cancelled)() {
                 answer.cancelled = best.is_none();
                 return answer.taking(offers);
             }
+
             let now = Instant::now();
+
             for at in 0..asked_of.len() {
                 let turned_to = began + asking.apart.saturating_mul(rank(at));
                 let every_one_before_answered = turns[..at].iter().all(|turn| *turn == Turn::Over);
                 let provider = asked_of[at];
+
                 let may_start_early = !provider.last_resort() && now >= turned_to;
+
                 if turns[at] != Turn::Waiting
                     || best.is_some_and(|best| at > best)
                     || !(every_one_before_answered || may_start_early)
@@ -346,6 +353,7 @@ impl Providers {
                     && now >= since + asking.within
                 {
                     let provider = asked_of[at];
+
                     tracing::warn!(provider = %provider.source(), title = %identity.title, within = ?asking.within, "a provider did not answer in time and was left behind");
                     answer.late += 1;
                     answer.heard.push(provider.source().clone());
@@ -357,11 +365,14 @@ impl Providers {
             let Ok((at, obtained)) = answers.recv_timeout(LOOKED_AT_EVERY) else {
                 continue;
             };
+
             if !matches!(turns[at], Turn::Asked { .. }) {
                 continue;
             }
             turns[at] = Turn::Over;
+
             let provider = asked_of[at];
+
             answer.heard.push(provider.source().clone());
             match obtained {
                 Ok(Obtained::Found(delivery)) => {
@@ -369,6 +380,7 @@ impl Providers {
                         provider: provider.source().clone(),
                         delivery,
                     };
+
                     if identity.finds_gone(&delivered.taken_from()) {
                         tracing::debug!(provider = %provider.source(), taken_from = %delivered.taken_from(), title = %identity.title, "an offer already found gone was offered again and passed over");
                         continue;
@@ -497,16 +509,22 @@ mod tests {
         providers.first(&Identity::named("Echoes"), &patient(), &mut away);
 
         assert_eq!(away.why(&source), Some(WhyAway::SignInLapsed));
+
         away.note(&source);
+
         assert_eq!(away.why(&source), Some(WhyAway::SignInLapsed));
+
         let mut joined = Away::default();
+
         joined.join(&away);
+
         assert_eq!(joined.why(&source), Some(WhyAway::SignInLapsed));
     }
 
     #[test]
     fn the_stub_is_the_only_provider_until_one_is_registered_and_a_name_registers_once() {
         let none = Providers::none();
+
         assert!(!none.has_a_source());
         assert_eq!(
             none.names(),
@@ -516,6 +534,7 @@ mod tests {
         let registered = Providers::default()
             .and(Fixed::registered("shop", nothing))
             .and(Fixed::registered("shop", found));
+
         assert_eq!(registered.names().len(), 2);
         assert!(registered.has_a_source());
     }
@@ -531,7 +550,9 @@ mod tests {
         let answer = providers.first(&Identity::named("Echoes"), &patient(), &mut Away::default());
 
         assert_eq!(answer.refused, 1);
+
         let delivered = answer.delivered.expect("a delivery");
+
         assert_eq!(delivered.provider.as_str(), "shop");
         assert!(matches!(delivered.delivery, Delivery::File(_)));
     }
@@ -672,6 +693,7 @@ mod tests {
 
         fn find(&self, _identity: &Identity) -> Result<Obtained> {
             thread::sleep(self.after);
+
             let opened = Arc::clone(&self.opened);
             Ok(Obtained::Found(Delivery::Stream {
                 key: self.source.as_str().into(),
@@ -691,6 +713,7 @@ mod tests {
     fn an_offer_not_taken_is_handed_back_unopened_behind_the_one_taken() {
         let inbox = Offers::registered("inbox", Duration::from_millis(300));
         let shop = Offers::registered("shop", Duration::ZERO);
+
         let providers = Providers::none()
             .and(Arc::clone(&inbox) as Arc<dyn Provider>)
             .and(Arc::clone(&shop) as Arc<dyn Provider>);
@@ -756,6 +779,7 @@ mod tests {
     fn nothing_registered_delivers_nothing() {
         let answer =
             Providers::none().first(&Identity::named("Echoes"), &patient(), &mut Away::default());
+
         assert!(answer.delivered.is_none());
         assert_eq!(answer.refused, 0);
     }
@@ -856,7 +880,9 @@ mod tests {
         assert_eq!(answer.late, 1);
         assert_eq!(answer.refused, 0);
         assert!(!answer.cancelled);
+
         let delivered = answer.delivered.expect("a delivery");
+
         assert_eq!(delivered.provider.as_str(), "shop");
     }
 
@@ -1016,7 +1042,9 @@ mod tests {
         assert_eq!(heard, ["inbox", "shop"]);
         assert_eq!(answer.declined, 1);
         assert!(answer.heard_from_every_provider());
+
         let delivered = answer.delivered.expect("the next provider's delivery");
+
         assert_eq!(delivered.provider.as_str(), "shop");
         assert_eq!(delivered.taken_from().to_uri(), "file:///shop/b.flac");
     }
@@ -1077,14 +1105,18 @@ mod tests {
 
         let alone = Providers::none().and(Fixed::registered("inbox", nothing));
         let (answer, _) = turned_to(&alone.only(&inbox), &patient());
+
         assert!(
             answer.heard_from_every_provider(),
             "a registry holding the inbox alone left nobody out"
         );
 
         let absent = providers.only(&SourceId::new("server").expect("a nameable source"));
+
         assert!(!absent.has_a_source());
+
         let (answer, heard) = turned_to(&absent, &patient());
+
         assert!(heard.is_empty());
         assert!(!answer.heard_from_every_provider());
     }
@@ -1143,7 +1175,9 @@ mod tests {
         let (answer, heard) = when_turned_to(&providers, &racing(10, 10));
 
         assert_eq!(delivered_by(&answer), Some("tube"));
+
         let (name, at) = heard.last().expect("the last resort was turned to");
+
         assert_eq!(name, "tube");
         assert!(at.duration_since(started) >= SLOW_FOR);
     }
@@ -1206,6 +1240,7 @@ mod tests {
             .and(Fixed::registered("empty", nothing))
             .and(LastResort::registered(away_tube.clone()));
         let mut away = Away::default();
+
         away.note(&SourceId::new("empty").expect("a nameable source"));
 
         let answer = providers.first(&Identity::named("Echoes"), &racing(10, 10), &mut away);
@@ -1219,6 +1254,7 @@ mod tests {
     fn a_second_last_resort_is_passed_over_with_the_first_and_asked_after_it_when_all_said_no() {
         let first = Slow::registered("tube", Duration::ZERO, nothing);
         let second = Slow::registered("radio", Duration::ZERO, found);
+
         let providers = Providers::none()
             .and(Fixed::registered("empty", nothing))
             .and(LastResort::registered(first.clone()))
@@ -1235,6 +1271,7 @@ mod tests {
 
         let refused_first = Slow::registered("tube", Duration::ZERO, found);
         let second = Slow::registered("radio", Duration::ZERO, found);
+
         let providers = Providers::none()
             .and(Fixed::registered("broken", refusing))
             .and(LastResort::registered(refused_first.clone()))

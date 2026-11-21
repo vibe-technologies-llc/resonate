@@ -65,6 +65,7 @@ impl MobilePlayer {
             let mut covers = connection
                 .prepare(THE_COVERS_OF_A_PLAYLIST)
                 .map_err(read_error)?;
+
             let rows = query
                 .query_map([], |row| {
                     let id = row.get::<_, i64>(0)?;
@@ -90,6 +91,7 @@ impl MobilePlayer {
             rows.into_iter()
                 .map(|mut playlist| {
                     let query = saved_query(&connection, playlist.id)?;
+
                     playlist.link = info_of(&connection, playlist.id);
                     playlist.followed = is_followed(&connection, playlist.id)?;
                     playlist.shared = is_shared(&connection, playlist.id)?;
@@ -103,6 +105,7 @@ impl MobilePlayer {
             .map(|(mut playlist, query)| {
                 if let Some(query) = query {
                     let measured = self.services.searching.measured(&self.catalog, &query)?;
+
                     playlist.songs = measured.songs;
                     playlist.covers = measured.covers;
                     playlist.search = Some(SavedSearch::of(&query));
@@ -114,6 +117,7 @@ impl MobilePlayer {
 
     pub fn playlist_tracks(&self, id: u64, offset: u32, limit: u32) -> Result<Vec<Track>> {
         let query = saved_query(&self.catalog.0.lock(), id)?;
+
         if let Some(query) = query {
             return self.services.searching.saved_page(
                 &self.catalog,
@@ -128,6 +132,7 @@ impl MobilePlayer {
         query
             .query_map(params![id as i64, limit.min(500), offset], |row| {
                 let mut track = read(row)?;
+
                 track.queue_id = Some(row.get::<_, i64>("position")? as u64);
                 Ok(track)
             })
@@ -157,6 +162,7 @@ impl MobilePlayer {
     pub fn add_to_playlist(&self, id: u64, tracks: Vec<u64>) -> Result<()> {
         self.edit_playlist(id, None, |connection| {
             refuse_a_saved_search(connection, id)?;
+
             let first: i64 = connection
                 .query_row(
                     "SELECT coalesce(max(position) + 1, 0) FROM playlist_rows WHERE playlist = ?1",
@@ -164,6 +170,7 @@ impl MobilePlayer {
                     |row| row.get(0),
                 )
                 .map_err(read_error)?;
+
             for (position, track) in tracks.iter().enumerate() {
                 connection
                     .execute(
@@ -179,11 +186,14 @@ impl MobilePlayer {
     pub fn remove_from_playlist(&self, id: u64, revision: u64, position: u32) -> Result<()> {
         self.edit_playlist(id, Some(revision), |connection| {
             refuse_a_saved_search(connection, id)?;
+
             let mut rows = playlist_rows(connection, id)?;
+
             let shown = shown_positions(connection, &rows)?;
             let Some(at) = shown.get(position as usize) else {
                 return Err(Error::PlaylistChanged);
             };
+
             rows.remove(*at);
             replace_rows(connection, id, &rows)
         })
@@ -192,12 +202,15 @@ impl MobilePlayer {
     pub fn move_in_playlist(&self, id: u64, revision: u64, from: u32, to: u32) -> Result<()> {
         self.edit_playlist(id, Some(revision), |connection| {
             refuse_a_saved_search(connection, id)?;
+
             let mut rows = playlist_rows(connection, id)?;
+
             let shown = shown_positions(connection, &rows)?;
             let (Some(from), Some(to)) = (shown.get(from as usize), shown.get(to as usize)) else {
                 return Err(Error::PlaylistChanged);
             };
             let row = rows.remove(*from);
+
             rows.insert(*to, row);
             replace_rows(connection, id, &rows)
         })
@@ -206,8 +219,10 @@ impl MobilePlayer {
     pub fn delete_playlist(&self, id: u64, revision: u64) -> Result<()> {
         let mut history = self.playlist_undo.lock();
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let before = saved_playlist(&transaction, id)?.ok_or(Error::UnknownPlaylist)?;
+
         if before.revision != revision {
             return Err(Error::PlaylistChanged);
         }
@@ -228,12 +243,15 @@ impl MobilePlayer {
 
     pub fn undo_playlist(&self) -> Result<bool> {
         let mut history = self.playlist_undo.lock();
+
         let Some(step) = history.last() else {
             return Ok(false);
         };
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let current = saved_playlist(&transaction, step.id)?;
+
         if current.as_ref().map(|playlist| playlist.revision) != step.after {
             history.pop();
             return Err(Error::PlaylistChanged);
@@ -293,7 +311,9 @@ impl MobilePlayer {
         let name = valid_name(&name)?;
         let mut history = self.playlist_undo.lock();
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
+
         refuse_duplicate(&transaction, &name, 0)?;
         transaction
             .execute(
@@ -301,7 +321,9 @@ impl MobilePlayer {
                 params![name, folded(&name), created_now()],
             )
             .map_err(write_error)?;
+
         let id = transaction.last_insert_rowid() as u64;
+
         replace_rows(&transaction, id, tracks)?;
         restore_query(&transaction, id, query)?;
         transaction.commit().map_err(write_error)?;
@@ -324,8 +346,10 @@ impl MobilePlayer {
     ) -> Result<()> {
         let mut history = self.playlist_undo.lock();
         let mut connection = self.catalog.0.lock();
+
         let transaction = connection.transaction().map_err(write_error)?;
         let before = saved_playlist(&transaction, id)?.ok_or(Error::UnknownPlaylist)?;
+
         if revision.is_some_and(|revision| revision != before.revision) {
             return Err(Error::PlaylistChanged);
         }
@@ -389,6 +413,7 @@ fn is_shared(connection: &Connection, id: u64) -> Result<bool> {
 
 fn valid_name(name: &str) -> Result<String> {
     let name = name.trim();
+
     if name.is_empty() || name.len() > 255 {
         return Err(Error::InvalidPlaylistName);
     }
@@ -447,6 +472,7 @@ fn shown_positions(connection: &Connection, rows: &[u64]) -> Result<Vec<usize>> 
     let mut query = connection
         .prepare("SELECT id FROM documents WHERE missing = 1")
         .map_err(read_error)?;
+
     let hidden = query
         .query_map([], |row| row.get::<_, i64>(0).map(|id| id as u64))
         .map_err(read_error)?
@@ -553,6 +579,7 @@ pub(crate) mod tests {
                     ..Track::default()
                 })
                 .expect("a song");
+
             if let Some(art) = art {
                 player
                     .catalog
@@ -574,6 +601,7 @@ pub(crate) mod tests {
         player
             .add_to_playlist(id, vec![bare, one, one_again, two, three, four, five])
             .expect("rows");
+
         let playlists = player.playlists().expect("the lists");
         let mix = playlists
             .iter()
@@ -602,20 +630,25 @@ pub(crate) mod tests {
         let id = player
             .create_playlist("Favourites".into())
             .expect("a new list");
+
         assert!(matches!(
             player.create_playlist("FAVOURITES".into()),
             Err(Error::DuplicatePlaylistName)
         ));
+
         player
             .add_to_playlist(id, vec![track.id, track.id])
             .expect("a deliberate repeat");
+
         assert_eq!(
             player.playlist_tracks(id, 0, 100).expect("the list").len(),
             2
         );
+
         player
             .remove_from_playlist(id, 1, 0)
             .expect("one row removed");
+
         assert!(matches!(
             player.remove_from_playlist(id, 1, 0),
             Err(Error::PlaylistChanged)
@@ -628,10 +661,12 @@ pub(crate) mod tests {
                 .len(),
             2
         );
+
         player
             .rename_playlist(id, 1, "Evening".into())
             .expect("a rename");
         player.delete_playlist(id, 2).expect("discard the list");
+
         assert!(player.playlists().expect("no lists").is_empty());
         assert!(player.undo_playlist().expect("restore the list"));
         assert_eq!(player.playlists().expect("the list")[0].name, "Evening");
@@ -659,6 +694,7 @@ pub(crate) mod tests {
             })
             .expect("another song");
         let id = player.create_playlist("Mixed".into()).expect("a list");
+
         player
             .add_to_playlist(id, vec![shown.id, hidden.id, hidden.id])
             .expect("rows");

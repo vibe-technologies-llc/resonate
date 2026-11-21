@@ -55,6 +55,7 @@ pub(crate) struct Message {
 impl Message {
     pub(crate) fn framed(&self) -> Vec<u8> {
         let mut body = Vec::new();
+
         varint_field(&mut body, PROTOCOL_VERSION, CASTV2_1_0);
         delimited_field(&mut body, SOURCE_ID, self.source.as_bytes());
         delimited_field(&mut body, DESTINATION_ID, self.destination.as_bytes());
@@ -74,6 +75,7 @@ impl Message {
             .unwrap_or(u32::MAX)
             .to_be_bytes()
             .to_vec();
+
         framed.extend_from_slice(&body);
         framed
     }
@@ -87,6 +89,7 @@ impl Message {
         let mut binary_named = false;
 
         let mut at = 0;
+
         while at < body.len() {
             let key = varint(body, &mut at)?;
             let field = key >> 3;
@@ -103,7 +106,9 @@ impl Message {
                         .map_err(|_| Error::NotACastMessage)?;
                     let end = at.checked_add(length).ok_or(Error::NotACastMessage)?;
                     let bytes = body.get(at..end).ok_or(Error::NotACastMessage)?;
+
                     at = end;
+
                     let text_of =
                         || String::from_utf8(bytes.to_vec()).map_err(|_| Error::NotACastMessage);
                     match field {
@@ -117,6 +122,7 @@ impl Message {
                 }
                 FIXED_EIGHT | FIXED_FOUR => {
                     let width = if wire == FIXED_EIGHT { 8 } else { 4 };
+
                     at = at
                         .checked_add(width)
                         .filter(|end| *end <= body.len())
@@ -145,6 +151,7 @@ pub(crate) fn whole(held: &[u8]) -> Result<Option<usize>> {
         return Ok(None);
     };
     let length = u32::from_be_bytes([length[0], length[1], length[2], length[3]]) as usize;
+
     if length > MESSAGE_BYTES_AT_MOST {
         return Err(Error::TooLong { bytes: length });
     }
@@ -172,8 +179,10 @@ fn put_varint(body: &mut Vec<u8>, mut value: u64) {
 
 fn varint(body: &[u8], at: &mut usize) -> Result<u64> {
     let mut value = 0_u64;
+
     for read in 0..VARINT_BYTES_AT_MOST {
         let byte = *body.get(*at).ok_or(Error::NotACastMessage)?;
+
         *at += 1;
         value |= (u64::from(byte) & SEVEN_BITS) << (7 * read);
         if byte & MORE == 0 {
@@ -233,6 +242,7 @@ mod tests {
     #[test]
     fn fields_it_does_not_know_are_stepped_over_and_a_cut_message_is_refused() {
         let mut body = message(Payload::Text("{}".to_owned())).framed()[LENGTH_BYTES..].to_vec();
+
         body.extend_from_slice(&[0x4D, 1, 2, 3, 4, 0x51, 1, 2, 3, 4, 5, 6, 7, 8]);
 
         assert!(Message::read(&body).is_ok());

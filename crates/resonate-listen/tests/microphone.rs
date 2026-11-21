@@ -102,6 +102,7 @@ impl Hosted {
         for stale in [SOCKET, "pipewire-0.lock"] {
             let _ = fs::remove_file(folder.join(stale));
         }
+
         let daemon = Command::new("pipewire")
             .arg("-c")
             .arg(folder.join("hosted.conf"))
@@ -113,6 +114,7 @@ impl Hosted {
             .ok()?;
 
         let deadline = Instant::now() + PATIENCE;
+
         while !folder.join(SOCKET).exists() && Instant::now() < deadline {
             thread::sleep(POLL_EVERY);
         }
@@ -142,6 +144,7 @@ fn the_capture_node(folder: &Path) -> Option<String> {
     let named = format!("node.name = \"{LISTENER}\"");
     let listed = pw_cli(folder, &["ls", "Node"]);
     let mut id = None;
+
     for line in listed.lines() {
         if let Some(rest) = line.trim().strip_prefix("id ") {
             id = rest.split(',').next().map(str::to_owned);
@@ -155,9 +158,11 @@ fn the_capture_node(folder: &Path) -> Option<String> {
 fn the_capture_aims_at(folder: &Path, source: &str) -> bool {
     let aimed = format!("target.object = \"{source}\"");
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if let Some(id) = the_capture_node(folder) {
             let described = pw_cli(folder, &["info", &id]);
+
             return described.contains(&aimed) && !described.contains("stream.capture.sink");
         }
         thread::sleep(POLL_EVERY);
@@ -180,6 +185,7 @@ fn node_named(folder: &Path, name: &str) -> Option<String> {
     let named = format!("node.name = \"{name}\"");
     let listed = pw_cli(folder, &["ls", "Node"]);
     let mut id = None;
+
     for line in listed.lines() {
         if let Some(rest) = line.trim().strip_prefix("id ") {
             id = rest.split(',').next().map(str::to_owned);
@@ -235,7 +241,9 @@ fn the_microphone_is_aimed_at(folder: &Path) {
         })
     };
     let aimed = the_capture_aims_at(folder, MICROPHONE);
+
     hearing.stop();
+
     let _ = recording.join();
 
     assert!(
@@ -248,6 +256,7 @@ fn the_microphone_is_aimed_at(folder: &Path) {
 fn the_tone_is_heard(folder: &Path) {
     let listener = Listener::new(LISTENER);
     let hearing = Hearing::new();
+
     let recording = thread::spawn(move || {
         let from = Listening::Microphone(Some(NodeName::new(TONE)));
         listener.record(&from, TONE_FOR, &hearing)
@@ -259,7 +268,9 @@ fn the_tone_is_heard(folder: &Path) {
 
     assert!(ported, "the tone and the capture were given no ports");
     assert!(linked, "the capture never linked to the tone");
+
     let clip = clip.expect("the tone is recorded");
+
     assert!(!clip.is_silent(), "the recording of the tone is silent");
     assert!(
         clip.length() >= TONE_FOR / 2,
@@ -270,6 +281,7 @@ fn the_tone_is_heard(folder: &Path) {
 
 fn until(mut done: impl FnMut() -> bool) -> bool {
     let deadline = Instant::now() + PATIENCE;
+
     while Instant::now() < deadline {
         if done() {
             return true;
@@ -285,9 +297,11 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
             eprintln!("skipped: no pipewire binary to host a daemon with");
             return;
         };
+
         under(&folder);
         return;
     }
+
     let tools = ["pipewire", "pw-cli", "pw-link"].into_iter().all(|tool| {
         Command::new(tool)
             .arg("--version")
@@ -296,14 +310,17 @@ fn hosted_as(this_test: &str, tag: &str, under: fn(&Path)) {
             .status()
             .is_ok()
     });
+
     if !tools {
         eprintln!("skipped: no pipewire, pw-cli and pw-link to host a daemon with");
         return;
     }
 
     let folder = env::temp_dir().join(format!("rlm-{}-{tag}", std::process::id()));
+
     fs::create_dir_all(&folder).expect("a folder for the hosted daemon");
     fs::write(folder.join("hosted.conf"), HOSTED_CONFIG).expect("the hosted daemon's config");
+
     let ran = Command::new(env::current_exe().expect("the test binary"))
         .args([in_this_suite(this_test).as_str(), "--exact", "--nocapture"])
         .env(HOSTED_AT, &folder)

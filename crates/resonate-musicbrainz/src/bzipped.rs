@@ -14,6 +14,7 @@ pub(crate) fn decoded_across<R: Read + Send + 'static>(packed: R, threads: usize
 #[cfg(any(test, fuzzing))]
 pub(crate) fn read_whole(decoded: impl Read, at_most: u64) -> std::io::Result<Vec<u8>> {
     let mut whole = Vec::new();
+
     decoded.take(at_most).read_to_end(&mut whole)?;
     Ok(whole)
 }

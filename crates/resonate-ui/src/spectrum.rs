@@ -153,6 +153,7 @@ impl Fft {
         self.transform();
 
         let gain = self.gain * self.gain;
+
         decibels.clear();
         decibels.extend(
             self.bins
@@ -163,6 +164,7 @@ impl Fft {
 
     fn transform(&mut self) {
         let half = self.points / 2;
+
         for (at, reversed) in self.reversed.iter().enumerate() {
             let pair = Complex {
                 re: self.windowed.get(2 * at).copied().unwrap_or(0.0),
@@ -174,13 +176,16 @@ impl Fft {
         }
 
         let mut span = 1;
+
         while span < half {
             let stride = half / (span * 2);
+
             for block in self.work.chunks_exact_mut(span * 2) {
                 let (lower, upper) = block.split_at_mut(span);
                 let turns = self.turns.iter().step_by(stride);
                 for ((low, high), turn) in lower.iter_mut().zip(upper.iter_mut()).zip(turns) {
                     let turned = *high * *turn;
+
                     *high = *low - turned;
                     *low = *low + turned;
                 }
@@ -197,8 +202,10 @@ impl Fft {
                 .copied()
                 .unwrap_or_default()
                 .conjugate();
+
             let even = (ahead + mirrored) * 0.5;
             let odd = (ahead - mirrored) * Complex::HALF_BACK_A_QUARTER_TURN;
+
             self.bins.push(even + *unzipped * odd);
         }
     }
@@ -278,6 +285,7 @@ impl Bar {
 
     pub(crate) fn fold(&mut self, reading: f32, step: Duration) {
         let seconds = step.as_secs_f32();
+
         self.level = if reading >= self.level {
             reading
         } else {
@@ -363,6 +371,7 @@ impl Spectrum {
 
     pub(crate) fn take(&mut self, samples: &[f32], step: Duration) {
         self.fft.levels(samples, &mut self.bins);
+
         let step = step.min(LONGEST_STEP);
         let floor = self.floor();
         for (bar, band) in self.bars.iter_mut().zip(self.bands.iter()) {
@@ -504,10 +513,12 @@ pub(crate) fn rising_edge(levels: &[f32], within: usize) -> usize {
         .fold(0.0_f32, |loudest, level| loudest.max(level.abs()));
     let armed_under = -loudest * ARMED_UNDER_THE_LOUDEST;
     let mut armed = false;
+
     for (at, pair) in levels.windows(2).take(within).enumerate() {
         let [before, after] = pair else {
             continue;
         };
+
         armed |= *before < armed_under;
         if armed && *before < 0.0 && *after >= 0.0 {
             return at + 1;
@@ -586,6 +597,7 @@ mod tests {
         for points in [8, 64, 1_024] {
             let mut fft = Fft::new(points);
             let input = noise(points);
+
             fft.windowed = input.clone();
             fft.transform();
 
@@ -602,6 +614,7 @@ mod tests {
                             )
                         });
                 let tolerance = 1e-4 * points as f64;
+
                 assert!(
                     (f64::from(bin.re) - re).abs() < tolerance
                         && (f64::from(bin.im) - im).abs() < tolerance,
@@ -615,6 +628,7 @@ mod tests {
     fn a_full_scale_sine_on_a_bin_reads_full_scale_in_that_bin() {
         let mut fft = Fft::new(4_096);
         let mut decibels = Vec::new();
+
         fft.levels(&tone(4_096, 100.0, 1.0), &mut decibels);
 
         assert_eq!(loudest(&decibels), 100);
@@ -626,10 +640,13 @@ mod tests {
     fn a_sine_between_two_bins_lands_on_the_nearer_one_within_the_windows_scalloping() {
         let mut fft = Fft::new(4_096);
         let mut decibels = Vec::new();
+
         fft.levels(&tone(4_096, 200.3, 0.5), &mut decibels);
 
         assert_eq!(loudest(&decibels), 200);
+
         let half_scale = 20.0 * 0.5_f32.log10();
+
         assert!(
             (decibels[200] - half_scale).abs() < 1.5,
             "read {} dB against {half_scale}",
@@ -641,9 +658,11 @@ mod tests {
     fn the_window_keeps_a_tone_from_leaking_across_the_spectrum() {
         let mut fft = Fft::new(4_096);
         let mut decibels = Vec::new();
+
         fft.levels(&tone(4_096, 100.5, 1.0), &mut decibels);
 
         let unwindowed_leak = 20.0 * (1.0 / (std::f32::consts::PI * 20.0)).log10();
+
         assert!(
             decibels[120] < -70.0 && decibels[80] < -70.0,
             "twenty bins away read {} and {} dB, where no window leaks {unwindowed_leak} dB",
@@ -656,6 +675,7 @@ mod tests {
     fn silence_reads_as_the_quietest_level_in_every_bin() {
         let mut fft = Fft::new(1_024);
         let mut decibels = Vec::new();
+
         fft.levels(&[0.0; 1_024], &mut decibels);
 
         assert!(decibels.iter().all(|level| *level == QUIETEST_DB));
@@ -664,12 +684,15 @@ mod tests {
     #[test]
     fn a_short_read_is_padded_with_silence_and_a_size_is_a_power_of_two() {
         let mut fft = Fft::new(3_000);
+
         assert_eq!(fft.points(), 4_096);
         assert_eq!(Fft::new(1).points(), FEWEST_POINTS);
         assert_eq!(Fft::new(usize::MAX).points(), MOST_POINTS);
 
         let mut decibels = Vec::new();
+
         fft.levels(&[], &mut decibels);
+
         assert!(decibels.iter().all(|level| *level == QUIETEST_DB));
     }
 
@@ -697,10 +720,13 @@ mod tests {
     #[test]
     fn a_tone_lights_its_own_band_and_leaves_one_two_octaves_away_at_the_floor() {
         let mut spectrum = Spectrum::new(RATE, Spectral::default());
+
         let points = spectrum.points();
+
         spectrum.take(&tone_at(RATE, points, 1_000.0, 1.0), Duration::ZERO);
 
         let lit = band_level(&spectrum, 1_000.0);
+
         assert!(
             lit > -2.0 && lit <= CEILING_DB,
             "the tone's band read {lit} dB"
@@ -713,19 +739,23 @@ mod tests {
     fn the_treble_is_tilted_up_three_decibels_an_octave_about_the_pivot() {
         let rate = SampleRate::HZ_44100;
         let mut spectrum = Spectrum::new(rate, Spectral::default());
+
         let points = spectrum.points();
         let near_the_pivot = 93.0;
+
         let tones: Vec<f32> = tone(points, near_the_pivot, 0.05)
             .into_iter()
             .zip(tone(points, near_the_pivot * 2.0, 0.05))
             .map(|(one, other)| one + other)
             .collect();
+
         spectrum.take(&tones, Duration::ZERO);
 
         let bin_hz = f64::from(rate.hz()) / points as f64;
         let tone_level = 20.0 * 0.05_f32.log10();
         let at_the_pivot = band_level(&spectrum, near_the_pivot * bin_hz);
         let an_octave_up = band_level(&spectrum, 2.0 * near_the_pivot * bin_hz);
+
         assert!((at_the_pivot - tone_level).abs() < 0.05, "{at_the_pivot}");
         assert!(
             (an_octave_up - tone_level - Spectral::default().tilt.db_per_octave()).abs() < 0.05,
@@ -744,6 +774,7 @@ mod tests {
         assert_eq!(marked(192_000.0).count(), 4);
 
         let bands = bands_for(SampleRate::HZ_96000, 8_192, Spectral::default());
+
         assert!(bands.last().is_some_and(|band| band.centre > 40_000.0));
     }
 
@@ -769,7 +800,9 @@ mod tests {
     fn a_band_above_what_the_rate_can_carry_stays_at_the_floor() {
         let rate = SampleRate::HZ_22050;
         let mut spectrum = Spectrum::new(rate, Spectral::default());
+
         let points = spectrum.points();
+
         spectrum.take(&noise(points), Duration::ZERO);
 
         assert!(band_level(&spectrum, 5_000.0) > FLOOR_DB);
@@ -779,6 +812,7 @@ mod tests {
     #[test]
     fn silence_leaves_every_bar_resting_on_the_floor() {
         let mut spectrum = Spectrum::new(RATE, Spectral::default());
+
         spectrum.take(&[], Duration::from_millis(16));
 
         assert!(spectrum.is_at_rest());
@@ -792,33 +826,40 @@ mod tests {
     #[test]
     fn a_bar_falls_at_its_rate_while_its_peak_holds_and_then_follows() {
         let mut bar = Bar::METERED;
+
         bar.fold(-20.0, Duration::ZERO);
+
         assert_eq!((bar.level, bar.peak), (-20.0, -20.0));
 
         bar.fold(FLOOR_DB, Duration::from_millis(100));
+
         assert!((bar.level - (-24.0)).abs() < 1e-4, "{}", bar.level);
         assert_eq!(bar.peak, -20.0);
 
         for _ in 0..6 {
             bar.fold(FLOOR_DB, Duration::from_millis(100));
         }
+
         assert_eq!(
             bar.peak, -20.0,
             "the peak let go before it was held its time"
         );
 
         bar.fold(FLOOR_DB, Duration::from_millis(100));
+
         assert!((bar.peak - (-22.0)).abs() < 1e-4, "{}", bar.peak);
 
         for _ in 0..100 {
             bar.fold(FLOOR_DB, Duration::from_millis(100));
         }
+
         assert!(bar.is_at_rest());
     }
 
     #[test]
     fn a_louder_reading_lifts_a_bar_at_once() {
         let mut bar = Bar::METERED;
+
         bar.fold(-40.0, Duration::from_millis(16));
         bar.fold(-6.0, Duration::from_millis(16));
 
@@ -832,6 +873,7 @@ mod tests {
             .collect();
 
         let at = rising_edge(&wave, 200);
+
         assert_eq!(at, 70);
         assert!(wave[at] > 0.0 && wave[at - 1] < 0.0);
         assert_eq!(
@@ -845,10 +887,13 @@ mod tests {
     #[test]
     fn a_trace_is_not_started_by_noise_wobbling_about_zero_ahead_of_the_swing() {
         let mut wave: Vec<f32> = vec![-0.01, 0.01, -0.01, 0.01];
+
         wave.extend((0..400).map(|at| -(TAU * f64::from(at) / 100.0).sin() as f32));
+
         let side: Vec<f32> = wave.iter().map(|level| level * 0.5).collect();
 
         let at = rising_edge(&wave, 200);
+
         assert_eq!(at, 55);
         assert!(std::ptr::eq(louder_of(&side, &wave), wave.as_slice()));
         assert!(std::ptr::eq(louder_of(&wave, &side), wave.as_slice()));

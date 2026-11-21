@@ -256,15 +256,19 @@ fn laid_out<S: Read + Seek + ?Sized>(source: &mut S) -> Refusable<Layout> {
     let length = source
         .seek(SeekFrom::End(0))
         .map_err(|_| Refused::UnreadableElement)?;
+
     source
         .seek(SeekFrom::Start(0))
         .map_err(|_| Refused::UnreadableElement)?;
 
     let header = element(source).ok_or(Refused::NotMatroska)?;
+
     if header.id != EBML_HEADER {
         return Err(Refused::NotMatroska);
     }
+
     let header_end = header.end().ok_or(Refused::NotMatroska)?;
+
     if !names_a_matroska(source, header_end) {
         return Err(Refused::NotMatroska);
     }
@@ -273,10 +277,13 @@ fn laid_out<S: Read + Seek + ?Sized>(source: &mut S) -> Refusable<Layout> {
         .map_err(|_| Refused::NotMatroska)?;
 
     let segment = element(source).ok_or(Refused::NotMatroska)?;
+
     if segment.id != SEGMENT {
         return Err(Refused::NotMatroska);
     }
+
     let end = segment.end().ok_or(Refused::UnknownSize)?;
+
     if end != length {
         return Err(Refused::NotWhole);
     }
@@ -286,8 +293,10 @@ fn laid_out<S: Read + Seek + ?Sized>(source: &mut S) -> Refusable<Layout> {
 
     let mut children = Vec::new();
     let mut at = segment.body;
+
     while at < end {
         let child = child_at(source, at, end)?;
+
         if child.id == CHECKSUM {
             return Err(Refused::SegmentChecksummed);
         }
@@ -308,15 +317,18 @@ fn names_a_matroska<S: Read + Seek + ?Sized>(source: &mut S, end: u64) -> bool {
     let Ok(mut at) = source.stream_position() else {
         return false;
     };
+
     while at < end {
         let Ok(child) = child_at(source, at, end) else {
             return false;
         };
+
         if child.id == DOC_TYPE {
             let Ok(held) = held_body(source, &child) else {
                 return false;
             };
             let named = held.split(|byte| *byte == 0).next().unwrap_or_default();
+
             return DOC_TYPES.contains(&named);
         }
         at = child.end;
@@ -328,11 +340,13 @@ fn child_at<S: Read + Seek + ?Sized>(source: &mut S, at: u64, end: u64) -> Refus
     source
         .seek(SeekFrom::Start(at))
         .map_err(|_| Refused::UnreadableElement)?;
+
     let found = element(source).ok_or(Refused::UnreadableElement)?;
     let Length::Known(_) = found.length else {
         return Err(Refused::UnknownSize);
     };
     let child_end = found.end().ok_or(Refused::UnreadableElement)?;
+
     if child_end > end {
         return Err(Refused::UnreadableElement);
     }
@@ -346,13 +360,16 @@ fn child_at<S: Read + Seek + ?Sized>(source: &mut S, at: u64, end: u64) -> Refus
 
 fn held_body<S: Read + Seek + ?Sized>(source: &mut S, child: &Child) -> Refusable<Vec<u8>> {
     let bytes = child.end - child.body;
+
     if bytes > TAGS_BYTES_AT_MOST {
         return Err(Refused::TagsTooLarge);
     }
     source
         .seek(SeekFrom::Start(child.body))
         .map_err(|_| Refused::UnreadableElement)?;
+
     let mut held = vec![0_u8; usize::try_from(bytes).map_err(|_| Refused::TagsTooLarge)?];
+
     source
         .read_exact(&mut held)
         .map_err(|_| Refused::UnreadableElement)?;
@@ -370,6 +387,7 @@ fn within(bytes: &[u8]) -> Refusable<Vec<Within<'_>>> {
     let mut found = Vec::new();
     let length = bytes.len() as u64;
     let mut at = 0;
+
     while at < length {
         let Element {
             id,
@@ -380,12 +398,15 @@ fn within(bytes: &[u8]) -> Refusable<Vec<Within<'_>>> {
         let Length::Known(size) = size else {
             return Err(Refused::UnknownSize);
         };
+
         let end = body
             .checked_add(size)
             .filter(|end| *end <= length)
             .ok_or(Refused::UnreadableElement)?;
         let span = |from: u64| usize::try_from(from).map_err(|_| Refused::UnreadableElement);
+
         let (from, starts, stops) = (span(at)?, span(body)?, span(end)?);
+
         found.push(Within {
             id,
             whole: &bytes[from..stops],
@@ -429,6 +450,7 @@ fn largest_in(width: u32) -> Option<u64> {
 
 fn size_bytes(size: u64, width: u32) -> Option<Vec<u8>> {
     largest_in(width).filter(|largest| size <= *largest)?;
+
     let marked = (1_u64 << (BITS_IN_A_SIZE_BYTE * width)) | size;
     let held = marked.to_be_bytes();
     held.get(held.len() - width as usize..).map(<[u8]>::to_vec)
@@ -440,6 +462,7 @@ fn narrowest_width(size: u64) -> Option<u32> {
 
 fn with_width(id: u32, body: &[u8], width: u32) -> Option<Vec<u8>> {
     let mut bytes = id_bytes(id);
+
     bytes.extend_from_slice(&size_bytes(body.len() as u64, width)?);
     bytes.extend_from_slice(body);
     Some(bytes)
@@ -458,9 +481,12 @@ struct Void {
 
 fn zeroed<W: Write>(file: &mut W, bytes: u64) -> io::Result<()> {
     static ZEROS: [u8; ZEROED_AT_A_TIME] = [0; ZEROED_AT_A_TIME];
+
     let mut left = bytes;
+
     while left > 0 {
         let now = usize::try_from(left).map_or(ZEROED_AT_A_TIME, |left| left.min(ZEROED_AT_A_TIME));
+
         file.write_all(&ZEROS[..now])?;
         left -= now as u64;
     }
@@ -471,6 +497,7 @@ fn void_of(bytes: u64) -> Option<Void> {
     if bytes < SMALLEST_VOID_BYTES {
         return None;
     }
+
     let (width, size) = (1..=MAX_LENGTH_BYTES).find_map(|width| {
         let size = bytes.checked_sub(VOID_ID_BYTES + u64::from(width))?;
         largest_in(width)
@@ -478,6 +505,7 @@ fn void_of(bytes: u64) -> Option<Void> {
             .map(|_| (width, size))
     })?;
     let mut header = vec![VOID];
+
     header.extend_from_slice(&size_bytes(size, width)?);
     Some(Void { header, body: size })
 }
@@ -498,6 +526,7 @@ fn void_after(bytes: &mut Vec<u8>, void: Void, standing: u64) -> u64 {
 fn filling(id: u32, body: &[u8], room: u64, standing: u64) -> Option<Filled> {
     let width = narrowest_width(body.len() as u64)?;
     let mut laid = with_width(id, body, width)?;
+
     let left = room.checked_sub(laid.len() as u64)?;
     let whole = |bytes| Filled { bytes, zeroed: 0 };
     match left {
@@ -539,6 +568,7 @@ struct HeldTag<'a> {
 fn sort_within<'a>(nested: &Within<'a>) -> Refusable<Option<&'a str>> {
     let mut sorts = false;
     let mut value = None;
+
     for child in within(nested.body)? {
         match child.id {
             TAG_NAME => sorts = child.body == SORT_WITH,
@@ -554,11 +584,13 @@ fn simple_tag_of<'a>(simple: &Within<'a>) -> Refusable<SimpleTag<'a>> {
     let mut value = None;
     let mut sort = None;
     let mut unsorted = Vec::new();
+
     for child in within(simple.body)? {
         let nested_sort = match child.id {
             SIMPLE_TAG => sort_within(&child)?,
             _ => None,
         };
+
         match child.id {
             TAG_NAME => name = String::from_utf8_lossy(child.body).to_ascii_uppercase(),
             TAG_STRING => value = str::from_utf8(child.body).ok(),
@@ -587,6 +619,7 @@ fn held_tag_of<'a>(tag: &Within<'a>) -> Refusable<HeldTag<'a>> {
         bare: true,
         simple: Vec::new(),
     };
+
     for child in within(tag.body)? {
         match child.id {
             TARGETS => {
@@ -634,7 +667,9 @@ impl Kept {
         if let Some(whole) = &self.whole {
             return whole.clone();
         }
+
         let mut body = self.targets.clone().unwrap_or_default();
+
         for simple in &self.simple {
             body.extend_from_slice(simple);
         }
@@ -644,6 +679,7 @@ impl Kept {
 
 fn simple_tag(name: &str, value: &str) -> Vec<u8> {
     let mut body = sized(TAG_NAME, name.as_bytes());
+
     body.extend_from_slice(&sized(TAG_STRING, value.as_bytes()));
     sized(SIMPLE_TAG, &body)
 }
@@ -729,10 +765,12 @@ impl Naming {
 fn said_in(tags: &[HeldTag<'_>]) -> Vec<Said> {
     let naming = Naming::of(tags);
     let mut said = Vec::new();
+
     for tag in tags.iter().filter(|tag| !tag.aimed_elsewhere) {
         let reading = naming.at(tag);
         for simple in &tag.simple {
             let given = simple.value.is_some_and(|value| !value.trim().is_empty());
+
             if let (true, Some(field)) = (given, reading.field_of(&simple.name)) {
                 said.push((field, DateStanding::of(&simple.name)));
             }
@@ -776,9 +814,11 @@ fn merged(held: &[Vec<u8>], asked: &Asked<'_>) -> Refusable<Vec<u8>> {
             .filter(|(spelled, _)| spelled.level == level)
             .map(|(spelled, value)| simple_tag(spelled.name, value))
             .collect();
+
         if simple.is_empty() {
             continue;
         }
+
         let home = kept
             .iter_mut()
             .find(|tag: &&mut Kept| tag.bare && tag.level == Some(level.value()));
@@ -808,6 +848,7 @@ fn kept_of(
 ) -> Option<Kept> {
     let mut simple = Vec::new();
     let mut touched = false;
+
     for held in &tag.simple {
         if tag.aimed_elsewhere {
             simple.push(held.whole.to_vec());
@@ -856,9 +897,11 @@ struct Entry {
 
 fn entries_in(body: &[u8]) -> Refusable<Vec<Entry>> {
     let mut entries = Vec::new();
+
     for seek in within(body)?.iter().filter(|child| child.id == SEEK) {
         let mut id = None;
         let mut position = None;
+
         for child in within(seek.body)? {
             match child.id {
                 SEEK_ID => id = Some(child.body.to_vec()),
@@ -866,9 +909,11 @@ fn entries_in(body: &[u8]) -> Refusable<Vec<Entry>> {
                 _ => {}
             }
         }
+
         let (Some(id), Some(position)) = (id, position) else {
             return Err(Refused::UnreadableElement);
         };
+
         entries.push(Entry { id, position });
     }
     Ok(entries)
@@ -876,8 +921,10 @@ fn entries_in(body: &[u8]) -> Refusable<Vec<Entry>> {
 
 fn laid_seek_head(entries: &[Entry]) -> Vec<u8> {
     let mut body = Vec::new();
+
     for entry in entries {
         let mut seek = sized(SEEK_ID, &entry.id);
+
         seek.extend_from_slice(&sized(SEEK_POSITION, &number_bytes(entry.position)));
         body.extend_from_slice(&sized(SEEK, &seek));
     }
@@ -893,6 +940,7 @@ fn entries_with_the_element_at(
     let element_id = id_bytes(id);
     let mut placed = false;
     let mut wanted = Vec::new();
+
     for entry in entries {
         if entry.id != element_id {
             wanted.push(entry.clone());
@@ -976,6 +1024,7 @@ impl Rewrite {
         let unconfirmed = || io::Error::from(io::ErrorKind::InvalidData);
         let layout = laid_out(&mut BufReader::new(file)).map_err(|_| unconfirmed())?;
         let moved = !layout.clusters().eq(self.clusters.iter());
+
         if moved || layout.all(TAGS).len() > 1 || layout.all(ATTACHMENTS).len() > 1 {
             return Err(unconfirmed());
         }
@@ -989,11 +1038,14 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
     taken: &[TagField],
 ) -> Refusable<Rewrite> {
     let layout = laid_out(source)?;
+
     if layout.all(ATTACHMENTS).len() > 1 {
         return Err(Refused::AttachmentsStand);
     }
+
     let clusters: Vec<Child> = layout.clusters().copied().collect();
     let asked = Asked { edits, taken };
+
     if asked.is_empty() {
         return Ok(Rewrite {
             laid: Vec::new(),
@@ -1007,6 +1059,7 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
         .map(|index| held_body(source, &layout.children[*index]))
         .collect::<Refusable<Vec<_>>>()?;
     let body = merged(&held, &asked)?;
+
     if body.is_empty() && olds.is_empty() {
         return Ok(Rewrite {
             laid: Vec::new(),
@@ -1016,9 +1069,11 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
 
     let placing = placed(&layout, &olds, &body);
     let mut laid: Vec<Laid> = placing.laid;
+
     for (index, child) in olds.iter().map(|index| (*index, &layout.children[*index])) {
         if Some(index) != placing.home {
             let void = void_whole(child.end - child.at).ok_or(Refused::UnreadableElement)?;
+
             laid.push(void.laid_at(child.at));
         }
     }
@@ -1033,6 +1088,7 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
     )?);
     if placing.end > layout.end {
         let size = placing.end - layout.body;
+
         laid.push(Laid::of(
             layout.size_at,
             size_bytes(size, layout.size_width).ok_or(Refused::SegmentSizeTooNarrow)?,
@@ -1050,6 +1106,7 @@ pub(crate) struct Attached<'a> {
 
 fn attached_file_of(file: &Attached<'_>) -> Vec<u8> {
     let mut body = sized(FILE_NAME, file.name.as_bytes());
+
     body.extend_from_slice(&sized(FILE_MEDIA_TYPE, file.media_type.as_bytes()));
     body.extend_from_slice(&sized(FILE_DATA, file.bytes));
     body.extend_from_slice(&sized(FILE_UID, &number_bytes(THE_PICTURE_UID)));
@@ -1083,8 +1140,10 @@ fn attachments_appended<S: Read + Seek + ?Sized>(
     let at = layout.end;
     let attachments =
         with_width(ATTACHMENTS, element, MAX_LENGTH_BYTES).ok_or(Refused::UnreadableElement)?;
+
     let end = at + attachments.len() as u64;
     let mut laid = vec![Laid::of(at, attachments)];
+
     laid.extend(indexed(source, layout, ATTACHMENTS, &[], Some(at), None)?);
     laid.push(Laid::of(
         layout.size_at,
@@ -1100,6 +1159,7 @@ fn attachments_grown<S: Read + Seek + ?Sized>(
     element: &[u8],
 ) -> Refusable<Vec<Laid>> {
     let standing = layout.children[index];
+
     if holds_a_cover_or_the_picture(source, &standing)? {
         return Err(Refused::AttachmentsStand);
     }
@@ -1107,6 +1167,7 @@ fn attachments_grown<S: Read + Seek + ?Sized>(
     let size_at = standing.at + id_bytes(ATTACHMENTS).len() as u64;
     let width = u32::try_from(standing.body - size_at).map_err(|_| Refused::UnreadableElement)?;
     let grown = standing.end - standing.body + element.len() as u64;
+
     let mut laid = match size_bytes(grown, width) {
         Some(size) => {
             let (filled, end) = laid_at_the_tail(layout, standing.end, element.to_vec(), 0)?;
@@ -1118,7 +1179,9 @@ fn attachments_grown<S: Read + Seek + ?Sized>(
         None => {
             let mut body =
                 held_body(source, &standing).map_err(|_| Refused::AttachmentsSizeTooNarrow)?;
+
             body.extend_from_slice(element);
+
             let whole = with_width(ATTACHMENTS, &body, MAX_LENGTH_BYTES)
                 .ok_or(Refused::AttachmentsSizeTooNarrow)?;
             let (filled, end) =
@@ -1128,6 +1191,7 @@ fn attachments_grown<S: Read + Seek + ?Sized>(
                 .collect()
         }
     };
+
     laid.extend(indexed(
         source,
         layout,
@@ -1147,16 +1211,19 @@ fn laid_at_the_tail(
 ) -> Refusable<(Filled, u64)> {
     let length = bytes.len() as u64;
     let mut zeroed = 0;
+
     let end = match (layout.end - at).checked_sub(length) {
         Some(0) => layout.end,
         Some(left) if left >= SMALLEST_VOID_BYTES => {
             let void = void_of(left).ok_or(Refused::UnreadableElement)?;
+
             zeroed = void_after(&mut bytes, void, standing);
             layout.end
         }
         Some(left) => {
             let padding = left + PADDING_LEFT_FOR_THE_NEXT_EDIT;
             let void = void_of(padding).ok_or(Refused::UnreadableElement)?;
+
             zeroed = void.body;
             bytes.extend_from_slice(&void.header);
             at + length + padding
@@ -1188,6 +1255,7 @@ fn holds_a_cover_or_the_picture<S: Read + Seek + ?Sized>(
             if part.end - part.body > FILE_NAMES_READ_AT_MOST {
                 continue;
             }
+
             let said = match part.id {
                 FILE_NAME => is_named_a_cover(&held_body(source, &part)?),
                 FILE_UID => number_in(&held_body(source, &part)?) == Some(THE_PICTURE_UID),
@@ -1209,8 +1277,10 @@ fn is_named_a_cover(name: &[u8]) -> bool {
 fn children_of<S: Read + Seek + ?Sized>(source: &mut S, parent: &Child) -> Refusable<Vec<Child>> {
     let mut children = Vec::new();
     let mut at = parent.body;
+
     while at < parent.end {
         let child = child_at(source, at, parent.end)?;
+
         at = child.end;
         children.push(child);
     }
@@ -1244,6 +1314,7 @@ fn placed(layout: &Layout, olds: &[usize], body: &[u8]) -> Placing {
         )?;
         Some((*index, standing.at, filled))
     });
+
     if let Some((index, at, filled)) = in_room {
         return Placing {
             laid: vec![filled.laid_at(at)],
@@ -1261,7 +1332,9 @@ fn placed(layout: &Layout, olds: &[usize], body: &[u8]) -> Placing {
     let mut bytes = sized(TAGS, body);
     let padding =
         void_of(PADDING_LEFT_FOR_THE_NEXT_EDIT).expect("the padding is wider than a void's head");
+
     bytes.extend_from_slice(&padding.header);
+
     let filled = Filled {
         bytes,
         zeroed: padding.body,
@@ -1299,6 +1372,7 @@ fn indexed<S: Read + Seek + ?Sized>(
     };
     let head = layout.children[index];
     let read_by_a_reader = first_cluster.is_none_or(|first| head.at < first);
+
     if past_the_clusters && !read_by_a_reader {
         return Err(Refused::Unindexed);
     }
@@ -1308,10 +1382,13 @@ fn indexed<S: Read + Seek + ?Sized>(
 
     let entries = entries_in(&held_body(source, &head)?)?;
     let position = at.map(|at| at - layout.body);
+
     let wanted = entries_with_the_element_at(&entries, id, position, past_the_clusters);
+
     if wanted == entries {
         return Ok(None);
     }
+
     let room = layout.room_of(index) - head.at;
     let filled = laid_in_the_room(wanted, layout, id, room, head.end - head.at)
         .ok_or(Refused::NoRoomInTheSeekHead)?;
@@ -1348,10 +1425,12 @@ fn laid_in_the_room(
         if let Some(filled) = filling(SEEK_HEAD, &laid_seek_head(&wanted), room, standing) {
             return Some(filled);
         }
+
         let read_in_order_anyway = wanted.iter().position(|entry| {
             entry.id != added
                 && first_cluster.is_some_and(|first| layout.body + entry.position < first)
         })?;
+
         wanted.remove(read_in_order_anyway);
     }
 }
@@ -1380,6 +1459,7 @@ mod tests {
 
     fn a_bare_segment() -> Vec<u8> {
         let mut bytes = sized(EBML_HEADER, &sized(DOC_TYPE, b"matroska"));
+
         bytes.extend_from_slice(&id_bytes(SEGMENT));
         bytes.extend_from_slice(&size_bytes(0, MAX_LENGTH_BYTES).expect("a size"));
         bytes
@@ -1389,9 +1469,11 @@ mod tests {
         let edits = [(TagField::Title, title.to_owned())];
         let rewrite = rewritten(&mut Cursor::new(bare), &edits, &[]).expect("a rewrite");
         let mut file = bare.to_vec();
+
         for laid in &rewrite.laid {
             let at = usize::try_from(laid.at).expect("a small offset");
             let end = at + laid.bytes.len() + usize::try_from(laid.zeroed).expect("a small run");
+
             if file.len() < end {
                 file.resize(end, 0);
             }
@@ -1410,10 +1492,12 @@ mod tests {
             .header;
         let void_at = padding.at;
         let total = void_at + A_VOID_LARGER_THAN_MEMORY_MAY_BE;
+
         let size = size_bytes(total - segment.body, segment.size_width).expect("a size");
 
         let path = env::temp_dir().join(format!("resonate-matroska-{}-{name}", process::id()));
         let mut file = File::create(&path).expect("a file");
+
         file.write_all(&tagged[..usize::try_from(void_at).expect("a small offset")])
             .expect("the head");
         file.write_all(&header).expect("the void's head");
@@ -1427,11 +1511,15 @@ mod tests {
     #[test]
     fn a_file_holding_two_attachments_is_refused_before_its_tags_are_rewritten() {
         let mut body = sized(ATTACHMENTS, &[]);
+
         body.extend_from_slice(&sized(ATTACHMENTS, &[]));
+
         let mut file = sized(EBML_HEADER, &sized(DOC_TYPE, b"matroska"));
+
         file.extend_from_slice(&id_bytes(SEGMENT));
         file.extend_from_slice(&size_bytes(body.len() as u64, MAX_LENGTH_BYTES).expect("a size"));
         file.extend_from_slice(&body);
+
         let edits = [(TagField::Title, "Echoes".to_owned())];
 
         let refused = rewritten(&mut Cursor::new(&file), &edits, &[]);
@@ -1470,11 +1558,15 @@ mod tests {
             .write(true)
             .open(&scratch.0)
             .expect("the file");
+
         let length = file.metadata().expect("its length").len();
+
         rewrite.laid_on(&mut file).expect("a rewrite laid in place");
 
         assert_eq!(file.metadata().expect("its length").len(), length);
+
         let layout = laid_out(&mut BufReader::new(file)).expect("a whole segment still");
+
         assert_eq!(layout.all(TAGS).len(), 1);
     }
 

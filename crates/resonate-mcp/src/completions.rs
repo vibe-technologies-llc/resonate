@@ -9,7 +9,7 @@ use crate::{
 
 const MOST_OFFERED: usize = 100;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Completable {
     Brief,
     NewPlaylist,

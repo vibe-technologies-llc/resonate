@@ -38,6 +38,7 @@ impl LibraryModel {
             return;
         }
         self.library.deliver_into(delivery_folder(cx));
+
         let library = Arc::clone(&self.library);
         let replacing = cx.spawn(async move |this, cx| {
             let (replaced, wanted) = cx
@@ -56,8 +57,10 @@ impl LibraryModel {
                     (replaced, wanted)
                 })
                 .await;
+
             let _ = this.update(cx, |this, cx| this.replaced(replaced, &wanted, cx));
         });
+
         replacing.detach();
     }
 
@@ -103,6 +106,7 @@ impl LibraryModel {
                 continue;
             };
             let recording = found.recording.clone();
+
             self.delivered.downloads.landing(found, now);
             self.delivered
                 .downloads

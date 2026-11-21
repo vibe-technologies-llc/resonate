@@ -40,7 +40,9 @@ impl Searches {
 
     pub fn recalled(&self, target: &str) -> Option<Recalled> {
         let mut kept = self.kept.lock();
+
         let remembered = kept.answers.get(target)?;
+
         if remembered.at.elapsed() < self.kept_for {
             return Some(remembered.answer.clone());
         }
@@ -52,12 +54,15 @@ impl Searches {
         if self.kept_for.is_zero() || body.len() > self.bytes_at_most {
             return;
         }
+
         let mut kept = self.kept.lock();
+
         kept.forget(target);
         while kept.bytes + body.len() > self.bytes_at_most {
             let Some(oldest) = kept.order.front().cloned() else {
                 break;
             };
+
             kept.forget(&oldest);
         }
         kept.bytes += body.len();

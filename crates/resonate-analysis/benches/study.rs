@@ -57,6 +57,7 @@ fn wave_of(seconds: u32) -> Vec<u8> {
         for _ in 0..2 {
             let sample = tone + noise.white() * swell;
             let scaled = (sample * f32::from(i16::MAX)) as i16;
+
             wave.extend_from_slice(&scaled.to_le_bytes());
         }
     }
@@ -69,6 +70,7 @@ fn cpu_seconds() -> Option<f64> {
     let mut fields = after_the_name
         .split_ascii_whitespace()
         .skip(STAT_FIELDS_BEFORE_USER_TIME);
+
     let user: f64 = fields.next()?.parse().ok()?;
     let system: f64 = fields.next()?.parse().ok()?;
     Some((user + system) / CPU_TICKS_A_SECOND)
@@ -85,6 +87,7 @@ impl Spent {
         let cpu = self
             .cpu
             .map_or_else(|| "    -".to_owned(), |cpu| format!("{cpu:5.1}"));
+
         println!(
             "  {name:<13} {wall:7.2} s wall, {cpu} s cpu, {:6.1} x real time",
             heard.as_secs_f64() / wall.max(f64::MIN_POSITIVE),
@@ -107,6 +110,7 @@ fn decoded_alone(sources: &Sources, location: &MediaLocation) -> u64 {
     let (mut decoder, info) = Decoder::open(sources, location).expect("a song opens");
     let mut block = AudioBuffer::empty(info.spec);
     let mut frames = 0;
+
     decoder.follow_format_changes();
     loop {
         match decoder.next_block(&mut block).expect("a song decodes") {
@@ -122,6 +126,7 @@ fn kept_as(folder: &Path, song: &Path, measure: &str, answer: &impl std::fmt::De
         .file_name()
         .expect("a song has a name")
         .to_string_lossy();
+
     fs::write(
         folder.join(format!("{name}.{measure}")),
         format!("{answer:#?}"),
@@ -137,11 +142,13 @@ fn songs() -> Vec<PathBuf> {
                 .map(|entry| entry.expect("an entry reads").path())
                 .filter(|path| path.is_file())
                 .collect();
+
             songs.sort();
             songs
         }
         None => {
             let held = env::temp_dir().join(format!("resonate-study-{}.wav", process::id()));
+
             fs::write(&held, wave_of(SYNTHETIC_SECONDS)).expect("the song written");
             vec![held]
         }
@@ -167,6 +174,7 @@ fn measured(song: &Path, answers: Option<&Path>) {
         length,
         ..
     } = studied.examined;
+
     println!(
         "{} ({rate:?}, {channels} channels, {:.0} s, {frames} frames)",
         song.display(),
@@ -189,6 +197,7 @@ fn studied_together(songs: &[PathBuf], workers: usize) {
     let watch = Watch::default();
     let next = AtomicUsize::new(0);
     let heard_millis = AtomicU64::new(0);
+
     let ((), spent) = timed(|| {
         thread::scope(|scope| {
             for _ in 0..workers {
@@ -197,6 +206,7 @@ fn studied_together(songs: &[PathBuf], workers: usize) {
                         let location = MediaLocation::local(song);
                         let studied =
                             study(&sources, &location, None, &watch).expect("a song is studied");
+
                         heard_millis.fetch_add(
                             studied.examined.length.as_millis() as u64,
                             Ordering::Relaxed,
@@ -206,6 +216,7 @@ fn studied_together(songs: &[PathBuf], workers: usize) {
             }
         });
     });
+
     println!("{} songs by {workers} workers at once", songs.len());
     spent.line(
         "all",
@@ -215,10 +226,13 @@ fn studied_together(songs: &[PathBuf], workers: usize) {
 
 fn main() {
     let answers = env::var_os(ANSWERS_KEPT_IN).map(PathBuf::from);
+
     if let Some(folder) = &answers {
         fs::create_dir_all(folder).expect("the answers' folder made");
     }
+
     let held_here = env::var_os(SONGS_HELD_IN).is_none();
+
     if let Some(workers) = env::var(WORKERS_AT_ONCE)
         .ok()
         .and_then(|workers| workers.parse().ok())

@@ -56,11 +56,13 @@ impl Trashes for Discarded {
 impl Tree {
     fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-mcp-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary directory");
         Self {
             root: root.canonicalize().expect("a canonical path"),
@@ -69,6 +71,7 @@ impl Tree {
 
     fn wav(&self, name: &str, title: &str, album: &str, number: &str) -> PathBuf {
         let path = self.root.join(name);
+
         fs::create_dir_all(path.parent().expect("a folder to hold it")).expect("a folder");
         fs::write(&path, wav(title, album, number)).expect("a writable temporary file");
         path
@@ -76,6 +79,7 @@ impl Tree {
 
     fn mp3(&self, name: &str, title: &str, album: &str) -> PathBuf {
         let path = self.root.join(name);
+
         fs::create_dir_all(path.parent().expect("a folder to hold it")).expect("a folder");
         fs::write(&path, mp3(title, album)).expect("a writable temporary file");
         path
@@ -99,6 +103,7 @@ fn chunk(into: &mut Vec<u8>, id: &[u8; 4], payload: &[u8]) {
 
 fn info(into: &mut Vec<u8>, id: &[u8; 4], value: &str) {
     let mut text = value.as_bytes().to_vec();
+
     text.push(0);
     chunk(into, id, &text);
 }
@@ -106,6 +111,7 @@ fn info(into: &mut Vec<u8>, id: &[u8; 4], value: &str) {
 fn wav(title: &str, album: &str, number: &str) -> Vec<u8> {
     let block_align = CHANNELS * BITS / 8;
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&CHANNELS.to_le_bytes());
     format.extend_from_slice(&RATE.to_le_bytes());
@@ -114,12 +120,14 @@ fn wav(title: &str, album: &str, number: &str) -> Vec<u8> {
     format.extend_from_slice(&BITS.to_le_bytes());
 
     let mut listed = b"INFO".to_vec();
+
     info(&mut listed, b"INAM", title);
     info(&mut listed, b"IART", "The Orbiters");
     info(&mut listed, b"IPRD", album);
     info(&mut listed, b"ITRK", number);
 
     let mut body = b"WAVE".to_vec();
+
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"LIST", &listed);
     chunk(
@@ -129,6 +137,7 @@ fn wav(title: &str, album: &str, number: &str) -> Vec<u8> {
     );
 
     let mut file = b"RIFF".to_vec();
+
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
@@ -145,12 +154,14 @@ fn synchsafe(value: usize) -> [u8; 4] {
 
 fn mp3(title: &str, album: &str) -> Vec<u8> {
     let mut frames = Vec::new();
+
     for (id, value) in [
         (b"TIT2", title),
         (b"TPE1", "The Orbiters"),
         (b"TALB", album),
     ] {
         let mut body = vec![3];
+
         body.extend_from_slice(value.as_bytes());
         frames.extend_from_slice(id);
         frames.extend_from_slice(&synchsafe(body.len()));
@@ -159,6 +170,7 @@ fn mp3(title: &str, album: &str) -> Vec<u8> {
     }
 
     let mut file = b"ID3\x04\x00\x00".to_vec();
+
     file.extend_from_slice(&synchsafe(frames.len()));
     file.extend_from_slice(&frames);
     for _ in 0..MP3_FRAMES {
@@ -170,6 +182,7 @@ fn mp3(title: &str, album: &str) -> Vec<u8> {
 
 fn scanned(tree: &Tree) -> Library {
     let library = Library::open_in_memory().expect("an in-memory catalog");
+
     library
         .add_root(&tree.root)
         .expect("the tree to be a root of the catalog");
@@ -266,6 +279,7 @@ impl Fake {
 
     fn beside(mut self, standing: Standing) -> (Self, Rc<RefCell<Standing>>) {
         let shared = Rc::new(RefCell::new(standing));
+
         self.others.push(Rc::clone(&shared));
         (self, shared)
     }
@@ -338,7 +352,9 @@ impl Handle {
 
     fn moves_by(&self, by: isize) {
         let mut standing = self.standing.borrow_mut();
+
         let len = standing.rows.len();
+
         standing.playing = standing
             .playing
             .and_then(|row| row.checked_add_signed(by))
@@ -368,6 +384,7 @@ impl Controlling for Handle {
 
     fn play_pause(&self) -> resonate_mpris::Result<()> {
         let playing = self.standing.borrow().status == Some(PlaybackStatus::Playing);
+
         self.stands(if playing {
             PlaybackStatus::Paused
         } else {
@@ -394,6 +411,7 @@ impl Controlling for Handle {
     fn seek(&self, by: Seeking) -> resonate_mpris::Result<()> {
         {
             let mut standing = self.standing.borrow_mut();
+
             standing.position = match by {
                 Seeking::Forward(span) => standing.position + span,
                 Seeking::Backward(span) => standing.position.saturating_sub(span),
@@ -444,6 +462,7 @@ impl Controlling for Handle {
 
     fn described(&self, rows: &[TrackId]) -> resonate_mpris::Result<Vec<Described>> {
         let mut standing = self.standing.borrow_mut();
+
         standing.described.push(rows.len());
         Ok(rows
             .iter()
@@ -454,13 +473,16 @@ impl Controlling for Handle {
     fn queue(&self, rows: &[Row], queueing: Queueing) -> resonate_mpris::Result<usize> {
         let fails_after = self.standing.borrow().queueing_fails_after;
         let landing = fails_after.map_or(rows.len(), |after| after.min(rows.len()));
+
         {
             let mut standing = self.standing.borrow_mut();
+
             let first = standing.rows.len() as u64 + 1_000;
             let minted: Vec<Described> = (first..)
                 .zip(&rows[..landing])
                 .map(|(id, _)| row(id, "Queued"))
                 .collect();
+
             standing.rows.extend(minted);
         }
         self.called(Call::Queue(rows.to_vec(), queueing))?;
@@ -520,9 +542,11 @@ impl Controlling for Handle {
             .find(|standing| standing.borrow().zone == to)
             .cloned()
             .ok_or(resonate_mpris::Error::ThreadStopped)?;
+
         {
             let mut leaving = self.standing.borrow_mut();
             let mut arriving = taking.borrow_mut();
+
             arriving.rows = std::mem::take(&mut leaving.rows);
             arriving.playing = leaving.playing.take();
             arriving.status = leaving.status.replace(PlaybackStatus::Stopped);
@@ -569,6 +593,7 @@ fn request(method: &str, params: Value) -> Value {
 
 fn result(server: &Server, method: &str, params: Value) -> Value {
     let answer = asked(server, &request(method, params)).expect("a request to be answered");
+
     assert_eq!(answer["jsonrpc"], "2.0");
     assert_eq!(answer["id"], 7);
     assert!(answer.get("error").is_none(), "{answer}");
@@ -577,6 +602,7 @@ fn result(server: &Server, method: &str, params: Value) -> Value {
 
 fn error_code(server: &Server, message: &Value) -> i64 {
     let answer = asked(server, message).expect("a refusal to be answered");
+
     assert!(answer.get("result").is_none(), "{answer}");
     answer["error"]["code"]
         .as_i64()
@@ -603,9 +629,11 @@ fn disagreement(value: &Value, schema: &Value, at: &str) -> Option<String> {
         _ => Vec::new(),
     };
     let found = type_of(value);
+
     let fits = types.is_empty()
         || types.contains(&found)
         || (found == "integer" && types.contains(&"number"));
+
     if !fits {
         return Some(format!("{at} is {found}, not {named}"));
     }
@@ -664,14 +692,19 @@ fn called(server: &Server, tool: &str, arguments: Value) -> Value {
         "tools/call",
         json!({ "name": tool, "arguments": arguments }),
     );
+
     assert_eq!(answered["isError"], false, "{answered}");
+
     let structured = answered["structuredContent"].clone();
+
     if let Some(said) = disagreement(&structured, &output_schema_of(server, tool), tool) {
         panic!("{said}: {structured}");
     }
+
     let text = answered["content"][0]["text"]
         .as_str()
         .expect("a result carries its text");
+
     assert_eq!(
         serde_json::from_str::<Value>(text).expect("the text to be the JSON it stands for"),
         structured
@@ -685,6 +718,7 @@ fn failed(server: &Server, tool: &str, arguments: Value) -> String {
         "tools/call",
         json!({ "name": tool, "arguments": arguments }),
     );
+
     assert_eq!(answered["isError"], true, "{answered}");
     answered["content"][0]["text"]
         .as_str()
@@ -757,6 +791,7 @@ fn a_broken_envelope_is_a_json_rpc_error_rather_than_a_tool_failure() {
     let unparsed = server
         .answer(b"{ not json")
         .expect("a parse error to be answered");
+
     assert_eq!(unparsed["error"]["code"], -32_700);
     assert_eq!(unparsed["id"], Value::Null);
 
@@ -877,6 +912,7 @@ fn every_tool_is_listed_with_a_schema_naming_what_it_requires() {
             .expect("a list of what is required")
         {
             let field = required.as_str().expect("a field's name");
+
             assert!(
                 entry["inputSchema"]["properties"].get(field).is_some(),
                 "{} requires {field} and does not describe it",
@@ -894,11 +930,13 @@ fn a_ping_is_answered_with_nothing() {
 #[test]
 fn playlists_are_listed_a_page_at_a_time_saying_how_many_there_are() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
+
     for name in ["Echo", "Alpha", "Delta", "Bravo", "Charlie"] {
         library
             .create_playlist(name)
             .expect("a playlist to be made");
     }
+
     let server = server(library, Fake::default());
 
     let first = called(&server, "list_playlists", json!({ "limit": 2 }));
@@ -913,6 +951,7 @@ fn playlists_are_listed_a_page_at_a_time_saying_how_many_there_are() {
             .map(|playlist| playlist["name"].clone())
             .collect()
     };
+
     assert_eq!(names(&first), [json!("Alpha"), json!("Bravo")]);
     assert_eq!(names(&second), [json!("Charlie"), json!("Delta")]);
     assert_eq!(names(&last), [json!("Echo")]);
@@ -924,16 +963,19 @@ fn playlists_are_listed_a_page_at_a_time_saying_how_many_there_are() {
 fn resources_are_listed_a_page_at_a_time_under_a_cursor_that_must_be_one_handed_out() {
     let library = Library::open_in_memory().expect("an in-memory catalog");
     let playlists = 250;
+
     for n in 0..playlists {
         library
             .create_playlist(&format!("List {n:03}"))
             .expect("a playlist to be made");
     }
+
     let server = server(library, Fake::default());
 
     let mut uris = Vec::new();
     let mut pages = 0;
     let mut cursor = Value::Null;
+
     loop {
         let params = match &cursor {
             Value::Null => json!({}),
@@ -941,7 +983,9 @@ fn resources_are_listed_a_page_at_a_time_under_a_cursor_that_must_be_one_handed_
         };
         let listed = result(&server, "resources/list", params);
         let page = listed["resources"].as_array().expect("a list of resources");
+
         assert!(page.len() <= 100, "{}", page.len());
+
         uris.extend(page.iter().map(|resource| resource["uri"].clone()));
         pages += 1;
         cursor = listed.get("nextCursor").cloned().unwrap_or(Value::Null);
@@ -979,12 +1023,14 @@ fn a_transport_tool_with_no_player_fails_as_a_tool_and_the_catalog_still_answers
     let server = nothing_running();
 
     let said = failed(&server, "now_playing", json!({}));
+
     assert!(said.contains("no player"), "{said}");
     assert!(
         failed(&server, "control_playback", json!({ "action": "pause" })).contains("no player")
     );
 
     let listed = called(&server, "list_playlists", json!({}));
+
     assert_eq!(listed, json!({ "matched": 0, "playlists": [] }));
 }
 
@@ -1026,6 +1072,7 @@ fn a_queue_id_is_written_as_text_so_no_client_rounds_it() {
     );
 
     let queue = called(&server, "show_queue", json!({}));
+
     assert_eq!(queue["rows"], 2);
     assert_eq!(queue["playing_row"], 0);
     assert_eq!(queue["queue"][0]["queue_id"], u64::MAX.to_string());
@@ -1037,6 +1084,7 @@ fn a_queue_id_is_written_as_text_so_no_client_rounds_it() {
         "remove_from_queue",
         json!({ "queue_id": (u64::MAX - 1).to_string() }),
     );
+
     assert_eq!(removed["removed"], (u64::MAX - 1).to_string());
     assert_eq!(
         standing.borrow().calls,
@@ -1059,6 +1107,7 @@ fn every_transport_gesture_reaches_the_player_as_the_call_it_names() {
 
     for action in ["play", "pause", "toggle", "stop", "next", "previous"] {
         let done = called(&server, "control_playback", json!({ "action": action }));
+
         assert_eq!(done["done"], action);
     }
     called(&server, "seek", json!({ "seconds": -12.5 }));
@@ -1090,16 +1139,19 @@ fn a_sleep_timer_is_set_in_minutes_or_at_an_end_and_read_back() {
     );
 
     let after = called(&server, "set_sleep_timer", json!({ "minutes": 20 }));
+
     assert_eq!(after["sleep_timer"]["until"], "after_a_while");
     assert_eq!(after["sleep_timer"]["left_seconds"], 1_200.0);
 
     let at_the_end = called(&server, "set_sleep_timer", json!({ "at": "end_of_queue" }));
+
     assert_eq!(
         at_the_end["sleep_timer"],
         json!({ "until": "end_of_queue" })
     );
 
     let off = called(&server, "set_sleep_timer", json!({ "at": "off" }));
+
     assert!(off.get("sleep_timer").is_none());
 
     assert_eq!(
@@ -1146,12 +1198,15 @@ fn the_catalog_is_searched_and_what_it_finds_is_queued_by_its_track_ids() {
     let tree = Tree::new();
     let second = tree.wav("b.wav", "Signal Fire", "Hours", "2");
     let first = tree.wav("a.wav", "Night Signal", "Hours", "1");
+
     tree.wav("c.wav", "Elsewhere", "Days", "1");
+
     let (players, standing) = Fake::with(Standing::default());
     let server = server(scanned(&tree), players);
 
     let found = called(&server, "search_library", json!({ "query": "signal" }));
     let tracks = found["tracks"].as_array().expect("a list of tracks");
+
     assert_eq!(tracks.len(), 2);
     assert!(tracks.iter().all(|track| track["album"] == "Hours"));
     assert_eq!(found["albums"][0]["title"], "Hours");
@@ -1166,15 +1221,18 @@ fn the_catalog_is_searched_and_what_it_finds_is_queued_by_its_track_ids() {
         "add_to_queue",
         json!({ "track_ids": ids, "next": true, "play": true }),
     );
+
     assert_eq!(queued["queued"], 2);
 
     let by_album = called(&server, "add_to_queue", json!({ "query": "album:Hours" }));
+
     assert_eq!(by_album["queued"], 2);
 
     let calls = standing.borrow().calls.clone();
     let Call::Queue(rows, queueing) = &calls[0] else {
         panic!("the ids were not queued: {calls:?}");
     };
+
     assert_eq!(rows.len(), 2);
     assert_eq!(
         *queueing,
@@ -1215,12 +1273,15 @@ fn a_playlists_rows_are_listed_from_the_catalog_with_no_player() {
         .tracks(&Default::default())
         .expect("the catalog to be read")
         .remove(0);
+
     library
         .add_to_playlist(id, &[resonate_library::Cut::of(&track)])
         .expect("a row to be added");
+
     let server = server(library, Fake::default());
 
     let listed = called(&server, "list_playlists", json!({}));
+
     assert_eq!(listed["playlists"][0]["name"], "Late Night");
     assert_eq!(listed["playlists"][0]["tracks"], 1);
 
@@ -1229,6 +1290,7 @@ fn a_playlists_rows_are_listed_from_the_catalog_with_no_player() {
         "playlist_tracks",
         json!({ "playlist": "late night" }),
     );
+
     assert_eq!(rows["matched"], 1);
     assert_eq!(rows["tracks"][0]["title"], "Night Signal");
     assert_eq!(
@@ -1245,9 +1307,11 @@ fn a_playlists_rows_are_listed_from_the_catalog_with_no_player() {
 #[test]
 fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
     tree.wav("b.wav", "Night Fire", "Hours", "2");
     tree.wav("c.wav", "Day Signal", "Hours", "3");
+
     let library = scanned(&tree);
     let cuts: Vec<_> = library
         .tracks(&Default::default())
@@ -1255,6 +1319,7 @@ fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
         .iter()
         .map(resonate_library::Cut::of)
         .collect();
+
     library
         .start_playlist("Hours", &cuts)
         .expect("a playlist to be made");
@@ -1269,6 +1334,7 @@ fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
             },
         )
         .expect("a query to be saved");
+
     let server = server(library, Fake::default());
 
     let list = called(
@@ -1276,6 +1342,7 @@ fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
         "playlist_tracks",
         json!({ "playlist": "Hours", "limit": 2 }),
     );
+
     assert_eq!(list["matched"], 3);
     assert_eq!(list["tracks"].as_array().map(Vec::len), Some(2));
 
@@ -1284,6 +1351,7 @@ fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
         "playlist_tracks",
         json!({ "playlist": "Hours", "matching": "night", "limit": 1 }),
     );
+
     assert_eq!(narrowed["matched"], 2);
     assert_eq!(narrowed["tracks"].as_array().map(Vec::len), Some(1));
 
@@ -1292,6 +1360,7 @@ fn a_playlist_listed_to_a_limit_still_says_how_many_rows_matched() {
         "playlist_tracks",
         json!({ "playlist": "Signals", "limit": 1 }),
     );
+
     assert_eq!(query["matched"], 2);
     assert_eq!(query["tracks"].as_array().map(Vec::len), Some(1));
 }
@@ -1309,26 +1378,32 @@ fn a_transport_gesture_answers_with_what_the_player_reads_back_once_it_has_lande
     );
 
     let played = called(&server, "control_playback", json!({ "action": "play" }));
+
     assert_eq!(played["status"], "Playing");
     assert_eq!(played["track"]["title"], "Echoes");
 
     let skipped = called(&server, "control_playback", json!({ "action": "next" }));
+
     assert_eq!(skipped["track"]["title"], "Time");
     assert_eq!(skipped["track"]["queue_id"], "8");
 
     let paused = called(&server, "control_playback", json!({ "action": "toggle" }));
+
     assert_eq!(paused["status"], "Paused");
 
     let sought = called(&server, "seek", json!({ "seconds": 30 }));
+
     assert_eq!(sought["moved_seconds"], 30.0);
     assert_eq!(sought["position_seconds"], 30.0);
     assert_eq!(sought["track"]["title"], "Time");
 
     let rewound = called(&server, "seek", json!({ "seconds": -100 }));
+
     assert_eq!(rewound["moved_seconds"], -30.0);
     assert_eq!(rewound["position_seconds"], 0.0);
 
     let louder = called(&server, "set_volume", json!({ "percent": 25 }));
+
     assert_eq!(louder["volume_percent"], 25.0);
 }
 
@@ -1422,7 +1497,9 @@ fn an_unshuffled_queue_leaves_the_play_position_out() {
 #[test]
 fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
+
     let server = server(scanned(&tree), Fake::default());
     let found = called(&server, "search_library", json!({ "query": "signal" }));
     let track = found["tracks"][0]["track_id"].clone();
@@ -1433,16 +1510,19 @@ fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
         "mark_favourite",
         json!({ "track_ids": [track], "album_ids": [album] }),
     );
+
     assert_eq!(
         marked,
         json!({ "favourite": true, "named": 2, "changed": 2 })
     );
 
     let favourites = called(&server, "favourites", json!({}));
+
     assert_eq!(favourites["tracks"][0]["title"], "Night Signal");
     assert_eq!(favourites["albums"][0]["title"], "Hours");
 
     let again = called(&server, "mark_favourite", json!({ "track_ids": [track] }));
+
     assert_eq!(again["changed"], 0);
 
     let unmarked = called(
@@ -1450,6 +1530,7 @@ fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
         "mark_favourite",
         json!({ "track_ids": [track], "favourite": false }),
     );
+
     assert_eq!(unmarked["changed"], 1);
     assert_eq!(
         called(&server, "favourites", json!({}))["tracks"],
@@ -1460,6 +1541,7 @@ fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
         "tools/call",
         json!({ "name": "mark_favourite", "arguments": {} }),
     );
+
     assert_eq!(error_code(&server, &nothing), -32_602);
 
     let said = failed(
@@ -1467,6 +1549,7 @@ fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
         "mark_favourite",
         json!({ "track_ids": [track, 999_999] }),
     );
+
     assert!(said.contains("999999"), "{said}");
     assert_eq!(
         called(&server, "favourites", json!({}))["tracks"],
@@ -1478,12 +1561,15 @@ fn a_favourite_is_marked_and_taken_away_by_its_catalog_id() {
 #[test]
 fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
     tree.wav("b.wav", "Signal Fire", "Hours", "2");
     tree.wav("c.wav", "Elsewhere", "Days", "1");
+
     let server = server(scanned(&tree), Fake::default());
 
     let made = called(&server, "create_playlist", json!({ "name": "Late Night" }));
+
     assert_eq!(made["playlist"]["name"], "Late Night");
     assert_eq!(made["playlist"]["tracks"], 0);
 
@@ -1492,10 +1578,12 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         "add_to_playlist",
         json!({ "playlist": "late night", "query": "album:Hours" }),
     );
+
     assert_eq!(added["added"], 2);
     assert_eq!(added["playlist"]["tracks"], 2);
 
     let elsewhere = called(&server, "search_library", json!({ "query": "elsewhere" }));
+
     called(
         &server,
         "add_to_playlist",
@@ -1516,6 +1604,7 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         .iter()
         .map(|row| (row["row"].clone(), row["title"].clone()))
         .collect();
+
     assert_eq!(
         listed,
         vec![
@@ -1539,11 +1628,13 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         -32_602,
         "a range written back to front was taken"
     );
+
     let dropped = called(
         &server,
         "remove_from_playlist",
         json!({ "playlist": "Late Night", "row": 0, "through_row": 1 }),
     );
+
     assert_eq!(dropped["removed"], 2);
     assert_eq!(dropped["playlist"]["tracks"], 1);
     assert!(
@@ -1554,11 +1645,13 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         )
         .contains("holds no row 5")
     );
+
     let matched = called(
         &server,
         "remove_from_playlist",
         json!({ "playlist": "Late Night", "matching": "elsewhere" }),
     );
+
     assert_eq!(matched["removed"], 1);
 
     let renamed = called(
@@ -1566,6 +1659,7 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         "rename_playlist",
         json!({ "playlist": "Late Night", "to": "Small Hours" }),
     );
+
     assert_eq!(renamed["playlist"]["name"], "Small Hours");
 
     let filling = called(
@@ -1573,6 +1667,7 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         "create_playlist",
         json!({ "name": "Signals", "fills_from": "signal" }),
     );
+
     assert_eq!(filling["playlist"]["fills_from"], "signal");
     assert_eq!(filling["playlist"]["tracks"], 2);
     assert!(
@@ -1591,6 +1686,7 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
             "arguments": { "name": "Both", "query": "signal", "fills_from": "signal" },
         }),
     );
+
     assert_eq!(error_code(&server, &both), -32_602);
     assert!(failed(&server, "create_playlist", json!({ "name": "Signals" })).contains("Signals"));
 
@@ -1599,7 +1695,9 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         "discard_playlist",
         json!({ "playlist": "Small Hours" }),
     );
+
     assert_eq!(discarded["discarded"]["name"], "Small Hours");
+
     let left = called(&server, "list_playlists", json!({}));
     let names: Vec<&Value> = left["playlists"]
         .as_array()
@@ -1607,6 +1705,7 @@ fn a_playlist_is_made_filled_trimmed_and_renamed_in_the_catalog() {
         .iter()
         .map(|playlist| &playlist["name"])
         .collect();
+
     assert_eq!(names, vec![&json!("Signals")]);
     assert!(
         failed(
@@ -1630,22 +1729,30 @@ fn a_session_takes_back_its_own_playlist_edit_and_makes_it_again() {
     );
 
     let undone = called(&server, "undo_edit", json!({}));
+
     assert_eq!(undone["walked"], "undone");
     assert_eq!(undone["edit"], "renamed");
     assert_eq!(undone["playlist"], "Evening");
     assert_eq!(undone["more_to_undo"], 1);
+
     let names = called(&server, "list_playlists", json!({}));
+
     assert_eq!(names["playlists"][0]["name"], "Evening");
 
     let again = called(&server, "undo_edit", json!({ "redo": true }));
+
     assert_eq!(again["walked"], "redone");
     assert_eq!(again["edit"], "renamed");
+
     let names = called(&server, "list_playlists", json!({}));
+
     assert_eq!(names["playlists"][0]["name"], "Night");
 
     called(&server, "undo_edit", json!({}));
     called(&server, "undo_edit", json!({}));
+
     let nothing = called(&server, "undo_edit", json!({}));
+
     assert_eq!(nothing["walked"], Value::Null);
     assert_eq!(
         called(&server, "list_playlists", json!({}))["playlists"],
@@ -1656,8 +1763,10 @@ fn a_session_takes_back_its_own_playlist_edit_and_makes_it_again() {
 #[test]
 fn a_track_an_album_is_short_of_is_listed_and_wanted() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
     tree.wav("b.wav", "Signal Fire", "Hours", "2");
+
     let library = scanned(&tree);
     let album = library
         .albums(&AlbumQuery::default())
@@ -1678,6 +1787,7 @@ fn a_track_an_album_is_short_of_is_listed_and_wanted() {
             links: Vec::new(),
         })
         .collect();
+
     library
         .land_release(
             album.id,
@@ -1705,11 +1815,15 @@ fn a_track_an_album_is_short_of_is_listed_and_wanted() {
         )
         .expect("the release to land");
     library.rematch(album.id).expect("the rows to be matched");
+
     let server = server(library, Fake::default());
 
     let missing = called(&server, "list_missing", json!({}));
+
     assert_eq!(missing["missing"], 1);
+
     let afterglow = &missing["tracks"][0];
+
     assert_eq!(afterglow["title"], "Afterglow");
     assert_eq!(afterglow["album"], "Hours");
     assert_eq!(afterglow["number"], "3");
@@ -1734,6 +1848,7 @@ fn a_track_an_album_is_short_of_is_listed_and_wanted() {
         "want_tracks",
         json!({ "release_track_ids": [afterglow["release_track_id"]] }),
     );
+
     assert_eq!(wanted["wanted"], 1);
     assert_eq!(
         called(&server, "list_missing", json!({}))["tracks"][0]["wanted"],
@@ -1776,6 +1891,7 @@ fn serving_answers_a_line_per_request_and_ends_with_its_input() {
         .lines()
         .map(|line| serde_json::from_str(line).expect("each line to be one message"))
         .collect();
+
     assert_eq!(lines.len(), 2);
     assert_eq!(lines[0]["result"], json!({}));
     assert!(lines[1]["result"]["tools"].is_array());
@@ -1785,7 +1901,9 @@ fn serving_answers_a_line_per_request_and_ends_with_its_input() {
 fn a_line_that_is_not_text_is_refused_rather_than_ending_the_session() {
     let server = nothing_running();
     let mut input = vec![0xff, 0xfe, b'\n'];
+
     input.extend_from_slice(request("ping", json!({})).to_string().as_bytes());
+
     let mut output = Vec::new();
 
     server
@@ -1794,6 +1912,7 @@ fn a_line_that_is_not_text_is_refused_rather_than_ending_the_session() {
 
     let text = String::from_utf8(output).expect("the output to be text");
     let lines: Vec<&str> = text.lines().collect();
+
     assert_eq!(lines.len(), 2);
     assert!(lines[0].contains("-32700"));
     assert!(lines[1].contains("\"result\":{}"));
@@ -1806,6 +1925,7 @@ fn a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole() {
     let server = nothing_running();
     let long = io::repeat(b'a').take(FAR_PAST_THE_LONGEST);
     let rest = format!("\n{}\n", request("ping", json!({})));
+
     let input = BufReader::new(long.chain(rest.as_bytes()));
     let mut output = Vec::new();
 
@@ -1818,6 +1938,7 @@ fn a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole() {
         .lines()
         .map(|line| serde_json::from_str(line).expect("each line to be one message"))
         .collect();
+
     assert_eq!(lines.len(), 2, "{lines:?}");
     assert_eq!(lines[0]["error"]["code"], -32_600);
     assert_eq!(lines[0]["id"], Value::Null);
@@ -1827,7 +1948,9 @@ fn a_line_longer_than_a_message_may_be_is_refused_and_passed_over_whole() {
 #[test]
 fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let server = nothing_running();
     let started = called(
         &server,
@@ -1836,6 +1959,7 @@ fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained(
     );
     let (reading, mut writing) = io::pipe().expect("a pipe");
     let (stop, stoppable) = resonate_mcp::stoppable();
+
     writeln!(writing, "{}", request("ping", json!({}))).expect("the pipe takes a line");
 
     let stopping = std::thread::spawn(move || {
@@ -1843,6 +1967,7 @@ fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained(
         stop.stop();
     });
     let mut output = Vec::new();
+
     server
         .serve_until_stopped(BufReader::new(reading), &mut output, stoppable)
         .expect("a session told to stop to end cleanly");
@@ -1850,9 +1975,11 @@ fn a_session_told_to_stop_ends_with_its_input_still_open_and_its_passes_drained(
 
     let answered = String::from_utf8(output).expect("the output to be text");
     let scan = called(&server, "library_passes", json!({}))["scan"].clone();
+
     assert_eq!(started["started"], "scan");
     assert!(answered.contains("\"result\":{}"), "{answered}");
     assert_ne!(scan["state"], "running", "{scan}");
+
     drop(writing);
 }
 
@@ -1866,11 +1993,13 @@ fn a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it
     });
 
     let started = std::time::Instant::now();
+
     while !telling.is_finished() {
         assert!(
             started.elapsed() < Duration::from_secs(5),
             "a second stop waited for the session to be free"
         );
+
         std::thread::sleep(Duration::from_millis(5));
     }
     telling.join().expect("the telling thread");
@@ -1880,6 +2009,7 @@ fn a_stop_told_again_while_the_session_is_busy_never_holds_up_the_one_telling_it
 fn once_settled(server: &Server, pass: &str) -> Value {
     for _ in 0..600 {
         let states = called(server, "library_passes", json!({}));
+
         if states[pass]["state"] != "running" {
             return states[pass].clone();
         }
@@ -1891,11 +2021,14 @@ fn once_settled(server: &Server, pass: &str) -> Value {
 #[test]
 fn a_scan_started_over_the_protocol_runs_behind_the_session_and_says_what_it_found() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
     tree.wav("02.wav", "Noise", "Hours", "2");
+
     let server = nothing_running();
 
     let idle = called(&server, "library_passes", json!({}));
+
     for pass in ["scan", "lookup", "poll"] {
         assert_eq!(idle[pass]["state"], "idle", "{idle}");
     }
@@ -1905,18 +2038,22 @@ fn a_scan_started_over_the_protocol_runs_behind_the_session_and_says_what_it_fou
         "start_scan",
         json!({ "roots": [tree.root.display().to_string()] }),
     );
+
     assert_eq!(started["started"], "scan");
     assert_eq!(started["roots"], json!([tree.root.display().to_string()]));
 
     let settled = once_settled(&server, "scan");
+
     assert_eq!(settled["state"], "finished", "{settled}");
     assert_eq!(settled["stats"]["added"], 2, "{settled}");
     assert_eq!(settled["cancelled"], false);
 
     let found = called(&server, "search_library", json!({ "query": "noise" }));
+
     assert_eq!(found["tracks"].as_array().map(Vec::len), Some(1), "{found}");
 
     let again = called(&server, "start_scan", json!({}));
+
     assert_eq!(again["roots"], json!([tree.root.display().to_string()]));
     assert_eq!(once_settled(&server, "scan")["stats"]["added"], 0);
 }
@@ -1946,6 +2083,7 @@ fn a_blank_query_or_search_is_refused_rather_than_taken_as_the_whole_library() {
             "{tool} took a blank search"
         );
     }
+
     assert_eq!(
         called(&server, "list_playlists", json!({}))["playlists"],
         json!([])
@@ -1963,14 +2101,18 @@ fn a_folder_that_is_not_there_is_refused_rather_than_kept_as_a_root() {
     );
 
     assert!(said.contains("not a folder"), "{said}");
+
     let idle = called(&server, "library_passes", json!({}));
+
     assert_eq!(idle["scan"]["state"], "idle");
 }
 
 #[test]
 fn a_folder_that_is_there_is_not_kept_when_a_later_one_in_the_list_is_refused() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let server = nothing_running();
 
     let said = failed(
@@ -1978,9 +2120,11 @@ fn a_folder_that_is_there_is_not_kept_when_a_later_one_in_the_list_is_refused() 
         "start_scan",
         json!({ "roots": [tree.root.display().to_string(), "/nowhere/resonate/music"] }),
     );
+
     assert!(said.contains("not a folder"), "{said}");
 
     let bare = called(&server, "start_scan", json!({}));
+
     assert_eq!(bare["roots"], json!([]), "{bare}");
     assert_eq!(once_settled(&server, "scan")["stats"]["added"], 0);
 }
@@ -2017,11 +2161,14 @@ fn a_library_takes_no_more_folders_than_its_cap_and_keeps_none_of_a_refused_list
 #[test]
 fn a_folder_forgotten_takes_its_tracks_with_it_and_one_never_kept_is_refused() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let server = nothing_running();
     let folder = tree.root.display().to_string();
 
     called(&server, "start_scan", json!({ "roots": [folder.clone()] }));
+
     assert_eq!(once_settled(&server, "scan")["state"], "finished");
 
     let forgotten = called(
@@ -2029,12 +2176,16 @@ fn a_folder_forgotten_takes_its_tracks_with_it_and_one_never_kept_is_refused() {
         "forget_folder",
         json!({ "folder": folder.clone() }),
     );
+
     assert_eq!(forgotten["forgotten"], folder);
     assert_eq!(forgotten["roots"], json!([]));
+
     let found = called(&server, "search_library", json!({ "query": "signal" }));
+
     assert_eq!(found["tracks"].as_array().map(Vec::len), Some(0), "{found}");
 
     let said = failed(&server, "forget_folder", json!({ "folder": folder }));
+
     assert!(said.contains("not one of the library's folders"), "{said}");
 }
 
@@ -2056,10 +2207,12 @@ fn a_poll_with_no_want_to_ask_about_finishes_having_asked_nothing() {
     let server = nothing_running();
 
     let started = called(&server, "start_poll", json!({ "again": true }));
+
     assert_eq!(started["started"], "poll");
     assert_eq!(started["a_provider_is_registered"], false);
 
     let settled = once_settled(&server, "poll");
+
     assert_eq!(settled["state"], "finished", "{settled}");
     assert_eq!(settled["stats"]["asked"], 0);
 }
@@ -2087,6 +2240,7 @@ fn stopping_a_pass_that_is_not_running_answers_where_it_stands() {
 #[test]
 fn a_session_that_ends_under_a_running_scan_waits_for_it_to_stop() {
     let tree = Tree::new();
+
     for number in 1..=40 {
         tree.wav(
             &format!("{number:02}.wav"),
@@ -2095,6 +2249,7 @@ fn a_session_that_ends_under_a_running_scan_waits_for_it_to_stop() {
             &number.to_string(),
         );
     }
+
     let library = Library::open_in_memory().expect("an in-memory catalog");
     let server = server(library, Fake::default());
     let started = request(
@@ -2112,12 +2267,14 @@ fn a_session_that_ends_under_a_running_scan_waits_for_it_to_stop() {
         .expect("the session to end cleanly");
 
     let settled = called(&server, "library_passes", json!({}));
+
     assert_eq!(settled["scan"]["state"], "finished", "{settled}");
 }
 
 fn read_resource(server: &Server, uri: &str) -> Value {
     let answered = result(server, "resources/read", json!({ "uri": uri }));
     let contents = &answered["contents"][0];
+
     assert_eq!(contents["uri"], uri, "{answered}");
     assert_eq!(contents["mimeType"], "application/json");
     serde_json::from_str(
@@ -2131,7 +2288,9 @@ fn read_resource(server: &Server, uri: &str) -> Value {
 #[test]
 fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
+
     let library = scanned(&tree);
     let id = library
         .create_playlist("AC/DC & Friends?")
@@ -2140,9 +2299,11 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
         .tracks(&Default::default())
         .expect("the catalog to be read")
         .remove(0);
+
     library
         .add_to_playlist(id, &[resonate_library::Cut::of(&track)])
         .expect("a row to be added");
+
     let server = server(library, Fake::default());
 
     let listed = result(&server, "resources/list", json!({}));
@@ -2152,6 +2313,7 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
         .iter()
         .map(|resource| resource["uri"].as_str().expect("a resource has a uri"))
         .collect();
+
     assert_eq!(
         uris,
         [
@@ -2169,6 +2331,7 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
     assert_eq!(listed["resources"][8]["name"], "AC/DC & Friends?");
 
     let rows = read_resource(&server, uris[8]);
+
     assert_eq!(rows["playlist"]["name"], "AC/DC & Friends?");
     assert_eq!(rows["tracks"][0]["title"], "Night Signal");
     assert_eq!(
@@ -2180,6 +2343,7 @@ fn every_resource_is_listed_and_each_playlist_as_one_of_its_own() {
     );
 
     let templates = result(&server, "resources/templates/list", json!({}));
+
     assert_eq!(
         templates["resourceTemplates"][0]["uriTemplate"],
         "resonate://library/playlist/{name}"
@@ -2233,6 +2397,7 @@ fn a_resource_nobody_offers_is_refused_and_one_that_cannot_be_read_fails() {
             "{uri}"
         );
     }
+
     assert_eq!(
         error_code(&server, &request("resources/read", json!({}))),
         -32_602
@@ -2246,6 +2411,7 @@ fn a_resource_nobody_offers_is_refused_and_one_that_cannot_be_read_fails() {
         ),
     )
     .expect("a failed read to be answered");
+
     assert_eq!(answer["error"]["code"], -32_603, "{answer}");
     assert!(
         answer["error"]["message"]
@@ -2276,15 +2442,18 @@ fn prompted(server: &Server, name: &str, arguments: Value) -> (String, Value) {
     let messages = got["messages"]
         .as_array()
         .expect("a prompt carries messages");
+
     assert_eq!(messages.len(), 2, "{got}");
     assert!(
         messages.iter().all(|message| message["role"] == "user"),
         "{got}"
     );
+
     let asked = messages[0]["content"]["text"]
         .as_str()
         .expect("a prompt opens with what it asks")
         .to_owned();
+
     assert_eq!(messages[1]["content"]["type"], "resource", "{got}");
     (asked, messages[1]["content"]["resource"].clone())
 }
@@ -2298,6 +2467,7 @@ fn every_prompt_is_listed_with_the_arguments_it_requires() {
         "initialize",
         json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
     );
+
     assert_eq!(initialised["capabilities"]["prompts"]["listChanged"], false);
 
     let listed = result(&server, "prompts/list", json!({}));
@@ -2306,6 +2476,7 @@ fn every_prompt_is_listed_with_the_arguments_it_requires() {
         .iter()
         .map(|prompt| prompt["name"].as_str().expect("a prompt has a name"))
         .collect();
+
     assert_eq!(
         names,
         [
@@ -2324,11 +2495,15 @@ fn every_prompt_is_listed_with_the_arguments_it_requires() {
 #[test]
 fn a_prompt_embeds_the_reading_its_resource_answers() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
+
     let library = scanned(&tree);
+
     library
         .create_playlist("Mornings")
         .expect("a playlist to be made");
+
     let (players, _) = Fake::with(Standing {
         rows: vec![row(9, "Echoes")],
         playing: Some(0),
@@ -2342,22 +2517,27 @@ fn a_prompt_embeds_the_reading_its_resource_answers() {
         "build_a_playlist",
         json!({ "brief": "  rain on a window  ", "name": "Drizzle" }),
     );
+
     assert!(asked.contains("brief: rain on a window."), "{asked}");
     assert!(asked.contains("under the name Drizzle"), "{asked}");
     assert!(asked.contains("search_library") && asked.contains("create_playlist"));
     assert_eq!(embedded["uri"], "resonate://library/playlists");
+
     let text = embedded["text"]
         .as_str()
         .expect("an embedded reading is text");
+
     assert_eq!(
         serde_json::from_str::<Value>(text).expect("the text to be JSON"),
         read_resource(&server, "resonate://library/playlists")
     );
 
     let (unnamed, _) = prompted(&server, "build_a_playlist", json!({ "brief": "rain" }));
+
     assert!(unnamed.contains("of your choosing"), "{unnamed}");
 
     let (asked, embedded) = prompted(&server, "review_my_listening", json!({ "window": "year" }));
+
     assert!(asked.contains("over the last year"), "{asked}");
     assert_eq!(embedded["uri"], "resonate://library/statistics/year");
     assert_eq!(
@@ -2373,13 +2553,16 @@ fn a_prompt_embeds_the_reading_its_resource_answers() {
     );
 
     let (_, embedded) = prompted(&server, "review_my_listening", json!({}));
+
     assert_eq!(embedded["uri"], "resonate://library/statistics");
 
     let (asked, embedded) = prompted(&server, "complete_my_albums", json!({}));
+
     assert!(asked.contains("want_tracks"), "{asked}");
     assert_eq!(embedded["uri"], "resonate://library/missing");
 
     let (_, embedded) = prompted(&server, "about_this_track", json!({}));
+
     assert_eq!(embedded["uri"], "resonate://player/now-playing");
     assert!(
         embedded["text"]
@@ -2412,6 +2595,7 @@ fn a_prompt_asked_wrongly_is_refused_and_one_whose_reading_fails_fails() {
         &request("prompts/get", json!({ "name": "about_this_track" })),
     )
     .expect("a failed prompt to be answered");
+
     assert_eq!(answer["error"]["code"], -32_603, "{answer}");
     assert!(
         answer["error"]["message"]
@@ -2435,6 +2619,7 @@ fn a_window_of_listening_is_a_resource_under_the_window_it_names() {
     for window in ["week", "month", "year", "everything"] {
         let read = read_resource(&server, &format!("resonate://library/statistics/{window}"));
         let asked = called(&server, "listening_statistics", json!({ "window": window }));
+
         assert_eq!(
             read.get("since").is_some(),
             asked.get("since").is_some(),
@@ -2446,6 +2631,7 @@ fn a_window_of_listening_is_a_resource_under_the_window_it_names() {
             "{window}"
         );
     }
+
     assert_eq!(
         error_code(
             &server,
@@ -2456,7 +2642,9 @@ fn a_window_of_listening_is_a_resource_under_the_window_it_names() {
         ),
         -32_002
     );
+
     let templates = result(&server, "resources/templates/list", json!({}));
+
     assert_eq!(
         templates["resourceTemplates"][1]["uriTemplate"],
         "resonate://library/statistics/{window}"
@@ -2472,6 +2660,7 @@ fn completed(server: &Server, reference: Value, argument: &str, value: &str) -> 
     let values = answer["completion"]["values"]
         .as_array()
         .expect("a completion carries values");
+
     assert_eq!(answer["completion"]["total"], values.len(), "{answer}");
     assert_eq!(answer["completion"]["hasMore"], false, "{answer}");
     values
@@ -2483,13 +2672,17 @@ fn completed(server: &Server, reference: Value, argument: &str, value: &str) -> 
 #[test]
 fn an_argument_is_completed_from_what_the_catalog_holds() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
+
     let library = scanned(&tree);
+
     for name in ["Late Night", "Mornings", "Night Drive"] {
         library
             .create_playlist(name)
             .expect("a playlist to be made");
     }
+
     let server = server(library, Fake::default());
 
     let initialised = result(
@@ -2497,9 +2690,11 @@ fn an_argument_is_completed_from_what_the_catalog_holds() {
         "initialize",
         json!({ "protocolVersion": "2025-06-18", "capabilities": {} }),
     );
+
     assert_eq!(initialised["capabilities"]["completions"], json!({}));
 
     let playlist = json!({ "type": "ref/resource", "uri": "resonate://library/playlist/{name}" });
+
     assert_eq!(
         completed(&server, playlist.clone(), "name", "night"),
         ["Night Drive", "Late Night"],
@@ -2511,8 +2706,11 @@ fn an_argument_is_completed_from_what_the_catalog_holds() {
     );
 
     let over = json!({ "type": "ref/resource", "uri": "resonate://library/statistics/{window}" });
+
     assert_eq!(completed(&server, over, "window", "Ye"), ["year"]);
+
     let review = json!({ "type": "ref/prompt", "name": "review_my_listening" });
+
     assert_eq!(
         completed(&server, review, "window", ""),
         ["week", "month", "year", "everything"]
@@ -2520,6 +2718,7 @@ fn an_argument_is_completed_from_what_the_catalog_holds() {
 
     let build = json!({ "type": "ref/prompt", "name": "build_a_playlist" });
     let briefs = completed(&server, build.clone(), "brief", "something like the orb");
+
     assert_eq!(
         briefs.first().map(String::as_str),
         Some("something like The Orbiters"),
@@ -2529,7 +2728,9 @@ fn an_argument_is_completed_from_what_the_catalog_holds() {
         completed(&server, build.clone(), "brief", "something like ").is_empty(),
         "a brief ending in a space was completed"
     );
+
     let named = completed(&server, build, "name", "");
+
     assert!(
         named
             .iter()
@@ -2601,6 +2802,7 @@ fn a_batch_is_answered_as_one_array_in_the_order_it_was_asked() {
     let answers = answered
         .as_array()
         .expect("a batch to be answered with an array");
+
     assert_eq!(answers.len(), 4, "{answered}");
     assert_eq!(answers[0]["id"], 7);
     assert_eq!(answers[0]["result"], json!({}));
@@ -2631,6 +2833,7 @@ fn a_batch_of_notifications_alone_is_never_answered() {
         .lines()
         .map(|line| serde_json::from_str(line).expect("each line to be one message"))
         .collect();
+
     assert_eq!(
         lines,
         vec![json!({ "jsonrpc": "2.0", "id": 7, "result": {} })]
@@ -2667,6 +2870,7 @@ fn more_ids_than_a_search_may_answer_are_refused() {
             ),
         )
         .expect("a refusal to be answered");
+
         assert_eq!(answer["error"]["code"], -32_602, "{tool}: {answer}");
         assert!(
             answer["error"]["message"]
@@ -2685,6 +2889,7 @@ fn more_ids_than_a_search_may_answer_are_refused() {
         .flat_map(|fields| fields.values())
         .filter(|field| field["type"] == "array" && field["items"]["type"] == "integer")
         .collect();
+
     assert_eq!(id_lists.len(), 8);
     assert!(
         id_lists.iter().all(|field| field["maxItems"] == 1_000),
@@ -2695,9 +2900,11 @@ fn more_ids_than_a_search_may_answer_are_refused() {
 #[test]
 fn a_queue_that_fails_partway_says_how_many_rows_landed() {
     let tree = Tree::new();
+
     tree.wav("a.wav", "Night Signal", "Hours", "1");
     tree.wav("b.wav", "Signal Fire", "Hours", "2");
     tree.wav("c.wav", "Signal Lost", "Hours", "3");
+
     let (players, _) = Fake::with(Standing {
         rows: vec![row(9, "Echoes")],
         queueing_fails_after: Some(2),
@@ -2717,12 +2924,18 @@ fn a_queue_that_fails_partway_says_how_many_rows_landed() {
 #[test]
 fn a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let catalog = tree.root.join("catalog.db");
     let mut lock_path = catalog.clone().into_os_string();
+
     lock_path.push(".walk");
+
     let walking = fs::File::create(&lock_path).expect("a writable lock file");
+
     walking.lock().expect("the walk lock to be free");
+
     let server = server(
         Library::open(&catalog).expect("a catalog on disk"),
         Fake::default(),
@@ -2735,6 +2948,7 @@ fn a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots() {
     );
 
     let beside = Library::open(&catalog).expect("the same catalog opened again");
+
     assert!(said.contains("already"), "{said}");
     assert_eq!(
         beside.roots().expect("the roots to read"),
@@ -2744,6 +2958,7 @@ fn a_scan_refused_before_its_walk_starts_keeps_none_of_its_roots() {
         called(&server, "library_passes", json!({}))["scan"]["state"],
         "idle"
     );
+
     drop(walking);
 }
 
@@ -2752,11 +2967,14 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
     const GIVEN_UP_AFTER: Duration = Duration::from_secs(20);
 
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let server = nothing_running();
     let (stop, stoppable) = resonate_mcp::stoppable();
     let (reading, mut writing) = io::pipe().expect("a pipe for the input");
     let (heard, answering) = io::pipe().expect("a pipe for the output");
+
     for message in [
         request(
             "initialize",
@@ -2788,10 +3006,13 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
     let watcher = stop.clone();
     let watching = std::thread::spawn(move || {
         let mut told = Vec::new();
+
         for line in io::BufRead::lines(BufReader::new(heard)) {
             let message: Value =
                 serde_json::from_str(&line.expect("a line of output")).expect("one message");
+
             told.push(message);
+
             let methods: Vec<&Value> = told.iter().map(|message| &message["method"]).collect();
             if methods.contains(&&json!("notifications/resources/updated"))
                 && methods.contains(&&json!("notifications/resources/list_changed"))
@@ -2802,6 +3023,7 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
         told
     });
     let backstop = stop.clone();
+
     std::thread::spawn(move || {
         std::thread::sleep(GIVEN_UP_AFTER);
         backstop.stop();
@@ -2809,9 +3031,11 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
     server
         .serve_until_stopped(BufReader::new(reading), answering, stoppable)
         .expect("a session told to stop to end cleanly");
+
     let told = watching.join().expect("the watching thread");
 
     let initialised = &told[0]["result"]["capabilities"]["resources"];
+
     assert_eq!(initialised["subscribe"], true, "{told:?}");
     assert_eq!(initialised["listChanged"], true, "{told:?}");
     assert_eq!(told[2]["result"], json!({}), "{told:?}");
@@ -2833,6 +3057,7 @@ fn a_subscribed_resource_is_told_to_have_changed_while_a_pass_runs() {
                 .as_str()
                 .is_some_and(|method| method.starts_with("notifications/"))
     }));
+
     drop(writing);
 }
 
@@ -2842,6 +3067,7 @@ fn a_playlist_discarded_since_it_was_subscribed_to_is_still_unsubscribed() {
     let road = "resonate://library/playlist/Road";
     let unheard = "resonate://library/playlist/Never%20Made";
     let mut lines = Vec::new();
+
     for message in [
         request(
             "initialize",
@@ -2863,6 +3089,7 @@ fn a_playlist_discarded_since_it_was_subscribed_to_is_still_unsubscribed() {
     ] {
         writeln!(lines, "{message}").expect("a line");
     }
+
     let (_stop, stoppable) = resonate_mcp::stoppable();
     let mut heard = Vec::new();
 
@@ -2876,6 +3103,7 @@ fn a_playlist_discarded_since_it_was_subscribed_to_is_still_unsubscribed() {
         .map(|line| serde_json::from_str::<Value>(line).expect("one message"))
         .filter(|message| message.get("id").is_some())
         .collect();
+
     assert_eq!(answers[3]["result"], json!({}), "{answers:?}");
     assert_eq!(answers[5]["result"], json!({}), "{answers:?}");
     assert_eq!(answers[6]["result"], json!({}), "{answers:?}");
@@ -3111,7 +3339,9 @@ fn a_spotify_account_is_followed_or_moved_where_it_is_signed_in_and_says_so_wher
 #[test]
 fn a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let server = looking_up(true);
 
     let started = called(
@@ -3119,7 +3349,9 @@ fn a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one()
         "start_scan",
         json!({ "roots": [tree.root.display().to_string()], "full": true, "follow_links": true }),
     );
+
     assert_eq!(once_settled(&server, "scan")["state"], "finished");
+
     let lookup = once_settled(&server, "lookup");
 
     assert_eq!(started["full"], true);
@@ -3138,7 +3370,9 @@ fn a_scan_run_to_its_end_hands_over_to_a_lookup_where_the_settings_ask_for_one()
 #[test]
 fn a_scan_hands_over_to_no_lookup_where_the_settings_leave_it_to_be_asked_for() {
     let tree = Tree::new();
+
     tree.wav("01.wav", "Signal", "Hours", "1");
+
     let server = looking_up(false);
 
     let started = called(
@@ -3146,7 +3380,9 @@ fn a_scan_hands_over_to_no_lookup_where_the_settings_leave_it_to_be_asked_for() 
         "start_scan",
         json!({ "roots": [tree.root.display().to_string()] }),
     );
+
     assert_eq!(once_settled(&server, "scan")["state"], "finished");
+
     let lookup = called(&server, "library_passes", json!({}))["lookup"].clone();
 
     assert_eq!(started["full"], false);
@@ -3172,7 +3408,9 @@ fn a_playlist_link_is_read_only_with_a_reference_and_a_link_that_names_no_playli
             }),
         ),
     );
+
     called(&with, "create_playlist", json!({ "name": "Evening" }));
+
     let unlinked = failed(
         &with,
         "keep_playlist_in_step",
@@ -3354,13 +3592,16 @@ fn a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_
             .expect("the file to be held")
             .id
     };
+
     let (song_id, copy_id, other_id) = (held(&song), held(&copy), held(&other));
+
     library
         .choose_version(song_id, copy_id)
         .expect("a version chosen");
     library
         .create_playlist("Late Night")
         .expect("a playlist to be made");
+
     let (players, standing) = Fake::with(Standing::default());
     let server = server(library, players);
 
@@ -3374,6 +3615,7 @@ fn a_song_with_a_version_chosen_is_queued_as_that_version_and_kept_as_itself_in_
         "add_to_playlist",
         json!({ "playlist": "Late Night", "track_ids": [song_id.get()] }),
     );
+
     let listed = called(
         &server,
         "playlist_tracks",
@@ -3403,6 +3645,7 @@ fn landed_release_of(library: &Library, song: &str, title: &str) {
         .into_iter()
         .find(|album| album.title == title)
         .expect("the album to be held");
+
     library
         .land_release(
             album.id,
@@ -3453,11 +3696,14 @@ fn listed_lossy(server: &Server, playlist: &str) -> Value {
 #[test]
 fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
     let tree = Tree::new();
+
     tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
     tree.mp3("lossy/b.mp3", "Elsewhere", "Days");
     tree.wav("lossless/c.wav", "Afterglow", "Dusk", "1");
+
     let library = scanned(&tree);
+
     library
         .start_playlist(
             "Late",
@@ -3471,6 +3717,7 @@ fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
     library
         .create_playlist("Empty")
         .expect("a playlist to be made");
+
     let server = server(library, Fake::default());
 
     let listed = listed_lossy(&server, "Late");
@@ -3478,7 +3725,9 @@ fn a_playlists_lossy_songs_are_listed_with_what_replacing_would_do_to_each() {
     assert_eq!(listed["playlist"]["name"], "Late");
     assert_eq!(listed["matched"], 2);
     assert_eq!(listed["replaceable"], 1);
+
     let songs = listed["songs"].as_array().expect("a list of songs");
+
     assert_eq!(songs[0]["title"], "Night Signal");
     assert_eq!(songs[0]["codec"], "MP3");
     assert_eq!(songs[0]["standing"], "held");
@@ -3514,6 +3763,7 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_beside_itself_and_nothing_is_
     let lossless = tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
     let elsewhere = tree.mp3("lossy/b.mp3", "Elsewhere", "Days");
     let library = scanned(&tree);
+
     library.trash_through(Some(Arc::new(Discarded)));
     library
         .start_playlist(
@@ -3524,6 +3774,7 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_beside_itself_and_nothing_is_
             ],
         )
         .expect("a playlist");
+
     let server = server(library, Fake::default());
 
     let replaced = called(
@@ -3537,12 +3788,16 @@ fn a_lossy_song_with_a_lossless_copy_held_plays_it_beside_itself_and_nothing_is_
     assert_eq!(replaced["wanted"], 0);
     assert_eq!(replaced["left"], 1);
     assert!(night.exists() && lossless.exists() && elsewhere.exists());
+
     let rows = called(&server, "playlist_tracks", json!({ "playlist": "Late" }));
+
     assert_eq!(
         rows["tracks"][0]["uri"],
         MediaLocation::local(&night).to_uri()
     );
+
     let listed = listed_lossy(&server, "Late");
+
     assert_eq!(listed["matched"], 1);
     assert_eq!(listed["songs"][0]["standing"], "unmatched");
     assert!(
@@ -3576,16 +3831,19 @@ fn a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queu
     let tree = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let library = scanned(&tree);
+
     library.deliver_into(Some(DeliveryFolder {
         path: tree.root.clone(),
         layout: Layout::default(),
     }));
+
     let playlist = library
         .start_playlist("Late", &[Cut::whole(MediaLocation::local(&night))])
         .expect("a playlist");
     let shop = Providers::none().and(Arc::new(HoldingItLossless(
         SourceId::new("shop").expect("a source name"),
     )));
+
     library
         .look_for_replacements(
             &shop,
@@ -3596,6 +3854,7 @@ fn a_song_matched_nowhere_a_service_holds_lossless_is_listed_as_offered_and_queu
             },
         )
         .expect("the service is asked");
+
     let server = server(library, Fake::default());
 
     let listed = listed_lossy(&server, "Late");
@@ -3623,9 +3882,12 @@ fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
     let tree = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let dusk = tree.mp3("lossy/b.mp3", "Afterglow", "Dusk");
+
     tree.wav("lossless/a.wav", "Night Signal", "Hours", "1");
+
     let copy = tree.wav("lossless/b.wav", "Afterglow", "Dusk", "1");
     let library = scanned(&tree);
+
     library.trash_through(Some(Arc::new(Discarded)));
     library
         .start_playlist(
@@ -3636,6 +3898,7 @@ fn only_the_lossy_songs_chosen_are_replaced_and_an_unknown_one_is_refused() {
             ],
         )
         .expect("a playlist");
+
     let server = server(library, Fake::default());
     let listed = listed_lossy(&server, "Late");
     let night_id = listed["songs"][0]["track_id"].clone();
@@ -3686,12 +3949,15 @@ fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_kept_until_one_is_held(
     let tree = Tree::new();
     let night = tree.mp3("lossy/a.mp3", "Night Signal", "Hours");
     let library = scanned(&tree);
+
     library.trash_through(Some(Arc::new(Discarded)));
     landed_release_of(&library, "Night Signal", "Hours");
     library
         .start_playlist("Late", &[Cut::whole(MediaLocation::local(&night))])
         .expect("a playlist");
+
     let server = server(library, Fake::default());
+
     assert_eq!(
         listed_lossy(&server, "Late")["songs"][0]["standing"],
         "wanted"
@@ -3711,11 +3977,13 @@ fn a_lossy_song_with_a_release_and_no_copy_is_wanted_and_kept_until_one_is_held(
         listed_lossy(&server, "Late")["songs"][0]["standing"],
         "waiting"
     );
+
     let again = called(
         &server,
         "replace_lossy_songs",
         json!({ "playlist": "Late" }),
     );
+
     assert_eq!(again["wanted"], 0);
     assert_eq!(again["already_waiting"], 1);
     assert!(night.exists());

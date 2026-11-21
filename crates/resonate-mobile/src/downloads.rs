@@ -286,6 +286,7 @@ impl Job {
 
     pub(crate) fn moved_to(&self, phase: DownloadPhase) -> Result<()> {
         let mut standing = self.standing.lock();
+
         if self.is_cancelled() || standing.phase == DownloadPhase::Cancelled {
             standing.phase = DownloadPhase::Cancelled;
             return Err(Error::DownloadCancelled);
@@ -296,6 +297,7 @@ impl Job {
 
     pub(crate) fn settled<T>(&self, result: Result<T>) -> Result<T> {
         let mut standing = self.standing.lock();
+
         standing.phase = match &result {
             Ok(_) => standing.phase,
             Err(Error::DownloadCancelled) => DownloadPhase::Cancelled,
@@ -332,7 +334,9 @@ impl Job {
 
     fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
+
         let mut standing = self.standing.lock();
+
         standing.opened = None;
         if !standing.phase.is_settled() {
             standing.phase = DownloadPhase::Cancelled;
@@ -374,6 +378,7 @@ impl Provider for Told {
             tracing::warn!(%error, provider = %self.provider, "a download provider refused");
             failure_of(self.provider, error)
         });
+
         self.heard.lock().push(Heard {
             provider: self.provider,
             failure,
@@ -483,6 +488,7 @@ impl Drop for Waiting<'_> {
 impl Downloads {
     pub(crate) fn under(folder: &Path) -> Self {
         let partials = Partials::under(folder);
+
         partials.sweep(SystemTime::now());
         Self {
             partials: Some(partials),
@@ -500,10 +506,13 @@ impl Downloads {
 
     fn waits_out_the_meter(&self, job: &Job) -> Result<()> {
         let gate = self.stalling.lock().clone();
+
         if !gate.is_shut() {
             return Ok(());
         }
+
         let _waiting = Waiting::begin(&self.waiting);
+
         while gate.is_shut() {
             if job.is_cancelled() {
                 return Err(Error::DownloadCancelled);
@@ -516,11 +525,13 @@ impl Downloads {
     pub(crate) fn begin(&self, song: SearchSong) -> u64 {
         let id = self.next.fetch_add(1, Ordering::Relaxed);
         let mut jobs = self.jobs.lock();
+
         let settled: Vec<u64> = jobs
             .iter()
             .filter(|(_, job)| job.standing.lock().phase.is_settled())
             .map(|(id, _)| *id)
             .collect();
+
         for gone in settled
             .iter()
             .take(settled.len().saturating_sub(JOBS_SETTLED_KEPT))
@@ -740,6 +751,7 @@ impl Downloads {
             .into_iter()
             .filter(|(_, reachable)| reachable.fetches_for_wants())
             .collect();
+
         if planned.is_empty() {
             return Searched {
                 offer: job.settled(Err(Error::NoProvider)),
@@ -763,21 +775,26 @@ impl Downloads {
         let heard = Arc::new(Mutex::new(Vec::new()));
         let mut asked = Vec::new();
         let mut providers = Providers::none();
+
         for (account, reachable) in planned {
             let provider = account.provider;
             let Some(searching) = self.reached(&reachable).and_then(Reached::provider) else {
                 continue;
             };
+
             let told = Told {
                 asked: searching,
                 provider,
                 heard: Arc::clone(&heard),
             };
+
             asked.push((told.source().clone(), provider));
             providers = providers.and(Arc::new(told));
         }
+
         let cancelled = || job.is_cancelled() || !reaching();
         let declined = |delivered: &Delivered| refused.contains(&delivered.taken_from().to_uri());
+
         let answer = providers.first(
             &identity_of(&job.song),
             &Asking {
@@ -812,6 +829,7 @@ impl Downloads {
             .chain(answer.held_back)
             .collect();
         let heard = std::mem::take(&mut *heard.lock());
+
         let offer = if offers.is_empty() {
             Err(nothing_found(job, reaching, heard, &asked))
         } else {
@@ -831,6 +849,7 @@ impl Downloads {
         reaching: &(dyn Fn() -> bool + Sync),
     ) -> Result<DownloadOffer> {
         let mut failure = None;
+
         for offered in offers {
             let Some(provider) = kind_of(&offered.provider) else {
                 continue;
@@ -856,6 +875,7 @@ impl Downloads {
     ) -> Result<DownloadOffer> {
         job.moved_to(DownloadPhase::Finding)?;
         self.waits_out_the_meter(job)?;
+
         let length = streamed.length();
         Ok(self.held_for_a_destination(
             job,
@@ -879,6 +899,7 @@ impl Downloads {
         .to_string_lossy()
         .into_owned();
         let mut standing = job.standing.lock();
+
         standing.total = taken.length;
         standing.provider = Some(taken.provider);
         standing.taken_from = Some(taken.taken_from);
@@ -902,9 +923,11 @@ impl Downloads {
         let (watched, released) = mpsc::channel::<()>();
         let held_for = self.offer_held_for.0;
         let job = Arc::downgrade(job);
+
         let watchdog = thread::Builder::new()
             .name("resonate-download-offer".into())
             .spawn(move || expire_unless_taken(&released, &job, parking, held_for));
+
         if let Err(error) = watchdog {
             tracing::warn!(%error, "an offered download is not watched for being left");
         }
@@ -928,12 +951,17 @@ impl Downloads {
             partial,
             ..
         } = parked.ok_or(Error::DownloadExpired)?;
+
         job.moved_to(DownloadPhase::Downloading)?;
+
         let from = partial.as_ref().map_or(0, Partial::from);
+
         job.received.store(from, Ordering::Release);
+
         let total = partial.as_ref().and_then(|_| job.standing.lock().total);
         let mut bytes = from;
         let mut buffer = vec![0_u8; CHUNK_BYTES];
+
         let copied = loop {
             if job.is_cancelled() {
                 break Err(Error::DownloadCancelled);
@@ -944,6 +972,7 @@ impl Downloads {
             if !reaching() {
                 break Err(Error::OnlineOff);
             }
+
             let count = match reader.read(&mut buffer) {
                 Ok(0) if total.is_some_and(|total| bytes < total) => {
                     break Err(Error::DownloadIo {
@@ -961,14 +990,17 @@ impl Downloads {
                     });
                 }
             };
+
             bytes = bytes.saturating_add(count as u64);
             if bytes > LARGEST_DOWNLOAD {
                 break Err(Error::DownloadTooLarge);
             }
+
             let written = match &partial {
                 Some(partial) => partial.append(&buffer[..count]),
                 None => output.write_all(&buffer[..count]),
             };
+
             if let Err(source) = written {
                 break Err(Error::DownloadIo {
                     op: DownloadOp::Write,
@@ -1014,6 +1046,7 @@ fn handed_over(
             return Err(error);
         }
     };
+
     partial.kept().map_err(|source| Error::DownloadIo {
         op: DownloadOp::Finish,
         source,
@@ -1058,10 +1091,12 @@ fn nothing_found(
     if !reaching() {
         return Error::OnlineOff;
     }
+
     let late = asked
         .iter()
         .map(|(_, provider)| *provider)
         .find(|provider| heard.iter().all(|heard| heard.provider != *provider));
+
     if let Some(failure) = heard.into_iter().find_map(|heard| heard.failure) {
         return failure;
     }
@@ -1160,6 +1195,7 @@ fn heeding<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T> {
     let (told, answer) = mpsc::sync_channel(1);
+
     thread::Builder::new()
         .name("resonate-download-opening".to_owned())
         .spawn(move || {
@@ -1195,6 +1231,7 @@ impl MobilePlayer {
 
     pub fn find_download(&self, job: u64, accounts: Vec<DownloadAccount>) -> Result<DownloadOffer> {
         let job = self.downloads.job(job)?;
+
         job.settled(self.require_online())?;
         if job.song.served_catalog.is_some() {
             self.serve_from(accounts);
@@ -1203,13 +1240,16 @@ impl MobilePlayer {
                 .found_served(&job, job.song.served.as_deref().unwrap_or_default())
                 .offer;
         }
+
         let client = Arc::clone(self.services.online.client());
         let reaching = move || client.is_reaching();
         let refused = self.catalog.refused_offers(&job.song, SystemTime::now())?;
+
         let searched = match job.song.served.clone() {
             Some(served) => self.found_served(&job, &served),
             None => self.downloads.find(&job, accounts, &refused, &reaching),
         };
+
         if let Err(error) = self.catalog.note_wanted_tried(&job.song, searched.tried) {
             tracing::warn!(%error, "a wanted song's try could not be noted");
         }
@@ -1219,7 +1259,9 @@ impl MobilePlayer {
     pub fn download_offer(&self, job: u64, descriptor: i32) -> Result<u64> {
         let output = fresh_destination(descriptor)?;
         let job = self.downloads.job(job)?;
+
         job.settled(self.require_online())?;
+
         let client = Arc::clone(self.services.online.client());
         self.downloads
             .download(&job, output, &move || client.is_reaching())
@@ -1239,6 +1281,7 @@ impl MobilePlayer {
 
     pub fn authorize_tidal(&self, client_id: String, secret: String) -> Result<TidalAuthorization> {
         self.require_online()?;
+
         let attempt = self.downloads.sign_in_asked();
         let client = Client {
             id: client_id,
@@ -1251,6 +1294,7 @@ impl MobilePlayer {
             user_code: authorizing.user_code.clone(),
             verify_at: authorizing.verify_at.clone(),
         };
+
         self.downloads.sign_in_began(attempt, client, authorizing);
         Ok(request)
     }
@@ -1273,20 +1317,24 @@ impl MobilePlayer {
 
     pub fn begin_jellyfin_quick_connect(&self, server: String) -> Result<JellyfinQuickConnect> {
         self.require_online()?;
+
         let attempt = self.downloads.quick_connect_asked();
         let asking = resonate_jellyfin::QuickConnect::at(&server);
         let offered = asking
             .offered()
             .map_err(|source| failure_of(MusicProvider::Jellyfin, &source))?;
+
         if !offered {
             return Err(Error::QuickConnectOff);
         }
+
         let approving = asking
             .begun()
             .map_err(|source| failure_of(MusicProvider::Jellyfin, &source))?;
         let begun = JellyfinQuickConnect {
             code: approving.code.clone(),
         };
+
         self.downloads
             .quick_connect_began(attempt, asking, approving);
         Ok(begun)
@@ -1306,6 +1354,7 @@ impl MobilePlayer {
 impl MobilePlayer {
     pub(crate) fn validate_download(&self, uri: String, duration_ms: Option<u64>) -> Result<()> {
         let info = resonate_codec::probe(&self.sources, &crate::documents::location(&uri)?)?;
+
         if let Some(expected) = duration_ms
             && let Some(frames) = info.duration
             && frames
@@ -1365,12 +1414,14 @@ mod tests {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let url = format!("http://{}", listener.local_addr().expect("a bound address"));
         let answering = Arc::new(answering);
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else {
                     return;
                 };
                 let answering = Arc::clone(&answering);
+
                 thread::spawn(move || answer(stream, answering.as_ref()));
             }
         });
@@ -1380,6 +1431,7 @@ mod tests {
     fn answer(stream: TcpStream, answering: &dyn Fn(&str) -> Canned) {
         let mut reader = BufReader::new(stream);
         let mut request = String::new();
+
         if reader.read_line(&mut request).is_err() {
             return;
         }
@@ -1391,8 +1443,10 @@ mod tests {
                 Ok(_) => {}
             }
         }
+
         let target = request.split(' ').nth(1).unwrap_or_default();
         let canned = answering(target);
+
         thread::sleep(canned.held_for);
 
         let head = format!(
@@ -1401,6 +1455,7 @@ mod tests {
             canned.body.len()
         );
         let mut stream = reader.into_inner();
+
         let _ = stream.write_all(head.as_bytes());
         let _ = stream.write_all(&canned.body);
     }
@@ -1456,6 +1511,7 @@ mod tests {
     fn unreached_address() -> String {
         let listener = TcpListener::bind("127.0.0.1:0").expect("a local port");
         let url = format!("http://{}", listener.local_addr().expect("a bound address"));
+
         drop(listener);
         url
     }
@@ -1501,6 +1557,7 @@ mod tests {
     #[test]
     fn the_second_provider_answers_when_the_first_is_away_and_says_how_long_the_song_is() {
         const AUDIO: &[u8] = b"fLaC and the rest of a lossless song";
+
         let downloads = Downloads::default();
         let job = downloads.begin(echoes());
 
@@ -1551,8 +1608,10 @@ mod tests {
                 (searched, began.elapsed())
             })
         };
+
         thread::sleep(Duration::from_millis(300));
         downloads.cancel(job);
+
         let (searched, took) = finding.join().expect("the find ends");
 
         assert!(matches!(searched.offer, Err(Error::DownloadCancelled)));
@@ -1570,6 +1629,7 @@ mod tests {
         let job = downloads.begin(echoes());
 
         downloads.cancel(job);
+
         let searched = found(
             &downloads,
             job,
@@ -1581,8 +1641,11 @@ mod tests {
 
     fn stalled_while_metered() -> (Downloads, Metering) {
         let metering = Metering::new();
+
         metering.report(Meter::Metered);
+
         let downloads = Downloads::default();
+
         downloads.stall_by(Gate::new(metering.clone(), true));
         (downloads, metering)
     }
@@ -1606,12 +1669,14 @@ mod tests {
                 )
             })
         };
+
         thread::sleep(WAITED_LONG_ENOUGH);
 
         assert!(downloads.are_waiting());
         assert!(!finding.is_finished());
 
         metering.report(Meter::Unmetered);
+
         let searched = finding.join().expect("the find ends");
 
         assert!(searched.offer.is_ok());
@@ -1621,9 +1686,11 @@ mod tests {
     #[test]
     fn a_download_stops_reading_while_the_connection_is_metered_and_finishes_when_it_is_not() {
         const AUDIO: &[u8] = b"fLaC waited for a connection that is not metered";
+
         let downloads = Arc::new(Downloads::default());
         let job = downloads.begin(echoes());
         let server = monochrome_serving(AUDIO, Duration::ZERO);
+
         found(
             &downloads,
             job,
@@ -1631,9 +1698,12 @@ mod tests {
         )
         .offer
         .expect("an offer");
+
         let metering = Metering::new();
+
         metering.report(Meter::Metered);
         downloads.stall_by(Gate::new(metering.clone(), true));
+
         let (path, file) = destination("metered");
 
         let copying = {
@@ -1642,6 +1712,7 @@ mod tests {
                 downloads.download(&downloads.job(job).expect("the job"), file, &reaching)
             })
         };
+
         thread::sleep(WAITED_LONG_ENOUGH);
 
         assert!(downloads.are_waiting());
@@ -1652,6 +1723,7 @@ mod tests {
         );
 
         metering.report(Meter::Unmetered);
+
         let copied = copying.join().expect("the copy ends");
 
         assert_eq!(copied.expect("the song downloads"), AUDIO.len() as u64);
@@ -1679,8 +1751,10 @@ mod tests {
                 (searched, began.elapsed())
             })
         };
+
         thread::sleep(WAITED_LONG_ENOUGH);
         downloads.cancel(job);
+
         let (searched, took) = finding.join().expect("the find ends");
 
         assert!(matches!(searched.offer, Err(Error::DownloadCancelled)));
@@ -1691,7 +1765,9 @@ mod tests {
     #[test]
     fn a_connection_that_cannot_be_told_holds_no_download() {
         let downloads = Downloads::default();
+
         downloads.stall_by(Gate::new(Metering::new(), true));
+
         let job = downloads.begin(echoes());
         let server = monochrome_serving(b"fLaC", Duration::ZERO);
 
@@ -1754,7 +1830,9 @@ mod tests {
     #[test]
     fn a_hifi_api_account_with_a_key_is_asked_though_hosted_services_are_declined() {
         let downloads = Downloads::default();
+
         downloads.hosted_services_allowed(false);
+
         let keyed = DownloadAccount {
             password: "key".to_owned(),
             ..account(MusicProvider::HifiApi, "")
@@ -1773,7 +1851,9 @@ mod tests {
     #[test]
     fn declined_hosted_services_leave_a_hosted_account_unasked_and_a_named_server_asked() {
         let downloads = Downloads::default();
+
         downloads.hosted_services_allowed(false);
+
         let hosted = downloads.begin(echoes());
         let named = downloads.begin(echoes());
 
@@ -1806,6 +1886,7 @@ mod tests {
     fn every_provider_failure_is_a_sentence_naming_its_cause() {
         let tidal = SourceId::new("tidal").expect("a source");
         let op = resonate_providers::ProviderOp::Search;
+
         let cases = [
             (
                 resonate_providers::Error::Refused {
@@ -1876,6 +1957,7 @@ mod tests {
     fn an_offer_nobody_takes_is_let_go_and_its_job_fails() {
         const HELD_FOR: Duration = Duration::from_millis(100);
         const LET_GO_WITHIN: Duration = Duration::from_secs(5);
+
         let downloads = briefly_holding(HELD_FOR);
         let job = downloads.begin(echoes());
         let server = monochrome_serving(b"fLaC", Duration::ZERO);
@@ -1887,14 +1969,18 @@ mod tests {
         )
         .offer
         .expect("an offer");
+
         let waited = Instant::now();
+
         while phase_of(&downloads, job) != DownloadPhase::Failed {
             assert!(
                 waited.elapsed() < LET_GO_WITHIN,
                 "the offer was never let go"
             );
+
             thread::sleep(Duration::from_millis(10));
         }
+
         let (path, file) = destination("let-go");
         let refused = downloads.download(&downloads.job(job).expect("the job"), file, &reaching);
 
@@ -1916,6 +2002,7 @@ mod tests {
     fn an_offer_taken_in_time_is_not_let_go_afterwards() {
         const AUDIO: &[u8] = b"fLaC taken at once";
         const HELD_FOR: Duration = Duration::from_millis(100);
+
         let downloads = briefly_holding(HELD_FOR);
         let job = downloads.begin(echoes());
         let server = monochrome_serving(AUDIO, Duration::ZERO);
@@ -1927,10 +2014,12 @@ mod tests {
         )
         .offer
         .expect("an offer");
+
         let (path, file) = destination("taken");
         let copied = downloads
             .download(&downloads.job(job).expect("the job"), file, &reaching)
             .expect("the song downloads");
+
         thread::sleep(HELD_FOR * 4);
 
         assert_eq!(copied, AUDIO.len() as u64);
@@ -1943,12 +2032,14 @@ mod tests {
     fn two_jobs_move_on_their_own() {
         const SHORT: &[u8] = b"fLaC short";
         const LONG: &[u8] = b"fLaC a much longer song than the other one";
+
         let downloads = Downloads::default();
         let short = downloads.begin(echoes());
         let long = downloads.begin(echoes());
 
         for (job, audio) in [(short, SHORT), (long, LONG)] {
             let server = monochrome_serving(audio, Duration::ZERO);
+
             found(
                 &downloads,
                 job,
@@ -1957,6 +2048,7 @@ mod tests {
             .offer
             .expect("an offer");
         }
+
         let (path, file) = destination("short");
         let copied = downloads
             .download(&downloads.job(short).expect("the job"), file, &reaching)
@@ -1984,6 +2076,7 @@ mod tests {
         );
 
         downloads.cancel(long);
+
         let (cancelled_path, cancelled) = destination("long");
         let refused =
             downloads.download(&downloads.job(long).expect("the job"), cancelled, &reaching);
@@ -2034,8 +2127,10 @@ mod tests {
         let tidal = unreached_tidal();
 
         let attempt = downloads.sign_in_asked();
+
         downloads.cancel_sign_in();
         downloads.sign_in_began(attempt, tidal_client(), waiting_for_a_code());
+
         let answer = downloads.signed_in(&tidal, &|| false);
 
         assert!(matches!(answer, Err(Error::DownloadExpired)));
@@ -2046,10 +2141,14 @@ mod tests {
         let downloads = Downloads::default();
 
         let cancelled = downloads.sign_in_asked();
+
         downloads.cancel_sign_in();
+
         let again = downloads.sign_in_asked();
+
         downloads.sign_in_began(again, tidal_client(), waiting_for_a_code());
         downloads.sign_in_began(cancelled, tidal_client(), waiting_for_a_code());
+
         let kept = downloads
             .authorizing
             .lock()
@@ -2065,7 +2164,9 @@ mod tests {
         let tidal = unreached_tidal();
 
         let attempt = downloads.sign_in_asked();
+
         downloads.sign_in_began(attempt, tidal_client(), waiting_for_a_code());
+
         let began = Instant::now();
         let answer = thread::scope(|scope| {
             scope.spawn(|| {

@@ -32,6 +32,7 @@ pub(crate) fn user(url: &str) -> Option<&str> {
     let path = on_host(url, "soundcloud.com")?;
     let path = path.split(['?', '#']).next()?;
     let mut segments = path.split('/').filter(|segment| !segment.is_empty());
+
     let user = segments.next()?;
     let usable = segments.next().is_none()
         && user

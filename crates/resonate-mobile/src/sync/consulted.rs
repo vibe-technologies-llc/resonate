@@ -77,6 +77,7 @@ impl Consultable for ConsultedHere {
                 packed: kept.packed,
             })
             .collect();
+
         self.0.take_kept(&device.to_string(), &answers, mark);
     }
 
@@ -105,6 +106,7 @@ pub(super) fn peers_through(running: Arc<Mutex<Option<Running>>>) -> Arc<dyn Pee
 
 fn device_named(hex: &str) -> Option<DeviceId> {
     let mut id = DeviceId([0; DEVICE_BYTES]);
+
     if hex.len() != DEVICE_BYTES * 2 {
         return None;
     }
@@ -127,6 +129,7 @@ impl Ask for AskedOfDevices {
         }) else {
             return Vec::new();
         };
+
         online.sort_by_key(|device| !device.nearby);
         online.iter().map(|device| device.id.to_string()).collect()
     }

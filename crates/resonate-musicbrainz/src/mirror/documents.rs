@@ -92,6 +92,7 @@ fn links_of(statement: &mut Statement<'_>, entity: i64) -> Result<Vec<Link>> {
     let mut rows = statement.query([entity]).map_err(&failed)?;
     let mut seen = BTreeSet::new();
     let mut links = Vec::new();
+
     while let Some(row) = rows.next().map_err(&failed)? {
         let kind: Option<String> = row.get(0).map_err(&failed)?;
         let url: Option<String> = row.get(1).map_err(&failed)?;
@@ -116,6 +117,7 @@ fn texts_of(statement: &mut Statement<'_>, id: i64) -> Result<Vec<String>> {
     let failed = store_read(Store::Staging);
     let mut rows = statement.query([id]).map_err(&failed)?;
     let mut texts = Vec::new();
+
     while let Some(row) = rows.next().map_err(&failed)? {
         if let Some(text) = row.get::<_, Option<String>>(0).map_err(&failed)? {
             texts.push(text);
@@ -213,6 +215,7 @@ impl<'a> Releases<'a> {
         let read_media = {
             let mut medium_rows = self.media.query([id]).map_err(&failed)?;
             let mut read_media = Vec::new();
+
             while let Some(medium) = medium_rows.next().map_err(&failed)? {
                 read_media.push((
                     medium.get::<_, i64>(0).map_err(&failed)?,
@@ -224,10 +227,12 @@ impl<'a> Releases<'a> {
             read_media
         };
         let mut held_media = Vec::new();
+
         for (medium, position, format, title) in read_media {
             let read_tracks: Vec<TrackRead> = {
                 let mut track_rows = self.tracks.query([medium]).map_err(&failed)?;
                 let mut read_tracks = Vec::new();
+
                 while let Some(track) = track_rows.next().map_err(&failed)? {
                     read_tracks.push((
                         track.get(0).map_err(&failed)?,
@@ -245,6 +250,7 @@ impl<'a> Releases<'a> {
                 read_tracks
             };
             let mut held_tracks = Vec::new();
+
             for (
                 place,
                 number,
@@ -264,6 +270,7 @@ impl<'a> Releases<'a> {
                 }
                 .filter(|own| !own.is_empty() && *own != credited);
                 let place = u32::try_from(place.unwrap_or(0)).unwrap_or(0);
+
                 held_tracks.push(ReleaseTrack {
                     position: place,
                     number: number.unwrap_or_else(|| place.to_string()),
@@ -333,6 +340,7 @@ impl<'a> Releases<'a> {
             status: looked_up.status_of(&info),
         };
         let mut writer = Writer::new();
+
         doc.write(&mut writer);
         Ok(Some(Document {
             gid: info.gid,
@@ -377,9 +385,11 @@ impl<'a> Recordings<'a> {
         let Some(gid) = gid_bytes(&gid) else {
             return Ok(None);
         };
+
         let appeared: Vec<(i64, Option<i64>, Option<i64>)> = {
             let mut rows = self.appearances.query([id]).map_err(&failed)?;
             let mut appeared = Vec::new();
+
             while let Some(appearance) = rows.next().map_err(&failed)? {
                 appeared.push((
                     appearance.get(0).map_err(&failed)?,
@@ -391,14 +401,17 @@ impl<'a> Recordings<'a> {
         };
         let mut on: Vec<RecordingRelease> = Vec::new();
         let mut seen = BTreeSet::new();
+
         for (release, disc, position) in appeared {
             if !seen.insert(release) {
                 continue;
             }
+
             let Some(info) = looked_up.release(release)? else {
                 continue;
             };
             let group = looked_up.group(info.group)?;
+
             on.push(RecordingRelease {
                 id: mbid_of(info.gid),
                 title: info.title.to_string(),
@@ -415,11 +428,15 @@ impl<'a> Recordings<'a> {
                 },
             });
         }
+
         let weight = counted(on.len());
+
         earliest_first(&mut on, |on| (&on.date, &on.title));
         on.truncate(RELEASES_OF_A_RECORDING_KEPT);
+
         let codes = texts_of(&mut self.isrcs, id)?;
         let length: Option<i64> = row.get(4).map_err(&failed)?;
+
         let recording = Recording {
             id: mbid_of(gid),
             title: row
@@ -438,6 +455,7 @@ impl<'a> Recordings<'a> {
         };
         let words = words_of_a_credited(&recording.title, &recording.credit);
         let mut writer = Writer::new();
+
         writer.recording(&recording);
         Ok(Some(Document {
             gid,
@@ -481,6 +499,7 @@ impl<'a> Groups<'a> {
         let Some(info) = looked_up.group(small(id))? else {
             return Ok(None);
         };
+
         let pressed: Vec<i64> = {
             let ids = self
                 .releases
@@ -489,10 +508,12 @@ impl<'a> Groups<'a> {
             ids.collect::<rusqlite::Result<_>>().map_err(&failed)?
         };
         let mut pressings = Vec::new();
+
         for release in pressed {
             let Some(release) = looked_up.release(release)? else {
                 continue;
             };
+
             pressings.push(GroupRelease {
                 id: mbid_of(release.gid),
                 title: release.title.to_string(),
@@ -502,8 +523,11 @@ impl<'a> Groups<'a> {
                 discs: release.discs.to_vec(),
             });
         }
+
         let weight = counted(pressings.len());
+
         earliest_first(&mut pressings, |pressing| (&pressing.date, &pressing.title));
+
         let group = ReleaseGroup {
             id: mbid_of(info.gid),
             title: info.title.to_string(),
@@ -520,6 +544,7 @@ impl<'a> Groups<'a> {
             secondary: looked_up.secondary_of(&info),
         };
         let mut writer = Writer::new();
+
         doc.write(&mut writer);
         Ok(Some(Document {
             gid: info.gid,
@@ -583,15 +608,19 @@ impl<'a> Artists<'a> {
         let billed = folded_letters(&name);
         let mut folds = vec![billed];
         let mut known_as = Vec::new();
+
         for alias in texts_of(&mut self.aliases, id)? {
             let fold = folded_letters(&alias);
+
             if alias.trim().is_empty() || folds.contains(&fold) {
                 continue;
             }
             folds.push(fold);
             known_as.push(alias);
         }
+
         let mut genres = Vec::new();
+
         {
             let mut tagged = self.tags.query([id]).map_err(&failed)?;
             while let Some(tag) = tagged.next().map_err(&failed)? {
@@ -605,6 +634,7 @@ impl<'a> Artists<'a> {
                 }
             }
         }
+
         let credited_groups: Vec<i64> = {
             let ids = self
                 .credited
@@ -614,11 +644,13 @@ impl<'a> Artists<'a> {
         };
         let weight = counted(credited_groups.len());
         let mut groups = Vec::new();
+
         for group in credited_groups {
             let Some(info) = looked_up.group(small(group))? else {
                 continue;
             };
             let kind = looked_up.kind_of(&info);
+
             if !kind
                 .as_deref()
                 .is_some_and(|kind| DISCOGRAPHY_KINDS.contains(&kind))
@@ -634,12 +666,15 @@ impl<'a> Artists<'a> {
             });
         }
         earliest_first(&mut groups, |group| (&group.first_released, &group.title));
+
         let credited_count = u32::try_from(groups.len()).unwrap_or(u32::MAX);
+
         groups.truncate(GROUPS_OF_AN_ARTIST_KEPT);
 
         let area: Option<i64> = row.get(11).map_err(&failed)?;
         let ended: Option<String> = row.get(14).map_err(&failed)?;
         let sort_name = present(row.get(3).map_err(&failed)?);
+
         let artist = ArtistProfile {
             mbid: mbid_of(gid),
             name,
@@ -668,8 +703,10 @@ impl<'a> Artists<'a> {
             links: links_of(&mut self.links, id)?,
         };
         let mut names = vec![artist.name.clone()];
+
         names.extend(sort_name);
         names.extend(artist.aliases.iter().cloned());
+
         let words = words_of_names(&names);
         let doc = ArtistDoc {
             artist,
@@ -677,6 +714,7 @@ impl<'a> Artists<'a> {
             credited: credited_count,
         };
         let mut writer = Writer::new();
+
         doc.write(&mut writer);
         Ok(Some(Document {
             gid,

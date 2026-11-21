@@ -81,6 +81,7 @@ fn read_at(offset: f64) -> [f32; READ_TAPS] {
 
 fn dotted(heard: &[f32; READ_TAPS], read: &[f32; READ_TAPS]) -> f32 {
     let mut lanes = [0.0_f32; READ_LANES];
+
     for (heard, read) in heard
         .as_chunks::<READ_LANES>()
         .0
@@ -129,9 +130,11 @@ pub(crate) fn group_passes(group: usize, hertz: f64, rate: SampleRate) -> f64 {
 fn passed_at(edge: usize, hertz: f64, rate: SampleRate) -> f64 {
     let angle_of = |hertz: f64| (PI * hertz / f64::from(rate.hz())).tan();
     let nyquist = f64::from(rate.hz()) / 2.0;
+
     if hertz >= nyquist {
         return 0.0;
     }
+
     let turned = angle_of(hertz) / angle_of(edge_of(edge).min(nyquist * (1.0 - 1e-6)));
     1.0 / (1.0 + turned.powi(EDGE_ORDER))
 }
@@ -164,6 +167,7 @@ impl Group {
     ) -> Self {
         let bins_a_hertz = size as f64 / f64::from(rate.hz());
         let last_bin = size / 2;
+
         let answers: Vec<f64> = (0..=last_bin)
             .map(|bin| group_passes(group, bin as f64 / bins_a_hertz, rate).max(0.0))
             .collect();
@@ -171,6 +175,7 @@ impl Group {
             .iter()
             .position(|answer| *answer >= ANSWER_HELD_FROM)
             .unwrap_or(0);
+
         let last = answers
             .iter()
             .rposition(|answer| *answer >= ANSWER_HELD_FROM)
@@ -207,7 +212,9 @@ impl Group {
 
     fn hear(&mut self, spectrum: &[Complex<f32>], from: usize, scratch: &mut Vec<Complex<f32>>) {
         self.heard.fill(Complex::new(0.0, 0.0));
+
         let bins = &spectrum[self.first..self.first + self.answers.len()];
+
         for ((into, bin), answer) in self.heard.iter_mut().zip(bins).zip(self.answers.iter()) {
             *into = bin * answer;
         }
@@ -219,7 +226,9 @@ impl Group {
         for (size, heard) in self.sizes.iter_mut().zip(&self.heard) {
             *size = heard.norm();
         }
+
         let points = self.sizes.len();
+
         for _ in 0..self.held_for {
             self.settled.copy_from_slice(&self.sizes);
             for (((settled, first), second), third) in self.settled[1..]
@@ -232,6 +241,7 @@ impl Group {
             }
             std::mem::swap(&mut self.sizes, &mut self.settled);
         }
+
         let hop = self.held.len();
         let mut into = 0;
         while into < hop {
@@ -240,6 +250,7 @@ impl Group {
             let height =
                 self.sizes[point].max(self.sizes[(point + 1) % points]) * self.sharpened_by;
             let past = past.min(hop);
+
             self.held[into..past].fill(height);
             into = past;
         }
@@ -268,6 +279,7 @@ impl Wholes {
             let heard = channel[at + 1 - READ_REACH..at + 1 + READ_REACH]
                 .first_chunk::<READ_TAPS>()
                 .unwrap_or(&[0.0; READ_TAPS]);
+
             *held = self.reads.iter().fold(channel[at].abs(), |loudest, read| {
                 loudest.max(dotted(heard, read).abs())
             });
@@ -324,6 +336,7 @@ impl Hearing {
         }
         while self.settled < self.noted {
             let ending = self.pad + self.noted - self.settled;
+
             mirrored_after(&mut self.samples, ending, self.size);
             self.settle((self.noted - self.settled).min(self.hop));
         }
@@ -334,6 +347,7 @@ impl Hearing {
             .rev()
             .map(|back| self.samples.get(back).copied().unwrap_or(0.0))
             .collect();
+
         self.samples.splice(0..0, before);
         self.begun = true;
     }
@@ -363,6 +377,7 @@ impl Hearing {
         for at in (0..frames).step_by(FRAMES_SUMMED_AT_ONCE) {
             let past = (at + FRAMES_SUMMED_AT_ONCE).min(frames);
             let whole = &self.wholes.held[at..past];
+
             self.sampled = whole.iter().copied().fold(self.sampled, f32::max);
             self.sums.hear_into(
                 self.heard.as_mut(),
@@ -402,8 +417,10 @@ impl Sums {
                 *half = height / 2.0;
             }
         }
+
         let frames = whole.len();
         let [half_whole, half_low, half_middle, half_high] = self.halves.as_ref();
+
         side_of_the_table(
             self.front.as_mut(),
             frames,
@@ -432,11 +449,13 @@ fn side_of_the_table(
 ) {
     for (row, sum) in side.iter_mut().enumerate() {
         let sum = &mut sum[..frames];
+
         match row / STEPS_OF_A_WEIGHT {
             0 => sum.fill(0.0),
             1 => sum.copy_from_slice(first_half),
             _ => sum.copy_from_slice(first),
         }
+
         let added = match row % STEPS_OF_A_WEIGHT {
             0 => continue,
             1 => second_half,
@@ -450,6 +469,7 @@ fn side_of_the_table(
 
 fn loudest_sum(start: f32, front: &[f32], back: &[f32]) -> f32 {
     let mut lanes = [start; SUM_LANES];
+
     for (front, back) in front
         .as_chunks::<SUM_LANES>()
         .0
@@ -460,6 +480,7 @@ fn loudest_sum(start: f32, front: &[f32], back: &[f32]) -> f32 {
             *lane = larger(*lane, front + back);
         }
     }
+
     let read = front.len() / SUM_LANES * SUM_LANES;
     let tail = front[read..]
         .iter()
@@ -479,8 +500,10 @@ impl Coinciding {
         let width = channels.max(1);
         let pad = (rate.hz() as usize / MARGINS_A_SECOND).max(MARGIN_AT_LEAST);
         let size = (rate.hz() as usize).max(4 * pad).next_power_of_two();
+
         let hop = size - 2 * pad;
         let mut planner = FftPlanner::new();
+
         let forward = planner.plan_fft_forward(size);
         let groups: [Group; GROUPS] =
             std::array::from_fn(|group| Group::over(group, size, hop, rate, &mut planner));
@@ -525,6 +548,7 @@ impl Coinciding {
     pub(crate) fn finished(mut self, true_peak: f64) -> Option<[f64; WEIGHINGS]> {
         let mut heard = [[0.0_f32; HALF_A_TABLE]; HALF_A_TABLE];
         let mut sampled = 0.0_f32;
+
         for hearing in &mut self.channels {
             hearing.finish();
             sampled = sampled.max(hearing.sampled);
@@ -539,6 +563,7 @@ impl Coinciding {
         if sampled <= 0.0 {
             return None;
         }
+
         let between = (true_peak - f64::from(sampled)).max(0.0);
         let heard = heard.as_flattened();
         Some(std::array::from_fn(|index| {
@@ -556,25 +581,31 @@ pub(crate) fn stays_together(responses: &[(Vec<f64>, usize)], rate: SampleRate) 
         .max(1);
     let size = (longest * COMPACT_BINS_A_TAP).next_power_of_two();
     let mut planner = FftPlanner::<f64>::new();
+
     let forward = planner.plan_fft_forward(size);
     let inverse = planner.plan_fft_inverse(size);
     let hertz_a_bin = f64::from(rate.hz()) / size as f64;
     responses.iter().all(|(taps, centre)| {
         let mut spectrum = vec![Complex::new(0.0, 0.0); size];
+
         for (into, tap) in taps.iter().enumerate() {
             spectrum[(into + size - centre % size) % size] = Complex::new(*tap, 0.0);
         }
         forward.process(&mut spectrum);
         (0..GROUPS).all(|group| {
             let mut heard = spectrum.clone();
+
             for (bin, value) in heard.iter_mut().enumerate() {
                 *value *= heard_across(group, bin.min(size - bin) as f64 * hertz_a_bin);
             }
             inverse.process(&mut heard);
+
             let within = (HELD_TOGETHER_WITHIN_SECONDS[group] * f64::from(rate.hz())) as usize;
             let (mut apart, mut whole) = (0.0, 0.0);
+
             for (at, value) in heard.iter().enumerate() {
                 let energy = value.norm_sqr();
+
                 whole += energy;
                 if at.min(size - at) > within {
                     apart += energy;
@@ -594,6 +625,7 @@ fn mirrored_after(channel: &mut Vec<f32>, ending: usize, size: usize) {
     for at in channel.len()..size {
         let mirrored = (2 * ending).checked_sub(at + 2);
         let sample = mirrored.and_then(|into| channel.get(into)).copied();
+
         channel.push(sample.unwrap_or(0.0));
     }
 }
@@ -636,9 +668,11 @@ mod tests {
 
     fn heard(samples: &[f32], piece: usize) -> [f64; WEIGHINGS] {
         let mut coinciding = Coinciding::new(RATE, 1);
+
         for part in samples.chunks(piece) {
             coinciding.note(part);
         }
+
         let peak = samples
             .iter()
             .fold(0.0_f32, |held, sample| held.max(sample.abs()));
@@ -666,8 +700,10 @@ mod tests {
             seen.iter()
                 .all(|weights| weights.iter().any(|weight| *weight > 0))
         );
+
         seen.sort_unstable();
         seen.dedup();
+
         assert_eq!(seen.len(), WEIGHINGS);
     }
 
@@ -675,6 +711,7 @@ mod tests {
     fn a_groups_answer_is_the_bands_own_filters_and_the_groups_sum_to_the_signal() {
         for hertz in [30.0, 126.0, 500.0, 3_200.0, 9_000.0, 20_000.0] {
             let bank = |edge: usize| passed_below(edge, hertz, RATE);
+
             for group in 0..GROUPS {
                 let wanted = bank(GROUP_EDGES[group + 1]) - bank(GROUP_EDGES[group]);
                 let answer = group_passes(group, hertz, RATE);
@@ -684,6 +721,7 @@ mod tests {
                     "{group} at {hertz}: {answer} {wanted}"
                 );
             }
+
             let together: f64 = (0..GROUPS)
                 .map(|group| group_passes(group, hertz, RATE))
                 .sum();
@@ -716,6 +754,7 @@ mod tests {
         let halved = figures[index_of(0.0, [0.5, 1.0, 0.5])];
 
         let high_as_read = 0.1 * f64::from(SHARPENED_BY_AT_MOST[2]);
+
         assert!((together - (0.8 + high_as_read)).abs() < 0.01, "{together}");
         assert!(
             (halved - (0.55 + high_as_read / 2.0)).abs() < 0.01,
@@ -762,6 +801,7 @@ mod tests {
             })
             .collect();
         let mut silent = Coinciding::new(RATE, 2);
+
         silent.note(&[0.0; 4_096]);
 
         let figures = heard(&short, 100);

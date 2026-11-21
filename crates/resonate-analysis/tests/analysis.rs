@@ -44,21 +44,26 @@ impl Tree {
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a scratch tree");
         Self { root }
     }
 
     fn wave(&self, name: &str, rate: u32, bits: u16, samples: &[i32]) -> MediaLocation {
         let path = self.root.join(name);
+
         fs::write(&path, wave(rate, bits, samples)).expect("a written fixture");
         MediaLocation::local(path)
     }
 
     fn streamed_wave(&self, name: &str, rate: u32, samples: &[i32]) -> MediaLocation {
         let mut streamed = wave(rate, 16, samples);
+
         streamed[RIFF_LENGTH_AT..RIFF_LENGTH_AT + 4].copy_from_slice(&UNKNOWN_LENGTH);
         streamed[DATA_LENGTH_AT..DATA_LENGTH_AT + 4].copy_from_slice(&UNKNOWN_LENGTH);
+
         let path = self.root.join(name);
+
         fs::write(&path, streamed).expect("a written fixture");
         MediaLocation::local(path)
     }
@@ -81,6 +86,7 @@ fn wave(rate: u32, bits: u16, samples: &[i32]) -> Vec<u8> {
     let width = usize::from(bits / 8);
     let block_align = channels * (bits / 8);
     let mut format = Vec::new();
+
     format.extend_from_slice(&1_u16.to_le_bytes());
     format.extend_from_slice(&channels.to_le_bytes());
     format.extend_from_slice(&rate.to_le_bytes());
@@ -94,11 +100,13 @@ fn wave(rate: u32, bits: u16, samples: &[i32]) -> Vec<u8> {
         .collect();
 
     let mut body = Vec::new();
+
     body.extend_from_slice(b"WAVE");
     chunk(&mut body, b"fmt ", &format);
     chunk(&mut body, b"data", &data);
 
     let mut whole = Vec::new();
+
     whole.extend_from_slice(b"RIFF");
     whole.extend_from_slice(&(body.len() as u32).to_le_bytes());
     whole.extend_from_slice(&body);
@@ -109,14 +117,18 @@ fn noise_up_to(rate: u32, ceiling_hz: f32) -> Vec<f32> {
     let bin_hz = rate as f32 / PERIOD as f32;
     let mut state = 0x2545_f491_u32;
     let mut spectrum = vec![Complex::<f32>::default(); PERIOD];
+
     for bin in 1..PERIOD / 2 {
         let hz = bin as f32 * bin_hz;
+
         if hz > ceiling_hz {
             break;
         }
         state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+
         let phase = (state >> 8) as f32 / (1 << 24) as f32 * std::f32::consts::TAU;
         let size = 1.0 / hz.sqrt();
+
         spectrum[bin] = Complex::from_polar(size, phase);
         spectrum[PERIOD - bin] = spectrum[bin].conj();
     }
@@ -183,9 +195,11 @@ fn band_limited_noise_reaching_the_top_is_genuine_and_everything_is_drawn() {
     assert_eq!(analysis.envelope.condensed(1, 300).len(), 300);
     assert!(analysis.spectrogram.columns() > 100);
     assert_eq!(analysis.spectrogram.nyquist_hz(), RATE / 2);
+
     let painted = analysis
         .spectrogram
         .painted(&Ramp::through(&[[0, 0, 0], [255, 255, 255]]));
+
     assert_eq!(painted.width as usize, analysis.spectrogram.columns());
 }
 
@@ -199,6 +213,7 @@ fn a_stereo_file_in_opposite_phase_is_judged_by_what_its_channels_hold() {
             [sample, -sample]
         })
         .collect();
+
     let location = tree.wave("opposed.wav", RATE, 16, &opposed);
 
     let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
@@ -216,6 +231,7 @@ fn a_stereo_file_in_opposite_phase_is_judged_by_what_its_channels_hold() {
 fn a_study_alone_and_the_study_inside_an_analysis_are_one_answer() {
     let tree = Tree::new();
     let mut state = 3_u32;
+
     let samples: Vec<i32> = (0..RATE * 2 * 8)
         .map(|_| {
             state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
@@ -242,6 +258,7 @@ fn a_study_alone_and_the_study_inside_an_analysis_are_one_answer() {
 
     let background =
         study(&Sources::local(), &location, None, &Background).expect("a background study");
+
     assert_eq!(alone, inside.study);
     assert_eq!(alone, background);
     assert!(!alone.band_peaks.is_silent());
@@ -268,6 +285,7 @@ fn a_stream_that_declares_no_length_is_printed_as_long_as_it_plays() {
     let rate = 11_025;
     let seconds = 150;
     let period = noise_up_to(rate, 4_000.0);
+
     let samples: Vec<i32> = (0..(rate * seconds) as usize)
         .flat_map(|frame| {
             let sample = (period[frame % PERIOD] * 20_000.0) as i32;
@@ -295,7 +313,9 @@ fn a_flac_that_was_once_a_128_kbps_mp3_is_fake() {
         "{:?}",
         study.judgement
     );
+
     let cutoff = study.judgement.cutoff.expect("a wall");
+
     assert!((15_700..=16_300).contains(&cutoff.hz), "{}", cutoff.hz);
     assert_eq!(study.judgement.lossy_guess(), Some(LossyGuess::Near128));
 }
@@ -305,8 +325,10 @@ fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
     const SPLATTERED_EVERY_THIRD_WINDOW: usize = 3;
     const WINDOW: usize = 4_096;
     const SPLATTER: f32 = 900.0;
+
     let transcoded = music(RATE, 16_000.0, 20_000.0);
     let mut state = 0x9e37_79b9_u32;
+
     let splattered: Vec<i32> = transcoded
         .chunks(2)
         .enumerate()
@@ -317,6 +339,7 @@ fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
                     state ^= state << 13;
                     state ^= state >> 17;
                     state ^= state << 5;
+
                     let noise = (state as f32 / u32::MAX as f32 - 0.5) * 2.0 * SPLATTER;
                     if burst {
                         (*sample as f32 + noise) as i32
@@ -328,6 +351,7 @@ fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
         })
         .collect();
     let tree = Tree::new();
+
     let location = tree.wave("splattered.wav", RATE, 16, &splattered);
     let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
 
@@ -337,7 +361,9 @@ fn a_transcode_splattered_above_its_wall_by_clipping_is_still_fake() {
         "{:?}",
         study.judgement
     );
+
     let cutoff = study.judgement.cutoff.expect("a wall");
+
     assert!((15_700..=16_300).contains(&cutoff.hz), "{}", cutoff.hz);
 }
 
@@ -348,6 +374,7 @@ fn sixteen_bit_audio_padded_into_twenty_four_bits_is_fake() {
         .into_iter()
         .map(|sample| sample << 8)
         .collect();
+
     let location = tree.wave("padded.wav", RATE, 24, &padded);
     let study = study(&Sources::local(), &location, None, &Watch::default()).expect("a study");
 
@@ -365,12 +392,16 @@ fn a_cut_is_analysed_alone_and_a_stopped_watch_ends_the_pass() {
     let location = tree.wave("whole.wav", RATE, 16, &music(RATE, 21_700.0, 32_767.0));
     let span = FrameSpan::between(Frames(u64::from(RATE)), Frames(u64::from(RATE) * 3));
     let watch = Watch::default();
+
     let cut = study(&Sources::local(), &location, Some(span), &watch).expect("a study");
+
     assert_eq!(cut.examined.length, Duration::from_secs(2));
     assert_eq!(watch.share(), Some(1.0));
 
     let stopped = Watch::default();
+
     stopped.stop();
+
     assert!(matches!(
         study(&Sources::local(), &location, None, &stopped),
         Err(Error::Stopped)
@@ -406,8 +437,10 @@ fn tone(hertz: f64, amplitude: f64) -> Vec<i32> {
         .flat_map(|frame| {
             let seconds = frame as f64 / f64::from(RATE);
             let left = frames as f64 / f64::from(RATE) - seconds;
+
             let envelope = faded(seconds).min(faded(left));
             let phase = std::f64::consts::TAU * hertz * seconds;
+
             let sample = (phase.sin() * amplitude * envelope * 32_767.0) as i32;
             [sample, sample]
         })
@@ -453,6 +486,7 @@ fn a_boost_where_the_music_has_energy_costs_the_headroom_the_boost_takes() {
     let peak = peak_db_through(&profile, &on_the_boost);
 
     let expected = 20.0 * 0.8_f64.log10() + BOOST_DB;
+
     assert!(
         (peak - expected).abs() < WITHIN_DB,
         "{peak} against {expected}"
@@ -484,11 +518,14 @@ fn peak_through_the_chain_on_one_thread(
     let rate = SampleRate::HZ_44100;
     let spec = StreamSpec::new(rate, ChannelLayout::Stereo, SampleFormat::F32);
     let mut stage = Equaliser::new(profile.at_rate(rate), rate);
+
     stage
         .prepare(spec, FRAMES_AT_A_TIME)
         .expect("a prepared stage");
+
     let mut convolver = correction.map(|impulse| {
         let mut convolver = Convolver::new(impulse);
+
         convolver
             .prepare(spec, FRAMES_AT_A_TIME)
             .expect("a prepared convolver");
@@ -498,10 +535,14 @@ fn peak_through_the_chain_on_one_thread(
 
     let mut equalise = |input: &[f64], meter: &mut TruePeakMeter| {
         let mut shaped = vec![0.0; input.len()];
+
         stage.process(input, &mut shaped);
+
         let narrowed: Vec<f32> = shaped.iter().map(|sample| *sample as f32).collect();
+
         meter.note(&narrowed);
     };
+
     for piece in samples.chunks(FRAMES_AT_A_TIME * 2) {
         let widened: Vec<f64> = piece
             .iter()
@@ -510,6 +551,7 @@ fn peak_through_the_chain_on_one_thread(
         match convolver.as_mut() {
             Some(convolver) => {
                 let mut corrected = vec![0.0; widened.len()];
+
                 convolver.process(&widened, &mut corrected);
                 equalise(&corrected, &mut meter);
             }
@@ -519,7 +561,9 @@ fn peak_through_the_chain_on_one_thread(
     if let Some(convolver) = convolver.as_mut() {
         loop {
             let mut corrected = vec![0.0; FRAMES_AT_A_TIME * 2];
+
             let flushed = convolver.flush(&mut corrected);
+
             if flushed == 0 {
                 break;
             }
@@ -534,6 +578,7 @@ fn peak_through_the_chain_on_one_thread(
 fn a_peak_read_in_stages_on_threads_is_the_peak_read_through_the_chain_on_one() {
     let tree = Tree::new();
     let samples = kick_hat_bass_and_pads();
+
     let location = tree.wave("staged.wav", RATE, 16, &samples);
     let profile = boosting_the_bass();
 
@@ -545,6 +590,7 @@ fn a_peak_read_in_stages_on_threads_is_the_peak_read_through_the_chain_on_one() 
         &Watch::default(),
     )
     .expect("a peak");
+
     assert_eq!(
         bare.to_bits(),
         peak_through_the_chain_on_one_thread(&samples, &profile, None).to_bits()
@@ -560,6 +606,7 @@ fn a_peak_read_in_stages_on_threads_is_the_peak_read_through_the_chain_on_one() 
             &Watch::default(),
         )
         .expect("a peak");
+
         assert_eq!(
             staged.to_bits(),
             peak_through_the_chain_on_one_thread(&samples, &profile, Some(impulse)).to_bits(),
@@ -575,6 +622,7 @@ fn the_fit_over_several_cuts_holds_the_loudest_and_counts_what_could_not_be_read
     let quiet = tree.wave("quiet.wav", RATE, 16, &tone(SOUNDED_ELSEWHERE_HZ, 0.3));
     let loud = tree.wave("loud.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
     let missing = MediaLocation::local(tree.root.join("missing.wav"));
+
     let cuts: Vec<Cut> = [quiet, loud.clone(), missing]
         .into_iter()
         .map(|location| Cut {
@@ -593,7 +641,9 @@ fn the_fit_over_several_cuts_holds_the_loudest_and_counts_what_could_not_be_read
 
     assert_eq!(loudest.measured, 2);
     assert_eq!(loudest.passed_over, 1);
+
     let alone = peak_db_through(&profile, &loud);
+
     assert!((loudest.peak_db().expect("a peak") - alone).abs() < 0.01);
     assert_eq!(
         loudest.fitted_preamp(),
@@ -612,7 +662,9 @@ fn a_stopped_watch_ends_the_fit_and_nothing_measured_fits_nothing() {
     }];
 
     let stopped = Watch::default();
+
     stopped.stop();
+
     assert!(matches!(
         loudest_through(
             &Sources::local(),
@@ -630,6 +682,7 @@ fn a_stopped_watch_ends_the_fit_and_nothing_measured_fits_nothing() {
         &Watch::default(),
     )
     .expect("an empty set");
+
     assert_eq!(nothing.fitted_preamp(), None);
 }
 
@@ -644,6 +697,7 @@ fn peak_db_estimated_from_the_kept_levels(profile: &Arc<Profile>, location: &Med
     let studied = study(&Sources::local(), location, None, &Watch::default()).expect("a study");
     let levels = BandLevels::of(&studied.spectrum);
     let at_the_rate = profile.at_rate(SampleRate::HZ_44100);
+
     let (shaped, heard) =
         levels
             .as_bytes()
@@ -653,8 +707,10 @@ fn peak_db_estimated_from_the_kept_levels(profile: &Arc<Profile>, location: &Med
                 if *step == u8::MAX {
                     return (shaped, heard);
                 }
+
                 let amplitude = 10_f64.powf(-f64::from(*step) / STEPS_A_DECIBEL_OF_A_LEVEL / 20.0);
                 let (from, to) = span_of_band(band);
+
                 let decibels = at_the_rate.peak_db_between(from, to, SampleRate::HZ_44100);
                 let gain = if decibels.is_finite() {
                     10_f64.powf(decibels / 20.0)
@@ -686,6 +742,7 @@ fn a_stopped_watch_ends_the_measure_of_the_bands() {
     let tree = Tree::new();
     let music = tree.wave("music.wav", RATE, 16, &tone(BOOSTED_AT_HZ, 0.8));
     let stopped = Watch::default();
+
     stopped.stop();
 
     assert!(matches!(
@@ -732,13 +789,16 @@ fn bass_bursts_over_a_steady_tone() -> Vec<i32> {
                 .iter()
                 .map(|at| {
                     let into = (seconds - at) / burst_seconds;
+
                     if !(0.0..1.0).contains(&into) {
                         return 0.0;
                     }
+
                     let swell = (std::f64::consts::PI * into).sin().powi(2);
                     swell * (std::f64::consts::TAU * 110.0 * seconds).sin() * 0.6
                 })
                 .sum();
+
             let sample = ((steady + burst) * 32_767.0) as i32;
             [sample, sample]
         })
@@ -792,6 +852,7 @@ fn two_tones_beating() -> Vec<i32> {
             let envelope = faded(seconds).min(faded(3.0 - seconds));
             let low = (std::f64::consts::TAU * 63.0 * seconds).sin() * 0.45;
             let high = (std::f64::consts::TAU * 2_500.0 * seconds).sin() * 0.4;
+
             let sample = ((low + high) * envelope * 32_767.0) as i32;
             [sample, sample]
         })
@@ -800,7 +861,9 @@ fn two_tones_beating() -> Vec<i32> {
 
 fn noise_between_fades() -> Vec<i32> {
     let mut samples = music(RATE, 18_000.0, 14_000.0);
+
     let frames = samples.len() / 2;
+
     for frame in 0..frames {
         let seconds = frame as f64 / f64::from(RATE);
         let envelope = faded(seconds).min(faded(SECONDS as f64 - seconds));
@@ -821,17 +884,23 @@ fn kick_hat_bass_and_pads() -> Vec<i32> {
             let kick = (std::f64::consts::TAU * (50.0 + 60.0 * (-beat * 30.0).exp()) * beat).sin()
                 * (-beat * 12.0).exp()
                 * 0.5;
+
             state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+
             let white = f64::from(state >> 8) / f64::from(1_u32 << 24) - 0.5;
             let off = (seconds + 0.25) % 0.5;
+
             let hat = (white - hiss) * (-off * 60.0).exp() * 0.4;
+
             hiss = white;
+
             let bass = (std::f64::consts::TAU * 82.0 * seconds).sin() * 0.15;
             let pad = [330.0, 415.0, 494.0, 1_250.0, 2_600.0]
                 .iter()
                 .map(|hertz| (std::f64::consts::TAU * hertz * seconds).sin() * 0.06)
                 .sum::<f64>();
             let envelope = faded(seconds).min(faded(4.0 - seconds));
+
             let sample = ((kick + hat + bass + pad) * envelope * 32_767.0) as i32;
             [sample, sample]
         })
@@ -987,6 +1056,7 @@ fn the_bound_holds_over_what_the_decode_measures_whatever_the_curve_and_where_th
         for ((curve, profile), gains) in curves.iter().zip(&bounds) {
             let decoded = peak_db_through(profile, location);
             let bounded = decibels_of_the_bound(gains, &studied);
+
             assert!(
                 bounded >= decoded - 0.02,
                 "{song} under {curve}: {bounded} under {decoded}"
@@ -999,19 +1069,24 @@ fn corrections() -> Vec<(&'static str, Arc<Impulse>)> {
     let rate = SampleRate::HZ_44100;
     let impulse = |taps: Vec<f64>| Arc::new(Impulse::new(rate, vec![taps]).expect("an impulse"));
     let mut seed = 0x5eed_u64;
+
     let dispersive: Vec<f64> = (0..2_000)
         .map(|at| {
             seed ^= seed << 13;
             seed ^= seed >> 7;
             seed ^= seed << 17;
+
             let noise = (seed >> 11) as f64 / (1_u64 << 53) as f64 - 0.5;
             noise * (-(at as f64) / 300.0).exp() * 0.6
         })
         .collect();
     let mut echoing = vec![0.0; 2_206];
+
     echoing[0] = 0.7;
     echoing[2_205] = 0.5;
+
     let mut held_back = vec![0.0; 13_231];
+
     held_back[0] = 0.4;
     held_back[13_230] = 0.9;
     vec![
@@ -1060,6 +1135,7 @@ fn bass_then_treble() -> Vec<i32> {
             } else {
                 0.0
             };
+
             let sample = ((low + high) * 32_767.0) as i32;
             [sample, sample]
         })
@@ -1143,6 +1219,7 @@ fn the_bound_still_holds_over_what_the_decode_measures_with_a_correction_in_the_
         for (correction, curve, applied, gains) in &chains {
             let decoded = peak_db_through_chain(applied, location);
             let bounded = decibels_of_the_bound(gains, &studied);
+
             assert!(
                 bounded >= decoded - 0.02,
                 "{song} under {curve} and {correction}: {bounded} under {decoded}"
@@ -1181,7 +1258,9 @@ fn hats_alone() -> Vec<i32> {
     stereo_of((0..ADVERSARY_FRAMES).map(|frame| {
         let seconds = frame as f64 / f64::from(RATE);
         let white = churning.white();
+
         let hat = (white - before) * (-(seconds % 0.25) * 60.0).exp() * 0.45;
+
         before = white;
         hat
     }))
@@ -1192,6 +1271,7 @@ fn noise_clipped_as_a_loud_master_is() -> Vec<i32> {
     let mut low = 0.0;
     stereo_of((0..ADVERSARY_FRAMES).map(|_| {
         let white = churning.white();
+
         low += (white - low) * 0.03;
         (low * 6.0 + white * 0.5).clamp(-0.95, 0.95)
     }))
@@ -1201,9 +1281,11 @@ fn chirps(from_hz: f64, to_hz: f64) -> Vec<i32> {
     let sweep = 0.05;
     stereo_of((0..ADVERSARY_FRAMES).map(|frame| {
         let seconds = (frame as f64 / f64::from(RATE)) % 0.2;
+
         if seconds >= sweep {
             return 0.0;
         }
+
         let rising = (to_hz / from_hz).ln() / sweep;
         let phase = std::f64::consts::TAU * from_hz * ((rising * seconds).exp() - 1.0) / rising;
         phase.sin() * 0.8 * (std::f64::consts::PI * seconds / sweep).sin().powi(2)
@@ -1230,17 +1312,20 @@ fn turning_chain() -> Vec<(BandKind, f64, f64, f64)> {
 fn a_click_undone_by(profile: &Arc<Profile>) -> Vec<i32> {
     let frames = RATE as usize / 2;
     let mut response = vec![0.0_f64; frames];
+
     response[0] = 1.0;
     for biquad in profile.designed(SampleRate::HZ_44100) {
         let (mut first, mut second) = (0.0, 0.0);
         for sample in &mut response {
             let input = *sample;
             let output = biquad.b0 * input + first;
+
             first = biquad.b1 * input - biquad.a1 * output + second;
             second = biquad.b2 * input - biquad.a2 * output;
             *sample = output;
         }
     }
+
     let loudest = response
         .iter()
         .fold(0.0_f64, |held, tap| held.max(tap.abs()));
@@ -1257,6 +1342,7 @@ fn a_click_undone_by(profile: &Arc<Profile>) -> Vec<i32> {
 fn the_bound_holds_where_a_curve_could_bring_together_what_the_music_kept_apart() {
     let tree = Tree::new();
     let turning = shaped(&turning_chain());
+
     let songs = [
         ("hats", tree.wave("hats.wav", RATE, 16, &hats_alone())),
         (
@@ -1345,6 +1431,7 @@ fn the_bound_holds_where_a_curve_could_bring_together_what_the_music_kept_apart(
             if *song == CLICK_UNDONE && *curve == TURNING_CHAIN {
                 continue;
             }
+
             let bounded = decibels_of_the_bound(gains, &studied);
             let decoded = peak_db_through(profile, location);
 
@@ -1411,6 +1498,7 @@ fn a_room_correction_that_boosts_where_the_music_sits_makes_the_fit_deeper_than_
     let modelled_through = corrected
         .fitted_preamp(SampleRate::HZ_44100)
         .expect("a model");
+
     assert!(
         modelled_through.decibels() < modelled.decibels() - 5.0,
         "{modelled_through:?} against {modelled:?}"
@@ -1420,6 +1508,7 @@ fn a_room_correction_that_boosts_where_the_music_sits_makes_the_fit_deeper_than_
         study(&Sources::local(), &on_the_boost, None, &Watch::default()).expect("a study");
     let bound_alone = decibels_of_the_bound(&bounded_under(&alone), &studied);
     let bound_through = decibels_of_the_bound(&bounded_under(&corrected), &studied);
+
     assert!(
         bound_through > bound_alone + 5.0,
         "{bound_through} against {bound_alone}"
@@ -1434,6 +1523,7 @@ fn a_room_correction_that_cuts_where_the_music_sits_needs_less_preamp_than_the_p
     let cutting =
         Arc::new(Impulse::new(SampleRate::HZ_44100, vec![vec![0.25, 0.25]]).expect("an impulse"));
     let alone = Applied::from(Arc::clone(&profile));
+
     let corrected = alone.clone().corrected_by(Some(cutting));
 
     let without = peak_db_through_chain(&alone, &loud);
@@ -1454,6 +1544,7 @@ fn a_response_holding_the_music_back_past_its_end_is_measured_in_the_tail_it_flu
             let burst = frame >= frames - 200;
             let seconds = frame as f64 / f64::from(RATE);
             let phase = std::f64::consts::TAU * 1_000.0 * seconds;
+
             let sample = if burst {
                 (phase.sin() * 0.5 * 32_767.0) as i32
             } else {
@@ -1462,9 +1553,12 @@ fn a_response_holding_the_music_back_past_its_end_is_measured_in_the_tail_it_flu
             [sample, sample]
         })
         .collect();
+
     let song = tree.wave("at-the-end.wav", RATE, 16, &at_the_end);
     let mut held_back = vec![0.0; 3_001];
+
     held_back[3_000] = 2.0;
+
     let delayed =
         Arc::new(Impulse::new(SampleRate::HZ_44100, vec![held_back]).expect("an impulse"));
     let flat = Applied::from(Arc::new(Profile::flat()));
@@ -1542,6 +1636,7 @@ const TAIL_TAPS: usize = 88_200;
 fn a_long_reverberant_tail(level: f64) -> Vec<f64> {
     let mut seed = 0x7a11_u64;
     let mut taps = vec![0.0; TAIL_FROM + TAIL_TAPS];
+
     taps[0] = 1.0;
     for tap in &mut taps[TAIL_FROM..] {
         seed ^= seed << 13;
@@ -1555,15 +1650,18 @@ fn a_long_reverberant_tail(level: f64) -> Vec<f64> {
 fn loudest_tooth_of(taps: &[f64], from_hz: f64, to_hz: f64) -> f64 {
     let size = (taps.len() * 16).next_power_of_two();
     let mut spectrum = vec![Complex::new(0.0, 0.0); size];
+
     for (into, tap) in spectrum.iter_mut().zip(taps.iter().skip(TAIL_FROM)) {
         *into = Complex::new(*tap, 0.0);
     }
     FftPlanner::new()
         .plan_fft_forward(size)
         .process(&mut spectrum);
+
     let bin_hz = f64::from(RATE) / size as f64;
     let first = (from_hz / bin_hz) as usize;
     let last = (to_hz / bin_hz) as usize;
+
     let loudest = (first..last)
         .max_by(|left, right| spectrum[*left].norm().total_cmp(&spectrum[*right].norm()))
         .expect("bins");

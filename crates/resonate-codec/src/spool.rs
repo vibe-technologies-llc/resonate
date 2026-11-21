@@ -108,9 +108,11 @@ impl Spool {
             Ok(at_most) => at_most,
             Err(refusal) => return Err((refusal, rest)),
         };
+
         if let Err(source) = file.write_all_at(head, 0) {
             return Err((Refusal::Unwritable(source), rest));
         }
+
         let spool = Arc::new(Self {
             file,
             hint,
@@ -122,6 +124,7 @@ impl Spool {
         });
         let (handing, handed) = mpsc::sync_channel::<Box<dyn MediaStream>>(1);
         let copying = Arc::clone(&spool);
+
         let started = thread::Builder::new()
             .name("resonate-spool".to_owned())
             .spawn(move || {
@@ -140,11 +143,14 @@ impl Spool {
 
     fn copy_from(self: Arc<Self>, mut rest: Box<dyn MediaStream>, at_most: u64) {
         let mut reading = vec![0_u8; COPIED_AT_A_TIME];
+
         let ending = loop {
             if Arc::strong_count(&self) == 1 {
                 break Ending::Cut;
             }
+
             let written = self.filled.lock().written;
+
             if written >= at_most {
                 tracing::warn!(
                     bytes = written,
@@ -152,6 +158,7 @@ impl Spool {
                 );
                 break Ending::Cut;
             }
+
             let room = usize::try_from(at_most - written)
                 .unwrap_or(usize::MAX)
                 .min(reading.len());
@@ -172,6 +179,7 @@ impl Spool {
                 }
             }
         };
+
         self.filled.lock().ended = Some(ending);
         self.grown.notify_all();
     }
@@ -215,12 +223,14 @@ impl Spool {
     fn read_at(&self, into: &mut [u8], at: u64) -> io::Result<usize> {
         let held = {
             let mut filled = self.filled.lock();
+
             while filled.written <= at && filled.ended.is_none() {
                 self.grown.wait(&mut filled);
             }
             filled.written.saturating_sub(at)
         };
         let taking = usize::try_from(held).unwrap_or(usize::MAX).min(into.len());
+
         if taking == 0 {
             return Ok(0);
         }
@@ -254,6 +264,7 @@ fn ceiling_for(
         return Ok(at_most);
     };
     let needed = whole.map_or(head, |whole| whole.max(head)).min(at_most);
+
     if needed > room {
         return Err(Refusal::NoRoom { needed, room });
     }
@@ -296,6 +307,7 @@ pub(crate) fn kept_under() -> Vec<PathBuf> {
 pub(crate) fn mended_under() -> Vec<PathBuf> {
     let owner = Owner::this_user();
     let shared = spooled_under();
+
     let kept = shared
         .iter()
         .map(|folder| per_user_folder_in(folder, owner))
@@ -314,6 +326,7 @@ fn unnamed_file() -> io::Result<File> {
 
 fn unnamed_file_under(folders: &[PathBuf]) -> io::Result<File> {
     let mut refused = io::Error::from(io::ErrorKind::NotFound);
+
     for folder in folders {
         match unnamed_file_in(folder) {
             Ok(file) => return Ok(file),
@@ -353,6 +366,7 @@ fn unnamed_file_in(folder: &Path) -> io::Result<File> {
         .write(true)
         .create_new(true)
         .open(&path)?;
+
     std::fs::remove_file(&path)?;
     Ok(file)
 }
@@ -365,6 +379,7 @@ pub(crate) struct Spooling {
 impl Read for Spooling {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let read = self.spool.read_at(into, self.at)?;
+
         self.at += read as u64;
         Ok(read)
     }
@@ -399,10 +414,13 @@ impl Read for Unspooled {
     fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
         let left = usize::try_from(self.len.saturating_sub(self.at)).unwrap_or(usize::MAX);
         let taking = left.min(into.len());
+
         if taking == 0 {
             return Ok(0);
         }
+
         let read = self.spool.file.read_at(&mut into[..taking], self.at)?;
+
         self.at += read as u64;
         Ok(read)
     }
@@ -416,6 +434,7 @@ impl Seek for Unspooled {
             SeekFrom::Current(by) => self.at.checked_add_signed(by),
         };
         let landed = landed.ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+
         self.at = landed;
         Ok(landed)
     }
@@ -448,6 +467,7 @@ mod tests {
     impl Read for Piped {
         fn read(&mut self, into: &mut [u8]) -> io::Result<usize> {
             thread::sleep(Duration::from_millis(1));
+
             let taking = into.len().min(7);
             self.0.read(&mut into[..taking])
         }
@@ -463,6 +483,7 @@ mod tests {
     fn a_spool_lands_in_the_first_folder_that_takes_it_and_leaves_no_name_behind() {
         let missing = env::temp_dir().join(format!("resonate-no-such-folder-{}", process::id()));
         let taking = env::temp_dir().join(format!("resonate-spool-folder-{}", process::id()));
+
         fs::create_dir_all(&taking).expect("a folder to spool into");
 
         let spooled = unnamed_file_under(&[missing.clone(), taking.clone()]).is_ok();
@@ -488,9 +509,13 @@ mod tests {
             1024,
             Some(&missing),
         );
+
         assert!(refused.is_err());
+
         let taking = env::temp_dir().join(format!("resonate-explicit-spool-{}", process::id()));
+
         fs::create_dir_all(&taking).expect("a writable spool folder");
+
         let spool = Spool::beginning_in(
             &[1, 2],
             Box::new(Piped(Cursor::new(vec![3]))),
@@ -502,11 +527,14 @@ mod tests {
         .expect("a spool in the selected folder");
         let mut whole = spool.ended_whole().expect("the whole source").stream;
         let mut bytes = Vec::new();
+
         whole
             .read_to_end(&mut bytes)
             .expect("readable spooled bytes");
         drop((whole, spool));
+
         let let_go_of = Instant::now();
+
         while fs::read_dir(&taking).expect("the selected folder").count() > 0
             && let_go_of.elapsed() < A_SPOOL_IS_LET_GO_OF_WITHIN
         {
@@ -518,6 +546,7 @@ mod tests {
             fs::read_dir(&taking).expect("the selected folder").count(),
             0
         );
+
         fs::remove_dir(&taking).expect("an unnamed spool leaves an empty folder");
     }
 
@@ -573,24 +602,33 @@ mod tests {
     fn a_spool_streams_what_arrives_and_becomes_seekable_once_it_has_all_arrived() {
         let all = bytes();
         let (head, rest) = all.split_at(100);
+
         let spool = Spool::beginning_with(head, Box::new(Piped(Cursor::new(rest.to_vec()))), None)
             .map_err(|(source, _)| source)
             .expect("a writable temporary folder");
 
         let mut streamed = Vec::new();
+
         spool
             .streamed()
             .read_to_end(&mut streamed)
             .expect("the spool reads to its end");
+
         assert_eq!(streamed, all);
 
         assert!(spool.is_whole());
+
         let mut whole = spool.whole().expect("a spool that has all arrived").stream;
+
         assert!(whole.is_seekable());
         assert_eq!(whole.byte_len(), Some(all.len() as u64));
+
         whole.seek(SeekFrom::End(-10)).expect("a seek from its end");
+
         let mut tail = Vec::new();
+
         whole.read_to_end(&mut tail).expect("the tail reads");
+
         assert_eq!(tail, all[all.len() - 10..]);
     }
 
@@ -607,10 +645,12 @@ mod tests {
         .expect("a writable temporary folder");
 
         let mut streamed = Vec::new();
+
         spool
             .streamed()
             .read_to_end(&mut streamed)
             .expect("the spool reads to where it stopped");
+
         assert_eq!(streamed, all[..1_000]);
         assert!(!spool.is_whole());
         assert!(spool.whole().is_none());

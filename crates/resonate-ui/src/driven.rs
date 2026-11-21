@@ -68,11 +68,13 @@ pub(crate) struct Folder {
 impl Folder {
     pub(crate) fn new() -> Self {
         static NEXT: AtomicU64 = AtomicU64::new(0);
+
         let root = env::temp_dir().join(format!(
             "resonate-driven-{}-{}",
             process::id(),
             NEXT.fetch_add(1, Ordering::Relaxed)
         ));
+
         fs::create_dir_all(&root).expect("a writable temporary folder");
         Self { root }
     }
@@ -94,6 +96,7 @@ impl Folder {
         let source = Self::new();
         let tone = source.tone("tone.wav", 2);
         let target = self.root.join(name);
+
         let made = std::process::Command::new("ffmpeg")
             .args(["-y", "-v", "error", "-i"])
             .arg(&tone)
@@ -109,6 +112,7 @@ impl Folder {
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status();
+
         if !made.is_ok_and(|status| status.success()) || !target.exists() {
             eprintln!("skipped: ffmpeg would not encode {name}");
             return None;
@@ -120,6 +124,7 @@ impl Folder {
         let frames = RATE * seconds;
         let block = u32::from(CHANNELS) * 2;
         let mut bytes = Vec::new();
+
         bytes.extend_from_slice(b"RIFF");
         bytes.extend_from_slice(&(36 + frames * block).to_le_bytes());
         bytes.extend_from_slice(b"WAVEfmt ");
@@ -140,8 +145,10 @@ impl Folder {
         }
         if !tags.is_empty() {
             let mut listed = b"INFO".to_vec();
+
             for (id, text) in tags {
                 let mut value = text.as_bytes().to_vec();
+
                 value.push(0);
                 if value.len() % 2 == 1 {
                     value.push(0);
@@ -153,10 +160,14 @@ impl Folder {
             bytes.extend_from_slice(b"LIST");
             bytes.extend_from_slice(&(listed.len() as u32).to_le_bytes());
             bytes.extend_from_slice(&listed);
+
             let riff = (bytes.len() - 8) as u32;
+
             bytes[4..8].copy_from_slice(&riff.to_le_bytes());
         }
+
         let path = self.root.join(name);
+
         fs::write(&path, bytes).expect("a writable temporary file");
         path
     }
@@ -329,6 +340,7 @@ impl Driven {
             cx,
             Arc::new(Library::open_in_memory().expect("a catalog in memory")),
         );
+
         driven.cx.update(|_, cx| {
             gpui::BorrowAppContext::update_global::<ResonateApp, _>(cx, |app, _| {
                 app.serving = crate::Serving::new(move |online| {
@@ -489,11 +501,14 @@ impl Driven {
         };
         let fingerprinters = recognising.unwrap_or_else(|| Arc::new(Fingerprinters::none()));
         let worn_by = Wearers::alongside();
+
         theme::wear(Appearance::default());
+
         let (attention, _) = unbounded();
         let unseen = Arc::new(Unseen);
         let metering = Metering::new();
         let lookups = Gate::new(metering.clone(), true);
+
         cx.update(|cx| {
             cx.set_global(Drawer::new());
             cx.set_global(ResonateApp {
@@ -581,8 +596,10 @@ impl Driven {
             });
             cx.bind_keys(app::bindings(cx.platform_info().os));
         });
+
         let (root, cx) = cx.add_window_view(RootView::new);
         let mut cx = cx.clone();
+
         cx.update(|window, _| window.activate_window());
         cx.simulate_resize(size(px(WIDE), px(TALL)));
         cx.run_until_parked();
@@ -632,10 +649,12 @@ impl Driven {
             if self.read(&mut holds) {
                 return;
             }
+
             assert!(
                 began.elapsed() < PATIENCE,
                 "the window never came to the state asked for"
             );
+
             self.cx.executor().advance_clock(beyond_a_frame);
             thread::sleep(FRAME);
         }
@@ -648,7 +667,9 @@ impl Driven {
             if self.cx.debug_bounds(selector).is_some() {
                 return;
             }
+
             assert!(began.elapsed() < PATIENCE, "{selector} was never drawn");
+
             thread::sleep(FRAME);
         }
     }
@@ -665,6 +686,7 @@ impl Driven {
         let player = self
             .cx
             .update(|_, cx| cx.global::<ResonateApp>().zones.first().player);
+
         player
             .send(Command::Resume(Resumption {
                 rows,
@@ -680,6 +702,7 @@ impl Driven {
 
     pub(crate) fn scroll(&mut self, selector: &'static str, down: f32) {
         let at = self.centre_of(selector);
+
         self.scroll_at(at, down);
     }
 
@@ -707,11 +730,13 @@ impl Driven {
 
     pub(crate) fn click(&mut self, selector: &'static str) {
         let at = self.centre_of(selector);
+
         self.click_at(at);
     }
 
     pub(crate) fn click_with(&mut self, selector: &'static str, modifiers: Modifiers) {
         let at = self.centre_of(selector);
+
         self.hover(at);
         self.cx.simulate_click(at, modifiers);
         self.settle();
@@ -725,6 +750,7 @@ impl Driven {
 
     pub(crate) fn right_click(&mut self, selector: &'static str) {
         let at = self.centre_of(selector);
+
         self.right_click_at(at);
     }
 
@@ -742,11 +768,14 @@ impl Driven {
         self.cx
             .simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
         self.settle();
+
         let steps = 8;
+
         for step in 1..=steps {
             let along = step as f32 / steps as f32;
             let x = from.x + (to.x - from.x) * along;
             let y = from.y + (to.y - from.y) * along;
+
             self.cx
                 .simulate_mouse_move(point(x, y), Some(MouseButton::Left), Modifiers::none());
             self.settle();
@@ -797,8 +826,10 @@ impl Driven {
         field: impl FnOnce(&RootView) -> &Entity<crate::views::field::Field>,
     ) {
         let root = self.root.clone();
+
         self.cx.update(|window, cx| {
             let focus = gpui::Focusable::focus_handle(field(root.read(cx)).read(cx), cx);
+
             focus.focus(window, cx);
         });
         self.settle();
@@ -809,9 +840,11 @@ impl Driven {
         field: impl FnOnce(&RootView, &gpui::App) -> Entity<crate::views::field::Field>,
     ) {
         let root = self.root.clone();
+
         self.cx.update(|window, cx| {
             let field = field(root.read(cx), cx);
             let focus = gpui::Focusable::focus_handle(field.read(cx), cx);
+
             focus.focus(window, cx);
         });
         self.settle();
@@ -850,12 +883,15 @@ mod tests {
         let database = folder.path().join("library.db");
         let window = Arc::new(Library::open(&database).expect("a catalog on disc"));
         let model = Library::open(&database).expect("a second handle on the catalog");
+
         model.offer_edits_as_a_model();
+
         let mut driven = Driven::opened_in(cx, window, &folder);
 
         let evening = model
             .create_playlist("Evening")
             .expect("the model starts a playlist");
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library
                 .update(cx, |library, cx| library.take_what_a_model_offered(cx));
@@ -875,6 +911,7 @@ mod tests {
                 .playlist(evening)
                 .is_ok_and(|standing| standing.is_none())
         });
+
         assert!(
             driven.read(|root, cx| root.library.read(cx).undoable().is_none()),
             "the model's edit was still offered once put back"
@@ -884,6 +921,7 @@ mod tests {
     #[gpui::test]
     fn a_press_on_a_sidebar_tab_opens_its_pane(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::default());
 
         driven.click("tab-visualiser");
@@ -895,6 +933,7 @@ mod tests {
     fn the_signal_path_is_as_wide_as_what_it_says_rather_than_the_panel(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = Driven::open(cx, catalog());
+
         driven.play(&[folder.tone("tone.wav", 2)]);
 
         let path = driven.bounds_of("signal-path");
@@ -912,8 +951,10 @@ mod tests {
     fn a_press_on_the_scope_segment_turns_the_visualiser_to_the_scope(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = Driven::open(cx, catalog());
+
         driven.play(&[folder.tone("tone.wav", 2)]);
         driven.click("tab-visualiser");
+
         assert_eq!(
             driven.read(|root, cx| root.visualiser.read(cx).showing()),
             Showing::Spectrum
@@ -954,7 +995,9 @@ mod tests {
             driven.read(|root, cx| root.equaliser.read(cx).bindings().clone()),
             bindings
         );
+
         let online = driven.read(|_, cx| cx.global::<ResonateApp>().online.clone());
+
         assert_eq!(online.tidal_client_id, "client");
         assert_eq!(online.tidal_client_secret, "secret");
         assert_eq!(online.tidal_refresh_token, "token");
@@ -1000,6 +1043,7 @@ mod tests {
         )]
         .into_iter()
         .collect();
+
         driven.cx.update(|_, cx| {
             cx.global_mut::<ResonateApp>().renderers =
                 Some(Arc::clone(&taught) as Arc<dyn crate::Renderers>);
@@ -1023,8 +1067,10 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.click("tab-settings");
         driven.click("category-Equaliser");
+
         let curve = driven.bounds_of("equaliser-curve");
         let pressed = point(
             curve.origin.x + curve.size.width * 0.3,
@@ -1032,18 +1078,23 @@ mod tests {
         );
 
         driven.click_at(pressed);
+
         assert_eq!(
             driven.bounds_of("equaliser-curve"),
             curve,
             "the curve moved out from under the press that shaped it"
         );
+
         let added = driven.read(|root, cx| root.equaliser.read(cx).shown_bands());
         let dragged_to = point(
             curve.origin.x + curve.size.width * 0.6,
             curve.origin.y + curve.size.height * 0.7,
         );
+
         driven.drag(pressed, dragged_to);
+
         let moved = driven.read(|root, cx| root.equaliser.read(cx).shown_bands());
+
         assert_eq!(moved.len(), 1);
         assert!(
             moved[0].frequency > added[0].frequency && moved[0].gain < added[0].gain,
@@ -1052,7 +1103,9 @@ mod tests {
 
         let (x, y) =
             driven.read(|root, _| Plot::of(root.rails.curve_plotted.get()).handle(moved[0]));
+
         driven.right_click_at(point(px(x), px(y)));
+
         assert!(
             driven
                 .read(|root, cx| root.equaliser.read(cx).shown_bands())
@@ -1064,11 +1117,14 @@ mod tests {
     fn with_a_band_at(driven: &mut Driven, hertz: f64) {
         driven.click("tab-settings");
         driven.click("category-Equaliser");
+
         let curve = driven.bounds_of("equaliser-curve");
+
         driven.click_at(point(
             curve.origin.x + curve.size.width * 0.3,
             curve.origin.y + curve.size.height * 0.3,
         ));
+
         let taken = driven.root.update(&mut driven.cx, |root, cx| {
             let editing = Editing {
                 row: 0,
@@ -1077,7 +1133,9 @@ mod tests {
             root.equaliser
                 .update(cx, |model, cx| model.take(editing, &format!("{hertz}"), cx))
         });
+
         assert!(taken, "the band refused {hertz} Hz");
+
         driven.settle();
     }
 
@@ -1091,7 +1149,9 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         with_a_band_at(&mut driven, 1059.46);
+
         let before = the_bands(&mut driven);
 
         driven.click("band-frequency-0");
@@ -1108,6 +1168,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         with_a_band_at(&mut driven, 1059.46);
         driven.click("band-frequency-0");
         driven.cx.simulate_keystrokes("enter");
@@ -1132,6 +1193,7 @@ mod tests {
                 root.equaliser.read(cx).written(editing),
             )
         });
+
         assert_eq!(held, written);
     }
 
@@ -1139,6 +1201,7 @@ mod tests {
     fn tab_out_of_an_equaliser_cell_takes_what_was_typed_and_closes_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         with_a_band_at(&mut driven, 1059.46);
 
         driven.click("band-frequency-0");
@@ -1148,6 +1211,7 @@ mod tests {
         driven.settle();
 
         let frequency = the_bands(&mut driven)[0].frequency;
+
         assert_eq!(
             frequency,
             resonate_core::eq::Frequency::from_hertz(2000.0).expect("a frequency")
@@ -1164,10 +1228,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.focus(|root| &root.typed.search);
         driven.cx.simulate_input("dark");
         driven.cx.simulate_keystrokes("secondary-a");
         driven.cx.simulate_input("x");
+
         assert_eq!(
             driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "x"
@@ -1189,12 +1255,15 @@ mod tests {
         let one = folder.tone("one.wav", 1);
         let two = folder.tone("two.wav", 1);
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&[one, two.clone()]);
         driven.cx.simulate_keystrokes("secondary-u");
         driven.settle();
+
         let root = driven.root.clone();
 
         let location = MediaLocation::local(&two);
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.take_out_of_the_queue(&location, None, cx);
@@ -1235,7 +1304,9 @@ mod tests {
         for title in titles {
             folder.tone(&format!("{title}.wav"), 1);
         }
+
         let library = catalog();
+
         Driven::scanned(&library, folder);
         library
     }
@@ -1250,6 +1321,7 @@ mod tests {
 
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let ordering = |driven: &mut Driven| driven.read(|root, cx| root.orders(cx).ordering);
         let title = SortOrder::ALL
@@ -1258,18 +1330,22 @@ mod tests {
             .expect("the tracks offer their title");
 
         driven.click("order-tracks");
+
         assert_eq!(ordering(&mut driven), Some(Ordered::Tracks));
         assert!(driven.read(|root, cx| root.something_stands_over_the_pane(cx)));
 
         driven.click(named("order-choice", title));
         driven.click(named("order-reading", 1));
+
         let sorting = driven.read(|root, cx| root.library.read(cx).sorting());
+
         assert_eq!(sorting.tracks, SortOrder::Title);
         assert_eq!(sorting.tracks_read, Direction::Descending);
         assert_eq!(ordering(&mut driven), Some(Ordered::Tracks));
 
         let mark = driven.bounds_of("order-tracks");
         let popped = driven.bounds_of("order-sheet");
+
         assert!(
             popped.top() >= mark.bottom() && popped.top() <= mark.bottom() + px(16.0),
             "the sort pop-up stands under the mark that opened it"
@@ -1277,15 +1353,18 @@ mod tests {
         assert!(popped.size.width < px(320.0), "the sort pop-up is small");
 
         driven.click_at(gpui::point(px(12.0), px(300.0)));
+
         assert_eq!(ordering(&mut driven), None);
 
         driven.click("order-tracks");
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
+
         assert_eq!(ordering(&mut driven), None);
 
         driven.click("order-tracks");
         driven.click_at(gpui::point(px(12.0), px(300.0)));
+
         assert_eq!(ordering(&mut driven), None);
     }
 
@@ -1297,6 +1376,7 @@ mod tests {
 
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let order = |driven: &mut Driven| driven.read(|root, cx| root.library.read(cx).sorting());
         let pressed = |driven: &mut Driven, keys: &str| {
@@ -1306,43 +1386,65 @@ mod tests {
 
         driven.click("order-tracks");
         driven.settle();
+
         assert_eq!(order(&mut driven).tracks, SortOrder::DateAdded);
 
         pressed(&mut driven, "down");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::Duration);
+
         pressed(&mut driven, "up");
         pressed(&mut driven, "up");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::Artist);
+
         pressed(&mut driven, "end");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::PlaysThisMonth);
+
         pressed(&mut driven, "down");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::Relevance);
+
         pressed(&mut driven, "end");
         pressed(&mut driven, "home");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::Relevance);
 
         pressed(&mut driven, "right");
+
         assert_eq!(order(&mut driven).tracks_read, Direction::Descending);
+
         pressed(&mut driven, "left");
+
         assert_eq!(order(&mut driven).tracks_read, Direction::Ascending);
 
         pressed(&mut driven, "a");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::AlbumThenTrack);
+
         pressed(&mut driven, "a");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::Artist);
+
         pressed(&mut driven, "a");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::DateAdded);
         assert!(driven.read(|root, cx| root.orders(cx).ordering.is_some()));
 
         pressed(&mut driven, "enter");
+
         assert_eq!(driven.read(|root, cx| root.orders(cx).ordering), None);
 
         driven.click("order-tracks");
         driven.settle();
         pressed(&mut driven, "l");
         pressed(&mut driven, "a");
+
         assert_eq!(order(&mut driven).tracks, SortOrder::Played);
+
         pressed(&mut driven, "escape");
+
         assert_eq!(driven.read(|root, cx| root.orders(cx).ordering), None);
     }
 
@@ -1352,7 +1454,9 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
         let second = ZoneId::new(2).expect("a second zone");
         let row = resonate_engine::QueueItem {
@@ -1365,7 +1469,9 @@ mod tests {
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
         driven.until(|root, _| root.zones.len() == 2);
+
         let shown_second = driven.read(|root, _| root.switcher.selected());
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.send(
@@ -1383,6 +1489,7 @@ mod tests {
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.show_zone(ZoneId::FIRST, cx)));
         driven.settle();
+
         let first_queue = driven.read(|root, cx| root.player.read(cx).queue().len());
         let label = driven.read(|root, _| root.switcher.label());
         let menu = driven.read(|root, _| root.zone_menu(Point::default()).labels());
@@ -1416,10 +1523,13 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
         let second = with_a_second_zone(&mut driven);
         let third = ZoneId::new(3).expect("a third zone");
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
@@ -1431,6 +1541,7 @@ mod tests {
         });
         driven.until(|_, cx| crate::toast::showing_text(cx).is_some());
         driven.settle();
+
         let came_back = driven.read(|root, _| root.switcher.selected());
 
         driven.cx.update(|_, cx| crate::toast::dismiss(cx));
@@ -1444,6 +1555,7 @@ mod tests {
         });
         driven.until(|_, cx| crate::toast::showing_text(cx).is_some());
         driven.settle();
+
         let stayed = driven.read(|root, _| root.switcher.selected());
 
         assert_eq!(came_back, ZoneId::FIRST);
@@ -1465,6 +1577,7 @@ mod tests {
         let recorded = Arc::new(parking_lot::Mutex::new(Vec::new()));
         let writer =
             crate::settings::SettingsWriter::over(Arc::new(Recorded(Arc::clone(&recorded))));
+
         driven.root.update(&mut driven.cx, |root, _| {
             root.settings_written = writer;
         });
@@ -1488,6 +1601,7 @@ mod tests {
 
     fn with_a_second_zone(driven: &mut Driven) -> ZoneId {
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.add_a_zone(cx)));
@@ -1497,6 +1611,7 @@ mod tests {
 
     fn volume_set(driven: &mut Driven, position: f32) {
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.set_volume(position, cx)));
@@ -1504,6 +1619,7 @@ mod tests {
 
     fn zone_shown(driven: &mut Driven, zone: ZoneId) {
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.show_zone(zone, cx)));
@@ -1517,6 +1633,7 @@ mod tests {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.store(&crate::settings::Setting::BitPerfect(true), cx);
         });
+
         let deadline = Instant::now() + PATIENCE;
         while !recorded.lock().iter().any(|change| {
             matches!(
@@ -1528,6 +1645,7 @@ mod tests {
                 Instant::now() < deadline,
                 "the settings never reached the writer"
             );
+
             driven.settle();
             thread::sleep(FRAME);
         }
@@ -1559,12 +1677,15 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
         let offering = Arc::new(Offering::default());
+
         driven.cx.update(|_, cx| {
             cx.global_mut::<ResonateApp>().catalog_shared =
                 Some(Arc::clone(&offering) as Arc<dyn crate::CatalogShared>);
         });
+
         let root = driven.root.clone();
         let field = |driven: &mut Driven| {
             driven.read(|root, cx| {
@@ -1576,8 +1697,10 @@ mod tests {
                     .to_owned()
             })
         };
+
         driven.cx.update(|_, cx| {
             let typed = root.read(cx).settings_fields.read(cx).offer_name.clone();
+
             typed.update(cx, |field, cx| field.hold("  Studio room  ".to_owned(), cx));
         });
 
@@ -1612,8 +1735,10 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
         let second = with_a_second_zone(&mut driven);
+
         zone_shown(&mut driven, ZoneId::FIRST);
 
         volume_set(&mut driven, 0.25);
@@ -1629,6 +1754,7 @@ mod tests {
     #[gpui::test]
     fn a_volume_changed_and_left_alone_is_kept_once_it_settles(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
 
         volume_set(&mut driven, 0.25);
@@ -1645,8 +1771,10 @@ mod tests {
     #[gpui::test]
     fn a_volume_changed_in_a_second_zone_is_never_kept_as_the_first_zones(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
         let second = with_a_second_zone(&mut driven);
+
         assert_eq!(second, ZoneId::new(2).expect("a second zone"));
 
         volume_set(&mut driven, 0.75);
@@ -1661,6 +1789,7 @@ mod tests {
     #[gpui::test]
     fn a_volume_changed_just_before_the_window_leaves_is_kept(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
 
         volume_set(&mut driven, 0.5);
@@ -1693,6 +1822,7 @@ mod tests {
     #[gpui::test]
     fn a_window_resized_just_before_it_leaves_keeps_its_size(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
         let resized = gpui::size(gpui::px(WIDE), gpui::px(TALL - 40.0));
         let kept = crate::WindowSize::from_pixels(resized).expect("a size a window may keep");
@@ -1716,6 +1846,7 @@ mod tests {
     #[gpui::test]
     fn a_window_size_already_kept_is_not_kept_again_as_the_window_leaves(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let recorded = recording_what_is_stored(&mut driven);
         let resized = gpui::size(gpui::px(WIDE), gpui::px(TALL - 40.0));
         let kept = crate::WindowSize::from_pixels(resized).expect("a size a window may keep");
@@ -1738,7 +1869,9 @@ mod tests {
     #[gpui::test]
     fn a_queue_selection_is_let_go_of_when_another_zone_is_shown(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let second = with_a_second_zone(&mut driven);
+
         zone_shown(&mut driven, ZoneId::FIRST);
         driven.root.update(&mut driven.cx, |root, cx| {
             root.set_reach(Some(crate::views::reorder::Reach::at(Shift::Queue, 2)), cx);
@@ -1757,6 +1890,7 @@ mod tests {
     #[gpui::test]
     fn a_pointer_at_rest_on_a_control_raises_its_hint(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let at = driven.centre_of("listen");
 
         driven.hover(at);
@@ -1775,6 +1909,7 @@ mod tests {
     #[gpui::test]
     fn a_hint_does_not_stand_over_the_sheet_its_own_control_opened(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         let at = driven.centre_of("listen");
 
         driven.hover(at);
@@ -1798,6 +1933,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged(
             "one.wav",
             1,
@@ -1808,13 +1944,17 @@ mod tests {
                 (b"ICRD", "1997"),
             ],
         );
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .albums(&resonate_library::AlbumQuery::default())
             .expect("the scanned albums")[0]
             .id;
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-albums");
         driven.until(|root, cx| !root.library.read(cx).albums().is_empty());
 
@@ -1825,6 +1965,7 @@ mod tests {
                 .clone()
                 .expect("an album with an artist")
         });
+
         let drawn = driven.read(|_, cx| {
             crate::views::kit::cut_to_fit(
                 gpui::SharedString::from(artist.clone()),
@@ -1861,21 +2002,26 @@ mod tests {
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
             .id;
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
 
         driven.right_click(named("track", first.get()));
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "a right press opened no menu"
         );
 
         driven.click("menu-entry-2");
+
         assert!(
             driven.read(|root, _| root.menu.is_none()),
             "the menu stayed open"
         );
+
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
     }
 
@@ -1892,15 +2038,18 @@ mod tests {
             |driven: &mut Driven| driven.read(|root, cx| root.player.read(cx).state().shuffle);
 
         driven.right_click("shuffle");
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "a right press opened no menu"
         );
+
         driven.click("menu-entry-4");
         driven.until(|root, cx| {
             root.player.read(cx).state().smart_shuffle.style
                 == resonate_engine::ShuffleStyle::Albums
         });
+
         assert!(
             !shuffled(&mut driven),
             "choosing how it shuffles turned shuffle on"
@@ -1913,19 +2062,23 @@ mod tests {
                 ..Modifiers::none()
             },
         );
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "a shift press opened no menu"
         );
+
         driven.click("menu-entry-3");
         driven.until(|root, cx| {
             root.player.read(cx).state().smart_shuffle.style == resonate_engine::ShuffleStyle::Smart
         });
+
         assert!(smart(&mut driven).spreads_artists);
         assert!(!shuffled(&mut driven));
 
         driven.click("shuffle");
         driven.until(|root, cx| root.player.read(cx).state().shuffle);
+
         assert!(
             driven.read(|root, _| root.menu.is_none()),
             "a plain press opened the menu"
@@ -1942,17 +2095,24 @@ mod tests {
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks");
         let (first, second) = (tracks[0].id, tracks[1].id);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+
         let lit = |driven: &mut Driven, id: resonate_core::TrackId| {
             driven.read(|_, cx| crate::views::menu::lit_by_its_menu(("track", id.get()), cx))
         };
 
         let before = lit(&mut driven, first);
+
         driven.right_click(named("track", first.get()));
+
         let while_open = (lit(&mut driven, first), lit(&mut driven, second));
+
         driven.click("menu-entry-2");
+
         let after = lit(&mut driven, first);
 
         assert!(!before);
@@ -1968,7 +2128,9 @@ mod tests {
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
             .id;
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
 
@@ -1985,7 +2147,9 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
         let playlist = library.create_playlist("Meddle").expect("a playlist");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.send(Command::SetShuffle(true), cx);
         });
@@ -1999,6 +2163,7 @@ mod tests {
                 false,
                 cx,
             );
+
             root.open_a_menu(menu, cx);
         });
         driven.click("menu-entry-0");
@@ -2062,9 +2227,11 @@ mod tests {
         let folder = Folder::new();
         let library = catalog();
         let playlist = library.create_playlist("Meddle").expect("a playlist");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let ledger = Arc::new(Ledger::default());
         let seam = Arc::clone(&ledger) as Arc<dyn crate::Syncing>;
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|app, _| app.syncing = Some(seam));
         });
@@ -2074,15 +2241,20 @@ mod tests {
                 std::rc::Rc::new(move |root, at, cx| {
                     crate::views::playlists::playlist_menu(root, at, playlist, false, cx)
                 });
+
             root.open_what_is_offered(offers, point(px(200.0), px(200.0)), None, cx);
             (*ledger.asked.lock(), root.menu.is_some())
         });
+
         driven.settle();
+
         let labels = driven.read(|root, _| root.menu.as_ref().map(Menu::labels));
 
         assert_eq!(asked_as_it_was_pressed, (0, false));
         assert_eq!(*ledger.asked.lock(), 2);
+
         let labels = labels.expect("the menu opened once the ledger was read");
+
         assert!(
             labels.iter().any(|label| label.contains("Desk")),
             "{labels:?}"
@@ -2101,6 +2273,7 @@ mod tests {
             .expect("the scanned tracks")
             .remove(0);
         let playlist = library.create_playlist("Meddle").expect("a playlist");
+
         library
             .add_to_playlist(playlist, &[resonate_library::Cut::of(&track)])
             .expect("a row put in");
@@ -2112,6 +2285,7 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
         let playlist = playlist_holding_the_first_song(&library);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
 
         driven.root.update(&mut driven.cx, |root, cx| {
@@ -2122,6 +2296,7 @@ mod tests {
                 false,
                 cx,
             );
+
             root.open_a_menu(menu, cx);
         });
         driven.click("menu-entry-0");
@@ -2136,10 +2311,12 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
         let playlist = playlist_holding_the_first_song(&library);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let seen = std::rc::Rc::new(std::cell::Cell::new(None));
         let ask = |driven: &mut Driven| {
             let seen = std::rc::Rc::clone(&seen);
+
             driven.root.update(&mut driven.cx, |root, cx| {
                 root.with_playlist_entries(playlist, cx, move |_, entries, _| {
                     seen.set(Some(entries.len()));
@@ -2148,12 +2325,15 @@ mod tests {
         };
 
         ask(&mut driven);
+
         assert_eq!(
             seen.get(),
             None,
             "the playlist was read on the window's thread"
         );
+
         let waiting = std::rc::Rc::clone(&seen);
+
         driven.until(move |_, _| waiting.get() == Some(1));
 
         seen.set(None);
@@ -2172,15 +2352,20 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
         folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .albums(&resonate_library::AlbumQuery::default())
             .expect("the albums read")[0]
             .id;
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
         driven.focus(|root| &root.typed.search);
@@ -2188,6 +2373,7 @@ mod tests {
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
         let root = driven.root.clone();
+
         driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 root.plays_everything_in(
@@ -2209,6 +2395,7 @@ mod tests {
         let library = scanned_catalog(&folder, &["Echoes"]);
         let kept = library.create_playlist("Kept").expect("a playlist");
         let other = library.create_playlist("Other").expect("a playlist");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
 
         driven.root.update(&mut driven.cx, |root, cx| {
@@ -2233,30 +2420,37 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
 
         driven.cx.simulate_keystrokes("shift-f10");
+
         assert!(
             driven.read(|root, _| root.menu.is_none()),
             "a menu opened with no row reached"
         );
 
         driven.cx.simulate_keystrokes("down menu");
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "the menu key opened no menu on the reached row"
         );
 
         driven.cx.simulate_keystrokes("down down enter");
+
         assert!(
             driven.read(|root, _| root.menu.is_none()),
             "the menu stayed open"
         );
+
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
         driven.cx.simulate_keystrokes("shift-f10");
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "shift-f10 opened no menu on the reached row"
@@ -2265,6 +2459,7 @@ mod tests {
 
     fn tabbed_onto(driven: &mut Driven, named: &'static str) -> bool {
         const TAB_STOPS_AT_MOST: usize = 64;
+
         let root = driven.root.clone();
         let on_it = |driven: &mut Driven| {
             driven.cx.update(|window, cx| {
@@ -2282,6 +2477,7 @@ mod tests {
 
     fn tabbed_onto_the_pane(driven: &mut Driven, named: &'static str) -> bool {
         const TAB_STOPS_AT_MOST: usize = 64;
+
         let root = driven.root.clone();
         let on_it = |driven: &mut Driven| {
             driven
@@ -2302,7 +2498,9 @@ mod tests {
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
             .id;
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
@@ -2310,6 +2508,7 @@ mod tests {
             tabbed_onto_the_pane(&mut driven, "play-all"),
             "tab never reached the heading's Play"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
@@ -2317,6 +2516,7 @@ mod tests {
             tabbed_onto_the_pane(&mut driven, "track-favourite-0"),
             "tab never reached the row's star"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.until(|root, cx| {
             let library = root.library.read(cx);
@@ -2332,8 +2532,11 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
         let playlist = library.create_playlist("Meddle").expect("a playlist");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.set_pane(Pane::Playlists, cx);
@@ -2346,8 +2549,10 @@ mod tests {
             tabbed_onto_the_pane(&mut driven, "more-of-the-playlist"),
             "tab never reached the playlist's menu mark"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "enter opened no menu"
@@ -2356,6 +2561,7 @@ mod tests {
 
     fn pressed_and_released(driven: &mut Driven, key: &'static str) {
         let keystroke = gpui::Keystroke::parse(key).expect("a key to press");
+
         driven.cx.simulate_keystrokes(key);
         driven.cx.simulate_event(gpui::KeyUpEvent { keystroke });
         driven.settle();
@@ -2370,13 +2576,16 @@ mod tests {
             folder.tone("three.wav", 5),
         ];
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&files);
+
         let queue = driven.queue();
 
         assert!(
             tabbed_onto(&mut driven, "next"),
             "tab never reached the next button"
         );
+
         pressed_and_released(&mut driven, "enter");
         driven.until(|root, cx| {
             root.player
@@ -2387,6 +2596,7 @@ mod tests {
         });
 
         let current = driven.read(|root, cx| root.player.read(cx).state().current.map(|c| c.id));
+
         assert_eq!(current, Some(queue[1]), "one press of next skipped two");
     }
 
@@ -2395,13 +2605,16 @@ mod tests {
         let folder = Folder::new();
         let file = folder.tone("tone.wav", 1);
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&[file]);
+
         let before = driven.read(|root, cx| root.player.read(cx).state().volume);
 
         assert!(
             tabbed_onto(&mut driven, "volume"),
             "tab never reached the volume rail"
         );
+
         driven.cx.simulate_keystrokes("left");
         driven.until(|root, cx| root.player.read(cx).state().volume < before);
     }
@@ -2412,7 +2625,9 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
@@ -2420,7 +2635,9 @@ mod tests {
             tabbed_onto(&mut driven, "queue"),
             "tab never reached the queue button"
         );
+
         driven.cx.simulate_keystrokes("enter");
+
         assert!(
             driven.read(|root, _| root.pane == Pane::Queue),
             "enter on the queue button did not open the queue"
@@ -2430,7 +2647,9 @@ mod tests {
             tabbed_onto(&mut driven, Pane::Albums.label()),
             "tab never reached the sidebar's albums"
         );
+
         driven.cx.simulate_keystrokes("enter");
+
         assert!(
             driven.read(|root, _| root.pane == Pane::Albums),
             "enter on the sidebar's albums did not open them"
@@ -2444,14 +2663,17 @@ mod tests {
         let folder = Folder::new();
         let files = [folder.tone("one.wav", 5)];
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&files);
 
         assert!(
             tabbed_onto(&mut driven, "sleep"),
             "tab never reached the sleep timer"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "enter opened no menu on the sleep timer"
@@ -2459,6 +2681,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("down enter");
         driven.until(|root, cx| root.player.read(cx).state().sleeping.is_some());
+
         assert!(driven.read(|root, _| root.menu.is_none()));
     }
 
@@ -2468,14 +2691,19 @@ mod tests {
     ) {
         let folder = Folder::new();
         let files = [folder.tone("one.wav", 5)];
+
         std::fs::write(
             folder.path().join("one.lrc"),
             "[00:00.50]first words\n[00:03.00]second words\n",
         )
         .expect("a sidecar beside the track");
+
         let mut driven = Driven::singing(cx, catalog(), &folder);
+
         driven.play(&files);
+
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
@@ -2485,8 +2713,10 @@ mod tests {
             tabbed_onto_the_pane(&mut driven, "lyric-1"),
             "tab never reached the second lyric line"
         );
+
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
+
         assert!(
             driven.read(|root, _| root.menu.is_some()),
             "enter opened no menu on the lyric line"
@@ -2496,7 +2726,9 @@ mod tests {
 
         driven.cx.simulate_keystrokes("down down down enter");
         driven.settle();
+
         assert!(driven.read(|root, _| root.menu.is_none()));
+
         driven.until(|root, cx| root.player.read(cx).state().seeks != sought);
     }
 
@@ -2506,19 +2738,25 @@ mod tests {
     ) {
         let folder = Folder::new();
         let files = [folder.tone("one.wav", 5)];
+
         std::fs::write(
             folder.path().join("one.lrc"),
             "[00:00.50]first words\n[00:03.00]second words\n",
         )
         .expect("a sidecar beside the track");
+
         let mut driven = Driven::singing(cx, catalog(), &folder);
+
         driven.play(&files);
+
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
         driven.until(|root, cx| root.lyrics.read(cx).text().len() == 2);
         driven.settle();
+
         let sought = driven.read(|root, cx| root.player.read(cx).state().seeks);
 
         driven.click("lyric-0");
@@ -2532,6 +2770,7 @@ mod tests {
                     .is_focused(window)
             })
         });
+
         assert!(
             !held,
             "a clicked lyric line kept the caret and stays lit once sung"
@@ -2542,13 +2781,19 @@ mod tests {
     fn tabbing_down_an_unsynced_sheet_keeps_the_line_reached_in_view(cx: &mut TestAppContext) {
         const LINES: usize = 40;
         const TABS: usize = 90;
+
         let folder = Folder::new();
         let files = [folder.tone("one.wav", 5)];
         let sheet: String = (0..LINES).map(|n| format!("words of line {n}\n")).collect();
+
         std::fs::write(folder.path().join("one.lrc"), sheet).expect("a sidecar beside the track");
+
         let mut driven = Driven::singing(cx, catalog(), &folder);
+
         driven.play(&files);
+
         let root = driven.root.clone();
+
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.set_pane(Pane::Lyrics, cx)));
@@ -2556,6 +2801,7 @@ mod tests {
         driven.settle();
 
         let mut deepest = 0;
+
         for _ in 0..TABS {
             driven.cx.simulate_keystrokes("tab");
             driven.settle();
@@ -2571,6 +2817,7 @@ mod tests {
             let Some(line) = reached else {
                 continue;
             };
+
             deepest = deepest.max(line);
 
             let (seen, drawn) = driven.read(|root, cx| {
@@ -2580,10 +2827,12 @@ mod tests {
                     .scroll()
                     .bounds_for_item(line)
                     .expect("a line is drawn");
+
                 let top = drawn.top() + model.scroll().offset().y;
                 let bottom = drawn.bottom() + model.scroll().offset().y;
                 (pane, (top, bottom))
             });
+
             assert!(
                 drawn.0 >= seen.top() && drawn.1 <= seen.bottom(),
                 "line {line} was reached by tab but stands outside the pane"
@@ -2602,25 +2851,35 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+
         let root = driven.root.clone();
         let (kept, second) = driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 let listing = root.library.read(cx).listing();
+
                 root.play_the_listing_from(&listing.whole(), 0, window, cx);
                 (listing[0].id, listing[1].id)
             })
         });
+
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
         driven.right_click(named("track", second.get()));
+
         let labels = menu_labels(&mut driven);
+
         assert!(labels.iter().any(|label| label == words::menu::play()));
         assert!(!labels.iter().any(|label| label == words::menu::take_out()));
+
         driven.cx.simulate_keystrokes("escape");
+
         let queued = driven.read(|root, cx| root.player.read(cx).queue()[1].id);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.set_pane(crate::Pane::Queue, cx);
         });
@@ -2640,12 +2899,16 @@ mod tests {
         let two = folder.tone("two.wav", 1);
         let three = folder.tone("three.wav", 1);
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&[one, two.clone(), three, two.clone()]);
+
         let before = driven.queue();
+
         assert_eq!(before.len(), 4);
 
         let root = driven.root.clone();
         let location = MediaLocation::local(&two);
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.take_out_of_the_queue(&location, None, cx);
@@ -2663,10 +2926,12 @@ mod tests {
                 })
             });
             let queued = put.expect("a step was left to put back");
+
             driven.until(|root, cx| root.player.read(cx).queue().len() > queued);
         }
 
         let restored: Vec<TrackId> = driven.queue();
+
         assert_eq!(restored.len(), 4);
         assert_eq!(restored[0], before[0]);
         assert_eq!(restored[2], before[2]);
@@ -2677,9 +2942,12 @@ mod tests {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Time"]);
         let playlist = library.create_playlist("Mix").expect("a playlist is made");
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
+
         let root = driven.root.clone();
         let marked = QueueStamp::default();
 
@@ -2691,8 +2959,10 @@ mod tests {
                         queue: marked,
                     }));
                 });
+
                 let before = root.library.read(cx).playing_playlist(marked);
                 let listing = root.library.read(cx).listing();
+
                 root.play_the_listing_from(&listing.whole(), 0, window, cx);
                 (before, root.library.read(cx).playing_playlist(marked))
             })
@@ -2713,25 +2983,32 @@ mod tests {
             .iter()
             .map(|track| track.id)
             .collect();
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
         let root = driven.root.clone();
         let first = driven.cx.update(|window, cx| {
             root.update(cx, |root, cx| {
                 let listing = root.library.read(cx).listing();
+
                 root.play_the_listing_from(&listing.whole()[1..2], 0, window, cx);
                 listing[1].id
             })
         });
+
         driven.until(|root, cx| root.player.read(cx).queue().len() == 3);
 
         let mut queued = driven.queue();
         let at = driven.read(|root, cx| root.player.read(cx).state().queue_position);
 
         assert_eq!(at.and_then(|at| queued.get(at)), Some(&first));
+
         queued.sort_unstable();
         every.sort_unstable();
+
         assert_eq!(queued, every);
     }
 
@@ -2744,19 +3021,24 @@ mod tests {
             .expect("the scanned tracks")[0]
             .id;
         let playlist = library.create_playlist("Meddle").expect("a playlist");
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
 
         driven.right_click(named("track", track.get()));
         pressed_in_the_menu(&mut driven, words::menu::add_to_playlist());
+
         assert!(
             driven.read(|root, _| root.adding.is_some()),
             "Add to playlist opened no picker"
         );
 
         driven.click(named("picker", playlist.get()));
+
         assert!(driven.read(|root, _| root.adding.is_none()));
+
         let began = Instant::now();
         while library
             .playlist_entries(playlist, None)
@@ -2764,6 +3046,7 @@ mod tests {
             .is_empty()
         {
             assert!(began.elapsed() < PATIENCE, "the row never landed");
+
             driven.settle();
             thread::sleep(FRAME);
         }
@@ -2774,14 +3057,18 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
         folder.tagged(
             "one.wav",
             1,
             &[(b"INAM", "One of These Days"), (b"IPRD", "Meddle")],
         );
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let tracks = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks");
@@ -2790,26 +3077,34 @@ mod tests {
             .expect("the albums read")[0]
             .id;
         let playlist = library.create_playlist("Drives").expect("a playlist");
+
         library
             .pin_playlist(playlist, true)
             .expect("the playlist pinned");
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 2);
 
         let from = driven.centre_of(named("track", tracks[1].id.get()));
         let onto = driven.centre_of("queue");
+
         driven.drag(from, onto);
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
+
         assert_eq!(
             driven.read(|root, cx| root.player.read(cx).queue()[0].location.clone()),
             tracks[1].location
         );
 
         driven.click("tab-albums");
+
         let from = driven.centre_of(named("album", album.get()));
         let onto = driven.centre_of(named("pinned-playlist", playlist.get()));
+
         driven.drag(from, onto);
+
         let began = Instant::now();
         while library
             .playlist_entries(playlist, None)
@@ -2818,6 +3113,7 @@ mod tests {
             < 2
         {
             assert!(began.elapsed() < PATIENCE, "the album never landed");
+
             driven.settle();
             thread::sleep(FRAME);
         }
@@ -2829,15 +3125,20 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
+
         let listing = driven.read(|root, cx| root.library.read(cx).listing());
 
         driven.cx.simulate_keystrokes("down shift-down");
         driven.settle();
+
         let from = driven.centre_of(named("track", listing[0].id.get()));
         let onto = driven.centre_of("queue");
+
         driven.drag(from, onto);
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
@@ -2849,6 +3150,7 @@ mod tests {
                 .map(|item| item.location.clone())
                 .collect()
         });
+
         assert_eq!(
             queued,
             [listing[0].location.clone(), listing[1].location.clone()]
@@ -2864,13 +3166,17 @@ mod tests {
             folder.tone("three.wav", 1),
         ];
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&files);
         driven.click("queue");
+
         let before = driven.queue();
+
         assert_eq!(before.len(), 3);
 
         let from = driven.centre_of(named("queued", before[1].get()));
         let onto = driven.bounds_of(named("queued", before[2].get()));
+
         driven.drag(
             from,
             point(onto.center().x, onto.origin.y + onto.size.height * 0.75),
@@ -2900,11 +3206,14 @@ mod tests {
     ) {
         let folder = Folder::new();
         let music = folder.path().join("music");
+
         fs::create_dir_all(&music).expect("a writable temporary folder");
+
         let music = music.canonicalize().expect("a folder that is there");
         let from = Folder::new();
         let song = from.tagged("dropped.wav", 1, &[(b"INAM", "Dropped Song")]);
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         with_music_folder(&mut driven, Some(music.clone()));
 
         driven.root.update(&mut driven.cx, |root, cx| {
@@ -2912,6 +3221,7 @@ mod tests {
         });
 
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 1);
+
         assert!(
             music.join("dropped.wav").is_file(),
             "the song was not copied"
@@ -2924,7 +3234,9 @@ mod tests {
     fn songs_dropped_with_filing_on_are_filed_by_the_layout_once_scanned(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let music = folder.path().join("music");
+
         fs::create_dir_all(&music).expect("a writable temporary folder");
+
         let music = music.canonicalize().expect("a folder that is there");
         let from = Folder::new();
         let song = from.tagged(
@@ -2937,8 +3249,11 @@ mod tests {
             ],
         );
         let cover = from.path().join("cover.jpg");
+
         fs::write(&cover, b"picture").expect("a writable temporary file");
+
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         with_music_folder(&mut driven, Some(music.clone()));
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|global, _| {
@@ -2951,8 +3266,10 @@ mod tests {
         });
 
         let filed = music.join("Pink Floyd/Meddle");
+
         driven.until(|_, _| filed.join("Echoes.wav").is_file());
         driven.until(|root, cx| !root.library.read(cx).is_busy());
+
         assert!(!music.join("dropped.wav").exists());
         assert_eq!(
             fs::read(filed.join("cover.jpg")).expect("the cover followed its song"),
@@ -2985,6 +3302,7 @@ mod tests {
     #[gpui::test]
     fn the_sidebar_scrolls_only_once_the_window_is_too_short_for_its_tabs(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.settle();
 
         let roomy = driven.read(|root, _| root.window_scrolls.sidebar.max_offset().y);
@@ -3010,8 +3328,11 @@ mod tests {
         let from = Folder::new();
         let song = from.tone("held.wav", 1);
         let note = from.path().join("notes.txt");
+
         fs::write(&note, b"words").expect("a writable temporary file");
+
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         with_music_folder(&mut driven, Some(folder.path().to_path_buf()));
 
         driven.root.update(&mut driven.cx, |root, cx| {
@@ -3029,8 +3350,10 @@ mod tests {
         let folder = Folder::new();
         let titles: Vec<String> = (1..=12).map(|nth| format!("Track {nth}")).collect();
         let named: Vec<&str> = titles.iter().map(String::as_str).collect();
+
         let library = scanned_catalog(&folder, &named);
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.until(|root, cx| !root.suggestions.read(cx).offered().is_empty());
         driven.click("tab-suggestions");
 
@@ -3046,6 +3369,7 @@ mod tests {
 
     fn a_png() -> Vec<u8> {
         let mut bytes = Vec::new();
+
         image::RgbaImage::from_pixel(8, 8, image::Rgba([200, 40, 40, 255]))
             .write_to(
                 &mut std::io::Cursor::new(&mut bytes),
@@ -3060,9 +3384,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("echoes.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .albums(&resonate_library::AlbumQuery::default())
             .expect("the albums read")
@@ -3081,7 +3409,9 @@ mod tests {
         };
 
         assert!(!drawn(&mut driven));
+
         driven.until(|root, cx| !root.library.read(cx).is_drawing_covers());
+
         assert!(!drawn(&mut driven), "an album with no cover drew one");
 
         library
@@ -3108,9 +3438,13 @@ mod tests {
     #[gpui::test]
     fn a_queued_row_is_read_again_once_the_catalog_changes_under_it(cx: &mut TestAppContext) {
         let folder = Folder::new();
+
         folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let track = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the tracks read")
@@ -3128,6 +3462,7 @@ mod tests {
                     .map(|track| track.title)
             })
         };
+
         assert_eq!(titled(&mut driven).as_deref(), Some("Echos"));
 
         library
@@ -3149,7 +3484,9 @@ mod tests {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library.update(cx, |model, cx| model.reload(cx));
         });
+
         let held = driven.read(|root, cx| root.library.read(cx).names_held());
+
         assert_eq!(held, 1, "a reload emptied the names the queue draws from");
 
         let began = Instant::now();
@@ -3158,6 +3495,7 @@ mod tests {
                 began.elapsed() < Duration::from_secs(10),
                 "the queue kept the row as it was first read"
             );
+
             driven.settle();
             thread::sleep(FRAME);
         }
@@ -3168,9 +3506,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let track = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the tracks read")
@@ -3200,9 +3542,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("echoes.wav", 1, &[(b"INAM", "Echos"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let track = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the tracks read")
@@ -3222,11 +3568,13 @@ mod tests {
         };
 
         let (revision, first) = stamped(&mut driven);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library
                 .update(cx, |model, cx| model.reload_playlists(cx));
         });
         driven.settle();
+
         let (moved, again) = stamped(&mut driven);
 
         assert!(first.is_some(), "the playing row is held");
@@ -3238,7 +3586,9 @@ mod tests {
                 model.favour(resonate_library::Favoured::Track(track.id), true, cx)
             });
         });
+
         let (_, favoured) = stamped(&mut driven);
+
         assert_ne!(favoured, first, "a favourite is shown on the playing row");
     }
 
@@ -3253,6 +3603,7 @@ mod tests {
             .map(|track| track.id)
             .rev()
             .collect();
+
         let driven = Driven::opened_in(cx, library, &folder);
 
         let read: Vec<_> = driven
@@ -3286,12 +3637,14 @@ mod tests {
             !driven.read(|root, cx| root.player.read(cx).state().shuffle),
             "an h typed into a search shuffled the queue"
         );
+
         let search_focused = |driven: &mut Driven| {
             let root = driven.root.clone();
             driven
                 .cx
                 .update(|window, cx| root.read(cx).typed.search.read(cx).is_focused(window))
         };
+
         assert!(
             search_focused(&mut driven),
             "a search typed at the window left the field without the caret"
@@ -3299,6 +3652,7 @@ mod tests {
 
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
+
         assert_eq!(
             driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "",
@@ -3319,6 +3673,7 @@ mod tests {
         use crate::views::field::Composing;
 
         let mut driven = Driven::open(cx, catalog());
+
         let search = driven.read(|root, _| root.typed.search.clone());
         let text = |driven: &mut Driven| {
             driven.read(|root, cx| root.typed.search.read(cx).text().to_owned())
@@ -3329,6 +3684,7 @@ mod tests {
                 .replace_and_mark_text_in_range(None, "ka", None, window, cx);
         });
         driven.settle();
+
         assert_eq!(text(&mut driven), "ka");
         assert!(driven.read(|root, cx| root.typed.search.read(cx).holds_a_preedit()));
 
@@ -3336,6 +3692,7 @@ mod tests {
             Composing::at_the_window(search.clone(), true)
                 .replace_and_mark_text_in_range(None, "\u{304b}", None, window, cx);
         });
+
         assert_eq!(text(&mut driven), "\u{304b}");
 
         driven.cx.update(|window, cx| {
@@ -3343,6 +3700,7 @@ mod tests {
                 .replace_text_in_range(None, "\u{304b}", window, cx);
         });
         driven.settle();
+
         assert_eq!(text(&mut driven), "\u{304b}");
         assert!(!driven.read(|root, cx| root.typed.search.read(cx).holds_a_preedit()));
 
@@ -3350,6 +3708,7 @@ mod tests {
             Composing::at_the_window(search.clone(), true)
                 .replace_text_in_range(None, "x", window, cx);
         });
+
         assert_eq!(
             text(&mut driven),
             "\u{304b}",
@@ -3366,6 +3725,7 @@ mod tests {
         use crate::views::field::Composing;
 
         let mut driven = Driven::open(cx, catalog());
+
         let search = driven.read(|root, _| root.typed.search.clone());
 
         driven.cx.update(|window, cx| {
@@ -3389,7 +3749,9 @@ mod tests {
         use crate::edit::LONGEST_CONTENT;
 
         let mut driven = Driven::open(cx, catalog());
+
         driven.focus(|root| &root.typed.search);
+
         let search = driven.read(|root, _| root.typed.search.clone());
 
         driven.cx.update(|window, cx| {
@@ -3397,6 +3759,7 @@ mod tests {
                 field.replace_and_mark_text_in_range(None, "a\nb\rc", None, window, cx);
             });
         });
+
         assert_eq!(
             driven.read(|root, cx| root.typed.search.read(cx).text().to_owned()),
             "a b c"
@@ -3409,9 +3772,11 @@ mod tests {
                 field.replace_and_mark_text_in_range(None, "xyz", None, window, cx);
             });
         });
+
         let marked = driven.cx.update(|window, cx| {
             search.update(cx, |field, cx| field.marked_text_range(window, cx))
         });
+
         assert_eq!(
             driven.read(|root, cx| root.typed.search.read(cx).text().len()),
             LONGEST_CONTENT
@@ -3429,6 +3794,7 @@ mod tests {
         };
         let typed = |driven: &mut Driven, text: &str| {
             let root = driven.root.clone();
+
             driven.cx.update(|_, cx| {
                 let field = root
                     .read(cx)
@@ -3437,6 +3803,7 @@ mod tests {
                     .contact
                     .clone()
                     .clone();
+
                 field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
             });
         };
@@ -3445,18 +3812,22 @@ mod tests {
         typed(&mut driven, "me@example.test");
         driven.cx.update(|window, cx| {
             let root = driven.root.clone();
+
             root.update(cx, |root, cx| root.leave_contact(window, cx));
         });
         driven.settle();
+
         assert_eq!(contact(&mut driven), "me@example.test");
 
         driven.focus_on(|root, cx| root.settings_fields.read(cx).contact.clone());
         typed(&mut driven, "someone@else.test");
         driven.cx.update(|window, cx| {
             let root = driven.root.clone();
+
             root.update(cx, |root, cx| root.put_back_contact(window, cx));
         });
         driven.settle();
+
         assert_eq!(contact(&mut driven), "me@example.test");
         assert_eq!(
             driven.read(|root, cx| root
@@ -3504,6 +3875,7 @@ mod tests {
                 )
             })
         };
+
         driven.click("tab-settings");
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
@@ -3518,6 +3890,7 @@ mod tests {
                 Some(Page::RoomCorrection)
             )
         );
+
         driven.bounds_of("choose-a-response");
 
         driven.click("settings-way-back");
@@ -3529,11 +3902,13 @@ mod tests {
 
         driven.scroll("settings", 6000.0);
         driven.click("settings-page-listening-test");
+
         assert_eq!(
             place(&mut driven).2,
             Some(Page::ListeningTest),
             "the listening test did not open"
         );
+
         driven.cx.simulate_keystrokes("escape");
         driven.settle();
 
@@ -3560,6 +3935,7 @@ mod tests {
         use crate::views::settings::Page;
 
         let mut driven = Driven::open(cx, catalog());
+
         driven.click("tab-settings");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("autoeq");
@@ -3584,6 +3960,7 @@ mod tests {
                 String::new()
             )
         );
+
         driven.bounds_of("measurer");
     }
 
@@ -3595,8 +3972,10 @@ mod tests {
         driven.focus_on(field);
 
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             let field = field(root.read(cx), cx);
+
             field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
         });
     }
@@ -3606,6 +3985,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Online);
 
         typed_into(
@@ -3688,7 +4068,9 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Library);
+
         let filed_as = |driven: &mut Driven| {
             driven.read(|_, cx| cx.global::<ResonateApp>().organise_as.clone())
         };
@@ -3722,6 +4104,7 @@ mod tests {
         let kept = Folder::new();
         let dropped = Folder::new();
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         showing_settings(&mut driven, SettingsCategory::Library);
 
         typed_into(
@@ -3759,6 +4142,7 @@ mod tests {
 
     fn reached_in_the_tracks(driven: &mut Driven, row: usize) {
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.reach_at(Shift::Listing(Listed::Tracks), row, false, cx);
@@ -3804,9 +4188,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
@@ -3831,9 +4218,12 @@ mod tests {
     fn a_shift_click_chooses_every_track_between_and_plays_nothing(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
@@ -3858,9 +4248,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven
@@ -3891,15 +4284,20 @@ mod tests {
     fn dragging_a_row_chosen_apart_carries_every_chosen_row_to_the_queue(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven.click_with(named("track", ids[3].get()), HELD_TO_CHOOSE_APART);
         driven.click_with(named("track", ids[1].get()), HELD_TO_CHOOSE_APART);
+
         let from = driven.centre_of(named("track", ids[1].get()));
         let onto = driven.centre_of("queue");
+
         driven.drag(from, onto);
         driven.until(|root, cx| root.player.read(cx).queue().len() == 2);
 
@@ -3910,15 +4308,20 @@ mod tests {
     fn dragging_a_row_that_is_not_chosen_carries_that_row_alone(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
         driven.click_with(named("track", ids[1].get()), HELD_TO_CHOOSE_APART);
+
         let from = driven.centre_of(named("track", ids[3].get()));
         let onto = driven.centre_of("queue");
+
         driven.drag(from, onto);
         driven.until(|root, cx| root.player.read(cx).queue().len() == 1);
 
@@ -3929,7 +4332,9 @@ mod tests {
     fn an_arrow_gives_up_the_rows_chosen_apart(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
 
@@ -3944,14 +4349,18 @@ mod tests {
     fn the_menu_of_rows_chosen_apart_queues_every_one_of_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven
             .cx
             .simulate_keystrokes("down secondary-shift-down secondary-shift-down ctrl-space menu");
+
         assert!(driven.read(|root, _| root.menu.is_some()));
 
         driven.cx.simulate_keystrokes("down down enter");
@@ -3965,14 +4374,20 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
         folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Animals")]);
         folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Wish")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-albums");
         driven.until(|root, cx| root.library.read(cx).albums_listed() == 3);
+
         let albums = driven.read(|root, cx| root.library.read(cx).albums());
 
         driven.click_with(named("album", albums[0].id.get()), HELD_TO_CHOOSE_APART);
@@ -3993,6 +4408,7 @@ mod tests {
                 .expect("the album's tracks")[0]
                 .id
         };
+
         assert_eq!(
             driven.queue(),
             [of_album(albums[0].id), of_album(albums[2].id)]
@@ -4052,10 +4468,14 @@ mod tests {
         folder: &Folder,
     ) -> (Driven, Arc<Library>, Vec<TrackId>) {
         let library = scanned_catalog(folder, &["Echoes", "Money", "Time", "Us"]);
+
         favourite_everything(&library);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), folder);
+
         driven.click("tab-favourites");
         driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 4);
+
         let ids = favourites_listed(&mut driven);
 
         driven.click_with(named("track", ids[3].get()), HELD_TO_CHOOSE_APART);
@@ -4094,10 +4514,14 @@ mod tests {
 
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         favourite_everything(&library);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-favourites");
         driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 4);
+
         let all_tracks = driven.read(|root, cx| root.library.read(cx).sorting());
         let title = SortOrder::ALL
             .iter()
@@ -4105,17 +4529,22 @@ mod tests {
             .expect("the favourites offer their title");
 
         driven.click("order-favourites");
+
         assert_eq!(
             driven.read(|root, cx| root.orders(cx).ordering),
             Some(Ordered::Favourites)
         );
+
         driven.click(named("order-choice", title));
         driven.click(named("order-reading", 1));
+
         let sorting = driven.read(|root, cx| root.library.read(cx).sorting());
+
         assert_eq!(sorting.favourites, SortOrder::Title);
         assert_eq!(sorting.favourites_read, Direction::Descending);
         assert_eq!(sorting.tracks, all_tracks.tracks);
         assert_eq!(sorting.tracks_read, all_tracks.tracks_read);
+
         driven.cx.simulate_keystrokes("escape");
         driven.until(|root, cx| {
             root.library
@@ -4125,20 +4554,28 @@ mod tests {
                 .map(|track| track.title.as_str())
                 .eq(["Us", "Time", "Money", "Echoes"])
         });
+
         let shown = favourites_listed(&mut driven);
 
         driven.click("shuffle-all");
         driven.until(|root, cx| {
             root.player.read(cx).queue().len() == 4 && root.player.read(cx).state().shuffle
         });
+
         let mut shuffled = driven.queue();
+
         shuffled.sort();
+
         let mut expected = shown.clone();
+
         expected.sort();
+
         assert_eq!(shuffled, expected);
 
         driven.click("play-all");
+
         let first = shown[0];
+
         driven.until(move |root, cx| {
             let state = root.player.read(cx).state();
             !state.shuffle && state.current.as_ref().map(|current| current.id) == Some(first)
@@ -4151,7 +4588,9 @@ mod tests {
     fn an_empty_favourites_offers_no_track_actions(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes"]);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-favourites");
         driven.settle();
 
@@ -4164,8 +4603,11 @@ mod tests {
     fn the_keys_hop_over_favourites_and_choose_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+
         favourite_everything(&library);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-favourites");
         driven.until(|root, cx| root.library.read(cx).favourite_tracks().len() == 3);
 
@@ -4184,6 +4626,7 @@ mod tests {
         let (mut driven, _library, ids) = favourites_open_with_two_chosen(cx, &folder);
 
         driven.right_click(named("track", ids[1].get()));
+
         let labels = menu_labels(&mut driven);
 
         for offered in [
@@ -4217,6 +4660,7 @@ mod tests {
             .into_iter()
             .map(|track| track.id)
             .collect();
+
         assert_eq!(left.len(), 2);
         assert!(left.contains(&ids[0]) && left.contains(&ids[2]));
     }
@@ -4239,14 +4683,18 @@ mod tests {
     fn the_menu_of_tracks_chosen_apart_offers_to_hide_and_delete_them(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time", "Us"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 4);
+
         let ids = listed_ids(&mut driven);
 
         driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
         driven.click_with(named("track", ids[2].get()), HELD_TO_CHOOSE_APART);
         driven.right_click(named("track", ids[0].get()));
+
         let labels = menu_labels(&mut driven);
 
         for offered in [
@@ -4272,8 +4720,10 @@ mod tests {
         let folder = Folder::new();
         let titles: Vec<String> = (1..=12).map(|nth| format!("Track {nth}")).collect();
         let named_titles: Vec<&str> = titles.iter().map(String::as_str).collect();
+
         let library = scanned_catalog(&folder, &named_titles);
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.until(|root, cx| !root.suggestions.read(cx).offered().is_empty());
         driven.click("tab-suggestions");
         driven.click("suggestion-open-0");
@@ -4283,6 +4733,7 @@ mod tests {
                 .opened()
                 .is_some_and(|opened| opened.tracks.len() > 3)
         });
+
         let ids: Vec<TrackId> = driven.read(|root, cx| {
             root.suggestions
                 .read(cx)
@@ -4311,7 +4762,9 @@ mod tests {
         ] {
             folder.tagged(file, 1, &[(b"INAM", title), (b"IART", artist)]);
         }
+
         let library = catalog();
+
         Driven::scanned(&library, folder);
         library
     }
@@ -4322,9 +4775,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = three_artists(&folder);
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-artists");
         driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
+
         let artists = driven.read(|root, cx| root.library.read(cx).artists());
 
         driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
@@ -4349,6 +4805,7 @@ mod tests {
                 .expect("the artist's tracks")[0]
                 .id
         };
+
         assert_eq!(
             driven.queue(),
             [of_artist(artists[0].id), of_artist(artists[2].id)]
@@ -4360,9 +4817,12 @@ mod tests {
     fn a_plain_click_on_an_artist_still_opens_it_and_chooses_nothing(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = three_artists(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-artists");
         driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
+
         let artists = driven.read(|root, cx| root.library.read(cx).artists());
 
         driven.click(named("artist", artists[1].id.get()));
@@ -4380,9 +4840,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = three_artists(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-artists");
         driven.until(|root, cx| root.library.read(cx).artists_listed() == 3);
+
         let artists = driven.read(|root, cx| root.library.read(cx).artists());
 
         driven.click_with(named("artist", artists[0].id.get()), HELD_TO_CHOOSE_APART);
@@ -4421,7 +4884,9 @@ mod tests {
                 &[(b"INAM", title), (b"IART", artist), (b"IPRD", album)],
             );
         }
+
         let library = catalog();
+
         Driven::scanned(&library, folder);
         favourite_everything(&library);
         for album in library
@@ -4446,6 +4911,7 @@ mod tests {
     fn favourites_with_shelves(cx: &mut TestAppContext, folder: &Folder) -> (Driven, Arc<Library>) {
         let library = three_records_all_favourite(folder);
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), folder);
+
         driven.click("tab-favourites");
         driven.until(|root, cx| {
             let held = root.library.read(cx).favourited();
@@ -4602,30 +5068,39 @@ mod tests {
         let artists = Shift::Listing(Listed::FavouriteArtists);
 
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(reached_at(&mut driven), Some((tracks, 0)));
 
         driven.cx.simulate_keystrokes("up");
+
         assert_eq!(reached_at(&mut driven), Some((albums, 0)));
 
         driven.cx.simulate_keystrokes("up");
+
         assert_eq!(reached_at(&mut driven), Some((artists, 0)));
 
         driven.cx.simulate_keystrokes("up");
+
         assert_eq!(reached_at(&mut driven), Some((artists, 0)));
 
         driven.cx.simulate_keystrokes("right right right");
+
         assert_eq!(reached_at(&mut driven), Some((artists, 2)));
 
         driven.cx.simulate_keystrokes("left");
+
         assert_eq!(reached_at(&mut driven), Some((artists, 1)));
 
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(reached_at(&mut driven), Some((albums, 0)));
 
         driven.cx.simulate_keystrokes("down");
+
         assert_eq!(reached_at(&mut driven), Some((tracks, 0)));
 
         driven.cx.simulate_keystrokes("down down down");
+
         assert_eq!(reached_at(&mut driven), Some((tracks, 2)));
     }
 
@@ -4633,6 +5108,7 @@ mod tests {
     fn the_arrows_in_the_favourites_pass_over_a_shelf_that_is_empty(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = three_records_all_favourite(&folder);
+
         for album in library
             .albums(&resonate_library::AlbumQuery::default())
             .expect("the scanned albums")
@@ -4641,7 +5117,9 @@ mod tests {
                 .favour(resonate_library::Favoured::Album(album.id), false)
                 .expect("a favourite taken back");
         }
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-favourites");
         driven.until(|root, cx| {
             let held = root.library.read(cx).favourited();
@@ -4660,6 +5138,7 @@ mod tests {
     fn a_shelf_alone_is_walked_by_the_arrows_where_no_song_is_a_favourite(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let library = three_records_all_favourite(&folder);
+
         for track in library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
@@ -4668,7 +5147,9 @@ mod tests {
                 .favour(resonate_library::Favoured::Track(track.id), false)
                 .expect("a favourite taken back");
         }
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         driven.click("tab-favourites");
         driven.until(|root, cx| {
             let held = root.library.read(cx).favourited();
@@ -4829,11 +5310,13 @@ mod tests {
         let tracks = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks");
+
         let held = ["Aa", "Bb", "Cc"]
             .into_iter()
             .zip(&tracks)
             .map(|(name, track)| {
                 let playlist = library.create_playlist(name).expect("a playlist");
+
                 library
                     .add_to_playlist(playlist, &[resonate_library::Cut::of(track)])
                     .expect("a row put in");
@@ -4860,9 +5343,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (library, held) = three_playlists_of_a_song_each(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
+
         let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
 
         driven.click_with(named("playlist", listed[0].id.get()), HELD_TO_CHOOSE_APART);
@@ -4888,9 +5374,12 @@ mod tests {
     fn a_plain_click_on_a_playlist_still_opens_it_and_chooses_nothing(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (library, _) = three_playlists_of_a_song_each(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
+
         let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
 
         driven.click(named("playlist", listed[1].id.get()));
@@ -4912,10 +5401,13 @@ mod tests {
             .expect("the scanned tracks");
         let playlist = library.create_playlist("Evening").expect("a playlist");
         let cuts: Vec<_> = tracks.iter().map(resonate_library::Cut::of).collect();
+
         library
             .add_to_playlist(playlist, &cuts)
             .expect("rows put in");
+
         let mut driven = Driven::opened_in(cx, library, folder);
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlists().len() == 1);
         driven.click(named("playlist", playlist.get()));
@@ -4976,6 +5468,7 @@ mod tests {
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
         let song = ids[1];
         let model = driven.read(|root, _| root.library.clone());
+
         driven.cx.update(|_, cx| {
             model.update(cx, |library, cx| {
                 library.choose_version(song, ids[4], String::new(), cx);
@@ -5012,6 +5505,7 @@ mod tests {
     ) {
         let folder = Folder::new();
         let mut driven = queue_open_for_menus(cx, &folder);
+
         let drawn_at = driven.read(|root, cx| root.player.read(cx).queued().revision);
 
         assert!(driven.read(|root, cx| root.player.read(cx).is_queued_at(drawn_at)));
@@ -5024,6 +5518,7 @@ mod tests {
         assert!(!driven.read(|root, cx| root.player.read(cx).is_queued_at(drawn_at)));
 
         let before = driven.read(|root, cx| root.player.read(cx).state().queue_position);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.send_by_position_at(drawn_at, Command::JumpTo(1), cx);
         });
@@ -5041,6 +5536,7 @@ mod tests {
             .map(|name| folder.tone(&format!("{name}.wav"), 1))
             .collect();
         let mut driven = Driven::opened_in(cx, catalog(), folder);
+
         driven.play(&files);
         driven
     }
@@ -5049,8 +5545,11 @@ mod tests {
     fn rows_held_in_several_chunks_are_queued_in_order_as_they_stand(cx: &mut TestAppContext) {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
+
         let mut tracks = driven.read(|root, cx| root.library.read(cx).held_tracks(&ids));
+
         tracks.sort_by_key(|track| ids.iter().position(|id| *id == track.id));
+
         let later = tracks.split_off(2);
         let rows = crate::held::Rows::from(tracks).appended(later);
 
@@ -5139,10 +5638,12 @@ mod tests {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
         let playlist = opened_playlist(&mut driven);
+
         let dropped = driven.read(|root, cx| root.library.read(cx).held_tracks(&ids[..1]));
 
         driven.root.update(&mut driven.cx, |root, cx| {
             let drawn = root.library.read(cx).playlist_as_drawn();
+
             moved_behind_the_window(root, playlist, cx);
             root.landed(
                 &dropped,
@@ -5164,6 +5665,7 @@ mod tests {
         let folder = Folder::new();
         let (mut driven, ids) = a_playlist_of_five_songs_opened(cx, &folder);
         let playlist = opened_playlist(&mut driven);
+
         let carried = driven.read(|root, cx| crate::views::reorder::Carried {
             shift: Shift::Playlist(playlist),
             rows: crate::views::reorder::Chosen::of(Span::one(0)),
@@ -5216,8 +5718,10 @@ mod tests {
 
         driven.click_with(named("entry", 0), HELD_TO_CHOOSE_APART);
         driven.click_with(named("entry", 2), HELD_TO_CHOOSE_APART);
+
         let from = driven.centre_of(named("entry", 0));
         let onto = driven.centre_of(named("entry", 4));
+
         driven.drag(from, onto);
         driven.until(|root, cx| {
             root.library
@@ -5275,7 +5779,9 @@ mod tests {
 
     fn searched_for_echoes(driven: &mut Driven) {
         driven.click("tab-tracks");
+
         let model = driven.read(|root, _| root.library.clone());
+
         driven.cx.update(|_, cx| {
             model.update(cx, |library, cx| library.set_query("echoes".to_owned(), cx));
         });
@@ -5286,14 +5792,20 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         for title in ["Echoes One", "Echoes Two", "Echoes Three"] {
             folder.tagged(&format!("{title}.wav"), 1, &[(b"INAM", title)]);
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         searched_for_echoes(&mut driven);
         driven.until(|root, cx| root.library.read(cx).listing().len() == 3);
+
         let ids = listed_ids(&mut driven);
 
         driven.click_with(named("track", ids[0].get()), HELD_TO_CHOOSE_APART);
@@ -5314,6 +5826,7 @@ mod tests {
     #[gpui::test]
     fn the_keys_choose_top_results_songs_and_never_an_artist_or_an_album(cx: &mut TestAppContext) {
         let folder = Folder::new();
+
         for title in ["Echoes One", "Echoes Two"] {
             folder.tagged(
                 &format!("{title}.wav"),
@@ -5321,9 +5834,13 @@ mod tests {
                 &[(b"INAM", title), (b"IART", "Echoes"), (b"IPRD", "Echoes")],
             );
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         searched_for_echoes(&mut driven);
         driven.until(|root, cx| {
             let library = root.library.read(cx);
@@ -5356,9 +5873,12 @@ mod tests {
     ) {
         let folder = Folder::new();
         let (library, held) = three_playlists_of_a_song_each(&folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-playlists");
         driven.until(|root, cx| root.library.read(cx).playlists().len() == 3);
+
         let listed = driven.read(|root, cx| root.library.read(cx).saved_playlists());
 
         driven.click_with(named("playlist", listed[0].id.get()), HELD_TO_CHOOSE_APART);
@@ -5386,11 +5906,15 @@ mod tests {
     #[gpui::test]
     fn opening_an_album_lets_go_of_the_row_reached_in_the_listing_before(cx: &mut TestAppContext) {
         let folder = Folder::new();
+
         folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
         folder.tagged("two.wav", 1, &[(b"INAM", "Two"), (b"IPRD", "Meddle")]);
         folder.tagged("three.wav", 1, &[(b"INAM", "Three"), (b"IPRD", "Other")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
@@ -5398,13 +5922,16 @@ mod tests {
             .find_map(|track| track.album_id)
             .expect("an album the tags named");
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
 
         reached_in_the_tracks(&mut driven, 2);
+
         assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::one(2)));
 
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.opened(Selection::Album(album), cx));
         });
@@ -5419,12 +5946,16 @@ mod tests {
     ) {
         let folder = Folder::new();
         let library = scanned_catalog(&folder, &["Echoes", "Money", "Time"]);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
 
         reached_in_the_tracks(&mut driven, 1);
+
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.library
@@ -5432,6 +5963,7 @@ mod tests {
             });
         });
         driven.settle();
+
         assert_eq!(reach_in_the_tracks(&mut driven), None);
 
         reached_in_the_tracks(&mut driven, 1);
@@ -5443,10 +5975,12 @@ mod tests {
             });
         });
         driven.settle();
+
         assert_eq!(reach_in_the_tracks(&mut driven), None);
 
         reached_in_the_tracks(&mut driven, 1);
         driven.settle();
+
         assert_eq!(reach_in_the_tracks(&mut driven), Some(Span::one(1)));
     }
 
@@ -5471,27 +6005,33 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.cx.simulate_keystrokes("secondary-f");
         driven.settle();
+
         let lit =
             |driven: &mut Driven| driven.read(|root, cx| root.typed.search.read(cx).caret_is_lit());
         let mut seen_dark = false;
+
         for _ in 0..40 {
             driven.cx.executor().advance_clock(FRAME * 4);
             driven.settle();
             seen_dark |= !lit(&mut driven);
         }
+
         assert!(seen_dark, "the caret never blinked");
 
         let caret = driven
             .cx
             .update(|_, cx| cx.global::<ResonateApp>().caret.clone());
+
         caret.steady();
         driven.cx.executor().advance_clock(Duration::from_secs(2));
         driven.settle();
         for _ in 0..40 {
             driven.cx.executor().advance_clock(FRAME * 4);
             driven.settle();
+
             assert!(
                 lit(&mut driven),
                 "a caret the desktop holds still went dark"
@@ -5502,31 +6042,40 @@ mod tests {
     #[gpui::test]
     fn the_way_back_and_forward_crosses_from_one_category_to_another(cx: &mut TestAppContext) {
         let folder = Folder::new();
+
         folder.tagged("01.wav", 1, &[(b"INAM", "Echoes"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.click("tab-albums");
         driven.click("tab-artists");
+
         let root = driven.root.clone();
 
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
         driven.settle();
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
 
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
         driven.settle();
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Tracks);
 
         driven
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.go_forward(cx)));
         driven.settle();
+
         assert_eq!(driven.read(|root, _| root.pane), Pane::Albums);
         assert_eq!(
             driven.read(|root, _| root.titled.as_ref().map(ToString::to_string)),
@@ -5540,6 +6089,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged(
             "01.wav",
             1,
@@ -5549,8 +6099,11 @@ mod tests {
                 (b"IART", "Pink Floyd"),
             ],
         );
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let track = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
@@ -5558,6 +6111,7 @@ mod tests {
         let album = crate::Selection::Album(track.album_id.expect("an album the tags named"));
         let artist = crate::Selection::Artist(track.artist_id.expect("an artist the tags named"));
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let root = driven.root.clone();
         let standing = |driven: &mut Driven| {
             driven.read(|root, cx| (root.in_front(cx), root.library.read(cx).selection()))
@@ -5568,6 +6122,7 @@ mod tests {
                 .update(|_, cx| root.update(cx, |root, cx| root.step_back(cx)));
             driven.settle();
         };
+
         driven.click("tab-albums");
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.opened(album, cx));
@@ -5579,18 +6134,27 @@ mod tests {
         driven.settle();
 
         stepped_back(&mut driven);
+
         let followed_back = standing(&mut driven);
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.opened(artist, cx));
         });
         driven.settle();
         driven.click("tab-albums");
+
         let pressed = standing(&mut driven);
+
         stepped_back(&mut driven);
+
         let within_the_tab = standing(&mut driven);
+
         stepped_back(&mut driven);
+
         let at_its_top = standing(&mut driven);
+
         stepped_back(&mut driven);
+
         let stays = standing(&mut driven);
 
         assert_eq!(
@@ -5607,6 +6171,7 @@ mod tests {
             .cx
             .update(|_, cx| root.update(cx, |root, cx| root.go_back(cx)));
         driven.settle();
+
         assert_ne!(
             standing(&mut driven).0,
             Pane::Albums,
@@ -5639,6 +6204,7 @@ mod tests {
 
     fn eighty_tracks_scrolled(cx: &mut TestAppContext) -> (Driven, Pixels) {
         let folder = Folder::new();
+
         for nth in 0..80 {
             folder.tagged(
                 &format!("{nth:02}.wav"),
@@ -5646,15 +6212,23 @@ mod tests {
                 &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
             );
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 80);
+
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
+
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
+
         let left_at = track_rows_offset(&mut driven);
+
         assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
 
         (driven, left_at)
@@ -5668,13 +6242,16 @@ mod tests {
         driven.cx.simulate_input("track 7");
         driven.settle();
         driven.click("search-songs");
+
         let base = track_rows(&mut driven).0.borrow().base_handle.clone();
+
         base.set_offset(point(px(0.0), px(0.0)));
         driven.cx.simulate_keystrokes("escape");
         driven.until(|root, _| root.landing_on.is_none());
         driven.settle();
 
         let landed = track_rows_offset(&mut driven);
+
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "clearing the search landed at {landed:?} where the list was left at {left_at:?}"
@@ -5693,6 +6270,7 @@ mod tests {
         driven.settle();
 
         let landed = track_rows_offset(&mut driven);
+
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "the tracks came back at {landed:?} where they were left at {left_at:?}"
@@ -5704,6 +6282,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         for nth in 0..80 {
             folder.tagged(
                 &format!("{nth:02}.wav"),
@@ -5711,8 +6290,11 @@ mod tests {
                 &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
             );
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let cuts: Vec<_> = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")
@@ -5720,13 +6302,17 @@ mod tests {
             .map(resonate_library::Cut::of)
             .collect();
         let long = library.create_playlist("Long").expect("a playlist");
+
         library
             .add_to_playlist(long, &cuts)
             .expect("the rows put in");
+
         let other = library.create_playlist("Other").expect("a playlist");
+
         library
             .add_to_playlist(other, &cuts)
             .expect("the rows put in");
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let open = |driven: &mut Driven, playlist| {
             driven.root.update(&mut driven.cx, |root, cx| {
@@ -5738,10 +6324,14 @@ mod tests {
         };
 
         open(&mut driven, long);
+
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
+
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
+
         let left_at = offset_of(&playlist_rows(&mut driven));
+
         assert!(
             left_at < px(-500.0),
             "the playlist did not scroll: {left_at:?}"
@@ -5755,6 +6345,7 @@ mod tests {
         open(&mut driven, long);
 
         let landed = offset_of(&playlist_rows(&mut driven));
+
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "the playlist came back at {landed:?} where it was left at {left_at:?}"
@@ -5776,9 +6367,11 @@ mod tests {
             .map(resonate_library::Cut::of)
             .collect();
         let kept = library.create_playlist("Kept").expect("a playlist");
+
         library
             .add_to_playlist(kept, &cuts)
             .expect("the rows put in");
+
         let other = library.create_playlist("Other").expect("a playlist");
         let mut driven = Driven::opened_in(cx, library, &folder);
         let titles = |driven: &mut Driven| -> Vec<String> {
@@ -5848,6 +6441,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         for title in ["Echoes", "Money", "Time"] {
             folder.tagged(
                 &format!("{title}.wav"),
@@ -5855,10 +6449,14 @@ mod tests {
                 &[(b"INAM", title), (b"IPRD", "Meddle")],
             );
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
         let tracks = Shift::Listing(Listed::Tracks);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 3);
 
@@ -5897,6 +6495,7 @@ mod tests {
     #[gpui::test]
     fn the_way_back_lands_on_the_pixel_the_list_was_left_at(cx: &mut TestAppContext) {
         let folder = Folder::new();
+
         for nth in 0..80 {
             folder.tagged(
                 &format!("{nth:02}.wav"),
@@ -5904,23 +6503,32 @@ mod tests {
                 &[(b"INAM", &format!("Track {nth}")), (b"IPRD", "Meddle")],
             );
         }
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
             .album_id
             .expect("an album the tags named");
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         driven.click("tab-tracks");
         driven.until(|root, cx| root.library.read(cx).tracks_counted() == 80);
+
         let middle = point(px(WIDE * 0.6), px(TALL * 0.5));
+
         driven.scroll_at(middle, 1_000.0);
         driven.scroll_at(middle, 37.0);
+
         let left_at = track_rows_offset(&mut driven);
+
         assert!(left_at < px(-500.0), "the list did not scroll: {left_at:?}");
 
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.opened(crate::Selection::Album(album), cx);
@@ -5934,6 +6542,7 @@ mod tests {
         driven.settle();
 
         let landed = track_rows_offset(&mut driven);
+
         assert!(
             (f32::from(landed) - f32::from(left_at)).abs() < 1.0,
             "the way back landed at {landed:?} where the list was left at {left_at:?}"
@@ -5945,9 +6554,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("one.wav", 1, &[(b"INAM", "One"), (b"IPRD", "Meddle")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
@@ -5956,18 +6569,21 @@ mod tests {
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
 
         let root = driven.root.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| {
                 root.opened(crate::Selection::Album(album), cx);
             });
         });
         driven.settle();
+
         assert_eq!(
             driven.read(|root, cx| root.library.read(cx).selection()),
             crate::Selection::Album(album)
         );
 
         let roots = library.roots().expect("the roots read");
+
         for held in roots {
             library.remove_root(&held).expect("the root is forgotten");
         }
@@ -5995,7 +6611,9 @@ mod tests {
             .iter()
             .map(|album| album.title.clone())
             .collect();
+
         records.sort();
+
         let totals = around.totals;
 
         Some(ArtistShelf {
@@ -6073,6 +6691,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         air_and_beck(&folder);
         folder.tagged(
             "four.wav",
@@ -6083,8 +6702,11 @@ mod tests {
                 (b"IPRD", "Talkie Walkie"),
             ],
         );
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let air = the_artist_named(&library, "Air");
         let mut driven = Driven::opened_in(cx, library, &folder);
 
@@ -6116,12 +6738,18 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         air_and_beck(&folder);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let air = the_artist_named(&library, "Air");
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         open_the_artist(&mut driven, air);
+
         let opened = artist_shelf(&mut driven);
 
         driven.click("tab-albums");
@@ -6143,11 +6771,16 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         air_and_beck(&folder);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let air = the_artist_named(&library, "Air");
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
+
         open_the_artist(&mut driven, air);
 
         assert_eq!(
@@ -6189,6 +6822,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged(
             "echoes.wav",
             1,
@@ -6198,24 +6832,31 @@ mod tests {
                 (b"IPRD", "Meddle"),
             ],
         );
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let mut driven = Driven::opened_in(cx, library, &folder);
+
         let model = driven.read(|root, _| root.library.clone());
         let search = |driven: &mut Driven, typed: &str| {
             let typed = typed.to_owned();
+
             driven.cx.update(|_, cx| {
                 model.update(cx, |library, cx| library.set_query(typed, cx));
             });
             driven.cx.executor().advance_clock(Duration::from_secs(1));
             driven.settle();
         };
+
         driven.click("tab-tracks");
 
         search(&mut driven, "floid");
         driven.until(|root, cx| instead_of(root, cx).is_some());
 
         assert_eq!(spelled_instead(&mut driven), Some("Floyd".to_owned()));
+
         driven.until_drawn("search-instead");
 
         driven.click("tab-statistics");
@@ -6234,6 +6875,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged(
             "echoes.wav",
             1,
@@ -6243,8 +6885,11 @@ mod tests {
                 (b"IPRD", "Meddle"),
             ],
         );
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let album = library
             .tracks(&resonate_library::TrackQuery::default())
             .expect("the scanned tracks")[0]
@@ -6262,6 +6907,7 @@ mod tests {
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             },
         );
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.opened(Selection::Album(album), cx);
         });
@@ -6346,6 +6992,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.click("tab-settings");
         driven.click("category-Accounts");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).listenbrainz.clone());
@@ -6354,6 +7001,7 @@ mod tests {
         driven.settle();
 
         let (searched, token, _) = texts(&mut driven);
+
         assert_eq!(token, "token");
         assert_eq!(searched, "", "the token was typed into the search as well");
     }
@@ -6408,14 +7056,17 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|global, _| {
                 global.scrobblers = Some(Arc::new(AllowedOnLastfm));
                 global.online.enabled = true;
             });
         });
+
         let session =
             |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
+
         driven.click("tab-settings");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("last.fm");
@@ -6458,14 +7109,17 @@ mod tests {
     #[gpui::test]
     fn a_last_fm_sign_in_refused_is_told_and_can_be_asked_again_at_once(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|global, _| {
                 global.scrobblers = Some(Arc::new(AllowedOnLastfm));
                 global.online.enabled = true;
             });
         });
+
         let session =
             |_: &RootView, cx: &gpui::App| cx.global::<ResonateApp>().online.lastfm_session.clone();
+
         driven.click("tab-settings");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("last.fm");
@@ -6539,9 +7193,13 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let folder = Folder::new();
+
         folder.tagged("First.wav", 1, &[(b"INAM", "First"), (b"IART", "Singer")]);
+
         let library = catalog();
+
         Driven::scanned(&library, &folder);
+
         let (resume, resumed) = crossbeam_channel::bounded(1);
         let recordings = Arc::new(PausedRecordings {
             waiting: AtomicBool::new(false),
@@ -6559,6 +7217,7 @@ mod tests {
                 register: Arc::new(|_: &Supplying<'_>| Providers::none()),
             },
         );
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library.update(cx, |model, cx| {
                 model.set_after_scan(true, cx);
@@ -6566,7 +7225,9 @@ mod tests {
             });
         });
         driven.until(|_, _| recordings.waiting.load(Ordering::SeqCst));
+
         let added = folder.tagged("Second.wav", 1, &[(b"INAM", "Second"), (b"IART", "Singer")]);
+
         driven.root.update(&mut driven.cx, |root, cx| {
             root.library.update(cx, |model, cx| model.rescan(cx));
         });
@@ -6576,11 +7237,13 @@ mod tests {
                     .track_at(&added, None)
                     .is_ok_and(|track| track.is_some())
         });
+
         let track = library
             .track_at(&added, None)
             .expect("the new song")
             .expect("a row")
             .id;
+
         assert!(
             library
                 .track_to_ask(track)
@@ -6589,6 +7252,7 @@ mod tests {
                 .mbid
                 .is_none()
         );
+
         resume.send(()).expect("the lookup released");
         driven.until(|root, cx| {
             !root.library.read(cx).is_enriching()
@@ -6645,6 +7309,7 @@ mod tests {
             let Some(recordings) = &self.recordings else {
                 return Ok(Vec::new());
             };
+
             if !recordings.waiting.swap(true, Ordering::SeqCst) {
                 recordings
                     .resume
@@ -6837,6 +7502,7 @@ mod tests {
         let mut driven = Driven::open(cx, library);
         let asked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
         let hearing = Arc::clone(&asked);
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(move |global, _| {
                 global.online.enabled = true;
@@ -6853,6 +7519,7 @@ mod tests {
 
         driven.click("youtube-music-check");
         driven.settle();
+
         assert!(asked.lock().is_empty(), "while off nothing is asked");
 
         driven.click("youtube-music-track");
@@ -6862,12 +7529,16 @@ mod tests {
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
         driven.click("youtube-music-check");
+
         let heard = Arc::clone(&asked);
+
         driven.until(move |_, _| !heard.lock().is_empty());
 
         assert_eq!(*asked.lock(), ["firefox"]);
+
         driven.cx.update(|_, cx| {
             let online = &cx.global::<ResonateApp>().online;
+
             assert!(online.youtube_music);
             assert_eq!(online.youtube_music_cookies, "firefox");
         });
@@ -6915,6 +7586,7 @@ mod tests {
     fn jellyfin_shown(cx: &mut TestAppContext, signs_in: Arc<QuickConnectsOnce>) -> Driven {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
         let mut driven = Driven::open(cx, library);
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(move |global, _| {
                 global.online.enabled = true;
@@ -6949,13 +7621,16 @@ mod tests {
 
         assert_eq!(*signs_in.asked.lock(), ["http://music.local:8096"]);
         assert_eq!(*signs_in.awaited.lock(), ["123456"]);
+
         driven.cx.update(|_, cx| {
             let online = &cx.global::<ResonateApp>().online;
+
             assert_eq!(online.jellyfin_user_id, "0a1b");
             assert_eq!(online.jellyfin_device, "device-1");
             assert_eq!(online.jellyfin_user, "listener");
             assert!(online.jellyfin_password.is_empty());
         });
+
         assert_eq!(
             driven.read(|root, cx| root.settings_fields.read(cx).jellyfin[2]
                 .read(cx)
@@ -6985,6 +7660,7 @@ mod tests {
 
         driven.cx.update(|_, cx| {
             let online = &cx.global::<ResonateApp>().online;
+
             assert!(online.jellyfin_token.is_empty());
             assert_eq!(online.jellyfin_password, "sesame");
         });
@@ -7014,6 +7690,7 @@ mod tests {
             crate::JellyfinSignIn::Stopped,
         );
         let mut driven = jellyfin_shown(cx, signs_in);
+
         let stopped = driven.cx.update(|_, cx| {
             driven.root.update(cx, |root, cx| {
                 let stopping = root.settings_pane.update(cx, |pane, _| {
@@ -7022,10 +7699,12 @@ mod tests {
                         .shown_waiting("123456".to_owned());
                     pane.accounts.jellyfin_quick.stopping()
                 });
+
                 cx.notify();
                 stopping
             })
         });
+
         driven.settle();
 
         assert!(
@@ -7034,6 +7713,7 @@ mod tests {
                 .debug_bounds("jellyfin-quick-connect-code")
                 .is_some()
         );
+
         driven.click("jellyfin-quick-connect-cancel");
 
         assert!(stopped.load(std::sync::atomic::Ordering::SeqCst));
@@ -7052,6 +7732,7 @@ mod tests {
             crate::JellyfinSignIn::SignedIn(a_session()),
         );
         let mut driven = jellyfin_shown(cx, signs_in);
+
         driven.click("jellyfin-quick-connect");
         driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
 
@@ -7062,6 +7743,7 @@ mod tests {
 
         driven.cx.update(|_, cx| {
             let online = &cx.global::<ResonateApp>().online;
+
             assert!(online.jellyfin_token.is_empty());
             assert!(online.jellyfin_device.is_empty());
             assert_eq!(online.jellyfin_password, "another");
@@ -7116,6 +7798,7 @@ mod tests {
     ) -> Driven {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
         let mut driven = Driven::open(cx, library);
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(move |global, _| {
                 global.online.enabled = true;
@@ -7142,10 +7825,13 @@ mod tests {
             cookies: "/data/resonate/youtube-music-cookies.txt".to_owned(),
         });
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
 
         driven.click("youtube-music-sign-in");
+
         let heard = Arc::clone(&checked);
+
         driven.until(move |_, _| !heard.lock().is_empty());
 
         assert_eq!(signs_in.asked.load(std::sync::atomic::Ordering::SeqCst), 1);
@@ -7153,12 +7839,14 @@ mod tests {
             *checked.lock(),
             ["/data/resonate/youtube-music-cookies.txt"]
         );
+
         driven.cx.update(|_, cx| {
             assert_eq!(
                 cx.global::<ResonateApp>().online.youtube_music_cookies,
                 "/data/resonate/youtube-music-cookies.txt"
             );
         });
+
         assert_eq!(
             driven.read(|root, cx| root.settings_fields.read(cx).youtube_music[0]
                 .read(cx)
@@ -7172,7 +7860,9 @@ mod tests {
     fn a_sign_in_closed_keeps_the_browser_the_settings_named(cx: &mut TestAppContext) {
         let signs_in = SignsInToYoutubeOnce::answering(crate::YoutubeMusicSignIn::Closed);
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+
         driven.focus_on(|root, cx| root.settings_fields.read(cx).youtube_music[0].clone());
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
@@ -7182,6 +7872,7 @@ mod tests {
         driven.until_said(|said| said.contains("nothing kept"));
 
         assert!(checked.lock().is_empty());
+
         driven.cx.update(|_, cx| {
             assert_eq!(
                 cx.global::<ResonateApp>().online.youtube_music_cookies,
@@ -7196,15 +7887,20 @@ mod tests {
             cookies: "/data/resonate/youtube-music-cookies.txt".to_owned(),
         });
         let checked: Arc<parking_lot::Mutex<Vec<String>>> = Arc::default();
+
         let mut driven = youtube_music_shown(cx, Some(Arc::clone(&signs_in)), Arc::clone(&checked));
+
         driven.focus_on(|root, cx| root.settings_fields.read(cx).youtube_music[0].clone());
         driven.cx.simulate_input("firefox");
         driven.cx.simulate_keystrokes("enter");
         driven.settle();
+
         assert!(driven.cx.debug_bounds("youtube-music-sign-out").is_none());
 
         driven.click("youtube-music-sign-in");
+
         let heard = Arc::clone(&checked);
+
         driven.until(move |_, _| !heard.lock().is_empty());
         driven.settle();
         driven.click("youtube-music-sign-out");
@@ -7220,7 +7916,9 @@ mod tests {
                 .signed_out
                 .load(std::sync::atomic::Ordering::SeqCst)
         );
+
         driven.settle();
+
         assert!(driven.cx.debug_bounds("youtube-music-sign-out").is_none());
     }
 
@@ -7246,6 +7944,7 @@ mod tests {
         let library = Arc::new(Library::open_in_memory().expect("a catalog in memory"));
         let folder = Folder::new();
         let signs_in = Arc::new(SignsInOnce::default());
+
         let mut driven = Driven::reaching(
             cx,
             Arc::clone(&library),
@@ -7260,8 +7959,10 @@ mod tests {
                 }),
             },
         );
+
         driven.cx.update(|_, cx| {
             let given = Arc::clone(&signs_in);
+
             cx.update_global::<ResonateApp, _>(move |global, _| {
                 global.spotify = Some(given);
                 global.online.enabled = true;
@@ -7276,6 +7977,7 @@ mod tests {
             root.sign_in_to_spotify(cx);
         });
         driven.settle();
+
         assert!(
             signs_in.asked.lock().is_empty(),
             "with no client ID nothing is asked"
@@ -7292,10 +7994,13 @@ mod tests {
                 .spotify_refresh_token
                 .is_empty()
         });
+
         assert_eq!(*signs_in.asked.lock(), ["registered"]);
 
         driven.click("spotify-follow");
+
         let followed = Arc::clone(&library);
+
         driven.until(move |_, _| {
             !followed
                 .profiles_followed()
@@ -7303,14 +8008,18 @@ mod tests {
                 .is_empty()
         });
         driven.settle();
+
         let kept = library.playlists_kept_in_step().expect("the catalog reads");
+
         assert_eq!(kept.len(), 1);
         assert_eq!(kept[0].1.link, resonate_library::PlaylistLink::SpotifyLiked);
 
         driven.click("tab-settings");
         driven.settle();
         driven.click("spotify-sign-out");
+
         let let_go = Arc::clone(&library);
+
         driven.until(move |_, _| {
             let_go
                 .profiles_followed()
@@ -7318,6 +8027,7 @@ mod tests {
                 .is_empty()
         });
         driven.settle();
+
         assert!(
             library
                 .playlists_kept_in_step()
@@ -7382,6 +8092,7 @@ mod tests {
                 .expect("the catalog reads")
         };
         let mut driven = Driven::open(cx, Arc::clone(&library));
+
         driven.click("tab-settings");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("listenbrainz token");
@@ -7420,6 +8131,7 @@ mod tests {
             &Folder::new(),
             Corrected::uncorrected().and(Arc::new(measuring)),
         );
+
         driven.click("tab-settings");
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
@@ -7427,6 +8139,7 @@ mod tests {
         driven.focus_on(|root, cx| root.settings_fields.read(cx).looking.clone());
         driven.cx.simulate_input("hd 650");
         driven.settle();
+
         let before = texts(&mut driven);
 
         driven.cx.simulate_keystrokes("escape");
@@ -7434,6 +8147,7 @@ mod tests {
 
         let (searched, _, looked_for) = texts(&mut driven);
         let pane = driven.read(|root, _| root.pane);
+
         assert_eq!(before.2, "hd 650");
         assert_eq!(looked_for, "", "escape left the AutoEq search as it was");
         assert_eq!(searched, "");
@@ -7460,6 +8174,7 @@ mod tests {
             })
         };
         let mut driven = Driven::open(cx, catalog());
+
         driven.click("tab-settings");
         driven.click("category-Equaliser");
         driven.scroll("settings", 6000.0);
@@ -7504,6 +8219,7 @@ mod tests {
                 sink_named(2, "alsa_output.usb", "USB DAC", false),
             ],
         );
+
         driven.until(|root, cx| root.player.read(cx).sinks().len() == 2);
         driven.click("tab-settings");
         driven.click("category-Equaliser");
@@ -7516,6 +8232,7 @@ mod tests {
         pressed_in_the_menu(&mut driven, "crinacle");
 
         let (measurers, for_the_desk) = worn(&mut driven);
+
         assert_eq!(measurers.fallback.as_deref(), Some("rtings"));
         assert_eq!(measurers.of_the_device(&desk), Some("crinacle"));
         assert_eq!(measurers.by_sink.len(), 1);
@@ -7525,6 +8242,7 @@ mod tests {
         pressed_in_the_menu(&mut driven, "As for the rest");
 
         let (measurers, for_the_desk) = worn(&mut driven);
+
         assert_eq!(measurers.fallback.as_deref(), Some("rtings"));
         assert!(measurers.by_sink.is_empty());
         assert_eq!(for_the_desk.as_deref(), Some("rtings"));
@@ -7544,6 +8262,7 @@ mod tests {
             })
         };
         let mut driven = Driven::open(cx, catalog());
+
         driven.click("tab-settings");
         driven.focus_on(|root, cx| root.settings_fields.read(cx).finding.clone());
         driven.cx.simulate_input("listened");
@@ -7577,11 +8296,14 @@ mod tests {
         let folder = Folder::new();
         let library = catalog();
         let music = folder.path().join("music");
+
         fs::create_dir_all(&music).expect("a folder to forget");
         library.add_root(&music).expect("the root is added");
+
         let mut driven = Driven::opened_in(cx, Arc::clone(&library), &folder);
         let forget: &'static str =
             Box::leak(format!("{}-forget", music.display()).into_boxed_str());
+
         driven.click("tab-settings");
         driven.click("category-Library");
 
@@ -7599,18 +8321,22 @@ mod tests {
         driven.click(forget);
 
         driven.until(|_, _| library.roots().expect("the roots read").is_empty());
+
         assert_eq!(driven.read(|root, cx| root.folder_armed(cx).cloned()), None);
     }
 
     #[gpui::test]
     fn the_wheel_scrolls_the_settings_body(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.click("tab-settings");
+
         let before = driven.read(|root, cx| root.settings_pane.read(cx).shown.scroll.offset().y);
 
         driven.scroll("settings", 400.0);
 
         let after = driven.read(|root, cx| root.settings_pane.read(cx).shown.scroll.offset().y);
+
         assert!(
             after < before,
             "the body did not scroll: {before:?} to {after:?}"
@@ -7620,10 +8346,13 @@ mod tests {
     #[gpui::test]
     fn the_reduce_motion_switch_reaches_gpui_and_the_app_global(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Appearance);
+
         assert!(!driven.read(|_, cx| cx.reduce_motion()));
 
         let track = named("reduce-motion", "track");
+
         driven.click(track);
         driven.until(|_, cx| cx.reduce_motion());
 
@@ -7642,8 +8371,10 @@ mod tests {
         use resonate_words::{Language, LanguageChoice};
 
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Appearance);
         driven.cx.update(|_, cx| cx.set_menus(Vec::new()));
+
         assert!(
             driven
                 .read(|_, cx| cx.get_menus())
@@ -7676,7 +8407,9 @@ mod tests {
             .expect("Germany offered");
 
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Appearance);
+
         let recorded = recording_what_is_stored(&mut driven);
 
         driven.click(named("region", at));
@@ -7689,11 +8422,13 @@ mod tests {
         );
 
         let deadline = Instant::now() + PATIENCE;
+
         while !recorded.lock().iter().any(|change| {
             *change
                 == crate::settings::SettingChange::Store(crate::settings::Setting::Region(german))
         }) {
             assert!(Instant::now() < deadline, "the region was never kept");
+
             driven.settle();
             thread::sleep(FRAME);
         }
@@ -7714,6 +8449,7 @@ mod tests {
         use resonate_words::LanguageChoice;
 
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Appearance);
         driven.cx.update(|_, cx| cx.set_menus(Vec::new()));
 
@@ -7736,6 +8472,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         driven.wearing_alone();
 
         let (kept, worn) = driven.root.update(&mut driven.cx, |root, cx| {
@@ -7743,10 +8480,14 @@ mod tests {
                 ground: Some(Ground::Light),
                 text_scale: Some(1.5),
             });
+
             let worn = theme::worn();
+
             root.follow_the_desktop_scheme(false, cx);
             root.follow_the_desktop_text_size(false, cx);
+
             let kept = theme::chosen();
+
             theme::hear_the_desktop(DesktopLook::default());
             (kept, worn)
         });
@@ -7768,7 +8509,9 @@ mod tests {
         let folder = Folder::new();
         let files = [folder.tone("one.wav", 5)];
         let mut driven = Driven::opened_in(cx, catalog(), &folder);
+
         driven.play(&files);
+
         let root = driven.root.clone();
         let named_now = |driven: &mut Driven| {
             driven
@@ -7783,6 +8526,7 @@ mod tests {
         );
 
         let caption = named_now(&mut driven).expect("the focused button is named");
+
         assert!(caption.contains("Next"), "the caption reads {caption:?}");
 
         driven.click("tab-tracks");
@@ -7796,18 +8540,22 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         assert!(!driven.read(|root, _| root.listening_open));
 
         driven.click("listen");
+
         assert!(driven.read(|root, _| root.listening_open));
 
         driven.click("listen-microphone");
+
         assert_eq!(
             driven.read(|root, cx| root.listen.read(cx).from().clone()),
             Listening::Microphone(None)
         );
 
         let listen = driven.read(|root, _| root.listen.clone());
+
         driven.cx.update(|_, cx| {
             listen.update(cx, |listen, cx| {
                 listen.hearing_of(vec![
@@ -7818,6 +8566,7 @@ mod tests {
             });
         });
         driven.click("listen-microphone-choice-1");
+
         assert_eq!(
             driven.read(|root, cx| root.listen.read(cx).from().clone()),
             Listening::Microphone(Some(resonate_engine::NodeName::new("alsa_input.headset")))
@@ -7825,6 +8574,7 @@ mod tests {
 
         if resonate_listen::desktop_is_heard() {
             driven.click("listen-desktop");
+
             assert_eq!(
                 driven.read(|root, cx| root.listen.read(cx).from().clone()),
                 Listening::Desktop
@@ -7832,8 +8582,11 @@ mod tests {
         }
 
         driven.click("listen-keep-track");
+
         assert!(driven.read(|root, cx| root.listen.read(cx).keeps_listening()));
+
         driven.click("listen-keep-track");
+
         assert!(!driven.read(|root, cx| root.listen.read(cx).keeps_listening()));
     }
 
@@ -7855,6 +8608,7 @@ mod tests {
         let before = driven.read(|root, cx| read(root.player.read(cx).output_settings()));
 
         let track = named(id, "track");
+
         driven.click(track);
         driven.until(|root, cx| read(root.player.read(cx).output_settings()) != before);
         driven.click(track);
@@ -7873,6 +8627,7 @@ mod tests {
 
         let trim = |millibels| Trim::from_millibels(millibels).expect("a trim");
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Processing);
 
         for (index, held) in [
@@ -7954,6 +8709,7 @@ mod tests {
                 settings.levelling.untagged == trim(millibels)
             });
         }
+
         assert_eq!(
             driven.read(|root, cx| root.player.read(cx).output_settings().levelling),
             Levelling {
@@ -7985,6 +8741,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings_page(&mut driven, crate::views::settings::Page::RoomCorrection);
         for _ in 0..60 {
             let in_reach = driven
@@ -7993,6 +8750,7 @@ mod tests {
                 .is_some_and(|bounds| {
                     bounds.center().y > px(150.0) && bounds.center().y < px(500.0)
                 });
+
             if in_reach {
                 break;
             }
@@ -8009,6 +8767,7 @@ mod tests {
             let in_reach = driven.cx.debug_bounds(id).is_some_and(|bounds| {
                 bounds.center().y > px(150.0) && bounds.center().y < px(500.0)
             });
+
             if in_reach {
                 return;
             }
@@ -8021,6 +8780,7 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings_page(&mut driven, crate::views::settings::Page::RoomCorrection);
         scrolled_to(&mut driven, "speaker-angle-more");
 
@@ -8072,6 +8832,7 @@ mod tests {
         }
 
         let mut driven = Driven::open(cx, catalog());
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|app, _| app.measures = Some(Arc::new(Flat)));
         });
@@ -8107,6 +8868,7 @@ mod tests {
                     calibration.map_or(0, |response| response.points().len()),
                     std::sync::atomic::Ordering::Relaxed,
                 );
+
                 let points = (0..60)
                     .map(|step| resonate_eq::Point {
                         hertz: 20.0 * 1.12_f64.powi(step),
@@ -8121,22 +8883,29 @@ mod tests {
             "resonate-ui-driven-calibration-{}",
             std::process::id()
         ));
+
         std::fs::create_dir_all(&folder).expect("a scratch folder");
+
         let microphone = folder.join("microphone.csv");
         let rows: String = (0..12)
             .map(|step| format!("{},0.5\n", 100 * (step + 1)))
             .collect();
+
         std::fs::write(&microphone, format!("frequency,raw\n{rows}")).expect("a calibration");
+
         let read = Arc::new(std::sync::atomic::AtomicUsize::new(0));
 
         let mut driven = Driven::open(cx, catalog());
         let rig = Arc::new(Remembers(read.clone()));
+
         driven.cx.update(|_, cx| {
             cx.update_global::<ResonateApp, _>(|app, _| app.measures = Some(rig));
         });
         showing_settings_page(&mut driven, crate::views::settings::Page::RoomMeasurement);
+
         let root = driven.root.clone();
         let chosen = microphone.clone();
+
         driven.cx.update(|_, cx| {
             root.update(cx, |root, cx| root.calibrate_with(Some(chosen), cx));
         });
@@ -8156,10 +8925,13 @@ mod tests {
                 .iter()
                 .any(|name| name.as_str() == "Bedroom")
         });
+
         let held = read.load(std::sync::atomic::Ordering::Relaxed);
+
         scrolled_to(&mut driven, "measure-calibration-forget");
         driven.click("measure-calibration-forget");
         driven.until(|root, cx| root.equaliser.read(cx).calibration().is_none());
+
         let _ = std::fs::remove_dir_all(&folder);
 
         assert!(held >= 8, "{held}");
@@ -8168,6 +8940,7 @@ mod tests {
     #[gpui::test]
     fn every_choice_and_switch_of_the_output_category_reaches_the_engine(cx: &mut TestAppContext) {
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Output);
 
         pressed_until(&mut driven, "sample-rate", 1, |settings| {
@@ -8238,12 +9011,14 @@ mod tests {
                 sink_named(3, "bluez_output.buds", "Earbuds", false),
             ],
         );
+
         driven.until(|root, cx| root.player.read(cx).sinks().len() == 3);
         showing_settings(&mut driven, SettingsCategory::Output);
 
         let chosen = |driven: &mut Driven| {
             driven.read(|root, cx| root.player.read(cx).output_settings().sink.clone())
         };
+
         assert_eq!(chosen(&mut driven), None);
 
         for name in ["alsa_output.usb", "bluez_output.buds", "alsa_output.desk"] {
@@ -8264,11 +9039,15 @@ mod tests {
         if !Group::Bluetooth.is_offered() {
             return;
         }
+
         let mut driven = Driven::open(cx, catalog());
+
         showing_settings(&mut driven, SettingsCategory::Output);
+
         let wake = |driven: &mut Driven| {
             driven.read(|root, cx| root.player.read(cx).output_settings().bluetooth)
         };
+
         assert!(!wake(&mut driven).on);
 
         driven.click("bluetooth-wake-track");
@@ -8285,6 +9064,7 @@ mod tests {
                 settings.bluetooth.awake_for == Duration::from_secs(seconds)
             });
         }
+
         assert!(
             wake(&mut driven).on,
             "a choice under the switch turned it off"

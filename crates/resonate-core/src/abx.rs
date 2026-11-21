@@ -14,7 +14,7 @@ const FIRST_STEP: u64 = 0x9E37_79B9_7F4A_7C15;
 const SECOND_STEP: u64 = 0xBF58_476D_1CE4_E5B9;
 const THIRD_STEP: u64 = 0x94D0_49BB_1331_11EB;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Arm {
     A,
     B,
@@ -29,13 +29,13 @@ impl Arm {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum Verdict {
     Right,
     Wrong,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Trial {
     pub x: Arm,
     pub answered: Arm,
@@ -51,7 +51,7 @@ impl Trial {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq)]
 pub struct Score {
     pub right: usize,
     pub answered: usize,
@@ -83,8 +83,10 @@ pub fn binomial_tail(at_least: usize, of: usize) -> f64 {
     if at_least > of {
         return 0.0;
     }
+
     let ln_factorial = ln_factorials(of);
     let ln_half_pow = of as f64 * std::f64::consts::LN_2;
+
     let tail: f64 = (at_least..=of)
         .map(|hits| {
             (ln_factorial[of] - ln_factorial[hits] - ln_factorial[of - hits] - ln_half_pow).exp()
@@ -96,6 +98,7 @@ pub fn binomial_tail(at_least: usize, of: usize) -> f64 {
 fn ln_factorials(up_to: usize) -> Vec<f64> {
     let mut table = Vec::with_capacity(up_to + 1);
     let mut running = 0.0;
+
     table.push(running);
     for number in 1..=up_to {
         running += (number as f64).ln();
@@ -115,7 +118,9 @@ impl Session {
         if planned == 0 || planned > TRIALS_AT_MOST {
             return Err(Error::AbxTrialsOutOfRange(planned));
         }
+
         let mut state = seed;
+
         let drawn = (0..planned)
             .map(|_| {
                 if splitmix(&mut state) >> 63 == 0 {
@@ -146,6 +151,7 @@ impl Session {
     pub fn answer(&mut self, answered: Arm) -> Result<Verdict> {
         let x = self.x().ok_or(Error::AbxFinished)?;
         let trial = Trial { x, answered };
+
         self.trials.push(trial);
         Ok(trial.verdict())
     }
@@ -165,7 +171,9 @@ impl Session {
 
 fn splitmix(state: &mut u64) -> u64 {
     *state = state.wrapping_add(FIRST_STEP);
+
     let mut mixed = *state;
+
     mixed = (mixed ^ (mixed >> 30)).wrapping_mul(SECOND_STEP);
     mixed = (mixed ^ (mixed >> 27)).wrapping_mul(THIRD_STEP);
     mixed ^ (mixed >> 31)
@@ -179,6 +187,7 @@ pub fn mean_gain_db(profile: &Profile, rate: SampleRate) -> f64 {
         .fold((0.0, 0.0), |(power, weighed), (_, decibels)| {
             (power + 10.0_f64.powf(decibels / 10.0), weighed + 1.0)
         });
+
     if weighed == 0.0 {
         return 0.0;
     }
@@ -205,14 +214,18 @@ impl Arms {
         let lowered = louder_by.max(0.0);
 
         let mut a = chain.clone();
+
         a.set_preamp(levelling_preamp(chain.preamp().decibels() - lowered)?);
 
         let mut b = Profile::flat();
+
         b.set_preamp(levelling_preamp(louder_by.min(0.0))?);
 
         let a_gain_db = mean_gain_db(&a, rate);
         let b_gain_db = mean_gain_db(&b, rate);
+
         let apart = (a_gain_db - b_gain_db).abs();
+
         if apart > LEVELS_MATCHED_WITHIN_DB {
             return Err(Error::LevelsNotMatched {
                 millibels: (apart * 1_000.0).round() as i32,
@@ -299,11 +312,16 @@ mod tests {
         let mut session = Session::new(3, 1).expect("planned");
 
         let first_x = session.x().expect("a trial is due");
+
         assert_eq!(session.answer(first_x), Ok(Verdict::Right));
+
         let second_x = session.x().expect("a trial is due");
+
         assert_eq!(session.answer(second_x.other()), Ok(Verdict::Wrong));
         assert!(!session.is_finished());
+
         let third_x = session.x().expect("a trial is due");
+
         session.answer(third_x).expect("answered");
 
         assert!(session.is_finished());
@@ -344,6 +362,7 @@ mod tests {
     fn a_boosting_chain_is_lowered_to_the_level_of_its_bypass() {
         let chain = profile(0.0, vec![band(BandKind::Peaking, 1_000.0, 9.0)]);
         let rate = SampleRate::HZ_48000;
+
         assert!(mean_gain_db(&chain, rate) > 0.3);
 
         let arms = Arms::matched(&chain, rate).expect("matched");
@@ -396,6 +415,7 @@ mod tests {
                     ],
                 );
                 let arms = Arms::matched(&chain, rate).expect("matched");
+
                 assert!(arms.residual_db() <= LEVELS_MATCHED_WITHIN_DB);
             }
         }

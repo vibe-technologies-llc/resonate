@@ -9,7 +9,7 @@ const fn count(n: u8) -> ChannelCount {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct ChannelCount(NonZeroU8);
 
 impl ChannelCount {
@@ -38,7 +38,7 @@ impl fmt::Display for ChannelCount {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ChannelLayout {
     Mono,
     Stereo,
@@ -80,6 +80,7 @@ impl ChannelLayout {
         if places.is_empty() {
             return None;
         }
+
         let named = Self::NAMED
             .into_iter()
             .find(|named| Places::of(named.positions().iter().copied()).stands_for(places));
@@ -156,7 +157,7 @@ impl fmt::Display for ChannelLayout {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum ChannelPosition {
     FrontLeft,
     FrontRight,
@@ -192,7 +193,7 @@ const EVERY_SET_OF_PLACES: usize = 1 << ChannelPosition::IN_WAVE_ORDER.len();
 const REAR_PAIR: u16 = ChannelPosition::RearLeft.bit() | ChannelPosition::RearRight.bit();
 const SIDE_PAIR: u16 = ChannelPosition::SideLeft.bit() | ChannelPosition::SideRight.bit();
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Places(u16);
 
 impl Places {
@@ -263,8 +264,10 @@ const fn laid_in_wave_order() -> [Laid; EVERY_SET_OF_PLACES] {
         len: 0,
     }; EVERY_SET_OF_PLACES];
     let mut set = 0;
+
     while set < EVERY_SET_OF_PLACES {
         let mut place = 0;
+
         while place < ChannelPosition::IN_WAVE_ORDER.len() {
             if set & (1 << place) != 0 {
                 every[set].positions[every[set].len] = ChannelPosition::IN_WAVE_ORDER[place];
@@ -303,6 +306,7 @@ mod tests {
     #[test]
     fn from_count_round_trips_through_named_layouts() {
         let layout = ChannelLayout::from_count(ChannelCount::STEREO);
+
         assert_eq!(layout, ChannelLayout::Stereo);
         assert_eq!(layout.count(), ChannelCount::STEREO);
     }
@@ -310,6 +314,7 @@ mod tests {
     #[test]
     fn unusual_channel_counts_fall_back_to_discrete() {
         let three = ChannelCount::new(3).expect("3 is in range");
+
         assert_eq!(
             ChannelLayout::from_count(three),
             ChannelLayout::Discrete(three)
@@ -339,6 +344,7 @@ mod tests {
         assert_eq!(placed(&[FrontCenter]), Some(ChannelLayout::Mono));
 
         let three = placed(&[FrontLeft, FrontRight, FrontCenter]).expect("three places");
+
         assert!(matches!(three, ChannelLayout::Placed(_)));
         assert_eq!(three.positions(), [FrontLeft, FrontRight, FrontCenter]);
         assert_eq!(three.to_string(), "3.0");
@@ -353,6 +359,7 @@ mod tests {
             FrontLeft,
         ])
         .expect("seven places");
+
         assert_eq!(seven.count().get(), 7);
         assert_eq!(
             seven.positions(),
@@ -371,6 +378,7 @@ mod tests {
 
         let four_one =
             placed(&[FrontLeft, FrontRight, FrontCenter, Lfe, RearCenter]).expect("five places");
+
         assert_eq!(four_one.to_string(), "4.1");
         assert_eq!(
             four_one.positions(),

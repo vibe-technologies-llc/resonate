@@ -29,6 +29,7 @@ impl Numerals {
     fn spelled() -> Self {
         let mut cardinals = AHashMap::new();
         let mut ordinals = AHashMap::new();
+
         for language in LANGUAGES {
             for number in 1..=HIGHEST {
                 for spelling in (language.cardinals)(number) {
@@ -39,7 +40,9 @@ impl Numerals {
                 }
             }
         }
+
         let mut ordinals: Vec<(String, u32)> = ordinals.into_iter().collect();
+
         ordinals.sort_by(|(one, _), (other, _)| other.len().cmp(&one.len()).then(one.cmp(other)));
         Self {
             cardinals,
@@ -163,6 +166,7 @@ fn french_cardinal(number: u32) -> String {
 fn french_cardinals(number: u32) -> Vec<String> {
     let cardinal = french_cardinal(number);
     let mut spellings = vec![cardinal.clone()];
+
     if number == 80 {
         spellings.push("quatre-vingt".to_owned());
     }
@@ -187,6 +191,7 @@ fn french_ordinals(number: u32) -> Vec<String> {
                 None => stem.to_owned(),
             };
             let mut spellings = vec![format!("{stem}ieme")];
+
             if number == 2 {
                 spellings.extend(["second".to_owned(), "seconde".to_owned()]);
             }
@@ -238,6 +243,7 @@ fn spanish_cardinals(number: u32) -> Vec<String> {
         ),
     };
     let mut spellings = vec![masculine.clone()];
+
     if let Some(stem) = masculine.strip_suffix("uno") {
         spellings.extend([format!("{stem}un"), format!("{stem}una")]);
     }
@@ -271,6 +277,7 @@ fn spanish_ordinals(number: u32) -> Vec<String> {
             vec![format!("{tens} {units}"), format!("{tens}{units}")]
         }
     };
+
     match number {
         1 => spellings.push("primer".to_owned()),
         3 => spellings.push("tercer".to_owned()),
@@ -484,6 +491,7 @@ const PORTUGUESE_FEMININE_UNITS: [(usize, &str); 2] = [(1, "uma"), (2, "duas")];
 fn portuguese_cardinals(number: u32) -> Vec<String> {
     let units = units_of(number);
     let tens = tens_of(number);
+
     let mut spellings = match number {
         1..=9 => vec![PORTUGUESE_UNITS[units].to_owned()],
         10..=19 => vec![PORTUGUESE_TEENS[units].to_owned()],
@@ -493,6 +501,7 @@ fn portuguese_cardinals(number: u32) -> Vec<String> {
             PORTUGUESE_TENS[tens], PORTUGUESE_UNITS[units]
         )],
     };
+
     spellings.extend(
         PORTUGUESE_TEENS_IN_PORTUGAL
             .iter()
@@ -538,6 +547,7 @@ fn portuguese_ordinals(number: u32) -> Vec<String> {
             PORTUGUESE_ORDINAL_TENS[tens], PORTUGUESE_ORDINAL_UNITS[units]
         )],
     };
+
     if tens_of(number) == 7 {
         spellings.extend(
             spellings
@@ -562,6 +572,7 @@ mod tests {
     #[test]
     fn a_spelling_names_one_number_whichever_language_spells_it() {
         let mut named: AHashMap<String, AHashSet<u32>> = AHashMap::new();
+
         for language in LANGUAGES {
             for number in 1..=HIGHEST {
                 for spelling in (language.cardinals)(number) {
@@ -569,13 +580,16 @@ mod tests {
                 }
             }
         }
+
         let torn: Vec<_> = named
             .iter()
             .filter(|(_, numbers)| numbers.len() > 1)
             .collect();
+
         assert!(torn.is_empty(), "spellings naming two numbers: {torn:?}");
 
         let mut ordered: AHashMap<String, AHashSet<u32>> = AHashMap::new();
+
         for language in LANGUAGES {
             for number in 1..=HIGHEST {
                 for spelling in (language.ordinals)(number) {
@@ -586,10 +600,12 @@ mod tests {
                 }
             }
         }
+
         let torn: Vec<_> = ordered
             .iter()
             .filter(|(_, numbers)| numbers.len() > 1)
             .collect();
+
         assert!(torn.is_empty(), "ordinals naming two numbers: {torn:?}");
     }
 

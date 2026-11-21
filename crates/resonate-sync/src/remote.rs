@@ -18,7 +18,7 @@ const PERMILLE: f32 = 1_000.0;
 const ZONE_AT_LEAST: usize = 8;
 const ROW_AT_LEAST: usize = 3;
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Permille(u16);
 
 impl Permille {
@@ -257,7 +257,9 @@ impl RemoteZone {
         writer.number(u64::from(self.volume.get()));
         writer.length(self.queue_length);
         writer.length(self.first_row);
+
         let rows = &self.rows[..self.rows.len().min(ROWS_MIRRORED_AT_MOST)];
+
         writer.length(rows.len());
         for row in rows {
             writer.text(&row.title);
@@ -291,10 +293,13 @@ impl RemoteZone {
         let queue_length = row_of(reader)?;
         let first_row = row_of(reader)?;
         let count = reader.count_of(ROW_AT_LEAST)?;
+
         if count > ROWS_MIRRORED_AT_MOST {
             return Err(Error::Malformed(Malformed::Overlong { length: count }));
         }
+
         let mut rows = crate::wire::reserved(count);
+
         for _ in 0..count {
             rows.push(RemoteRow {
                 title: reader.text()?,
@@ -302,6 +307,7 @@ impl RemoteZone {
                 length: read_length(reader)?,
             });
         }
+
         let queue_revision = match revisions {
             Revisions::Carried if reader.flag()? => Some(reader.number()?),
             Revisions::Carried | Revisions::Unsaid => None,
@@ -348,6 +354,7 @@ pub enum Revisions {
 
 pub(crate) fn write_zones(writer: &mut Writer, zones: &[RemoteZone], revisions: Revisions) {
     let zones = &zones[..zones.len().min(ZONES_MIRRORED_AT_MOST)];
+
     writer.length(zones.len());
     for zone in zones {
         zone.write(writer, revisions);
@@ -356,10 +363,13 @@ pub(crate) fn write_zones(writer: &mut Writer, zones: &[RemoteZone], revisions: 
 
 pub(crate) fn read_zones(reader: &mut Reader<'_>, revisions: Revisions) -> Result<Vec<RemoteZone>> {
     let count = reader.count_of(ZONE_AT_LEAST)?;
+
     if count > ZONES_MIRRORED_AT_MOST {
         return Err(Error::Malformed(Malformed::Overlong { length: count }));
     }
+
     let mut zones = crate::wire::reserved(count);
+
     for _ in 0..count {
         zones.push(RemoteZone::read(reader, revisions)?);
     }
@@ -377,6 +387,7 @@ impl Mirror {
         if zone.playback != RemotePlayback::Playing {
             return zone.position;
         }
+
         let heard = zone.position + now.saturating_duration_since(self.heard_at);
         zone.length.map_or(heard, |length| heard.min(length))
     }
@@ -497,11 +508,13 @@ mod tests {
                     command,
                     queue_seen,
                 };
+
                 assert_eq!(ToPeer::decoded(&asked.encoded()).expect("decoded"), asked);
             }
         }
         for revisions in [Revisions::Unsaid, Revisions::Carried] {
             let watch = ToPeer::Watch { revisions };
+
             assert_eq!(ToPeer::decoded(&watch.encoded()).expect("decoded"), watch);
         }
     }
@@ -533,10 +546,12 @@ mod tests {
             [9]
         );
         assert_eq!(unsaid.encoded()[0], 14);
+
         let FromPeer::Zones { zones, .. } = FromPeer::decoded(&unsaid.encoded()).expect("decoded")
         else {
             panic!("a mirror");
         };
+
         assert_eq!(zones[0].queue_revision, None);
     }
 
@@ -568,6 +583,7 @@ mod tests {
         );
         for answer in answers {
             let answered = FromPeer::Controlled(answer);
+
             assert_eq!(
                 FromPeer::decoded(&answered.encoded()).expect("decoded"),
                 answered
@@ -590,7 +606,9 @@ mod tests {
     #[test]
     fn more_rows_than_a_mirror_carries_are_cut_by_the_writer() {
         let mut long = zone(RemotePlayback::Playing, Duration::ZERO);
+
         long.rows = vec![RemoteRow::default(); ROWS_MIRRORED_AT_MOST + 1];
+
         let mirrored = FromPeer::Zones {
             zones: vec![long],
             revisions: Revisions::Carried,
@@ -601,6 +619,7 @@ mod tests {
         let FromPeer::Zones { zones, .. } = decoded else {
             panic!("a mirror");
         };
+
         assert_eq!(zones[0].rows.len(), ROWS_MIRRORED_AT_MOST);
     }
 
@@ -636,6 +655,7 @@ mod tests {
         let heard_at = Instant::now();
         let playing = zone(RemotePlayback::Playing, Duration::from_secs(199));
         let paused = zone(RemotePlayback::Paused, Duration::from_secs(20));
+
         let mirror = Mirror {
             zones: vec![playing.clone(), paused.clone()],
             heard_at,

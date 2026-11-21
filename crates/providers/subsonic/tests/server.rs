@@ -128,11 +128,13 @@ impl Fake {
         let heard = Arc::new(Mutex::new(Vec::new()));
         let noted = Arc::clone(&heard);
         let answering: Arc<Answering> = Arc::new(answering);
+
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let Ok(stream) = stream else {
                     return;
                 };
+
                 answer(stream, &noted, answering.as_ref());
             }
         });
@@ -168,10 +170,13 @@ impl Fake {
 fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
     let mut reader = BufReader::new(stream);
     let mut request_line = String::new();
+
     if reader.read_line(&mut request_line).is_err() {
         return;
     }
+
     let mut range = None;
+
     loop {
         let mut header = String::new();
         match reader.read_line(&mut header) {
@@ -186,10 +191,13 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
             }
         }
     }
+
     let target = request_line.split(' ').nth(1).unwrap_or_default();
     let asked = asked_from(target, range.as_deref());
     let nth = heard.lock().len();
+
     let canned = answering(&asked, nth);
+
     heard.lock().push(asked);
 
     let mut written = format!(
@@ -197,11 +205,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
         canned.status,
         canned.body.len()
     );
+
     for (name, value) in &canned.headers {
         written.push_str(&format!("{name}: {value}\r\n"));
     }
     written.push_str("\r\n");
+
     let mut stream = reader.into_inner();
+
     let _ = stream.write_all(written.as_bytes());
     match canned.sent {
         Sent::Whole => {
@@ -213,12 +224,14 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
         Sent::StallingAfter(bytes) => {
             let _ = stream.write_all(&canned.body[..bytes]);
             let _ = stream.flush();
+
             thread::sleep(STALLED_FOR);
         }
         Sent::Dripping { bytes, apart } => {
             for drop in canned.body.chunks(bytes) {
                 let _ = stream.write_all(drop);
                 let _ = stream.flush();
+
                 thread::sleep(apart);
             }
         }
@@ -264,6 +277,7 @@ fn streamed(obtained: Obtained) -> Option<(String, Vec<u8>)> {
         Obtained::Found(Delivery::Stream { key, opening, .. }) => {
             let mut reader = opened(opening);
             let mut bytes = Vec::new();
+
             reader.read_to_end(&mut bytes).expect("the stream reads");
             Some((key.into_string(), bytes))
         }
@@ -285,6 +299,7 @@ fn a_search_is_answered_without_the_download_being_asked_for() {
     };
     let asked_before_opening = fake.heard();
     let mut bytes = Vec::new();
+
     opened(opening)
         .read_to_end(&mut bytes)
         .expect("the stream reads");
@@ -456,6 +471,7 @@ fn a_download_that_stalls_part_way_is_broken_off_rather_than_held() {
     };
     let mut reader = opened(opening);
     let mut bytes = Vec::new();
+
     let broken_off = reader.read_to_end(&mut bytes);
 
     assert!(broken_off.is_err());
@@ -653,10 +669,14 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
 
     let mut streamed = fake.subsonic().streamed(&id("so-6")).expect("a stream");
     let mut head = [0_u8; 4];
+
     streamed.read_exact(&mut head).expect("the head reads");
+
     let landed = streamed.seek(SeekFrom::Start(1)).expect("a seek back");
     let mut rest = Vec::new();
+
     streamed.read_to_end(&mut rest).expect("the rest reads");
+
     let asked: Vec<_> = fake
         .heard
         .lock()
@@ -676,6 +696,7 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
     assert_eq!(&head, b"fLaC");
     assert_eq!(landed, 1);
     assert_eq!(rest, AUDIO[1..]);
+
     let stream = |from| {
         (
             "stream".to_owned(),
@@ -684,6 +705,7 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
             from,
         )
     };
+
     assert_eq!(asked, [stream(None), stream(Some(1))]);
 }
 
@@ -692,11 +714,16 @@ fn a_seek_a_little_ahead_reads_on_rather_than_asking_again_and_one_past_the_end_
     let fake = Fake::serving(|_, _| Canned::audio());
 
     let mut streamed = fake.subsonic().streamed(&id("so-6")).expect("a stream");
+
     streamed.seek(SeekFrom::Current(4)).expect("a seek ahead");
+
     let mut word = [0_u8; 3];
+
     streamed.read_exact(&mut word).expect("it reads on");
     streamed.seek(SeekFrom::End(0)).expect("a seek to the end");
+
     let mut past = Vec::new();
+
     streamed.read_to_end(&mut past).expect("nothing more");
 
     assert_eq!(&word, &AUDIO[4..7]);
@@ -787,6 +814,7 @@ fn a_song_is_starred_and_unstarred_by_the_servers_own_calls_and_a_song_it_lacks_
     subsonic
         .favour(&id("so-1"), false)
         .expect("a song unstarred");
+
     let lacking = subsonic.favour(&id("nope"), true);
 
     let calls: Vec<_> = fake
@@ -796,6 +824,7 @@ fn a_song_is_starred_and_unstarred_by_the_servers_own_calls_and_a_song_it_lacks_
         .filter(|asked| asked.method.ends_with("star"))
         .map(|asked| (asked.method.clone(), asked.id.clone()))
         .collect();
+
     assert!(subsonic.keeps_favourites());
     assert_eq!(
         calls,

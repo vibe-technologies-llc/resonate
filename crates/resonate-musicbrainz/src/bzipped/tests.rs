@@ -33,7 +33,9 @@ struct Seeded(u64);
 impl Seeded {
     fn next(&mut self) -> u64 {
         self.0 = self.0.wrapping_add(0x9e37_79b9_7f4a_7c15);
+
         let mut mixed = self.0;
+
         mixed = (mixed ^ (mixed >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
         mixed = (mixed ^ (mixed >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
         mixed ^ (mixed >> 31)
@@ -83,7 +85,9 @@ fn text(len: usize, seeded: &mut Seeded) -> Vec<u8> {
         b"Official\t",
         b"\n",
     ];
+
     let mut text = Vec::with_capacity(len + 64);
+
     while text.len() < len {
         text.extend_from_slice(WORDS[seeded.below(WORDS.len())]);
     }
@@ -93,6 +97,7 @@ fn text(len: usize, seeded: &mut Seeded) -> Vec<u8> {
 
 fn runs(len: usize, seeded: &mut Seeded) -> Vec<u8> {
     let mut runs = Vec::with_capacity(len + 512);
+
     while runs.len() < len {
         let length = if seeded.below(2) == 0 {
             RUN_LENGTHS_AT_THE_EDGES[seeded.below(RUN_LENGTHS_AT_THE_EDGES.len())]
@@ -100,6 +105,7 @@ fn runs(len: usize, seeded: &mut Seeded) -> Vec<u8> {
             1 + seeded.below(4096)
         };
         let byte = seeded.byte() % 4;
+
         runs.extend(std::iter::repeat_n(byte, length));
     }
     runs.truncate(len);
@@ -108,12 +114,14 @@ fn runs(len: usize, seeded: &mut Seeded) -> Vec<u8> {
 
 fn packed(plain: &[u8], blocks: u32) -> Vec<u8> {
     let mut encoder = BzEncoder::new(Vec::new(), Compression::new(blocks));
+
     encoder.write_all(plain).expect("an archive written");
     encoder.finish().expect("an archive finished")
 }
 
 fn by_the_reference(packed: &[u8]) -> io::Result<Vec<u8>> {
     let mut plain = Vec::new();
+
     MultiBzDecoder::new(packed).read_to_end(&mut plain)?;
     Ok(plain)
 }
@@ -183,7 +191,9 @@ fn many_small_streams_one_after_another_decode_as_their_bytes_in_order() {
             seeded.below(LONGEST_SMALL_STREAM)
         };
         let blocks = 1 + seeded.below(9) as u32;
+
         let stream = made(kind, len, &mut seeded);
+
         packed_streams.extend(packed(&stream, blocks));
         plain.extend(stream);
     }
@@ -205,6 +215,7 @@ fn bytes_after_the_last_stream_are_refused_as_the_reference_refuses_them() {
     for (case, _, packed) in archives_to_harm(&mut seeded) {
         for trailing in TRAILING {
             let mut followed = packed.clone();
+
             followed.extend_from_slice(trailing);
 
             assert!(
@@ -270,6 +281,7 @@ fn a_flipped_bit_is_refused_or_leaves_every_byte_as_it_was() {
         for _ in 0..FLIPS_AN_ARCHIVE {
             let bit = seeded.below(packed.len() * 8);
             let mut flipped = packed.clone();
+
             flipped[bit / 8] ^= 1 << (bit % 8);
 
             let reference = by_the_reference(&flipped);
@@ -300,6 +312,7 @@ fn a_randomised_block_is_refused_though_the_reference_reads_it() {
         &mut Seeded(SEED ^ 5),
     );
     let mut randomised = packed(&plain, LARGEST_BLOCKS);
+
     randomised[RANDOMISED_FLAG_BYTE] ^= RANDOMISED_FLAG_BIT;
 
     assert_eq!(by_the_reference(&randomised).ok(), Some(plain));

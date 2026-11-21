@@ -40,9 +40,11 @@ impl PhysicalFormat {
 
     pub const fn depth(&self) -> Option<Depth> {
         let flags = self.0.mFormatFlags;
+
         if self.0.mFormatID != kAudioFormatLinearPCM || flags & kAudioFormatFlagIsBigEndian != 0 {
             return None;
         }
+
         let float = flags & kAudioFormatFlagIsFloat != 0;
         let signed = flags & kAudioFormatFlagIsSignedInteger != 0;
         match (float, signed, self.0.mBitsPerChannel) {

@@ -148,11 +148,13 @@ fn lasting(text: &str) -> Option<Duration> {
         .filter(|clock| !clock.is_empty())?;
     let mut total = Duration::ZERO;
     let mut number = String::new();
+
     for letter in clock.chars() {
         if letter.is_ascii_digit() || letter == '.' {
             number.push(letter);
             continue;
         }
+
         let seconds_in_a_unit = match letter {
             'H' => 3600.0,
             'M' => 60.0,
@@ -160,6 +162,7 @@ fn lasting(text: &str) -> Option<Duration> {
             _ => return None,
         };
         let amount: f64 = number.parse().ok()?;
+
         number.clear();
         total = total.checked_add(Duration::try_from_secs_f64(amount * seconds_in_a_unit).ok()?)?;
     }

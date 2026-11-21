@@ -64,9 +64,11 @@ impl MobilePlayer {
                 bytes: bytes.len() as u64,
             });
         }
+
         let (text, _) = text::decoded(&bytes);
         let (sheet, _) = read_sheet(&text, Path::new(FOLDER_ROOT));
         let listed = sheet.locations.len() + sheet.elsewhere;
+
         if listed == 0 {
             return Err(Error::PlaylistFileEmpty);
         }
@@ -83,6 +85,7 @@ impl MobilePlayer {
             .into_iter()
             .flatten()
             .collect::<Vec<_>>();
+
         if tracks.is_empty() {
             return Err(Error::NoLocalMatches);
         }
@@ -197,6 +200,7 @@ fn held_at(connection: &Connection, listed: &Path) -> Result<Option<u64>> {
     let mut query = connection
         .prepare(HELD_AT)
         .map_err(|source| Error::store(StoreOp::Read, source))?;
+
     let candidates = query
         .query_map(params![name], |row| {
             Ok((row.get::<_, i64>(0)? as u64, row.get::<_, String>(1)?))
@@ -204,6 +208,7 @@ fn held_at(connection: &Connection, listed: &Path) -> Result<Option<u64>> {
         .map_err(|source| Error::store(StoreOp::Read, source))?
         .collect::<rusqlite::Result<Vec<_>>>()
         .map_err(|source| Error::store(StoreOp::Read, source))?;
+
     if let [(id, _)] = candidates.as_slice() {
         return Ok(Some(*id));
     }
@@ -217,6 +222,7 @@ fn held_at(connection: &Connection, listed: &Path) -> Result<Option<u64>> {
         .into_iter()
         .map(|(id, uri)| (shared_tail(&listed, &components_of_uri(&uri)), id))
         .collect::<Vec<_>>();
+
     shared.sort_by(|one, other| other.0.cmp(&one.0).then(one.1.cmp(&other.1)));
 
     Ok(match shared.as_slice() {
@@ -260,8 +266,11 @@ fn path_in_folder(uri: &str) -> Option<PathBuf> {
         return None;
     };
     let mut parts = key.split('/').filter(|part| !part.is_empty());
+
     parts.next()?;
+
     let mut path = PathBuf::from(FOLDER_ROOT);
+
     path.extend(parts);
     (path != Path::new(FOLDER_ROOT)).then_some(path)
 }
@@ -350,6 +359,7 @@ mod tests {
             "Air",
         );
         let id = player.create_playlist("Evening".into()).expect("a list");
+
         player
             .add_to_playlist(id, vec![two, one, two])
             .expect("three rows");
@@ -360,6 +370,7 @@ mod tests {
             PlaylistFileFormat::Xspf,
         ] {
             let text = player.export_playlist(id, format).expect("a written list");
+
             assert!(text.contains("Safari"), "{text}");
 
             let imported = player
@@ -413,8 +424,10 @@ mod tests {
     #[test]
     fn a_taken_name_gets_a_number_and_a_list_of_strangers_is_refused() {
         let player = player();
+
         song(&player, "resonate-folder://local/a.flac", "A", "X");
         player.create_playlist("Mix".into()).expect("a list");
+
         let sheet = b"#EXTM3U\n#PLAYLIST:Mix\na.flac\n".to_vec();
 
         let imported = player

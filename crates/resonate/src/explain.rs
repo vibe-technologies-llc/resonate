@@ -25,6 +25,7 @@ pub(crate) fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
     let replay_gain =
         resolve_replay_gain(config.replay_gain, config.levelling, &info.tags.replay_gain);
     let decoded = Decoded::of(&info, None);
+
     let plan = plan_output(decoded, &sink, &config, replay_gain);
 
     said!("{}", words::main::explain_source(info.spec.to_string()));
@@ -97,6 +98,7 @@ pub(crate) fn explain(cli: &Cli, config: &Config, path: &Path) -> Result<()> {
                 words::main::studied_at(format!("{:.1}", f64::from(wall.centihertz()) / 100_000.0))
             },
         );
+
         said!(
             "{}",
             words::main::explain_restore(

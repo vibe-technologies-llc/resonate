@@ -187,7 +187,9 @@ impl Catalog {
         let Some(year) = year.or_else(|| year_worth_showing(&years, today)) else {
             return Ok(None);
         };
+
         let review = reviewed(&connection, year, calendar, history, today)?;
+
         drop(connection);
 
         Ok(Some(WrappedYear {
@@ -223,11 +225,13 @@ fn reviewed(
 ) -> Result<YearReview> {
     let kept = kept_year(connection, year)?;
     let of_a_later_build = matches!(kept, Kept::OfALaterBuild);
+
     if let Kept::Review(review) = kept {
         return Ok(*review);
     }
 
     let review = year_review(connection, year, calendar, history)?;
+
     if year < today.year && review.holds_anything() && !of_a_later_build {
         keep_year(connection, &review)?;
     }
@@ -288,12 +292,14 @@ fn years_heard(connection: &Connection, calendar: &Calendar) -> Result<Vec<i64>>
             .map_err(read_error)
     };
     let mut years = Vec::new();
+
     if let (Some(first), Some(last)) = (bound(THE_FIRST_LISTEN_EVER)?, bound(THE_LAST_LISTEN_EVER)?)
     {
         let first = calendar.date_at(moment(first)).year;
         let last = calendar.date_at(moment(last)).year;
         for year in first..=last {
             let (from, to) = bounds_of(calendar, year);
+
             let held = connection
                 .query_row(ANY_LISTEN_BETWEEN, params![from, to], |row| {
                     row.get::<_, bool>(0)
@@ -328,6 +334,7 @@ fn year_review(
     history: HistoryKept,
 ) -> Result<YearReview> {
     let (from, to) = bounds_of(calendar, year);
+
     let (plays, listened, songs, artists, albums) = connection
         .query_row(WHAT_WAS_HEARD_IN_THE_YEAR, params![from, to], |row| {
             Ok((
@@ -384,6 +391,7 @@ fn songs_new(
     let first_ever: Option<i64> = connection
         .query_row(THE_FIRST_LISTEN_EVER, [], |row| row.get(0))
         .map_err(read_error)?;
+
     if first_ever.is_none_or(|first| first >= from) {
         return Ok(None);
     }
@@ -418,6 +426,7 @@ fn genres(connection: &Connection, from: i64, to: i64) -> Result<Vec<Ranked>> {
     let mut statement = connection
         .prepare(THE_GENRES_OF_THE_YEAR)
         .map_err(read_error)?;
+
     let listed = statement
         .query_map(params![from, to, GENRE_ROWS_RANKED_AT_MOST], |row| {
             Ok((
@@ -442,6 +451,7 @@ fn rhythm(
     let mut statement = connection
         .prepare(THE_QUARTERS_OF_THE_YEAR)
         .map_err(read_error)?;
+
     let quarters = statement
         .query_map(params![from, to, SECONDS_A_QUARTER_HOUR], |row| {
             let quarter: i64 = row.get(0)?;
@@ -479,6 +489,7 @@ fn formats(connection: &Connection, from: i64, to: i64) -> Result<Option<FormatS
     let mut statement = connection
         .prepare(THE_FORMATS_OF_THE_YEAR)
         .map_err(read_error)?;
+
     let heard = statement
         .query_map(params![from, to], |row| {
             let codec: String = row.get(0)?;
@@ -604,6 +615,7 @@ mod tests {
     fn a_year_counts_what_was_heard_inside_it_and_a_visit_that_earned_no_play_is_time_alone() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = held(&catalog, &PLAIN);
+
         heard(&catalog, song, -1, 30, 1);
         heard(&catalog, song, 0, 10, 1);
         heard(&catalog, song, 1, 5, 0);
@@ -643,6 +655,7 @@ mod tests {
                 ..PLAIN
             },
         );
+
         heard(&catalog, old, 2, 5, 1);
         heard(&catalog, new, 3, 5, 1);
 
@@ -699,6 +712,7 @@ mod tests {
                 ..PLAIN
             },
         );
+
         heard(&catalog, studio, 0, 30, 1);
         heard(&catalog, master, 1, 10, 1);
         heard(&catalog, rip, 2, 10, 1);
@@ -730,6 +744,7 @@ mod tests {
         );
 
         let song = held(&catalog, &PLAIN);
+
         heard(&catalog, song, 0, 90, 1);
 
         let shown = catalog
@@ -780,9 +795,11 @@ mod tests {
      {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = held(&catalog, &PLAIN);
+
         heard(&catalog, song, 0, 90, 1);
 
         let first = shown(&catalog, 2025, WHEN_2025_IS_OVER);
+
         assert_eq!(kept_years(&catalog), 1);
 
         heard(&catalog, song, 1, 60, 1);
@@ -808,11 +825,15 @@ mod tests {
     fn a_year_still_running_is_read_afresh_and_a_year_with_nothing_in_it_is_never_kept() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = held(&catalog, &PLAIN);
+
         heard(&catalog, song, 0, 30, 1);
 
         let before = shown(&catalog, 2025, WHILE_2025_RUNS);
+
         heard(&catalog, song, 1, 30, 1);
+
         let after = shown(&catalog, 2025, WHILE_2025_RUNS);
+
         shown(&catalog, 1999, WHEN_2025_IS_OVER);
 
         assert_ne!(before.slides[0].headline, after.slides[0].headline);
@@ -823,7 +844,9 @@ mod tests {
     fn a_year_kept_by_a_later_build_is_shown_afresh_and_left_and_a_damaged_one_is_kept_again() {
         let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
         let song = held(&catalog, &PLAIN);
+
         heard(&catalog, song, 0, 30, 1);
+
         let keep = |bytes: &[u8]| {
             catalog
                 .0
@@ -840,13 +863,17 @@ mod tests {
         };
 
         let later = [FROZEN_LAYOUT + 1, 9, 9];
+
         keep(&later);
+
         let fresh = shown(&catalog, 2025, WHEN_2025_IS_OVER);
+
         assert_eq!(fresh.slides[0].headline, "30 minutes of music");
         assert_eq!(kept(), later);
 
         keep(&[FROZEN_LAYOUT, 1]);
         shown(&catalog, 2025, WHEN_2025_IS_OVER);
+
         assert_eq!(
             YearReview::unfrozen(&kept()).map(|review| review.plays),
             Ok(1)

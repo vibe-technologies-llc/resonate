@@ -24,7 +24,7 @@ pub(crate) const BROWSED_AT_MOST: u32 = 500;
 
 pub(crate) const THE_ONE_CONNECTION: &str = "0";
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub(crate) enum Service {
     ContentDirectory,
     ConnectionManager,
@@ -113,17 +113,21 @@ pub(crate) fn called(body: &str, service: Service) -> Option<Called> {
     };
     let document = Document::parse_with_options(body, options).ok()?;
     let envelope = document.root_element();
+
     if envelope.tag_name().name() != "Envelope" {
         return None;
     }
+
     let call = envelope
         .children()
         .find(|node| node.is_element() && node.tag_name().name() == "Body")?
         .children()
         .find(roxmltree::Node::is_element)?;
+
     if call.tag_name().namespace() != Some(service.kind()) {
         return None;
     }
+
     let arguments: Vec<(String, String)> = call
         .children()
         .filter(roxmltree::Node::is_element)
@@ -192,6 +196,7 @@ impl<C: Catalog> Asking<'_, C> {
         let read_at = self.catalog.revision();
 
         let mut didl = Didl::new(self.base);
+
         let (returned, total) = match called.argument("BrowseFlag").map(str::trim) {
             Some("BrowseMetadata") => {
                 self.metadata(object, &mut didl)?;
@@ -199,6 +204,7 @@ impl<C: Catalog> Asking<'_, C> {
             }
             Some("BrowseDirectChildren") => {
                 let children = self.children(object, Page { from, most }, &mut didl)?;
+
                 self.watched.watch(object, read_at);
                 children
             }
@@ -243,6 +249,7 @@ impl<C: Catalog> Asking<'_, C> {
         let mut didl = Didl::new(self.base);
         let mut returned = 0;
         let mut total: u32 = 0;
+
         for sought in sought {
             let next = page.from.saturating_add(returned);
             let wanted = Page {
@@ -250,6 +257,7 @@ impl<C: Catalog> Asking<'_, C> {
                 most: page.most - returned,
             };
             let (taken, held) = self.sought(*sought, within, &criterion, wanted, &mut didl)?;
+
             returned += taken;
             total = total.saturating_add(held);
         }
@@ -277,6 +285,7 @@ impl<C: Catalog> Asking<'_, C> {
                     kind: None,
                     title: Some(naming::title_of(shelf)),
                 };
+
                 if criteria::reduced(criterion, &described) != Reduced::Always {
                     return Ok((0, 0));
                 }
@@ -293,6 +302,7 @@ impl<C: Catalog> Asking<'_, C> {
             Reduced::Always => Query::Everything,
             Reduced::Asks(query) => query,
         };
+
         let shelved = match self
             .catalog
             .searched(kind, within, &query, page)
@@ -305,6 +315,7 @@ impl<C: Catalog> Asking<'_, C> {
             }
         };
         let returned = shelved.held.len().min(page.most as usize);
+
         for entry in shelved.held.iter().take(returned) {
             match entry {
                 Entry::Shelf(held) => didl.shelf(held, held.shelf.parent()),
@@ -324,6 +335,7 @@ impl<C: Catalog> Asking<'_, C> {
                     .song(id)
                     .map_err(failed)?
                     .ok_or(Fault::NoSuchObject)?;
+
                 didl.song(&song, Object::Shelf(Shelf::Songs));
             }
         }
@@ -337,6 +349,7 @@ impl<C: Catalog> Asking<'_, C> {
                 .shelved(shelf, Page::counting())
                 .map_err(failed)?
                 .map_or(0, |shelved| shelved.total);
+
             return Ok(Held {
                 shelf,
                 title: naming::title_of(shelf).to_owned(),
@@ -365,6 +378,7 @@ impl<C: Catalog> Asking<'_, C> {
                     .take(page.most as usize)
                     .map(|shelf| self.held(shelf))
                     .collect::<Result<_, _>>()?;
+
                 for held in &top {
                     didl.shelf(held, Object::Root);
                 }
@@ -385,6 +399,7 @@ impl<C: Catalog> Asking<'_, C> {
             .ok_or(Fault::NoSuchObject)?;
         let parent = Object::Shelf(shelf);
         let returned = shelved.held.len().min(page.most as usize);
+
         for entry in shelved.held.iter().take(returned) {
             match entry {
                 Entry::Shelf(held) => didl.shelf(held, parent),
@@ -477,14 +492,17 @@ const ENVELOPE_CLOSES: &str = "</s:Body></s:Envelope>";
 
 fn envelope(service: Service, action: &str, arguments: &[(&str, String)]) -> String {
     let mut written = ENVELOPE_OPENS.to_owned();
+
     let _ = write!(
         written,
         "<u:{action}Response xmlns:u=\"{}\">",
         service.kind()
     );
+
     for (name, value) in arguments {
         let _ = write!(written, "<{name}>{}</{name}>", escaped(value));
     }
+
     let _ = write!(written, "</u:{action}Response>{ENVELOPE_CLOSES}");
     written
 }

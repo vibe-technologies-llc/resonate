@@ -16,7 +16,7 @@ const fn gcd(a: u32, b: u32) -> u32 {
     if b == 0 { a } else { gcd(b, a % b) }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub struct SampleRate(NonZeroU32);
 
 impl SampleRate {
@@ -83,10 +83,13 @@ impl SampleRate {
     pub fn kilohertz(self) -> String {
         let hz = self.hz();
         let mut fraction = hz % HZ_A_KILOHERTZ;
+
         if fraction == 0 {
             return format!("{}", hz / HZ_A_KILOHERTZ);
         }
+
         let mut digits = DIGITS_OF_A_KILOHERTZ;
+
         while fraction.is_multiple_of(10) {
             fraction /= 10;
             digits -= 1;
@@ -101,14 +104,14 @@ impl fmt::Display for SampleRate {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum RateFamily {
     Base44100,
     Base48000,
     Other,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct Ratio {
     pub numer: NonZeroU32,
     pub denom: NonZeroU32,
@@ -126,7 +129,7 @@ impl fmt::Display for Ratio {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub enum BitDepth {
     Bits8,
     Bits16,
@@ -171,7 +174,7 @@ impl fmt::Display for BitDepth {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub enum SampleFormat {
     S16,
     S24,
@@ -252,7 +255,7 @@ impl fmt::Display for SampleFormat {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
 pub struct StreamSpec {
     pub rate: SampleRate,
     pub channels: ChannelLayout,
@@ -317,6 +320,7 @@ mod tests {
             (705_600, "705.6 kHz"),
         ] {
             let rate = SampleRate::new(hz).expect("a supported rate");
+
             assert_eq!(rate.to_string(), written);
             assert_eq!(format!("{} kHz", rate.kilohertz()), written);
         }
@@ -366,10 +370,12 @@ mod tests {
     #[test]
     fn rate_ratios_are_reduced() {
         let ratio = SampleRate::HZ_44100.ratio_to(SampleRate::HZ_88200);
+
         assert_eq!(ratio.numer.get(), 2);
         assert_eq!(ratio.denom.get(), 1);
 
         let ratio = SampleRate::HZ_44100.ratio_to(SampleRate::HZ_48000);
+
         assert_eq!(ratio.numer.get(), 160);
         assert_eq!(ratio.denom.get(), 147);
     }

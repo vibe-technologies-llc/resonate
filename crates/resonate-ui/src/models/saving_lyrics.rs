@@ -38,6 +38,7 @@ impl LibraryModel {
         cx: &mut Context<Self>,
     ) {
         let library = Arc::clone(&self.library);
+
         cx.spawn(async move |this, cx| {
             let saved = cx
                 .background_executor()
@@ -111,6 +112,7 @@ impl SavedLyrics {
             Saved::NothingKept => &mut self.unkept,
             Saved::Unwritten => &mut self.unwritten,
         };
+
         *counted += 1;
         self
     }
@@ -119,7 +121,9 @@ impl SavedLyrics {
         if self.unwritten > 0 {
             return Notice::Trouble(words::saving_lyrics::not_written(self.unwritten));
         }
+
         let mut parts = Vec::new();
+
         if self.written > 0 {
             parts.push(words::saving_lyrics::written(self.written));
         }
@@ -138,6 +142,7 @@ impl SavedLyrics {
         if self.apart > 0 {
             parts.push(words::saving_lyrics::no_file_of_its_own(self.apart));
         }
+
         let told = parts.join(" · ");
 
         match self.written + self.already > 0 && self.stood + self.outranked == 0 {

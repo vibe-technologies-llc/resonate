@@ -64,6 +64,7 @@ pub(crate) fn play(
             queue_items_served(arguments, &Served::of(config, settings_path(cli).ok())),
         ),
     );
+
     if items.is_empty() {
         return Err(if arguments.is_empty() {
             Error::NoFileNamed
@@ -90,6 +91,7 @@ pub(crate) fn queue_onto_a_running_player(
     wanted: &QueueArgs,
 ) -> Result<()> {
     let running = reached(wanted.player.as_deref(), wanted.zone.as_deref())?;
+
     if let Some(to) = wanted.move_to.as_deref().map(ZoneAsked::read) {
         return move_the_playback(&running, to);
     }
@@ -99,6 +101,7 @@ pub(crate) fn queue_onto_a_running_player(
     if let Some(name) = wanted.activate.as_deref() {
         return activate_the_playlist(&running, name);
     }
+
     let rows = match wanted.playlist.as_deref() {
         Some(name) => playlist_rows(cli, config, name)?,
         None => queue_items_served(&wanted.files, &Served::of(config, settings_path(cli).ok()))
@@ -129,6 +132,7 @@ fn move_the_playback(running: &Running, to: ZoneAsked) -> Result<()> {
     let target = Running::zoned(&to)?
         .and_then(|target| target.zone_number())
         .ok_or(Error::NoSuchZone { zone: to })?;
+
     running.hand_over(target)?;
 
     said!(
@@ -142,6 +146,7 @@ const PLAYING_MARK: &str = "▶";
 
 fn show_the_queue(running: &Running) -> Result<()> {
     let rows = running.rows()?;
+
     if rows.is_empty() {
         said!(
             "{}",
@@ -149,6 +154,7 @@ fn show_the_queue(running: &Running) -> Result<()> {
         );
         return Ok(());
     }
+
     let playing = running.metadata()?.map(|playing| playing.track);
 
     said_on!("{}", queue_table(&rows, playing).render());
@@ -163,12 +169,14 @@ fn queue_table(rows: &[Described], playing: Option<TrackId>) -> Table {
         columns::album(),
         columns::length(),
     ]);
+
     for row in rows {
         let mark = if playing == Some(row.track) {
             PLAYING_MARK
         } else {
             ""
         };
+
         table.push(vec![
             mark.to_owned(),
             row.title.clone().unwrap_or_default(),
@@ -184,6 +192,7 @@ fn activate_the_playlist(running: &Running, name: &str) -> Result<()> {
     let offered = running.playlists(PlaylistOrder::Alphabetical, false, 0, None)?;
     let found = offered_named(&offered, name)
         .ok_or_else(|| Error::NoSuchPlaylist(PlaylistName::new(name)))?;
+
     running.activate_playlist(found.id)?;
 
     said!(
@@ -209,6 +218,7 @@ pub(crate) fn reached(player: Option<&str>, zone: Option<&str>) -> Result<Runnin
     if let Some(zone) = zone.map(ZoneAsked::read) {
         return Running::zoned(&zone)?.ok_or(Error::NoSuchZone { zone });
     }
+
     let Some(name) = player.map(PlayerName::new) else {
         return Running::found()?.ok_or(Error::NothingRunning);
     };
@@ -264,6 +274,7 @@ pub(crate) fn players() -> Result<()> {
         columns::title(),
         columns::artist(),
     ]);
+
     for player in &standing {
         table.push(vec![
             player.name.to_string(),
@@ -319,21 +330,26 @@ fn play_queue_here(
         &Served::of(config, settings_path(cli).ok()),
     );
     let mut engine = kinship::kin_from(engine_config(cli, config), library.as_ref());
+
     if let Some(percent) = transport.volume {
         engine.volume = at_percent(percent)?;
     }
+
     let wanted = wanted_sink(cli, config);
     let player = Arc::new(
         Rendering::of(config, wanted.as_ref(), Asked::Nothing)
             .player(engine, Arc::clone(&sources))?,
     );
+
     confirm_sink(&player, wanted.as_ref());
+
     let queue = stamp_of(&items);
     let start_at = if transport.shuffle {
         anywhere_in(items.len())
     } else {
         0
     };
+
     for command in set_out(transport, items, start_at) {
         player.send(command)?;
     }
@@ -348,15 +364,18 @@ fn play_queue_here(
     if asleep.is_some() {
         player.send(Command::SleepUntil(asleep))?;
     }
+
     let mut keeper =
         resuming(config, library.as_deref()).then(KeptBesideTheWindow::asking_the_session);
 
     let (asked_to_quit, quitting) = bounded(1);
     let silenced = Arc::clone(&player);
+
     crate::signals::quit_when_told(
         asked_to_quit.clone(),
         crate::signals::silencing(move || vec![Arc::clone(&silenced)]),
     );
+
     let mpris = mpris::start(
         &mpris::Serving::new(
             &sources,
@@ -381,6 +400,7 @@ fn play_queue_here(
     let syncing = library
         .as_ref()
         .map(|library| sync::start(config, settings_path(cli).ok().as_deref(), library));
+
     #[cfg(feature = "sync")]
     if let Some(syncing) = syncing.as_ref() {
         syncing.drive(resonate_driven::Driven::player(&player));
@@ -396,11 +416,13 @@ fn play_queue_here(
         input::help_said()
     };
     let mut readout = Readout::over(keyed.is_some() && io::stdout().is_terminal());
+
     if behind {
         told!("{}", words::main::in_the_background());
     } else {
         said!("{help}");
     }
+
     let events = player.events().clone();
     let mut keys = if behind {
         never()
@@ -545,6 +567,7 @@ fn count_a_play(
     let Some(library) = library else {
         return;
     };
+
     record_a_play(
         library,
         listening.heard(&player.state(), &player.queue()),
@@ -664,6 +687,7 @@ fn act(player: &Player, action: Action, help: &str) -> Result<()> {
     };
 
     let kind = command.kind();
+
     if let Err(error) = player.request(command)?.wait_for(COMMAND_TIMEOUT) {
         told!("{}", words::main::rejected(format!("{kind:?}")));
         report(&error);
@@ -680,7 +704,9 @@ pub(crate) fn launch(cli: Cli, config: Config, _library: Arc<Library>) -> Result
     if !cli.files.is_empty() {
         return play(&cli, &config, &cli.files, None, &TransportArgs::default());
     }
+
     let player = Player::new(engine_config(&cli, &config))?;
+
     confirm_sink(&player, wanted_sink(&cli, &config).as_ref());
     player.shutdown()?;
     Ok(())
@@ -705,14 +731,19 @@ mod tests {
         };
 
         let mut every_one_failed = Played::default();
+
         for event in [failed(), failed(), Event::QueueFinished] {
             every_one_failed.hears(&event);
         }
+
         let mut one_played = Played::default();
+
         for event in [failed(), Event::TrackStarted(track), Event::QueueFinished] {
             one_played.hears(&event);
         }
+
         let mut left_early = Played::default();
+
         left_early.hears(&failed());
 
         assert!(matches!(

@@ -128,6 +128,7 @@ pub struct Stoppable {
 pub fn stoppable() -> (Stop, Stoppable) {
     let (sender, heard) = mpsc::sync_channel(1);
     let asked = Arc::new(AtomicBool::new(false));
+
     let stop = Stop {
         sender: sender.clone(),
         asked: Arc::clone(&asked),
@@ -232,6 +233,7 @@ impl Server {
         let mut line = Vec::new();
         loop {
             line.clear();
+
             let read = next_line(&mut input, &mut line);
             if self.took(read, &line, &mut output)? == Flow::Ended {
                 return Ok(());
@@ -251,6 +253,7 @@ impl Server {
             asked,
         } = stoppable;
         let ticking = sender.clone();
+
         thread::Builder::new()
             .name("resonate-mcp-read".to_owned())
             .spawn(move || read_into(input, &sender))
@@ -307,6 +310,7 @@ impl Server {
             Line::Held if line.trim_ascii().is_empty() => None,
             Line::Held => self.answer(line),
         };
+
         if let Some(answer) = answer {
             written_out(output, &answer)?;
         }
@@ -315,6 +319,7 @@ impl Server {
 
     fn changed(&self) -> Vec<Value> {
         let mut notifications = Vec::new();
+
         for (uri, last) in self.subscribed.borrow_mut().iter_mut() {
             let now = self.reading(uri);
             if now != *last {
@@ -324,12 +329,14 @@ impl Server {
         }
 
         let mut listed = self.listed.borrow_mut();
+
         if let Some(last) = listed.as_mut() {
             let revision = self.library.catalog_revision();
             if revision != last.revision {
                 match resources::fingerprint(&self.library) {
                     Ok(fingerprint) => {
                         let moved = fingerprint != last.fingerprint;
+
                         *last = Watched {
                             revision,
                             fingerprint,
@@ -359,8 +366,10 @@ impl Server {
         if !self.pushing.get() || self.listed.borrow().is_some() {
             return Ok(());
         }
+
         let revision = self.library.catalog_revision();
         let fingerprint = resources::fingerprint(&self.library)?;
+
         *self.listed.borrow_mut() = Some(Watched {
             revision,
             fingerprint,
@@ -377,6 +386,7 @@ impl Server {
             Some(_) => true,
             None => false,
         };
+
         if !held {
             return Err(Refusal::UnknownResource(ResourceUri::new(asked.uri)));
         }
@@ -409,6 +419,7 @@ impl Server {
                 &Unanswered::Refused(Refusal::EmptyBatch),
             ));
         }
+
         let answers: Vec<Value> = batch
             .into_iter()
             .filter_map(|message| self.answer_one(message))
@@ -449,13 +460,16 @@ impl Server {
                     None | Some(Value::Null) => Value::Object(Map::new()),
                     Some(given) => given,
                 };
+
                 let outcome = tool.run(arguments, &self.library, &*self.players, &self.passes)?;
                 Ok(called(tool, outcome))
             }
             RESOURCES_LIST => {
                 let from = starting_at(method, params)?;
                 let page = resources::page_from(&self.library, from)?;
+
                 self.watch_the_list()?;
+
                 let listed = page.resources.iter().map(Resource::listed).collect();
                 Ok(with_next("resources", listed, page.next))
             }
@@ -468,6 +482,7 @@ impl Server {
                 let resource = Resource::at(&asked.uri).ok_or_else(|| {
                     Refusal::UnknownResource(ResourceUri::new(asked.uri.as_str()))
                 })?;
+
                 let read = match resource.read(&self.library, &*self.players, &self.passes) {
                     Err(Error::NoSuchPlaylist(_)) => {
                         return Err(
@@ -481,11 +496,13 @@ impl Server {
             RESOURCES_SUBSCRIBE => {
                 let uri = self.subscription(method, params)?;
                 let now = self.reading(&uri);
+
                 self.subscribed.borrow_mut().insert(uri, now);
                 Ok(json!({}))
             }
             RESOURCES_UNSUBSCRIBE => {
                 let asked = self.pushed(method, params)?;
+
                 self.subscribed.borrow_mut().remove(&asked.uri);
                 Ok(json!({}))
             }
@@ -541,6 +558,7 @@ fn notification(method: &str, params: Value) -> Value {
 fn read_into(mut input: impl BufRead, sender: &SyncSender<Heard>) {
     loop {
         let mut line = Vec::new();
+
         let read = next_line(&mut input, &mut line);
         let last = !matches!(read, Ok(Line::Held | Line::TooLong));
         if sender.send(Heard::Read(read, line)).is_err() || last {
@@ -576,6 +594,7 @@ fn next_line(input: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Line> {
         .by_ref()
         .take(LONGEST_MESSAGE as u64 + 1)
         .read_until(b'\n', line)?;
+
     if read == 0 {
         return Ok(Line::Ended);
     }
@@ -590,6 +609,7 @@ fn past_the_rest_of_the_line(input: &mut impl BufRead) -> io::Result<()> {
     loop {
         let (used, ended) = {
             let held = input.fill_buf()?;
+
             if held.is_empty() {
                 return Ok(());
             }
@@ -598,6 +618,7 @@ fn past_the_rest_of_the_line(input: &mut impl BufRead) -> io::Result<()> {
                 None => (held.len(), false),
             }
         };
+
         input.consume(used);
         if ended {
             return Ok(());
@@ -610,6 +631,7 @@ fn read(message: Value) -> std::result::Result<Message, (Value, Refusal)> {
         return Err((Value::Null, Refusal::NotARequest));
     };
     let id = envelope.remove("id");
+
     if envelope.get("jsonrpc").and_then(Value::as_str) != Some(JSON_RPC) {
         return Err((answerable(id), Refusal::NotARequest));
     }
@@ -668,6 +690,7 @@ fn page_of(key: &str, items: Vec<Value>, from: usize) -> Value {
 
 fn with_next(key: &str, items: Vec<Value>, next: Option<usize>) -> Value {
     let mut listed = Map::new();
+
     listed.insert(key.to_owned(), Value::Array(items));
     if let Some(next) = next {
         listed.insert("nextCursor".to_owned(), Value::String(next.to_string()));

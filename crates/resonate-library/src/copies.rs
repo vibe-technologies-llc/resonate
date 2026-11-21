@@ -72,6 +72,7 @@ pub(crate) fn found(connection: &Connection) -> Result<Copies> {
         let (kept, rest) = class
             .split_first()
             .expect("a class holds at least two files");
+
         for copy in rest {
             held_in_a_class.insert(copy.path);
             copies.identical.push(IdenticalCopy {
@@ -97,6 +98,7 @@ pub(crate) fn found(connection: &Connection) -> Result<Copies> {
 
 fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> {
     let mut by_size: BTreeMap<i64, Vec<Member<'_>>> = BTreeMap::new();
+
     for (path, whole) in wholes {
         if whole.size > 0 {
             by_size.entry(whole.size).or_default().push(Member {
@@ -107,6 +109,7 @@ fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> 
     }
 
     let mut classes = Vec::new();
+
     for sharing_a_size in by_size.into_values().filter(|members| members.len() > 1) {
         classes.extend(identical_among(sharing_a_size, |member| {
             File::open(member.path).ok()
@@ -130,6 +133,7 @@ pub(crate) fn handed_over(transaction: &Transaction<'_>, over: &HandOver<'_>) ->
           WHERE path = ?2",
         params![kept_path, copy_path],
     )?;
+
     if renamed > 0 {
         changed(
             "UPDATE playlists SET modified = ?2
@@ -228,6 +232,7 @@ pub(crate) fn unreached_links_hand_over_their_history(
 fn file_a_link_names(path: &Path) -> Option<PathBuf> {
     let is_a_link = fs::symlink_metadata(path).is_ok_and(|metadata| metadata.is_symlink());
     let names_a_file = fs::metadata(path).is_ok_and(|metadata| metadata.is_file());
+
     if !(is_a_link && names_a_file) {
         return None;
     }
@@ -260,6 +265,7 @@ fn whole_files(connection: &Connection) -> Result<BTreeMap<PathBuf, Whole>> {
              HAVING count(*) = 1 AND min(span_frames) IS NULL",
         )
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
     let rows = statement
         .query_map([], |row| {
             Ok((
