@@ -646,8 +646,10 @@ curve's name and *Every output* or the output keeping it, *Off · Original sound
 <output>* while the route is known (`SwitchRow`s); the graph, always shown (`EqualiserGraph` in an
 `EqualiserCard`, its height 10/16 of its width held to 180 to 340 dp, `graphHeightDp`, the level labels
 in a gutter of their own, `GraphFrame.gutter`, so no handle covers them); the band chips `1 … n`
-(`BandChips`, a `LazyRow` keeping the chosen chip in view, faded over its last 48 dp while it scrolls on, `fadedTowardTheEnd`, so a chip cut by the edge reads as more to come) with *Add band* fixed at its end, a tonal `AssistChip` as tall as the band chips; the chosen
-band's card docked under them (`BandCard`); *Preamp* (*Level*, its value, *Fit* and the note *Fit brings
+(`BandChips`, a `LazyRow` keeping the chosen chip in view, faded over its last 24 dp while it scrolls
+on, `fadedTowardTheEnd`) with *Add band* fixed at its end. The gutter belongs to the outer row so the
+scrolling chips stay inside the edges of the graph and band card at either end of the list. Below
+them are the chosen band's card (`BandCard`); *Preamp* (*Level*, its value, *Fit* and the note *Fit brings
 the queue's loudest peak to full scale.*); *Presets* (a `LazyRow` of `FilterChip`s opening on the chosen
 one, its line beneath, or *Your own sound, shaped on the graph above.*); *Corrections*, rows to the
 pages `Screen.HeadphoneCorrection`, `Measurement`, `RoomCorrection`, `ListeningTest` and, only while
@@ -753,7 +755,9 @@ of the boundary's built-in targets (`measurement_offers`, the recommended one ch
 of your own…* (`TargetChoice.File`), which opens `ActivityResultContracts.OpenDocument` and reads the
 target through `ContentResolver.readUpTo` (`DocumentReads.kt`, at most the offers' `bytes_at_most` and
 one byte, so the boundary's refusal speaks for a larger one); *A measurement file* holds *Fit a
-measurement…*, which opens the picker for the measurement itself. `MeasurementViewModel.fitFrom` reads
+measurement…*, which opens the picker for the measurement itself. The file and microphone actions
+are full-width settings rows with their descriptions as supporting text, so each action and its
+explanation read together. `MeasurementViewModel.fitFrom` reads
 on `Dispatchers.IO`, fits on `Dispatchers.Default` through `fit_measurement`, then commits the fitted
 curve as an import does (it switches the equaliser on, binds to the output in use) and says
 `fitSentence`: the bands, the target, the error before and after and any lines passed over, kept at the
@@ -781,8 +785,10 @@ runs (`MeasurementView.sounding`, `MeasurementAimTest`).
 
 **Room correction is a page of its own** (`RoomCorrectionScreen`, `RoomCorrectionViewModel`,
 `RoomCorrectionState.kt`): *Correct for the room* (a `SwitchRow`, off until a response is kept, its line
-the response's name and `describeRoom`), then *The response*: *Choose a response* opens the system document picker for audio (`ACTION_OPEN_DOCUMENT`), the chosen
-file is read in `room_correction_chunk_bytes()` chunks off the main thread and staged through
+the response's name and `describeRoom`), then *The response*, whose introduction precedes the
+single-response and pair picker rows. *Choose a response* opens the system document picker for audio
+(`ACTION_OPEN_DOCUMENT`). The chosen file is read in `room_correction_chunk_bytes()` chunks off the
+main thread and staged through
 `begin_room_correction`, `stage_room_correction` and `finish_room_correction` (a failure calls
 `abandon_room_correction`), never held whole, then switched on; the switch, the response's channels, rate and length and
 *Forget the response* (confirmed) follow, as `eq.md`'s *Room correction* says. `room-correction` (on)
@@ -1816,8 +1822,19 @@ unverified. The QR is `com.google.zxing:core` (pure Java), since pairing draws n
 `shared-name`. **What stops a list being shared is a `SharingBlock`** (`TogetherWords.sharingBlock`: sync off, this network only, online off), and the sheet's button goes where its sentence points: *Open Devices* for the first two, *Open Settings* for online off, whose switch is on Settings' root (`TogetherWordsTest`). **The sheet knows a list is shared from the catalog, not the service**: with sync stopped `shared_playlists()` is empty, so `SharingSheet` takes `MusicPlaylist.shared` (`sharedHere`) and reads *This playlist is shared* beside the same block and button rather than offering to share it anew, and the playlist's overline says *Shared*; its menu offers no *Delete* either way (`TogetherWords.inShare`), since a list in a share is left from the sheet, never deleted from under it. **A Resonate invitation typed or pasted into Search is not searched for** (`invitationIn`, `isOnlineLink`, `SearchLogicTest`): `isLink` holds it, no online link view is rooted for it (`OnlineTrailTest`), and the results show a *Join* card that calls `Together.arrive`, as *Paste a link* does. The card is drawn through a graphics layer to a PNG for the system's sheet
 (`shared-playlists.md`, `party.md`).
 
+## Wrapped
+
+`WrappedDeck` gives each slide the available space between the toolbar and the page controls.
+The opening summary and other slides without rows or charts centre their content with a five-bar
+mark. Rankings and charts start at the top of the same surface, and all slides scroll vertically
+when their content needs more room. The toolbar holds the year picker, copy and share. The bottom
+controls show the current page and progress alongside Previous and Next.
+
 ## Accessibility
 
+- **Shared settings choices use compact radio rows** (`ChoiceDialog`). Each option has a 48 dp
+  minimum touch target and grows to fit its label and description. The list scrolls when the
+  options are taller than the available dialog space.
 - **One set of helpers, in `ui/components/Accessibility.kt`.** `rememberCalm()` re-reads on resume and on
   touch-exploration changes (animator scale zero or a reader exploring means calm); `rememberTitleMaxLines()`
   gives titles two or three lines above font scale 1.3 (Now Playing's action row wraps to two columns

@@ -7,28 +7,20 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.automirrored.rounded.ShowChart
+import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material.icons.rounded.MicOff
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.TrackChanges
 import androidx.compose.material.icons.rounded.Tune
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearWavyProgressIndicator
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -70,7 +62,6 @@ import org.resonate.android.ui.components.Page
 import org.resonate.android.ui.components.SectionHeader
 import org.resonate.android.ui.components.Sizes
 import org.resonate.android.ui.resonateViewModel
-import org.resonate.android.ui.settings.ButtonRow
 import org.resonate.android.ui.settings.Choice
 import org.resonate.android.ui.settings.ChoiceDialog
 import org.resonate.android.ui.settings.Note
@@ -256,56 +247,40 @@ fun MeasurementScreen() {
             }
             item(key = "file") {
                 SectionHeader(stringResource(R.string.equaliser_measure_file))
-                Note(stringResource(R.string.equaliser_measure_file_note))
-                ButtonRow(start = true) {
-                    FilledTonalButton(
-                        onClick = { measurementPicker.launch(arrayOf(ANY_DOCUMENT)) },
-                        enabled = ready,
-                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                        modifier = Modifier.testTag("measurement-fit"),
-                    ) {
-                        Icon(Icons.AutoMirrored.Rounded.ShowChart, null, Modifier.size(ButtonDefaults.IconSize))
-                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                        Text(
-                            stringResource(
-                                if (view.fitting && !view.sounding) {
-                                    R.string.equaliser_measure_fitting
-                                } else R.string.equaliser_measure_fit_file
-                            )
-                        )
-                    }
-                }
+                SettingRow(
+                    title =
+                        stringResource(
+                            if (view.fitting && !view.sounding) R.string.equaliser_measure_fitting
+                            else R.string.equaliser_measure_fit_file
+                        ),
+                    icon = Icons.AutoMirrored.Rounded.ShowChart,
+                    supporting = stringResource(R.string.equaliser_measure_file_note),
+                    onClick = { measurementPicker.launch(arrayOf(ANY_DOCUMENT)) },
+                    enabled = ready,
+                    modifier = Modifier.testTag("measurement-fit"),
+                )
             }
             item(key = "microphone") {
                 SectionHeader(stringResource(R.string.equaliser_measure_microphone))
-                Note(stringResource(R.string.equaliser_measure_microphone_note))
-                ButtonRow(start = true) {
-                    Button(
-                        onClick = { model.measure(context) },
-                        enabled = ready,
-                        contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                        modifier = Modifier.testTag("measurement-measure"),
-                    ) {
-                        Icon(Icons.Rounded.Mic, null, Modifier.size(ButtonDefaults.IconSize))
-                        Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                        Text(
-                            stringResource(
-                                if (view.sounding) R.string.equaliser_measure_measuring
-                                else R.string.equaliser_measure_start
-                            )
-                        )
-                    }
-                    if (view.sounding) {
-                        OutlinedButton(
-                            onClick = model::stop,
-                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                            modifier = Modifier.testTag("measurement-stop"),
-                        ) {
-                            Icon(Icons.Rounded.Stop, null, Modifier.size(ButtonDefaults.IconSize))
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text(stringResource(R.string.equaliser_measure_stop))
-                        }
-                    }
+                SettingRow(
+                    title =
+                        stringResource(
+                            if (view.sounding) R.string.equaliser_measure_measuring
+                            else R.string.equaliser_measure_start
+                        ),
+                    icon = Icons.Rounded.Mic,
+                    supporting = stringResource(R.string.equaliser_measure_microphone_note),
+                    onClick = { model.measure(context) },
+                    enabled = ready,
+                    modifier = Modifier.testTag("measurement-measure"),
+                )
+                if (view.sounding) {
+                    SettingRow(
+                        title = stringResource(R.string.equaliser_measure_stop),
+                        icon = Icons.Rounded.Stop,
+                        onClick = model::stop,
+                        modifier = Modifier.testTag("measurement-stop"),
+                    )
                 }
                 val calibration = view.calibration
                 SettingRow(
@@ -349,11 +324,7 @@ fun MeasurementScreen() {
             }
             item(key = "status") {
                 Column(Modifier.semantics { liveRegion = LiveRegionMode.Polite }) {
-                    Box(
-                        Modifier.fillMaxWidth()
-                            .height(12.dp)
-                            .padding(horizontal = Sizes.gutter)
-                    ) {
+                    Box(Modifier.fillMaxWidth().height(12.dp).padding(horizontal = Sizes.gutter)) {
                         if (view.fitting) LinearWavyProgressIndicator(Modifier.fillMaxWidth())
                     }
                     view.said?.let { Note(it, Modifier.testTag("measurement-said")) }

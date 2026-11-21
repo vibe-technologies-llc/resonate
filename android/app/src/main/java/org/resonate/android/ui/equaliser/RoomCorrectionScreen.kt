@@ -22,12 +22,10 @@ import androidx.compose.material.icons.rounded.Remove
 import androidx.compose.material.icons.rounded.SpeakerGroup
 import androidx.compose.material.icons.rounded.SurroundSound
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -131,6 +129,7 @@ fun RoomCorrectionScreen() {
             }
             item(key = "response") {
                 SectionHeader(stringResource(R.string.equaliser_room_response))
+                Note(stringResource(R.string.equaliser_room_response_note))
                 if (left != null) {
                     SettingRow(
                         title = stringResource(R.string.equaliser_room_left),
@@ -138,74 +137,52 @@ fun RoomCorrectionScreen() {
                         supporting = left.name,
                         modifier = Modifier.testTag("room-pair-left"),
                     )
-                    ButtonRow(start = true) {
-                        FilledTonalButton(
-                            onClick = { rightPicker.launch(RESPONSE_DOCUMENTS) },
-                            enabled = !room.reading,
-                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                            modifier = Modifier.testTag("room-pair-right"),
-                        ) {
-                            Icon(
-                                Icons.Rounded.AudioFile,
-                                null,
-                                Modifier.size(ButtonDefaults.IconSize),
-                            )
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text(
-                                stringResource(
-                                    if (room.reading) R.string.equaliser_room_reading
-                                    else R.string.equaliser_room_choose_right
-                                )
-                            )
-                        }
+                    SettingRow(
+                        title =
+                            stringResource(
+                                if (room.reading) R.string.equaliser_room_reading
+                                else R.string.equaliser_room_choose_right
+                            ),
+                        icon = Icons.Rounded.AudioFile,
+                        onClick = { rightPicker.launch(RESPONSE_DOCUMENTS) },
+                        enabled = !room.reading,
+                        modifier = Modifier.testTag("room-pair-right"),
+                    )
+                    ButtonRow {
                         TextButton(onClick = model::cancelPair, enabled = !room.reading) {
                             Text(stringResource(R.string.equaliser_cancel))
                         }
                     }
                 } else {
-                    ButtonRow(start = true) {
-                        FilledTonalButton(
-                            onClick = model::choose,
-                            enabled = !room.reading,
-                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                            modifier = Modifier.testTag("room-choose"),
-                        ) {
-                            Icon(
-                                Icons.Rounded.AudioFile,
-                                null,
-                                Modifier.size(ButtonDefaults.IconSize),
-                            )
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text(
-                                stringResource(
-                                    when {
-                                        room.reading -> R.string.equaliser_room_reading
-                                        named -> R.string.equaliser_room_choose_another
-                                        else -> R.string.equaliser_room_choose
-                                    }
-                                )
-                            )
-                        }
-                        OutlinedButton(
-                            onClick = { leftPicker.launch(RESPONSE_DOCUMENTS) },
-                            enabled = !room.reading,
-                            contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-                            modifier = Modifier.testTag("room-choose-pair"),
-                        ) {
-                            Icon(
-                                Icons.Rounded.Headphones,
-                                null,
-                                Modifier.size(ButtonDefaults.IconSize),
-                            )
-                            Spacer(Modifier.width(ButtonDefaults.IconSpacing))
-                            Text(stringResource(R.string.equaliser_room_choose_pair))
-                        }
-                        if (named) {
-                            OutlinedButton(
+                    SettingRow(
+                        title =
+                            stringResource(
+                                when {
+                                    room.reading -> R.string.equaliser_room_reading
+                                    named -> R.string.equaliser_room_choose_another
+                                    else -> R.string.equaliser_room_choose
+                                }
+                            ),
+                        icon = Icons.Rounded.AudioFile,
+                        onClick = model::choose,
+                        enabled = !room.reading,
+                        modifier = Modifier.testTag("room-choose"),
+                    )
+                    SettingRow(
+                        title = stringResource(R.string.equaliser_room_choose_pair),
+                        icon = Icons.Rounded.Headphones,
+                        onClick = { leftPicker.launch(RESPONSE_DOCUMENTS) },
+                        enabled = !room.reading,
+                        modifier = Modifier.testTag("room-choose-pair"),
+                    )
+                    Note(stringResource(R.string.equaliser_room_four_channels_note))
+                    if (named) {
+                        ButtonRow {
+                            TextButton(
                                 onClick = { forgetting = true },
-                                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
+                                contentPadding = ButtonDefaults.TextButtonWithIconContentPadding,
                                 colors =
-                                    ButtonDefaults.outlinedButtonColors(
+                                    ButtonDefaults.textButtonColors(
                                         contentColor = MaterialTheme.colorScheme.error
                                     ),
                                 modifier = Modifier.testTag("room-forget"),
@@ -221,8 +198,6 @@ fun RoomCorrectionScreen() {
                         }
                     }
                 }
-                Note(stringResource(R.string.equaliser_room_response_note))
-                Note(stringResource(R.string.equaliser_room_four_channels_note))
             }
             if (named) {
                 item(key = "speakers") {

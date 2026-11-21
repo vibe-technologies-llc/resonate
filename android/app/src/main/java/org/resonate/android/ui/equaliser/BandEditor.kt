@@ -73,17 +73,17 @@ fun BandChips(
         if (wanted !in seen) state.animateScrollToItem(wanted)
     }
     Row(
-        Modifier.fillMaxWidth().padding(end = Sizes.gutter, top = 8.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth()
+            .padding(horizontal = Sizes.gutter)
+            .padding(top = 8.dp, bottom = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         LazyRow(
             state = state,
-            contentPadding = PaddingValues(start = Sizes.gutter, end = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             modifier =
-                Modifier.weight(1f)
-                    .fadedTowardTheEnd(state.canScrollForward)
-                    .testTag("band-chips"),
+                Modifier.weight(1f).fadedTowardTheEnd(state.canScrollForward).testTag("band-chips"),
         ) {
             itemsIndexed(curve.bands) { index, band ->
                 val described =
@@ -102,7 +102,9 @@ fun BandChips(
             onClick = onAdd,
             enabled = curve.bands.size < bounds.bandsAtMost,
             label = { Text(stringResource(R.string.equaliser_add_band)) },
-            leadingIcon = { Icon(Icons.Rounded.Add, null, Modifier.size(AssistChipDefaults.IconSize)) },
+            leadingIcon = {
+                Icon(Icons.Rounded.Add, null, Modifier.size(AssistChipDefaults.IconSize))
+            },
             colors =
                 AssistChipDefaults.assistChipColors(
                     containerColor = MaterialTheme.colorScheme.secondaryContainer,
@@ -110,12 +112,12 @@ fun BandChips(
                     leadingIconContentColor = MaterialTheme.colorScheme.onSecondaryContainer,
                 ),
             border = null,
-            modifier = Modifier.padding(start = 8.dp).testTag("add-band"),
+            modifier = Modifier.testTag("add-band"),
         )
     }
 }
 
-private val CHIPS_FADE_OVER = 48.dp
+private val CHIPS_FADE_OVER = 24.dp
 
 private fun Modifier.fadedTowardTheEnd(more: Boolean): Modifier =
     if (!more) {
@@ -124,7 +126,8 @@ private fun Modifier.fadedTowardTheEnd(more: Boolean): Modifier =
         graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
             .drawWithContent {
                 drawContent()
-                val fade = CHIPS_FADE_OVER.toPx()
+                val fade = CHIPS_FADE_OVER.toPx().coerceAtMost(size.width)
+                if (fade == 0f) return@drawWithContent
                 val (from, to) =
                     if (layoutDirection == LayoutDirection.Ltr) {
                         size.width - fade to size.width
@@ -235,8 +238,7 @@ private fun FilterMenu(filter: EqualiserFilter, number: Int, onChoose: (Equalise
         TextButton(
             onClick = { open = true },
             contentPadding = PaddingValues(start = 8.dp, end = 4.dp),
-            modifier =
-                Modifier.semantics { contentDescription = described }.testTag("band-type"),
+            modifier = Modifier.semantics { contentDescription = described }.testTag("band-type"),
         ) {
             Text(label, style = MaterialTheme.typography.titleMedium)
             Icon(Icons.Rounded.ArrowDropDown, null)

@@ -2,23 +2,26 @@ package org.resonate.android.ui.wrapped
 
 import android.graphics.Bitmap
 import androidx.compose.animation.core.snap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.PagerDefaults
@@ -29,34 +32,35 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.automirrored.rounded.ArrowForward
+import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentCopy
 import androidx.compose.material.icons.rounded.Share
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.FilledTonalIconButton
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.setValue
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
@@ -76,6 +80,7 @@ import androidx.compose.ui.semantics.paneTitle
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.dp
@@ -108,6 +113,8 @@ private const val PNG_QUALITY = 100
 private val CHART_HEIGHT = 140.dp
 private val CARD_CHART_HEIGHT = 100.dp
 private const val SMALLEST_BAR = 0.02f
+private val DECK_WIDTH = 560.dp
+private val COVER_BARS = listOf(0.38f, 0.66f, 1f, 0.78f, 0.48f)
 
 @Composable
 fun WrappedDeck(year: WrappedYear, onYear: (Long) -> Unit, onClose: () -> Unit) {
@@ -143,9 +150,10 @@ private fun Deck(
     val card = rememberGraphicsLayer()
     val shown = slides.getOrNull(pager.currentPage)
     val turn: (Int) -> Unit = { to ->
-        scope.launch {
-            val page = to.coerceIn(slides.indices)
-            if (calm.reduced) pager.scrollToPage(page) else pager.animateScrollToPage(page)
+        if (to in slides.indices) {
+            scope.launch {
+                if (calm.reduced) pager.scrollToPage(to) else pager.animateScrollToPage(to)
+            }
         }
     }
     LaunchedEffect(Unit) { focus.requestFocus() }
@@ -176,9 +184,12 @@ private fun Deck(
                     }
                 },
     ) {
-        Column(Modifier.fillMaxSize().safeDrawingPadding()) {
+        Column(
+            Modifier.fillMaxSize().safeDrawingPadding(),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
             Row(
-                Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+                Modifier.widthIn(max = DECK_WIDTH).fillMaxWidth().padding(horizontal = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onClose, modifier = Modifier.testTag("wrapped-close")) {
@@ -187,20 +198,25 @@ private fun Deck(
                         contentDescription = stringResource(R.string.wrapped_close),
                     )
                 }
-                Spacer(Modifier.weight(1f))
-                Years(year, onYear)
+                Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                    Years(year, onYear)
+                }
+                WrappedActions(year, pager.currentPage, card, shown)
             }
             HorizontalPager(
                 state = pager,
                 flingBehavior =
-                    if (calm.reduced)
-                        PagerDefaults.flingBehavior(pager, snapAnimationSpec = snap())
+                    if (calm.reduced) PagerDefaults.flingBehavior(pager, snapAnimationSpec = snap())
                     else PagerDefaults.flingBehavior(pager),
-                modifier = Modifier.weight(1f).fillMaxWidth().testTag("wrapped-slides"),
+                modifier =
+                    Modifier.weight(1f)
+                        .widthIn(max = DECK_WIDTH)
+                        .fillMaxWidth()
+                        .testTag("wrapped-slides"),
             ) { page ->
                 Slide(slides[page])
             }
-            Foot(year, pager.currentPage, turn, card, shown)
+            SlideNavigation(pager.currentPage, slides.size, turn)
         }
     }
     if (shown != null) CardBeingDrawn(year.year, shown, card)
@@ -237,10 +253,9 @@ private fun Years(year: WrappedYear, onYear: (Long) -> Unit) {
 }
 
 @Composable
-private fun Foot(
+private fun WrappedActions(
     year: WrappedYear,
     page: Int,
-    turn: (Int) -> Unit,
     card: GraphicsLayer,
     shown: WrappedSlide?,
 ) {
@@ -252,86 +267,93 @@ private fun Foot(
     val words = words()
     val entry = WrappedWords.entry(words, year.year)
     val notDrawn = stringResource(R.string.wrapped_not_drawn)
-    Column(
-        Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+    IconButton(
+        onClick = {
+            copy(entry, year.summary)
+            copied = true
+        },
+        modifier = Modifier.testTag("wrapped-copy"),
     ) {
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterHorizontally),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            FilledTonalIconButton(
-                onClick = { turn(page - 1) },
-                enabled = page > 0,
-                modifier = Modifier.testTag("wrapped-before"),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.ArrowBack,
-                    contentDescription = stringResource(R.string.wrapped_before),
-                )
+        Icon(
+            if (copied) Icons.Rounded.Check else Icons.Rounded.ContentCopy,
+            contentDescription =
+                stringResource(if (copied) R.string.wrapped_copied else R.string.wrapped_copy),
+        )
+    }
+    IconButton(
+        onClick = {
+            scope.launch {
+                resonate
+                    .read {
+                        val drawn = card.toImageBitmap().asAndroidBitmap()
+                        val file =
+                            File(
+                                File(context.cacheDir, CARD_FOLDER),
+                                WrappedWords.cardFileName(year.year, page),
+                            )
+                        withContext(Dispatchers.IO) { writePng(drawn, file) }
+                        file
+                    }
+                    .onSuccess { resonate.host.shareImage(entry, it) }
+                    .onFailure {
+                        android.util.Log.w("Resonate", "The card was not drawn", it)
+                        resonate.library.notice(notDrawn)
+                    }
             }
+        },
+        enabled = shown != null,
+        modifier = Modifier.testTag("wrapped-share"),
+    ) {
+        Icon(Icons.Rounded.Share, contentDescription = stringResource(R.string.wrapped_share))
+    }
+}
+
+@Composable
+private fun SlideNavigation(page: Int, total: Int, turn: (Int) -> Unit) {
+    if (total == 0) return
+    Row(
+        Modifier.widthIn(max = DECK_WIDTH)
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        FilledTonalIconButton(
+            onClick = { turn(page - 1) },
+            enabled = page > 0,
+            modifier = Modifier.testTag("wrapped-before"),
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowBack,
+                contentDescription = stringResource(R.string.wrapped_before),
+            )
+        }
+        Column(
+            Modifier.weight(1f),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
             Text(
-                WrappedWords.place(words, page, year.slides.size),
+                WrappedWords.place(words(), page, total),
                 style = MaterialTheme.typography.labelLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.testTag("wrapped-place"),
             )
-            FilledTonalIconButton(
-                onClick = { turn(page + 1) },
-                enabled = page < year.slides.lastIndex,
-                modifier = Modifier.testTag("wrapped-next"),
-            ) {
-                Icon(
-                    Icons.AutoMirrored.Rounded.ArrowForward,
-                    contentDescription = stringResource(R.string.wrapped_next),
-                )
-            }
+            LinearProgressIndicator(
+                progress = { (page + 1).toFloat() / total },
+                modifier = Modifier.fillMaxWidth().clearAndSetSemantics {},
+                drawStopIndicator = {},
+            )
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(
-                onClick = {
-                    copy(entry, year.summary)
-                    copied = true
-                },
-                modifier = Modifier.weight(1f).testTag("wrapped-copy"),
-            ) {
-                Icon(Icons.Rounded.ContentCopy, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    stringResource(if (copied) R.string.wrapped_copied else R.string.wrapped_copy)
-                )
-            }
-            FilledTonalButton(
-                onClick = {
-                    if (shown != null)
-                        scope.launch {
-                            resonate
-                                .read {
-                                    val drawn = card.toImageBitmap().asAndroidBitmap()
-                                    val file =
-                                        File(
-                                            File(context.cacheDir, CARD_FOLDER),
-                                            WrappedWords.cardFileName(year.year, page),
-                                        )
-                                    withContext(Dispatchers.IO) { writePng(drawn, file) }
-                                    file
-                                }
-                                .onSuccess {
-                                    resonate.host.shareImage(entry, it)
-                                }
-                                .onFailure {
-                                    android.util.Log.w("Resonate", "The card was not drawn", it)
-                                    resonate.library.notice(notDrawn)
-                                }
-                        }
-                },
-                modifier = Modifier.weight(1f).testTag("wrapped-share"),
-            ) {
-                Icon(Icons.Rounded.Share, null, Modifier.size(18.dp))
-                Spacer(Modifier.width(8.dp))
-                Text(stringResource(R.string.wrapped_share))
-            }
+        FilledTonalIconButton(
+            onClick = { turn(page + 1) },
+            enabled = page < total - 1,
+            modifier = Modifier.testTag("wrapped-next"),
+        ) {
+            Icon(
+                Icons.AutoMirrored.Rounded.ArrowForward,
+                contentDescription = stringResource(R.string.wrapped_next),
+            )
         }
     }
 }
@@ -347,34 +369,98 @@ private fun writePng(drawn: Bitmap, file: File) {
 @Composable
 private fun Slide(slide: WrappedSlide) {
     val scheme = MaterialTheme.colorScheme
-    Column(
-        Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+    val cover = slide.rows.isEmpty() && slide.bars.isEmpty()
+    val gradient =
+        if (cover) {
+            Brush.verticalGradient(listOf(scheme.primaryContainer, scheme.surface))
+        } else {
+            Brush.verticalGradient(listOf(scheme.surfaceContainerHigh, scheme.surface))
+        }
+    Surface(
+        shape = MaterialTheme.shapes.extraLarge,
+        color = scheme.surface,
+        contentColor = scheme.onSurface,
+        border = BorderStroke(1.dp, scheme.outlineVariant),
+        modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp, vertical = 4.dp),
     ) {
-        Surface(
-            color = scheme.primaryContainer,
-            contentColor = scheme.onPrimaryContainer,
-            shape = MaterialTheme.shapes.extraLarge,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Column(Modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(slide.eyebrow, style = MaterialTheme.typography.labelLarge)
-                Text(
-                    slide.headline,
-                    style = MaterialTheme.typography.headlineLarge,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.semantics { heading() },
-                )
-                slide.detail?.let { Text(it, style = MaterialTheme.typography.bodyLarge) }
+        BoxWithConstraints(Modifier.background(gradient)) {
+            Column(
+                Modifier.fillMaxWidth()
+                    .verticalScroll(rememberScrollState())
+                    .heightIn(min = maxHeight)
+                    .padding(24.dp),
+                verticalArrangement =
+                    Arrangement.spacedBy(
+                        24.dp,
+                        if (cover) Alignment.CenterVertically else Alignment.Top,
+                    ),
+                horizontalAlignment = if (cover) Alignment.CenterHorizontally else Alignment.Start,
+            ) {
+                if (cover) CoverMark()
+                SlideHeading(slide, cover)
+                if (slide.rows.isNotEmpty()) {
+                    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        slide.rows.forEachIndexed { at, row -> RowOfASlide(at, row) }
+                    }
+                }
+                if (slide.bars.isNotEmpty()) Chart(slide.bars, CHART_HEIGHT)
             }
         }
-        if (slide.rows.isNotEmpty()) {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                slide.rows.forEachIndexed { at, row -> RowOfASlide(at, row) }
-            }
+    }
+}
+
+@Composable
+private fun SlideHeading(slide: WrappedSlide, cover: Boolean) {
+    val scheme = MaterialTheme.colorScheme
+    val align = if (cover) TextAlign.Center else TextAlign.Start
+    Column(
+        Modifier.fillMaxWidth(),
+        horizontalAlignment = if (cover) Alignment.CenterHorizontally else Alignment.Start,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
+    ) {
+        Text(
+            slide.eyebrow,
+            style = MaterialTheme.typography.labelLarge,
+            color = scheme.onSurfaceVariant,
+            textAlign = align,
+        )
+        Text(
+            slide.headline,
+            style =
+                if (cover) MaterialTheme.typography.displaySmall
+                else MaterialTheme.typography.headlineLarge,
+            fontWeight = FontWeight.Bold,
+            textAlign = align,
+            modifier = Modifier.semantics { heading() },
+        )
+        slide.detail?.let {
+            Text(
+                it,
+                style = MaterialTheme.typography.bodyLarge,
+                color = scheme.onSurfaceVariant,
+                textAlign = align,
+            )
         }
-        if (slide.bars.isNotEmpty()) Chart(slide.bars, CHART_HEIGHT)
-        Spacer(Modifier.height(8.dp))
+    }
+}
+
+@Composable
+private fun CoverMark() {
+    val scheme = MaterialTheme.colorScheme
+    val colors =
+        listOf(scheme.tertiary, scheme.secondary, scheme.primary, scheme.secondary, scheme.tertiary)
+    Row(
+        Modifier.widthIn(max = 192.dp).fillMaxWidth().height(96.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        COVER_BARS.forEachIndexed { index, height ->
+            Box(
+                Modifier.weight(1f)
+                    .fillMaxHeight(height)
+                    .background(colors[index], MaterialTheme.shapes.extraLarge)
+            )
+        }
     }
 }
 
@@ -432,7 +518,10 @@ private fun Chart(bars: List<WrappedBar>, height: androidx.compose.ui.unit.Dp) {
                 },
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
-                Box(Modifier.height(height).fillMaxWidth(), contentAlignment = Alignment.BottomCenter) {
+                Box(
+                    Modifier.height(height).fillMaxWidth(),
+                    contentAlignment = Alignment.BottomCenter,
+                ) {
                     Box(
                         Modifier.fillMaxWidth()
                             .fillMaxHeight(
@@ -529,7 +618,13 @@ private fun ShareCard(year: Long, slide: WrappedSlide) {
             )
         }
         if (slide.bars.isNotEmpty()) {
-            MaterialTheme(colorScheme = scheme.copy(onSurfaceVariant = scheme.onPrimaryContainer, secondaryContainer = scheme.surface)) {
+            MaterialTheme(
+                colorScheme =
+                    scheme.copy(
+                        onSurfaceVariant = scheme.onPrimaryContainer,
+                        secondaryContainer = scheme.surface,
+                    )
+            ) {
                 Chart(slide.bars, CARD_CHART_HEIGHT)
             }
         }
