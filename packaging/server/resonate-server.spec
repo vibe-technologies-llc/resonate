@@ -51,6 +51,8 @@ install -Dm644 packaging/server/resonate-server.env %{buildroot}%{_sysconfdir}/r
 %config(noreplace) %{_sysconfdir}/resonate-server/resonate-server.env
 
 %changelog
+* Sat Nov 21 2026 Resonate - 0.16.0-1
+- Features; see the GitHub release for the list
 * Fri Nov 20 2026 Resonate - 0.15.0-1
 - Features; see the GitHub release for the list
 * Thu Nov 19 2026 Resonate - 0.14.0-1
