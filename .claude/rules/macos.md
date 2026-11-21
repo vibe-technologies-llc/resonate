@@ -60,8 +60,9 @@ builds it and runs its tests, with no display and no output device. It is checke
   broadcast address from a socket never allowed to broadcast.
 - **A watch on a Mac starts late and hears a little of the past.** FSEvents can miss what happens
   in the moments after a stream starts and deliver a folder made just before it, which reads as a
-  change no test has settled, so `taken_away` answers nothing. A test acting on files made before
-  its watch first proves the watch listens (`heard_a_write_first`).
+  change no test has settled, so `taken_away` answers nothing. Tests that act on files made before
+  the watch or expect a write to go unreported first let startup events settle
+  (`heard_a_write_first`).
 - **The hosted runner's sleeps overshoot and it stalls threads for tens of milliseconds**, which the
   engine's transport tests read as a device falling behind. The job runs `resonate-engine`'s tests
   one at a time (the `ci` profile's `engine-alone` group in `.config/nextest.toml`), on top of what `audio.md`'s *Fixtures* holds them to.

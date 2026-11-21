@@ -765,6 +765,8 @@ mod tests {
         let scratch = Scratch::new("unread");
         let watch = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
 
+        heard_a_write_first(&watch, &scratch);
+
         fs::write(scratch.path.join("album/notes.txt"), b"liner notes").expect("a file");
 
         assert!(settled_within(&watch, QUIET * 10).is_empty());
