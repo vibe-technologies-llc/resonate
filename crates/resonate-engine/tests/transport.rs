@@ -9583,7 +9583,7 @@ fn dop_rows_play_on_through_one_stream_with_no_drain_no_gap_and_the_marker_unbro
     )?;
 
     player.send(Command::Load {
-        items: vec![row(1), row(2)],
+        items: vec![row(1), row(2), row(3)],
         start_at: 0,
         autoplay: true,
     })?;

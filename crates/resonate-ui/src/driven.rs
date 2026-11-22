@@ -5499,7 +5499,14 @@ mod tests {
         assert!(driven.read(|root, cx| root.library.read(cx).has_variants(song)));
 
         driven.click(named("entry", 1));
-        driven.until(|root, cx| root.player.read(cx).queue().len() == 5);
+        driven.until(|root, cx| {
+            root.player
+                .read(cx)
+                .queue()
+                .iter()
+                .map(|item| item.id)
+                .eq(ids.iter().copied())
+        });
 
         assert_eq!(driven.queue(), ids);
     }

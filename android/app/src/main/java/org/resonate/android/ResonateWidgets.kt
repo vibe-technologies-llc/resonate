@@ -298,9 +298,14 @@ object ResonateWidgets {
             PendingIntent.getBroadcast(
                 context,
                 id,
-                Intent(context, ResonatePlayerWidgetProvider::class.java).setAction(action),
+                widgetPress(context, action),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
+
+    fun widgetPress(context: Context, action: String): Intent =
+        Intent(context, ResonatePlayerWidgetProvider::class.java)
+            .setAction(action)
+            .addFlags(Intent.FLAG_RECEIVER_FOREGROUND)
 
     private fun decoded(bytes: ByteArray): Bitmap? {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }

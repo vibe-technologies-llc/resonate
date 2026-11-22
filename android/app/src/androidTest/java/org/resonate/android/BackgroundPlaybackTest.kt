@@ -5,7 +5,6 @@ import android.app.Notification
 import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.ContentValues
-import android.content.Intent
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.provider.MediaStore
@@ -109,13 +108,11 @@ class BackgroundPlaybackTest {
                     val position = library.snapshot.value?.positionMs ?: 0uL
                     eventually { (library.snapshot.value?.positionMs ?: 0uL) > position + 500uL }
                     context.sendBroadcast(
-                        Intent(context, ResonatePlayerWidgetProvider::class.java)
-                            .setAction(WidgetPresses.TOGGLE)
+                        ResonateWidgets.widgetPress(context, WidgetPresses.TOGGLE)
                     )
                     eventually { library.snapshot.value?.transport == Transport.PAUSED }
                     context.sendBroadcast(
-                        Intent(context, ResonatePlayerWidgetProvider::class.java)
-                            .setAction(WidgetPresses.TOGGLE)
+                        ResonateWidgets.widgetPress(context, WidgetPresses.TOGGLE)
                     )
                     eventually { library.snapshot.value?.transport == Transport.PLAYING }
                     assertTrue((library.snapshot.value?.positionMs ?: 0uL) > 0uL)

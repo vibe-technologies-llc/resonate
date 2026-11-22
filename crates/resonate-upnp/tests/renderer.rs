@@ -2211,7 +2211,11 @@ fn learning_what_a_renderer_plays_offers_exactly_what_played_and_it_is_then_sent
 
     stream.set_active(true).expect("plays");
     stream.drain().expect("drains");
-    fake.until("the fetch to end once drained", |heard| heard.fetch_ended);
+    fake.until("the fetch to end once drained", |heard| {
+        heard.offers.len() == Trial::ALL.len() + 1
+            && heard.fetching.as_ref() == heard.offers.last()
+            && heard.fetch_ended
+    });
     stream.close().expect("closes");
 
     let tree = Tree::new();
