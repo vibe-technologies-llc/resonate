@@ -48,9 +48,11 @@ and holds it to `dsp-lab/baseline.tsv`.
   no peak, every sample is limited, so a +3 dBFS tone makes no over. With the protection off it
   makes 73 836.
 - **The true-peak guard holds a +1 dBFS tone at exactly −0.10 dBTP** (1.10 dB of reduction, THD+N
-  −103.7 to −108.5 dB while limiting) and leaves music under its ceiling bit for bit. **An
-  inter-sample over of +3.1 dBTP comes out at −0.01 dBTP**, 0.09 dB over the −0.1 dB ceiling as
-  `TruePeakMeter` reads it, at every rate measured. That is a finding left open.
+  −105.9 to −109.9 dB while limiting) and leaves music under its ceiling bit for bit. **An
+  inter-sample over comes out at the ceiling too**: a sine at a quarter of the rate, 45 degrees off
+  its samples, with its samples at 0 dBFS, reads +3.1 dBTP where it starts and stops (+3.0 between)
+  and leaves at −0.10 dBTP, within 6e-5 dB, at every rate measured. Each output is read whole, its
+  start and its end included, by the `TruePeakMeter` of its rate.
 - **A claimed latency is not where the samples land.** The guard claims 115 to 192 frames,
   restoration 768 and the resampler up to 17 064, but each holds its delay back and hands the
   samples on aligned (measured 0). The convolver hands them on one 1 024-frame partition late, as it
@@ -247,21 +249,21 @@ The tables the lab prints. Resonate's stages are in bold.
 
 | Setting | Inter-sample over out (dBTP) | +1 dBFS tone out (dBTP) | Reduction of the hot tone (dB) | THD+N while limiting (dB) | Null under the ceiling (dB) | Claimed latency (frames) | Measured latency (frames) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **True-peak guard** | -0.01 | -0.10 | -1.10 | -103.7 | −∞ | 115 | 0 |
+| **True-peak guard** | -0.10 | -0.10 | -1.10 | -105.9 | −∞ | 115 | 0 |
 | **No guard** | 3.10 | 1.00 | 0.00 | -308.2 | −∞ | 0 | 0 |
 
 #### True-peak guard, 48 kHz
 
 | Setting | Inter-sample over out (dBTP) | +1 dBFS tone out (dBTP) | Reduction of the hot tone (dB) | THD+N while limiting (dB) | Null under the ceiling (dB) | Claimed latency (frames) | Measured latency (frames) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **True-peak guard** | -0.01 | -0.10 | -1.10 | -108.5 | −∞ | 120 | 0 |
+| **True-peak guard** | -0.10 | -0.10 | -1.10 | -109.9 | −∞ | 120 | 0 |
 | **No guard** | 3.10 | 1.00 | 0.00 | -308.8 | −∞ | 0 | 0 |
 
 #### True-peak guard, 96 kHz
 
 | Setting | Inter-sample over out (dBTP) | +1 dBFS tone out (dBTP) | Reduction of the hot tone (dB) | THD+N while limiting (dB) | Null under the ceiling (dB) | Claimed latency (frames) | Measured latency (frames) |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| **True-peak guard** | -0.01 | -0.10 | -1.10 | -108.0 | −∞ | 192 | 0 |
+| **True-peak guard** | -0.10 | -0.10 | -1.10 | -108.6 | −∞ | 192 | 0 |
 | **No guard** | 3.10 | 1.00 | 0.00 | -310.4 | −∞ | 0 | 0 |
 
 ### Remix

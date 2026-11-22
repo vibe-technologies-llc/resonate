@@ -3497,10 +3497,10 @@ gain	48	ReplayGain +6 dB, no peak, unprotected	heard-db	6.00000030231538
 gain	48	ReplayGain +6 dB, no peak, unprotected	error-db	0
 gain	48	ReplayGain +6 dB, no peak, unprotected	null-db	-inf
 gain	48	ReplayGain +6 dB, no peak, unprotected	overs	73836
-peak	44.1	True-peak guard	inter-sample-over-dbtp	-0.010055036069281187
-peak	44.1	True-peak guard	hot-tone-dbtp	-0.09860255520361148
-peak	44.1	True-peak guard	reduction-db	-1.0999116623813114
-peak	44.1	True-peak guard	limited-thd-n-db	-103.72638166969281
+peak	44.1	True-peak guard	inter-sample-over-dbtp	-0.09998283087065364
+peak	44.1	True-peak guard	hot-tone-dbtp	-0.09999975729792682
+peak	44.1	True-peak guard	reduction-db	-1.0999370891441826
+peak	44.1	True-peak guard	limited-thd-n-db	-105.94275074592798
 peak	44.1	True-peak guard	under-the-ceiling-null-db	-inf
 peak	44.1	True-peak guard	claimed-latency-frames	115
 peak	44.1	True-peak guard	measured-latency-frames	0
@@ -3511,10 +3511,10 @@ peak	44.1	No guard	limited-thd-n-db	-308.17345430610123
 peak	44.1	No guard	under-the-ceiling-null-db	-inf
 peak	44.1	No guard	claimed-latency-frames	0
 peak	44.1	No guard	measured-latency-frames	0
-peak	48	True-peak guard	inter-sample-over-dbtp	-0.010055036069281187
-peak	48	True-peak guard	hot-tone-dbtp	-0.09999825333333673
-peak	48	True-peak guard	reduction-db	-1.09995286153953
-peak	48	True-peak guard	limited-thd-n-db	-108.50663715272445
+peak	48	True-peak guard	inter-sample-over-dbtp	-0.09994778267458254
+peak	48	True-peak guard	hot-tone-dbtp	-0.09999977671908802
+peak	48	True-peak guard	reduction-db	-1.099974415786925
+peak	48	True-peak guard	limited-thd-n-db	-109.89141850450666
 peak	48	True-peak guard	under-the-ceiling-null-db	-inf
 peak	48	True-peak guard	claimed-latency-frames	120
 peak	48	True-peak guard	measured-latency-frames	0
@@ -3525,10 +3525,10 @@ peak	48	No guard	limited-thd-n-db	-308.8210477498135
 peak	48	No guard	under-the-ceiling-null-db	-inf
 peak	48	No guard	claimed-latency-frames	0
 peak	48	No guard	measured-latency-frames	0
-peak	96	True-peak guard	inter-sample-over-dbtp	-0.010055036069281187
-peak	96	True-peak guard	hot-tone-dbtp	-0.09999914420836134
-peak	96	True-peak guard	reduction-db	-1.099970813809791
-peak	96	True-peak guard	limited-thd-n-db	-108.0077119607858
+peak	96	True-peak guard	inter-sample-over-dbtp	-0.09997803560280338
+peak	96	True-peak guard	hot-tone-dbtp	-0.09999966978799847
+peak	96	True-peak guard	reduction-db	-1.0999899906324768
+peak	96	True-peak guard	limited-thd-n-db	-108.57875194097139
 peak	96	True-peak guard	under-the-ceiling-null-db	-inf
 peak	96	True-peak guard	claimed-latency-frames	192
 peak	96	True-peak guard	measured-latency-frames	0

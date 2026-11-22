@@ -1505,7 +1505,16 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   converts, never on bit-perfect or repacked streams. It reads each frame oversampled by rate (`Sampling::at`: 4x under 96 kHz, 2x under 176.4 kHz,
   none above, where a read is the centre tap alone; about 192 kHz of grid in every case, so the guard's
   worst error on a tone near Nyquist is BS.1770's 0.7 dB, not the meter's tenth); where a phase
-  passes -0.1 dBTP it asks for the gain bringing it under, averaged over the lookahead. A stream
+  passes -0.1 dBTP it asks for the gain bringing it under, averaged over the lookahead. The quietest
+  gain asked is held `frames_held_beside_a_read` (half the lookahead, at most `REACH`) either side
+  before the average, which then spans the rest of the lookahead, so the frames nearest a read,
+  which carry most of what it reads, are gained no louder than that read asked, at no added
+  latency. A read is of ungained frames, so a gain rising on the frames beside it lets the
+  interpolated peak out past the ceiling: unheld, a quarter-rate sine 45 degrees off its samples at
+  0 dBFS leaves at -0.0995 dBTP and loud noise at -0.05 on the guard's own grid
+  (`a_quarter_rate_over_with_its_samples_at_full_scale_leaves_at_the_ceiling`,
+  `a_loud_busy_stream_is_held_under_the_ceiling_on_the_guards_own_grid`). What is left is the
+  gain's own turning, a few 1e-5 dB on a tone and under 1e-3 dB on noise. A stream
   never passing the ceiling is multiplied by exactly one and comes out bit for bit, only later:
   audio waits `lookahead + 48` (`REACH`) frames, handed on in its flush; `Engine::swap_chain` first
   flushes the running chain's held tail into the ring. The interpolator is 96 taps (every fractional

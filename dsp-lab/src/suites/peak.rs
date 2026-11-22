@@ -143,8 +143,7 @@ impl Suite for Guarding {
         let feed = Feed::every(ChannelLayout::Stereo);
         let channels = feed.channels();
 
-        let peak_out =
-            |heard: &[f64]| decibels(true_peak(settled(heard, channels, rate), channels, pair.to));
+        let peak_out = |heard: &[f64]| decibels(true_peak(heard, channels, pair.to));
 
         let over = signal::spread(&inter_sample_over(rate, frames), channels);
         let over_out = ran(subject, pair, feed.layout, &over, BLOCK)?;
@@ -194,15 +193,17 @@ mod tests {
     use crate::lab::suite::measured_as;
 
     const AT: Pair = Pair::at(SampleRate::HZ_48000);
+    const CEILING_DBTP: f64 = -0.1;
+    const TURNING_GAIN_WITHIN_DB: f64 = 1e-4;
 
     #[test]
     fn the_guard_holds_an_over_the_counter_lets_through() {
         let guarded = measured_as(&Guarding, "True-peak guard", AT);
         let unguarded = measured_as(&Guarding, "No guard", AT);
 
-        assert!(guarded.value(&OVER_PEAK) <= 0.0);
+        assert!(guarded.value(&OVER_PEAK) <= CEILING_DBTP + TURNING_GAIN_WITHIN_DB);
         assert!(unguarded.value(&OVER_PEAK) > 3.0);
-        assert!(guarded.value(&HOT_PEAK) <= -0.09);
+        assert!(guarded.value(&HOT_PEAK) <= CEILING_DBTP + TURNING_GAIN_WITHIN_DB);
     }
 
     #[test]

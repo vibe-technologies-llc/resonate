@@ -3,12 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Audio
-- [S · 0.17.0] The true-peak guard lets an inter-sample over out 0.09 dB past its ceiling: a sine at
-  a quarter of the rate, 45 degrees off its samples, with samples at 0 dBFS (+3.1 dBTP) leaves at
-  −0.01 dBTP where the ceiling is −0.1 (`TruePeakMeter`, at 44.1, 48 and 96 kHz), while a +1 dBFS
-  997 Hz tone is held at −0.10 exactly; `dsp-lab measure peak` (`docs/DSP.md`) reads it
-
 ## Android
 - [S · blocked: design] The widget's previous and next do nothing while the playback service is not
   running: play starts the service as the headset's key does (`WidgetPresses`), but a skip that

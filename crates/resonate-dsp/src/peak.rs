@@ -464,7 +464,7 @@ pub struct TruePeak {
     quiet_below: f64,
     channels: usize,
     oversampler: Option<Sampling>,
-    lookahead: usize,
+    held_for: usize,
     delay: usize,
     release: f64,
     delayed: Vec<f64>,
@@ -494,7 +494,7 @@ impl TruePeak {
             quiet_below: 0.0,
             channels: 1,
             oversampler: None,
-            lookahead: 0,
+            held_for: 1,
             delay: 0,
             release: 1.0,
             delayed: Vec::new(),
@@ -567,7 +567,7 @@ impl TruePeak {
         }
         self.lows.push_back(Low { at, wanted });
 
-        let window = self.lookahead as u64 + 1;
+        let window = self.held_for as u64;
 
         while self.lows.front().is_some_and(|low| low.at + window <= at) {
             self.lows.pop_front();
@@ -588,7 +588,7 @@ impl TruePeak {
             self.smallest_sum += quietest - *slot;
             *slot = quietest;
         }
-        self.ring_at = if at == self.lookahead {
+        self.ring_at = if at + 1 == self.smallest.len() {
             self.smallest_sum = self.smallest.iter().sum();
             0
         } else {
@@ -600,6 +600,10 @@ impl TruePeak {
             self.smallest_sum * self.per_window
         }
     }
+}
+
+fn frames_held_beside_a_read(lookahead: usize) -> usize {
+    (lookahead / 2).min(REACH)
 }
 
 impl Default for TruePeak {
@@ -619,13 +623,19 @@ impl Processor for TruePeak {
 
         self.quiet_below = oversampler.quiet_below(self.ceiling);
         self.oversampler = Some(oversampler);
-        self.lookahead = (LOOKAHEAD_SECONDS * rate).ceil() as usize;
-        self.delay = self.lookahead + REACH;
+
+        let lookahead = (LOOKAHEAD_SECONDS * rate).ceil() as usize;
+        let beside = frames_held_beside_a_read(lookahead);
+
+        let averaged_over = lookahead + 1 - beside;
+
+        self.held_for = averaged_over + 2 * beside;
+        self.delay = lookahead + REACH;
         self.release = 1.0 - (-1.0 / (RELEASE_SECONDS * rate)).exp();
         self.delayed = vec![0.0; (self.delay + 1) * channels];
-        self.lows = VecDeque::with_capacity(self.lookahead + 2);
-        self.smallest = vec![1.0; self.lookahead + 1];
-        self.per_window = 1.0 / (self.lookahead + 1) as f64;
+        self.lows = VecDeque::with_capacity(self.held_for + 1);
+        self.smallest = vec![1.0; averaged_over];
+        self.per_window = 1.0 / averaged_over as f64;
         self.silence = vec![0.0; channels];
         self.reset();
         Ok(max_frames_in)
@@ -720,7 +730,7 @@ impl Processor for TruePeak {
 
 #[cfg(test)]
 mod tests {
-    use std::f64::consts::{FRAC_PI_4, PI, TAU};
+    use std::f64::consts::{FRAC_PI_4, PI, SQRT_2, TAU};
 
     use resonate_core::{ChannelLayout, SampleFormat, SampleRate};
 
@@ -1170,6 +1180,84 @@ mod tests {
             assert!(
                 after <= CEILING_DECIBELS + FOLDED_READS_WITHIN_DB,
                 "the guard let {after:.3} dBTP through at {} Hz",
+                rate.hz()
+            );
+        }
+    }
+
+    fn quarter_rate_between_its_samples(rate: SampleRate) -> Vec<f64> {
+        sine_at(
+            rate,
+            f64::from(rate.hz()) / 4.0,
+            SQRT_2,
+            FRAC_PI_4,
+            rate.hz() as usize,
+        )
+    }
+
+    #[test]
+    fn a_quarter_rate_over_with_its_samples_at_full_scale_leaves_at_the_ceiling() {
+        const TURNING_GAIN_WITHIN_DB: f64 = 1e-4;
+        for rate in [
+            SampleRate::HZ_44100,
+            SampleRate::HZ_48000,
+            SampleRate::HZ_96000,
+        ] {
+            let over = quarter_rate_between_its_samples(rate);
+            let sampled = over
+                .iter()
+                .fold(0.0_f64, |loudest, sample| loudest.max(sample.abs()));
+
+            assert!(
+                decibels(sampled).abs() < 1e-9,
+                "the samples reached {sampled}"
+            );
+            assert!(decibels(metered(&over)) > 3.0);
+
+            let (output, _) = guarded_at(rate, &over);
+            let after = decibels(metered(&output));
+
+            assert!(
+                after <= CEILING_DECIBELS + TURNING_GAIN_WITHIN_DB,
+                "the guard let {after:.5} dBTP through at {} Hz",
+                rate.hz()
+            );
+        }
+    }
+
+    #[test]
+    fn a_loud_busy_stream_is_held_under_the_ceiling_on_the_guards_own_grid() {
+        const TURNING_GAIN_WITHIN_DB: f64 = 1e-3;
+        for rate in [
+            SampleRate::HZ_44100,
+            SampleRate::HZ_48000,
+            SampleRate::HZ_96000,
+        ] {
+            let mut state = 0x2545_f491_u32;
+            let mut busy = Vec::new();
+
+            for frame in 0..rate.hz() as usize / 2 {
+                state ^= state << 13;
+                state ^= state >> 17;
+                state ^= state << 5;
+
+                let drawn = f64::from(state) / f64::from(u32::MAX) * 2.0 - 1.0;
+                let swell = 0.5 + 0.9 * (frame as f64 / 2_000.0).sin().abs();
+
+                busy.extend([drawn * swell, -drawn * swell * 0.8]);
+            }
+
+            let (output, _) = guarded_at(rate, &busy);
+            let narrow: Vec<f32> = output.iter().map(|sample| *sample as f32).collect();
+            let mut meter = TruePeakMeter::at(rate, NonZeroUsize::new(2).expect("two channels"));
+
+            meter.note(&narrow);
+
+            let after = decibels(meter.finish());
+
+            assert!(
+                after <= CEILING_DECIBELS + TURNING_GAIN_WITHIN_DB,
+                "the guard let {after:.5} dBTP through at {} Hz",
                 rate.hz()
             );
         }

@@ -300,7 +300,8 @@ Linux sound server or GUI libraries are needed.
   silence. `eq` covers single bands of every kind and whole curves against
   `Profile::magnitude_db_on`, and the impulse against the design. `gain` is the gain heard against
   the gain asked and the overs a hot input makes. `peak` is the true-peak guard against `Overs`
-  (an inter-sample over, a +1 dBFS tone, a null under the ceiling). `remix` is every matrix heard
+  (an inter-sample over, a +1 dBFS tone, a null under the ceiling), each output's peak read whole,
+  never from a cut that would itself ring past the ceiling. `remix` is every matrix heard
   tone by tone against `Remix::gain`. `crossfeed` covers the direct and crossed paths, the crossed
   delay and a centred source's spread. `convolve` is against direct convolution at the response's
   rate and redrawn. `restore` covers repair and extension on noise walled at 16 kHz. `chain` is
