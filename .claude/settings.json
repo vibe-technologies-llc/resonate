@@ -10,6 +10,8 @@
       "Bash(cargo xwin check:*)",
       "Bash(cargo bench:*)",
       "Bash(rust-formatter:*)",
+      "Bash(cargo run --release -- list:*)",
+      "Bash(cargo run --release -- measure:*)",
       "Bash(python3 android/build-native.py:*)",
       "Bash(android/gradlew -p android:*)",
       "Bash(python3 android/check-native.py:*)",

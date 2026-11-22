@@ -5,8 +5,9 @@ paths:
   - "fuzz/**"
   - "Cargo.toml"
   - "crates/*/benches/**"
-  - "soxr-comparison/**"
+  - "dsp-lab/**"
   - "docs/RESAMPLING.md"
+  - "docs/DSP.md"
   - "crates/xtask/**"
 ---
 
@@ -62,7 +63,7 @@ lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`)
   (`macos-latest`, Apple Silicon) the `macos` job (the same clippy lines) beside `macos-tests` (the headless tests and the `signals` test
   `windows-tests` runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time, `macos.md`) and `macos-window` (the tests of `resonate` and `resonate-ui`, since
   the window builds for macOS on a Mac alone), each test step run whatever the one before
-  answered, so one run names every failure of a build no machine here can run (`macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the SoXR comparison aside); a crate added to the
+  answered, so one run names every failure of a build no machine here can run (`macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the DSP lab aside); a crate added to the
   layering refusals gets a line. The layering job has six shapes: `refuse`, `refuse_headless` (no
   default features), `only` (the workspace crates a crate may reach), `only_on` (the same in one
   target's tree), `reached_by_the_binary_alone` (`cargo tree -i`; `online`, `mcp`, `discord`),
@@ -272,25 +273,77 @@ Linux sound server or GUI libraries are needed.
   overflow checks are off in `[profile.dev]`: an overflow panic inside either is not a finding;
   `fuzz run -O` says what a release build would do.
 
-## The resampler against SoXR
+## The DSP lab
 
-- **`soxr-comparison/` measures `resonate-dsp`'s resampler against libsoxr from outside the
-  workspace**: its own `[workspace]` table, like `fuzz/`, so no workspace build, lint or `cargo
-  tree` sees libsoxr. It links the system libsoxr through `pkg-config` (the `soxr` crate), the one
-  C library wanted anywhere, since that library is what is measured; nothing in the workspace may
-  depend on it.
-- **One process, the same buffers**: nineteen settings (Resonate's four levels, High and Very high
-  each intermediate and minimum; SoXR's eight recipes, VHQ steep, intermediate and minimum) at
-  seven rate pairs, f64 interleaved in and out, SoXR on one thread. Tones sit on a 1/64 Hz grid so
-  every phase reduces exactly (`signal::phase_at`) and the least-squares fit (`fit::Window`) reads
-  levels down to the f64 floor, over the settled middle 0.6 s of 1.2 s.
-- **Timing wants an idle machine**: throughput is the best of five runs over 4 s of stereo noise in
-  1 024-frame blocks, construction the first build in the process and the best of nine after.
-  `--no-timing` measures quality alone (on every core, under any load), `--timing-only` the costs.
-  `--candidates FILE` measures and times a line each of kernels and recipes in one table, a rejection, a
-  ringing, a pre-echo and a latency for each pair (`tuning.rs`, a `Contender::Tuned` through
-  `Resampler::with_params`), which is how every preset was chosen: a window that wins at 44.1 to 48 kHz
-  can lose going up. `design_window.py` (numpy alone) prints a level's window as `resample.rs` holds it, to the bit.
+- **`dsp-lab/` measures `resonate-dsp`'s stages and the engine's whole chains for quality and cost,
+  from outside the workspace**: its own `[workspace]` table, like `fuzz/`, so no workspace build,
+  lint or `cargo tree` sees its references. It reaches `resonate-core`, `resonate-dsp` and
+  `resonate-engine` by path, `realfft` for spectra and `clap` for its grammar. Its two references are
+  features, both on by default: `soxr` links the system libsoxr through `pkg-config` (the one C
+  library wanted anywhere, since that library is what is measured; nothing in the workspace may
+  depend on it) and `rubato` is pure Rust. `--no-default-features` builds and tests with neither.
+  `cargo xtask fmt` formats it beside `fuzz/` (`DETACHED` in `plan.rs`).
+- **The seams.** A `Subject` names a setting and opens a `Running` (f64 interleaved in, pushed then
+  finished, with the latency it claims), so every implementation pays the same buffers. `Stage`
+  makes one of any `Processor` and its `Driven` drives it block by block. `Resonate` covers the
+  resampler's levels, phases and `Tuned` candidates. `Recipe` (SoXR) and `Rubato` (FFT, two sincs,
+  cubic polynomial) are the references. `Played` is a whole chain: a source, a sink's
+  `SinkFormats` and an `EngineConfig` go through `plan_output` and `build_chain` with the engine's
+  block, the input is rounded to the source's words and the output to the sink's (`in_words`), so a
+  chain measured is the chain played. A `Suite` names its subjects, its rate `Pair`s, its `Metric`s
+  and how it measures one subject at one pair. Each `Metric` carries the way that is better and a
+  `Tolerance`, and `suites::all` is the one list a suite is added to. `measured_everywhere` shares
+  the subject-pair cases among every core; `timed` runs them one at a time.
+- **The suites.** `resample` is the resampler against SoXR and rubato (below). `dither-16` and
+  `dither-24` cover each kind and shaping: noise to Nyquist and A-weighted, where shaping moves it,
+  the harmonics of a one-step tone, noise modulation across levels, the grid and the frames to
+  silence. `eq` covers single bands of every kind and whole curves against
+  `Profile::magnitude_db_on`, and the impulse against the design. `gain` is the gain heard against
+  the gain asked and the overs a hot input makes. `peak` is the true-peak guard against `Overs`
+  (an inter-sample over, a +1 dBFS tone, a null under the ceiling). `remix` is every matrix heard
+  tone by tone against `Remix::gain`. `crossfeed` covers the direct and crossed paths, the crossed
+  delay and a centred source's spread. `convolve` is against direct convolution at the response's
+  rate and redrawn. `restore` covers repair and extension on noise walled at 16 kHz. `chain` is
+  eleven planned chains, from bit-perfect to room correction, with THD, THD+N, A-weighted dynamic
+  range, SMPTE IMD, the response's spread, the gain asked and heard, latency and a null where the
+  rate and layout do not change.
+- **The measures** (`analysis/`): tones sit on whole FFT bins (`on_the_bins`) at 2^16 frames
+  widened with the rate (`analysed_frames`), analysed after 0.75 s of settling, so a rectangular
+  window leaks nothing. The response is a multitone of 48 log-spaced bins at random phases, THD
+  counts harmonics 2 to 10, and THD+N everything from 20 Hz to 20 kHz but the fundamental. A tone
+  fed to one channel is read on that channel alone (`heard_where_fed`), since a downmix leaves the
+  other near silent.
+- **A claimed latency is not where the samples land.** The true-peak guard, the resampler and
+  restoration hold their delay back and hand the samples on aligned (measured 0). The convolver
+  hands them on a partition late (measured as claimed). So every null is aligned by the delay an
+  impulse measures (`held_back`), never by the claim, and both are tabled.
+- **Readings become a baseline.** `measure --tsv FILE` writes every reading as `suite`, rates,
+  subject, metric key and value apart by tabs, and `--record FILE` writes the same as a baseline.
+  `--against FILE` names each reading worse than the baseline by more than its tolerance, and each
+  kept reading no longer measured, then fails. `dsp-lab/baseline.tsv` is the committed baseline,
+  recorded on this machine with the default features. Everything is seeded but the engine's
+  dither, which is seeded from the clock, so a chain's THD and SMPTE IMD (a few bins at the dither
+  floor, which moved 6.8 and 4 dB over six runs) are held within `AMONG_DITHER` (10 dB). Re-record
+  only where a change is meant to move a figure, and say which in the commit.
+- **The resample suite is the old comparison, unchanged in arithmetic**: nineteen settings
+  (Resonate's four levels, High and Very high each intermediate and minimum, SoXR's eight recipes,
+  VHQ steep, intermediate and minimum) plus rubato's four, at seven rate pairs. SoXR runs on one
+  thread. Tones sit on a 1/64 Hz grid so every phase reduces exactly (`signal::phase_at`), and the
+  least-squares fit (`fit::Window`) reads levels down to the f64 floor over the settled middle
+  0.6 s of 1.2 s. rubato is queued chunk by chunk. Its `output_delay` is trimmed and its tail
+  pumped with empty partial chunks until it has given `ceil(ratio × input)` frames, as SoXR does,
+  and a chunk may give none, so only `EMPTY_PUMPS_AT_MOST` in a row is a stall. Its report and
+  plots are the old tool's to the byte for the rows it had.
+- **Timing wants an idle machine**: `time [SUITE..]` times throughput as the best of five runs over
+  4 s of noise in 1 024-frame blocks, and construction as the first build in the process and the
+  best of nine after, in each subject's own layout (stereo by default). `candidates FILE
+  [--no-timing]` measures and times one candidate per line, kernels and recipes, in one table: a
+  rejection, a ringing, a pre-echo and a latency for each pair (`tuning.rs`, a `Resonate::Tuned`
+  through `Resampler::with_params`). That is how every preset was chosen: a window that wins at
+  44.1 to 48 kHz can lose going up. `design_window.py` (numpy alone) prints a level's window as
+  `resample.rs` holds it, to the bit.
 - **Not in CI**: a hosted runner has no libsoxr and its timings would mean nothing.
-  `docs/RESAMPLING.md` is the report and `docs/resampling/` its plots; the `compare-resamplers`
-  skill reruns both.
+  `docs/DSP.md` is the report of every suite, `docs/dsp/` its plots, and `docs/RESAMPLING.md` the
+  resampler's own report with `docs/resampling/` its plots. The `measure-dsp` skill runs the lab
+  and holds it to the baseline after a DSP change; the `compare-resamplers` skill refreshes the
+  resampler's report.

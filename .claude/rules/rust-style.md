@@ -19,7 +19,7 @@ Strict: a violation is a defect.
 
 **A test refuses a comment anywhere in the tree**: `no_source_in_the_workspace_carries_a_comment`
 (`crates/resonate-words-build/tests/comments.rs`, so `cargo nextest run -p resonate-words-build` and CI's
-workspace test run it) walks `crates`, `fuzz`, `soxr-comparison`, `android`, `ios`, `packaging`,
+workspace test run it) walks `crates`, `fuzz`, `dsp-lab`, `android`, `ios`, `packaging`,
 `.github`, `.claude` and the root manifests through `resonate_words_build::comments_in`, which
 tells a comment from a string, a raw string, a character, a lifetime and a template or
 interpolation: `//`, `///`, `//!` and nested `/* */` in `.rs`, `.kt`, `.kts` and `.swift`; `#` in
@@ -61,7 +61,7 @@ minimal profile) an `expect` is unfulfilled. So `regional.rs` carries
 **A test refuses a rule that names code that is gone**: `every_function_a_rule_names_is_written_somewhere_in_the_source`
 (`crates/resonate-words-build/tests/rules.rs`) reads every backticked name in `.claude/rules/*.md`
 (a bare name, `name()` or `Type::name`) spelled as code is: snake_case, UPPER_SNAKE or CamelCase of
-two humps or more, and fails when no source under `crates`, `fuzz`, `soxr-comparison`, `android`,
+two humps or more, and fails when no source under `crates`, `fuzz`, `dsp-lab`, `android`,
 `ios`, `.github` or `packaging` holds it as a whole identifier or a file's stem (a Swift suite named by
 its file), so a name that is only the start of a longer one is gone. A
 name that belongs to another program, a protocol, a format or a crate's feature (`pw_stream_destroy`,

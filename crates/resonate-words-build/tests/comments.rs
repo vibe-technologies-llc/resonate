@@ -5,7 +5,7 @@ use resonate_words_build::comments_in;
 const ROOTS: [&str; 8] = [
     "crates",
     "fuzz",
-    "soxr-comparison",
+    "dsp-lab",
     "android",
     "ios",
     "packaging",

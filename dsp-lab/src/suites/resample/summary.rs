@@ -1,7 +1,7 @@
 use crate::{
-    contender::{Contender, Pair},
     error::Result,
-    measure::{
+    lab::{pair::Pair, subject::Subject},
+    suites::resample::measure::{
         self, AUDIBLE_HZ, Impulse, LOWEST_HZ, MIDDLE_HZ, Tone, impulse, latency, null, phase_delays,
     },
 };
@@ -12,9 +12,7 @@ const EDGE_SEARCH_FROM_HZ: f64 = 1_000.0;
 const SLIGHT_DROP_DB: f64 = -0.1;
 const HALF_POWER_DB: f64 = -3.0;
 
-pub struct Measured {
-    pub contender: Contender,
-    pub pair: Pair,
+pub struct Summarised {
     pub tones: Vec<Tone>,
     pub summary: Summary,
 }
@@ -69,12 +67,12 @@ fn loudest(levels: impl Iterator<Item = f64>) -> f64 {
     levels.fold(f64::NEG_INFINITY, f64::max)
 }
 
-pub fn measured(contender: Contender, pair: Pair) -> Result<Measured> {
+pub fn summarised(subject: &dyn Subject, pair: Pair) -> Result<Summarised> {
     let tones = measure::sweep(pair)
         .into_iter()
-        .map(|hz| measure::tone(contender, pair, hz))
+        .map(|hz| measure::tone(subject, pair, hz))
         .collect::<Result<Vec<_>>>()?;
-    let impulse = impulse(contender, pair)?;
+    let impulse = impulse(subject, pair)?;
 
     let delays = phase_delays(&tones, impulse.peak_offset_s);
     let delay_middle_s = delays
@@ -113,19 +111,14 @@ pub fn measured(contender: Contender, pair: Pair) -> Result<Measured> {
         ),
         snr_middle_db,
         worst_snr_db: -loudest(snrs.iter().map(|snr| -snr)),
-        null_wide_db: null(contender, pair, AUDIBLE_HZ, delay_middle_s)?,
-        null_narrow_db: null(contender, pair, NULL_NARROW_HZ, delay_middle_s)?,
+        null_wide_db: null(subject, pair, AUDIBLE_HZ, delay_middle_s)?,
+        null_narrow_db: null(subject, pair, NULL_NARROW_HZ, delay_middle_s)?,
         delay_middle_s,
         delay_spread_s: loudest(delays.iter().map(|&(_, delay)| delay))
             + loudest(delays.iter().map(|&(_, delay)| -delay)),
         impulse,
-        latency_s: latency(contender, pair)?,
+        latency_s: latency(subject, pair)?,
     };
 
-    Ok(Measured {
-        contender,
-        pair,
-        tones,
-        summary,
-    })
+    Ok(Summarised { tones, summary })
 }

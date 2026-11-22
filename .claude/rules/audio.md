@@ -1278,7 +1278,7 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   it: 900 taps of Kaiser reject what 1 092 of a flat top in frequency did (the flat top's tail wrapped, and an
   equal-ripple tail at the band edge adds coherently: constraining a kernel's far taps is the wrong objective).
   **The windows are even Legendre series, `BALANCED_WINDOW`, `HIGH_WINDOW` and `VERY_HIGH_WINDOW`**, printed to the bit by
-  `soxr-comparison/design_window.py`: the deepest ripple a kernel of this reach and transition can meet while its
+  `dsp-lab/design_window.py`: the deepest ripple a kernel of this reach and transition can meet while its
   level falls in a straight line in decibels from −120 dB at a chosen tap to the far end. The straight line
   is not decoration: an envelope free to sit just under −120 dB games the ringing figure. A Kaiser only
   trades rejection for ringing at 8.4 dB to 0.4 ms a unit of β; removing its pedestal, whatever the order, buys nothing.

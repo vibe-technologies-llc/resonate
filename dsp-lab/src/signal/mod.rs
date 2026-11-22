@@ -86,6 +86,92 @@ impl Noise {
     }
 }
 
+pub fn on_the_bins(hz: f64, rate: f64, frames: usize) -> f64 {
+    let width = rate / frames as f64;
+    ((hz / width).round().max(1.0)) * width
+}
+
+pub fn sine(hz: f64, amplitude: f64, rate: f64, frames: usize) -> Vec<f64> {
+    (0..frames)
+        .map(|index| amplitude * phase_at(hz, index, rate).sin())
+        .collect()
+}
+
+pub fn summed(tones: &[(f64, f64)], rate: f64, frames: usize) -> Vec<f64> {
+    (0..frames)
+        .map(|index| {
+            tones
+                .iter()
+                .map(|&(hz, amplitude)| amplitude * phase_at(hz, index, rate).sin())
+                .sum()
+        })
+        .collect()
+}
+
+pub fn phased(tones: &[(f64, f64, f64)], rate: f64, frames: usize) -> Vec<f64> {
+    (0..frames)
+        .map(|index| {
+            tones
+                .iter()
+                .map(|&(hz, amplitude, phase)| {
+                    amplitude * (phase_at(hz, index, rate) + phase).sin()
+                })
+                .sum()
+        })
+        .collect()
+}
+
+pub fn spread(mono: &[f64], channels: usize) -> Vec<f64> {
+    mono.iter()
+        .flat_map(|&sample| std::iter::repeat_n(sample, channels))
+        .collect()
+}
+
+pub fn on_one(mono: &[f64], channel: usize, channels: usize) -> Vec<f64> {
+    let mut whole = vec![0.0; mono.len() * channels];
+
+    for (frame, &sample) in whole.chunks_exact_mut(channels).zip(mono) {
+        frame[channel] = sample;
+    }
+    whole
+}
+
+pub fn impulse(frames: usize, at: usize) -> Vec<f64> {
+    let mut input = vec![0.0; frames];
+
+    input[at] = 1.0;
+    input
+}
+
+pub fn walled(samples: &[f64], rate: f64, wall_hz: f64) -> Vec<f64> {
+    let frames = samples.len();
+    let mut planner = realfft::RealFftPlanner::<f64>::new();
+
+    let forward = planner.plan_fft_forward(frames);
+    let inverse = planner.plan_fft_inverse(frames);
+    let mut input = samples.to_vec();
+    let mut bins = forward.make_output_vec();
+    let mut output = inverse.make_output_vec();
+    let first_cut = (wall_hz * frames as f64 / rate).ceil() as usize;
+
+    if forward.process(&mut input, &mut bins).is_err() {
+        return samples.to_vec();
+    }
+    for bin in bins.iter_mut().skip(first_cut) {
+        *bin = realfft::num_complex::Complex::new(0.0, 0.0);
+    }
+    if let Some(last) = bins.last_mut() {
+        last.im = 0.0;
+    }
+    if let Some(first) = bins.first_mut() {
+        first.im = 0.0;
+    }
+    if inverse.process(&mut bins, &mut output).is_err() {
+        return samples.to_vec();
+    }
+    output.iter().map(|sample| sample / frames as f64).collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -101,6 +187,15 @@ mod tests {
 
         assert!((reduced - wrapped).abs() < 1e-6);
         assert!(reduced < TAU);
+    }
+
+    #[test]
+    fn a_tone_on_the_bins_lands_on_a_whole_number_of_cycles() {
+        let frames = 65_536;
+        let hz = on_the_bins(997.0, 48_000.0, frames);
+
+        assert!((hz * frames as f64 / 48_000.0).fract() == 0.0);
+        assert!((hz - 997.0).abs() < 0.4);
     }
 
     #[test]

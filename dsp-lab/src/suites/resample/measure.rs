@@ -3,10 +3,18 @@ use std::{
     iter, slice,
 };
 
+use resonate_core::ChannelLayout;
+
 use crate::{
-    contender::{Channels, Contender, Pair, Stream, resampled},
+    analysis::{
+        fit::Window,
+        level::{decibels, loudest},
+    },
     error::Result,
-    fit::Window,
+    lab::{
+        pair::Pair,
+        subject::{Subject, resampled},
+    },
     signal::{self, Multitone, TONE_AMPLITUDE, folded, on_the_grid},
 };
 
@@ -20,7 +28,7 @@ const IMAGE_APART_HZ: f64 = 25.0;
 const MEASURING_BLOCK: usize = 4_096;
 const NULL_TONES: usize = 48;
 const NULL_SEED: u64 = 0x5265_736F_6E61_7465;
-const QUIETEST_AMPLITUDE: f64 = 1e-30;
+const QUIETEST_POWER: f64 = 1e-30;
 const LOG_SWEEP_POINTS: usize = 64;
 const EDGE_SWEEP_POINTS: usize = 48;
 const PAST_NYQUIST_NEAR_POINTS: usize = 24;
@@ -33,10 +41,6 @@ const PAST_NYQUIST_FAR_UNTIL: f64 = 0.995;
 pub const LOWEST_HZ: f64 = 20.0;
 pub const AUDIBLE_HZ: f64 = 20_000.0;
 pub const MIDDLE_HZ: f64 = 1_000.0;
-
-pub fn decibels(ratio: f64) -> f64 {
-    20.0 * ratio.max(QUIETEST_AMPLITUDE).log10()
-}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Heard {
@@ -138,10 +142,10 @@ fn settled(output: &[f64], pair: Pair, seconds: f64) -> Window<'_> {
     }
 }
 
-pub fn tone(contender: Contender, pair: Pair, hz: f64) -> Result<Tone> {
+pub fn tone(subject: &dyn Subject, pair: Pair, hz: f64) -> Result<Tone> {
     let frames = (INPUT_SECONDS * pair.input_hz()) as usize;
     let input = signal::tone(hz, pair.input_hz(), frames);
-    let output = resampled(contender, pair, &input, MEASURING_BLOCK)?;
+    let output = resampled(subject, pair, &input, MEASURING_BLOCK)?;
     let window = settled(&output, pair, INPUT_SECONDS);
     let reference = TONE_AMPLITUDE / SQRT_2;
 
@@ -186,22 +190,14 @@ pub fn tone(contender: Contender, pair: Pair, hz: f64) -> Result<Tone> {
     })
 }
 
-fn loudest(samples: &[f64]) -> usize {
-    samples
-        .iter()
-        .enumerate()
-        .max_by(|(_, a), (_, b)| a.abs().total_cmp(&b.abs()))
-        .map_or(0, |(index, _)| index)
-}
-
-pub fn impulse(contender: Contender, pair: Pair) -> Result<Impulse> {
+pub fn impulse(subject: &dyn Subject, pair: Pair) -> Result<Impulse> {
     let frames = (IMPULSE_SECONDS * pair.input_hz()) as usize;
     let at = frames / 2;
     let mut input = vec![0.0; frames];
 
     input[at] = 1.0;
 
-    let output = resampled(contender, pair, &input, MEASURING_BLOCK)?;
+    let output = resampled(subject, pair, &input, MEASURING_BLOCK)?;
 
     let peak = loudest(&output);
     let floor = output[peak].abs() * RING_FLOOR;
@@ -226,18 +222,18 @@ pub fn impulse(contender: Contender, pair: Pair) -> Result<Impulse> {
         peak_offset_s: peak as f64 / rate - at as f64 / pair.input_hz(),
         before_peak_s: (peak - first) as f64 / rate,
         after_peak_s: (last - peak) as f64 / rate,
-        pre_echo_db: 10.0 * (echo / total).max(QUIETEST_AMPLITUDE).log10(),
+        pre_echo_db: 10.0 * (echo / total).max(QUIETEST_POWER).log10(),
     })
 }
 
-pub fn latency(contender: Contender, pair: Pair) -> Result<f64> {
+pub fn latency(subject: &dyn Subject, pair: Pair) -> Result<f64> {
     let frames = (STREAMED_SECONDS * pair.input_hz()) as usize;
     let at = frames / 2;
     let mut input = vec![0.0; frames];
 
     input[at] = 1.0;
 
-    let mut stream = Stream::open(contender, pair, Channels::Mono, 1)?;
+    let mut stream = subject.open(pair, ChannelLayout::Mono, 1)?;
     let mut produced = Vec::new();
     let mut fed_when = Vec::new();
 
@@ -252,12 +248,12 @@ pub fn latency(contender: Contender, pair: Pair) -> Result<f64> {
     Ok((fed_when[peak] - (at + 1)) as f64 / pair.input_hz())
 }
 
-pub fn null(contender: Contender, pair: Pair, highest_hz: f64, delay_s: f64) -> Result<f64> {
+pub fn null(subject: &dyn Subject, pair: Pair, highest_hz: f64, delay_s: f64) -> Result<f64> {
     let multitone = Multitone::log_spaced(LOWEST_HZ, highest_hz, NULL_TONES, NULL_SEED);
     let frames = (INPUT_SECONDS * pair.input_hz()) as usize;
 
     let input = multitone.rendered(pair.input_hz(), frames);
-    let output = resampled(contender, pair, &input, MEASURING_BLOCK)?;
+    let output = resampled(subject, pair, &input, MEASURING_BLOCK)?;
     let window = settled(&output, pair, INPUT_SECONDS);
 
     let (error, ideal) =

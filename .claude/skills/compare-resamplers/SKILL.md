@@ -1,40 +1,43 @@
 ---
 name: compare-resamplers
-description: Rerun the measurement of Resonate's resampler against libsoxr, try a changed kernel or window against it, and refresh docs/RESAMPLING.md and its plots. Use after any change to resonate-dsp's resample.rs, spectral.rs or phase.rs, a new Quality level or SincParams, or whenever the report's figures need checking.
+description: Rerun the measurement of Resonate's resampler against libsoxr and rubato, try a changed kernel or window against them, and refresh docs/RESAMPLING.md and its plots. Use after any change to resonate-dsp's resample.rs, spectral.rs or phase.rs, a new Quality level or SincParams, or whenever the report's figures need checking.
 ---
 
-# Compare the resampler against SoXR
+# Compare the resampler against SoXR and rubato
 
-The harness is `soxr-comparison/`, a crate outside the workspace (`build.md`). It needs the
-system libsoxr and its headers (`pkg-config --modversion soxr` answers).
+The harness is the `resample` suite of `dsp-lab/`, a crate outside the workspace (`build.md`). It
+needs the system libsoxr and its headers (`pkg-config --modversion soxr` answers); rubato is pure
+Rust. The `measure-dsp` skill runs every other suite.
 
-1. **Quality, under any load.** On every core, in about 20 s:
+1. **Quality, under any load.** On every core, in about 45 s:
 
    ```sh
-   cd soxr-comparison
-   cargo run --release -- --no-timing --plots ../docs/resampling > /tmp/quality.md
+   cd dsp-lab
+   cargo run --release -- measure resample --plots ../docs/resampling > /tmp/quality.md
    ```
 
    It writes `response-<pair>.svg` and `passband-<pair>.svg` for each rate pair, and the frequency
-   and time domain tables on stdout.
+   and time domain tables on stdout under `## Resampling`. `--only TEXT` keeps the settings whose
+   name holds the text.
 
 2. **Timing, only on an idle machine.** Ask the listener first: another build, agent or player
-   running at the same time skews every figure. It runs serially, about a minute:
+   running at the same time skews every figure. It runs serially, a few minutes:
 
    ```sh
-   cargo run --release -- --timing-only > /tmp/cost.md
+   cargo run --release -- time resample > /tmp/cost.md
    ```
 
 3. **Refresh the report.** In `docs/RESAMPLING.md`, the quality output replaces the tables under
    `## Every measurement` and the timing output those under `### Throughput and construction`.
    Then check the prose against the new figures: each claim there names a number from these
-   tables, and the summary tables under `## Results` repeat some of them.
+   tables, and the summary tables under `## Results` repeat some of them. A figure meant to move
+   is re-recorded in `dsp-lab/baseline.tsv` (`measure-dsp`, step 3).
 
-4. **A changed kernel starts from `--candidates`.** `python3 design_window.py NAME WIDTH_HZ REACH RING_TAPS TERMS`
+4. **A changed kernel starts from `candidates`.** `python3 design_window.py NAME WIDTH_HZ REACH RING_TAPS TERMS`
    prints a window (`docs/RESAMPLING.md`, *Reproducing*, has the three held now); write its numbers to a file, one
    line per try in a candidates file (`very-high 1200 32.4845 0 3400 16000 window.txt`, `soxr-steep` for a recipe),
-   and `cargo run --release -- --candidates FILE` tables them side by side.
+   and `cargo run --release -- candidates FILE` tables them side by side (`--no-timing` under load).
 
 5. **Look at the plots** with `rsvg-convert docs/resampling/response-44.1-to-48.svg -o /tmp/r.png`
    before committing: a level clamped at the plot's floor or overlapping labels mean the frame needs
-   widening in `plot.rs`.
+   widening in `suites/resample/mod.rs` (`plotted_at`).

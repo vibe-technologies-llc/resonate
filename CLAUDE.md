@@ -7,7 +7,7 @@ Rules live in `.claude/rules/` and load where their `paths:` match:
 | `rust-style.md` | always | formatting, imports, the no-comment rule, collections, sync primitives, text read from files, a lint that fires only on some machines, names built around a file's, a file another run may sweep, the check that rules name code that exists |
 | `errors.md` | always | the `thiserror` architecture and its structural enforcement |
 | `language.md` | always | the word catalogs (`resonate-words`, the `.ftl` areas and the build step), what is not translated, choosing the language and the region, adding one, the prose check |
-| `build.md` | `.github`, `.cargo`, `fuzz`, `soxr-comparison`, the root manifest, benches, `crates/xtask` | the check runner (`cargo xtask`), CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the resampler measured against SoXR |
+| `build.md` | `.github`, `.cargo`, `fuzz`, `dsp-lab`, the root manifest, benches, `crates/xtask` | the check runner (`cargo xtask`), CI, `release.yml` (tag-driven RPM, DEB, Arch and signed APK assets and their secrets), the profiles and `target-cpu`, the fuzz targets, the DSP lab (every stage and whole chains measured, the resampler against SoXR and rubato, the baseline) |
 | `android.md` | Android Gradle project, the mobile boundary and binding tool | Compose, native build, documents, service lifecycle, emulator checks, and the boundary behaviour both phones share |
 | `mobile.md` | resonate-mobile, resonate-bindgen, both `build-native.py` | the unsafe exception, one surface on every target, granted-document schemes, the output per target, the phones' zones |
 | `ios.md` | `ios/**`, the RemoteIO output, resonate-apple's unit | the xtool toolchain, the native library and bindings, the App Intents metadata, hardening, the shape of the SwiftUI app, Siri |
@@ -246,8 +246,8 @@ Invariants the layering protects (the rules files have the rest):
   empty `stitched_shaders.metal` goes into `gpui_apple`'s `OUT_DIR` once (`macos.md`). CI lints (the headless and per-feature lines too) and
   tests it natively in the `macos`, `macos-tests` and `macos-window` jobs. `packaging/macos/build.sh` builds the disk image on a Mac.
 
-- **`cargo xtask check` is the gate before a push**: `rust-formatter --check` of the workspace and
-  `fuzz/`, every clippy line below (`cargo xtask lint`) and `cargo nextest run --workspace` under
+- **`cargo xtask check` is the gate before a push**: `rust-formatter --check` of the workspace,
+  `fuzz/` and `dsp-lab/`, every clippy line below (`cargo xtask lint`) and `cargo nextest run --workspace` under
   `dbus-run-session` where there is one (`cargo xtask test`). `--changed` narrows lint and test to
   the packages changed since `origin/master` (`--since <rev>` for another) and those depending on
   them, `resonate-words-build` always tested; a change to a root manifest, the lock or `.cargo/` is
@@ -302,11 +302,15 @@ Invariants the layering protects (the rules files have the rest):
   remote (CI points `source` at its own checkout).
 - `cd fuzz && cargo +nightly fuzz build`, then `cargo +nightly fuzz run <target> corpus/<target>
   seeds/<target> -- -max_total_time=180 -timeout=15` (`build.md`).
-- `cd soxr-comparison && cargo run --release -- --plots ../docs/resampling`: the resampler
-  measured against the system libsoxr, the tables of `docs/RESAMPLING.md` on stdout (`build.md`,
-  the `compare-resamplers` skill). Not in CI: it needs libsoxr, and an idle machine for its timings.
+- `cd dsp-lab && cargo run --release -- measure --against baseline.tsv`: every DSP stage and
+  eleven chains the engine plans, measured for quality, with the resampler against libsoxr and
+  rubato. It prints each suite's tables and fails on a reading worse than the committed baseline.
+  `list` names the suites, `measure SUITE --plots DIR` draws, `--record` writes a baseline,
+  `time` times, and `candidates FILE` weighs resampler kernels (`build.md`, the `measure-dsp` and
+  `compare-resamplers` skills). Not in CI: it needs libsoxr unless `--no-default-features`, and an
+  idle machine for its timings.
 
-CI (`ci.yml`) runs the clippy lines through `cargo xtask lint --locked --verbose` and the nextest lines (the headless suite runs in one job under `dbus-run-session`, including the bus tests), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the SoXR comparison run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
+CI (`ci.yml`) runs the clippy lines through `cargo xtask lint --locked --verbose` and the nextest lines (the headless suite runs in one job under `dbus-run-session`, including the bus tests), the DSP ceilings bench, the Windows and macOS builds, the fuzz build, the server package and the Android checks of this list; the other benches, the profiling build, `cargo xwin` (CI builds Windows natively), the iOS checks and the DSP lab run locally, and `release.yml` runs on tags only. The debug profile is optimised and `target-cpu=native` is set
 (`build.md`).
 
 `cargo run -- <subcommand> --help` is the grammar (`binary.md`); the binary doubles as the audio

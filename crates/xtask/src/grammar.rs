@@ -9,7 +9,7 @@ pub const USAGE: &str = "\
 cargo xtask <task> [flags]
 
 tasks:
-  fmt [--check]             rust-formatter over the workspace and fuzz/
+  fmt [--check]             rust-formatter over the workspace, fuzz/ and dsp-lab/
   lint                      every clippy line CI runs, -D warnings
   test [-- <nextest args>]  cargo nextest run over the workspace, under dbus-run-session where there is one
   check                     fmt --check, lint and test: the gate before a push

@@ -131,13 +131,24 @@ fn the_tests_run_under_a_session_bus_where_there_is_one_and_take_what_is_passed_
 }
 
 #[test]
-fn formatting_covers_the_workspace_and_the_detached_fuzz_project() {
+fn formatting_covers_the_workspace_and_every_detached_project() {
     let checked: Vec<String> = format(true).iter().map(line).collect();
     let written: Vec<String> = format(false).iter().map(line).collect();
 
     assert_eq!(
         checked,
-        ["rust-formatter --check", "rust-formatter --check fuzz"]
+        [
+            "rust-formatter --check",
+            "rust-formatter --check fuzz",
+            "rust-formatter --check dsp-lab"
+        ]
     );
-    assert_eq!(written, ["rust-formatter ", "rust-formatter fuzz"]);
+    assert_eq!(
+        written,
+        [
+            "rust-formatter ",
+            "rust-formatter fuzz",
+            "rust-formatter dsp-lab"
+        ]
+    );
 }

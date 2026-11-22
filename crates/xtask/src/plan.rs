@@ -10,7 +10,7 @@ pub const OFF_LINUX: [&str; 3] = ["resonate-mobile", "resonate-bindgen", "resona
 pub const BINARY_FEATURES_TOGETHER: &str = "online,mcp,discord,sync";
 pub const BINARY_FEATURES_ALONE: [&str; 5] = ["ui", "online", "mcp", "discord", "sync"];
 
-const FUZZ: &str = "fuzz";
+const DETACHED: [&str; 2] = ["fuzz", "dsp-lab"];
 const SESSION_BUS: &str = "dbus-run-session";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -96,14 +96,16 @@ pub fn format(check: bool) -> Vec<Step> {
     let checked: &[&str] = if check { &["--check"] } else { &[] };
     let verb = if check { "format check" } else { "format" };
 
-    vec![
-        Step::new(verb, Program::Formatter, checked.iter().copied()),
-        Step::new(
-            format!("{verb} {FUZZ}/"),
-            Program::Formatter,
-            checked.iter().copied().chain([FUZZ]),
-        ),
-    ]
+    [Step::new(verb, Program::Formatter, checked.iter().copied())]
+        .into_iter()
+        .chain(DETACHED.iter().map(|folder| {
+            Step::new(
+                format!("{verb} {folder}/"),
+                Program::Formatter,
+                checked.iter().copied().chain([*folder]),
+            )
+        }))
+        .collect()
 }
 
 struct Linted {

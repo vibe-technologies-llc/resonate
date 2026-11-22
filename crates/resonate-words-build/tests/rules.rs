@@ -9,7 +9,7 @@ const HUMPS_OF_A_TYPE_AT_LEAST: usize = 2;
 const SOURCE_ROOTS: &[&str] = &[
     "crates",
     "fuzz",
-    "soxr-comparison",
+    "dsp-lab",
     "android",
     "ios",
     ".github",

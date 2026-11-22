@@ -3,8 +3,10 @@
 How `resonate-dsp`'s resampler compares with libsoxr, the resampler most audio software treats as
 the reference, measured with both in one process on the same buffers. Measured on 2026-11-17 with
 libsoxr 0.1.3 as Arch ships it, rustc 1.100.0 and `target-cpu=native` on an AMD Ryzen 7 7700, after
-the changes this comparison led to (*What changed in Resonate*). `soxr-comparison/` is the harness
-(`.claude/rules/build.md`); the `compare-resamplers` skill reruns it.
+the changes this comparison led to (*What changed in Resonate*). rubato 5.1.0, a pure-Rust
+resampler, was added to *Every measurement* on 2026-11-22 and has not been timed yet. The harness is
+the `resample` suite of `dsp-lab/` (`.claude/rules/build.md`, *The DSP lab*), which measures every
+other stage too (`docs/DSP.md`); the `compare-resamplers` skill reruns it.
 
 ## In short
 
@@ -48,7 +50,8 @@ the changes this comparison led to (*What changed in Resonate*). `soxr-compariso
 ## What was compared
 
 Nineteen settings at seven rate pairs: 44.1 to 48 kHz (a CD on a 48 kHz device), 48 to 44.1,
-96 to 48, 96 to 44.1, 192 to 48, 44.1 to 96 and 48 to 96.
+96 to 48, 96 to 44.1, 192 to 48, 44.1 to 96 and 48 to 96. *Every measurement* adds rubato's four
+(below), measured but not part of the comparison the rest of this report draws.
 
 | Setting | Design |
 |---|---|
@@ -68,6 +71,10 @@ Nineteen settings at seven rate pairs: 44.1 to 48 kHz (a CD on a 48 kHz device),
 | SoXR 32-bit | 32-bit, passband to 0.911 |
 | SoXR VHQ, steep | VHQ with `SOXR_STEEP_FILTER`'s passband, 0.982 |
 | SoXR VHQ, intermediate and minimum | VHQ at phase response 25 and 0 |
+| rubato FFT | its synchronous FFT resampler, fixed input |
+| rubato sinc 256, cubic | its asynchronous sinc, 256 taps, Blackman-Harris² window, oversampled 256 times, cubic between |
+| rubato sinc 128, linear | the same at 128 taps, linear between |
+| rubato polynomial, cubic | its asynchronous polynomial, cubic, no filter |
 
 Resonate's taps are counted at the lower of the two rates. Low latency tabulates its kernel for every
 phase the exact rational ratio needs (160 for 44.1 to 48 kHz) and sums each output frame over it. The
@@ -75,7 +82,9 @@ other three take one forward FFT at the input's rate over a pair of channels, mu
 response and take one inverse FFT at the output's rate (*What changed in Resonate*). SoXR runs on one
 thread, with its own defaults otherwise: its stopband begins at Nyquist at every recipe, and recipes of
 20 bits and fewer compute in single precision. Both take and give interleaved f64, so neither pays for
-a conversion the other does not.
+a conversion the other does not. rubato's output delay is trimmed and its tail pumped out until it has
+given as many frames as the ratio owes, so its output lines up as SoXR's does; what is left is its own:
+an output delay counted in whole frames leaves the sinc settings up to 21 µs early.
 
 ## How it was measured
 
@@ -349,7 +358,7 @@ exact response, and the only cut left is the band edge, whose jump is a stopband
 A Kaiser only trades: every unit of β gained about 8.4 dB of rejection and cost about 0.4 ms of
 ringing, and no β beat steep on both. A Kaiser is near-optimal when the only goal is depth at its
 reach; here there are two. So the window is an even Legendre series solved numerically
-(`soxr-comparison/design_window.py`): the deepest frequency-domain ripple a kernel of this reach and
+(`dsp-lab/design_window.py`): the deepest frequency-domain ripple a kernel of this reach and
 transition can meet while its level falls in a straight line, in decibels, from −120 dB at a chosen tap
 to the far end. The straight line matters: an envelope allowed to sit just under −120 dB rings for
 10 ms by this report's measure and about 15 ms by −125 dB, which is the measure gamed rather than a
@@ -532,6 +541,9 @@ phase. Sharing the weight loads across a phase's frames is still what pays.
 ## Every measurement
 
 The tables the harness prints, every setting at every rate pair. Resonate's settings are in bold.
+rubato's polynomial setting reads as SoXR QQ does, both being cubic interpolation with no filter, and
+at 2:1 down it aliases at 0 dB; its sinc settings let an alias through their transition band at 2:1
+(−39 dB at 96 to 48 kHz).
 
 ### Frequency domain, 44.1 kHz to 48 kHz
 
@@ -556,6 +568,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 1.3e-8 | 0.0017 | -0.0 | 21.75 | 21.82 | -181.6 | -214.6 | 189.9 | 183.9 | -91.1 | -183.0 |
 | SoXR VHQ, intermediate | 1.4e-8 | 0.0062 | -0.0 | 20.57 | 20.95 | -183.7 | -201.5 | 187.0 | 183.9 | -8.7 | -26.0 |
 | SoXR VHQ, minimum | 1.7e-8 | 0.0062 | -0.0 | 20.57 | 20.95 | -183.6 | -201.5 | 187.0 | 184.1 | -5.9 | -20.0 |
+| rubato FFT | 4.2e-11 | < 0.0001 | 0.0 | 20.51 | 20.90 | -142.8 | -241.8 | 195.8 | 179.0 | -160.9 | -196.0 |
+| rubato sinc 256, cubic | 1.6e-10 | 0.0017 | -0.0 | 20.29 | 20.73 | -143.3 | -224.8 | 202.4 | 176.3 | -91.2 | -192.8 |
+| rubato sinc 128, linear | 2.1e-5 | 10.3112 | -10.3 | 17.55 | 19.44 | -142.3 | -187.0 | 157.3 | 106.7 | -20.0 | -123.9 |
+| rubato polynomial, cubic | 4.2e-1 | 5.2375 | -5.2 | 6.65 | 16.94 | -7.3 | -18.0 | 110.7 | 9.6 | -19.5 | -39.4 |
 
 ### Time domain, 44.1 kHz to 48 kHz
 
@@ -580,6 +596,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 0.0 | 0.0 | 0.0 | 11.77 | 11.77 | -31.6 | 24.83 |
 | SoXR VHQ, intermediate | -13.4 | 38.0 | 0.0 | 1.98 | 3.62 | -75.6 | 34.35 |
 | SoXR VHQ, minimum | -26.8 | 76.1 | -20.8 | 0.08 | 4.75 | < -200 | 5.40 |
+| rubato FFT | -0.0 | 0.0 | 0.0 | 2.48 | 2.48 | -47.1 | 3.31 |
+| rubato sinc 256, cubic | -14.3 | 0.0 | -20.8 | 2.21 | 2.17 | -51.1 | 2.93 |
+| rubato sinc 128, linear | -7.2 | 0.0 | 0.0 | 1.10 | 1.15 | -101.7 | 1.50 |
+| rubato polynomial, cubic | -17.1 | 0.0 | -20.8 | 0.02 | 0.04 | < -200 | 0.09 |
 
 ### Frequency domain, 48 kHz to 44.1 kHz
 
@@ -604,6 +624,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 1.2e-8 | 0.0013 | -0.0 | 21.75 | 21.82 | -181.4 | -206.5 | 187.0 | 184.2 | -93.3 | -183.6 |
 | SoXR VHQ, intermediate | 1.8e-8 | 0.0023 | -0.0 | 20.57 | 20.95 | -182.1 | -195.2 | 187.5 | 185.7 | -8.7 | -25.7 |
 | SoXR VHQ, minimum | 4.8e-8 | 0.0023 | -0.0 | 20.57 | 20.95 | -182.0 | -195.2 | 187.5 | 185.6 | -5.9 | -19.8 |
+| rubato FFT | 5.1e-11 | < 0.0001 | 0.0 | 20.51 | 20.90 | -147.4 | -203.3 | 205.8 | 189.5 | -160.9 | -205.8 |
+| rubato sinc 256, cubic | 7.4e-11 | 0.0055 | -0.0 | 20.24 | 20.72 | -117.0 | -212.6 | 201.7 | 175.7 | -80.7 | -192.1 |
+| rubato sinc 128, linear | 1.8e-5 | 9.9026 | -9.9 | 17.33 | 19.41 | -112.5 | -157.9 | 160.2 | 109.7 | -20.2 | -125.3 |
+| rubato polynomial, cubic | 3.1e-1 | 3.9418 | -3.9 | 7.25 | 18.42 | -3.9 | -9.4 | 113.6 | 11.9 | -21.7 | -42.1 |
 
 ### Time domain, 48 kHz to 44.1 kHz
 
@@ -628,6 +652,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 0.0 | 0.0 | 0.0 | 11.75 | 11.75 | -30.1 | 134.27 |
 | SoXR VHQ, intermediate | -15.8 | 38.6 | 0.0 | 1.90 | 3.67 | -74.5 | 33.31 |
 | SoXR VHQ, minimum | -31.5 | 77.2 | -22.7 | 0.09 | 4.60 | < -200 | 27.85 |
+| rubato FFT | -0.0 | 0.0 | 0.0 | 2.38 | 2.38 | -47.1 | 3.31 |
+| rubato sinc 256, cubic | -9.2 | 0.0 | 0.0 | 1.93 | 2.06 | -56.0 | 2.71 |
+| rubato sinc 128, linear | -4.6 | 0.0 | 0.0 | 1.00 | 1.04 | -120.5 | 1.38 |
+| rubato polynomial, cubic | -3.7 | 0.0 | 0.0 | 0.02 | 0.02 | < -200 | 0.10 |
 
 ### Frequency domain, 96 kHz to 48 kHz
 
@@ -652,6 +680,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 3.6e-10 | < 0.0001 | -0.0 | 23.67 | 23.75 | -192.3 | -229.5 | 241.0 | 230.4 | -215.0 | -219.0 |
 | SoXR VHQ, intermediate | 2.7e-8 | < 0.0001 | -0.0 | 22.39 | 22.80 | -201.1 | -223.6 | 235.0 | 223.2 | -8.8 | -28.6 |
 | SoXR VHQ, minimum | 1.0e-7 | < 0.0001 | -0.0 | 22.39 | 22.80 | -177.1 | -205.7 | 225.8 | 215.6 | -8.0 | -22.6 |
+| rubato FFT | 2.1e-10 | 0.0363 | -0.0 | 20.11 | 21.16 | -147.5 | -180.5 | 192.7 | 181.3 | -64.4 | -193.9 |
+| rubato sinc 256, cubic | 8.3e-11 | < 0.0001 | 0.0 | 21.44 | 22.41 | -39.3 | -191.3 | 256.9 | 256.9 | -163.7 | -212.8 |
+| rubato sinc 128, linear | 2.5e-9 | 0.9154 | -0.9 | 18.43 | 20.84 | -38.5 | -167.6 | 256.0 | 252.3 | -36.8 | -205.0 |
+| rubato polynomial, cubic | 1.1e-12 | < 0.0001 | -0.0 | — | — | 0.0 | 0.0 | 259.8 | 259.8 | -261.3 | -266.9 |
 
 ### Time domain, 96 kHz to 48 kHz
 
@@ -676,6 +708,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | -0.0 | 0.0 | 0.0 | 10.60 | 10.60 | -30.9 | 143.14 |
 | SoXR VHQ, intermediate | -8.6 | 21.6 | 0.0 | 1.77 | 3.29 | -78.7 | 9.70 |
 | SoXR VHQ, minimum | -17.2 | 43.3 | 0.0 | 0.08 | 4.04 | -197.0 | 0.12 |
+| rubato FFT | 0.0 | 0.0 | 0.0 | 1.04 | 1.04 | -114.9 | 0.03 |
+| rubato sinc 256, cubic | -20.9 | 0.0 | -20.8 | 1.04 | 1.04 | -112.1 | 1.34 |
+| rubato sinc 128, linear | -20.9 | 0.0 | -20.8 | 0.52 | 0.52 | < -200 | 0.68 |
+| rubato polynomial, cubic | -20.8 | 0.0 | -20.8 | 0.00 | 0.00 | < -200 | 0.04 |
 
 ### Frequency domain, 96 kHz to 44.1 kHz
 
@@ -700,6 +736,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 1.2e-8 | 0.0013 | -0.0 | 21.75 | 21.82 | -181.4 | -184.3 | 187.0 | 184.2 | -93.3 | -183.6 |
 | SoXR VHQ, intermediate | 1.8e-8 | 0.0023 | -0.0 | 20.57 | 20.95 | -184.0 | -186.8 | 187.5 | 185.7 | -8.7 | -25.7 |
 | SoXR VHQ, minimum | 4.8e-8 | 0.0023 | -0.0 | 20.57 | 20.95 | -184.8 | -186.8 | 187.5 | 185.7 | -5.9 | -19.8 |
+| rubato FFT | 1.3e-10 | 5.6272 | -5.6 | 19.00 | 19.77 | -147.1 | -177.3 | 194.6 | 178.0 | -23.3 | -195.8 |
+| rubato sinc 256, cubic | 1.6e-10 | 0.5528 | -0.6 | 19.60 | 20.57 | -34.9 | -170.8 | 215.6 | 190.1 | -41.0 | -206.1 |
+| rubato sinc 128, linear | 4.5e-6 | 7.7971 | -7.8 | 16.88 | 19.09 | -34.3 | -99.3 | 172.3 | 123.3 | -21.4 | -137.4 |
+| rubato polynomial, cubic | 2.1e-2 | 0.3349 | -0.3 | 14.49 | — | -0.4 | -0.7 | 137.7 | 33.9 | -42.5 | -65.4 |
 
 ### Time domain, 96 kHz to 44.1 kHz
 
@@ -724,6 +764,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 0.0 | 0.0 | 0.0 | 11.75 | 11.75 | -30.1 | 134.28 |
 | SoXR VHQ, intermediate | -15.8 | 38.6 | 0.0 | 1.90 | 3.67 | -74.5 | 33.32 |
 | SoXR VHQ, minimum | -21.1 | 77.2 | 0.0 | 0.11 | 4.78 | < -200 | 27.85 |
+| rubato FFT | 11.3 | 0.0 | 0.0 | 1.29 | 1.32 | -84.5 | 3.32 |
+| rubato sinc 256, cubic | -4.6 | 0.0 | 0.0 | 1.04 | 1.02 | -110.3 | 1.35 |
+| rubato sinc 128, linear | -13.6 | 0.0 | -22.7 | 0.48 | 0.52 | < -200 | 0.68 |
+| rubato polynomial, cubic | -1.8 | 0.0 | 0.0 | 0.00 | 0.00 | < -200 | 0.05 |
 
 ### Frequency domain, 192 kHz to 48 kHz
 
@@ -748,6 +792,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 1.2e-8 | < 0.0001 | -0.0 | 23.67 | 23.75 | -183.9 | -183.9 | 247.4 | 236.2 | -185.2 | -185.3 |
 | SoXR VHQ, intermediate | 1.3e-8 | < 0.0001 | -0.0 | 22.40 | 22.80 | -183.9 | -183.9 | 239.9 | 228.8 | -8.7 | -28.3 |
 | SoXR VHQ, minimum | 1.6e-8 | < 0.0001 | -0.0 | 22.40 | 22.80 | -183.9 | -183.9 | 232.1 | 221.6 | -8.0 | -22.3 |
+| rubato FFT | 5.6e-9 | 14.9405 | -14.9 | 16.37 | 18.29 | -147.3 | -176.5 | 188.9 | 177.0 | -18.5 | -190.1 |
+| rubato sinc 256, cubic | 1.5e-9 | 0.0661 | -0.1 | 20.12 | 22.09 | -17.7 | -146.4 | 259.1 | 250.5 | -59.2 | -207.9 |
+| rubato sinc 128, linear | 1.3e-7 | 2.6414 | -2.6 | 16.30 | 20.20 | -17.5 | -58.5 | 256.0 | 256.0 | -28.4 | -181.7 |
+| rubato polynomial, cubic | 1.5e-12 | < 0.0001 | 0.0 | — | — | 0.0 | 0.0 | 255.9 | 255.9 | 3.4 | 2.8 |
 
 ### Time domain, 192 kHz to 48 kHz
 
@@ -772,6 +820,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | -0.0 | 0.0 | 0.0 | 10.79 | 10.79 | -30.9 | 140.65 |
 | SoXR VHQ, intermediate | -12.3 | 22.4 | 0.0 | 1.77 | 3.38 | -78.6 | 7.31 |
 | SoXR VHQ, minimum | -14.2 | 44.8 | 0.0 | 0.08 | 4.35 | < -200 | 11.86 |
+| rubato FFT | -0.0 | 0.0 | 0.0 | 0.54 | 0.54 | < -200 | 0.04 |
+| rubato sinc 256, cubic | -20.9 | 0.0 | -20.8 | 0.52 | 0.52 | < -200 | 0.67 |
+| rubato sinc 128, linear | -20.9 | 0.0 | -20.8 | 0.27 | 0.27 | < -200 | 0.34 |
+| rubato polynomial, cubic | 497989.6 | 34326.4 | 499979.2 | 0.00 | 0.00 | < -200 | 299.99 |
 
 ### Frequency domain, 44.1 kHz to 96 kHz
 
@@ -796,6 +848,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 1.3e-8 | 0.0017 | -0.0 | 21.75 | 21.82 | -181.6 | — | 190.0 | 183.9 | -91.1 | -183.0 |
 | SoXR VHQ, intermediate | 1.4e-8 | 0.0062 | -0.0 | 20.57 | 20.95 | -183.7 | — | 187.1 | 183.9 | -8.7 | -26.0 |
 | SoXR VHQ, minimum | 1.7e-8 | 0.0062 | -0.0 | 20.57 | 20.95 | -183.6 | — | 187.1 | 184.1 | -5.9 | -20.0 |
+| rubato FFT | 4.7e-11 | < 0.0001 | 0.0 | 20.51 | 20.90 | -142.8 | — | 195.7 | 179.0 | -160.9 | -196.0 |
+| rubato sinc 256, cubic | 1.6e-10 | 0.0017 | -0.0 | 20.29 | 20.73 | -143.3 | — | 197.1 | 171.1 | -91.2 | -187.5 |
+| rubato sinc 128, linear | 2.1e-5 | 10.3112 | -10.3 | 17.55 | 19.44 | -142.3 | — | 157.3 | 106.7 | -20.0 | -123.9 |
+| rubato polynomial, cubic | 4.2e-1 | 5.2376 | -5.2 | 6.65 | 16.94 | -7.3 | — | 110.7 | 9.6 | -19.5 | -39.4 |
 
 ### Time domain, 44.1 kHz to 96 kHz
 
@@ -820,6 +876,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 0.0 | 0.0 | 0.0 | 11.77 | 11.77 | -31.8 | 24.83 |
 | SoXR VHQ, intermediate | -13.4 | 38.0 | 0.0 | 1.98 | 3.68 | -76.0 | 34.35 |
 | SoXR VHQ, minimum | -26.8 | 76.1 | -10.4 | 0.10 | 4.79 | < -200 | 5.40 |
+| rubato FFT | -0.0 | 0.0 | 0.0 | 2.53 | 2.53 | -46.6 | 3.31 |
+| rubato sinc 256, cubic | -3.8 | 0.0 | 0.0 | 2.22 | 2.21 | -50.7 | 2.95 |
+| rubato sinc 128, linear | -7.2 | 0.0 | -10.4 | 1.12 | 1.16 | -100.3 | 1.47 |
+| rubato polynomial, cubic | -6.7 | 0.0 | -10.4 | 0.03 | 0.04 | < -200 | 0.09 |
 
 ### Frequency domain, 48 kHz to 96 kHz
 
@@ -844,6 +904,10 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 3.6e-10 | < 0.0001 | -0.0 | 23.67 | 23.75 | -176.3 | — | 225.1 | 199.7 | -209.0 | -211.5 |
 | SoXR VHQ, intermediate | 2.7e-8 | < 0.0001 | -0.0 | 22.39 | 22.80 | -177.8 | — | 216.7 | 190.6 | -8.8 | -28.6 |
 | SoXR VHQ, minimum | 1.0e-7 | < 0.0001 | -0.0 | 22.39 | 22.80 | -177.1 | — | 210.6 | 191.3 | -8.0 | -22.6 |
+| rubato FFT | 5.1e-11 | < 0.0001 | 0.0 | 22.08 | 22.57 | -143.6 | — | 194.5 | 182.8 | -194.2 | -195.2 |
+| rubato sinc 256, cubic | 7.0e-11 | < 0.0001 | 0.0 | 22.08 | 22.57 | -143.3 | — | 230.9 | 213.9 | -215.8 | -220.5 |
+| rubato sinc 128, linear | 1.9e-10 | 0.0363 | -0.0 | 20.11 | 21.16 | -142.3 | — | 224.2 | 205.0 | -64.4 | -214.1 |
+| rubato polynomial, cubic | 2.1e-1 | 3.2258 | -3.2 | 7.74 | 19.55 | -6.0 | — | 109.3 | 10.2 | -21.8 | -42.3 |
 
 ### Time domain, 48 kHz to 96 kHz
 
@@ -868,14 +932,18 @@ The tables the harness prints, every setting at every rate pair. Resonate's sett
 | SoXR VHQ, steep | 0.0 | 0.0 | 0.0 | 10.60 | 10.60 | -32.4 | 143.12 |
 | SoXR VHQ, intermediate | -8.6 | 21.6 | 0.0 | 1.82 | 3.29 | -80.5 | 9.69 |
 | SoXR VHQ, minimum | -27.6 | 43.3 | -10.4 | 0.09 | 4.26 | < -200 | 0.12 |
+| rubato FFT | -0.0 | 0.0 | 0.0 | 2.03 | 2.03 | -54.2 | 0.00 |
+| rubato sinc 256, cubic | -10.5 | 0.0 | -10.4 | 2.03 | 2.03 | -54.2 | 2.69 |
+| rubato sinc 128, linear | -10.5 | 0.0 | -10.4 | 1.04 | 1.04 | -112.2 | 1.35 |
+| rubato polynomial, cubic | -10.4 | 0.0 | -10.4 | 0.03 | 0.03 | < -200 | 0.08 |
 
 ## Reproducing
 
 ```sh
-cd soxr-comparison
-cargo run --release -- --no-timing --plots ../docs/resampling
-cargo run --release -- --timing-only
-cargo run --release -- --candidates FILE
+cd dsp-lab
+cargo run --release -- measure resample --plots ../docs/resampling
+cargo run --release -- time resample
+cargo run --release -- candidates FILE
 python3 design_window.py NAME WIDTH_HZ REACH RING_TAPS TERMS
 ```
 
