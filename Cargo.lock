@@ -260,9 +260,9 @@ checksum = "33ca55ee147b1926dbea904f50fe4902494e97bc742205abbbf10c709e43815f"
 
 [[package]]
 name = "archmage"
-version = "0.9.32"
+version = "0.9.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a92f0e72adfba3f34ee8726e42cffed7384571e95411265060c638ece0f00ff2"
+checksum = "2261f8722a6b01db495cddca47194ddcb293747025192ae189ab5412e724e358"
 dependencies = [
  "archmage-macros",
  "safe_unaligned_simd",
@@ -271,9 +271,9 @@ dependencies = [
 
 [[package]]
 name = "archmage-macros"
-version = "0.9.32"
+version = "0.9.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3d4e76b4cdc9779ac80e4b04cbc6c15fdb5b714116a7047eea481fb2f45017d2"
+checksum = "4cbd5e93a65bd3c08bc1f8fdddc1eff1f42a39bf2b4395f11281eb939d097ba8"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3402,9 +3402,9 @@ dependencies = [
 
 [[package]]
 name = "hashbrown"
-version = "0.17.1"
+version = "0.17.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
+checksum = "735eaa21a6a5ffb2e84362faaeb90c05ba8e19797ca30428478cb6ea3a4921bc"
 dependencies = [
  "foldhash",
 ]
@@ -3415,7 +3415,7 @@ version = "0.12.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a596f1b20ed2cc5ecac41a164aaebc7258057060f06c0cf7a2ba3991ee7990fb"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
 ]
 
 [[package]]
@@ -3974,7 +3974,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "serde",
  "serde_core",
 ]
@@ -4727,7 +4727,7 @@ version = "0.19.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "83be4da409554841af087163ad187608824ad8ca8713d8e124c8e0f704a2f92f"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
 ]
 
 [[package]]
@@ -4795,9 +4795,9 @@ checksum = "fc04a4c58212d57930a24bf47d3fa87485264a3a054e9c10e042eb373573ad3c"
 
 [[package]]
 name = "magetypes"
-version = "0.9.32"
+version = "0.9.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a4bf97ae47bb9993221b6e00114dd4ef0920c11e72d39bc550d46ecd50c257c"
+checksum = "c97530899f0a93eebffd5e8a9ce8e733e35236e7349ada63ad4126142014bf45"
 dependencies = [
  "archmage",
  "rustversion",
@@ -4903,9 +4903,9 @@ dependencies = [
 
 [[package]]
 name = "mibz2"
-version = "0.5.11"
+version = "0.5.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1063953f4cb10a67c004c9ed933248212b664c03ab3173031ef2c0c413a4b3a7"
+checksum = "07f55323987c1ae4cd3f2d322f1ed7c87a73f7b6be9b8a675dc3b13eda3b92dc"
 
 [[package]]
 name = "minimal-lexical"
@@ -4995,7 +4995,7 @@ dependencies = [
  "cfg_aliases",
  "codespan-reporting",
  "half",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "indexmap",
  "libm",
  "log",
@@ -5013,7 +5013,7 @@ name = "naga-types"
 version = "30.0.0"
 source = "git+https://github.com/gfx-rs/wgpu?rev=cddb2f5d80dc0009b2ef6767635140cacf90a007#cddb2f5d80dc0009b2ef6767635140cacf90a007"
 dependencies = [
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "indexmap",
  "rustc-hash 1.1.0",
  "thiserror 2.0.21",
@@ -10421,7 +10421,7 @@ dependencies = [
  "cfg-if",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "js-sys",
  "log",
  "naga",
@@ -10450,7 +10450,7 @@ dependencies = [
  "bytemuck",
  "cfg_aliases",
  "document-features",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "indexmap",
  "log",
  "naga",
@@ -10530,7 +10530,7 @@ dependencies = [
  "glow",
  "glutin_wgl_sys",
  "gpu-allocator",
- "hashbrown 0.17.1",
+ "hashbrown 0.17.2",
  "js-sys",
  "khronos-egl",
  "libc",
