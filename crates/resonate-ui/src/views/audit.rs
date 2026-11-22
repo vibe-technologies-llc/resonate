@@ -36,9 +36,9 @@ mod tests {
     ];
 
     const STILL_POINTER_ONLY: &[&str] = &[
-        "browser.rs | cell.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
-        "browser.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
-        "browser.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "browser/missing_albums.rs | cell.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "browser/missing_rows.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
+        "browser/missing_rows.rs | row.cursor_pointer() | .on_click(cx.listener(move |this, _, _, cx| {",
         "chrome.rs | button | .on_click(move |_, window, _| control.act(window))",
         "dropping.rs | if stopping { | button.on_click(cx.listener(|this, _, _, cx| this.stop_copying(cx)))",
         "hint.rs | div() | .on_click(|_, _, cx| cx.stop_propagation())",
@@ -247,7 +247,17 @@ mod words {
         "wrapped_card/markup.rs",
     ];
 
-    const ONLY_UNDER_TEST: &[&str] = &["driven.rs", "models/tests.rs", "views/root/tests.rs"];
+    const ONLY_UNDER_TEST: &[&str] = &[
+        "driven.rs",
+        "models/tests.rs",
+        "views/browser/tests.rs",
+        "views/browser/tests/enriching.rs",
+        "views/browser/tests/fixtures.rs",
+        "views/browser/tests/found.rs",
+        "views/browser/tests/searching.rs",
+        "views/browser/tests/wanting.rs",
+        "views/root/tests.rs",
+    ];
 
     const STILL_TO_MOVE: &[&str] = &[];
 

@@ -180,11 +180,8 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 - [M] `crates/resonate-library/tests/library.rs` is 33 623 lines and 804 tests in one module, so
   `library::` is the narrowest filter and every edit rebuilds it; topic files under `suite` (retag,
   polls and metering, undo, history, keeps) sharing `support`
-- [M] `resonate-ui`'s `views/browser.rs` (6 424 lines, one `impl RootView` of some 3 000 for the
-  albums and artists grids, track rows, missing rows, the record card, pressings and menus) and the
-  binary's `config.rs` (4 499, folders and permissions, `Config`, parsing and the locked `toml_edit`
-  writer) want splitting as `views/root/` was: `views/browser/` by subject, `config/writing.rs` and
-  `config/places.rs`
+- [M] The binary's `config.rs` (4 499 lines, folders and permissions, `Config`, parsing and the locked
+  `toml_edit` writer) wants splitting as `views/root/` was: `config/writing.rs` and `config/places.rs`
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to
