@@ -420,7 +420,11 @@ The man page's entry is held to the table's default by
 `the_man_page_gives_every_switch_the_default_the_table_does`. `settings::stored` writes under
 `Setting::key`, so no setting's key is named twice. Keys
 with a flag: the `global` ones plus `volume`; the rest only pane and file. Defaults and meanings:
-`config.rs` and `views/settings/`; below are the decisions.
+`config.rs` and `views/settings/`; below are the decisions. **The settings file is `config.rs` and
+`config/`**: `config.rs` holds `Config`, `Bindings` and the accounts, `places.rs` the folders and
+their permissions, `reading.rs` the parse (`config::load`, `Config::take`, the per-key readers) and
+`writing.rs` the locked `toml_edit` writer (`config::edit`), with the tests under `config/tests/` by
+subject.
 
 - **A value that will not read costs its key alone.** `Config::take` answers the typed
   `ConfigType`/`ConfigValue` refusal; `config::parse` warns and leaves the key at its default (a
@@ -659,7 +663,7 @@ with a flag: the `global` ones plus `volume`; the rest only pane and file. Defau
   wake what waits on them.
 
   **A retired spelling is read and never written.** `download-on-metered` was
-  `stall-downloads-on-metered`, the other way round; `config.rs`'s `RETIRED` names it with the
+  `stall-downloads-on-metered`, the other way round; `config/reading.rs`'s `RETIRED` names it with the
   switch it became and how its value reads there (`reads_as`, here `Not::not`), so a file holding `stall-downloads-on-metered = true` reads
   as `download-on-metered = false`. The new key wins where a file holds both, whatever their order
   (`take_unless_said_anew`), a retired value that is not a boolean is passed over with a warning,

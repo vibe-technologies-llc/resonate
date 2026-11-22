@@ -177,8 +177,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   more in its groups), with `RootView::new` some 400 lines making 27 subscriptions. Each wants a
   driven test pinning it before it moves, as the panes moved so far got, and a pane's drawing stays
   on the root while its controls live in the root's focus ring
-- [M] The binary's `config.rs` (4 499 lines, folders and permissions, `Config`, parsing and the locked
-  `toml_edit` writer) wants splitting as `views/root/` was: `config/writing.rs` and `config/places.rs`
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL
   encoders, `zune-jpegxl` for a cover's pixels and `jxl-encoder` for a JPEG's transcode. Measured on
   600 to 1400 px covers, `jxl-encoder` 0.3.4's lossless effort 7 is about half zune's size (0.6 to
