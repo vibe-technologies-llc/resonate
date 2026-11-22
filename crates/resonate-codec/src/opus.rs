@@ -34,7 +34,6 @@ const VORBIS_FAMILY: u8 = 1;
 const ISO_BMFF_VERSION: u8 = 0;
 const SILENT_CHANNEL: u8 = 255;
 const DB_PER_DECADE: f32 = 20.0;
-const STEREO_FLAG: u8 = 0b100;
 const GAIN_STEPS_PER_DB: f32 = 256.0;
 
 const FIRST_HYBRID_CONFIG: u8 = 12;
@@ -224,10 +223,7 @@ fn routes_only_what_it_decodes(table: &ChannelMappingTable) -> bool {
 }
 
 enum Streams {
-    Plain {
-        decoder: Box<OpusDecoder>,
-        other: Option<Box<OpusDecoder>>,
-    },
+    Plain(Box<OpusDecoder>),
     Multi(MultistreamDecoder),
 }
 
@@ -239,10 +235,7 @@ impl Streams {
                 .map(Self::Multi)
                 .or_else(decode_error),
             None => OpusDecoder::new(rate, usize::from(head.channels))
-                .map(|decoder| Self::Plain {
-                    decoder: Box::new(decoder),
-                    other: None,
-                })
+                .map(|decoder| Self::Plain(Box::new(decoder)))
                 .or_else(decode_error),
         }
     }
@@ -250,42 +243,12 @@ impl Streams {
     fn decode(
         &mut self,
         packet: &[u8],
-        channels: usize,
-        scratch: &mut [f32],
         out: &mut [f32],
     ) -> std::result::Result<usize, &'static str> {
         match self {
             Self::Multi(decoder) => decoder.decode(packet, LONGEST_PACKET_FRAMES, out),
-            Self::Plain { decoder, other } => {
-                let carried = packet
-                    .first()
-                    .map_or(channels, |toc| if toc & STEREO_FLAG == 0 { 1 } else { 2 });
-
-                if carried == channels {
-                    return decoder.decode(packet, LONGEST_PACKET_FRAMES, out);
-                }
-
-                let other = match other {
-                    Some(other) => other,
-                    None => other.insert(Box::new(OpusDecoder::new(OPUS_RATE as i32, carried)?)),
-                };
-                let frames = other.decode(packet, LONGEST_PACKET_FRAMES, scratch)?;
-
-                fold_to(carried, channels, &scratch[..frames * carried], out);
-                Ok(frames)
-            }
+            Self::Plain(decoder) => decoder.decode(packet, LONGEST_PACKET_FRAMES, out),
         }
-    }
-}
-
-fn fold_to(carried: usize, channels: usize, from: &[f32], into: &mut [f32]) {
-    for (frame, to) in from
-        .chunks_exact(carried)
-        .zip(into.chunks_exact_mut(channels))
-    {
-        let mean = frame.iter().sum::<f32>() / carried as f32;
-
-        to.fill(mean);
     }
 }
 
@@ -296,7 +259,6 @@ pub(crate) struct Opus {
     planes: [usize; MOST_CHANNELS],
     amplitude: Option<f32>,
     interleaved: Vec<f32>,
-    scratch: Vec<f32>,
     buffer: AudioBuffer<f32>,
 }
 
@@ -331,7 +293,6 @@ impl Opus {
             amplitude: head.amplitude(),
             head,
             interleaved: vec![0.0; LONGEST_PACKET_FRAMES * count],
-            scratch: vec![0.0; LONGEST_PACKET_FRAMES * 2],
             buffer: AudioBuffer::new(AudioSpec::new(OPUS_RATE, channels), LONGEST_PACKET_FRAMES),
         })
     }
@@ -379,12 +340,7 @@ impl AudioDecoder for Opus {
         packet: &PacketRef<'_>,
     ) -> Result<symphonia::core::audio::GenericAudioBufferRef<'_>> {
         let channels = self.channels();
-        let frames = match self.streams.decode(
-            packet.data,
-            channels,
-            &mut self.scratch,
-            &mut self.interleaved,
-        ) {
+        let frames = match self.streams.decode(packet.data, &mut self.interleaved) {
             Ok(frames) => frames,
             Err(reason) => {
                 self.buffer.clear();
@@ -615,20 +571,5 @@ mod tests {
         assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3]), None);
         assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3, 0]), None);
         assert_eq!(samples_in_a_packet(&[CELT_20_MS | 3, 7]), None);
-    }
-
-    #[test]
-    fn a_packet_carrying_fewer_channels_than_the_stream_is_heard_on_all_of_them() {
-        let mut stereo = [0.0; 4];
-
-        fold_to(1, 2, &[0.5, -0.25], &mut stereo);
-
-        assert_eq!(stereo, [0.5, 0.5, -0.25, -0.25]);
-
-        let mut mono = [0.0; 2];
-
-        fold_to(2, 1, &[0.5, 0.25, -1.0, 0.0], &mut mono);
-
-        assert_eq!(mono, [0.375, -0.5]);
     }
 }

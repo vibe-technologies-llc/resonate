@@ -3,6 +3,7 @@ use std::os::unix::fs::MetadataExt as _;
 use std::{
     env, fs,
     io::{self, Cursor, Read, Seek, SeekFrom},
+    ops::Range,
     path::{Path, PathBuf},
     process::{self, Command, Stdio},
     sync::{
@@ -3496,6 +3497,180 @@ fn a_stereo_opus_stream_of_mono_packets_decodes_to_both_channels_at_libopus_s_le
     assert!(
         (ours - theirs).abs() < theirs * 0.01,
         "folded.opus decoded to a level of {ours:.4} where libopus reads {theirs:.4}"
+    );
+}
+
+const OPUS_A_PACKET_A_PAGE: [&str; 13] = [
+    "-c:a",
+    "libopus",
+    "-b:a",
+    "64k",
+    "-application",
+    "lowdelay",
+    "-bitexact",
+    "-serial_offset",
+    "7",
+    "-page_duration",
+    "20000",
+    "-f",
+    "ogg",
+];
+const OGG_PLACE: Range<usize> = 6..22;
+const OGG_SEGMENTS_AT: usize = 26;
+const OGG_LACING_AT: usize = 27;
+const OGG_HEADER_PAGES: usize = 2;
+const PACKETS_A_RUN: usize = 10;
+const OPUS_STEREO_FLAG: u8 = 0b100;
+const OPUS_WINDOW_FRAMES: usize = 960;
+const A_SWITCH_AGREES_WITH_LIBOPUS_TO_DB: f64 = 25.0;
+const STEEPEST_STEP_OVER_LIBOPUS_AT_MOST: f64 = 1.01;
+
+fn ogg_pages(bytes: &[u8]) -> Vec<&[u8]> {
+    let mut pages = Vec::new();
+    let mut at = 0;
+
+    while at < bytes.len() {
+        let lacing_ends = at + OGG_LACING_AT + usize::from(bytes[at + OGG_SEGMENTS_AT]);
+        let body: usize = bytes[at + OGG_LACING_AT..lacing_ends]
+            .iter()
+            .map(|length| usize::from(*length))
+            .sum();
+
+        pages.push(&bytes[at..lacing_ends + body]);
+        at = lacing_ends + body;
+    }
+    pages
+}
+
+fn carries_stereo(page: &[u8]) -> bool {
+    let lacing_ends = OGG_LACING_AT + usize::from(page[OGG_SEGMENTS_AT]);
+
+    page[lacing_ends] & OPUS_STEREO_FLAG != 0
+}
+
+fn switching_between_mono_and_stereo_packets(tree: &Tree) -> Option<PathBuf> {
+    let laid_out_with =
+        |channels: &'static str| [&OPUS_A_PACKET_A_PAGE[..], &["-ac", channels]].concat();
+    let (stereo, _) = shaped(tree, BROADCAST, "stereo.opus", &laid_out_with("2"))?;
+    let mono = tree.at("mono.opus");
+
+    if !encode(&tree.at("source.wav"), &mono, &laid_out_with("1")) {
+        eprintln!("skipped: ffmpeg would not encode mono.opus");
+        return None;
+    }
+
+    let stereo = fs::read(&stereo).expect("a written fixture");
+    let mono = fs::read(&mono).expect("a written fixture");
+
+    let (stereo_pages, mono_pages) = (ogg_pages(&stereo), ogg_pages(&mono));
+
+    assert_eq!(stereo_pages.len(), mono_pages.len());
+    assert!(
+        stereo_pages
+            .iter()
+            .zip(&mono_pages)
+            .all(|(stereo, mono)| stereo[OGG_PLACE] == mono[OGG_PLACE]),
+        "the two encodes are not laid out page for page alike, so they cannot be spliced"
+    );
+
+    let spliced = stereo_pages
+        .iter()
+        .zip(&mono_pages)
+        .enumerate()
+        .map(|(at, (stereo, mono))| {
+            let run = at
+                .checked_sub(OGG_HEADER_PAGES)
+                .map(|data| data / PACKETS_A_RUN);
+            if run.is_some_and(|run| run % 2 == 1) {
+                *mono
+            } else {
+                *stereo
+            }
+        })
+        .collect::<Vec<_>>();
+    let carried = spliced[OGG_HEADER_PAGES..]
+        .iter()
+        .map(|page| carries_stereo(page))
+        .collect::<Vec<_>>();
+    let switches = carried.windows(2).filter(|pair| pair[0] != pair[1]).count();
+
+    assert!(
+        switches >= 8,
+        "the spliced stream switches only {switches} times"
+    );
+
+    let path = tree.at("switching.opus");
+
+    fs::write(&path, spliced.concat()).expect("a writable fixture");
+    Some(path)
+}
+
+fn steepest_step(samples: &[i32], channels: usize) -> f64 {
+    samples
+        .chunks_exact(channels)
+        .zip(samples.chunks_exact(channels).skip(1))
+        .flat_map(|(before, after)| before.iter().zip(after))
+        .map(|(before, after)| (f64::from(*after) - f64::from(*before)).abs() / f64::from(i32::MAX))
+        .fold(0.0, f64::max)
+}
+
+fn worst_window_agreement_db(ours: &[i32], theirs: &[i32], channels: usize) -> f64 {
+    let window = OPUS_WINDOW_FRAMES * channels;
+
+    ours.chunks_exact(window)
+        .zip(theirs.chunks_exact(window))
+        .flat_map(|(ours, theirs)| {
+            (0..channels).map(move |channel| {
+                let (signal, error) = ours
+                    .iter()
+                    .zip(theirs)
+                    .skip(channel)
+                    .step_by(channels)
+                    .fold((0.0, 0.0), |(signal, error), (ours, theirs)| {
+                        let theirs = f64::from(*theirs);
+                        (
+                            signal + theirs * theirs,
+                            error + (f64::from(*ours) - theirs).powi(2),
+                        )
+                    });
+                10.0 * (signal / error).log10()
+            })
+        })
+        .fold(f64::INFINITY, f64::min)
+}
+
+#[test]
+fn a_stereo_opus_stream_switching_to_mono_packets_and_back_plays_each_switch_as_libopus_does() {
+    let tree = Tree::new();
+    let Some(path) = switching_between_mono_and_stereo_packets(&tree) else {
+        return;
+    };
+    let Some(reference) = decoded_by_libopus(&path) else {
+        eprintln!("skipped: this ffmpeg has no libopus to decode switching.opus with");
+        return;
+    };
+
+    let decoded = decode(&path);
+    let kept = decoded.samples.len().min(reference.len());
+
+    assert_eq!(decoded.spec.channels, ChannelLayout::Stereo);
+    assert!(
+        kept >= tone(BROADCAST).len(),
+        "switching.opus decoded short"
+    );
+
+    let (ours, theirs) = (&decoded.samples[..kept], &reference[..kept]);
+
+    let agreement = worst_window_agreement_db(ours, theirs, 2);
+    let (our_step, their_step) = (steepest_step(ours, 2), steepest_step(theirs, 2));
+
+    assert!(
+        agreement > A_SWITCH_AGREES_WITH_LIBOPUS_TO_DB,
+        "a 20 ms window of switching.opus agrees with libopus's decode to {agreement:.1} dB only"
+    );
+    assert!(
+        our_step < their_step * STEEPEST_STEP_OVER_LIBOPUS_AT_MOST,
+        "switching.opus steps {our_step:e} of full scale between two frames where libopus steps {their_step:e} at most"
     );
 }
 

@@ -60,7 +60,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   (`vorbis::Windows`). Matroska seeks are approximate (ms ticks).
 - **Opus: `opus-rs`, registered beside symphonia's decoders** (symphonia 0.6 demuxes Opus, decodes
   none). **Billed at 48 kHz whatever the container says** (`opus::rate_of`; ffmpeg writes the input's
-  rate as Matroska `SamplingFrequency`). `R128_TRACK_GAIN`/`R128_ALBUM_GAIN` read as ReplayGain 5 dB
+  rate as Matroska `SamplingFrequency`). **A stream keeps one decoder whatever its packets carry**: libopus
+  drops a stereo stream to mono packets near 16-24 kbps, and `opus-rs` decodes a packet whose TOC
+  channel bit differs from the decoder's as libopus does (a mono packet on both channels, keeping
+  the stream's CELT band energies and SILK state; a stereo packet downmixed by a mono decoder), so a
+  second decoder would start each switch from stale or empty state, a click and mispredicted bands
+  (`a_stereo_opus_stream_switching_to_mono_packets_and_back_plays_each_switch_as_libopus_does`, a
+  spliced stream against libopus's decode). `R128_TRACK_GAIN`/`R128_ALBUM_GAIN` read as ReplayGain 5 dB
   louder. **Pre-skip is the container's:** Ogg counts it inside granules, Matroska shifts by
   `CodecDelay`, MP4's edit list is read by the box scan. **Matroska's end is the last block's
   `DiscardPadding`**, kept per `A_OPUS` track (`Segment::discarded_frames(track, rate)`; another
