@@ -2054,9 +2054,9 @@ dependencies = [
 
 [[package]]
 name = "mibz2"
-version = "0.5.10"
+version = "0.5.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60b593812e8b550ae7aba5b22694636314a985b175dba8e10e5af1223877ea57"
+checksum = "1063953f4cb10a67c004c9ed933248212b664c03ab3173031ef2c0c413a4b3a7"
 
 [[package]]
 name = "minimal-lexical"
