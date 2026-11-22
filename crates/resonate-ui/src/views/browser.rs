@@ -1309,6 +1309,7 @@ impl RootView {
                 let placeable = this.library.read(cx).can_enrich().then_some(track_id);
                 let matched = SharedString::from(track.title.clone());
                 let looked_up = track.title.clone();
+                let refreshed = track.title.clone();
                 let deleting = Deleting::of(track);
                 let everywhere =
                     syncs_with_other_devices(cx).then(|| deleting.clone().on_every_device());
@@ -1347,6 +1348,17 @@ impl RootView {
 
                                         this.library.update(cx, |library, cx| {
                                             library.look_up_the_song(track, title, cx);
+                                        });
+                                    },
+                                )
+                                .does(
+                                    Icon::Undo,
+                                    words::browser::refresh_what_was_fetched(),
+                                    move |this, _, cx| {
+                                        let title = refreshed.clone();
+
+                                        this.library.update(cx, |library, cx| {
+                                            library.refresh_the_song(track, title, cx);
                                         });
                                     },
                                 )
@@ -2025,14 +2037,58 @@ impl RootView {
             false => Vec::new(),
         };
         let naming = self.naming.filter(|naming| naming.is_a_search());
+        let narrowing = self.narrowing_the_page(cx);
 
         heading
-            .when(!reads.is_empty(), |heading| {
-                heading.child(listing::reads(&reads))
+            .when(!reads.is_empty() || narrowing.is_some(), |heading| {
+                heading.child(
+                    div()
+                        .flex()
+                        .flex_wrap()
+                        .items_center()
+                        .gap_2()
+                        .when(!reads.is_empty(), |row| row.child(listing::reads(&reads)))
+                        .when_some(narrowing, Div::child),
+                )
             })
             .when_some(naming, |heading, naming| {
                 heading.child(self.naming_row(naming, cx))
             })
+    }
+
+    fn narrowing_the_page(&self, cx: &mut Context<Self>) -> Option<Stateful<Div>> {
+        let library = self.library.read(cx);
+
+        if !library.words_wait_beside_the_page() {
+            return None;
+        }
+
+        let narrows = library.narrows_the_page();
+        let button = match narrows {
+            true => kit::button(
+                "show-the-whole-page",
+                Some(Icon::Close),
+                words::browser::show_the_whole_page(),
+                words::browser::show_the_whole_page_hint(),
+                Tone::Ghost,
+            ),
+            false => kit::button(
+                "narrow-by-the-search",
+                Some(Icon::Search),
+                words::browser::narrow_by_the_search(library.query()),
+                words::browser::narrow_by_the_search_hint(),
+                Tone::Ghost,
+            ),
+        };
+
+        Some(self.in_the_pane_ring(
+            button,
+            move |this, _, cx| {
+                this.library
+                    .update(cx, |library, cx| library.narrow_the_page(!narrows, cx));
+            },
+            cx,
+        ))
     }
 
     fn library_heading(&self, cx: &mut Context<Self>) -> Div {
@@ -5558,19 +5614,19 @@ mod tests {
         }
 
         fn enrich_this_song_pressed(driven: &mut Driven, track: &Track) {
+            identified_by(driven, track, "Enrich this song");
+        }
+
+        fn identified_by(driven: &mut Driven, track: &Track, label: &str) {
             let row: &'static str = Box::leak(format!("track-{}", track.id.get()).into_boxed_str());
 
             driven.right_click(row);
 
             let offered = driven
-                .read(|root, _| {
-                    root.menu
-                        .as_ref()
-                        .and_then(|menu| menu.offering("Enrich this song"))
-                })
-                .expect("the song's menu offers to enrich it");
+                .read(|root, _| root.menu.as_ref().and_then(|menu| menu.offering(label)))
+                .expect("the song's menu offers it");
             let crate::views::menu::Offered::Beneath(at, under) = offered else {
-                panic!("enriching a song stands outside the Identify nest");
+                panic!("{label} stands outside the Identify nest");
             };
             let nest: &'static str = Box::leak(format!("menu-entry-{at}").into_boxed_str());
             let entry: &'static str =
@@ -5618,6 +5674,61 @@ mod tests {
                     .and_then(|asked| asked.mbid),
                 Some(mbid(HEROES_TONIGHT)),
                 "the song was not given the recording its code names"
+            );
+        }
+
+        #[gpui::test]
+        fn clearing_what_was_fetched_for_a_song_looks_it_up_again_and_fills_it_in_afresh(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let (mut driven, library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+
+            library
+                .set_isrc(track.id, &Isrc::new(HEROES_TONIGHT_ISRC).expect("an isrc"))
+                .expect("the code is given");
+
+            enrich_this_song_pressed(&mut driven, &track);
+            told_in_turn(
+                &mut driven,
+                "Found Heroes Tonight on MusicBrainz and filled in what it says",
+            );
+            driven.until(|root, cx| !root.library.read(cx).is_enriching());
+
+            identified_by(&mut driven, &track, "Clear and fetch again");
+            driven.until(|root, cx| root.library.read(cx).is_enriching());
+            told_in_turn(
+                &mut driven,
+                "Found Heroes Tonight on MusicBrainz and filled in what it says",
+            );
+
+            assert_eq!(
+                library
+                    .track_to_ask(track.id)
+                    .expect("the track read")
+                    .and_then(|asked| asked.mbid),
+                Some(mbid(HEROES_TONIGHT)),
+                "the song fetched again was not given its recording"
+            );
+        }
+
+        #[gpui::test]
+        fn clearing_what_was_fetched_on_a_metered_connection_clears_nothing_and_says_why(
+            cx: &mut TestAppContext,
+        ) {
+            let folder = Folder::new();
+            let (mut driven, _library, track) = a_song_held_alone(cx, &folder, "Heroes Tonight");
+
+            driven.metering.report(resonate_core::Meter::Metered);
+
+            identified_by(&mut driven, &track, "Clear and fetch again");
+
+            assert!(driven.read(|root, cx| !root.library.read(cx).is_enriching()));
+            assert_eq!(
+                told(&mut driven).as_deref(),
+                Some(
+                    "Heroes Tonight wasn't looked up: the connection is metered, and Settings › Online holds lookups on it"
+                )
             );
         }
 

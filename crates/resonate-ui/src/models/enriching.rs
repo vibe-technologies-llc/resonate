@@ -5,8 +5,8 @@ use resonate_core::{TrackId, gaming};
 use resonate_library::{Breadth, EnrichOptions, EnrichStats, EnrichSummary, Pace};
 
 use super::{
-    A_QUIET_LOOKUP_SHOWS_AFTER, LibraryModel, LookupAsked, Notice, POLLS_PER_RELOAD, Prompted,
-    SCAN_POLL, SongAsked,
+    A_QUIET_LOOKUP_SHOWS_AFTER, Forget as _, LibraryModel, LookupAsked, Notice, POLLS_PER_RELOAD,
+    Prompted, SCAN_POLL, SongAsked,
     told::{looked_up, song_looked_up},
 };
 use crate::{toast, words};
@@ -127,7 +127,11 @@ impl LibraryModel {
     }
 
     pub fn look_up_the_song(&mut self, track: TrackId, title: String, cx: &mut Context<Self>) {
-        let song = SongAsked { track, title };
+        let song = SongAsked {
+            track,
+            title,
+            afresh: false,
+        };
 
         if !self.can_enrich() {
             toast::tell(
@@ -169,6 +173,63 @@ impl LibraryModel {
         toast::tell(Notice::Noted(said), cx);
         self.enrichment.song = Some(song);
         self.enrich_with(asked, Prompted::ByHand, cx);
+    }
+
+    pub fn refresh_the_song(&mut self, track: TrackId, title: String, cx: &mut Context<Self>) {
+        if !self.can_enrich() {
+            toast::tell(
+                Notice::Noted(words::models::song_not_looked_up_offline(&title)),
+                cx,
+            );
+            return;
+        }
+        if self.for_the_pass.lookups.is_shut() {
+            toast::tell(
+                Notice::Noted(words::models::song_not_looked_up_metered(&title)),
+                cx,
+            );
+            return;
+        }
+        if self.enrichment.running.is_some() {
+            toast::tell(
+                Notice::Noted(words::models::song_refreshed_next(&title)),
+                cx,
+            );
+            self.enrichment.song_owed = Some(SongAsked {
+                track,
+                title,
+                afresh: true,
+            });
+            return;
+        }
+
+        let library = Arc::clone(&self.library);
+
+        self.enrichment._forgetting = cx.spawn(async move |this, cx| {
+            let forgotten = cx
+                .background_executor()
+                .spawn(async move { library.forget_what_was_fetched_for(track) })
+                .await;
+
+            let _ = this.update(cx, |this, cx| match forgotten {
+                Ok(album) => {
+                    if let Some(album) = album {
+                        this.pictures
+                            .covers
+                            .take_where(|drawn| drawn.key == album)
+                            .forget(cx);
+                    }
+                    this.look_up_the_song(track, title, cx);
+                }
+                Err(error) => {
+                    tracing::error!(%error, %track, "what was fetched for a song could not be cleared");
+                    toast::tell(
+                        toast::could_not(words::models::forget_what_was_fetched(), &error),
+                        cx,
+                    );
+                }
+            });
+        });
     }
 
     pub(super) fn enrich_with(
@@ -269,7 +330,10 @@ impl LibraryModel {
                 }
                 this.reload(cx);
                 if let Some(owed) = this.enrichment.song_owed.take() {
-                    this.look_up_the_song(owed.track, owed.title, cx);
+                    match owed.afresh {
+                        true => this.refresh_the_song(owed.track, owed.title, cx),
+                        false => this.look_up_the_song(owed.track, owed.title, cx),
+                    }
                 }
                 if owed && finished {
                     this.enrich_new_songs(cx);

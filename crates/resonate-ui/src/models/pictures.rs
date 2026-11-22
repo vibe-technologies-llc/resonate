@@ -141,9 +141,6 @@ impl LibraryModel {
 
         let reference = self.reference.clone().filter(|_| self.choices.online);
 
-        if reference.is_none() && group.is_none() {
-            return None;
-        }
         if !self.pictures.fetching_covers.may_ask(release) {
             return None;
         }
@@ -164,8 +161,24 @@ impl LibraryModel {
                     }
                 }
             }
+            match library.found_cover(&asked) {
+                Ok(Some(kept)) => return (Ok(Some(kept)), true),
+                Ok(None) => {}
+                Err(error) => {
+                    tracing::warn!(%error, "a kept cover for a song found beyond the library could not be read");
+                }
+            }
             match reference {
-                Some(reference) => (reference.cover(&asked, group.as_ref()), true),
+                Some(reference) => {
+                    let fetched = reference.cover(&asked, group.as_ref());
+
+                    if let Ok(Some(art)) = &fetched
+                        && let Err(error) = library.keep_found_cover(&asked, art)
+                    {
+                        tracing::warn!(%error, "a cover fetched for a song found beyond the library was not kept");
+                    }
+                    (fetched, true)
+                }
                 None => (Ok(None), false),
             }
         });

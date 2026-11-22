@@ -6745,6 +6745,67 @@ mod tests {
         assert_eq!(artist_shelf(&mut driven), None);
     }
 
+    fn titles_listed(driven: &mut Driven) -> Vec<String> {
+        driven.read(|root, cx| {
+            root.library
+                .read(cx)
+                .listing()
+                .iter()
+                .map(|track| track.title.clone())
+                .collect()
+        })
+    }
+
+    fn played_with_the_words(driven: &mut Driven) -> Option<String> {
+        driven.read(|root, cx| root.library.read(cx).listing_whole().1.text)
+    }
+
+    #[gpui::test]
+    fn an_artist_opened_from_a_search_lists_every_song_until_the_words_are_asked_to_narrow_it(
+        cx: &mut TestAppContext,
+    ) {
+        let folder = Folder::new();
+
+        air_and_beck(&folder);
+
+        let library = catalog();
+
+        Driven::scanned(&library, &folder);
+
+        let air = the_artist_named(&library, "Air");
+        let mut driven = Driven::opened_in(cx, library, &folder);
+
+        let model = driven.read(|root, _| root.library.clone());
+
+        driven.cx.update(|_, cx| {
+            model.update(cx, |library, cx| library.set_query("Kelly".to_owned(), cx));
+        });
+        driven.until(|root, cx| root.library.read(cx).listing().len() == 1);
+
+        open_the_artist(&mut driven, air);
+
+        assert_eq!(titles_listed(&mut driven).len(), 2);
+        assert_eq!(played_with_the_words(&mut driven), None);
+
+        driven.click("narrow-by-the-search");
+        driven.until(|root, cx| root.library.read(cx).listing().len() == 1);
+
+        assert_eq!(
+            titles_listed(&mut driven),
+            vec!["Kelly Watch the Stars".to_owned()]
+        );
+        assert_eq!(played_with_the_words(&mut driven), Some("Kelly".to_owned()));
+
+        driven.click("show-the-whole-page");
+        driven.until(|root, cx| root.library.read(cx).listing().len() == 2);
+
+        assert_eq!(played_with_the_words(&mut driven), None);
+        assert_eq!(
+            driven.read(|root, cx| root.library.read(cx).query().to_owned()),
+            "Kelly"
+        );
+    }
+
     #[gpui::test]
     fn an_artist_opened_is_drawn_again_with_its_shelf_after_other_panes_were_shown(
         cx: &mut TestAppContext,

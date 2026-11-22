@@ -287,8 +287,8 @@ so `editing` sees it.
   `LibraryModel::save_the_lyrics` on the background executor, one toast counting what was saved,
   already there, left alone and why: `lyrics.md`, and *Into the file's tags*,
   `LibraryModel::tag_the_lyrics`, an applied tag pass over those songs alone that *Put the last run
-  back* walks back), *Identify* (nesting *Enrich this song*, the ISRC and *Place on
-  a release…*, wherever the reference is reachable), and last what takes something away (*Take out
+  back* walks back), *Identify* (nesting *Enrich this song*, *Clear and fetch again*, the ISRC and
+  *Place on a release…*, wherever the reference is reachable), and last what takes something away (*Take out
   of the queue*, *Remove* with hide, forget a delivery and delete; a playlist's *Discard*). The
   shared pieces (`Menu::holds`, `favours`, `reaches`, `shares`, `offers_the_file`,
   `offers_the_files`) draw no line of their own; the caller puts `apart()` before each group. **Another version of a song is looked up from *Find another version***, which nests *Find a higher quality version* and the ratings the track is not already (*Look for a Clean version* for an explicit track, *Look for an Explicit version* for a clean one, both for an unmarked one: `better::offered_for`, over the library's `VersionSought::offered_for`): `views/better.rs`, its matching `resonate-library`'s `versions.rs` (`library.md`). Held copies are offered best first: for quality `alternatives_of` where `Quality` (lossless, significant bits, rate) is above (a lossless copy above any lossy one, else no lower on any count and higher on one), for a rating the catalog's tracks named alike (`LibraryModel::tracks_named`, `HELD_WEIGHED_AT_MOST`) that `TheSong::held_as` the rating. Every service that plays in place (`Serving::opened`, so nothing is asked with Online off) is searched on the background executor for the bare title and artist, a song kept only where it is the same song (folded bare title, artist, length within `LENGTHS_AGREE_WITHIN`, 3 s) and, for quality, its suffix reads as a lossless codec (`resonate_library::codec_named`), for a rating it carries it: Explicit must be marked, and Clean may be unmarked only beside an explicit track (`a_clean_version_of_an_explicit_song_may_be_unmarked_and_an_explicit_one_must_be_marked`). **Every lookup says what it is doing and what came of it**: *Looking for … of {title}* as it asks, *Found N versions of {title}* with the menu at the press, a `Trouble` naming every service that could not be asked, and where nothing was found the reason (`better::nothing_said`: already lossless, no service set up to ask, or none on the services named; `nothing_found_says_why_and_where_it_was_looked_for`). **Nothing found is ever streamed in the song's place, and nothing is deleted for it**: a held copy is played at once and chosen as the song's version (`Library::choose_version`, `library.md`'s *A song keeps its versions beside it*), written through `LibraryModel::edited` like every other edit and told as *{title} plays this version from now on*; a service's version is downloaded beside the song (`LibraryModel::keep_as_a_version`, `Library::keep_as_a_version`, `KeptAs::Lossless` for a higher quality, `KeptAs::AsServed` for a rating), told as *Downloading another version of {title}…*, and chosen once it lands; only a service the keep pass can fetch from is offered (`song_to_keep`). **The versions a song keeps are a nest of their own**: wherever `LibraryModel::has_variants` (the `tracks_with_variants` set read at each reload, so a song with none asks nothing) says a track row's song has any, its menu nests *Versions* (`Menu::offers_the_variants`): the song's own copy and each version held, by codec and quality (and folder where two read alike), a check on the one that plays (`Variants::plays`); a press makes it the one that plays, the song's own copy forgetting the choice, and plays nothing. The menu is held back while `variants_of` is read (`Menu::awaiting_the_variants_of`, `Awaited::Versions`, kept in `LibraryModel::keep_the_variants` and read back by `variants_held`). `RootView::send` passes every `Command::Load` and `Insert` through `with_the_versions_chosen`, which asks `Library::chosen_among` for the rows being sent alone and only for those `LibraryModel` holds among `versions_chosen` (a set read on the background executor at each reload and after each choosing, so a catalog with no version chosen asks nothing on the window's thread), so a row of that song wherever it is played (the tracks pane, a playlist, a queue gesture) is queued as the version instead, a catalog row of its own whose artist and album link as any other (`better::played_as_chosen`, `a_song_with_a_version_chosen_is_queued_as_that_version_wherever_it_is_played`, `a_playlist_row_plays_the_version_chosen_for_its_song_until_its_own_copy_is_chosen_again`). A track's menu opens at once and never reads the catalog on the window's thread: a menu that nests the other copies (`Menu::awaiting_the_copies_of`) is held back while `open_once_read` reads `alternatives_of` on the background executor, keeps the answer in `LibraryModel::keep_the_copies` and builds the menu when it lands, unless the window moved on (`window_has_moved_on_from`); a playlist's menu where sync runs is held back the same way (`Menu::awaiting_what_is_synced_of`, `Awaited::Synced`) while `PlaylistSynced::read` asks the `Syncing` seam for the songs missing, whether its songs are kept and the devices online to fetch from (the ledger's lock, and `missing_from` asking the ledger by `local_id`), kept in `RootView::synced_read` until the next menu opens (`forget_what_menus_read`), and its *Fetch* and *Keep its songs here* run on the background executor too (`a_playlists_menu_reads_the_ledger_off_the_windows_thread_and_opens_once_it_is_read`); every opening goes through `RootView::open_what_is_offered`; *Find another version* reads its held copies, or its full-text `tracks_named` match for a rating, on the background executor too (`look_for_a_version`), and an opened playlist's row menu offers *Find another version* from the same held set (`LibraryModel::has_a_version_chosen`). A queue row's *Play*, *Take out of the queue* and its raise and lower buttons, and the playlist row's remove, act on the queue's revision or the entries the row was drawn at and do nothing if the list has moved since (`PlayerModel::send_by_position_at`, `is_queued_at`, `entries_are`); a mover carries what its row was drawn over as a drag does (`RootView::shift_drawn`, `a_raise_pressed_on_a_frame_drawn_before_another_reorder_landed_moves_nothing`). **Every playlist edit by position carries what was drawn down the edit chain**: key Delete, the movers and the move keys, a drag's move or gather and a drop into the opened playlist hand `LibraryModel::playlist_as_drawn` (taken at the press, or for a dropped album before its tracks are read) to the library's `_as_drawn` edits, which refuse inside their transaction once the rows have moved (`library.md`), told as a `Trouble` (`playlist-moved-since-drawn`); a drag's `Carried::over` holds the entries it was lifted from, so a drop after the pane read the playlist again does nothing (`carried_over_what_is_drawn`; `a_playlist_row_taken_out_after_another_edit_landed_first_is_refused_and_said`, `a_playlist_row_moved_after_another_edit_landed_first_is_refused_and_said`, `rows_dropped_into_a_playlist_after_another_edit_landed_first_are_refused_and_said`, `rows_carried_over_a_playlist_that_has_since_moved_are_not_dropped`). A pointer opens the panel
@@ -517,9 +517,17 @@ so `editing` sees it.
   album found from the search, an artist reached from a found song) is drawn whole, its held rows
   read with no text, while the box keeps the words for the search behind it: `select` lets go of
   `typed_on_the_scope`, `set_query` on a scope takes it, and `Asked::listing` and the *Reads* chips
-  (`narrows_the_page`) read it. Otherwise a missing row, which no words narrow, would become a held
+  (`narrows_the_page`) read it, as do `LibraryModel::page_narrowed_by` (the words that narrow the page,
+  if any) and everything built on it: the songs an artist lacks (`songs_of_the_artist_shown`) and a
+  whole-listing play (`listing_whole`), so an artist opened from a found song lists and plays every
+  song it has. Otherwise a missing row, which no words narrow, would become a held
   row the words hide the moment its download lands
-  (`a_song_downloaded_on_an_album_opened_from_the_search_stays_on_it_as_the_held_row`).
+  (`a_song_downloaded_on_an_album_opened_from_the_search_stays_on_it_as_the_held_row`,
+  `an_artist_opened_from_a_search_lists_every_song_until_the_words_are_asked_to_narrow_it`).
+  **Narrowing such a page is one press away**: while the box holds words a scoped page does not
+  read (`words_wait_beside_the_page`), `narrowing_the_page` draws *Narrow by “…”* beside the *Reads*
+  chips, which `LibraryModel::narrow_the_page` turns into `typed_on_the_scope`, and *Show all of it*
+  turns back, the box keeping its words either way.
   - A focused field never reaches the match (`editing` returns first); `editing` asks
     `RootView::text_fields`, the one list of every `Field` the window holds, the panes' included
     (`what_is_typed_into_the_listenbrainz_token_stays_out_of_the_library_search`). Each field still
@@ -803,6 +811,15 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   (`enrich_this_song_finds_the_song_by_its_code_and_says_so`,
   `enrich_this_song_says_plainly_when_nothing_strictly_matches`,
   `enrich_this_song_on_a_metered_connection_asks_nothing_and_says_why`).
+- ***Clear and fetch again* forgets what a lookup wrote for the song, then looks it up.**
+  `LibraryModel::refresh_the_song` refuses as *Enrich this song* does (Online off, a shut lookup
+  gate) and clears nothing then; while another pass runs the song waits for it (`song_owed` with
+  `afresh`). Otherwise `Library::forget_what_was_fetched_for` runs on the background executor
+  (`library.md`), the album's decoded covers are taken out of `covers` (`Recent::take_where`, handed
+  to `Forget` so gpui lets the textures go) and `look_up_the_song` runs the song's pass, which asks
+  the album again and fetches its cover anew
+  (`clearing_what_was_fetched_for_a_song_looks_it_up_again_and_fills_it_in_afresh`,
+  `clearing_what_was_fetched_on_a_metered_connection_clears_nothing_and_says_why`).
 - **What a listener reaches for is what the lookup asks next.** `LibraryModel` holds one `Sought` for
   the run and hands it to every `enrich`. Set via `LibraryModel::ask_about`: scoping the tracks pane
   to an album or artist, playing a row, and `ask_about_what_is_drawn` whenever a listing is read with
@@ -1091,8 +1108,9 @@ Inside a sheet, which a menu would close, `kit::radio_row`s (the Listen
   first. A hint from a catalog takes each key as a variable (`play-hint = Play — { $keys }`, said as
   `words::transport::play_hint(key!(play_pause))`), so the key stays the bound one and the words
   around it translate; `keys::keyed(what, &[ways])` writes the same shape through `keys.ftl` where
-  the words come from elsewhere; the keys written in the search field, the settings filter and the
-  search field's menu are `key!` too
+  the words come from elsewhere; the keys written in the settings filter and the search field's
+  menu are `key!` too (the search field itself draws no key beside its placeholder: `ctrl-f` is
+  named in the *View* menu and the command palette)
   (`every_key_a_hint_names_is_a_key_something_is_bound_to_on_every_system`).
 - **A Mac steers with Command where the rest steer with Control.** A chord written `secondary!` is
   `cmd-` on macOS and `ctrl-` elsewhere, and what is written `ctrl-` stays Control everywhere: mute
@@ -2284,7 +2302,11 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
     `Beside::ASearch` cover column (`Sleeve::Released`), which `LibraryModel::released_cover` asks the
     reference for on bg while Online is on: `FETCHES_AT_ONCE` (6) at a time, decoded on the `Drawer`,
     held in `released_covers` (`RELEASED_COVERS_HELD` 512: more than a discography draws, else the grid
-    evicts what it is still asking for). Want mark = `want_mark` over an `Asks`: a found song calls
+    evicts what it is still asking for). **A cover a search fetched outlives the run**: before the
+    reference is asked, `Library::found_cover` reads what an earlier run kept (Online off too), and a
+    cover the reference answers is kept with `Library::keep_found_cover` (`library.md`'s *Covers found
+    beyond the library*), so a restart and the same search draw their covers from the catalog while
+    the songs come back from the kept MusicBrainz answers (`musicbrainz.md`). Want mark = `want_mark` over an `Asks`: a found song calls
     `want_found`, landing its release and wanting the row on bg, mark greyed meanwhile.
     `restate_what_was_found` passes over a found song whose want holds a track the held listing draws
     (`is_listed_as_held`), so it is listed once, as the held track, once the catalog's next read carries

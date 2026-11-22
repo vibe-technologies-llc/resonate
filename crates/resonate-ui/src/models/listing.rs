@@ -57,7 +57,7 @@ impl LibraryModel {
                 artist,
                 on_an_album: false,
                 by_an_artist: false,
-                text: (!self.query.is_empty()).then(|| self.query.clone()),
+                text: self.page_narrowed_by().map(ToOwned::to_owned),
                 sort: self.sorting.tracks,
                 reading: self.sorting.tracks_read,
                 limit: None,
@@ -385,6 +385,25 @@ impl LibraryModel {
 
     pub fn narrows_the_page(&self) -> bool {
         self.selection == Selection::Everything || self.typed_on_the_scope
+    }
+
+    pub fn page_narrowed_by(&self) -> Option<&str> {
+        self.narrowing().filter(|_| self.narrows_the_page())
+    }
+
+    pub fn words_wait_beside_the_page(&self) -> bool {
+        self.selection != Selection::Everything && self.narrowing().is_some()
+    }
+
+    pub fn narrow_the_page(&mut self, narrows: bool, cx: &mut Context<Self>) {
+        if self.selection == Selection::Everything || self.typed_on_the_scope == narrows {
+            return;
+        }
+        self.typed_on_the_scope = narrows;
+        self.restate_the_listing();
+        self.browse.reach = PAGE;
+        self.read(Wanted::TheSearch, cx);
+        cx.notify();
     }
 
     pub const fn meant(&self) -> Option<&Meant> {

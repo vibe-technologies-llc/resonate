@@ -162,9 +162,6 @@ impl RootView {
             }))
             .child(self.typed.search.clone())
             .when(!empty, |field| field.child(self.clear_search(cx)))
-            .when(empty && !searching, |field| {
-                field.child(kit::figure(key!(find)).text_color(rgb(theme::faint())))
-            })
             .child(hint::explains("search-terms", words::root::search_hint()));
 
         menu::opens_a_menu(

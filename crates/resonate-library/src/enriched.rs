@@ -407,6 +407,58 @@ pub(crate) fn forget_the_match(tx: &Transaction<'_>, album: AlbumId) -> Result<b
     Ok(true)
 }
 
+pub(crate) fn forget_what_was_fetched_for(
+    tx: &Transaction<'_>,
+    track: TrackId,
+) -> Result<Option<AlbumId>> {
+    let id = track.get() as i64;
+    let album = tx
+        .query_row(
+            "UPDATE tracks SET
+                 title              = coalesce(tagged_title, title),
+                 artist             = coalesce(tagged_artist, artist),
+                 release_title      = NULL,
+                 release_track_mbid = NULL,
+                 asks               = 0,
+                 refusals           = 0,
+                 asked              = NULL,
+                 answered           = NULL
+              WHERE id = ?1
+             RETURNING album_id",
+            params![id],
+            |row| row.get::<_, Option<i64>>(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Update, source))?
+        .ok_or(Error::UnknownTrack(track))?;
+
+    if let Some(album) = album {
+        tx.execute(
+            "UPDATE albums SET
+                 cover_art    = CASE WHEN cover_source = ?2 THEN NULL ELSE cover_art END,
+                 cover_format = CASE WHEN cover_source = ?2 THEN NULL ELSE cover_format END,
+                 cover_source = CASE WHEN cover_source = ?2 THEN ?3 ELSE cover_source END,
+                 cover_asked  = NULL,
+                 asks         = 0,
+                 refusals     = 0,
+                 asked        = NULL,
+                 answered     = NULL
+              WHERE id = ?1",
+            params![
+                album,
+                store::cover_source_code(CoverSource::Archive),
+                store::cover_source_code(CoverSource::File),
+            ],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+    }
+    store::reindex_the_track(tx, id)?;
+
+    album
+        .map(|album| AlbumId::new(album as u64).map_err(Error::from))
+        .transpose()
+}
+
 pub(crate) fn forgive(tx: &Transaction<'_>, album: AlbumId, mbid: &Mbid) -> Result<()> {
     tx.execute(
         "DELETE FROM refused_releases WHERE album_id = ?1 AND mbid = ?2",

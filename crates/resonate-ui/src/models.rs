@@ -709,6 +709,7 @@ struct LookupAsked {
 struct SongAsked {
     track: TrackId,
     title: String,
+    afresh: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -938,6 +939,7 @@ struct Enrichment {
     looked_up: Option<EnrichSummary>,
     sought: Arc<Sought>,
     _task: Task<()>,
+    _forgetting: Task<()>,
 }
 
 struct Outreach {
@@ -1319,6 +1321,7 @@ impl LibraryModel {
                 looked_up: None,
                 sought: Arc::default(),
                 _task: Task::ready(()),
+                _forgetting: Task::ready(()),
             },
             outreach: Outreach {
                 asking: None,

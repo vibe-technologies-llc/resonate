@@ -5,7 +5,7 @@ use resonate_core::{AlbumId, ArtistId, FrameSpan, MediaLocation, TrackId};
 use resonate_engine::QueueItem;
 use resonate_library::{
     AlbumFound, Codec, Direction, Found, HeldReleaseTrack, Imported, Library, Mbid, SortOrder,
-    Track, folded_letters,
+    Track, folded_letters, still_answering,
 };
 
 use super::{Beyond, ListedRow, MissingRow};
@@ -124,6 +124,16 @@ pub(super) fn kept_before_the_rest(kept: &[Found], rest: &[Found]) -> Vec<Found>
                 .cloned(),
         )
         .collect()
+}
+
+pub(super) fn songs_of_the_artist_shown(
+    songs: &Arc<[Found]>,
+    narrowed_by: Option<&str>,
+) -> Arc<[Found]> {
+    match narrowed_by {
+        Some(words) => still_answering(songs, words).into(),
+        None => Arc::clone(songs),
+    }
 }
 
 pub(super) fn albums_kept_before_the_rest(

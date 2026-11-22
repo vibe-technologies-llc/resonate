@@ -1253,6 +1253,16 @@ group landing and `forget_the_match` clear it), writes each row's `release_track
   carried) on the first release `in_the_order_worth_offering`, and gives the track's album that
   pressing as `place_on` does
   (`a_song_is_offered_the_recordings_its_words_nearly_name_and_becomes_the_one_chosen`).
+- **What a lookup wrote for one song can be forgotten.** `Library::forget_what_was_fetched_for`
+  puts the track's title and artist back to what its tags said (`tagged_title`, `tagged_artist`),
+  drops its `release_title` and `release_track_mbid` and its clocks (`asks`, `refusals`, `asked`,
+  `answered`), and on its album drops a cover the archive gave (`cover_source` Archive; a cover the
+  files carry or the vault holds stays), `cover_asked` and the album's clocks, keeping the album's
+  release and group ids so the next pass asks it by them; the track's own `mbid` and `isrc` stay,
+  since a tag may have given them and they are what it is asked by. It answers the album, so the
+  window can let its pictures go, and refuses an unknown track
+  (`a_song_whose_fetched_metadata_is_forgotten_reads_as_tagged_and_asks_again_for_its_cover`,
+  `forgetting_what_was_fetched_keeps_a_cover_the_files_carry`).
 - **The listener can give a track an ISRC, and ask about one track at once.** `Library::set_isrc`
   writes `tracks.isrc` (the upsert's `isrc` arm keeps it across rescans of an unchanged file) and
   clears `asked`, `asks`, `refusals`, so the next lookup asks the track by its code.
@@ -2918,6 +2928,20 @@ playlists; `weave_mix` interleaves streamed `ExploreOffer`s into local mix track
 bounded cadence while avoiding adjacent duplicate artists. `Library::kept_explored_locations` reports
 queued served keeps for UI state. An absent service costs its offers and the other results still
 stand.
+
+### Covers found beyond the library
+
+`COVERS_FOUND_BEYOND_THE_LIBRARY_ARE_KEPT` appends `found_covers`: the bytes a reference answered for
+a release a search found (a found song's or album's sleeve), keyed by the release's id.
+`Library::keep_found_cover` keeps one (never one over `FOUND_COVER_BYTES_AT_MOST`, 2 MiB) and prunes
+in the same write what is older than `FOUND_COVERS_KEPT_FOR` (30 days, the kept answers' month) and
+all but the newest `FOUND_COVERS_HELD` (512) within `FOUND_COVERS_BUDGET` (64 MiB);
+`Library::found_cover` reads one back while its month lasts. A miss is not kept, so a release with
+no cover is asked again on the next run
+(`a_found_cover_is_read_back_until_its_month_is_out`,
+`the_newest_found_covers_are_kept_and_the_oldest_give_way`, `a_cover_too_large_to_keep_is_left_unkept`).
+
+### Explore covers
 
 `EXPLORE_COVERS_ARE_KEPT` appends `explore_covers` to the desktop catalog. Artwork is kept for
 `EXPLORE_CACHE_DAYS` by catalog, source scheme, cover ID and drawn side, with the song ID as a

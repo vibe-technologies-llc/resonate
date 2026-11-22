@@ -12902,6 +12902,94 @@ fn an_artist_is_taken_from_a_stem_only_where_the_title_it_parsed_is_the_title_ta
 }
 
 #[test]
+fn a_song_whose_fetched_metadata_is_forgotten_reads_as_tagged_and_asks_again_for_its_cover()
+-> Result<()> {
+    let (tree, library, database) = scanned_orbits_on_disk()?;
+    let album = only_album(&library)?;
+    let file = tree.path().join("1.wav");
+
+    library.land_release(
+        album.id,
+        &orbits(
+            vec![
+                release_row(1, "One of These Days", Vec::new()),
+                release_row(2, "A Pillow of Winds", Vec::new()),
+                release_row(3, "Fearless", Vec::new()),
+            ],
+            Vec::new(),
+        ),
+    )?;
+    library.rematch(album.id)?;
+
+    assert!(library.land_archive_cover(
+        album.id,
+        &CoverArt {
+            format: ImageFormat::Png,
+            bytes: png(128)
+        }
+    )?);
+
+    answer_track(&database, &file, "One Of These Days", "Orbiters", "Orbits");
+
+    let track = the_row_at(&library, &file)?.id;
+
+    assert_eq!(library.forget_what_was_fetched_for(track)?, Some(album.id));
+
+    let forgotten = stored(&database, &file);
+
+    assert_eq!(forgotten.title, "One of These Days");
+    assert_eq!(forgotten.artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(forgotten.release_title, None);
+    assert_eq!((forgotten.asked, forgotten.answered), (None, None));
+    assert_eq!(library.cover_art(album.id)?, None);
+    assert_eq!(
+        library
+            .release_of(album.id)?
+            .expect("the album is still known")
+            .cover_source,
+        CoverSource::File
+    );
+    assert!(
+        library
+            .albums_to_ask(WAITED, false)?
+            .iter()
+            .any(|asked| asked.id == album.id && !asked.rematch_only),
+        "the album was not asked again for what was forgotten"
+    );
+    Ok(())
+}
+
+#[test]
+fn forgetting_what_was_fetched_keeps_a_cover_the_files_carry() -> Result<()> {
+    let tree = Tree::new();
+    let art = png(64);
+
+    tree.write(
+        "1.wav",
+        &Wav::new()
+            .frames(8_820)
+            .text(TITLE, "Fearless")
+            .text(ARTIST, "The Orbiters")
+            .text(ALBUM, "Orbits")
+            .picture(&art)
+            .build(),
+    );
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &options(&tree))?;
+
+    let album = only_album(&library)?;
+    let track = the_row_at(&library, &tree.path().join("1.wav"))?.id;
+    let before = library.cover_art(album.id)?;
+
+    assert!(before.is_some());
+    assert_eq!(library.forget_what_was_fetched_for(track)?, Some(album.id));
+    assert_eq!(library.cover_art(album.id)?, before);
+    Ok(())
+}
+
+#[test]
 fn a_file_cover_found_on_a_rescan_replaces_one_the_archive_gave() -> Result<()> {
     let (tree, library) = scanned_orbits()?;
     let album = only_album(&library)?;

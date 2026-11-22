@@ -10,7 +10,7 @@ use super::{
     Answer, Beyond, LibraryModel, ListedRow, Selection, Shown, Wanted,
     arranged::{
         Reaching, album_rows, albums_kept_before_the_rest, beyond_the_listing, elsewhere_standing,
-        kept_before_the_rest,
+        kept_before_the_rest, songs_of_the_artist_shown,
     },
 };
 use crate::downloads::Download;
@@ -72,8 +72,9 @@ impl LibraryModel {
                     .filter(|found| !self.is_listed_as_held(found))
                     .collect()
             }
-            Selection::Artist(_) if self.query.is_empty() => Arc::clone(&self.unheld.songs),
-            Selection::Artist(_) => still_answering(&self.unheld.songs, &self.query).into(),
+            Selection::Artist(_) => {
+                songs_of_the_artist_shown(&self.unheld.songs, self.page_narrowed_by())
+            }
             Selection::Album(_) => Arc::default(),
         };
     }

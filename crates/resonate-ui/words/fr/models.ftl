@@ -312,3 +312,5 @@ tracks-counted = { $count ->
     [one] { $count } piste
    *[other] { $count } voies
 }
+forget-what-was-fetched = effacer ce qui a été récupéré pour ce morceau
+song-refreshed-next = { $title } sera effacé puis récupéré à nouveau une fois la recherche en cours terminée

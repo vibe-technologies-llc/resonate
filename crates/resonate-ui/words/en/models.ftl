@@ -312,3 +312,5 @@ tracks-counted = { $count ->
     [one] { $count } track
    *[other] { $count } tracks
 }
+forget-what-was-fetched = clear what was fetched for that song
+song-refreshed-next = Clearing and fetching { $title } again once the lookup running now ends

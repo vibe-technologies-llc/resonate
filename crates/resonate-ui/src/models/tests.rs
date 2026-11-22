@@ -22,7 +22,7 @@ use super::{
     arranged::{
         Arranging, Reaching, albums_kept_before_the_rest, arranged, beyond_the_listing,
         elsewhere_standing, headed_by_disc, held_at, held_in, kept_before_the_rest,
-        missing_track_rows, unheld_release_rows,
+        missing_track_rows, songs_of_the_artist_shown, unheld_release_rows,
     },
     delivery_folder, kept,
     pictures::{landed_since, renewed},
@@ -971,6 +971,32 @@ fn a_song(recording: &str, title: &str, artist: &str) -> Found {
         performer: None,
         isrcs: Vec::new(),
     }
+}
+
+#[test]
+fn the_songs_an_artist_lacks_are_listed_whole_unless_the_page_is_narrowed_by_the_words() {
+    let songs: Arc<[Found]> = vec![
+        a_song(
+            "83d91898-7763-47d7-b03b-b92132375c47",
+            "Daybreak",
+            "The Orbiters",
+        ),
+        a_song(
+            "5b11f4ce-a62d-471e-81fc-a69a8278c7da",
+            "Nightfall",
+            "The Orbiters",
+        ),
+    ]
+    .into();
+
+    assert_eq!(songs_of_the_artist_shown(&songs, None).len(), 2);
+    assert_eq!(
+        songs_of_the_artist_shown(&songs, Some("nightfall"))
+            .iter()
+            .map(|song| song.title.as_str())
+            .collect::<Vec<_>>(),
+        vec!["Nightfall"]
+    );
 }
 
 #[test]

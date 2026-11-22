@@ -54,6 +54,11 @@ impl Library {
             .write(|transaction| enriched::forget_the_match(transaction, album))
     }
 
+    pub fn forget_what_was_fetched_for(&self, track: TrackId) -> Result<Option<AlbumId>> {
+        self.inner
+            .write(|transaction| enriched::forget_what_was_fetched_for(transaction, track))
+    }
+
     pub fn take_pressing(
         &self,
         album: AlbumId,

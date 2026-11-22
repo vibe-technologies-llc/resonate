@@ -81,6 +81,19 @@ impl<K: Clone + Eq + Hash, V> Recent<K, V> {
         });
     }
 
+    pub(crate) fn take_where(&mut self, taken: impl Fn(&K) -> bool) -> Leaving<V> {
+        let gone: Vec<K> = self.held.keys().filter(|key| taken(key)).cloned().collect();
+        let mut leaving = Leaving::new();
+
+        for key in gone {
+            if let Some(held) = self.held.remove(&key) {
+                self.order.remove(&held.used);
+                leaving.push(held.value);
+            }
+        }
+        leaving
+    }
+
     fn evict_until_one_fits(&mut self, leaving: &mut Leaving<V>) {
         while self.held.len() >= self.limit.get() {
             let Some((_, stale)) = self.order.pop_first() else {
@@ -131,6 +144,21 @@ mod tests {
             Some(&30),
             "a forgotten entry still held a place"
         );
+    }
+
+    #[test]
+    fn what_is_taken_by_its_key_is_handed_back_and_frees_its_place() {
+        let mut cache = filled(3, &[1, 2, 3]);
+
+        let taken = cache.take_where(|key| *key % 2 == 1);
+
+        assert_eq!(taken.into_iter().sum::<u32>(), 40);
+        assert_eq!(cache.get(&1), None);
+
+        cache.insert(4, 40);
+        cache.insert(5, 50);
+
+        assert_eq!(cache.get(&2), Some(&20), "a taken entry still held a place");
     }
 
     #[test]
