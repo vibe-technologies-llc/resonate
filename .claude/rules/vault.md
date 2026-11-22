@@ -288,7 +288,7 @@ nothing is written (`Compacted { covers, was, now, kept, left }`: swapped, bytes
 left JPEGs, failures). Tests: `the_jpeg_covers_an_older_build_kept_are_swapped_for_smaller_forms_that_hand_back_the_same_jpegs`,
 `a_swap_stopped_after_the_smaller_form_landed_leaves_both_forms_reading_and_the_next_pass_finishes`,
 `a_smaller_form_that_does_not_give_the_jpeg_back_is_replaced_and_never_left_standing_in_its_place`
-(vault) and the three `OlderCovers` tests in `resonate-library/tests/library.rs`. The window has
+(vault) and the three `OlderCovers` tests in `resonate-library/tests/vault.rs`. The window has
 no vault maintenance group, so the pass is the command line's alone.
 
 **The vault decodes a pixel-lossless JXL back to PNG, and a transcoded one to its JPEG, so

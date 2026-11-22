@@ -1,6 +1,18 @@
 #![allow(dead_code)]
 
+mod albums;
+mod fakes;
+mod files;
+mod identities;
+mod setups;
+
 use std::{fs, io, path::Path};
+
+pub(crate) use albums::*;
+pub(crate) use fakes::*;
+pub(crate) use files::*;
+pub(crate) use identities::*;
+pub(crate) use setups::*;
 
 const ERROR_PRIVILEGE_NOT_HELD: i32 = 1314;
 

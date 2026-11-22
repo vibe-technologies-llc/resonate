@@ -177,9 +177,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   more in its groups), with `RootView::new` some 400 lines making 27 subscriptions. Each wants a
   driven test pinning it before it moves, as the panes moved so far got, and a pane's drawing stays
   on the root while its controls live in the root's focus ring
-- [M] `crates/resonate-library/tests/library.rs` is 33 623 lines and 804 tests in one module, so
-  `library::` is the narrowest filter and every edit rebuilds it; topic files under `suite` (retag,
-  polls and metering, undo, history, keeps) sharing `support`
 - [M] The binary's `config.rs` (4 499 lines, folders and permissions, `Config`, parsing and the locked
   `toml_edit` writer) wants splitting as `views/root/` was: `config/writing.rs` and `config/places.rs`
 - [M · blocked: jxl-oxide reading jxl-encoder's ANS-coded output] The vault builds two JPEG XL

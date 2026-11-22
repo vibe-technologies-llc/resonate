@@ -19,6 +19,15 @@ reads a row back, and each other file one `impl Library` of a subject (`tracks`,
 `playlists`, `syncing`, `vault`, `filing`, `following`, `wants`, `enriching`, `studied`, …), its tests
 in `db/tests.rs`. A method another file calls is `pub(super)`.
 
+**The integration tests are the one `suite` binary, a file a subject** under `crates/resonate-library/tests`
+(`scanning.rs`, `grouping.rs`, `lists.rs`, `sheets.rs`, `cues.rs`, `lossless.rs`, `history.rs`, `undo.rs`,
+`stored.rs`, `landing.rs`, `identify.rs`, `passes.rs`, `wants.rs`, `polls.rs`, `keeps.rs`, `organise.rs`,
+`retag.rs`, `vault.rs`, `links.rs`, `suggestions.rs`, `finding.rs`, `discography.rs`, beside `playlists.rs`,
+`scanned.rs`, `search.rs`, `studies.rs` and `synced.rs`). A fixture two files need is written once under
+`tests/support/` (`files.rs`, `identities.rs`, `albums.rs`, `fakes.rs`, `setups.rs`), `pub(crate)` through
+`support`'s glob re-exports; a helper only one file uses stays beside its tests. A test is named by its
+file's module (`keeps::…`), and a test that starts its own binary again names itself through `in_this_suite`.
+
 ## Schema and grouping
 
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
@@ -1020,8 +1029,8 @@ in `db/tests.rs`. A method another file calls is `pub(super)`.
   (`a_song_looked_up_alone_is_asked_at_once_though_asked_in_vain_and_nothing_else_is`,
   `a_song_on_an_answered_album_is_looked_up_through_its_album_again`).
   Rematch-only albums go first; the rest is one queue of `Ask`s walked in order, albums first
-  because a landing album retires every track under it. `tests/library.rs` drives it via a `Fake`
-  that can fault on a chosen call; the online crate proves its mapping over captured fixtures,
+  because a landing album retires every track under it. `tests/passes.rs` and its neighbours drive it via the suite's `Fake`
+  (`tests/support/fakes.rs`) that can fault on a chosen call; the online crate proves its mapping over captured fixtures,
   reaching services only under `RESONATE_ONLINE_TESTS`.
 - **Both catalogs' passes walk through `walk.rs`, so the queue, the seeks and the picture readers
   are written once.** The desktop's `Pass` and the phones' (`resonate-mobile`'s `enrichment.rs`) each
@@ -2145,7 +2154,7 @@ guard and re-keys a sleeve-keyed album after moves land.
   (`every_folder_a_move_made_is_settled_into_its_parent_deepest_first_before_the_source_goes`). A run killed after the rename, before the commit, leaves
   the whole copy beside its source; `already_copied` reads it next run (another device, same size,
   same mtime, same bytes in `COMPARED_AT_ONCE` pieces once the cheap readings agree) and it lands as
-  `Landing::Copied`; hence no refusal for a move across devices. `tests/library.rs` holds all three onto a
+  `Landing::Copied`; hence no refusal for a move across devices. `tests/organise.rs` holds all three onto a
   `/dev/shm` folder linked into the root (skipped where it shares the root's volume):
   `a_file_organised_onto_another_volume_lands_whole_before_the_catalog_follows_and_its_source_goes_after`,
   `a_copy_a_killed_run_landed_on_another_volume_is_taken_as_copied_and_one_that_differs_is_not`,

@@ -262,7 +262,7 @@ Invariants the layering protects (the rules files have the rest):
   member so a bare `cargo run` opens the window. `cargo build` the same way builds without testing.
 - `cargo nextest run --workspace`: everything. `cargo nextest run -p <crate> <name> --no-capture`:
   one test; a crate's integration tests are one binary, `suite`, a module a file (`bus::`,
-  `library::`), so `-p resonate-mpris bus::` runs one file of them.
+  `keeps::`), so `-p resonate-mpris bus::` runs one file of them.
 - `cargo xtask lint` runs every clippy line, each `--all-targets -- -D warnings`: the workspace,
   the workspace with `--exclude resonate-ui --no-default-features`, and `-p resonate
   --no-default-features` with `--features online,mcp,discord,sync` and with each of `ui`, `online`,
@@ -287,7 +287,7 @@ Invariants the layering protects (the rules files have the rest):
   `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris`'s `bus::` (session
   bus; notification and headset presses run under `dbus-run-session`); `resonate-codec`'s
   `encoded::` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp`'s `restoration`
-  (ffmpeg); `resonate-library`'s `library::`
+  (ffmpeg); `resonate-library`'s `cues::`, `keeps::`, `lossless::` and `retag::`
   (ffmpeg); `resonate-analysis`'s `references::` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online`'s `live` (`RESONATE_ONLINE_TESTS`); `resonate`'s `terminal::`
   (`setsid`, a pseudo-terminal) and, on Windows, `resonate`'s `console::` (ConPTY, an audio
   endpoint `sinks` lists); `resonate`'s `dragging::` (`RESONATE_DRAG_TESTS`, a hosted KWin, GTK 4

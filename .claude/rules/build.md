@@ -183,7 +183,7 @@ Linux sound server or GUI libraries are needed.
   relink every test. A crate with a single file keeps Cargo's inferred binary.
   `every_crate_links_its_integration_tests_into_one_suite_that_names_each_file`
   (`resonate-words-build`'s `suites.rs`) refuses a second binary and a file the suite never
-  compiles. A test runs within its file's module, so its name is `bus::…`, `library::…`; a test
+  compiles. A test runs within its file's module, so its name is `bus::…`, `keeps::…`; a test
   that starts its own binary again (a hosted daemon, a bus of its own, a process killed part way)
   names the test through `in_this_suite`, which prefixes `module_path!()`'s module, since a bare
   name under `--exact` runs nothing and the parent would read the child's emptiness as a pass.
