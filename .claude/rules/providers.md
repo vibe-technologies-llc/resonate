@@ -114,8 +114,9 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   drop, a panicking keeper failing the poll as `Error::Stopped`); a lane whose keeper did not start
   keeps its own offers. `PollProgress::wants_changed` makes the next claim reread wants (false once
   the poll closed or was cancelled). **Every way out of a poll closes it**: `supply::start`'s thread
-  runs `PollProgress::close` after `run` whatever it answered, so a want nudged into a poll cancelled
-  or failed before any claim is `owes_a_poll` (`a_cancelled_poll_is_not_nudged_and_owes_nothing`,
+  runs `PollProgress::close` after `run` whatever it answered, so a poll nudged and then cancelled
+  or failed is `owes_a_poll`, whether or not a lane had reread the wants the nudge named: a reread
+  queues a want it may never claim, or cuts one short (`a_cancelled_poll_is_not_nudged_and_owes_nothing`,
   `a_poll_nudged_before_it_was_cancelled_owes_another`). `PollProgress` keeps a lane per want asked
   (`asking_all`, `provider_of`, `received_for`).
 - **A metered connection holds a poll's downloads when `download-on-metered` is off.**

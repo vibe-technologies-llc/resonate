@@ -181,6 +181,7 @@ struct Lane {
 #[derive(Debug, Default)]
 struct Rereading {
     wanted: bool,
+    nudged: bool,
     closed: bool,
     owed: bool,
 }
@@ -295,6 +296,7 @@ impl PollProgress {
             return false;
         }
         rereading.wanted = true;
+        rereading.nudged = true;
         true
     }
 
@@ -322,7 +324,7 @@ impl PollProgress {
         if rereading.closed {
             return;
         }
-        rereading.owed = std::mem::take(&mut rereading.wanted);
+        rereading.owed = rereading.nudged;
         rereading.closed = true;
     }
 
