@@ -1473,7 +1473,10 @@ is the one correction of a running stream, a fade, `RingProducer::hold_in_step` 
   flush drains a chain; a flush with less room is refused:** `Chain::max_flush_frames` sums what
   every stage can still hand on and `Chain::flush` answers `Error::OutputTooSmall` for a shorter
   destination. One flush is the whole tail on purpose (a resampler pads half its filter, keeping a
-  track exactly its length).
+  track exactly its length, in as many pieces as its history has room for, so a block shorter than
+  the filter loses nothing; the track ends at the input's last instant, `outputs_of`). A stage's
+  `reset` leaves it as `prepare` did, its tail owed again whole (the convolver once flushed nothing
+  after one); the lab's `stress` suite holds both for every stage.
 - **Clip prevention attenuates where the peak is known; only an unseen over is ridden down.** A
   ReplayGain boost is capped where the declared peak would reach full scale. `AppliedGain`
   (`resonate-core`) pairs gain with the selected peak and owns the arithmetic (DSP stage, `resonate

@@ -484,6 +484,7 @@ pub struct Convolver {
     width: usize,
     crossed: bool,
     tail: usize,
+    tail_owed: usize,
 }
 
 impl Convolving {
@@ -571,6 +572,7 @@ impl Convolver {
             width: 0,
             crossed: false,
             tail: 0,
+            tail_owed: 0,
         }
     }
 
@@ -609,7 +611,14 @@ impl Processor for Convolver {
             .filter_map(|channel| filters.get(channel % filters.len().max(1)))
             .map(|filter| Channel::of(Arc::clone(filter), partition))
             .collect();
-        self.tail = taps.iter().map(Vec::len).max().unwrap_or(0) + partition;
+        self.tail = taps
+            .iter()
+            .map(Vec::len)
+            .max()
+            .unwrap_or(0)
+            .saturating_sub(1)
+            + partition;
+        self.tail_owed = self.tail;
         Ok(max_frames_in)
     }
 
@@ -621,6 +630,7 @@ impl Processor for Convolver {
         for channel in &mut self.channels {
             channel.primed();
         }
+        self.tail_owed = self.tail;
     }
 
     fn latency_frames(&self) -> f64 {
@@ -642,6 +652,9 @@ impl Processor for Convolver {
 
         let frames = frames.min(room);
 
+        if frames > 0 {
+            self.tail_owed = self.tail;
+        }
         for (frame, out) in input
             .chunks_exact(count)
             .zip(output.chunks_exact_mut(count))
@@ -664,7 +677,7 @@ impl Processor for Convolver {
 
     fn flush(&mut self, output: &mut [f64]) -> usize {
         let count = self.width.max(1);
-        let frames = (output.len() / count).min(self.tail);
+        let frames = (output.len() / count).min(self.tail_owed);
 
         for out in output.chunks_exact_mut(count).take(frames) {
             if self.crossed {
@@ -676,7 +689,7 @@ impl Processor for Convolver {
                 }
             }
         }
-        self.tail -= frames;
+        self.tail_owed -= frames;
         frames
     }
 }
@@ -1194,5 +1207,54 @@ mod tests {
 
         assert_eq!(stage.channels.len(), 4);
         assert!(!stage.crossed);
+    }
+
+    fn played_and_flushed(stage: &mut Convolver, input: &[f64], block: usize) -> Vec<f64> {
+        let mut written = Vec::new();
+        let mut out = vec![0.0; block * 2];
+
+        for chunk in input.chunks(block * 2) {
+            let counted = stage.process(chunk, &mut out);
+
+            written.extend_from_slice(&out[..counted.frames_out * 2]);
+        }
+
+        let mut tail = vec![0.0; stage.max_flush_frames() * 2];
+
+        let flushed = stage.flush(&mut tail);
+
+        written.extend_from_slice(&tail[..flushed * 2]);
+        written
+    }
+
+    #[test]
+    fn a_flush_hands_on_the_whole_convolution_and_not_a_frame_more() {
+        let taps = 300;
+        let frames = 1_000;
+        let impulse = Arc::new(Impulse::new(RATE, vec![vec![0.5; taps]]).expect("an impulse"));
+        let mut stage = Convolver::new(impulse);
+
+        stage.prepare(stereo(), 256).expect("a prepared stage");
+
+        let heard = played_and_flushed(&mut stage, &noise(frames), 256);
+
+        assert_eq!(heard.len() / 2, frames + taps - 1 + stage.partition);
+    }
+
+    #[test]
+    fn a_convolver_reset_after_its_flush_flushes_the_whole_tail_again() {
+        let impulse = Arc::new(Impulse::new(RATE, vec![vec![1.0, 0.5, 0.25]]).expect("an impulse"));
+        let mut stage = Convolver::new(impulse);
+        let input = noise(2_000);
+
+        stage.prepare(stereo(), 256).expect("a prepared stage");
+
+        let first = played_and_flushed(&mut stage, &input, 256);
+
+        stage.reset();
+
+        let again = played_and_flushed(&mut stage, &input, 256);
+
+        assert_eq!(again, first);
     }
 }

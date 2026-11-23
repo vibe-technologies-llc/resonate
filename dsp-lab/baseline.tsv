@@ -3832,3 +3832,1703 @@ chain	48	Room correction of 1 s, 48/24	gain-heard-db	-13.778128423703297
 chain	48	Room correction of 1 s, 48/24	claimed-latency-frames	1144
 chain	48	Room correction of 1 s, 48/24	measured-latency-frames	1024
 chain	48	Room correction of 1 s, 48/24	null-against-the-input-db	1.156772095062428
+stress	44.1	dither-16: Dither no dither, flat	non-finite-samples	0
+stress	44.1	dither-16: Dither no dither, flat	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither no dither, flat	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither no dither, flat	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither no dither, flat	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither no dither, flat	tail-dbfs	-600
+stress	44.1	dither-16: Dither no dither, flat	subnormal-samples	0
+stress	44.1	dither-16: Dither no dither, flat	block-null-db	-inf
+stress	44.1	dither-16: Dither no dither, flat	reset-null-db	-inf
+stress	44.1	dither-16: Dither no dither, flat	frames-beyond-the-input	0
+stress	44.1	dither-16: Dither rectangular, flat	non-finite-samples	0
+stress	44.1	dither-16: Dither rectangular, flat	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither rectangular, flat	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither rectangular, flat	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither rectangular, flat	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither rectangular, flat	tail-dbfs	-600
+stress	44.1	dither-16: Dither rectangular, flat	subnormal-samples	0
+stress	44.1	dither-16: Dither rectangular, flat	block-null-db	-inf
+stress	44.1	dither-16: Dither rectangular, flat	reset-null-db	-90.40512784991513
+stress	44.1	dither-16: Dither rectangular, flat	frames-beyond-the-input	0
+stress	44.1	dither-16: Dither rectangular, Lipshitz	non-finite-samples	0
+stress	44.1	dither-16: Dither rectangular, Lipshitz	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither rectangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither rectangular, Lipshitz	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither rectangular, Lipshitz	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither rectangular, Lipshitz	tail-dbfs	-600
+stress	44.1	dither-16: Dither rectangular, Lipshitz	subnormal-samples	0
+stress	44.1	dither-16: Dither rectangular, Lipshitz	block-null-db	-inf
+stress	44.1	dither-16: Dither rectangular, Lipshitz	reset-null-db	-77.43241861698417
+stress	44.1	dither-16: Dither rectangular, Lipshitz	frames-beyond-the-input	0
+stress	44.1	dither-16: Dither rectangular, threshold	non-finite-samples	0
+stress	44.1	dither-16: Dither rectangular, threshold	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither rectangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither rectangular, threshold	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither rectangular, threshold	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither rectangular, threshold	tail-dbfs	-600
+stress	44.1	dither-16: Dither rectangular, threshold	subnormal-samples	0
+stress	44.1	dither-16: Dither rectangular, threshold	block-null-db	-inf
+stress	44.1	dither-16: Dither rectangular, threshold	reset-null-db	-75.46276796619105
+stress	44.1	dither-16: Dither rectangular, threshold	frames-beyond-the-input	0
+stress	44.1	dither-16: Dither triangular, flat	non-finite-samples	0
+stress	44.1	dither-16: Dither triangular, flat	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither triangular, flat	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither triangular, flat	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither triangular, flat	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither triangular, flat	tail-dbfs	-600
+stress	44.1	dither-16: Dither triangular, flat	subnormal-samples	0
+stress	44.1	dither-16: Dither triangular, flat	block-null-db	-inf
+stress	44.1	dither-16: Dither triangular, flat	reset-null-db	-87.7370756395342
+stress	44.1	dither-16: Dither triangular, flat	frames-beyond-the-input	0
+stress	44.1	dither-16: Dither triangular, Lipshitz	non-finite-samples	0
+stress	44.1	dither-16: Dither triangular, Lipshitz	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither triangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither triangular, Lipshitz	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither triangular, Lipshitz	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither triangular, Lipshitz	tail-dbfs	-600
+stress	44.1	dither-16: Dither triangular, Lipshitz	subnormal-samples	0
+stress	44.1	dither-16: Dither triangular, Lipshitz	block-null-db	-inf
+stress	44.1	dither-16: Dither triangular, Lipshitz	reset-null-db	-75.50241543890165
+stress	44.1	dither-16: Dither triangular, Lipshitz	frames-beyond-the-input	0
+stress	44.1	dither-16: Dither triangular, threshold	non-finite-samples	0
+stress	44.1	dither-16: Dither triangular, threshold	non-finite-a-second-on	0
+stress	44.1	dither-16: Dither triangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-16: Dither triangular, threshold	loudest-peak-dbfs	0
+stress	44.1	dither-16: Dither triangular, threshold	silence-peak-dbfs	-600
+stress	44.1	dither-16: Dither triangular, threshold	tail-dbfs	-600
+stress	44.1	dither-16: Dither triangular, threshold	subnormal-samples	0
+stress	44.1	dither-16: Dither triangular, threshold	block-null-db	-inf
+stress	44.1	dither-16: Dither triangular, threshold	reset-null-db	-73.25381739550822
+stress	44.1	dither-16: Dither triangular, threshold	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither no dither, flat	non-finite-samples	0
+stress	44.1	dither-24: Dither no dither, flat	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither no dither, flat	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither no dither, flat	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither no dither, flat	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither no dither, flat	tail-dbfs	-600
+stress	44.1	dither-24: Dither no dither, flat	subnormal-samples	0
+stress	44.1	dither-24: Dither no dither, flat	block-null-db	-inf
+stress	44.1	dither-24: Dither no dither, flat	reset-null-db	-inf
+stress	44.1	dither-24: Dither no dither, flat	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither rectangular, flat	non-finite-samples	0
+stress	44.1	dither-24: Dither rectangular, flat	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither rectangular, flat	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither rectangular, flat	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither rectangular, flat	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither rectangular, flat	tail-dbfs	-600
+stress	44.1	dither-24: Dither rectangular, flat	subnormal-samples	0
+stress	44.1	dither-24: Dither rectangular, flat	block-null-db	-inf
+stress	44.1	dither-24: Dither rectangular, flat	reset-null-db	-138.48812260638266
+stress	44.1	dither-24: Dither rectangular, flat	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither rectangular, Lipshitz	non-finite-samples	0
+stress	44.1	dither-24: Dither rectangular, Lipshitz	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither rectangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither rectangular, Lipshitz	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither rectangular, Lipshitz	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither rectangular, Lipshitz	tail-dbfs	-600
+stress	44.1	dither-24: Dither rectangular, Lipshitz	subnormal-samples	0
+stress	44.1	dither-24: Dither rectangular, Lipshitz	block-null-db	-inf
+stress	44.1	dither-24: Dither rectangular, Lipshitz	reset-null-db	-125.52806608188823
+stress	44.1	dither-24: Dither rectangular, Lipshitz	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither rectangular, threshold	non-finite-samples	0
+stress	44.1	dither-24: Dither rectangular, threshold	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither rectangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither rectangular, threshold	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither rectangular, threshold	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither rectangular, threshold	tail-dbfs	-600
+stress	44.1	dither-24: Dither rectangular, threshold	subnormal-samples	0
+stress	44.1	dither-24: Dither rectangular, threshold	block-null-db	-inf
+stress	44.1	dither-24: Dither rectangular, threshold	reset-null-db	-123.86136949673121
+stress	44.1	dither-24: Dither rectangular, threshold	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither triangular, flat	non-finite-samples	0
+stress	44.1	dither-24: Dither triangular, flat	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither triangular, flat	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither triangular, flat	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither triangular, flat	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither triangular, flat	tail-dbfs	-600
+stress	44.1	dither-24: Dither triangular, flat	subnormal-samples	0
+stress	44.1	dither-24: Dither triangular, flat	block-null-db	-inf
+stress	44.1	dither-24: Dither triangular, flat	reset-null-db	-135.90644403930742
+stress	44.1	dither-24: Dither triangular, flat	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither triangular, Lipshitz	non-finite-samples	0
+stress	44.1	dither-24: Dither triangular, Lipshitz	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither triangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither triangular, Lipshitz	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither triangular, Lipshitz	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither triangular, Lipshitz	tail-dbfs	-600
+stress	44.1	dither-24: Dither triangular, Lipshitz	subnormal-samples	0
+stress	44.1	dither-24: Dither triangular, Lipshitz	block-null-db	-inf
+stress	44.1	dither-24: Dither triangular, Lipshitz	reset-null-db	-123.70712159986698
+stress	44.1	dither-24: Dither triangular, Lipshitz	frames-beyond-the-input	0
+stress	44.1	dither-24: Dither triangular, threshold	non-finite-samples	0
+stress	44.1	dither-24: Dither triangular, threshold	non-finite-a-second-on	0
+stress	44.1	dither-24: Dither triangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	44.1	dither-24: Dither triangular, threshold	loudest-peak-dbfs	0
+stress	44.1	dither-24: Dither triangular, threshold	silence-peak-dbfs	-600
+stress	44.1	dither-24: Dither triangular, threshold	tail-dbfs	-600
+stress	44.1	dither-24: Dither triangular, threshold	subnormal-samples	0
+stress	44.1	dither-24: Dither triangular, threshold	block-null-db	-inf
+stress	44.1	dither-24: Dither triangular, threshold	reset-null-db	-121.4231277821083
+stress	44.1	dither-24: Dither triangular, threshold	frames-beyond-the-input	0
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	non-finite-samples	0
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	non-finite-a-second-on	0
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	loudest-peak-dbfs	7.127617184624233
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	silence-peak-dbfs	-600
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	tail-dbfs	-600
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	subnormal-samples	0
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	block-null-db	-inf
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	reset-null-db	-inf
+stress	44.1	eq: Peaking, 1 kHz, +6 dB, Q 1	frames-beyond-the-input	0
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	non-finite-samples	0
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	non-finite-a-second-on	0
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	loudest-peak-dbfs	1.7171813936368527
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	silence-peak-dbfs	-600
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	tail-dbfs	-468.4186965325774
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	subnormal-samples	0
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	block-null-db	-inf
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	reset-null-db	-inf
+stress	44.1	eq: Peaking, 60 Hz, −9 dB, Q 8	frames-beyond-the-input	0
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	non-finite-samples	0
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	non-finite-a-second-on	0
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	loudest-peak-dbfs	5.97865473853738
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	silence-peak-dbfs	-600
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	tail-dbfs	-600
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	subnormal-samples	0
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	block-null-db	-inf
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	reset-null-db	-inf
+stress	44.1	eq: Low shelf, 100 Hz, +6 dB	frames-beyond-the-input	0
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	non-finite-samples	0
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	non-finite-a-second-on	0
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	loudest-peak-dbfs	0.6458588432832334
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	silence-peak-dbfs	-600
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	tail-dbfs	-600
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	subnormal-samples	0
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	block-null-db	-inf
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	reset-null-db	-inf
+stress	44.1	eq: High shelf, 8 kHz, −6 dB	frames-beyond-the-input	0
+stress	44.1	eq: Low pass, 10 kHz	non-finite-samples	0
+stress	44.1	eq: Low pass, 10 kHz	non-finite-a-second-on	0
+stress	44.1	eq: Low pass, 10 kHz	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Low pass, 10 kHz	loudest-peak-dbfs	1.547914362290679
+stress	44.1	eq: Low pass, 10 kHz	silence-peak-dbfs	-600
+stress	44.1	eq: Low pass, 10 kHz	tail-dbfs	-600
+stress	44.1	eq: Low pass, 10 kHz	subnormal-samples	0
+stress	44.1	eq: Low pass, 10 kHz	block-null-db	-inf
+stress	44.1	eq: Low pass, 10 kHz	reset-null-db	-inf
+stress	44.1	eq: Low pass, 10 kHz	frames-beyond-the-input	0
+stress	44.1	eq: High pass, 40 Hz	non-finite-samples	0
+stress	44.1	eq: High pass, 40 Hz	non-finite-a-second-on	0
+stress	44.1	eq: High pass, 40 Hz	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: High pass, 40 Hz	loudest-peak-dbfs	1.3816778281220612
+stress	44.1	eq: High pass, 40 Hz	silence-peak-dbfs	-600
+stress	44.1	eq: High pass, 40 Hz	tail-dbfs	-568.9573367428168
+stress	44.1	eq: High pass, 40 Hz	subnormal-samples	0
+stress	44.1	eq: High pass, 40 Hz	block-null-db	-inf
+stress	44.1	eq: High pass, 40 Hz	reset-null-db	-inf
+stress	44.1	eq: High pass, 40 Hz	frames-beyond-the-input	0
+stress	44.1	eq: Notch, 3 kHz, Q 4	non-finite-samples	0
+stress	44.1	eq: Notch, 3 kHz, Q 4	non-finite-a-second-on	0
+stress	44.1	eq: Notch, 3 kHz, Q 4	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Notch, 3 kHz, Q 4	loudest-peak-dbfs	2.942546781137424
+stress	44.1	eq: Notch, 3 kHz, Q 4	silence-peak-dbfs	-600
+stress	44.1	eq: Notch, 3 kHz, Q 4	tail-dbfs	-600
+stress	44.1	eq: Notch, 3 kHz, Q 4	subnormal-samples	0
+stress	44.1	eq: Notch, 3 kHz, Q 4	block-null-db	-inf
+stress	44.1	eq: Notch, 3 kHz, Q 4	reset-null-db	-inf
+stress	44.1	eq: Notch, 3 kHz, Q 4	frames-beyond-the-input	0
+stress	44.1	eq: Band pass, 1 kHz, Q 1	non-finite-samples	0
+stress	44.1	eq: Band pass, 1 kHz, Q 1	non-finite-a-second-on	0
+stress	44.1	eq: Band pass, 1 kHz, Q 1	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Band pass, 1 kHz, Q 1	loudest-peak-dbfs	2.12117323226421
+stress	44.1	eq: Band pass, 1 kHz, Q 1	silence-peak-dbfs	-600
+stress	44.1	eq: Band pass, 1 kHz, Q 1	tail-dbfs	-600
+stress	44.1	eq: Band pass, 1 kHz, Q 1	subnormal-samples	0
+stress	44.1	eq: Band pass, 1 kHz, Q 1	block-null-db	-inf
+stress	44.1	eq: Band pass, 1 kHz, Q 1	reset-null-db	-inf
+stress	44.1	eq: Band pass, 1 kHz, Q 1	frames-beyond-the-input	0
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	non-finite-samples	0
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	non-finite-a-second-on	0
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	loudest-peak-dbfs	5.52628916654017
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	silence-peak-dbfs	-600
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	tail-dbfs	-600
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	subnormal-samples	0
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	block-null-db	-inf
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	reset-null-db	-inf
+stress	44.1	eq: All pass, 2 kHz, Q 0.7	frames-beyond-the-input	0
+stress	44.1	eq: Ten octave bands	non-finite-samples	0
+stress	44.1	eq: Ten octave bands	non-finite-a-second-on	0
+stress	44.1	eq: Ten octave bands	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Ten octave bands	loudest-peak-dbfs	0.7575291352132675
+stress	44.1	eq: Ten octave bands	silence-peak-dbfs	-600
+stress	44.1	eq: Ten octave bands	tail-dbfs	-555.1851129879792
+stress	44.1	eq: Ten octave bands	subnormal-samples	0
+stress	44.1	eq: Ten octave bands	block-null-db	-inf
+stress	44.1	eq: Ten octave bands	reset-null-db	-inf
+stress	44.1	eq: Ten octave bands	frames-beyond-the-input	0
+stress	44.1	eq: Thirty-two bands	non-finite-samples	0
+stress	44.1	eq: Thirty-two bands	non-finite-a-second-on	0
+stress	44.1	eq: Thirty-two bands	null-a-second-after-the-poison-db	-inf
+stress	44.1	eq: Thirty-two bands	loudest-peak-dbfs	-0.055664521962332986
+stress	44.1	eq: Thirty-two bands	silence-peak-dbfs	-600
+stress	44.1	eq: Thirty-two bands	tail-dbfs	-552.9401406175112
+stress	44.1	eq: Thirty-two bands	subnormal-samples	0
+stress	44.1	eq: Thirty-two bands	block-null-db	-inf
+stress	44.1	eq: Thirty-two bands	reset-null-db	-inf
+stress	44.1	eq: Thirty-two bands	frames-beyond-the-input	0
+stress	44.1	peak: True-peak guard	non-finite-samples	0
+stress	44.1	peak: True-peak guard	non-finite-a-second-on	0
+stress	44.1	peak: True-peak guard	null-a-second-after-the-poison-db	-156.6891069076537
+stress	44.1	peak: True-peak guard	loudest-peak-dbfs	-0.09999999999999204
+stress	44.1	peak: True-peak guard	silence-peak-dbfs	-600
+stress	44.1	peak: True-peak guard	tail-dbfs	-600
+stress	44.1	peak: True-peak guard	subnormal-samples	0
+stress	44.1	peak: True-peak guard	block-null-db	-inf
+stress	44.1	peak: True-peak guard	reset-null-db	-inf
+stress	44.1	peak: True-peak guard	frames-beyond-the-input	0
+stress	44.1	peak: No guard	non-finite-samples	0
+stress	44.1	peak: No guard	non-finite-a-second-on	0
+stress	44.1	peak: No guard	null-a-second-after-the-poison-db	-inf
+stress	44.1	peak: No guard	loudest-peak-dbfs	0
+stress	44.1	peak: No guard	silence-peak-dbfs	-600
+stress	44.1	peak: No guard	tail-dbfs	-600
+stress	44.1	peak: No guard	subnormal-samples	0
+stress	44.1	peak: No guard	block-null-db	-inf
+stress	44.1	peak: No guard	reset-null-db	-inf
+stress	44.1	peak: No guard	frames-beyond-the-input	0
+stress	44.1	crossfeed: Crossfeed light	non-finite-samples	0
+stress	44.1	crossfeed: Crossfeed light	non-finite-a-second-on	0
+stress	44.1	crossfeed: Crossfeed light	null-a-second-after-the-poison-db	-inf
+stress	44.1	crossfeed: Crossfeed light	loudest-peak-dbfs	-0.0035631340102366066
+stress	44.1	crossfeed: Crossfeed light	silence-peak-dbfs	-600
+stress	44.1	crossfeed: Crossfeed light	tail-dbfs	-600
+stress	44.1	crossfeed: Crossfeed light	subnormal-samples	0
+stress	44.1	crossfeed: Crossfeed light	block-null-db	-inf
+stress	44.1	crossfeed: Crossfeed light	reset-null-db	-inf
+stress	44.1	crossfeed: Crossfeed light	frames-beyond-the-input	0
+stress	44.1	crossfeed: Crossfeed moderate	non-finite-samples	0
+stress	44.1	crossfeed: Crossfeed moderate	non-finite-a-second-on	0
+stress	44.1	crossfeed: Crossfeed moderate	null-a-second-after-the-poison-db	-inf
+stress	44.1	crossfeed: Crossfeed moderate	loudest-peak-dbfs	-0.003982615391595866
+stress	44.1	crossfeed: Crossfeed moderate	silence-peak-dbfs	-600
+stress	44.1	crossfeed: Crossfeed moderate	tail-dbfs	-600
+stress	44.1	crossfeed: Crossfeed moderate	subnormal-samples	0
+stress	44.1	crossfeed: Crossfeed moderate	block-null-db	-inf
+stress	44.1	crossfeed: Crossfeed moderate	reset-null-db	-inf
+stress	44.1	crossfeed: Crossfeed moderate	frames-beyond-the-input	0
+stress	44.1	crossfeed: Crossfeed strong	non-finite-samples	0
+stress	44.1	crossfeed: Crossfeed strong	non-finite-a-second-on	0
+stress	44.1	crossfeed: Crossfeed strong	null-a-second-after-the-poison-db	-inf
+stress	44.1	crossfeed: Crossfeed strong	loudest-peak-dbfs	-0.004252935536996032
+stress	44.1	crossfeed: Crossfeed strong	silence-peak-dbfs	-600
+stress	44.1	crossfeed: Crossfeed strong	tail-dbfs	-600
+stress	44.1	crossfeed: Crossfeed strong	subnormal-samples	0
+stress	44.1	crossfeed: Crossfeed strong	block-null-db	-inf
+stress	44.1	crossfeed: Crossfeed strong	reset-null-db	-inf
+stress	44.1	crossfeed: Crossfeed strong	frames-beyond-the-input	0
+stress	44.1	convolve: Unit impulse	non-finite-samples	0
+stress	44.1	convolve: Unit impulse	non-finite-a-second-on	0
+stress	44.1	convolve: Unit impulse	null-a-second-after-the-poison-db	-inf
+stress	44.1	convolve: Unit impulse	loudest-peak-dbfs	-0.0751705097776611
+stress	44.1	convolve: Unit impulse	silence-peak-dbfs	-600
+stress	44.1	convolve: Unit impulse	tail-dbfs	-600
+stress	44.1	convolve: Unit impulse	subnormal-samples	0
+stress	44.1	convolve: Unit impulse	block-null-db	-inf
+stress	44.1	convolve: Unit impulse	reset-null-db	-inf
+stress	44.1	convolve: Unit impulse	frames-beyond-the-input	1024
+stress	44.1	convolve: Decaying noise, 1 s	non-finite-samples	0
+stress	44.1	convolve: Decaying noise, 1 s	non-finite-a-second-on	0
+stress	44.1	convolve: Decaying noise, 1 s	null-a-second-after-the-poison-db	-inf
+stress	44.1	convolve: Decaying noise, 1 s	loudest-peak-dbfs	35.698952904704896
+stress	44.1	convolve: Decaying noise, 1 s	silence-peak-dbfs	-600
+stress	44.1	convolve: Decaying noise, 1 s	tail-dbfs	-600
+stress	44.1	convolve: Decaying noise, 1 s	subnormal-samples	0
+stress	44.1	convolve: Decaying noise, 1 s	block-null-db	-inf
+stress	44.1	convolve: Decaying noise, 1 s	reset-null-db	-inf
+stress	44.1	convolve: Decaying noise, 1 s	frames-beyond-the-input	45123
+stress	44.1	convolve: Stereo pair, 0.1 s	non-finite-samples	0
+stress	44.1	convolve: Stereo pair, 0.1 s	non-finite-a-second-on	0
+stress	44.1	convolve: Stereo pair, 0.1 s	null-a-second-after-the-poison-db	-inf
+stress	44.1	convolve: Stereo pair, 0.1 s	loudest-peak-dbfs	32.38042172538957
+stress	44.1	convolve: Stereo pair, 0.1 s	silence-peak-dbfs	-600
+stress	44.1	convolve: Stereo pair, 0.1 s	tail-dbfs	-600
+stress	44.1	convolve: Stereo pair, 0.1 s	subnormal-samples	0
+stress	44.1	convolve: Stereo pair, 0.1 s	block-null-db	-inf
+stress	44.1	convolve: Stereo pair, 0.1 s	reset-null-db	-inf
+stress	44.1	convolve: Stereo pair, 0.1 s	frames-beyond-the-input	5435
+stress	44.1	convolve: Two-by-two, 0.25 s	non-finite-samples	0
+stress	44.1	convolve: Two-by-two, 0.25 s	non-finite-a-second-on	0
+stress	44.1	convolve: Two-by-two, 0.25 s	null-a-second-after-the-poison-db	-inf
+stress	44.1	convolve: Two-by-two, 0.25 s	loudest-peak-dbfs	37.47811390856299
+stress	44.1	convolve: Two-by-two, 0.25 s	silence-peak-dbfs	-600
+stress	44.1	convolve: Two-by-two, 0.25 s	tail-dbfs	-600
+stress	44.1	convolve: Two-by-two, 0.25 s	subnormal-samples	0
+stress	44.1	convolve: Two-by-two, 0.25 s	block-null-db	-inf
+stress	44.1	convolve: Two-by-two, 0.25 s	reset-null-db	-inf
+stress	44.1	convolve: Two-by-two, 0.25 s	frames-beyond-the-input	12060
+stress	44.1	restore: repair MP3	non-finite-samples	0
+stress	44.1	restore: repair MP3	non-finite-a-second-on	0
+stress	44.1	restore: repair MP3	null-a-second-after-the-poison-db	-inf
+stress	44.1	restore: repair MP3	loudest-peak-dbfs	1.1500143662833393
+stress	44.1	restore: repair MP3	silence-peak-dbfs	-600
+stress	44.1	restore: repair MP3	tail-dbfs	-600
+stress	44.1	restore: repair MP3	subnormal-samples	0
+stress	44.1	restore: repair MP3	block-null-db	-inf
+stress	44.1	restore: repair MP3	reset-null-db	-inf
+stress	44.1	restore: repair MP3	frames-beyond-the-input	0
+stress	44.1	restore: repair AAC	non-finite-samples	0
+stress	44.1	restore: repair AAC	non-finite-a-second-on	0
+stress	44.1	restore: repair AAC	null-a-second-after-the-poison-db	-inf
+stress	44.1	restore: repair AAC	loudest-peak-dbfs	0.3937791899315191
+stress	44.1	restore: repair AAC	silence-peak-dbfs	-600
+stress	44.1	restore: repair AAC	tail-dbfs	-600
+stress	44.1	restore: repair AAC	subnormal-samples	0
+stress	44.1	restore: repair AAC	block-null-db	-inf
+stress	44.1	restore: repair AAC	reset-null-db	-inf
+stress	44.1	restore: repair AAC	frames-beyond-the-input	0
+stress	44.1	restore: repair Vorbis	non-finite-samples	0
+stress	44.1	restore: repair Vorbis	non-finite-a-second-on	0
+stress	44.1	restore: repair Vorbis	null-a-second-after-the-poison-db	-inf
+stress	44.1	restore: repair Vorbis	loudest-peak-dbfs	0.7171261887195839
+stress	44.1	restore: repair Vorbis	silence-peak-dbfs	-600
+stress	44.1	restore: repair Vorbis	tail-dbfs	-600
+stress	44.1	restore: repair Vorbis	subnormal-samples	0
+stress	44.1	restore: repair Vorbis	block-null-db	-inf
+stress	44.1	restore: repair Vorbis	reset-null-db	-inf
+stress	44.1	restore: repair Vorbis	frames-beyond-the-input	0
+stress	44.1	restore: extend MP3	non-finite-samples	0
+stress	44.1	restore: extend MP3	non-finite-a-second-on	0
+stress	44.1	restore: extend MP3	null-a-second-after-the-poison-db	-103.73964632479445
+stress	44.1	restore: extend MP3	loudest-peak-dbfs	1.6671054570235917
+stress	44.1	restore: extend MP3	silence-peak-dbfs	-600
+stress	44.1	restore: extend MP3	tail-dbfs	-600
+stress	44.1	restore: extend MP3	subnormal-samples	0
+stress	44.1	restore: extend MP3	block-null-db	-inf
+stress	44.1	restore: extend MP3	reset-null-db	-inf
+stress	44.1	restore: extend MP3	frames-beyond-the-input	0
+stress	44.1	restore: extend AAC	non-finite-samples	0
+stress	44.1	restore: extend AAC	non-finite-a-second-on	0
+stress	44.1	restore: extend AAC	null-a-second-after-the-poison-db	-103.77463882060098
+stress	44.1	restore: extend AAC	loudest-peak-dbfs	1.291066452244162
+stress	44.1	restore: extend AAC	silence-peak-dbfs	-600
+stress	44.1	restore: extend AAC	tail-dbfs	-600
+stress	44.1	restore: extend AAC	subnormal-samples	0
+stress	44.1	restore: extend AAC	block-null-db	-inf
+stress	44.1	restore: extend AAC	reset-null-db	-inf
+stress	44.1	restore: extend AAC	frames-beyond-the-input	0
+stress	44.1	restore: extend Vorbis	non-finite-samples	0
+stress	44.1	restore: extend Vorbis	non-finite-a-second-on	0
+stress	44.1	restore: extend Vorbis	null-a-second-after-the-poison-db	-103.76167287174951
+stress	44.1	restore: extend Vorbis	loudest-peak-dbfs	1.2865932443139074
+stress	44.1	restore: extend Vorbis	silence-peak-dbfs	-600
+stress	44.1	restore: extend Vorbis	tail-dbfs	-600
+stress	44.1	restore: extend Vorbis	subnormal-samples	0
+stress	44.1	restore: extend Vorbis	block-null-db	-inf
+stress	44.1	restore: extend Vorbis	reset-null-db	-inf
+stress	44.1	restore: extend Vorbis	frames-beyond-the-input	0
+stress	44.1	chain: CD on a CD sink	non-finite-samples	0
+stress	44.1	chain: CD on a CD sink	non-finite-a-second-on	0
+stress	44.1	chain: CD on a CD sink	null-a-second-after-the-poison-db	-inf
+stress	44.1	chain: CD on a CD sink	loudest-peak-dbfs	0
+stress	44.1	chain: CD on a CD sink	silence-peak-dbfs	-600
+stress	44.1	chain: CD on a CD sink	tail-dbfs	-600
+stress	44.1	chain: CD on a CD sink	subnormal-samples	0
+stress	44.1	chain: CD on a CD sink	block-null-db	-inf
+stress	44.1	chain: CD on a CD sink	reset-null-db	-inf
+stress	44.1	chain: CD on a CD sink	frames-beyond-the-input	0
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	non-finite-samples	0
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	non-finite-a-second-on	0
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	null-a-second-after-the-poison-db	-117.9923678198289
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	loudest-peak-dbfs	-0.09999413258372747
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	silence-peak-dbfs	-600
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	tail-dbfs	-600
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	subnormal-samples	0
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	block-null-db	-117.40541234410622
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	reset-null-db	-117.58257311100635
+stress	44.1	chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24	frames-beyond-the-input	0
+stress	48	dither-16: Dither no dither, flat	non-finite-samples	0
+stress	48	dither-16: Dither no dither, flat	non-finite-a-second-on	0
+stress	48	dither-16: Dither no dither, flat	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither no dither, flat	loudest-peak-dbfs	0
+stress	48	dither-16: Dither no dither, flat	silence-peak-dbfs	-600
+stress	48	dither-16: Dither no dither, flat	tail-dbfs	-600
+stress	48	dither-16: Dither no dither, flat	subnormal-samples	0
+stress	48	dither-16: Dither no dither, flat	block-null-db	-inf
+stress	48	dither-16: Dither no dither, flat	reset-null-db	-inf
+stress	48	dither-16: Dither no dither, flat	frames-beyond-the-input	0
+stress	48	dither-16: Dither rectangular, flat	non-finite-samples	0
+stress	48	dither-16: Dither rectangular, flat	non-finite-a-second-on	0
+stress	48	dither-16: Dither rectangular, flat	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither rectangular, flat	loudest-peak-dbfs	0
+stress	48	dither-16: Dither rectangular, flat	silence-peak-dbfs	-600
+stress	48	dither-16: Dither rectangular, flat	tail-dbfs	-600
+stress	48	dither-16: Dither rectangular, flat	subnormal-samples	0
+stress	48	dither-16: Dither rectangular, flat	block-null-db	-inf
+stress	48	dither-16: Dither rectangular, flat	reset-null-db	-90.3111859860875
+stress	48	dither-16: Dither rectangular, flat	frames-beyond-the-input	0
+stress	48	dither-16: Dither rectangular, Lipshitz	non-finite-samples	0
+stress	48	dither-16: Dither rectangular, Lipshitz	non-finite-a-second-on	0
+stress	48	dither-16: Dither rectangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither rectangular, Lipshitz	loudest-peak-dbfs	0
+stress	48	dither-16: Dither rectangular, Lipshitz	silence-peak-dbfs	-600
+stress	48	dither-16: Dither rectangular, Lipshitz	tail-dbfs	-600
+stress	48	dither-16: Dither rectangular, Lipshitz	subnormal-samples	0
+stress	48	dither-16: Dither rectangular, Lipshitz	block-null-db	-inf
+stress	48	dither-16: Dither rectangular, Lipshitz	reset-null-db	-77.3457382487955
+stress	48	dither-16: Dither rectangular, Lipshitz	frames-beyond-the-input	0
+stress	48	dither-16: Dither rectangular, threshold	non-finite-samples	0
+stress	48	dither-16: Dither rectangular, threshold	non-finite-a-second-on	0
+stress	48	dither-16: Dither rectangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither rectangular, threshold	loudest-peak-dbfs	0
+stress	48	dither-16: Dither rectangular, threshold	silence-peak-dbfs	-600
+stress	48	dither-16: Dither rectangular, threshold	tail-dbfs	-600
+stress	48	dither-16: Dither rectangular, threshold	subnormal-samples	0
+stress	48	dither-16: Dither rectangular, threshold	block-null-db	-inf
+stress	48	dither-16: Dither rectangular, threshold	reset-null-db	-76.25566708141407
+stress	48	dither-16: Dither rectangular, threshold	frames-beyond-the-input	0
+stress	48	dither-16: Dither triangular, flat	non-finite-samples	0
+stress	48	dither-16: Dither triangular, flat	non-finite-a-second-on	0
+stress	48	dither-16: Dither triangular, flat	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither triangular, flat	loudest-peak-dbfs	0
+stress	48	dither-16: Dither triangular, flat	silence-peak-dbfs	-600
+stress	48	dither-16: Dither triangular, flat	tail-dbfs	-600
+stress	48	dither-16: Dither triangular, flat	subnormal-samples	0
+stress	48	dither-16: Dither triangular, flat	block-null-db	-inf
+stress	48	dither-16: Dither triangular, flat	reset-null-db	-87.68638046491118
+stress	48	dither-16: Dither triangular, flat	frames-beyond-the-input	0
+stress	48	dither-16: Dither triangular, Lipshitz	non-finite-samples	0
+stress	48	dither-16: Dither triangular, Lipshitz	non-finite-a-second-on	0
+stress	48	dither-16: Dither triangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither triangular, Lipshitz	loudest-peak-dbfs	0
+stress	48	dither-16: Dither triangular, Lipshitz	silence-peak-dbfs	-600
+stress	48	dither-16: Dither triangular, Lipshitz	tail-dbfs	-600
+stress	48	dither-16: Dither triangular, Lipshitz	subnormal-samples	0
+stress	48	dither-16: Dither triangular, Lipshitz	block-null-db	-inf
+stress	48	dither-16: Dither triangular, Lipshitz	reset-null-db	-75.54599677795052
+stress	48	dither-16: Dither triangular, Lipshitz	frames-beyond-the-input	0
+stress	48	dither-16: Dither triangular, threshold	non-finite-samples	0
+stress	48	dither-16: Dither triangular, threshold	non-finite-a-second-on	0
+stress	48	dither-16: Dither triangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	48	dither-16: Dither triangular, threshold	loudest-peak-dbfs	0
+stress	48	dither-16: Dither triangular, threshold	silence-peak-dbfs	-600
+stress	48	dither-16: Dither triangular, threshold	tail-dbfs	-600
+stress	48	dither-16: Dither triangular, threshold	subnormal-samples	0
+stress	48	dither-16: Dither triangular, threshold	block-null-db	-inf
+stress	48	dither-16: Dither triangular, threshold	reset-null-db	-74.24584539484363
+stress	48	dither-16: Dither triangular, threshold	frames-beyond-the-input	0
+stress	48	dither-24: Dither no dither, flat	non-finite-samples	0
+stress	48	dither-24: Dither no dither, flat	non-finite-a-second-on	0
+stress	48	dither-24: Dither no dither, flat	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither no dither, flat	loudest-peak-dbfs	0
+stress	48	dither-24: Dither no dither, flat	silence-peak-dbfs	-600
+stress	48	dither-24: Dither no dither, flat	tail-dbfs	-600
+stress	48	dither-24: Dither no dither, flat	subnormal-samples	0
+stress	48	dither-24: Dither no dither, flat	block-null-db	-inf
+stress	48	dither-24: Dither no dither, flat	reset-null-db	-inf
+stress	48	dither-24: Dither no dither, flat	frames-beyond-the-input	0
+stress	48	dither-24: Dither rectangular, flat	non-finite-samples	0
+stress	48	dither-24: Dither rectangular, flat	non-finite-a-second-on	0
+stress	48	dither-24: Dither rectangular, flat	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither rectangular, flat	loudest-peak-dbfs	0
+stress	48	dither-24: Dither rectangular, flat	silence-peak-dbfs	-600
+stress	48	dither-24: Dither rectangular, flat	tail-dbfs	-600
+stress	48	dither-24: Dither rectangular, flat	subnormal-samples	0
+stress	48	dither-24: Dither rectangular, flat	block-null-db	-inf
+stress	48	dither-24: Dither rectangular, flat	reset-null-db	-138.42869822753758
+stress	48	dither-24: Dither rectangular, flat	frames-beyond-the-input	0
+stress	48	dither-24: Dither rectangular, Lipshitz	non-finite-samples	0
+stress	48	dither-24: Dither rectangular, Lipshitz	non-finite-a-second-on	0
+stress	48	dither-24: Dither rectangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither rectangular, Lipshitz	loudest-peak-dbfs	0
+stress	48	dither-24: Dither rectangular, Lipshitz	silence-peak-dbfs	-600
+stress	48	dither-24: Dither rectangular, Lipshitz	tail-dbfs	-600
+stress	48	dither-24: Dither rectangular, Lipshitz	subnormal-samples	0
+stress	48	dither-24: Dither rectangular, Lipshitz	block-null-db	-inf
+stress	48	dither-24: Dither rectangular, Lipshitz	reset-null-db	-125.8538960078191
+stress	48	dither-24: Dither rectangular, Lipshitz	frames-beyond-the-input	0
+stress	48	dither-24: Dither rectangular, threshold	non-finite-samples	0
+stress	48	dither-24: Dither rectangular, threshold	non-finite-a-second-on	0
+stress	48	dither-24: Dither rectangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither rectangular, threshold	loudest-peak-dbfs	0
+stress	48	dither-24: Dither rectangular, threshold	silence-peak-dbfs	-600
+stress	48	dither-24: Dither rectangular, threshold	tail-dbfs	-600
+stress	48	dither-24: Dither rectangular, threshold	subnormal-samples	0
+stress	48	dither-24: Dither rectangular, threshold	block-null-db	-inf
+stress	48	dither-24: Dither rectangular, threshold	reset-null-db	-124.51344884482454
+stress	48	dither-24: Dither rectangular, threshold	frames-beyond-the-input	0
+stress	48	dither-24: Dither triangular, flat	non-finite-samples	0
+stress	48	dither-24: Dither triangular, flat	non-finite-a-second-on	0
+stress	48	dither-24: Dither triangular, flat	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither triangular, flat	loudest-peak-dbfs	0
+stress	48	dither-24: Dither triangular, flat	silence-peak-dbfs	-600
+stress	48	dither-24: Dither triangular, flat	tail-dbfs	-600
+stress	48	dither-24: Dither triangular, flat	subnormal-samples	0
+stress	48	dither-24: Dither triangular, flat	block-null-db	-inf
+stress	48	dither-24: Dither triangular, flat	reset-null-db	-135.85028211254667
+stress	48	dither-24: Dither triangular, flat	frames-beyond-the-input	0
+stress	48	dither-24: Dither triangular, Lipshitz	non-finite-samples	0
+stress	48	dither-24: Dither triangular, Lipshitz	non-finite-a-second-on	0
+stress	48	dither-24: Dither triangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither triangular, Lipshitz	loudest-peak-dbfs	0
+stress	48	dither-24: Dither triangular, Lipshitz	silence-peak-dbfs	-600
+stress	48	dither-24: Dither triangular, Lipshitz	tail-dbfs	-600
+stress	48	dither-24: Dither triangular, Lipshitz	subnormal-samples	0
+stress	48	dither-24: Dither triangular, Lipshitz	block-null-db	-inf
+stress	48	dither-24: Dither triangular, Lipshitz	reset-null-db	-123.78539394345167
+stress	48	dither-24: Dither triangular, Lipshitz	frames-beyond-the-input	0
+stress	48	dither-24: Dither triangular, threshold	non-finite-samples	0
+stress	48	dither-24: Dither triangular, threshold	non-finite-a-second-on	0
+stress	48	dither-24: Dither triangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	48	dither-24: Dither triangular, threshold	loudest-peak-dbfs	0
+stress	48	dither-24: Dither triangular, threshold	silence-peak-dbfs	-600
+stress	48	dither-24: Dither triangular, threshold	tail-dbfs	-600
+stress	48	dither-24: Dither triangular, threshold	subnormal-samples	0
+stress	48	dither-24: Dither triangular, threshold	block-null-db	-inf
+stress	48	dither-24: Dither triangular, threshold	reset-null-db	-122.32949863393861
+stress	48	dither-24: Dither triangular, threshold	frames-beyond-the-input	0
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	non-finite-samples	0
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	non-finite-a-second-on	0
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	loudest-peak-dbfs	7.092101260075278
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	silence-peak-dbfs	-600
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	tail-dbfs	-600
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	subnormal-samples	0
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	block-null-db	-inf
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	reset-null-db	-inf
+stress	48	eq: Peaking, 1 kHz, +6 dB, Q 1	frames-beyond-the-input	0
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	non-finite-samples	0
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	non-finite-a-second-on	0
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	loudest-peak-dbfs	1.651787300502913
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	silence-peak-dbfs	-600
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	tail-dbfs	-468.41949911982294
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	subnormal-samples	0
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	block-null-db	-inf
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	reset-null-db	-inf
+stress	48	eq: Peaking, 60 Hz, −9 dB, Q 8	frames-beyond-the-input	0
+stress	48	eq: Low shelf, 100 Hz, +6 dB	non-finite-samples	0
+stress	48	eq: Low shelf, 100 Hz, +6 dB	non-finite-a-second-on	0
+stress	48	eq: Low shelf, 100 Hz, +6 dB	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Low shelf, 100 Hz, +6 dB	loudest-peak-dbfs	5.978280277467739
+stress	48	eq: Low shelf, 100 Hz, +6 dB	silence-peak-dbfs	-600
+stress	48	eq: Low shelf, 100 Hz, +6 dB	tail-dbfs	-600
+stress	48	eq: Low shelf, 100 Hz, +6 dB	subnormal-samples	0
+stress	48	eq: Low shelf, 100 Hz, +6 dB	block-null-db	-inf
+stress	48	eq: Low shelf, 100 Hz, +6 dB	reset-null-db	-inf
+stress	48	eq: Low shelf, 100 Hz, +6 dB	frames-beyond-the-input	0
+stress	48	eq: High shelf, 8 kHz, −6 dB	non-finite-samples	0
+stress	48	eq: High shelf, 8 kHz, −6 dB	non-finite-a-second-on	0
+stress	48	eq: High shelf, 8 kHz, −6 dB	null-a-second-after-the-poison-db	-inf
+stress	48	eq: High shelf, 8 kHz, −6 dB	loudest-peak-dbfs	0.6061881881030485
+stress	48	eq: High shelf, 8 kHz, −6 dB	silence-peak-dbfs	-600
+stress	48	eq: High shelf, 8 kHz, −6 dB	tail-dbfs	-600
+stress	48	eq: High shelf, 8 kHz, −6 dB	subnormal-samples	0
+stress	48	eq: High shelf, 8 kHz, −6 dB	block-null-db	-inf
+stress	48	eq: High shelf, 8 kHz, −6 dB	reset-null-db	-inf
+stress	48	eq: High shelf, 8 kHz, −6 dB	frames-beyond-the-input	0
+stress	48	eq: Low pass, 10 kHz	non-finite-samples	0
+stress	48	eq: Low pass, 10 kHz	non-finite-a-second-on	0
+stress	48	eq: Low pass, 10 kHz	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Low pass, 10 kHz	loudest-peak-dbfs	1.1474192669228873
+stress	48	eq: Low pass, 10 kHz	silence-peak-dbfs	-600
+stress	48	eq: Low pass, 10 kHz	tail-dbfs	-600
+stress	48	eq: Low pass, 10 kHz	subnormal-samples	0
+stress	48	eq: Low pass, 10 kHz	block-null-db	-inf
+stress	48	eq: Low pass, 10 kHz	reset-null-db	-inf
+stress	48	eq: Low pass, 10 kHz	frames-beyond-the-input	0
+stress	48	eq: High pass, 40 Hz	non-finite-samples	0
+stress	48	eq: High pass, 40 Hz	non-finite-a-second-on	0
+stress	48	eq: High pass, 40 Hz	null-a-second-after-the-poison-db	-inf
+stress	48	eq: High pass, 40 Hz	loudest-peak-dbfs	1.332689716096699
+stress	48	eq: High pass, 40 Hz	silence-peak-dbfs	-600
+stress	48	eq: High pass, 40 Hz	tail-dbfs	-600
+stress	48	eq: High pass, 40 Hz	subnormal-samples	0
+stress	48	eq: High pass, 40 Hz	block-null-db	-inf
+stress	48	eq: High pass, 40 Hz	reset-null-db	-inf
+stress	48	eq: High pass, 40 Hz	frames-beyond-the-input	0
+stress	48	eq: Notch, 3 kHz, Q 4	non-finite-samples	0
+stress	48	eq: Notch, 3 kHz, Q 4	non-finite-a-second-on	0
+stress	48	eq: Notch, 3 kHz, Q 4	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Notch, 3 kHz, Q 4	loudest-peak-dbfs	2.9378813678653044
+stress	48	eq: Notch, 3 kHz, Q 4	silence-peak-dbfs	-600
+stress	48	eq: Notch, 3 kHz, Q 4	tail-dbfs	-600
+stress	48	eq: Notch, 3 kHz, Q 4	subnormal-samples	0
+stress	48	eq: Notch, 3 kHz, Q 4	block-null-db	-inf
+stress	48	eq: Notch, 3 kHz, Q 4	reset-null-db	-inf
+stress	48	eq: Notch, 3 kHz, Q 4	frames-beyond-the-input	0
+stress	48	eq: Band pass, 1 kHz, Q 1	non-finite-samples	0
+stress	48	eq: Band pass, 1 kHz, Q 1	non-finite-a-second-on	0
+stress	48	eq: Band pass, 1 kHz, Q 1	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Band pass, 1 kHz, Q 1	loudest-peak-dbfs	2.038934101499449
+stress	48	eq: Band pass, 1 kHz, Q 1	silence-peak-dbfs	-600
+stress	48	eq: Band pass, 1 kHz, Q 1	tail-dbfs	-600
+stress	48	eq: Band pass, 1 kHz, Q 1	subnormal-samples	0
+stress	48	eq: Band pass, 1 kHz, Q 1	block-null-db	-inf
+stress	48	eq: Band pass, 1 kHz, Q 1	reset-null-db	-inf
+stress	48	eq: Band pass, 1 kHz, Q 1	frames-beyond-the-input	0
+stress	48	eq: All pass, 2 kHz, Q 0.7	non-finite-samples	0
+stress	48	eq: All pass, 2 kHz, Q 0.7	non-finite-a-second-on	0
+stress	48	eq: All pass, 2 kHz, Q 0.7	null-a-second-after-the-poison-db	-inf
+stress	48	eq: All pass, 2 kHz, Q 0.7	loudest-peak-dbfs	5.562613215973894
+stress	48	eq: All pass, 2 kHz, Q 0.7	silence-peak-dbfs	-600
+stress	48	eq: All pass, 2 kHz, Q 0.7	tail-dbfs	-600
+stress	48	eq: All pass, 2 kHz, Q 0.7	subnormal-samples	0
+stress	48	eq: All pass, 2 kHz, Q 0.7	block-null-db	-inf
+stress	48	eq: All pass, 2 kHz, Q 0.7	reset-null-db	-inf
+stress	48	eq: All pass, 2 kHz, Q 0.7	frames-beyond-the-input	0
+stress	48	eq: Ten octave bands	non-finite-samples	0
+stress	48	eq: Ten octave bands	non-finite-a-second-on	0
+stress	48	eq: Ten octave bands	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Ten octave bands	loudest-peak-dbfs	0.7766536124064016
+stress	48	eq: Ten octave bands	silence-peak-dbfs	-600
+stress	48	eq: Ten octave bands	tail-dbfs	-553.2545743951844
+stress	48	eq: Ten octave bands	subnormal-samples	0
+stress	48	eq: Ten octave bands	block-null-db	-inf
+stress	48	eq: Ten octave bands	reset-null-db	-inf
+stress	48	eq: Ten octave bands	frames-beyond-the-input	0
+stress	48	eq: Thirty-two bands	non-finite-samples	0
+stress	48	eq: Thirty-two bands	non-finite-a-second-on	0
+stress	48	eq: Thirty-two bands	null-a-second-after-the-poison-db	-inf
+stress	48	eq: Thirty-two bands	loudest-peak-dbfs	-0.044240439789128665
+stress	48	eq: Thirty-two bands	silence-peak-dbfs	-600
+stress	48	eq: Thirty-two bands	tail-dbfs	-552.6740193629471
+stress	48	eq: Thirty-two bands	subnormal-samples	0
+stress	48	eq: Thirty-two bands	block-null-db	-inf
+stress	48	eq: Thirty-two bands	reset-null-db	-inf
+stress	48	eq: Thirty-two bands	frames-beyond-the-input	0
+stress	48	gain: Volume +0 dB	non-finite-samples	0
+stress	48	gain: Volume +0 dB	non-finite-a-second-on	0
+stress	48	gain: Volume +0 dB	null-a-second-after-the-poison-db	-inf
+stress	48	gain: Volume +0 dB	loudest-peak-dbfs	0
+stress	48	gain: Volume +0 dB	silence-peak-dbfs	-600
+stress	48	gain: Volume +0 dB	tail-dbfs	-600
+stress	48	gain: Volume +0 dB	subnormal-samples	0
+stress	48	gain: Volume +0 dB	block-null-db	-inf
+stress	48	gain: Volume +0 dB	reset-null-db	-inf
+stress	48	gain: Volume +0 dB	frames-beyond-the-input	0
+stress	48	gain: Volume -0.1 dB	non-finite-samples	0
+stress	48	gain: Volume -0.1 dB	non-finite-a-second-on	0
+stress	48	gain: Volume -0.1 dB	null-a-second-after-the-poison-db	-inf
+stress	48	gain: Volume -0.1 dB	loudest-peak-dbfs	-0.10000094086736072
+stress	48	gain: Volume -0.1 dB	silence-peak-dbfs	-600
+stress	48	gain: Volume -0.1 dB	tail-dbfs	-600
+stress	48	gain: Volume -0.1 dB	subnormal-samples	0
+stress	48	gain: Volume -0.1 dB	block-null-db	-inf
+stress	48	gain: Volume -0.1 dB	reset-null-db	-inf
+stress	48	gain: Volume -0.1 dB	frames-beyond-the-input	0
+stress	48	gain: Volume -6 dB	non-finite-samples	0
+stress	48	gain: Volume -6 dB	non-finite-a-second-on	0
+stress	48	gain: Volume -6 dB	null-a-second-after-the-poison-db	-inf
+stress	48	gain: Volume -6 dB	loudest-peak-dbfs	-6.0000004906757844
+stress	48	gain: Volume -6 dB	silence-peak-dbfs	-600
+stress	48	gain: Volume -6 dB	tail-dbfs	-600
+stress	48	gain: Volume -6 dB	subnormal-samples	0
+stress	48	gain: Volume -6 dB	block-null-db	-inf
+stress	48	gain: Volume -6 dB	reset-null-db	-inf
+stress	48	gain: Volume -6 dB	frames-beyond-the-input	0
+stress	48	gain: Volume -20 dB	non-finite-samples	0
+stress	48	gain: Volume -20 dB	non-finite-a-second-on	0
+stress	48	gain: Volume -20 dB	null-a-second-after-the-poison-db	-inf
+stress	48	gain: Volume -20 dB	loudest-peak-dbfs	-19.999999223420986
+stress	48	gain: Volume -20 dB	silence-peak-dbfs	-600
+stress	48	gain: Volume -20 dB	tail-dbfs	-600
+stress	48	gain: Volume -20 dB	subnormal-samples	0
+stress	48	gain: Volume -20 dB	block-null-db	-inf
+stress	48	gain: Volume -20 dB	reset-null-db	-inf
+stress	48	gain: Volume -20 dB	frames-beyond-the-input	0
+stress	48	gain: Volume -60 dB	non-finite-samples	0
+stress	48	gain: Volume -60 dB	non-finite-a-second-on	0
+stress	48	gain: Volume -60 dB	null-a-second-after-the-poison-db	-inf
+stress	48	gain: Volume -60 dB	loudest-peak-dbfs	-59.99999958744239
+stress	48	gain: Volume -60 dB	silence-peak-dbfs	-600
+stress	48	gain: Volume -60 dB	tail-dbfs	-600
+stress	48	gain: Volume -60 dB	subnormal-samples	0
+stress	48	gain: Volume -60 dB	block-null-db	-inf
+stress	48	gain: Volume -60 dB	reset-null-db	-inf
+stress	48	gain: Volume -60 dB	frames-beyond-the-input	0
+stress	48	gain: ReplayGain −6 dB	non-finite-samples	0
+stress	48	gain: ReplayGain −6 dB	non-finite-a-second-on	0
+stress	48	gain: ReplayGain −6 dB	null-a-second-after-the-poison-db	-inf
+stress	48	gain: ReplayGain −6 dB	loudest-peak-dbfs	-6.0000004906757844
+stress	48	gain: ReplayGain −6 dB	silence-peak-dbfs	-600
+stress	48	gain: ReplayGain −6 dB	tail-dbfs	-600
+stress	48	gain: ReplayGain −6 dB	subnormal-samples	0
+stress	48	gain: ReplayGain −6 dB	block-null-db	-inf
+stress	48	gain: ReplayGain −6 dB	reset-null-db	-inf
+stress	48	gain: ReplayGain −6 dB	frames-beyond-the-input	0
+stress	48	gain: ReplayGain +6 dB, peak 0.9	non-finite-samples	0
+stress	48	gain: ReplayGain +6 dB, peak 0.9	non-finite-a-second-on	0
+stress	48	gain: ReplayGain +6 dB, peak 0.9	null-a-second-after-the-poison-db	-inf
+stress	48	gain: ReplayGain +6 dB, peak 0.9	loudest-peak-dbfs	0.9151502253889856
+stress	48	gain: ReplayGain +6 dB, peak 0.9	silence-peak-dbfs	-600
+stress	48	gain: ReplayGain +6 dB, peak 0.9	tail-dbfs	-600
+stress	48	gain: ReplayGain +6 dB, peak 0.9	subnormal-samples	0
+stress	48	gain: ReplayGain +6 dB, peak 0.9	block-null-db	-inf
+stress	48	gain: ReplayGain +6 dB, peak 0.9	reset-null-db	-inf
+stress	48	gain: ReplayGain +6 dB, peak 0.9	frames-beyond-the-input	0
+stress	48	gain: ReplayGain +6 dB, no peak	non-finite-samples	0
+stress	48	gain: ReplayGain +6 dB, no peak	non-finite-a-second-on	0
+stress	48	gain: ReplayGain +6 dB, no peak	null-a-second-after-the-poison-db	-inf
+stress	48	gain: ReplayGain +6 dB, no peak	loudest-peak-dbfs	0
+stress	48	gain: ReplayGain +6 dB, no peak	silence-peak-dbfs	-600
+stress	48	gain: ReplayGain +6 dB, no peak	tail-dbfs	-600
+stress	48	gain: ReplayGain +6 dB, no peak	subnormal-samples	0
+stress	48	gain: ReplayGain +6 dB, no peak	block-null-db	-inf
+stress	48	gain: ReplayGain +6 dB, no peak	reset-null-db	-inf
+stress	48	gain: ReplayGain +6 dB, no peak	frames-beyond-the-input	0
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	non-finite-samples	0
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	non-finite-a-second-on	0
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	null-a-second-after-the-poison-db	-inf
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	loudest-peak-dbfs	6.00000030231538
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	silence-peak-dbfs	-600
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	tail-dbfs	-600
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	subnormal-samples	0
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	block-null-db	-inf
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	reset-null-db	-inf
+stress	48	gain: ReplayGain +6 dB, no peak, unprotected	frames-beyond-the-input	0
+stress	48	peak: True-peak guard	non-finite-samples	0
+stress	48	peak: True-peak guard	non-finite-a-second-on	0
+stress	48	peak: True-peak guard	null-a-second-after-the-poison-db	-156.6983242590403
+stress	48	peak: True-peak guard	loudest-peak-dbfs	-0.09999999999999497
+stress	48	peak: True-peak guard	silence-peak-dbfs	-600
+stress	48	peak: True-peak guard	tail-dbfs	-600
+stress	48	peak: True-peak guard	subnormal-samples	0
+stress	48	peak: True-peak guard	block-null-db	-inf
+stress	48	peak: True-peak guard	reset-null-db	-inf
+stress	48	peak: True-peak guard	frames-beyond-the-input	0
+stress	48	peak: No guard	non-finite-samples	0
+stress	48	peak: No guard	non-finite-a-second-on	0
+stress	48	peak: No guard	null-a-second-after-the-poison-db	-inf
+stress	48	peak: No guard	loudest-peak-dbfs	0
+stress	48	peak: No guard	silence-peak-dbfs	-600
+stress	48	peak: No guard	tail-dbfs	-600
+stress	48	peak: No guard	subnormal-samples	0
+stress	48	peak: No guard	block-null-db	-inf
+stress	48	peak: No guard	reset-null-db	-inf
+stress	48	peak: No guard	frames-beyond-the-input	0
+stress	48	remix: Remix mono to stereo	non-finite-samples	0
+stress	48	remix: Remix mono to stereo	non-finite-a-second-on	0
+stress	48	remix: Remix mono to stereo	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix mono to stereo	loudest-peak-dbfs	-3.0102999566398116
+stress	48	remix: Remix mono to stereo	silence-peak-dbfs	-600
+stress	48	remix: Remix mono to stereo	tail-dbfs	-600
+stress	48	remix: Remix mono to stereo	subnormal-samples	0
+stress	48	remix: Remix mono to stereo	block-null-db	-inf
+stress	48	remix: Remix mono to stereo	reset-null-db	-inf
+stress	48	remix: Remix mono to stereo	frames-beyond-the-input	0
+stress	48	remix: Remix stereo to mono	non-finite-samples	0
+stress	48	remix: Remix stereo to mono	non-finite-a-second-on	0
+stress	48	remix: Remix stereo to mono	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix stereo to mono	loudest-peak-dbfs	0
+stress	48	remix: Remix stereo to mono	silence-peak-dbfs	-600
+stress	48	remix: Remix stereo to mono	tail-dbfs	-600
+stress	48	remix: Remix stereo to mono	subnormal-samples	0
+stress	48	remix: Remix stereo to mono	block-null-db	-inf
+stress	48	remix: Remix stereo to mono	reset-null-db	-inf
+stress	48	remix: Remix stereo to mono	frames-beyond-the-input	0
+stress	48	remix: Remix quad to stereo	non-finite-samples	0
+stress	48	remix: Remix quad to stereo	non-finite-a-second-on	0
+stress	48	remix: Remix quad to stereo	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix quad to stereo	loudest-peak-dbfs	0
+stress	48	remix: Remix quad to stereo	silence-peak-dbfs	-600
+stress	48	remix: Remix quad to stereo	tail-dbfs	-600
+stress	48	remix: Remix quad to stereo	subnormal-samples	0
+stress	48	remix: Remix quad to stereo	block-null-db	-inf
+stress	48	remix: Remix quad to stereo	reset-null-db	-inf
+stress	48	remix: Remix quad to stereo	frames-beyond-the-input	0
+stress	48	remix: Remix 5.0 to stereo	non-finite-samples	0
+stress	48	remix: Remix 5.0 to stereo	non-finite-a-second-on	0
+stress	48	remix: Remix 5.0 to stereo	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix 5.0 to stereo	loudest-peak-dbfs	0.000000000000001928654933106574
+stress	48	remix: Remix 5.0 to stereo	silence-peak-dbfs	-600
+stress	48	remix: Remix 5.0 to stereo	tail-dbfs	-600
+stress	48	remix: Remix 5.0 to stereo	subnormal-samples	0
+stress	48	remix: Remix 5.0 to stereo	block-null-db	-inf
+stress	48	remix: Remix 5.0 to stereo	reset-null-db	-inf
+stress	48	remix: Remix 5.0 to stereo	frames-beyond-the-input	0
+stress	48	remix: Remix 5.1 to stereo	non-finite-samples	0
+stress	48	remix: Remix 5.1 to stereo	non-finite-a-second-on	0
+stress	48	remix: Remix 5.1 to stereo	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix 5.1 to stereo	loudest-peak-dbfs	0.000000000000001928654933106574
+stress	48	remix: Remix 5.1 to stereo	silence-peak-dbfs	-600
+stress	48	remix: Remix 5.1 to stereo	tail-dbfs	-600
+stress	48	remix: Remix 5.1 to stereo	subnormal-samples	0
+stress	48	remix: Remix 5.1 to stereo	block-null-db	-inf
+stress	48	remix: Remix 5.1 to stereo	reset-null-db	-inf
+stress	48	remix: Remix 5.1 to stereo	frames-beyond-the-input	0
+stress	48	remix: Remix 6.1 to stereo	non-finite-samples	0
+stress	48	remix: Remix 6.1 to stereo	non-finite-a-second-on	0
+stress	48	remix: Remix 6.1 to stereo	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix 6.1 to stereo	loudest-peak-dbfs	0
+stress	48	remix: Remix 6.1 to stereo	silence-peak-dbfs	-600
+stress	48	remix: Remix 6.1 to stereo	tail-dbfs	-600
+stress	48	remix: Remix 6.1 to stereo	subnormal-samples	0
+stress	48	remix: Remix 6.1 to stereo	block-null-db	-inf
+stress	48	remix: Remix 6.1 to stereo	reset-null-db	-inf
+stress	48	remix: Remix 6.1 to stereo	frames-beyond-the-input	0
+stress	48	remix: Remix 7.1 to stereo	non-finite-samples	0
+stress	48	remix: Remix 7.1 to stereo	non-finite-a-second-on	0
+stress	48	remix: Remix 7.1 to stereo	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix 7.1 to stereo	loudest-peak-dbfs	0
+stress	48	remix: Remix 7.1 to stereo	silence-peak-dbfs	-600
+stress	48	remix: Remix 7.1 to stereo	tail-dbfs	-600
+stress	48	remix: Remix 7.1 to stereo	subnormal-samples	0
+stress	48	remix: Remix 7.1 to stereo	block-null-db	-inf
+stress	48	remix: Remix 7.1 to stereo	reset-null-db	-inf
+stress	48	remix: Remix 7.1 to stereo	frames-beyond-the-input	0
+stress	48	remix: Remix 7.1 to 5.1	non-finite-samples	0
+stress	48	remix: Remix 7.1 to 5.1	non-finite-a-second-on	0
+stress	48	remix: Remix 7.1 to 5.1	null-a-second-after-the-poison-db	-inf
+stress	48	remix: Remix 7.1 to 5.1	loudest-peak-dbfs	0
+stress	48	remix: Remix 7.1 to 5.1	silence-peak-dbfs	-600
+stress	48	remix: Remix 7.1 to 5.1	tail-dbfs	-600
+stress	48	remix: Remix 7.1 to 5.1	subnormal-samples	0
+stress	48	remix: Remix 7.1 to 5.1	block-null-db	-inf
+stress	48	remix: Remix 7.1 to 5.1	reset-null-db	-inf
+stress	48	remix: Remix 7.1 to 5.1	frames-beyond-the-input	0
+stress	48	crossfeed: Crossfeed light	non-finite-samples	0
+stress	48	crossfeed: Crossfeed light	non-finite-a-second-on	0
+stress	48	crossfeed: Crossfeed light	null-a-second-after-the-poison-db	-inf
+stress	48	crossfeed: Crossfeed light	loudest-peak-dbfs	-0.003567397844200213
+stress	48	crossfeed: Crossfeed light	silence-peak-dbfs	-600
+stress	48	crossfeed: Crossfeed light	tail-dbfs	-600
+stress	48	crossfeed: Crossfeed light	subnormal-samples	0
+stress	48	crossfeed: Crossfeed light	block-null-db	-inf
+stress	48	crossfeed: Crossfeed light	reset-null-db	-inf
+stress	48	crossfeed: Crossfeed light	frames-beyond-the-input	0
+stress	48	crossfeed: Crossfeed moderate	non-finite-samples	0
+stress	48	crossfeed: Crossfeed moderate	non-finite-a-second-on	0
+stress	48	crossfeed: Crossfeed moderate	null-a-second-after-the-poison-db	-inf
+stress	48	crossfeed: Crossfeed moderate	loudest-peak-dbfs	-0.003993025556503408
+stress	48	crossfeed: Crossfeed moderate	silence-peak-dbfs	-600
+stress	48	crossfeed: Crossfeed moderate	tail-dbfs	-600
+stress	48	crossfeed: Crossfeed moderate	subnormal-samples	0
+stress	48	crossfeed: Crossfeed moderate	block-null-db	-inf
+stress	48	crossfeed: Crossfeed moderate	reset-null-db	-inf
+stress	48	crossfeed: Crossfeed moderate	frames-beyond-the-input	0
+stress	48	crossfeed: Crossfeed strong	non-finite-samples	0
+stress	48	crossfeed: Crossfeed strong	non-finite-a-second-on	0
+stress	48	crossfeed: Crossfeed strong	null-a-second-after-the-poison-db	-inf
+stress	48	crossfeed: Crossfeed strong	loudest-peak-dbfs	-0.004265918804298539
+stress	48	crossfeed: Crossfeed strong	silence-peak-dbfs	-600
+stress	48	crossfeed: Crossfeed strong	tail-dbfs	-600
+stress	48	crossfeed: Crossfeed strong	subnormal-samples	0
+stress	48	crossfeed: Crossfeed strong	block-null-db	-inf
+stress	48	crossfeed: Crossfeed strong	reset-null-db	-inf
+stress	48	crossfeed: Crossfeed strong	frames-beyond-the-input	0
+stress	48	convolve: Unit impulse	non-finite-samples	0
+stress	48	convolve: Unit impulse	non-finite-a-second-on	0
+stress	48	convolve: Unit impulse	null-a-second-after-the-poison-db	-inf
+stress	48	convolve: Unit impulse	loudest-peak-dbfs	0.000000000000011571929598639439
+stress	48	convolve: Unit impulse	silence-peak-dbfs	-600
+stress	48	convolve: Unit impulse	tail-dbfs	-600
+stress	48	convolve: Unit impulse	subnormal-samples	0
+stress	48	convolve: Unit impulse	block-null-db	-inf
+stress	48	convolve: Unit impulse	reset-null-db	-inf
+stress	48	convolve: Unit impulse	frames-beyond-the-input	1024
+stress	48	convolve: Decaying noise, 1 s	non-finite-samples	0
+stress	48	convolve: Decaying noise, 1 s	non-finite-a-second-on	0
+stress	48	convolve: Decaying noise, 1 s	null-a-second-after-the-poison-db	-inf
+stress	48	convolve: Decaying noise, 1 s	loudest-peak-dbfs	35.299103440334136
+stress	48	convolve: Decaying noise, 1 s	silence-peak-dbfs	-600
+stress	48	convolve: Decaying noise, 1 s	tail-dbfs	-600
+stress	48	convolve: Decaying noise, 1 s	subnormal-samples	0
+stress	48	convolve: Decaying noise, 1 s	block-null-db	-inf
+stress	48	convolve: Decaying noise, 1 s	reset-null-db	-inf
+stress	48	convolve: Decaying noise, 1 s	frames-beyond-the-input	49023
+stress	48	convolve: Stereo pair, 0.1 s	non-finite-samples	0
+stress	48	convolve: Stereo pair, 0.1 s	non-finite-a-second-on	0
+stress	48	convolve: Stereo pair, 0.1 s	null-a-second-after-the-poison-db	-inf
+stress	48	convolve: Stereo pair, 0.1 s	loudest-peak-dbfs	32.57292296533693
+stress	48	convolve: Stereo pair, 0.1 s	silence-peak-dbfs	-600
+stress	48	convolve: Stereo pair, 0.1 s	tail-dbfs	-600
+stress	48	convolve: Stereo pair, 0.1 s	subnormal-samples	0
+stress	48	convolve: Stereo pair, 0.1 s	block-null-db	-inf
+stress	48	convolve: Stereo pair, 0.1 s	reset-null-db	-inf
+stress	48	convolve: Stereo pair, 0.1 s	frames-beyond-the-input	5826
+stress	48	convolve: Two-by-two, 0.25 s	non-finite-samples	0
+stress	48	convolve: Two-by-two, 0.25 s	non-finite-a-second-on	0
+stress	48	convolve: Two-by-two, 0.25 s	null-a-second-after-the-poison-db	-inf
+stress	48	convolve: Two-by-two, 0.25 s	loudest-peak-dbfs	37.14986119529152
+stress	48	convolve: Two-by-two, 0.25 s	silence-peak-dbfs	-600
+stress	48	convolve: Two-by-two, 0.25 s	tail-dbfs	-600
+stress	48	convolve: Two-by-two, 0.25 s	subnormal-samples	0
+stress	48	convolve: Two-by-two, 0.25 s	block-null-db	-inf
+stress	48	convolve: Two-by-two, 0.25 s	reset-null-db	-inf
+stress	48	convolve: Two-by-two, 0.25 s	frames-beyond-the-input	13036
+stress	48	restore: repair MP3	non-finite-samples	0
+stress	48	restore: repair MP3	non-finite-a-second-on	0
+stress	48	restore: repair MP3	null-a-second-after-the-poison-db	-inf
+stress	48	restore: repair MP3	loudest-peak-dbfs	1.1155875958473054
+stress	48	restore: repair MP3	silence-peak-dbfs	-600
+stress	48	restore: repair MP3	tail-dbfs	-600
+stress	48	restore: repair MP3	subnormal-samples	0
+stress	48	restore: repair MP3	block-null-db	-inf
+stress	48	restore: repair MP3	reset-null-db	-inf
+stress	48	restore: repair MP3	frames-beyond-the-input	0
+stress	48	restore: repair AAC	non-finite-samples	0
+stress	48	restore: repair AAC	non-finite-a-second-on	0
+stress	48	restore: repair AAC	null-a-second-after-the-poison-db	-inf
+stress	48	restore: repair AAC	loudest-peak-dbfs	0.38749955283451293
+stress	48	restore: repair AAC	silence-peak-dbfs	-600
+stress	48	restore: repair AAC	tail-dbfs	-600
+stress	48	restore: repair AAC	subnormal-samples	0
+stress	48	restore: repair AAC	block-null-db	-inf
+stress	48	restore: repair AAC	reset-null-db	-inf
+stress	48	restore: repair AAC	frames-beyond-the-input	0
+stress	48	restore: repair Vorbis	non-finite-samples	0
+stress	48	restore: repair Vorbis	non-finite-a-second-on	0
+stress	48	restore: repair Vorbis	null-a-second-after-the-poison-db	-inf
+stress	48	restore: repair Vorbis	loudest-peak-dbfs	0.6954153966724524
+stress	48	restore: repair Vorbis	silence-peak-dbfs	-600
+stress	48	restore: repair Vorbis	tail-dbfs	-600
+stress	48	restore: repair Vorbis	subnormal-samples	0
+stress	48	restore: repair Vorbis	block-null-db	-inf
+stress	48	restore: repair Vorbis	reset-null-db	-inf
+stress	48	restore: repair Vorbis	frames-beyond-the-input	0
+stress	48	restore: extend MP3	non-finite-samples	0
+stress	48	restore: extend MP3	non-finite-a-second-on	0
+stress	48	restore: extend MP3	null-a-second-after-the-poison-db	-92.48276909457442
+stress	48	restore: extend MP3	loudest-peak-dbfs	3.137243012642308
+stress	48	restore: extend MP3	silence-peak-dbfs	-600
+stress	48	restore: extend MP3	tail-dbfs	-600
+stress	48	restore: extend MP3	subnormal-samples	0
+stress	48	restore: extend MP3	block-null-db	-inf
+stress	48	restore: extend MP3	reset-null-db	-inf
+stress	48	restore: extend MP3	frames-beyond-the-input	0
+stress	48	restore: extend AAC	non-finite-samples	0
+stress	48	restore: extend AAC	non-finite-a-second-on	0
+stress	48	restore: extend AAC	null-a-second-after-the-poison-db	-92.4878344171926
+stress	48	restore: extend AAC	loudest-peak-dbfs	2.4361579961069446
+stress	48	restore: extend AAC	silence-peak-dbfs	-600
+stress	48	restore: extend AAC	tail-dbfs	-600
+stress	48	restore: extend AAC	subnormal-samples	0
+stress	48	restore: extend AAC	block-null-db	-inf
+stress	48	restore: extend AAC	reset-null-db	-inf
+stress	48	restore: extend AAC	frames-beyond-the-input	0
+stress	48	restore: extend Vorbis	non-finite-samples	0
+stress	48	restore: extend Vorbis	non-finite-a-second-on	0
+stress	48	restore: extend Vorbis	null-a-second-after-the-poison-db	-92.48606967924466
+stress	48	restore: extend Vorbis	loudest-peak-dbfs	2.69845499182435
+stress	48	restore: extend Vorbis	silence-peak-dbfs	-600
+stress	48	restore: extend Vorbis	tail-dbfs	-600
+stress	48	restore: extend Vorbis	subnormal-samples	0
+stress	48	restore: extend Vorbis	block-null-db	-inf
+stress	48	restore: extend Vorbis	reset-null-db	-inf
+stress	48	restore: extend Vorbis	frames-beyond-the-input	0
+stress	48	chain: 5.1 at 48/24 on a stereo sink	non-finite-samples	0
+stress	48	chain: 5.1 at 48/24 on a stereo sink	non-finite-a-second-on	0
+stress	48	chain: 5.1 at 48/24 on a stereo sink	null-a-second-after-the-poison-db	-118.93085314428507
+stress	48	chain: 5.1 at 48/24 on a stereo sink	loudest-peak-dbfs	-0.09999413258372747
+stress	48	chain: 5.1 at 48/24 on a stereo sink	silence-peak-dbfs	-600
+stress	48	chain: 5.1 at 48/24 on a stereo sink	tail-dbfs	-600
+stress	48	chain: 5.1 at 48/24 on a stereo sink	subnormal-samples	0
+stress	48	chain: 5.1 at 48/24 on a stereo sink	block-null-db	-116.50496994318708
+stress	48	chain: 5.1 at 48/24 on a stereo sink	reset-null-db	-116.52690212391092
+stress	48	chain: 5.1 at 48/24 on a stereo sink	frames-beyond-the-input	0
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	non-finite-samples	0
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	non-finite-a-second-on	0
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	null-a-second-after-the-poison-db	-104.7945270087785
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	loudest-peak-dbfs	-0.10001298630532335
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	silence-peak-dbfs	-600
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	tail-dbfs	-600
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	subnormal-samples	0
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	block-null-db	-113.33480316797167
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	reset-null-db	-113.33581367909392
+stress	48	chain: Ten bands and moderate crossfeed, 48/24	frames-beyond-the-input	0
+stress	48	chain: Room correction of 1 s, 48/24	non-finite-samples	0
+stress	48	chain: Room correction of 1 s, 48/24	non-finite-a-second-on	0
+stress	48	chain: Room correction of 1 s, 48/24	null-a-second-after-the-poison-db	-105.57515635735109
+stress	48	chain: Room correction of 1 s, 48/24	loudest-peak-dbfs	-2.6956728704107666
+stress	48	chain: Room correction of 1 s, 48/24	silence-peak-dbfs	-600
+stress	48	chain: Room correction of 1 s, 48/24	tail-dbfs	-600
+stress	48	chain: Room correction of 1 s, 48/24	subnormal-samples	0
+stress	48	chain: Room correction of 1 s, 48/24	block-null-db	-105.88850137697669
+stress	48	chain: Room correction of 1 s, 48/24	reset-null-db	-105.877031378416
+stress	48	chain: Room correction of 1 s, 48/24	frames-beyond-the-input	49023
+stress	96	dither-16: Dither no dither, flat	non-finite-samples	0
+stress	96	dither-16: Dither no dither, flat	non-finite-a-second-on	0
+stress	96	dither-16: Dither no dither, flat	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither no dither, flat	loudest-peak-dbfs	0
+stress	96	dither-16: Dither no dither, flat	silence-peak-dbfs	-600
+stress	96	dither-16: Dither no dither, flat	tail-dbfs	-600
+stress	96	dither-16: Dither no dither, flat	subnormal-samples	0
+stress	96	dither-16: Dither no dither, flat	block-null-db	-inf
+stress	96	dither-16: Dither no dither, flat	reset-null-db	-inf
+stress	96	dither-16: Dither no dither, flat	frames-beyond-the-input	0
+stress	96	dither-16: Dither rectangular, flat	non-finite-samples	0
+stress	96	dither-16: Dither rectangular, flat	non-finite-a-second-on	0
+stress	96	dither-16: Dither rectangular, flat	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither rectangular, flat	loudest-peak-dbfs	0
+stress	96	dither-16: Dither rectangular, flat	silence-peak-dbfs	-600
+stress	96	dither-16: Dither rectangular, flat	tail-dbfs	-600
+stress	96	dither-16: Dither rectangular, flat	subnormal-samples	0
+stress	96	dither-16: Dither rectangular, flat	block-null-db	-inf
+stress	96	dither-16: Dither rectangular, flat	reset-null-db	-90.26509329110148
+stress	96	dither-16: Dither rectangular, flat	frames-beyond-the-input	0
+stress	96	dither-16: Dither rectangular, Lipshitz	non-finite-samples	0
+stress	96	dither-16: Dither rectangular, Lipshitz	non-finite-a-second-on	0
+stress	96	dither-16: Dither rectangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither rectangular, Lipshitz	loudest-peak-dbfs	0
+stress	96	dither-16: Dither rectangular, Lipshitz	silence-peak-dbfs	-600
+stress	96	dither-16: Dither rectangular, Lipshitz	tail-dbfs	-600
+stress	96	dither-16: Dither rectangular, Lipshitz	subnormal-samples	0
+stress	96	dither-16: Dither rectangular, Lipshitz	block-null-db	-inf
+stress	96	dither-16: Dither rectangular, Lipshitz	reset-null-db	-90.26509329110148
+stress	96	dither-16: Dither rectangular, Lipshitz	frames-beyond-the-input	0
+stress	96	dither-16: Dither rectangular, threshold	non-finite-samples	0
+stress	96	dither-16: Dither rectangular, threshold	non-finite-a-second-on	0
+stress	96	dither-16: Dither rectangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither rectangular, threshold	loudest-peak-dbfs	0
+stress	96	dither-16: Dither rectangular, threshold	silence-peak-dbfs	-600
+stress	96	dither-16: Dither rectangular, threshold	tail-dbfs	-600
+stress	96	dither-16: Dither rectangular, threshold	subnormal-samples	0
+stress	96	dither-16: Dither rectangular, threshold	block-null-db	-inf
+stress	96	dither-16: Dither rectangular, threshold	reset-null-db	-82.58832583221658
+stress	96	dither-16: Dither rectangular, threshold	frames-beyond-the-input	0
+stress	96	dither-16: Dither triangular, flat	non-finite-samples	0
+stress	96	dither-16: Dither triangular, flat	non-finite-a-second-on	0
+stress	96	dither-16: Dither triangular, flat	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither triangular, flat	loudest-peak-dbfs	0
+stress	96	dither-16: Dither triangular, flat	silence-peak-dbfs	-600
+stress	96	dither-16: Dither triangular, flat	tail-dbfs	-600
+stress	96	dither-16: Dither triangular, flat	subnormal-samples	0
+stress	96	dither-16: Dither triangular, flat	block-null-db	-inf
+stress	96	dither-16: Dither triangular, flat	reset-null-db	-87.77368239718335
+stress	96	dither-16: Dither triangular, flat	frames-beyond-the-input	0
+stress	96	dither-16: Dither triangular, Lipshitz	non-finite-samples	0
+stress	96	dither-16: Dither triangular, Lipshitz	non-finite-a-second-on	0
+stress	96	dither-16: Dither triangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither triangular, Lipshitz	loudest-peak-dbfs	0
+stress	96	dither-16: Dither triangular, Lipshitz	silence-peak-dbfs	-600
+stress	96	dither-16: Dither triangular, Lipshitz	tail-dbfs	-600
+stress	96	dither-16: Dither triangular, Lipshitz	subnormal-samples	0
+stress	96	dither-16: Dither triangular, Lipshitz	block-null-db	-inf
+stress	96	dither-16: Dither triangular, Lipshitz	reset-null-db	-87.77368239718335
+stress	96	dither-16: Dither triangular, Lipshitz	frames-beyond-the-input	0
+stress	96	dither-16: Dither triangular, threshold	non-finite-samples	0
+stress	96	dither-16: Dither triangular, threshold	non-finite-a-second-on	0
+stress	96	dither-16: Dither triangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	96	dither-16: Dither triangular, threshold	loudest-peak-dbfs	0
+stress	96	dither-16: Dither triangular, threshold	silence-peak-dbfs	-600
+stress	96	dither-16: Dither triangular, threshold	tail-dbfs	-600
+stress	96	dither-16: Dither triangular, threshold	subnormal-samples	0
+stress	96	dither-16: Dither triangular, threshold	block-null-db	-inf
+stress	96	dither-16: Dither triangular, threshold	reset-null-db	-80.5060280399444
+stress	96	dither-16: Dither triangular, threshold	frames-beyond-the-input	0
+stress	96	dither-24: Dither no dither, flat	non-finite-samples	0
+stress	96	dither-24: Dither no dither, flat	non-finite-a-second-on	0
+stress	96	dither-24: Dither no dither, flat	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither no dither, flat	loudest-peak-dbfs	0
+stress	96	dither-24: Dither no dither, flat	silence-peak-dbfs	-600
+stress	96	dither-24: Dither no dither, flat	tail-dbfs	-600
+stress	96	dither-24: Dither no dither, flat	subnormal-samples	0
+stress	96	dither-24: Dither no dither, flat	block-null-db	-inf
+stress	96	dither-24: Dither no dither, flat	reset-null-db	-inf
+stress	96	dither-24: Dither no dither, flat	frames-beyond-the-input	0
+stress	96	dither-24: Dither rectangular, flat	non-finite-samples	0
+stress	96	dither-24: Dither rectangular, flat	non-finite-a-second-on	0
+stress	96	dither-24: Dither rectangular, flat	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither rectangular, flat	loudest-peak-dbfs	0
+stress	96	dither-24: Dither rectangular, flat	silence-peak-dbfs	-600
+stress	96	dither-24: Dither rectangular, flat	tail-dbfs	-600
+stress	96	dither-24: Dither rectangular, flat	subnormal-samples	0
+stress	96	dither-24: Dither rectangular, flat	block-null-db	-inf
+stress	96	dither-24: Dither rectangular, flat	reset-null-db	-138.43070193859324
+stress	96	dither-24: Dither rectangular, flat	frames-beyond-the-input	0
+stress	96	dither-24: Dither rectangular, Lipshitz	non-finite-samples	0
+stress	96	dither-24: Dither rectangular, Lipshitz	non-finite-a-second-on	0
+stress	96	dither-24: Dither rectangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither rectangular, Lipshitz	loudest-peak-dbfs	0
+stress	96	dither-24: Dither rectangular, Lipshitz	silence-peak-dbfs	-600
+stress	96	dither-24: Dither rectangular, Lipshitz	tail-dbfs	-600
+stress	96	dither-24: Dither rectangular, Lipshitz	subnormal-samples	0
+stress	96	dither-24: Dither rectangular, Lipshitz	block-null-db	-inf
+stress	96	dither-24: Dither rectangular, Lipshitz	reset-null-db	-138.43070193859324
+stress	96	dither-24: Dither rectangular, Lipshitz	frames-beyond-the-input	0
+stress	96	dither-24: Dither rectangular, threshold	non-finite-samples	0
+stress	96	dither-24: Dither rectangular, threshold	non-finite-a-second-on	0
+stress	96	dither-24: Dither rectangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither rectangular, threshold	loudest-peak-dbfs	0
+stress	96	dither-24: Dither rectangular, threshold	silence-peak-dbfs	-600
+stress	96	dither-24: Dither rectangular, threshold	tail-dbfs	-600
+stress	96	dither-24: Dither rectangular, threshold	subnormal-samples	0
+stress	96	dither-24: Dither rectangular, threshold	block-null-db	-inf
+stress	96	dither-24: Dither rectangular, threshold	reset-null-db	-130.81081942644028
+stress	96	dither-24: Dither rectangular, threshold	frames-beyond-the-input	0
+stress	96	dither-24: Dither triangular, flat	non-finite-samples	0
+stress	96	dither-24: Dither triangular, flat	non-finite-a-second-on	0
+stress	96	dither-24: Dither triangular, flat	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither triangular, flat	loudest-peak-dbfs	0
+stress	96	dither-24: Dither triangular, flat	silence-peak-dbfs	-600
+stress	96	dither-24: Dither triangular, flat	tail-dbfs	-600
+stress	96	dither-24: Dither triangular, flat	subnormal-samples	0
+stress	96	dither-24: Dither triangular, flat	block-null-db	-inf
+stress	96	dither-24: Dither triangular, flat	reset-null-db	-135.89844311503003
+stress	96	dither-24: Dither triangular, flat	frames-beyond-the-input	0
+stress	96	dither-24: Dither triangular, Lipshitz	non-finite-samples	0
+stress	96	dither-24: Dither triangular, Lipshitz	non-finite-a-second-on	0
+stress	96	dither-24: Dither triangular, Lipshitz	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither triangular, Lipshitz	loudest-peak-dbfs	0
+stress	96	dither-24: Dither triangular, Lipshitz	silence-peak-dbfs	-600
+stress	96	dither-24: Dither triangular, Lipshitz	tail-dbfs	-600
+stress	96	dither-24: Dither triangular, Lipshitz	subnormal-samples	0
+stress	96	dither-24: Dither triangular, Lipshitz	block-null-db	-inf
+stress	96	dither-24: Dither triangular, Lipshitz	reset-null-db	-135.89844311503003
+stress	96	dither-24: Dither triangular, Lipshitz	frames-beyond-the-input	0
+stress	96	dither-24: Dither triangular, threshold	non-finite-samples	0
+stress	96	dither-24: Dither triangular, threshold	non-finite-a-second-on	0
+stress	96	dither-24: Dither triangular, threshold	null-a-second-after-the-poison-db	-inf
+stress	96	dither-24: Dither triangular, threshold	loudest-peak-dbfs	0
+stress	96	dither-24: Dither triangular, threshold	silence-peak-dbfs	-600
+stress	96	dither-24: Dither triangular, threshold	tail-dbfs	-600
+stress	96	dither-24: Dither triangular, threshold	subnormal-samples	0
+stress	96	dither-24: Dither triangular, threshold	block-null-db	-inf
+stress	96	dither-24: Dither triangular, threshold	reset-null-db	-128.63108862319012
+stress	96	dither-24: Dither triangular, threshold	frames-beyond-the-input	0
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	non-finite-samples	0
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	non-finite-a-second-on	0
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	loudest-peak-dbfs	7.089886042132535
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	silence-peak-dbfs	-600
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	tail-dbfs	-600
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	subnormal-samples	0
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	block-null-db	-inf
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	reset-null-db	-inf
+stress	96	eq: Peaking, 1 kHz, +6 dB, Q 1	frames-beyond-the-input	0
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	non-finite-samples	0
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	non-finite-a-second-on	0
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	loudest-peak-dbfs	1.7477839093528602
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	silence-peak-dbfs	-600
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	tail-dbfs	-468.4227583192316
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	subnormal-samples	0
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	block-null-db	-inf
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	reset-null-db	-inf
+stress	96	eq: Peaking, 60 Hz, −9 dB, Q 8	frames-beyond-the-input	0
+stress	96	eq: Low shelf, 100 Hz, +6 dB	non-finite-samples	0
+stress	96	eq: Low shelf, 100 Hz, +6 dB	non-finite-a-second-on	0
+stress	96	eq: Low shelf, 100 Hz, +6 dB	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Low shelf, 100 Hz, +6 dB	loudest-peak-dbfs	5.9750927804120915
+stress	96	eq: Low shelf, 100 Hz, +6 dB	silence-peak-dbfs	-600
+stress	96	eq: Low shelf, 100 Hz, +6 dB	tail-dbfs	-600
+stress	96	eq: Low shelf, 100 Hz, +6 dB	subnormal-samples	0
+stress	96	eq: Low shelf, 100 Hz, +6 dB	block-null-db	-inf
+stress	96	eq: Low shelf, 100 Hz, +6 dB	reset-null-db	-inf
+stress	96	eq: Low shelf, 100 Hz, +6 dB	frames-beyond-the-input	0
+stress	96	eq: High shelf, 8 kHz, −6 dB	non-finite-samples	0
+stress	96	eq: High shelf, 8 kHz, −6 dB	non-finite-a-second-on	0
+stress	96	eq: High shelf, 8 kHz, −6 dB	null-a-second-after-the-poison-db	-inf
+stress	96	eq: High shelf, 8 kHz, −6 dB	loudest-peak-dbfs	0.5019675824012892
+stress	96	eq: High shelf, 8 kHz, −6 dB	silence-peak-dbfs	-600
+stress	96	eq: High shelf, 8 kHz, −6 dB	tail-dbfs	-600
+stress	96	eq: High shelf, 8 kHz, −6 dB	subnormal-samples	0
+stress	96	eq: High shelf, 8 kHz, −6 dB	block-null-db	-inf
+stress	96	eq: High shelf, 8 kHz, −6 dB	reset-null-db	-inf
+stress	96	eq: High shelf, 8 kHz, −6 dB	frames-beyond-the-input	0
+stress	96	eq: Low pass, 10 kHz	non-finite-samples	0
+stress	96	eq: Low pass, 10 kHz	non-finite-a-second-on	0
+stress	96	eq: Low pass, 10 kHz	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Low pass, 10 kHz	loudest-peak-dbfs	0.8518094293006212
+stress	96	eq: Low pass, 10 kHz	silence-peak-dbfs	-600
+stress	96	eq: Low pass, 10 kHz	tail-dbfs	-600
+stress	96	eq: Low pass, 10 kHz	subnormal-samples	0
+stress	96	eq: Low pass, 10 kHz	block-null-db	-inf
+stress	96	eq: Low pass, 10 kHz	reset-null-db	-inf
+stress	96	eq: Low pass, 10 kHz	frames-beyond-the-input	0
+stress	96	eq: High pass, 40 Hz	non-finite-samples	0
+stress	96	eq: High pass, 40 Hz	non-finite-a-second-on	0
+stress	96	eq: High pass, 40 Hz	null-a-second-after-the-poison-db	-inf
+stress	96	eq: High pass, 40 Hz	loudest-peak-dbfs	1.3476534177330373
+stress	96	eq: High pass, 40 Hz	silence-peak-dbfs	-600
+stress	96	eq: High pass, 40 Hz	tail-dbfs	-600
+stress	96	eq: High pass, 40 Hz	subnormal-samples	0
+stress	96	eq: High pass, 40 Hz	block-null-db	-inf
+stress	96	eq: High pass, 40 Hz	reset-null-db	-inf
+stress	96	eq: High pass, 40 Hz	frames-beyond-the-input	0
+stress	96	eq: Notch, 3 kHz, Q 4	non-finite-samples	0
+stress	96	eq: Notch, 3 kHz, Q 4	non-finite-a-second-on	0
+stress	96	eq: Notch, 3 kHz, Q 4	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Notch, 3 kHz, Q 4	loudest-peak-dbfs	2.9442292947527453
+stress	96	eq: Notch, 3 kHz, Q 4	silence-peak-dbfs	-600
+stress	96	eq: Notch, 3 kHz, Q 4	tail-dbfs	-600
+stress	96	eq: Notch, 3 kHz, Q 4	subnormal-samples	0
+stress	96	eq: Notch, 3 kHz, Q 4	block-null-db	-inf
+stress	96	eq: Notch, 3 kHz, Q 4	reset-null-db	-inf
+stress	96	eq: Notch, 3 kHz, Q 4	frames-beyond-the-input	0
+stress	96	eq: Band pass, 1 kHz, Q 1	non-finite-samples	0
+stress	96	eq: Band pass, 1 kHz, Q 1	non-finite-a-second-on	0
+stress	96	eq: Band pass, 1 kHz, Q 1	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Band pass, 1 kHz, Q 1	loudest-peak-dbfs	2.041557939097127
+stress	96	eq: Band pass, 1 kHz, Q 1	silence-peak-dbfs	-600
+stress	96	eq: Band pass, 1 kHz, Q 1	tail-dbfs	-600
+stress	96	eq: Band pass, 1 kHz, Q 1	subnormal-samples	0
+stress	96	eq: Band pass, 1 kHz, Q 1	block-null-db	-inf
+stress	96	eq: Band pass, 1 kHz, Q 1	reset-null-db	-inf
+stress	96	eq: Band pass, 1 kHz, Q 1	frames-beyond-the-input	0
+stress	96	eq: All pass, 2 kHz, Q 0.7	non-finite-samples	0
+stress	96	eq: All pass, 2 kHz, Q 0.7	non-finite-a-second-on	0
+stress	96	eq: All pass, 2 kHz, Q 0.7	null-a-second-after-the-poison-db	-inf
+stress	96	eq: All pass, 2 kHz, Q 0.7	loudest-peak-dbfs	5.904437499948841
+stress	96	eq: All pass, 2 kHz, Q 0.7	silence-peak-dbfs	-600
+stress	96	eq: All pass, 2 kHz, Q 0.7	tail-dbfs	-600
+stress	96	eq: All pass, 2 kHz, Q 0.7	subnormal-samples	0
+stress	96	eq: All pass, 2 kHz, Q 0.7	block-null-db	-inf
+stress	96	eq: All pass, 2 kHz, Q 0.7	reset-null-db	-inf
+stress	96	eq: All pass, 2 kHz, Q 0.7	frames-beyond-the-input	0
+stress	96	eq: Ten octave bands	non-finite-samples	0
+stress	96	eq: Ten octave bands	non-finite-a-second-on	0
+stress	96	eq: Ten octave bands	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Ten octave bands	loudest-peak-dbfs	0.8873749106013302
+stress	96	eq: Ten octave bands	silence-peak-dbfs	-600
+stress	96	eq: Ten octave bands	tail-dbfs	-548.3540519454859
+stress	96	eq: Ten octave bands	subnormal-samples	0
+stress	96	eq: Ten octave bands	block-null-db	-inf
+stress	96	eq: Ten octave bands	reset-null-db	-inf
+stress	96	eq: Ten octave bands	frames-beyond-the-input	0
+stress	96	eq: Thirty-two bands	non-finite-samples	0
+stress	96	eq: Thirty-two bands	non-finite-a-second-on	0
+stress	96	eq: Thirty-two bands	null-a-second-after-the-poison-db	-inf
+stress	96	eq: Thirty-two bands	loudest-peak-dbfs	0.02017936356839444
+stress	96	eq: Thirty-two bands	silence-peak-dbfs	-600
+stress	96	eq: Thirty-two bands	tail-dbfs	-546.3133849564623
+stress	96	eq: Thirty-two bands	subnormal-samples	0
+stress	96	eq: Thirty-two bands	block-null-db	-inf
+stress	96	eq: Thirty-two bands	reset-null-db	-inf
+stress	96	eq: Thirty-two bands	frames-beyond-the-input	0
+stress	96	peak: True-peak guard	non-finite-samples	0
+stress	96	peak: True-peak guard	non-finite-a-second-on	0
+stress	96	peak: True-peak guard	null-a-second-after-the-poison-db	-156.77862428226481
+stress	96	peak: True-peak guard	loudest-peak-dbfs	-0.09999999999995887
+stress	96	peak: True-peak guard	silence-peak-dbfs	-600
+stress	96	peak: True-peak guard	tail-dbfs	-600
+stress	96	peak: True-peak guard	subnormal-samples	0
+stress	96	peak: True-peak guard	block-null-db	-inf
+stress	96	peak: True-peak guard	reset-null-db	-inf
+stress	96	peak: True-peak guard	frames-beyond-the-input	0
+stress	96	peak: No guard	non-finite-samples	0
+stress	96	peak: No guard	non-finite-a-second-on	0
+stress	96	peak: No guard	null-a-second-after-the-poison-db	-inf
+stress	96	peak: No guard	loudest-peak-dbfs	0
+stress	96	peak: No guard	silence-peak-dbfs	-600
+stress	96	peak: No guard	tail-dbfs	-600
+stress	96	peak: No guard	subnormal-samples	0
+stress	96	peak: No guard	block-null-db	-inf
+stress	96	peak: No guard	reset-null-db	-inf
+stress	96	peak: No guard	frames-beyond-the-input	0
+stress	96	crossfeed: Crossfeed light	non-finite-samples	0
+stress	96	crossfeed: Crossfeed light	non-finite-a-second-on	0
+stress	96	crossfeed: Crossfeed light	null-a-second-after-the-poison-db	-inf
+stress	96	crossfeed: Crossfeed light	loudest-peak-dbfs	-0.004025001139793641
+stress	96	crossfeed: Crossfeed light	silence-peak-dbfs	-600
+stress	96	crossfeed: Crossfeed light	tail-dbfs	-600
+stress	96	crossfeed: Crossfeed light	subnormal-samples	0
+stress	96	crossfeed: Crossfeed light	block-null-db	-inf
+stress	96	crossfeed: Crossfeed light	reset-null-db	-inf
+stress	96	crossfeed: Crossfeed light	frames-beyond-the-input	0
+stress	96	crossfeed: Crossfeed moderate	non-finite-samples	0
+stress	96	crossfeed: Crossfeed moderate	non-finite-a-second-on	0
+stress	96	crossfeed: Crossfeed moderate	null-a-second-after-the-poison-db	-inf
+stress	96	crossfeed: Crossfeed moderate	loudest-peak-dbfs	-0.004510057135156049
+stress	96	crossfeed: Crossfeed moderate	silence-peak-dbfs	-600
+stress	96	crossfeed: Crossfeed moderate	tail-dbfs	-600
+stress	96	crossfeed: Crossfeed moderate	subnormal-samples	0
+stress	96	crossfeed: Crossfeed moderate	block-null-db	-inf
+stress	96	crossfeed: Crossfeed moderate	reset-null-db	-inf
+stress	96	crossfeed: Crossfeed moderate	frames-beyond-the-input	0
+stress	96	crossfeed: Crossfeed strong	non-finite-samples	0
+stress	96	crossfeed: Crossfeed strong	non-finite-a-second-on	0
+stress	96	crossfeed: Crossfeed strong	null-a-second-after-the-poison-db	-inf
+stress	96	crossfeed: Crossfeed strong	loudest-peak-dbfs	-0.0048152646458124145
+stress	96	crossfeed: Crossfeed strong	silence-peak-dbfs	-600
+stress	96	crossfeed: Crossfeed strong	tail-dbfs	-600
+stress	96	crossfeed: Crossfeed strong	subnormal-samples	0
+stress	96	crossfeed: Crossfeed strong	block-null-db	-inf
+stress	96	crossfeed: Crossfeed strong	reset-null-db	-inf
+stress	96	crossfeed: Crossfeed strong	frames-beyond-the-input	0
+stress	44.1-to-48	resample: Resonate Low latency	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate Low latency	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate Low latency	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate Low latency	loudest-peak-dbfs	4.034571776040769
+stress	44.1-to-48	resample: Resonate Low latency	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate Low latency	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate Low latency	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate Low latency	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate Low latency	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate Low latency	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate Balanced	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate Balanced	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate Balanced	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate Balanced	loudest-peak-dbfs	4.544738241351973
+stress	44.1-to-48	resample: Resonate Balanced	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate Balanced	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate Balanced	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate Balanced	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate Balanced	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate Balanced	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate High	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate High	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate High	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate High	loudest-peak-dbfs	4.560209326512634
+stress	44.1-to-48	resample: Resonate High	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate High	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate High	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate High	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate High	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate High	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate Very high	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate Very high	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate Very high	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate Very high	loudest-peak-dbfs	5.243382013696025
+stress	44.1-to-48	resample: Resonate Very high	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate Very high	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate Very high	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate Very high	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate Very high	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate Very high	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate High, intermediate	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate High, intermediate	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate High, intermediate	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate High, intermediate	loudest-peak-dbfs	6.004181182214275
+stress	44.1-to-48	resample: Resonate High, intermediate	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate High, intermediate	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate High, intermediate	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate High, intermediate	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate High, intermediate	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate High, intermediate	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate High, minimum	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate High, minimum	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate High, minimum	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate High, minimum	loudest-peak-dbfs	6.807110039263522
+stress	44.1-to-48	resample: Resonate High, minimum	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate High, minimum	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate High, minimum	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate High, minimum	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate High, minimum	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate High, minimum	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate Very high, intermediate	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate Very high, intermediate	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate Very high, intermediate	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate Very high, intermediate	loudest-peak-dbfs	6.117183905135363
+stress	44.1-to-48	resample: Resonate Very high, intermediate	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate Very high, intermediate	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate Very high, intermediate	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate Very high, intermediate	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate Very high, intermediate	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate Very high, intermediate	frames-beyond-the-input	-1
+stress	44.1-to-48	resample: Resonate Very high, minimum	non-finite-samples	0
+stress	44.1-to-48	resample: Resonate Very high, minimum	non-finite-a-second-on	0
+stress	44.1-to-48	resample: Resonate Very high, minimum	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-48	resample: Resonate Very high, minimum	loudest-peak-dbfs	6.593806873024005
+stress	44.1-to-48	resample: Resonate Very high, minimum	silence-peak-dbfs	-600
+stress	44.1-to-48	resample: Resonate Very high, minimum	tail-dbfs	-600
+stress	44.1-to-48	resample: Resonate Very high, minimum	subnormal-samples	0
+stress	44.1-to-48	resample: Resonate Very high, minimum	block-null-db	-inf
+stress	44.1-to-48	resample: Resonate Very high, minimum	reset-null-db	-inf
+stress	44.1-to-48	resample: Resonate Very high, minimum	frames-beyond-the-input	-1
+stress	44.1-to-48	chain: CD on 48/24	non-finite-samples	0
+stress	44.1-to-48	chain: CD on 48/24	non-finite-a-second-on	0
+stress	44.1-to-48	chain: CD on 48/24	null-a-second-after-the-poison-db	-118.96194328107414
+stress	44.1-to-48	chain: CD on 48/24	loudest-peak-dbfs	-0.0999951800116314
+stress	44.1-to-48	chain: CD on 48/24	silence-peak-dbfs	-600
+stress	44.1-to-48	chain: CD on 48/24	tail-dbfs	-600
+stress	44.1-to-48	chain: CD on 48/24	subnormal-samples	0
+stress	44.1-to-48	chain: CD on 48/24	block-null-db	-118.10107479077564
+stress	44.1-to-48	chain: CD on 48/24	reset-null-db	-118.10159231886928
+stress	44.1-to-48	chain: CD on 48/24	frames-beyond-the-input	-1
+stress	44.1-to-48	chain: CD on 48/16	non-finite-samples	0
+stress	44.1-to-48	chain: CD on 48/16	non-finite-a-second-on	0
+stress	44.1-to-48	chain: CD on 48/16	null-a-second-after-the-poison-db	-70.8152322730861
+stress	44.1-to-48	chain: CD on 48/16	loudest-peak-dbfs	-0.09836658221280498
+stress	44.1-to-48	chain: CD on 48/16	silence-peak-dbfs	-600
+stress	44.1-to-48	chain: CD on 48/16	tail-dbfs	-600
+stress	44.1-to-48	chain: CD on 48/16	subnormal-samples	0
+stress	44.1-to-48	chain: CD on 48/16	block-null-db	-69.84921407753242
+stress	44.1-to-48	chain: CD on 48/16	reset-null-db	-69.91904894670061
+stress	44.1-to-48	chain: CD on 48/16	frames-beyond-the-input	-1
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	non-finite-samples	0
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	non-finite-a-second-on	0
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	null-a-second-after-the-poison-db	-104.89387314388524
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	loudest-peak-dbfs	-0.0999951800116314
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	silence-peak-dbfs	-600
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	tail-dbfs	-600
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	subnormal-samples	0
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	block-null-db	-117.43812658984639
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	reset-null-db	-117.50964129617128
+stress	44.1-to-48	chain: MP3 extended past its wall, 44.1 on 48/24	frames-beyond-the-input	-1
+stress	48-to-44.1	resample: Resonate Low latency	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate Low latency	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate Low latency	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate Low latency	loudest-peak-dbfs	3.7091582360232334
+stress	48-to-44.1	resample: Resonate Low latency	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate Low latency	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate Low latency	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate Low latency	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate Low latency	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate Low latency	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate Balanced	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate Balanced	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate Balanced	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate Balanced	loudest-peak-dbfs	3.921151372852762
+stress	48-to-44.1	resample: Resonate Balanced	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate Balanced	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate Balanced	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate Balanced	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate Balanced	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate Balanced	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate High	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate High	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate High	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate High	loudest-peak-dbfs	3.916130378760336
+stress	48-to-44.1	resample: Resonate High	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate High	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate High	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate High	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate High	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate High	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate Very high	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate Very high	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate Very high	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate Very high	loudest-peak-dbfs	4.266497583421077
+stress	48-to-44.1	resample: Resonate Very high	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate Very high	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate Very high	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate Very high	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate Very high	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate Very high	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate High, intermediate	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate High, intermediate	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate High, intermediate	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate High, intermediate	loudest-peak-dbfs	5.442053819111001
+stress	48-to-44.1	resample: Resonate High, intermediate	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate High, intermediate	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate High, intermediate	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate High, intermediate	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate High, intermediate	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate High, intermediate	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate High, minimum	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate High, minimum	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate High, minimum	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate High, minimum	loudest-peak-dbfs	6.43259549990617
+stress	48-to-44.1	resample: Resonate High, minimum	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate High, minimum	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate High, minimum	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate High, minimum	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate High, minimum	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate High, minimum	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate Very high, intermediate	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate Very high, intermediate	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate Very high, intermediate	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate Very high, intermediate	loudest-peak-dbfs	5.982234406010168
+stress	48-to-44.1	resample: Resonate Very high, intermediate	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate Very high, intermediate	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate Very high, intermediate	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate Very high, intermediate	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate Very high, intermediate	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate Very high, intermediate	frames-beyond-the-input	0
+stress	48-to-44.1	resample: Resonate Very high, minimum	non-finite-samples	0
+stress	48-to-44.1	resample: Resonate Very high, minimum	non-finite-a-second-on	0
+stress	48-to-44.1	resample: Resonate Very high, minimum	null-a-second-after-the-poison-db	-inf
+stress	48-to-44.1	resample: Resonate Very high, minimum	loudest-peak-dbfs	6.0969572939061925
+stress	48-to-44.1	resample: Resonate Very high, minimum	silence-peak-dbfs	-600
+stress	48-to-44.1	resample: Resonate Very high, minimum	tail-dbfs	-600
+stress	48-to-44.1	resample: Resonate Very high, minimum	subnormal-samples	0
+stress	48-to-44.1	resample: Resonate Very high, minimum	block-null-db	-inf
+stress	48-to-44.1	resample: Resonate Very high, minimum	reset-null-db	-inf
+stress	48-to-44.1	resample: Resonate Very high, minimum	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate Low latency	non-finite-samples	0
+stress	96-to-48	resample: Resonate Low latency	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate Low latency	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate Low latency	loudest-peak-dbfs	1.9379812835393964
+stress	96-to-48	resample: Resonate Low latency	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate Low latency	tail-dbfs	-600
+stress	96-to-48	resample: Resonate Low latency	subnormal-samples	0
+stress	96-to-48	resample: Resonate Low latency	block-null-db	-inf
+stress	96-to-48	resample: Resonate Low latency	reset-null-db	-inf
+stress	96-to-48	resample: Resonate Low latency	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate Balanced	non-finite-samples	0
+stress	96-to-48	resample: Resonate Balanced	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate Balanced	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate Balanced	loudest-peak-dbfs	2.5122449313662836
+stress	96-to-48	resample: Resonate Balanced	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate Balanced	tail-dbfs	-600
+stress	96-to-48	resample: Resonate Balanced	subnormal-samples	0
+stress	96-to-48	resample: Resonate Balanced	block-null-db	-inf
+stress	96-to-48	resample: Resonate Balanced	reset-null-db	-inf
+stress	96-to-48	resample: Resonate Balanced	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate High	non-finite-samples	0
+stress	96-to-48	resample: Resonate High	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate High	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate High	loudest-peak-dbfs	2.5323741568278404
+stress	96-to-48	resample: Resonate High	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate High	tail-dbfs	-600
+stress	96-to-48	resample: Resonate High	subnormal-samples	0
+stress	96-to-48	resample: Resonate High	block-null-db	-inf
+stress	96-to-48	resample: Resonate High	reset-null-db	-inf
+stress	96-to-48	resample: Resonate High	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate Very high	non-finite-samples	0
+stress	96-to-48	resample: Resonate Very high	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate Very high	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate Very high	loudest-peak-dbfs	2.845002019143706
+stress	96-to-48	resample: Resonate Very high	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate Very high	tail-dbfs	-600
+stress	96-to-48	resample: Resonate Very high	subnormal-samples	0
+stress	96-to-48	resample: Resonate Very high	block-null-db	-inf
+stress	96-to-48	resample: Resonate Very high	reset-null-db	-inf
+stress	96-to-48	resample: Resonate Very high	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate High, intermediate	non-finite-samples	0
+stress	96-to-48	resample: Resonate High, intermediate	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate High, intermediate	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate High, intermediate	loudest-peak-dbfs	4.163464032138116
+stress	96-to-48	resample: Resonate High, intermediate	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate High, intermediate	tail-dbfs	-600
+stress	96-to-48	resample: Resonate High, intermediate	subnormal-samples	0
+stress	96-to-48	resample: Resonate High, intermediate	block-null-db	-inf
+stress	96-to-48	resample: Resonate High, intermediate	reset-null-db	-inf
+stress	96-to-48	resample: Resonate High, intermediate	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate High, minimum	non-finite-samples	0
+stress	96-to-48	resample: Resonate High, minimum	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate High, minimum	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate High, minimum	loudest-peak-dbfs	3.8353453055883313
+stress	96-to-48	resample: Resonate High, minimum	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate High, minimum	tail-dbfs	-600
+stress	96-to-48	resample: Resonate High, minimum	subnormal-samples	0
+stress	96-to-48	resample: Resonate High, minimum	block-null-db	-inf
+stress	96-to-48	resample: Resonate High, minimum	reset-null-db	-inf
+stress	96-to-48	resample: Resonate High, minimum	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate Very high, intermediate	non-finite-samples	0
+stress	96-to-48	resample: Resonate Very high, intermediate	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate Very high, intermediate	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate Very high, intermediate	loudest-peak-dbfs	4.419175571988241
+stress	96-to-48	resample: Resonate Very high, intermediate	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate Very high, intermediate	tail-dbfs	-600
+stress	96-to-48	resample: Resonate Very high, intermediate	subnormal-samples	0
+stress	96-to-48	resample: Resonate Very high, intermediate	block-null-db	-inf
+stress	96-to-48	resample: Resonate Very high, intermediate	reset-null-db	-inf
+stress	96-to-48	resample: Resonate Very high, intermediate	frames-beyond-the-input	0
+stress	96-to-48	resample: Resonate Very high, minimum	non-finite-samples	0
+stress	96-to-48	resample: Resonate Very high, minimum	non-finite-a-second-on	0
+stress	96-to-48	resample: Resonate Very high, minimum	null-a-second-after-the-poison-db	-inf
+stress	96-to-48	resample: Resonate Very high, minimum	loudest-peak-dbfs	3.891531143799323
+stress	96-to-48	resample: Resonate Very high, minimum	silence-peak-dbfs	-600
+stress	96-to-48	resample: Resonate Very high, minimum	tail-dbfs	-600
+stress	96-to-48	resample: Resonate Very high, minimum	subnormal-samples	0
+stress	96-to-48	resample: Resonate Very high, minimum	block-null-db	-inf
+stress	96-to-48	resample: Resonate Very high, minimum	reset-null-db	-inf
+stress	96-to-48	resample: Resonate Very high, minimum	frames-beyond-the-input	0
+stress	96-to-48	chain: 96/24 on 48/16, very high	non-finite-samples	0
+stress	96-to-48	chain: 96/24 on 48/16, very high	non-finite-a-second-on	0
+stress	96-to-48	chain: 96/24 on 48/16, very high	null-a-second-after-the-poison-db	-70.80120317504313
+stress	96-to-48	chain: 96/24 on 48/16, very high	loudest-peak-dbfs	-0.09836658221280498
+stress	96-to-48	chain: 96/24 on 48/16, very high	silence-peak-dbfs	-600
+stress	96-to-48	chain: 96/24 on 48/16, very high	tail-dbfs	-600
+stress	96-to-48	chain: 96/24 on 48/16, very high	subnormal-samples	0
+stress	96-to-48	chain: 96/24 on 48/16, very high	block-null-db	-68.12369959012555
+stress	96-to-48	chain: 96/24 on 48/16, very high	reset-null-db	-68.15346201584242
+stress	96-to-48	chain: 96/24 on 48/16, very high	frames-beyond-the-input	0
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	non-finite-samples	0
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	non-finite-a-second-on	0
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	null-a-second-after-the-poison-db	-118.0579193331374
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	loudest-peak-dbfs	-0.09999308515594985
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	silence-peak-dbfs	-600
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	tail-dbfs	-600
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	subnormal-samples	0
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	block-null-db	-114.40308895040991
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	reset-null-db	-114.40714245076641
+stress	192-to-44.1	chain: 192/24 on 44.1/24, low latency	frames-beyond-the-input	0
+stress	44.1-to-96	resample: Resonate Low latency	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate Low latency	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate Low latency	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate Low latency	loudest-peak-dbfs	4.22730960266596
+stress	44.1-to-96	resample: Resonate Low latency	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate Low latency	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate Low latency	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate Low latency	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate Low latency	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate Low latency	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate Balanced	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate Balanced	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate Balanced	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate Balanced	loudest-peak-dbfs	4.544738247985539
+stress	44.1-to-96	resample: Resonate Balanced	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate Balanced	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate Balanced	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate Balanced	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate Balanced	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate Balanced	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate High	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate High	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate High	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate High	loudest-peak-dbfs	4.560209326531918
+stress	44.1-to-96	resample: Resonate High	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate High	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate High	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate High	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate High	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate High	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate Very high	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate Very high	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate Very high	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate Very high	loudest-peak-dbfs	5.243382013695102
+stress	44.1-to-96	resample: Resonate Very high	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate Very high	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate Very high	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate Very high	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate Very high	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate Very high	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate High, intermediate	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate High, intermediate	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate High, intermediate	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate High, intermediate	loudest-peak-dbfs	6.004181182222068
+stress	44.1-to-96	resample: Resonate High, intermediate	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate High, intermediate	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate High, intermediate	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate High, intermediate	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate High, intermediate	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate High, intermediate	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate High, minimum	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate High, minimum	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate High, minimum	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate High, minimum	loudest-peak-dbfs	6.807110039261429
+stress	44.1-to-96	resample: Resonate High, minimum	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate High, minimum	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate High, minimum	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate High, minimum	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate High, minimum	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate High, minimum	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate Very high, intermediate	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate Very high, intermediate	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate Very high, intermediate	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate Very high, intermediate	loudest-peak-dbfs	6.117183905135804
+stress	44.1-to-96	resample: Resonate Very high, intermediate	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate Very high, intermediate	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate Very high, intermediate	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate Very high, intermediate	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate Very high, intermediate	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate Very high, intermediate	frames-beyond-the-input	-2
+stress	44.1-to-96	resample: Resonate Very high, minimum	non-finite-samples	0
+stress	44.1-to-96	resample: Resonate Very high, minimum	non-finite-a-second-on	0
+stress	44.1-to-96	resample: Resonate Very high, minimum	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	resample: Resonate Very high, minimum	loudest-peak-dbfs	6.593806873024399
+stress	44.1-to-96	resample: Resonate Very high, minimum	silence-peak-dbfs	-600
+stress	44.1-to-96	resample: Resonate Very high, minimum	tail-dbfs	-600
+stress	44.1-to-96	resample: Resonate Very high, minimum	subnormal-samples	0
+stress	44.1-to-96	resample: Resonate Very high, minimum	block-null-db	-inf
+stress	44.1-to-96	resample: Resonate Very high, minimum	reset-null-db	-inf
+stress	44.1-to-96	resample: Resonate Very high, minimum	frames-beyond-the-input	-2
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	non-finite-samples	0
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	non-finite-a-second-on	0
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	null-a-second-after-the-poison-db	-inf
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	loudest-peak-dbfs	-0.09999989343876212
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	silence-peak-dbfs	-600
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	tail-dbfs	-600
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	subnormal-samples	0
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	block-null-db	-inf
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	reset-null-db	-inf
+stress	44.1-to-96	chain: CD on 96 kHz float, minimum phase	frames-beyond-the-input	-2

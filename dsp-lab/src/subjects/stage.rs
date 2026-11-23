@@ -130,6 +130,11 @@ impl Running for Driven {
         self.channels_out
     }
 
+    fn starts_over(&mut self) -> bool {
+        self.processor.reset();
+        true
+    }
+
     fn claimed_latency_frames(&self) -> Option<f64> {
         Some(self.processor.latency_frames())
     }

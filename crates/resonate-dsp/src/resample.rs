@@ -948,6 +948,7 @@ struct Polyphase {
     whole_step: usize,
     phase_step: u32,
     stage: Option<Stage>,
+    silence_padded: usize,
 }
 
 impl Resampler {
@@ -1071,6 +1072,7 @@ impl Polyphase {
             whole_step: (advance / phases) as usize,
             phase_step: advance % phases,
             stage,
+            silence_padded: 0,
         }
     }
 
@@ -1558,6 +1560,7 @@ impl Polyphase {
         };
         self.whole = self.reach.behind;
         self.phase = 0;
+        self.silence_padded = 0;
         if let Some(stage) = self.stage.as_mut() {
             stage.reset();
         }
@@ -1567,6 +1570,9 @@ impl Polyphase {
         let frames_in = self.append(input);
         let frames_out = self.emit(output);
 
+        if frames_in > 0 {
+            self.silence_padded = 0;
+        }
         self.compact();
         ProcessCount {
             frames_in,
@@ -1579,9 +1585,25 @@ impl Polyphase {
             return self.flush_staged(output);
         }
 
+        let channels = self.channels;
+        let mut produced = 0;
+
+        loop {
+            let padded = self.pad_with_silence();
+            let made = self.emit(output.get_mut(produced * channels..).unwrap_or_default());
+
+            produced += made;
+            self.compact();
+            if self.silence_padded >= self.reach.ahead || (padded == 0 && made == 0) {
+                return produced;
+            }
+        }
+    }
+
+    fn pad_with_silence(&mut self) -> usize {
         let stride = self.history.stride;
         let room = self.history.capacity - self.filled;
-        let pad = self.reach.ahead.min(room);
+        let pad = (self.reach.ahead - self.silence_padded).min(room);
         let filled = self.filled;
 
         for plane in self.history.planes_mut().chunks_exact_mut(stride) {
@@ -1589,13 +1611,9 @@ impl Polyphase {
                 tail.fill(0.0);
             }
         }
-
         self.filled += pad;
-
-        let produced = self.emit(output);
-
-        self.compact();
-        produced
+        self.silence_padded += pad;
+        pad
     }
 }
 
@@ -2352,6 +2370,52 @@ mod tests {
             );
         }
         resampler
+    }
+
+    fn resampled_in_blocks_of(config: ResamplerConfig, input: &[f64], block: usize) -> Vec<f64> {
+        let mut resampler = Resampler::new(ResamplerConfig {
+            max_frames_in: block,
+            ..config
+        })
+        .expect("a valid resampler configuration");
+
+        let mut scratch = vec![0.0; resampler.max_output_frames(block)];
+        let mut output = Vec::new();
+
+        for piece in input.chunks(block) {
+            let count = resampler.process(piece, &mut scratch);
+
+            output.extend_from_slice(&scratch[..count.frames_out]);
+        }
+
+        let mut tail = vec![0.0; resampler.max_flush_frames()];
+
+        let flushed = resampler.flush(&mut tail);
+
+        output.extend_from_slice(&tail[..flushed]);
+        output
+    }
+
+    #[test]
+    fn blocks_shorter_than_the_filter_hand_on_the_track_whole_and_alike() {
+        const SHORTER_THAN_THE_FILTER: [usize; 3] = [1, 7, 37];
+
+        for (from, to) in RATE_PAIRS {
+            for quality in QUALITIES {
+                let config = config(from, to, quality);
+                let input = tone(from, 1_000.0, 4 * BLOCK + 123);
+
+                let whole = resampled_in_blocks_of(config, &input, BLOCK);
+
+                for block in SHORTER_THAN_THE_FILTER {
+                    assert_eq!(
+                        resampled_in_blocks_of(config, &input, block),
+                        whole,
+                        "{from} -> {to} {quality:?} in blocks of {block}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]

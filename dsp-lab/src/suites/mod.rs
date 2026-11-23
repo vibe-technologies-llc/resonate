@@ -8,6 +8,7 @@ pub mod peak;
 pub mod remix;
 pub mod resample;
 pub mod restore;
+pub mod stress;
 
 use resonate_core::BitDepth;
 
@@ -30,6 +31,7 @@ pub fn all() -> Vec<&'static dyn Suite> {
         &convolve::Convolving,
         &restore::Restoring,
         &chain::Chains,
+        &stress::Stressing,
     ]
 }
 

@@ -699,7 +699,8 @@ tested.
   `RESPONSE_BYTES_AT_MOST` (512 MiB) refuses with `Error::ResponseTooLarge` both a redraw at another
   rate (`Impulse::at`, taps held) and a `prepare` whose filter and history spectra would pass it,
   before any is allocated; `partition_frames_at` grows it with the rate (flat cost); a track's end
-  flushes the tail.
+  flushes the tail, the response's length less one plus the partition, owed again whole after a
+  reset or more music (`a_flush_hands_on_the_whole_convolution_and_not_a_frame_more`).
 - **`EngineConfig::convolution`, `Command::SetConvolution`, key `convolution`.**
   `OutputPlan::convolution` makes the plan `Converted`; a change rebinds at the position, no retune.
   The binary reads the file at start, `explain` names it; the *Room correction* page's *The room's response* group reads

@@ -1,10 +1,10 @@
 # The DSP pipeline measured
 
 Every stage of `resonate-dsp` and eleven whole chains the engine plans, measured for quality by
-`dsp-lab/` (`.claude/rules/build.md`, *The DSP lab*). Measured on 2026-11-22 with rustc 1.100.0
-and `target-cpu=native` on an AMD Ryzen 7 7700. The resampler has a report of its own,
-`docs/RESAMPLING.md`, which is the lab's `resample` suite. The `measure-dsp` skill reruns this one
-and holds it to `dsp-lab/baseline.tsv`.
+`dsp-lab/` (`.claude/rules/build.md`, *The DSP lab*). Measured on 2026-11-22 (the generated
+inputs on 2026-11-23) with rustc 1.100.0 and `target-cpu=native` on an AMD Ryzen 7 7700. The
+resampler has a report of its own, `docs/RESAMPLING.md`, which is the lab's `resample` suite. The
+`measure-dsp` skill reruns this one and holds it to `dsp-lab/baseline.tsv`.
 
 ## How it was measured
 
@@ -68,7 +68,8 @@ and holds it to `dsp-lab/baseline.tsv`.
   ![What crosses to the other ear, 48 kHz](dsp/crossfeed-crossed-48.svg)
 
 - **The convolver is direct convolution to −291 dB** or better, at the response's rate and redrawn
-  at another, a two-by-two set included, and its flush carries the whole tail.
+  at another, a two-by-two set included, and its flush carries the whole tail: the response's
+  length less one, plus the partition it is late by, and the same again after a reset.
 - **Dither does what it is for, and A-weighting hides what shaping buys.** Rounding to 16 bits
   alone puts a one-step tone's harmonics 12.2 dB under it and moves the noise by 1.6 dB with the
   level. Triangular dither takes both away (harmonics at the noise floor, modulation 0.02 dB) for
@@ -80,6 +81,23 @@ and holds it to `dsp-lab/baseline.tsv`.
 - **Restoration's extension adds −14.0 dB (44.1 kHz) and −7.6 dB (48 kHz) above a 16 kHz wall**,
   against the band under it, where repair leaves −86 to −94 dB. Both leave what is under the wall
   within −112 to −123 dB of the input.
+
+- **Generated inputs leave nothing behind** (the `stress` suite: every subject of ours above at
+  its own rates, fed full-scale noise, a 0 dBFS square, Nyquist, a DC step, impulses, a sweep to
+  0.99 of Nyquist, a tone under every word, a NaN and an infinity, and silence). No sample out is
+  ever non-finite, none falls under f32's normal range through 12 s of silence after noise, and every
+  stage is down to digital silence or under −468 dBFS (an equaliser's ring) 1.5 s after the music
+  stops. A NaN and an infinity in a tone leave no trace a second on: the output nulls to −∞ against
+  a clean run, but for the guard's gain (−157 dB) and restoration's extension (−92 to −104 dB), which
+  learnt its spectrum over them. **Every stage hands on the same samples in blocks of 1, 37, 1 024
+  and 4 096 frames and again after a flush and a reset** (−∞), every chain within its dither (−68 dB
+  at 16 bits, −105 to −118 at 24). **Two stages failed this when it was first run**: the low-latency
+  resampler, fed in blocks shorter than its filter, ended a track short by up to its own latency,
+  since its flush padded only what the history had room for; and the convolver, reset after a
+  flush, flushed nothing (losing the last partition of music and the response's tail), and one
+  frame past its tail otherwise. **The resampler ends a track at the input's last instant**
+  (`outputs_of`), so converting up hands one or two frames fewer than the ratio times the input
+  (−1 at 44.1 to 48 kHz, −2 at 44.1 to 96), at every level alike.
 
 ## Every measurement
 
@@ -392,3 +410,215 @@ The tables the lab prints. Resonate's stages are in bold.
 | Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24 | -129.2 | -97.4 | -78.5 | 100.5 | -124.8 | 0.001 | -0.02 | -0.02 | 115.0 | 0.0 | -52.5 |
 | MP3 extended past its wall, 44.1 on 48/24 | -186.1 | -125.6 | -110.1 | 137.2 | -173.3 | 0.068 | 0.00 | 0.00 | 2635.4 | 0.0 | — |
 | Room correction of 1 s, 48/24 | -115.4 | -52.3 | -52.3 | 125.7 | -89.0 | 21.950 | 0.00 | -13.78 | 1144.0 | 1024.0 | 1.2 |
+
+### Generated inputs, every stage and chain
+
+#### Generated inputs, every stage and chain, 44.1 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **dither-16: Dither no dither, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **dither-16: Dither rectangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -90.4 | 0 |
+| **dither-16: Dither rectangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -77.4 | 0 |
+| **dither-16: Dither rectangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -75.5 | 0 |
+| **dither-16: Dither triangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -87.7 | 0 |
+| **dither-16: Dither triangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -75.5 | 0 |
+| **dither-16: Dither triangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -73.3 | 0 |
+| **dither-24: Dither no dither, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **dither-24: Dither rectangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -138.5 | 0 |
+| **dither-24: Dither rectangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -125.5 | 0 |
+| **dither-24: Dither rectangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -123.9 | 0 |
+| **dither-24: Dither triangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -135.9 | 0 |
+| **dither-24: Dither triangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -123.7 | 0 |
+| **dither-24: Dither triangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -121.4 | 0 |
+| **eq: Peaking, 1 kHz, +6 dB, Q 1** | 0 | 0 | −∞ | 7.13 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Peaking, 60 Hz, −9 dB, Q 8** | 0 | 0 | −∞ | 1.72 | -600.0 | -468.4 | 0 | −∞ | −∞ | 0 |
+| **eq: Low shelf, 100 Hz, +6 dB** | 0 | 0 | −∞ | 5.98 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: High shelf, 8 kHz, −6 dB** | 0 | 0 | −∞ | 0.65 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Low pass, 10 kHz** | 0 | 0 | −∞ | 1.55 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: High pass, 40 Hz** | 0 | 0 | −∞ | 1.38 | -600.0 | -569.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Notch, 3 kHz, Q 4** | 0 | 0 | −∞ | 2.94 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Band pass, 1 kHz, Q 1** | 0 | 0 | −∞ | 2.12 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: All pass, 2 kHz, Q 0.7** | 0 | 0 | −∞ | 5.53 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Ten octave bands** | 0 | 0 | −∞ | 0.76 | -600.0 | -555.2 | 0 | −∞ | −∞ | 0 |
+| **eq: Thirty-two bands** | 0 | 0 | −∞ | -0.06 | -600.0 | -552.9 | 0 | −∞ | −∞ | 0 |
+| **peak: True-peak guard** | 0 | 0 | -156.7 | -0.10 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **peak: No guard** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed light** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed moderate** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed strong** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **convolve: Unit impulse** | 0 | 0 | −∞ | -0.08 | -600.0 | -600.0 | 0 | −∞ | −∞ | 1024 |
+| **convolve: Decaying noise, 1 s** | 0 | 0 | −∞ | 35.70 | -600.0 | -600.0 | 0 | −∞ | −∞ | 45123 |
+| **convolve: Stereo pair, 0.1 s** | 0 | 0 | −∞ | 32.38 | -600.0 | -600.0 | 0 | −∞ | −∞ | 5435 |
+| **convolve: Two-by-two, 0.25 s** | 0 | 0 | −∞ | 37.48 | -600.0 | -600.0 | 0 | −∞ | −∞ | 12060 |
+| **restore: repair MP3** | 0 | 0 | −∞ | 1.15 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: repair AAC** | 0 | 0 | −∞ | 0.39 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: repair Vorbis** | 0 | 0 | −∞ | 0.72 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: extend MP3** | 0 | 0 | -103.7 | 1.67 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: extend AAC** | 0 | 0 | -103.8 | 1.29 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: extend Vorbis** | 0 | 0 | -103.8 | 1.29 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **chain: CD on a CD sink** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **chain: Half volume, ReplayGain +6 dB, guarded, 44.1/16 on 44.1/24** | 0 | 0 | -118.0 | -0.10 | -600.0 | -600.0 | 0 | -117.4 | -117.4 | 0 |
+
+#### Generated inputs, every stage and chain, 48 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **dither-16: Dither no dither, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **dither-16: Dither rectangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -90.3 | 0 |
+| **dither-16: Dither rectangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -77.3 | 0 |
+| **dither-16: Dither rectangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -76.3 | 0 |
+| **dither-16: Dither triangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -87.7 | 0 |
+| **dither-16: Dither triangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -75.5 | 0 |
+| **dither-16: Dither triangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -74.2 | 0 |
+| **dither-24: Dither no dither, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **dither-24: Dither rectangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -138.4 | 0 |
+| **dither-24: Dither rectangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -125.9 | 0 |
+| **dither-24: Dither rectangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -124.5 | 0 |
+| **dither-24: Dither triangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -135.9 | 0 |
+| **dither-24: Dither triangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -123.8 | 0 |
+| **dither-24: Dither triangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -122.3 | 0 |
+| **eq: Peaking, 1 kHz, +6 dB, Q 1** | 0 | 0 | −∞ | 7.09 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Peaking, 60 Hz, −9 dB, Q 8** | 0 | 0 | −∞ | 1.65 | -600.0 | -468.4 | 0 | −∞ | −∞ | 0 |
+| **eq: Low shelf, 100 Hz, +6 dB** | 0 | 0 | −∞ | 5.98 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: High shelf, 8 kHz, −6 dB** | 0 | 0 | −∞ | 0.61 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Low pass, 10 kHz** | 0 | 0 | −∞ | 1.15 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: High pass, 40 Hz** | 0 | 0 | −∞ | 1.33 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Notch, 3 kHz, Q 4** | 0 | 0 | −∞ | 2.94 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Band pass, 1 kHz, Q 1** | 0 | 0 | −∞ | 2.04 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: All pass, 2 kHz, Q 0.7** | 0 | 0 | −∞ | 5.56 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Ten octave bands** | 0 | 0 | −∞ | 0.78 | -600.0 | -553.3 | 0 | −∞ | −∞ | 0 |
+| **eq: Thirty-two bands** | 0 | 0 | −∞ | -0.04 | -600.0 | -552.7 | 0 | −∞ | −∞ | 0 |
+| **gain: Volume +0 dB** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: Volume -0.1 dB** | 0 | 0 | −∞ | -0.10 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: Volume -6 dB** | 0 | 0 | −∞ | -6.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: Volume -20 dB** | 0 | 0 | −∞ | -20.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: Volume -60 dB** | 0 | 0 | −∞ | -60.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: ReplayGain −6 dB** | 0 | 0 | −∞ | -6.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: ReplayGain +6 dB, peak 0.9** | 0 | 0 | −∞ | 0.92 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: ReplayGain +6 dB, no peak** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **gain: ReplayGain +6 dB, no peak, unprotected** | 0 | 0 | −∞ | 6.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **peak: True-peak guard** | 0 | 0 | -156.7 | -0.10 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **peak: No guard** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix mono to stereo** | 0 | 0 | −∞ | -3.01 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix stereo to mono** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix quad to stereo** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix 5.0 to stereo** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix 5.1 to stereo** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix 6.1 to stereo** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix 7.1 to stereo** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **remix: Remix 7.1 to 5.1** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed light** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed moderate** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed strong** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **convolve: Unit impulse** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 1024 |
+| **convolve: Decaying noise, 1 s** | 0 | 0 | −∞ | 35.30 | -600.0 | -600.0 | 0 | −∞ | −∞ | 49023 |
+| **convolve: Stereo pair, 0.1 s** | 0 | 0 | −∞ | 32.57 | -600.0 | -600.0 | 0 | −∞ | −∞ | 5826 |
+| **convolve: Two-by-two, 0.25 s** | 0 | 0 | −∞ | 37.15 | -600.0 | -600.0 | 0 | −∞ | −∞ | 13036 |
+| **restore: repair MP3** | 0 | 0 | −∞ | 1.12 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: repair AAC** | 0 | 0 | −∞ | 0.39 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: repair Vorbis** | 0 | 0 | −∞ | 0.70 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: extend MP3** | 0 | 0 | -92.5 | 3.14 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: extend AAC** | 0 | 0 | -92.5 | 2.44 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **restore: extend Vorbis** | 0 | 0 | -92.5 | 2.70 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **chain: 5.1 at 48/24 on a stereo sink** | 0 | 0 | -119.0 | -0.10 | -600.0 | -600.0 | 0 | -116.5 | -116.6 | 0 |
+| **chain: Ten bands and moderate crossfeed, 48/24** | 0 | 0 | -104.8 | -0.10 | -600.0 | -600.0 | 0 | -113.3 | -113.4 | 0 |
+| **chain: Room correction of 1 s, 48/24** | 0 | 0 | -105.5 | -2.70 | -600.0 | -600.0 | 0 | -105.9 | -105.9 | 49023 |
+
+#### Generated inputs, every stage and chain, 96 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **dither-16: Dither no dither, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **dither-16: Dither rectangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -90.3 | 0 |
+| **dither-16: Dither rectangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -90.3 | 0 |
+| **dither-16: Dither rectangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -82.6 | 0 |
+| **dither-16: Dither triangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -87.8 | 0 |
+| **dither-16: Dither triangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -87.8 | 0 |
+| **dither-16: Dither triangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -80.5 | 0 |
+| **dither-24: Dither no dither, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **dither-24: Dither rectangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -138.4 | 0 |
+| **dither-24: Dither rectangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -138.4 | 0 |
+| **dither-24: Dither rectangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -130.8 | 0 |
+| **dither-24: Dither triangular, flat** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -135.9 | 0 |
+| **dither-24: Dither triangular, Lipshitz** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -135.9 | 0 |
+| **dither-24: Dither triangular, threshold** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | -128.6 | 0 |
+| **eq: Peaking, 1 kHz, +6 dB, Q 1** | 0 | 0 | −∞ | 7.09 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Peaking, 60 Hz, −9 dB, Q 8** | 0 | 0 | −∞ | 1.75 | -600.0 | -468.4 | 0 | −∞ | −∞ | 0 |
+| **eq: Low shelf, 100 Hz, +6 dB** | 0 | 0 | −∞ | 5.98 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: High shelf, 8 kHz, −6 dB** | 0 | 0 | −∞ | 0.50 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Low pass, 10 kHz** | 0 | 0 | −∞ | 0.85 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: High pass, 40 Hz** | 0 | 0 | −∞ | 1.35 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Notch, 3 kHz, Q 4** | 0 | 0 | −∞ | 2.94 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Band pass, 1 kHz, Q 1** | 0 | 0 | −∞ | 2.04 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: All pass, 2 kHz, Q 0.7** | 0 | 0 | −∞ | 5.90 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **eq: Ten octave bands** | 0 | 0 | −∞ | 0.89 | -600.0 | -548.4 | 0 | −∞ | −∞ | 0 |
+| **eq: Thirty-two bands** | 0 | 0 | −∞ | 0.02 | -600.0 | -546.3 | 0 | −∞ | −∞ | 0 |
+| **peak: True-peak guard** | 0 | 0 | -156.8 | -0.10 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **peak: No guard** | 0 | 0 | −∞ | 0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed light** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed moderate** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **crossfeed: Crossfeed strong** | 0 | 0 | −∞ | -0.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+
+#### Generated inputs, every stage and chain, 44.1 kHz to 48 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **resample: Resonate Low latency** | 0 | 0 | −∞ | 4.03 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate Balanced** | 0 | 0 | −∞ | 4.54 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate High** | 0 | 0 | −∞ | 4.56 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate Very high** | 0 | 0 | −∞ | 5.24 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate High, intermediate** | 0 | 0 | −∞ | 6.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate High, minimum** | 0 | 0 | −∞ | 6.81 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate Very high, intermediate** | 0 | 0 | −∞ | 6.12 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **resample: Resonate Very high, minimum** | 0 | 0 | −∞ | 6.59 | -600.0 | -600.0 | 0 | −∞ | −∞ | -1 |
+| **chain: CD on 48/24** | 0 | 0 | -118.9 | -0.10 | -600.0 | -600.0 | 0 | -118.0 | -118.1 | -1 |
+| **chain: CD on 48/16** | 0 | 0 | -70.8 | -0.10 | -600.0 | -600.0 | 0 | -69.9 | -70.0 | -1 |
+| **chain: MP3 extended past its wall, 44.1 on 48/24** | 0 | 0 | -104.9 | -0.10 | -600.0 | -600.0 | 0 | -117.5 | -117.4 | -1 |
+
+#### Generated inputs, every stage and chain, 48 kHz to 44.1 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **resample: Resonate Low latency** | 0 | 0 | −∞ | 3.71 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Balanced** | 0 | 0 | −∞ | 3.92 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate High** | 0 | 0 | −∞ | 3.92 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Very high** | 0 | 0 | −∞ | 4.27 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate High, intermediate** | 0 | 0 | −∞ | 5.44 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate High, minimum** | 0 | 0 | −∞ | 6.43 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Very high, intermediate** | 0 | 0 | −∞ | 5.98 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Very high, minimum** | 0 | 0 | −∞ | 6.10 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+
+#### Generated inputs, every stage and chain, 96 kHz to 48 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **resample: Resonate Low latency** | 0 | 0 | −∞ | 1.94 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Balanced** | 0 | 0 | −∞ | 2.51 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate High** | 0 | 0 | −∞ | 2.53 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Very high** | 0 | 0 | −∞ | 2.85 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate High, intermediate** | 0 | 0 | −∞ | 4.16 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate High, minimum** | 0 | 0 | −∞ | 3.84 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Very high, intermediate** | 0 | 0 | −∞ | 4.42 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **resample: Resonate Very high, minimum** | 0 | 0 | −∞ | 3.89 | -600.0 | -600.0 | 0 | −∞ | −∞ | 0 |
+| **chain: 96/24 on 48/16, very high** | 0 | 0 | -70.8 | -0.10 | -600.0 | -600.0 | 0 | -68.1 | -68.1 | 0 |
+
+#### Generated inputs, every stage and chain, 192 kHz to 44.1 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **chain: 192/24 on 44.1/24, low latency** | 0 | 0 | -118.0 | -0.10 | -600.0 | -600.0 | 0 | -114.4 | -114.4 | 0 |
+
+#### Generated inputs, every stage and chain, 44.1 kHz to 96 kHz
+
+| Setting | Non-finite samples out | Non-finite a second after a NaN and an infinity in | Null against a clean run a second on (dB) | Loudest sample out (dBFS) | Silence in, peak out after 0.1 s (dBFS) | Left after 1.5 s of silence (dBFS) | Under f32's normal range in 12 s of silence | Worst null across block sizes (dB) | Null of a run after a flush and reset (dB) | Frames out beyond the input's |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| **resample: Resonate Low latency** | 0 | 0 | −∞ | 4.23 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate Balanced** | 0 | 0 | −∞ | 4.54 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate High** | 0 | 0 | −∞ | 4.56 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate Very high** | 0 | 0 | −∞ | 5.24 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate High, intermediate** | 0 | 0 | −∞ | 6.00 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate High, minimum** | 0 | 0 | −∞ | 6.81 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate Very high, intermediate** | 0 | 0 | −∞ | 6.12 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **resample: Resonate Very high, minimum** | 0 | 0 | −∞ | 6.59 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |
+| **chain: CD on 96 kHz float, minimum phase** | 0 | 0 | −∞ | -0.10 | -600.0 | -600.0 | 0 | −∞ | −∞ | -2 |

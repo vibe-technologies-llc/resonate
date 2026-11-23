@@ -51,6 +51,10 @@ pub trait Running {
 
     fn channels_out(&self) -> usize;
 
+    fn starts_over(&mut self) -> bool {
+        false
+    }
+
     fn claimed_latency_frames(&self) -> Option<f64> {
         None
     }
@@ -99,6 +103,27 @@ pub fn ran(
         channels: running.channels_out(),
         claimed_latency_frames: running.claimed_latency_frames(),
     })
+}
+
+pub fn ran_again_after_a_reset(
+    subject: &dyn Subject,
+    pair: Pair,
+    layout: ChannelLayout,
+    input: &[f64],
+    block: usize,
+) -> Result<Option<(Vec<f64>, Vec<f64>)>> {
+    let mut running = subject.open(pair, layout, block)?;
+    let mut first = Vec::new();
+    let mut again = Vec::new();
+
+    running.push(input, &mut first)?;
+    running.finish(&mut first)?;
+    if !running.starts_over() {
+        return Ok(None);
+    }
+    running.push(input, &mut again)?;
+    running.finish(&mut again)?;
+    Ok(Some((first, again)))
 }
 
 pub fn resampled(

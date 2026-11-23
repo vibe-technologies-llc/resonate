@@ -290,7 +290,9 @@ Linux sound server or GUI libraries are needed.
   cubic polynomial) are the references. `Played` is a whole chain: a source, a sink's
   `SinkFormats` and an `EngineConfig` go through `plan_output` and `build_chain` with the engine's
   block, the input is rounded to the source's words and the output to the sink's (`in_words`), so a
-  chain measured is the chain played. A `Suite` names its subjects, its rate `Pair`s, its `Metric`s
+  chain measured is the chain played. A `Running` that can be reset says so (`starts_over`: `Driven`
+  resets its `Processor`, `Playing` its `Chain`, a reference cannot), which
+  `ran_again_after_a_reset` reads. A `Suite` names its subjects, its rate `Pair`s, its `Metric`s
   and how it measures one subject at one pair. Each `Metric` carries the way that is better and a
   `Tolerance`, and `suites::all` is the one list a suite is added to. `measured_everywhere` shares
   the subject-pair cases among every core; `timed` runs them one at a time.
@@ -307,7 +309,17 @@ Linux sound server or GUI libraries are needed.
   rate and redrawn. `restore` covers repair and extension on noise walled at 16 kHz. `chain` is
   eleven planned chains, from bit-perfect to room correction, with THD, THD+N, A-weighted dynamic
   range, SMPTE IMD, the response's spread, the gain asked and heard, latency and a null where the
-  rate and layout do not change.
+  rate and layout do not change. `stress` borrows every subject of ours the other suites hold, at
+  each one's own rates among eight (`Borrowed`, named `<suite>: <subject>`), and feeds each the
+  same generated inputs: full-scale noise, a 0 dBFS square, Nyquist, a DC step, impulses, a sweep,
+  a tone under every word, a NaN and an infinity, silence and 12 s of silence after noise. It
+  counts what is not finite and what falls under f32's normal range, reads the loudest sample,
+  what silence and a tail leave, what a NaN leaves a second on against a clean run, the null
+  across blocks of 1, 37, 1 024 and 4 096 frames and after a flush and a reset, and the frames
+  beyond the input times the ratio. Two bugs it found when first run are held by tests in
+  `resonate-dsp` as well (`blocks_shorter_than_the_filter_hand_on_the_track_whole_and_alike`,
+  `a_convolver_reset_after_its_flush_flushes_the_whole_tail_again`). Its readings are bit for bit
+  but a chain's and a dither's reset, which read the dither's own noise.
 - **The measures** (`analysis/`): tones sit on whole FFT bins (`on_the_bins`) at 2^16 frames
   widened with the rate (`analysed_frames`), analysed after 0.75 s of settling, so a rectangular
   window leaks nothing. The response is a multitone of 48 log-spaced bins at random phases, THD
