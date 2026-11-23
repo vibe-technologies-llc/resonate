@@ -453,31 +453,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/catalog.rs:138`). Preserve known stamps when a read provides
   no newer one, while still invalidating analysis on confirmed changes. Done when indexing
   a stamped file from open-with keeps the analysis and scanning a changed file refreshes it.
-## Providers and network
-- [M · 0.17.1] Ask for uncoded audio from the first seekable HTTP request.
-  **Medium, architect.** The first Jellyfin, native TIDAL FLAC and relayed hifi stream
-  requests can negotiate gzip while later requests for the same reader ask for identity
-  coding. The decoded first response then has no known length, which disables seeking, and can
-  supply a validator that conflicts with the identity-coded range response
-  (`crates/providers/jellyfin/src/lib.rs:270`, `:728`,
-  `crates/providers/tidal/src/played.rs:202`,
-  `crates/providers/tidal/src/hifi_served.rs:197`,
-  `crates/resonate-fetch/src/ranged.rs:149`,
-  `crates/resonate-providers/src/in_place.rs:275`). Use the same coding on the initial and
-  reopened requests. Done when provider tests with a server that offers gzip see identity
-  on both requests, and the reader knows the uncoded length and returns the expected bytes
-  after a seek.
-- [M · 0.17.1] Restart a MusicBrainz archive download after a stale partial fails.
-  **Low, builder.** The dump checksum protects installation, but a resumed answer
-  that fails verification after returning bytes ends the job. A whole answer
-  shorter than the held prefix can fail before verification and leave that
-  partial in place for the next attempt
-  (`crates/resonate-musicbrainz/src/download.rs:289`, `:331`, `:360`,
-  `crates/resonate-fetch/src/ranged.rs:201`). Retry once from zero when the
-  saved prefix is incompatible. Done when both cases complete with a new
-  verified archive from a valid whole response and a bad whole response still
-  fails checksum verification.
-
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
