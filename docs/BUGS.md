@@ -13,19 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   packed WAVE object with an intact header and damaged frames restores a copy that passes `verify`.
 
 ## Playback and output
-- [M · 0.17.1] Honor the initial spool deadline during a remote read. **Low, architect.**
-  A single slow read can stall beyond the 750 ms initial spool budget because elapsed time is
-  checked between reads and the source's read timeout defaults to five seconds
-  (`crates/resonate-codec/src/container.rs:508`, `crates/resonate-codec/src/source.rs:215`).
-  Use the remaining spool budget while waiting and carry the in-flight read into the next phase.
-  Done when a gated non-seekable source hands off at the spool deadline and every byte is still
-  delivered once the stalled read completes.
-- [S · 0.17.1] Measure free space on the volume holding the Windows spool. **Low, builder.**
-  A caller supplying a spool folder on another volume gets the limit for the default temporary
-  drive (`crates/resonate-codec/src/spool.rs:98`, `crates/resonate-codec/src/spool.rs:242`).
-  Query the volume of the file or the chosen folder. Done when a Windows test with distinct
-  reported capacity for the two locations uses the chosen location for admission.
-
 ## Security
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
   takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
