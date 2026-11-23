@@ -357,6 +357,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
 ## Catalog
+- [S · 0.17.1] Settle a pending removal before a scan prunes its file. **Low, builder.**
+  A delete whose run ended after the trash took the file is settled when the catalog next opens or
+  before the next delete (`deleted::settle`, `removals_pending`), but an open that could not take
+  the walk lock skips it, and a scan then prunes the gone row first, so the every-device notice for
+  that song is never queued (`crates/resonate-library/src/deleted.rs`, `scan.rs`). Settle pending
+  removals at the start of a scan, under its walk guard. Done when a run ended after the move,
+  an open behind another walker and a scan leave the deletion noticed to devices exactly once.
 - [M · 0.17.1] Keep a song moved into a root that a scan names alone. **Medium, architect.**
   `resonate scan R2` walks only the destination root, and its tidy of the other registered roots
   forgets the old row as gone before any later scan can pair it with the arrival, so the song keeps
@@ -373,46 +380,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-library/src/organise.rs:2384`). Apply the entire cycle as one unit and roll back
   an incomplete one. Done when a cancelled swap, an injected landing refusal and a swap at a
   batch boundary leave both file paths and catalog entries consistent.
-- [M · 0.17.1] Keep catalog rows when a delete reaches an offline volume.
-  **Medium, architect.** A missing mount path is treated as a missing file, so deletion
-  can discard catalog state and mark a recording deleted while its file is still on disk
-  (`crates/resonate-library/src/deleted.rs:108`,
-  `crates/resonate-library/src/db/roots.rs:195`, `:219`). Use the catalog's mounted-volume
-  check and require positive evidence of absence from a reachable volume before settling
-  a deletion. Done when a delete on an unplugged root or a refused stat preserves its
-  track and local deletion state, and a confirmed missing file is handled normally.
-- [M · 0.17.1] Recover desktop deletion state after a partial trash pass. **Medium, architect.**
-  Local deletion marks commit before the files move, then the catalog and outbound
-  every-device notices settle in a later transaction. An interruption between them can
-  leave a present file marked deleted or a trashed file with no notice for peers
-  (`crates/resonate-library/src/db/roots.rs:179`, `:213`,
-  `crates/resonate-library/src/deleted.rs:206`, `:242`). Persist the pending intent and
-  reconcile what actually reached the trash on restart. While a removal is pending,
-  a concurrent follow must keep its mark while the file still stands (`crates/resonate-sync/src/ledger.rs:4388`,
-  `crates/resonate-sync/src/service.rs:3577`,
-  `crates/resonate-library/src/synced.rs:1024`). Done when failure tests before and after
-  a simulated move recover rows, marks and notices exactly once, and a follow during
-  the move leaves the deleted file out of later fetches.
-- [M · 0.17.1] Recheck identical copies before folding them. **Medium, architect.**
-  Apply uses the preview's rows and paths. If the listener edits or moves a file in
-  another app, the fold can transfer history and queue references to a different or
-  unavailable file and trash the remaining copy (`crates/resonate-library/src/db/roots.rs:109`,
-  `crates/resonate-library/src/copies.rs:124`,
-  `crates/resonate-ui/src/models/filing.rs:299`). Resolve both rows and validate the files
-  under the walk guard before changing either. Done when modifying either file or removing
-  a previewed row makes that pair unavailable to apply and leaves unrelated pairs usable.
 - [M · 0.17.1] Keep destination files when a move lacks an atomic no-replace operation.
   **Low, architect.** The fallback can use a replacing rename after a separate existence
   check, so a concurrently created destination file can be lost
   (`crates/resonate-library/src/unreplacing.rs:23`). Use a platform operation that
   reserves the destination atomically or refuse the move on that volume. Done when a
   fallback test preserves both the source and a competing destination.
-- [M · 0.17.1] Report sidecars left behind by a refused trash move. **Low, builder.**
-  The audio file can reach the trash while a sidecar remains, and the completed result
-  reports only the audio move (`crates/resonate-library/src/db/roots.rs:196`,
-  `crates/resonate-library/src/deleted.rs:133`). Surface the partial outcome while
-  preserving shared sidecars. Done when a trash stub that accepts audio and refuses its
-  lyrics leaves the lyrics in place and reports them as kept.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
