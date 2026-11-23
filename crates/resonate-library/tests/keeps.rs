@@ -13,11 +13,13 @@ use std::{
 };
 
 use parking_lot::Mutex;
+use resonate_codec::Writing;
 use resonate_core::{Gate as MeteredGate, MediaLocation, Meter, Metering, SourceId, Span, writer};
 use resonate_library::{
-    Cut, DeliveryFolder, Direction, Error, FileTags, KeepStopped, KeepSummary, KeptList, KeptSong,
-    Layout, Library, OrganiseOptions, Picturing, PlaylistToKeep, PollOptions, PollSummary, Result,
-    SavedQuery, Service, SongToKeep, SortOrder, Sources, TagSource as _, Track, TrackQuery,
+    CoverArt, Cut, DeliveryFolder, Direction, Error, FileTags, ImageFormat, KeepStopped,
+    KeepSummary, KeptList, KeptSong, Layout, Library, OrganiseOptions, Picturing, PlaylistToKeep,
+    PollOptions, PollSummary, Result, SavedQuery, Service, SongToKeep, SortOrder, Sources,
+    TagSink as _, TagSource as _, Track, TrackQuery,
 };
 use resonate_providers::{
     Delivery, Error as ProvidedError, Extension, Identity, Obtained, Opened, Opening, Provider,
@@ -1450,6 +1452,10 @@ impl Provider for ServesWebm {
         &self.source
     }
 
+    fn picture(&self, _: &str) -> ProvidedResult<Vec<u8>> {
+        Ok(png(64))
+    }
+
     fn find(&self, _: &Identity) -> ProvidedResult<Obtained> {
         Ok(Obtained::Found(Delivery::Stream {
             key: "track/abc123".into(),
@@ -1506,6 +1512,61 @@ fn opus_in_webm_kept_as_mka_is_tagged_and_keeps_its_names_through_a_rescan() -> 
         .expect("the album");
 
     assert_eq!(album.title, "Kept Songs");
+    Ok(())
+}
+
+fn pictured_by_its_maker(bytes: &[u8], picture: &CoverArt) -> Vec<u8> {
+    let held = Tree::new();
+    let path = held.write("made.mka", bytes);
+
+    FileTags::over(Sources::local())
+        .write(
+            &MediaLocation::local(&path),
+            Writing {
+                edits: &[],
+                taken: &[],
+                picture: Some(picture),
+                unpictured: false,
+                popularity: None,
+            },
+        )
+        .expect("the maker's picture attached");
+    fs::read(&path).expect("the pictured file")
+}
+
+#[test]
+fn a_kept_matroska_whose_own_cover_refuses_the_one_fetched_still_lands_with_its_names() -> Result<()>
+{
+    let Some(served) = opus_in_webm() else {
+        return Ok(());
+    };
+    let its_own = CoverArt {
+        format: ImageFormat::Png,
+        bytes: png(16),
+    };
+    let (tree, library) = a_music_folder()?;
+
+    let providers = Providers::none().and(Arc::new(ServesWebm {
+        source: source(KEPT_BY),
+        bytes: pictured_by_its_maker(&served, &its_own),
+    }) as Arc<dyn Provider>);
+
+    library.keep_song(SongToKeep {
+        cover: Some("https://lh3.googleusercontent.com/cover".to_owned()),
+        ..song_to_keep("abc123", "San Tropez")
+    })?;
+
+    assert_eq!(library.keep_pending(&providers, &|| false)?.landed, 1);
+
+    let path = tree.path().join("The Orbiters/Kept Songs/San Tropez.mka");
+    let read = FileTags::over(Sources::local())
+        .read(&MediaLocation::local(&path), Picturing::Copied)
+        .expect("the file reads");
+
+    assert_eq!(read.tags.title.as_deref(), Some("San Tropez"));
+    assert_eq!(read.tags.artist.as_deref(), Some("The Orbiters"));
+    assert_eq!(read.tags.album.as_deref(), Some("Kept Songs"));
+    assert_eq!(read.picture.into_copied(), Some(its_own));
     Ok(())
 }
 

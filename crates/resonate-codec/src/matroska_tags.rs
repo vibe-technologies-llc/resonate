@@ -982,6 +982,90 @@ impl Laid {
     fn then_zeroed(self, zeroed: u64) -> Self {
         Self { zeroed, ..self }
     }
+
+    fn reaches(&self) -> u64 {
+        self.at + self.bytes.len() as u64 + self.zeroed
+    }
+
+    fn shown_in(&self, at: u64, into: &mut [u8]) {
+        let end = at + into.len() as u64;
+        let written_to = self.at + self.bytes.len() as u64;
+        let overlap = |from: u64, to: u64| {
+            let from = from.max(at);
+            let to = to.min(end);
+            (from < to).then(|| (offset_of(from - at), offset_of(to - at)))
+        };
+
+        if let Some((from, to)) = overlap(self.at, written_to) {
+            let skipped = offset_of(self.at.max(at) - self.at);
+
+            into[from..to].copy_from_slice(&self.bytes[skipped..skipped + (to - from)]);
+        }
+        if let Some((from, to)) = overlap(written_to, written_to + self.zeroed) {
+            into[from..to].fill(0);
+        }
+    }
+}
+
+fn offset_of(bytes: u64) -> usize {
+    usize::try_from(bytes).unwrap_or(usize::MAX)
+}
+
+struct Patched<'s, S: ?Sized> {
+    source: &'s mut S,
+    laid: &'s [Laid],
+    stood: u64,
+    length: u64,
+    at: u64,
+}
+
+impl<'s, S: Read + Seek + ?Sized> Patched<'s, S> {
+    fn over(source: &'s mut S, laid: &'s [Laid]) -> Refusable<Self> {
+        let stood = source
+            .seek(SeekFrom::End(0))
+            .map_err(|_| Refused::UnreadableElement)?;
+        let length = laid.iter().map(Laid::reaches).fold(stood, u64::max);
+
+        Ok(Self {
+            source,
+            laid,
+            stood,
+            length,
+            at: 0,
+        })
+    }
+}
+
+impl<S: Read + Seek + ?Sized> Read for Patched<'_, S> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let wanted = offset_of(self.length.saturating_sub(self.at)).min(buf.len());
+        let from_the_source = offset_of(self.stood.saturating_sub(self.at)).min(wanted);
+        let into = &mut buf[..wanted];
+
+        if from_the_source > 0 {
+            self.source.seek(SeekFrom::Start(self.at))?;
+            self.source.read_exact(&mut into[..from_the_source])?;
+        }
+        into[from_the_source..].fill(0);
+        for laid in self.laid {
+            laid.shown_in(self.at, into);
+        }
+        self.at += wanted as u64;
+        Ok(wanted)
+    }
+}
+
+impl<S: ?Sized> Seek for Patched<'_, S> {
+    fn seek(&mut self, to: SeekFrom) -> io::Result<u64> {
+        let at = match to {
+            SeekFrom::Start(at) => Some(at),
+            SeekFrom::End(by) => self.length.checked_add_signed(by),
+            SeekFrom::Current(by) => self.at.checked_add_signed(by),
+        };
+
+        self.at = at.ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
+        Ok(self.at)
+    }
 }
 
 struct Filled {
@@ -1096,6 +1180,26 @@ pub(crate) fn rewritten<S: Read + Seek + ?Sized>(
     }
 
     Ok(Rewrite { laid, clusters })
+}
+
+pub(crate) fn tagged_and_pictured<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    edits: &[(TagField, String)],
+    taken: &[TagField],
+    picture: Option<&Attached<'_>>,
+) -> Refusable<Rewrite> {
+    let tagged = rewritten(source, edits, taken)?;
+
+    let Some(picture) = picture else {
+        return Ok(tagged);
+    };
+
+    let pictured = attached(&mut Patched::over(source, &tagged.laid)?, picture)?;
+
+    Ok(Rewrite {
+        laid: tagged.laid.into_iter().chain(pictured.laid).collect(),
+        clusters: tagged.clusters,
+    })
 }
 
 pub(crate) struct Attached<'a> {
@@ -1525,6 +1629,61 @@ mod tests {
         let refused = rewritten(&mut Cursor::new(&file), &edits, &[]);
 
         assert!(matches!(refused, Err(Refused::AttachmentsStand)));
+    }
+
+    const A_COVER: Attached<'static> = Attached {
+        name: "cover.png",
+        media_type: "image/png",
+        bytes: b"\x89PNG\r\n\x1a\n",
+    };
+
+    fn laid(file: &[u8], rewrite: &Rewrite) -> Vec<u8> {
+        let mut landed = Cursor::new(file.to_vec());
+
+        rewrite.laid_on(&mut landed).expect("a rewrite laid");
+        landed.into_inner()
+    }
+
+    #[test]
+    fn tags_and_a_picture_laid_together_land_as_each_laid_in_turn_would() {
+        let bare = a_bare_segment();
+        let edits = [(TagField::Title, "Echoes".to_owned())];
+
+        for file in [bare.clone(), titled(&bare, "Old")] {
+            let tags = rewritten(&mut Cursor::new(&file), &edits, &[]).expect("the tags");
+            let tagged = laid(&file, &tags);
+            let picture = attached(&mut Cursor::new(&tagged), &A_COVER).expect("the picture");
+
+            let in_turn = laid(&tagged, &picture);
+
+            let together =
+                tagged_and_pictured(&mut Cursor::new(&file), &edits, &[], Some(&A_COVER))
+                    .expect("the tags and the picture");
+            let once = laid(&file, &together);
+
+            assert_eq!(once, in_turn);
+
+            let layout = laid_out(&mut Cursor::new(&once)).expect("a whole segment");
+
+            assert_eq!(layout.all(TAGS).len(), 1);
+            assert_eq!(layout.all(ATTACHMENTS).len(), 1);
+        }
+    }
+
+    #[test]
+    fn a_picture_the_file_refuses_takes_the_tags_written_with_it_down_too() {
+        let bare = a_bare_segment();
+        let pictured = laid(
+            &bare,
+            &attached(&mut Cursor::new(&bare), &A_COVER).expect("a first picture"),
+        );
+        let edits = [(TagField::Title, "Echoes".to_owned())];
+
+        let refused = tagged_and_pictured(&mut Cursor::new(&pictured), &edits, &[], Some(&A_COVER));
+        let unpictured = tagged_and_pictured(&mut Cursor::new(&pictured), &edits, &[], None);
+
+        assert!(matches!(refused, Err(Refused::AttachmentsStand)));
+        assert!(unpictured.is_ok_and(|rewrite| !rewrite.is_empty()));
     }
 
     #[test]

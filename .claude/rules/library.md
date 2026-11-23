@@ -1640,9 +1640,15 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Cluster` (`a_seek_head_laid_in_a_void`;
   `a_matroska_file_with_no_seek_head_is_given_one_in_the_room_before_its_clusters`,
   `a_matroska_file_whose_attachments_hold_no_cover_takes_the_picture_beside_them`).
-  `written_into_a_matroska` lands the tags first and the picture as a second landing
-  (`Taken::of` read afresh); a keep that cannot take its picture is retried without it
-  (`filed::tagged`), so the song is tagged whatever the picture does.
+  **The tags and the picture are one landing.** `written_into_a_matroska` asks
+  `matroska_tags::tagged_and_pictured`, which places the tags, then the picture against the file as
+  the tags leave it (`Patched`, the file read with the tags' `Laid` bytes over it), and answers one
+  `Rewrite` landed once under one `Taken`; so a picture the file refuses takes the tags written with
+  it down too, and the file stands byte for byte as it was
+  (`tags_written_with_a_picture_a_matroska_file_refuses_leave_the_file_as_it_stood`,
+  `tags_and_a_picture_laid_together_land_as_each_laid_in_turn_would`). A keep that cannot take its
+  picture is retried without it (`filed::tagged`), so the song is tagged whatever the picture does
+  (`a_kept_matroska_whose_own_cover_refuses_the_one_fetched_still_lands_with_its_names`).
 - **A Matroska name is spelled so it reads alike under both `tags::Naming`s.** `TITLE` and `ARTIST`
   go in a `Tag` at level 30, since at 50 the container's naming reads them as the album and album
   artist and a Vorbis-only key beside them turns that around; the rest go at level 50 under the

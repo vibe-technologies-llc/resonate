@@ -63,9 +63,9 @@ fn rewrite_a_matroska(bytes: &[u8]) {
         (TagField::Title, "Echoes".to_owned()),
         (TagField::Album, "Meddle".to_owned()),
     ];
-    let Ok(rewrite) =
-        matroska_tags::rewritten(&mut Cursor::new(bytes), &edits, &[TagField::Artist])
-    else {
+    let taken = [TagField::Artist];
+
+    let Ok(rewrite) = matroska_tags::rewritten(&mut Cursor::new(bytes), &edits, &taken) else {
         return;
     };
     let mut landed = Cursor::new(bytes.to_vec());
@@ -73,22 +73,48 @@ fn rewrite_a_matroska(bytes: &[u8]) {
     rewrite
         .laid_on(&mut landed)
         .expect("a rewrite lands on the file it was read from");
-    attach_to_a_matroska(landed.get_ref());
+
+    let pictured = attach_to_a_matroska(landed.get_ref());
+    let together =
+        matroska_tags::tagged_and_pictured(&mut Cursor::new(bytes), &edits, &taken, Some(&A_COVER));
+
+    match (together, pictured) {
+        (Ok(together), Some(pictured)) => {
+            let mut once = Cursor::new(bytes.to_vec());
+
+            together
+                .laid_on(&mut once)
+                .expect("the tags and the picture land together on the file they were read from");
+
+            assert_eq!(
+                once.into_inner(),
+                pictured,
+                "the tags and the picture laid together differ from each laid in turn"
+            );
+        }
+        (Err(_), None) => {}
+        (together, pictured) => panic!(
+            "the tags and the picture together were {} where each in turn was {}",
+            together.map_or("refused", |_| "taken"),
+            pictured.map_or("refused", |_| "taken"),
+        ),
+    }
 }
 
-fn attach_to_a_matroska(tagged: &[u8]) {
-    let attached = Attached {
-        name: "cover.jpg",
-        media_type: "image/jpeg",
-        bytes: A_PICTURE,
-    };
-    let Ok(rewrite) = matroska_tags::attached(&mut Cursor::new(tagged), &attached) else {
-        return;
-    };
+const A_COVER: Attached<'static> = Attached {
+    name: "cover.jpg",
+    media_type: "image/jpeg",
+    bytes: A_PICTURE,
+};
+
+fn attach_to_a_matroska(tagged: &[u8]) -> Option<Vec<u8>> {
+    let rewrite = matroska_tags::attached(&mut Cursor::new(tagged), &A_COVER).ok()?;
+    let mut pictured = Cursor::new(tagged.to_vec());
 
     rewrite
-        .laid_on(&mut Cursor::new(tagged.to_vec()))
+        .laid_on(&mut pictured)
         .expect("a picture lands on the file its tags were just laid on");
+    Some(pictured.into_inner())
 }
 
 pub fn read_a_whole_copy(bytes: &[u8]) {

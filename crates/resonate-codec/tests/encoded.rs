@@ -6195,6 +6195,52 @@ fn a_second_picture_is_refused_by_a_matroska_file_that_holds_one() {
 }
 
 #[test]
+fn tags_written_with_a_picture_a_matroska_file_refuses_leave_the_file_as_it_stood() {
+    let tree = Tree::new();
+    let Some(path) = opus_as_youtube_sends_it(&tree, "song.mka") else {
+        return;
+    };
+    let location = MediaLocation::local(&path);
+    let tags = FileTags::over(Sources::local());
+    let picture = CoverArt {
+        format: ImageFormat::Png,
+        bytes: ONE_PIXEL_PNG.to_vec(),
+    };
+    let edits = title_and_artist("Creep", "Radiohead");
+
+    tags.write(
+        &location,
+        Writing {
+            picture: Some(&picture),
+            ..only_edits(&[])
+        },
+    )
+    .expect("a first picture");
+
+    let held = fs::read(&path).expect("a written file");
+    let refused = tags.write(
+        &location,
+        Writing {
+            picture: Some(&picture),
+            ..only_edits(&edits)
+        },
+    );
+
+    assert!(matches!(refused, Err(Error::Unwritable { .. })));
+    assert_eq!(fs::read(&path).expect("the file"), held);
+
+    tags.write(&location, only_edits(&edits))
+        .expect("the tags alone over the file holding a picture");
+
+    let read = tags
+        .read(&location, Picturing::Copied)
+        .expect("a readable file");
+
+    assert_eq!(read.tags.title.as_deref(), Some("Creep"));
+    assert_eq!(read.picture.into_copied(), Some(picture));
+}
+
+#[test]
 fn a_matroska_cue_still_points_at_its_cluster_after_a_write() {
     let tree = Tree::new();
     for path in [

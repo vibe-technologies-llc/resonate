@@ -745,52 +745,36 @@ fn written_into_a_matroska(
         .iter()
         .map(|edit| (edit.field, edit.value.clone()))
         .collect();
+    let name = writing
+        .picture
+        .map(|picture| format!("{COVER_FILE_STEM}.{}", picture.format.extension()));
+    let attached = writing
+        .picture
+        .zip(name.as_deref())
+        .map(|(picture, name)| Attached {
+            name,
+            media_type: picture.format.media_type(),
+            bytes: &picture.bytes,
+        });
     let file = File::open(path).map_err(|source| Error::Io {
         location: location.clone(),
         source,
     })?;
 
-    let rewrite = matroska_tags::rewritten(&mut BufReader::new(file), &edits, writing.taken)
-        .map_err(|refused| {
-            tracing::debug!(?refused, path = %path.display(), "a Matroska file its tags could not be placed in is left as it stood");
-            unwritable()
-        })?;
-
-    if !rewrite.is_empty() {
-        landed(path, location, &Rewriting { rewrite, taken })?;
-    }
-
-    match writing.picture {
-        Some(picture) => attached_to_a_matroska(path, location, picture),
-        None => Ok(()),
-    }
-}
-
-fn attached_to_a_matroska(path: &Path, location: &MediaLocation, picture: &CoverArt) -> Result<()> {
-    let name = format!("{COVER_FILE_STEM}.{}", picture.format.extension());
-    let attached = Attached {
-        name: &name,
-        media_type: picture.format.media_type(),
-        bytes: &picture.bytes,
-    };
-    let taken = Taken::of(path).map_err(|source| Error::Io {
-        location: location.clone(),
-        source,
-    })?;
-    let file = File::open(path).map_err(|source| Error::Io {
-        location: location.clone(),
-        source,
+    let rewrite = matroska_tags::tagged_and_pictured(
+        &mut BufReader::new(file),
+        &edits,
+        writing.taken,
+        attached.as_ref(),
+    )
+    .map_err(|refused| {
+        tracing::debug!(?refused, path = %path.display(), "a Matroska file its tags or picture could not be placed in is left as it stood");
+        unwritable()
     })?;
 
-    let rewrite = matroska_tags::attached(&mut BufReader::new(file), &attached).map_err(
-        |refused| {
-            tracing::debug!(?refused, path = %path.display(), "a Matroska file a picture could not be attached to is left as it stood");
-            Error::Unwritable {
-                location: location.clone(),
-            }
-        },
-    )?;
-
+    if rewrite.is_empty() {
+        return Ok(());
+    }
     landed(path, location, &Rewriting { rewrite, taken })
 }
 
