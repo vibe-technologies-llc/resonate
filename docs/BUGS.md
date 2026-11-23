@@ -20,16 +20,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   transfer (`export_once`, `crates/resonate-sync/src/peer.rs`) still returns with its partial
   unflushed. Flush it the same way. Done when an interrupted copy transfer resumed at once lands
   bytes identical to the offered copy across repeated runs.
-- [M · 0.17.1] Validate an Android join code before replacing the current group.
-  **High, architect.** A nonblank manual entry can overwrite the stored pairing
-  key. The native restart stops the old service before parsing the replacement,
-  so a typo leaves sync stopped and the previous key can be lost
-  (`android/app/src/main/java/org/resonate/android/ui/settings/SyncScreen.kt:396`, `:647`,
-  `android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:704`, `:740`,
-  `crates/resonate-mobile/src/sync.rs:346`, `:357`, `:752`). Validate before saving
-  or stopping the current service and preserve the old pairing on refusal.
-  Done when an invalid manual code leaves the stored and active group usable,
-  including after a relaunch.
 - [M · 0.17.1] Expire remote playback commands when their answers time out.
   **Medium, architect.** The request can report that a device did not answer, while the
   command stays queued and plays, pauses or skips when that device later reconnects
@@ -86,14 +76,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Done when two rapid changes reach disk and the service in order and a failed save
   leaves the persisted configuration visible. Canonicalising a pairing key
   during startup must also preserve a newer settings change.
-- [M · 0.17.1] Save a newly minted phone pairing code before offering it to other devices.
-  **Medium, architect.** Both apps can show the native service's new code after
-  its first save fails. The next launch reads a blank key and creates another group
-  (`crates/resonate-mobile/src/sync.rs:357`,
-  `android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:982`, `:991`,
-  `ios/Sources/Resonate/Features.swift:887`, `:900`). Commit the code before
-  presenting it for pairing. Done when the first key write fails and recovers
-  with no shareable code lost on restart.
 - [M · 0.17.1] Retry nearby changes until the other device acknowledges them.
   **Medium, architect.** A nearby-only look clears owed changes after scheduling
   a send. If that stream fails, the connection can stay up and the sender's
@@ -162,16 +144,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   the shared watch result and show that state in the controls. Done when
   traffic stops, the display expires and disables commands, and a fresh mirror
   restores the controls.
-- [M · 0.17.1] Surface a failed phone sync restart and retry it.
-  **Medium, architect.** The native restart stops the existing run before the
-  replacement can fail. The iPhone then keeps the enabled preference with an
-  off status that the settings page describes as starting
-  (`crates/resonate-mobile/src/sync.rs:357`,
-  `ios/Sources/Resonate/Features.swift:872`,
-  `ios/Sources/ResonateLogic/Sync.swift:119`). Preserve the effective status,
-  distinguish startup failure from an ongoing start, and make recovery
-  reachable. Done when a failed replacement is visible and can recover
-  without closing the app or changing a setting.
 - [M · 0.17.1] Withdraw a handoff when its source clears the queue.
   **Medium, architect.** The desktop and phone catalogs return no resumption
   for an empty saved queue. The ledger leaves the previous handoff intact,
@@ -312,13 +284,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `ios/Sources/ResonateLogic/Sync.swift:211`). Show the unavailable choice and
   let the listener choose a reachable replacement. Done when the picker and
   the landing status agree with one available and one unavailable folder.
-- [S · 0.17.1] Hide the old iOS pairing code while a new group is starting.
-  **Low, builder.** A confirmed rotation changes the configuration while the
-  sheet can still copy and share the previous code from the live summary
-  (`ios/Sources/Resonate/Features.swift:671`, `:887`,
-  `ios/Sources/Resonate/SyncView.swift:434`, `:442`). Withhold the old code at
-  confirmation and reset visibility when the replacement is ready.
-  Done when a delayed restart leaves the old code unavailable in the sheet.
 - [S · 0.17.1] Restore the saved iOS sync route after a settings write fails.
   **Low, builder.** The connection picker keeps its local choice after the
   main configuration reverts to the saved route
