@@ -92,6 +92,9 @@ pub struct Inside {
     pub deletions_weighed: usize,
     pub trash_refuses: bool,
     pub deletions_wait: bool,
+    pub platform_removes: bool,
+    pub waiting_removal: Vec<Recording>,
+    pub deletions_taken: usize,
     next_id: i64,
     next_answered: i64,
 }
@@ -168,6 +171,19 @@ impl Shelf {
             id,
             recording: gone,
         });
+        drop(inside);
+        self.moved();
+    }
+
+    pub fn remove_waiting(&self) {
+        let mut inside = self.inside.lock();
+
+        let waiting = std::mem::take(&mut inside.waiting_removal);
+
+        Self::remove_where(&mut inside, |held, _| waiting.contains(held));
+        inside
+            .deleted_here
+            .extend(waiting.iter().map(|gone| gone.title.clone()));
         drop(inside);
         self.moved();
     }
@@ -371,6 +387,19 @@ impl Shelf {
             !doomed[at - 1]
         });
         doomed.iter().filter(|doomed| **doomed).count()
+    }
+
+    fn queued_for_removal(inside: &mut Inside, recording: &Recording, before: i64) -> u64 {
+        let doomed: Vec<Recording> = inside
+            .arrivals
+            .iter()
+            .filter(|(held, at, _)| held.names_the_same_song_as(recording) && *at < before)
+            .map(|(held, _, _)| held.clone())
+            .filter(|held| !inside.waiting_removal.contains(held))
+            .collect();
+
+        inside.waiting_removal.extend(doomed.iter().cloned());
+        u64::try_from(doomed.len()).expect("a count")
     }
 
     fn holds_song(inside: &Inside, recording: &Recording) -> bool {
@@ -691,6 +720,10 @@ impl Catalog for Shelf {
         if inside.trash_refuses {
             return Ok(0);
         }
+        inside.deletions_taken += 1;
+        if inside.platform_removes {
+            return Ok(Self::queued_for_removal(&mut inside, recording, before));
+        }
 
         let removed = Self::remove_where(&mut inside, |held, at| {
             held.names_the_same_song_as(recording) && at < before
@@ -702,6 +735,23 @@ impl Catalog for Shelf {
         drop(inside);
         self.moved();
         Ok(u64::try_from(removed).expect("a count"))
+    }
+
+    fn deletion_waits(&self, recording: &Recording) -> Result<bool, Refused> {
+        Ok(self
+            .inside
+            .lock()
+            .waiting_removal
+            .iter()
+            .any(|waiting| waiting.names_the_same_song_as(recording)))
+    }
+
+    fn withdraw_deletion(&self, recording: &Recording) -> Result<(), Refused> {
+        self.inside
+            .lock()
+            .waiting_removal
+            .retain(|waiting| !waiting.names_the_same_song_as(recording));
+        Ok(())
     }
 
     fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Result<bool, Refused> {

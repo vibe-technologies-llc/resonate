@@ -45,6 +45,11 @@ enum Settled {
     Waiting,
 }
 
+enum Weighed {
+    Settled(u64),
+    Waiting(u64),
+}
+
 fn noted(connection: &Connection, note: &DeletionNote, owed: Owed, settled: Settled) -> Result<()> {
     connection
         .execute(
@@ -109,6 +114,10 @@ impl Ledger {
                 continue;
             }
 
+            catalog
+                .withdraw_deletion(&standing.recording)
+                .map_err(Error::Catalog)?;
+
             let answered = DeletionNote {
                 recording: standing.recording,
                 deleted: false,
@@ -136,14 +145,21 @@ impl Ledger {
         let mut removed = 0;
 
         for (note, heard) in waiting {
-            let taken = if note.deleted {
+            let weighed = if note.deleted {
                 self.taken_here(catalog, &note, heard, joined)
             } else {
-                catalog.forgive_deletion(&note.recording).map(|()| 0)
+                catalog
+                    .forgive_deletion(&note.recording)
+                    .and_then(|()| catalog.withdraw_deletion(&note.recording))
+                    .map(|()| Weighed::Settled(0))
             };
 
-            match taken {
-                Ok(copies) => removed += usize::try_from(copies).unwrap_or(usize::MAX),
+            match weighed {
+                Ok(Weighed::Settled(copies)) => removed += counted(copies),
+                Ok(Weighed::Waiting(copies)) => {
+                    removed += counted(copies);
+                    continue;
+                }
                 Err(Refused::Unavailable) => continue,
                 Err(refused) => {
                     tracing::debug!(
@@ -172,17 +188,28 @@ impl Ledger {
         note: &DeletionNote,
         heard: i64,
         joined: i64,
-    ) -> std::result::Result<u64, Refused> {
+    ) -> std::result::Result<Weighed, Refused> {
         let told_before_this_device_joined = note.stamp.nanos <= joined;
         let answered_since = self
             .newest_word_on(&note.recording)
             .map_err(|_| Refused::Unavailable)?
             .is_some_and(|newest| newest.stamp > note.stamp);
 
-        if told_before_this_device_joined || answered_since || !catalog.takes_deletions() {
-            return Ok(0);
+        if told_before_this_device_joined {
+            return Ok(Weighed::Settled(0));
         }
-        catalog.take_deletion(&note.recording, note.stamp.nanos.min(heard))
+        if answered_since || !catalog.takes_deletions() {
+            catalog.withdraw_deletion(&note.recording)?;
+            return Ok(Weighed::Settled(0));
+        }
+
+        let copies = catalog.take_deletion(&note.recording, note.stamp.nanos.min(heard))?;
+
+        if catalog.deletion_waits(&note.recording)? {
+            Ok(Weighed::Waiting(copies))
+        } else {
+            Ok(Weighed::Settled(copies))
+        }
     }
 
     pub fn deleted_everywhere(&self, recording: &Recording) -> Result<bool> {
@@ -191,13 +218,18 @@ impl Ledger {
             .is_some_and(|newest| newest.deleted))
     }
 
-    pub fn asked_back(&mut self, recording: &Recording) -> Result<bool> {
+    pub fn asked_back(&mut self, catalog: &dyn Catalog, recording: &Recording) -> Result<bool> {
         let standing: Vec<DeletionNote> = self
             .alike(recording)?
             .into_iter()
             .filter(|note| note.deleted)
             .collect();
 
+        for note in &standing {
+            catalog
+                .withdraw_deletion(&note.recording)
+                .map_err(Error::Catalog)?;
+        }
         for note in &standing {
             let answered = DeletionNote {
                 recording: note.recording.clone(),
@@ -288,6 +320,10 @@ impl Ledger {
             .map(drop)
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
+}
+
+fn counted(copies: u64) -> usize {
+    usize::try_from(copies).unwrap_or(usize::MAX)
 }
 
 struct DeletionRow {

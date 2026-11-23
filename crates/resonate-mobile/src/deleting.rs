@@ -1,10 +1,11 @@
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, BTreeSet},
     os::unix::fs::MetadataExt,
     sync::{Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
 };
 
+use parking_lot::Mutex;
 use resonate_core::{Mbid, Recording};
 use resonate_library::{identical_among, kept_first};
 use rusqlite::{OptionalExtension, Transaction};
@@ -22,6 +23,8 @@ use crate::{
 
 const HELD_WITH_THEIR_SIZES: &str =
     "SELECT d.*, d.size AS bytes FROM documents d WHERE d.missing = 0 ORDER BY d.id";
+const WAITING_FOR_REMOVAL: &str = "SELECT q.track FROM deletions_from_other_devices q
+     JOIN documents d ON d.id = q.track WHERE d.missing = 0 ORDER BY q.told, q.track";
 
 fn read_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Read, source)
@@ -33,6 +36,22 @@ fn write_error(source: rusqlite::Error) -> Error {
 
 #[derive(Default)]
 pub(crate) struct Files(OnceLock<Arc<dyn Documents>>);
+
+#[derive(Default)]
+pub(crate) struct HandedForRemoval(Mutex<BTreeSet<u64>>);
+
+impl HandedForRemoval {
+    fn not_yet_handed(&self, waiting: &[u64]) -> Vec<u64> {
+        let mut handed = self.0.lock();
+
+        handed.retain(|id| waiting.contains(id));
+        waiting
+            .iter()
+            .copied()
+            .filter(|id| handed.insert(*id))
+            .collect()
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) struct FileIdentity {
@@ -102,7 +121,9 @@ impl MobilePlayer {
     }
 
     pub fn take_deletions_from_other_devices(&self) -> Result<Vec<Track>> {
-        let ids = self.catalog.deletions_from_other_devices_taken()?;
+        let waiting = self.catalog.deletions_from_other_devices_waiting()?;
+
+        let ids = self.services.removals.not_yet_handed(&waiting);
         Ok(ids
             .into_iter()
             .filter_map(|id| self.catalog.track(id).ok())
@@ -313,24 +334,16 @@ impl Catalog {
         Ok(forgotten)
     }
 
-    fn deletions_from_other_devices_taken(&self) -> Result<Vec<u64>> {
-        let mut connection = self.0.lock();
-
-        let transaction = connection.transaction().map_err(write_error)?;
-        let taken = transaction
-            .prepare("SELECT track FROM deletions_from_other_devices ORDER BY told, track")
-            .and_then(|mut query| {
-                query
-                    .query_map([], |row| row.get::<_, i64>(0).map(i64::cast_unsigned))?
-                    .collect::<rusqlite::Result<Vec<_>>>()
-            })
+    fn deletions_from_other_devices_waiting(&self) -> Result<Vec<u64>> {
+        let connection = self.0.lock();
+        let mut query = connection
+            .prepare_cached(WAITING_FOR_REMOVAL)
             .map_err(read_error)?;
-
-        transaction
-            .execute("DELETE FROM deletions_from_other_devices", [])
-            .map_err(write_error)?;
-        transaction.commit().map_err(write_error)?;
-        Ok(taken)
+        query
+            .query_map([], |row| row.get::<_, i64>(0).map(i64::cast_unsigned))
+            .map_err(read_error)?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .map_err(read_error)
     }
 
     pub(crate) fn fold_into(&self, kept: u64, copies: &[u64]) -> Result<usize> {

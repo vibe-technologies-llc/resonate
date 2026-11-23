@@ -434,7 +434,17 @@ platforms; the catalog seam stays thin.
   and no newer row answers it; `Catalog::take_deletion(recording, before)` then removes only the
   copies that arrived in the catalog before the earlier of the stamp and `heard`, through the
   catalog's own delete, so a song added again later is never deleted by an older tombstone, a file
-  the trash refuses keeps its row, and the deletion is not tried again. **The stamp orders the
+  the trash refuses keeps its row, and the deletion is not tried again. **A removal someone else
+  makes keeps the deletion standing until it is made**: a catalog whose copies wait for a front end
+  to remove them (the phones', `mobile.md`) says so through `Catalog::deletion_waits`, and the row
+  stays unsettled, weighed again at every settle (so it outlives a restart) until no copy waits, then
+  settles once. Whatever no longer stands withdraws the copies still waiting
+  (`Catalog::withdraw_deletion`): a deletion answered since, *Let my other devices delete songs here*
+  switched off, an answer settling, a song added again by hand (the look, before its answer is
+  written) or asked back (`asked_back`). The desktop's catalog removes at once and keeps both
+  defaults
+  (`a_deletion_waiting_for_the_platform_stands_over_a_reopen_and_settles_once_the_file_is_gone`,
+  `a_removal_waiting_for_the_platform_is_withdrawn_by_a_newer_answer_from_anywhere`). **The stamp orders the
   deletion against other words; it never dates a copy here**: a stamp is another device's clock and
   may run up to the accepted day ahead of this one, so a copy is weighed against `heard` (this
   device's wall as the row arrived) where that is earlier, and a copy added between the stamp and

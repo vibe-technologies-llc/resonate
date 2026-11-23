@@ -2762,6 +2762,121 @@ fn a_deletion_the_trash_refuses_keeps_the_song_and_is_not_tried_again() {
     assert!(deletions(&phone.send()).is_empty());
 }
 
+fn waiting_removal(device: &Device) -> Vec<String> {
+    device
+        .shelf
+        .inside
+        .lock()
+        .waiting_removal
+        .iter()
+        .map(|waiting| waiting.title.clone())
+        .collect()
+}
+
+fn deletions_taken(device: &Device) -> usize {
+    device.shelf.inside.lock().deletions_taken
+}
+
+fn told_a_deletion_the_platform_removes(desk: &mut Device, device: &mut Device) {
+    device.shelf.inside.lock().platform_removes = true;
+    sync(desk, device);
+    sync(device, desk);
+    desk.shelf.delete_everywhere("A");
+
+    let told = desk.send();
+
+    device.receive(&told);
+}
+
+#[test]
+fn a_deletion_waiting_for_the_platform_stands_over_a_reopen_and_settles_once_the_file_is_gone() {
+    let folder = scratch_folder("waiting-removal");
+    let path = folder.join("sync.sqlite");
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = device_over_a_file("Phone", &["A", "B"], &path);
+
+    told_a_deletion_the_platform_removes(&mut desk, &mut phone);
+
+    let queued = waiting_removal(&phone);
+
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    phone.ledger = Ledger::open(&path).expect("the ledger opened again");
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let still_queued = waiting_removal(&phone);
+    let weighed_while_waiting = deletions_taken(&phone);
+
+    phone.shelf.remove_waiting();
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let weighed_once_removed = deletions_taken(&phone);
+
+    phone.ledger.settle(&phone.shelf).expect("settled");
+    phone.ledger = Ledger::open(&path).expect("the ledger opened again");
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let weighed_after = deletions_taken(&phone);
+    let told_back = deletions(&phone.send());
+    let titles = phone.shelf.song_titles();
+
+    drop(phone);
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert_eq!(queued, ["A"]);
+    assert_eq!(still_queued, ["A"]);
+    assert_eq!(weighed_while_waiting, 3);
+    assert_eq!(weighed_once_removed, 4);
+    assert_eq!(weighed_after, 4);
+    assert_eq!(titles, ["B"]);
+    assert!(told_back.is_empty());
+}
+
+#[test]
+fn a_removal_waiting_for_the_platform_is_withdrawn_by_a_newer_answer_from_anywhere() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut answered_there = Device::new("Phone", &["A", "B"]);
+    let mut added_here = Device::new("Tablet", &["A", "B"]);
+    let mut asked_here = Device::new("Laptop", &["A", "B"]);
+
+    told_a_deletion_the_platform_removes(&mut desk, &mut answered_there);
+    told_a_deletion_the_platform_removes(&mut desk, &mut added_here);
+    told_a_deletion_the_platform_removes(&mut desk, &mut asked_here);
+
+    let queued = [
+        waiting_removal(&answered_there),
+        waiting_removal(&added_here),
+        waiting_removal(&asked_here),
+    ];
+
+    desk.shelf.add_song(song("A"), b"A".repeat(1000));
+
+    let answered = desk.send();
+
+    answered_there.receive(&answered);
+    thread::sleep(Duration::from_millis(5));
+    added_here.shelf.add_song(song("A"), b"A".repeat(1000));
+
+    let told_by_the_listener = deletions(&added_here.send());
+    let asked = asked_here
+        .ledger
+        .asked_back(&asked_here.shelf, &song("A"))
+        .expect("answered");
+
+    for device in [&mut answered_there, &mut added_here, &mut asked_here] {
+        device.ledger.settle(&device.shelf).expect("settled");
+    }
+
+    assert_eq!(queued, [["A"], ["A"], ["A"]]);
+    assert_eq!(deletions(&answered), [("A".to_owned(), false)]);
+    assert_eq!(told_by_the_listener, [("A".to_owned(), false)]);
+    assert!(asked);
+    for device in [&answered_there, &added_here, &asked_here] {
+        assert!(waiting_removal(device).is_empty());
+        assert!(device.shelf.song_titles().contains(&"A".to_owned()));
+        assert!(!device.ledger.deleted_everywhere(&song("A")).expect("asked"));
+    }
+}
+
 #[test]
 fn a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device() {
     let mut desk = Device::new("Desk", &["A"]);
@@ -2771,7 +2886,12 @@ fn a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device() {
     desk.shelf.delete_everywhere("A");
     sync(&mut desk, &mut phone);
 
-    assert!(phone.ledger.asked_back(&song("A")).expect("answered"));
+    assert!(
+        phone
+            .ledger
+            .asked_back(&phone.shelf, &song("A"))
+            .expect("answered")
+    );
 
     let answered = phone.send();
 
@@ -2783,7 +2903,7 @@ fn a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device() {
     assert!(
         !phone
             .ledger
-            .asked_back(&song("A"))
+            .asked_back(&phone.shelf, &song("A"))
             .expect("nothing standing")
     );
 }

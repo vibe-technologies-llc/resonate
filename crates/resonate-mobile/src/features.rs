@@ -47,6 +47,7 @@ pub(crate) struct Services {
     pub(crate) searching: Arc<crate::search::Searching>,
     pub(crate) watching: crate::watching::Watching,
     pub(crate) files: crate::deleting::Files,
+    pub(crate) removals: crate::deleting::HandedForRemoval,
     pub(crate) history_kept: Mutex<resonate_library::HistoryKept>,
 }
 
@@ -89,6 +90,7 @@ impl Default for Services {
             searching: Arc::default(),
             watching: crate::watching::Watching::default(),
             files: crate::deleting::Files::default(),
+            removals: crate::deleting::HandedForRemoval::default(),
             history_kept: Mutex::default(),
         }
     }

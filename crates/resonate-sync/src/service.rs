@@ -3635,8 +3635,9 @@ async fn fetch_one(
 
 async fn asked_back(running: &Arc<Running>, recording: &Recording) {
     let ledger = Arc::clone(&running.ledger);
+    let catalog = Arc::clone(&running.catalog);
     let asked = recording.clone();
-    if let Err(error) = blocking(move || ledger.lock().asked_back(&asked)).await {
+    if let Err(error) = blocking(move || ledger.lock().asked_back(catalog.as_ref(), &asked)).await {
         tracing::debug!(%error, "a song asked for could not answer its deletion everywhere");
     }
 }

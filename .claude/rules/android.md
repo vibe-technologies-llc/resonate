@@ -1483,7 +1483,7 @@ open the same dialog (`Sheets.delete(tracks, everywhere = true)`, `sheet_delete_
 and `SongDeletion.delete(tracks, everywhere)` forgets the removed songs through
 `forget_songs_deleted_everywhere`. `pollSync` first asks `take_deletions_from_other_devices()` and
 removes the deletable ones with no consent asked (a MediaStore file waiting on the listener's consent
-stays), then forgets them. *Let my other devices delete songs here* (`SyncScreen`, below the control
+stays), then forgets them; a song not removed is asked again when the player next opens. *Let my other devices delete songs here* (`SyncScreen`, below the control
 choice) is `SyncConfig.takes_deletions`, kept as `sync-deletions-from-others` (on by default, read by
 `StoredChoices.deletionsFromOthers`).
 

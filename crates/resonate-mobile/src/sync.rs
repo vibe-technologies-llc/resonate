@@ -1723,6 +1723,14 @@ impl Catalog for DocumentCatalog {
         self.deletion_waits_for_the_platform(recording, before)
     }
 
+    fn deletion_waits(&self, recording: &Recording) -> Answered<bool> {
+        self.deletion_still_waits(recording)
+    }
+
+    fn withdraw_deletion(&self, recording: &Recording) -> Answered<()> {
+        self.deletion_withdrawn(recording)
+    }
+
     fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Answered<bool> {
         self.added_here_since(recording, since)
     }

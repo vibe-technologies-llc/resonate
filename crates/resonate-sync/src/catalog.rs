@@ -201,6 +201,16 @@ pub trait Catalog: Send + Sync + 'static {
         Ok(0)
     }
 
+    fn deletion_waits(&self, recording: &Recording) -> Result<bool, Refused> {
+        let _ = recording;
+        Ok(false)
+    }
+
+    fn withdraw_deletion(&self, recording: &Recording) -> Result<(), Refused> {
+        let _ = recording;
+        Ok(())
+    }
+
     fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Result<bool, Refused> {
         let _ = (recording, since);
         Ok(false)

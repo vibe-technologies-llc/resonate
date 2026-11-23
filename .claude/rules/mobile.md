@@ -1242,17 +1242,26 @@ its ledger holds them. A deletion another device told, while `SyncConfig.takes_d
 before the moment the ledger passes (`documents.added`, Unix seconds, against the earlier of the
 tombstone's stamp and when this device heard it, `sync.md`) and surely named by it (`Recording::surely_names`
 over the document's own recording, `sync.md`) into `deletions_from_other_devices`;
-`take_deletions_from_other_devices()` hands those `Track`s to the front end and empties the table, and
-the front end removes each file it may (a writable folder's, as its own *Delete*) and forgets those
-through `forget_deleted_songs`; a file it cannot remove keeps its row, and the ledger has settled the
-deletion, so it is not asked again. `added_by_hand_since` answers whether a visible copy was added since
-a moment by anything but a sync landing (no `songs_received` row), which answers the deletion for every
-device
+**A row waits until its file is gone**: `take_deletions_from_other_devices()` hands the rows of visible
+documents to the front end as `Track`s and leaves the table as it is, each row once a run
+(`HandedForRemoval`, in memory, so a file refused is not tried at every poll and is handed again when
+the player next opens); the front end removes each file it may (a writable folder's, as its own
+*Delete*) and forgets those through `forget_deleted_songs`, and forgetting the document takes its row.
+A file it cannot remove, a folder withdrawn or an app ended before it forgot keeps the row, so the
+removal is asked again after a restart. The ledger settles the deletion only once no copy waits
+(`deletion_waits`: a row for any document the recording names, `deletion_still_waits`), weighing it
+again at every settle meanwhile (`sync.md`), and a newer word withdraws the rows
+(`withdraw_deletion`, `deletion_withdrawn`): an answer from another device, the song added again by
+hand here or asked back, or *Let my other devices delete songs here* switched off. `added_by_hand_since`
+answers whether a visible copy was added since a moment by anything but a sync landing (no
+`songs_received` row), which answers the deletion for every device
 (`a_song_deleted_from_every_device_waits_to_be_told_and_one_deleted_here_does_not`,
 `a_deletion_another_device_told_waits_for_the_platform_only_for_a_copy_older_than_it`,
 `a_deletion_named_without_a_recording_id_waits_only_for_the_copy_of_its_album_and_length`,
 `a_deletion_naming_no_album_length_or_recording_id_waits_for_nothing`,
-`a_song_one_phone_deletes_from_every_device_waits_for_the_other_unless_it_refuses`).
+`a_song_one_phone_deletes_from_every_device_waits_for_the_other_unless_it_refuses`,
+`a_removal_the_platform_refuses_waits_over_a_reopen_and_one_that_succeeds_settles_once`,
+`a_removal_waiting_for_the_platform_is_cancelled_by_the_song_added_again_anywhere`).
 
 ## Higher quality versions of a playlist
 

@@ -1310,7 +1310,8 @@ every route change (a pair of headphones at the same rate included), not from th
   (`Features.syncsWithOtherDevices`) it also offers *Delete from every device*, the same confirmation
   over `SongsToDelete.everywhere`, forgetting through `forget_songs_deleted_everywhere`; the sync poll
   first asks `take_deletions_from_other_devices()` and `Library.takeDeletionsFromOtherDevices` removes
-  each deletable file and forgets those that went. Library tools'
+  each deletable file and forgets those that went; a song not removed is asked again when the player
+  next opens. Library tools'
   *Identical songs* (`IdenticalSongsView`, `Destination.identicalSongs`) asks `identical_songs` on
   `Work.aside` and lists each set, every file with its folder and name (marked read-only where its
   folder is); a tap chooses the copy kept, and *Delete copies* (confirmed) deletes the others set by
