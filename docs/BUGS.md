@@ -357,6 +357,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
 ## Catalog
+- [S · 0.17.1] Reserve a tag recovery file's destination when no exclusive rename exists. **Low, builder.**
+  The library's fallback move now creates the destination name exclusively before renaming onto it
+  (`unreplacing.rs`, `renamed_onto_a_name_reserved`), but the codec's own `renamed_over_nothing`
+  (`crates/resonate-codec/src/journal.rs`) still checks and then renames where links are refused,
+  so a recovery file that appears between the two can be replaced. Share one helper (in core) or
+  give the codec the same reservation. Done when a fallback test with links refused keeps a
+  competing destination and still lands the journal under a fresh name.
 - [S · 0.17.1] Settle a pending removal before a scan prunes its file. **Low, builder.**
   A delete whose run ended after the trash took the file is settled when the catalog next opens or
   before the next delete (`deleted::settle`, `removals_pending`), but an open that could not take
@@ -373,19 +380,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   names) an unsettled arrival under a walked root shares, or pair it then. Done when a song moved
   from R1 to R2 and scanned with `scan R2` keeps its ID and favourite, and the existing tidy tests
   with same-sized fixtures still forget what is truly gone.
-- [M · 0.17.1] Keep organise's filename swaps together when a move fails or is cancelled.
-  **Medium, architect.** The park and landing are ordinary moves, so cancellation or an I/O refusal
-  can commit only the park and leave the catalog pointing at a temporary filename
-  (`crates/resonate-library/src/organise.rs:2104`, `crates/resonate-library/src/organise.rs:2300`,
-  `crates/resonate-library/src/organise.rs:2384`). Apply the entire cycle as one unit and roll back
-  an incomplete one. Done when a cancelled swap, an injected landing refusal and a swap at a
-  batch boundary leave both file paths and catalog entries consistent.
-- [M · 0.17.1] Keep destination files when a move lacks an atomic no-replace operation.
-  **Low, architect.** The fallback can use a replacing rename after a separate existence
-  check, so a concurrently created destination file can be lost
-  (`crates/resonate-library/src/unreplacing.rs:23`). Use a platform operation that
-  reserves the destination atomically or refuse the move on that volume. Done when a
-  fallback test preserves both the source and a competing destination.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
