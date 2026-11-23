@@ -51,6 +51,11 @@ const SEEDS: &[Seed] = &[
         fingerprint: 0x8e42_1a02_7d16_28b4,
     },
     Seed {
+        name: "fetch-revised",
+        kind: Kind::ToPeer,
+        fingerprint: 0x2ffd_33e8_c62b_45f9,
+    },
+    Seed {
         name: "heads-asked",
         kind: Kind::ToServer,
         fingerprint: 0x5469_6afd_cbd4_1b5a,
@@ -94,6 +99,11 @@ const SEEDS: &[Seed] = &[
         name: "room-pong",
         kind: Kind::FromServer,
         fingerprint: 0x0f39_2b04_de02_0483,
+    },
+    Seed {
+        name: "sending-revised",
+        kind: Kind::FromPeer,
+        fingerprint: 0x89a4_0297_2914_a7b2,
     },
     Seed {
         name: "stage",

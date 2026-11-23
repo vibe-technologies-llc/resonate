@@ -21,6 +21,7 @@ use crate::{
     consulted::{Dates, ExportPart, KeptAnswer},
     key::{DEVICE_BYTES, SPACE_BYTES, TOKEN_BYTES},
     remote::{Controlling, RemoteCommand, RemoteZone, Revisions, read_zones, write_zones},
+    revision::{Bound, REVISION_BYTES, Revised, Revision},
     seal::SEALED_AT_LEAST,
 };
 
@@ -264,6 +265,7 @@ pub enum ToPeer {
     Fetch {
         recording: Recording,
         offset: u64,
+        bound: Bound,
     },
     Meet {
         device: DeviceId,
@@ -317,6 +319,7 @@ pub enum FromPeer {
     Sending {
         size: u64,
         extension: String,
+        revised: Option<Revised>,
     },
     Missing,
     Met {
@@ -1694,10 +1697,27 @@ impl ToPeer {
 
         match self {
             Self::Holdings => writer.byte(0),
-            Self::Fetch { recording, offset } => {
+            Self::Fetch {
+                recording,
+                offset,
+                bound: Bound::Unsaid,
+            } => {
                 writer.byte(1);
                 writer.recording(recording);
                 writer.number(*offset);
+            }
+            Self::Fetch {
+                recording,
+                offset,
+                bound: Bound::Carried(revision),
+            } => {
+                writer.byte(16);
+                writer.recording(recording);
+                writer.number(*offset);
+                writer.flag(revision.is_some());
+                if let Some(revision) = revision {
+                    writer.fixed(&revision.0);
+                }
             }
             Self::Meet { device, records } => {
                 writer.byte(2);
@@ -1789,6 +1809,16 @@ impl ToPeer {
             1 => Self::Fetch {
                 recording: reader.recording()?,
                 offset: reader.number()?,
+                bound: Bound::Unsaid,
+            },
+            16 => Self::Fetch {
+                recording: reader.recording()?,
+                offset: reader.number()?,
+                bound: Bound::Carried(if reader.flag()? {
+                    Some(Revision(reader.fixed::<REVISION_BYTES>()?))
+                } else {
+                    None
+                }),
             },
             2 => Self::Meet {
                 device: reader.device()?,
@@ -1907,10 +1937,25 @@ impl FromPeer {
                 }
             }
             Self::HeldEnd => writer.byte(1),
-            Self::Sending { size, extension } => {
+            Self::Sending {
+                size,
+                extension,
+                revised: None,
+            } => {
                 writer.byte(2);
                 writer.number(*size);
                 writer.text(extension);
+            }
+            Self::Sending {
+                size,
+                extension,
+                revised: Some(revised),
+            } => {
+                writer.byte(22);
+                writer.number(*size);
+                writer.text(extension);
+                writer.fixed(&revised.revision.0);
+                writer.number(revised.from);
             }
             Self::Missing => writer.byte(3),
             Self::Met { device } => {
@@ -2013,7 +2058,23 @@ impl FromPeer {
             2 => Self::Sending {
                 size: reader.number()?,
                 extension: reader.text()?,
+                revised: None,
             },
+            22 => {
+                let size = reader.number()?;
+                let extension = reader.text()?;
+                let revision = Revision(reader.fixed::<REVISION_BYTES>()?);
+                let from = reader.number()?;
+
+                if from > size {
+                    return Err(Error::Malformed(Malformed::Number));
+                }
+                Self::Sending {
+                    size,
+                    extension,
+                    revised: Some(Revised { revision, from }),
+                }
+            }
             3 => Self::Missing,
             4 => Self::Met {
                 device: reader.device()?,
@@ -2955,6 +3016,7 @@ mod tests {
         let fetch = ToPeer::Fetch {
             recording: song("Echoes"),
             offset: 1 << 40,
+            bound: Bound::Unsaid,
         };
         let held = FromPeer::Held {
             items: vec![Held {
@@ -3027,6 +3089,60 @@ mod tests {
             FromPeer::decoded(&FromPeer::Missing.encoded()).expect("decoded"),
             FromPeer::Missing
         );
+    }
+
+    #[test]
+    fn a_fetch_bound_to_a_revision_reads_back_and_an_unbound_one_is_written_as_an_earlier_build_wrote_it()
+     {
+        let revision = Revision([7; REVISION_BYTES]);
+        let unbound = ToPeer::Fetch {
+            recording: song("Echoes"),
+            offset: 4096,
+            bound: Bound::Unsaid,
+        };
+        let asked = [
+            ToPeer::Fetch {
+                recording: song("Echoes"),
+                offset: 0,
+                bound: Bound::Carried(None),
+            },
+            ToPeer::Fetch {
+                recording: song("Echoes"),
+                offset: 4096,
+                bound: Bound::Carried(Some(revision)),
+            },
+        ];
+        let sent = FromPeer::Sending {
+            size: 9000,
+            extension: "flac".into(),
+            revised: Some(Revised {
+                revision,
+                from: 4096,
+            }),
+        };
+        let past_its_end = FromPeer::Sending {
+            size: 9000,
+            extension: "flac".into(),
+            revised: Some(Revised {
+                revision,
+                from: 9001,
+            }),
+        };
+
+        for fetch in asked {
+            let encoded = fetch.encoded();
+
+            assert_eq!(encoded[0], 16);
+            assert_eq!(ToPeer::decoded(&encoded).expect("decoded"), fetch);
+        }
+
+        assert_eq!(unbound.encoded()[0], 1);
+        assert_eq!(sent.encoded()[0], 22);
+        assert_eq!(FromPeer::decoded(&sent.encoded()).expect("decoded"), sent);
+        assert!(matches!(
+            FromPeer::decoded(&past_its_end.encoded()),
+            Err(Error::Malformed(Malformed::Number))
+        ));
     }
 
     #[test]
@@ -3141,11 +3257,13 @@ mod tests {
         let fetch = ToPeer::Fetch {
             recording: song("Echoes"),
             offset: 0,
+            bound: Bound::Unsaid,
         }
         .encoded();
         let sending = FromPeer::Sending {
             size: 9,
             extension: "flac".into(),
+            revised: None,
         }
         .encoded();
 

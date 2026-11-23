@@ -127,7 +127,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   `Arrived`/`Left`, `Punched`, `Compacted`, `Staging` (tag 18), `Refused`, `Relayed` (from a device, one datagram). ALPN `resonate-sync/1` to the server,
   `resonate-peer/1` between devices.
 - **Between devices**, one request per stream: `Holdings` (answered `Held`… `HeldEnd`), `Fetch`
-  (`Sending` then the bytes, or `Missing`), `Meet` (device, whether records travel; answered `Met`
+  (`Sending` then the bytes, or `Missing`; tags 16 and 22 carry the file's revision, *Peers*), `Meet` (device, whether records travel; answered `Met`
   with the other's device), `Changes` (whether whole, a bundle; answered `Taken`), `Tags` (a
   recording; answered `Tagged`, a `SongTags`) and `Covers` (`ToPeer` tag 5: release ids, at most
   `COVERS_ASKED_AT_MOST`, 512, the reader refusing more; answered a `Covered` frame, a release id and
@@ -1114,11 +1114,33 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `Error::SongTooLarge` and the stream is stopped before a note or a byte is staged, so a paired
   device cannot fill the disc under `sync-staging`
   (`a_song_announced_past_the_largest_one_fetched_is_refused_before_anything_is_staged`).
-  **A partial is resumed only from the file it began as**:
-  a `.from` note beside it names the sending device and the size it announced; another device, or a
-  size the header no longer names, starts the song over (`peer::resumable`, `fetched_from`). The
-  header carries no version of the file, so a file replaced at the same size by the same device is
-  not told apart; carrying one would change `Sending`, which an older build reads to its end. A
+  **A partial is resumed only from the revision of the file it began as**:
+  a `.from` note beside it names the sending device, the size it announced and the file's
+  `Revision` (`device size revision`, `song_note`); a note naming another device, no revision (an
+  earlier build's `device size`) or a size the partial is past starts the song over
+  (`bound_partial`). A `Revision` is the SHA-256 of the size, the first and last 64 KiB and sixteen
+  4 KiB windows spread between (the whole file up to 192 KiB), read by the sender from the
+  catalog's reader for every fetch (`Revision::of`). It is drawn from the bytes alone because the
+  seam hands a reader and a size, never a modification time (a phone's document has none it can be
+  trusted for), and not from the whole file because that would read a 4 GiB song once before its
+  first byte moves, past `A_FETCH_GOES_QUIET_AFTER` on a slow card. A rewritten tag, a re-encode or
+  another song touches the head or tail, so a same-size replacement is told apart; a same-size edit
+  touching none of the sampled bytes is not. **The fetch carries the revision the partial was bound
+  to** (`ToPeer::Fetch` tag 16, `Bound::Carried`) and **the sender answers from where it resumes**
+  (`FromPeer::Sending` tag 22, `Revised`: its revision now and the offset the bytes start at): the
+  offset asked where the revision matches, zero otherwise, so a replaced song comes whole from zero
+  in one request (`a_song_replaced_at_the_same_size_while_cut_off_is_fetched_again_from_zero`). The
+  receiver takes a resumption only where offset, size and revision are its note's, and truncates
+  at zero (`resumed_from`); once whole, the staged file must read as the announced revision or it
+  is `Error::SongUnlikeItsRevision` and removed (`holds_revision`), so a file changed while sent never
+  lands spliced (`an_unchanged_song_cut_off_midway_is_resumed_to_its_original_bytes`,
+  `a_song_unlike_the_revision_its_sender_announced_is_refused_and_nothing_stays_staged`). **An
+  older build drops tag 16 unread**, a stream closed with no frame, so the song is asked again
+  with the old tag 1 from zero (`Bound::Unsaid`, answered by the old `Sending` tag 2), staged with
+  no note and so never resumed
+  (`a_device_too_old_to_name_a_revision_sends_the_song_from_zero_whatever_is_staged`); an older
+  asker sends tag 1 and is answered as it always was. A partial's bytes are synced before an
+  interrupted fetch returns, so the next one measures all that was written. A
   `.part` or `.from` untouched for `A_PARTIAL_IS_SWEPT_AFTER` (7 days) is swept when the service
   starts (`service::swept`), so a partial of a song never asked again does not stay. **A song
   the catalog refused waits before a follow asks for it again, across restarts**: a landing answered `false` or

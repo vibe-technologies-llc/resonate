@@ -225,6 +225,9 @@ pub enum Error {
     #[error("device {0:?} does not hold that song")]
     Missing(DeviceId),
 
+    #[error("the song device {0:?} sent is not the revision it announced")]
+    SongUnlikeItsRevision(DeviceId),
+
     #[error("a device on this network did not answer a meeting")]
     Unmet,
 

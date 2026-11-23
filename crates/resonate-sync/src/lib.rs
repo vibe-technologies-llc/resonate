@@ -14,6 +14,7 @@ mod peer;
 mod quic;
 mod relay;
 mod remote;
+mod revision;
 mod seal;
 mod service;
 pub mod shared;
@@ -55,6 +56,7 @@ pub use crate::{
         Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone,
         Revisions, Uncontrolled, Watched, ZONES_MIRRORED_AT_MOST,
     },
+    revision::{Bound, Revised, Revision},
     seal::{opened, sealed},
     service::{
         AskedToControl, ExportWanted, HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown,

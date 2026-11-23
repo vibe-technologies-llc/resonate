@@ -24,7 +24,8 @@ use tokio::{
 };
 
 use crate::{
-    Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, Result, SongTags, StreamOp,
+    Bound, Catalog, Change, DeviceId, Error, FileOp, Held, Ledger, ReadSeek, Result, Revised,
+    Revision, SongTags, StreamOp,
     consulted::{
         CONSULT_ANSWERED_WITHIN, Consultable, Consulting, Dates, ExportFetched, ExportHeld,
         ExportPart, ExportReceiving, KEPT_PAGES_A_MEETING,
@@ -249,9 +250,13 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
         ToPeer::Export { part, offset } => {
             send_export(&mut send, &asked.answering, part, offset).await?;
         }
-        ToPeer::Fetch { recording, offset } => {
+        ToPeer::Fetch {
+            recording,
+            offset,
+            bound,
+        } => {
             if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
-                send_song(&mut send, catalog, recording, offset).await?;
+                send_song(&mut send, catalog, recording, offset, bound).await?;
             } else {
                 send_frame(&mut send, &FromPeer::Missing.encoded()).await?;
             }
@@ -894,18 +899,53 @@ async fn send_song(
     catalog: Arc<dyn Catalog>,
     recording: Recording,
     offset: u64,
+    bound: Bound,
 ) -> Result<()> {
     let opened = blocking(move || catalog.open(&recording).map_err(Error::Catalog)).await?;
     let Some(opened) = opened else {
         return send_frame(send, &FromPeer::Missing.encoded()).await;
     };
+    let Bound::Carried(held) = bound else {
+        let header = FromPeer::Sending {
+            size: opened.size,
+            extension: opened.extension,
+            revised: None,
+        };
+
+        send_frame(send, &header.encoded()).await?;
+        return streamed_from(send, opened.reader, offset).await;
+    };
+
+    let size = opened.size;
+    let reader = opened.reader;
+
+    let Some((reader, revision)) = blocking(move || Ok(revised(reader, size))).await? else {
+        return send_frame(send, &FromPeer::Missing.encoded()).await;
+    };
+    let from = if held == Some(revision) && offset <= size {
+        offset
+    } else {
+        0
+    };
+
     let header = FromPeer::Sending {
-        size: opened.size,
-        extension: opened.extension.clone(),
+        size,
+        extension: opened.extension,
+        revised: Some(Revised { revision, from }),
     };
 
     send_frame(send, &header.encoded()).await?;
-    streamed_from(send, opened.reader, offset).await
+    streamed_from(send, reader, from).await
+}
+
+fn revised(mut reader: Box<dyn ReadSeek>, size: u64) -> Option<(Box<dyn ReadSeek>, Revision)> {
+    match Revision::of(&mut *reader, size) {
+        Ok(revision) => Some((reader, revision)),
+        Err(error) => {
+            tracing::debug!(%error, "the revision of a song asked for could not be read");
+            None
+        }
+    }
 }
 
 async fn send_export(
@@ -1079,6 +1119,34 @@ pub struct Fetched {
     pub tags: SongTags,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Partial {
+    offset: u64,
+    size: u64,
+    revision: Revision,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Asking {
+    Revised(Option<Partial>),
+    Unrevised,
+}
+
+enum Answered {
+    Whole(Fetched),
+    StartOver,
+    Unknown,
+}
+
+struct Fetching<'a, F> {
+    connection: &'a Connection,
+    device: DeviceId,
+    recording: &'a Recording,
+    staged: &'a Path,
+    noted: &'a Path,
+    received: F,
+}
+
 pub async fn fetch(
     connection: &Connection,
     device: DeviceId,
@@ -1087,17 +1155,27 @@ pub async fn fetch(
     received: impl Fn(u64, u64),
 ) -> Result<Fetched> {
     let noted = staged.with_extension(NOTED_EXTENSION);
-    let offset = resumable(staged, &noted, device).await;
+    let fetching = Fetching {
+        connection,
+        device,
+        recording,
+        staged,
+        noted: &noted,
+        received,
+    };
 
-    let fetched = match fetched_from(
-        connection, device, recording, staged, &noted, offset, &received,
-    )
-    .await?
-    {
-        Some(fetched) => fetched,
-        None => fetched_from(connection, device, recording, staged, &noted, 0, &received)
-            .await?
-            .ok_or(Error::Missing(device))?,
+    let partial = bound_partial(staged, &noted, device).await;
+
+    let answered = match fetching.answered(Asking::Revised(partial)).await? {
+        Answered::StartOver => fetching.answered(Asking::Revised(None)).await?,
+        answered => answered,
+    };
+    let answered = match answered {
+        Answered::Unknown => fetching.answered(Asking::Unrevised).await?,
+        answered => answered,
+    };
+    let Answered::Whole(fetched) = answered else {
+        return Err(Error::Missing(device));
     };
     Ok(Fetched {
         tags: tags_from(connection, recording).await,
@@ -1155,9 +1233,19 @@ async fn resumable(staged: &Path, noted: &Path, device: DeviceId) -> u64 {
         .unwrap_or_default()
 }
 
-async fn noted_size(noted: &Path) -> Option<u64> {
-    let note = fs::read_to_string(noted).await.ok()?;
-    note.split_once(' ')?.1.trim().parse().ok()
+fn song_note(device: DeviceId, size: u64, revision: Revision) -> String {
+    format!("{device} {size} {}", revision.hex())
+}
+
+fn noted_revision(note: &str, device: DeviceId) -> Option<(u64, Revision)> {
+    let mut fields = note.trim().split(' ');
+
+    let (from, size, revision) = (fields.next()?, fields.next()?, fields.next()?);
+
+    if from != device.to_string() || fields.next().is_some() {
+        return None;
+    }
+    Some((size.parse().ok()?, Revision::from_hex(revision)?))
 }
 
 async fn quietly_short<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
@@ -1171,122 +1259,215 @@ async fn quietly_short<T>(waiting: impl Future<Output = Result<T>>) -> Result<T>
         })
 }
 
-async fn fetched_from(
-    connection: &Connection,
-    device: DeviceId,
-    recording: &Recording,
-    staged: &Path,
-    noted: &Path,
-    offset: u64,
-    received: &impl Fn(u64, u64),
-) -> Result<Option<Fetched>> {
-    let (mut send, mut recv) = quietly_short(async {
-        connection
-            .open_bi()
-            .await
-            .map_err(|source| Error::Connection(Box::new(source)))
-    })
-    .await?;
-    let request = ToPeer::Fetch {
-        recording: recording.clone(),
-        offset,
-    };
+async fn bound_partial(staged: &Path, noted: &Path, device: DeviceId) -> Option<Partial> {
+    let revised = fs::read_to_string(noted)
+        .await
+        .ok()
+        .and_then(|note| noted_revision(&note, device));
+    let held = fs::metadata(staged)
+        .await
+        .map(|metadata| metadata.len())
+        .ok();
 
-    send_frame(&mut send, &request.encoded()).await?;
-    send.finish().map_err(|_| Error::StreamClosed)?;
-
-    let Some(header) = quietly_short(read_frame(&mut recv)).await? else {
-        return Err(Error::Missing(device));
-    };
-    let (size, extension) = match FromPeer::decoded(&header)? {
-        FromPeer::Sending { size, extension } => (size, extension),
-        FromPeer::Missing
-        | FromPeer::Held { .. }
-        | FromPeer::HeldEnd
-        | FromPeer::Met { .. }
-        | FromPeer::Taken
-        | FromPeer::Tagged { .. }
-        | FromPeer::Covered { .. }
-        | FromPeer::CoversEnd
-        | FromPeer::Documented { .. }
-        | FromPeer::LyricsfilesEnd
-        | FromPeer::Printed { .. }
-        | FromPeer::PrintsEnd
-        | FromPeer::Controlled(_)
-        | FromPeer::Zones { .. }
-        | FromPeer::Consulted { .. }
-        | FromPeer::Unconsulted
-        | FromPeer::KeptAnswer(_)
-        | FromPeer::KeptEnd { .. }
-        | FromPeer::Exporting { .. } => {
-            return Err(Error::Missing(device));
+    match (revised, held) {
+        (Some((size, revision)), Some(offset)) if offset > 0 && offset <= size => Some(Partial {
+            offset,
+            size,
+            revision,
+        }),
+        _ => {
+            started_over(staged, noted).await;
+            None
         }
-    };
-
-    if size > LARGEST_SONG_FETCHED {
-        let _ = recv.stop(0_u32.into());
-
-        return Err(Error::SongTooLarge { device, size });
     }
-    if offset > 0 && noted_size(noted).await != Some(size) {
-        let _ = recv.stop(0_u32.into());
-        let _ = fs::remove_file(staged).await;
-        let _ = fs::remove_file(noted).await;
+}
 
-        return Ok(None);
-    }
-    fs::write(noted, format!("{device} {size}"))
-        .await
-        .map_err(|source| file_failed(FileOp::Stage, noted, source))?;
+async fn started_over(staged: &Path, noted: &Path) {
+    let _ = fs::remove_file(staged).await;
+    let _ = fs::remove_file(noted).await;
+}
 
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(staged)
-        .await
-        .map_err(|source| file_failed(FileOp::Stage, staged, source))?;
-    let mut have = offset;
-    let mut chunk = vec![0; CHUNK_BYTES];
-
-    loop {
-        let read = quietly_short(async {
-            recv.read(&mut chunk)
+impl<F: Fn(u64, u64)> Fetching<'_, F> {
+    async fn answered(&self, asked: Asking) -> Result<Answered> {
+        let (mut send, mut recv) = quietly_short(async {
+            self.connection
+                .open_bi()
                 .await
-                .map_err(|source| Error::stream(StreamOp::Read, source))
+                .map_err(|source| Error::Connection(Box::new(source)))
         })
         .await?;
-        let Some(read) = read else {
-            break;
+        let request = ToPeer::Fetch {
+            recording: self.recording.clone(),
+            offset: match asked {
+                Asking::Revised(Some(partial)) => partial.offset,
+                Asking::Revised(None) | Asking::Unrevised => 0,
+            },
+            bound: match asked {
+                Asking::Revised(partial) => Bound::Carried(partial.map(|partial| partial.revision)),
+                Asking::Unrevised => Bound::Unsaid,
+            },
         };
 
-        file.write_all(&chunk[..read])
+        send_frame(&mut send, &request.encoded()).await?;
+        send.finish().map_err(|_| Error::StreamClosed)?;
+
+        let Some(header) = quietly_short(read_frame(&mut recv)).await? else {
+            return match asked {
+                Asking::Revised(_) => Ok(Answered::Unknown),
+                Asking::Unrevised => Err(Error::Missing(self.device)),
+            };
+        };
+        let (size, extension, revised) = match FromPeer::decoded(&header)? {
+            FromPeer::Sending {
+                size,
+                extension,
+                revised,
+            } => (size, extension, revised),
+            FromPeer::Missing
+            | FromPeer::Held { .. }
+            | FromPeer::HeldEnd
+            | FromPeer::Met { .. }
+            | FromPeer::Taken
+            | FromPeer::Tagged { .. }
+            | FromPeer::Covered { .. }
+            | FromPeer::CoversEnd
+            | FromPeer::Documented { .. }
+            | FromPeer::LyricsfilesEnd
+            | FromPeer::Printed { .. }
+            | FromPeer::PrintsEnd
+            | FromPeer::Controlled(_)
+            | FromPeer::Zones { .. }
+            | FromPeer::Consulted { .. }
+            | FromPeer::Unconsulted
+            | FromPeer::KeptAnswer(_)
+            | FromPeer::KeptEnd { .. }
+            | FromPeer::Exporting { .. } => {
+                return Err(Error::Missing(self.device));
+            }
+        };
+
+        if size > LARGEST_SONG_FETCHED {
+            let _ = recv.stop(0_u32.into());
+
+            return Err(Error::SongTooLarge {
+                device: self.device,
+                size,
+            });
+        }
+
+        let Some(from) = resumed_from(asked, size, revised) else {
+            let _ = recv.stop(0_u32.into());
+
+            started_over(self.staged, self.noted).await;
+            return Ok(Answered::StartOver);
+        };
+
+        match revised {
+            Some(revised) => fs::write(self.noted, song_note(self.device, size, revised.revision))
+                .await
+                .map_err(|source| file_failed(FileOp::Stage, self.noted, source))?,
+            None => {
+                let _ = fs::remove_file(self.noted).await;
+            }
+        }
+
+        let mut file = fs::OpenOptions::new()
+            .create(true)
+            .write(true)
+            .append(from > 0)
+            .truncate(from == 0)
+            .open(self.staged)
             .await
-            .map_err(|source| file_failed(FileOp::Write, staged, source))?;
-        have += u64::try_from(read).unwrap_or(u64::MAX);
-        received(have, size);
-        if have > size {
-            break;
+            .map_err(|source| file_failed(FileOp::Stage, self.staged, source))?;
+
+        let streamed = self.streamed_into(&mut file, &mut recv, from, size).await;
+
+        file.sync_all()
+            .await
+            .map_err(|source| file_failed(FileOp::Write, self.staged, source))?;
+
+        let have = streamed?;
+
+        let _ = fs::remove_file(self.noted).await;
+
+        if have != size {
+            let _ = fs::remove_file(self.staged).await;
+
+            return Err(Error::stream(
+                StreamOp::Read,
+                std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
+            ));
+        }
+        if let Some(revised) = revised
+            && !self.holds_revision(size, revised.revision).await?
+        {
+            let _ = fs::remove_file(self.staged).await;
+
+            return Err(Error::SongUnlikeItsRevision(self.device));
+        }
+        Ok(Answered::Whole(Fetched {
+            staged: self.staged.to_path_buf(),
+            extension,
+            tags: SongTags::default(),
+        }))
+    }
+
+    async fn streamed_into(
+        &self,
+        file: &mut fs::File,
+        recv: &mut RecvStream,
+        from: u64,
+        size: u64,
+    ) -> Result<u64> {
+        let mut have = from;
+        let mut chunk = vec![0; CHUNK_BYTES];
+
+        loop {
+            let read = quietly_short(async {
+                recv.read(&mut chunk)
+                    .await
+                    .map_err(|source| Error::stream(StreamOp::Read, source))
+            })
+            .await?;
+            let Some(read) = read else {
+                return Ok(have);
+            };
+
+            file.write_all(&chunk[..read])
+                .await
+                .map_err(|source| file_failed(FileOp::Write, self.staged, source))?;
+            have += u64::try_from(read).unwrap_or(u64::MAX);
+            (self.received)(have, size);
+            if have > size {
+                return Ok(have);
+            }
         }
     }
-    file.sync_all()
+
+    async fn holds_revision(&self, size: u64, revision: Revision) -> Result<bool> {
+        let staged = self.staged.to_path_buf();
+
+        blocking(move || {
+            let held = std::fs::File::open(&staged)
+                .and_then(|mut file| Revision::of(&mut file, size))
+                .map_err(|source| file_failed(FileOp::Read, &staged, source))?;
+
+            Ok(held == revision)
+        })
         .await
-        .map_err(|source| file_failed(FileOp::Write, staged, source))?;
-
-    let _ = fs::remove_file(noted).await;
-
-    if have != size {
-        let _ = fs::remove_file(staged).await;
-
-        return Err(Error::stream(
-            StreamOp::Read,
-            std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
-        ));
     }
-    Ok(Some(Fetched {
-        staged: staged.to_path_buf(),
-        extension,
-        tags: SongTags::default(),
-    }))
+}
+
+fn resumed_from(asked: Asking, size: u64, revised: Option<Revised>) -> Option<u64> {
+    match (asked, revised) {
+        (Asking::Unrevised, None) | (Asking::Revised(_), Some(Revised { from: 0, .. })) => Some(0),
+        (Asking::Revised(Some(partial)), Some(Revised { revision, from }))
+            if from == partial.offset && revision == partial.revision && size == partial.size =>
+        {
+            Some(from)
+        }
+        (Asking::Unrevised, Some(_)) | (Asking::Revised(_), _) => None,
+    }
 }
 
 pub struct ExportStaged<'a> {
@@ -1446,9 +1627,183 @@ pub async fn blocking<T: Send + 'static>(
 
 #[cfg(test)]
 mod tests {
-    use std::{env, process};
+    use std::{env, io::Cursor, process};
 
     use super::*;
+    use crate::{
+        LocalListen, LocalPlaylist, LocalPlaylistId, Opened, Refused, RemoteListen, Resumed,
+    };
+
+    const SONG_BYTES: usize = 4 * 1024 * 1024;
+    const CUT_OFF_PAST: u64 = 256 * 1024;
+    const SENDER: DeviceId = DeviceId([1; 16]);
+
+    struct OneSong {
+        bytes: Mutex<Vec<u8>>,
+    }
+
+    impl Catalog for OneSong {
+        fn playlists(&self) -> std::result::Result<Vec<LocalPlaylist>, Refused> {
+            Ok(Vec::new())
+        }
+
+        fn write_playlist(
+            &self,
+            _: Option<LocalPlaylistId>,
+            _: &str,
+            _: &[Recording],
+        ) -> std::result::Result<LocalPlaylist, Refused> {
+            Err(Refused::Unwritable)
+        }
+
+        fn remove_playlist(&self, _: LocalPlaylistId) -> std::result::Result<(), Refused> {
+            Ok(())
+        }
+
+        fn favourites(&self) -> std::result::Result<Vec<Recording>, Refused> {
+            Ok(Vec::new())
+        }
+
+        fn favour(&self, _: &Recording, _: bool) -> std::result::Result<bool, Refused> {
+            Ok(false)
+        }
+
+        fn listens_after(
+            &self,
+            _: u64,
+            _: usize,
+        ) -> std::result::Result<Vec<LocalListen>, Refused> {
+            Ok(Vec::new())
+        }
+
+        fn credit(&self, _: &RemoteListen) -> std::result::Result<bool, Refused> {
+            Ok(false)
+        }
+
+        fn resumption(&self) -> std::result::Result<Option<Resumed>, Refused> {
+            Ok(None)
+        }
+
+        fn holds(&self, _: &Recording) -> std::result::Result<bool, Refused> {
+            Ok(true)
+        }
+
+        fn holdings(&self) -> std::result::Result<Vec<Held>, Refused> {
+            Ok(Vec::new())
+        }
+
+        fn open(&self, _: &Recording) -> std::result::Result<Option<Opened>, Refused> {
+            let bytes = self.bytes.lock().clone();
+
+            Ok(Some(Opened {
+                size: u64::try_from(bytes.len()).expect("a size"),
+                reader: Box::new(Cursor::new(bytes)),
+                extension: "flac".into(),
+            }))
+        }
+
+        fn land(
+            &self,
+            _: &Recording,
+            _: &SongTags,
+            _: &str,
+            _: &Path,
+        ) -> std::result::Result<bool, Refused> {
+            Ok(false)
+        }
+
+        fn revision(&self) -> u64 {
+            0
+        }
+    }
+
+    fn a_song_of(seed: u8) -> Vec<u8> {
+        (0..SONG_BYTES).map(|at| (at % 251) as u8 ^ seed).collect()
+    }
+
+    fn echoes() -> Recording {
+        Recording {
+            mbid: None,
+            title: "Echoes".into(),
+            artist: "Pink Floyd".into(),
+            album: "Meddle".into(),
+            length: None,
+        }
+    }
+
+    async fn serving(song: Arc<OneSong>) -> (Endpoint, Endpoint, SocketAddr) {
+        let derived = crate::SyncKey::minted()
+            .and_then(|key| key.derived())
+            .expect("a key");
+        let identity = crate::quic::PeerIdentity::of(&derived).expect("an identity");
+        let sending = Endpoint::server(
+            identity.serving().expect("serving"),
+            SocketAddr::from(([127, 0, 0, 1], 0)),
+        )
+        .expect("a device listening");
+        let mut asking = Endpoint::client(SocketAddr::from(([127, 0, 0, 1], 0))).expect("a client");
+        let (heard, _) = mpsc::unbounded_channel();
+        let answering = Arc::new(Answering {
+            catalog: song,
+            consulted: RwLock::new(None),
+            controlled: RwLock::new(None),
+            ledger: Arc::new(Mutex::new(Ledger::in_memory().expect("a ledger"))),
+            device: SENDER,
+            heard,
+            transfers_allowed: Arc::new(AtomicBool::new(true)),
+        });
+
+        asking.set_default_client_config(identity.dialling().expect("dialling"));
+
+        let address = sending.local_addr().expect("an address");
+        let listening = sending.clone();
+
+        tokio::spawn(async move {
+            while let Some(incoming) = listening.accept().await {
+                if let Ok(connection) = incoming.await {
+                    tokio::spawn(serve(connection, Arc::clone(&answering), None));
+                }
+            }
+        });
+        (sending, asking, address)
+    }
+
+    async fn dialled_at(asking: &Endpoint, address: SocketAddr) -> Connection {
+        asking
+            .connect(address, PEER_NAME)
+            .expect("dialled")
+            .await
+            .expect("connected")
+    }
+
+    async fn cut_off(connection: &Connection, staged: &Path) -> u64 {
+        let cutting = connection.clone();
+
+        let fetched = fetch(connection, SENDER, &echoes(), staged, move |have, _| {
+            if have >= CUT_OFF_PAST {
+                cutting.close(0_u32.into(), b"cut off");
+            }
+        })
+        .await;
+
+        assert!(fetched.is_err());
+        std::fs::metadata(staged).expect("a partial").len()
+    }
+
+    async fn resumed(connection: &Connection, staged: &Path) -> (Vec<u8>, Vec<u64>) {
+        let heard = Arc::new(Mutex::new(Vec::new()));
+        let hearing = Arc::clone(&heard);
+
+        let fetched = fetch(connection, SENDER, &echoes(), staged, move |have, _| {
+            hearing.lock().push(have);
+        })
+        .await
+        .expect("the song whole");
+        let bytes = std::fs::read(&fetched.staged).expect("the song staged");
+
+        let heard = heard.lock().clone();
+        (bytes, heard)
+    }
 
     fn staged_in(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!("resonate-peer-{name}-{}", process::id()));
@@ -1560,6 +1915,7 @@ mod tests {
                 &FromPeer::Sending {
                     size: announced,
                     extension: "flac".into(),
+                    revised: None,
                 }
                 .encoded(),
             );
@@ -1579,16 +1935,7 @@ mod tests {
             length: None,
         };
 
-        let fetched = fetched_from(
-            &connection,
-            device,
-            &recording,
-            &staged,
-            &noted,
-            0,
-            &|_, _| {},
-        )
-        .await;
+        let fetched = fetch(&connection, device, &recording, &staged, |_, _| {}).await;
 
         assert!(matches!(
             fetched,
@@ -1677,5 +2024,170 @@ mod tests {
 
         assert_eq!(offset, 0);
         assert!(!staged.exists());
+    }
+
+    #[tokio::test]
+    async fn an_unchanged_song_cut_off_midway_is_resumed_to_its_original_bytes() {
+        let song = a_song_of(0);
+        let held = Arc::new(OneSong {
+            bytes: Mutex::new(song.clone()),
+        });
+        let (_sending, asking, address) = serving(held).await;
+        let staged = staged_in("unchanged");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+
+        let first = dialled_at(&asking, address).await;
+        let partial = cut_off(&first, &staged).await;
+
+        assert!(partial >= CUT_OFF_PAST);
+        assert!(partial < u64::try_from(SONG_BYTES).expect("a size"));
+        assert!(noted.exists());
+
+        let second = dialled_at(&asking, address).await;
+        let (bytes, heard) = resumed(&second, &staged).await;
+
+        assert!(bytes == song, "the resumed song differs from the one sent");
+        assert!(heard.iter().all(|have| *have > partial), "{heard:?}");
+        assert!(!noted.exists());
+    }
+
+    #[tokio::test]
+    async fn a_song_replaced_at_the_same_size_while_cut_off_is_fetched_again_from_zero() {
+        let song = a_song_of(0);
+        let replaced = a_song_of(0x5a);
+        let held = Arc::new(OneSong {
+            bytes: Mutex::new(song),
+        });
+        let (_sending, asking, address) = serving(Arc::clone(&held)).await;
+        let staged = staged_in("replaced");
+
+        let first = dialled_at(&asking, address).await;
+        let partial = cut_off(&first, &staged).await;
+
+        *held.bytes.lock() = replaced.clone();
+
+        let second = dialled_at(&asking, address).await;
+        let (bytes, heard) = resumed(&second, &staged).await;
+
+        assert!(partial >= CUT_OFF_PAST);
+        assert!(bytes == replaced, "the old song's start was kept");
+        assert!(
+            heard.first().is_some_and(|have| *have < partial),
+            "{heard:?}"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_device_too_old_to_name_a_revision_sends_the_song_from_zero_whatever_is_staged() {
+        let song = a_song_of(0);
+        let size = u64::try_from(song.len()).expect("a size");
+        let unbound_from_zero = ToPeer::Fetch {
+            recording: echoes(),
+            offset: 0,
+            bound: Bound::Unsaid,
+        }
+        .encoded();
+        let sent = song.clone();
+
+        let (_older, _newer, connection) = met_answering(move |asked| {
+            (asked == unbound_from_zero).then(|| {
+                let mut told = framed(
+                    &FromPeer::Sending {
+                        size,
+                        extension: "flac".into(),
+                        revised: None,
+                    }
+                    .encoded(),
+                );
+
+                told.extend_from_slice(&sent);
+                told
+            })
+        })
+        .await;
+        let staged = staged_in("older");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+        let staged_by_a_newer_build = a_song_of(0x5a);
+        let revision =
+            Revision::of(&mut Cursor::new(&staged_by_a_newer_build), size).expect("a revision");
+
+        std::fs::write(&staged, &staged_by_a_newer_build[..4096]).expect("a partial");
+        std::fs::write(&noted, song_note(SENDER, size, revision)).expect("a note");
+
+        let fetched = fetch(&connection, SENDER, &echoes(), &staged, |_, _| {})
+            .await
+            .expect("the song whole");
+        let bytes = std::fs::read(&fetched.staged).expect("the song staged");
+
+        assert!(
+            bytes == song,
+            "a partial was kept for a device naming no revision"
+        );
+        assert!(!noted.exists());
+    }
+
+    #[tokio::test]
+    async fn a_song_unlike_the_revision_its_sender_announced_is_refused_and_nothing_stays_staged() {
+        let announced = a_song_of(0);
+        let sent = a_song_of(0x5a);
+        let size = u64::try_from(sent.len()).expect("a size");
+
+        let revision = Revision::of(&mut Cursor::new(&announced), size).expect("a revision");
+        let (_sending, _asking, connection) = met_answering(move |_| {
+            let mut told = framed(
+                &FromPeer::Sending {
+                    size,
+                    extension: "flac".into(),
+                    revised: Some(Revised { revision, from: 0 }),
+                }
+                .encoded(),
+            );
+
+            told.extend_from_slice(&sent);
+            Some(told)
+        })
+        .await;
+        let staged = staged_in("unlike");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+
+        let fetched = fetch(&connection, SENDER, &echoes(), &staged, |_, _| {}).await;
+
+        assert!(matches!(
+            fetched,
+            Err(Error::SongUnlikeItsRevision(device)) if device == SENDER
+        ));
+        assert!(!staged.exists());
+        assert!(!noted.exists());
+    }
+
+    #[tokio::test]
+    async fn a_partial_noted_by_an_earlier_build_naming_no_revision_is_started_over() {
+        let staged = staged_in("unrevised");
+        let noted = staged.with_extension(NOTED_EXTENSION);
+        let revision = Revision([3; crate::revision::REVISION_BYTES]);
+
+        std::fs::write(&staged, [0_u8; 100]).expect("a partial");
+        std::fs::write(&noted, format!("{SENDER} 4000")).expect("a note an earlier build wrote");
+
+        let earlier = bound_partial(&staged, &noted, SENDER).await;
+
+        std::fs::write(&staged, [0_u8; 100]).expect("a partial");
+        std::fs::write(&noted, song_note(SENDER, 4000, revision)).expect("a note");
+
+        let bound = bound_partial(&staged, &noted, SENDER).await;
+        let of_another = bound_partial(&staged, &noted, DeviceId([2; 16])).await;
+
+        assert_eq!(earlier, None);
+        assert_eq!(
+            bound,
+            Some(Partial {
+                offset: 100,
+                size: 4000,
+                revision,
+            })
+        );
+        assert_eq!(of_another, None);
+        assert!(!staged.exists());
+        assert!(!noted.exists());
     }
 }
