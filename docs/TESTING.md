@@ -67,6 +67,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   refused without the multicast entitlement have not been seen
 
 ## iOS
+- [S · 0.17.1] Test iOS file removal errors with overlapping numeric codes. **Low, builder.**
+  The negatives use different numbers from the positive cases, so ignoring the error
+  domain would pass (`ios/Tests/ResonateLogicTests/FileRemovalTests.swift:41`,
+  `ios/Sources/ResonateLogic/FileRemoval.swift:22`). Add interrupted POSIX I/O and a
+  wrong-domain match. Done when those errors keep the catalog row eligible and
+  a real not-found result under a reachable folder still counts as gone.
 - [M · blocked: hardware] The Core Audio tests (`resonate-coreaudio`'s `stream`: a tone through
   the shared sink, a hog-mode rate switch and its restoration, a 24-bit ramp read back bit for bit
   through a loopback device) need an output device, and the hog and bit-exact halves a device named
@@ -108,10 +114,69 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   regression check (`crates/resonate-codec/src/sheet.rs:319`, `crates/resonate-codec/src/sheet.rs:598`).
   Done when removing the final line alone and with an insertion preserves the preceding lines,
   the chosen line ending and a legacy sheet's encoding.
+- [M · 0.17.1] Test the exact history retention cutoff with two scrobblers.
+  **Medium, builder.** The ageing tests use fresh or 400-day-old samples and one
+  service, so they miss a shorter retention window or a lagging second service
+  (`crates/resonate-library/tests/history.rs:403`, `:468`,
+  `crates/resonate-library/tests/support/fakes.rs:89`). Use a fixed clock and different
+  submission cursors. Done when the test proves the cutoff boundary, ageing of unheld
+  listens, and protection for rows the slower service still needs.
+- [M · 0.17.1] Verify that a failed desktop upgrade rolls back and retries on disk.
+  **Low, builder.** The released-stamp sweep lays out empty in-memory catalogs and checks
+  the final stamp (`crates/resonate-library/src/schema_released_tests.rs:70`).
+  Exercise a populated file catalog with an injected migration failure. Done when the
+  failure leaves the old schema, rows and stamp intact, and retry reaches the current
+  stamp with the rows preserved.
+- [M · 0.17.1] Carry populated mobile state through the full released migration chain.
+  **Low, builder.** The released-version sweep uses an empty catalog, and focused tests
+  populate only individual steps (`crates/resonate-mobile/src/catalog_released_tests.rs:111`).
+  Add a populated old-version fixture with listening history, saved queue and favourites.
+  Done when an upgrade keeps the identities and saved values across the full chain.
+- [S · 0.17.1] Pin down desktop resumption when the last saved row is unreadable.
+  **Low, builder.** The test for dropping the selected row has a successor, while the
+  last-row case clamps to the preceding song at its start
+  (`crates/resonate-library/src/resumed.rs:49`, `:160`, `.claude/rules/library.md:79`).
+  Decide and document the intended fallback. Done when a regression test covers a
+  saved queue whose selected last URI cannot be read.
+- [S · 0.17.1] Give same-size rescan fixtures a known modification time. **Low, builder.**
+  The incremental test writes the same bytes twice and expects a new timestamp, which
+  a coarse filesystem can round to the same value
+  (`crates/resonate-library/tests/stored.rs:415`, `:436`,
+  `crates/resonate-library/src/scan.rs:1380`). Set distinct fixture timestamps where
+  the test needs a changed stamp. Done when the enrichment assertions run reliably
+  with both fixture writes in the same clock tick.
+- [M · 0.17.1] Exercise unreadable-folder scans regardless of process privileges. **Low, builder.**
+  The permission cases return successfully without checking scan behavior when the runner
+  can read or search the fixture anyway (`crates/resonate-library/tests/scanning.rs:1659`,
+  `:1698`). Inject the denied listing or metadata read into the existing scan cases.
+  Done when the tests assert the protected rows stay even when the runner can bypass
+  filesystem mode bits.
+- [M · 0.17.1] Prove which catalog row each restored desktop queue entry names. **Low, builder.**
+  The test for a catalog-backed queue entry only asserts that some track ID was found
+  (`crates/resonate-library/tests/history.rs:121`,
+  `crates/resonate-library/src/db/resuming.rs:57`). Assert the actual ID and add two cue
+  cuts of the same file. Done when the test catches assigning either cut to its neighbour
+  and a pruned row keeps its saved location without a catalog ID.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
   manifest's own permissions have never been in the path
+
+## Mobile catalog
+- [M · 0.17.1] Exercise phone restores through a new player on the saved catalog.
+  **Medium, builder.** The save and queue tests use an already-open harness and the
+  released-step tests reopen only the catalog (`crates/resonate-mobile/src/harness.rs:309`,
+  `crates/resonate-mobile/src/lib.rs:434`, `crates/resonate-mobile/src/zoning.rs:696`).
+  Reopen through the same path the apps use. Done when tests observe each zone's queue,
+  shuffle order, play-next span, volume and restore-off behavior after relaunch.
+- [M · 0.17.1] Test Android queue restoration from a window with a nonzero start.
+  **Medium, builder.** The current positive test builds media IDs with the helper it
+  checks. It never exercises conversion between a saved queue position and a Media3
+  window index (`android/app/src/test/java/org/resonate/android/ResumedQueueTest.kt:35`,
+  `android/app/src/main/java/org/resonate/android/PlaybackService.kt:48`,
+  `android/app/src/main/java/org/resonate/android/RustMediaPlayer.kt:279`). Assert fixed
+  IDs for library and served items and exercise both index conversions. Done when a
+  test restores a mixed window starting after row zero and lands on the original song.
 
 ## Providers and network
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,

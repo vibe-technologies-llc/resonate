@@ -19,6 +19,26 @@ are in [ROADMAP.md](ROADMAP.md).
   discards (`crates/resonate-codec/src/chapters.rs:80`, `crates/resonate-codec/src/flac.rs:170`).
   Build a lookup of the first title for each number. Done when a large comment block is parsed
   without repeated scans and the tests keep the existing order and duplicate-title handling.
+- [M · 0.17.1] Check file availability outside the catalog's replacement write lock.
+  **Low, architect.** A replacement or downloaded variant can stat a stalled mount while
+  holding the only SQLite writer (`crates/resonate-library/src/db/replacing.rs:215`, `:821`,
+  `:1091`). Collect file evidence before the write and validate the catalog rows inside it.
+  Done when a delayed stat leaves other catalog writes responsive and a changed candidate
+  is skipped.
+- [S · 0.17.1] Avoid restarting trash suffix searches from zero for each same-named file.
+  **Low, builder.** Each file probes all previously occupied names with a filesystem
+  reservation call, so a batch of same-named tracks makes quadratically many attempts
+  (`crates/resonate-library/src/trash.rs:69`, `:97`). Choose a new suffix without
+  replaying the occupied range and keep exclusive reservations. Done when a synthetic
+  same-name batch needs a bounded number of attempts per file and preserves existing
+  trash records.
+- [M · 0.17.1] Keep published catalog revisions steady while the writer connection is busy.
+  **Low, builder.** A revision substitutes zero for the external part when `try_lock` fails,
+  so unchanged content can invalidate callers on each busy-to-idle transition
+  (`crates/resonate-library/src/db/mod.rs:664`,
+  `crates/resonate-library/src/db/stamps.rs:13`). Preserve the last observed external
+  revision in the nonblocking path. Done when a held writer lock leaves the revision
+  stable and a commit by another connection still advances it when observed.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
