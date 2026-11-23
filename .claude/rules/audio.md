@@ -733,7 +733,9 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   stream-open answer, stream events. Timeout: half what the ring holds, floored at `SHORTEST_TICK`,
   capped at `PUBLISH_TICK`; `IDLE_TICK` with no stream or nothing wanting more; a transport at rest
   parks `AT_REST_TICK`. A disconnected receiver reports ready forever: `changes` dropped and
-  `Output::deaf` set the first time one does. `run` is two loops because a `Select` borrows its
+  `Output::deaf` set the first time one does, and a survey worker that ended is no longer
+  awaited (`Surveying::awaited`, which `Heard::is_what` compares, so the set is rebuilt without
+  it: `a_survey_worker_that_ends_is_taken_out_of_the_set_the_engine_parks_on`). `run` is two loops because a `Select` borrows its
   receivers and the stream's receiver lives in the `Output` every `&mut self` method replaces
   (`Heard` breaks the inner loop exactly when the set changed; `unsafe_code = "forbid"` ruled out a
   self-referential field).
@@ -783,14 +785,25 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   before binding, so a failure for the row's own reason (`Convert`, `Decode`) would leave no stream
   while the transport plays: `carried_on_past_a_stranded_row` sends such an error through `fail`
   (reported, skipping on, engine `is_stranded`) and the command answers `Ok`. A device's error
-  (`NoSink` to a `Load`) is answered as before.
+  (`NoSink` to a `Load`) is answered as before. **A rebind that retired a playing output and
+  binds none hands its error to `fail` itself** (`carry_on_past_a_lost_output`, from
+  `rebind_with`) and answers `Ok`, so a settings change or a tick's rebind
+  (`restart_what_a_renderer_holds`) finding the list emptied waits for a device with
+  `Event::Waiting`, and any other error fails the row; neither leaves `Playing` over no output
+  (`a_setting_that_rebinds_onto_no_device_waits_for_one_rather_than_playing_nothing`,
+  `a_renderer_restarted_onto_no_device_waits_for_one_rather_than_playing_nothing`).
 - **A graph letting go of the ring is waited for once; the second time fails the track.**
   `RingProducer::is_abandoned` = consumer dropped (daemon restart). `watch_graph` closes the output,
   keeps the row with the heard position in `unbound`, publishes `Loading`; the sink survey runs and
   the landing answer binds the row again at that frame. Waits `GRAPH_BACK_WITHIN` (10 s) before
-  failing the row; pause or stop ends the wait, another row does not: a bind failing with
-  `Disconnected`, `LoopStopped` or a `Daemon` error while `graph_lost` stands is the graph's, not the
-  row's (`parked_for_a_device`). The graph letting go again within that window raises
+  failing the row, once: a wait run out is spent (`give_up_on_the_graph` stamps
+  `graph_last_lost`), so `parked_for_a_device` reads the failure as the graph lost again and
+  fails the row rather than opening another wait, and rows after it failing on the same absent
+  graph fail at once until the queue ends
+  (`a_graph_that_stays_away_past_its_wait_fails_the_row_once_rather_than_waiting_again`,
+  `a_graph_back_within_its_wait_plays_the_row_on_with_nothing_failed`); pause or stop ends the
+  wait, another row does not: a bind failing with `Disconnected`, `LoopStopped` or a `Daemon`
+  error while `graph_lost` stands is the graph's, not the row's (`parked_for_a_device`). The graph letting go again within that window raises
   `Error::LoopStopped` (`graph_last_lost`). A failing `backend.open` takes the whole `Output` with it
   (the consumer went into the call).
 - **A device going is waited out, not billed to the row.** `Engine::fail` first hands its error to

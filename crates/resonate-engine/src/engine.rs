@@ -686,6 +686,10 @@ impl Heard {
     fn is_what(&self, engine: &Engine) -> bool {
         is_one_channel(self.changes.as_ref(), engine.changes.as_ref())
             && is_one_channel(
+                self.surveyed.as_ref(),
+                engine.surveying.as_ref().and_then(Surveying::awaited),
+            )
+            && is_one_channel(
                 self.events.as_ref(),
                 engine.listening().map(SinkStream::events),
             )
@@ -887,8 +891,8 @@ impl Engine {
             surveyed: self
                 .surveying
                 .as_ref()
-                .filter(|surveying| surveying.is_running())
-                .map(|surveying| surveying.answers().clone()),
+                .and_then(Surveying::awaited)
+                .cloned(),
             events: self.listening().map(|stream| stream.events().clone()),
             opened: self.opening.as_ref().map(|opening| opening.landed.clone()),
             ahead: self.ahead.as_ref().and_then(Ahead::awaited).cloned(),
@@ -1066,9 +1070,69 @@ fn ring_capacity(asked: Duration, spec: StreamSpec, block: usize) -> Frames {
 #[cfg(test)]
 mod tests {
     use crossbeam_channel::unbounded;
-    use resonate_core::{ChannelLayout, SampleFormat, SampleRate};
+    use resonate_audio::{AudioSource, SinkInfo, StreamRequest};
+    use resonate_core::{ChannelLayout, Gain, SampleFormat, SampleRate};
 
     use super::*;
+    use crate::SinkResult;
+
+    const A_WORKER_ENDS_WITHIN: Duration = Duration::from_secs(5);
+
+    struct Silent {
+        changes: Receiver<SinkChange>,
+    }
+
+    struct Nothing;
+
+    struct Breaks;
+
+    impl Surveyor for Nothing {
+        fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+            Ok(Vec::new())
+        }
+    }
+
+    impl Surveyor for Breaks {
+        fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
+            panic!("the surveyor failed")
+        }
+    }
+
+    impl Opener for Nothing {
+        fn open(
+            &self,
+            _request: &StreamRequest,
+            _source: Box<dyn AudioSource>,
+        ) -> SinkResult<SinkStream> {
+            Err(resonate_audio::Error::NoSink)
+        }
+    }
+
+    impl Backend for Silent {
+        fn subscribe_sinks(&self) -> Receiver<SinkChange> {
+            self.changes.clone()
+        }
+
+        fn surveyor(&self) -> Arc<dyn Surveyor> {
+            Arc::new(Nothing)
+        }
+
+        fn opener(&self) -> Arc<dyn Opener> {
+            Arc::new(Nothing)
+        }
+
+        fn set_device_volume(&self, _sink: SinkId, _gain: Gain) -> SinkResult<()> {
+            Ok(())
+        }
+
+        fn set_device_mute(&self, _sink: SinkId, _muted: bool) -> SinkResult<()> {
+            Ok(())
+        }
+
+        fn shutdown(self: Box<Self>) -> SinkResult<()> {
+            Ok(())
+        }
+    }
 
     fn spec() -> StreamSpec {
         StreamSpec::new(
@@ -1211,6 +1275,45 @@ mod tests {
         events.try_recv().expect("the event is read back");
 
         assert!(parked.ready_timeout(SHORTEST_TICK).is_err());
+    }
+
+    #[test]
+    fn a_survey_worker_that_ends_is_taken_out_of_the_set_the_engine_parks_on() {
+        let (_orders, commands) = unbounded::<Request>();
+        let (told, _events) = unbounded::<Event>();
+        let (_announce, changes) = unbounded::<SinkChange>();
+
+        let mut engine = Engine::new(
+            EngineConfig::default(),
+            Arc::new(Sources::local()),
+            Box::new(Silent { changes }),
+            commands,
+            told,
+            Published::default(),
+        );
+
+        engine.surveying = Surveying::start(Arc::new(Breaks), SINK_TIMEOUT);
+
+        let held = engine.heard();
+        let asked = engine.surveying.as_mut().is_some_and(Surveying::ask);
+        let deadline = Instant::now() + A_WORKER_ENDS_WITHIN;
+
+        while engine.the_survey_runs() && Instant::now() < deadline {
+            engine.rediscover();
+            thread::yield_now();
+        }
+
+        let rebuilt = engine.heard();
+
+        assert!(asked);
+        assert!(held.surveyed.is_some());
+        assert!(!engine.the_survey_runs(), "the survey worker never ended");
+        assert!(
+            !held.is_what(&engine),
+            "a set still parked on the ended worker's answers was taken for the engine's"
+        );
+        assert!(rebuilt.surveyed.is_none());
+        assert!(rebuilt.is_what(&engine));
     }
 
     #[test]

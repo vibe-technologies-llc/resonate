@@ -157,7 +157,7 @@ impl Engine {
         }
     }
 
-    fn is_stranded(&self) -> bool {
+    pub(super) fn is_stranded(&self) -> bool {
         self.playing
             && self.track.is_some()
             && self.output.is_none()

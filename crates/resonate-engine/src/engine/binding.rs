@@ -8,7 +8,7 @@ use super::{
     ring_capacity,
 };
 use crate::{
-    Event, OutputPlan, Result, TransportState,
+    Error, Event, OutputPlan, Result, TransportState,
     pipeline::{Attenuator, plan_for, plan_output},
     ring::Entering,
 };
@@ -107,6 +107,8 @@ impl Engine {
             at
         };
 
+        let sounded_through_an_output = self.playing && self.output.is_some();
+
         self.retire(how);
 
         let bound = self.bind(at, target);
@@ -114,7 +116,18 @@ impl Engine {
         if bound.is_err() && self.track.is_some() {
             self.unbound = Some(resumes_at);
         }
-        bound
+        match bound {
+            Err(error) if sounded_through_an_output && self.is_stranded() => {
+                self.carry_on_past_a_lost_output(error);
+                Ok(())
+            }
+            bound => bound,
+        }
+    }
+
+    fn carry_on_past_a_lost_output(&mut self, error: Error) {
+        tracing::warn!(%error, "a rebind took the row's output and found none to play through");
+        self.fail(error);
     }
 
     fn bind(&mut self, at: Option<Frames>, target: Option<StreamSpec>) -> Result<()> {

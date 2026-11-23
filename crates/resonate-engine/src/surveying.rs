@@ -45,8 +45,8 @@ impl Surveying {
         })
     }
 
-    pub(crate) const fn answers(&self) -> &Receiver<Surveyed> {
-        &self.answers
+    pub(crate) fn awaited(&self) -> Option<&Receiver<Surveyed>> {
+        self.is_running().then_some(&self.answers)
     }
 
     pub(crate) fn ask(&mut self) -> bool {
@@ -169,6 +169,7 @@ mod tests {
 
         assert!(first);
         assert!(!again);
+        assert!(surveying.awaited().is_some());
         assert!(answered.is_ok());
         assert!(after);
         assert!(second.is_ok());
@@ -188,6 +189,7 @@ mod tests {
         assert!(found.is_none());
         assert!(!surveying.is_asked());
         assert!(!surveying.is_running());
+        assert!(surveying.awaited().is_none());
         assert!(!surveying.ask());
         assert!(surveying.answered().is_none());
     }

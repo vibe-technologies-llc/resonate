@@ -76,14 +76,12 @@ impl Engine {
             return;
         }
         if since.elapsed() >= GRAPH_BACK_WITHIN {
-            self.graph_lost = None;
-
             let away = self
                 .graph_still_away
                 .take()
                 .unwrap_or(Error::Sink(resonate_audio::Error::Disconnected));
 
-            self.fail(away);
+            self.give_up_on_the_graph(away);
             return;
         }
         if !self.surveying.as_ref().is_some_and(Surveying::is_asked) {
@@ -149,11 +147,16 @@ impl Engine {
                 tracing::debug!(%error, "the graph is not back yet");
                 self.transport = TransportState::Loading;
             }
-            Err(error) => {
-                self.graph_lost = None;
-                self.fail(error);
-            }
+            Err(error) => self.give_up_on_the_graph(error),
         }
+    }
+
+    fn give_up_on_the_graph(&mut self, away: Error) {
+        tracing::warn!(%away, "the graph did not come back in time; the row is passed over");
+        self.graph_lost = None;
+        self.graph_still_away = None;
+        self.graph_last_lost = Some(Instant::now());
+        self.fail(away);
     }
 
     pub(super) fn collect_faults(&mut self) {

@@ -2,6 +2,7 @@ use std::{
     collections::BTreeMap,
     env, fs,
     io::Cursor,
+    mem,
     num::NonZeroU32,
     ops::Range,
     path::{Path, PathBuf},
@@ -16,6 +17,7 @@ use std::{
 
 use crossbeam_channel::{Receiver, Sender, unbounded};
 use parking_lot::Mutex;
+use resonate_audio::Downstream;
 use resonate_codec::{Error as CodecError, Placement as SpeakerPlacement, Result as CodecResult};
 use resonate_core::{
     ChannelLayout, Decibels, FrameSpan, Frames, Gain, MeasuredGain, MediaLocation, Ratio,
@@ -196,6 +198,7 @@ struct Graph {
     unanswering: bool,
     clock: Option<Arc<StreamClock>>,
     survey_gate: Option<Receiver<()>>,
+    survey_breaks: bool,
     heard: Vec<(usize, Moment)>,
 }
 
@@ -280,6 +283,7 @@ struct FakeSink {
     latency: u64,
     answers_drain: bool,
     lets_go: bool,
+    holds_seconds: bool,
     reshaping: Reshaping,
 }
 
@@ -306,6 +310,7 @@ impl FakeSink {
                 latency,
                 answers_drain,
                 lets_go: false,
+                holds_seconds: false,
                 reshaping: Reshaping::Refused,
             },
             graph,
@@ -322,19 +327,32 @@ impl FakeSink {
             ..self
         }
     }
+
+    fn holding_seconds_downstream(self) -> Self {
+        Self {
+            holds_seconds: true,
+            ..self
+        }
+    }
 }
 
 struct Surveyed(Arc<Mutex<Graph>>);
 
 impl Surveyor for Surveyed {
     fn enumerate_sinks(&self, _timeout: Duration) -> SinkResult<Vec<SinkInfo>> {
-        let gate = {
+        let (gate, breaks) = {
             let mut graph = self.0.lock();
 
             graph.enumerations += 1;
-            graph.survey_gate.clone()
+            (
+                graph.survey_gate.clone(),
+                mem::take(&mut graph.survey_breaks),
+            )
         };
 
+        if breaks {
+            panic!("the fake surveyor breaks as it was told to");
+        }
         if let Some(gate) = gate {
             let _ = gate.recv();
         }
@@ -412,6 +430,12 @@ impl Opener for FakeSink {
                 Ok(())
             }),
         );
+        let stream = if self.holds_seconds {
+            stream.holding(Downstream::Seconds)
+        } else {
+            stream
+        };
+
         Ok(match reshaper {
             Some(reshaper) => stream.reshaped_by(reshaper),
             None => stream,
@@ -3921,6 +3945,122 @@ fn a_graph_that_lets_go_just_as_one_row_ends_plays_the_next_row_from_its_start()
     Ok(())
 }
 
+const THE_GRAPH_IS_WAITED_FOR: Duration = Duration::from_secs(10);
+const PAST_THE_WAIT_AT_MOST: Duration = Duration::from_secs(5);
+const THE_GRAPH_AWAY_FOR_A_WHILE: Duration = Duration::from_secs(2);
+
+fn one_row_the_graph_went_away_from() -> Result<(Player, Arc<Mutex<Graph>>, Instant)> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+
+    let path = tree.write("track.wav", &source.file);
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+
+    {
+        let mut held = graph.lock();
+
+        held.away = true;
+        held.source = None;
+    }
+
+    let lost_at = Instant::now();
+
+    wait_for(
+        &player,
+        |player| player.state().playback == PlaybackState::Buffering,
+        "the row to wait for the graph",
+    );
+    Ok((player, graph, lost_at))
+}
+
+#[test]
+fn a_graph_that_stays_away_past_its_wait_fails_the_row_once_rather_than_waiting_again() -> Result<()>
+{
+    let (player, _graph, lost_at) = one_row_the_graph_went_away_from()?;
+    let deadline = lost_at + THE_GRAPH_IS_WAITED_FOR + PAST_THE_WAIT_AT_MOST;
+
+    let mut events = Vec::new();
+
+    while Instant::now() < deadline && player.state().playback != PlaybackState::Stopped {
+        events.extend(player.events().try_iter());
+        thread::sleep(Duration::from_millis(10));
+    }
+
+    let waited = lost_at.elapsed();
+
+    events.extend(player.events().try_iter());
+
+    let failed: Vec<u64> = events
+        .iter()
+        .filter_map(|event| match event {
+            Event::Failed { track, .. } => Some(track.get()),
+            _ => None,
+        })
+        .collect();
+
+    assert_eq!(
+        player.state().playback,
+        PlaybackState::Stopped,
+        "the row still waited for the graph past one wait: {}",
+        transport(&player)
+    );
+    assert!(
+        waited >= THE_GRAPH_IS_WAITED_FOR,
+        "the row was given up on after {waited:?}, before the graph had been waited for"
+    );
+    assert_eq!(failed, vec![1], "{events:?}");
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Event::QueueFinished)),
+        "{events:?}"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_graph_back_within_its_wait_plays_the_row_on_with_nothing_failed() -> Result<()> {
+    let (player, graph, _) = one_row_the_graph_went_away_from()?;
+
+    thread::sleep(THE_GRAPH_AWAY_FOR_A_WHILE);
+
+    assert_eq!(
+        player.state().playback,
+        PlaybackState::Buffering,
+        "{}",
+        transport(&player)
+    );
+
+    graph.lock().away = false;
+    wait_for(
+        &player,
+        playing,
+        "the row to play on once the graph is back",
+    );
+
+    assert!(plays(&player, 1), "{}", transport(&player));
+    assert_eq!(graph.lock().opens, 2, "{}", pulls(&graph.lock()));
+
+    neither_failed_nor_finished(&player);
+    Ok(())
+}
+
 #[test]
 fn a_skip_while_the_graph_is_away_waits_for_it_rather_than_failing_every_row() -> Result<()> {
     let tree = Tree::new();
@@ -5121,6 +5261,138 @@ fn a_device_going_with_none_left_holds_the_row_until_one_comes_and_plays_on_wher
         heard_as_faded_in(&graph.lock().played, &source.stream),
         "the row did not play on from the frame the graph had last been handed"
     );
+    Ok(())
+}
+
+fn every_device_goes_while_the_stream_plays_on(player: &Player, graph: &Arc<Mutex<Graph>>) {
+    let announced = {
+        let mut held = graph.lock();
+
+        held.sinks.clear();
+        held.announce
+            .as_ref()
+            .map(|announce| announce.send(SinkChange::Removed(SinkId::new(1))))
+    };
+
+    assert!(
+        announced.is_some_and(|sent| sent.is_ok()),
+        "the fake daemon could not announce its device gone"
+    );
+
+    wait_for(
+        player,
+        |player| player.sinks().is_empty(),
+        "the engine to see every device gone",
+    );
+
+    assert!(
+        playing(player) && bound_to(player) == Some(SinkId::new(1)),
+        "{}",
+        transport(player)
+    );
+}
+
+fn a_device_comes_and_the_row_plays_on_there(player: &Player, graph: &Arc<Mutex<Graph>>) {
+    wait_for(
+        player,
+        |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
+        "the row to wait for a device",
+    );
+    announce(
+        graph,
+        SinkInfo {
+            id: SinkId::new(3),
+            ..sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])
+        },
+    );
+    wait_for(
+        player,
+        |player| playing(player) && bound_to(player) == Some(SinkId::new(3)),
+        "the row to play on the device that came",
+    );
+
+    assert!(plays(player, 1), "{}", transport(player));
+
+    let events = neither_failed_nor_finished(player);
+
+    assert!(
+        events
+            .iter()
+            .any(|event| matches!(event, Event::Waiting { .. })),
+        "the row waiting for a device was not told: {events:?}"
+    );
+}
+
+#[test]
+fn a_setting_that_rebinds_onto_no_device_waits_for_one_rather_than_playing_nothing() -> Result<()> {
+    let (player, graph, _) =
+        two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+    every_device_goes_while_the_stream_plays_on(&player, &graph);
+
+    player
+        .request(Command::SetForceGraphRate(true))?
+        .wait_for(PATIENCE)?;
+
+    a_device_comes_and_the_row_plays_on_there(&player, &graph);
+    Ok(())
+}
+
+#[test]
+fn a_renderer_restarted_onto_no_device_waits_for_one_rather_than_playing_nothing() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+
+    let path = tree.write("track.wav", &source.file);
+    let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
+
+    let (backend, graph) = FakeSink::new(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])]);
+    let backend = backend.holding_seconds_downstream();
+    let config = EngineConfig {
+        equaliser: equalised(vec![(1_000.0, 3.0, 1.0)]),
+        ..config()
+    };
+
+    let player = once_surveyed(Player::with_backend(config, move |_| {
+        Ok(Box::new(backend))
+    })?);
+
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+    play_until(
+        &player,
+        &graph,
+        block,
+        |_, graph| graph.played.len() >= block,
+        "the first block to play",
+    );
+    every_device_goes_while_the_stream_plays_on(&player, &graph);
+
+    player
+        .request(Command::SetEqualisation(equalised(vec![(
+            1_000.0, 6.0, 1.0,
+        )])))?
+        .wait_for(PATIENCE)?;
+
+    assert_eq!(
+        bound_to(&player),
+        Some(SinkId::new(1)),
+        "the equaliser rebound the row itself rather than owing the renderer a restart"
+    );
+
+    a_device_comes_and_the_row_plays_on_there(&player, &graph);
     Ok(())
 }
 
@@ -14660,6 +14932,54 @@ fn a_row_heard_on_without_a_gap_under_restoration_finds_its_own_wall_rather_than
         under - above < EXTENDED_WITHIN_DB,
         "the narrow row was left {:.1} dB under its music above its wall, held at the wide row's",
         under - above
+    );
+    Ok(())
+}
+
+#[test]
+fn a_survey_worker_that_ends_leaves_the_engine_answering_the_transport() -> Result<()> {
+    let tree = Tree::new();
+    let source = pcm(16, FRAMES);
+
+    let path = tree.write("track.wav", &source.file);
+    let (player, graph) = player(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
+
+    player.send(Command::Load {
+        items: vec![track(&path, 1)],
+        start_at: 0,
+        autoplay: true,
+    })?;
+    wait_for(&player, playing, "the stream to open");
+
+    let surveyed = {
+        let mut held = graph.lock();
+
+        held.survey_breaks = true;
+        held.enumerations
+    };
+
+    announce(&graph, arriving());
+    wait_for(
+        &player,
+        |_| {
+            let held = graph.lock();
+            held.enumerations > surveyed && !held.survey_breaks
+        },
+        "the survey worker to break",
+    );
+    thread::sleep(A_SHORT_DOZE);
+
+    player.request(Command::Pause)?.wait_for(PATIENCE)?;
+    wait_for(&player, paused, "the transport to pause");
+    player.request(Command::Play)?.wait_for(PATIENCE)?;
+    wait_for(&player, playing, "the transport to play again");
+    player.request(Command::Stop)?.wait_for(PATIENCE)?;
+
+    assert_eq!(
+        player.state().playback,
+        PlaybackState::Stopped,
+        "{}",
+        transport(&player)
     );
     Ok(())
 }
