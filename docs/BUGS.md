@@ -406,15 +406,15 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
 ## Catalog
-- [L · 0.17.1] Preserve a moved track across an interrupted scan. **High, architect.**
-  New rows are committed before move reconciliation. If a scan stops there, the next scan
-  excludes the arrival from pairing because it was added in an earlier generation, then
-  prunes the old row. The file survives with a fresh ID and loses its favourite, play count
-  and saved queue references (`crates/resonate-library/src/scan.rs:640`, `:666`,
-  `crates/resonate-library/src/moves.rs:280`, `:307`). Keep arrivals eligible until
-  reconciliation has settled them. Done when a scan interrupted after committing the
-  arrival and a destination-only scan followed by a full scan both preserve the old ID,
-  favourite, listens and queue location, including for cue cuts.
+- [M · 0.17.1] Keep a song moved into a root that a scan names alone. **Medium, architect.**
+  `resonate scan R2` walks only the destination root, and its tidy of the other registered roots
+  forgets the old row as gone before any later scan can pair it with the arrival, so the song keeps
+  its file but loses its ID, favourite, listens and queue place (`crates/resonate-library/src/scan.rs`,
+  `tidy_the_roots_beside`; the size-only guard there cannot tell an unsettled arrival from a
+  same-sized stranger). Let the tidy hold a gone row whose likeness (size, length, codec, tagged
+  names) an unsettled arrival under a walked root shares, or pair it then. Done when a song moved
+  from R1 to R2 and scanned with `scan R2` keeps its ID and favourite, and the existing tidy tests
+  with same-sized fixtures still forget what is truly gone.
 - [M · 0.17.1] Preserve another writer's tag recovery files on a name collision. **High, architect.**
   A failed exclusive journal create unlinks the existing journal, and whole-copy landing can
   overwrite a name another writer holds (`crates/resonate-codec/src/journal.rs:131`,
@@ -443,14 +443,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-ui/src/models/watching.rs:112`). Queue both roots and defer the old
   path's removal until the move has been checked. Done when synthetic watcher events for
   a split rename across roots preserve the original track ID and its favourite.
-- [M · 0.17.1] Record newly discovered volumes with the tracks from the first scan.
-  **Medium, architect.** Track batches can commit before the scan records their mount
-  point. If the first pass stops and the drive is then unplugged, a remaining empty
-  mount directory looks like an ordinary folder and the next scan prunes its rows
-  (`crates/resonate-library/src/scan.rs:640`, `:692`, `:1011`,
-  `crates/resonate-library/src/volumes.rs:195`). Persist mount information before or
-  with the first track batch. Done when cancellation and write failure before final
-  settlement leave a root on a now-unmounted volume with its IDs and favourites intact.
 - [M · 0.17.1] Keep catalog rows when a delete reaches an offline volume.
   **Medium, architect.** A missing mount path is treated as a missing file, so deletion
   can discard catalog state and mark a recording deleted while its file is still on disk
@@ -486,14 +478,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `:868`, `crates/resonate-library/src/db/mod.rs:1167`). Read the marker and any merge inputs
   inside the same immediate transaction as the repair. Done when simultaneous opens on a
   file-backed catalog with pending repairs both succeed and apply each repair once.
-- [M · 0.17.1] Credit kept listens after a scan stops partway through. **Medium, builder.**
-  A batch can commit a newly catalogued track before the scan reaches the listen credit.
-  A follow-up scan that adds no fresh tracks skips the credit again
-  (`crates/resonate-library/src/scan.rs:640`, `:693`,
-  `crates/resonate-library/src/history.rs:174`). Let a completed pass credit matching
-  retained listens regardless of how many files it just added. Done when a committed
-  arrival followed by a cancelled pass and an unchanged rescan restores every listen
-  and the play count exactly once.
 - [M · 0.17.1] Export listening history from one catalog snapshot. **Low, architect.**
   The exporter pages through held and then unheld listens in separate reads.
   A scan crediting a retained listen between reads can omit it from the export, and
@@ -502,13 +486,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-library/src/traded.rs:111`, `:151`). Hold one read snapshot for the
   export. Done when credits and removals committed between pages leave the export with
   every listen present at its start exactly once.
-- [S · 0.17.1] Refresh advisory and frame metadata when following a move. **Low, builder.**
-  A move keeps the old row and replaces its file stamp but leaves `explicit` and
-  `walked` untouched. A simultaneous retag or container rewrite can leave stale data
-  with a current stamp (`crates/resonate-library/src/moves.rs:650`,
-  `crates/resonate-library/src/store.rs:2275`). Copy both values from the newly probed
-  row. Done when a followed move keeps the original ID and reflects the arrival's
-  advisory and cached frame count.
 - [M · 0.17.1] Scan each root after file monitoring recovers. **Low, builder.**
   A root that regains its watch starts receiving new events, but changes made while it
   was uncovered remain invisible. Replacing the watcher has a similar gap
