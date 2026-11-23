@@ -30,13 +30,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or stopping the current service and preserve the old pairing on refusal.
   Done when an invalid manual code leaves the stored and active group usable,
   including after a relaunch.
-- [M · 0.17.1] Keep the retry delay when a server link cannot apply its catch-up.
-  **Medium, architect.** A catalog write refusal stops catch-up before the cursor advances.
-  Every successful connection resets the delay even if the same record drops it again
-  (`crates/resonate-sync/src/service.rs:1878`, `:1894`, `:2288`,
-  `crates/resonate-mobile/src/sync.rs:1518`). Preserve backoff until catch-up makes progress
-  and distinguish a local catalog refusal from a connection failure. Done when an injected
-  write refusal backs off without losing the change and later records apply once the write works.
 - [M · 0.17.1] Expire remote playback commands when their answers time out.
   **Medium, architect.** The request can report that a device did not answer, while the
   command stays queued and plays, pauses or skips when that device later reconnects
@@ -67,14 +60,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `:2783`, `:2861`, `:2906`). Bound the lookup, share recent results across punches,
   and deliver the result without holding up the loop. Done when stalled resolution
   and a silent STUN server both leave status, commands and shutdown responsive.
-- [M · 0.17.1] Try another sync server address when the first route stalls.
-  **Medium, builder.** Secure WebSocket opens addresses in resolver order under
-  one deadline. QUIC selects one address from the same result set. A silent route
-  can leave either transport disconnected while a second address works
-  (`crates/resonate-sync/src/web.rs:304`, `crates/resonate-sync/src/service.rs:1516`,
-  `:1614`). Try addresses with bounded or staggered attempts and preserve TLS
-  name checks. Done when both transports can use a working second route after
-  the first stalls.
 - [M · 0.17.1] Release a follow when a device stops listing its songs.
   **Medium, builder.** A holdings read waits indefinitely for its next frame
   while the connection remains open. The follow remains active, so later requests
