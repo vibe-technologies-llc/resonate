@@ -415,12 +415,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   names) an unsettled arrival under a walked root shares, or pair it then. Done when a song moved
   from R1 to R2 and scanned with `scan R2` keeps its ID and favourite, and the existing tidy tests
   with same-sized fixtures still forget what is truly gone.
-- [M · 0.17.1] Preserve another writer's tag recovery files on a name collision. **High, architect.**
-  A failed exclusive journal create unlinks the existing journal, and whole-copy landing can
-  overwrite a name another writer holds (`crates/resonate-codec/src/journal.rs:131`,
-  `crates/resonate-codec/src/journal.rs:322`, `crates/resonate-codec/src/journal.rs:350`).
-  Keep the existing file on collision and obtain a fresh name or refuse the write. Done when
-  forcing each collision leaves the original recovery record intact and available to recovery.
 - [M · 0.17.1] Keep organise's filename swaps together when a move fails or is cancelled.
   **Medium, architect.** The park and landing are ordinary moves, so cancellation or an I/O refusal
   can commit only the park and leave the catalog pointing at a temporary filename
@@ -428,13 +422,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-library/src/organise.rs:2384`). Apply the entire cycle as one unit and roll back
   an incomplete one. Done when a cancelled swap, an injected landing refusal and a swap at a
   batch boundary leave both file paths and catalog entries consistent.
-- [S · 0.17.1] Keep a fractional APE rating during a play-count-only update. **Medium, builder.**
-  A retag that changes the count for an unfavourited track removes its existing fractional
-  `FMPS_RATING` (`crates/resonate-codec/src/counted.rs:168`,
-  `crates/resonate-codec/src/counted.rs:180`, `crates/resonate-codec/src/writing.rs:1069`).
-  Update the rating only when the favourite state changes. Done when a WavPack or Monkey's Audio
-  fixture retains its fractional rating after a count update and still supports adding and removing
-  a favourite.
 - [M · 0.17.1] Reconcile both roots when the file watcher reports a split rename.
   **Medium, architect.** Windows and macOS can report the old and new paths separately.
   The old path goes straight to deferred removal and only the new root is scanned, so the
