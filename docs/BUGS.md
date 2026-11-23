@@ -653,22 +653,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   reopened requests. Done when provider tests with a server that offers gzip see identity
   on both requests, and the reader knows the uncoded length and returns the expected bytes
   after a seek.
-- [M · 0.17.1] Bound name resolution for HTTP downloads and streams.
-  **Medium, builder.** The download agent starts its connect and response timers after
-  resolving the host. Without a resolution timeout, ureq's default resolver waits on the
-  system lookup and a reopened reader can stay occupied while the lookup is stuck
-  (`crates/resonate-fetch/src/agents.rs:44`, `:63`). Set a resolution budget using
-  the HTTP client's resolver API. Done when an injected slow resolver puts an upper
-  bound on a new request and does the same on reopen, while a download making progress
-  can still take longer than the resolution budget.
-- [S · 0.17.1] Apply the download stall limit to body reads.
-  **Medium, builder.** The connector caps every input wait, so the hifi relay's
-  configured 60-second response-header window ends after the 30-second body silence
-  limit on a quiet connection (`crates/resonate-fetch/src/stall.rs:32`, `:52`,
-  `crates/providers/tidal/src/hifi.rs:33`, `:379`). Keep the response phase's
-  configured limit and apply the idle cap to the body phase. Done when a first
-  response between the shorter and longer deadlines can open, and a body that goes
-  quiet still trips the shorter deadline.
 - [M · 0.17.1] Validate the complete byte interval on a partial HTTP response.
   **Medium, builder.** The range reader checks only the starting offset and reads
   the slash suffix as a total, so a response with inconsistent range bounds can
@@ -677,14 +661,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   range as one interval and check the bounds and body framing before treating the
   answer as a valid continuation. Done when range tests reject inconsistent intervals
   and still accept a server that returns a shorter valid interval.
-- [S · 0.17.1] Read retry dates against the current calendar.
-  **Low, builder.** A fixed cutoff for legacy two-digit years can map a future
-  date into the past. A malformed short asctime year is also accepted as an
-  ancient date, causing a prompt retry in place of the fallback delay
-  (`crates/resonate-fetch/src/waited.rs:23`, `:45`, `:68`). Validate the date
-  components and resolve legacy years using the supplied clock. Done when dates at
-  the legacy century boundary, a valid leap day and a malformed short year each
-  follow the HTTP date rules, and an invalid date leaves caller backoff in force.
 - [S · 0.17.1] Keep the type of an HTTP representation validator.
   **Low, builder.** When a server supplies both an ETag and a modification date,
   the reader takes the ETag and then compares that value with a bare date from a
