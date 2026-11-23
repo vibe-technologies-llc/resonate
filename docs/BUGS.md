@@ -37,18 +37,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Done when an interrupted or temporarily refused removal remains pending after
   restart, a successful removal settles once, and a newer reversal cancels
   the queued removal.
-- [L · 0.17.1] Preserve a hand-added copy when a paired device's clock is ahead.
-  **High, architect.** Deletion ordering accepts a remote stamp ahead of local
-  time, then uses it as the cutoff for local file additions and for announcing
-  a re-addition. A song added after the actual deletion can be removed or never
-  announced as restored
-  (`crates/resonate-sync/src/ledger.rs:2064`,
-  `crates/resonate-sync/src/ledger/deletions.rs:98`, `:171`,
-  `crates/resonate-library/src/db/roots.rs:137`,
-  `crates/resonate-mobile/src/sync/everywhere.rs:53`). Keep conflict ordering
-  separate from evidence of when a local copy arrived and preserve ambiguous
-  copies. Done when a later local addition survives a skewed deletion and an
-  addition after receipt still clears the deletion on paired devices.
 - [M · 0.17.1] Validate an Android join code before replacing the current group.
   **High, architect.** A nonblank manual entry can overwrite the stored pairing
   key. The native restart stops the old service before parsing the replacement,
@@ -89,16 +77,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate-sync/src/service.rs:3608`, `:3614`, `:3628`). Distinguish a skipped
   automatic fetch from a completed or already-held song. Done when an explicit request made
   during the deletion check is replayed and lands the song.
-- [M · 0.17.1] Recover ledger rows stamped while the device clock was wrong.
-  **Medium, architect.** A device whose wall clock was far ahead can write stamps that peers
-  refuse, then ignore valid changes after its clock is corrected. Opening the ledger resets
-  the in-memory clock and leaves the future rows ahead of incoming changes
-  (`crates/resonate-sync/src/change.rs:224`, `:236`,
-  `crates/resonate-sync/src/ledger.rs:223`, `:547`, `:2064`, `:3129`).
-  Repair affected rows and persist the corrected clock together. Done when a favourite
-  stamped several days ahead becomes eligible for replication after clock correction and
-  a subsequent edit on a paired device wins. A remote stamp within the
-  accepted skew still lands.
 - [M · 0.17.1] Keep unread sync changes through a compaction.
   **Medium, architect.** A reader skips an answer kind it cannot read or advances the
   cursor after a bundle decode failure. Its snapshot contains only changes it interpreted,
