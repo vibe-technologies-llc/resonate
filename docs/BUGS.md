@@ -588,19 +588,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   fails checksum verification.
 
 ## Formats
-- [M · 0.17.1] Read Matroska bit depth from the selected audio track. **Medium, builder.**
-  For streams without a coded depth supplied by the decoder, the prescan can lose the declaration
-  or supply a different track's bit depth (`crates/resonate-codec/src/matroska.rs:1047`,
-  `crates/resonate-codec/src/container.rs:561`, `crates/resonate-codec/src/container.rs:918`).
-  Match the container track entry to the audio track chosen for playback. Done when fixture files
-  with a preceding video track or a different default audio track use the selected audio depth.
-- [S · 0.17.1] Recheck cached frame counts when an equal-size file has changed.
-  **Medium, builder.** The catalog supplies the old walk and byte length, and the prescan
-  treats an equal-length replacement as unchanged
-  (`crates/resonate-library/src/hinted.rs:24`, `crates/resonate-codec/src/prescan.rs:93`).
-  Compare the file's live modification stamp with the catalog's stamp before reusing its
-  MPEG frame count or Matroska cluster tally. Done when an equal-length replacement is
-  walked again, and an unchanged track still uses its cached walk.
 - [M · 0.17.1] Make a combined Matroska tag and cover write's result explicit. **Low, architect.**
   Tag edits can land before cover attachment is refused, while the tag writer returns one error
   and the rules promise the file was untouched (`crates/resonate-codec/src/writing.rs:759`,
@@ -608,12 +595,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Give the combined operation one commit, or return a typed partial result that the delivery path
   can handle. Done when a fixture with a cover the writer must refuse proves the documented
   outcome and a filed delivery still gets its text tags.
-- [S · 0.17.1] Bound DSDIFF duration when declared DST frames cannot fit in the data chunk.
-  **Low, builder.** The container publishes the declared count as duration and seek range even if
-  the available stream is much shorter (`crates/resonate-codec/src/dsd/dff.rs:147`,
-  `crates/resonate-codec/src/dsd/dst.rs:499`). Reject or reconcile a count incompatible with the
-  stored frames. Done when a fixture with an overstated count cannot publish an impossible seek
-  range and a well-formed file keeps its sample count.
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
