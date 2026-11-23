@@ -48,6 +48,7 @@ impl Watching {
     pub(super) fn following(mut self, library: &Library) -> Self {
         self.read_at = Some(Instant::now());
 
+        let read_before = self.there.is_some();
         let roots = match library.roots() {
             Ok(roots) => roots,
             Err(error) => {
@@ -80,6 +81,7 @@ impl Watching {
 
         let laid = match self.watch.take() {
             Some(previous) => RootsWatch::replacing(previous, &present),
+            None if read_before => RootsWatch::over_again(&present),
             None => RootsWatch::over(&present),
         };
         let Some(laid) = laid else {

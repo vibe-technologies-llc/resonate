@@ -266,7 +266,7 @@ pub use crate::{
         Lifted, PERFORMERS_WEIGHED_AT_MOST, PICTURES_WAITING_AT_MOST, Queue, Readers, Reads, Seeks,
         Step, Walker, walk,
     },
-    watch::RootsWatch,
+    watch::{Overheard, RootsWatch},
     weighing::{
         VaultMended, VaultReframed, VaultUnreached, VaultWeighing, VaultWeighingProgress,
         VaultWeighingStats,

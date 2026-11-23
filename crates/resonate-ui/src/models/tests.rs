@@ -440,6 +440,35 @@ fn the_roots_are_read_once_in_a_while_and_not_at_every_look() {
 }
 
 #[test]
+fn a_watch_lost_after_the_roots_were_read_is_laid_again_owing_every_root_a_look() {
+    let folder = Folder::new();
+    let library = Library::open_in_memory().expect("an in-memory catalog");
+
+    library
+        .add_root(folder.path())
+        .expect("the folder kept as a root");
+
+    let mut watching = Watching::default().following(&library);
+
+    let first = watching.watch.take().expect("a watch laid");
+
+    watching.read_at = None;
+
+    let watching = watching.following(&library);
+    let owed = watching
+        .watch
+        .as_ref()
+        .expect("a watch laid again")
+        .settled(Duration::ZERO);
+
+    assert!(
+        first.settled(Duration::ZERO).is_empty(),
+        "the first watch laid owed a look the opening scan already takes"
+    );
+    assert_eq!(owed, [folder.path().to_path_buf()]);
+}
+
+#[test]
 fn a_pass_says_what_it_kept_and_one_stopped_by_its_service_says_so() {
     let landed = KeepSummary {
         landed: 2,

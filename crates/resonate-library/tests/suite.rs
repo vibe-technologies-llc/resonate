@@ -26,3 +26,4 @@ mod synced;
 mod undo;
 mod vault;
 mod wants;
+mod watching;

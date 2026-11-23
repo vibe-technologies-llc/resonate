@@ -43,6 +43,12 @@ impl Moved {
             *at = (*at).max(heard);
         }
     }
+
+    fn changed(&mut self, roots: impl IntoIterator<Item = PathBuf>, at: Instant) {
+        self.roots.extend(roots);
+        self.last = Some(at);
+        self.since.get_or_insert(at);
+    }
 }
 
 enum Heard {
@@ -51,8 +57,126 @@ enum Heard {
     Unread,
 }
 
+pub struct Overheard {
+    roots: Vec<PathBuf>,
+    moved: Mutex<Moved>,
+}
+
+impl Overheard {
+    pub fn over(roots: &[PathBuf]) -> Self {
+        Self {
+            roots: roots.to_vec(),
+            moved: Mutex::new(Moved::default()),
+        }
+    }
+
+    pub fn hear(&self, event: &Event) {
+        if event.need_rescan() {
+            self.moved
+                .lock()
+                .changed(self.roots.iter().cloned(), Instant::now());
+            return;
+        }
+
+        let heard = heard_as(event);
+
+        if matches!(heard, Heard::Unread) {
+            return;
+        }
+
+        let under: Vec<&PathBuf> = event
+            .paths
+            .iter()
+            .filter(|path| self.root_of(path).is_some())
+            .collect();
+
+        if under.is_empty() {
+            return;
+        }
+
+        let now = Instant::now();
+        let mut moved = self.moved.lock();
+        match heard {
+            Heard::Gone => {
+                for path in under {
+                    moved.gone.insert(path.clone(), now);
+                }
+            }
+            Heard::Changed => {
+                let touched = under.iter().filter_map(|path| self.root_of(path)).cloned();
+
+                moved.changed(touched, now);
+            }
+            Heard::Unread => {}
+        }
+    }
+
+    pub fn settled(&self, quiet: Duration) -> Vec<PathBuf> {
+        self.settled_or_deferred_too_long(quiet, DEFERRED_AT_MOST)
+    }
+
+    fn settled_or_deferred_too_long(&self, quiet: Duration, at_most: Duration) -> Vec<PathBuf> {
+        let mut moved = self.moved.lock();
+
+        let still = moved.last.is_some_and(|last| last.elapsed() >= quiet);
+        let deferred_long =
+            moved.last.is_some() && moved.since.is_some_and(|since| since.elapsed() >= at_most);
+
+        if !still && !deferred_long {
+            return Vec::new();
+        }
+        moved.last = None;
+        moved.since = None;
+        self.leave_to_the_scan_what_went_while_settling(&mut moved);
+        std::mem::take(&mut moved.roots).into_iter().collect()
+    }
+
+    fn leave_to_the_scan_what_went_while_settling(&self, moved: &mut Moved) {
+        let Moved { roots, gone, .. } = moved;
+
+        gone.retain(|path, _| match self.root_of(path) {
+            Some(root) => {
+                roots.insert(root.clone());
+                false
+            }
+            None => true,
+        });
+    }
+
+    pub fn taken_away(&self, quiet: Duration) -> Vec<PathBuf> {
+        let mut moved = self.moved.lock();
+
+        if moved.last.is_some() {
+            return Vec::new();
+        }
+
+        let still: Vec<PathBuf> = moved
+            .gone
+            .iter()
+            .filter(|(_, heard)| heard.elapsed() >= quiet)
+            .map(|(path, _)| path.clone())
+            .collect();
+
+        for path in &still {
+            moved.gone.remove(path);
+        }
+        still
+    }
+
+    fn owe_a_look_at(&self, roots: Vec<PathBuf>) {
+        if roots.is_empty() {
+            return;
+        }
+        self.moved.lock().changed(roots, Instant::now());
+    }
+
+    fn root_of(&self, path: &Path) -> Option<&PathBuf> {
+        self.roots.iter().find(|root| path.starts_with(root))
+    }
+}
+
 pub struct RootsWatch {
-    moved: Arc<Mutex<Moved>>,
+    overheard: Arc<Overheard>,
     watcher: RecommendedWatcher,
     uncovered: Vec<PathBuf>,
     out_of_watches: bool,
@@ -60,13 +184,12 @@ pub struct RootsWatch {
 
 impl RootsWatch {
     pub fn over(roots: &[PathBuf]) -> Option<Self> {
-        let moved = Arc::new(Mutex::new(Moved::default()));
-        let heard = Arc::clone(&moved);
-        let under: Vec<PathBuf> = roots.to_vec();
+        let overheard = Arc::new(Overheard::over(roots));
+        let heard = Arc::clone(&overheard);
 
         let watcher =
             notify::recommended_watcher(move |event: notify::Result<Event>| match event {
-                Ok(event) => heard_under(&under, &event, &heard),
+                Ok(event) => heard.hear(&event),
                 Err(error) => tracing::debug!(%error, "a library folder's watch reported a fault"),
             });
         let mut watcher = match watcher {
@@ -93,11 +216,24 @@ impl RootsWatch {
         }
 
         Some(Self {
-            moved,
+            overheard,
             watcher,
             uncovered,
             out_of_watches,
         })
+    }
+
+    pub fn over_again(roots: &[PathBuf]) -> Option<Self> {
+        let laid = Self::over(roots)?;
+
+        let covered = roots
+            .iter()
+            .filter(|root| !laid.uncovered.contains(root))
+            .cloned()
+            .collect();
+
+        laid.overheard.owe_a_look_at(covered);
+        Some(laid)
     }
 
     pub fn leaves_a_root_uncovered(&self) -> bool {
@@ -110,34 +246,41 @@ impl RootsWatch {
 
     pub fn replacing(previous: Self, roots: &[PathBuf]) -> Option<Self> {
         let Self {
-            moved: left,
+            overheard: left,
             watcher: stopped,
             ..
         } = previous;
 
         drop(stopped);
 
-        let left = std::mem::take(&mut *left.lock());
+        let left = std::mem::take(&mut *left.moved.lock());
 
-        let laid = Self::over(roots)?;
+        let laid = Self::over_again(roots)?;
 
-        laid.moved.lock().carry(left);
+        laid.overheard.moved.lock().carry(left);
         Some(laid)
     }
 
     pub fn cover_again(&mut self) {
         self.out_of_watches = false;
+
+        let mut covered = Vec::new();
+
         for root in std::mem::take(&mut self.uncovered) {
-            if let Err(error) = self.watcher.watch(&root, RecursiveMode::Recursive) {
-                self.out_of_watches |= wants_more_watches(&error);
-                tracing::debug!(
-                    %error,
-                    root = %root.display(),
-                    "a library folder is still not covered by the watch"
-                );
-                self.uncovered.push(root);
+            match self.watcher.watch(&root, RecursiveMode::Recursive) {
+                Ok(()) => covered.push(root),
+                Err(error) => {
+                    self.out_of_watches |= wants_more_watches(&error);
+                    tracing::debug!(
+                        %error,
+                        root = %root.display(),
+                        "a library folder is still not covered by the watch"
+                    );
+                    self.uncovered.push(root);
+                }
             }
         }
+        self.overheard.owe_a_look_at(covered);
     }
 
     pub fn tried_again_after(&self, last_wait: Duration, at_first: Duration) -> Duration {
@@ -151,92 +294,11 @@ impl RootsWatch {
     }
 
     pub fn settled(&self, quiet: Duration) -> Vec<PathBuf> {
-        self.settled_or_deferred_too_long(quiet, DEFERRED_AT_MOST)
-    }
-
-    fn settled_or_deferred_too_long(&self, quiet: Duration, at_most: Duration) -> Vec<PathBuf> {
-        let mut moved = self.moved.lock();
-
-        let still = moved.last.is_some_and(|last| last.elapsed() >= quiet);
-        let deferred_long =
-            moved.last.is_some() && moved.since.is_some_and(|since| since.elapsed() >= at_most);
-
-        if !still && !deferred_long {
-            return Vec::new();
-        }
-        moved.last = None;
-        moved.since = None;
-        std::mem::take(&mut moved.roots).into_iter().collect()
+        self.overheard.settled(quiet)
     }
 
     pub fn taken_away(&self, quiet: Duration) -> Vec<PathBuf> {
-        let mut moved = self.moved.lock();
-
-        if moved.last.is_some() {
-            return Vec::new();
-        }
-
-        let still: Vec<PathBuf> = moved
-            .gone
-            .iter()
-            .filter(|(_, heard)| heard.elapsed() >= quiet)
-            .map(|(path, _)| path.clone())
-            .collect();
-
-        for path in &still {
-            moved.gone.remove(path);
-        }
-        still
-    }
-}
-
-fn heard_under(roots: &[PathBuf], event: &Event, into: &Mutex<Moved>) {
-    if event.need_rescan() {
-        let mut moved = into.lock();
-
-        moved.roots.extend(roots.iter().cloned());
-
-        let now = Instant::now();
-
-        moved.last = Some(now);
-        moved.since.get_or_insert(now);
-        return;
-    }
-
-    let heard = heard_as(event);
-
-    if matches!(heard, Heard::Unread) {
-        return;
-    }
-
-    let under: Vec<&PathBuf> = event
-        .paths
-        .iter()
-        .filter(|path| roots.iter().any(|root| path.starts_with(root)))
-        .collect();
-
-    if under.is_empty() {
-        return;
-    }
-
-    let now = Instant::now();
-    let mut moved = into.lock();
-    match heard {
-        Heard::Gone => {
-            for path in under {
-                moved.gone.insert(path.clone(), now);
-            }
-        }
-        Heard::Changed => {
-            let touched = roots
-                .iter()
-                .filter(|root| under.iter().any(|path| path.starts_with(root)));
-
-            moved.roots.extend(touched.cloned());
-            moved.last = Some(now);
-            moved.since.get_or_insert(now);
-        }
-        Heard::Unread => {}
+        self.overheard.taken_away(quiet)
     }
 }
 
@@ -334,7 +396,7 @@ mod tests {
 
         let started = Instant::now();
 
-        while watch.moved.lock().roots.is_empty() {
+        while watch.overheard.moved.lock().roots.is_empty() {
             assert!(
                 started.elapsed() < HEARD_WITHIN,
                 "the watch never heard the write that proves it listens"
@@ -371,7 +433,7 @@ mod tests {
 
         let started = Instant::now();
 
-        while watch.moved.lock().roots.is_empty() {
+        while watch.overheard.moved.lock().roots.is_empty() {
             assert!(
                 started.elapsed() < HEARD_WITHIN,
                 "the write was never heard"
@@ -383,15 +445,19 @@ mod tests {
 
         assert!(
             watch
+                .overheard
                 .settled_or_deferred_too_long(never_quiet, never_quiet)
                 .is_empty()
         );
         assert_eq!(
-            watch.settled_or_deferred_too_long(never_quiet, Duration::ZERO),
+            watch
+                .overheard
+                .settled_or_deferred_too_long(never_quiet, Duration::ZERO),
             vec![scratch.path.clone()]
         );
         assert!(
             watch
+                .overheard
                 .settled_or_deferred_too_long(never_quiet, Duration::ZERO)
                 .is_empty(),
             "a change was handed out twice"
@@ -523,25 +589,20 @@ mod tests {
 
         fs::write(&after, b"fLaC").expect("a file");
 
-        let roots = std::slice::from_ref(&scratch.path);
         let renamed = EventKind::Modify(ModifyKind::Name(RenameMode::Any));
-        let heard = Mutex::new(Moved::default());
+        let heard = Overheard::over(std::slice::from_ref(&scratch.path));
 
-        heard_under(
-            roots,
-            &Event::new(EventKind::Create(CreateKind::File)).add_path(before.clone()),
-            &heard,
-        );
+        heard.hear(&Event::new(EventKind::Create(CreateKind::File)).add_path(before.clone()));
 
         assert!(
-            heard.lock().last.is_none(),
+            heard.moved.lock().last.is_none(),
             "a file made and taken away before it was heard held back what was taken away"
         );
 
-        heard_under(roots, &Event::new(renamed).add_path(before.clone()), &heard);
-        heard_under(roots, &Event::new(renamed).add_path(after), &heard);
+        heard.hear(&Event::new(renamed).add_path(before.clone()));
+        heard.hear(&Event::new(renamed).add_path(after));
 
-        let moved = heard.lock();
+        let moved = heard.moved.lock();
 
         assert_eq!(moved.gone.keys().collect::<Vec<_>>(), [&before]);
         assert_eq!(
@@ -635,7 +696,10 @@ mod tests {
             settled_within(&watch, HEARD_WITHIN),
             vec![scratch.path.clone()]
         );
-        assert_eq!(watch.taken_away(Duration::ZERO), vec![before]);
+        assert!(
+            watch.taken_away(Duration::ZERO).is_empty(),
+            "the side a rename left was forgotten beside the scan that follows it"
+        );
     }
 
     #[test]
@@ -661,7 +725,10 @@ mod tests {
             settled_within(&watch, HEARD_WITHIN),
             vec![scratch.path.clone()]
         );
-        assert_eq!(watch.taken_away(Duration::ZERO), vec![before]);
+        assert!(
+            watch.taken_away(Duration::ZERO).is_empty(),
+            "the folder a rename left was forgotten beside the scan that follows it"
+        );
     }
 
     #[test]
@@ -686,7 +753,7 @@ mod tests {
         let started = Instant::now();
 
         while started.elapsed() < wait {
-            let moved = watch.moved.lock();
+            let moved = watch.overheard.moved.lock();
 
             if moved.last.is_some() || !moved.gone.is_empty() {
                 return true;
@@ -700,6 +767,7 @@ mod tests {
     #[test]
     fn a_watch_laid_again_hands_out_what_the_one_it_replaced_had_heard() {
         let scratch = Scratch::new("laid-again");
+        let elsewhere = Scratch::new("laid-again-elsewhere");
         let taken = scratch.path.join("album/echoes.flac");
 
         fs::write(&taken, b"fLaC").expect("a file");
@@ -714,13 +782,66 @@ mod tests {
         thread::sleep(QUIET / 2);
 
         let second =
-            RootsWatch::replacing(first, std::slice::from_ref(&scratch.path)).expect("a watch");
+            RootsWatch::replacing(first, std::slice::from_ref(&elsewhere.path)).expect("a watch");
+
+        let mut settled = settled_within(&second, HEARD_WITHIN);
+
+        settled.sort();
+
+        let mut both = vec![scratch.path.clone(), elsewhere.path.clone()];
+
+        both.sort();
+
+        assert_eq!(settled, both);
+        assert_eq!(taken_away_within(&second, HEARD_WITHIN), vec![taken]);
+    }
+
+    #[test]
+    fn a_watch_laid_in_place_of_another_owes_every_root_it_covers_a_look() {
+        let scratch = Scratch::new("replaced");
+        let missing = scratch.path.join("not-there");
+        let first = RootsWatch::over(std::slice::from_ref(&scratch.path)).expect("a watch");
+
+        heard_a_write_first(&first, &scratch);
+
+        let second =
+            RootsWatch::replacing(first, &[scratch.path.clone(), missing]).expect("a watch");
 
         assert_eq!(
             settled_within(&second, HEARD_WITHIN),
-            vec![scratch.path.clone()]
+            vec![scratch.path.clone()],
+            "what changed while no watch was laid waits for the next file to change"
         );
-        assert_eq!(taken_away_within(&second, HEARD_WITHIN), vec![taken]);
+        assert!(
+            RootsWatch::over(std::slice::from_ref(&scratch.path))
+                .expect("a watch")
+                .settled(Duration::ZERO)
+                .is_empty(),
+            "the first watch laid owed a look the opening scan already takes"
+        );
+    }
+
+    #[test]
+    fn a_root_covered_again_is_owed_a_look_for_what_changed_while_it_was_not() {
+        let scratch = Scratch::new("recovered");
+        let elsewhere = Scratch::new("recovered-elsewhere");
+        let late = elsewhere.path.join("late");
+
+        let mut watch = RootsWatch::over(&[scratch.path.clone(), late.clone()]).expect("a watch");
+
+        assert!(watch.leaves_a_root_uncovered());
+
+        fs::create_dir_all(&late).expect("the folder appears");
+        fs::write(late.join("echoes.flac"), b"fLaC").expect("a file no watch heard");
+
+        watch.cover_again();
+
+        assert!(!watch.leaves_a_root_uncovered());
+        assert_eq!(
+            settled_within(&watch, HEARD_WITHIN),
+            vec![late],
+            "a file changed while its root was uncovered waits for another to change"
+        );
     }
 
     #[test]

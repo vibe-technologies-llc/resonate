@@ -1835,7 +1835,19 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   FSEvents on a Mac, via `notify`):
   - *Gone* (audio file or folder removed): handed out by `taken_away` once `GONE_QUIET_FOR` (250 ms)
     has passed, never while a change under the roots is settling (a rename is a path gone and changed
-    at once; the scan follows the file instead of forgetting and recounting it). **FSEvents names
+    at once; the scan follows the file instead of forgetting and recounting it). **What went while a
+    change settled is left to the scan**: `settled` hands out the root of each such path beside the
+    roots that changed and drops the path from what `taken_away` names, so both roots of a move are
+    walked in one scan, where `moves::follow_the_moved` pairs across roots, and the old row is
+    forgotten by that scan's prune only where nothing paired it. Windows and a Mac hear a move as two
+    sides: Windows a rename's old and new names apart, and a move between two roots (two directory
+    handles) as a removal and a making; FSEvents a `RenameMode::Any` each side
+    (`a_file_renamed_across_roots_with_each_side_heard_apart_keeps_its_id_and_favourite`,
+    `a_file_renamed_across_roots_with_neither_side_named_keeps_its_id_and_favourite`,
+    `a_file_moved_across_roots_heard_as_taken_away_and_made_keeps_its_id_and_favourite`); a removal
+    with nothing changing beside it is still forgotten at once
+    (`a_file_taken_away_with_nothing_arriving_is_forgotten_without_a_scan`). The weighing is
+    `resonate_library::Overheard`, fed events by the watcher and by those tests alike. **FSEvents names
     neither side of a rename and folds a file's flags together**, so an event is weighed against the
     disc: a rename (`RenameMode::Any`) naming no path that still stands is the side taken away, and a
     making or writing naming none says nothing, so a file written and removed within one FSEvents
@@ -1855,7 +1867,12 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
     (`the_roots_are_read_once_in_a_while_and_not_at_every_look`), rebuilding the watch wherever
     they moved, over roots present as directories (`RootsWatch::replacing` drops the old watch first,
     so two never hold inotify watches at once, and carries what it heard and had not handed out; one
-    that cannot be laid is tried again at the next read). What is gone goes to `Library::forget_the_gone` (takes the `Walk` guard, deletes rows
+    that cannot be laid is tried again at the next read, through `RootsWatch::over_again`). **A watch
+    laid after the first owes every root it covers one look**, since what changed while no watch was
+    laid was heard by nothing: `replacing` and `over_again` note each covered root as changed, so
+    `settled` hands it out once quiet; the first watch laid owes none, the opening scan taking every
+    root (`a_watch_laid_in_place_of_another_owes_every_root_it_covers_a_look`,
+    `a_watch_lost_after_the_roots_were_read_is_laid_again_owing_every_root_a_look`). What is gone goes to `Library::forget_the_gone` (takes the `Walk` guard, deletes rows
     whose file is missing, sparing a vaulted and a delivered row as the scan's prune does, and rows on
     an absent volume); a forget refused by `Error::AlreadyWalking` or failed is kept and retried. A
     settled root with the work slot free runs the incremental scan, `Prompted::OnItsOwn`. A non-UTF-8
@@ -1863,7 +1880,10 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   - A watch that cannot be made is a warning; one that cannot cover a root
     (`RootsWatch::leaves_a_root_uncovered`) is laid again on the same watcher every
     `UNCOVERED_ROOTS_TRIED_AGAIN_AFTER` (5 minutes, `RootsWatch::cover_again`,
-    `a_root_that_appears_after_the_watch_was_laid_is_covered_on_the_same_watch`); a root refused for
+    `a_root_that_appears_after_the_watch_was_laid_is_covered_on_the_same_watch`), and a root it
+    covers again is owed one look the same way, for what changed while it was uncovered
+    (`a_root_covered_again_is_owed_a_look_for_what_changed_while_it_was_not`,
+    `a_song_added_while_its_root_was_uncovered_is_catalogued_once_the_watch_covers_it_again`); a root refused for
     want of inotify watches (`ENOSPC`, notify's `MaxFilesWatch`, `RootsWatch::ran_out_of_watches`)
     is tried twice as late each time up to `OUT_OF_WATCHES_TRIED_AGAIN_AT_MOST` (4 hours,
     `RootsWatch::tried_again_after`, kept in `Watching::uncovered_wait`), since every try walks the
