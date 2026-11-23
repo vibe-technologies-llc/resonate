@@ -606,7 +606,7 @@ mod tests {
     use resonate_core::{AudioBuffer, MediaLocation, SampleData};
 
     use super::*;
-    use crate::{DecodeStatus, Decoder};
+    use crate::{DecodeStatus, Decoder, Reading};
 
     const DSD64: u32 = 2_822_400;
     const SAMPLES_A_FRAME: usize = (DSD64 as u64 / FRAMES_A_SECOND) as usize;
@@ -977,8 +977,12 @@ mod tests {
     const FRAME_BYTES: usize = SAMPLES_A_FRAME / 8 * CHANNELS;
 
     fn frames_chunk(dsd: &[u8]) -> Vec<u8> {
+        frames_chunk_declaring(dsd, (dsd.len() / FRAME_BYTES) as u32)
+    }
+
+    fn frames_chunk_declaring(dsd: &[u8], declared: u32) -> Vec<u8> {
         let mut body = Vec::new();
-        let mut info = ((dsd.len() / FRAME_BYTES) as u32).to_be_bytes().to_vec();
+        let mut info = declared.to_be_bytes().to_vec();
 
         info.extend_from_slice(&(FRAMES_A_SECOND as u16).to_be_bytes());
         body.extend(chunk(b"FRTE", &info));
@@ -1066,6 +1070,43 @@ mod tests {
 
         assert_eq!(all, dsd);
         assert_eq!(unpacked.byte_len(), Some(dsd.len() as u64));
+    }
+
+    fn samples_declared_by(body: &[u8]) -> u64 {
+        let file = dsdiff(CHANNELS as u16, b"DST ", &chunk(b"DST ", body));
+
+        dff::read(
+            &mut Reading::new(Cursor::new(file)),
+            &MediaLocation::local("declared.dff"),
+        )
+        .expect("a DSDIFF lays out")
+        .samples
+    }
+
+    #[test]
+    fn a_frame_count_the_stored_frames_cannot_hold_is_bounded_to_what_fits() {
+        let dsd = signal(CHANNELS, 3, 0xBEEF_0006);
+        let body = frames_chunk(&dsd);
+
+        let honest = samples_declared_by(&body);
+        let overstated = samples_declared_by(&frames_chunk_declaring(&dsd, 1_000_000));
+        let most_the_body_could_hold = body.len() as u64 / 12 * SAMPLES_A_FRAME as u64;
+
+        assert_eq!(honest, 3 * SAMPLES_A_FRAME as u64);
+        assert!(overstated <= most_the_body_could_hold);
+        assert!(overstated < 1_000_000 * SAMPLES_A_FRAME as u64);
+        assert!(overstated >= honest);
+    }
+
+    #[test]
+    fn a_frame_count_within_what_the_chunk_can_hold_is_published_as_declared() {
+        let dsd = signal(CHANNELS, 3, 0xBEEF_0007);
+
+        let honest = samples_declared_by(&frames_chunk(&dsd));
+        let short = samples_declared_by(&frames_chunk_declaring(&dsd, 2));
+
+        assert_eq!(honest, 3 * SAMPLES_A_FRAME as u64);
+        assert_eq!(short, 2 * SAMPLES_A_FRAME as u64);
     }
 
     fn whole_stream(body: Vec<u8>, declared: u64) -> Vec<u8> {

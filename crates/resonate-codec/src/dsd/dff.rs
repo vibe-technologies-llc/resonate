@@ -21,6 +21,7 @@ const MAX_PROP_BYTES: u64 = 1 << 16;
 const MAX_EDITED_TEXT_BYTES: u32 = 1 << 12;
 const EDITED_COUNT_BYTES: u64 = 4;
 const FRAME_INFO_BYTES: u64 = 6;
+const FRAME_INFO_CHUNK_BYTES: u64 = CHUNK_HEADER_BYTES + FRAME_INFO_BYTES;
 const DST: &[u8; 4] = b"DST ";
 const CHANNEL_ID_BYTES: usize = 4;
 
@@ -64,7 +65,8 @@ pub(crate) fn read(bytes: &mut dyn MediaStream, location: &MediaLocation) -> Res
                 found.packed = Some(Compressed {
                     at: body,
                     bytes: size,
-                    frames: frame_count(bytes, body, size),
+                    frames: frame_count(bytes, body, size)
+                        .map(|declared| declared.min(frames_that_fit(bytes, body, size))),
                 });
             }
             _ => {}
@@ -171,6 +173,14 @@ fn frame_count(bytes: &mut dyn MediaStream, body: u64, size: u64) -> Option<u64>
     read_exact::<4, _>(bytes)
         .map(|count| u64::from(u32::from_be_bytes(count)))
         .filter(|_| size > held)
+}
+
+fn frames_that_fit(bytes: &dyn MediaStream, body: u64, size: u64) -> u64 {
+    let stored = bytes
+        .byte_len()
+        .map_or(size, |len| size.min(len.saturating_sub(body)));
+
+    stored.saturating_sub(FRAME_INFO_CHUNK_BYTES) / CHUNK_HEADER_BYTES
 }
 
 pub(crate) fn next_packed(

@@ -1,4 +1,7 @@
-use std::{collections::BTreeMap, time::Duration};
+use std::{
+    collections::BTreeMap,
+    time::{Duration, SystemTime},
+};
 
 use resonate_core::Frames;
 
@@ -19,6 +22,7 @@ pub(crate) struct ClusterTally {
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Walked {
     pub(crate) size: u64,
+    pub(crate) modified: Option<SystemTime>,
     pub(crate) mpeg_frames: Option<Frames>,
     pub(crate) clusters: ClusterTally,
 }
@@ -26,6 +30,22 @@ pub struct Walked {
 impl Walked {
     pub const fn size(&self) -> u64 {
         self.size
+    }
+
+    pub const fn modified(&self) -> Option<SystemTime> {
+        self.modified
+    }
+
+    pub fn stamped(mut self, modified: SystemTime) -> Self {
+        self.modified = Some(modified);
+        self
+    }
+
+    pub(crate) fn believed_at(&self, modified: Option<SystemTime>) -> bool {
+        match self.modified {
+            Some(stamp) => modified == Some(stamp),
+            None => true,
+        }
     }
 
     pub fn written(&self) -> String {
@@ -59,6 +79,7 @@ impl Walked {
 
         fields.next().is_none().then_some(Self {
             size,
+            modified: None,
             mpeg_frames,
             clusters: ClusterTally {
                 counted,
@@ -125,6 +146,7 @@ mod tests {
     fn walked() -> Walked {
         Walked {
             size: 4_096,
+            modified: None,
             mpeg_frames: Some(Frames(1_152_000)),
             clusters: ClusterTally {
                 counted: Some(Duration::from_nanos(212_345_678_901)),

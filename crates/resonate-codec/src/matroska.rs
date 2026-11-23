@@ -87,7 +87,7 @@ pub(crate) struct Segment {
     pub(crate) scale: Option<u64>,
     pub(crate) declared: Option<Duration>,
     pub(crate) counted: Option<Duration>,
-    pub(crate) bit_depth: Option<u32>,
+    pub(crate) bit_depths: BTreeMap<u64, u32>,
     pub(crate) discarded: BTreeMap<u64, Duration>,
     pub(crate) opus_samples: Option<u64>,
     pub(crate) framed_samples: Option<u64>,
@@ -119,6 +119,10 @@ impl Segment {
             .then_some(self.framed_samples)
             .flatten()
             .map(Frames)
+    }
+
+    pub(crate) fn bit_depth_of(&self, track: u32) -> Option<u32> {
+        self.bit_depths.get(&u64::from(track)).copied()
     }
 
     pub(crate) fn discarded_frames(&self, track: u32, rate: SampleRate) -> u32 {
@@ -301,7 +305,7 @@ fn scan<S: Read + Seek + ?Sized>(source: &mut S, known: Option<&ClusterTally>) -
     let mut found = read_info(source, info.end());
 
     if source.seek(SeekFrom::Start(body)).is_ok() {
-        found.bit_depth = read_bit_depth(source, within);
+        found.bit_depths = read_bit_depths(source, within);
     }
 
     let tally = match known {
@@ -918,6 +922,7 @@ struct Entry {
     number: Option<u64>,
     codec: Option<String>,
     private: Option<Vec<u8>>,
+    bit_depth: Option<u32>,
 }
 
 fn read_entry<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Entry {
@@ -932,6 +937,7 @@ fn read_entry<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> En
             TRACK_NUMBER => entry.number = positive(uint(source, element.length)),
             CODEC_ID => entry.codec = text(source, element.length),
             CODEC_PRIVATE => entry.private = bytes(source, element.length),
+            TRACK_AUDIO => entry.bit_depth = read_audio_bit_depth(source, element.end()),
             _ => {}
         }
 
@@ -1044,13 +1050,25 @@ fn bytes<S: Read + ?Sized>(source: &mut S, length: Length) -> Option<Vec<u8>> {
     Some(held)
 }
 
-fn read_bit_depth<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) -> Option<u32> {
-    let tracks = find(source, TRACKS, within)?;
-    let entry = find(source, TRACK_ENTRY, tracks.end())?;
-    let audio = find(source, TRACK_AUDIO, entry.end())?;
+fn read_bit_depths<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    within: Option<u64>,
+) -> BTreeMap<u64, u32> {
+    let mut depths = BTreeMap::new();
 
-    let limit = audio.end();
+    walk_tracks::<_, ()>(source, within, |entry| {
+        if let (Some(number), Some(bits)) = (entry.number, entry.bit_depth) {
+            depths.entry(number).or_insert(bits);
+        }
+        ControlFlow::Continue(())
+    });
+    depths
+}
 
+fn read_audio_bit_depth<S: Read + Seek + ?Sized>(
+    source: &mut S,
+    limit: Option<u64>,
+) -> Option<u32> {
     for _ in 0..MAX_ELEMENTS {
         let element = element(source)?;
 
@@ -1061,7 +1079,7 @@ fn read_bit_depth<S: Read + Seek + ?Sized>(source: &mut S, within: Option<u64>) 
         }
 
         let next = skip(source, &element)?;
-        if limit.is_some_and(|limit| next >= limit) {
+        if limit.is_none_or(|limit| next >= limit) {
             break;
         }
     }
@@ -1098,7 +1116,7 @@ fn read_info<S: Read + Seek + ?Sized>(source: &mut S, limit: Option<u64>) -> Seg
         scale: Some(scale),
         declared: span(ticks, scale),
         counted: None,
-        bit_depth: None,
+        bit_depths: BTreeMap::new(),
         discarded: BTreeMap::new(),
         opus_samples: None,
         framed_samples: None,
@@ -2040,26 +2058,58 @@ mod tests {
         );
     }
 
-    #[test]
-    fn a_track_audio_bit_depth_is_read_out_of_the_tracks_element() {
-        let audio = element(TRACK_AUDIO, &element(BIT_DEPTH, &[24_u8]));
-        let tracks = element(TRACKS, &element(TRACK_ENTRY, &audio));
+    fn audio_entry(number: u8, depth: Option<u8>) -> Vec<u8> {
+        let mut entry = element(TRACK_NUMBER, &[number]);
 
+        if let Some(depth) = depth {
+            entry.extend_from_slice(&element(TRACK_AUDIO, &element(BIT_DEPTH, &[depth])));
+        }
+        element(TRACK_ENTRY, &entry)
+    }
+
+    fn depths_of(entries: &[Vec<u8>]) -> Segment {
         let mut segment = element(INFO, &titled("Echoes"));
 
-        segment.extend_from_slice(&tracks);
+        segment.extend_from_slice(&element(TRACKS, &entries.concat()));
 
         let mut bytes = element(EBML_HEADER, b"an ebml header");
 
         bytes.extend_from_slice(&element(SEGMENT, &segment));
+        read_segment(&mut Cursor::new(bytes))
+    }
 
-        assert_eq!(read_segment(&mut Cursor::new(bytes)).bit_depth, Some(24));
+    #[test]
+    fn a_track_audio_bit_depth_is_read_out_of_the_tracks_element() {
+        let segment = depths_of(&[audio_entry(1, Some(24))]);
+
+        assert_eq!(segment.bit_depth_of(1), Some(24));
+    }
+
+    #[test]
+    fn a_bit_depth_belongs_to_the_track_entry_that_declares_it() {
+        let segment = depths_of(&[
+            track_entry(1, "V_MPEG4/ISO/AVC"),
+            audio_entry(2, Some(16)),
+            audio_entry(3, Some(24)),
+        ]);
+
+        assert_eq!(segment.bit_depth_of(1), None);
+        assert_eq!(segment.bit_depth_of(2), Some(16));
+        assert_eq!(segment.bit_depth_of(3), Some(24));
+    }
+
+    #[test]
+    fn a_track_declaring_no_depth_beside_one_that_does_is_left_unknown() {
+        let segment = depths_of(&[audio_entry(1, None), audio_entry(2, Some(24))]);
+
+        assert_eq!(segment.bit_depth_of(1), None);
+        assert_eq!(segment.bit_depth_of(2), Some(24));
     }
 
     #[test]
     fn a_file_declaring_no_bit_depth_leaves_it_unknown() {
         assert_eq!(
-            read_segment(&mut Cursor::new(file("Echoes"))).bit_depth,
+            read_segment(&mut Cursor::new(file("Echoes"))).bit_depth_of(1),
             None
         );
     }

@@ -652,7 +652,7 @@ pub(crate) fn coded_info(
             .unwrap_or(0),
         playable,
         splices: primed.and_then(|held| held.splices),
-        bits_per_coded_sample: declared_bits(params, prescan)
+        bits_per_coded_sample: declared_bits(params, track.id, prescan)
             .and_then(|bits| u8::try_from(bits).ok()),
         is_seekable: opened.seekable,
         packing: Packing::Samples,
@@ -927,12 +927,12 @@ fn sample_format(params: &AudioCodecParameters) -> SampleFormat {
     }
 }
 
-fn declared_bits(params: &AudioCodecParameters, prescan: &Prescan) -> Option<u32> {
+fn declared_bits(params: &AudioCodecParameters, track: u32, prescan: &Prescan) -> Option<u32> {
     params
         .bits_per_coded_sample
         .or(prescan.riff.valid_bits)
         .or_else(|| flac_bit_depth(params))
-        .or(prescan.segment.bit_depth)
+        .or_else(|| prescan.segment.bit_depth_of(track))
         .or(params.bits_per_sample)
         .or_else(|| alac_bit_depth(params))
         .or_else(|| float_wider_than_it_decodes(params.codec))
@@ -1549,7 +1549,7 @@ mod tests {
                 SampleFormat::S16
             );
             assert_eq!(
-                declared_bits(&alac(24, prefix), &Prescan::default()),
+                declared_bits(&alac(24, prefix), 1, &Prescan::default()),
                 Some(24)
             );
         }
@@ -1580,7 +1580,7 @@ mod tests {
     fn a_flac_depth_is_read_from_streaminfo_where_the_container_left_it_unset() {
         for depth in [16, 20, 24, 32] {
             assert_eq!(
-                declared_bits(&flac(depth), &Prescan::default()),
+                declared_bits(&flac(depth), 1, &Prescan::default()),
                 Some(depth),
                 "a {depth}-bit STREAMINFO was read as something else"
             );
@@ -1612,8 +1612,8 @@ mod tests {
 
         prescan.riff.valid_bits = Some(20);
 
-        assert_eq!(declared_bits(&params, &prescan), Some(20));
-        assert_eq!(declared_bits(&params, &Prescan::default()), Some(24));
+        assert_eq!(declared_bits(&params, 1, &prescan), Some(20));
+        assert_eq!(declared_bits(&params, 1, &Prescan::default()), Some(24));
     }
 
     #[test]
@@ -1645,11 +1645,23 @@ mod tests {
     fn a_matroska_bit_depth_answers_where_nothing_nearer_the_codec_does() {
         let mut prescan = Prescan::default();
 
-        prescan.segment.bit_depth = Some(24);
+        prescan.segment.bit_depths.insert(1, 24);
 
         assert_eq!(
-            declared_bits(&params(AudioCodecId::default()), &prescan),
+            declared_bits(&params(AudioCodecId::default()), 1, &prescan),
             Some(24)
+        );
+    }
+
+    #[test]
+    fn a_matroska_bit_depth_of_another_track_is_not_the_chosen_tracks() {
+        let mut prescan = Prescan::default();
+
+        prescan.segment.bit_depths.insert(1, 24);
+
+        assert_eq!(
+            declared_bits(&params(AudioCodecId::default()), 2, &prescan),
+            None
         );
     }
 
@@ -1707,11 +1719,11 @@ mod tests {
     #[test]
     fn sixty_four_bit_float_samples_declare_their_width_though_none_is_written() {
         assert_eq!(
-            declared_bits(&params(CODEC_ID_PCM_F64LE), &Prescan::default()),
+            declared_bits(&params(CODEC_ID_PCM_F64LE), 1, &Prescan::default()),
             Some(64)
         );
         assert_eq!(
-            declared_bits(&params(CODEC_ID_PCM_F32LE), &Prescan::default()),
+            declared_bits(&params(CODEC_ID_PCM_F32LE), 1, &Prescan::default()),
             None
         );
     }

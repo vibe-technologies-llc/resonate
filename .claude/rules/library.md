@@ -55,9 +55,10 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
 - **A scan keeps what its open had to walk, so playback need not.** `tracks.walked` is the text of
   `resonate_codec::Walked` (the VBR MP3 frame count, the Matroska cluster tally), written by every
   upsert from `MediaInfo::walked` (each cut of a file carries its file's); `Hinted::walked` answers
-  it by path with the row's `file_size`, which the codec weighs against the source's own length
-  before believing it (`audio.md`), so a tag write that moves the size and the row's `file_size`
-  together keeps the count and a file rewritten behind the catalog's back is walked again
+  it by path with the row's `file_size` and `modified`, which the codec weighs against the source's own
+  length and the file's live modification stamp before believing it (`audio.md`), so a tag write that
+  moves the size, the stamp and the row together keeps the count and a file rewritten behind the
+  catalog's back, to the same length too, is walked again
   (`a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback`).
 - **Transport state = three tables, each moving at its own rate, each keyed by zone.** `resume`: one
   row per zone (queue's row, frame, shuffled, taken, `next_first`/`next_last`). `resume_rows`: one

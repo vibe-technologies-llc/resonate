@@ -1,12 +1,12 @@
 use std::{
     cmp::min,
-    fs::File,
+    fs::{self, File},
     io::{self, Read, Seek, SeekFrom},
     mem,
     path::{Path, PathBuf},
     sync::{Arc, mpsc},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 
 use parking_lot::Mutex;
@@ -260,9 +260,12 @@ impl Sources {
     }
 
     pub fn walked(&self, location: &MediaLocation) -> Option<Walked> {
-        self.hinting
+        let walked = self
+            .hinting
             .as_ref()
-            .and_then(|hinting| hinting.walked(location))
+            .and_then(|hinting| hinting.walked(location))?;
+
+        walked.believed_at(live_stamp(location)).then_some(walked)
     }
 
     pub fn hints(&self, location: &MediaLocation, span: Option<FrameSpan>) -> TrackHints {
@@ -323,6 +326,10 @@ impl Sources {
             hint,
         })
     }
+}
+
+fn live_stamp(location: &MediaLocation) -> Option<SystemTime> {
+    fs::metadata(location.as_path()?).ok()?.modified().ok()
 }
 
 const LARGEST_READ_ASKED: usize = 1 << 20;

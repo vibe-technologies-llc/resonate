@@ -116,6 +116,7 @@ impl Prescan {
     fn walked_at(&self, size: u64) -> Walked {
         Walked {
             size,
+            modified: None,
             mpeg_frames: self.mpeg_frames,
             clusters: ClusterTally {
                 counted: self.segment.counted,
@@ -615,6 +616,7 @@ mod tests {
         let file = a_variable_rate_stream();
         let stale = Walked {
             size: file.len() as u64 + 1,
+            modified: None,
             mpeg_frames: Some(Frames(7)),
             clusters: ClusterTally::default(),
         };

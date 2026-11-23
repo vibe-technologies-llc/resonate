@@ -26,17 +26,26 @@ impl Hinting for Hinted {
         let kept = self.inner.read(|connection| {
             connection
                 .query_row(
-                    "SELECT walked, file_size FROM tracks
+                    "SELECT walked, file_size, modified FROM tracks
                       WHERE path = ?1 AND walked IS NOT NULL
                       LIMIT 1",
                     [path.as_ref()],
-                    |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?)),
+                    |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, i64>(1)?,
+                            row.get::<_, i64>(2)?,
+                        ))
+                    },
                 )
                 .optional()
                 .map_err(|source| Error::store(StoreOp::Query, source))
         });
         match kept {
-            Ok(Some((written, size))) => Walked::read(&written, u64::try_from(size).ok()?),
+            Ok(Some((written, size, modified))) => {
+                Walked::read(&written, u64::try_from(size).ok()?)
+                    .map(|walked| walked.stamped(store::from_nanos(modified)))
+            }
             Ok(None) => None,
             Err(error) => {
                 tracing::debug!(%error, %location, "the catalog could not say what it walked of a row");

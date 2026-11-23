@@ -22,7 +22,9 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
 
 - **Depth: container, never decoder buffer.** symphonia leaves ALAC `bits_per_sample` unset;
   `declared_bits` asks each container (ALAC magic cookie, WAV `wValidBitsPerSample`, FLAC
-  `STREAMINFO`, Matroska `BitDepth`). Padding lies about the master.
+  `STREAMINFO`, Matroska `BitDepth`, read per track entry and answered for the chosen track's number by
+  `Segment::bit_depth_of`, so a video track before it or another audio track never lends its depth).
+  Padding lies about the master.
 - **Layout named only where the container places every channel as that layout does.**
   `positioned_layout` turns symphonia's speaker mask into core's `Places` and asks
   `ChannelLayout::placed`: a set a named layout holds is that layout (a side pair standing for the
@@ -166,10 +168,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   `Prescan::buffered` found, written as one text (`Walked::written`) that `Sources` hands back through
   `Hinting::walked` at every open but the scan's (`probe_scanned` opens afresh, so a revised walk is
   never fed its own old answer). A hint is believed only for a source of the byte length it was read
-  at (`Walked::size`; the library gives its row's `file_size`): a file another program rewrote since
-  the scan is walked again. A source whose provider hints nothing (the phones) walks as before
+  at (`Walked::size`; the library gives its row's `file_size`) and, where the hint carries one
+  (`Walked::stamped`, the library giving its row's `modified`), only while the file's live modification
+  stamp is that one (`Walked::believed_at`, read by `Sources::walked`): a file another program rewrote
+  since the scan, even to the same length, is walked again. A source whose provider hints nothing (the phones) walks as before
   (`a_walk_read_before_spares_the_frame_walk_of_a_file_of_the_same_size`,
   `a_walk_read_of_a_file_of_another_size_is_not_believed`,
+  `a_file_replaced_by_one_of_the_same_length_is_walked_again`,
   `a_count_already_known_stands_in_for_the_walk_of_the_clusters`).
 - **MPEG audio and ADTS seek from marks, not from the first frame** (`framed::Framed` wraps
   symphonia's `MpaReader` and `AdtsReader`). A seek walks frame headers itself (`Framing::walk`) from
@@ -307,7 +312,9 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   `Packing`, not its spec: `DopMarked` delivered as samples = `OutputMode::Converted`, no
   `NO_CONVERT`. `retune` asks `packs_again` and rebinds into the marked plan where `dop_survives`.
 - **DST-compressed DSDIFF unpacks into the stream an uncompressed one would be** (`dsd::unpacked`,
-  `dst::Unpacked`; `FRTE` = frame count, absent: `DsdChunkMissing`). **Frame index found as
+  `dst::Unpacked`; `FRTE` = frame count, absent: `DsdChunkMissing`; a count the `DST ` chunk cannot hold, one `DSTF` header
+  of 12 bytes a frame after the `FRTE` chunk, is bounded to what fits by `frames_that_fit`, so the
+  duration and seek range are never past the stored frames). **Frame index found as
   reached:** `dst::Walk` resumes over `DSTF` headers only as far as a read or seek asks. `dst.rs` =
   ISO/IEC 14496-3 subpart 10 as FFmpeg reads it; tests carry their own encoder.
   **A DST frame that will not unpack, or is longer than `PACKED_FRAME_AT_MOST_RAW_FRAMES` (8) raw

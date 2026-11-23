@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
     slice,
     sync::Arc,
-    time::Duration,
+    time::{Duration, SystemTime},
 };
 #[cfg(unix)]
 use std::{ffi::OsStr, os::unix::fs::MetadataExt as _, process};
@@ -149,6 +149,106 @@ fn a_scan_keeps_the_frames_it_walked_and_the_catalog_hands_them_to_playback() ->
             .hinting()
             .walked(&MediaLocation::local(tree.path().join("absent.mp3")))
             .is_none()
+    );
+    Ok(())
+}
+
+fn another_variable_rate_stream_of_the_same_length() -> Vec<u8> {
+    let mut file = Vec::new();
+
+    for (header, length, count) in [
+        ([0xff, 0xfb, 0x10, 0x00], 104, 562),
+        ([0xff, 0xfb, 0xe0, 0x00], 1_044, 8),
+    ] {
+        for _ in 0..count {
+            file.extend_from_slice(&header);
+            file.resize(file.len() + length - header.len(), 0);
+        }
+    }
+    file
+}
+
+fn replaced_keeping_its_length(path: &Path, bytes: &[u8], stamp: SystemTime) {
+    fs::write(path, bytes).expect("a writable temporary file");
+    fs::File::options()
+        .write(true)
+        .open(path)
+        .and_then(|file| file.set_modified(stamp))
+        .expect("a file whose stamp can be set");
+}
+
+fn frames_heard_through(library: &Library, path: &Path) -> Option<Frames> {
+    let sources = Sources::local().hinted_by(library.hinting());
+
+    resonate_codec::probe(&sources, &MediaLocation::local(path))
+        .expect("a stream of frames probes")
+        .duration
+}
+
+#[test]
+fn a_walk_is_handed_back_with_the_stamp_of_the_file_it_was_made_of() -> Result<()> {
+    let tree = Tree::new();
+    let path = tree.write("walked.mp3", &a_variable_rate_stream());
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &options(&tree))?;
+
+    let walked = library
+        .hinting()
+        .walked(&MediaLocation::local(&path))
+        .expect("the scan kept what it walked");
+
+    assert_eq!(
+        walked.modified(),
+        Some(fs::metadata(&path).unwrap().modified().unwrap())
+    );
+    Ok(())
+}
+
+#[test]
+fn a_file_replaced_by_one_of_the_same_length_is_walked_again() -> Result<()> {
+    let tree = Tree::new();
+    let first = a_variable_rate_stream();
+    let second = another_variable_rate_stream_of_the_same_length();
+
+    let path = tree.write("walked.mp3", &first);
+    let scanned = fs::metadata(&path).unwrap().modified().unwrap();
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &options(&tree))?;
+
+    let before = frames_heard_through(&library, &path);
+
+    replaced_keeping_its_length(&path, &second, scanned + Duration::from_secs(60));
+
+    let after = frames_heard_through(&library, &path);
+
+    assert_eq!(first.len(), second.len());
+    assert_eq!(before, Some(Frames(100 * 1_152)));
+    assert_eq!(after, Some(Frames(570 * 1_152)));
+    Ok(())
+}
+
+#[test]
+fn a_file_whose_stamp_is_unmoved_still_plays_from_the_walk_the_scan_kept() -> Result<()> {
+    let tree = Tree::new();
+    let first = a_variable_rate_stream();
+    let second = another_variable_rate_stream_of_the_same_length();
+
+    let path = tree.write("walked.mp3", &first);
+    let scanned = fs::metadata(&path).unwrap().modified().unwrap();
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &options(&tree))?;
+
+    replaced_keeping_its_length(&path, &second, scanned);
+
+    assert_eq!(
+        frames_heard_through(&library, &path),
+        Some(Frames(100 * 1_152))
     );
     Ok(())
 }
