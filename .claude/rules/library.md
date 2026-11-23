@@ -1575,8 +1575,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `TrackToTag::popularity` rides in `Writing::popularity`. Favourite: lofty's popularimeter under
   `resonate_codec::RATED_BY` (`resonate`), five stars; non-favourite: this build's rating removed.
   Lands as ID3v2 `POPM` (counter kept), Vorbis `RATING:resonate`, MP4 `rate`, RIFF `IRTD`; WavPack
-  and Monkey's Audio carry FMPS `FMPS_RATING` `1.0`. Another player's rating under its own name
-  stays; where a format names nobody that one is ours. **Plays are written favourite or not**, under
+  and Monkey's Audio carry FMPS `FMPS_RATING` `1.0`, touched only where the favourite changes
+  (`Counted::favour_in_ape` weighs `favoured_in_ape` first), so another player's fractional rating
+  outlives a count (`a_wavpack_files_fractional_rating_outlasts_a_count_and_still_takes_a_favourite`).
+  Another player's rating under its own name stays; where a format names nobody that one is ours. **Plays are written favourite or not**, under
   each tag's FMPS name (`FMPS_PLAYCOUNT` in Vorbis/APE, `TXXX` `FMPS_PlayCount` in ID3v2,
   `----:com.apple.iTunes:FMPS_Playcount` in MP4); zero is removed. lofty's generic `Tag` drops a
   name with no `ItemKey`, so `counted.rs` converts it into the format's own tag, sets the count
@@ -1799,7 +1801,19 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   (`a_whole_copy_at_the_tracks_length_is_laid_whoever_reads_it`). The spool's write back follows
   the same rule. Before that window the synced copy is renamed
   `.<name>.<pid>-<n>.resonate-whole` (`journal::WholeCopy`); a write-back failing part way renames
-  it `.resonate-torn` and answers `codec::Error::WrittenBackPartway`. **The whole copy says what the
+  it `.resonate-torn` and answers `codec::Error::WrittenBackPartway`. **A kept name is never taken
+  from another writer:** a pid is not unique across pid namespaces (Flatpak), so a journal, whole or
+  torn name may already stand. The journal is made `create_new` and the copy renamed without
+  replacing (`renamed_over_nothing`: `renameat2(RENAME_NOREPLACE)`, else a hard link then unlink, as
+  the library's); a name found taken is left as it stands and the next count tried
+  (`under_a_fresh_name`, `NAMES_TRIED_AT_MOST` of them, then the write is refused as
+  `AlreadyExists`), and only a file this writer made is removed when its own write fails, so what
+  another writer kept stays for the sweep and the mend
+  (`a_journal_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken`,
+  `a_whole_copy_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken`,
+  `a_whole_copy_kept_elsewhere_leaves_another_writers_under_the_same_name`,
+  `a_torn_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken`,
+  `a_write_finding_every_journal_name_taken_is_refused_and_leaves_each_as_it_was`). **The whole copy says what the
   track was:** `stood_beside` appends an FNV-1a hash of each 4 KiB page of the track as it stood,
   both lengths and a check, `STOOD_MAGIC` last; the write-back lays the copy over in page-aligned
   chunks (`laid_over`, writing only the runs of pages that differ from the track). A dead writer's whole or torn copy is finished by the next write to that

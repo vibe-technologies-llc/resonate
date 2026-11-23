@@ -12,6 +12,13 @@ use std::{
     },
 };
 
+use lofty::{
+    ape::{ApeFile, ApeItem, ApeTag},
+    config::{ParseOptions, WriteOptions},
+    file::AudioFile as _,
+    tag::{ItemValue, TagExt as _},
+    wavpack::WavPackFile,
+};
 use resonate_codec::{
     Codec, Container, CoverArt, CueStamp, CueStart, DecodeStatus, Decoder, Error, Faststart,
     FileTags, Holes, ImageFormat, LocalFiles, Media, MediaProvider, Picturing, Popularity, Rated,
@@ -4127,6 +4134,132 @@ fn a_favourite_reaches_a_monkeys_audio_file_as_its_ape_tag_says_one() {
     );
 
     counted_and_favoured_through(&target);
+}
+
+const FMPS_RATING: &str = "FMPS_RATING";
+const FRACTIONAL_RATING: &str = "0.6";
+
+fn rated_fractionally(path: &Path) {
+    let mut tag = ApeTag::new();
+
+    tag.insert(
+        ApeItem::new(
+            FMPS_RATING.to_owned(),
+            ItemValue::Text(FRACTIONAL_RATING.to_owned()),
+        )
+        .expect("a rating item"),
+    );
+    tag.save_to_path(path, WriteOptions::default())
+        .expect("a rating another player gave");
+}
+
+fn ape_rating(path: &Path) -> Option<String> {
+    let mut file = fs::File::open(path).expect("a readable file");
+
+    let options = ParseOptions::new().read_properties(false);
+    let tag = match path.extension().and_then(|extension| extension.to_str()) {
+        Some("wv") => WavPackFile::read_from(&mut file, options)
+            .expect("a WavPack file")
+            .ape()
+            .cloned(),
+        _ => ApeFile::read_from(&mut file, options)
+            .expect("a Monkey's Audio file")
+            .ape()
+            .cloned(),
+    };
+    tag?.get(FMPS_RATING).and_then(|item| match item.value() {
+        ItemValue::Text(text) => Some(text.clone()),
+        _ => None,
+    })
+}
+
+fn a_fractional_rating_outlasts_a_count_through(path: &Path) {
+    let name = path.display();
+    let location = MediaLocation::local(path);
+    let tags = FileTags::default();
+
+    rated_fractionally(path);
+
+    let counted = Popularity {
+        favourite: false,
+        plays: 4,
+    };
+
+    tags.write(&location, rated_as(counted))
+        .expect("a counted file");
+
+    assert_eq!(
+        ape_rating(path).as_deref(),
+        Some(FRACTIONAL_RATING),
+        "{name}"
+    );
+    assert_eq!(
+        tags.rated(&location).expect("a readable file"),
+        Rated::Unrated { plays: Some(4) },
+        "{name}"
+    );
+
+    let favoured = Popularity {
+        favourite: true,
+        plays: 5,
+    };
+
+    tags.write(&location, rated_as(favoured))
+        .expect("a favoured file");
+
+    assert_eq!(ape_rating(path).as_deref(), Some("1.0"), "{name}");
+    assert_eq!(
+        tags.rated(&location).expect("a readable file"),
+        Rated::Favourite { plays: Some(5) },
+        "{name}"
+    );
+
+    let unfavoured = Popularity {
+        favourite: false,
+        plays: 6,
+    };
+
+    tags.write(&location, rated_as(unfavoured))
+        .expect("an unfavoured file");
+
+    assert_eq!(ape_rating(path), None, "{name}");
+    assert_eq!(
+        tags.rated(&location).expect("a readable file"),
+        Rated::Unrated { plays: Some(6) },
+        "{name}"
+    );
+}
+
+#[test]
+fn a_wavpack_files_fractional_rating_outlasts_a_count_and_still_takes_a_favourite() {
+    let tree = Tree::new();
+    let Some((path, _)) = fixture(&tree, "fractional.wv", &["-c:a", "wavpack"]) else {
+        return;
+    };
+
+    a_fractional_rating_outlasts_a_count_through(&path);
+}
+
+#[test]
+fn a_monkeys_audio_files_fractional_rating_outlasts_a_count_and_still_takes_a_favourite() {
+    if !monkeys() {
+        eprintln!("skipped: no mac to build the fixture");
+        return;
+    }
+
+    let tree = Tree::new();
+    let source = tree.at("source.wav");
+
+    wav(&source, CD, &tone(CD));
+
+    let target = tree.at("fractional.ape");
+
+    assert!(
+        monkeyed(&source, &target, "-c2000"),
+        "mac would not write it"
+    );
+
+    a_fractional_rating_outlasts_a_count_through(&target);
 }
 
 #[test]

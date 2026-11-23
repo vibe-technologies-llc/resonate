@@ -34,6 +34,7 @@ const STOOD_TRAILER_BYTES: u64 = 5 * NUMBER_BYTES;
 const AWAY_MAGIC: &[u8; 8] = b"RSAWAY01";
 const AWAY_TRAILER_BYTES: u64 = 3 * NUMBER_BYTES;
 const TRACK_PATH_BYTES_AT_MOST: u64 = 4096;
+const NAMES_TRIED_AT_MOST: usize = 8;
 
 static KEPT: AtomicU64 = AtomicU64::new(0);
 
@@ -102,7 +103,7 @@ impl Undo {
         let mut refused = io::Error::from(io::ErrorKind::PermissionDenied);
 
         for folder in folders {
-            match Self::written_into(folder, folder.join(journal_name(name)), &bytes) {
+            match Self::written_into(folder, name, &bytes) {
                 Ok(undo) => return Ok(undo),
                 Err(error) => refused = error,
             }
@@ -120,25 +121,17 @@ impl Undo {
         let name = track
             .file_name()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
-        let folder = folder_of(track);
         Self::written_into(
-            folder,
-            folder.join(journal_name(name)),
+            folder_of(track),
+            name,
             &encoded(name, stood, lands, shifted, changes),
         )
     }
 
-    fn written_into(folder: &Path, journal: PathBuf, bytes: &[u8]) -> io::Result<Self> {
-        let written = Held::made(&journal).and_then(|held| {
-            let mut file = held.file();
-
-            file.write_all(bytes)?;
-            file.sync_all()?;
-            file_facts::sync_directory(folder)?;
-            Ok(held)
-        });
-        match written {
-            Ok(held) => Ok(Self { journal, held }),
+    fn written_into(folder: &Path, track: &OsStr, bytes: &[u8]) -> io::Result<Self> {
+        let (journal, held) = under_a_fresh_name(folder, track, JOURNAL_SUFFIX, Held::made)?;
+        match written_whole(&held, folder, bytes) {
+            Ok(()) => Ok(Self { journal, held }),
             Err(error) => {
                 let _ = fs::remove_file(&journal);
                 Err(error)
@@ -164,6 +157,77 @@ impl Undo {
     }
 }
 
+fn written_whole(held: &Held, folder: &Path, bytes: &[u8]) -> io::Result<()> {
+    let mut file = held.file();
+
+    file.write_all(bytes)?;
+    file.sync_all()?;
+    file_facts::sync_directory(folder)
+}
+
+fn under_a_fresh_name<T>(
+    folder: &Path,
+    track: &OsStr,
+    suffix: &str,
+    mut taken: impl FnMut(&Path) -> io::Result<T>,
+) -> io::Result<(PathBuf, T)> {
+    let mut collided = io::Error::from(io::ErrorKind::AlreadyExists);
+
+    for _ in 0..NAMES_TRIED_AT_MOST {
+        let path = folder.join(kept_name(track, suffix));
+        match taken(&path) {
+            Ok(took) => return Ok((path, took)),
+            Err(error) if error.kind() == io::ErrorKind::AlreadyExists => {
+                tracing::debug!(path = %path.display(), "a name kept for a tag write is another writer's, so a fresh one is taken");
+                collided = error;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Err(collided)
+}
+
+#[cfg(unix)]
+fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
+    use rustix::{
+        fs::{CWD, RenameFlags, renameat_with},
+        io::Errno,
+    };
+
+    match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
+        Ok(()) => Ok(()),
+        Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP) => linked_over_nothing(from, to),
+        Err(errno) => Err(errno.into()),
+    }
+}
+
+#[cfg(not(unix))]
+fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
+    linked_over_nothing(from, to)
+}
+
+fn linked_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
+    match fs::hard_link(from, to) {
+        Ok(()) => fs::remove_file(from).inspect_err(|_| link_taken_back(to)),
+        Err(error)
+            if matches!(
+                error.kind(),
+                io::ErrorKind::AlreadyExists | io::ErrorKind::CrossesDevices
+            ) =>
+        {
+            Err(error)
+        }
+        Err(_) if fs::symlink_metadata(to).is_ok() => Err(io::ErrorKind::AlreadyExists.into()),
+        Err(_) => fs::rename(from, to),
+    }
+}
+
+fn link_taken_back(to: &Path) {
+    if let Err(error) = fs::remove_file(to) {
+        tracing::warn!(path = %to.display(), %error, "a link made for a kept copy whose staged name stayed could not be taken back");
+    }
+}
+
 fn restored(file: &File, stood: u64, changes: &[Change<'_>]) -> io::Result<()> {
     file.set_len(stood)?;
     changes
@@ -177,10 +241,6 @@ fn folder_of(track: &Path) -> &Path {
         .parent()
         .filter(|folder| !folder.as_os_str().is_empty())
         .unwrap_or(Path::new("."))
-}
-
-fn journal_name(track: &OsStr) -> PathBuf {
-    kept_name(track, JOURNAL_SUFFIX)
 }
 
 fn kept_name(track: &OsStr, suffix: &str) -> PathBuf {
@@ -314,17 +374,11 @@ impl WholeCopy {
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
         let folder = folder_of(track);
 
-        let copy = folder.join(kept_name(name, WHOLE_SUFFIX));
         let mut handle = held.file().try_clone()?;
 
         let length = stood_beside(&mut handle, track)?;
 
-        fs::rename(staged, &copy)?;
-        if let Err(error) = file_facts::sync_directory(folder) {
-            let _ = fs::rename(&copy, staged);
-
-            return Err(error);
-        }
+        let copy = landed_whole(staged, folder, name)?;
         Ok(Self {
             copy,
             track: track.to_path_buf(),
@@ -338,21 +392,13 @@ impl WholeCopy {
         let name = track
             .file_name()
             .ok_or_else(|| io::Error::from(io::ErrorKind::InvalidInput))?;
-        let folder = folder_of(staged);
-
-        let copy = folder.join(kept_name(name, WHOLE_SUFFIX));
         let mut handle = held.file().try_clone()?;
 
         let length = stood_beside(&mut handle, &track)?;
 
         bound_beside(&mut handle, &track)?;
 
-        fs::rename(staged, &copy)?;
-        if let Err(error) = file_facts::sync_directory(folder) {
-            let _ = fs::rename(&copy, staged);
-
-            return Err(error);
-        }
+        let copy = landed_whole(staged, folder_of(staged), name)?;
         Ok(Self {
             copy,
             track,
@@ -404,13 +450,28 @@ impl WholeCopy {
 
     fn torn(self, source: io::Error) -> Torn {
         let name = self.track.file_name().unwrap_or_default();
-        let torn = folder_of(&self.copy).join(kept_name(name, TORN_SUFFIX));
-        let whole = match fs::rename(&self.copy, &torn) {
-            Ok(()) => torn,
+        let torn = under_a_fresh_name(folder_of(&self.copy), name, TORN_SUFFIX, |torn| {
+            renamed_over_nothing(&self.copy, torn)
+        });
+        let whole = match torn {
+            Ok((torn, ())) => torn,
             Err(_) => self.copy,
         };
         Torn { whole, source }
     }
+}
+
+fn landed_whole(staged: &Path, folder: &Path, track: &OsStr) -> io::Result<PathBuf> {
+    let (copy, ()) = under_a_fresh_name(folder, track, WHOLE_SUFFIX, |copy| {
+        renamed_over_nothing(staged, copy)
+    })?;
+
+    if let Err(error) = file_facts::sync_directory(folder) {
+        let _ = renamed_over_nothing(&copy, staged);
+
+        return Err(error);
+    }
+    Ok(copy)
 }
 
 fn warn_torn(source: &io::Error, track: &Path, whole: &Path) {
@@ -2430,5 +2491,215 @@ mod tests {
             "a copy of the same length waited for its readers"
         );
         assert_eq!(fs::read(&track).expect("the track"), tagged);
+    }
+
+    fn kept_next(folder: &Path, track: &str, suffix: &str, ahead: u64) -> PathBuf {
+        folder.join(format!(
+            ".{track}.{}{KEPT_BY_AND_COUNTED}{}{suffix}",
+            process::id(),
+            KEPT.load(Ordering::Relaxed) + ahead
+        ))
+    }
+
+    fn held_by_another_writer(path: &Path, bytes: &[u8]) -> Held {
+        let held = Held::made(path).expect("another writer's file");
+
+        held.file()
+            .write_all(bytes)
+            .expect("another writer's record");
+        held
+    }
+
+    #[test]
+    fn a_journal_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken() {
+        let folder = Folder::new("journal-collision");
+        let track = folder.0.join("Time.flac");
+        let was = vec![1_u8; 64];
+
+        fs::write(&track, &was).expect("a track");
+
+        let theirs = [Change {
+            start: 0,
+            before: was[..8].to_vec(),
+            after: &[2; 8],
+        }];
+        let record = encoded(OsStr::new("Time.flac"), 64, 64, 0, &theirs);
+        let planted = kept_next(&folder.0, "Time.flac", JOURNAL_SUFFIX, 0);
+
+        let another = held_by_another_writer(&planted, &record);
+
+        let ours = [Change {
+            start: 32,
+            before: was[32..40].to_vec(),
+            after: &[3; 8],
+        }];
+        let undo = Undo::kept_beside(&track, 64, 64, &ours).expect("an undo under a fresh name");
+
+        assert_ne!(undo.journal, planted);
+        assert_eq!(fs::read(&planted).expect("their journal"), record);
+
+        undo.done();
+        drop(another);
+
+        let mut torn = was.clone();
+
+        torn[..4].fill(2);
+        fs::write(&track, &torn).expect("their write cut short");
+        left_long_ago(&planted);
+
+        assert!(names_a_cut_short_write(&planted));
+        assert_eq!(
+            mend_a_cut_short_write(&planted).expect("a mend"),
+            Mended::RolledBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), was);
+    }
+
+    #[test]
+    fn a_write_finding_every_journal_name_taken_is_refused_and_leaves_each_as_it_was() {
+        let folder = Folder::new("journal-names-taken");
+        let track = folder.0.join("Breathe.flac");
+        let was = vec![1_u8; 16];
+
+        fs::write(&track, &was).expect("a track");
+
+        let planted: Vec<(PathBuf, Held)> = (0..NAMES_TRIED_AT_MOST as u64)
+            .map(|ahead| {
+                let path = kept_next(&folder.0, "Breathe.flac", JOURNAL_SUFFIX, ahead);
+                let held = held_by_another_writer(&path, &[ahead as u8; 4]);
+                (path, held)
+            })
+            .collect();
+        let ours = [Change {
+            start: 0,
+            before: was[..4].to_vec(),
+            after: &[9; 4],
+        }];
+
+        let refused = Undo::kept_beside(&track, 16, 16, &ours);
+
+        assert_eq!(
+            refused.map(drop).map_err(|error| error.kind()),
+            Err(io::ErrorKind::AlreadyExists)
+        );
+        for (ahead, (path, _)) in planted.iter().enumerate() {
+            assert_eq!(
+                fs::read(path).expect("their journal"),
+                [ahead as u8; 4],
+                "{}",
+                path.display()
+            );
+        }
+    }
+
+    #[test]
+    fn a_whole_copy_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken() {
+        let folder = Folder::new("whole-collision");
+        let track = folder.0.join("Brain Damage.flac");
+        let was = paged(3, 100, 10);
+        let theirs = paged(2, 50, 90);
+
+        fs::write(&track, &was).expect("a track");
+
+        let their_staged = folder.0.join(".Brain Damage.theirs.flac");
+        let their_held = staged_holding(&their_staged, &theirs);
+
+        let their_copy =
+            WholeCopy::named_beside(&their_staged, &their_held, &track).expect("their whole copy");
+        let planted = kept_next(&folder.0, "Brain Damage.flac", WHOLE_SUFFIX, 0);
+
+        fs::rename(&their_copy.copy, &planted).expect("their copy under the next name");
+
+        let record = fs::read(&planted).expect("their copy");
+
+        let our_staged = folder.0.join(".Brain Damage.ours.flac");
+        let our_held = staged_holding(&our_staged, &paged(1, 0, 40));
+
+        let ours = WholeCopy::named_beside(&our_staged, &our_held, &track).expect("our whole copy");
+
+        assert_ne!(ours.copy, planted);
+        assert!(ours.copy.exists(), "our copy did not land");
+        assert_eq!(fs::read(&planted).expect("their copy"), record);
+
+        fs::remove_file(&ours.copy).expect("our copy taken away");
+        drop((ours, our_held, their_copy, their_held));
+
+        let mut torn = was.clone();
+
+        torn[..PAGE_BYTES].copy_from_slice(&theirs[..PAGE_BYTES]);
+        fs::write(&track, &torn).expect("their write back cut short");
+        left_long_ago(&planted);
+
+        assert_eq!(
+            mend_a_cut_short_write(&planted).expect("a mend"),
+            Mended::WrittenBack
+        );
+        assert_eq!(fs::read(&track).expect("the track"), theirs);
+    }
+
+    #[test]
+    fn a_whole_copy_kept_elsewhere_leaves_another_writers_under_the_same_name() {
+        let folder = Folder::new("elsewhere-collision");
+        let spool = folder.0.join("spool");
+        let track = folder.0.join("Eclipse.flac");
+        let was = paged(3, 100, 10);
+        let theirs = paged(2, 50, 90);
+
+        fs::create_dir_all(&spool).expect("a spool folder");
+        fs::write(&track, &was).expect("a track");
+
+        let their_staged = spool.join(staged_elsewhere_name(&track).expect("a staged name"));
+        let their_held = staged_holding(&their_staged, &theirs);
+
+        let their_copy = WholeCopy::kept_elsewhere(&their_staged, &their_held, &track)
+            .expect("their whole copy");
+        let planted = kept_next(&spool, "Eclipse.flac", WHOLE_SUFFIX, 1);
+
+        fs::rename(&their_copy.copy, &planted).expect("their copy under the next name");
+
+        let record = fs::read(&planted).expect("their copy");
+
+        let our_staged = spool.join(staged_elsewhere_name(&track).expect("a staged name"));
+        let our_held = staged_holding(&our_staged, &paged(1, 0, 40));
+
+        let ours =
+            WholeCopy::kept_elsewhere(&our_staged, &our_held, &track).expect("our whole copy");
+
+        assert_ne!(ours.copy, planted);
+        assert!(ours.copy.exists(), "our copy did not land");
+        assert_eq!(fs::read(&planted).expect("their copy"), record);
+
+        fs::remove_file(&ours.copy).expect("our copy taken away");
+        drop((ours, our_held, their_copy, their_held));
+
+        let mut torn = was.clone();
+
+        torn[..PAGE_BYTES].copy_from_slice(&theirs[..PAGE_BYTES]);
+        fs::write(&track, &torn).expect("their write back cut short");
+        left_long_ago(&planted);
+        mend_what_was_left_in(slice::from_ref(&spool));
+
+        assert_eq!(fs::read(&track).expect("the track"), theirs);
+        assert!(!planted.exists(), "their copy was not finished");
+    }
+
+    #[test]
+    fn a_torn_name_another_writer_holds_is_left_whole_and_a_fresh_one_taken() {
+        let folder = Folder::new("torn-collision");
+
+        let (_track, whole, _held) =
+            about_to_be_written_back(&folder, &paged(2, 10, 3), &paged(2, 50, 9));
+
+        let planted = kept_next(&folder.0, "Any Colour You Like.flac", TORN_SUFFIX, 0);
+        let _another = held_by_another_writer(&planted, b"theirs");
+
+        let copy = whole.copy.clone();
+        let torn = whole.torn(io::ErrorKind::WriteZero.into());
+
+        assert_ne!(torn.whole, planted);
+        assert_ne!(torn.whole, copy);
+        assert!(torn.whole.exists(), "the torn copy did not land");
+        assert!(!copy.exists(), "the whole copy was not renamed torn");
+        assert_eq!(fs::read(&planted).expect("their torn copy"), b"theirs");
     }
 }

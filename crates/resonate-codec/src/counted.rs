@@ -178,6 +178,9 @@ impl Counted {
     }
 
     pub(crate) fn favour_in_ape(&mut self, favourite: bool) {
+        if self.favoured_in_ape() == Some(favourite) {
+            return;
+        }
         if let Self::Ape(tag) = self {
             tag.remove(APE_RATING);
             if favourite
@@ -239,6 +242,61 @@ fn whole_plays(text: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const FRACTIONAL: &str = "0.6";
+
+    fn rated_ape(rating: &str) -> Counted {
+        let mut tag = ApeTag::new();
+
+        tag.insert(
+            ApeItem::new(APE_RATING.to_owned(), ItemValue::Text(rating.to_owned()))
+                .expect("a rating item"),
+        );
+        Counted::Ape(tag)
+    }
+
+    fn rating_of(counted: &Counted) -> Option<&str> {
+        match counted {
+            Counted::Ape(tag) => tag.get(APE_RATING).and_then(ape_text),
+            _ => None,
+        }
+    }
+
+    #[test]
+    fn a_count_alone_keeps_a_fractional_ape_rating_another_player_gave() {
+        let mut counted = rated_ape(FRACTIONAL);
+
+        counted.count(4);
+        counted.favour_in_ape(false);
+
+        assert_eq!(rating_of(&counted), Some(FRACTIONAL));
+        assert_eq!(counted.plays(), Some(4));
+        assert_eq!(counted.favoured_in_ape(), Some(false));
+    }
+
+    #[test]
+    fn a_fractional_ape_rating_is_still_favoured_and_unfavoured() {
+        let mut counted = rated_ape(FRACTIONAL);
+
+        counted.favour_in_ape(true);
+
+        assert_eq!(rating_of(&counted), Some(APE_FAVOURITE));
+        assert_eq!(counted.favoured_in_ape(), Some(true));
+
+        counted.favour_in_ape(false);
+
+        assert_eq!(rating_of(&counted), None);
+        assert_eq!(counted.favoured_in_ape(), Some(false));
+    }
+
+    #[test]
+    fn a_favourite_spelt_another_way_is_left_as_it_was_spelt() {
+        let mut counted = rated_ape("1");
+
+        counted.favour_in_ape(true);
+
+        assert_eq!(rating_of(&counted), Some("1"));
+    }
 
     #[test]
     fn a_count_is_read_as_a_whole_number_however_a_player_spelt_it() {
