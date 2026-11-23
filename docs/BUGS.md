@@ -3,12 +3,6 @@
 Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims. Format and
 ordering are in [ROADMAP.md](ROADMAP.md).
 
-## Android
-- [S · blocked: design] The widget's previous and next do nothing while the playback service is not
-  running: play starts the service as the headset's key does (`WidgetPresses`), but a skip that
-  starts nothing cannot meet the foreground-service rule, and Media3's own `MediaButtonReceiver`
-  passes over every key but play cold; whether a cold skip should start playing the row before or
-  after is the open choice
 
 ## Security
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it

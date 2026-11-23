@@ -9,6 +9,7 @@ import android.media.AudioFocusRequest
 import android.media.AudioManager
 import android.net.Uri
 import android.provider.MediaStore
+import androidx.core.content.ContextCompat
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -168,6 +169,41 @@ class PlaybackLifecycleTest {
     }
 
     @Test
+    fun aColdNextFromTheWidgetResumesTheSavedQueueAndPlaysTheRowAfter() {
+        leaveTheServiceCold()
+
+        context.sendBroadcast(ResonateWidgets.widgetPress(context, WidgetPresses.NEXT))
+
+        eventually { playing() == songs[1].id }
+        eventually { library.queue.value.map { it.id } == songs.map { it.id } }
+    }
+
+    @Test
+    fun aColdPreviousFromTheWidgetResumesTheSavedQueueAndPlaysTheRowBefore() {
+        onMain { controller().seekTo(1, 0) }
+        eventually { library.snapshot.value?.current?.id == songs[1].id }
+        leaveTheServiceCold()
+
+        context.sendBroadcast(ResonateWidgets.widgetPress(context, WidgetPresses.PREVIOUS))
+
+        eventually { playing() == songs[0].id }
+    }
+
+    @Test
+    fun aSkipDrawnColdThatFindsTheQueueHeldSkipsOnceAndPlays() {
+        eventually { library.snapshot.value?.current?.id == songs[0].id }
+
+        ContextCompat.startForegroundService(
+            context,
+            ResonateWidgets.startPress(context, WidgetPresses.NEXT),
+        )
+
+        eventually { playing() == songs[1].id }
+        Thread.sleep(SETTLED_QUIET_MS)
+        assertEquals(songs[1].id, playing())
+    }
+
+    @Test
     fun aPollTickThatThrowsIsSaidOnceAndPollingGoesOn() {
         runBlocking { withTimeout(OPENED_WITHIN_MS) { library.ready() } }
         library.dismissStatus()
@@ -218,6 +254,15 @@ class PlaybackLifecycleTest {
         context.stopService(Intent(context, PlaybackService::class.java))
         eventually { library.retained == 0 }
     }
+
+    private fun leaveTheServiceCold() {
+        library.request { it.save() }
+        stopTheService()
+        eventually { library.snapshot.value == null && !PlaybackService.running }
+    }
+
+    private fun playing() =
+        library.snapshot.value?.takeIf { it.transport == Transport.PLAYING }?.current?.id
 
     private fun releaseController() {
         controller?.let { held -> instrumentation.runOnMainSync { held.release() } }

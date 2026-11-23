@@ -3,6 +3,7 @@ package org.resonate.android
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Bundle
+import android.util.Log
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.CommandButton
@@ -21,10 +22,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeout
 
 private val closePlayback = SessionCommand("resonate.close", Bundle.EMPTY)
@@ -39,6 +43,20 @@ private fun nextRepeat(mode: Int): Int =
     }
 
 private const val RESUMPTION_WAITS_AT_MOST_MS = 8_000L
+
+@UnstableApi
+private suspend fun LibraryRepository.savedQueue(): MediaSession.MediaItemsWithStartPosition {
+    val (saved, place) =
+        withTimeout(RESUMPTION_WAITS_AT_MOST_MS) {
+            ready()
+            queueRead.first { it.tracks.isNotEmpty() } to snapshot.filterNotNull().first()
+        }
+    return MediaSession.MediaItemsWithStartPosition(
+        saved.tracks.map { it.mediaItem() },
+        (place.queueIndex.toInt() - saved.first).coerceIn(saved.tracks.indices),
+        place.positionMs.toLong(),
+    )
+}
 
 @UnstableApi
 private class TrustedControllers(
@@ -178,19 +196,7 @@ private class TrustedControllers(
         val resumed = SettableFuture.create<MediaSession.MediaItemsWithStartPosition>()
         scope.launch {
             try {
-                val (saved, place) =
-                    withTimeout(RESUMPTION_WAITS_AT_MOST_MS) {
-                        library.ready()
-                        library.queueRead.first { it.tracks.isNotEmpty() } to
-                            library.snapshot.filterNotNull().first()
-                    }
-                resumed.set(
-                    MediaSession.MediaItemsWithStartPosition(
-                        saved.tracks.map { it.mediaItem() },
-                        (place.queueIndex.toInt() - saved.first).coerceIn(saved.tracks.indices),
-                        place.positionMs.toLong(),
-                    )
-                )
+                resumed.set(library.savedQueue())
             } catch (cancelled: CancellationException) {
                 resumed.cancel(false)
                 throw cancelled
@@ -224,6 +230,8 @@ class PlaybackService : MediaLibraryService() {
     private var session: MediaLibrarySession? = null
     private var player: RustMediaPlayer? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val coldSkips = Mutex()
+    private var resumedForASkip = false
 
     override fun onCreate() {
         super.onCreate()
@@ -262,6 +270,46 @@ class PlaybackService : MediaLibraryService() {
                 override fun onRepeatModeChanged(repeatMode: Int) = refreshButtons(adapter)
             }
         )
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        WidgetPresses.coldSkip(intent?.action)?.let(::skippedCold)
+        return super.onStartCommand(intent, flags, startId)
+    }
+
+    private fun skippedCold(skip: ColdSkip) {
+        val open = session ?: return
+        addSession(open)
+        val library = (application as ResonateApplication).library
+        scope.launch {
+            coldSkips.withLock {
+                val player = open.player
+                val holdsARow = player.currentMediaItem != null
+                if (WidgetPresses.resumesBeforeSkipping(holdsARow, resumedForASkip)) {
+                    resumedForASkip = true
+                    resumed(player, library)
+                }
+                when (skip) {
+                    ColdSkip.PREVIOUS -> player.seekToPrevious()
+                    ColdSkip.NEXT -> player.seekToNext()
+                }
+                player.prepare()
+                player.play()
+            }
+        }
+    }
+
+    private suspend fun resumed(player: Player, library: LibraryRepository) {
+        try {
+            val saved = library.savedQueue()
+            player.setMediaItems(saved.mediaItems, saved.startIndex, saved.startPositionMs)
+        } catch (late: TimeoutCancellationException) {
+            Log.w("PlaybackService", "Resume the saved queue for a widget skip", late)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (failure: Exception) {
+            Log.w("PlaybackService", "Resume the saved queue for a widget skip", failure)
+        }
     }
 
     override fun onUpdateNotification(session: MediaSession, startInForegroundRequired: Boolean) {

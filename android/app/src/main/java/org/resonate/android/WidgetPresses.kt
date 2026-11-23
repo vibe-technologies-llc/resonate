@@ -3,7 +3,11 @@ package org.resonate.android
 enum class WidgetPress {
     CONTROLLED,
     STARTED,
-    UNHEARD,
+}
+
+enum class ColdSkip {
+    PREVIOUS,
+    NEXT,
 }
 
 object WidgetPresses {
@@ -12,12 +16,19 @@ object WidgetPresses {
     const val NEXT = "org.resonate.android.widget.NEXT"
     val actions = setOf(TOGGLE, PREVIOUS, NEXT)
 
-    fun playStartsTheService(playing: Boolean): Boolean = !playing
+    fun startsTheService(action: String, playing: Boolean, serviceRunning: Boolean): Boolean =
+        if (action == TOGGLE) !playing else !serviceRunning
 
-    fun pressed(action: String, serviceRunning: Boolean): WidgetPress =
-        when {
-            serviceRunning -> WidgetPress.CONTROLLED
-            action == TOGGLE -> WidgetPress.STARTED
-            else -> WidgetPress.UNHEARD
+    fun pressed(serviceRunning: Boolean): WidgetPress =
+        if (serviceRunning) WidgetPress.CONTROLLED else WidgetPress.STARTED
+
+    fun coldSkip(action: String?): ColdSkip? =
+        when (action) {
+            PREVIOUS -> ColdSkip.PREVIOUS
+            NEXT -> ColdSkip.NEXT
+            else -> null
         }
+
+    fun resumesBeforeSkipping(holdsARow: Boolean, resumedAlready: Boolean): Boolean =
+        !holdsARow && !resumedAlready
 }

@@ -85,6 +85,7 @@ object ResonateWidgets {
         val artist: String,
         val album: String,
         val playing: Boolean,
+        val held: Boolean,
         val artwork: ByteArray?,
     )
 
@@ -97,6 +98,7 @@ object ResonateWidgets {
                 track?.album.orEmpty(),
                 snapshot?.transport == Transport.PLAYING ||
                     snapshot?.transport == Transport.LOADING,
+                PlaybackService.running,
                 artwork,
             )
         if (song == latest) return
@@ -123,9 +125,10 @@ object ResonateWidgets {
 
     fun stopped(context: Context) {
         val song = latest ?: return
-        latest = song.copy(playing = false)
+        val gone = song.copy(playing = false, held = false)
+        latest = gone
         publishing?.cancel()
-        publishing = scope.launch(io) { render(context, song.copy(playing = false)) }
+        publishing = scope.launch(io) { render(context, gone) }
     }
 
     fun refresh(context: Context, result: BroadcastReceiver.PendingResult) {
@@ -142,6 +145,7 @@ object ResonateWidgets {
                                     .orEmpty(),
                                 preferences.getString("album", "").orEmpty(),
                                 false,
+                                PlaybackService.running,
                                 preferences.getString("artwork", null)?.let(::storedArtwork),
                             )
                     render(context, song)
@@ -165,9 +169,15 @@ object ResonateWidgets {
             .setClass(context, PlaybackService::class.java)
             .putExtra(Intent.EXTRA_KEY_EVENT, KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_MEDIA_PLAY))
 
-    private fun startedToPlay(context: Context, result: BroadcastReceiver.PendingResult) {
+    private fun skipPress(context: Context, action: String): Intent =
+        Intent(context, PlaybackService::class.java).setAction(action)
+
+    fun startPress(context: Context, action: String): Intent =
+        if (action == WidgetPresses.TOGGLE) playPress(context) else skipPress(context, action)
+
+    private fun started(context: Context, action: String, result: BroadcastReceiver.PendingResult) {
         try {
-            ContextCompat.startForegroundService(context, playPress(context))
+            ContextCompat.startForegroundService(context, startPress(context, action))
             result.finish()
         } catch (refused: IllegalStateException) {
             Log.w("ResonateWidgets", "Start the playback service", refused)
@@ -176,10 +186,9 @@ object ResonateWidgets {
     }
 
     fun control(context: Context, action: String, result: BroadcastReceiver.PendingResult) {
-        when (WidgetPresses.pressed(action, PlaybackService.running)) {
+        when (WidgetPresses.pressed(PlaybackService.running)) {
             WidgetPress.CONTROLLED -> controlled(context, action, result)
-            WidgetPress.STARTED -> startedToPlay(context, result)
-            WidgetPress.UNHEARD -> result.finish()
+            WidgetPress.STARTED -> started(context, action, result)
         }
     }
 
@@ -280,18 +289,18 @@ object ResonateWidgets {
                     R.id.widget_play_pause to WidgetPresses.TOGGLE,
                     R.id.widget_next to WidgetPresses.NEXT,
                 )) {
-                views.setOnClickPendingIntent(id, pressOf(context, id, action, song.playing))
+                views.setOnClickPendingIntent(id, pressOf(context, id, action, song))
             }
             manager.updateAppWidget(ids, views)
         }
     }
 
-    private fun pressOf(context: Context, id: Int, action: String, playing: Boolean): PendingIntent =
-        if (action == WidgetPresses.TOGGLE && WidgetPresses.playStartsTheService(playing))
+    private fun pressOf(context: Context, id: Int, action: String, song: WidgetSong): PendingIntent =
+        if (WidgetPresses.startsTheService(action, song.playing, song.held))
             PendingIntent.getForegroundService(
                 context,
                 id,
-                playPress(context),
+                startPress(context, action),
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
             )
         else

@@ -50,18 +50,37 @@ answers a `Result`. Each screen has a ViewModel (`resonateViewModel`, scoped to 
 entry) exposing typed `StateFlow`s; no screen reads an untyped map or names an action by string.
 Kotlin retains SAF, encrypted accounts, workers, Media3 and services.
 Compact and album home-screen widgets use RemoteViews with rounded,
-artwork-tinted surfaces and system light/dark colors. A play drawn while nothing plays is an
-explicit, immutable foreground-service PendingIntent carrying the headset's `KEYCODE_MEDIA_PLAY` to
-`PlaybackService` (`WidgetPresses.playStartsTheService`), so the service starts in the foreground and
-resumes the saved queue through `onPlaybackResumption` as a headset's play does, after the task was
-swiped away or the process ended. Every other press is a broadcast (`ResonateWidgets.widgetPress`, marked
+artwork-tinted surfaces and system light/dark colors. A press that must start the service is an
+explicit, immutable foreground-service PendingIntent to `PlaybackService`
+(`WidgetPresses.startsTheService`, `ResonateWidgets.startPress`): a play drawn while nothing plays
+carries the headset's `KEYCODE_MEDIA_PLAY`, so the service starts in the foreground and resumes the
+saved queue through `onPlaybackResumption` as a headset's play does, after the task was swiped away
+or the process ended; a previous or next drawn while no service runs (the drawn song's `held`,
+`PlaybackService.running` when it was published, so a service starting or ending redraws the
+widget) carries the widget's own `WidgetPresses.PREVIOUS` or `NEXT` as the intent's action, since
+Media3 passes a next or previous key on a cold session over (its notification controller not yet
+connected) or hands it to a player holding no queue, either way skipping nothing and never reaching
+the foreground. `PlaybackService.onStartCommand` reads that action
+(`WidgetPresses.coldSkip`), adds the session to the service so its notification can take the
+foreground, and under one mutex, so a second quick press neither resumes again nor is lost to the
+first's jump, resumes the saved queue the way `onPlaybackResumption` answers it (`savedQueue`, the
+same 8 s wait, its `setMediaItems` naming the held queue and so only jumping to the row), then
+calls the session player's `seekToNext` or `seekToPrevious`, which `SkippingPlayer` makes the
+boundary's `next` or `previous`, then prepares and plays: a cold skip always ends playing, which is
+what meets the foreground-service rule. A cold previous is therefore the boundary's own previous
+on the resumed row: the row before where the row was left within its first seconds, a restart of
+the row past them with *Previous restarts the song* on, as the same press on a warm paused player
+does. A skip that finds the session already holding a row, or one resumed for an earlier skip,
+does not resume again (`WidgetPresses.resumesBeforeSkipping`): it skips once and plays, as a play
+key reaching a held queue only plays. Every other press is a broadcast (`ResonateWidgets.widgetPress`, marked
 `FLAG_RECEIVER_FOREGROUND`, since the background queue of a busy phone held a pause past
 fifteen seconds) the provider sends through a
 short-lived Media3 controller only while `PlaybackService.running`, the service being held by
-something other than that controller; with no service a stale pause starts it to play the same way,
-and a previous or next is dropped rather than binding a service only to let it go mid-resumption
-(`WidgetPresses.pressed`, `WidgetPressesTest`), as Media3's `MediaButtonReceiver` drops every key
-but play on a service that is gone. Metadata and the bounded session thumbnail are kept in app preferences for
+something other than that controller, so a skip beside a paused service stays paused; a broadcast
+finding no service (a press drawn before the process ended) starts it with the same intent a drawn
+press would have carried (`WidgetPresses.pressed`, `WidgetPressesTest`), never binding a service
+only to let it go mid-resumption (`PlaybackLifecycleTest`'s cold next, cold previous and held-queue
+skip). Metadata and the bounded session thumbnail are kept in app preferences for
 launcher refresh after process death; that fallback is paused until a live session publishes.
 Widget updates deduplicate metadata, artwork and playing state instead of sending polling ticks
 to the launcher; a drawing that fails (a launcher refusing the views, a cover too big for memory, the
