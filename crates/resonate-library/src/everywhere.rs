@@ -87,7 +87,13 @@ pub(crate) fn told(inner: &Inner, ids: &[i64]) -> Result<()> {
     })
 }
 
-pub(crate) fn copies_of(inner: &Inner, recording: &Recording) -> Result<Vec<Copy>> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Naming {
+    Alike,
+    Surely,
+}
+
+pub(crate) fn copies_of(inner: &Inner, recording: &Recording, naming: Naming) -> Result<Vec<Copy>> {
     inner.read(|connection| {
         let paths: BTreeSet<PathBuf> = synced::every_row_holding(connection, recording)?
             .into_iter()
@@ -96,10 +102,21 @@ pub(crate) fn copies_of(inner: &Inner, recording: &Recording) -> Result<Vec<Copy
         let mut copies = Vec::new();
 
         for path in paths {
-            copies.extend(copies_at(connection, &store::path_text(&path))?);
+            let path = store::path_text(&path);
+
+            if naming == Naming::Surely && !surely_holds(connection, &path, recording)? {
+                continue;
+            }
+            copies.extend(copies_at(connection, &path)?);
         }
         Ok(copies)
     })
+}
+
+fn surely_holds(connection: &Connection, path: &str, recording: &Recording) -> Result<bool> {
+    let held = synced::recordings_at(connection, path)?;
+
+    Ok(!held.is_empty() && held.iter().all(|held| recording.surely_names(held)))
 }
 
 fn copies_at(connection: &Connection, path: &str) -> Result<Vec<Copy>> {

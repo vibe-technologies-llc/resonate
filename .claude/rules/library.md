@@ -1981,13 +1981,16 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   which the sync reads (`deleted_everywhere_to_tell`) and empties once its ledger holds them
   (`deletions_told`, `sync.md`). **A deletion another device told** (`Library::take_deletion(recording,
   before)`) deletes through `delete_tracks` only the copies holding the recording (every row
-  `synced::every_row_holding` finds, hidden ones too: `everywhere::copies_of`) whose `tracks.added` is
+  `synced::every_row_holding` finds, hidden ones too, kept by `everywhere::copies_of` under
+  `Naming::Surely` only where every recording at the path is one `Recording::surely_names`:
+  `sync.md`) whose `tracks.added` is
   before the tombstone's stamp and that are a whole file alone at their path, so a song added again
   after the deletion stays and a cut never takes the other songs of its file;
   `added_by_hand_since` answers whether a copy was added after a moment by anything but a sync
   landing (a path `songs_received` names), which answers the deletion for every device
   (`a_song_deleted_everywhere_waits_to_be_told_and_one_the_trash_refused_or_deleted_here_does_not`,
   `a_deletion_another_device_told_takes_only_the_copies_older_than_it`,
+  `a_deletion_named_without_a_recording_id_takes_only_the_copy_of_its_album_and_length`,
   `a_song_landed_from_another_device_is_never_added_by_hand`,
   `a_catalog_from_before_songs_were_deleted_everywhere_keeps_its_marks_and_tells_nothing`). A vault object no row names leaves the vault; one that will not go
   waits for `prune_the_vault`. The window asks first (`ui.md`).

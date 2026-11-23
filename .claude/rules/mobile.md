@@ -1218,7 +1218,8 @@ is `forget_deleted_songs` for songs the listener deleted from every device: the 
 `deletions_from_other_devices`), which the sync reads (`Catalog::deleted_everywhere`) and empties once
 its ledger holds them. A deletion another device told, while `SyncConfig.takes_deletions` (default on,
 *Let my other devices delete songs here*) lets it, puts each visible document of the recording added
-before the tombstone (`documents.added`, Unix seconds) into `deletions_from_other_devices`;
+before the tombstone (`documents.added`, Unix seconds) and surely named by it (`Recording::surely_names`
+over the document's own recording, `sync.md`) into `deletions_from_other_devices`;
 `take_deletions_from_other_devices()` hands those `Track`s to the front end and empties the table, and
 the front end removes each file it may (a writable folder's, as its own *Delete*) and forgets those
 through `forget_deleted_songs`; a file it cannot remove keeps its row, and the ledger has settled the
@@ -1227,6 +1228,8 @@ a moment by anything but a sync landing (no `songs_received` row), which answers
 device
 (`a_song_deleted_from_every_device_waits_to_be_told_and_one_deleted_here_does_not`,
 `a_deletion_another_device_told_waits_for_the_platform_only_for_a_copy_older_than_it`,
+`a_deletion_named_without_a_recording_id_waits_only_for_the_copy_of_its_album_and_length`,
+`a_deletion_naming_no_album_length_or_recording_id_waits_for_nothing`,
 `a_song_one_phone_deletes_from_every_device_waits_for_the_other_unless_it_refuses`).
 
 ## Higher quality versions of a playlist

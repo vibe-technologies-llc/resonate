@@ -15,7 +15,7 @@ use crate::{
     Error, Result, StoreOp,
     copies::{self, Copies, IdenticalCopy},
     deleted::{self, Deleted, Removal, Why},
-    everywhere::{self, DeletedEverywhere},
+    everywhere::{self, DeletedEverywhere, Naming},
     forgetting::{Forgetting, Rows, forget_rows},
     organise::{self},
     sheet, store,
@@ -135,7 +135,7 @@ impl Library {
     }
 
     pub fn take_deletion(&self, recording: &Recording, before: i64) -> Result<Deleted> {
-        let older: Vec<TrackId> = everywhere::copies_of(&self.inner, recording)?
+        let older: Vec<TrackId> = everywhere::copies_of(&self.inner, recording, Naming::Surely)?
             .into_iter()
             .filter(|copy| copy.whole_file && copy.added < before)
             .map(|copy| copy.track)
@@ -148,9 +148,11 @@ impl Library {
     }
 
     pub fn added_by_hand_since(&self, recording: &Recording, since: i64) -> Result<bool> {
-        Ok(everywhere::copies_of(&self.inner, recording)?
-            .iter()
-            .any(|copy| copy.added > since && !copy.received))
+        Ok(
+            everywhere::copies_of(&self.inner, recording, Naming::Alike)?
+                .iter()
+                .any(|copy| copy.added > since && !copy.received),
+        )
     }
 
     pub fn deleted_everywhere_to_tell(&self) -> Result<Vec<DeletedEverywhere>> {

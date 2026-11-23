@@ -941,8 +941,8 @@ pub(crate) fn holds(inner: &Inner, vault: Option<&Vault>, recording: &Recording)
     })
 }
 
-pub(crate) fn recordings_at(tx: &Transaction<'_>, path: &str) -> Result<Vec<Recording>> {
-    let mut statement = tx
+pub(crate) fn recordings_at(connection: &Connection, path: &str) -> Result<Vec<Recording>> {
+    let mut statement = connection
         .prepare_cached(&format!(
             "SELECT {RECORDING_COLUMNS} FROM tracks t {RECORDING_JOINS} WHERE t.path = ?1"
         ))

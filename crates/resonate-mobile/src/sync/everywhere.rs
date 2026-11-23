@@ -4,7 +4,7 @@ use resonate_core::{Mbid, Recording};
 use resonate_sync::DeletedEverywhere;
 use rusqlite::{OptionalExtension, params};
 
-use super::{Answered, DocumentCatalog, Found, unavailable};
+use super::{Answered, DocumentCatalog, Found, RECORDING_COLUMNS, recording_at, unavailable};
 
 const NANOS_A_SECOND: i64 = 1_000_000_000;
 
@@ -62,7 +62,9 @@ impl DocumentCatalog {
                 continue;
             };
 
-            if added.saturating_mul(NANOS_A_SECOND) >= before {
+            if added.saturating_mul(NANOS_A_SECOND) >= before
+                || !self.surely_holds(id, recording)?
+            {
                 continue;
             }
 
@@ -113,6 +115,19 @@ impl DocumentCatalog {
             .collect())
     }
 
+    fn surely_holds(&self, id: u64, recording: &Recording) -> Answered<bool> {
+        let connection = self.catalog.0.lock();
+        let held = connection
+            .query_row(
+                &format!("SELECT {RECORDING_COLUMNS} FROM documents d WHERE d.id = ?1"),
+                params![id.cast_signed()],
+                |row| recording_at(row, 0),
+            )
+            .optional()
+            .map_err(unavailable)?;
+        Ok(held.is_some_and(|held| recording.surely_names(&held)))
+    }
+
     fn added_at(&self, id: u64) -> Answered<Option<i64>> {
         let connection = self.catalog.0.lock();
         connection
@@ -131,15 +146,72 @@ impl DocumentCatalog {
 mod tests {
     use std::{fs, time::Duration};
 
-    use resonate_core::Recording;
+    use resonate_core::{Mbid, Recording};
     use resonate_sync::{Catalog, Ledger, Me, Platform, SpaceId, wall_nanos};
 
     use super::super::{
         DocumentCatalog,
         tests::{documents_of, folder, player, song},
     };
+    use crate::{MobilePlayer, Track};
 
     const A_MINUTE_IN_NANOS: i64 = 60 * 1_000_000_000;
+    const JOGA: &str = "5c1f2b7e-3d9a-4e6b-8f0c-1a2b3c4d5e6f";
+    const ANOTHER_JOGA: &str = "9e8d7c6b-5a4f-4e3d-8c2b-1a0f9e8d7c6b";
+    const LIVE_MS: u64 = 342_000;
+
+    struct Joga<'a> {
+        album: &'a str,
+        duration_ms: u64,
+        recording: Option<&'a str>,
+    }
+
+    const ON_HOMOGENIC: Joga<'static> = Joga {
+        album: "Homogenic",
+        duration_ms: 305_000,
+        recording: None,
+    };
+
+    fn joga(player: &MobilePlayer, uri: &str, joga: &Joga<'_>) -> Track {
+        let track = player
+            .catalog
+            .upsert(Track {
+                uri: uri.into(),
+                name: "Jóga.flac".into(),
+                title: "Jóga".into(),
+                artist: "Björk".into(),
+                album: joga.album.into(),
+                duration_ms: joga.duration_ms,
+                rate: 44_100,
+                codec: "FLAC".into(),
+                ..Track::default()
+            })
+            .expect("an indexed song");
+
+        player
+            .catalog
+            .learned(track.id, joga.recording, None, None, "")
+            .expect("a recording identity");
+        track
+    }
+
+    fn waiting_for_the_platform(player: &MobilePlayer, told: &Recording) -> (u64, Vec<u64>) {
+        let folder = folder("deleted-namesakes");
+        let documents = documents_of(player, &folder);
+
+        let taken = documents
+            .take_deletion(told, wall_nanos() + A_MINUTE_IN_NANOS)
+            .expect("weighed");
+        let for_the_platform = player
+            .take_deletions_from_other_devices()
+            .expect("the waiting");
+
+        let _ = fs::remove_dir_all(&folder);
+        (
+            taken,
+            for_the_platform.iter().map(|track| track.id).collect(),
+        )
+    }
 
     fn homogenic(title: &str) -> Recording {
         Recording {
@@ -316,5 +388,116 @@ mod tests {
         );
         assert!(refused_waiting.is_empty());
         assert!(followed_back);
+    }
+
+    #[test]
+    fn a_deletion_another_device_told_waits_only_for_its_recording_and_never_a_namesake() {
+        let folder = folder("deleted-by-id");
+        let player = player(&folder);
+
+        let named = joga(
+            &player,
+            "content://test/joga.flac",
+            &Joga {
+                recording: Some(JOGA),
+                ..ON_HOMOGENIC
+            },
+        );
+
+        joga(
+            &player,
+            "content://test/joga-debut.flac",
+            &Joga {
+                album: "Debut",
+                ..ON_HOMOGENIC
+            },
+        );
+        joga(
+            &player,
+            "content://test/joga-live.flac",
+            &Joga {
+                duration_ms: LIVE_MS,
+                ..ON_HOMOGENIC
+            },
+        );
+        joga(
+            &player,
+            "content://test/joga-another.flac",
+            &Joga {
+                recording: Some(ANOTHER_JOGA),
+                ..ON_HOMOGENIC
+            },
+        );
+
+        let told = Recording {
+            mbid: Some(Mbid::new(JOGA).expect("an mbid")),
+            ..homogenic("Jóga")
+        };
+        let (taken, for_the_platform) = waiting_for_the_platform(&player, &told);
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(taken, 1);
+        assert_eq!(for_the_platform, [named.id]);
+    }
+
+    #[test]
+    fn a_deletion_named_without_a_recording_id_waits_only_for_the_copy_of_its_album_and_length() {
+        let folder = folder("deleted-by-name");
+        let player = player(&folder);
+
+        let named = joga(&player, "content://test/joga.flac", &ON_HOMOGENIC);
+
+        joga(
+            &player,
+            "content://test/joga-debut.flac",
+            &Joga {
+                album: "Debut",
+                ..ON_HOMOGENIC
+            },
+        );
+        joga(
+            &player,
+            "content://test/joga-live.flac",
+            &Joga {
+                duration_ms: LIVE_MS,
+                ..ON_HOMOGENIC
+            },
+        );
+
+        let (taken, for_the_platform) = waiting_for_the_platform(&player, &homogenic("Jóga"));
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(taken, 1);
+        assert_eq!(for_the_platform, [named.id]);
+    }
+
+    #[test]
+    fn a_deletion_naming_no_album_length_or_recording_id_waits_for_nothing() {
+        let folder = folder("deleted-bare");
+        let player = player(&folder);
+
+        joga(&player, "content://test/joga.flac", &ON_HOMOGENIC);
+        joga(
+            &player,
+            "content://test/joga-debut.flac",
+            &Joga {
+                album: "Debut",
+                ..ON_HOMOGENIC
+            },
+        );
+
+        let told = Recording {
+            album: String::new(),
+            length: None,
+            ..homogenic("Jóga")
+        };
+        let (taken, for_the_platform) = waiting_for_the_platform(&player, &told);
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(taken, 0);
+        assert!(for_the_platform.is_empty());
     }
 }

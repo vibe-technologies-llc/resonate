@@ -424,7 +424,20 @@ platforms; the catalog seam stays thin.
   and no newer row answers it; `Catalog::take_deletion(recording, before)` then removes only the
   copies that arrived in the catalog before the stamp, through the catalog's own delete, so a song
   added again later is never deleted by an older tombstone, a file the trash refuses keeps its row,
-  and the deletion is not tried again. A catalog refusing as `Unavailable` leaves the row for the next
+  and the deletion is not tried again. **A deletion takes only a copy the tombstone surely names**
+  (`Recording::surely_names`, in core, the one rule both catalogs ask of each copy the permissive
+  holdings match found): where the tombstone and the copy both carry a recording MBID they must be
+  the same, so a namesake under another MBID always stays; otherwise the folded title words, artist
+  and album must all agree (an empty album agreeing only with an empty one), lengths known on both
+  sides within 2 s, and the tombstone must tell the song apart by a non-empty album or a length the
+  copy confirms, so one naming no MBID, no album and no length deletes nothing. The wire carries
+  the recording's MBID, title, artist, album and length and nothing more, so these are all a
+  deletion can be weighed by. Favourites, listens, playlists, `holds`, the follow and
+  `added_by_hand_since` keep the permissive match: none of them removes a file
+  (`a_deletion_surely_names_only_the_recording_its_id_or_its_album_and_length_tell`,
+  `a_deletion_another_device_told_takes_its_recording_and_leaves_another_album_take_or_recording_id`,
+  `a_deletion_naming_no_album_length_or_recording_id_takes_nothing`,
+  `a_deletion_another_device_told_waits_only_for_its_recording_and_never_a_namesake`). A catalog refusing as `Unavailable` leaves the row for the next
   settle. Switched off, or with nothing held, the row alone is the mark. An answering row (`deleted`
   false) forgives the catalog's own mark (`forgive_deletion`), so the song may be followed again.
   **A song added again answers its deletion**: a look, whenever the catalog's revision moved, asks

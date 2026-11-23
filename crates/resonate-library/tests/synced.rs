@@ -25,6 +25,11 @@ const RATE: u32 = 44_100;
 const CHANNELS: u16 = 2;
 const BITS: u16 = 16;
 const SECONDS: u32 = 3;
+const LIVE_SECONDS: u32 = 9;
+const UNIQUE_FILE_ID: &[u8; 4] = b"UFID";
+const MUSICBRAINZ_OWNER: &str = "http://musicbrainz.org";
+const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+const ANOTHER_ECHOES: &str = "0bd1c7a3-9f2e-4c6b-8a1d-5e7f3b2c4d6a";
 
 struct Tree {
     root: PathBuf,
@@ -114,7 +119,14 @@ fn syncsafe(value: usize) -> [u8; 4] {
 }
 
 fn id3_frame(id: &[u8; 4], text: &str) -> Vec<u8> {
-    let mut payload = vec![3_u8];
+    let mut payload = if id == UNIQUE_FILE_ID {
+        let mut owner = MUSICBRAINZ_OWNER.as_bytes().to_vec();
+
+        owner.push(0);
+        owner
+    } else {
+        vec![3_u8]
+    };
 
     payload.extend_from_slice(text.as_bytes());
 
@@ -141,8 +153,12 @@ fn id3_tag(frames: &[(&[u8; 4], &str)]) -> Vec<u8> {
 }
 
 fn declared_wav(frames: &[(&[u8; 4], &str)], distinct: u8) -> Vec<u8> {
+    declared_wav_lasting(frames, distinct, SECONDS)
+}
+
+fn declared_wav_lasting(frames: &[(&[u8; 4], &str)], distinct: u8, seconds: u32) -> Vec<u8> {
     let block_align = CHANNELS * BITS / 8;
-    let mut data = vec![0_u8; (RATE * SECONDS) as usize * usize::from(block_align)];
+    let mut data = vec![0_u8; (RATE * seconds) as usize * usize::from(block_align)];
 
     *data.last_mut().expect("a sample") = distinct;
 
@@ -1855,6 +1871,152 @@ fn a_deletion_another_device_told_takes_only_the_copies_older_than_it() -> Resul
     assert!(library.track_at(&echoes, None)?.is_none());
     assert!(library.deleted_recording(&told)?);
     assert!(library.deleted_everywhere_to_tell()?.is_empty());
+    Ok(())
+}
+
+struct Echoes<'a> {
+    album: &'a str,
+    recording: Option<&'a str>,
+    seconds: u32,
+}
+
+impl Tree {
+    fn echoes(&self, relative: &str, echoes: &Echoes<'_>, distinct: u8) -> PathBuf {
+        let path = self.root.join(relative);
+        let mut frames = vec![
+            (b"TIT2", "Echoes"),
+            (b"TPE1", "Pink Floyd"),
+            (b"TALB", echoes.album),
+        ];
+
+        if let Some(recording) = echoes.recording {
+            frames.push((UNIQUE_FILE_ID, recording));
+        }
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).expect("a writable folder");
+        }
+        fs::write(
+            &path,
+            declared_wav_lasting(&frames, distinct, echoes.seconds),
+        )
+        .expect("a written song");
+        path
+    }
+}
+
+const MEDDLE: Echoes<'static> = Echoes {
+    album: "Meddle",
+    recording: None,
+    seconds: SECONDS,
+};
+
+const POMPEII: Echoes<'static> = Echoes {
+    album: "Live at Pompeii",
+    ..MEDDLE
+};
+
+const LIVE: Echoes<'static> = Echoes {
+    seconds: LIVE_SECONDS,
+    ..MEDDLE
+};
+
+fn deleted_by_another_device(tree: &Tree) -> Result<Library> {
+    let library = Library::open_in_memory()?;
+
+    library.trash_through(Some(Arc::new(TakenByTheDesktop)));
+    scan(&library, &tree.root)?;
+    Ok(library)
+}
+
+#[test]
+fn a_deletion_another_device_told_takes_its_recording_and_leaves_another_album_take_or_recording_id()
+-> Result<()> {
+    let tree = Tree::new();
+    let named = tree.echoes(
+        "Meddle/Echoes.wav",
+        &Echoes {
+            recording: Some(ECHOES),
+            ..MEDDLE
+        },
+        1,
+    );
+    let kept = [
+        tree.echoes("Pompeii/Echoes.wav", &POMPEII, 2),
+        tree.echoes("Meddle/Echoes (live).wav", &LIVE, 3),
+        tree.echoes(
+            "Meddle/Echoes (another).wav",
+            &Echoes {
+                recording: Some(ANOTHER_ECHOES),
+                ..MEDDLE
+            },
+            4,
+        ),
+    ];
+    let library = deleted_by_another_device(&tree)?;
+
+    let told = Recording {
+        mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
+        ..song("Echoes", "Pink Floyd", "Meddle")
+    };
+    let taken = library.take_deletion(&told, now_in_nanos())?;
+
+    assert_eq!(taken.files, 1);
+    assert!(!named.exists());
+
+    for kept in &kept {
+        assert!(kept.exists(), "{} kept", kept.display());
+        assert!(library.track_at(kept, None)?.is_some());
+    }
+    Ok(())
+}
+
+#[test]
+fn a_deletion_named_without_a_recording_id_takes_only_the_copy_of_its_album_and_length()
+-> Result<()> {
+    let tree = Tree::new();
+    let named = tree.echoes("Meddle/Echoes.wav", &MEDDLE, 1);
+    let kept = [
+        tree.echoes("Pompeii/Echoes.wav", &POMPEII, 2),
+        tree.echoes("Meddle/Echoes (live).wav", &LIVE, 3),
+    ];
+    let library = deleted_by_another_device(&tree)?;
+
+    let taken = library.take_deletion(&song("Echoes", "Pink Floyd", "Meddle"), now_in_nanos())?;
+
+    assert_eq!(taken.files, 1);
+    assert!(!named.exists());
+
+    for kept in &kept {
+        assert!(kept.exists(), "{} kept", kept.display());
+        assert!(library.track_at(kept, None)?.is_some());
+    }
+    Ok(())
+}
+
+#[test]
+fn a_deletion_naming_no_album_length_or_recording_id_takes_nothing() -> Result<()> {
+    let tree = Tree::new();
+    let kept = [
+        tree.echoes("Meddle/Echoes.wav", &MEDDLE, 1),
+        tree.echoes("Pompeii/Echoes.wav", &POMPEII, 2),
+    ];
+    let library = deleted_by_another_device(&tree)?;
+
+    let told = Recording {
+        album: String::new(),
+        length: None,
+        ..song("Echoes", "Pink Floyd", "")
+    };
+    let taken = library.take_deletion(&told, now_in_nanos())?;
+
+    assert_eq!(taken.files, 0);
+
+    for kept in &kept {
+        assert!(kept.exists(), "{} kept", kept.display());
+        assert!(library.track_at(kept, None)?.is_some());
+    }
+
+    assert!(library.holds_recording(&told)?);
     Ok(())
 }
 
