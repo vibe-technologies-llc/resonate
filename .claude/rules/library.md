@@ -131,7 +131,12 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   reads `listens` in id order and then `unheld_listens`, a page at a time, each a `HeardOnce`: when it
   began, time heard, `elsewhere`, the `Billed` names a held row carries and its location as a URI (a
   row's path and span, or an unheld listen's path or the URI a song played in place was kept under);
-  `HistoryRead::next` names where the next page begins, none once both are read. `Library::bring_in`
+  `HistoryRead::next` names where the next page begins, none once both are read. **An export reads
+  one snapshot**: `KeptListens::history_pages` hands back `HistoryPages`, and `Library`'s
+  (`PinnedHistory`) holds one checked-out reader inside a read transaction across every page, so a
+  scan crediting a retained listen or a removal moving a held one to `unheld_listens` between pages
+  neither drops nor repeats a listen; a catalog with no such seam answers `Unpinned`, page by page,
+  as the phones' does (one connection behind a mutex). `Library::bring_in`
   lands a page a service read (`HeardElsewhere`: a moment and a `Recording`) in one write: each is
   resolved strictly as a remote listen is (`synced::resolved`), and a song held is credited as an
   `elsewhere` listen with the service's name as `origin_device` and the unix second as `origin_id`,
@@ -340,6 +345,12 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `settle_the_credits_if_owed` take the write lock as the transaction opens, so a second process
   waits its `busy_timeout`; a deferred transaction that read before writing fails at once with
   `SQLITE_BUSY_SNAPSHOT`, which no timeout waits out.
+  **A deferred repair is claimed inside its own transaction**: `reconcile_artists`,
+  `refold_the_index`, `compose_the_album_keys`, `word_the_titles` and `settle_the_credits_if_owed`
+  look at their marker table (or `settle_owed`) outside the lock only to skip the lock when nothing
+  is pending, then read it again once `IMMEDIATE` is held, with every input the repair merges, so a
+  process that waited behind another's repair finds the marker gone and does nothing instead of
+  dropping a missing table.
 - **A cue sheet claims the file it names; the scan reads sheets before audio.** `.cue` is a sidecar,
   not in `AUDIO_EXTENSIONS`: `directory_of` reads every sheet in a directory first (name order),
   resolves each `FILE` against the sheet's folder, then probes audio no sheet claimed, so one FLAC
@@ -377,7 +388,8 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   missed. `enrich` and `poll` stay outside.
   - **Across processes**: a catalog on disc also takes an exclusive `File::try_lock` on
     `<catalog>.walk` (`locked_across_processes`), released as its `File` closes (panic or kill
-    alike); held elsewhere = `Error::AlreadyWalking`.
+    alike); held elsewhere = `Error::AlreadyWalking`. `Walk`'s `Drop` closes the file before it
+    clears the flag and notifies, so whoever `wind_down` or the flag wakes can take the lock.
   - **Wind-down**: `Library::wind_down(patience)` cancels the pass through `Walk::cancelled_by`,
     waits for the guard to drop, answers whether it did.
   - **Lookup and poll** likewise, each with its own lock (`<catalog>.enrich`, `<catalog>.poll`,

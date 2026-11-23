@@ -242,6 +242,8 @@ impl Walk {
 
 impl Drop for Walk {
     fn drop(&mut self) {
+        drop(self._across_processes.take());
+
         let mut held = self.inner.walking_pass.lock();
 
         *held = None;

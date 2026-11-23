@@ -4,7 +4,7 @@ use std::{
 };
 
 use resonate_core::{MediaLocation, Recording};
-use rusqlite::{OptionalExtension as _, Transaction, params};
+use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
 
 use crate::{
     Billed, Error, ListeningService, Result, StoreOp,
@@ -109,55 +109,61 @@ impl BroughtIn {
 }
 
 pub(crate) fn history_from(inner: &Inner, from: HistoryFrom, most: usize) -> Result<HistoryRead> {
+    inner.read(|connection| history_page(connection, from, most))
+}
+
+pub(crate) fn history_page(
+    connection: &Connection,
+    from: HistoryFrom,
+    most: usize,
+) -> Result<HistoryRead> {
     let most = i64::try_from(most.max(1)).unwrap_or(i64::MAX);
-    inner.read(|connection| {
-        let (sql, after) = match from {
-            HistoryFrom::Held(after) => (THE_HELD_AFTER, after),
-            HistoryFrom::Unheld(after) => (THE_UNHELD_AFTER, after),
-        };
-        let mut statement = connection
-            .prepare_cached(sql)
-            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-        let held = matches!(from, HistoryFrom::Held(_));
+    let (sql, after) = match from {
+        HistoryFrom::Held(after) => (THE_HELD_AFTER, after),
+        HistoryFrom::Unheld(after) => (THE_UNHELD_AFTER, after),
+    };
+    let mut statement = connection
+        .prepare_cached(sql)
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+    let held = matches!(from, HistoryFrom::Held(_));
 
-        let rows = statement
-            .query_map(params![after.cast_signed(), most], |row| {
-                let path: String = row.get(4)?;
-                let start: i64 = row.get(5)?;
-                let (frames, billed) = if held {
-                    (
-                        row.get::<_, Option<i64>>(6)?,
-                        RawBilled::read(row, 7)?.billed(),
-                    )
-                } else {
-                    (None, None)
-                };
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    HeardOnce {
-                        began: store::from_nanos(row.get(1)?),
-                        heard: Duration::from_nanos(row.get::<_, i64>(2)?.max(0).cast_unsigned()),
-                        elsewhere: row.get::<_, i64>(3)? != 0,
-                        billed,
-                        location: located(&path, start, frames),
-                    },
-                ))
-            })
-            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-            .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-        let last = rows.last().map(|(id, _)| id.max(&0).cast_unsigned());
-        let full = rows.len() == usize::try_from(most).unwrap_or(usize::MAX);
-        let next = match (from, last, full) {
-            (HistoryFrom::Held(_), Some(last), true) => Some(HistoryFrom::Held(last)),
-            (HistoryFrom::Held(_), _, false) => Some(HistoryFrom::Unheld(0)),
-            (HistoryFrom::Unheld(_), Some(last), true) => Some(HistoryFrom::Unheld(last)),
-            (HistoryFrom::Held(_) | HistoryFrom::Unheld(_), _, _) => None,
-        };
-        Ok(HistoryRead {
-            heard: rows.into_iter().map(|(_, heard)| heard).collect(),
-            next,
+    let rows = statement
+        .query_map(params![after.cast_signed(), most], |row| {
+            let path: String = row.get(4)?;
+            let start: i64 = row.get(5)?;
+            let (frames, billed) = if held {
+                (
+                    row.get::<_, Option<i64>>(6)?,
+                    RawBilled::read(row, 7)?.billed(),
+                )
+            } else {
+                (None, None)
+            };
+            Ok((
+                row.get::<_, i64>(0)?,
+                HeardOnce {
+                    began: store::from_nanos(row.get(1)?),
+                    heard: Duration::from_nanos(row.get::<_, i64>(2)?.max(0).cast_unsigned()),
+                    elsewhere: row.get::<_, i64>(3)? != 0,
+                    billed,
+                    location: located(&path, start, frames),
+                },
+            ))
         })
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    let last = rows.last().map(|(id, _)| id.max(&0).cast_unsigned());
+    let full = rows.len() == usize::try_from(most).unwrap_or(usize::MAX);
+    let next = match (from, last, full) {
+        (HistoryFrom::Held(_), Some(last), true) => Some(HistoryFrom::Held(last)),
+        (HistoryFrom::Held(_), _, false) => Some(HistoryFrom::Unheld(0)),
+        (HistoryFrom::Unheld(_), Some(last), true) => Some(HistoryFrom::Unheld(last)),
+        (HistoryFrom::Held(_) | HistoryFrom::Unheld(_), _, _) => None,
+    };
+    Ok(HistoryRead {
+        heard: rows.into_iter().map(|(_, heard)| heard).collect(),
+        next,
     })
 }
 

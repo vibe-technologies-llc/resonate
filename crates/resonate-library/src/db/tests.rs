@@ -2,7 +2,10 @@ use std::{
     env, fs,
     num::NonZeroUsize,
     process,
-    sync::mpsc::{self, Receiver, Sender},
+    sync::{
+        Barrier,
+        mpsc::{self, Receiver, Sender},
+    },
     thread,
     time::UNIX_EPOCH,
 };
@@ -22,8 +25,8 @@ use super::{
     *,
 };
 use crate::{
-    AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Codec, Direction, OrderedColumn,
-    OrganiseOptions, ScanOptions, SchemaFingerprint, SortOrder, keyed,
+    AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Codec, Direction, HistoryFrom, HistoryPages,
+    OrderedColumn, OrganiseOptions, ScanOptions, SchemaFingerprint, SortOrder, keyed,
 };
 
 const A_TEMPORARY_SORT: &str = "TEMP B-TREE";
@@ -2000,4 +2003,303 @@ fn a_root_is_neither_added_nor_dropped_under_a_pass_walking_the_tree() {
         .expect("a root added once the walk ended");
 
     assert!(library.remove_root(&root).expect("a root dropped"));
+}
+
+const THE_REPAIR_MARKERS: [&str; 4] = [
+    "artists_fold_wanted",
+    "index_refold_wanted",
+    "album_keys_composed_wanted",
+    "title_words_wanted",
+];
+
+fn owe_every_repair(catalog: &Path) {
+    drop(Library::open(catalog).expect("a catalog opens on disc"));
+
+    let connection = Connection::open(catalog).expect("the catalog opens raw");
+
+    connection
+        .execute_batch(
+            "INSERT INTO artists (id, key, name) VALUES
+                 (1, 'marcin przybylowicz', 'Marcin Przybylowicz'),
+                 (2, 'marcin przybyłowicz', 'Marcin Przybyłowicz');
+             CREATE TABLE artists_fold_wanted (since INTEGER) STRICT;
+             CREATE TABLE index_refold_wanted (since INTEGER) STRICT;
+             CREATE TABLE album_keys_composed_wanted (since INTEGER) STRICT;
+             CREATE TABLE title_words_wanted (id INTEGER PRIMARY KEY) STRICT;",
+        )
+        .expect("a catalog owing every repair");
+}
+
+fn repairs_owed(catalog: &Path) -> usize {
+    let connection = Connection::open(catalog).expect("the catalog opens raw");
+
+    THE_REPAIR_MARKERS
+        .iter()
+        .filter(|marker| {
+            connection
+                .query_row(
+                    "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ?1)",
+                    params![marker],
+                    |row| row.get::<_, bool>(0),
+                )
+                .expect("the schema reads back")
+        })
+        .count()
+}
+
+#[test]
+fn a_repair_another_process_finished_while_this_one_waited_for_the_lock_is_not_attempted_again() {
+    let scratch = Scratch::new("repair-finished-while-waiting");
+    let catalog = scratch.path.join("library.db");
+
+    owe_every_repair(&catalog);
+
+    let mut holder = connect(&Source::File(catalog.clone()), schema::Role::Writing)
+        .expect("a connection opens on disc");
+
+    let transaction = holder
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .expect("the write lock is free");
+
+    let waited = thread::scope(|scope| {
+        let waiting = scope.spawn(|| {
+            let mut connection = connect(&Source::File(catalog.clone()), schema::Role::Writing)
+                .expect("a second connection opens on disc");
+
+            let merged = store::reconcile_artists(&mut connection)?;
+            let refolded = store::refold_the_index(&mut connection)?;
+            let composed = store::compose_the_album_keys(&mut connection)?;
+
+            store::word_the_titles(&mut connection)?;
+
+            Ok::<_, Error>((merged, refolded, composed))
+        });
+
+        thread::sleep(Duration::from_millis(300));
+
+        transaction
+            .execute_batch(
+                "DROP TABLE artists_fold_wanted;
+                 DROP TABLE index_refold_wanted;
+                 DROP TABLE album_keys_composed_wanted;
+                 DROP TABLE title_words_wanted;",
+            )
+            .expect("the repairs are claimed");
+        transaction.commit().expect("the claim lands");
+
+        waiting.join().expect("the waiting open did not panic")
+    });
+
+    assert_eq!(
+        waited.expect("a repair already done is passed over"),
+        (0, 0, 0)
+    );
+}
+
+#[test]
+fn two_opens_at_once_on_a_catalog_owing_every_repair_both_succeed_and_leave_nothing_owed() {
+    let scratch = Scratch::new("repairs-claimed-once");
+    let catalog = scratch.path.join("library.db");
+
+    owe_every_repair(&catalog);
+
+    let arrived = Barrier::new(2);
+
+    let opened: Vec<Result<Library>> = thread::scope(|scope| {
+        let opens: Vec<_> = (0..2)
+            .map(|_| {
+                scope.spawn(|| {
+                    arrived.wait();
+                    Library::open(&catalog)
+                })
+            })
+            .collect();
+
+        opens
+            .into_iter()
+            .map(|open| open.join().expect("an open did not panic"))
+            .collect()
+    });
+
+    for open in &opened {
+        assert!(open.is_ok(), "an open failed: {:?}", open.as_ref().err());
+    }
+
+    assert_eq!(repairs_owed(&catalog), 0);
+}
+
+#[test]
+fn a_caller_woken_by_wind_down_can_take_the_walk_lock_of_a_catalog_on_disc() {
+    let scratch = Scratch::new("walk-lock-before-wake");
+    let catalog = scratch.path.join("library.db");
+    let here = Library::open(&catalog).expect("a catalog opens on disc");
+
+    let waiting = File::options()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(scratch.path.join("library.db.walk"))
+        .expect("the walk lock opens beside the catalog");
+
+    for _ in 0..5000 {
+        let walking = here
+            .walk_the_tree()
+            .expect("nothing else is walking the tree");
+
+        let taken = thread::scope(|scope| {
+            scope.spawn(move || drop(walking));
+
+            while here.inner.walking.load(Ordering::Acquire) {
+                std::hint::spin_loop();
+            }
+            waiting.try_lock()
+        });
+
+        assert!(
+            taken.is_ok(),
+            "the lock was still held once the walk had said it ended: {taken:?}"
+        );
+
+        waiting.unlock().expect("the lock is let go");
+    }
+}
+
+#[test]
+fn wind_down_answers_once_the_walk_has_let_go_of_the_catalog_lock() {
+    let scratch = Scratch::new("wind-down-after-lock");
+    let catalog = scratch.path.join("library.db");
+    let here = Library::open(&catalog).expect("a catalog opens on disc");
+    let elsewhere = Library::open(&catalog).expect("a catalog opens twice on disc");
+
+    let walking = here
+        .walk_the_tree()
+        .expect("nothing else is walking the tree");
+
+    thread::scope(|scope| {
+        scope.spawn(move || {
+            thread::sleep(Duration::from_millis(100));
+            drop(walking);
+        });
+
+        assert!(here.wind_down(Duration::from_secs(10)));
+    });
+
+    assert!(elsewhere.walk_the_tree().is_ok());
+}
+
+fn keep_an_unheld_listen(library: &Library, path: &str, ago: Duration) {
+    library
+        .inner
+        .write(|transaction| {
+            transaction
+                .execute(
+                    "INSERT INTO unheld_listens (path, span_start, at) VALUES (?1, 0, ?2)",
+                    params![
+                        path,
+                        store::to_nanos(SystemTime::now().checked_sub(ago).unwrap_or(UNIX_EPOCH)),
+                    ],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })
+        .expect("the catalog keeps a listen against a path");
+}
+
+fn credit_the_unheld_listens_of(library: &Library, title: &str) {
+    counted_at(library, title, &[]);
+    library
+        .inner
+        .write(|transaction| {
+            transaction
+                .execute_batch(&format!(
+                    "INSERT INTO listens (track_id, at)
+                     SELECT t.id, u.at FROM unheld_listens u
+                       JOIN tracks t ON t.path = u.path AND t.span_start = u.span_start
+                      WHERE t.title = '{title}';
+                     DELETE FROM unheld_listens WHERE path = '/music/{title}.wav'"
+                ))
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })
+        .expect("the catalog credits the listens kept against a path");
+}
+
+fn let_the_first_held_listen_go_unheld(library: &Library) {
+    library
+        .inner
+        .write(|transaction| {
+            transaction
+                .execute_batch(
+                    "INSERT INTO unheld_listens (path, span_start, at, listen_id)
+                     SELECT t.path, t.span_start, l.at, l.id FROM listens l
+                       JOIN tracks t ON t.id = l.track_id
+                      WHERE l.id = (SELECT min(id) FROM listens);
+                     DELETE FROM listens WHERE id = (SELECT min(id) FROM listens)",
+                )
+                .map_err(|source| Error::store(StoreOp::Update, source))
+        })
+        .expect("the catalog lets a held listen go unheld");
+}
+
+fn every_listen_read_by_pages_of_one(
+    pages: &mut dyn HistoryPages,
+    between: &mut dyn FnMut(HistoryFrom),
+) -> Vec<SystemTime> {
+    let mut read = Vec::new();
+    let mut from = Some(HistoryFrom::START);
+
+    while let Some(at) = from {
+        let page = pages.page(at, 1).expect("a page reads");
+
+        read.extend(page.heard.into_iter().map(|heard| heard.began));
+        from = page.next;
+        between(at);
+    }
+    read.sort();
+    read
+}
+
+#[test]
+fn the_history_is_read_from_one_snapshot_whatever_is_credited_or_removed_between_its_pages() {
+    let scratch = Scratch::new("history-one-snapshot");
+    let library = Library::open(&scratch.path.join("library.db")).expect("a catalog opens on disc");
+
+    counted_at(
+        &library,
+        "Held",
+        &[A_MINUTE_AGO * 10, A_MINUTE_AGO * 20, A_MINUTE_AGO * 30],
+    );
+    keep_an_unheld_listen(&library, "/music/Away.wav", A_MINUTE_AGO * 40);
+    keep_an_unheld_listen(&library, "/music/Credited.wav", A_MINUTE_AGO * 50);
+
+    let expected = every_listen_read_by_pages_of_one(
+        &mut library.history_pages().expect("a snapshot begins"),
+        &mut |_| {},
+    );
+
+    assert_eq!(expected.len(), 5);
+
+    let mut moved = 0;
+
+    let read = every_listen_read_by_pages_of_one(
+        &mut library.history_pages().expect("a snapshot begins"),
+        &mut |at| {
+            if moved == 0 {
+                let_the_first_held_listen_go_unheld(&library);
+            }
+            if at == HistoryFrom::Unheld(0) {
+                credit_the_unheld_listens_of(&library, "Credited");
+            }
+            moved += 1;
+        },
+    );
+
+    assert_eq!(read, expected);
+
+    let after = every_listen_read_by_pages_of_one(
+        &mut library.history_pages().expect("a snapshot begins"),
+        &mut |_| {},
+    );
+
+    assert_eq!(after.len(), 5);
+    assert_eq!(library.inner.readers.lock().open, 1);
 }

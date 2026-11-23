@@ -9,8 +9,24 @@ pub const LISTENS_READ_AT_ONCE: usize = 1_000;
 
 pub const LINES_READ_AS: ListeningService = ListeningService::ListenBrainz;
 
+pub trait HistoryPages {
+    fn page(&mut self, from: HistoryFrom, most: usize) -> Result<HistoryRead>;
+}
+
+pub struct Unpinned<'a, K: ?Sized>(pub &'a K);
+
+impl<K: KeptListens + ?Sized> HistoryPages for Unpinned<'_, K> {
+    fn page(&mut self, from: HistoryFrom, most: usize) -> Result<HistoryRead> {
+        self.0.history_from(from, most)
+    }
+}
+
 pub trait KeptListens {
     fn history_from(&self, from: HistoryFrom, most: usize) -> Result<HistoryRead>;
+
+    fn history_pages(&self) -> Result<Box<dyn HistoryPages + '_>> {
+        Ok(Box::new(Unpinned(self)))
+    }
 
     fn bring_in(&self, service: ListeningService, heard: &[HeardElsewhere]) -> Result<BroughtIn>;
 }
@@ -20,6 +36,10 @@ impl KeptListens for Library {
         Self::history_from(self, from, most)
     }
 
+    fn history_pages(&self) -> Result<Box<dyn HistoryPages + '_>> {
+        Ok(Box::new(Self::history_pages(self)?))
+    }
+
     fn bring_in(&self, service: ListeningService, heard: &[HeardElsewhere]) -> Result<BroughtIn> {
         Self::bring_in(self, service, heard)
     }
@@ -27,6 +47,7 @@ impl KeptListens for Library {
 
 pub struct HistoryLines<'a> {
     kept: &'a dyn KeptListens,
+    pages: Option<Box<dyn HistoryPages + 'a>>,
     from: Option<HistoryFrom>,
     page: vec::IntoIter<HeardOnce>,
 }
@@ -41,7 +62,17 @@ impl Iterator for HistoryLines<'_> {
             }
 
             let from = self.from.take()?;
-            match self.kept.history_from(from, LISTENS_READ_AT_ONCE) {
+
+            if self.pages.is_none() {
+                match self.kept.history_pages() {
+                    Ok(pages) => self.pages = Some(pages),
+                    Err(error) => return Some(Err(error)),
+                }
+            }
+
+            let pages = self.pages.as_mut()?;
+
+            match pages.page(from, LISTENS_READ_AT_ONCE) {
                 Ok(read) => {
                     self.from = read.next;
                     self.page = read.heard.into_iter();
@@ -55,6 +86,7 @@ impl Iterator for HistoryLines<'_> {
 pub fn history_lines(kept: &dyn KeptListens) -> HistoryLines<'_> {
     HistoryLines {
         kept,
+        pages: None,
         from: Some(HistoryFrom::START),
         page: Vec::new().into_iter(),
     }

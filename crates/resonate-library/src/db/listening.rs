@@ -6,12 +6,15 @@ use std::{
 use resonate_core::{Calendar, FrameSpan, ListenId, MediaLocation, TrackId, wrapped::YearReview};
 use rusqlite::{OptionalExtension as _, params};
 
-use super::{KeptSuggestions, Library, Visited, rows::RawTrack, statements::TRACK_COLUMNS};
+use super::{
+    Inner, KeptSuggestions, Library, Reader, Source, Visited, rows::RawTrack,
+    statements::TRACK_COLUMNS,
+};
 use crate::{
     Aged, Billed, BroughtIn, Counted, Day, Error, Habits, HeardElsewhere, HistoryFrom, HistoryKept,
-    HistoryRead, Listen, ListeningService, LovesTold, MostListened, Result, Scrobbler, Shared,
-    Statistics, StoreOp, Submitted, Suggestion, Window, history, scrobble, share, statistics,
-    store, suggest, traded, wrapped,
+    HistoryPages, HistoryRead, Listen, ListeningService, LovesTold, MostListened, Result,
+    Scrobbler, Shared, Statistics, StoreOp, Submitted, Suggestion, Window, history, scrobble,
+    share, statistics, store, suggest, traded, wrapped,
 };
 
 impl Library {
@@ -133,6 +136,10 @@ impl Library {
         traded::history_from(&self.inner, from, most)
     }
 
+    pub(crate) fn history_pages(&self) -> Result<PinnedHistory<'_>> {
+        PinnedHistory::begin(&self.inner)
+    }
+
     pub fn bring_in(
         &self,
         service: ListeningService,
@@ -248,5 +255,62 @@ impl Library {
             suggestions: Arc::clone(&suggestions),
         });
         Ok(suggestions)
+    }
+}
+
+pub struct PinnedHistory<'a> {
+    inner: &'a Inner,
+    pinned: Option<Reader<'a>>,
+}
+
+const A_SNAPSHOT_BEGUN: &str = "BEGIN; SELECT count(*) FROM sqlite_master";
+
+impl<'a> PinnedHistory<'a> {
+    fn begin(inner: &'a Inner) -> Result<Self> {
+        let Source::File(_) = inner.source else {
+            return Ok(Self {
+                inner,
+                pinned: None,
+            });
+        };
+
+        let pinned = Self {
+            inner,
+            pinned: Some(inner.checkout()?),
+        };
+
+        if let Some(reader) = &pinned.pinned {
+            reader
+                .execute_batch(A_SNAPSHOT_BEGUN)
+                .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+        }
+        Ok(pinned)
+    }
+}
+
+impl HistoryPages for PinnedHistory<'_> {
+    fn page(&mut self, from: HistoryFrom, most: usize) -> Result<HistoryRead> {
+        match &self.pinned {
+            Some(reader) => traded::history_page(reader, from, most),
+            None => self
+                .inner
+                .read(|connection| traded::history_page(connection, from, most)),
+        }
+    }
+}
+
+impl Drop for PinnedHistory<'_> {
+    fn drop(&mut self) {
+        let Some(mut reader) = self.pinned.take() else {
+            return;
+        };
+
+        if reader.is_autocommit() || reader.execute_batch("ROLLBACK").is_ok() {
+            return;
+        }
+
+        reader.connection.take();
+        self.inner.readers.lock().open -= 1;
+        self.inner.freed.notify_one();
     }
 }

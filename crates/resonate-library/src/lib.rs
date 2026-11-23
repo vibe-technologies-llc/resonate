@@ -156,8 +156,8 @@ pub use crate::{
         KeepStopped, KeepSummary, Kept as KeptSong, KeptAs, KeptList, PlaylistToKeep, SongToKeep,
     },
     kept_listens::{
-        HistoryLines, KeptListens, LINES_READ_AS, LISTENS_READ_AT_ONCE, bring_in_history,
-        bring_in_lines, history_lines,
+        HistoryLines, HistoryPages, KeptListens, LINES_READ_AS, LISTENS_READ_AT_ONCE, Unpinned,
+        bring_in_history, bring_in_lines, history_lines,
     },
     learning::Learning,
     linked::{

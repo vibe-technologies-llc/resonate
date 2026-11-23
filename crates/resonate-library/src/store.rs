@@ -35,6 +35,10 @@ use crate::{
 const UNIT_SEPARATOR: char = '\u{1f}';
 const SLEEVE_TIER: &str = "sleeve";
 const RELEASE_TIER: &str = "release";
+const ARTISTS_FOLD_WANTED_MARKER: &str = "artists_fold_wanted";
+const INDEX_REFOLD_WANTED_MARKER: &str = "index_refold_wanted";
+const ALBUM_KEYS_COMPOSED_WANTED_MARKER: &str = "album_keys_composed_wanted";
+const TITLE_WORDS_WANTED_MARKER: &str = "title_words_wanted";
 const YEAR_DIGITS: usize = 4;
 const DATE_DIGITS: [usize; 3] = [YEAR_DIGITS, 6, 8];
 macro_rules! the_picture_of {
@@ -275,22 +279,19 @@ pub fn land_covers(tx: &Transaction<'_>, cache: &mut Cache, read: ReadCovers) ->
 }
 
 pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
-    let wanted: bool = queried(
-        connection,
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'artists_fold_wanted')",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-    if !wanted {
+    if !marker_pending(connection, ARTISTS_FOLD_WANTED_MARKER)? {
         return Ok(0);
     }
 
-    let unsettled = artists_folding_together(connection)?;
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+
+    if !marker_pending(&tx, ARTISTS_FOLD_WANTED_MARKER)? {
+        return Ok(0);
+    }
+
+    let unsettled = artists_folding_together(&tx)?;
     let mut merged = 0;
 
     for (key, mut sharing) in unsettled {
@@ -328,21 +329,18 @@ pub fn reconcile_artists(connection: &mut Connection) -> Result<usize> {
 }
 
 pub fn refold_the_index(connection: &mut Connection) -> Result<usize> {
-    let wanted: bool = queried(
-        connection,
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'index_refold_wanted')",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-    if !wanted {
+    if !marker_pending(connection, INDEX_REFOLD_WANTED_MARKER)? {
         return Ok(0);
     }
 
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+
+    if !marker_pending(&tx, INDEX_REFOLD_WANTED_MARKER)? {
+        return Ok(0);
+    }
+
     let stale: Vec<(Indexable, Option<i64>)> = {
         let mut statement = tx
             .prepare(
@@ -866,21 +864,18 @@ fn composed(key: &str) -> String {
 }
 
 pub fn compose_the_album_keys(connection: &mut Connection) -> Result<usize> {
-    let wanted: bool = queried(
-        connection,
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'album_keys_composed_wanted')",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-    if !wanted {
+    if !marker_pending(connection, ALBUM_KEYS_COMPOSED_WANTED_MARKER)? {
         return Ok(0);
     }
 
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+
+    if !marker_pending(&tx, ALBUM_KEYS_COMPOSED_WANTED_MARKER)? {
+        return Ok(0);
+    }
+
     let decomposed: Vec<String> = {
         let mut statement = tx
             .prepare("SELECT key FROM album_keys")
@@ -1359,21 +1354,17 @@ fn superseded_in_the_vault(tx: &Transaction<'_>, scoped: &str, generation: i64) 
 }
 
 pub fn word_the_titles(connection: &mut Connection) -> Result<()> {
-    let wanted: bool = queried(
-        connection,
-        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = 'title_words_wanted')",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-    if !wanted {
+    if !marker_pending(connection, TITLE_WORDS_WANTED_MARKER)? {
         return Ok(());
     }
 
     let tx = connection
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
+
+    if !marker_pending(&tx, TITLE_WORDS_WANTED_MARKER)? {
+        return Ok(());
+    }
 
     tx.execute_batch(
         "UPDATE tracks SET title_words = words_of(title) WHERE title_words IS NULL;
@@ -1385,11 +1376,7 @@ pub fn word_the_titles(connection: &mut Connection) -> Result<()> {
 }
 
 pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
-    let owed: bool = connection
-        .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-    if !owed {
+    if !credits_owed(connection)? {
         return Ok(());
     }
 
@@ -1397,16 +1384,33 @@ pub fn settle_the_credits_if_owed(connection: &mut Connection) -> Result<()> {
         .transaction_with_behavior(TransactionBehavior::Immediate)
         .map_err(|source| Error::store(StoreOp::Transaction, source))?;
 
+    if !credits_owed(&tx)? {
+        return Ok(());
+    }
+
     sweep_orphans(&tx)?;
     tx.commit()
         .map_err(|source| Error::store(StoreOp::Transaction, source))
 }
 
-pub fn sweep_orphans_if_owed(tx: &Transaction<'_>) -> Result<()> {
-    let owed: bool = tx
+fn credits_owed(connection: &Connection) -> Result<bool> {
+    connection
         .query_row("SELECT owed FROM settle_owed", [], |row| row.get(0))
-        .map_err(|source| Error::store(StoreOp::Query, source))?;
-    match owed {
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn marker_pending(connection: &Connection, marker: &str) -> Result<bool> {
+    queried(
+        connection,
+        "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE name = ?1)",
+        params![marker],
+        |row| row.get(0),
+    )
+    .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub fn sweep_orphans_if_owed(tx: &Transaction<'_>) -> Result<()> {
+    match credits_owed(tx)? {
         true => sweep_orphans(tx),
         false => Ok(()),
     }
