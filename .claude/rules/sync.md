@@ -180,17 +180,27 @@ platforms; the catalog seam stays thin.
   after what it has read. **A stamp is believed at most `STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS` (a
   day) past the wall clock**, the one bound the ledger and the shared lists share: `Ledger::arrived`
   passes over a change stamped past it (logged, before the clock sees it, so one stamp near `i64::MAX`
-  cannot freeze the clock and have every later change of a key compare equal and be dropped), and a
-  ledger opened with a saved clock past it sets the clock back to the wall (`Clock::from_saved`, the
-  stored column unchanged)
+  cannot freeze the clock and have every later change of a key compare equal and be dropped).
+  **A clock past it was this device's own wall running ahead, and is set back with what it stamped**:
+  where the clock (saved, as the ledger opens, or in memory, as `look` and `arrived` begin) is past the
+  bound, `kept_or_set_back` restamps every stamped table's rows past it to the wall, keeping their
+  `stamped_by` and owing them, lowers the wall times this device wrote to the wall (`deletions.heard`,
+  `refusals.refused`, `state.joined`) and stores the clock at the wall, in one transaction, so a
+  favourite or playlist stamped while the wall ran days ahead (which every peer refused) is told
+  again at an honest stamp, and a peer's later edit outranks it rather than being passed over. A
+  clock within the bound is kept, so a peer's stamp within the accepted skew still lands and orders
+  what follows
   (`a_change_stamped_far_past_the_wall_clock_is_refused_and_a_later_honest_edit_still_lands`,
-  `a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens`). **A row already stored
-  past it is restamped once**, by the step `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: every stamped
+  `a_clock_saved_far_past_the_wall_clock_is_set_back_when_the_ledger_opens`,
+  `rows_stamped_while_the_clock_ran_days_ahead_are_restamped_and_owed_with_the_clock_when_the_ledger_opens`,
+  `a_clock_set_back_while_the_ledger_is_open_restamps_the_rows_it_ran_ahead_with`,
+  `a_favourite_stamped_days_ahead_travels_once_the_clock_is_set_right_and_a_later_edit_elsewhere_wins`,
+  `a_favourite_stamped_within_a_day_ahead_lands_keeps_its_stamp_and_a_later_edit_here_still_wins`).
+  The tables have no index on `nanos`, so the sweep runs only when the clock says it must. **A row an
+  older build stored past it is restamped once**, by the step `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: every stamped
   table (`devices`, `playlists`, `queries`, `favourites`, `handoffs`, `shares`, `layouts`,
   `answers`, `deletions`) takes the wall clock in SQL, keeps its `stamped_by` and is owed so a peer
-  hears it, and `state.clock` is lifted to that wall so the next stamp outranks the rows. A step
-  rather than a sweep on every open, since an arrival past the bound is refused and nothing stored
-  can pass it again, and the tables have no index on `nanos`. Each device restamps on its own, so
+  hears it, and `state.clock` is lifted to that wall so the next stamp outranks the rows. Each device restamps on its own, so
   two holding one row end with stamps apart and the same value; the next honest edit is stamped
   after both and wins on both, though an edit made on a device that restamped before another
   device's restamp is overtaken by that later stamp, the value then converging on the restamped
@@ -422,9 +432,14 @@ platforms; the catalog seam stays thin.
   below), its stamp is past `state.joined` (the wall time this ledger entered the space: a device
   paired later keeps what it held, since the listener's *every device* was the devices paired then)
   and no newer row answers it; `Catalog::take_deletion(recording, before)` then removes only the
-  copies that arrived in the catalog before the stamp, through the catalog's own delete, so a song
-  added again later is never deleted by an older tombstone, a file the trash refuses keeps its row,
-  and the deletion is not tried again. **A deletion takes only a copy the tombstone surely names**
+  copies that arrived in the catalog before the earlier of the stamp and `heard`, through the
+  catalog's own delete, so a song added again later is never deleted by an older tombstone, a file
+  the trash refuses keeps its row, and the deletion is not tried again. **The stamp orders the
+  deletion against other words; it never dates a copy here**: a stamp is another device's clock and
+  may run up to the accepted day ahead of this one, so a copy is weighed against `heard` (this
+  device's wall as the row arrived) where that is earlier, and a copy added between the stamp and
+  `heard` (one this device could not have known was deleted) stays
+  (`a_song_added_by_hand_after_a_deletion_stamped_ahead_arrived_stays_and_answers_it_everywhere`). **A deletion takes only a copy the tombstone surely names**
   (`Recording::surely_names`, in core, the one rule both catalogs ask of each copy the permissive
   holdings match found): where the tombstone and the copy both carry a recording MBID they must be
   the same, so a namesake under another MBID always stays; otherwise the folded title words, artist
@@ -441,7 +456,7 @@ platforms; the catalog seam stays thin.
   settle. Switched off, or with nothing held, the row alone is the mark. An answering row (`deleted`
   false) forgives the catalog's own mark (`forgive_deletion`), so the song may be followed again.
   **A song added again answers its deletion**: a look, whenever the catalog's revision moved, asks
-  `added_by_hand_since(recording, max(stamp, heard))` of every standing row, and a copy the listener
+  `added_by_hand_since(recording, heard)` of every standing row, and a copy the listener
   added here since (not one a sync landed, so a follow racing the tombstone keeps its copy here
   without undoing the deletion elsewhere, and not one added before this ledger heard the deletion)
   restamps the row as answered and owes it; an asked fetch that lands (`Command::Fetch`) answers it

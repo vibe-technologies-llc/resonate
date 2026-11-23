@@ -2023,7 +2023,8 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `synced::every_row_holding` finds, hidden ones too, kept by `everywhere::copies_of` under
   `Naming::Surely` only where every recording at the path is one `Recording::surely_names`:
   `sync.md`) whose `tracks.added` is
-  before the tombstone's stamp and that are a whole file alone at their path, so a song added again
+  before the moment the ledger passes (the earlier of the tombstone's stamp and when this device
+  heard it, `sync.md`) and that are a whole file alone at their path, so a song added again
   after the deletion stays and a cut never takes the other songs of its file;
   `added_by_hand_since` answers whether a copy was added after a moment by anything but a sync
   landing (a path `songs_received` names), which answers the deletion for every device

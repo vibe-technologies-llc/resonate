@@ -5,6 +5,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 
 use self::{
     deletions::SONGS_DELETED_EVERYWHERE,
+    set_back::kept_or_set_back,
     unheld::{UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS, name_the_answers},
 };
 use crate::{
@@ -31,6 +32,7 @@ use crate::{
 mod deletions;
 #[cfg(test)]
 mod released;
+mod set_back;
 mod unheld;
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;
@@ -536,6 +538,7 @@ impl Ledger {
                 (device, 0)
             }
         };
+        let clock = kept_or_set_back(&transaction, Clock::from_last(clock), wall_nanos())?;
 
         transaction
             .commit()
@@ -544,7 +547,7 @@ impl Ledger {
         Ok(Self {
             connection,
             device,
-            clock: Clock::from_saved(clock, wall_nanos()),
+            clock,
             answers_tried_at: None,
             deletions_tried_at: None,
         })
@@ -707,6 +710,7 @@ impl Ledger {
     }
 
     pub fn look(&mut self, catalog: &dyn Catalog, me: &Me) -> Result<Looked> {
+        self.set_back_a_clock_run_ahead()?;
         self.look_at_me(me)?;
         self.look_at_playlists(catalog, Looking::Everything)?;
         self.look_at_queries(catalog, Looking::Everything)?;
@@ -2055,6 +2059,7 @@ impl Ledger {
     }
 
     pub fn arrived(&mut self, catalog: &dyn Catalog, changes: &[Change]) -> Result<Applied> {
+        self.set_back_a_clock_run_ahead()?;
         self.look_at_what_is_held(catalog)?;
 
         let mut applied = Applied::default();
@@ -4421,8 +4426,11 @@ mod tests {
 
         let mut reopened = Ledger::over(ledger.connection).expect("reopened");
 
+        let kept = reopened.state_number("clock").expect("the stored clock");
+        let set_back = reopened.clock.last();
         let next = reopened.clock.now(reopened.device);
 
+        assert_eq!(kept.cast_signed(), set_back);
         assert!(next.nanos < before + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS);
     }
 
@@ -4595,6 +4603,134 @@ mod tests {
         let bound = STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS.to_string();
 
         assert!(STAMPS_PAST_THE_BOUND_ARE_RESTAMPED.contains(&format!("+ {bound}")));
+    }
+
+    const THREE_DAYS_IN_NANOS: i64 = 3 * 24 * 60 * 60 * 1_000_000_000;
+
+    fn stamped_days_ahead(ledger: &Ledger, ahead: i64) {
+        for (_, insert) in STAMPED_ROWS {
+            ledger
+                .connection
+                .execute(insert, params![ahead])
+                .expect("a row stamped while the clock ran days ahead");
+        }
+        ledger
+            .connection
+            .execute("UPDATE deletions SET heard = ?1, owed = 0", params![ahead])
+            .expect("a deletion heard while the clock ran ahead");
+        ledger
+            .connection
+            .execute(
+                "INSERT INTO refusals (key, refused) VALUES ('a', ?1)",
+                params![ahead],
+            )
+            .expect("a refusal noted while the clock ran ahead");
+        ledger
+            .connection
+            .execute(
+                "UPDATE state SET clock = ?1, joined = ?1 WHERE id = 1",
+                params![ahead],
+            )
+            .expect("a clock and a joining kept while it ran ahead");
+    }
+
+    fn wall_times_kept_here(ledger: &Ledger) -> (i64, i64, i64) {
+        ledger
+            .connection
+            .query_row(
+                "SELECT (SELECT heard FROM deletions), (SELECT refused FROM refusals), joined
+                   FROM state WHERE id = 1",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("the wall times")
+    }
+
+    #[test]
+    fn rows_stamped_while_the_clock_ran_days_ahead_are_restamped_and_owed_with_the_clock_when_the_ledger_opens()
+     {
+        let ledger = Ledger::in_memory().expect("a ledger");
+
+        stamped_days_ahead(&ledger, wall_nanos() + THREE_DAYS_IN_NANOS);
+
+        let before = wall_nanos();
+
+        let mut reopened = Ledger::over(ledger.connection).expect("reopened");
+        let after = wall_nanos();
+
+        let kept = reopened.state_number("clock").expect("the stored clock");
+        let set_back = reopened.clock.last();
+        let (heard, refused, joined) = wall_times_kept_here(&reopened);
+        let next = reopened.clock.now(reopened.device);
+
+        for (table, _) in STAMPED_ROWS {
+            let (nanos, by, owed) = stamp_and_owed_of(&reopened, table);
+
+            assert!((before..=after).contains(&nanos), "{table}: {nanos}");
+            assert!(next.nanos > nanos, "{table}");
+            assert_eq!(by, [9_u8], "{table}");
+            assert_eq!(owed, 1, "{table}");
+        }
+
+        assert!((before..=after).contains(&kept.cast_signed()));
+        assert_eq!(kept.cast_signed(), set_back);
+        for wall_time in [heard, refused, joined] {
+            assert!((before..=after).contains(&wall_time), "{wall_time}");
+        }
+    }
+
+    #[test]
+    fn a_clock_set_back_while_the_ledger_is_open_restamps_the_rows_it_ran_ahead_with() {
+        let mut ledger = Ledger::in_memory().expect("a ledger");
+        let ahead = wall_nanos() + THREE_DAYS_IN_NANOS;
+
+        stamped_days_ahead(&ledger, ahead);
+        ledger.clock = Clock::from_last(ahead);
+
+        let before = wall_nanos();
+
+        ledger
+            .set_back_a_clock_run_ahead()
+            .expect("the clock set back");
+
+        let after = wall_nanos();
+        let kept = ledger.state_number("clock").expect("the stored clock");
+        let (heard, _, joined) = wall_times_kept_here(&ledger);
+
+        for (table, _) in STAMPED_ROWS {
+            let (nanos, _, owed) = stamp_and_owed_of(&ledger, table);
+
+            assert!((before..=after).contains(&nanos), "{table}: {nanos}");
+            assert_eq!(owed, 1, "{table}");
+        }
+
+        assert_eq!(kept.cast_signed(), ledger.clock.last());
+        assert!((before..=after).contains(&ledger.clock.last()));
+        assert!(heard <= after && joined <= after);
+    }
+
+    #[test]
+    fn a_clock_within_a_day_ahead_of_the_wall_keeps_its_rows_and_owes_nothing_new() {
+        let mut ledger = Ledger::in_memory().expect("a ledger");
+        let ahead = wall_nanos() + STAMP_AHEAD_OF_THE_WALL_AT_MOST_NANOS / 2;
+
+        stamped_days_ahead(&ledger, ahead);
+        ledger.clock = Clock::from_last(ahead);
+
+        ledger
+            .set_back_a_clock_run_ahead()
+            .expect("the clock weighed");
+
+        let reopened = Ledger::over(ledger.connection).expect("reopened");
+
+        for (table, _) in STAMPED_ROWS {
+            let (nanos, _, owed) = stamp_and_owed_of(&reopened, table);
+
+            assert_eq!(nanos, ahead, "{table}");
+            assert_eq!(owed, 0, "{table}");
+        }
+
+        assert_eq!(reopened.clock.last(), ahead);
     }
 
     #[test]

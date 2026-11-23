@@ -102,10 +102,8 @@ impl Ledger {
             return Ok(());
         }
         for (standing, heard) in self.heard_where("deleted = 1")? {
-            let since = standing.stamp.nanos.max(heard);
-
             if !catalog
-                .added_by_hand_since(&standing.recording, since)
+                .added_by_hand_since(&standing.recording, heard)
                 .map_err(Error::Catalog)?
             {
                 continue;
@@ -128,7 +126,7 @@ impl Ledger {
     }
 
     pub(super) fn settle_deletions(&mut self, catalog: &dyn Catalog) -> Result<usize> {
-        let waiting = self.deletions_where("settled = 0")?;
+        let waiting = self.heard_where("settled = 0")?;
 
         if waiting.is_empty() {
             return Ok(0);
@@ -137,9 +135,9 @@ impl Ledger {
         let joined = self.joined()?;
         let mut removed = 0;
 
-        for note in waiting {
+        for (note, heard) in waiting {
             let taken = if note.deleted {
-                self.taken_here(catalog, &note, joined)
+                self.taken_here(catalog, &note, heard, joined)
             } else {
                 catalog.forgive_deletion(&note.recording).map(|()| 0)
             };
@@ -172,6 +170,7 @@ impl Ledger {
         &self,
         catalog: &dyn Catalog,
         note: &DeletionNote,
+        heard: i64,
         joined: i64,
     ) -> std::result::Result<u64, Refused> {
         let told_before_this_device_joined = note.stamp.nanos <= joined;
@@ -183,7 +182,7 @@ impl Ledger {
         if told_before_this_device_joined || answered_since || !catalog.takes_deletions() {
             return Ok(0);
         }
-        catalog.take_deletion(&note.recording, note.stamp.nanos)
+        catalog.take_deletion(&note.recording, note.stamp.nanos.min(heard))
     }
 
     pub fn deleted_everywhere(&self, recording: &Recording) -> Result<bool> {

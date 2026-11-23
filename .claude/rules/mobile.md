@@ -1218,7 +1218,8 @@ is `forget_deleted_songs` for songs the listener deleted from every device: the 
 `deletions_from_other_devices`), which the sync reads (`Catalog::deleted_everywhere`) and empties once
 its ledger holds them. A deletion another device told, while `SyncConfig.takes_deletions` (default on,
 *Let my other devices delete songs here*) lets it, puts each visible document of the recording added
-before the tombstone (`documents.added`, Unix seconds) and surely named by it (`Recording::surely_names`
+before the moment the ledger passes (`documents.added`, Unix seconds, against the earlier of the
+tombstone's stamp and when this device heard it, `sync.md`) and surely named by it (`Recording::surely_names`
 over the document's own recording, `sync.md`) into `deletions_from_other_devices`;
 `take_deletions_from_other_devices()` hands those `Track`s to the front end and empties the table, and
 the front end removes each file it may (a writable folder's, as its own *Delete*) and forgets those

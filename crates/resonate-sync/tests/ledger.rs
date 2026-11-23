@@ -202,6 +202,38 @@ fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
     device.ledger = Ledger::open(path).expect("the ledger opened by the build that restamps");
 }
 
+fn stamped_ahead(changes: Vec<Change>, ahead: i64) -> Vec<Change> {
+    changes
+        .into_iter()
+        .map(|change| match change {
+            Change::Favourite(mut note) => {
+                note.stamp.nanos += ahead;
+                Change::Favourite(note)
+            }
+            Change::Deletion(mut note) => {
+                note.stamp.nanos += ahead;
+                Change::Deletion(note)
+            }
+            other => other,
+        })
+        .collect()
+}
+
+fn reopened_after_its_clock_ran_ahead(device: &mut Device, path: &Path, ahead: i64) {
+    device.ledger = Ledger::in_memory().expect("a ledger standing in while the file is written");
+
+    let connection = Connection::open(path).expect("the file");
+
+    connection
+        .execute("UPDATE favourites SET nanos = nanos + ?1", [ahead])
+        .expect("a favourite stamped while the clock ran ahead");
+    connection
+        .execute("UPDATE state SET clock = clock + ?1", [ahead])
+        .expect("the clock kept while it ran ahead");
+    drop(connection);
+    device.ledger = Ledger::open(path).expect("the ledger opened once the clock is set right");
+}
+
 #[test]
 fn a_title_past_the_longest_text_is_cut_and_never_wedges_the_ledger() {
     let overlong = "é".repeat(3000);
@@ -924,6 +956,78 @@ fn two_devices_holding_a_playlist_stamped_near_the_end_of_time_restamp_apart_and
         after_the_phone_edits,
         (vec!["A".into(), "C".into()], vec!["A".into(), "C".into()])
     );
+}
+
+#[test]
+fn a_favourite_stamped_days_ahead_travels_once_the_clock_is_set_right_and_a_later_edit_elsewhere_wins()
+ {
+    let folder = scratch_folder("ran-ahead");
+    let path = folder.join("sync.sqlite");
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = device_over_a_file("Phone", &["A", "B"], &path);
+
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    phone.shelf.favour_here("A", true);
+
+    let refused = stamped_ahead(phone.send(), 3 * A_DAY_IN_NANOS);
+
+    desk.receive(&refused);
+
+    let while_it_ran_ahead = desk.shelf.favourite_titles();
+
+    reopened_after_its_clock_ran_ahead(&mut phone, &path, 3 * A_DAY_IN_NANOS);
+    sync(&mut phone, &mut desk);
+
+    let once_set_right = desk.shelf.favourite_titles();
+
+    desk.shelf.favour_here("A", false);
+    sync(&mut desk, &mut phone);
+
+    let after_the_desk_edits = phone.shelf.favourite_titles();
+
+    drop(phone);
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert!(while_it_ran_ahead.is_empty());
+    assert_eq!(once_set_right, ["A"]);
+    assert!(after_the_desk_edits.is_empty());
+    assert!(desk.shelf.favourite_titles().is_empty());
+}
+
+#[test]
+fn a_favourite_stamped_within_a_day_ahead_lands_keeps_its_stamp_and_a_later_edit_here_still_wins() {
+    let folder = scratch_folder("within-skew");
+    let path = folder.join("sync.sqlite");
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = device_over_a_file("Phone", &["A", "B"], &path);
+
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    desk.shelf.favour_here("A", true);
+
+    let ahead = stamped_ahead(desk.send(), A_DAY_IN_NANOS / 2);
+
+    phone.receive(&ahead);
+
+    let landed = phone.shelf.favourite_titles();
+
+    phone.ledger = Ledger::open(&path).expect("the ledger opened again");
+
+    let owed_again = phone
+        .send()
+        .iter()
+        .any(|change| matches!(change, Change::Favourite(_)));
+
+    phone.shelf.favour_here("A", false);
+    sync(&mut phone, &mut desk);
+
+    drop(phone);
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert_eq!(landed, ["A"]);
+    assert!(!owed_again);
+    assert!(desk.shelf.favourite_titles().is_empty());
 }
 
 #[test]
@@ -2585,6 +2689,36 @@ fn a_song_added_again_after_its_deletion_is_never_deleted_again_and_comes_back()
     assert!(!phone.ledger.deleted_everywhere(&song("A")).expect("asked"));
     assert!(phone.shelf.inside.lock().deleted_here.is_empty());
     assert_eq!(wanted_titles(&phone, follow), ["A"]);
+}
+
+#[test]
+fn a_song_added_by_hand_after_a_deletion_stamped_ahead_arrived_stays_and_answers_it_everywhere() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut phone = Device::new("Phone", &["A", "B"]);
+
+    sync(&mut desk, &mut phone);
+    sync(&mut phone, &mut desk);
+    desk.shelf.delete_everywhere("A");
+
+    let told = stamped_ahead(desk.send(), A_DAY_IN_NANOS / 2);
+
+    phone.shelf.inside.lock().deletions_wait = true;
+    phone.receive(&told);
+    thread::sleep(Duration::from_millis(5));
+    phone.shelf.add_song(song("A"), b"A".repeat(1000));
+    phone.shelf.inside.lock().deletions_wait = false;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let kept = phone.shelf.song_titles();
+    let answered = phone.send();
+
+    desk.receive(&answered);
+
+    assert_eq!(kept, ["A", "B"]);
+    assert_eq!(phone.shelf.inside.lock().arrivals.len(), 2);
+    assert_eq!(deletions(&answered), [("A".to_owned(), false)]);
+    assert!(!phone.ledger.deleted_everywhere(&song("A")).expect("asked"));
+    assert!(!desk.ledger.deleted_everywhere(&song("A")).expect("asked"));
 }
 
 #[test]

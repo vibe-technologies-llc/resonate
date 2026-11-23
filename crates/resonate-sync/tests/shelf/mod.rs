@@ -91,6 +91,7 @@ pub struct Inside {
     pub refuses_deletions: bool,
     pub deletions_weighed: usize,
     pub trash_refuses: bool,
+    pub deletions_wait: bool,
     next_id: i64,
     next_answered: i64,
 }
@@ -684,6 +685,9 @@ impl Catalog for Shelf {
     fn take_deletion(&self, recording: &Recording, before: i64) -> Result<u64, Refused> {
         let mut inside = self.inside.lock();
 
+        if inside.deletions_wait {
+            return Err(Refused::Unavailable);
+        }
         if inside.trash_refuses {
             return Ok(0);
         }

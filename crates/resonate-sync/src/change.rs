@@ -221,12 +221,8 @@ impl Clock {
         Self { last }
     }
 
-    pub const fn from_saved(last: i64, wall: i64) -> Self {
-        if nanos_too_far_ahead(last, wall) {
-            Self { last: wall }
-        } else {
-            Self { last }
-        }
+    pub const fn runs_too_far_ahead_of(&self, wall: i64) -> bool {
+        nanos_too_far_ahead(self.last, wall)
     }
 
     pub const fn last(&self) -> i64 {
