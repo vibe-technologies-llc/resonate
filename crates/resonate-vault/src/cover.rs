@@ -1,8 +1,4 @@
-use std::{
-    fs::File,
-    io::{BufReader, Cursor, Read},
-    path::Path,
-};
+use std::io::Cursor;
 
 use image::{
     AnimationDecoder as _, ColorType, DynamicImage, ExtendedColorType, ImageBuffer,
@@ -19,11 +15,10 @@ use zune_core::{bit_depth::BitDepth, colorspace::ColorSpace, options::EncoderOpt
 use zune_jpegxl::JxlSimpleEncoder;
 
 use crate::{
-    error::{Error, PictureOp, Result, VaultOp},
+    error::{Error, PictureOp, Result},
     transcoded,
 };
 
-const HEAD_READ_AT_A_TIME: usize = 16 << 10;
 const MOST_EFFORT: u8 = 127;
 const SMALLEST_JXL_SIDE: u32 = 2;
 const FRAMES_THAT_MAKE_AN_ANIMATION: usize = 2;
@@ -40,6 +35,16 @@ impl Drawn {
     pub(crate) fn held_by(&self, written: &[u8]) -> Result<bool> {
         Ok(lossless_of_jxl(written)? == self.pixels)
     }
+}
+
+pub(crate) fn drawn_as(stored: &DynamicImage, art: &CoverArt) -> bool {
+    let Ok(pixels) = read(art).map(without_opaque_alpha) else {
+        return false;
+    };
+    stored == &pixels
+        || (stored.width() == pixels.width()
+            && stored.height() == pixels.height()
+            && stored.to_rgba16() == pixels.to_rgba16())
 }
 
 pub(crate) enum Drawing {
@@ -198,49 +203,6 @@ pub(crate) fn size_of(bytes: &[u8], format: Option<ImageFormat>) -> Result<(u32,
     reading.into_dimensions().map_err(|source| Error::Picture {
         source: Box::new(source),
     })
-}
-
-pub(crate) fn size_of_file(path: &Path, format: Option<ImageFormat>) -> Result<(u32, u32)> {
-    let opened = File::open(path).map_err(|source| Error::io(VaultOp::Read, path, source))?;
-    let Some(format) = format else {
-        return size_of_jxl_stream(path, opened);
-    };
-    let mut reading = image::ImageReader::new(BufReader::new(opened));
-
-    reading.set_format(read_as(format));
-    reading.into_dimensions().map_err(|source| Error::Picture {
-        source: Box::new(source),
-    })
-}
-
-fn size_of_jxl_stream(path: &Path, mut file: File) -> Result<(u32, u32)> {
-    let unopened = || Error::PictureRead {
-        op: PictureOp::Open,
-    };
-    let mut reading = jxl_oxide::JxlImage::builder().build_uninit();
-    let mut chunk = vec![0_u8; HEAD_READ_AT_A_TIME];
-    loop {
-        let read = file
-            .read(&mut chunk)
-            .map_err(|source| Error::io(VaultOp::Read, path, source))?;
-
-        if read == 0 {
-            return Err(unopened());
-        }
-        reading.feed_bytes(&chunk[..read]).map_err(|source| {
-            tracing::warn!(%source, "a JXL picture's head could not be read");
-            unopened()
-        })?;
-        match reading.try_init().map_err(|source| {
-            tracing::warn!(%source, "a JXL picture's head could not be read");
-            unopened()
-        })? {
-            InitializeResult::Initialized(picture) => {
-                return Ok((picture.width(), picture.height()));
-            }
-            InitializeResult::NeedMoreData(unfinished) => reading = unfinished,
-        }
-    }
 }
 
 pub(crate) fn opened_jxl(bytes: &[u8]) -> Result<jxl_oxide::JxlImage> {
@@ -505,6 +467,35 @@ mod tests {
     }
 
     #[test]
+    fn a_stored_picture_is_drawn_as_the_cover_in_any_layout_of_the_same_pixels_and_never_in_fewer_bits()
+     {
+        let art = noisy(24, 18);
+        let opaque = read(&art).expect("a picture").into_rgba8();
+
+        let mut touched = opaque.clone();
+
+        touched.get_pixel_mut(5, 7).0[0] ^= 1;
+
+        let picture = sixteen_bit(24, 18);
+        let wide = CoverArt {
+            format: ImageFormat::Png,
+            bytes: written_png(picture.clone()),
+        };
+
+        assert!(drawn_as(&DynamicImage::ImageRgba8(opaque.clone()), &art));
+        assert!(drawn_as(
+            &DynamicImage::ImageRgb8(DynamicImage::ImageRgba8(opaque).into_rgb8()),
+            &art
+        ));
+        assert!(!drawn_as(&DynamicImage::ImageRgba8(touched), &art));
+        assert!(drawn_as(&picture, &wide));
+        assert!(!drawn_as(
+            &DynamicImage::ImageRgb8(picture.to_rgb8()),
+            &wide
+        ));
+    }
+
+    #[test]
     fn a_jxl_is_sized_by_its_head_alone() {
         let drawn = lossless(&noisy(64, 48));
         let head = &drawn.bytes[..drawn.bytes.len() / 4];
@@ -512,36 +503,5 @@ mod tests {
         assert_eq!(size_of_jxl(&drawn.bytes).expect("a size"), (64, 48));
         assert_eq!(size_of_jxl(head).expect("a size off the head"), (64, 48));
         assert!(lossless_of_jxl(head).is_err());
-    }
-
-    #[test]
-    fn a_standing_file_is_sized_off_its_head_in_chunks() {
-        let folder =
-            std::env::temp_dir().join(format!("resonate-cover-sized-{}", std::process::id()));
-
-        std::fs::create_dir_all(&folder).expect("a folder");
-
-        let art = noisy(160, 120);
-        let drawn = lossless(&art);
-
-        assert!(drawn.bytes.len() > 2 * HEAD_READ_AT_A_TIME);
-
-        let jxl = folder.join("cover.jxl");
-        let png = folder.join("cover.png");
-        let empty = folder.join("empty.jxl");
-
-        std::fs::write(&jxl, &drawn.bytes).expect("a written JXL");
-        std::fs::write(&png, &art.bytes).expect("a written PNG");
-        std::fs::write(&empty, []).expect("an empty file");
-
-        let sized_jxl = size_of_file(&jxl, None);
-        let sized_png = size_of_file(&png, Some(ImageFormat::Png));
-        let sized_empty = size_of_file(&empty, None);
-
-        std::fs::remove_dir_all(&folder).expect("a removed folder");
-
-        assert_eq!(sized_jxl.expect("a JXL size"), (160, 120));
-        assert_eq!(sized_png.expect("a PNG size"), (160, 120));
-        assert!(sized_empty.is_err());
     }
 }

@@ -173,7 +173,7 @@ impl Replacing {
 #[derive(Clone, Copy)]
 enum Expected<'a> {
     Sound(Form, &'a Heard),
-    Bytes,
+    Bytes(VaultKey),
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -673,11 +673,7 @@ impl Vault {
 
         let key = digest.settled();
 
-        if let Some(target) = self.held_cover(key) {
-            self.inside(&target)?;
-
-            let (width, height) = cover::size_of_file(&target, kept_as_it_came(&target))?;
-
+        if let Some((target, (width, height))) = self.standing_cover(key, art)? {
             return Ok(KeptCover {
                 key,
                 bytes: self.sized(&target)?,
@@ -727,6 +723,47 @@ impl Vault {
             height: drawn.height,
             deduped: false,
         })
+    }
+
+    fn standing_cover(
+        &self,
+        key: VaultKey,
+        art: &CoverArt,
+    ) -> Result<Option<(PathBuf, (u32, u32))>> {
+        for target in PICTURE_EXTENSIONS
+            .into_iter()
+            .map(|extension| self.cover_path(key, extension))
+            .filter(|path| path.is_file())
+        {
+            self.inside(&target)?;
+
+            match self.cover_holding(&target, art) {
+                Some(size) => return Ok(Some((target, size))),
+                None => tracing::warn!(
+                    path = %target.display(),
+                    "a cover under this key no longer holds the picture and is kept again"
+                ),
+            }
+        }
+        Ok(None)
+    }
+
+    fn cover_holding(&self, target: &Path, art: &CoverArt) -> Option<(u32, u32)> {
+        let bytes = fs::read(target).ok()?;
+
+        if let Some(format) = kept_as_it_came(target) {
+            return (bytes == art.bytes)
+                .then(|| cover::size_of(&bytes, Some(format)).ok())
+                .flatten();
+        }
+
+        let opened = cover::opened_jxl(&bytes).ok()?;
+        let size = (opened.width(), opened.height());
+
+        match transcoded::reconstructed(&bytes, &opened).ok()? {
+            Some(jpeg) => (jpeg == art.bytes).then_some(size),
+            None => cover::drawn_as(&cover::lossless_of(&opened).ok()?, art).then_some(size),
+        }
     }
 
     fn transcoded_cover(
@@ -936,24 +973,8 @@ impl Vault {
         };
 
         match form {
-            Form::Kept => {
-                let mut digest = Digest::default();
-                let mut file =
-                    File::open(path).map_err(|source| Error::io(VaultOp::Verify, path, source))?;
-                let mut buffer = vec![0_u8; COPY_BYTES];
-
-                loop {
-                    let read = file
-                        .read(&mut buffer)
-                        .map_err(|source| Error::io(VaultOp::Verify, path, source))?;
-
-                    if read == 0 {
-                        break;
-                    }
-                    digest.note(&buffer[..read]);
-                }
-                Ok(digest.settled() == key)
-            }
+            Form::Kept => holds_the_bytes(path, key)
+                .map_err(|source| Error::io(VaultOp::Verify, path, source)),
             Form::Flac => Ok(read_back(path, None, Halt::NEVER)?.answers_to(key, form)),
             Form::Wave => Ok(self
                 .read_back_packed(path, None, Halt::NEVER)?
@@ -1479,7 +1500,7 @@ impl Vault {
             &copied.staging,
             &target,
             Weighing::AS_IT_STANDS,
-            Expected::Bytes,
+            Expected::Bytes(key),
         )?;
 
         Ok(landing.kept(Kept {
@@ -1648,7 +1669,9 @@ impl Vault {
             let standing = self.sized(target)?;
             let sound = match expected {
                 Expected::Sound(form, heard) => holds_the_sound(target, form, heard),
-                Expected::Bytes => standing == staged,
+                Expected::Bytes(key) => {
+                    standing == staged && holds_the_bytes(target, key).unwrap_or(false)
+                }
             };
             if !sound {
                 tracing::warn!(path = %target.display(), "an object under this key holds something else and is replaced");
@@ -1681,7 +1704,9 @@ impl Vault {
             Expected::Sound(form, heard) => {
                 target.is_file() && holds_the_sound(target, form, heard)
             }
-            Expected::Bytes => target.is_file(),
+            Expected::Bytes(key) => {
+                target.is_file() && holds_the_bytes(target, key).unwrap_or(false)
+            }
         };
         match holds {
             true => self.sized(target).map(Some),
@@ -1899,6 +1924,22 @@ impl Heard {
             && self.spec.channel_count() == read.spec.channel_count()
             && self.speakers.held_by(read.speakers)
     }
+}
+
+fn holds_the_bytes(path: &Path, key: VaultKey) -> io::Result<bool> {
+    let mut digest = Digest::default();
+    let mut file = File::open(path)?;
+    let mut buffer = vec![0_u8; COPY_BYTES];
+
+    loop {
+        let read = file.read(&mut buffer)?;
+
+        if read == 0 {
+            break;
+        }
+        digest.note(&buffer[..read]);
+    }
+    Ok(digest.settled() == key)
 }
 
 fn holds_the_sound(target: &Path, form: Form, heard: &Heard) -> bool {

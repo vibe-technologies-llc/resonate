@@ -34,9 +34,12 @@ engine, library, `ureq` (CI `refuse`).
   declares what went in, never on its size alone** (`standing_holding`, `holds_the_sound`): a FLAC's
   STREAMINFO (`standing::of_a_flac`: rate, channels, frames and the samples' MD5), a packed WAVE's
   RIFF header (`standing::of_a_packed_wave`: rate, channels, frames), a kept object's size against
-  the staged copy of the same bytes. One that does not hold it is no dedup hit: the import encodes,
-  validates and lands over it (warned)
-  (`an_object_under_the_key_that_holds_something_else_is_not_taken_for_it`).
+  the staged copy of the same bytes and then the MD5 of the whole standing file against the key its
+  name carries (`holds_the_bytes`, the digest `Vault::verify` reads a kept object by, run under the
+  landing lock, so only a dedup hit pays a read). One that does not hold it is no dedup hit: the
+  import encodes, validates and lands over it (warned)
+  (`an_object_under_the_key_that_holds_something_else_is_not_taken_for_it`,
+  `a_kept_object_damaged_to_the_same_length_gives_way_to_the_verified_copy_of_a_second_import`).
 - **A stream that turns rate or channel count is kept as it came.** FLAC's STREAMINFO and a WAVE's
   `fmt ` name one shape, so `flac::encode` and `wave::tally` read without following format changes
   and a turn is `codec::Error::FormatChanged`; `Vault::keep` answers it by taking the source again
@@ -299,8 +302,15 @@ caller takes (window, `mpris::art::Pictures`, the tag writer's picture, the phon
 `dependencies.md` forbids an image crate in `resonate-ui`. The one place a cover leaves the vault is
 `picture`, so no reader sees the JXL form.
 
-A cover already under its key is a dedup hit sized from its head, read in chunks off the file
-(`cover::size_of_file`), never the whole file. A cover decodes through `resonate_codec::decode_cover`
+**A cover already under its key is a dedup hit only where it still holds the cover handed in**
+(`standing_cover`, over every extension under the key, the first that holds it taken): one kept as
+it came is the very bytes; a transcoded JXL reconstructs the very JPEG; a pixel-lossless JXL renders
+the cover's own pixels (`cover::drawn_as`, which takes the same samples in another layout, an older
+build's opaque alpha, as held, and fewer bits as not). Anything else, a readable head over damaged
+data included, is warned and kept again, landing over a form of the same extension
+(`a_stored_cover_damaged_behind_a_readable_head_is_kept_again_and_an_intact_one_is_left_alone`).
+The whole file is read and, for a pixel-lossless JXL, both pictures decoded, which only an album the
+vault lacks a cover for pays. A cover decodes through `resonate_codec::decode_cover`
 (sides within `LARGEST_COVER_SIDE`, at most `COVERS_DECODED_AT_ONCE` at a time, the window's
 drawing included), so a burst of imports holds a bounded number of decoded pictures. **Drawn once a
 run**: `Drawings` holds the PNG under the cover's key, evicting past `DRAWN_BYTES_AT_MOST` (48 MiB);

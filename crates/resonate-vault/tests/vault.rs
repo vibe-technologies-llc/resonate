@@ -7,6 +7,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU32, Ordering},
     },
+    time::{Duration, SystemTime},
 };
 
 use resonate_codec::{
@@ -841,6 +842,55 @@ fn a_sixty_four_bit_float_copy_differing_past_a_single_float_is_refused() {
 }
 
 #[test]
+fn a_kept_object_damaged_to_the_same_length_gives_way_to_the_verified_copy_of_a_second_import() {
+    let tree = Tree::new();
+    let samples = double_precision(&signal(FRAMES));
+    let sources = Sources::local();
+    let vault = tree.vault();
+
+    let location = MediaLocation::local(tree.write("doubled.wav", &sixty_four_bit_float(&samples)));
+    let first = kept(&vault, &sources, &location);
+    let whole = fs::read(&first.path).expect("the kept object");
+
+    let mut damaged = whole.clone();
+
+    let middle = damaged.len() / 2;
+
+    for byte in &mut damaged[middle..middle + 64] {
+        *byte ^= 0x5a;
+    }
+    fs::write(&first.path, &damaged).expect("a damaged object");
+
+    assert_eq!(first.form, Form::Kept);
+    assert!(
+        !vault
+            .verify(&first.path, Form::Kept)
+            .expect("a readable object")
+    );
+
+    let again = kept(&vault, &sources, &location);
+
+    assert!(
+        !again.deduped,
+        "an object of the same length was taken as a dedup hit"
+    );
+    assert_eq!(again.key, first.key);
+    assert_eq!(again.path, first.path);
+    assert_eq!(fs::read(&again.path).expect("the kept object"), whole);
+    assert!(
+        vault
+            .verify(&again.path, Form::Kept)
+            .expect("a verified object")
+    );
+    assert_eq!(stagings(&vault), 0);
+
+    let intact = kept(&vault, &sources, &location);
+
+    assert!(intact.deduped);
+    assert_eq!(intact.path, first.path);
+}
+
+#[test]
 fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
     let tree = Tree::new();
     let samples = signal(FRAMES);
@@ -1124,6 +1174,90 @@ fn a_transcoded_cover_with_one_bit_flipped_or_cut_short_no_longer_reads_back() {
 
     assert!(vault.verify_cover(&held.path).expect("a readable file"));
     assert_eq!(vault.picture(&held.path).expect("a cover"), art);
+}
+
+fn sized_by_its_head(bytes: &[u8], extension: &str) -> (u32, u32) {
+    if extension != "jxl" {
+        return image::ImageReader::new(Cursor::new(bytes))
+            .with_guessed_format()
+            .expect("a guessed format")
+            .into_dimensions()
+            .expect("a readable head");
+    }
+
+    let mut reading = jxl_oxide::JxlImage::builder().build_uninit();
+
+    reading.feed_bytes(bytes).expect("a readable head");
+    match reading.try_init().expect("a readable head") {
+        jxl_oxide::InitializeResult::Initialized(picture) => (picture.width(), picture.height()),
+        jxl_oxide::InitializeResult::NeedMoreData(_) => panic!("a head cut short"),
+    }
+}
+
+#[test]
+fn a_stored_cover_damaged_behind_a_readable_head_is_kept_again_and_an_intact_one_is_left_alone() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+    let long_ago = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+
+    for (art, extension) in [
+        (photographed(16, 16), "jpg"),
+        (landscape(320, 240, 85), "jxl"),
+        (picture(33, 21), "jxl"),
+    ] {
+        let held = vault.keep_cover(&art).expect("a kept cover");
+        let whole = fs::read(&held.path).expect("the kept cover");
+
+        let mut damaged = whole.clone();
+
+        let at = damaged.len() * 3 / 4;
+
+        damaged[at] ^= 0x10;
+        fs::write(&held.path, &damaged).expect("a damaged cover");
+
+        assert_eq!(
+            held.path.extension().and_then(|held| held.to_str()),
+            Some(extension)
+        );
+        assert_eq!(
+            sized_by_its_head(&damaged, extension),
+            (held.width, held.height)
+        );
+
+        let again = vault.keep_cover(&art).expect("a kept cover");
+
+        assert!(
+            !again.deduped,
+            "a damaged cover was taken as a dedup hit: {}",
+            held.path.display()
+        );
+        assert_eq!(again.path, held.path);
+        assert_eq!((again.width, again.height), (held.width, held.height));
+        assert_eq!(fs::read(&again.path).expect("the kept cover"), whole);
+        assert!(vault.verify_cover(&again.path).expect("a readable cover"));
+
+        fs::OpenOptions::new()
+            .write(true)
+            .open(&again.path)
+            .and_then(|file| file.set_modified(long_ago))
+            .expect("a cover dated long ago");
+
+        let intact = vault.keep_cover(&art).expect("a kept cover");
+
+        assert!(intact.deduped);
+        assert_eq!(intact.path, held.path);
+        assert_eq!((intact.width, intact.height), (held.width, held.height));
+        assert_eq!(
+            fs::metadata(&intact.path)
+                .and_then(|held| held.modified())
+                .expect("a dated cover"),
+            long_ago,
+            "an intact cover was written again"
+        );
+    }
+
+    assert_eq!(vault.holding().expect("a counted vault").covers, 3);
+    assert_eq!(stagings(&vault), 0);
 }
 
 #[test]
