@@ -711,6 +711,92 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   setting through the insertion. Done when Add to Queue and Play Next populate an empty
   queue without toggling shuffle off.
 
+## Providers and network
+- [M · 0.17.1] Check that a stream still names the same file after a rewind.
+  **Medium, builder.** The reader keeps the first answer's length and validator, but
+  reopening at byte zero skips the identity check used for other offsets
+  (`crates/resonate-fetch/src/seeking.rs:58`, `:111`,
+  `crates/resonate-fetch/src/ranged.rs:192`). Some codec probes rewind the source before
+  reading it again (`crates/resonate-codec/src/prescan.rs:84`, `:173`). Check the known
+  representation on a reopen at every offset. Done when rewinding after a server-side
+  replacement with a different ETag reports a changed stream and an unchanged file still
+  plays from the start.
+- [M · 0.17.1] Check a saved download's validator before appending a resumed answer.
+  **Medium, builder.** The saved-part path checks the returned offset and total, then
+  adopts the answer's validator even when it conflicts with the saved one. The phone
+  retains the prefix and records the new validator
+  (`crates/resonate-fetch/src/ranged.rs:259`, `:275`,
+  `crates/resonate-mobile/src/downloads.rs:1138`,
+  `crates/resonate-mobile/src/partials.rs:185`). Reuse the in-process identity check
+  before handing a partial response to the caller. Done when a same-length response
+  carrying a conflicting strong ETag causes the provider to restart from byte zero,
+  while a matching partial still appends.
+- [M · 0.17.1] Ask for uncoded audio from the first seekable HTTP request.
+  **Medium, architect.** The first Jellyfin, native TIDAL FLAC and relayed hifi stream
+  requests can negotiate gzip while later requests for the same reader ask for identity
+  coding. The decoded first response then has no known length, which disables seeking, and can
+  supply a validator that conflicts with the identity-coded range response
+  (`crates/providers/jellyfin/src/lib.rs:270`, `:728`,
+  `crates/providers/tidal/src/played.rs:202`,
+  `crates/providers/tidal/src/hifi_served.rs:197`,
+  `crates/resonate-fetch/src/ranged.rs:149`,
+  `crates/resonate-providers/src/in_place.rs:275`). Use the same coding on the initial and
+  reopened requests. Done when provider tests with a server that offers gzip see identity
+  on both requests, and the reader knows the uncoded length and returns the expected bytes
+  after a seek.
+- [M · 0.17.1] Bound name resolution for HTTP downloads and streams.
+  **Medium, builder.** The download agent starts its connect and response timers after
+  resolving the host. Without a resolution timeout, ureq's default resolver waits on the
+  system lookup and a reopened reader can stay occupied while the lookup is stuck
+  (`crates/resonate-fetch/src/agents.rs:44`, `:63`). Set a resolution budget using
+  the HTTP client's resolver API. Done when an injected slow resolver puts an upper
+  bound on a new request and does the same on reopen, while a download making progress
+  can still take longer than the resolution budget.
+- [S · 0.17.1] Apply the download stall limit to body reads.
+  **Medium, builder.** The connector caps every input wait, so the hifi relay's
+  configured 60-second response-header window ends after the 30-second body silence
+  limit on a quiet connection (`crates/resonate-fetch/src/stall.rs:32`, `:52`,
+  `crates/providers/tidal/src/hifi.rs:33`, `:379`). Keep the response phase's
+  configured limit and apply the idle cap to the body phase. Done when a first
+  response between the shorter and longer deadlines can open, and a body that goes
+  quiet still trips the shorter deadline.
+- [M · 0.17.1] Validate the complete byte interval on a partial HTTP response.
+  **Medium, builder.** The range reader checks only the starting offset and reads
+  the slash suffix as a total, so a response with inconsistent range bounds can
+  be combined into a stream or a saved download
+  (`crates/resonate-fetch/src/ranged.rs:71`, `:180`, `:268`). Parse the response
+  range as one interval and check the bounds and body framing before treating the
+  answer as a valid continuation. Done when range tests reject inconsistent intervals
+  and still accept a server that returns a shorter valid interval.
+- [S · 0.17.1] Read retry dates against the current calendar.
+  **Low, builder.** A fixed cutoff for legacy two-digit years can map a future
+  date into the past. A malformed short asctime year is also accepted as an
+  ancient date, causing a prompt retry in place of the fallback delay
+  (`crates/resonate-fetch/src/waited.rs:23`, `:45`, `:68`). Validate the date
+  components and resolve legacy years using the supplied clock. Done when dates at
+  the legacy century boundary, a valid leap day and a malformed short year each
+  follow the HTTP date rules, and an invalid date leaves caller backoff in force.
+- [S · 0.17.1] Keep the type of an HTTP representation validator.
+  **Low, builder.** When a server supplies both an ETag and a modification date,
+  the reader takes the ETag and then compares that value with a bare date from a
+  later response. The switch in header kind can be misreported as a changed file
+  (`crates/resonate-fetch/src/ranged.rs:87`, `:130`,
+  `crates/resonate-providers/src/delivery.rs:49`). Compare validators of the same
+  kind and require sufficient evidence before using a date in `If-Range`.
+  Done when a valid date-validated continuation can supply its unchanged date
+  alongside a new ETag, a conflicting validator of the same kind is rejected,
+  and `If-Range` carries only strong validators.
+- [M · 0.17.1] Restart a MusicBrainz archive download after a stale partial fails.
+  **Low, builder.** The dump checksum protects installation, but a resumed answer
+  that fails verification after returning bytes ends the job. A whole answer
+  shorter than the held prefix can fail before verification and leave that
+  partial in place for the next attempt
+  (`crates/resonate-musicbrainz/src/download.rs:289`, `:331`, `:360`,
+  `crates/resonate-fetch/src/ranged.rs:201`). Retry once from zero when the
+  saved prefix is incompatible. Done when both cases complete with a new
+  verified archive from a valid whole response and a bad whole response still
+  fails checksum verification.
+
 ## Formats
 - [M · 0.17.1] Read Matroska bit depth from the selected audio track. **Medium, builder.**
   For streams without a coded depth supplied by the decoder, the prescan can lose the declaration

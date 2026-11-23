@@ -263,6 +263,19 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   installing on a stopped server leaves service startup to the operator.
 
 ## Providers and network
+- [S · 0.17.1] Prove that a provider can use a private certificate authority.
+  **Medium, builder.** The current assertion on the root count passes with only the
+  built-in roots (`crates/resonate-fetch/src/trust.rs:5`, `:48`,
+  `crates/resonate-fetch/src/agents.rs:50`). Use a deterministic private root and
+  verify the client policy through a local TLS handshake. Done when the system-plus-built-in
+  policy reaches a fixture server signed by that root and the built-in-only policy refuses it.
+- [S · 0.17.1] Pin the error kinds reported by HTTP transport failures.
+  **Low, builder.** The unit tests check away status for several failures but do
+  not pin the timeout and body-stall variants or most of their reader mappings
+  (`crates/resonate-fetch/src/failed.rs:16`, `:58`, `:76`). Cover the categories
+  the caller acts on. Done when a timeout or stalled body maps to `TimedOut`, a
+  refused certificate maps to `PermissionDenied` for a reader, and an invalid
+  response retains its separate classification.
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
   `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,
   `RESONATE_YTMUSIC_PLAYLIST`) has never been run: it lists an album song, reads the head of its best
