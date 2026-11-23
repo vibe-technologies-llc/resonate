@@ -1,10 +1,18 @@
-use std::{fs, io, path::Path};
+use std::{
+    fs::{self, File},
+    io,
+    path::Path,
+};
 
 #[cfg(unix)]
 use rustix::{
     fs::{CWD, RenameFlags, renameat_with},
     io::Errno,
 };
+
+#[cfg(unix)]
+const NO_EXCLUSIVE_RENAME_HERE: [Errno; 4] =
+    [Errno::INVAL, Errno::NOSYS, Errno::OPNOTSUPP, Errno::NOTSUP];
 
 #[cfg(windows)]
 pub(crate) fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
@@ -15,7 +23,7 @@ pub(crate) fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
 pub(crate) fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
     match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
         Ok(()) => Ok(()),
-        Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP) => linked_over_nothing(from, to),
+        Err(errno) if NO_EXCLUSIVE_RENAME_HERE.contains(&errno) => linked_over_nothing(from, to),
         Err(errno) => Err(errno.into()),
     }
 }
@@ -26,13 +34,25 @@ fn linked_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
         Err(error)
             if matches!(
                 error.kind(),
-                io::ErrorKind::AlreadyExists | io::ErrorKind::CrossesDevices
+                io::ErrorKind::AlreadyExists
+                    | io::ErrorKind::CrossesDevices
+                    | io::ErrorKind::NotFound
             ) =>
         {
             Err(error)
         }
-        Err(_) if fs::symlink_metadata(to).is_ok() => Err(io::ErrorKind::AlreadyExists.into()),
-        Err(_) => fs::rename(from, to),
+        Err(_) => renamed_onto_a_name_reserved(from, to),
+    }
+}
+
+fn renamed_onto_a_name_reserved(from: &Path, to: &Path) -> io::Result<()> {
+    File::create_new(to)?;
+    fs::rename(from, to).inspect_err(|_| reservation_given_back(to))
+}
+
+fn reservation_given_back(to: &Path) {
+    if let Err(error) = fs::remove_file(to) {
+        tracing::warn!(path = %to.display(), %error, "a name reserved for a move that did not land could not be given back");
     }
 }
 
@@ -98,6 +118,58 @@ mod tests {
 
         assert!(!from.exists());
         assert_eq!(fs::read(&to).expect("landed"), b"moving");
+    }
+
+    #[test]
+    fn a_move_with_no_link_to_reserve_its_name_refuses_a_destination_that_appeared_and_keeps_both()
+    {
+        let scratch = Scratch::new("reserved-refused");
+        let from = scratch.0.join("from.flac");
+        let to = scratch.0.join("to.flac");
+
+        fs::write(&from, b"moving").expect("written");
+        fs::write(&to, b"standing").expect("written");
+
+        let refused = renamed_onto_a_name_reserved(&from, &to);
+
+        assert_eq!(
+            refused.map_err(|error| error.kind()),
+            Err(io::ErrorKind::AlreadyExists)
+        );
+        assert_eq!(fs::read(&from).expect("still there"), b"moving");
+        assert_eq!(fs::read(&to).expect("still there"), b"standing");
+    }
+
+    #[test]
+    fn a_move_with_no_link_lands_on_the_name_it_reserved() {
+        let scratch = Scratch::new("reserved-landed");
+        let from = scratch.0.join("from.flac");
+        let to = scratch.0.join("to.flac");
+
+        fs::write(&from, b"moving").expect("written");
+
+        renamed_onto_a_name_reserved(&from, &to).expect("the move lands");
+
+        assert!(!from.exists());
+        assert_eq!(fs::read(&to).expect("landed"), b"moving");
+    }
+
+    #[test]
+    fn a_name_reserved_for_a_move_that_did_not_land_is_given_back() {
+        let scratch = Scratch::new("reserved-given-back");
+        let from = scratch.0.join("gone.flac");
+        let to = scratch.0.join("to.flac");
+
+        let refused = renamed_onto_a_name_reserved(&from, &to);
+
+        assert_eq!(
+            refused.map_err(|error| error.kind()),
+            Err(io::ErrorKind::NotFound)
+        );
+        assert!(
+            fs::symlink_metadata(&to).is_err(),
+            "the reserved name was left behind"
+        );
     }
 
     #[test]

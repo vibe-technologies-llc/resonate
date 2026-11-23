@@ -1823,8 +1823,8 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   it `.resonate-torn` and answers `codec::Error::WrittenBackPartway`. **A kept name is never taken
   from another writer:** a pid is not unique across pid namespaces (Flatpak), so a journal, whole or
   torn name may already stand. The journal is made `create_new` and the copy renamed without
-  replacing (`renamed_over_nothing`: `renameat2(RENAME_NOREPLACE)`, else a hard link then unlink, as
-  the library's); a name found taken is left as it stands and the next count tried
+  replacing (`renamed_over_nothing`: `renameat2(RENAME_NOREPLACE)`, else a hard link then
+  unlink); a name found taken is left as it stands and the next count tried
   (`under_a_fresh_name`, `NAMES_TRIED_AT_MOST` of them, then the write is refused as
   `AlreadyExists`), and only a file this writer made is removed when its own write fails, so what
   another writer kept stays for the sweep and the mend
@@ -2179,11 +2179,18 @@ guard and re-keys a sleeve-keyed album after moves land.
   each upward removing while empty, stopping at the first non-empty folder or the root,
   `deepest_first`.
 - **Files move before the catalog, in batches; an unfinishable batch is put back.** `apply`:
-  `MOVES_PER_BATCH` (256) at a time; cancel heard before each move. Per move: `standing` re-weigh
+  `MOVES_PER_BATCH` (256) at a time, cut by `batches` only between units (a unit is one move, or a
+  whole cycle, below); cancel heard before each unit, never inside one. Per move: `standing` re-weigh
   (vanished source `SourceGone`, destination now taken `Collided`), rename with sidecars, record in
   `done`. **Every rename refuses an existing name**: `unreplacing::renamed_over_nothing` is
-  `renameat2(RENAME_NOREPLACE)`, falling back to `hard_link` then unlink, then a checked `rename`
-  (also used by a delivery's filing and the drop-in); an unlink refused takes the new link back before
+  `renameat2(RENAME_NOREPLACE)` (`renameatx_np(RENAME_EXCL)` on a Mac, both through rustix; Windows begins at the link), where
+  the volume offers no such rename falling back to `hard_link` then unlink, and where it offers no
+  link either to a name reserved by `File::create_new` and renamed onto
+  (`renamed_onto_a_name_reserved`, the reservation given back if the move fails), never a name
+  checked and then renamed over, so a file appearing at the destination meanwhile is refused as
+  `AlreadyExists` and both stay
+  (`a_move_with_no_link_to_reserve_its_name_refuses_a_destination_that_appeared_and_keeps_both`;
+  also used by a delivery's filing and the drop-in); an unlink refused takes the new link back before
   its error is answered, so a move refused is never left under two names
   (`a_link_whose_source_cannot_be_unlinked_is_taken_back_and_the_source_left`). **A destination that is another hard link of
   the same file is no rename** (`another_link_of`): it lands as `Landing::Linked`, the source's name
@@ -2199,8 +2206,8 @@ guard and re-keys a sleeve-keyed album after moves land.
   deleting any `tracks`, lyric or `songs_received` row at the destination (path-keyed). **The undo and redo stacks follow too** (`undo::followed`, after the commit, from `Library::files_moved` and from the scan's move pairing): a step's `Held.rows` are the rows an edit took out, and a row removed before its file moved, then put back by an undo, would otherwise return under a path no file or row carries; a step another process offered is rewritten in `offered_step_rows` by the same transaction (`a_row_removed_and_then_followed_to_its_new_path_is_put_back_there_by_an_undo_and_a_redo`, `a_row_a_model_removed_and_the_catalog_then_followed_is_put_back_at_its_new_path`). The open queue follows: the
   window sends `Command::Relocate`, `resonate organise --apply` reaches every bus player via
   `org.resonate.Player1`'s `Relocate` (`mpris.md`); `Queue::relocate` follows each row through the
-  moves in landing order (`queue::landed_at`). A failing rename puts back only its own move's steps,
-  refused as `Refusal::Unmoved` with the volume's `io::ErrorKind`, batch going on. A failing catalog
+  moves in landing order (`queue::landed_at`). A failing rename puts back only its own unit's steps,
+  in reverse, refused as `Refusal::Unmoved` with the volume's `io::ErrorKind`, batch going on. A failing catalog
   write runs `put_back` over all of `done` in reverse; the whole batch counts `failed`. Files before
   catalog: a crash between leaves a moved file the next scan reconciles; the reverse would leave the
   catalog naming absent files.
@@ -2231,7 +2238,25 @@ guard and re-keys a sleeve-keyed album after moves land.
   its end, deepest first. **A cycle is broken through a parked name.** `parked_out_of_their_cycles`
   splits one cycle of single-file moves: its file goes first to `<stem>.resonate-parked-<pid>.<ext>`
   (`PARKED`) beside where it stood, then to its destination, so files filed under each other's names
-  trade places in one run. The catalog follows each step in the batch's one transaction.
+  trade places in one run. The catalog follows each step in the batch's one transaction. **A cycle
+  lands whole or not at all**: `parked_out_of_their_cycles` names each cycle's moves in landing
+  order (park, each move onto a name the one before freed, landing) and `each_cycle_together`
+  keeps them one run in the plan, so `unit_length` reads a unit from a move that parks to the move
+  out of its parked name (a walk back's reversed cycle the same; a park with no landing, as an
+  older note may hold, is a unit alone). `batches` never cuts a unit, a unit longer than a batch
+  being a batch alone, and a cancel is heard only between units. A refusal anywhere in the unit
+  (`standing`, a rename, its landing's sidecar) puts back every step it took in reverse
+  (`taken_back`): the file that failed is refused with its reason and every other `Collided` with
+  its destination (`unit_refused`), the parked name gone and the catalog untouched
+  (`a_swap_whose_landing_is_refused_puts_both_files_back_and_the_catalog_names_them_where_they_stood`,
+  `a_swap_a_cancel_reaches_once_it_has_begun_lands_whole_and_the_catalog_follows_both_files`,
+  `a_swap_beginning_at_a_batch_boundary_whose_catalog_write_is_refused_is_put_back_whole`). A step
+  that cannot be put back (a stranger took the name it left) stops the putting back there: the
+  steps before it stand, and the moves they carried land with the batch, so the catalog names each
+  file where it stands, a parked name included
+  (`a_swap_put_back_onto_a_name_a_stranger_took_keeps_what_stands_and_the_catalog_follows_it`). A
+  cycle crossing a volume is put back whole every time: a copy's source stands until the commit, so
+  the landing meets it at `standing`.
   `Move::parks` names the first half (listed by the preview, counted as moved by nothing). A run
   killed between rename and commit leaves a file the next scan follows by `moves::follow_the_moved`.
   A move leading into a cycle a unit sits in, and every move waiting on a row that stays, is still

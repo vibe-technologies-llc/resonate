@@ -1907,7 +1907,7 @@ impl<'a> Planner<'a> {
     }
 
     fn order_the_chains(&mut self) {
-        let asked = parked_out_of_their_cycles(mem::take(&mut self.moves));
+        let Parked { asked, cycles } = parked_out_of_their_cycles(mem::take(&mut self.moves));
         let mut waits = Vec::with_capacity(asked.len());
         let mut state = vec![Step::Unwalked; asked.len()];
 
@@ -1936,7 +1936,7 @@ impl<'a> Planner<'a> {
             }
         }
 
-        let order = walked(&waits, &mut state);
+        let order = each_cycle_together(&walked(&waits, &mut state), &cycles, asked.len());
         let mut held: Vec<Option<Planned>> = asked.into_iter().map(Some).collect();
         let mut moves = Vec::with_capacity(order.len());
 
@@ -2054,7 +2054,12 @@ impl<'a> Planner<'a> {
     }
 }
 
-fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
+struct Parked {
+    asked: Vec<Planned>,
+    cycles: Vec<Vec<usize>>,
+}
+
+fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Parked {
     let one_step: Vec<Option<usize>> = {
         let by_source: AHashMap<&Path, usize> = asked
             .iter()
@@ -2101,10 +2106,24 @@ fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
         }
     }
 
+    let mut cycles = Vec::with_capacity(broken.len());
+
     for at in broken {
         let Some(parking) = a_place_to_park(&asked[at].planned.from) else {
             continue;
         };
+
+        let mut members = vec![at];
+        let mut next = one_step[at];
+
+        while let Some(member) = next.filter(|member| *member != at) {
+            members.push(member);
+            next = one_step[member];
+        }
+        members[1..].reverse();
+        members.push(asked.len());
+        cycles.push(members);
+
         let held = &mut asked[at];
 
         let landing = Planned {
@@ -2122,7 +2141,41 @@ fn parked_out_of_their_cycles(mut asked: Vec<Planned>) -> Vec<Planned> {
         asked.push(landing);
     }
 
-    asked
+    Parked { asked, cycles }
+}
+
+fn each_cycle_together(order: &[usize], cycles: &[Vec<usize>], moves: usize) -> Vec<usize> {
+    let mut is_ordered = vec![false; moves];
+
+    for &at in order {
+        is_ordered[at] = true;
+    }
+
+    let mut cycle_of = vec![None; moves];
+
+    for (number, cycle) in cycles.iter().enumerate() {
+        if cycle.iter().all(|member| is_ordered[*member]) {
+            for &member in cycle {
+                cycle_of[member] = Some(number);
+            }
+        }
+    }
+
+    let mut placed = vec![false; cycles.len()];
+    let mut together = Vec::with_capacity(order.len());
+
+    for &at in order {
+        match cycle_of[at] {
+            None => together.push(at),
+            Some(number) if !placed[number] => {
+                placed[number] = true;
+                together.extend_from_slice(&cycles[number]);
+            }
+            Some(_) => {}
+        }
+    }
+
+    together
 }
 
 fn a_place_to_park(from: &Path) -> Option<PathBuf> {
@@ -2292,24 +2345,22 @@ fn apply(
     plan: &mut Plan,
     roots: &AHashSet<PathBuf>,
     progress: &OrganiseProgress,
-    mut noting: Noting,
+    noting: Noting,
 ) {
     let asked = mem::take(&mut plan.moves);
-    let mut landed = Vec::with_capacity(asked.len());
+    let cancelled = || progress.is_cancelled();
 
-    for batch in asked.chunks(MOVES_PER_BATCH) {
-        if progress.is_cancelled() {
-            break;
-        }
+    let applied = in_batches(
+        library,
+        &asked,
+        MOVES_PER_BATCH,
+        progress,
+        &cancelled,
+        noting,
+    );
+    let landed = applied.landed;
 
-        let applied = batch_moved(library, batch, progress, noting);
-
-        if !applied.landed.is_empty() {
-            noting = noting.past(applied.landed.len());
-        }
-        landed.extend(applied.landed);
-        plan.refused.extend(applied.refused);
-    }
+    plan.refused.extend(applied.refused);
 
     if !landed.is_empty()
         && let Err(error) = library.albums_re_keyed(&landed)
@@ -2324,15 +2375,80 @@ fn apply(
     plan.moves = landed;
 }
 
+fn in_batches(
+    library: &Library,
+    asked: &[Move],
+    at_most: usize,
+    progress: &OrganiseProgress,
+    cancelled: &dyn Fn() -> bool,
+    mut noting: Noting,
+) -> Applied {
+    let mut landed = Vec::with_capacity(asked.len());
+    let mut refused = Vec::new();
+
+    for batch in batches(asked, at_most) {
+        if cancelled() {
+            break;
+        }
+
+        let applied = batch_moved(library, batch, progress, cancelled, noting);
+
+        if !applied.landed.is_empty() {
+            noting = noting.past(applied.landed.len());
+        }
+        landed.extend(applied.landed);
+        refused.extend(applied.refused);
+    }
+
+    Applied { landed, refused }
+}
+
+fn unit_length(moves: &[Move]) -> usize {
+    let Some(first) = moves.first() else {
+        return 0;
+    };
+
+    if !first.parks() {
+        return 1;
+    }
+
+    moves
+        .iter()
+        .position(|planned| planned.from == first.to)
+        .map_or(1, |landing| landing + 1)
+}
+
+fn batches(moves: &[Move], at_most: usize) -> Vec<&[Move]> {
+    let mut batches = Vec::new();
+    let mut start = 0;
+    let mut at = 0;
+
+    while at < moves.len() {
+        let next = at + unit_length(&moves[at..]);
+
+        if at > start && next - start > at_most {
+            batches.push(&moves[start..at]);
+            start = at;
+        }
+        at = next;
+    }
+    if start < moves.len() {
+        batches.push(&moves[start..]);
+    }
+
+    batches
+}
+
 fn batch_moved(
     library: &Library,
     batch: &[Move],
     progress: &OrganiseProgress,
+    cancelled: &dyn Fn() -> bool,
     noting: Noting,
 ) -> Applied {
     let mut made: Vec<PathBuf> = Vec::new();
 
-    let applied = batch_landing(library, batch, progress, noting, &mut made);
+    let applied = batch_landing(library, batch, progress, cancelled, noting, &mut made);
 
     take_back_the_empty(&made);
     applied
@@ -2342,36 +2458,38 @@ fn batch_landing(
     library: &Library,
     batch: &[Move],
     progress: &OrganiseProgress,
+    cancelled: &dyn Fn() -> bool,
     noting: Noting,
     made: &mut Vec<PathBuf>,
 ) -> Applied {
     let mut done: Vec<Renamed> = Vec::new();
     let mut landed: Vec<Move> = Vec::new();
     let mut refused: Vec<Refused> = Vec::new();
+    let mut rest = batch;
 
-    for planned in batch {
-        if progress.is_cancelled() {
+    while !rest.is_empty() {
+        if cancelled() {
             break;
         }
-        if let Some(refusal) = standing(planned) {
-            refused.push(refused_now(progress, planned, refusal));
-            continue;
-        }
 
-        let planned = &with_the_sidecars_that_can_go(planned);
+        let (unit, after) = rest.split_at(unit_length(rest));
+
+        rest = after;
+
         let mark = done.len();
-        match renamed_onto(library, planned, &mut done, made) {
-            Ok(()) => landed.push(planned.clone()),
-            Err(error) => {
-                tracing::warn!(%error, "a track could not be moved and was put back where it stood");
-                put_back(&done[mark..]);
-                done.truncate(mark);
+        match unit_landed(library, unit, &mut done, made) {
+            Ok(moved) => landed.extend(moved),
+            Err(stopped) => {
+                let standing = taken_back(&mut done, mark, stopped.begun);
 
-                let refusal = Refusal::Unmoved {
-                    kind: moved_how(&error),
-                };
-
-                refused.push(refused_now(progress, planned, refusal));
+                refused.extend(unit_refused(
+                    progress,
+                    unit,
+                    stopped.at,
+                    stopped.refusal,
+                    standing.len(),
+                ));
+                landed.extend(standing);
             }
         }
     }
@@ -2407,6 +2525,117 @@ fn batch_landing(
 
     progress.moved.fetch_add(files as u64, Ordering::Relaxed);
     Applied { landed, refused }
+}
+
+struct Begun {
+    planned: Move,
+    first_step: usize,
+}
+
+impl Begun {
+    fn landed_up_to(self, steps_standing: usize) -> Option<Move> {
+        let steps = steps_standing
+            .checked_sub(self.first_step)
+            .filter(|steps| *steps > 0)?;
+        let mut planned = self.planned;
+
+        let files = 1 + planned.companions.len();
+
+        planned.companions.truncate(steps.min(files) - 1);
+        planned.sidecars.truncate(steps.saturating_sub(files));
+        Some(planned)
+    }
+}
+
+struct Stopped {
+    at: usize,
+    refusal: Refusal,
+    begun: Vec<Begun>,
+}
+
+fn unit_landed(
+    library: &Library,
+    unit: &[Move],
+    done: &mut Vec<Renamed>,
+    made: &mut Vec<PathBuf>,
+) -> std::result::Result<Vec<Move>, Stopped> {
+    let mut begun: Vec<Begun> = Vec::with_capacity(unit.len());
+
+    for (at, planned) in unit.iter().enumerate() {
+        if let Some(refusal) = standing(planned) {
+            return Err(Stopped { at, refusal, begun });
+        }
+
+        let planned = with_the_sidecars_that_can_go(planned);
+        let first_step = done.len();
+        let renamed = renamed_onto(library, &planned, done, made);
+
+        begun.push(Begun {
+            planned,
+            first_step,
+        });
+        if let Err(error) = renamed {
+            tracing::warn!(%error, "a track could not be moved, so what its move began is put back");
+            return Err(Stopped {
+                at,
+                refusal: Refusal::Unmoved {
+                    kind: moved_how(&error),
+                },
+                begun,
+            });
+        }
+    }
+
+    Ok(begun.into_iter().map(|begun| begun.planned).collect())
+}
+
+fn taken_back(done: &mut Vec<Renamed>, mark: usize, begun: Vec<Begun>) -> Vec<Move> {
+    let standing = mark + still_standing_after_putting_back(&done[mark..]);
+
+    done.truncate(standing);
+    begun
+        .into_iter()
+        .filter_map(|begun| begun.landed_up_to(standing))
+        .collect()
+}
+
+fn unit_refused(
+    progress: &OrganiseProgress,
+    unit: &[Move],
+    stopped_at: usize,
+    refusal: Refusal,
+    landed: usize,
+) -> Vec<Refused> {
+    let last = unit.len() - 1;
+    let is_a_cycle = last > 0;
+
+    let carrier = |member: usize| {
+        if is_a_cycle && member == 0 {
+            last
+        } else {
+            member
+        }
+    };
+    let failed = if is_a_cycle && stopped_at == last {
+        0
+    } else {
+        stopped_at
+    };
+
+    (0..last.max(1))
+        .filter(|member| carrier(*member) >= landed)
+        .map(|member| {
+            let refusal = if member == failed {
+                refusal.clone()
+            } else {
+                Refusal::Collided {
+                    with: unit[carrier(member)].to.clone(),
+                }
+            };
+
+            refused_now(progress, &unit[member], refusal)
+        })
+        .collect()
 }
 
 fn moved_how(error: &Error) -> io::ErrorKind {
@@ -3036,28 +3265,44 @@ fn take_back_the_empty(made: &[PathBuf]) {
 
 fn put_back(done: &[Renamed]) {
     for step in done.iter().rev() {
-        let (op, taken) = match step.how {
-            Landing::Renamed => (
-                MoveOp::Rename,
-                unreplacing::renamed_over_nothing(&step.to, &step.from),
-            ),
-            Landing::Copied => (MoveOp::Discard, fs::remove_file(&step.to)),
-            Landing::Linked => continue,
-        };
-        if let Err(source) = taken {
-            let error = Error::Move {
-                op,
-                path: step.to.clone(),
-                source,
-            };
+        let _ = put_back_one(step);
+    }
+}
 
-            tracing::error!(
-                %error,
-                stood = %step.from.display(),
-                "a file this run moved is not back where it stood"
-            );
+fn still_standing_after_putting_back(done: &[Renamed]) -> usize {
+    for (at, step) in done.iter().enumerate().rev() {
+        if !put_back_one(step) {
+            return at + 1;
         }
     }
+    0
+}
+
+fn put_back_one(step: &Renamed) -> bool {
+    let (op, taken) = match step.how {
+        Landing::Renamed => (
+            MoveOp::Rename,
+            unreplacing::renamed_over_nothing(&step.to, &step.from),
+        ),
+        Landing::Copied => (MoveOp::Discard, fs::remove_file(&step.to)),
+        Landing::Linked => return true,
+    };
+    let Err(source) = taken else {
+        return true;
+    };
+
+    let error = Error::Move {
+        op,
+        path: step.to.clone(),
+        source,
+    };
+
+    tracing::error!(
+        %error,
+        stood = %step.from.display(),
+        "a file this run moved is not back where it stood"
+    );
+    false
 }
 
 fn settle(landed: &[Move], made: &[PathBuf]) {
@@ -5617,7 +5862,7 @@ mod tests {
     }
 
     #[test]
-    fn a_cancel_is_heard_between_the_moves_of_a_batch() {
+    fn a_cancel_is_heard_before_the_first_move_of_a_batch() {
         let folder = env::temp_dir().join(format!("resonate-cancelled-{}", std::process::id()));
 
         fs::create_dir_all(&folder).expect("a writable temporary folder");
@@ -5638,12 +5883,353 @@ mod tests {
 
         progress.cancel();
 
-        let applied = batch_moved(&library, &batch, &progress, Noting::Not);
+        let applied = batch_moved(
+            &library,
+            &batch,
+            &progress,
+            &|| progress.is_cancelled(),
+            Noting::Not,
+        );
 
         assert!(applied.landed.is_empty());
         assert!(applied.refused.is_empty());
         assert!(from.exists(), "a move began after the run was cancelled");
 
         let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn a_swap_is_planned_as_one_run_of_moves_though_a_track_was_planned_between_its_halves() {
+        let folder = a_folder_of_its_own();
+
+        fs::create_dir_all(folder.join("Meddle")).expect("a writable temporary directory");
+        for named in ["Echoes", "Fearless", "Seamus"] {
+            fs::write(folder.join(format!("Meddle/{named}.wav")), b"held")
+                .expect("a writable temporary file");
+        }
+
+        let mut one = row(1, "");
+
+        one.root = folder.clone();
+        one.path = folder.join("Meddle/Echoes.wav");
+        one.title = "Fearless".to_owned();
+
+        let mut other = row(2, "");
+
+        other.root = folder.clone();
+        other.path = folder.join("Meddle/Fearless.wav");
+        other.title = "Echoes".to_owned();
+
+        let mut third = row(3, "");
+
+        third.root = folder.clone();
+        third.path = folder.join("Meddle/Seamus.wav");
+        third.title = "San Tropez".to_owned();
+
+        let (plan, _) = preview(
+            &[one.clone(), other.clone(), third.clone()],
+            "{album}/{title}",
+        );
+
+        let parked = folder.join(format!("Meddle/Echoes.{PARKED}-{}.wav", process::id()));
+        let steps: Vec<(PathBuf, PathBuf)> = plan
+            .moves
+            .iter()
+            .map(|planned| (planned.from.clone(), planned.to.clone()))
+            .collect();
+
+        assert_eq!(
+            steps,
+            vec![
+                (one.path.clone(), parked.clone()),
+                (other.path.clone(), one.path.clone()),
+                (parked, other.path.clone()),
+                (third.path.clone(), folder.join("Meddle/San Tropez.wav")),
+            ]
+        );
+        assert_eq!(unit_length(&plan.moves), 3);
+        assert_eq!(unit_length(&plan.moves[3..]), 1);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    fn moving(from: &Path, to: &Path) -> Move {
+        Move {
+            from: from.to_path_buf(),
+            to: to.to_path_buf(),
+            rows: 1,
+            companions: Vec::new(),
+            sidecars: Vec::new(),
+        }
+    }
+
+    struct Swap {
+        one: PathBuf,
+        other: PathBuf,
+        parked: PathBuf,
+        moves: Vec<Move>,
+    }
+
+    fn a_swap_in(folder: &Path) -> Swap {
+        let one = folder.join("one.wav");
+        let other = folder.join("other.wav");
+
+        fs::write(&one, b"one").expect("a writable file");
+        fs::write(&other, b"other").expect("a writable file");
+
+        let parked = a_place_to_park(&one).expect("a free name to park under");
+        let moves = vec![
+            moving(&one, &parked),
+            moving(&other, &one),
+            moving(&parked, &other),
+        ];
+
+        Swap {
+            one,
+            other,
+            parked,
+            moves,
+        }
+    }
+
+    fn listed(library: &Library, paths: &[&Path]) -> PlaylistId {
+        let cuts: Vec<crate::Cut> = paths
+            .iter()
+            .map(|path| crate::Cut::whole(MediaLocation::local(path)))
+            .collect();
+
+        library
+            .start_playlist("Evening", &cuts)
+            .expect("a playlist naming the files")
+    }
+
+    fn holds(path: &Path) -> Vec<u8> {
+        fs::read(path).unwrap_or_default()
+    }
+
+    #[test]
+    fn a_swap_a_cancel_reaches_once_it_has_begun_lands_whole_and_the_catalog_follows_both_files() {
+        let folder = a_folder_of_its_own();
+        let swap = a_swap_in(&folder);
+        let lone = folder.join("lone.wav");
+        let filed = folder.join("Filed/lone.wav");
+
+        fs::write(&lone, b"lone").expect("a writable file");
+
+        let batch: Vec<Move> = swap
+            .moves
+            .iter()
+            .cloned()
+            .chain([moving(&lone, &filed)])
+            .collect();
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let id = listed(&library, &[&swap.one, &swap.other, &lone]);
+        let progress = OrganiseProgress::default();
+        let cancelled = || holds(&swap.one) != b"one";
+
+        let applied = batch_moved(&library, &batch, &progress, &cancelled, Noting::Not);
+
+        assert_eq!(applied.landed, swap.moves);
+        assert!(applied.refused.is_empty(), "{:?}", applied.refused);
+        assert_eq!(holds(&swap.one), b"other");
+        assert_eq!(holds(&swap.other), b"one");
+        assert!(!swap.parked.exists(), "the swap stopped at its parked name");
+        assert!(lone.exists(), "a move began after the cancel was heard");
+        assert!(!filed.exists());
+        assert_eq!(
+            paths_of(&library, id),
+            [swap.other.clone(), swap.one.clone(), lone]
+        );
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_swap_whose_landing_is_refused_puts_both_files_back_and_the_catalog_names_them_where_they_stood()
+     {
+        let folder = a_folder_of_its_own();
+        let mut swap = a_swap_in(&folder);
+        let lyrics = folder.join("one.lrc");
+
+        fs::write(&lyrics, b"lyrics").expect("a writable file");
+        swap.moves[2].sidecars.push(Sidecar {
+            from: lyrics.clone(),
+            to: folder.join("Nowhere/other.lrc"),
+        });
+
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+        let id = listed(&library, &[&swap.one, &swap.other]);
+        let progress = OrganiseProgress::default();
+
+        let applied = batch_moved(&library, &swap.moves, &progress, &|| false, Noting::Not);
+
+        assert!(applied.landed.is_empty(), "{:?}", applied.landed);
+        assert_eq!(
+            applied.refused,
+            vec![
+                Refused {
+                    from: swap.one.clone(),
+                    refusal: Refusal::Unmoved {
+                        kind: io::ErrorKind::NotFound
+                    },
+                },
+                Refused {
+                    from: swap.other.clone(),
+                    refusal: Refusal::Collided {
+                        with: swap.one.clone()
+                    },
+                },
+            ]
+        );
+        assert_eq!(holds(&swap.one), b"one");
+        assert_eq!(holds(&swap.other), b"other");
+        assert_eq!(holds(&lyrics), b"lyrics");
+        assert!(!swap.parked.exists(), "the parked name was left standing");
+        assert_eq!(
+            paths_of(&library, id),
+            [swap.one.clone(), swap.other.clone()]
+        );
+        assert_eq!(progress.snapshot().failed, 1);
+        assert_eq!(progress.snapshot().collided, 1);
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_unit_is_never_cut_by_a_batch_boundary_and_one_longer_than_a_batch_is_a_batch_alone() {
+        let single = |name: &str| moving(Path::new(name), Path::new("/music/Filed/x.flac"));
+        let swap = a_swap_in_name_only();
+
+        let moves: Vec<Move> = [single("/music/a.flac"), single("/music/b.flac")]
+            .into_iter()
+            .chain(swap.iter().cloned())
+            .chain([single("/music/c.flac")])
+            .collect();
+
+        let lengths = |at_most: usize| -> Vec<usize> {
+            batches(&moves, at_most)
+                .into_iter()
+                .map(<[Move]>::len)
+                .collect()
+        };
+
+        assert_eq!(lengths(3), vec![2, 3, 1]);
+        assert_eq!(lengths(5), vec![5, 1]);
+        assert_eq!(lengths(2), vec![2, 3, 1]);
+        assert_eq!(lengths(1), vec![1, 1, 3, 1]);
+        assert_eq!(lengths(256), vec![6]);
+    }
+
+    fn a_swap_in_name_only() -> Vec<Move> {
+        let one = Path::new("/music/one.flac");
+        let other = Path::new("/music/other.flac");
+        let parked = PathBuf::from(format!("/music/one.{PARKED}-{}.flac", process::id()));
+
+        vec![
+            moving(one, &parked),
+            moving(other, one),
+            moving(&parked, other),
+        ]
+    }
+
+    #[test]
+    fn a_swap_beginning_at_a_batch_boundary_whose_catalog_write_is_refused_is_put_back_whole() {
+        let folder = a_folder_of_its_own();
+        let swap = a_swap_in(&folder);
+        let lone = folder.join("lone.wav");
+        let filed = folder.join("Filed/lone.wav");
+
+        fs::write(&lone, b"lone").expect("a writable file");
+
+        let asked: Vec<Move> = iter::once(moving(&lone, &filed))
+            .chain(swap.moves.iter().cloned())
+            .collect();
+        let database = folder.join("library.db");
+        let library = Library::open(&database).expect("a catalog on disk");
+        let id = listed(&library, &[&swap.one, &swap.other, &lone]);
+
+        Connection::open(&database)
+            .expect("the catalog beside")
+            .execute_batch(
+                "CREATE TRIGGER landing_refused BEFORE UPDATE OF path ON playlist_entries
+                 WHEN OLD.path LIKE '%resonate-parked%'
+                 BEGIN SELECT RAISE(ABORT, 'the catalog refuses the landing'); END",
+            )
+            .expect("the catalog takes a trigger");
+
+        let progress = OrganiseProgress::default();
+
+        let applied = in_batches(&library, &asked, 2, &progress, &|| false, Noting::Not);
+
+        assert_eq!(applied.landed, vec![moving(&lone, &filed)]);
+        assert_eq!(holds(&swap.one), b"one");
+        assert_eq!(holds(&swap.other), b"other");
+        assert!(!swap.parked.exists(), "the parked name was left standing");
+        assert_eq!(holds(&filed), b"lone");
+        assert_eq!(
+            paths_of(&library, id),
+            [swap.one.clone(), swap.other.clone(), filed]
+        );
+
+        drop(library);
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
+    }
+
+    #[test]
+    fn a_swap_put_back_onto_a_name_a_stranger_took_keeps_what_stands_and_the_catalog_follows_it() {
+        let folder = a_folder_of_its_own();
+        let swap = a_swap_in(&folder);
+        let library = Library::open_in_memory().expect("an in-memory catalog");
+
+        let id = listed(&library, &[&swap.one, &swap.other]);
+        let progress = OrganiseProgress::default();
+        let mut done = Vec::new();
+        let mut made = Vec::new();
+        let mut begun = Vec::new();
+
+        for planned in &swap.moves[..2] {
+            begun.push(Begun {
+                planned: planned.clone(),
+                first_step: done.len(),
+            });
+            renamed_onto(&library, planned, &mut done, &mut made).expect("a step of the swap");
+        }
+        fs::write(&swap.other, b"stranger").expect("a stranger's file");
+
+        let standing = taken_back(&mut done, 0, begun);
+        let refused = unit_refused(
+            &progress,
+            &swap.moves,
+            2,
+            Refusal::Collided {
+                with: swap.other.clone(),
+            },
+            standing.len(),
+        );
+
+        library
+            .files_moved(&standing, Noting::Not)
+            .expect("the catalog follows what stands");
+
+        assert_eq!(standing, swap.moves[..2]);
+        assert_eq!(done.len(), 2);
+        assert_eq!(
+            refused,
+            vec![Refused {
+                from: swap.one.clone(),
+                refusal: Refusal::Collided {
+                    with: swap.other.clone()
+                },
+            }]
+        );
+        assert_eq!(holds(&swap.parked), b"one");
+        assert_eq!(holds(&swap.one), b"other");
+        assert_eq!(holds(&swap.other), b"stranger");
+        assert_eq!(
+            paths_of(&library, id),
+            [swap.parked.clone(), swap.one.clone()]
+        );
+
+        fs::remove_dir_all(&folder).expect("the temporary folder goes away");
     }
 }
