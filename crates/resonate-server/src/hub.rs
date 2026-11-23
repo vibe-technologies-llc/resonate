@@ -186,6 +186,10 @@ impl Hub {
         }
     }
 
+    pub fn spaces_held(&self) -> Vec<SpaceId> {
+        self.spaces.lock().keys().copied().collect()
+    }
+
     pub fn tell_all(&self, space: SpaceId, notice: &Notice) {
         if let Some(present) = self.spaces.lock().get_mut(&space) {
             for device in present.values_mut() {
@@ -256,6 +260,29 @@ mod tests {
 
     fn address(port: u16) -> SocketAddr {
         SocketAddr::from(([203, 0, 113, 1], port))
+    }
+
+    #[test]
+    fn a_space_is_held_while_any_of_its_devices_is_here_and_let_go_once_the_last_leaves() {
+        let hub = Hub::default();
+        let other = SpaceId([4; 16]);
+
+        let desk = hub.join(SPACE, DESK, address(1), 16).expect("joined");
+        let phone = hub.join(SPACE, PHONE, address(2), 16).expect("joined");
+        let elsewhere = hub.join(other, DESK, address(3), 16).expect("joined");
+
+        let while_all_are_here = hub.spaces_held();
+
+        hub.leave(SPACE, DESK, desk.session);
+
+        let while_one_is_left = hub.spaces_held();
+
+        hub.leave(SPACE, PHONE, phone.session);
+        hub.leave(other, DESK, elsewhere.session);
+
+        assert_eq!(while_all_are_here, [SPACE, other]);
+        assert_eq!(while_one_is_left, [SPACE, other]);
+        assert!(hub.spaces_held().is_empty());
     }
 
     #[test]

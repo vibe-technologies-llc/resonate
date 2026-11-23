@@ -69,8 +69,30 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   0 with no parts, which is how `Stage` is written, is what a server before staging refuses `Stale`
   (`the_compaction_through_nothing_a_staging_is_asked_by_is_refused_as_stale_by_the_one_frame_form`).
 - **A space untouched for `--idle-days` (365) is swept** (checked hourly, or every thirtieth of the
-  limit if shorter). **A space never written to is swept after a day** (`Store::sweep_unused`:
-  `head` and `snapshot_through` both 0), so claims made by a script and abandoned do not pile up.
+  limit if shorter, `sweep_wait`). **The limit is at least a day**: `Limits::idle_days` is a
+  `NonZeroU64`, so clap refuses `--idle-days 0` before the store is opened and no caller of the
+  library can make the sweeper spin or sweep what was touched this second
+  (`a_retention_of_zero_days_is_refused_before_the_store_is_opened`,
+  `a_sweep_waits_a_thirtieth_of_the_idle_limit_and_never_more_than_an_hour`). **A space never
+  written to is swept once untouched for a day** (`Store::sweep_unused`: `head` and
+  `snapshot_through` both 0), so claims made by a script and abandoned do not pile up.
+- **Touched means used**: a claim, a view and `Heads` touch a space, and so does every write that
+  persists (`Store::append`, a compaction whole or staged, a staged part, `Store::close`, each taking
+  the time as `now`), so a device that stays connected and keeps writing is never swept
+  (`every_write_to_a_space_keeps_it_past_the_idle_limit_and_an_idle_one_is_still_swept`). **A space
+  a session holds is never swept, empty or not**: each sweep round first touches every space the
+  hub has a device in (`Hub::spaces_held`, `Store::touch`), so neither the idle nor the unused pass
+  takes a space out from under a live session, and a device connected to a space it has not written
+  yet keeps it; a script holding an empty space so costs a connection held open, which the
+  per-address limits bound, where one record would keep it for `--idle-days` anyway
+  (`a_space_a_session_holds_is_kept_by_both_sweeps_and_swept_once_let_go`). Where that touch fails
+  the round sweeps no space.
+- **A sweep round runs as the server opens, then after every wait** (`Server::sweep_once`), so a
+  staging a crash left is reclaimed at the restart rather than an hour on
+  (`a_staging_an_earlier_run_left_behind_is_reclaimed_as_the_server_opens`). **Every pass reports
+  its own outcome** (`Pass`: `Held`, `Staged`, `Unused`, `Idle`): what it took away is an info
+  line, a failure a warning naming the pass, so capacity charged to a stale staging is never held
+  without a word (`every_pass_of_a_sweep_that_fails_is_reported_by_name`).
 
 ## Sessions
 
@@ -110,6 +132,12 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 - **What a QUIC session said leaves before its connection goes**: dropping a `quinn::Connection`
   closes it at once and discards what its streams had not sent, so `welcome` waits up to
   `WHAT_WAS_SAID_LEAVES_WITHIN` (1 s) for the client to close first, and a `Refused` reaches it.
+- **A session's reader lives no longer than its session**: `read_ahead` hands back a
+  `ReadingAhead`, which aborts the reading task as it drops, so a session that ends on an error (a
+  failed store write, a failed send) stops its reader at once and gives back the frame bytes it
+  held, rather than leaving it to read on until the connection closes
+  (`a_reader_let_go_stops_and_gives_back_the_bytes_its_frame_held`,
+  `a_store_write_that_fails_ends_the_session_and_gives_back_the_bytes_its_reader_held`).
 - **A session or a room's member ends with what its client still sends read out**
   (`finished_with_nothing_unread`): the server finishes its side, then keeps taking the read-ahead's
   frames until the client closes, within `WHAT_WAS_SAID_LEAVES_WITHIN`, before it lets the reader go.
@@ -443,5 +471,8 @@ address and no inbound port is open. The old `sync.tecnio.dev` name is not serve
 store), `CAP_NET_BIND_SERVICE` for UDP 443 and the usual hardening; the certificate chain and key
 are handed in as systemd credentials from `/etc/resonate-server/fullchain.pem` and `privkey.pem`
 (a root-owned Let's Encrypt key a dynamic user could not read); `resonate-server.env` sets `LISTEN`,
-`RUST_LOG` and `SERVER_ARGS` (empty; `--config /etc/resonate-server/config.toml` turns the gateway on). SIGINT and SIGTERM close the endpoint and wait for it to go idle. The same directory holds the Arch and Fedora recipes that install the binary, the unit and
+`RUST_LOG` and `SERVER_ARGS` (empty; `--config /etc/resonate-server/config.toml` turns the gateway on). **The log is
+coloured only on a terminal**: `logs_in_colour` asks whether standard output is one and whether
+`NO_COLOR` is set, so the unit's journal holds plain levels and messages with no escapes
+(`what_the_server_logs_to_a_journal_carries_plain_levels_and_no_terminal_escapes`). SIGINT and SIGTERM close the endpoint and wait for it to go idle. The same directory holds the Arch and Fedora recipes that install the binary, the unit and
 `resonate-server.env` (`packaging.md`).

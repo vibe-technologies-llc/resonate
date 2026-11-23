@@ -51,6 +51,10 @@ fn client_trusting(certificate: CertificateDer<'static>) -> ClientConfig {
 }
 
 pub fn serving_with(limits: Limits) -> Serving {
+    serving_over(Store::in_memory().expect("a store"), limits)
+}
+
+pub fn serving_over(store: Store, limits: Limits) -> Serving {
     let signing = rcgen::KeyPair::generate().expect("a key");
     let certificate = rcgen::CertificateParams::new(vec!["localhost".to_owned()])
         .and_then(|params| params.self_signed(&signing))
@@ -61,7 +65,7 @@ pub fn serving_with(limits: Limits) -> Serving {
     let endpoint =
         listening(config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("listening");
     let address = endpoint.local_addr().expect("an address");
-    let server = Server::new(Store::in_memory().expect("a store"), limits);
+    let server = Server::new(store, limits);
 
     tokio::spawn(server.serve(endpoint));
 
@@ -112,14 +116,14 @@ pub async fn welcomed(serving: &Serving, device: u8) -> Session {
     }
 }
 
-async fn announce(send: &mut SendStream, length: u32) {
+pub async fn announce(send: &mut SendStream, length: u32) {
     send.write_all(&length.to_be_bytes())
         .await
         .expect("announced");
     send.write_all(&[0; 64]).await.expect("began");
 }
 
-async fn refused_with(recv: &mut RecvStream) -> Option<Refusal> {
+pub async fn refused_with(recv: &mut RecvStream) -> Option<Refusal> {
     while let Ok(Some(frame)) = read_frame(recv).await {
         if let Ok(FromServer::Refused(refusal)) = FromServer::decoded(&frame) {
             return Some(refusal);

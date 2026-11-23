@@ -1,5 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
+    num::NonZeroU64,
     path::Path,
     sync::{Arc, atomic::Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -22,7 +23,6 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{Semaphore, mpsc::Receiver},
-    task::JoinHandle,
     time::{Instant, interval, timeout},
 };
 
@@ -31,7 +31,7 @@ use crate::{
     guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice, notice_weight, relayed_weight},
     pages,
-    reading::{FrameBytes, Read, read_ahead, read_the_first},
+    reading::{FrameBytes, Read, ReadingAhead, read_ahead, read_the_first},
     relay::Bucket,
     rooms::{self, JoinedRoom, Leaving, RoomLimits, RoomNotice, Rooms},
     store::{Appended, CaughtUp, Claim, Closing, Compacted, Reading, Staged, StagingId, Store},
@@ -47,6 +47,9 @@ const A_PAGE_ASKED_AGAIN_AFTER: Duration = Duration::from_millis(5);
 const A_PAGE_ASKER_LEAVES_WITHIN: Duration = Duration::from_secs(2);
 const ASKED_BYTES_READ_OUT_AT_ONCE: usize = 4 * 1024;
 const LONGEST_SWEEP_WAIT: Duration = Duration::from_secs(60 * 60);
+const SWEEPS_AN_IDLE_SPAN: u64 = 30;
+const SECONDS_A_DAY: u64 = 24 * 60 * 60;
+const IDLE_DAYS_BY_DEFAULT: NonZeroU64 = NonZeroU64::new(365).unwrap();
 const UNUSED_SPACE_KEPT_FOR: i64 = 24 * 60 * 60;
 const WEB_HANDSHAKES_AT_ONCE: usize = 256;
 const WHAT_WAS_SAID_LEAVES_WITHIN: Duration = Duration::from_secs(1);
@@ -59,7 +62,7 @@ pub struct Limits {
     pub devices: usize,
     pub frames_per_minute: u32,
     pub relay_bytes_per_second: u64,
-    pub idle_for: Duration,
+    pub idle_days: NonZeroU64,
     pub allowance: Allowance,
     pub rooms: usize,
     pub room_members: usize,
@@ -83,6 +86,14 @@ struct Door {
     viewer: Option<[u8; 32]>,
     device: DeviceId,
     after: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Pass {
+    Held,
+    Unused,
+    Staged,
+    Idle,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -131,7 +142,7 @@ impl Default for Limits {
             devices: 16,
             frames_per_minute: 240,
             relay_bytes_per_second: 2 * 1024 * 1024,
-            idle_for: Duration::from_secs(365 * 24 * 60 * 60),
+            idle_days: IDLE_DAYS_BY_DEFAULT,
             allowance: Allowance::default(),
             rooms: 1024,
             room_members: 32,
@@ -289,36 +300,53 @@ impl Server {
     }
 
     async fn sweep(self: Arc<Self>) {
-        let wait = (self.limits.idle_for / 30).min(LONGEST_SWEEP_WAIT);
+        let wait = sweep_wait(self.limits.idle_days);
         loop {
-            tokio::time::sleep(wait).await;
-
-            let idle = i64::try_from(self.limits.idle_for.as_secs()).unwrap_or(i64::MAX);
-            let store = Arc::clone(&self.store);
-            let unused = Arc::clone(&self.store);
-            let _ = in_the_store(move || {
-                unused
-                    .lock()
-                    .sweep_unused(now().saturating_sub(UNUSED_SPACE_KEPT_FOR))
-            })
-            .await;
-
+            self.sweep_once().await;
             self.guard.forget_quiet_addresses();
-
-            let staged = Arc::clone(&self.store);
-            let _ = in_the_store(move || {
-                staged
-                    .lock()
-                    .sweep_staged(now().saturating_sub(A_STAGING_UNTOUCHED_IS_KEPT_FOR))
-            })
-            .await;
-            let swept = in_the_store(move || store.lock().sweep(now().saturating_sub(idle))).await;
-            match swept {
-                Ok(0) => {}
-                Ok(swept) => tracing::info!(swept, "spaces left untouched were swept away"),
-                Err(error) => tracing::warn!(%error, "the idle spaces could not be swept"),
-            }
+            tokio::time::sleep(wait).await;
         }
+    }
+
+    async fn sweep_once(&self) {
+        let idle = idle_seconds(self.limits.idle_days);
+        let held = self.hub.spaces_held();
+        let store = Arc::clone(&self.store);
+
+        let touched = in_the_store(move || store.lock().touch(&held, now())).await;
+        let staged = Arc::clone(&self.store);
+        let swept = in_the_store(move || {
+            staged
+                .lock()
+                .sweep_staged(now().saturating_sub(A_STAGING_UNTOUCHED_IS_KEPT_FOR))
+        })
+        .await;
+
+        reported(Pass::Staged, swept);
+
+        if let Err(error) = touched {
+            tracing::warn!(
+                pass = ?Pass::Held,
+                %error,
+                "the spaces sessions hold could not be marked, so no space is swept this round"
+            );
+            return;
+        }
+
+        let unused = Arc::clone(&self.store);
+        let swept = in_the_store(move || {
+            unused
+                .lock()
+                .sweep_unused(now().saturating_sub(UNUSED_SPACE_KEPT_FOR))
+        })
+        .await;
+
+        reported(Pass::Unused, swept);
+
+        let store = Arc::clone(&self.store);
+        let swept = in_the_store(move || store.lock().sweep(now().saturating_sub(idle))).await;
+
+        reported(Pass::Idle, swept);
     }
 
     async fn welcome(self: Arc<Self>, incoming: Incoming, admitted: Arc<Admitted>) -> Result<()> {
@@ -963,8 +991,12 @@ impl Server {
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
 
-        let appended =
-            in_the_store(move || store.lock().append(space, device, &blobs, space_bytes)).await?;
+        let appended = in_the_store(move || {
+            store
+                .lock()
+                .append(space, device, &blobs, space_bytes, now())
+        })
+        .await?;
         match appended {
             Appended::Full => refuse(send, Refusal::SpaceFull).await,
             Appended::Closed => self.told_it_closed(send, space).await,
@@ -986,8 +1018,12 @@ impl Server {
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
 
-        let compacted =
-            in_the_store(move || store.lock().compact(space, through, &parts, space_bytes)).await?;
+        let compacted = in_the_store(move || {
+            store
+                .lock()
+                .compact(space, through, &parts, space_bytes, now())
+        })
+        .await?;
         self.told_compacted(send, space, compacted).await
     }
 
@@ -1070,7 +1106,7 @@ impl Server {
         let compacted = in_the_store(move || {
             store
                 .lock()
-                .compact_staged(space, id, through, &parts, space_bytes)
+                .compact_staged(space, id, through, &parts, space_bytes, now())
         })
         .await?;
         self.told_compacted(send, space, compacted).await
@@ -1084,7 +1120,7 @@ impl Server {
         let store = Arc::clone(&self.store);
         let space_bytes = self.limits.space_bytes;
 
-        match in_the_store(move || store.lock().close(space, &sealed, space_bytes)).await? {
+        match in_the_store(move || store.lock().close(space, &sealed, space_bytes, now())).await? {
             Closing::Now(kept) => self.hub.tell_all(space, &Notice::Closed(kept)),
             Closing::Before(first) => {
                 send.send(&FromServer::Closed { sealed: first }.encoded())
@@ -1247,7 +1283,7 @@ impl Pace {
 async fn finished_with_nothing_unread(
     send: &mut Writer,
     mut frames: Receiver<Read>,
-    reading: JoinHandle<()>,
+    reading: ReadingAhead,
 ) {
     send.finish().await;
 
@@ -1256,7 +1292,7 @@ async fn finished_with_nothing_unread(
     })
     .await;
 
-    reading.abort();
+    drop(reading);
 }
 
 async fn refuse(send: &mut Writer, refusal: Refusal) -> Result<()> {
@@ -1270,6 +1306,23 @@ async fn in_the_store<T: Send + 'static>(
     tokio::task::spawn_blocking(work)
         .await
         .map_err(|_| Error::Worker)?
+}
+
+fn reported(pass: Pass, swept: Result<usize>) {
+    match swept {
+        Ok(0) => {}
+        Ok(swept) => tracing::info!(?pass, swept, "a sweep took away what was left untouched"),
+        Err(error) => tracing::warn!(?pass, %error, "a sweep failed"),
+    }
+}
+
+fn sweep_wait(idle_days: NonZeroU64) -> Duration {
+    Duration::from_secs(idle_days.get().saturating_mul(SECONDS_A_DAY) / SWEEPS_AN_IDLE_SPAN)
+        .min(LONGEST_SWEEP_WAIT)
+}
+
+fn idle_seconds(idle_days: NonZeroU64) -> i64 {
+    i64::try_from(idle_days.get().saturating_mul(SECONDS_A_DAY)).unwrap_or(i64::MAX)
 }
 
 fn staging_id() -> Result<u64> {
@@ -1293,6 +1346,21 @@ mod tests {
     use std::net::Ipv6Addr;
 
     use super::*;
+
+    #[test]
+    fn a_sweep_waits_a_thirtieth_of_the_idle_limit_and_never_more_than_an_hour() {
+        let a_day = sweep_wait(NonZeroU64::MIN);
+        let a_week = sweep_wait(NonZeroU64::new(7).expect("days"));
+        let a_year = sweep_wait(IDLE_DAYS_BY_DEFAULT);
+        let forever = sweep_wait(NonZeroU64::MAX);
+
+        assert_eq!(a_day, Duration::from_secs(48 * 60));
+        assert_eq!(a_week, LONGEST_SWEEP_WAIT);
+        assert_eq!(a_year, LONGEST_SWEEP_WAIT);
+        assert_eq!(forever, LONGEST_SWEEP_WAIT);
+        assert_eq!(idle_seconds(NonZeroU64::MIN), 24 * 60 * 60);
+        assert_eq!(idle_seconds(NonZeroU64::MAX), i64::MAX);
+    }
 
     #[test]
     fn the_proxys_header_is_trusted_only_from_a_peer_on_this_machine() {

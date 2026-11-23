@@ -1,4 +1,13 @@
-use std::{net::SocketAddr, path::PathBuf, process::ExitCode, sync::Arc, time::Duration};
+use std::{
+    env,
+    io::{self, IsTerminal},
+    net::SocketAddr,
+    num::NonZeroU64,
+    path::PathBuf,
+    process::ExitCode,
+    sync::Arc,
+    time::Duration,
+};
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use resonate_server::{
@@ -9,7 +18,6 @@ use resonate_sync::wire::LARGEST_RECORD;
 use tokio::net::TcpListener;
 use tracing_subscriber::EnvFilter;
 
-const SECONDS_PER_DAY: u64 = 24 * 60 * 60;
 const SECONDS_PER_MINUTE: u64 = 60;
 
 #[derive(Parser)]
@@ -92,10 +100,10 @@ struct Args {
 
     #[arg(
         long,
-        default_value_t = 365,
-        help = "Days a space may go untouched before it is swept"
+        default_value_t = Limits::default().idle_days,
+        help = "Days a space may go untouched before it is swept, at least 1"
     )]
-    idle_days: u64,
+    idle_days: NonZeroU64,
 
     #[arg(
         long,
@@ -201,6 +209,7 @@ fn main() -> ExitCode {
         .with_env_filter(
             EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
         )
+        .with_ansi(logs_in_colour())
         .init();
 
     let args = Args::parse();
@@ -212,6 +221,12 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+fn logs_in_colour() -> bool {
+    let colour_refused = env::var_os("NO_COLOR").is_some_and(|refused| !refused.is_empty());
+
+    io::stdout().is_terminal() && !colour_refused
 }
 
 fn mint() -> Result<(), Error> {
@@ -273,7 +288,7 @@ fn run(args: Args) -> Result<(), Error> {
         frames_per_minute: args.frames_per_minute,
         relay_bytes_per_second: args.relay_bytes_per_second,
         frame_bytes: args.frame_bytes,
-        idle_for: Duration::from_secs(args.idle_days.saturating_mul(SECONDS_PER_DAY)),
+        idle_days: args.idle_days,
         allowance: Allowance {
             connections: args.connections,
             connections_per_address: args.connections_per_address,

@@ -36,6 +36,14 @@ pub struct First {
     _across_sessions: Option<OwnedSemaphorePermit>,
 }
 
+pub struct ReadingAhead(JoinHandle<()>);
+
+impl Drop for ReadingAhead {
+    fn drop(&mut self) {
+        self.0.abort();
+    }
+}
+
 pub enum Read {
     Frame {
         frame: Result<ToServer>,
@@ -116,14 +124,14 @@ pub fn read_ahead(
     recv: Reader,
     most: usize,
     across_sessions: FrameBytes,
-) -> (Receiver<Read>, JoinHandle<()>) {
+) -> (Receiver<Read>, ReadingAhead) {
     let (frames_in, frames) = channel(READ_AHEAD_BYTES_AT_MOST / A_FRAME_WEIGHS_AT_LEAST);
     let budget = Budget::of(READ_AHEAD_BYTES_AT_MOST);
     let across_sessions: Arc<dyn Holds> = Arc::new(across_sessions);
 
     let reading = tokio::spawn(read_frames(recv, frames_in, most, budget, across_sessions));
 
-    (frames, reading)
+    (frames, ReadingAhead(reading))
 }
 
 async fn read_frames(
@@ -222,6 +230,31 @@ mod tests {
         drop((small, after));
 
         assert!(shared.hold(32 * 1024 * 1024).is_some());
+    }
+
+    #[tokio::test]
+    async fn a_reader_let_go_stops_and_gives_back_the_bytes_its_frame_held() {
+        let shared = FrameBytes::of(1000);
+
+        let held = shared.hold(600).expect("held");
+        let reading = ReadingAhead(tokio::spawn(async move {
+            let _held = held;
+
+            std::future::pending::<()>().await;
+        }));
+        let while_reading = shared.bytes.available_permits();
+
+        drop(reading);
+
+        let given_back = timeout(PATIENCE * 10, async {
+            while shared.bytes.available_permits() < 1000 {
+                tokio::task::yield_now().await;
+            }
+        })
+        .await;
+
+        assert_eq!(while_reading, 400);
+        assert!(given_back.is_ok(), "the reader kept its frame's bytes");
     }
 
     #[tokio::test]

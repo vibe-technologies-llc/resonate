@@ -8,4 +8,5 @@ mod shared;
 mod shelf;
 mod sync;
 mod together;
+mod upkeep;
 mod web;

@@ -335,7 +335,13 @@ impl Store {
         Ok(heads)
     }
 
-    pub fn close(&mut self, space: SpaceId, sealed: &[u8], space_bytes: u64) -> Result<Closing> {
+    pub fn close(
+        &mut self,
+        space: SpaceId,
+        sealed: &[u8],
+        space_bytes: u64,
+        now: i64,
+    ) -> Result<Closing> {
         let capacity = self.capacity;
         let transaction = self
             .connection
@@ -361,11 +367,12 @@ impl Store {
         }
         transaction
             .execute(
-                "UPDATE spaces SET closed = ?2, bytes = bytes + ?3 WHERE id = ?1",
+                "UPDATE spaces SET closed = ?2, bytes = bytes + ?3, touched = ?4 WHERE id = ?1",
                 params![
                     space.0.as_slice(),
                     sealed,
-                    i64::try_from(adding).unwrap_or(i64::MAX)
+                    i64::try_from(adding).unwrap_or(i64::MAX),
+                    now
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -414,6 +421,7 @@ impl Store {
         device: DeviceId,
         blobs: &[Vec<u8>],
         space_bytes: u64,
+        now: i64,
     ) -> Result<Appended> {
         let capacity = self.capacity;
         let transaction = self
@@ -494,8 +502,8 @@ impl Store {
         }
         transaction
             .execute(
-                "UPDATE spaces SET head = ?2, bytes = bytes + ?3 WHERE id = ?1",
-                params![space.0.as_slice(), seq, adding],
+                "UPDATE spaces SET head = ?2, bytes = bytes + ?3, touched = ?4 WHERE id = ?1",
+                params![space.0.as_slice(), seq, adding, now],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         transaction
@@ -633,8 +641,9 @@ impl Store {
         through: u64,
         parts: &[Vec<u8>],
         space_bytes: u64,
+        now: i64,
     ) -> Result<Compacted> {
-        self.replaced(space, through, None, parts, space_bytes)
+        self.replaced(space, through, None, parts, space_bytes, now)
     }
 
     pub fn stage(&mut self, space: SpaceId, id: StagingId, now: i64) -> Result<()> {
@@ -714,6 +723,12 @@ impl Store {
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         transaction
+            .execute(
+                "UPDATE spaces SET touched = ?2 WHERE id = ?1",
+                params![space.0.as_slice(), now],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         Ok(Staged::Taken)
@@ -726,8 +741,9 @@ impl Store {
         through: u64,
         parts: &[Vec<u8>],
         space_bytes: u64,
+        now: i64,
     ) -> Result<Compacted> {
-        let compacted = self.replaced(space, through, Some(id), parts, space_bytes)?;
+        let compacted = self.replaced(space, through, Some(id), parts, space_bytes, now)?;
 
         if compacted != Compacted::Through(through) {
             self.unstage(space, id)?;
@@ -761,6 +777,7 @@ impl Store {
         staged: Option<StagingId>,
         parts: &[Vec<u8>],
         space_bytes: u64,
+        now: i64,
     ) -> Result<Compacted> {
         let transaction = self
             .connection
@@ -846,8 +863,8 @@ impl Store {
         }
         transaction
             .execute(
-                "UPDATE spaces SET snapshot_through = ?2, bytes = ?3 WHERE id = ?1",
-                params![space.0.as_slice(), through, bytes],
+                "UPDATE spaces SET snapshot_through = ?2, bytes = ?3, touched = ?4 WHERE id = ?1",
+                params![space.0.as_slice(), through, bytes, now],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
         transaction
@@ -856,12 +873,32 @@ impl Store {
         Ok(Compacted::Through(through.cast_unsigned()))
     }
 
-    pub fn sweep_unused(&mut self, made_before: i64) -> Result<usize> {
+    pub fn sweep_unused(&mut self, untouched_since: i64) -> Result<usize> {
         self.connection
             .execute(
-                "DELETE FROM spaces WHERE head = 0 AND snapshot_through = 0 AND created < ?1",
-                params![made_before],
+                "DELETE FROM spaces WHERE head = 0 AND snapshot_through = 0 AND touched < ?1",
+                params![untouched_since],
             )
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    pub fn touch(&mut self, spaces: &[SpaceId], now: i64) -> Result<()> {
+        let transaction = self
+            .connection
+            .transaction_with_behavior(TransactionBehavior::Immediate)
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        let mut touching = transaction
+            .prepare_cached("UPDATE spaces SET touched = ?2 WHERE id = ?1")
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        for space in spaces {
+            touching
+                .execute(params![space.0.as_slice(), now])
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        drop(touching);
+        transaction
+            .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
@@ -979,8 +1016,10 @@ mod tests {
     fn a_space_closed_twice_is_told_to_have_been_closed_by_the_first_word_alone() {
         let mut store = claimed();
 
-        let first = store.close(SPACE, &[7; 32], 1 << 20).expect("closed");
-        let second = store.close(SPACE, &[8; 32], 1 << 20).expect("closed again");
+        let first = store.close(SPACE, &[7; 32], 1 << 20, 1).expect("closed");
+        let second = store
+            .close(SPACE, &[8; 32], 1 << 20, 1)
+            .expect("closed again");
 
         assert_eq!(first, Closing::Now(vec![7; 32]));
         assert_eq!(second, Closing::Before(vec![7; 32]));
@@ -997,13 +1036,13 @@ mod tests {
 
         store.claim(other, &[3; 32], 1, || true).expect("made");
         store
-            .append(SPACE, DESK, &[vec![0; 40]], 1 << 20)
+            .append(SPACE, DESK, &[vec![0; 40]], 1 << 20, 1)
             .expect("appended");
 
-        let past_the_space = store.close(SPACE, &[7; 32], 64).expect("weighed");
-        let kept = store.close(SPACE, &[7; 32], 1 << 20).expect("closed");
+        let past_the_space = store.close(SPACE, &[7; 32], 64, 1).expect("weighed");
+        let kept = store.close(SPACE, &[7; 32], 1 << 20, 1).expect("closed");
         let (_, stored) = store.totals().expect("totals");
-        let past_the_total = store.close(other, &[8; 32], 1 << 20).expect("weighed");
+        let past_the_total = store.close(other, &[8; 32], 1 << 20, 1).expect("weighed");
 
         assert_eq!(past_the_space, Closing::Full);
         assert_eq!(kept, Closing::Now(vec![7; 32]));
@@ -1047,7 +1086,7 @@ mod tests {
             .collect();
 
         let appended = store
-            .append(SPACE, DESK, &repeated, 1 << 20)
+            .append(SPACE, DESK, &repeated, 1 << 20, 1)
             .expect("appended");
         let kept = store.records_after(SPACE, 0, 100, 1 << 20).expect("read");
 
@@ -1063,14 +1102,20 @@ mod tests {
         let mut store = claimed();
 
         store
-            .append(SPACE, DESK, &[vec![1; 40]], 100)
+            .append(SPACE, DESK, &[vec![1; 40]], 100, 1)
             .expect("appended");
 
         let past = store
-            .append(SPACE, DESK, &[vec![2; 40], vec![3; 40], vec![4; 40]], 100)
+            .append(
+                SPACE,
+                DESK,
+                &[vec![2; 40], vec![3; 40], vec![4; 40]],
+                100,
+                1,
+            )
             .expect("weighed");
         let resent = store
-            .append(SPACE, DESK, &[vec![1; 40]], 100)
+            .append(SPACE, DESK, &[vec![1; 40]], 100, 1)
             .expect("resent");
 
         assert_eq!(past, Appended::Full);
@@ -1083,7 +1128,7 @@ mod tests {
 
         assert_eq!(
             store
-                .append(SPACE, DESK, &[vec![1], vec![2], vec![3]], 1 << 20)
+                .append(SPACE, DESK, &[vec![1], vec![2], vec![3]], 1 << 20, 1)
                 .expect("appended"),
             Appended::Through(3)
         );
@@ -1104,13 +1149,13 @@ mod tests {
 
         assert_eq!(
             store
-                .append(SPACE, DESK, &[vec![0; 10]], 15)
+                .append(SPACE, DESK, &[vec![0; 10]], 15, 1)
                 .expect("appended"),
             Appended::Through(1)
         );
         assert_eq!(
             store
-                .append(SPACE, DESK, &[vec![1; 10]], 15)
+                .append(SPACE, DESK, &[vec![1; 10]], 15, 1)
                 .expect("refused"),
             Appended::Full
         );
@@ -1122,7 +1167,7 @@ mod tests {
         let phone = DeviceId([9; 16]);
 
         let first = store
-            .append(SPACE, DESK, &[vec![1; 40], vec![2; 40]], 1 << 20)
+            .append(SPACE, DESK, &[vec![1; 40], vec![2; 40]], 1 << 20, 1)
             .expect("appended");
         let again = store
             .append(
@@ -1130,10 +1175,11 @@ mod tests {
                 DESK,
                 &[vec![1; 40], vec![2; 40], vec![3; 40]],
                 1 << 20,
+                1,
             )
             .expect("appended again");
         let elsewhere = store
-            .append(SPACE, phone, &[vec![1; 40]], 1 << 20)
+            .append(SPACE, phone, &[vec![1; 40]], 1 << 20, 1)
             .expect("appended elsewhere");
         let kept = store.records_after(SPACE, 0, 10, 1 << 20).expect("read");
 
@@ -1172,7 +1218,7 @@ mod tests {
         let mut store = Store::over(connection).expect("carried forward");
 
         let appended = store
-            .append(SPACE, DESK, &[vec![7; 3]], 1 << 20)
+            .append(SPACE, DESK, &[vec![7; 3]], 1 << 20, 1)
             .expect("appended");
 
         assert_eq!(appended, Appended::Through(2));
@@ -1189,24 +1235,25 @@ mod tests {
                 DESK,
                 &[vec![1; 100], vec![2; 100], vec![3; 100]],
                 1 << 20,
+                1,
             )
             .expect("appended");
 
         assert_eq!(
             store
-                .compact(SPACE, 2, &[vec![9; 10]], 1 << 20)
+                .compact(SPACE, 2, &[vec![9; 10]], 1 << 20, 1)
                 .expect("compacted"),
             Compacted::Through(2)
         );
         assert_eq!(
             store
-                .compact(SPACE, 2, &[vec![9; 10]], 1 << 20)
+                .compact(SPACE, 2, &[vec![9; 10]], 1 << 20, 1)
                 .expect("stale"),
             Compacted::Stale
         );
         assert_eq!(
             store
-                .compact(SPACE, 4, &[vec![9; 10]], 1 << 20)
+                .compact(SPACE, 4, &[vec![9; 10]], 1 << 20, 1)
                 .expect("ahead"),
             Compacted::Stale
         );
@@ -1236,6 +1283,7 @@ mod tests {
                 DESK,
                 &[vec![1; 100], vec![2; 100], vec![3; 100]],
                 1 << 20,
+                1,
             )
             .expect("appended");
         store
@@ -1255,7 +1303,7 @@ mod tests {
      {
         let mut store = appended_three();
 
-        let asked = store.compact(SPACE, 0, &[], 1 << 20).expect("refused");
+        let asked = store.compact(SPACE, 0, &[], 1 << 20, 1).expect("refused");
 
         assert_eq!(asked, Compacted::Stale);
         assert_eq!(store.head(SPACE).expect("head"), (3, 0));
@@ -1273,12 +1321,12 @@ mod tests {
         let before = store.catch_up(SPACE, 0, None, 10, 1 << 20).expect("read");
         let (_, held_while_staging) = store.totals().expect("totals");
         let compacted = store
-            .compact_staged(SPACE, STAGED, 2, &[vec![9; 10]], 1 << 20)
+            .compact_staged(SPACE, STAGED, 2, &[vec![9; 10]], 1 << 20, 1)
             .expect("compacted");
         let snapshot = store.snapshot(SPACE).expect("read").expect("a snapshot");
         let (_, held_after) = store.totals().expect("totals");
         let again = store
-            .compact_staged(SPACE, STAGED, 3, &[vec![9; 10]], 1 << 20)
+            .compact_staged(SPACE, STAGED, 3, &[vec![9; 10]], 1 << 20, 1)
             .expect("refused");
 
         assert_eq!(first, Staged::Taken);
@@ -1313,7 +1361,7 @@ mod tests {
             .staged(SPACE, STAGED, &[vec![7; 50]], 1 << 20, 2)
             .expect("unstaged");
         let finished_after = store
-            .compact_staged(SPACE, STAGED, 2, &[], 1 << 20)
+            .compact_staged(SPACE, STAGED, 2, &[], 1 << 20, 1)
             .expect("refused");
 
         store.stage(SPACE, STAGED_LATER, 5).expect("staged");
@@ -1350,10 +1398,10 @@ mod tests {
             .staged(SPACE, STAGED, &[vec![7; 10]], 1 << 20, 2)
             .expect("unstaged");
         let earlier_finished = store
-            .compact_staged(SPACE, STAGED, 2, &[], 1 << 20)
+            .compact_staged(SPACE, STAGED, 2, &[], 1 << 20, 1)
             .expect("refused");
         let later_finished = store
-            .compact_staged(SPACE, STAGED_LATER, 2, &[vec![9; 10]], 1 << 20)
+            .compact_staged(SPACE, STAGED_LATER, 2, &[vec![9; 10]], 1 << 20, 1)
             .expect("compacted");
 
         assert_eq!(earlier, Staged::Unstaged);
@@ -1390,7 +1438,7 @@ mod tests {
             .staged(SPACE, STAGED_LATER, &[vec![7; 150]], 1 << 20, 2)
             .expect("taken");
         let crowding_another = store
-            .append(other, DESK, &[vec![1; 60]], 1 << 20)
+            .append(other, DESK, &[vec![1; 60]], 1 << 20, 1)
             .expect("weighed");
         let past_the_total = store
             .staged(SPACE, STAGED_LATER, &[vec![7; 60]], 1 << 20, 3)
@@ -1411,7 +1459,9 @@ mod tests {
         let mut store = appended_three();
         let parts = vec![vec![5; 30]; BLOBS_A_FRAME_AT_MOST + 1];
 
-        store.compact(SPACE, 2, &parts, 1 << 30).expect("compacted");
+        store
+            .compact(SPACE, 2, &parts, 1 << 30, 1)
+            .expect("compacted");
 
         let CaughtUp::Snapshot(first) = store.catch_up(SPACE, 0, None, 10, 1 << 20).expect("read")
         else {
@@ -1428,7 +1478,9 @@ mod tests {
             panic!("the snapshot's last frame");
         };
 
-        store.compact(SPACE, 3, &parts, 1 << 30).expect("compacted");
+        store
+            .compact(SPACE, 3, &parts, 1 << 30, 1)
+            .expect("compacted");
 
         let CaughtUp::Snapshot(replaced) = store
             .catch_up(SPACE, 0, Some(reading), 10, 1 << 20)
@@ -1455,10 +1507,11 @@ mod tests {
                 DESK,
                 &(1..=10).map(|seq| vec![seq; 10]).collect::<Vec<_>>(),
                 1 << 20,
+                1,
             )
             .expect("appended");
         store
-            .compact(SPACE, 8, &[vec![9; 10]], 1 << 20)
+            .compact(SPACE, 8, &[vec![9; 10]], 1 << 20, 1)
             .expect("compacted");
 
         let behind = store.catch_up(SPACE, 3, None, 10, 1 << 20).expect("read");
@@ -1484,7 +1537,7 @@ mod tests {
         let mut store = claimed();
 
         store
-            .append(SPACE, DESK, &[vec![1]], 1 << 20)
+            .append(SPACE, DESK, &[vec![1]], 1 << 20, 1)
             .expect("appended");
 
         assert_eq!(store.sweep(2).expect("swept"), 1);
@@ -1553,13 +1606,13 @@ mod tests {
 
         assert_eq!(
             store
-                .append(SPACE, DESK, &[vec![0; 10]], 1 << 20)
+                .append(SPACE, DESK, &[vec![0; 10]], 1 << 20, 1)
                 .expect("appended"),
             Appended::Through(1)
         );
         assert_eq!(
             store
-                .append(SpaceId([9; 16]), DESK, &[vec![0; 10]], 1 << 20)
+                .append(SpaceId([9; 16]), DESK, &[vec![0; 10]], 1 << 20, 1)
                 .expect("refused"),
             Appended::Full
         );
@@ -1574,15 +1627,15 @@ mod tests {
 
         store.claim(SPACE, &[3; 32], 1, || true).expect("made");
         store
-            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20)
+            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20, 1)
             .expect("appended");
 
         let refused = store
-            .compact(SPACE, 1, &[vec![9; 25]], 1 << 20)
+            .compact(SPACE, 1, &[vec![9; 25]], 1 << 20, 1)
             .expect("refused");
         let kept = store.head(SPACE).expect("head");
         let fits = store
-            .compact(SPACE, 1, &[vec![9; 15]], 1 << 20)
+            .compact(SPACE, 1, &[vec![9; 15]], 1 << 20, 1)
             .expect("compacted");
 
         assert_eq!(refused, Compacted::Full);
@@ -1599,11 +1652,11 @@ mod tests {
 
         store.claim(SPACE, &[3; 32], 1, || true).expect("made");
         store
-            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20)
+            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20, 1)
             .expect("appended");
 
         let shrunk = store
-            .compact(SPACE, 2, &[vec![9; 5]], 1 << 20)
+            .compact(SPACE, 2, &[vec![9; 5]], 1 << 20, 1)
             .expect("compacted");
 
         assert_eq!(shrunk, Compacted::Through(2));
@@ -1632,12 +1685,70 @@ mod tests {
             .claim(SpaceId([9; 16]), &[3; 32], 1, || true)
             .expect("made");
         store
-            .append(SpaceId([9; 16]), DESK, &[vec![1]], 1 << 20)
+            .append(SpaceId([9; 16]), DESK, &[vec![1]], 1 << 20, 1)
             .expect("appended");
 
         assert_eq!(store.sweep_unused(0).expect("nothing yet"), 0);
         assert_eq!(store.sweep_unused(10).expect("swept"), 1);
         assert_eq!(store.head(SpaceId([9; 16])).expect("head"), (1, 0));
         assert_eq!(store.head(SPACE).expect("gone"), (0, 0));
+    }
+
+    #[test]
+    fn every_write_to_a_space_keeps_it_past_the_idle_limit_and_an_idle_one_is_still_swept() {
+        let mut store = claimed();
+
+        store
+            .append(SPACE, DESK, &[vec![1; 10], vec![2; 10]], 1 << 20, 100)
+            .expect("appended");
+
+        let kept_after_an_append = store.sweep(50).expect("swept");
+
+        store
+            .compact(SPACE, 1, &[vec![9; 10]], 1 << 20, 200)
+            .expect("compacted");
+
+        let kept_after_a_compaction = store.sweep(150).expect("swept");
+
+        store.stage(SPACE, STAGED, 250).expect("staged");
+        store
+            .staged(SPACE, STAGED, &[vec![7; 10]], 1 << 20, 300)
+            .expect("taken");
+
+        let kept_while_staging = store.sweep(250).expect("swept");
+
+        store.close(SPACE, &[7; 32], 1 << 20, 400).expect("closed");
+
+        let kept_after_closing = store.sweep(350).expect("swept");
+        let swept_once_idle = store.sweep(401).expect("swept");
+
+        assert_eq!(kept_after_an_append, 0);
+        assert_eq!(kept_after_a_compaction, 0);
+        assert_eq!(kept_while_staging, 0);
+        assert_eq!(kept_after_closing, 0);
+        assert_eq!(swept_once_idle, 1);
+    }
+
+    #[test]
+    fn a_space_a_session_holds_is_kept_by_both_sweeps_and_swept_once_let_go() {
+        let mut store = claimed();
+        let written = SpaceId([9; 16]);
+
+        store.claim(written, &[3; 32], 1, || true).expect("made");
+        store
+            .append(written, DESK, &[vec![1]], 1 << 20, 1)
+            .expect("appended");
+
+        store.touch(&[SPACE, written], 100).expect("touched");
+
+        let unused_while_held = store.sweep_unused(50).expect("swept");
+        let idle_while_held = store.sweep(50).expect("swept");
+        let unused_once_let_go = store.sweep_unused(101).expect("swept");
+        let idle_once_let_go = store.sweep(101).expect("swept");
+
+        assert_eq!(unused_while_held, 0);
+        assert_eq!(idle_while_held, 0);
+        assert_eq!(unused_once_let_go, 1);
+        assert_eq!(idle_once_let_go, 1);
     }
 }
