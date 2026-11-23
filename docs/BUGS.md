@@ -4,14 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Vault
-- [M · 0.17.1] Decode a standing FLAC or packed WAVE object before reusing it. **Medium, architect.**
-  A re-import's deduplication of a lossless form reads only the standing object's header (rate,
-  channels, frame count, declared digest) through `holds_the_sound`, never its frames, so an object
-  whose header survived and whose audio is damaged is kept over the verified staged copy
-  (`crates/resonate-vault/src/vault.rs`, `holds_the_sound`). Decode the standing object on a dedup
-  hit and compare it with what went in, as `verify` does. Done when re-importing against a FLAC and a
-  packed WAVE object with an intact header and damaged frames restores a copy that passes `verify`.
-
 ## Security
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
   takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
@@ -410,27 +402,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-ui/src/models/filing.rs:299`). Resolve both rows and validate the files
   under the walk guard before changing either. Done when modifying either file or removing
   a previewed row makes that pair unavailable to apply and leaves unrelated pairs usable.
-- [M · 0.17.1] Claim each deferred catalog repair in its own transaction. **Medium, builder.**
-  Two processes can both read a pending marker before either obtains the write lock.
-  The next opener retries the repair against an already repaired catalog and fails when
-  dropping the missing marker (`crates/resonate-library/src/store.rs:277`, `:330`,
-  `:868`, `crates/resonate-library/src/db/mod.rs:1167`). Read the marker and any merge inputs
-  inside the same immediate transaction as the repair. Done when simultaneous opens on a
-  file-backed catalog with pending repairs both succeed and apply each repair once.
-- [M · 0.17.1] Export listening history from one catalog snapshot. **Low, architect.**
-  The exporter pages through held and then unheld listens in separate reads.
-  A scan crediting a retained listen between reads can omit it from the export, and
-  a removal moving a held listen in the other direction can include it twice
-  (`crates/resonate-library/src/kept_listens.rs:34`,
-  `crates/resonate-library/src/traded.rs:111`, `:151`). Hold one read snapshot for the
-  export. Done when credits and removals committed between pages leave the export with
-  every listen present at its start exactly once.
-- [S · 0.17.1] Release the catalog's file lock before a walk reports completion.
-  **Low, builder.** A waiting operation can observe that the walk ended while the old
-  guard still holds the lock and be refused as already walking
-  (`crates/resonate-library/src/db/mod.rs:244`, `:394`). Close the file guard before
-  clearing the flag and notifying. Done when a caller woken by `wind_down` can take the
-  lock in a file-backed catalog with no other walkers.
 - [M · 0.17.1] Keep destination files when a move lacks an atomic no-replace operation.
   **Low, architect.** The fallback can use a replacing rename after a separate existence
   check, so a concurrently created destination file can be lost
@@ -449,6 +420,14 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Mobile catalog
+- [M · 0.17.1] Export a phone's listening history from one snapshot. **Low, architect.**
+  The desktop's export now holds one read transaction across its pages (`KeptListens::history_pages`,
+  `PinnedHistory`), but the phones' catalog answers the unpinned default
+  (`crates/resonate-mobile/src/history.rs`): its one connection sits behind a mutex that a pinned
+  export would hold across pages, so a listen counted or forgotten between pages can be missed or
+  written twice. Read the phone's export from one snapshot (a second read-only connection, or the
+  pages copied under one hold) without holding up the player. Done when a listen counted and one
+  forgotten between pages leave the export with every listen present at its start exactly once.
 - [M · 0.17.1] Recover the original after an interrupted Android tag rewrite. **High, architect.**
   The document provider can truncate a song before the replacement bytes land. If the
   app stops during that write, the next tag edit can sweep the only intact copy
