@@ -7289,6 +7289,7 @@ dependencies = [
 name = "resonate-jellyfin"
 version = "0.17.0"
 dependencies = [
+ "flate2",
  "parking_lot 0.13.0",
  "resonate-core",
  "resonate-fetch",
@@ -7637,6 +7638,7 @@ name = "resonate-tidal"
 version = "0.17.0"
 dependencies = [
  "base64 0.23.1",
+ "flate2",
  "parking_lot 0.13.0",
  "resonate-core",
  "resonate-fetch",

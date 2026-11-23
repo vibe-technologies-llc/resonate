@@ -74,7 +74,7 @@ impl fmt::Debug for Server {
 
 fn downloading(patience: Patience) -> Agent {
     downloading_agent(
-        configured(patience.answered_within, Trusted::SystemStoreToo).build(),
+        configured(patience.answered_within, Trusted::SystemStoreToo),
         patience.broken_off_after,
     )
 }

@@ -29,7 +29,7 @@ const LARGEST_ANSWER: u64 = 4 * 1024 * 1024;
 
 fn downloading(patience: Patience, trusted: Trusted) -> Agent {
     downloading_agent(
-        configured(patience.answered_within, trusted).build(),
+        configured(patience.answered_within, trusted),
         patience.broken_off_after,
     )
 }

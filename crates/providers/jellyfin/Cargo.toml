@@ -18,5 +18,8 @@ tracing.workspace = true
 ureq.workspace = true
 uuid.workspace = true
 
+[dev-dependencies]
+flate2.workspace = true
+
 [lints]
 workspace = true

@@ -22,7 +22,7 @@ use crate::{failed::as_io, waited::retry_after_of};
 pub const ASKED_LATER: [u16; 4] = [429, 502, 503, 504];
 pub const RESUMES_AT_MOST: u32 = 5;
 const LONGEST_WAIT: Duration = Duration::from_secs(8);
-const UNCODED: &str = "identity";
+pub(crate) const UNCODED: &str = "identity";
 const WHOLE: u16 = 200;
 const PARTIAL: u16 = 206;
 const FORBIDDEN: u16 = 403;
@@ -230,7 +230,12 @@ fn asked(
         status => return Err(Unfetched::Refused(status)),
     };
 
-    if expecting.total_differs(total) || expecting.changed(&validators, status == PARTIAL) {
+    let shorter_than_the_place = status == WHOLE && length.is_some_and(|length| length < from);
+
+    if shorter_than_the_place
+        || expecting.total_differs(total)
+        || expecting.changed(&validators, status == PARTIAL)
+    {
         return Err(Unfetched::Changed);
     }
 
@@ -1013,6 +1018,22 @@ mod tests {
         assert!(!interval.continues(21, Some(52)));
         assert!(!interval.continues(20, Some(51)));
         assert!(!interval.continues(20, Some(53)));
+    }
+
+    #[test]
+    fn a_whole_answer_shorter_than_the_place_asked_from_is_another_file() {
+        let (url, heads) = serving(vec![Box::new(|_| {
+            answering("200 OK", &[], WHOLE_BODY, WHOLE_BODY.len())
+        })]);
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+        let past_the_whole = WHOLE_BODY.len() as u64 + OPENED_PART_WAY;
+
+        let opened = Ranged::opened_from(agent, url, past_the_whole, Duration::ZERO);
+
+        assert!(matches!(opened, Err(Unfetched::Changed)));
+        assert_eq!(heads.lock().len(), 1);
     }
 
     #[test]

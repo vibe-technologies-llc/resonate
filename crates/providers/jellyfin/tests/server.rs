@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use flate2::{Compression, write::GzEncoder};
 use parking_lot::Mutex;
 use resonate_jellyfin::{
     Flavour, Id, Jellyfin, KeptSession, Named, Patience, PlaysInPlace as _, QuickConnect, Server,
@@ -79,6 +80,7 @@ struct Asked {
     authorization: Option<String>,
     emby_authorization: Option<String>,
     range: Option<usize>,
+    accept_encoding: Option<String>,
     body: String,
 }
 
@@ -205,6 +207,7 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
         authorization: None,
         emby_authorization: None,
         range: None,
+        accept_encoding: None,
         body: String::new(),
     };
     let target = request_line.split(' ').nth(1).unwrap_or_default();
@@ -237,6 +240,7 @@ fn answer(stream: TcpStream, heard: &Mutex<Vec<Asked>>, answering: &Answering) {
                     }
                     "content-length" => length = value.parse().unwrap_or(0),
                     "authorization" => asked.authorization = Some(value),
+                    "accept-encoding" => asked.accept_encoding = Some(value),
                     "x-emby-authorization" => asked.emby_authorization = Some(value),
                     _ => {}
                 }
@@ -767,6 +771,84 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
     assert_eq!(asked[0].parameter("static"), Some("true"));
     assert_eq!(asked[0].parameter("api_key"), Some(TOKEN));
     assert_eq!(asked[1].range, Some(5));
+}
+
+fn gzipped(body: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+
+    encoder.write_all(body).expect("writes to memory");
+    encoder.finish().expect("finishes in memory")
+}
+
+fn coded_as_asked(asked: &Asked) -> Canned {
+    let offers_gzip = asked
+        .accept_encoding
+        .as_deref()
+        .is_some_and(|offered| offered.contains("gzip"));
+
+    if !offers_gzip {
+        return match asked.range {
+            Some(from) => Canned::audio_from(from),
+            None => Canned::audio(),
+        };
+    }
+
+    let coded = gzipped(AUDIO);
+    let from = asked.range.unwrap_or_default();
+    let mut headers = vec![
+        ("Content-Type", "audio/flac".to_owned()),
+        ("Content-Encoding", "gzip".to_owned()),
+    ];
+
+    if from > 0 {
+        headers.push((
+            "Content-Range",
+            format!("bytes {from}-{}/{}", coded.len() - 1, coded.len()),
+        ));
+    }
+    Canned {
+        status: if from > 0 { 206 } else { 200 },
+        headers,
+        body: coded[from..].to_vec(),
+    }
+}
+
+#[test]
+fn a_song_from_a_server_offering_gzip_is_asked_uncoded_from_the_first_request_and_seeks_within_its_length()
+ {
+    let fake = Fake::serving(|asked, nth| {
+        if asked.path == "/Audio/so-1/stream" {
+            return coded_as_asked(asked);
+        }
+        library(asked, nth)
+    });
+    let mut streamed = fake.impatient().streamed(&id("so-1")).expect("a stream");
+    let mut head = [0; 9];
+
+    streamed.read_exact(&mut head).expect("the head");
+    streamed.seek(SeekFrom::Start(5)).expect("a seek back");
+
+    let mut rest = Vec::new();
+
+    streamed.read_to_end(&mut rest).expect("the rest");
+
+    assert!(streamed.is_seekable());
+    assert_eq!(streamed.length(), Some(AUDIO.len() as u64));
+    assert_eq!(head, AUDIO[..9]);
+    assert_eq!(rest, &AUDIO[5..]);
+
+    let asked = fake.heard_at("/Audio/so-1/stream");
+
+    assert_eq!(
+        asked.iter().map(|asked| asked.range).collect::<Vec<_>>(),
+        [None, Some(5)]
+    );
+    assert!(
+        asked
+            .iter()
+            .all(|asked| asked.accept_encoding.as_deref() == Some("identity")),
+        "{asked:?}"
+    );
 }
 
 #[test]

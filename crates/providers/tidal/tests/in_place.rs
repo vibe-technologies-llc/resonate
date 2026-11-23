@@ -6,6 +6,7 @@ use std::{
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
+use flate2::{Compression, write::GzEncoder};
 use parking_lot::Mutex;
 use resonate_providers::{Error, Id, Named, PlaysInPlace, ProviderOp};
 use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal};
@@ -45,6 +46,7 @@ struct Asked {
     query: String,
     authorization: Option<String>,
     range: Option<u64>,
+    accept_encoding: Option<String>,
 }
 
 struct Canned {
@@ -184,6 +186,7 @@ fn answer(
 
     let mut authorization = None;
     let mut range = None;
+    let mut accept_encoding = None;
     let mut body_length = 0_usize;
 
     loop {
@@ -201,6 +204,7 @@ fn answer(
         let value = value.trim();
         match name.to_ascii_lowercase().as_str() {
             "authorization" => authorization = Some(value.to_owned()),
+            "accept-encoding" => accept_encoding = Some(value.to_owned()),
             "content-length" => body_length = value.parse().unwrap_or_default(),
             "range" => {
                 range = value
@@ -228,32 +232,50 @@ fn answer(
         query: query.to_owned(),
         authorization,
         range,
+        accept_encoding,
     };
     let canned = answering(&asked, own);
 
     heard.lock().push(asked.clone());
 
-    let total = canned.body.len();
+    let offers_gzip = asked
+        .accept_encoding
+        .as_deref()
+        .is_some_and(|offered| offered.contains("gzip"));
+    let (representation, coding) = if canned.ranged && offers_gzip {
+        (gzipped(&canned.body), "Content-Encoding: gzip\r\n")
+    } else {
+        (canned.body, "")
+    };
+    let total = representation.len();
+
     let (status, body, ranged) = match asked.range {
         Some(from) if canned.ranged && canned.status == 200 => {
             let from = usize::try_from(from).expect("a small offset");
             (
                 206,
-                canned.body[from..].to_vec(),
+                representation[from..].to_vec(),
                 format!("Content-Range: bytes {from}-{}/{total}\r\n", total - 1),
             )
         }
-        _ => (canned.status, canned.body, String::new()),
+        _ => (canned.status, representation, String::new()),
     };
     let mut stream = reader.into_inner();
 
     let _ = write!(
         stream,
-        "HTTP/1.1 {status} Canned\r\nContent-Type: {}\r\nContent-Length: {}\r\n{ranged}Connection: close\r\n\r\n",
+        "HTTP/1.1 {status} Canned\r\nContent-Type: {}\r\nContent-Length: {}\r\n{ranged}{coding}Connection: close\r\n\r\n",
         canned.media_type,
         body.len()
     );
     let _ = stream.write_all(&body);
+}
+
+fn gzipped(body: &[u8]) -> Vec<u8> {
+    let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
+
+    encoder.write_all(body).expect("writes to memory");
+    encoder.finish().expect("finishes in memory")
 }
 
 fn one_flac_manifest(own: &str) -> String {
@@ -688,6 +710,53 @@ fn a_keyed_server_streams_its_file_with_the_key_on_every_ask_and_browses_by_sear
             .iter()
             .all(|asked| asked.authorization.as_deref() == Some("Bearer hush"))
     );
+}
+
+fn asked_uncoded_and_sought(fake: &Fake, service: &dyn PlaysInPlace, path: &str) {
+    let whole = song();
+
+    let mut streamed = service.streamed(&song_id()).expect("a stream");
+
+    let head = read_some(&mut streamed, 4);
+
+    streamed
+        .seek(SeekFrom::Start(FAR_AHEAD))
+        .expect("a seek ahead");
+
+    let after = read_some(&mut streamed, 16);
+
+    assert!(streamed.is_seekable(), "{path}");
+    assert_eq!(streamed.length(), Some(whole.len() as u64), "{path}");
+    assert_eq!(head, b"fLaC");
+    assert_eq!(after, whole[500_000..500_016]);
+
+    let asked: Vec<_> = fake
+        .heard()
+        .into_iter()
+        .filter(|asked| asked.path == path)
+        .collect();
+
+    assert_eq!(
+        asked.iter().map(|asked| asked.range).collect::<Vec<_>>(),
+        [None, Some(FAR_AHEAD)]
+    );
+    assert!(
+        asked
+            .iter()
+            .all(|asked| asked.accept_encoding.as_deref() == Some("identity")),
+        "{asked:?}"
+    );
+}
+
+#[test]
+fn a_song_from_a_server_offering_gzip_is_asked_uncoded_from_the_first_request_and_seeks_within_its_length()
+ {
+    let tidal = tidal_server();
+    let hifi = hifi_server();
+
+    asked_uncoded_and_sought(&tidal, &tidal.tidal(), "/media/whole.flac");
+    asked_uncoded_and_sought(&hifi, &hifi.hifi(), "/media/whole.flac");
+    asked_uncoded_and_sought(&hifi, &HifiApi::at(&hifi.url).with_secret("hush"), "/file/");
 }
 
 #[test]

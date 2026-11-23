@@ -47,9 +47,7 @@ fn listeners_server_agent() -> Agent {
 
 pub(crate) fn media_agent() -> Agent {
     downloading_agent(
-        configured(MEDIA_ANSWERED_WITHIN, Trusted::BuiltInRoots)
-            .max_redirects(0)
-            .build(),
+        configured(MEDIA_ANSWERED_WITHIN, Trusted::BuiltInRoots).max_redirects(0),
         Patience::default().broken_off_after,
     )
 }

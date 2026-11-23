@@ -141,8 +141,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        Trusted, configured,
-        testing::{Answer, WHOLE_BODY, answering, cut_first_answer, lower, partial_from, serving},
+        Trusted, configured, downloading_agent,
+        testing::{
+            Answer, WHOLE_BODY, answering, coded_as_asked, cut_first_answer, lower, partial_from,
+            serving,
+        },
     };
 
     const READ_FIRST: usize = 30;
@@ -195,6 +198,38 @@ mod tests {
             "{asked}"
         );
         assert!(asked.contains("if-range: \"v1\""), "{asked}");
+    }
+
+    #[test]
+    fn a_stream_a_downloading_agent_opens_is_asked_uncoded_from_its_first_request_and_seeks_within_its_length()
+     {
+        let (url, heads) = serving(vec![
+            Box::new(|head| coded_as_asked(head, None)),
+            Box::new(|head| coded_as_asked(head, None)),
+        ]);
+        let agent = downloading_agent(
+            configured(Duration::from_secs(5), Trusted::BuiltInRoots),
+            Duration::from_secs(5),
+        );
+
+        let response = agent.get(&url).call().expect("the first answer");
+        let mut seeking = Seeking::continuing(agent, url, response, Duration::ZERO);
+
+        read_then_seek_back(&mut seeking);
+
+        let mut read = Vec::new();
+
+        seeking.read_to_end(&mut read).expect("the rest is read");
+
+        assert_eq!(seeking.length(), Some(WHOLE_BODY.len() as u64));
+        assert_eq!(read, &WHOLE_BODY[SOUGHT_BACK_TO as usize..]);
+
+        let heads = heads.lock();
+
+        assert_eq!(heads.len(), 2);
+        for head in heads.iter() {
+            assert!(lower(head).contains("accept-encoding: identity"), "{head}");
+        }
     }
 
     #[test]

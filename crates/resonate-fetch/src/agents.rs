@@ -18,7 +18,7 @@ use ureq::{
     },
 };
 
-use crate::{stall::BrokenOffAfter, trust};
+use crate::{ranged::UNCODED, stall::BrokenOffAfter, trust};
 
 pub const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
 pub const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
@@ -104,18 +104,18 @@ impl<R: Resolver> Resolver for Bounded<R> {
 }
 
 fn downloading_through(
-    config: Config,
+    config: ConfigBuilder<AgentScope>,
     broken_off_after: Duration,
     resolver: impl Resolver,
 ) -> Agent {
     Agent::with_parts(
-        config,
+        config.accept_encoding(UNCODED).build(),
         DefaultConnector::new().chain(BrokenOffAfter(broken_off_after)),
         Bounded(Arc::new(resolver)),
     )
 }
 
-pub fn downloading_agent(config: Config, broken_off_after: Duration) -> Agent {
+pub fn downloading_agent(config: ConfigBuilder<AgentScope>, broken_off_after: Duration) -> Agent {
     downloading_through(config, broken_off_after, DefaultResolver::default())
 }
 
@@ -170,10 +170,9 @@ mod tests {
         }
     }
 
-    fn budgeted() -> Config {
+    fn budgeted() -> ConfigBuilder<AgentScope> {
         configured(Duration::from_secs(5), Trusted::BuiltInRoots)
             .timeout_resolve(Some(RESOLUTION_BUDGET))
-            .build()
     }
 
     fn is_resolution_timeout(error: &Error) -> bool {

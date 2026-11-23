@@ -369,7 +369,16 @@ plumbing, so a `ureq` bump is made once:
   with, so a first answer slower than the stall opens). Every agent carries `timeout_resolve`, and
   `downloading_agent` resolves on a helper thread of its own (`agents.rs`'s `Bounded`), so a host
   lookup stuck in the system resolver ends at the budget on a new request and on a reopening alike,
-  while a download already moving runs as long as it delivers.
+  while a download already moving runs as long as it delivers. **A downloading agent asks for
+  uncoded bytes on every request**: `downloading_agent` takes the caller's `ConfigBuilder` and sets
+  `accept_encoding` to identity before building, so the first request of a stream a provider makes
+  itself (Jellyfin's, TIDAL's one FLAC file, the hifi relay's `/file/`) is asked as its reopenings
+  are, and its answer carries the uncoded `Content-Length` and the validators a range answer is
+  checked against; a provider cannot forget it, since every stream and download goes through such
+  an agent
+  (`a_stream_a_downloading_agent_opens_is_asked_uncoded_from_its_first_request_and_seeks_within_its_length`,
+  `a_song_from_a_server_offering_gzip_is_asked_uncoded_from_the_first_request_and_seeks_within_its_length`
+  in `resonate-jellyfin` and `resonate-tidal`).
 - **`unreached` classes a `ureq::Error` once**: a refused certificate is `Untrusted`; I/O, timeout,
   unknown host, connect/proxy/TLS failure is `Io` (away); `BadUri`/`Http` is `Unaddressable` (away);
   a body over its limit, protocol error or redirect failure is `Unreadable`, the want's
@@ -398,7 +407,9 @@ plumbing, so a `ureq` bump is made once:
   naming another total, validators that conflict, or a `200` where a strong tag is held whose
   validators do not vouch for it (a `200` answering `If-Range` meaning the file was replaced) is
   `Unfetched::Changed`, not retried and read as `ErrorKind::InvalidData`, so a file a server
-  re-transcoded meanwhile is never joined old head to new tail, and a later answer bearing only the
+  re-transcoded meanwhile is never joined old head to new tail; so is a `200` whose
+  `Content-Length` is under the place asked from, which cannot hold what was read
+  (`a_whole_answer_shorter_than_the_place_asked_from_is_another_file`), and a later answer bearing only the
   held date is not taken for a change
   (`a_resume_bearing_only_the_date_of_a_tagged_first_answer_is_read_on`,
   `a_resume_naming_another_validator_of_the_same_kind_is_refused`,

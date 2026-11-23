@@ -108,7 +108,7 @@ mod tests {
     }
 
     fn agent_waiting(response: Duration, body: Duration) -> Agent {
-        downloading_agent(configured(response, Trusted::BuiltInRoots).build(), body)
+        downloading_agent(configured(response, Trusted::BuiltInRoots), body)
     }
 
     #[test]

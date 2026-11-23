@@ -46,8 +46,7 @@ pub fn agent() -> Agent {
 
 fn agent_carrying(carried: Carried) -> Agent {
     let config = configured(ANSWERED_WITHIN, Trusted::BuiltInRoots)
-        .https_only(carried == Carried::Encrypted)
-        .build();
+        .https_only(carried == Carried::Encrypted);
     downloading_agent(config, BROKEN_OFF_AFTER)
 }
 
@@ -287,7 +286,22 @@ fn downloaded(
     let mut started_over = false;
 
     loop {
-        let reached = fetched_whole(agent, url, &partial, gate, building)?;
+        let fetched = fetched_whole(agent, url, &partial, gate, building)?;
+        let may_start_over = !started_over && !matches!(fetched, Fetched::FromTheStart);
+
+        if let Fetched::OnAStalePart(source) = fetched {
+            let _ = fs::remove_file(&partial);
+
+            if may_start_over {
+                tracing::debug!(error = %source, file, "a saved part is not the archive served now and is fetched again from the start");
+                started_over = true;
+                continue;
+            }
+            return Err(Error::Fetch {
+                url: url.to_owned(),
+                source,
+            });
+        }
 
         building.enter(Phase::Verifying);
 
@@ -299,7 +313,11 @@ fn downloaded(
 
         let _ = fs::remove_file(&partial);
 
-        if reached == Copied::PastTheEnd && !started_over {
+        if may_start_over {
+            tracing::debug!(
+                file,
+                "an archive grown on a saved part fails its checksum and is fetched again from the start"
+            );
             started_over = true;
             continue;
         }
@@ -312,13 +330,22 @@ fn downloaded(
     Ok(whole)
 }
 
+#[derive(Debug)]
+enum Fetched {
+    FromTheStart,
+    OnAPart,
+    OnAStalePart(io::Error),
+}
+
 fn fetched_whole(
     agent: &Agent,
     url: &str,
     partial: &Path,
     gate: &Gate,
     building: &Building,
-) -> Result<Copied> {
+) -> Result<Fetched> {
+    let mut on_a_part = false;
+
     loop {
         building.enter(Phase::Downloading);
         while gate.is_shut() {
@@ -329,9 +356,13 @@ fn fetched_whole(
         building.enter(Phase::Downloading);
 
         let from = fs::metadata(partial).map_or(0, |meta| meta.len());
+
+        on_a_part |= from > 0;
         match copied(agent, url, partial, from, gate, building)? {
             Copied::Shut => continue,
-            reached => return Ok(reached),
+            Copied::Stale(source) => return Ok(Fetched::OnAStalePart(source)),
+            Copied::Whole | Copied::PastTheEnd if on_a_part => return Ok(Fetched::OnAPart),
+            Copied::Whole | Copied::PastTheEnd => return Ok(Fetched::FromTheStart),
         }
     }
 }
@@ -342,11 +373,12 @@ fn whole_size(total: Option<u64>, length: Option<u64>, held: u64) -> u64 {
         .unwrap_or(0)
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Debug)]
 enum Copied {
     Whole,
     PastTheEnd,
     Shut,
+    Stale(io::Error),
 }
 
 fn copied(
@@ -360,6 +392,9 @@ fn copied(
     let mut source = match Ranged::opened_from(agent.clone(), url.to_owned(), from, RESUMED_AFTER) {
         Ok(source) => source,
         Err(Unfetched::Refused(RANGE_PAST_THE_END)) if from > 0 => return Ok(Copied::PastTheEnd),
+        Err(stale @ (Unfetched::Changed | Unfetched::Misranged)) if from > 0 => {
+            return Ok(Copied::Stale(stale.into_io()));
+        }
         Err(Unfetched::Refused(status)) => {
             return Err(Error::Refused {
                 url: url.to_owned(),
@@ -652,6 +687,152 @@ mod tests {
         assert_eq!(held_again, ARCHIVE);
     }
 
+    type Answer = Box<dyn Fn(&str) -> Vec<u8> + Send>;
+
+    const DAMAGED: &[u8] = b"a damaged copy of what was served";
+    const SAVED: usize = 10;
+
+    fn whole(body: &'static [u8]) -> Answer {
+        Box::new(move |_| {
+            let mut answer = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len()
+            )
+            .into_bytes();
+
+            answer.extend_from_slice(body);
+            answer
+        })
+    }
+
+    fn ranged_as_asked(body: &'static [u8]) -> Answer {
+        Box::new(move |asked| {
+            let from = asked
+                .lines()
+                .find_map(|line| line.strip_prefix("range: bytes="))
+                .and_then(|range| range.trim().trim_end_matches('-').parse::<usize>().ok())
+                .unwrap_or(0);
+            let mut answer = format!(
+                "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {from}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                body.len() - 1,
+                body.len(),
+                body.len() - from
+            )
+            .into_bytes();
+
+            answer.extend_from_slice(&body[from..]);
+            answer
+        })
+    }
+
+    fn served_in_turn(answers: Vec<Answer>) -> (String, std::thread::JoinHandle<Vec<String>>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let url = format!(
+            "http://{}/{CORE_ARCHIVE}",
+            listener.local_addr().expect("bound")
+        );
+        let serving = std::thread::spawn(move || {
+            answers
+                .into_iter()
+                .map(|answer| {
+                    let (mut stream, _) = listener.accept().expect("a fetch");
+                    let asked = asked_head(&mut stream);
+
+                    stream.write_all(&answer(&asked)).expect("the answer");
+                    asked
+                })
+                .collect()
+        });
+        (url, serving)
+    }
+
+    fn downloaded_over(
+        saved: Option<Vec<u8>>,
+        answers: Vec<Answer>,
+    ) -> (Result<Vec<u8>>, Vec<String>, bool) {
+        let (url, serving) = served_in_turn(answers);
+        let into = a_folder("stale-part");
+        let partial = named(&into.join(CORE_ARCHIVE), PARTIAL);
+
+        if let Some(saved) = saved {
+            fs::write(&partial, saved).expect("a saved part");
+        }
+
+        let fetched = downloaded(
+            &plain_agent(),
+            &url,
+            &into,
+            CORE_ARCHIVE,
+            &sum_of(ARCHIVE),
+            &Gate::open(),
+            &Building::default(),
+        )
+        .map(|whole| fs::read(whole).expect("the archive"));
+        let asked = serving.join().expect("served");
+        let part_left = partial.exists();
+
+        let _ = fs::remove_dir_all(&into);
+
+        (fetched, asked, part_left)
+    }
+
+    fn ranges_of(asked: &[String]) -> Vec<Option<String>> {
+        asked
+            .iter()
+            .map(|head| {
+                head.lines()
+                    .find_map(|line| line.strip_prefix("range: ").map(str::to_owned))
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_resumed_answer_failing_its_checksum_is_fetched_again_once_from_the_start() {
+        let (fetched, asked, part_left) = downloaded_over(
+            Some(vec![b'x'; SAVED]),
+            vec![ranged_as_asked(ARCHIVE), whole(ARCHIVE)],
+        );
+
+        assert_eq!(fetched.expect("a verified archive"), ARCHIVE);
+        assert_eq!(ranges_of(&asked), [Some(format!("bytes={SAVED}-")), None]);
+        assert!(!part_left);
+    }
+
+    #[test]
+    fn a_whole_answer_shorter_than_the_saved_part_is_fetched_again_once_from_the_start() {
+        let saved = ARCHIVE.len() + SAVED;
+
+        let (fetched, asked, part_left) = downloaded_over(
+            Some(vec![b'x'; saved]),
+            vec![whole(ARCHIVE), whole(ARCHIVE)],
+        );
+
+        assert_eq!(fetched.expect("a verified archive"), ARCHIVE);
+        assert_eq!(ranges_of(&asked), [Some(format!("bytes={saved}-")), None]);
+        assert!(!part_left);
+    }
+
+    #[test]
+    fn a_damaged_whole_answer_still_fails_its_checksum_with_a_saved_part_or_without() {
+        let (unsaved, asked_once, unsaved_left) = downloaded_over(None, vec![whole(DAMAGED)]);
+        let (saved, asked_twice, saved_left) = downloaded_over(
+            Some(vec![b'x'; SAVED]),
+            vec![whole(DAMAGED), whole(DAMAGED)],
+        );
+
+        assert!(
+            matches!(unsaved, Err(Error::Checksum { .. })),
+            "{unsaved:?}"
+        );
+        assert!(matches!(saved, Err(Error::Checksum { .. })), "{saved:?}");
+        assert_eq!(ranges_of(&asked_once), [None]);
+        assert_eq!(
+            ranges_of(&asked_twice),
+            [Some(format!("bytes={SAVED}-")), None]
+        );
+        assert!(!unsaved_left && !saved_left);
+    }
+
     fn served_from_half_way(listener: &std::net::TcpListener) {
         let (mut stream, _) = listener.accept().expect("a fetch");
         let mut asked = Vec::new();
@@ -717,7 +898,7 @@ mod tests {
 
         let _ = fs::remove_dir_all(&into);
 
-        assert_eq!(reached, Copied::Whole);
+        assert!(matches!(reached, Copied::Whole), "{reached:?}");
         assert_eq!(kept, ARCHIVE);
         assert_eq!(of, ARCHIVE.len() as u64);
         assert_eq!(read, of);

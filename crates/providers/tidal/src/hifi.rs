@@ -378,9 +378,7 @@ fn relayed_download(
 
 fn relay_agent() -> Agent {
     downloading_agent(
-        configured(RELAYED_ANSWERED_WITHIN, Trusted::SystemStoreToo)
-            .max_redirects(0)
-            .build(),
+        configured(RELAYED_ANSWERED_WITHIN, Trusted::SystemStoreToo).max_redirects(0),
         Patience::default().broken_off_after,
     )
 }

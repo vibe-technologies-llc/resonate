@@ -305,7 +305,16 @@ asked over plain HTTP (`Carried::Plain`, `the_export_is_never_asked_for_over_pla
      held), so a resumed one never reads past it (`whole_size`).
    - It waits while the download gate is shut (`download-on-metered` off).
    - Each archive is checked against its sum before being renamed whole and marked `.verified`.
-   - A mismatch removes the part and is `Error::Checksum`.
+   - A mismatch removes the part and is `Error::Checksum`, unless the archive grew on a saved part
+     (any copy of the pass began past byte 0): then it is fetched again once from the start, so a
+     part saved from another file never ends the job for good
+     (`a_resumed_answer_failing_its_checksum_is_fetched_again_once_from_the_start`). A whole fetched
+     from the start that fails is refused at once, and so is the second pass
+     (`a_damaged_whole_answer_still_fails_its_checksum_with_a_saved_part_or_without`).
+   - A saved part the answer proves stale before any byte is copied (`Unfetched::Changed`, as a
+     `200` shorter than the part, or `Unfetched::Misranged`) is removed and fetched again once from
+     the start (`Copied::Stale`), never left for the next attempt to trip over
+     (`a_whole_answer_shorter_than_the_saved_part_is_fetched_again_once_from_the_start`).
    - A part already whole (a cancel during the checksum, a kill before the rename) is answered
      `416` when ranged past its end: that goes straight to the checksum, and a part that fails it
      is fetched again once from the start, never refused for good
