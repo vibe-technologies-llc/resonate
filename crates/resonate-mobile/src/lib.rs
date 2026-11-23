@@ -242,24 +242,23 @@ fn place_saved(
     rows: &QueueRows,
     revision: u64,
 ) -> Option<SavedPlace> {
-    if party_following {
-        return None;
-    }
-    place_to_save(state, rows, revision)
+    (!party_following).then(|| place_to_save(state, rows, revision))
 }
 
-fn place_to_save(state: &PlayerState, rows: &QueueRows, revision: u64) -> Option<SavedPlace> {
-    if state.current.is_none() && row_being_opened(state, rows).is_some() {
-        return None;
-    }
-    Some(SavedPlace {
+fn place_to_save(state: &PlayerState, rows: &QueueRows, revision: u64) -> SavedPlace {
+    let reached = match state.current {
+        Some(track) => {
+            Reached::At(track.position.to_duration(track.source.rate).as_millis() as u64)
+        }
+        None if row_being_opened(state, rows).is_some() => Reached::StillOpening,
+        None => Reached::At(0),
+    };
+    SavedPlace {
         revision,
         shuffle: state.shuffle,
         row: state.queue_position.unwrap_or(0) as u32,
-        position_ms: state.current.map_or(0, |track| {
-            track.position.to_duration(track.source.rate).as_millis() as u64
-        }),
-    })
+        reached,
+    }
 }
 
 const fn transport_of(playback: PlaybackState) -> Transport {
@@ -321,12 +320,18 @@ pub struct Snapshot {
     pub heard_elsewhere: Option<HeardElsewhere>,
 }
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Reached {
+    At(u64),
+    StillOpening,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SavedPlace {
     revision: u64,
     shuffle: bool,
     row: u32,
-    position_ms: u64,
+    reached: Reached,
 }
 
 impl SavedPlace {
@@ -761,20 +766,31 @@ impl MobilePlayer {
 
 impl MobilePlayer {
     pub(crate) fn save_while(&self, following: impl Fn(ZoneId) -> bool) -> Result<()> {
-        for zone in self.playing.listed() {
-            self.save_zone(&zone, following(zone.id))?;
-        }
-        Ok(())
+        self.playing
+            .listed()
+            .into_iter()
+            .map(|zone| self.save_zone(&zone, following(zone.id)))
+            .fold(Ok(()), Result::and)
     }
 
     fn save_zone(&self, zone: &resonate_engine::Zone, following: bool) -> Result<()> {
-        self.keep_volume_of(zone)?;
+        let Ok(zoned) = self.playing.zoned(zone.id) else {
+            return Ok(());
+        };
+        let mut keeping = zoned.keeping.lock();
 
-        let zoned = self.playing.zoned(zone.id)?;
-        let mut saved = zoned.saved.lock();
+        if !self.playing.still_holds(zone) {
+            return Ok(());
+        }
+        self.keep_volume_of(zone, &zoned)?;
+
         let (place, queue, rate) = {
             let state = zone.player.state();
             let queue = zone.player.queued();
+
+            if keeping.waits_on_its_restore(queue.revision) {
+                return Ok(());
+            }
 
             let Some(place) = place_saved(following, &state, &queue.rows, queue.revision) else {
                 return Ok(());
@@ -783,7 +799,7 @@ impl MobilePlayer {
             (place, queue, rate)
         };
 
-        if saved.as_ref() == Some(&place) {
+        if keeping.place.as_ref() == Some(&place) {
             return Ok(());
         }
 
@@ -792,12 +808,13 @@ impl MobilePlayer {
             .get(place.row as usize)
             .is_some_and(|item| served::Served::names(&item.location));
 
-        if saved
+        if keeping
+            .place
             .as_ref()
             .is_some_and(|saved| saved.arranged_as(&place))
         {
             self.catalog
-                .save_place_of(zone.id, place.row, place.position_ms)?;
+                .save_place_of(zone.id, place.row, place.reached)?;
             if served_playing && let Some(rate) = rate {
                 self.catalog.keep_served_rate_of(zone.id, place.row, rate)?;
             }
@@ -831,27 +848,49 @@ impl MobilePlayer {
                 }
                 ids.next().flatten().map(catalog::KeptRow::Document)
             });
-            let position_ms = if passed.the_place {
-                0
+            let reached = if passed.the_place {
+                Reached::At(0)
             } else {
-                place.position_ms
+                place.reached
             };
 
-            self.catalog.save_rows_of(zone.id, &kept, position_ms)?;
+            self.catalog.save_rows_of(zone.id, &kept, reached)?;
             if passed.any {
-                *saved = None;
+                keeping.place = None;
                 return Ok(());
             }
         }
-        *saved = Some(place);
+        keeping.place = Some(place);
         Ok(())
     }
 
     pub(crate) fn resume_saved_in(&self, zone: ZoneId) -> Result<()> {
+        let Some(resumption) = self.saved_resumption(zone)? else {
+            return Ok(());
+        };
+
+        self.restore_in(zone, || {
+            self.playing.send_to(zone, Command::Resume(resumption))
+        })
+    }
+
+    fn restore_in(&self, zone: ZoneId, sent: impl FnOnce() -> Result<()>) -> Result<()> {
+        let zoned = self.playing.zoned(zone)?;
+        let player = self.playing.player_of(zone)?;
+        let mut keeping = zoned.keeping.lock();
+
+        let over_revision = player.queued().revision;
+
+        sent()?;
+        keeping.restore_sent(over_revision);
+        Ok(())
+    }
+
+    fn saved_resumption(&self, zone: ZoneId) -> Result<Option<Resumption>> {
         let (kept, position) = self.catalog.resume_rows_of(zone)?;
 
         if kept.is_empty() {
-            return Ok(());
+            return Ok(None);
         }
 
         let ids: Vec<u64> = kept
@@ -907,9 +946,7 @@ impl MobilePlayer {
             playing_rate.unwrap_or(SampleRate::HZ_48000),
         );
 
-        self.playing
-            .send_to(zone, Command::Resume(resumed.resumption(at)))?;
-        Ok(())
+        Ok(Some(resumed.resumption(at)))
     }
 
     fn tracks_of_rows(&self, rows: &[&Arc<QueueItem>]) -> Result<Vec<Track>> {
@@ -961,6 +998,7 @@ mod tests {
     use resonate_engine::{OutputMode, SinkId, StreamVolume};
 
     use super::*;
+    use crate::harness::{CatalogFile, Harness};
 
     fn output_with(underruns: u64, overs: u64) -> OutputStatus {
         let rate = SampleRate::new(48_000).expect("a rate");
@@ -1119,6 +1157,173 @@ mod tests {
         assert!(saved.2);
         assert_eq!(saved.1, "acbcd");
         assert_eq!(resumed, saved);
+    }
+
+    #[test]
+    fn a_restore_still_on_its_way_leaves_every_saved_queue_as_it_was_through_a_save_and_a_shutdown()
+    {
+        let file = CatalogFile::new();
+        let kitchen = {
+            let harness = Harness::over_the_catalog_in(&file);
+
+            let kitchen = harness
+                .player
+                .zone_added("Kitchen", 0, String::new())
+                .expect("a second zone");
+
+            harness
+                .player
+                .catalog
+                .save_queue(&harness.ids("abcd"), 1, 500)
+                .expect("the first zone's queue");
+            harness
+                .player
+                .catalog
+                .save_queue_of(kitchen.id, &harness.ids("dc"), 1, 0)
+                .expect("the kitchen's queue");
+            kitchen.id
+        };
+
+        let harness = Harness::over_the_catalog_in(&file);
+        let kept = harness.player.catalog.kept_zones().expect("the kept zones");
+
+        harness
+            .player
+            .zone_opened(
+                &harness.player.playing.zones().expect("the zones"),
+                &kept[0],
+                0,
+            )
+            .expect("the kitchen reopened");
+
+        let mut held = [ZoneId::FIRST, kitchen].map(|zone| {
+            let resumption = harness
+                .player
+                .saved_resumption(zone)
+                .expect("read")
+                .expect("a saved queue");
+
+            harness
+                .player
+                .restore_in(zone, || Ok(()))
+                .expect("a restore on its way");
+            resumption
+        });
+
+        harness
+            .player
+            .save()
+            .expect("a save before the restores land");
+
+        let saved_early = [ZoneId::FIRST, kitchen]
+            .map(|zone| harness.player.catalog.resume_of(zone).expect("read"));
+
+        harness
+            .player
+            .playing
+            .player_of(ZoneId::FIRST)
+            .expect("the first zone")
+            .request(Command::Resume(std::mem::take(&mut held[0])))
+            .expect("the first restore sent")
+            .wait_for(crate::harness::SETTLED_WITHIN)
+            .expect("the first restore landed");
+        harness.settled(|snapshot| snapshot.current.is_some());
+        harness
+            .player
+            .add_to_queue(harness.ids("c"))
+            .expect("a song added once the first queue stands");
+        harness.player.shutdown().expect("shut down");
+
+        let (first, row, _) = harness
+            .player
+            .catalog
+            .resume_of(ZoneId::FIRST)
+            .expect("read");
+
+        assert_eq!(
+            saved_early,
+            [(harness.ids("abcd"), 1, 500), (harness.ids("dc"), 1, 0)]
+        );
+        assert_eq!((first, row), (harness.ids("abcdc"), 1));
+        assert_eq!(
+            harness.player.catalog.resume_of(kitchen).expect("read"),
+            (harness.ids("dc"), 1, 0)
+        );
+        assert_eq!(
+            harness
+                .player
+                .catalog
+                .kept_zones()
+                .expect("read")
+                .iter()
+                .map(|zone| zone.id)
+                .collect::<Vec<_>>(),
+            vec![kitchen]
+        );
+    }
+
+    fn opening_its_row(harness: &Harness) {
+        let player = harness.player.playing.player().expect("an open player");
+        let began = std::time::Instant::now();
+
+        loop {
+            let (state, queue) = (player.state(), player.queued());
+
+            if !queue.rows.is_empty()
+                && place_to_save(&state, &queue.rows, queue.revision).reached
+                    == Reached::StillOpening
+            {
+                return;
+            }
+
+            assert!(
+                began.elapsed() < crate::harness::SETTLED_WITHIN,
+                "the row never began opening"
+            );
+
+            std::thread::sleep(crate::harness::LOOKED_AGAIN_AFTER);
+        }
+    }
+
+    #[test]
+    fn a_queue_edited_while_its_song_opens_is_kept_through_a_shutdown_and_reopens_where_it_was_owed()
+     {
+        let file = CatalogFile::new();
+
+        {
+            let harness = Harness::over_the_catalog_in(&file);
+
+            harness
+                .player
+                .catalog
+                .save_queue(&harness.ids("abcd"), 1, 500)
+                .expect("a saved queue");
+            harness.hold_opens();
+            harness
+                .player
+                .resume_saved_in(ZoneId::FIRST)
+                .expect("the saved queue resumed");
+            opening_its_row(&harness);
+            harness
+                .player
+                .add_to_queue(harness.ids("a"))
+                .expect("a song added while the place opens");
+            harness.player.shutdown().expect("shut down");
+        }
+
+        let harness = Harness::over_the_catalog_in(&file);
+
+        let kept = harness.player.catalog.resume().expect("read");
+
+        harness
+            .player
+            .resume_saved_in(ZoneId::FIRST)
+            .expect("the kept queue resumed");
+        harness.settled(|snapshot| snapshot.current.is_some());
+
+        assert_eq!(kept, (harness.ids("abcda"), 1, 500));
+        assert_eq!(harness.queued(), "abcda");
+        assert_eq!(harness.playing(), ('b', 1, 500));
     }
 
     #[test]

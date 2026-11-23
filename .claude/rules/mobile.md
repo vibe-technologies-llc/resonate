@@ -157,9 +157,15 @@ at, so a row whose rate the boundary does not know (a song played in place from 
 `Track` carries a rate of 0) lands where it was asked
 (`a_seek_in_a_row_still_opening_is_sent_and_one_with_nothing_to_play_is_not`,
 `a_song_played_in_place_lands_where_a_jump_or_a_seek_while_it_opens_asks`). **A save in that window
-writes nothing** (`place_to_save`): a place of 0 would rewrite the queue over the place the previous song
-reached, and the previous place stays true until the new row publishes
-(`a_save_waits_for_the_row_opening_to_publish_its_place`).
+keeps the rows and the row, and waits for the place** (`place_to_save`, `Reached::StillOpening`): the
+queue's edits and the row being opened are written as any save writes them, and the moment is the one
+the catalog already kept where its kept row names the same song (`save_rows_of` and `save_place_of`
+compare the song, a document's id or a served song's uri, before they rewrite), else 0, since a place
+of 0 would overwrite the seek the opening still owes (a resumed place, a jump's) and the moment kept
+stays true until the row publishes its own
+(`a_save_while_a_row_opens_keeps_its_row_and_waits_for_the_row_to_publish_its_place`,
+`a_place_still_opening_keeps_the_moment_kept_for_its_song_and_another_song_starts_at_its_beginning`,
+`a_queue_edited_while_its_song_opens_is_kept_through_a_shutdown_and_reopens_where_it_was_owed`).
 
 **A paused load waits to land, and its refusal is still told by the snapshot.** `load` and
 `load_served` without autoplay send `Command::Resume` through `command_landed` (`Player::settle`),
@@ -772,7 +778,7 @@ phones*).
 
 **The boundary owns a `Zones`, never one player** (`zoning.rs`, `audio.md`'s zones). `Playing` holds
 the `Zones`, the zone shown (`shown`, the first until another is chosen) and a `Zoned` per zone: its
-own output `Routing`, failure, waiting, saved place and `Listening`, and the route string it was bound
+own output `Routing`, failure, waiting, `Keeping` (the place last saved and a restore still owed) and `Listening`, and the route string it was bound
 for. Every call the phones made before addresses the zone shown (`Playing::player`, `send` through
 `Zones::send`, so a setting, the equaliser and room correction reach every zone and a transport
 command the shown one); the snapshot names it (`Snapshot.zone`) with `Zones::revision`
@@ -849,7 +855,20 @@ forgetting and handing over songs reach it as they reach `queue`). The first zon
 `save_rows_of`, `save_place_of`, `resume_rows_of` and `place_among_rows` read either through `QueueKept`.
 `save` saves every zone; `MobilePlayer::new` resumes the first zone, then opens each kept zone at the
 system's device with its kept queue paused and at its kept volume (`restore_zones`); the front end
-binds a kept route to the device it now names (`select_zone_output`). A song gone or deleted leaves every zone's queue
+binds a kept route to the device it now names (`select_zone_output`). **A zone's kept queue waits for
+its restore**: `resume_saved_in` sends `Command::Resume` unwaited, so it notes the queue revision it
+was sent over (`restore_in`, `Keeping::restore_sent`) and `save_zone` writes nothing for that zone
+until the engine's revision moves past it (`Keeping::waits_on_its_restore`); a save or a shutdown
+before the engine takes the Resume up leaves the kept queue as it was, never the fresh engine's empty
+one (`a_restore_still_on_its_way_leaves_every_saved_queue_as_it_was_through_a_save_and_a_shutdown`).
+**Each zone is saved on its own and a removed zone stays removed**: `save_while` saves every zone
+listed and answers the first failure after the rest are saved; a zone's `Keeping` lock is held across
+its whole save (volume, rows, place), and `remove_zone` takes it across `Zones::remove` and
+`forget_zone`, as `rename_zone` and `select_zone_output` do across their `keep_zone`, so no write in
+flight lands after the zone's rows are forgotten; a zone gone or reopened under its id by the time
+its save takes the lock is passed over (`Playing::still_holds`)
+(`a_zone_removed_while_a_save_goes_round_stays_gone_on_disk_and_every_other_zone_is_saved`,
+`a_save_holding_a_zone_finishes_before_its_removal_forgets_it`). A song gone or deleted leaves every zone's queue
 (`drop_from_queue`, every run of its rows in one `Command::RemoveAll`, asked again where the queue moved meanwhile), and `documents_moved` sends `Command::Relocate` to every zone, a party's following one included (its seat follows the moved stamps, `party.md`), whatever its state (a row still opening included), then saves every zone but the following one (`android.md`). One
 `resonate-watch` thread follows each zone's events, counting that zone's listening and telling the
 watch (`watching::keep(player, zone)`; it ends when the zone's engine goes)
@@ -1040,7 +1059,9 @@ crate's sources (`language.md`'s *The checks*). The queue edit tests drive a rea
 a backend with no device (a paused queue never binds a stream; `Harness::sounding` lists one sink
 whose stream nothing pulls, for a queue that plays) and WAVE documents through the
 `content` provider; that `Harness` (`harness.rs`, test-only) is shared by the organise, inspector,
-analysis, snapshot and listening tests. A listen counted for a song the catalog no longer holds
+analysis, snapshot and listening tests. `Harness::over_the_catalog_in` opens it over a catalog file
+(`CatalogFile`, a folder of its own that outlives each harness), so a save and shutdown are read back
+by the next harness as by the next start. A listen counted for a song the catalog no longer holds
 stores nothing and settles nothing: `store_counting` keeps no visit unless the insert changed a row
 (`a_listen_counted_for_a_song_the_catalog_lost_does_not_settle_over_another_listen`). The enrichment tests drive the pass over a fake `Reference` through `Asking`
 (the reference and the client whose switch it reads): one cover per album, a miss left alone until

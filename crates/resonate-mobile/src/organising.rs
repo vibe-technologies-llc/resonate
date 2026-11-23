@@ -545,6 +545,7 @@ mod tests {
 
         use super::*;
         use crate::{
+            Reached,
             documents::document_uri,
             harness::{FOLDER, Harness},
             place_saved,
@@ -697,7 +698,7 @@ mod tests {
         }
 
         #[test]
-        fn a_zone_a_party_is_followed_in_or_a_row_is_opening_in_saves_no_place() {
+        fn a_zone_a_party_is_followed_in_saves_no_place_and_a_row_opening_saves_its_row_alone() {
             let harness = Harness::new();
 
             harness.resumed("abc", 0, 0);
@@ -710,33 +711,31 @@ mod tests {
                 ..PlayerState::default()
             };
 
-            assert!(
-                place_saved(
-                    true,
-                    &state(PlaybackState::Stopped),
-                    &queue.rows,
-                    queue.revision
-                )
-                .is_none()
+            let following = place_saved(
+                true,
+                &state(PlaybackState::Stopped),
+                &queue.rows,
+                queue.revision,
             );
-            assert!(
-                place_saved(
-                    false,
-                    &state(PlaybackState::Buffering),
-                    &queue.rows,
-                    queue.revision
-                )
-                .is_none()
+            let opening = place_saved(
+                false,
+                &state(PlaybackState::Buffering),
+                &queue.rows,
+                queue.revision,
             );
-            assert!(
-                place_saved(
-                    false,
-                    &state(PlaybackState::Stopped),
-                    &queue.rows,
-                    queue.revision
-                )
-                .is_some()
+            let stopped = place_saved(
+                false,
+                &state(PlaybackState::Stopped),
+                &queue.rows,
+                queue.revision,
             );
+
+            assert!(following.is_none());
+            assert_eq!(
+                opening.map(|place| place.reached),
+                Some(Reached::StillOpening)
+            );
+            assert_eq!(stopped.map(|place| place.reached), Some(Reached::At(0)));
         }
 
         #[test]
@@ -749,7 +748,8 @@ mod tests {
                 let state = player.state();
                 let queue = player.queued();
                 queue.rows.len() == ids.len()
-                    && place_saved(false, &state, &queue.rows, queue.revision).is_none()
+                    && place_saved(false, &state, &queue.rows, queue.revision)
+                        .is_some_and(|place| place.reached == Reached::StillOpening)
             };
 
             harness.hold_opens();

@@ -420,7 +420,8 @@ row keeps playing at its position and the revision moves for the next save. `pla
 catalog documents as `Placement::Next` (right after the playing row); `add_to_queue` appends them
 (`Placement::At` the queue's length, after the rest of the loaded order, unlike the desktop's
 `Queued`); both build rows as `load` does, and into an empty queue they arrive paused on its first
-row through `Resumption`. `remove_from_queue` names the row by the queue snapshot's `queue_id`;
+row through `Resumption`, carrying the queue's shuffle so the listener's setting stays on
+(`an_empty_queue_filled_by_add_to_queue_or_play_next_keeps_shuffle_on`). `remove_from_queue` names the row by the queue snapshot's `queue_id`;
 removing the playing row moves on as the engine's removal does. `move_in_queue(from, to)` takes
 SwiftUI's `onMove` convention, `to` being the row it lands before counted before the move (the
 queue's length for the end), turned into the engine's landing row. `clear_queue` keeps the playing

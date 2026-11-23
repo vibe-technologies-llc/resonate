@@ -57,7 +57,7 @@ impl MobilePlayer {
     fn queue_documents(&self, ids: Vec<u64>, placed: impl Fn(usize) -> Placement) -> Result<()> {
         let items = self.queue_items(ids)?;
 
-        self.edit_queue(|queued, _| {
+        self.edit_queue(|queued, state| {
             if items.is_empty() {
                 return Ok(None);
             }
@@ -65,7 +65,10 @@ impl MobilePlayer {
             let items = self.as_chosen(items)?;
 
             if queued.rows.is_empty() {
-                return Ok(Some(Command::Resume(paused_on_the_first(items))));
+                return Ok(Some(Command::Resume(paused_on_the_first(
+                    items,
+                    state.shuffle,
+                ))));
             }
             Ok(Some(Command::Insert {
                 items,
@@ -119,7 +122,7 @@ impl MobilePlayer {
     }
 }
 
-fn paused_on_the_first(items: Vec<QueueItem>) -> Resumption {
+fn paused_on_the_first(items: Vec<QueueItem>, shuffle: bool) -> Resumption {
     Resumption {
         rows: items
             .into_iter()
@@ -129,6 +132,7 @@ fn paused_on_the_first(items: Vec<QueueItem>) -> Resumption {
                 held: Some(item.id),
             })
             .collect(),
+        shuffle,
         ..Resumption::default()
     }
 }
@@ -292,7 +296,7 @@ mod tests {
     }
 
     #[test]
-    fn a_save_waits_for_the_row_opening_to_publish_its_place() {
+    fn a_save_while_a_row_opens_keeps_its_row_and_waits_for_the_row_to_publish_its_place() {
         let harness = Harness::new();
 
         harness.resumed("abc", 0, 0);
@@ -310,18 +314,19 @@ mod tests {
             ..PlayerState::default()
         };
 
-        assert!(
-            crate::place_to_save(
-                &state(PlaybackState::Buffering),
-                &queue.rows,
-                queue.revision
-            )
-            .is_none()
+        let opening = crate::place_to_save(
+            &state(PlaybackState::Buffering),
+            &queue.rows,
+            queue.revision,
         );
-        assert!(
-            crate::place_to_save(&state(PlaybackState::Stopped), &queue.rows, queue.revision)
-                .is_some_and(|place| place.row == 1 && place.position_ms == 0)
+        let stopped =
+            crate::place_to_save(&state(PlaybackState::Stopped), &queue.rows, queue.revision);
+
+        assert_eq!(
+            (opening.row, opening.reached),
+            (1, crate::Reached::StillOpening)
         );
+        assert_eq!((stopped.row, stopped.reached), (1, crate::Reached::At(0)));
     }
 
     #[test]
@@ -657,6 +662,27 @@ mod tests {
             .expect("nothing queued");
 
         assert_eq!(harness.queued(), "ba");
+    }
+
+    type Queueing = fn(&MobilePlayer, Vec<u64>) -> Result<()>;
+
+    #[test]
+    fn an_empty_queue_filled_by_add_to_queue_or_play_next_keeps_shuffle_on() {
+        let queueings: [Queueing; 2] = [MobilePlayer::add_to_queue, MobilePlayer::play_next];
+
+        for queued in queueings {
+            let harness = Harness::new();
+
+            harness.player.set_shuffle(true).expect("shuffle on");
+            harness.settled(|snapshot| snapshot.shuffle);
+            queued(&harness.player, harness.ids("bad")).expect("songs queued");
+
+            let filled = harness.settled(|snapshot| snapshot.current.is_some());
+
+            assert!(filled.shuffle);
+            assert_eq!(harness.queued(), "bad");
+            assert_eq!(harness.playing(), ('b', 0, 0));
+        }
     }
 
     #[test]

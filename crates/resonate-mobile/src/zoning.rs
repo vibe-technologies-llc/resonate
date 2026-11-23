@@ -34,11 +34,31 @@ pub(crate) type Engines = dyn Fn(ZoneId, EngineConfig, &Arc<output::Routing>) ->
     + Send
     + Sync;
 
+#[derive(Default)]
+pub(crate) struct Keeping {
+    pub(crate) place: Option<SavedPlace>,
+    restore_sent_over: Option<u64>,
+}
+
+impl Keeping {
+    pub(crate) const fn restore_sent(&mut self, over_revision: u64) {
+        self.restore_sent_over = Some(over_revision);
+    }
+
+    pub(crate) fn waits_on_its_restore(&mut self, revision: u64) -> bool {
+        if self.restore_sent_over == Some(revision) {
+            return true;
+        }
+        self.restore_sent_over = None;
+        false
+    }
+}
+
 pub(crate) struct Zoned {
     pub(crate) routing: Arc<output::Routing>,
     pub(crate) failure: Mutex<Option<String>>,
     pub(crate) waiting: Mutex<Option<String>>,
-    pub(crate) saved: Mutex<Option<SavedPlace>>,
+    pub(crate) keeping: Mutex<Keeping>,
     pub(crate) listening: Mutex<(Listening, Option<i64>)>,
     pub(crate) renderer: Mutex<Option<KeptRenderer>>,
     route: Mutex<String>,
@@ -56,7 +76,7 @@ impl Zoned {
             routing,
             failure: Mutex::new(None),
             waiting: Mutex::new(None),
-            saved: Mutex::new(None),
+            keeping: Mutex::new(Keeping::default()),
             listening: Mutex::new((Listening::default(), None)),
             renderer: Mutex::new(renderer),
             route: Mutex::new(route),
@@ -269,6 +289,14 @@ impl Playing {
             .iter()
             .map(|(id, zoned)| (*id, Arc::clone(zoned)))
             .collect()
+    }
+
+    pub(crate) fn still_holds(&self, zone: &Zone) -> bool {
+        self.zones
+            .lock()
+            .as_ref()
+            .and_then(|zones| zones.zone(zone.id))
+            .is_some_and(|listed| Arc::ptr_eq(&listed.player, &zone.player))
     }
 
     pub(crate) fn listed(&self) -> Vec<Zone> {
@@ -522,6 +550,7 @@ impl MobilePlayer {
         let id = zone_named(zone)?;
         let name = ZoneName::given(&name).ok_or(Error::ZoneUnnamed)?;
         let zoned = self.playing.zoned(id)?;
+        let _keeping = zoned.keeping.lock();
 
         self.playing.zones()?.rename(id, name.clone())?;
         self.catalog.keep_zone(&zoned.kept(id, &name))
@@ -535,21 +564,27 @@ impl MobilePlayer {
         }
 
         let zones = self.playing.zones()?;
-        let listening = self.playing.zoned(id)?;
+        let zoned = self.playing.zoned(id)?;
 
         self.party_left_on(id);
-        if let Err(error) = self.settle_listening(&listening) {
+        if let Err(error) = self.settle_listening(&zoned) {
             tracing::warn!(%error, zone, "the listen of a zone taken away was not kept");
         }
+
+        let keeping = zoned.keeping.lock();
+
         zones.remove(id)?;
         if self.playing.shown() == id {
             self.playing
                 .shown
                 .store(ZoneId::FIRST.get(), Ordering::Release);
         }
-        self.catalog.forget_zone(id)?;
+
+        let forgotten = self.catalog.forget_zone(id);
+
+        drop(keeping);
         self.services.watching.tell();
-        Ok(())
+        forgotten
     }
 
     pub fn select_zone_output(&self, zone: u32, device: i32, route: String) -> Result<()> {
@@ -570,7 +605,12 @@ impl MobilePlayer {
             return Err(Error::OutputUnavailable);
         }
         *zoned.route.lock() = route;
-        self.catalog.keep_zone(&zoned.kept(id, &name))?;
+        {
+            let _keeping = zoned.keeping.lock();
+
+            self.playing.player_of(id)?;
+            self.catalog.keep_zone(&zoned.kept(id, &name))?;
+        }
         self.playing
             .send_to(id, Command::SetSink(zoned.wanted_sink()))
     }
@@ -715,8 +755,7 @@ impl MobilePlayer {
 }
 
 impl MobilePlayer {
-    pub(crate) fn keep_volume_of(&self, zone: &Zone) -> Result<()> {
-        let zoned = self.playing.zoned(zone.id)?;
+    pub(crate) fn keep_volume_of(&self, zone: &Zone, zoned: &Zoned) -> Result<()> {
         let volume = zone.player.state().volume;
 
         if (volume.get() - zoned.volume.lock().get()).abs() < VOLUME_KEPT_WITHIN {
@@ -1146,6 +1185,120 @@ mod tests {
             harness.player.catalog.resume_of(study.id).expect("read"),
             (Vec::new(), 0, 0)
         );
+        assert!(
+            harness
+                .player
+                .catalog
+                .kept_zones()
+                .expect("read")
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn a_zone_removed_while_a_save_goes_round_stays_gone_on_disk_and_every_other_zone_is_saved() {
+        let harness = Harness::new();
+
+        harness.resumed("abc", 0, 0);
+
+        let [kitchen, study] = [("Kitchen", "dc"), ("Study", "ba")].map(|(name, queued)| {
+            let zone = harness
+                .player
+                .zone_added(name, 0, String::new())
+                .expect("another zone");
+
+            harness
+                .player
+                .show_zone(zone.id.get())
+                .expect("the zone shown");
+            harness
+                .player
+                .load(harness.ids(queued), 1, false)
+                .expect("a queue for the zone");
+            harness.settled(|snapshot| snapshot.current.is_some());
+            zone.id
+        });
+
+        harness
+            .player
+            .show_zone(kitchen.get())
+            .expect("the kitchen shown");
+        harness.player.set_volume(0.3).expect("the kitchen quieter");
+        settled_at(
+            &harness.player.playing.player_of(kitchen).expect("a zone"),
+            0.3,
+        );
+
+        let saved = harness.player.save_while(|zone| {
+            if zone == kitchen {
+                harness
+                    .player
+                    .remove_zone(kitchen.get())
+                    .expect("the kitchen taken away");
+            }
+            false
+        });
+
+        assert!(saved.is_ok(), "a zone was left unsaved: {saved:?}");
+        assert_eq!(
+            harness
+                .player
+                .catalog
+                .kept_zones()
+                .expect("read")
+                .iter()
+                .map(|kept| kept.id)
+                .collect::<Vec<_>>(),
+            vec![study]
+        );
+        assert_eq!(
+            harness.player.catalog.resume_of(kitchen).expect("read"),
+            (Vec::new(), 0, 0)
+        );
+        assert_eq!(
+            harness.player.catalog.resume_of(study).expect("read"),
+            (harness.ids("ba"), 1, 0)
+        );
+        assert_eq!(
+            harness
+                .player
+                .catalog
+                .resume_of(ZoneId::FIRST)
+                .expect("read"),
+            (harness.ids("abc"), 0, 0)
+        );
+    }
+
+    #[test]
+    fn a_save_holding_a_zone_finishes_before_its_removal_forgets_it() {
+        let harness = Arc::new(Harness::new());
+        let kitchen = harness
+            .player
+            .zone_added("Kitchen", 0, String::new())
+            .expect("a second zone");
+
+        let zoned = harness.player.playing.zoned(kitchen.id).expect("a zone");
+        let keeping = zoned.keeping.lock();
+
+        let removing = {
+            let harness = Arc::clone(&harness);
+            thread::spawn(move || harness.player.remove_zone(kitchen.id.get()))
+        };
+
+        thread::sleep(Duration::from_millis(50));
+        harness
+            .player
+            .catalog
+            .keep_volume(&KeptZone {
+                volume: Volume::new(0.3).expect("a volume"),
+                ..zoned.kept(kitchen.id, &kitchen.name)
+            })
+            .expect("a volume kept mid-save");
+        drop(keeping);
+
+        let removed = removing.join().expect("the removal finished");
+
+        assert!(removed.is_ok(), "the kitchen stayed: {removed:?}");
         assert!(
             harness
                 .player

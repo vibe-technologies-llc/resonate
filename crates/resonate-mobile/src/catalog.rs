@@ -18,7 +18,7 @@ use rusqlite::{
 };
 
 use crate::{
-    Error, Result, StoreOp, Track,
+    Error, Reached, Result, StoreOp, Track,
     arranged::{Arranged, Laid},
     served::ServedSong,
 };
@@ -1030,7 +1030,7 @@ impl Catalog {
 
     #[cfg(test)]
     pub(crate) fn save_place(&self, row: u32, position_ms: u64) -> Result<()> {
-        self.save_place_of(ZoneId::FIRST, row, position_ms)
+        self.save_place_of(ZoneId::FIRST, row, Reached::At(position_ms))
     }
 
     #[cfg(test)]
@@ -1050,14 +1050,14 @@ impl Catalog {
             row: at as usize,
             ..Arranged::in_play_order(ids.iter().copied().map(KeptRow::Document))
         };
-        self.save_rows_of(zone, &arranged, position_ms)
+        self.save_rows_of(zone, &arranged, Reached::At(position_ms))
     }
 
     pub(crate) fn save_rows_of(
         &self,
         zone: ZoneId,
         arranged: &Arranged<KeptRow>,
-        position_ms: u64,
+        reached: Reached,
     ) -> Result<()> {
         let kept = QueueKept::of(zone);
         let mut connection = self.0.lock();
@@ -1065,6 +1065,16 @@ impl Catalog {
         let transaction = connection
             .transaction()
             .map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        let position_ms = match reached {
+            Reached::At(position_ms) => position_ms,
+            Reached::StillOpening => reached_before_opening(
+                &transaction,
+                zone,
+                arranged.rows.get(arranged.row).map(|laid| laid.row.song()),
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))?,
+        };
 
         transaction
             .execute(kept.cleared, [zone.get()])
@@ -1120,9 +1130,16 @@ impl Catalog {
             .map_err(|source| Error::store(StoreOp::Write, source))
     }
 
-    pub(crate) fn save_place_of(&self, zone: ZoneId, row: u32, position_ms: u64) -> Result<()> {
-        self.0
-            .lock()
+    pub(crate) fn save_place_of(&self, zone: ZoneId, row: u32, reached: Reached) -> Result<()> {
+        let connection = self.0.lock();
+
+        let position_ms = match reached {
+            Reached::At(position_ms) => position_ms,
+            Reached::StillOpening => reached_at_the_row_kept(&connection, zone, row)
+                .map_err(|source| Error::store(StoreOp::Read, source))?,
+        };
+
+        connection
             .execute(
                 QueueKept::of(zone).place,
                 params![zone.get(), row, position_ms.min(i64::MAX as u64) as i64],
@@ -1273,6 +1290,66 @@ impl KeptPlace {
 
 const SERVED_ROWS_CLEARED: &str = "DELETE FROM served_rows WHERE zone = ?1";
 
+fn place_kept(connection: &Connection, zone: ZoneId) -> rusqlite::Result<Option<(i64, u64)>> {
+    connection
+        .query_row(QueueKept::of(zone).read_place, [zone.get()], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?.max(0) as u64))
+        })
+        .optional()
+}
+
+fn song_kept_at(
+    connection: &Connection,
+    zone: ZoneId,
+    row_at: i64,
+) -> rusqlite::Result<Option<KeptSong>> {
+    let document = connection
+        .query_row(
+            QueueKept::of(zone).track_at,
+            params![zone.get(), row_at],
+            |row| row.get::<_, i64>(0),
+        )
+        .optional()?;
+
+    if let Some(id) = document {
+        return Ok(Some(KeptSong::Document(id as u64)));
+    }
+    connection
+        .query_row(
+            "SELECT uri FROM served_rows WHERE zone = ?1 AND position = ?2",
+            params![zone.get(), row_at],
+            |row| row.get(0).map(KeptSong::Served),
+        )
+        .optional()
+}
+
+fn reached_before_opening(
+    connection: &Connection,
+    zone: ZoneId,
+    opening: Option<KeptSong>,
+) -> rusqlite::Result<u64> {
+    let Some((row_at, position_ms)) = place_kept(connection, zone)? else {
+        return Ok(0);
+    };
+    let was = song_kept_at(connection, zone, row_at)?;
+
+    Ok(if was.is_some() && was == opening {
+        position_ms
+    } else {
+        0
+    })
+}
+
+fn reached_at_the_row_kept(
+    connection: &Connection,
+    zone: ZoneId,
+    row: u32,
+) -> rusqlite::Result<u64> {
+    Ok(place_kept(connection, zone)?
+        .filter(|(row_at, _)| *row_at == i64::from(row))
+        .map_or(0, |(_, position_ms)| position_ms))
+}
+
 pub(crate) fn forget_served_rows_of(
     connection: &rusqlite::Connection,
     zone: ZoneId,
@@ -1292,6 +1369,21 @@ pub(crate) enum KeptRow {
     Served(KeptServed),
 }
 
+impl KeptRow {
+    fn song(&self) -> KeptSong {
+        match self {
+            Self::Document(id) => KeptSong::Document(*id),
+            Self::Served(served) => KeptSong::Served(served.song.uri.clone()),
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum KeptSong {
+    Document(u64),
+    Served(String),
+}
+
 pub(crate) struct QueueKept {
     cleared: &'static str,
     row: &'static str,
@@ -1299,6 +1391,7 @@ pub(crate) struct QueueKept {
     arranged: &'static str,
     rows: &'static str,
     pub(crate) read_place: &'static str,
+    track_at: &'static str,
     read_arranged: &'static str,
     among: &'static str,
     among_documents: &'static str,
@@ -1314,6 +1407,7 @@ impl QueueKept {
         arranged: "INSERT INTO resume(id, row_at, position_ms, shuffle, next_first, next_last) VALUES (1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(id) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms, shuffle = excluded.shuffle, next_first = excluded.next_first, next_last = excluded.next_last",
         rows: "SELECT position, track, coalesce(loaded, position) FROM queue WHERE ?1 = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM resume WHERE id = 1 AND ?1 = ?1",
+        track_at: "SELECT track FROM queue WHERE position = ?2 AND ?1 = ?1",
         read_arranged: "SELECT row_at, position_ms, shuffle, next_first, next_last FROM resume WHERE id = 1 AND ?1 = ?1",
         among: "SELECT (SELECT count(*) FROM queue WHERE position < ?2) + (SELECT count(*) FROM served_rows WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2) OR EXISTS(SELECT 1 FROM served_rows WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM queue) + (SELECT count(*) FROM served_rows WHERE zone = ?1)",
         among_documents: "SELECT (SELECT count(*) FROM queue WHERE position < ?2), EXISTS(SELECT 1 FROM queue WHERE position = ?2), (SELECT count(*) FROM queue) WHERE ?1 = ?1",
@@ -1328,6 +1422,7 @@ impl QueueKept {
         arranged: "INSERT INTO zone_resume(zone, row_at, position_ms, shuffle, next_first, next_last) VALUES (?1, ?2, ?3, ?4, ?5, ?6) ON CONFLICT(zone) DO UPDATE SET row_at = excluded.row_at, position_ms = excluded.position_ms, shuffle = excluded.shuffle, next_first = excluded.next_first, next_last = excluded.next_last",
         rows: "SELECT position, track, coalesce(loaded, position) FROM zone_queue WHERE zone = ?1 ORDER BY position",
         read_place: "SELECT row_at, position_ms FROM zone_resume WHERE zone = ?1",
+        track_at: "SELECT track FROM zone_queue WHERE zone = ?1 AND position = ?2",
         read_arranged: "SELECT row_at, position_ms, shuffle, next_first, next_last FROM zone_resume WHERE zone = ?1",
         among: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2) + (SELECT count(*) FROM served_rows WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2) OR EXISTS(SELECT 1 FROM served_rows WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1) + (SELECT count(*) FROM served_rows WHERE zone = ?1)",
         among_documents: "SELECT (SELECT count(*) FROM zone_queue WHERE zone = ?1 AND position < ?2), EXISTS(SELECT 1 FROM zone_queue WHERE zone = ?1 AND position = ?2), (SELECT count(*) FROM zone_queue WHERE zone = ?1)",
@@ -2789,6 +2884,79 @@ mod tests {
         );
     }
 
+    #[test]
+    fn a_place_still_opening_keeps_the_moment_kept_for_its_song_and_another_song_starts_at_its_beginning()
+     {
+        let catalog = Catalog::open(Path::new(":memory:")).expect("a catalog");
+        let ids = ["a", "b", "c"].map(|name| {
+            catalog
+                .upsert(Track {
+                    uri: format!("content://music/{name}.flac"),
+                    name: format!("{name}.flac"),
+                    title: name.to_uppercase(),
+                    rate: 44100,
+                    codec: "FLAC".into(),
+                    ..Track::default()
+                })
+                .expect("a document")
+                .id
+        });
+        let kitchen = ZoneId::new(2).expect("a zone");
+
+        catalog
+            .keep_zone(&crate::zoning::KeptZone {
+                id: kitchen,
+                name: "Kitchen".into(),
+                route: String::new(),
+                volume: Volume::MAX,
+                renderer: None,
+            })
+            .expect("a kept zone");
+
+        let moved = [ids[2], ids[0], ids[1]];
+        let opening = |row| Arranged {
+            row,
+            ..Arranged::in_play_order(moved.map(KeptRow::Document))
+        };
+
+        for zone in [ZoneId::FIRST, kitchen] {
+            catalog
+                .save_queue_of(zone, &ids, 1, 500)
+                .expect("a saved queue");
+            catalog
+                .save_rows_of(zone, &opening(2), Reached::StillOpening)
+                .expect("rows saved while their song opens");
+
+            let same_song = catalog.resume_of(zone).expect("read");
+
+            catalog
+                .save_rows_of(zone, &opening(0), Reached::StillOpening)
+                .expect("rows saved while another song opens");
+
+            let another_song = catalog.resume_of(zone).expect("read");
+
+            catalog
+                .save_queue_of(zone, &ids, 1, 500)
+                .expect("a saved queue");
+            catalog
+                .save_place_of(zone, 1, Reached::StillOpening)
+                .expect("the row kept while it opens");
+
+            let same_row = catalog.resume_of(zone).expect("read");
+
+            catalog
+                .save_place_of(zone, 2, Reached::StillOpening)
+                .expect("another row kept while it opens");
+
+            let another_row = catalog.resume_of(zone).expect("read");
+
+            assert_eq!(same_song, (moved.to_vec(), 2, 500));
+            assert_eq!(another_song, (moved.to_vec(), 0, 0));
+            assert_eq!(same_row, (ids.to_vec(), 1, 500));
+            assert_eq!(another_row, (ids.to_vec(), 2, 0));
+        }
+    }
+
     fn kept_rows(arranged: &Arranged<KeptRow>) -> Vec<(KeptRow, usize)> {
         arranged
             .rows
@@ -2892,10 +3060,10 @@ mod tests {
         };
 
         opened
-            .save_rows_of(kitchen, &shuffled, 1200)
+            .save_rows_of(kitchen, &shuffled, Reached::At(1200))
             .expect("a shuffled queue saved");
         opened
-            .save_place_of(kitchen, 2, 300)
+            .save_place_of(kitchen, 2, Reached::At(300))
             .expect("a later place");
 
         let (kept, at) = opened.resume_rows_of(kitchen).expect("the shuffled queue");

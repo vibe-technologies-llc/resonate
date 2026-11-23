@@ -48,6 +48,38 @@ pub(crate) const LOOKED_AGAIN_AFTER: Duration = Duration::from_millis(10);
 pub(crate) const FOLDER: &str = "content://test/";
 pub(crate) const SONGS: [&str; 4] = ["a", "b", "c", "d"];
 const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
+const IN_MEMORY: &str = ":memory:";
+
+static NEXT_FOLDER: AtomicU64 = AtomicU64::new(0);
+
+fn a_fresh_folder(named: &str) -> PathBuf {
+    let folder = env::temp_dir().join(format!(
+        "resonate-mobile-{named}-{}-{}",
+        process::id(),
+        NEXT_FOLDER.fetch_add(1, Ordering::Relaxed)
+    ));
+
+    fs::create_dir_all(&folder).expect("a test folder");
+    folder
+}
+
+pub(crate) struct CatalogFile(PathBuf);
+
+impl CatalogFile {
+    pub(crate) fn new() -> Self {
+        Self(a_fresh_folder("catalog"))
+    }
+
+    fn path(&self) -> PathBuf {
+        self.0.join("documents.sqlite")
+    }
+}
+
+impl Drop for CatalogFile {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
 
 pub(crate) struct Folder {
     root: PathBuf,
@@ -239,23 +271,21 @@ impl Harness {
         Self::beside(
             Device::Speakers,
             Rendering::resting(searching, nothing_to_browse()),
+            Path::new(IN_MEMORY),
         )
     }
 
-    fn over(device: Device) -> Self {
-        Self::beside(device, Rendering::default())
+    pub(crate) fn over_the_catalog_in(file: &CatalogFile) -> Self {
+        Self::beside(Device::None, Rendering::default(), &file.path())
     }
 
-    fn beside(device: Device, rendering: Rendering) -> Self {
-        static NEXT: AtomicU64 = AtomicU64::new(0);
+    fn over(device: Device) -> Self {
+        Self::beside(device, Rendering::default(), Path::new(IN_MEMORY))
+    }
 
-        let folder = env::temp_dir().join(format!(
-            "resonate-mobile-queue-{}-{}",
-            process::id(),
-            NEXT.fetch_add(1, Ordering::Relaxed)
-        ));
+    fn beside(device: Device, rendering: Rendering, catalog: &Path) -> Self {
+        let folder = a_fresh_folder("queue");
 
-        fs::create_dir_all(&folder).expect("a test folder");
         for name in SONGS {
             fs::write(folder.join(format!("{name}.wav")), silence()).expect("a song");
         }
@@ -306,7 +336,7 @@ impl Harness {
 
         let player = MobilePlayer {
             playing: Playing::start(engine, Arc::new(Routing::new()), None, engines),
-            catalog: Arc::new(Catalog::open(Path::new(":memory:")).expect("a catalog")),
+            catalog: Arc::new(Catalog::open(catalog).expect("a catalog")),
             sources,
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: Services::default(),
