@@ -33,7 +33,7 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
 - **Schema = one `V1`, the baseline of 0.1.0, and a `MIGRATIONS` chain after it.** `V1` is the first
   release's schema as one SQL batch and is never edited, since a stamped catalog of a release would be
   stranded; a change appends a step to `MIGRATIONS` (`listens` naming the device and listen a remote
-  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `vault_objects_by_origin` and `object_deliveries_by_origin` indexes that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture; the `tracks_hidden` index; letting go of every album and artist a blank tag had named (`A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST`: the tracks' and albums' ids to them cleared and the settle owed, so the open's orphan sweep takes them); `versions_chosen`, the version a listener picked for a song: *A song keeps its versions beside it* below; `artists_fold_wanted`, the marker owing the artists' fold once more: below; `unheld_listens` rebuilt under an `AUTOINCREMENT` `id`, each row keeping its rowid, beside `unheld_credited`: *The count is the catalog's* below; `wants_by_offered`, `retagged_sheets_by_file` and `offered_step_rows_by_path`, the indexes on the paths a removal or a move looks up once a path; `replacements`, the lossy songs waiting for a lossless copy (`A_LOSSY_SONG_WAITS_TO_BE_REPLACED`): *Finding higher quality versions* below; `larger_covers_wanted`, the marker owing every album a cover under `A_SMALL_COVER_BELOW` one ask for a larger one (`SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE`): *A cover says where it came from* below; `replacements_looked_for`, what the services answered when asked for a lossless copy and where it was offered, beside `replacements_kept`, the keep downloading one for a song matched nowhere (`WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT`): *Finding higher quality versions* below; `songs_deleted_everywhere`, the recordings of songs deleted from every device waiting for the sync to tell them (`A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD`): *Deleting* below; `track_studies_by_studied` and `lyrics_kept_by_taken`, the order a sync look reads answers in (`ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN`): `sync.md`; `discography_songs` rebuilt under an `id INTEGER PRIMARY KEY` beside `discography_songs_fts` and its triggers (`A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD`): *A piece of a word* below; `lyric_keys_let_go` and its triggers, seeded with every lyric key no track held (`A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY`): *A lyric fetched once is kept* below; `versions_held` and `versions_kept`, the versions a song keeps beside it and the downloads that will be (`A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT`): *A song keeps its versions beside it* below; `unsettled_arrivals`, the rows a scan wrote that no completed pass has yet weighed as a move's arrival (`AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED`, empty on a catalog it carries forward): *Moved files are followed* below, the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
+  listen came from is the first, `songs_received` the second, forgetting the read stamp of every learnt group whose songs carry no length the third, `retagged_sheets` the fourth, `offered_steps` the fifth, `track_studies.band_levels` the sixth, `release_credits` the seventh, an album whose release landed exactly before that table made due again by setting its `answered` to 1, so the next lookup lands its credit and the release is shared, the eighth: `a_release_landed_before_its_credit_was_kept_is_asked_again_and_one_with_its_credit_is_not`; `unheld_listens` keeping the listen's own id, `elsewhere` and origin the ninth; the `songs_received_go_with_their_file` trigger, dropping a path's `songs_received` rows once its last `tracks` row goes, the tenth: `sync.md`; `track_studies.band_peaks`, each band's own peak beside `band_levels`, the eleventh: `eq.md`; the `zone` column of the three resume tables and the `zones` table, the twelfth (below); clearing the 58-byte peaks of the layout that kept one moment, so they are measured again over moments, the thirteenth: `analysis.md`; `songs_deleted`, the recording keys of songs the listener deleted from the app, the fourteenth: `sync.md`; `playlist_shares`, flagging a playlist shared with other people by its id and creation: `shared-playlists.md`; `wrapped_years`, a finished year's review kept as it was heard: *Resonate Wrapped* below; `kept_songs`, the queue of what was pressed to keep from a service, with `tried` (when a failure last moved the row to the back, NULL for a row never tried, which goes first) and `tries` (failures that counted, reset by a press), and the `vault_objects_by_origin` and `object_deliveries_by_origin` indexes that find a delivery by its `taken_from`: `providers.md`'s *Keeping a song from a service*; `kept_songs.cover`, the picture its service showed; the `tracks_by_format` index; `kept_songs.picture_asked`, stamping a landed keep once asked for its picture; the `tracks_hidden` index; letting go of every album and artist a blank tag had named (`A_BLANK_TAG_NAMES_NO_ALBUM_OR_ARTIST`: the tracks' and albums' ids to them cleared and the settle owed, so the open's orphan sweep takes them); `versions_chosen`, the version a listener picked for a song: *A song keeps its versions beside it* below; `artists_fold_wanted`, the marker owing the artists' fold once more: below; `unheld_listens` rebuilt under an `AUTOINCREMENT` `id`, each row keeping its rowid, beside `unheld_credited`: *The count is the catalog's* below; `wants_by_offered`, `retagged_sheets_by_file` and `offered_step_rows_by_path`, the indexes on the paths a removal or a move looks up once a path; `replacements`, the lossy songs waiting for a lossless copy (`A_LOSSY_SONG_WAITS_TO_BE_REPLACED`): *Finding higher quality versions* below; `larger_covers_wanted`, the marker owing every album a cover under `A_SMALL_COVER_BELOW` one ask for a larger one (`SMALL_COVERS_ARE_ASKED_FOR_A_LARGER_ONE`): *A cover says where it came from* below; `replacements_looked_for`, what the services answered when asked for a lossless copy and where it was offered, beside `replacements_kept`, the keep downloading one for a song matched nowhere (`WHERE_A_LOSSLESS_COPY_WAS_LOOKED_FOR_IS_KEPT`): *Finding higher quality versions* below; `songs_deleted_everywhere`, the recordings of songs deleted from every device waiting for the sync to tell them (`A_SONG_DELETED_EVERYWHERE_WAITS_TO_BE_TOLD`): *Deleting* below; `track_studies_by_studied` and `lyrics_kept_by_taken`, the order a sync look reads answers in (`ANSWERS_ARE_READ_IN_THE_ORDER_THEY_WERE_TAKEN`): `sync.md`; `discography_songs` rebuilt under an `id INTEGER PRIMARY KEY` beside `discography_songs_fts` and its triggers (`A_KEPT_SONG_IS_LOOKED_UP_BY_A_PIECE_OF_A_WORD`): *A piece of a word* below; `lyric_keys_let_go` and its triggers, seeded with every lyric key no track held (`A_LYRIC_LET_GO_IS_SWEPT_BY_ITS_KEY`): *A lyric fetched once is kept* below; `versions_held` and `versions_kept`, the versions a song keeps beside it and the downloads that will be (`A_SONG_KEEPS_ITS_VERSIONS_BESIDE_IT`): *A song keeps its versions beside it* below; `unsettled_arrivals`, the rows a scan wrote that no completed pass has yet weighed as a move's arrival (`AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED`, empty on a catalog it carries forward): *Moved files are followed* below; `removals_pending` and `removal_marks`, a listener's removal under way and the marks it made (`A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED`): *Deleting* below, the latest). `PRAGMA user_version` is a hash, not a count: `STAMPS[0]` is
   `fingerprint_of(V1)` (the stamp 0.1.0 wrote) and `STAMPS[n + 1]` hashes `STAMPS[n]` over step `n`'s
   text, in a `const fn`; `SCHEMA_FINGERPRINT` is the last. `lay_out`: `UNSTAMPED` writes `V1` and
   every step; this build's stamp opens; a stamp that is an earlier `STAMPS` entry runs the steps after
@@ -613,7 +613,7 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   the scan, which sweeps and settles once after every root, or to organise's own end. **No removal
   notes `songs_deleted`**: only a listener's delete does, in a transaction of its own before the
   file goes (`deleted::note_before_removing`, so a follow meanwhile does not fetch the song back,
-  and `Marked::take_back_for` if the trash refuses), which `forget_rows` cannot do as the rows go
+  and `deleted::settle` takes them back if the trash refuses), which `forget_rows` cannot do as the rows go
   after the files. `no_source_in_the_library_deletes_tracks_outside_forget_rows`
   (`forgetting.rs`) refuses a `DELETE FROM tracks`, case and whitespace aside, in any source of the
   crate but `forgetting.rs` and test modules
@@ -1975,8 +1975,17 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
 - **A deleted track goes to the trash with its own sidecars; its listens stay in the totals.**
   `Library::delete_tracks` (`deleted.rs`): `Walk` guard; distinct paths of the tracks
   (`Error::UnknownTrack` for an unheld id); each file moved to the freedesktop trash
-  (`trash::send`, hand-written to the Trash spec, pure Rust, its `DeletionDate` the wall clock at that moment, `Calendar::second_of_the_day`, so a day the clocks change is dated as the clock read; already gone = removed; refused:
-  logged, `Deleted::kept`, rows left). **A desktop's trash can stand in**: `Library::trash_through`
+  (`trash::send`, hand-written to the Trash spec, pure Rust, its `DeletionDate` the wall clock at that moment, `Calendar::second_of_the_day`, so a day the clocks change is dated as the clock read; refused:
+  logged, `Deleted::kept`, rows left). **Already gone needs evidence**: a trash answering
+  `Removal::AlreadyGone` settles the file as removed only where `OutOfReach::has_gone` agrees (the
+  same weighing as a playlist's `gone_from`: the stat says `NotFound` or `NotADirectory`, on no
+  volume the catalog finds unmounted, under no root whose folder is missing and no desktop mount
+  point nothing stands at, its folder or the nearest standing one above holding something), so a
+  file on an unplugged drive or behind a refused stat (a Mac's and Windows's trash answer gone
+  where `exists` is false, which a refused stat also is) is `Deleted::kept` with its rows, its
+  marks taken back
+  (`a_song_deleted_on_a_drive_not_plugged_in_keeps_its_row_and_mark_and_one_gone_by_hand_is_settled`,
+  `a_file_the_trash_called_gone_though_its_stat_was_refused_keeps_its_row_and_mark`). **A desktop's trash can stand in**: `Library::trash_through`
   takes a `Trashes` (answering a `Removal`) that replaces the hand-written bin for every file and
   sidecar, so a sandbox whose own `XDG_DATA_HOME` is not the desktop's trash does not hide a
   deleted song; the binary registers one under Flatpak (`/.flatpak-info`, `trashing.rs`) over
@@ -2008,7 +2017,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   **Sidecars go with the file that was removed** (`deleted::sidecars_of`): a `<stem>.lrc`
   (any case) unless another audio file in the folder shares the stem, and a `.cue` in the same
   folder every `FILE` of which names this file and no other (`scan::claimed_beside`); a sheet that
-  also cuts another file, names another folder or cannot be read stays. **The folders the files
+  also cuts another file, names another folder or cannot be read stays. A sidecar the trash
+  refuses beside a file it took stays where it is and is named in `Deleted::sidecars_kept`, which
+  the window's toast counts and `resonate dedupe` lists
+  (`lyrics_the_trash_refused_beside_a_song_it_took_stay_and_are_told_as_kept`). **The folders the files
   left are pruned** up to, never including, a root, by `organise::prune_the_emptied` (only a
   folder with nothing in it). Per path gone, one transaction: drop `wants` naming a release row
   its tracks fill or offering the path (else the next poll refetches it), **copy the path's
@@ -2022,13 +2034,30 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   transaction of its own notes the keys of each row and of its `songs_received` rows in
   `songs_deleted` (the fourteenth migration step; `synced::keys_deleted_with`,
   `deleted::note_before_removing`), since a row whose file is gone reads as not held, and a file the
-  trash refused has its keys taken back after the pass (`Marked::take_back_for`), so a followed playlist or favourite does not
-  fetch the song back from another device; folding a copy (`Why::Folded`) notes nothing, and the
+  trash refused has its keys taken back after the pass (`deleted::settle`), so a followed playlist or favourite does not
+  fetch the song back from another device. **A removal under way is kept in the catalog until it
+  settles**: the same transaction notes each path in `removals_pending` (`why`: a fold 0, a delete
+  1, a delete from every device 2) and each key it marked in `removal_marks` (`anew` where the key
+  was not marked before), and one transaction after the files were tried takes back the marks of
+  the files kept (a key `anew` and held by no other removal under way; a file settled as removed
+  clears `anew` on the keys it shares with a removal still pending), queues what every device
+  is told, forgets the rows of the files gone and drops their pending rows together, so each
+  happens once. A run that ends between the two leaves its paths pending: the next deletion,
+  under the `Walk` guard, and the catalog's open, where it can take the guard
+  (`settle_removals_left_under_way`; another process walking leaves them), weigh each file
+  (`deleted::found_at`): standing is kept, gone by `OutOfReach::has_gone` is settled as removed,
+  and out of reach stays pending
+  (`a_removal_left_out_of_reach_waits_and_never_takes_back_a_mark_a_removed_copy_shares`,
+  `a_run_ended_before_the_file_moved_takes_its_mark_back_once_reopened_and_tells_no_device`,
+  `a_run_ended_once_the_file_moved_is_settled_once_reopened_and_tells_every_device_once`,
+  `a_run_ended_once_the_file_moved_is_settled_before_the_next_deletion_of_the_same_catalog`).
+  `forgive_deletion` and `forgive_deletions` pass over a key `removal_marks` holds, since the
+  song is still held while its file moves (`sync.md`); folding a copy (`Why::Folded`) notes nothing, and the
   mark is forgiven by *Sync now* or once the song is held again (`sync.md`)
   (`a_song_deleted_from_the_app_is_remembered_and_one_folded_into_its_twin_is_not`). **A song deleted from every device**
   (`Library::delete_tracks_everywhere`, `Why::DeletedEverywhere`) is the same deletion, marks
-  included, and `note_before_removing` also reads the recordings at each file (`synced::recordings_at`);
-  in the transaction that forgets the files, `Marked::tell_every_device` queues the recording of each
+  included, and in the transaction that forgets the files `deleted::settle` reads the recordings at each
+  file still catalogued (`synced::recordings_at`) and queues the recording of each
   file that went (removed or already gone, never one the trash kept) in `songs_deleted_everywhere`,
   which the sync reads (`deleted_everywhere_to_tell`) and empties once its ledger holds them
   (`deletions_told`, `sync.md`). **A deletion another device told** (`Library::take_deletion(recording,
@@ -2065,9 +2094,17 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   over stays each catalog's own (`copies::handed_over` over `tracks` by path, the phones' over
   `documents` and the tables referring to one), since the two schemas share no row. A file ending
   ` (N)` that joins no class is `Copies::differing` and stays. It is a plain call to run off
-  the window's thread (the CLI and `LibraryModel::find_identical_songs` do). `fold_copies` hands each copy's plays, last
+  the window's thread (the CLI and `LibraryModel::find_identical_songs` do). **A fold weighs each
+  pair again before it changes either**: `fold_copies` takes the `Walk` guard, then
+  `copies::still_identical` reads both rows by id (still at the previewed paths, whole files,
+  sharing a catalogued size) and the two files (regular files of that size, byte for byte the
+  same); a pair that fails any of it was edited, moved or forgotten since the preview, is left
+  as it is and named in `Deleted::changed_since_found`, which the window's toast counts and
+  `resonate dedupe` lists, while every other pair still folds
+  (`a_pair_changed_or_forgotten_since_it_was_found_is_not_folded_and_the_rest_still_are`). For
+  the pairs that stand it hands each copy's plays, last
   play, favourite, listens, playlist entries, queue rows and `songs_received` row to the song in
-  one transaction (`copies::handed_over`, which zeroes the copy's `plays` once they are the song's, so a copy the trash refuses and the next run finds again adds nothing twice, `a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice`), then `delete_tracks` trashes the copies as any deletion.
+  one transaction (`copies::handed_over`, which zeroes the copy's `plays` once they are the song's, so a copy the trash refuses and the next run finds again adds nothing twice, `a_copy_the_trash_refused_is_folded_again_without_adding_its_plays_twice`), then trashes the copies as any deletion under the same guard.
   `resonate dedupe` previews, `--apply` folds
   (`a_copy_numbered_beside_its_song_is_folded_into_it_and_one_that_differs_is_left`,
   `files_holding_the_same_bytes_under_different_names_are_folded_into_the_one_not_numbered`,

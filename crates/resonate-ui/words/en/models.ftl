@@ -201,6 +201,10 @@ kept-in-the-vault = { $count ->
 }
 could-not-delete-the-song = Couldn't delete “{ $title }” — its file couldn't be removed
 deleted-the-song = Deleted “{ $title }”
+deleted-the-song-leaving-files-beside = Deleted “{ $title }” — { $left ->
+    [one] { $left } file beside it couldn't be removed
+   *[other] { $left } files beside it couldn't be removed
+}
 could-not-delete-some-songs = Couldn't delete { $kept ->
     [one] { $kept } song
    *[other] { $kept } songs
@@ -211,6 +215,13 @@ could-not-delete-some-songs = Couldn't delete { $kept ->
 deleted-songs = { $count ->
     [one] Deleted { $count } song
    *[other] Deleted { $count } songs
+}
+deleted-songs-leaving-files-beside = Deleted { $count ->
+    [one] { $count } song
+   *[other] { $count } songs
+} — { $left ->
+    [one] { $left } file beside them couldn't be removed
+   *[other] { $left } files beside them couldn't be removed
 }
 find-the-identical-songs = find the identical songs
 fold-the-identical-songs = fold the identical songs
@@ -224,6 +235,13 @@ folded-identical-songs-some-kept = { $files ->
 } — { $kept ->
     [one] { $kept } file couldn't be removed
    *[other] { $kept } files couldn't be removed
+}
+folded-identical-songs-some-changed = { $files ->
+    [one] Folded { $files } identical song
+   *[other] Folded { $files } identical songs
+} — { $changed ->
+    [one] { $changed } copy changed since it was found, so it was left
+   *[other] { $changed } copies changed since they were found, so they were left
 }
 the-inbox-filled = { $count ->
     [one] The inbox filled { $count } want

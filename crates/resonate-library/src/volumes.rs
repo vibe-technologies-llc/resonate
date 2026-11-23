@@ -1,5 +1,7 @@
 use std::{
-    fs, mem,
+    fs,
+    io::ErrorKind,
+    mem,
     path::{Path, PathBuf},
 };
 
@@ -158,6 +160,64 @@ fn under_a_mount_point_not_there_below(path: &Path, base: &Path, deepest: usize)
 
 pub fn is_on_an_absent_one(path: &Path, absent: &[PathBuf]) -> bool {
     absent.iter().any(|volume| path.starts_with(volume))
+}
+
+pub(crate) struct OutOfReach {
+    volumes: Vec<PathBuf>,
+    folders: AHashMap<PathBuf, bool>,
+}
+
+impl OutOfReach {
+    pub(crate) fn of(held: Vec<PathBuf>, roots: Vec<PathBuf>) -> Self {
+        let points = MountPoints::read();
+        let mut volumes: Vec<PathBuf> = held
+            .into_iter()
+            .filter(|volume| !is_mounted_among(volume, &points))
+            .collect();
+
+        volumes.extend(roots.into_iter().filter(|root| !root.is_dir()));
+        volumes.extend(listed_and_not_mounted());
+        Self {
+            volumes,
+            folders: AHashMap::new(),
+        }
+    }
+
+    pub(crate) fn has_gone(&mut self, path: &Path) -> bool {
+        match fs::metadata(path) {
+            Ok(metadata) => !metadata.is_file(),
+            Err(error)
+                if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) =>
+            {
+                !is_on_an_absent_one(path, &self.volumes)
+                    && !is_under_a_mount_point_not_there(path)
+                    && path.parent().is_some_and(|folder| {
+                        folder.is_dir() || self.nearest_standing_folder_holds_something(folder)
+                    })
+            }
+            Err(error) => {
+                tracing::debug!(%error, path = %path.display(), "a file that could not be asked about is not taken as gone");
+                false
+            }
+        }
+    }
+
+    fn nearest_standing_folder_holds_something(&mut self, folder: &Path) -> bool {
+        if let Some(verdict) = self.folders.get(folder) {
+            return *verdict;
+        }
+
+        let verdict = if folder.is_dir() {
+            fs::read_dir(folder).is_ok_and(|mut entries| entries.next().is_some())
+        } else {
+            folder
+                .parent()
+                .is_some_and(|above| self.nearest_standing_folder_holds_something(above))
+        };
+
+        self.folders.insert(folder.to_path_buf(), verdict);
+        verdict
+    }
 }
 
 pub fn under(paths: impl IntoIterator<Item = impl AsRef<Path>>) -> Vec<PathBuf> {

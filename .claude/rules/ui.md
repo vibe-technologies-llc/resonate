@@ -2217,6 +2217,9 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   saying the listener's other devices that let them move their copy to the trash too, and *Delete*
   is `LibraryModel::delete_tracks` with `Reach::EveryDevice`, `Library::delete_tracks_everywhere`
   (`deleting_a_track_from_every_device_takes_its_file_and_waits_to_tell_the_others`, `sync.md`).
+  The toast (`deletion_told`) is trouble where a file stayed (the trash refused it, or it is out
+  of reach: `library.md`'s *Deleting*) and, the songs gone, where a file beside them the trash
+  would not take stayed (`Deleted::sidecars_kept`).
 - **A playlist's higher quality versions are found from a sheet, and kept beside its songs**
   (`views/replacing.rs`, `Sheet::Replacing`, `library.md`'s *Finding higher quality versions*). It
   does to a whole playlist what *Find a higher quality version* does to one song: *Find higher
@@ -3035,7 +3038,8 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   the first twelve then *and N more*, and a note counts what would fold and what differs and
   stays. *Fold* is armed by `Armed::FoldTheCopies` and takes two presses, then
   `fold_identical_songs` = `Library::fold_copies` on the preview's own copies after the edit chain
-  (`Work::Identical(Pass::Apply)`), a toast tells the files trashed and any the trash refused, and
+  (`Work::Identical(Pass::Apply)`), a toast tells the files trashed and any the trash refused or
+  that changed since the preview and were left (`folding_told`, `Deleted::changed_since_found`), and
   the catalog reloads
   (`identical_songs_are_found_listed_and_folded_only_once_found_and_pressed_twice`). Any
   files holding the same bytes are offered, as the phones' *Identical songs* (`mobile.md`) do

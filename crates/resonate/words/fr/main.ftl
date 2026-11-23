@@ -119,6 +119,8 @@ trash-refused = { $kept ->
     [one] { $kept } la poubelle ne prendrait pas, donc elle reste
    *[other] { $kept } la poubelle ne prendrait pas, donc ils restent
 }
+changed-since-found = { $path } a changé depuis qu’il a été trouvé, il reste donc
+left-beside = { $path } reste où il était, la poubelle ne le prendrait pas
 plays = { $plays ->
     [one] { $plays } jouer
    *[other] { $plays } pièces

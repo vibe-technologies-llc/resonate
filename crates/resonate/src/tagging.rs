@@ -186,6 +186,15 @@ pub(crate) fn dedupe(library: &Library, apply: bool) -> Result<()> {
     if deleted.kept > 0 {
         said!("{}", words::main::trash_refused(deleted.kept));
     }
+    for changed in &deleted.changed_since_found {
+        said!(
+            "{}",
+            words::main::changed_since_found(changed.display().to_string())
+        );
+    }
+    for left in &deleted.sidecars_kept {
+        said!("{}", words::main::left_beside(left.display().to_string()));
+    }
     Ok(())
 }
 

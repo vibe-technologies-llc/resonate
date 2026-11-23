@@ -201,6 +201,10 @@ kept-in-the-vault = { $count ->
 }
 could-not-delete-the-song = Impossible d’effacer le fichier «{ $title }» — son fichier ne pouvait pas être supprimé
 deleted-the-song = Supprimé { $title }
+deleted-the-song-leaving-files-beside = Supprimé « { $title } » — { $left ->
+    [one] { $left } fichier à côté n’a pas pu être supprimé
+   *[other] { $left } fichiers à côté n’ont pas pu être supprimés
+}
 could-not-delete-some-songs = Impossible de supprimer { $kept ->
     [one] { $kept } chanson
    *[other] { $kept } chansons
@@ -211,6 +215,13 @@ could-not-delete-some-songs = Impossible de supprimer { $kept ->
 deleted-songs = { $count ->
     [one] Chanson supprimée { $count }
    *[other] Supprimé { $count } chansons
+}
+deleted-songs-leaving-files-beside = Supprimé { $count ->
+    [one] { $count } chanson
+   *[other] { $count } chansons
+} — { $left ->
+    [one] { $left } fichier à côté n’a pas pu être supprimé
+   *[other] { $left } fichiers à côté n’ont pas pu être supprimés
 }
 find-the-identical-songs = trouver les chansons identiques
 fold-the-identical-songs = pliez les chansons identiques
@@ -224,6 +235,13 @@ folded-identical-songs-some-kept = { $files ->
 } — { $kept ->
     [one] { $kept } fichier ne pouvait pas être supprimé
    *[other] { $kept } fichiers ne pouvaient pas être supprimés
+}
+folded-identical-songs-some-changed = { $files ->
+    [one] Plié { $files } chanson identique
+   *[other] Plié { $files } chansons identiques
+} — { $changed ->
+    [one] { $changed } copie a changé depuis qu’elle a été trouvée, elle reste donc
+   *[other] { $changed } copies ont changé depuis qu’elles ont été trouvées, elles restent donc
 }
 the-inbox-filled = { $count ->
     [one] La boîte de réception remplie { $count } veut

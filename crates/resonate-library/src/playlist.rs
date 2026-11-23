@@ -2,8 +2,6 @@ use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
     ffi::OsStr,
-    fs,
-    io::ErrorKind,
     path::{Component, Path, PathBuf},
     time::{Duration, SystemTime},
 };
@@ -1973,58 +1971,12 @@ fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
         ))
     })?;
 
-    let points = volumes::MountPoints::read();
-    let mut out_of_reach: Vec<PathBuf> = volumes
-        .into_iter()
-        .filter(|volume| !volumes::is_mounted_among(volume, &points))
-        .collect();
-
-    out_of_reach.extend(roots.into_iter().filter(|root| !root.is_dir()));
-    out_of_reach.extend(volumes::listed_and_not_mounted());
-
-    let mut folders = AHashMap::new();
+    let mut out_of_reach = volumes::OutOfReach::of(volumes, roots);
 
     Ok(paths
         .into_iter()
-        .filter(|path| has_gone(&store::path_of(path), &out_of_reach, &mut folders))
+        .filter(|path| out_of_reach.has_gone(&store::path_of(path)))
         .collect())
-}
-
-fn has_gone(path: &Path, out_of_reach: &[PathBuf], folders: &mut AHashMap<PathBuf, bool>) -> bool {
-    match fs::metadata(path) {
-        Ok(metadata) => !metadata.is_file(),
-        Err(error) if matches!(error.kind(), ErrorKind::NotFound | ErrorKind::NotADirectory) => {
-            !volumes::is_on_an_absent_one(path, out_of_reach)
-                && !volumes::is_under_a_mount_point_not_there(path)
-                && path.parent().is_some_and(|folder| {
-                    folder.is_dir() || the_nearest_standing_folder_holds_something(folder, folders)
-                })
-        }
-        Err(error) => {
-            tracing::debug!(%error, path = %path.display(), "keeping a row whose file could not be asked about");
-            false
-        }
-    }
-}
-
-fn the_nearest_standing_folder_holds_something(
-    folder: &Path,
-    folders: &mut AHashMap<PathBuf, bool>,
-) -> bool {
-    if let Some(verdict) = folders.get(folder) {
-        return *verdict;
-    }
-
-    let verdict = if folder.is_dir() {
-        fs::read_dir(folder).is_ok_and(|mut entries| entries.next().is_some())
-    } else {
-        folder
-            .parent()
-            .is_some_and(|above| the_nearest_standing_folder_holds_something(above, folders))
-    };
-
-    folders.insert(folder.to_path_buf(), verdict);
-    verdict
 }
 
 fn distinct_paths(connection: &Connection, id: PlaylistId) -> Result<Vec<String>> {

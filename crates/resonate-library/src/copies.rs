@@ -10,7 +10,8 @@ use rusqlite::{Connection, OptionalExtension as _, ToSql, Transaction, params};
 
 use crate::{
     Error, Result, StoreOp,
-    identical::{identical_among, names_a_numbered_copy},
+    db::Inner,
+    identical::{identical_among, names_a_numbered_copy, same_bytes},
     store,
 };
 
@@ -57,6 +58,15 @@ struct Whole {
     size: i64,
 }
 
+pub(crate) struct Rechecked<'a> {
+    pub(crate) standing: Vec<&'a IdenticalCopy>,
+    pub(crate) changed: Vec<&'a IdenticalCopy>,
+}
+
+const A_WHOLE_FILE_ROW: &str = "SELECT path, file_size FROM tracks
+  WHERE id = ?1 AND vault_key IS NULL AND span_frames IS NULL
+    AND (SELECT count(*) FROM tracks AS beside WHERE beside.path = tracks.path) = 1";
+
 #[derive(Clone, Copy, Debug)]
 struct Member<'a> {
     path: &'a PathBuf,
@@ -94,6 +104,75 @@ pub(crate) fn found(connection: &Connection) -> Result<Copies> {
         .cloned()
         .collect();
     Ok(copies)
+}
+
+pub(crate) fn still_identical<'a>(
+    inner: &Inner,
+    numbered: &'a [IdenticalCopy],
+) -> Result<Rechecked<'a>> {
+    let rows = inner.read(|connection| {
+        numbered
+            .iter()
+            .map(|copy| {
+                Ok((
+                    whole_row(connection, copy.kept_id)?,
+                    whole_row(connection, copy.copy_id)?,
+                ))
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
+
+    let mut rechecked = Rechecked {
+        standing: Vec::new(),
+        changed: Vec::new(),
+    };
+
+    for (copy, rows) in numbered.iter().zip(rows) {
+        let stands = match rows {
+            (Some((kept, kept_size)), Some((taken, taken_size))) => {
+                kept == copy.kept
+                    && taken == copy.copy
+                    && kept_size == taken_size
+                    && hold_the_same_bytes(&copy.kept, &copy.copy, kept_size)
+            }
+            _ => false,
+        };
+
+        if stands {
+            rechecked.standing.push(copy);
+        } else {
+            tracing::info!(copy = %copy.copy.display(), kept = %copy.kept.display(), "a copy changed since it was found, so it is not folded");
+            rechecked.changed.push(copy);
+        }
+    }
+    Ok(rechecked)
+}
+
+fn whole_row(connection: &Connection, id: TrackId) -> Result<Option<(PathBuf, i64)>> {
+    store::queried(
+        connection,
+        A_WHOLE_FILE_ROW,
+        params![id.get() as i64],
+        |row| Ok((store::path_of(&row.get::<_, String>(0)?), row.get(1)?)),
+    )
+    .optional()
+    .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+fn hold_the_same_bytes(kept: &Path, copy: &Path, catalogued: i64) -> bool {
+    let sized = |path: &Path| {
+        fs::metadata(path)
+            .is_ok_and(|held| held.is_file() && i64::try_from(held.len()) == Ok(catalogued))
+    };
+
+    if !(sized(kept) && sized(copy)) {
+        return false;
+    }
+
+    let (Ok(kept), Ok(copy)) = (File::open(kept), File::open(copy)) else {
+        return false;
+    };
+    same_bytes(kept, copy)
 }
 
 fn identical_classes(wholes: &BTreeMap<PathBuf, Whole>) -> Vec<Vec<Member<'_>>> {

@@ -184,9 +184,18 @@ pub(super) fn deletion_told(
         (Ok(deleted), 1) if deleted.kept > 0 => {
             Notice::Trouble(words::models::could_not_delete_the_song(title))
         }
+        (Ok(deleted), 1) if !deleted.sidecars_kept.is_empty() => {
+            Notice::Trouble(words::models::deleted_the_song_leaving_files_beside(
+                title,
+                deleted.sidecars_kept.len(),
+            ))
+        }
         (Ok(_), 1) => Notice::Done(words::models::deleted_the_song(title)),
         (Ok(deleted), asked) if deleted.kept > 0 => Notice::Trouble(
             words::models::could_not_delete_some_songs(asked, deleted.kept),
+        ),
+        (Ok(deleted), asked) if !deleted.sidecars_kept.is_empty() => Notice::Trouble(
+            words::models::deleted_songs_leaving_files_beside(asked, deleted.sidecars_kept.len()),
         ),
         (Ok(_), asked) => Notice::Done(words::models::deleted_songs(asked)),
         (Err(error), asked) => {
@@ -208,6 +217,12 @@ pub(super) fn folding_told(folded: resonate_library::Result<Deleted>) -> Notice 
         Ok(deleted) if deleted.kept > 0 => Notice::Trouble(
             words::models::folded_identical_songs_some_kept(deleted.files, deleted.kept),
         ),
+        Ok(deleted) if !deleted.changed_since_found.is_empty() => {
+            Notice::Trouble(words::models::folded_identical_songs_some_changed(
+                deleted.files,
+                deleted.changed_since_found.len(),
+            ))
+        }
         Ok(deleted) => Notice::Done(words::models::folded_identical_songs(deleted.files)),
         Err(error) => {
             tracing::error!(%error, "identical songs could not be folded");

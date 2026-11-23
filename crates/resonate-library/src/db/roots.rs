@@ -13,12 +13,13 @@ use super::{
 };
 use crate::{
     Error, Result, StoreOp,
-    copies::{self, Copies, IdenticalCopy},
-    deleted::{self, Deleted, Removal, Why},
+    copies::{self, Copies, IdenticalCopy, Rechecked},
+    deleted::{self, Deleted, Found, Removal, Why},
     everywhere::{self, DeletedEverywhere, Naming},
     forgetting::{Forgetting, Rows, forget_rows},
     organise::{self},
     sheet, store,
+    volumes::{self, OutOfReach},
 };
 
 impl Library {
@@ -114,16 +115,28 @@ impl Library {
         if numbered.is_empty() {
             return Ok(Deleted::default());
         }
-        self.inner.write(|transaction| {
-            for copy in numbered {
-                copies::handed_over(transaction, &copy.hand_over())?;
-            }
-            Ok(())
-        })?;
-        self.inner.playlists_changed();
 
-        let copies: Vec<TrackId> = numbered.iter().map(IdenticalCopy::copy_id).collect();
-        self.remove_tracks(&copies, Why::Folded)
+        let walk = self.walk_the_tree()?;
+        let Rechecked { standing, changed } = copies::still_identical(&self.inner, numbered)?;
+
+        if !standing.is_empty() {
+            self.inner.write(|transaction| {
+                for copy in &standing {
+                    copies::handed_over(transaction, &copy.hand_over())?;
+                }
+                Ok(())
+            })?;
+            self.inner.playlists_changed();
+        }
+
+        let copies: Vec<TrackId> = standing.iter().map(|copy| copy.copy_id()).collect();
+        let mut folded = match copies.is_empty() {
+            true => Deleted::default(),
+            false => self.remove_tracks_under(&walk, &copies, Why::Folded)?,
+        };
+
+        folded.changed_since_found = changed.into_iter().map(|copy| copy.copy.clone()).collect();
+        Ok(folded)
     }
 
     pub fn delete_tracks(&self, tracks: &[TrackId]) -> Result<Deleted> {
@@ -170,62 +183,122 @@ impl Library {
 
     pub(super) fn remove_tracks_under(
         &self,
-        _walk: &Walk,
+        walk: &Walk,
         tracks: &[TrackId],
         why: Why,
     ) -> Result<Deleted> {
+        self.settle_removals_under_way(walk)?;
+
         let files = self
             .inner
             .read(|connection| deleted::files_of(connection, tracks))?;
 
-        let marked = match why {
-            Why::Deleted | Why::DeletedEverywhere => Some(
-                self.inner
-                    .write(|transaction| deleted::note_before_removing(transaction, &files, why))?,
-            ),
-            Why::Folded => None,
-        };
+        self.inner
+            .write(|transaction| deleted::note_before_removing(transaction, &files, why))?;
 
         let data_home = self.inner.trash_home.lock().clone();
         let through = self.inner.trashes.lock().clone();
         let through = through.as_deref();
+        let mut out_of_reach = None;
         let mut done = Deleted::default();
         let mut gone = Vec::with_capacity(files.len());
         let mut emptied = Vec::new();
-        let mut refused = Vec::new();
+        let mut kept = Vec::new();
 
         for path in files {
             let sidecars = deleted::sidecars_of(&path);
             match deleted::removed(&path, data_home.as_deref(), through) {
                 Removal::Removed => {
                     done.files += 1;
-                    for sidecar in &sidecars {
-                        deleted::removed(sidecar, data_home.as_deref(), through);
-                    }
+                    done.sidecars_kept
+                        .extend(sidecars.into_iter().filter(|sidecar| {
+                            deleted::removed(sidecar, data_home.as_deref(), through)
+                                == Removal::Kept
+                        }));
                     emptied.extend(path.parent().map(Path::to_path_buf));
                     gone.push(path);
                 }
-                Removal::AlreadyGone => gone.push(path),
+                Removal::AlreadyGone => {
+                    if out_of_reach.is_none() {
+                        out_of_reach = Some(self.out_of_reach()?);
+                    }
+                    if out_of_reach
+                        .as_mut()
+                        .is_some_and(|reach| reach.has_gone(&path))
+                    {
+                        gone.push(path);
+                    } else {
+                        tracing::warn!(path = %path.display(), "a file asked to be deleted is out of reach, so its rows stay");
+                        done.kept += 1;
+                        kept.push(path);
+                    }
+                }
                 Removal::Kept => {
                     done.kept += 1;
-                    refused.push(path);
+                    kept.push(path);
                 }
             }
         }
-        if let Some(marked) = marked.as_ref().filter(|_| !refused.is_empty()) {
-            self.inner
-                .write(|transaction| marked.take_back_for(transaction, &refused))?;
-        }
         self.prune_the_emptied(&emptied)?;
 
-        let forgotten = self.inner.write(|transaction| {
-            if let Some(marked) = &marked {
-                marked.tell_every_device(transaction, &gone)?;
-            }
-            deleted::forget_files(transaction, &gone)
-        })?;
+        done.tracks = self.settle_removals(&gone, &kept)?;
+        Ok(done)
+    }
 
-        done.tracks = forgotten.tracks;
+    pub(super) fn settle_removals_left_under_way(&self) -> Result<()> {
+        if !self.inner.read(deleted::any_under_way)? {
+            return Ok(());
+        }
+        match self.walk_the_tree() {
+            Ok(walk) => self.settle_removals_under_way(&walk),
+            Err(Error::AlreadyWalking) => Ok(()),
+            Err(error) => Err(error),
+        }
+    }
+
+    fn settle_removals_under_way(&self, _walk: &Walk) -> Result<()> {
+        let under_way = self.inner.read(deleted::under_way)?;
+
+        if under_way.is_empty() {
+            return Ok(());
+        }
+
+        let mut out_of_reach = self.out_of_reach()?;
+        let mut gone = Vec::new();
+        let mut kept = Vec::new();
+
+        for path in under_way {
+            match deleted::found_at(&path, &mut out_of_reach) {
+                Found::Gone => gone.push(path),
+                Found::Stands => kept.push(path),
+                Found::OutOfReach => {
+                    tracing::info!(path = %path.display(), "a removal left under way waits for its file to be in reach again");
+                }
+            }
+        }
+        tracing::info!(
+            gone = gone.len(),
+            kept = kept.len(),
+            "settling the removals a run left under way"
+        );
+        self.settle_removals(&gone, &kept).map(drop)
+    }
+
+    fn out_of_reach(&self) -> Result<OutOfReach> {
+        let held = self.inner.read(volumes::held)?;
+
+        Ok(OutOfReach::of(held, self.roots()?))
+    }
+
+    fn settle_removals(&self, gone: &[PathBuf], kept: &[PathBuf]) -> Result<u64> {
+        if gone.is_empty() && kept.is_empty() {
+            return Ok(0);
+        }
+
+        let forgotten = self
+            .inner
+            .write(|transaction| deleted::settle(transaction, gone, kept))?;
+
         if let Some(vault) = self.vault().cloned() {
             for object in self
                 .vault_objects_nothing_names()?
@@ -242,6 +315,6 @@ impl Library {
                 }
             }
         }
-        Ok(done)
+        Ok(forgotten.tracks)
     }
 }

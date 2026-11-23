@@ -517,6 +517,7 @@ fn deleting_a_track_removes_its_file_and_its_row_and_leaves_the_rest() -> Result
             tracks: 1,
             files: 1,
             kept: 0,
+            ..Deleted::default()
         }
     );
     assert!(!doomed.exists());
@@ -747,6 +748,7 @@ fn a_file_with_no_trash_to_go_to_is_kept_with_its_row() -> Result<()> {
             tracks: 0,
             files: 0,
             kept: 1,
+            ..Deleted::default()
         }
     );
     assert!(song.exists());
@@ -809,6 +811,7 @@ fn a_file_the_desktops_trash_would_not_take_is_kept_with_its_row() -> Result<()>
             tracks: 0,
             files: 0,
             kept: 1,
+            ..Deleted::default()
         }
     );
     assert!(song.exists());

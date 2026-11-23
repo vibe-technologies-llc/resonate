@@ -119,6 +119,8 @@ trash-refused = { $kept ->
     [one] { $kept } the trash would not take, so it stays
    *[other] { $kept } the trash would not take, so they stay
 }
+changed-since-found = { $path } changed since it was found, so it stays
+left-beside = { $path } stays where it was, the trash would not take it
 plays = { $plays ->
     [one] { $plays } play
    *[other] { $plays } plays

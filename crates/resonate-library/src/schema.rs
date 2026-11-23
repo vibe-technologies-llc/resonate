@@ -70,7 +70,22 @@ const MIGRATIONS: &[&str] = &[
     EXPLORE_COVERS_ARE_KEPT,
     COVERS_FOUND_BEYOND_THE_LIBRARY_ARE_KEPT,
     AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED,
+    A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED,
 ];
+
+const A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED: &str = "
+CREATE TABLE removals_pending (
+    path TEXT PRIMARY KEY,
+    why  INTEGER NOT NULL CHECK (why IN (0, 1, 2))
+) STRICT;
+CREATE TABLE removal_marks (
+    path      TEXT NOT NULL,
+    recording TEXT NOT NULL,
+    anew      INTEGER NOT NULL CHECK (anew IN (0, 1)),
+    PRIMARY KEY (path, recording)
+) STRICT;
+CREATE INDEX removal_marks_by_recording ON removal_marks (recording);
+";
 
 const AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED: &str = "
 CREATE TABLE unsettled_arrivals (
@@ -3297,6 +3312,48 @@ mod tests {
             .expect("the table stands");
 
         assert_eq!(left, 0, "a forgotten song left its arrival waiting");
+    }
+
+    #[test]
+    fn a_catalog_from_before_removals_were_kept_under_way_keeps_its_marks_and_has_none_pending() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_REMOVAL_UNDER_WAY_IS_KEPT_UNTIL_SETTLED)
+            .expect("the step that makes the tables");
+
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec,
+                                     file_size, modified, added, seen)
+                 VALUES (7, '/music/song.flac', 'A song', 44100, 2, 16, 1, 100, 1, 1, 1);
+                 INSERT INTO songs_deleted (recording, deleted) VALUES ('gone', 5);",
+            )
+            .expect("a song and a deletion kept before the step");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let count = |table: &str| -> i64 {
+            connection
+                .query_row(&format!("SELECT count(*) FROM {table}"), [], |row| {
+                    row.get(0)
+                })
+                .expect("the table stands")
+        };
+
+        assert_eq!(count("tracks"), 1);
+        assert_eq!(count("songs_deleted"), 1);
+        assert_eq!(count("removals_pending"), 0);
+        assert_eq!(count("removal_marks"), 0);
     }
 }
 

@@ -1196,7 +1196,7 @@ impl Library {
             },
         )?;
 
-        Ok(Self {
+        let library = Self {
             inner: Arc::new(Inner {
                 source,
                 writer: Mutex::new(writer),
@@ -1232,7 +1232,12 @@ impl Library {
                 listens_settle_after: Mutex::new(synced::LISTEN_SETTLES_AFTER),
                 foresight: Foresight::default(),
             }),
-        })
+        };
+
+        if let Err(error) = library.settle_removals_left_under_way() {
+            tracing::warn!(%error, "the removals a run left under way wait for the next deletion");
+        }
+        Ok(library)
     }
 
     pub(crate) fn inner(&self) -> &Inner {

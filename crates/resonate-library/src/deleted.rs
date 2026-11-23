@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeMap, BTreeSet},
+    collections::BTreeSet,
     ffi::OsStr,
     fs, io,
     path::{Path, PathBuf},
@@ -7,13 +7,14 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_codec::the_folder_a_cue_names;
-use resonate_core::{Recording, TrackId};
-use rusqlite::{Connection, Transaction, params, params_from_iter};
+use resonate_core::TrackId;
+use rusqlite::{Connection, OptionalExtension as _, Transaction, params, params_from_iter};
 
 use crate::{
     Error, Result, StoreOp, everywhere,
     forgetting::{Forgetting, Rows, forget_rows},
     scan, store, synced,
+    volumes::OutOfReach,
 };
 
 const LYRICS_EXTENSION: &str = "lrc";
@@ -23,11 +24,13 @@ const PATHS_ASKED_AT_ONCE: usize = 256;
 const VAULTED_ROWS_OF_A_ROOT_LEFT_ROOTLESS: &str =
     "UPDATE tracks SET root_id = NULL WHERE root_id = ?1 AND vault_key IS NOT NULL";
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Deleted {
     pub tracks: u64,
     pub files: u64,
     pub kept: u64,
+    pub sidecars_kept: Vec<PathBuf>,
+    pub changed_since_found: Vec<PathBuf>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -46,6 +49,48 @@ pub(crate) enum Why {
     Deleted,
     DeletedEverywhere,
     Folded,
+}
+
+impl Why {
+    const fn stored(self) -> i64 {
+        match self {
+            Self::Folded => FOLDED,
+            Self::Deleted => DELETED_HERE,
+            Self::DeletedEverywhere => DELETED_EVERYWHERE,
+        }
+    }
+
+    const fn marks(self) -> bool {
+        !matches!(self, Self::Folded)
+    }
+}
+
+const FOLDED: i64 = 0;
+const DELETED_HERE: i64 = 1;
+const DELETED_EVERYWHERE: i64 = 2;
+
+const NOTE_A_REMOVAL_UNDER_WAY: &str = "INSERT INTO removals_pending (path, why) VALUES (?1, ?2)
+     ON CONFLICT (path) DO UPDATE SET why = max(why, excluded.why)";
+
+const NOTE_A_MARK_A_REMOVAL_MADE: &str =
+    "INSERT OR IGNORE INTO removal_marks (path, recording, anew) VALUES (?1, ?2, ?3)";
+
+const MARKS_A_REMOVAL_MADE_ANEW: &str =
+    "SELECT recording FROM removal_marks WHERE path = ?1 AND anew = 1";
+
+const A_MARK_ANOTHER_REMOVAL_HOLDS: &str =
+    "SELECT EXISTS (SELECT 1 FROM removal_marks WHERE recording = ?1)";
+
+const A_KEY_A_REMOVED_FILE_HELD_IS_NO_LONGER_ANEW: &str = "UPDATE removal_marks SET anew = 0
+  WHERE path <> ?1 AND recording IN (SELECT recording FROM removal_marks WHERE path = ?1)";
+
+const WHY_A_REMOVAL_WAS_ASKED: &str = "SELECT why FROM removals_pending WHERE path = ?1";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Found {
+    Stands,
+    Gone,
+    OutOfReach,
 }
 
 pub(crate) struct Forgotten {
@@ -197,79 +242,148 @@ fn cuts_only(sheet: &Path, folder: &Path, file: &Path, beside: &[PathBuf]) -> bo
     cuts_the_file
 }
 
-pub(crate) struct Marked {
-    by_file: BTreeMap<PathBuf, Vec<String>>,
-    already: AHashSet<String>,
-    told_everywhere: BTreeMap<PathBuf, Vec<Recording>>,
-}
-
 pub(crate) fn note_before_removing(
     tx: &Transaction<'_>,
     files: &BTreeSet<PathBuf>,
     why: Why,
-) -> Result<Marked> {
-    let mut marked = Marked {
-        by_file: BTreeMap::new(),
-        already: AHashSet::new(),
-        told_everywhere: BTreeMap::new(),
-    };
-
+) -> Result<()> {
     for path in files {
-        if why == Why::DeletedEverywhere {
-            marked.told_everywhere.insert(
-                path.clone(),
-                synced::recordings_at(tx, &store::path_text(path))?,
-            );
-        }
+        let text = store::path_text(path);
 
-        let keys = synced::keys_deleted_with(tx, &store::path_text(path))?;
-
-        for key in &keys {
-            if !marked.by_file.values().any(|held| held.contains(key))
-                && synced::is_marked_deleted(tx, key)?
-            {
-                marked.already.insert(key.clone());
-            }
-            synced::mark_deleted(tx, key)?;
+        store::cached(tx, NOTE_A_REMOVAL_UNDER_WAY, params![text, why.stored()])
+            .map_err(|source| Error::store(StoreOp::Insert, source))?;
+        if !why.marks() {
+            continue;
         }
-        marked.by_file.insert(path.clone(), keys);
+        for key in synced::keys_deleted_with(tx, &text)? {
+            let anew = !synced::is_marked_deleted(tx, &key)?;
+
+            store::cached(tx, NOTE_A_MARK_A_REMOVAL_MADE, params![text, key, anew])
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            synced::mark_deleted(tx, &key)?;
+        }
     }
-
-    Ok(marked)
+    Ok(())
 }
 
-impl Marked {
-    pub(crate) fn tell_every_device(&self, tx: &Transaction<'_>, gone: &[PathBuf]) -> Result<()> {
-        for recording in gone
-            .iter()
-            .filter_map(|path| self.told_everywhere.get(path))
-            .flatten()
-        {
-            everywhere::to_be_told(tx, recording)?;
-        }
-        Ok(())
+pub(crate) fn under_way(connection: &Connection) -> Result<Vec<PathBuf>> {
+    connection
+        .prepare_cached("SELECT path FROM removals_pending ORDER BY path")
+        .and_then(|mut statement| {
+            statement
+                .query_map([], |row| row.get::<_, String>(0))
+                .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        })
+        .map(|paths| paths.iter().map(|path| store::path_of(path)).collect())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn any_under_way(connection: &Connection) -> Result<bool> {
+    connection
+        .query_row(
+            "SELECT EXISTS (SELECT 1 FROM removals_pending)",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn found_at(path: &Path, out_of_reach: &mut OutOfReach) -> Found {
+    if fs::symlink_metadata(path).is_ok() {
+        return Found::Stands;
     }
-
-    pub(crate) fn take_back_for(&self, tx: &Transaction<'_>, kept: &[PathBuf]) -> Result<()> {
-        let standing: AHashSet<&String> = self
-            .by_file
-            .iter()
-            .filter(|(path, _)| !kept.contains(path))
-            .flat_map(|(_, keys)| keys)
-            .collect();
-
-        for key in kept
-            .iter()
-            .filter_map(|path| self.by_file.get(path))
-            .flatten()
-        {
-            if !self.already.contains(key) && !standing.contains(key) {
-                synced::unmark_deleted(tx, key)?;
-            }
-        }
-
-        Ok(())
+    if out_of_reach.has_gone(path) {
+        return Found::Gone;
     }
+    Found::OutOfReach
+}
+
+pub(crate) fn settle(
+    tx: &Transaction<'_>,
+    gone: &[PathBuf],
+    kept: &[PathBuf],
+) -> Result<Forgotten> {
+    take_back_for(tx, kept)?;
+    tell_every_device(tx, gone)?;
+
+    let forgotten = forget_files(tx, gone)?;
+
+    for path in gone {
+        let text = store::path_text(path);
+
+        store::cached(
+            tx,
+            A_KEY_A_REMOVED_FILE_HELD_IS_NO_LONGER_ANEW,
+            params![text],
+        )
+        .map_err(|source| Error::store(StoreOp::Update, source))?;
+        no_longer_under_way(tx, &text)?;
+    }
+    Ok(forgotten)
+}
+
+fn take_back_for(tx: &Transaction<'_>, kept: &[PathBuf]) -> Result<()> {
+    let mut made_anew = Vec::new();
+
+    for path in kept {
+        let text = store::path_text(path);
+        let marks = tx
+            .prepare_cached(MARKS_A_REMOVAL_MADE_ANEW)
+            .and_then(|mut statement| {
+                statement
+                    .query_map(params![text], |row| row.get::<_, String>(0))
+                    .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            })
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        made_anew.extend(marks);
+        no_longer_under_way(tx, &text)?;
+    }
+    for key in made_anew {
+        let held_by_another: bool =
+            store::queried(tx, A_MARK_ANOTHER_REMOVAL_HOLDS, params![key], |row| {
+                row.get(0)
+            })
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        if !held_by_another {
+            synced::unmark_deleted(tx, &key)?;
+        }
+    }
+    Ok(())
+}
+
+fn tell_every_device(tx: &Transaction<'_>, gone: &[PathBuf]) -> Result<()> {
+    for path in gone {
+        let text = store::path_text(path);
+        let why: Option<i64> = tx
+            .prepare_cached(WHY_A_REMOVAL_WAS_ASKED)
+            .and_then(|mut statement| {
+                statement
+                    .query_row(params![text], |row| row.get(0))
+                    .optional()
+            })
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        if why != Some(DELETED_EVERYWHERE) {
+            continue;
+        }
+        for recording in synced::recordings_at(tx, &text)? {
+            everywhere::to_be_told(tx, &recording)?;
+        }
+    }
+    Ok(())
+}
+
+fn no_longer_under_way(tx: &Transaction<'_>, path: &str) -> Result<()> {
+    for sql in [
+        "DELETE FROM removal_marks WHERE path = ?1",
+        "DELETE FROM removals_pending WHERE path = ?1",
+    ] {
+        store::cached(tx, sql, params![path])
+            .map_err(|source| Error::store(StoreOp::Delete, source))?;
+    }
+    Ok(())
 }
 
 pub(crate) fn forget_a_root(tx: &Transaction<'_>, root: i64) -> Result<()> {

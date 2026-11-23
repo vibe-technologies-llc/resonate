@@ -1025,7 +1025,8 @@ pub(crate) fn forgive_deletion(inner: &Inner, recording: &Recording) -> Result<(
     inner.write(|transaction| {
         transaction
             .execute(
-                "DELETE FROM songs_deleted WHERE recording IN (?1, ?2)",
+                "DELETE FROM songs_deleted WHERE recording IN (?1, ?2)
+                    AND recording NOT IN (SELECT recording FROM removal_marks)",
                 params![recording.key().as_str(), recording.named_key().as_str()],
             )
             .map(drop)
@@ -1036,7 +1037,10 @@ pub(crate) fn forgive_deletion(inner: &Inner, recording: &Recording) -> Result<(
 pub(crate) fn forgive_deletions(inner: &Inner) -> Result<()> {
     inner.write(|transaction| {
         transaction
-            .execute("DELETE FROM songs_deleted", [])
+            .execute(
+                "DELETE FROM songs_deleted WHERE recording NOT IN (SELECT recording FROM removal_marks)",
+                [],
+            )
             .map(drop)
             .map_err(|source| Error::store(StoreOp::Delete, source))
     })
