@@ -12,7 +12,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   hit and compare it with what went in, as `verify` does. Done when re-importing against a FLAC and a
   packed WAVE object with an intact header and damaged frames restores a copy that passes `verify`.
 
-## Playback and output
 ## Security
 - [M · blocked: design] A device that joins a shared playlist after a hostile editor compacted it
   takes the forged member keys from the snapshot: the first key heard for a `MemberId` stands, so
