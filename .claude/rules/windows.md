@@ -360,9 +360,10 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   `FILE_FLAG_BACKUP_SEMANTICS`) and a directory takes no byte-range lock, so the folder lock Linux
   uses failed every write with *cannot write*; the lock file stays beside the settings and no sweep
   takes it.
-- **The spool is the system temporary folder** and its anonymous file is
-  `FILE_FLAG_DELETE_ON_CLOSE`; free space on the temporary folder's volume is read through `fs4` and the
-  ceiling leaves `LEFT_FREE_ON_DISC` of it, as `fstatvfs` does on Unix.
+- **The spool is the system temporary folder** unless `Sources::spooling_under` names another, and
+  its anonymous file is `FILE_FLAG_DELETE_ON_CLOSE`; free space on the volume of the folder the file
+  was made in is read through `fs4` (a folder on another drive is measured there, not on the
+  temporary folder's) and the ceiling leaves `LEFT_FREE_ON_DISC` of it, as `fstatvfs` does on Unix.
 
 ## The terminal and interrupts
 

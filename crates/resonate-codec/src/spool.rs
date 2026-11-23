@@ -95,15 +95,31 @@ impl Spool {
         at_most: u64,
         folder: Option<&Path>,
     ) -> Result<Arc<Self>, (Refusal, Box<dyn MediaStream>)> {
-        let file = match folder.map_or_else(unnamed_file, unnamed_file_in) {
-            Ok(file) => file,
+        Self::beginning_measured(head, rest, hint, at_most, folder, room_on_disc)
+    }
+
+    fn beginning_measured(
+        head: &[u8],
+        rest: Box<dyn MediaStream>,
+        hint: Option<FormatHint>,
+        at_most: u64,
+        folder: Option<&Path>,
+        measured: impl Fn(&File, &Path) -> Option<u64>,
+    ) -> Result<Arc<Self>, (Refusal, Box<dyn MediaStream>)> {
+        let placed = match folder {
+            Some(folder) => unnamed_file_in(folder).map(|file| (file, folder.to_path_buf())),
+            None => unnamed_file_under(&spooled_under()),
+        };
+        let (file, folder) = match placed {
+            Ok(placed) => placed,
             Err(source) => return Err((Refusal::Unwritable(source), rest)),
         };
+
         let at_most = match ceiling_for(
             head.len() as u64,
             rest.byte_len(),
             at_most,
-            room_on_disc(&file),
+            measured(&file, &folder),
         ) {
             Ok(at_most) => at_most,
             Err(refusal) => return Err((refusal, rest)),
@@ -239,13 +255,13 @@ impl Spool {
 }
 
 #[cfg(windows)]
-fn room_on_disc(_: &File) -> Option<u64> {
-    let available = fs4::available_space(env::temp_dir()).ok()?;
+fn room_on_disc(_: &File, folder: &Path) -> Option<u64> {
+    let available = fs4::available_space(folder).ok()?;
     Some(available.saturating_sub(LEFT_FREE_ON_DISC))
 }
 
 #[cfg(unix)]
-fn room_on_disc(file: &File) -> Option<u64> {
+fn room_on_disc(file: &File, _: &Path) -> Option<u64> {
     let stat = rustix::fs::fstatvfs(file).ok()?;
     Some(
         stat.f_bavail
@@ -320,16 +336,12 @@ fn per_user_folder_in(folder: &Path, owner: Owner) -> PathBuf {
     folder.join(format!("{PER_USER_FOLDER_STEM}{}", owner.id()))
 }
 
-fn unnamed_file() -> io::Result<File> {
-    unnamed_file_under(&spooled_under())
-}
-
-fn unnamed_file_under(folders: &[PathBuf]) -> io::Result<File> {
+fn unnamed_file_under(folders: &[PathBuf]) -> io::Result<(File, PathBuf)> {
     let mut refused = io::Error::from(io::ErrorKind::NotFound);
 
     for folder in folders {
         match unnamed_file_in(folder) {
-            Ok(file) => return Ok(file),
+            Ok(file) => return Ok((file, folder.clone())),
             Err(source) => refused = source,
         }
     }
@@ -656,27 +668,27 @@ mod tests {
         assert!(spool.whole().is_none());
     }
 
-    struct ClaimsToBeEnormous;
+    struct ClaimsToBe(u64);
 
-    impl Read for ClaimsToBeEnormous {
+    impl Read for ClaimsToBe {
         fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
             Ok(0)
         }
     }
 
-    impl Seek for ClaimsToBeEnormous {
+    impl Seek for ClaimsToBe {
         fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
             Err(io::Error::from(io::ErrorKind::Unsupported))
         }
     }
 
-    impl MediaStream for ClaimsToBeEnormous {
+    impl MediaStream for ClaimsToBe {
         fn is_seekable(&self) -> bool {
             false
         }
 
         fn byte_len(&self) -> Option<u64> {
-            Some(1 << 62)
+            Some(self.0)
         }
     }
 
@@ -684,7 +696,7 @@ mod tests {
     fn a_source_longer_than_the_disc_has_room_for_is_refused_before_anything_is_written() {
         let refused = Spool::beginning_in(
             &[1, 2, 3],
-            Box::new(ClaimsToBeEnormous),
+            Box::new(ClaimsToBe(1 << 62)),
             None,
             u64::MAX,
             None,
@@ -693,6 +705,71 @@ mod tests {
         assert!(matches!(
             refused,
             Err((Refusal::NoRoom { needed, .. }, _)) if needed == 1 << 62
+        ));
+    }
+
+    fn let_go_of(folder: &Path) {
+        let let_go_of = Instant::now();
+
+        while fs::read_dir(folder).map_or(0, Iterator::count) > 0
+            && let_go_of.elapsed() < A_SPOOL_IS_LET_GO_OF_WITHIN
+        {
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        let _ = fs::remove_dir(folder);
+    }
+
+    #[test]
+    fn a_spool_is_admitted_by_the_room_on_the_volume_of_the_folder_it_is_placed_in() {
+        const ROOMY: u64 = 1 << 40;
+        const CRAMPED: u64 = 100;
+        const NEEDED: u64 = 1_000;
+
+        let roomy = env::temp_dir().join(format!("resonate-roomy-spool-{}", process::id()));
+        let cramped = env::temp_dir().join(format!("resonate-cramped-spool-{}", process::id()));
+
+        fs::create_dir_all(&roomy).expect("a roomy folder to spool into");
+        fs::create_dir_all(&cramped).expect("a cramped folder to spool into");
+
+        let reported =
+            |_: &File, folder: &Path| Some(if folder == roomy { ROOMY } else { CRAMPED });
+        let admitted = Spool::beginning_measured(
+            &[1, 2, 3],
+            Box::new(ClaimsToBe(NEEDED)),
+            None,
+            u64::MAX,
+            Some(&roomy),
+            reported,
+        )
+        .map_err(|(refusal, _)| refusal)
+        .map(|spool| spool.ended_whole().is_some());
+        let refused = Spool::beginning_measured(
+            &[1, 2, 3],
+            Box::new(ClaimsToBe(NEEDED)),
+            None,
+            u64::MAX,
+            Some(&cramped),
+            reported,
+        )
+        .map(|_| ());
+
+        let_go_of(&roomy);
+        let_go_of(&cramped);
+
+        assert!(
+            matches!(admitted, Ok(true)),
+            "the roomy folder was not admitted"
+        );
+        assert!(matches!(
+            refused,
+            Err((
+                Refusal::NoRoom {
+                    needed: NEEDED,
+                    room: CRAMPED
+                },
+                _
+            ))
         ));
     }
 

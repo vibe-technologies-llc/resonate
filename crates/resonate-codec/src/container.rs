@@ -33,7 +33,9 @@ use symphonia::core::{
 use crate::{
     CodecOp, Container, Error, MediaInfo, Result, Speakers, StreamTrackId, TrackProperty,
     boxes::{self, Priming},
-    caf, chapters,
+    caf,
+    carried::Carrier,
+    chapters,
     cue::{self, CueFile, CueSheet},
     dsd::{self, Packing},
     matroska::Voided,
@@ -301,16 +303,16 @@ fn open_spooling_within(
     let mut prescan = if seekable {
         Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
     } else {
-        match spooled(bytes.as_mut(), at_most.in_memory, at_most.within) {
+        match spooled(bytes, at_most.in_memory, at_most.within) {
             Spooled::Whole(held) => {
                 bytes = Box::new(Reading::new(Cursor::new(held)));
                 seekable = true;
                 Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
             }
-            Spooled::Head(head) if let Some(container) = read_by_seeking(&head) => {
+            Spooled::Head { head, rest } if let Some(container) = read_by_seeking(&head) => {
                 bytes = match spooled_whole_on_disc(
                     &head,
-                    bytes,
+                    rest,
                     named.clone(),
                     at_most.on_disc,
                     at_most.folder.as_deref(),
@@ -333,12 +335,12 @@ fn open_spooling_within(
                 seekable = true;
                 Prescan::buffered(bytes.as_mut(), at_most.walked.as_ref())
             }
-            Spooled::Head(head) => {
+            Spooled::Head { head, rest } => {
                 let found = Prescan::read(&mut Cursor::new(head.as_slice()));
 
                 bytes = match Spool::beginning_in(
                     &head,
-                    bytes,
+                    rest,
                     named.clone(),
                     at_most.on_disc,
                     at_most.folder.as_deref(),
@@ -349,9 +351,9 @@ fn open_spooling_within(
                         spool = Some(held);
                         streamed
                     }
-                    Err((refusal, bytes)) => {
+                    Err((refusal, rest)) => {
                         tracing::debug!(%refusal, "a source that cannot seek could not be spooled on disc; it plays from its head");
-                        Box::new(Replaying::over(bytes, head))
+                        Box::new(Replaying::over(rest, head))
                     }
                 };
                 found
@@ -502,32 +504,42 @@ fn refuse_what_the_caf_reader_would_overflow_on(
 
 enum Spooled {
     Whole(Vec<u8>),
-    Head(Vec<u8>),
+    Head {
+        head: Vec<u8>,
+        rest: Box<dyn MediaStream>,
+    },
 }
 
-fn spooled(bytes: &mut dyn MediaStream, at_most: u64, within: Duration) -> Spooled {
-    let began = Instant::now();
+fn spooled(bytes: Box<dyn MediaStream>, at_most: u64, within: Duration) -> Spooled {
+    let deadline = Instant::now() + within;
+    let mut carrier = Carrier::over(bytes);
     let mut held = Vec::new();
     let mut reading = vec![0_u8; SPOOLED_A_READ_AT_A_TIME];
+
     loop {
         let room = at_most.saturating_sub(held.len() as u64);
 
-        if room == 0 || began.elapsed() >= within {
-            return Spooled::Head(held);
+        if room == 0 || Instant::now() >= deadline {
+            break;
         }
 
         let wanted = usize::try_from(room)
             .unwrap_or(usize::MAX)
             .min(reading.len());
-        match bytes.read(&mut reading[..wanted]) {
-            Ok(0) => return Spooled::Whole(held),
-            Ok(read) => held.extend_from_slice(&reading[..read]),
-            Err(source) if source.kind() == io::ErrorKind::Interrupted => {}
-            Err(source) => {
+        match carrier.read_by(&mut reading[..wanted], deadline) {
+            Some(Ok(0)) => return Spooled::Whole(held),
+            Some(Ok(read)) => held.extend_from_slice(&reading[..read]),
+            Some(Err(source)) if source.kind() == io::ErrorKind::Interrupted => {}
+            Some(Err(source)) => {
                 tracing::debug!(%source, "a source that cannot seek stopped before it was spooled");
-                return Spooled::Head(held);
+                break;
             }
+            None => break,
         }
+    }
+    Spooled::Head {
+        head: held,
+        rest: carrier.handed_on(),
     }
 }
 
@@ -1032,7 +1044,9 @@ fn duration(track: &Track, rate: SampleRate) -> Option<Frames> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{io::Cursor, sync::mpsc, thread};
+
+    use parking_lot::Mutex;
 
     use super::*;
     use crate::source::Reading;
@@ -1261,6 +1275,97 @@ mod tests {
             "the open waited for the whole stream"
         );
         assert!(!opened.seekable);
+    }
+
+    struct Gated {
+        head: Cursor<Vec<u8>>,
+        rest: Cursor<Vec<u8>>,
+        gate: Mutex<mpsc::Receiver<()>>,
+    }
+
+    impl Read for Gated {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            let read = self.head.read(buf)?;
+
+            if read > 0 {
+                return Ok(read);
+            }
+
+            let _ = self.gate.get_mut().recv();
+
+            self.rest.read(buf)
+        }
+    }
+
+    impl Seek for Gated {
+        fn seek(&mut self, _: SeekFrom) -> io::Result<u64> {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "a gated stream"))
+        }
+    }
+
+    impl MediaStream for Gated {
+        fn is_seekable(&self) -> bool {
+            false
+        }
+
+        fn byte_len(&self) -> Option<u64> {
+            None
+        }
+    }
+
+    #[test]
+    fn a_read_stalled_past_the_spool_deadline_is_handed_on_and_its_bytes_follow_the_head() {
+        const WAITED_AT_MOST: Duration = Duration::from_millis(50);
+        const GATE_OPENS_AFTER: Duration = Duration::from_secs(1);
+        const HANDED_ON_WITHIN: Duration = Duration::from_millis(500);
+
+        let all: Vec<u8> = (0..=u8::MAX).cycle().take(200_000).collect();
+        let (head, rest) = all.split_at(300);
+        let (opening, gate) = mpsc::channel();
+
+        let gated = Gated {
+            head: Cursor::new(head.to_vec()),
+            rest: Cursor::new(rest.to_vec()),
+            gate: Mutex::new(gate),
+        };
+
+        thread::spawn(move || {
+            thread::sleep(GATE_OPENS_AFTER);
+
+            let _ = opening.send(());
+        });
+
+        let began = Instant::now();
+        let Spooled::Head {
+            head: held,
+            rest: carried,
+        } = spooled(Box::new(gated), SPOOLED_AT_MOST, WAITED_AT_MOST)
+        else {
+            panic!("a stalled stream was read whole");
+        };
+        let handed_on_after = began.elapsed();
+
+        assert!(
+            handed_on_after < HANDED_ON_WITHIN,
+            "the spool waited {handed_on_after:?} on a stalled read"
+        );
+        assert_eq!(held, head);
+        assert!(!carried.is_seekable());
+
+        let spool = Spool::beginning_in(&held, carried, None, SPOOLED_ON_DISC_AT_MOST, None)
+            .map_err(|(refusal, _)| refusal)
+            .expect("a writable temporary folder");
+        let mut whole = spool
+            .ended_whole()
+            .expect("the stalled read arrived and the stream ended")
+            .stream;
+        let mut delivered = Vec::new();
+
+        whole
+            .read_to_end(&mut delivered)
+            .expect("the spool reads to its end");
+
+        assert_eq!(delivered, all);
     }
 
     #[test]

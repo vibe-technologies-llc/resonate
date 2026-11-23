@@ -209,10 +209,17 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   checks the CAF reader's declared values first (`Error::PacketTooLarge` and its siblings).
 - **Non-seekable sources are spooled; only one too long to spool is read from its head.**
   `container::open` reads it into memory up to `SPOOLED_AT_MOST` (256 MiB) for at most
-  `SPOOLED_WITHIN` (750 ms); ending inside both, it opens seekable. A stream still arriving goes on
-  onto disc: `spool::Spool` = unnamed unlinked file under `TMPDIR` else `/var/tmp` (`/tmp` is tmpfs
+  `SPOOLED_WITHIN` (750 ms); ending inside both, it opens seekable. The reads go through a
+  `Carrier` (a `resonate-head` thread), so a read that stalls is waited on only for what is left of
+  the budget: at the deadline the stream is handed on with that read still in flight, and the bytes
+  it returns later are the first the spool or the replay reads, then the stream is read directly
+  again (`a_read_stalled_past_the_spool_deadline_is_handed_on_and_its_bytes_follow_the_head`). A
+  stream still arriving goes on onto disc: `spool::Spool` = unnamed unlinked file under `TMPDIR` else `/var/tmp` (`/tmp` is tmpfs
   on Arch, Fedora, Flatpak), copied by a `resonate-spool` thread up to `SPOOLED_ON_DISC_AT_MOST`
-  (8 GiB) or the room `fstatvfs` finds less `LEFT_FREE_ON_DISC` (256 MiB), whichever is less: a
+  (8 GiB) or the room on the volume the spool was placed on less `LEFT_FREE_ON_DISC` (256 MiB),
+  whichever is less (`fstatvfs` of the file on Unix, `fs4` on the folder it was made in on Windows,
+  measured through `beginning_measured`'s seam:
+  `a_spool_is_admitted_by_the_room_on_the_volume_of_the_folder_it_is_placed_in`): a
   source whose length is known and does not fit is refused before a byte is written
   (`spool::Refusal::NoRoom`; the stream plays from its head, a DSD or Monkey's Audio file that
   must be whole is `Error::NoRoomToSpool`) (`a_source_longer_than_the_disc_has_room_for_is_refused_before_anything_is_written`); symphonia gets the `Spooling` side (`is_seekable() == false`). **Once all has arrived it
