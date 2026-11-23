@@ -356,14 +356,22 @@ plumbing, so a `ureq` bump is made once:
 - **Agents**: `USER_AGENT`, `Patience` (`answered_within`, `broken_off_after`, `resumed_after`),
   `Trusted` (`BuiltInRoots`, or `SystemStoreToo` for a listener's own server), `asking_agent`
   (`timeout_global` of `answered_within`), `downloading_agent` (`stall.rs`'s `BrokenOffAfter`: a
-  silent socket closes, one still delivering is read however long; no whole-body deadline).
+  silent body closes after `broken_off_after`, one still delivering is read however long; no
+  whole-body deadline, and the response phase keeps the `answered_within` the agent was configured
+  with, so a first answer slower than the stall opens). Every agent carries `timeout_resolve`, and
+  `downloading_agent` resolves on a helper thread of its own (`agents.rs`'s `Bounded`), so a host
+  lookup stuck in the system resolver ends at the budget on a new request and on a reopening alike,
+  while a download already moving runs as long as it delivers.
 - **`unreached` classes a `ureq::Error` once**: a refused certificate is `Untrusted`; I/O, timeout,
   unknown host, connect/proxy/TLS failure is `Io` (away); `BadUri`/`Http` is `Unaddressable` (away);
   a body over its limit, protocol error or redirect failure is `Unreadable`, the want's
   (`an_answer_too_large_or_malformed_is_unreadable_and_no_refused_connection`). `as_io` is the same
   reading for a `Read` path.
 - **`retry_after` reads seconds or any of HTTP's three date forms** against the clock; a past date
-  is no wait. `resonate-online` reads it too.
+  is no wait. The date's parts are checked (a day within its month, a leap day only in a leap year, a
+  four-digit year but in the two-digit form), and a two-digit year is the latest one not more than
+  fifty years ahead of the clock (RFC 9110 §5.6.7); a date that fails is `None`, so the caller's own
+  backoff stays. `resonate-online` reads it too.
 - **`Ranged` is a download that resumes** with `Range: bytes=<read>-` and `Accept-Encoding: identity` (every agent has ureq's `gzip`, which adds `Accept-Encoding: gzip` unless the request names one and decodes by the response's `Content-Encoding`, while a range counts the bytes of the coded representation; `asking_to_resume` and `Ranged` ask identity on every request, `a_download_is_asked_for_uncoded_so_a_resume_counts_the_bytes_the_server_ranges_over`), up to `RESUMES_AT_MOST` (5)
   times running: a `206` whose `Content-Range` starts there is read on, a `200` is read past what was
   held, another refusal ends it. A resume carries `If-Range` with the first answer's strong
