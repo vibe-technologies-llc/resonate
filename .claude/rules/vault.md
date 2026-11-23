@@ -30,16 +30,31 @@ engine, library, `ureq` (CI `refuse`).
   one key never delete what the other's row names
   (`imports_of_one_flac_key_racing_land_one_object_and_leave_nothing_staged`, its `_wave_` sibling and
   `dedup_hits_and_renewals_racing_a_sweep_never_lose_the_object_or_trip_the_sweep`: eight threads over
-  a barrier, forty rounds, one landing, the rest deduped, nothing left staged). **A standing object is taken only where its head
-  declares what went in, never on its size alone** (`standing_holding`, `holds_the_sound`): a FLAC's
-  STREAMINFO (`standing::of_a_flac`: rate, channels, frames and the samples' MD5), a packed WAVE's
-  RIFF header (`standing::of_a_packed_wave`: rate, channels, frames), a kept object's size against
+  a barrier, forty rounds, one landing, the rest deduped, nothing left staged). **A standing object is taken only where it holds
+  what went in, never on its size or its head alone.** A FLAC or packed WAVE object is first refused
+  by its head where that declares another sound (`holds_the_sound`: a FLAC's STREAMINFO,
+  `standing::of_a_flac`: rate, channels, frames and the samples' MD5; a packed WAVE's RIFF header,
+  `standing::of_a_packed_wave`: rate, channels, frames), then decoded whole at the depth what went in
+  was heard at and compared with it through `Heard::held_by`, as validation and `Vault::verify` read
+  an object (`holds_every_frame`), so frames damaged behind an intact head are no dedup hit. **The
+  decode runs outside the landing lock**, which serialises every landing: `standing_holding` and
+  `landed_or_standing` note the object's size and modification time (`Seen`) before deciding and
+  read them again after (`landed_or_standing` under the lock), deciding afresh where they moved. A
+  landing in between is only ever a verified copy under the same key, so a same-sized swap the stamp
+  misses is never an unsound object. `landed_or_standing` decodes only where the outcome hinges on
+  it (`Weighing::hinges_on_the_standing`): a renewal smaller than the standing object lands over it
+  either way and a copy no smaller than the source either way is refused, so those read the head
+  alone. A damaged object costs more than one decode (once where the hit is looked for, again at the
+  landing); an intact one, the common case, costs one. A kept object is weighed by its size against
   the staged copy of the same bytes and then the MD5 of the whole standing file against the key its
   name carries (`holds_the_bytes`, the digest `Vault::verify` reads a kept object by, run under the
-  landing lock, so only a dedup hit pays a read). One that does not hold it is no dedup hit: the
-  import encodes, validates and lands over it (warned)
-  (`an_object_under_the_key_that_holds_something_else_is_not_taken_for_it`,
-  `a_kept_object_damaged_to_the_same_length_gives_way_to_the_verified_copy_of_a_second_import`).
+  landing lock). One that does not hold it is no dedup hit: the import encodes, validates and lands
+  over it (warned) (`an_object_under_the_key_that_holds_something_else_is_not_taken_for_it`,
+  `a_flac_object_damaged_behind_an_intact_head_gives_way_to_the_verified_copy_of_a_second_import`,
+  which damages it under a WAVE source's import and again under a FLAC source's foretold key,
+  `a_packed_wave_damaged_behind_an_intact_head_gives_way_to_the_verified_copy_of_a_second_import`,
+  `a_kept_object_damaged_to_the_same_length_gives_way_to_the_verified_copy_of_a_second_import`; each
+  leaves an intact object a dedup hit, unwritten).
 - **A stream that turns rate or channel count is kept as it came.** FLAC's STREAMINFO and a WAVE's
   `fmt ` name one shape, so `flac::encode` and `wave::tally` read without following format changes
   and a turn is `codec::Error::FormatChanged`; `Vault::keep` answers it by taking the source again
@@ -74,9 +89,9 @@ engine, library, `ureq` (CI `refuse`).
   a renewal), is weighed against that object before read-back (`Deduped` or `NoSmaller`).
   **Key named before encoding where possible**: a native 16/24-bit FLAC's STREAMINFO MD5 is the
   PCM digest the encode would lay down (`bare::declared_digest`), keyed with the source's sound;
-  with an object under it holding that sound `foretold_flac` decodes once instead of encoding
-  (`Foretold::Misdeclared` if samples hash otherwise or the object holds another sound; never for a
-  renewal or cut row). Other sources: `Taking::foretold` carries a catalog key where
+  with an object under it holding that sound `foretold_flac` decodes the source and the object
+  instead of encoding (`Foretold::Misdeclared` if samples hash otherwise or the object does not hold
+  every frame of that sound, which then encodes; never for a renewal or cut row). Other sources: `Taking::foretold` carries a catalog key where
   `TRACKS_TO_VAULT` finds exactly one noted object keyed by the sound (`Encoding::KEYED_BY_THE_SOUND`)
   with the row's sound (frames, rate, channels; `vault_objects_by_sound`); a sound two objects share
   foretells nothing.

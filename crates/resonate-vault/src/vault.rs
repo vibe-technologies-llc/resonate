@@ -8,6 +8,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU64, Ordering},
     },
+    time::SystemTime,
 };
 
 use parking_lot::Mutex;
@@ -233,6 +234,37 @@ impl Weighing {
     fn fits(self, bytes: u64) -> bool {
         self.smaller_than.is_none_or(|was| bytes < was)
     }
+
+    fn hinges_on_the_standing(self, staged: u64, standing: u64) -> bool {
+        let replaced_either_way = self.renewing && staged < standing && self.fits(staged);
+        let refused_either_way = !self.fits(staged) && !self.fits(standing);
+
+        !replaced_either_way && !refused_either_way
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Seen {
+    bytes: u64,
+    modified: Option<SystemTime>,
+}
+
+impl Seen {
+    fn of(path: &Path) -> Option<Self> {
+        fs::metadata(path)
+            .ok()
+            .filter(fs::Metadata::is_file)
+            .map(|held| Self {
+                bytes: held.len(),
+                modified: held.modified().ok(),
+            })
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Judged {
+    Heard(bool),
+    ByItsBytes(VaultKey),
 }
 
 enum Foretold {
@@ -1205,7 +1237,7 @@ impl Vault {
             return Ok(Foretold::Misdeclared);
         }
 
-        let Some(standing) = self.standing_holding(&target, Expected::Sound(Form::Flac, &heard))?
+        let Some(standing) = self.standing_holding(&target, Form::Flac, &heard, taking.halt)?
         else {
             return Ok(Foretold::Misdeclared);
         };
@@ -1287,7 +1319,7 @@ impl Vault {
         let target = self.object_path(key, FLAC_EXTENSION);
 
         let standing = match encoded.outgrew || (!weighing.renewing && target.is_file()) {
-            true => self.standing_holding(&target, Expected::Sound(Form::Flac, &went_in))?,
+            true => self.standing_holding(&target, Form::Flac, &went_in, halt)?,
             false => None,
         };
 
@@ -1374,7 +1406,7 @@ impl Vault {
 
         let standing = match weighing.renewing {
             true => None,
-            false => self.standing_holding(&target, Expected::Sound(Form::Wave, &went_in))?,
+            false => self.standing_holding(&target, Form::Wave, &went_in, taking.halt)?,
         };
 
         if let Some(bytes) = standing {
@@ -1431,6 +1463,7 @@ impl Vault {
             &target,
             weighing,
             Expected::Sound(Form::Wave, &went_in),
+            taking.halt,
         )?;
 
         Ok(landing.kept(Kept {
@@ -1501,6 +1534,7 @@ impl Vault {
             &target,
             Weighing::AS_IT_STANDS,
             Expected::Bytes(key),
+            taking.halt,
         )?;
 
         Ok(landing.kept(Kept {
@@ -1637,8 +1671,13 @@ impl Vault {
         }
 
         let target = self.object_path(key, extension);
-        let landing =
-            self.landed_or_standing(staging, &target, weighing, Expected::Sound(form, &went_in))?;
+        let landing = self.landed_or_standing(
+            staging,
+            &target,
+            weighing,
+            Expected::Sound(form, &went_in),
+            halt,
+        )?;
 
         Ok(landing.kept(Kept {
             key,
@@ -1662,34 +1701,54 @@ impl Vault {
         target: &Path,
         weighing: Weighing,
         expected: Expected<'_>,
+        halt: Halt<'_>,
     ) -> Result<Landing> {
-        let _landing = self.landing.lock();
         let staged = self.sized(staging)?;
-        let landing = if target.is_file() {
-            let standing = self.sized(target)?;
-            let sound = match expected {
-                Expected::Sound(form, heard) => holds_the_sound(target, form, heard),
-                Expected::Bytes(key) => {
-                    standing == staged && holds_the_bytes(target, key).unwrap_or(false)
+
+        let landing = loop {
+            let seen = Seen::of(target);
+            let judged = match (seen, expected) {
+                (_, Expected::Bytes(key)) => Judged::ByItsBytes(key),
+                (None, Expected::Sound(..)) => Judged::Heard(false),
+                (Some(standing), Expected::Sound(form, heard))
+                    if weighing.hinges_on_the_standing(staged, standing.bytes) =>
+                {
+                    Judged::Heard(self.holds_every_frame(target, form, heard, halt)?)
+                }
+                (Some(_), Expected::Sound(form, heard)) => {
+                    Judged::Heard(holds_the_sound(target, form, heard))
                 }
             };
-            if !sound {
-                tracing::warn!(path = %target.display(), "an object under this key holds something else and is replaced");
-                match weighing.fits(staged) {
-                    true => Landing::Landed(self.landed(staging, target)?),
-                    false => Landing::NoSmaller,
-                }
-            } else if weighing.renewing && staged < standing && weighing.fits(staged) {
-                Landing::Replaced(self.landed(staging, target)?)
-            } else if weighing.fits(standing) {
-                Landing::Deduped(standing)
-            } else {
-                Landing::NoSmaller
+
+            let _landing = self.landing.lock();
+
+            if Seen::of(target) != seen {
+                continue;
             }
-        } else if weighing.fits(staged) {
-            Landing::Landed(self.landed(staging, target)?)
-        } else {
-            Landing::NoSmaller
+
+            let standing = seen
+                .map(|seen| seen.bytes)
+                .filter(|&standing| match judged {
+                    Judged::Heard(sound) => sound,
+                    Judged::ByItsBytes(key) => {
+                        standing == staged && holds_the_bytes(target, key).unwrap_or(false)
+                    }
+                });
+
+            if seen.is_some() && standing.is_none() {
+                tracing::warn!(path = %target.display(), "an object under this key holds something else and is replaced");
+            }
+            break match standing {
+                None if weighing.fits(staged) => Landing::Landed(self.landed(staging, target)?),
+                None => Landing::NoSmaller,
+                Some(standing)
+                    if weighing.renewing && staged < standing && weighing.fits(staged) =>
+                {
+                    Landing::Replaced(self.landed(staging, target)?)
+                }
+                Some(standing) if weighing.fits(standing) => Landing::Deduped(standing),
+                Some(_) => Landing::NoSmaller,
+            };
         };
 
         if !matches!(landing, Landing::Landed(_) | Landing::Replaced(_)) {
@@ -1698,20 +1757,42 @@ impl Vault {
         Ok(landing)
     }
 
-    fn standing_holding(&self, target: &Path, expected: Expected<'_>) -> Result<Option<u64>> {
-        let _landing = self.landing.lock();
-        let holds = match expected {
-            Expected::Sound(form, heard) => {
-                target.is_file() && holds_the_sound(target, form, heard)
+    fn standing_holding(
+        &self,
+        target: &Path,
+        form: Form,
+        heard: &Heard,
+        halt: Halt<'_>,
+    ) -> Result<Option<u64>> {
+        loop {
+            let Some(seen) = Seen::of(target) else {
+                return Ok(None);
+            };
+            let holds = self.holds_every_frame(target, form, heard, halt)?;
+
+            if Seen::of(target) == Some(seen) {
+                return Ok(holds.then_some(seen.bytes));
             }
-            Expected::Bytes(key) => {
-                target.is_file() && holds_the_bytes(target, key).unwrap_or(false)
-            }
-        };
-        match holds {
-            true => self.sized(target).map(Some),
-            false => Ok(None),
         }
+    }
+
+    fn holds_every_frame(
+        &self,
+        target: &Path,
+        form: Form,
+        heard: &Heard,
+        halt: Halt<'_>,
+    ) -> Result<bool> {
+        if !holds_the_sound(target, form, heard) {
+            return Ok(false);
+        }
+
+        let read = match form {
+            Form::Flac => read_back(target, Some(heard.spec.format), halt),
+            Form::Wave => self.read_back_packed(target, Some(heard.spec.format), halt),
+            Form::Kept => return Ok(true),
+        };
+        Ok(held_unless_halted(read)?.is_some_and(|read| heard.held_by(read)))
     }
 
     fn read_back_packed(

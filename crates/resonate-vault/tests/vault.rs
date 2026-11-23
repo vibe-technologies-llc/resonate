@@ -890,6 +890,132 @@ fn a_kept_object_damaged_to_the_same_length_gives_way_to_the_verified_copy_of_a_
     assert_eq!(intact.path, first.path);
 }
 
+fn head_of(vault: &Vault, path: &Path) -> Vec<u8> {
+    const HEAD_BYTES: usize = 68;
+
+    let mut head = vec![0; HEAD_BYTES];
+
+    vault
+        .offer(path)
+        .expect("an offered object")
+        .read_exact(&mut head)
+        .expect("a readable head");
+    head
+}
+
+fn damaged_behind_its_head(path: &Path) -> Vec<u8> {
+    let whole = fs::read(path).expect("the kept object");
+
+    let mut damaged = whole.clone();
+
+    let at = damaged.len() * 3 / 4;
+
+    for byte in &mut damaged[at..at + 16] {
+        *byte ^= 0x5a;
+    }
+    fs::write(path, &damaged).expect("a damaged object");
+    whole
+}
+
+fn padded_flac(flac: &[u8], padding: usize) -> Vec<u8> {
+    const BLOCK_HEADER_AT: usize = 4;
+    const STREAM_INFO_ENDS: usize = 42;
+    const LAST_BLOCK: u8 = 0x80;
+    const PADDING: u8 = 1;
+
+    let mut held = flac[..STREAM_INFO_ENDS].to_vec();
+
+    held[BLOCK_HEADER_AT] &= !LAST_BLOCK;
+    held.push(LAST_BLOCK | PADDING);
+    held.extend_from_slice(&(padding as u32).to_be_bytes()[1..]);
+    held.resize(held.len() + padding, 0);
+    held.extend_from_slice(&flac[STREAM_INFO_ENDS..]);
+    held
+}
+
+fn restored_over_frames_damaged_behind_an_intact_head(
+    vault: &Vault,
+    location: &MediaLocation,
+    form: Form,
+) -> Kept {
+    let sources = Sources::local();
+    let long_ago = SystemTime::UNIX_EPOCH + Duration::from_secs(1_000_000_000);
+
+    let first = kept(vault, &sources, location);
+    let head = head_of(vault, &first.path);
+    let whole = damaged_behind_its_head(&first.path);
+
+    assert_eq!(first.form, form);
+    assert_eq!(head_of(vault, &first.path), head);
+    assert!(!vault.verify(&first.path, form).unwrap_or(false));
+
+    let again = kept(vault, &sources, location);
+
+    assert!(
+        !again.deduped,
+        "an object whose head alone survived was taken as a dedup hit"
+    );
+    assert_eq!(again.key, first.key);
+    assert_eq!(again.path, first.path);
+    assert_eq!(fs::read(&again.path).expect("the kept object"), whole);
+    assert!(vault.verify(&again.path, form).expect("a verified object"));
+    assert_eq!(stagings(vault), 0);
+
+    fs::OpenOptions::new()
+        .write(true)
+        .open(&again.path)
+        .and_then(|file| file.set_modified(long_ago))
+        .expect("an object dated long ago");
+
+    let intact = kept(vault, &sources, location);
+
+    assert!(intact.deduped);
+    assert_eq!(intact.path, first.path);
+    assert_eq!(
+        fs::metadata(&intact.path)
+            .and_then(|held| held.modified())
+            .expect("a dated object"),
+        long_ago,
+        "an intact object was written again"
+    );
+    assert_eq!(stagings(vault), 0);
+    intact
+}
+
+#[test]
+fn a_flac_object_damaged_behind_an_intact_head_gives_way_to_the_verified_copy_of_a_second_import() {
+    let tree = Tree::new();
+    let samples = signal(FRAMES);
+    let vault = tree.vault();
+
+    let wave = MediaLocation::local(tree.write("sixteen.wav", &sixteen_bit(&samples, None)));
+    let from_a_wave = restored_over_frames_damaged_behind_an_intact_head(&vault, &wave, Form::Flac);
+    let flac = fs::read(&from_a_wave.path).expect("the kept object");
+    let flac = MediaLocation::local(tree.write("padded.flac", &padded_flac(&flac, 4096)));
+    let from_a_flac = restored_over_frames_damaged_behind_an_intact_head(&vault, &flac, Form::Flac);
+
+    assert_eq!(from_a_flac.key, from_a_wave.key);
+    assert_eq!(decoded(&from_a_flac.path, SampleFormat::S16), samples);
+    assert_eq!(vault.holding().expect("a counted vault").objects, 1);
+}
+
+#[test]
+fn a_packed_wave_damaged_behind_an_intact_head_gives_way_to_the_verified_copy_of_a_second_import() {
+    let tree = Tree::new();
+    let vault = tree.vault();
+
+    let location = MediaLocation::local(tree.write("floating.wav", &floating(&signal(FRAMES))));
+    let restored =
+        restored_over_frames_damaged_behind_an_intact_head(&vault, &location, Form::Wave);
+
+    assert!(
+        vault
+            .verify(&restored.path, Form::Wave)
+            .expect("a verified object")
+    );
+    assert_eq!(vault.holding().expect("a counted vault").objects, 1);
+}
+
 #[test]
 fn a_wave_already_in_the_vault_is_deduped_before_anything_is_staged() {
     let tree = Tree::new();
