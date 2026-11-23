@@ -585,25 +585,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   queue without toggling shuffle off.
 
 ## Providers and network
-- [M · 0.17.1] Check that a stream still names the same file after a rewind.
-  **Medium, builder.** The reader keeps the first answer's length and validator, but
-  reopening at byte zero skips the identity check used for other offsets
-  (`crates/resonate-fetch/src/seeking.rs:58`, `:111`,
-  `crates/resonate-fetch/src/ranged.rs:192`). Some codec probes rewind the source before
-  reading it again (`crates/resonate-codec/src/prescan.rs:84`, `:173`). Check the known
-  representation on a reopen at every offset. Done when rewinding after a server-side
-  replacement with a different ETag reports a changed stream and an unchanged file still
-  plays from the start.
-- [M · 0.17.1] Check a saved download's validator before appending a resumed answer.
-  **Medium, builder.** The saved-part path checks the returned offset and total, then
-  adopts the answer's validator even when it conflicts with the saved one. The phone
-  retains the prefix and records the new validator
-  (`crates/resonate-fetch/src/ranged.rs:259`, `:275`,
-  `crates/resonate-mobile/src/downloads.rs:1138`,
-  `crates/resonate-mobile/src/partials.rs:185`). Reuse the in-process identity check
-  before handing a partial response to the caller. Done when a same-length response
-  carrying a conflicting strong ETag causes the provider to restart from byte zero,
-  while a matching partial still appends.
 - [M · 0.17.1] Ask for uncoded audio from the first seekable HTTP request.
   **Medium, architect.** The first Jellyfin, native TIDAL FLAC and relayed hifi stream
   requests can negotiate gzip while later requests for the same reader ask for identity
@@ -617,24 +598,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   reopened requests. Done when provider tests with a server that offers gzip see identity
   on both requests, and the reader knows the uncoded length and returns the expected bytes
   after a seek.
-- [M · 0.17.1] Validate the complete byte interval on a partial HTTP response.
-  **Medium, builder.** The range reader checks only the starting offset and reads
-  the slash suffix as a total, so a response with inconsistent range bounds can
-  be combined into a stream or a saved download
-  (`crates/resonate-fetch/src/ranged.rs:71`, `:180`, `:268`). Parse the response
-  range as one interval and check the bounds and body framing before treating the
-  answer as a valid continuation. Done when range tests reject inconsistent intervals
-  and still accept a server that returns a shorter valid interval.
-- [S · 0.17.1] Keep the type of an HTTP representation validator.
-  **Low, builder.** When a server supplies both an ETag and a modification date,
-  the reader takes the ETag and then compares that value with a bare date from a
-  later response. The switch in header kind can be misreported as a changed file
-  (`crates/resonate-fetch/src/ranged.rs:87`, `:130`,
-  `crates/resonate-providers/src/delivery.rs:49`). Compare validators of the same
-  kind and require sufficient evidence before using a date in `If-Range`.
-  Done when a valid date-validated continuation can supply its unchanged date
-  alongside a new ETag, a conflicting validator of the same kind is rejected,
-  and `If-Range` carries only strong validators.
 - [M · 0.17.1] Restart a MusicBrainz archive download after a stale partial fails.
   **Low, builder.** The dump checksum protects installation, but a resumed answer
   that fails verification after returning bytes ends the job. A whole answer
