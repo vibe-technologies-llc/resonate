@@ -396,14 +396,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-library/src/organise.rs:2384`). Apply the entire cycle as one unit and roll back
   an incomplete one. Done when a cancelled swap, an injected landing refusal and a swap at a
   batch boundary leave both file paths and catalog entries consistent.
-- [M · 0.17.1] Reconcile both roots when the file watcher reports a split rename.
-  **Medium, architect.** Windows and macOS can report the old and new paths separately.
-  The old path goes straight to deferred removal and only the new root is scanned, so the
-  old row can be forgotten without transferring its state
-  (`crates/resonate-library/src/watch.rs:172`, `:225`,
-  `crates/resonate-ui/src/models/watching.rs:112`). Queue both roots and defer the old
-  path's removal until the move has been checked. Done when synthetic watcher events for
-  a split rename across roots preserve the original track ID and its favourite.
 - [M · 0.17.1] Keep catalog rows when a delete reaches an offline volume.
   **Medium, architect.** A missing mount path is treated as a missing file, so deletion
   can discard catalog state and mark a recording deleted while its file is still on disk
@@ -447,13 +439,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-library/src/traded.rs:111`, `:151`). Hold one read snapshot for the
   export. Done when credits and removals committed between pages leave the export with
   every listen present at its start exactly once.
-- [M · 0.17.1] Scan each root after file monitoring recovers. **Low, builder.**
-  A root that regains its watch starts receiving new events, but changes made while it
-  was uncovered remain invisible. Replacing the watcher has a similar gap
-  (`crates/resonate-library/src/watch.rs:111`, `:128`,
-  `crates/resonate-ui/src/models/watched.rs:71`). Queue one catch-up scan after
-  re-establishing coverage. Done when a file changed during an uncovered interval is
-  picked up after coverage returns without needing another filesystem event.
 - [S · 0.17.1] Release the catalog's file lock before a walk reports completion.
   **Low, builder.** A waiting operation can observe that the walk ended while the old
   guard still holds the lock and be refused as already walking
