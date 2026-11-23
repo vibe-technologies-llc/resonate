@@ -29,20 +29,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   transfer (`export_once`, `crates/resonate-sync/src/peer.rs`) still returns with its partial
   unflushed. Flush it the same way. Done when an interrupted copy transfer resumed at once lands
   bytes identical to the offered copy across repeated runs.
-- [L · 0.17.1] Keep a phone's incoming deletions pending until removal settles.
-  **High, architect.** The ledger marks a deletion settled once the mobile catalog
-  queues it. Polling clears the queue before Android or iOS attempts file removal.
-  An interrupted app or a temporarily unavailable folder can leave the file
-  with no pending deletion
-  (`crates/resonate-sync/src/ledger/deletions.rs:147`,
-  `crates/resonate-mobile/src/deleting.rs:104`, `:316`,
-  `crates/resonate-mobile/src/sync.rs:1691`,
-  `android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:1043`,
-  `ios/Sources/Resonate/Deleting.swift:51`). Record the per-file result after removal
-  and catalog cleanup, and revalidate queued deletions against newer changes.
-  Done when an interrupted or temporarily refused removal remains pending after
-  restart, a successful removal settles once, and a newer reversal cancels
-  the queued removal.
 - [M · 0.17.1] Validate an Android join code before replacing the current group.
   **High, architect.** A nonblank manual entry can overwrite the stored pairing
   key. The native restart stops the old service before parsing the replacement,
