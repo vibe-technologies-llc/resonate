@@ -4,17 +4,13 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Vault
-- [M · 0.17.1] Verify a kept object before reusing it. **High, architect.** A second import of a
-  track can discard a verified staged copy and keep a damaged archive object of the same length
-  (`crates/resonate-vault/src/vault.rs:1478`, `crates/resonate-vault/src/vault.rs:1651`).
-  Reuse the byte-digest check from `verify` on the deduplication path and keep the verified copy
-  when the digest differs. Done when re-importing against a same-length damaged object restores
-  the expected bytes and the catalog points to an object that passes verification.
-- [M · 0.17.1] Check a stored cover before counting it as a deduplication hit. **Medium, architect.**
-  `crates/resonate-vault/src/vault.rs:676` accepts the dimensions from the stored header as proof
-  that the whole image still reads. Verify the stored form against the incoming cover before reuse.
-  Done when re-import repairs a cover with a readable header and damaged image data and still
-  deduplicates all intact stored forms.
+- [M · 0.17.1] Decode a standing FLAC or packed WAVE object before reusing it. **Medium, architect.**
+  A re-import's deduplication of a lossless form reads only the standing object's header (rate,
+  channels, frame count, declared digest) through `holds_the_sound`, never its frames, so an object
+  whose header survived and whose audio is damaged is kept over the verified staged copy
+  (`crates/resonate-vault/src/vault.rs`, `holds_the_sound`). Decode the standing object on a dedup
+  hit and compare it with what went in, as `verify` does. Done when re-importing against a FLAC and a
+  packed WAVE object with an intact header and damaged frames restores a copy that passes `verify`.
 
 ## Playback and output
 - [M · 0.17.1] Finish graph recovery when its deadline expires. **High, architect.**
