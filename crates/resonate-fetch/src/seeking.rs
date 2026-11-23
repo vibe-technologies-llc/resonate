@@ -1,5 +1,6 @@
 use std::{
     io::{self, ErrorKind, Read, Seek, SeekFrom},
+    mem,
     time::Duration,
 };
 
@@ -34,7 +35,7 @@ impl Seeking {
             length: reading.length(),
             at: 0,
             known: Known {
-                validator: reading.validator().cloned(),
+                validators: reading.validators().clone(),
                 total: reading.total(),
             },
             reading: Some(reading),
@@ -69,11 +70,8 @@ impl Seeking {
             .map_err(Unfetched::into_io)?,
         };
 
-        self.known.validator = self
-            .known
-            .validator
-            .take()
-            .or_else(|| reading.validator().cloned());
+        self.known.validators =
+            mem::take(&mut self.known.validators).joined(reading.validators().clone());
         self.known.total = self.known.total.or(reading.total());
         Ok(self.reading.insert(reading))
     }
@@ -144,7 +142,7 @@ mod tests {
     use super::*;
     use crate::{
         Trusted, configured,
-        testing::{WHOLE_BODY, answering, cut_first_answer, lower, partial_from, serving},
+        testing::{Answer, WHOLE_BODY, answering, cut_first_answer, lower, partial_from, serving},
     };
 
     const READ_FIRST: usize = 30;
@@ -214,6 +212,63 @@ mod tests {
             .expect_err("the change is refused");
 
         assert_eq!(error.kind(), ErrorKind::InvalidData);
+    }
+
+    fn rewound_after(first: &'static [&'static str], again: Answer) -> io::Result<Vec<u8>> {
+        let (url, heads) = serving(vec![Box::new(move |_| whole_with(first)), again]);
+        let mut seeking = seeking_over(&url);
+
+        seeking
+            .read_exact(&mut [0; READ_FIRST])
+            .expect("the first part");
+        seeking
+            .seek(SeekFrom::Start(0))
+            .expect("the rewind moves the place");
+
+        let mut read = Vec::new();
+
+        let ended = seeking.read_to_end(&mut read).map(|_| read);
+
+        assert!(!lower(&heads.lock()[1]).contains("range:"));
+        ended
+    }
+
+    #[test]
+    fn a_rewind_after_the_file_was_replaced_reports_a_changed_stream() {
+        let replaced = rewound_after(
+            &["ETag: \"v1\""],
+            Box::new(|_| whole_with(&["ETag: \"v2\""])),
+        );
+        let regrown = rewound_after(
+            &[],
+            Box::new(|_| answering("200 OK", &[], WHOLE_BODY, WHOLE_BODY.len() - 1)),
+        );
+        let untagged = rewound_after(&["ETag: \"v1\""], Box::new(|_| whole_with(&[])));
+
+        assert_eq!(
+            replaced.map_err(|error| error.kind()),
+            Err(ErrorKind::InvalidData)
+        );
+        assert_eq!(
+            regrown.map_err(|error| error.kind()),
+            Err(ErrorKind::InvalidData)
+        );
+        assert_eq!(
+            untagged.map_err(|error| error.kind()),
+            Err(ErrorKind::InvalidData)
+        );
+    }
+
+    #[test]
+    fn an_unchanged_file_rewound_plays_from_the_start() {
+        let tagged = rewound_after(
+            &["ETag: \"v1\""],
+            Box::new(|_| whole_with(&["ETag: \"v1\""])),
+        );
+        let untagged = rewound_after(&[], Box::new(|_| whole_with(&[])));
+
+        assert_eq!(tagged.expect("the whole is read again"), WHOLE_BODY);
+        assert_eq!(untagged.expect("the whole is read again"), WHOLE_BODY);
     }
 
     #[test]

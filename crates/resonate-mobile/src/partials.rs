@@ -10,14 +10,17 @@ use resonate_core::{
     naming::named_within,
     writer::{self, Held as Locked, Writer},
 };
-use resonate_providers::{Held, Validator};
+use resonate_providers::{EntityTag, Held, Modified, Validators};
 
 use crate::{collections::wanted_key, downloads::file_stem_of, features::SearchSong};
 
 const FOLDER: &str = "download-partials";
 const DATA_SUFFIX: &str = "resonate-part";
 const NOTES_SUFFIX: &str = "resonate-note";
-const NOTES_VERSION: &str = "1";
+const NOTES_VERSION: &str = "2";
+const NOTES_OF_ONE_VALIDATOR: &str = "1";
+const TAG_OPENING: [&str; 2] = ["\"", "W/\""];
+const DATE_ZONE: &str = stringify!(GMT);
 const NO_STAMP: u32 = 0;
 const REPLAY_CHUNK_BYTES: usize = 64 * 1024;
 pub(crate) const STALE_AFTER: Duration = Duration::from_secs(7 * 24 * 60 * 60);
@@ -31,19 +34,48 @@ struct Notes {
     wanted: String,
     taken_from: String,
     total: Option<u64>,
-    validator: Option<Validator>,
+    validators: Validators,
+}
+
+fn told_apart(validator: &str) -> Option<Validators> {
+    let validator = validator.trim();
+
+    if validator.is_empty() {
+        return Some(Validators::default());
+    }
+    if TAG_OPENING
+        .iter()
+        .any(|opening| validator.starts_with(opening))
+    {
+        return EntityTag::new(validator).map(|tag| Validators {
+            tag: Some(tag),
+            modified: None,
+        });
+    }
+    if validator
+        .strip_suffix(DATE_ZONE)
+        .is_some_and(|stamped| stamped.ends_with(' '))
+    {
+        return Modified::new(validator).map(|date| Validators {
+            tag: None,
+            modified: Some(date),
+        });
+    }
+    None
 }
 
 impl Notes {
     fn written(&self) -> String {
         let total = self.total.map(|total| total.to_string());
-        let validator = self.validator.as_ref().map(Validator::as_str);
+        let tag = self.validators.tag.as_ref().map(EntityTag::as_str);
+        let modified = self.validators.modified.as_ref().map(Modified::as_str);
         [
             NOTES_VERSION,
             &self.wanted,
             &self.taken_from,
             total.as_deref().unwrap_or_default(),
-            validator.unwrap_or_default(),
+            tag.unwrap_or_default(),
+            modified.unwrap_or_default(),
         ]
         .iter()
         .map(|field| format!("{}:{field}", field.len()))
@@ -61,15 +93,28 @@ impl Notes {
             fields.push(after.get(..length)?);
             rest = &after[length..];
         }
-        match fields.as_slice() {
-            [NOTES_VERSION, wanted, taken_from, total, validator] => Some(Self {
-                wanted: (*wanted).to_owned(),
-                taken_from: (*taken_from).to_owned(),
-                total: total.parse().ok(),
-                validator: Validator::new(validator),
-            }),
-            _ => None,
-        }
+
+        let (wanted, taken_from, total, validators) = match fields.as_slice() {
+            [NOTES_VERSION, wanted, taken_from, total, tag, modified] => (
+                wanted,
+                taken_from,
+                total,
+                Validators {
+                    tag: EntityTag::new(tag),
+                    modified: Modified::new(modified),
+                },
+            ),
+            [NOTES_OF_ONE_VALIDATOR, wanted, taken_from, total, validator] => {
+                (wanted, taken_from, total, told_apart(validator)?)
+            }
+            _ => return None,
+        };
+        Some(Self {
+            wanted: (*wanted).to_owned(),
+            taken_from: (*taken_from).to_owned(),
+            total: total.parse().ok(),
+            validators,
+        })
     }
 }
 
@@ -129,7 +174,7 @@ impl Partials {
             .map(|noted| Held {
                 bytes,
                 total: noted.total,
-                validator: noted.validator,
+                validators: noted.validators,
             });
         Some(Partial {
             locked,
@@ -188,7 +233,7 @@ impl Partial {
         taken_from: &str,
         from: u64,
         total: Option<u64>,
-        validator: Option<Validator>,
+        validators: Validators,
     ) -> io::Result<Self> {
         let kept = self.held.take().map_or(0, |held| held.bytes);
 
@@ -205,7 +250,7 @@ impl Partial {
             wanted: wanted_key(song),
             taken_from: taken_from.to_owned(),
             total,
-            validator,
+            validators,
         };
 
         fs::write(&self.notes, notes.written())?;
@@ -289,15 +334,18 @@ mod tests {
         }
     }
 
-    fn validator(text: &str) -> Option<Validator> {
-        Validator::new(text)
+    fn tagged(text: &str) -> Validators {
+        Validators {
+            tag: EntityTag::new(text),
+            modified: None,
+        }
     }
 
     fn partial_of(partials: &Partials, from: u64, chunk: &[u8]) -> Partial {
         let partial = partials
             .claim(&echoes(), TAKEN_FROM)
             .expect("a claimed partial")
-            .begun(&echoes(), TAKEN_FROM, from, Some(100), validator("\"v1\""))
+            .begun(&echoes(), TAKEN_FROM, from, Some(100), tagged("\"v1\""))
             .expect("a begun partial");
 
         partial.append(chunk).expect("written");
@@ -310,13 +358,13 @@ mod tests {
             wanted: "named:4:a:b\n5:c:".to_owned(),
             taken_from: "tidal:track/1".to_owned(),
             total: Some(7),
-            validator: validator("W/\"x:y\""),
+            validators: tagged("W/\"x:y\""),
         };
         let bare = Notes {
             wanted: String::new(),
             taken_from: String::new(),
             total: None,
-            validator: None,
+            validators: Validators::default(),
         };
 
         assert_eq!(Notes::read(&notes.written()), Some(notes));
@@ -324,6 +372,105 @@ mod tests {
         assert_eq!(Notes::read("garbage"), None);
         assert_eq!(Notes::read("9:1"), None);
         assert_eq!(Notes::read("1:2"), None);
+    }
+
+    const MONDAY: &str = "Mon, 02 Nov 2026 10:00:00 GMT";
+
+    fn noted_in_the_first_shape(validator: &str) -> String {
+        [NOTES_OF_ONE_VALIDATOR, "w", "t", "100", validator]
+            .iter()
+            .map(|field| format!("{}:{field}", field.len()))
+            .collect()
+    }
+
+    fn read_in_the_first_shape(validator: &str) -> Option<Validators> {
+        Notes::read(&noted_in_the_first_shape(validator)).map(|notes| notes.validators)
+    }
+
+    #[test]
+    fn notes_keep_a_tag_and_a_date_apart() {
+        let notes = Notes {
+            wanted: "w".to_owned(),
+            taken_from: "t".to_owned(),
+            total: None,
+            validators: Validators {
+                tag: EntityTag::new("\"v1\""),
+                modified: Modified::new(MONDAY),
+            },
+        };
+
+        assert_eq!(Notes::read(&notes.written()), Some(notes));
+    }
+
+    #[test]
+    fn a_note_written_with_one_validator_is_read_by_its_kind() {
+        assert_eq!(
+            Notes::read("1:11:w1:t3:1004:\"v1\""),
+            Some(Notes {
+                wanted: "w".to_owned(),
+                taken_from: "t".to_owned(),
+                total: Some(100),
+                validators: tagged("\"v1\""),
+            })
+        );
+        assert_eq!(
+            read_in_the_first_shape("W/\"v1\""),
+            Some(tagged("W/\"v1\""))
+        );
+        assert_eq!(
+            read_in_the_first_shape(MONDAY),
+            Some(Validators {
+                tag: None,
+                modified: Modified::new(MONDAY),
+            })
+        );
+        assert_eq!(read_in_the_first_shape(""), Some(Validators::default()));
+        assert_eq!(read_in_the_first_shape("abc123"), None);
+    }
+
+    #[test]
+    fn a_partial_whose_note_names_a_validator_of_no_kind_that_can_be_told_is_begun_again() {
+        let scratch = Scratch::new("first-shape");
+        let partials = Partials::under(&scratch.0);
+        let (data, notes) = partials.paths(&echoes());
+        let noted = |validator: &str| {
+            [
+                NOTES_OF_ONE_VALIDATOR,
+                &wanted_key(&echoes()),
+                TAKEN_FROM,
+                "100",
+                validator,
+            ]
+            .iter()
+            .map(|field| format!("{}:{field}", field.len()))
+            .collect::<String>()
+        };
+
+        fs::create_dir_all(&partials.folder).expect("a folder");
+        fs::write(&data, b"abcde").expect("a partial");
+        fs::write(&notes, noted("\"v1\"")).expect("a note");
+
+        let told = partials
+            .claim(&echoes(), TAKEN_FROM)
+            .expect("a claim")
+            .held();
+
+        fs::write(&notes, noted("abc123")).expect("a note");
+
+        let untold = partials
+            .claim(&echoes(), TAKEN_FROM)
+            .expect("a claim")
+            .held();
+
+        assert_eq!(
+            told,
+            Some(Held {
+                bytes: 5,
+                total: Some(100),
+                validators: tagged("\"v1\""),
+            })
+        );
+        assert_eq!(untold, None);
     }
 
     #[test]
@@ -357,7 +504,7 @@ mod tests {
             Some(Held {
                 bytes: 5,
                 total: Some(100),
-                validator: validator("\"v1\""),
+                validators: tagged("\"v1\""),
             })
         );
         assert_eq!(other.held(), None);
@@ -388,7 +535,7 @@ mod tests {
         let resumed = partials
             .claim(&echoes(), TAKEN_FROM)
             .expect("a claim")
-            .begun(&echoes(), TAKEN_FROM, 6, Some(9), validator("\"v1\""))
+            .begun(&echoes(), TAKEN_FROM, 6, Some(9), tagged("\"v1\""))
             .expect("resumed");
 
         resumed.append(b"ghi").expect("written");
@@ -416,7 +563,7 @@ mod tests {
         let restarted = partials
             .claim(&echoes(), TAKEN_FROM)
             .expect("a claim")
-            .begun(&echoes(), TAKEN_FROM, 0, Some(3), validator("\"v2\""))
+            .begun(&echoes(), TAKEN_FROM, 0, Some(3), tagged("\"v2\""))
             .expect("restarted");
 
         restarted.append(b"xyz").expect("written");
@@ -443,7 +590,7 @@ mod tests {
         let refused = partials
             .claim(&echoes(), TAKEN_FROM)
             .expect("a claim")
-            .begun(&echoes(), TAKEN_FROM, 9, Some(20), None)
+            .begun(&echoes(), TAKEN_FROM, 9, Some(20), Validators::default())
             .map(drop);
 
         assert_eq!(

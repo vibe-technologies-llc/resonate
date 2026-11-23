@@ -45,21 +45,105 @@ pub enum Opened {
     Gone,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Validator(Box<str>);
+const WEAK_PREFIX: &str = "W/";
 
-impl Validator {
+fn header_text(text: &str) -> Option<&str> {
+    let text = text.trim();
+    (!text.is_empty() && !text.contains(['\r', '\n'])).then_some(text)
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum EntityTag {
+    Strong(Box<str>),
+    Weak(Box<str>),
+}
+
+impl EntityTag {
     pub fn new(text: &str) -> Option<Self> {
-        let text = text.trim();
-        (!text.is_empty() && !text.contains(['\r', '\n'])).then(|| Self(text.into()))
+        let text = header_text(text)?;
+        match text.strip_prefix(WEAK_PREFIX) {
+            Some(opaque) => header_text(opaque).map(|_| Self::Weak(text.into())),
+            None => Some(Self::Strong(text.into())),
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Strong(text) | Self::Weak(text) => text,
+        }
+    }
+
+    fn opaque(&self) -> &str {
+        match self {
+            Self::Strong(text) => text,
+            Self::Weak(text) => text.strip_prefix(WEAK_PREFIX).unwrap_or(text).trim_start(),
+        }
+    }
+
+    pub fn agrees_with(&self, other: &Self) -> bool {
+        self.opaque() == other.opaque()
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Modified(Box<str>);
+
+impl Modified {
+    pub fn new(text: &str) -> Option<Self> {
+        header_text(text).map(|text| Self(text.into()))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
+}
 
-    pub fn is_weak(&self) -> bool {
-        self.0.starts_with("W/")
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Validators {
+    pub tag: Option<EntityTag>,
+    pub modified: Option<Modified>,
+}
+
+impl Validators {
+    pub fn strong_tag(&self) -> Option<&EntityTag> {
+        self.tag
+            .as_ref()
+            .filter(|tag| matches!(tag, EntityTag::Strong(_)))
+    }
+
+    pub fn conflicts_with(&self, answered: &Self) -> bool {
+        let tags_differ = self
+            .tag
+            .as_ref()
+            .zip(answered.tag.as_ref())
+            .is_some_and(|(held, answered)| !held.agrees_with(answered));
+        let dates_differ = self
+            .modified
+            .as_ref()
+            .zip(answered.modified.as_ref())
+            .is_some_and(|(held, answered)| held != answered);
+        tags_differ || dates_differ
+    }
+
+    pub fn vouch_for(&self, answered: &Self) -> bool {
+        let tags_agree = self
+            .tag
+            .as_ref()
+            .zip(answered.tag.as_ref())
+            .is_some_and(|(held, answered)| held.agrees_with(answered));
+        let dates_agree = self
+            .modified
+            .as_ref()
+            .zip(answered.modified.as_ref())
+            .is_some_and(|(held, answered)| held == answered);
+        !self.conflicts_with(answered) && (tags_agree || dates_agree)
+    }
+
+    pub fn joined(self, answered: Self) -> Self {
+        Self {
+            tag: self.tag.or(answered.tag),
+            modified: self.modified.or(answered.modified),
+        }
     }
 }
 
@@ -67,13 +151,12 @@ impl Validator {
 pub struct Held {
     pub bytes: u64,
     pub total: Option<u64>,
-    pub validator: Option<Validator>,
+    pub validators: Validators,
 }
 
 impl Held {
     pub fn can_be_checked(&self) -> bool {
-        self.bytes > 0
-            && (self.total.is_some() || self.validator.as_ref().is_some_and(|v| !v.is_weak()))
+        self.bytes > 0 && (self.total.is_some() || self.validators.strong_tag().is_some())
     }
 }
 
@@ -81,7 +164,7 @@ pub struct Resumed {
     pub reader: Box<dyn Read + Send>,
     pub length: Option<u64>,
     pub from: u64,
-    pub validator: Option<Validator>,
+    pub validators: Validators,
 }
 
 pub enum Reopened {
@@ -142,7 +225,7 @@ impl Opening {
                     reader,
                     length,
                     from: 0,
-                    validator: None,
+                    validators: Validators::default(),
                 }),
                 Opened::Gone => Reopened::Gone,
             }),
@@ -237,7 +320,7 @@ mod tests {
         let held = Held {
             bytes: 2,
             total: Some(3),
-            validator: None,
+            validators: Validators::default(),
         };
 
         assert!(!opening.is_resumable());
@@ -247,7 +330,7 @@ mod tests {
         };
 
         assert_eq!(resumed.from, 0);
-        assert_eq!(resumed.validator, None);
+        assert_eq!(resumed.validators, Validators::default());
     }
 
     #[test]
@@ -258,7 +341,7 @@ mod tests {
                     reader: Box::new(std::io::empty()),
                     length: held.as_ref().and_then(|held| held.total),
                     from: held.as_ref().map_or(0, |held| held.bytes),
-                    validator: None,
+                    validators: Validators::default(),
                 }))
             })
             .open_resuming(held)
@@ -266,7 +349,7 @@ mod tests {
         let held = Held {
             bytes: 5,
             total: Some(9),
-            validator: None,
+            validators: Validators::default(),
         };
 
         let Ok(Reopened::Reading(resumed)) = asked(Some(held)) else {
@@ -277,7 +360,7 @@ mod tests {
                 reader: Box::new(std::io::empty()),
                 length: Some(4),
                 from: 0,
-                validator: None,
+                validators: Validators::default(),
             }))
         })
         .open() else {
@@ -288,24 +371,93 @@ mod tests {
         assert_eq!(length, Some(4));
     }
 
+    fn tagged(tag: &str) -> Validators {
+        Validators {
+            tag: EntityTag::new(tag),
+            modified: None,
+        }
+    }
+
+    fn dated(date: &str) -> Validators {
+        Validators {
+            tag: None,
+            modified: Modified::new(date),
+        }
+    }
+
+    const MONDAY: &str = "Mon, 02 Nov 2026 10:00:00 GMT";
+    const TUESDAY: &str = "Tue, 03 Nov 2026 10:00:00 GMT";
+
     #[test]
     fn a_partial_can_be_checked_only_by_a_length_or_a_strong_validator() {
-        let held = |total, validator: Option<&str>| Held {
+        let held = |total, validators| Held {
             bytes: 10,
             total,
-            validator: validator.and_then(Validator::new),
+            validators,
         };
 
-        assert!(held(Some(100), None).can_be_checked());
-        assert!(held(None, Some("\"abc\"")).can_be_checked());
-        assert!(!held(None, Some("W/\"abc\"")).can_be_checked());
-        assert!(!held(None, None).can_be_checked());
+        assert!(held(Some(100), Validators::default()).can_be_checked());
+        assert!(held(None, tagged("\"abc\"")).can_be_checked());
+        assert!(!held(None, tagged("W/\"abc\"")).can_be_checked());
+        assert!(!held(None, dated(MONDAY)).can_be_checked());
+        assert!(!held(None, Validators::default()).can_be_checked());
         assert!(
             !Held {
                 bytes: 0,
-                ..held(Some(100), None)
+                ..held(Some(100), Validators::default())
             }
             .can_be_checked()
         );
+    }
+
+    #[test]
+    fn an_entity_tag_is_weak_only_under_its_prefix_and_says_itself_as_given() {
+        assert_eq!(
+            EntityTag::new(" \"abc\" "),
+            Some(EntityTag::Strong("\"abc\"".into()))
+        );
+        assert_eq!(
+            EntityTag::new("W/\"abc\""),
+            Some(EntityTag::Weak("W/\"abc\"".into()))
+        );
+        assert_eq!(
+            EntityTag::new("W/\"abc\"").map(|tag| tag.as_str().to_owned()),
+            Some("W/\"abc\"".to_owned())
+        );
+        assert_eq!(EntityTag::new("W/"), None);
+        assert_eq!(EntityTag::new(""), None);
+        assert_eq!(EntityTag::new("\"a\"\r\nX: b"), None);
+    }
+
+    #[test]
+    fn validators_conflict_only_where_both_name_the_same_kind_and_differ() {
+        let both = Validators {
+            tag: EntityTag::new("\"v1\""),
+            modified: Modified::new(MONDAY),
+        };
+
+        assert!(!both.conflicts_with(&dated(MONDAY)));
+        assert!(!both.conflicts_with(&tagged("\"v1\"")));
+        assert!(!both.conflicts_with(&tagged("W/\"v1\"")));
+        assert!(!both.conflicts_with(&Validators::default()));
+        assert!(both.conflicts_with(&tagged("\"v2\"")));
+        assert!(both.conflicts_with(&dated(TUESDAY)));
+        assert!(dated(MONDAY).conflicts_with(&dated(TUESDAY)));
+        assert!(!dated(MONDAY).conflicts_with(&tagged("\"v2\"")));
+    }
+
+    #[test]
+    fn a_date_vouches_for_a_continuation_that_brings_a_tag_and_keeps_the_date() {
+        let answered = Validators {
+            tag: EntityTag::new("\"new\""),
+            modified: Modified::new(MONDAY),
+        };
+
+        let joined = dated(MONDAY).joined(answered.clone());
+
+        assert!(dated(MONDAY).vouch_for(&answered));
+        assert!(!dated(TUESDAY).vouch_for(&answered));
+        assert!(!tagged("\"v1\"").vouch_for(&dated(MONDAY)));
+        assert_eq!(joined, answered);
     }
 }

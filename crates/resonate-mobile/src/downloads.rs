@@ -1148,7 +1148,7 @@ fn opened(
                             &taken_from,
                             resumed.from,
                             resumed.length,
-                            resumed.validator,
+                            resumed.validators,
                         )
                     });
                     let partial = match begun {

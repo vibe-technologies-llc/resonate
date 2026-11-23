@@ -16,8 +16,7 @@ pub use crate::{
     },
     failed::{as_io, unreached},
     ranged::{
-        ASKED_LATER, Known, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, validator_of,
-        waited_before,
+        ASKED_LATER, Known, RESUMES_AT_MOST, Ranged, Unfetched, asking_to_resume, waited_before,
     },
     seeking::{SKIPPED_RATHER_THAN_ASKED, Seeking},
     stall::BrokenOffAfter,

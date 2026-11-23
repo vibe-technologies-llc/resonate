@@ -17,7 +17,7 @@ use resonate_core::{Isrc, Link, MediaLocation};
 use resonate_fetch::RESUMES_AT_MOST;
 use resonate_providers::{
     Authorizing, Client, Delivery, Error, Held, Identity, Obtained, Opened, Opening, PlaysInPlace,
-    Provider, ProviderOp, Reopened, SignsIn,
+    Provider, ProviderOp, Reopened, SignsIn, Validators,
 };
 use resonate_tidal::{Account, Endpoints, HifiApi, Hosting, MediaHosts, Tidal, TidalSignIn};
 
@@ -1825,7 +1825,7 @@ fn a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on() {
     let held = Held {
         bytes: 20,
         total: Some(song.len() as u64),
-        validator: None,
+        validators: Validators::default(),
     };
 
     let Ok(Reopened::Reading(mut resumed)) = keyed_opening(&fake).open_resuming(Some(held)) else {
@@ -1873,7 +1873,7 @@ fn a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_star
     let held = Held {
         bytes: 20,
         total: Some(song.len() as u64 - 7),
-        validator: None,
+        validators: Validators::default(),
     };
 
     let Ok(Reopened::Reading(mut resumed)) = keyed_opening(&fake).open_resuming(Some(held)) else {

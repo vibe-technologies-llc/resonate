@@ -1570,14 +1570,21 @@ document once whole, then removed, so a cancel, a failure, a lost network or a k
 document and nothing else (and a destination that refuses the copy keeps the bytes for the retry). The
 partial is `<file stem>.<crc32 of wanted_key>.resonate-part` (`naming::named_within`) with a
 `.resonate-note` beside it (same length of suffix, so both cut alike) holding the wanted key, the offer's
-`taken_from`, the whole's length and its validator (ETag, else Last-Modified); a note that does not read
-means no partial. **`find_download` claims the partial under `Held::resumed` for the whole job** (a second job for the
+`taken_from`, the whole's length and its validators, the tag and the date each in a field of its own
+(the note's version `2`; a version `1` note, which kept one validator, is read by its shape: `"…"` or
+`W/"…"` a tag, a value ending ` GMT` a date, none an empty field, and one whose kind cannot be told
+reads as no note, so that partial begins again from byte 0:
+`a_note_written_with_one_validator_is_read_by_its_kind`,
+`a_partial_whose_note_names_a_validator_of_no_kind_that_can_be_told_is_begun_again`); a note that does
+not read means no partial. **`find_download` claims the partial under `Held::resumed` for the whole job** (a second job for the
 same want finds it held and streams straight, the sweep finds it living), and opens the offer with
-`Opening::open_resuming(Held { bytes, total, validator })`: a partial is asked for only if it is of the same
-offer (`taken_from`) and can be checked, by a strong validator (sent as `If-Range`) or a known length
-(a `206` must start at the byte held and name that total). A `200` (a server ignoring `Range`, or a validator
-that no longer matches), a mismatched `Content-Range` or a `412`/`416` begins again from byte 0 and empties the
-partial; `DownloadOffer.total` is always the whole's length and `DownloadProgress.received` starts at the
+`Opening::open_resuming(Held { bytes, total, validators })`: a partial is asked for only if it is of the same
+offer (`taken_from`) and can be checked, by a strong tag (sent as `If-Range`) or a known length
+(a `206` must continue from the byte held, framed as its body is, name that total and bear no validator
+conflicting with the held ones). A `200` (a server ignoring `Range`, or a validator
+that no longer matches), a mismatched `Content-Range`, a `206` bearing another tag or date, or a `412`/`416`
+begins again from byte 0 and empties the partial
+(`a_partial_answer_of_the_same_length_naming_another_strong_tag_starts_over_from_the_start`); `DownloadOffer.total` is always the whole's length and `DownloadProgress.received` starts at the
 bytes kept. The offer found `Gone` and a download over the eight GiB limit delete the partial; a stream
 ending short of the known length is a failed read, not a finished file. A partial untouched for
 `STALE_AFTER` (7 days) with no living writer is swept when the player opens

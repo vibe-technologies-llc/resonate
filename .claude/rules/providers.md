@@ -89,11 +89,19 @@ away**: `StillArriving` counts `refused`, the want stays unstamped and due.
   FLAC (segments and a remux say none); the phones show it as the download's total
   (`an_opened_download_says_how_long_the_server_said_it_is`).
   **An `Opening` is whole or resumable.** `Opening::new` opens from the start; `Opening::resumable`
-  takes the `Held` a caller already has (`bytes`, the whole's `total`, a `Validator`: ETag, else
-  Last-Modified) and answers `Reopened::Reading(Resumed { reader, length, from, validator })` or
+  takes the `Held` a caller already has (`bytes`, the whole's `total`, its `Validators`) and answers
+  `Reopened::Reading(Resumed { reader, length, from, validators })` or
   `Reopened::Gone`, `from` being where the reader begins (0 for a server that started over). `open` of a
   resumable opening is `open_resuming(None)`; `open_resuming` of a whole one reads from 0 with no
-  validator, so a caller asks `is_resumable()` first. Subsonic, Monochrome and a keyed hifi-api are
+  validators, so a caller asks `is_resumable()` first. **`Validators` keeps each kind apart**: the
+  answer's `ETag` as an `EntityTag` (`Strong`, or `Weak` under `W/`, said back as given) and its
+  `Last-Modified` as a `Modified`, either absent. Two sets of validators conflict only where both
+  name the same kind and it differs (`conflicts_with`; tags by their opaque part, so `W/"a"` agrees
+  with `"a"`), a set vouches for an answer where they do not conflict and one kind agrees
+  (`vouch_for`), and `joined` fills a kind one lacks from the other, so a date-validated
+  continuation bringing its unchanged date beside a new tag is taken and the tag kept
+  (`validators_conflict_only_where_both_name_the_same_kind_and_differ`,
+  `a_date_vouches_for_a_continuation_that_brings_a_tag_and_keeps_the_date`). Subsonic, Monochrome and a keyed hifi-api are
   resumable; TIDAL and the hosted hifi-api, which rebuild a FLAC from segments, are whole.
 
 ## What the infrastructure owns
@@ -373,14 +381,28 @@ plumbing, so a `ureq` bump is made once:
   fifty years ahead of the clock (RFC 9110 §5.6.7); a date that fails is `None`, so the caller's own
   backoff stays. `resonate-online` reads it too.
 - **`Ranged` is a download that resumes** with `Range: bytes=<read>-` and `Accept-Encoding: identity` (every agent has ureq's `gzip`, which adds `Accept-Encoding: gzip` unless the request names one and decodes by the response's `Content-Encoding`, while a range counts the bytes of the coded representation; `asking_to_resume` and `Ranged` ask identity on every request, `a_download_is_asked_for_uncoded_so_a_resume_counts_the_bytes_the_server_ranges_over`), up to `RESUMES_AT_MOST` (5)
-  times running: a `206` whose `Content-Range` starts there is read on, a `200` is read past what was
+  times running: a `206` whose `Content-Range` continues from there is read on, a `200` is read past what was
   held, another refusal ends it. A resume carries `If-Range` with the first answer's strong
-  validator (`Ranged::validator`, kept from the first answer whichever way it was opened) and holds
-  the answer to the total it has seen: a `206` or `200` naming another total, or a validator other
-  than the one held (a `200` answering `If-Range` meaning the file was replaced), is
+  tag and nothing else (`strong_tag`; a weak tag or a date never, since RFC 9110 lets a date stand
+  in `If-Range` only with evidence it is strong: `if_range_carries_only_a_strong_tag`), keeps the
+  validators (`Ranged::validators`, the first answer's joined with each later one's, whichever way it
+  was opened) and holds the answer to the total it has seen. **A `206` is one interval**:
+  `Interval::read` takes `Content-Range` whole (`bytes first-last/complete`, `complete` a number or
+  `*`), refusing a range whose last byte is before its first or at or past its complete length, and
+  the answer continues only where the interval starts at the byte asked from and the body's
+  `Content-Length`, where sent, is the interval's length; the body is read no further than the
+  interval, so a shorter valid interval is read and the rest asked for again, and anything else is
+  `Unfetched::Misranged`, read as `ErrorKind::InvalidData` and never retried
+  (`a_range_whose_bounds_disagree_is_no_interval`,
+  `a_resume_whose_interval_disagrees_with_its_body_or_its_whole_is_refused`). A `206` or `200`
+  naming another total, validators that conflict, or a `200` where a strong tag is held whose
+  validators do not vouch for it (a `200` answering `If-Range` meaning the file was replaced) is
   `Unfetched::Changed`, not retried and read as `ErrorKind::InvalidData`, so a file a server
-  re-transcoded meanwhile is never joined old head to new tail
-  (`a_file_replaced_between_the_break_and_the_resume_is_not_joined_old_head_to_new_tail`). The first resume is at once, each later one waits `waited_before`
+  re-transcoded meanwhile is never joined old head to new tail, and a later answer bearing only the
+  held date is not taken for a change
+  (`a_resume_bearing_only_the_date_of_a_tagged_first_answer_is_read_on`,
+  `a_resume_naming_another_validator_of_the_same_kind_is_refused`,
+  `a_file_replaced_between_the_break_and_the_resume_is_not_joined_old_head_to_new_tail`). The first resume is at once, each later one waits `waited_before`
   (`resumed_after` doubling, at most 8 s), or a 429/502/503/504's `Retry-After`. `Ranged::opened`
   asks a first request answered 429/502/503/504 again the same way. **A body that ends under its
   total is a break-off too**: a server capping each `206` (an open range answered with a slice) ends
@@ -389,18 +411,27 @@ plumbing, so a `ureq` bump is made once:
   (`a_server_capping_every_partial_answer_still_yields_the_whole_body`,
   `a_server_answering_nothing_more_under_the_total_ends_in_an_error_after_a_bounded_number_of_asks`).
 - **A `Held` that can be checked is asked with `Range` and `If-Range`** (`asking_to_resume`; a partial
-  is checkable by a strong validator or a known total, never by neither and never empty). The answer
+  is checkable by a strong tag or a known total, never by neither and never empty). The answer
   is read by `Ranged::continuing_held`: a `200` begins again from 0; a `206` is taken only if its
-  `Content-Range` starts at `bytes` and, where a total was held, names it; anything else is `None`
+  `Content-Range` is an interval starting at `bytes` and framed as its body is, where a total was
+  held names it, and its validators pass the same check a resume's do against the held ones (a
+  conflicting tag or date refused, a new kind joined), so a saved partial is never handed on with
+  another file's tail; anything else is `None`
   and the provider asks again with no `Range`, as it does for a `412` or `416`. The `Ranged` it makes
   counts from `from`, so a break-off later resumes at the absolute offset (`Ranged::into_resumed`)
-  (`a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on`,
+  (`a_held_partial_answered_with_a_conflicting_strong_tag_is_not_continued`,
+  `a_held_partial_answered_with_an_inconsistent_interval_is_not_continued`,
+  `a_keyed_download_opened_with_what_is_held_is_asked_from_there_and_read_on`,
   `a_keyed_download_whose_length_is_not_what_is_held_is_read_again_from_the_start`).
 - **`Seeking` is a stream a decoder can seek**: it reads on the first answer, and a seek moves
   only its place; the next read asks `Range: bytes=<place>-` (`Ranged::opened_bearing`, so it resumes
-  as any `Ranged` does), carrying the first answer's validator and total as a `Known` (`If-Range`
+  as any `Ranged` does), carrying the first answer's validators and total as a `Known` (`If-Range`
   and the `Changed` guard, so a file replaced between two seeks is refused, never joined old to
-  new: `a_file_replaced_between_two_seeks_is_not_joined_old_to_new`), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
+  new: `a_file_replaced_between_two_seeks_is_not_joined_old_to_new`). A seek back to byte 0 asks
+  with no `Range` and is held to the same `Known`, so a probe rewinding over a file replaced
+  meanwhile reads `InvalidData` and an unchanged one plays from the start
+  (`a_rewind_after_the_file_was_replaced_reports_a_changed_stream`,
+  `an_unchanged_file_rewound_plays_from_the_start`), except a seek at most `SKIPPED_RATHER_THAN_ASKED` (256 KiB) ahead, which
   reads on and discards (a skip that fails drops the reading in hand, so the seek's error leaves the
   place where it was and the next read asks from there:
   `a_seek_whose_skipping_copy_fails_leaves_the_place_where_it_was_and_reads_on_from_there`). Its length is the first answer's `Content-Length`; a read at or past it

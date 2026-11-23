@@ -47,6 +47,7 @@ struct Serving {
     track: &'static str,
     version: Mutex<Version>,
     honours_range: bool,
+    heeds_if_range: bool,
     gate: Mutex<Option<Gate>>,
     seen: Mutex<Vec<Seen>>,
 }
@@ -57,6 +58,7 @@ impl Serving {
             track: TRACK,
             version: Mutex::new(version),
             honours_range: true,
+            heeds_if_range: true,
             gate: Mutex::new(None),
             seen: Mutex::new(Vec::new()),
         })
@@ -191,10 +193,11 @@ fn answer(stream: TcpStream, state: &Serving) {
         .and_then(|from| from.parse::<usize>().ok())
         .filter(|&from| from < total)
         .filter(|_| {
-            request
-                .if_range
-                .as_deref()
-                .is_none_or(|asked| Some(asked) == current.etag)
+            !state.heeds_if_range
+                || request
+                    .if_range
+                    .as_deref()
+                    .is_none_or(|asked| Some(asked) == current.etag)
         });
     let validator = current
         .etag
@@ -411,6 +414,7 @@ fn a_server_ignoring_range_restarts_cleanly_from_the_start() {
         track: TRACK,
         version: Mutex::new(version(2, Some("\"v1\""))),
         honours_range: false,
+        heeds_if_range: true,
         gate: Mutex::new(None),
         seen: Mutex::new(Vec::new()),
     });
@@ -453,6 +457,50 @@ fn an_offer_that_changed_discards_the_partial_and_starts_over() {
         "the new bytes were spliced onto the old"
     );
     assert_eq!(requests[1].if_range, Some("\"v1\"".to_owned()));
+    assert_eq!(files_in_the_partials(&scratch), 0);
+}
+
+#[test]
+fn a_partial_answer_of_the_same_length_naming_another_strong_tag_starts_over_from_the_start() {
+    let scratch = Scratch::new("retagged");
+    let state = Arc::new(Serving {
+        track: TRACK,
+        version: Mutex::new(version(9, Some("\"v1\""))),
+        honours_range: true,
+        heeds_if_range: false,
+        gate: Mutex::new(None),
+        seen: Mutex::new(Vec::new()),
+    });
+    let release = state.cut_after(CUT_AT);
+    let server = served(Arc::clone(&state));
+    let downloads = Arc::new(Downloads::under(&scratch.0));
+
+    cut_download(&downloads, &scratch, &server, &release);
+    *state.version.lock() = version(10, Some("\"v2\""));
+
+    let kept = partial_bytes(&scratch).expect("a partial kept");
+    let (bytes, written) = finished_download(&downloads, &scratch, &server, "retagged");
+
+    let requests = state.requests_for_the_song();
+
+    assert_eq!(bytes, SONG_BYTES as u64);
+    assert!(
+        written == pattern(10),
+        "the new bytes were spliced onto the old"
+    );
+    assert_eq!(
+        requests[1..],
+        [
+            Seen {
+                range: Some(format!("bytes={kept}-")),
+                if_range: Some("\"v1\"".to_owned())
+            },
+            Seen {
+                range: None,
+                if_range: None
+            },
+        ]
+    );
     assert_eq!(files_in_the_partials(&scratch), 0);
 }
 
@@ -508,6 +556,7 @@ fn a_partial_of_another_offer_is_never_ranged_into() {
         track: OTHER_TRACK,
         version: Mutex::new(version(7, Some("\"w1\""))),
         honours_range: true,
+        heeds_if_range: true,
         gate: Mutex::new(None),
         seen: Mutex::new(Vec::new()),
     });

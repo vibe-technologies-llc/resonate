@@ -13,8 +13,8 @@ pub use song_catalog::{SongCatalog, stream_extension};
 
 pub use crate::{
     delivery::{
-        Delivered, Delivery, Extension, Held, Obtained, Opened, Opening, Reopened, Resumed,
-        Validator,
+        Delivered, Delivery, EntityTag, Extension, Held, Modified, Obtained, Opened, Opening,
+        Reopened, Resumed, Validators,
     },
     error::{
         Error, ProviderOp, Result, THE_SIGN_IN_LAPSED, THE_SUBSCRIPTION_LAPSED, WhyAway, is_a_page,

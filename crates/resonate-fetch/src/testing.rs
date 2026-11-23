@@ -107,8 +107,12 @@ pub(crate) fn capped_partial(head: &str, cap: usize) -> Vec<u8> {
 
 pub(crate) fn emptied_partial(head: &str) -> Vec<u8> {
     let at = asked_from(&lower(head)).unwrap_or_default();
-    let range = format!("Content-Range: bytes {at}-{at}/{}", WHOLE_BODY.len());
-    answering("206 Partial Content", &[range.as_str()], b"", 0)
+    format!(
+        "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {at}-{}/{}\r\nConnection: close\r\n\r\n",
+        WHOLE_BODY.len() - 1,
+        WHOLE_BODY.len()
+    )
+    .into_bytes()
 }
 
 pub(crate) fn lower(head: &str) -> String {

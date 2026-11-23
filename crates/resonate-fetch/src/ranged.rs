@@ -1,16 +1,17 @@
 use std::{
-    io::{self, ErrorKind, Read},
-    thread,
+    io::{self, ErrorKind, Read, Take},
+    mem, thread,
     time::Duration,
 };
 
-use resonate_providers::{Held, Resumed, Validator};
+use resonate_providers::{EntityTag, Held, Modified, Resumed, Validators};
 use ureq::{
     Agent, Body, BodyReader, RequestBuilder,
     http::{
         Response,
         header::{
-            ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, ETAG, IF_RANGE, LAST_MODIFIED, RANGE,
+            ACCEPT_ENCODING, AUTHORIZATION, CONTENT_RANGE, ETAG, HeaderName, IF_RANGE,
+            LAST_MODIFIED, RANGE,
         },
     },
     typestate::WithoutBody,
@@ -26,12 +27,18 @@ const WHOLE: u16 = 200;
 const PARTIAL: u16 = 206;
 const FORBIDDEN: u16 = 403;
 const NOT_FOUND: u16 = 404;
+const UNBOUNDED: u64 = u64::MAX;
+const BYTES_UNIT: &str = "bytes";
+const LENGTH_UNKNOWN: &str = "*";
+
+type Bounded = Take<BodyReader<'static>>;
 
 #[derive(Debug)]
 pub enum Unfetched {
     Io(io::Error),
     Refused(u16),
     Changed,
+    Misranged,
     AskedLater {
         status: u16,
         asked_for: Option<Duration>,
@@ -44,7 +51,7 @@ impl Unfetched {
             Self::Io(error) => error,
             Self::Refused(FORBIDDEN) => io::Error::from(ErrorKind::PermissionDenied),
             Self::Refused(NOT_FOUND) => io::Error::from(ErrorKind::NotFound),
-            Self::Changed => io::Error::from(ErrorKind::InvalidData),
+            Self::Changed | Self::Misranged => io::Error::from(ErrorKind::InvalidData),
             Self::Refused(_) | Self::AskedLater { .. } => {
                 io::Error::from(ErrorKind::ConnectionAborted)
             }
@@ -53,7 +60,7 @@ impl Unfetched {
 
     pub fn status(&self) -> Option<u16> {
         match self {
-            Self::Io(_) | Self::Changed => None,
+            Self::Io(_) | Self::Changed | Self::Misranged => None,
             Self::Refused(status) | Self::AskedLater { status, .. } => Some(*status),
         }
     }
@@ -68,30 +75,66 @@ pub fn waited_before(resume: u32, resumed_after: Duration) -> Duration {
     }
 }
 
-fn starts_at(range: &str) -> Option<u64> {
-    range
-        .trim()
-        .strip_prefix("bytes")?
-        .trim_start()
-        .split('-')
-        .next()?
-        .trim()
-        .parse()
-        .ok()
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Interval {
+    first: u64,
+    end: u64,
+    complete: Option<u64>,
 }
 
-fn total_of(range: &str) -> Option<u64> {
-    range.rsplit('/').next()?.trim().parse().ok()
+impl Interval {
+    fn read(range: &str) -> Option<Self> {
+        let rest = range.trim().strip_prefix(BYTES_UNIT)?;
+        let (span, complete) = rest.strip_prefix(' ')?.trim_start().split_once('/')?;
+        let (first, last) = span.trim().split_once('-')?;
+        let first: u64 = digits(first)?;
+        let last: u64 = digits(last)?;
+        let complete = match complete.trim() {
+            LENGTH_UNKNOWN => None,
+            complete => Some(digits(complete)?),
+        };
+        let end = last.checked_add(1)?;
+
+        let within = complete.is_none_or(|complete| end <= complete);
+        (first < end && within).then_some(Self {
+            first,
+            end,
+            complete,
+        })
+    }
+
+    fn of(response: &Response<Body>) -> Option<Self> {
+        header_of(response, &CONTENT_RANGE).and_then(Self::read)
+    }
+
+    const fn bytes(&self) -> u64 {
+        self.end - self.first
+    }
+
+    fn continues(&self, from: u64, body: Option<u64>) -> bool {
+        self.first == from && body.is_none_or(|body| body == self.bytes())
+    }
 }
 
-pub fn validator_of(response: &Response<Body>) -> Option<Validator> {
-    [ETAG, LAST_MODIFIED].iter().find_map(|name| {
-        response
-            .headers()
-            .get(name)
-            .and_then(|value| value.to_str().ok())
-            .and_then(Validator::new)
-    })
+fn digits(text: &str) -> Option<u64> {
+    let text = text.trim();
+    (!text.is_empty() && text.bytes().all(|byte| byte.is_ascii_digit()))
+        .then(|| text.parse().ok())
+        .flatten()
+}
+
+fn header_of<'a>(response: &'a Response<Body>, name: &HeaderName) -> Option<&'a str> {
+    response
+        .headers()
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+}
+
+pub(crate) fn validators_of(response: &Response<Body>) -> Validators {
+    Validators {
+        tag: header_of(response, &ETAG).and_then(EntityTag::new),
+        modified: header_of(response, &LAST_MODIFIED).and_then(Modified::new),
+    }
 }
 
 pub fn asking_to_resume(
@@ -104,31 +147,30 @@ pub fn asking_to_resume(
     };
 
     let request = request.header(RANGE, format!("bytes={}-", held.bytes));
-    match held
-        .validator
-        .as_ref()
-        .filter(|validator| !validator.is_weak())
-    {
-        Some(validator) => request.header(IF_RANGE, validator.as_str()),
+    match held.validators.strong_tag() {
+        Some(tag) => request.header(IF_RANGE, tag.as_str()),
         None => request,
     }
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct Known {
-    pub validator: Option<Validator>,
+    pub validators: Validators,
     pub total: Option<u64>,
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct Expecting<'a> {
-    validator: Option<&'a Validator>,
+    validators: &'a Validators,
     total: Option<u64>,
 }
 
-impl Expecting<'_> {
-    fn strong_validator(&self) -> Option<&Validator> {
-        self.validator.filter(|validator| !validator.is_weak())
+impl<'a> Expecting<'a> {
+    fn of(known: &'a Known) -> Self {
+        Self {
+            validators: &known.validators,
+            total: known.total,
+        }
     }
 
     fn total_differs(&self, whole: Option<u64>) -> bool {
@@ -137,12 +179,11 @@ impl Expecting<'_> {
             .is_some_and(|(known, whole)| known != whole)
     }
 
-    fn validator_differs(&self, answered: Option<&Validator>, partial: bool) -> bool {
-        match (self.strong_validator(), answered) {
-            (None, _) => false,
-            (Some(known), Some(answered)) => known != answered,
-            (Some(_), None) => !partial,
-        }
+    fn changed(&self, answered: &Validators, partial: bool) -> bool {
+        let unvouched_whole = !partial
+            && self.validators.strong_tag().is_some()
+            && !self.validators.vouch_for(answered);
+        self.validators.conflicts_with(answered) || unvouched_whole
     }
 }
 
@@ -160,8 +201,8 @@ fn asked(
     }
     if from > 0 {
         request = request.header(RANGE, format!("bytes={from}-"));
-        if let Some(validator) = expecting.strong_validator() {
-            request = request.header(IF_RANGE, validator.as_str());
+        if let Some(tag) = expecting.validators.strong_tag() {
+            request = request.header(IF_RANGE, tag.as_str());
         }
     }
 
@@ -169,17 +210,17 @@ fn asked(
         .call()
         .map_err(|error| Unfetched::Io(as_io(error)))?;
     let status = response.status().as_u16();
-    let content_range = response
-        .headers()
-        .get(CONTENT_RANGE)
-        .and_then(|range| range.to_str().ok());
-    let resumed_at = content_range.and_then(starts_at);
     let length = response.body().content_length();
-    let validator = validator_of(&response);
+    let validators = validators_of(&response);
 
-    let (skipped, total) = match status {
-        PARTIAL if from > 0 && resumed_at == Some(from) => (0, content_range.and_then(total_of)),
-        WHOLE => (from, length),
+    let (skipped, total, bound) = match status {
+        PARTIAL if from > 0 => {
+            let interval = Interval::of(&response)
+                .filter(|interval| interval.continues(from, length))
+                .ok_or(Unfetched::Misranged)?;
+            (0, interval.complete, interval.bytes())
+        }
+        WHOLE => (from, length, UNBOUNDED),
         status if ASKED_LATER.contains(&status) => {
             return Err(Unfetched::AskedLater {
                 status,
@@ -189,10 +230,7 @@ fn asked(
         status => return Err(Unfetched::Refused(status)),
     };
 
-    if from > 0
-        && (expecting.total_differs(total)
-            || expecting.validator_differs(validator.as_ref(), status == PARTIAL))
-    {
+    if expecting.total_differs(total) || expecting.changed(&validators, status == PARTIAL) {
         return Err(Unfetched::Changed);
     }
 
@@ -206,30 +244,30 @@ fn asked(
         }
     }
     Ok(Answered {
-        reader,
+        reader: reader.take(bound),
         length,
         total,
-        validator,
+        validators,
     })
 }
 
 struct Answered {
-    reader: BodyReader<'static>,
+    reader: Bounded,
     length: Option<u64>,
     total: Option<u64>,
-    validator: Option<Validator>,
+    validators: Validators,
 }
 
 pub struct Ranged {
     agent: Agent,
     url: String,
     bearer: Option<String>,
-    reader: BodyReader<'static>,
+    reader: Bounded,
     length: Option<u64>,
     total: Option<u64>,
     read: u64,
     from: u64,
-    validator: Option<Validator>,
+    validators: Validators,
     broken: u32,
     resumed_after: Duration,
 }
@@ -247,8 +285,8 @@ impl Ranged {
             bearer: None,
             length: response.body().content_length(),
             total: response.body().content_length(),
-            validator: validator_of(&response),
-            reader: response.into_body().into_reader(),
+            validators: validators_of(&response),
+            reader: response.into_body().into_reader().take(UNBOUNDED),
             read: 0,
             from: 0,
             broken: 0,
@@ -266,22 +304,26 @@ impl Ranged {
         match response.status().as_u16() {
             WHOLE => Some(Self::continuing(agent, url, response, resumed_after)),
             PARTIAL => {
-                let range = response
-                    .headers()
-                    .get(CONTENT_RANGE)
-                    .and_then(|range| range.to_str().ok())?;
-                let total = total_of(range);
+                let interval = Interval::of(&response)?;
+                let answered = validators_of(&response);
+                let expecting = Expecting {
+                    validators: &held.validators,
+                    total: held.total,
+                };
 
-                let unchanged = starts_at(range) == Some(held.bytes)
-                    && (held.total.is_none() || total == held.total);
+                let unchanged = interval.continues(held.bytes, response.body().content_length())
+                    && held
+                        .total
+                        .is_none_or(|total| interval.complete == Some(total))
+                    && !expecting.changed(&answered, true);
                 unchanged.then(|| Self {
                     agent,
                     url,
                     bearer: None,
-                    length: total.or(held.total),
-                    total: total.or(held.total),
-                    validator: validator_of(&response).or_else(|| held.validator.clone()),
-                    reader: response.into_body().into_reader(),
+                    length: interval.complete.or(held.total),
+                    total: interval.complete.or(held.total),
+                    validators: held.validators.clone().joined(answered),
+                    reader: response.into_body().into_reader().take(interval.bytes()),
                     read: held.bytes,
                     from: held.bytes,
                     broken: 0,
@@ -313,10 +355,7 @@ impl Ranged {
         known: &Known,
         resumed_after: Duration,
     ) -> Result<Self, Unfetched> {
-        let expecting = Expecting {
-            validator: known.validator.as_ref(),
-            total: known.total,
-        };
+        let expecting = Expecting::of(known);
         let mut tried = 0;
 
         let answered = loop {
@@ -345,7 +384,7 @@ impl Ranged {
             reader: answered.reader,
             length: answered.length,
             total: answered.total.or(known.total),
-            validator: answered.validator.or_else(|| known.validator.clone()),
+            validators: known.validators.clone().joined(answered.validators),
             read: from,
             from,
             broken: 0,
@@ -364,8 +403,8 @@ impl Ranged {
         self.from
     }
 
-    pub fn validator(&self) -> Option<&Validator> {
-        self.validator.as_ref()
+    pub fn validators(&self) -> &Validators {
+        &self.validators
     }
 
     pub fn total(&self) -> Option<u64> {
@@ -376,7 +415,7 @@ impl Ranged {
         Resumed {
             from: self.from,
             length: self.length,
-            validator: self.validator.clone(),
+            validators: self.validators.clone(),
             reader: Box::new(self),
         }
     }
@@ -408,7 +447,7 @@ impl Ranged {
             thread::sleep(wait);
 
             let expecting = Expecting {
-                validator: self.validator.as_ref(),
+                validators: &self.validators,
                 total: self.total,
             };
             match asked(
@@ -421,12 +460,12 @@ impl Ranged {
                 Ok(answered) => {
                     self.reader = answered.reader;
                     self.total = self.total.or(answered.total);
-                    if self.validator.is_none() {
-                        self.validator = answered.validator;
-                    }
+                    self.validators = mem::take(&mut self.validators).joined(answered.validators);
                     return Ok(());
                 }
-                Err(stopped @ (Unfetched::Refused(_) | Unfetched::Changed)) => {
+                Err(
+                    stopped @ (Unfetched::Refused(_) | Unfetched::Changed | Unfetched::Misranged),
+                ) => {
                     return Err(stopped.into_io());
                 }
                 Err(Unfetched::AskedLater {
@@ -626,6 +665,262 @@ mod tests {
         assert!(!lower(&heads.lock()[1]).contains("if-range"));
     }
 
+    const MONDAY: &str = "Last-Modified: Mon, 02 Nov 2026 10:00:00 GMT";
+    const TUESDAY: &str = "Last-Modified: Tue, 03 Nov 2026 10:00:00 GMT";
+
+    fn read_after_a_cut(first: &[&str], resumed: Answer) -> (io::Result<Vec<u8>>, String) {
+        let first: Vec<String> = first.iter().map(|header| (*header).to_owned()).collect();
+        let (url, heads) = serving(vec![
+            Box::new(move |_| {
+                let first: Vec<&str> = first.iter().map(String::as_str).collect();
+                cut_first_answer(&first)
+            }),
+            resumed,
+        ]);
+        let mut read = Vec::new();
+
+        let ended = opened(&url).read_to_end(&mut read).map(|_| read);
+        let asked = lower(&heads.lock()[1]);
+        (ended, asked)
+    }
+
+    #[test]
+    fn a_date_validated_resume_may_bring_a_tag_beside_its_unchanged_date() {
+        let (read, _) = read_after_a_cut(
+            &[MONDAY],
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &[MONDAY, "ETag: \"new\""])),
+        );
+
+        assert_eq!(read.expect("the whole is read"), WHOLE_BODY);
+    }
+
+    #[test]
+    fn a_resume_bearing_only_the_date_of_a_tagged_first_answer_is_read_on() {
+        let (read, _) = read_after_a_cut(
+            &["ETag: \"v1\"", MONDAY],
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &[MONDAY])),
+        );
+
+        assert_eq!(read.expect("the whole is read"), WHOLE_BODY);
+    }
+
+    #[test]
+    fn a_whole_answer_bearing_the_date_of_a_tagged_first_answer_is_read_past() {
+        let (read, _) = read_after_a_cut(
+            &["ETag: \"v1\"", MONDAY],
+            Box::new(|_| answering("200 OK", &[MONDAY], WHOLE_BODY, WHOLE_BODY.len())),
+        );
+
+        assert_eq!(read.expect("the whole is read"), WHOLE_BODY);
+    }
+
+    #[test]
+    fn a_resume_naming_another_validator_of_the_same_kind_is_refused() {
+        for (first, resumed) in [
+            ([MONDAY], TUESDAY),
+            (["ETag: \"v1\""], "ETag: \"v2\""),
+            (["ETag: W/\"v1\""], "ETag: W/\"v2\""),
+        ] {
+            let (read, _) = read_after_a_cut(
+                &first,
+                Box::new(move |_| partial_from(CUT_AT, WHOLE_BODY.len(), &[resumed])),
+            );
+
+            assert_eq!(
+                read.map_err(|error| error.kind()),
+                Err(ErrorKind::InvalidData),
+                "{resumed}"
+            );
+        }
+    }
+
+    #[test]
+    fn if_range_carries_only_a_strong_tag() {
+        for (first, if_range) in [
+            (vec![MONDAY], None),
+            (vec!["ETag: W/\"v1\"", MONDAY], None),
+            (vec!["ETag: \"v1\"", MONDAY], Some("if-range: \"v1\"")),
+        ] {
+            let (_, asked) = read_after_a_cut(
+                &first,
+                Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &[])),
+            );
+
+            assert!(
+                asked.contains(&format!("range: bytes={CUT_AT}-")),
+                "{asked}"
+            );
+            match if_range {
+                Some(if_range) => assert!(asked.contains(if_range), "{asked}"),
+                None => assert!(!asked.contains("if-range"), "{asked}"),
+            }
+        }
+    }
+
+    #[test]
+    fn a_resume_whose_interval_disagrees_with_its_body_or_its_whole_is_refused() {
+        let whole = WHOLE_BODY.len();
+        for (range, declared) in [
+            (
+                format!("Content-Range: bytes {CUT_AT}-{}/{whole}", whole - 1),
+                whole - CUT_AT - 5,
+            ),
+            (
+                format!("Content-Range: bytes {CUT_AT}-{whole}/{whole}"),
+                whole - CUT_AT + 1,
+            ),
+            (
+                format!("Content-Range: bytes {CUT_AT}-{}/{whole}", CUT_AT - 1),
+                0,
+            ),
+            (
+                format!("Content-Range: bytes {}-{}/{whole}", CUT_AT + 1, whole - 1),
+                whole - CUT_AT - 1,
+            ),
+        ] {
+            let header = range.clone();
+            let (read, _) = read_after_a_cut(
+                &[],
+                Box::new(move |_| {
+                    answering(
+                        "206 Partial Content",
+                        &[header.as_str()],
+                        &WHOLE_BODY[CUT_AT..],
+                        declared,
+                    )
+                }),
+            );
+
+            assert_eq!(
+                read.map_err(|error| error.kind()),
+                Err(ErrorKind::InvalidData),
+                "{range}"
+            );
+        }
+    }
+
+    fn held_at_the_cut(validators: &[&str]) -> Held {
+        let mut known = Validators::default();
+
+        for header in validators {
+            match header.split_once(": ") {
+                Some(("ETag", tag)) => known.tag = EntityTag::new(tag),
+                Some(("Last-Modified", date)) => known.modified = Modified::new(date),
+                _ => panic!("{header} is no validator"),
+            }
+        }
+        Held {
+            bytes: CUT_AT as u64,
+            total: Some(WHOLE_BODY.len() as u64),
+            validators: known,
+        }
+    }
+
+    fn continued(held: &Held, answer: Answer) -> (Option<Vec<u8>>, String) {
+        let (url, heads) = serving(vec![
+            answer,
+            Box::new(|head| capped_partial(head, WHOLE_BODY.len())),
+        ]);
+        let agent = configured(Duration::from_secs(5), Trusted::BuiltInRoots)
+            .build()
+            .new_agent();
+
+        let response = asking_to_resume(agent.get(&url), Some(held))
+            .call()
+            .expect("an answer");
+
+        let read = Ranged::continuing_held(agent, url, response, held, Duration::ZERO).map(
+            |mut ranged| {
+                let mut read = Vec::new();
+
+                ranged.read_to_end(&mut read).expect("the rest is read");
+                read
+            },
+        );
+        let asked = lower(&heads.lock()[0]);
+        (read, asked)
+    }
+
+    #[test]
+    fn a_held_partial_answered_with_a_conflicting_strong_tag_is_not_continued() {
+        let held = held_at_the_cut(&["ETag: \"v1\""]);
+
+        let (conflicting, asked) = continued(
+            &held,
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &["ETag: \"v2\""])),
+        );
+        let (matching, _) = continued(
+            &held,
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &["ETag: \"v1\""])),
+        );
+
+        assert!(asked.contains("if-range: \"v1\""), "{asked}");
+        assert_eq!(conflicting, None);
+        assert_eq!(matching.as_deref(), Some(&WHOLE_BODY[CUT_AT..]));
+    }
+
+    #[test]
+    fn a_held_partial_validated_by_date_takes_a_tag_beside_the_same_date_and_refuses_another_date()
+    {
+        let held = held_at_the_cut(&[MONDAY]);
+
+        let (tagged, asked) = continued(
+            &held,
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &[MONDAY, "ETag: \"new\""])),
+        );
+        let (redated, _) = continued(
+            &held,
+            Box::new(|_| partial_from(CUT_AT, WHOLE_BODY.len(), &[TUESDAY])),
+        );
+
+        assert!(!asked.contains("if-range"), "{asked}");
+        assert_eq!(tagged.as_deref(), Some(&WHOLE_BODY[CUT_AT..]));
+        assert_eq!(redated, None);
+    }
+
+    #[test]
+    fn a_held_partial_answered_with_an_inconsistent_interval_is_not_continued() {
+        let held = held_at_the_cut(&[]);
+        let whole = WHOLE_BODY.len();
+
+        let (misframed, _) = continued(
+            &held,
+            Box::new(move |_| {
+                let range = format!("Content-Range: bytes {CUT_AT}-{}/{whole}", whole - 1);
+                answering(
+                    "206 Partial Content",
+                    &[range.as_str()],
+                    &WHOLE_BODY[CUT_AT..],
+                    7,
+                )
+            }),
+        );
+        let (past_the_whole, _) = continued(
+            &held,
+            Box::new(move |_| {
+                let range = format!("Content-Range: bytes {CUT_AT}-{}/{whole}", whole + 3);
+                answering(
+                    "206 Partial Content",
+                    &[range.as_str()],
+                    &WHOLE_BODY[CUT_AT..],
+                    whole + 4 - CUT_AT,
+                )
+            }),
+        );
+
+        assert_eq!(misframed, None);
+        assert_eq!(past_the_whole, None);
+    }
+
+    #[test]
+    fn a_held_partial_answered_with_a_shorter_valid_interval_is_continued_and_read_to_the_end() {
+        let held = held_at_the_cut(&[]);
+
+        let (read, _) = continued(&held, Box::new(|head| capped_partial(head, CAPPED_AT)));
+
+        assert_eq!(read.as_deref(), Some(&WHOLE_BODY[CUT_AT..]));
+    }
+
     const LEFT_UNSENT: usize = 12;
 
     #[test]
@@ -667,18 +962,57 @@ mod tests {
     }
 
     #[test]
-    fn a_range_says_how_long_the_whole_is() {
-        assert_eq!(total_of("bytes 100-999/1000"), Some(1000));
-        assert_eq!(total_of("bytes 0-0/*"), None);
-        assert_eq!(total_of("bytes */1000"), Some(1000));
+    fn a_range_is_read_as_one_interval_within_its_whole() {
+        assert_eq!(
+            Interval::read("bytes 100-999/1000"),
+            Some(Interval {
+                first: 100,
+                end: 1000,
+                complete: Some(1000)
+            })
+        );
+        assert_eq!(
+            Interval::read("bytes 0-0/*"),
+            Some(Interval {
+                first: 0,
+                end: 1,
+                complete: None
+            })
+        );
+        assert_eq!(
+            Interval::read("bytes 100-999/1000").map(|i| i.bytes()),
+            Some(900)
+        );
     }
 
     #[test]
-    fn a_resumed_range_says_where_it_starts() {
-        assert_eq!(starts_at("bytes 100-999/1000"), Some(100));
-        assert_eq!(starts_at("bytes 0-0/*"), Some(0));
-        assert_eq!(starts_at("bytes */1000"), None);
-        assert_eq!(starts_at("items 1-2/3"), None);
+    fn a_range_whose_bounds_disagree_is_no_interval() {
+        for refused in [
+            "bytes */1000",
+            "items 1-2/3",
+            "bytes 100-99/1000",
+            "bytes 100-1000/1000",
+            "bytes 100-/1000",
+            "bytes -5/1000",
+            "bytes +1-5/1000",
+            "bytes 0-18446744073709551615/*",
+            "bytes 1-5/x",
+            "bytes 1-5",
+            "bytes1-5/9",
+        ] {
+            assert_eq!(Interval::read(refused), None, "{refused}");
+        }
+    }
+
+    #[test]
+    fn an_interval_continues_only_from_where_it_was_asked_and_as_long_as_its_body() {
+        let interval = Interval::read("bytes 20-71/72").expect("an interval");
+
+        assert!(interval.continues(20, Some(52)));
+        assert!(interval.continues(20, None));
+        assert!(!interval.continues(21, Some(52)));
+        assert!(!interval.continues(20, Some(51)));
+        assert!(!interval.continues(20, Some(53)));
     }
 
     #[test]
