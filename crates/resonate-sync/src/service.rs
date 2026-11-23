@@ -32,7 +32,7 @@ use tokio::{
 
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, LayoutNote, Ledger, LocalPlaylistId, Platform,
-    Result, SyncKey,
+    Refused, Result, SyncKey,
     consulted::{
         AskedForExport, AskedToConsult, Consultable, Consulting, ExportFetched, ExportHeld,
         ExportPart, ExportReceiving,
@@ -54,6 +54,7 @@ use crate::{
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
     remote::{CONTROL_ANSWERED_WITHIN, Controlled, Controlling, RemoteCommand, Watched},
+    routes::{each_once, first_answering},
     seal::{LARGEST_OPENED, opened, sealed},
     stun::{Reflector, STUN_PORT},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
@@ -476,6 +477,7 @@ struct Link {
     address: Option<SocketAddr>,
     online: Vec<DeviceId>,
     head: u64,
+    read_from: u64,
     caught_up: bool,
     in_flight: VecDeque<Vec<Pushed>>,
     compacting: Option<u64>,
@@ -690,6 +692,52 @@ impl Advertised {
     }
 }
 
+enum Parting {
+    Ended,
+    Failed(Error),
+    CatalogRefused(Refused),
+}
+
+impl Parting {
+    fn of(error: Error) -> Self {
+        match error {
+            Error::Catalog(refused) => Self::CatalogRefused(refused),
+            error => Self::Failed(error),
+        }
+    }
+}
+
+fn moved_on(caught_up: bool, read_from: u64, cursor: Option<u64>, parting: &Parting) -> bool {
+    let still_caught_up = caught_up && !matches!(parting, Parting::CatalogRefused(_));
+    still_caught_up || cursor.is_some_and(|cursor| cursor > read_from)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Backoff {
+    wait: Duration,
+}
+
+impl Backoff {
+    const fn first() -> Self {
+        Self { wait: FIRST_RETRY }
+    }
+
+    const fn reset(&mut self) {
+        self.wait = FIRST_RETRY;
+    }
+
+    const fn longest(&mut self) {
+        self.wait = LAST_RETRY;
+    }
+
+    fn next(&mut self) -> Duration {
+        let wait = self.wait;
+
+        self.wait = (wait * 2).min(LAST_RETRY);
+        wait
+    }
+}
+
 #[derive(Clone, Copy)]
 struct Redial {
     at: Instant,
@@ -700,7 +748,7 @@ struct Syncing {
     running: Arc<Running>,
     server: Option<Link>,
     retry_at: Option<Instant>,
-    wait: Duration,
+    backoff: Backoff,
     server_online: BTreeSet<DeviceId>,
     caught_up_once: bool,
     neighbour_caught_up: bool,
@@ -1288,16 +1336,16 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
         let outcome = tokio::select! {
             frame = next_frame(&mut syncing.server) => match frame {
                 None => {
-                    syncing.unlinked(None);
+                    syncing.unlinked(Parting::Ended);
                     Ok(())
                 }
                 Some(Err(error)) => {
-                    syncing.unlinked(Some(error));
+                    syncing.unlinked(Parting::Failed(error));
                     Ok(())
                 }
                 Some(Ok(frame)) => {
                     if let Err(error) = syncing.heard_from_server(frame).await {
-                        syncing.unlinked(Some(error));
+                        syncing.unlinked(Parting::of(error));
                     }
                     Ok(())
                 }
@@ -1513,25 +1561,54 @@ async fn resolve_stun(stun: &str) -> Result<SocketAddr> {
         })
 }
 
-pub(crate) async fn resolve(server: &str) -> Result<(SocketAddr, String)> {
+pub(crate) async fn resolve(server: &str) -> Result<(Vec<SocketAddr>, String)> {
     let (host, port) = host_and_port(server.trim());
 
-    let addresses = tokio::net::lookup_host((host.as_str(), port))
+    let resolved = tokio::net::lookup_host((host.as_str(), port))
         .await
         .map_err(|source| Error::Resolve {
             server: server.into(),
             source,
-        })?
-        .collect::<Vec<_>>();
-    let address = addresses
-        .iter()
-        .find(|address| address.is_ipv4())
-        .or_else(|| addresses.first())
-        .copied()
-        .ok_or_else(|| Error::Unresolved {
-            server: server.into(),
         })?;
-    Ok((address, host))
+    let routes = ipv4_first(each_once(resolved));
+
+    if routes.is_empty() {
+        return Err(Error::Unresolved {
+            server: server.into(),
+        });
+    }
+    Ok((routes, host))
+}
+
+fn ipv4_first(routes: Vec<SocketAddr>) -> Vec<SocketAddr> {
+    let (ipv4, ipv6): (Vec<_>, Vec<_>) = routes.into_iter().partition(SocketAddr::is_ipv4);
+    [ipv4, ipv6].concat()
+}
+
+pub(crate) async fn dialled_server(
+    endpoint: &Endpoint,
+    config: &ClientConfig,
+    server: &str,
+) -> Result<(Connection, SocketAddr)> {
+    let (routes, host) = within(resolve(server)).await?;
+    within(dialled_through(endpoint, config, server, &routes, &host)).await
+}
+
+async fn dialled_through(
+    endpoint: &Endpoint,
+    config: &ClientConfig,
+    server: &str,
+    routes: &[SocketAddr],
+    host: &str,
+) -> Result<(Connection, SocketAddr)> {
+    first_answering(server, routes, |route| async move {
+        endpoint
+            .connect_with(config.clone(), route, host)
+            .map_err(|source| Error::Connect(Box::new(source)))?
+            .await
+            .map_err(|source| Error::Connection(Box::new(source)))
+    })
+    .await
 }
 
 fn host_and_port(server: &str) -> (String, u16) {
@@ -1627,18 +1704,8 @@ async fn reached(
         return Ok((Carrier::web(), send, recv, None));
     }
 
-    let (address, host) = within(resolve(server)).await?;
-
-    let connecting = running
-        .endpoint
-        .connect_with(running.to_server.clone(), address, &host)
-        .map_err(|source| Error::Connect(Box::new(source)))?;
-    let connection = within(async {
-        connecting
-            .await
-            .map_err(|source| Error::Connection(Box::new(source)))
-    })
-    .await?;
+    let (connection, address) =
+        dialled_server(&running.endpoint, &running.to_server, server).await?;
     let (send, recv) = within(async {
         connection
             .open_bi()
@@ -1700,6 +1767,7 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
         address,
         online,
         head,
+        read_from: cursor,
         caught_up: cursor >= head,
         in_flight: VecDeque::new(),
         compacting: None,
@@ -1811,7 +1879,7 @@ impl Syncing {
             running,
             server: None,
             retry_at,
-            wait: FIRST_RETRY,
+            backoff: Backoff::first(),
             server_online: BTreeSet::new(),
             caught_up_once: false,
             neighbour_caught_up: false,
@@ -1875,7 +1943,6 @@ impl Syncing {
         let _ = link.say(&ToServer::Relaying);
 
         self.server = Some(link);
-        self.wait = FIRST_RETRY;
         self.look_at = Some(Instant::now());
         self.running.stand(Standing::Connected);
         self.publish_devices();
@@ -1886,33 +1953,41 @@ impl Syncing {
         Ok(())
     }
 
-    fn unlinked(&mut self, error: Option<Error>) {
+    fn unlinked(&mut self, parting: Parting) {
         if let Some(link) = self.server.take() {
+            let cursor = self.running.ledger.lock().cursor().ok();
+
+            if moved_on(link.caught_up, link.read_from, cursor, &parting) {
+                self.backoff.reset();
+            }
             link.hang_up();
         }
         self.server_online.clear();
-        match error {
-            None => {
-                self.running.stand(Standing::Unreachable);
-                self.wait = FIRST_RETRY;
+        match parting {
+            Parting::Ended => self.running.stand(Standing::Unreachable),
+            Parting::CatalogRefused(refused) => {
+                tracing::warn!(
+                    ?refused,
+                    "this device's catalog refused a record from the sync server, so catch-up stops before it and is tried again later"
+                );
+                self.running.stand(Standing::Connecting);
             }
-            Some(Error::SpaceMadeAnew) => {
+            Parting::Failed(Error::SpaceMadeAnew) => {
                 tracing::info!("the sync server holds this space afresh; everything is sent again");
                 self.running.stand(Standing::Connecting);
-                self.wait = FIRST_RETRY;
+                self.backoff.reset();
             }
-            Some(Error::Refused(refusal)) => {
+            Parting::Failed(Error::Refused(refusal)) => {
                 tracing::warn!(?refusal, "the sync server refused this device");
                 self.running.stand(Standing::Refused(refusal));
-                self.wait = LAST_RETRY;
+                self.backoff.longest();
             }
-            Some(error) => {
+            Parting::Failed(error) => {
                 tracing::debug!(%error, server = ?self.running.server, "the sync server could not be reached");
                 self.running.stand(Standing::Unreachable);
             }
         }
-        self.retry_at = Some(Instant::now() + jittered(self.wait));
-        self.wait = (self.wait * 2).min(LAST_RETRY);
+        self.retry_at = Some(Instant::now() + jittered(self.backoff.next()));
         self.publish_devices();
         self.publish_settled();
     }
@@ -1952,7 +2027,7 @@ impl Syncing {
     async fn event(&mut self, event: Event) -> Result<()> {
         match event {
             Event::Linked(Ok(link)) => self.link(link).await?,
-            Event::Linked(Err(error)) => self.unlinked(Some(error)),
+            Event::Linked(Err(error)) => self.unlinked(Parting::Failed(error)),
             Event::Relayed(device, Some(connection)) if self.reached(device) => {
                 connection.close(0_u32.into(), b"reached directly");
             }
@@ -2009,7 +2084,7 @@ impl Syncing {
                     .as_ref()
                     .is_some_and(|link| link.carrier.id() == id)
                 {
-                    self.unlinked(Some(error));
+                    self.unlinked(Parting::Failed(error));
                 }
             }
             Event::Gone(device, id) => {
@@ -3202,7 +3277,7 @@ impl Syncing {
         let catalog = Arc::clone(&self.running.catalog);
 
         blocking(move || catalog.forgive_deletions().map_err(Error::Catalog)).await?;
-        self.wait = FIRST_RETRY;
+        self.backoff.reset();
         self.followed.clear();
         self.covers_asked.clear();
         self.lyricsfiles_asked.clear();
@@ -3764,11 +3839,16 @@ async fn accept_peers(running: Arc<Running>) {
 mod tests {
     use std::{env, fs::File, process};
 
+    use quinn::{ServerConfig, crypto::rustls::QuicServerConfig};
     use resonate_core::Mbid;
+    use rustls::{RootCertStore, crypto::ring::default_provider, version::TLS13};
+    use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
     use super::*;
+    use crate::{routes::NEXT_ROUTE_AFTER, wire::SERVER_ALPN};
 
     const ECHOES: &str = "83d91898-7763-47d7-b03b-b92132375c47";
+    const A_ROUTE_SETTLES_WITHIN: Duration = Duration::from_secs(5);
     const FRAMES_A_HOSTILE_SERVER_SENDS: u32 = 64;
     const THE_READER_SETTLES_WITHIN: Duration = Duration::from_millis(300);
 
@@ -4204,6 +4284,152 @@ mod tests {
 
         assert_eq!(shown.downloading(), 1);
         assert_eq!(shown.waiting(), 2);
+    }
+
+    fn quic_server_certified_as(name: &str) -> (Endpoint, RootCertStore) {
+        let signing = rcgen::KeyPair::generate().expect("a key");
+        let certificate = rcgen::CertificateParams::new(vec![name.to_owned()])
+            .and_then(|params| params.self_signed(&signing))
+            .expect("a certificate");
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
+        let mut roots = RootCertStore::empty();
+
+        roots.add(certificate.der().clone()).expect("trusted");
+
+        let mut tls = rustls::ServerConfig::builder_with_provider(Arc::new(default_provider()))
+            .with_protocol_versions(&[&TLS13])
+            .expect("TLS 1.3")
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate.der().clone()], key)
+            .expect("a server configuration");
+
+        tls.alpn_protocols = vec![SERVER_ALPN.to_vec()];
+
+        let crypto = QuicServerConfig::try_from(tls).expect("QUIC crypto");
+        let endpoint = Endpoint::server(
+            ServerConfig::with_crypto(Arc::new(crypto)),
+            SocketAddr::from((Ipv4Addr::LOCALHOST, 0)),
+        )
+        .expect("listening");
+        (endpoint, roots)
+    }
+
+    fn accepting(server: Endpoint) -> JoinHandle<()> {
+        tokio::spawn(async move {
+            let mut held = Vec::new();
+            while let Some(incoming) = server.accept().await {
+                if let Ok(connection) = incoming.await {
+                    held.push(connection);
+                }
+            }
+        })
+    }
+
+    #[tokio::test]
+    async fn quic_goes_on_to_the_next_route_when_the_first_never_answers_and_still_checks_the_name()
+    {
+        let (server, roots) = quic_server_certified_as("localhost");
+        let working = server.local_addr().expect("an address");
+        let accepted = accepting(server);
+        let never_answering = UdpSocket::bind((Ipv4Addr::LOCALHOST, 0)).expect("bound");
+        let stalled = never_answering.local_addr().expect("an address");
+        let client =
+            Endpoint::client(SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("a client");
+        let to_server = to_the_server(roots).expect("a configuration");
+
+        let reached = timeout(
+            NEXT_ROUTE_AFTER + A_ROUTE_SETTLES_WITHIN,
+            dialled_through(
+                &client,
+                &to_server,
+                "localhost",
+                &[stalled, working],
+                "localhost",
+            ),
+        )
+        .await;
+        let (connection, route) = reached.expect("in time").expect("connected");
+
+        assert_eq!(route, working);
+        assert_eq!(connection.remote_address(), working);
+
+        let named_otherwise = timeout(
+            A_ROUTE_SETTLES_WITHIN,
+            dialled_through(
+                &client,
+                &to_server,
+                "elsewhere.example",
+                &[working],
+                "elsewhere.example",
+            ),
+        )
+        .await;
+
+        assert!(matches!(
+            named_otherwise.expect("in time"),
+            Err(Error::Connection(_))
+        ));
+
+        accepted.abort();
+    }
+
+    #[test]
+    fn a_server_is_dialled_over_ipv4_first_and_ipv6_after_each_in_the_order_resolved() {
+        let v6 =
+            |last: u16| SocketAddr::from((Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, last), 443));
+        let v4 = |last: u8| SocketAddr::from(([192, 0, 2, last], 443));
+
+        assert_eq!(
+            ipv4_first(vec![v6(1), v4(1), v6(2), v4(2)]),
+            [v4(1), v4(2), v6(1), v6(2)]
+        );
+    }
+
+    #[test]
+    fn a_link_whose_catalog_refused_before_the_cursor_moved_waits_longer_each_time_and_progress_waits_the_first_again()
+     {
+        let mut backoff = Backoff::first();
+        let refused = || Parting::CatalogRefused(Refused::Unavailable);
+        let mut waits = Vec::new();
+
+        for _ in 0..3 {
+            if moved_on(false, 7, Some(7), &refused()) {
+                backoff.reset();
+            }
+            waits.push(backoff.next());
+        }
+
+        let caught_up_then_refused = moved_on(true, 7, Some(7), &refused());
+        let caught_up_then_dropped = moved_on(true, 7, Some(7), &Parting::Ended);
+        let moved_then_refused = moved_on(false, 7, Some(9), &refused());
+        let unread = moved_on(false, 7, None, &Parting::Failed(Error::ServerSilent));
+
+        assert_eq!(waits, [FIRST_RETRY, FIRST_RETRY * 2, FIRST_RETRY * 4]);
+        assert!(!caught_up_then_refused);
+        assert!(caught_up_then_dropped);
+        assert!(moved_then_refused);
+        assert!(!unread);
+
+        backoff.reset();
+
+        assert_eq!(backoff.next(), FIRST_RETRY);
+
+        backoff.longest();
+
+        assert_eq!(backoff.next(), LAST_RETRY);
+        assert_eq!(backoff.next(), LAST_RETRY);
+    }
+
+    #[test]
+    fn a_catalog_refusal_is_told_apart_from_a_connection_failure() {
+        assert!(matches!(
+            Parting::of(Error::Catalog(Refused::Unwritable)),
+            Parting::CatalogRefused(Refused::Unwritable)
+        ));
+        assert!(matches!(
+            Parting::of(Error::ServerSilent),
+            Parting::Failed(Error::ServerSilent)
+        ));
     }
 
     #[test]

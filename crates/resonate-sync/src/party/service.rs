@@ -28,7 +28,7 @@ use crate::{
     },
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
-    service::{resolve, within},
+    service::{dialled_server, within},
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{FromServer, PROTOCOL_VERSION, Refusal, ToServer},
 };
@@ -667,8 +667,6 @@ impl Running {
             return within(connect(&web, &self.to_web)).await;
         }
 
-        let (address, host) = within(resolve(&self.server)).await?;
-
         if self.endpoint.is_none() {
             let any = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
 
@@ -678,15 +676,7 @@ impl Running {
         let Some(endpoint) = self.endpoint.as_ref() else {
             return Err(Error::SharedStopped);
         };
-        let connecting = endpoint
-            .connect_with(self.to_server.clone(), address, &host)
-            .map_err(|source| Error::Connect(Box::new(source)))?;
-        let connection = within(async {
-            connecting
-                .await
-                .map_err(|source| Error::Connection(Box::new(source)))
-        })
-        .await?;
+        let (connection, _) = dialled_server(endpoint, &self.to_server, &self.server).await?;
         let (send, recv) = within(async {
             connection
                 .open_bi()

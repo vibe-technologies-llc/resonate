@@ -718,8 +718,18 @@ will not open is left out of the holdings.
   so looks, peers and beacons carry on while the server is away. Connecting runs as a task handing
   back a `Link`. The server connection keeps alive every 25 s, so presence and the NAT mapping hold
   for a few dozen bytes; nothing is polled: the server pushes what other devices append.
-- **Unreachable is quiet**: backoff from 5 s doubling to 30 minutes with jitter, logged at debug;
-  a refusal waits the longest; a link made resets it, so a drop after a long outage retries in 5 s.
+- **Unreachable is quiet**: backoff from 5 s doubling to 30 minutes with jitter (`Backoff`), logged
+  at debug; a refusal waits the longest. **A link resets it only once it moved on** (`moved_on`):
+  caught up with the server, or its cursor past where its `Hello` read from, so a drop after a long
+  outage retries in 5 s while a link that connects and fails the same way again keeps doubling.
+  **A record this device's catalog refuses is not a connection failure** (`Parting`, an
+  `Error::Catalog` while handling a frame is `Parting::CatalogRefused`): it is logged as a warning,
+  the standing is `Connecting` rather than `Unreachable`, and the link is dropped and made again after
+  the backoff. A record's seq is `passed` only after it applies, so the cursor stops before the
+  refused one, the next link reads it again, and the records after it follow once the catalog takes
+  it; a caught-up link counts as moved on for this only where its cursor moved
+  (`a_record_the_catalog_refuses_backs_the_link_off_and_applies_with_the_records_after_it_once_written`,
+  `a_link_whose_catalog_refused_before_the_cursor_moved_waits_longer_each_time_and_progress_waits_the_first_again`).
   `Shown` (standing, devices, transfers, owed) is a snapshot the window and the phones read without
   asking the thread; `owed` is read again after every `Appended`.
 - **A record the server would refuse is never sent to it.** A bundle sealed past `LARGEST_RECORD`
@@ -746,6 +756,17 @@ will not open is left out of the holdings.
   frame to it goes through a writer task fed by a channel (`Link::say`), so a server that stops
   reading stalls nothing: neighbours, beacons and looks carry on, and a failed write comes back as
   `Event::Dropped` and unlinks.
+- **Every address the server's name resolves to is a route, and a silent one is not waited out.**
+  The name is resolved once and each address kept once (`each_once`): IPv4 first for QUIC
+  (`dialled_server`), the resolver's order for a web socket (`connect`). `first_answering` starts the
+  first route, the next beside it after `NEXT_ROUTE_AFTER` (1 s) or at once when one fails, and the
+  first to finish its handshake wins (QUIC's; TCP, TLS and the upgrade over a web socket) while the
+  others are dropped, all within the one `SERVER_ANSWERS_WITHIN`. TLS checks the host as written in
+  the setting, never the route's address
+  (`quic_goes_on_to_the_next_route_when_the_first_never_answers_and_still_checks_the_name`,
+  `a_secure_web_socket_reaches_a_second_route_and_still_checks_the_name_it_was_given`,
+  `a_plain_web_socket_goes_on_to_the_next_route_when_the_first_never_answers`). Shared playlists
+  and parties dial the server the same way.
 - **An Android phone keeps syncing with the app closed**: a job wakes the engine every 15 minutes
   and once more when the app is left mid-transfer, until the service is quiet (`android.md`'s
   *Sync goes on with the app closed*). It never forces, so a background wake forgives no deletion.

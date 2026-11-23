@@ -35,6 +35,7 @@ use tokio_tungstenite::{
 use crate::{
     Error, Result, StreamOp, TlsOp,
     quic::{read_frame_held, send_frame},
+    routes::{each_once, first_answering},
     wire::LARGEST_FRAME,
 };
 
@@ -255,13 +256,7 @@ pub fn web_address(server: &str) -> Option<WebAddress> {
 }
 
 async fn on_this_machine(address: &WebAddress) -> Result<Vec<SocketAddr>> {
-    let resolved = lookup_host((address.host.as_str(), address.port))
-        .await
-        .map_err(|source| Error::Resolve {
-            server: address.host.clone().into(),
-            source,
-        })?
-        .collect::<Vec<_>>();
+    let resolved = resolved(address).await?;
     let only_here = !resolved.is_empty()
         && resolved
             .iter()
@@ -305,12 +300,42 @@ pub async fn connect(
     address: &WebAddress,
     tls: &Arc<ClientConfig>,
 ) -> Result<(Outgoing, Incoming)> {
-    let tcp = if address.secure {
-        TcpStream::connect((address.host.as_str(), address.port)).await
+    let routes = if address.secure {
+        resolved(address).await?
     } else {
-        TcpStream::connect(on_this_machine(address).await?.as_slice()).await
-    }
-    .map_err(|source| Error::stream(StreamOp::Open, source))?;
+        on_this_machine(address).await?
+    };
+    connect_through(address, &routes, tls).await
+}
+
+async fn resolved(address: &WebAddress) -> Result<Vec<SocketAddr>> {
+    let resolved = lookup_host((address.host.as_str(), address.port))
+        .await
+        .map_err(|source| Error::Resolve {
+            server: address.host.clone().into(),
+            source,
+        })?;
+    Ok(each_once(resolved))
+}
+
+async fn connect_through(
+    address: &WebAddress,
+    routes: &[SocketAddr],
+    tls: &Arc<ClientConfig>,
+) -> Result<(Outgoing, Incoming)> {
+    let (halves, _) =
+        first_answering(&address.host, routes, |route| opened(address, route, tls)).await?;
+    Ok(halves)
+}
+
+async fn opened(
+    address: &WebAddress,
+    route: SocketAddr,
+    tls: &Arc<ClientConfig>,
+) -> Result<(Outgoing, Incoming)> {
+    let tcp = TcpStream::connect(route)
+        .await
+        .map_err(|source| Error::stream(StreamOp::Open, source))?;
 
     tcp.set_nodelay(true)
         .map_err(|source| Error::stream(StreamOp::Open, source))?;
@@ -526,6 +551,8 @@ async fn next_message(
 
 #[cfg(test)]
 mod tests {
+    use rustls::ServerConfig;
+    use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
     use tokio::{
         io::{AsyncReadExt, AsyncWriteExt, duplex},
         net::TcpListener,
@@ -533,8 +560,10 @@ mod tests {
         task::JoinHandle,
         time::{Instant, sleep},
     };
+    use tokio_rustls::TlsAcceptor;
 
     use super::*;
+    use crate::routes::NEXT_ROUTE_AFTER;
 
     const READ_AT_ONCE: usize = 16;
     const SETTLES_WITHIN: Duration = Duration::from_secs(5);
@@ -805,5 +834,120 @@ mod tests {
 
         assert!(past.is_err());
         assert_eq!(within.expect("heard"), Some(vec![7; 1024]));
+    }
+
+    struct Certified {
+        roots: RootCertStore,
+        serving: Arc<ServerConfig>,
+    }
+
+    fn certified_as(name: &str) -> Certified {
+        let signing = rcgen::KeyPair::generate().expect("a key");
+        let certificate = rcgen::CertificateParams::new(vec![name.to_owned()])
+            .and_then(|params| params.self_signed(&signing))
+            .expect("a certificate");
+        let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
+        let mut roots = RootCertStore::empty();
+
+        roots.add(certificate.der().clone()).expect("trusted");
+
+        let mut serving = ServerConfig::builder_with_provider(Arc::new(default_provider()))
+            .with_protocol_versions(&[&TLS13])
+            .expect("TLS 1.3")
+            .with_no_client_auth()
+            .with_single_cert(vec![certificate.der().clone()], key)
+            .expect("a server configuration");
+
+        serving.alpn_protocols = vec![WEB_ALPN.to_vec()];
+        Certified {
+            roots,
+            serving: Arc::new(serving),
+        }
+    }
+
+    async fn never_answering() -> (TcpListener, SocketAddr) {
+        let stalled = TcpListener::bind(("127.0.0.1", 0)).await.expect("bound");
+        let route = stalled.local_addr().expect("an address");
+        (stalled, route)
+    }
+
+    async fn upgrading(
+        secured: Option<Arc<ServerConfig>>,
+    ) -> (JoinHandle<Option<Accepted>>, SocketAddr) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.expect("bound");
+        let route = listener.local_addr().expect("an address");
+        let serving = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.ok()?;
+            match secured {
+                Some(config) => {
+                    let secured = TlsAcceptor::from(config).accept(stream).await.ok()?;
+                    accepted(secured, None).await.ok()
+                }
+                None => accepted(stream, None).await.ok(),
+            }
+        });
+        (serving, route)
+    }
+
+    #[tokio::test]
+    async fn a_plain_web_socket_goes_on_to_the_next_route_when_the_first_never_answers() {
+        let (_stalled, stalled) = never_answering().await;
+        let (serving, working) = upgrading(None).await;
+        let address =
+            web_address(&format!("ws://127.0.0.1:{}/", working.port())).expect("an address");
+        let tls = to_the_web(RootCertStore::empty()).expect("a configuration");
+
+        let reached = timeout(
+            NEXT_ROUTE_AFTER + SETTLES_WITHIN,
+            connect_through(&address, &[stalled, working], &tls),
+        )
+        .await;
+        let (mut outgoing, _incoming) = reached.expect("in time").expect("connected");
+        let mut server_side = serving.await.expect("the server task").expect("upgraded");
+
+        outgoing.send(&[4, 2]).await.expect("sent");
+
+        let heard = server_side.incoming.read_at_most(LARGEST_FRAME).await;
+
+        assert_eq!(heard.expect("read"), Some(vec![4, 2]));
+    }
+
+    #[tokio::test]
+    async fn a_secure_web_socket_reaches_a_second_route_and_still_checks_the_name_it_was_given() {
+        let (_stalled, stalled) = never_answering().await;
+        let certified = certified_as("localhost");
+        let (serving, working) = upgrading(Some(Arc::clone(&certified.serving))).await;
+        let address =
+            web_address(&format!("wss://localhost:{}/", working.port())).expect("an address");
+        let tls = to_the_web(certified.roots).expect("a configuration");
+
+        let reached = timeout(
+            NEXT_ROUTE_AFTER + SETTLES_WITHIN,
+            connect_through(&address, &[stalled, working], &tls),
+        )
+        .await;
+
+        assert!(reached.expect("in time").is_ok());
+        assert!(serving.await.expect("the server task").is_some());
+
+        let elsewhere = certified_as("elsewhere.example");
+        let (_refusing, other) = upgrading(Some(Arc::clone(&elsewhere.serving))).await;
+        let named_otherwise =
+            web_address(&format!("wss://localhost:{}/", other.port())).expect("an address");
+        let tls = to_the_web(elsewhere.roots).expect("a configuration");
+
+        let refused = timeout(
+            SETTLES_WITHIN,
+            connect_through(&named_otherwise, &[other], &tls),
+        )
+        .await;
+
+        assert!(matches!(
+            refused.expect("in time"),
+            Err(Error::Stream {
+                op: StreamOp::Open,
+                ..
+            })
+        ));
     }
 }

@@ -15,6 +15,7 @@ mod quic;
 mod relay;
 mod remote;
 mod revision;
+mod routes;
 mod seal;
 mod service;
 pub mod shared;

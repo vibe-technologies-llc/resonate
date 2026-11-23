@@ -22,7 +22,7 @@ use crate::{
     merge::projection_digest,
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
-    service::{HOSTED_SERVER, InParts, Oversized, resolve, within},
+    service::{HOSTED_SERVER, InParts, Oversized, dialled_server, within},
     shared::{
         Access,
         appending::{
@@ -996,8 +996,6 @@ impl Running {
             return within(connect(&web, &self.to_web)).await;
         }
 
-        let (address, host) = within(resolve(server)).await?;
-
         if self.endpoint.is_none() {
             let any = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
 
@@ -1007,15 +1005,7 @@ impl Running {
         let Some(endpoint) = self.endpoint.as_ref() else {
             return Err(Error::SharedStopped);
         };
-        let connecting = endpoint
-            .connect_with(self.to_server.clone(), address, &host)
-            .map_err(|source| Error::Connect(Box::new(source)))?;
-        let connection = within(async {
-            connecting
-                .await
-                .map_err(|source| Error::Connection(Box::new(source)))
-        })
-        .await?;
+        let (connection, _) = dialled_server(endpoint, &self.to_server, server).await?;
         let (send, recv) = within(async {
             connection
                 .open_bi()

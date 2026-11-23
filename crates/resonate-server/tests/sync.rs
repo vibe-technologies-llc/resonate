@@ -18,6 +18,7 @@ use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 use crate::shelf::{Shelf, song};
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
+const A_SECOND_REFUSAL_IS_LEFT_FOR: Duration = Duration::from_secs(8);
 
 trait HeldHere {
     fn holds_title(&self, title: &str) -> bool;
@@ -424,6 +425,79 @@ fn a_forced_sync_reconnects_to_the_server_and_carries_on() {
 
     drop(phone);
     drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_record_the_catalog_refuses_backs_the_link_off_and_applies_with_the_records_after_it_once_written()
+ {
+    let folder = scratch("refused");
+    let kept_at = folder.join("server.sqlite");
+
+    let hosted = hosted_over(&folder, Store::open(&kept_at).expect("a store"));
+    let key = SyncKey::minted().expect("a key");
+    let space = key.derived().expect("derived").space;
+    let watching = Store::open(&kept_at).expect("the server's store, read beside it");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
+    desk_shelf.favour_here("A", true);
+    phone_shelf.inside.lock().refuses_favouring = true;
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+    let head_of = || watching.head(space).map_or(0, |(head, _)| head);
+
+    eventually("the favourite reaching the server", || {
+        let shown = desk.shown();
+        shown.settled && shown.owed == 0 && head_of() > 0
+    });
+
+    let favoured_through = head_of();
+
+    desk_shelf.make_playlist("Later", &["A"]);
+    eventually("the later playlist reaching the server", || {
+        let shown = desk.shown();
+        shown.settled && shown.owed == 0 && head_of() > favoured_through
+    });
+    drop(desk);
+
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+    let refused = || phone_shelf.inside.lock().favours_refused;
+
+    eventually("the favourite refused twice", || refused() >= 2);
+    thread::sleep(A_SECOND_REFUSAL_IS_LEFT_FOR);
+
+    assert_eq!(refused(), 2);
+    assert!(phone_shelf.favourite_titles().is_empty());
+    assert!(phone_shelf.playlist_named("Later").is_none());
+
+    phone_shelf.inside.lock().refuses_favouring = false;
+    eventually("the refused favourite applying once written", || {
+        phone_shelf.favourite_titles() == ["A"]
+    });
+    eventually("the later playlist applying after it", || {
+        phone_shelf.playlist_named("Later").is_some()
+    });
+    eventually("the phone standing connected", || {
+        phone.shown().standing == Standing::Connected
+    });
+
+    drop(phone);
 
     let _ = fs::remove_dir_all(&folder);
 }

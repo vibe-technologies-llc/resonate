@@ -78,6 +78,8 @@ pub struct Inside {
     pub opened: usize,
     pub listed: usize,
     pub refuses_landing: bool,
+    pub refuses_favouring: bool,
+    pub favours_refused: usize,
     pub refuses_opening: bool,
     pub refuses_resolving: bool,
     pub unwritable_sorts_from: Option<u8>,
@@ -605,6 +607,11 @@ impl Catalog for Shelf {
 
     fn favour(&self, recording: &Recording, favoured: bool) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
+
+        if inside.refuses_favouring {
+            inside.favours_refused += 1;
+            return Err(Refused::Unavailable);
+        }
 
         let Some(own) = Self::own_of(&inside, recording) else {
             return Ok(false);
