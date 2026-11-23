@@ -479,13 +479,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   fails checksum verification.
 
 ## Formats
-- [M · 0.17.1] Make a combined Matroska tag and cover write's result explicit. **Low, architect.**
-  Tag edits can land before cover attachment is refused, while the tag writer returns one error
-  and the rules promise the file was untouched (`crates/resonate-codec/src/writing.rs:759`,
-  `crates/resonate-codec/src/matroska_tags.rs:1124`, `.claude/rules/library.md:1582`).
-  Give the combined operation one commit, or return a typed partial result that the delivery path
-  can handle. Done when a fixture with a cover the writer must refuse proves the documented
-  outcome and a filed delivery still gets its text tags.
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader
