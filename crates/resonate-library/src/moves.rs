@@ -45,6 +45,7 @@ struct Row {
     cut: (i64, Option<i64>),
     packets: Option<i64>,
     print: Option<String>,
+    fresh: bool,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq)]
@@ -107,12 +108,19 @@ struct Paired {
     from: Row,
     to: Row,
     followed: Vec<(i64, i64)>,
+    fresh: usize,
 }
 
 impl Paired {
     fn whole(from: Row, to: Row) -> Self {
         let followed = vec![(from.id, to.id)];
-        Self { from, to, followed }
+        let fresh = usize::from(to.fresh);
+        Self {
+            from,
+            to,
+            followed,
+            fresh,
+        }
     }
 
     fn cut(from: Cut, to: Cut) -> Option<Self> {
@@ -122,10 +130,12 @@ impl Paired {
             .zip(&to.rows)
             .map(|(from, to)| (from.id, to.id))
             .collect();
+        let fresh = to.rows.iter().filter(|row| row.fresh).count();
         Some(Self {
             from: from.rows.into_iter().next()?,
             to: to.rows.into_iter().next()?,
             followed,
+            fresh,
         })
     }
 
@@ -200,6 +210,47 @@ const WHOLE_AND_ALONE: &str = "span_frames IS NULL AND span_start = 0
 const CUT_OR_SHARED: &str = "(span_frames IS NOT NULL OR span_start != 0
      OR EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.id != t.id))";
 
+const ARRIVED_AND_REACHED: &str = "t.id IN (SELECT track_id FROM unsettled_arrivals)
+     AND t.seen != -?1";
+
+const EVERY_ROW_AT_ITS_PATH_ARRIVED: &str = "NOT EXISTS (SELECT 1 FROM tracks o
+     WHERE o.path = t.path
+       AND o.id NOT IN (SELECT track_id FROM unsettled_arrivals))";
+
+const NOTE_AN_ARRIVAL: &str = "INSERT OR IGNORE INTO unsettled_arrivals (track_id)
+     SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2 AND added >= ?3";
+
+pub(crate) fn note_the_arrival(
+    tx: &Transaction<'_>,
+    path: &Path,
+    span_start: i64,
+    generation: i64,
+) -> Result<()> {
+    store::cached(
+        tx,
+        NOTE_AN_ARRIVAL,
+        params![store::path_text(path), span_start, generation],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Insert, source))
+}
+
+pub(crate) fn settle_the_arrivals(tx: &Transaction<'_>, roots: &[i64]) -> Result<()> {
+    if roots.is_empty() {
+        return Ok(());
+    }
+    tx.execute(
+        &format!(
+            "DELETE FROM unsettled_arrivals
+              WHERE track_id IN (SELECT id FROM tracks WHERE root_id IN ({}))",
+            scoped(roots)
+        ),
+        [],
+    )
+    .map(drop)
+    .map_err(|source| Error::store(StoreOp::Delete, source))
+}
+
 pub(crate) fn to_be_heard(
     connection: &Connection,
     roots: &[i64],
@@ -248,6 +299,7 @@ pub(crate) fn follow_the_moved(
     let moves = follow(tx, &paired, generation)?;
     Ok(Followed {
         rows: paired.iter().map(|pair| pair.rows() as u64).sum(),
+        arrived_in_this_scan: paired.iter().map(|pair| pair.fresh as u64).sum(),
         moves,
     })
 }
@@ -255,6 +307,7 @@ pub(crate) fn follow_the_moved(
 #[derive(Default)]
 pub(crate) struct Followed {
     pub(crate) rows: u64,
+    pub(crate) arrived_in_this_scan: u64,
     pub(crate) moves: Vec<Move>,
 }
 
@@ -279,7 +332,7 @@ fn wholes_moved(
 
     let arrived = rows(
         tx,
-        &format!("seen = ?1 AND added >= ?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
+        &format!("{ARRIVED_AND_REACHED} AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
         generation,
     )?;
 
@@ -307,8 +360,8 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
     let arrived = cuts(rows(
         tx,
         &format!(
-            "seen = ?1 AND added >= ?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}
-             AND NOT EXISTS (SELECT 1 FROM tracks o WHERE o.path = t.path AND o.added < ?1)"
+            "{ARRIVED_AND_REACHED} AND root_id IN ({scoped}) AND {CUT_OR_SHARED}
+             AND {EVERY_ROW_AT_ITS_PATH_ARRIVED}"
         ),
         generation,
     )?);
@@ -360,7 +413,7 @@ fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
         .prepare(&format!(
             "SELECT t.path, t.root_id, t.album_id, t.file_size, t.duration, t.codec,
                     t.tagged_title, t.tagged_artist, t.sample_rate, t.channels, t.span_start,
-                    t.span_frames, s.print, t.packets, t.id
+                    t.span_frames, s.print, t.packets, t.id, t.added >= ?1
                FROM tracks t
                LEFT JOIN track_studies s ON s.track_id = t.id
               WHERE {narrowed}"
@@ -386,6 +439,7 @@ fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
                 print: row.get(12)?,
                 packets: row.get(13)?,
                 id: row.get(14)?,
+                fresh: row.get(15)?,
             })
         })
         .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
@@ -668,6 +722,8 @@ const THE_FILE_AS_IT_ARRIVED: &str = "UPDATE tracks SET
          artist_sort = arrived.artist_sort,
          genre = arrived.genre,
          lyrics = arrived.lyrics,
+         walked = arrived.walked,
+         explicit = arrived.explicit,
          probe_again = 0
        FROM tracks arrived
       WHERE tracks.id = ?1 AND arrived.id = ?2";
@@ -763,6 +819,7 @@ mod tests {
             cut: (0, None),
             packets: None,
             print: None,
+            fresh: true,
         }
     }
 

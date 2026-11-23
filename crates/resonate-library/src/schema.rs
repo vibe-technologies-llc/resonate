@@ -69,7 +69,14 @@ const MIGRATIONS: &[&str] = &[
     EXPLORE_SEARCHES_ARE_KEPT,
     EXPLORE_COVERS_ARE_KEPT,
     COVERS_FOUND_BEYOND_THE_LIBRARY_ARE_KEPT,
+    AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED,
 ];
+
+const AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED: &str = "
+CREATE TABLE unsettled_arrivals (
+    track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE
+) STRICT;
+";
 
 const COVERS_FOUND_BEYOND_THE_LIBRARY_ARE_KEPT: &str = "
 CREATE TABLE found_covers (
@@ -3233,6 +3240,63 @@ mod tests {
             "a schema hashing to nothing reads as a catalog nothing has stamped"
         );
         assert_eq!(never_unstamped(FNV_OFFSET_BASIS), FNV_OFFSET_BASIS);
+    }
+
+    #[test]
+    fn a_catalog_from_before_arrivals_waited_to_be_weighed_keeps_its_songs_and_waits_on_none() {
+        let connection = opened();
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == AN_ARRIVAL_WAITS_FOR_ITS_MOVE_TO_BE_WEIGHED)
+            .expect("the step that makes the table");
+
+        connection
+            .execute_batch(V1)
+            .expect("the first release's schema");
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("an earlier step");
+        }
+        connection
+            .execute_batch(
+                "INSERT INTO tracks (id, path, title, sample_rate, channels, sample_format, codec,
+                                     file_size, modified, added, seen)
+                 VALUES (7, '/music/song.flac', 'A song', 44100, 2, 16, 1, 100, 1, 1, 1);",
+            )
+            .expect("a song catalogued before the step");
+        connection
+            .pragma_update(None, "user_version", as_signed(STAMPS[before].0))
+            .expect("the earlier stamp");
+
+        lay_out(&connection).expect("the catalog is carried forward");
+
+        let carried: String = connection
+            .query_row("SELECT title FROM tracks WHERE id = 7", [], |row| {
+                row.get(0)
+            })
+            .expect("the song is carried");
+        let waiting: i64 = connection
+            .query_row("SELECT count(*) FROM unsettled_arrivals", [], |row| {
+                row.get(0)
+            })
+            .expect("the table stands");
+
+        assert_eq!(carried, "A song");
+        assert_eq!(waiting, 0);
+
+        connection
+            .execute_batch(
+                "INSERT INTO unsettled_arrivals (track_id) VALUES (7);
+                 DELETE FROM tracks WHERE id = 7;",
+            )
+            .expect("an arrival noted and its song forgotten");
+
+        let left: i64 = connection
+            .query_row("SELECT count(*) FROM unsettled_arrivals", [], |row| {
+                row.get(0)
+            })
+            .expect("the table stands");
+
+        assert_eq!(left, 0, "a forgotten song left its arrival waiting");
     }
 }
 

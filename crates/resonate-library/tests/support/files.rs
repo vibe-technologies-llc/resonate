@@ -3,12 +3,17 @@ use std::{
     num::NonZeroUsize,
     path::{Path, PathBuf},
     process,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    thread,
+    time::{Duration, Instant},
 };
 
 use resonate_core::{PlaylistId, QueueStamp};
 use resonate_library::{
-    Library, Playing, Result, ScanOptions, ScanStats, SortOrder, Track, TrackQuery,
+    Library, Playing, Result, ScanOptions, ScanStats, ScanSummary, SortOrder, Track, TrackQuery,
 };
 
 pub(crate) const RATE: u32 = 44_100;
@@ -281,6 +286,43 @@ pub(crate) fn scan(library: &Library, options: &ScanOptions) -> Result<ScanStats
 
     assert!(!summary.cancelled, "the scan reported itself cancelled");
     Ok(summary.stats)
+}
+
+pub(crate) const MORE_THAN_A_BATCH: usize = 2_000;
+
+const A_BATCH_IS_WRITTEN_WITHIN: Duration = Duration::from_secs(120);
+
+pub(crate) fn many_short_songs(folder: &Path) {
+    fs::create_dir_all(folder).expect("a writable folder");
+    for number in 0..MORE_THAN_A_BATCH {
+        fs::write(
+            folder.join(format!("{number:04}.wav")),
+            Wav::new()
+                .frames(64)
+                .text(TITLE, &format!("song {number}"))
+                .build(),
+        )
+        .expect("a writable folder");
+    }
+}
+
+pub(crate) fn cancelled_once_a_batch_is_written(
+    library: &Library,
+    options: &ScanOptions,
+) -> Result<ScanSummary> {
+    let handle = library.scan(options.clone())?;
+    let progress = Arc::clone(handle.progress());
+    let deadline = Instant::now() + A_BATCH_IS_WRITTEN_WITHIN;
+
+    while progress.snapshot().processed == 0 && Instant::now() < deadline {
+        thread::yield_now();
+    }
+    progress.cancel();
+
+    let summary = handle.join()?;
+
+    assert!(summary.cancelled, "the scan outran the cancel");
+    Ok(summary)
 }
 
 pub(crate) fn loaded(playlist: PlaylistId) -> Option<Playing> {

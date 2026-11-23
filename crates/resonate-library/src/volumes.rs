@@ -1,9 +1,10 @@
 use std::{
-    fs,
+    fs, mem,
     path::{Path, PathBuf},
 };
 
 use ahash::{AHashMap, AHashSet};
+use parking_lot::Mutex;
 use resonate_core::file_facts;
 use rusqlite::{Connection, Transaction, params};
 
@@ -189,6 +190,32 @@ fn mount_point_above(folder: &Path, device: impl Fn(&Path) -> Option<u64>) -> Op
             return Some(point.to_path_buf());
         }
         point = parent;
+    }
+}
+
+#[derive(Default)]
+pub(crate) struct Mounting(Mutex<Seen>);
+
+#[derive(Default)]
+struct Seen {
+    every: Vec<PathBuf>,
+    unnoted: Vec<PathBuf>,
+}
+
+impl Mounting {
+    pub(crate) fn seen_at(&self, volume: &Path) {
+        let mut seen = self.0.lock();
+
+        seen.every.push(volume.to_path_buf());
+        seen.unnoted.push(volume.to_path_buf());
+    }
+
+    pub(crate) fn unnoted(&self) -> Vec<PathBuf> {
+        mem::take(&mut self.0.lock().unnoted)
+    }
+
+    pub(crate) fn every(&self) -> Vec<PathBuf> {
+        self.0.lock().every.clone()
     }
 }
 

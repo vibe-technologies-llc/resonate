@@ -17,8 +17,9 @@ use resonate_library::{
 
 use crate::support::{
     ALBUM, ARTIST, Delivering, HOURS, ISRC, MUSICBRAINZ, Offering, RECORDING, TITLE, TRACK, Told,
-    Tree, Wav, album_titled, all, artist_named, beside, matched, mbid, opened_with_a_vault,
-    options, orbits_tree, scan, scanned_shapes, the_row_of, titles, wanted_san_tropez,
+    Tree, Wav, album_titled, all, artist_named, beside, cancelled_once_a_batch_is_written,
+    many_short_songs, matched, mbid, opened_with_a_vault, options, orbits_tree, scan,
+    scanned_shapes, the_row_of, titles, wanted_san_tropez,
 };
 
 fn resumable(path: &str) -> Resumable {
@@ -1674,6 +1675,61 @@ fn a_file_the_scan_prunes_keeps_its_listens_and_has_them_back_when_it_returns() 
         library.track_at(&echoes, None)?.expect("held again").plays,
         2
     );
+    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+    Ok(())
+}
+
+#[test]
+fn a_song_back_in_a_scan_cancelled_partway_is_credited_its_listens_once_by_an_unchanged_rescan()
+-> Result<()> {
+    let tree = Tree::new();
+    let bytes = Wav::new().text(TITLE, "Echoes").build();
+
+    let echoes = tree.write("echoes.wav", &bytes);
+
+    many_short_songs(&tree.path().join("many"));
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &options(&tree))?;
+    for _ in 0..2 {
+        let counted = library
+            .track_played(&MediaLocation::local(&echoes), None, Duration::from_secs(2))?
+            .expect("a counted play");
+
+        library.listened(counted.listen, Duration::from_secs(2))?;
+    }
+    fs::remove_file(&echoes).expect("the file goes");
+    scan(&library, &options(&tree))?;
+    tree.write("echoes.wav", &bytes);
+    cancelled_once_a_batch_is_written(
+        &library,
+        &ScanOptions {
+            incremental: false,
+            ..options(&tree)
+        },
+    )?;
+
+    let arrived = library
+        .track_at(&echoes, None)?
+        .expect("the cancelled scan wrote the song back");
+
+    assert_eq!(arrived.plays, 0, "the cancelled scan credited the listens");
+
+    let unchanged = scan(&library, &options(&tree))?;
+
+    assert_eq!(unchanged.added, 0);
+    assert_eq!(unchanged.updated, 0);
+    assert_eq!(
+        library.track_at(&echoes, None)?.expect("held").plays,
+        2,
+        "the listens kept against the song were not credited"
+    );
+    assert_eq!(library.statistics(Window::Everything)?.plays, 2);
+
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(library.track_at(&echoes, None)?.expect("held").plays, 2);
     assert_eq!(library.statistics(Window::Everything)?.plays, 2);
     Ok(())
 }

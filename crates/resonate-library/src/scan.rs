@@ -594,6 +594,7 @@ fn run(
 
     let (work_tx, work_rx) = bounded::<Job>(QUEUE);
     let (done_tx, done_rx) = bounded::<Outcome>(QUEUE);
+    let mounting = Arc::new(volumes::Mounting::default());
 
     let mut workers = Vec::with_capacity(options.workers.get());
 
@@ -616,6 +617,7 @@ fn run(
         let options = options.clone();
         let progress = Arc::clone(progress);
         let vault = inner.vault_root().map(Path::to_path_buf);
+        let mounting = Arc::clone(&mounting);
         thread::Builder::new()
             .name("resonate-walk".to_owned())
             .spawn(move || {
@@ -625,10 +627,13 @@ fn run(
                         walked: &roots,
                         registered: &registered,
                     },
-                    &options,
-                    &progress,
-                    &work_tx,
-                    vault.as_deref(),
+                    &Walked {
+                        options: &options,
+                        progress: &progress,
+                        work: &work_tx,
+                        vault: vault.as_deref(),
+                        mounting: &mounting,
+                    },
                 );
 
                 drop(work_tx);
@@ -637,7 +642,16 @@ fn run(
             .map_err(|source| Error::ThreadSpawn { source })?
     };
 
-    let written = write_all(inner, options, &done_rx, progress, generation);
+    let written = write_all(
+        inner,
+        &Writing {
+            options,
+            progress,
+            generation,
+            mounting: &mounting,
+        },
+        &done_rx,
+    );
 
     drop(done_rx);
 
@@ -651,7 +665,10 @@ fn run(
         pass: PassKind::Scan,
     }));
     let reached = written?;
-    let mounted = walked?;
+
+    walked?;
+
+    let mounted = mounting.every();
 
     if lost {
         return Err(Error::Stopped {
@@ -660,8 +677,8 @@ fn run(
     }
 
     let cancelled = progress.is_cancelled();
-    let arrived = progress.added.load(Ordering::Relaxed);
-    let mut changed = arrived + progress.updated.load(Ordering::Relaxed);
+    let mut changed =
+        progress.added.load(Ordering::Relaxed) + progress.updated.load(Ordering::Relaxed);
 
     if !cancelled {
         inner.write(|transaction| {
@@ -673,26 +690,32 @@ fn run(
             .into_iter()
             .filter_map(|path| heard_as(&path).map(|print| (path, print)))
             .collect();
+        let weighed_against_every_root = walked_every_root_there(inner, &ids)?;
+
         let moved = inner.write(|transaction| {
-            moves::follow_the_moved(transaction, &ids, generation, &|path| {
+            let followed = moves::follow_the_moved(transaction, &ids, generation, &|path| {
                 prints.get(path).cloned()
-            })
+            })?;
+
+            if weighed_against_every_root {
+                moves::settle_the_arrivals(transaction, &ids)?;
+            }
+            Ok(followed)
         })?;
 
         undo::followed(inner, &moved.moves);
 
-        let moved = moved.rows;
-
-        progress.moved.store(moved, Ordering::Relaxed);
-        progress.added.fetch_sub(moved, Ordering::Relaxed);
+        progress.moved.store(moved.rows, Ordering::Relaxed);
+        progress
+            .added
+            .fetch_sub(moved.arrived_in_this_scan, Ordering::Relaxed);
+        changed += moved.rows;
 
         let removed = inner.write(|transaction| store::prune(transaction, &ids, generation))?;
 
         inner.write(store::sweep_orphans_if_owed)?;
         inner.write(|transaction| volumes::settle(transaction, &walked_roots, &mounted))?;
-        if arrived > 0 {
-            inner.write(history::credit_the_unheld)?;
-        }
+        inner.write(history::credit_the_unheld)?;
 
         let tidied = match beside {
             Beside::Tidied => tidy_the_roots_beside(inner, &ids, progress)?,
@@ -813,6 +836,12 @@ fn roots_beside(inner: &Inner, walked: &[i64]) -> Result<Vec<Root>> {
         .collect())
 }
 
+fn walked_every_root_there(inner: &Inner, walked: &[i64]) -> Result<bool> {
+    Ok(!roots_beside(inner, walked)?
+        .iter()
+        .any(|root| root.path.is_dir()))
+}
+
 fn tidy_the_roots_beside(
     inner: &Arc<Inner>,
     walked: &[i64],
@@ -917,32 +946,32 @@ struct Rooted<'a> {
     registered: &'a [PathBuf],
 }
 
-fn walk_all(
-    known: &Known,
-    roots: &Rooted<'_>,
-    options: &ScanOptions,
-    progress: &ScanProgress,
-    work: &Sender<Job>,
-    vault: Option<&Path>,
-) -> Result<Vec<PathBuf>> {
+struct Walked<'a> {
+    options: &'a ScanOptions,
+    progress: &'a ScanProgress,
+    work: &'a Sender<Job>,
+    vault: Option<&'a Path>,
+    mounting: &'a volumes::Mounting,
+}
+
+fn walk_all(known: &Known, roots: &Rooted<'_>, walked: &Walked<'_>) -> Result<()> {
     let mut visited = Visited::default();
-    let mut mounted = Vec::new();
 
     for root in roots.walked {
         let walking = Walking {
             known,
             root,
             registered: roots.registered,
-            options,
-            progress,
-            work,
-            vault,
+            options: walked.options,
+            progress: walked.progress,
+            work: walked.work,
+            vault: walked.vault,
         };
-        if !walk(&walking, &mut visited, &mut mounted)? || !kept_the_vanished_volumes(&walking) {
+        if !walk(&walking, &mut visited, walked.mounting)? || !kept_the_vanished_volumes(&walking) {
             break;
         }
     }
-    Ok(mounted)
+    Ok(())
 }
 
 fn kept_the_vanished_volumes(walking: &Walking<'_>) -> bool {
@@ -984,7 +1013,11 @@ impl Visited {
     }
 }
 
-fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>) -> Result<bool> {
+fn walk(
+    walking: &Walking<'_>,
+    visited: &mut Visited,
+    mounting: &volumes::Mounting,
+) -> Result<bool> {
     let Walking {
         options, progress, ..
     } = *walking;
@@ -1011,7 +1044,7 @@ fn walk(walking: &Walking<'_>, visited: &mut Visited, mounted: &mut Vec<PathBuf>
         let device = volumes::device(&directory);
 
         if device.is_some() && outer.is_some() && (device != outer || points.hold(&directory)) {
-            mounted.push(directory.clone());
+            mounting.seen_at(&directory);
         } else if walking.known.is_a_volume(&directory) {
             tracing::warn!(path = %directory.display(), "keeping what the catalog holds on a volume that is not mounted");
             if !kept_unread(walking, &directory) {
@@ -1983,12 +2016,17 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
     }])
 }
 
+struct Writing<'a> {
+    options: &'a ScanOptions,
+    progress: &'a ScanProgress,
+    generation: i64,
+    mounting: &'a volumes::Mounting,
+}
+
 fn write_all(
     inner: &Inner,
-    options: &ScanOptions,
+    writing: &Writing<'_>,
     done: &Receiver<Outcome>,
-    progress: &ScanProgress,
-    generation: i64,
 ) -> Result<store::Reached> {
     let mut cache = Cache::default();
     let mut batch = Vec::with_capacity(BATCH);
@@ -1997,38 +2035,27 @@ fn write_all(
     for outcome in done {
         batch.push(outcome);
         if batch.len() >= BATCH {
-            commit(
-                inner,
-                options,
-                &mut cache,
-                &mut batch,
-                progress,
-                generation,
-                &mut reached,
-            )?;
+            commit(inner, writing, &mut cache, &mut batch, &mut reached)?;
         }
     }
-    commit(
-        inner,
-        options,
-        &mut cache,
-        &mut batch,
-        progress,
-        generation,
-        &mut reached,
-    )?;
+    commit(inner, writing, &mut cache, &mut batch, &mut reached)?;
     Ok(store::Reached::of(reached))
 }
 
 fn commit(
     inner: &Inner,
-    options: &ScanOptions,
+    writing: &Writing<'_>,
     cache: &mut Cache,
     batch: &mut Vec<Outcome>,
-    progress: &ScanProgress,
-    generation: i64,
     reached: &mut Vec<i64>,
 ) -> Result<()> {
+    let Writing {
+        options,
+        progress,
+        generation,
+        mounting,
+    } = *writing;
+
     if batch.is_empty() {
         return Ok(());
     }
@@ -2047,7 +2074,10 @@ fn commit(
         .any(|outcome| matches!(outcome, Outcome::Store(_)));
 
     if stores {
+        let unnoted = mounting.unnoted();
+
         inner.write(|transaction| {
+            volumes::note(transaction, &unnoted)?;
             for outcome in batch.iter_mut() {
                 match outcome {
                     Outcome::Seen(_) | Outcome::Kept(_) => {}
@@ -2068,6 +2098,14 @@ fn commit(
                         if record.existing.is_some() {
                             updated += 1;
                         } else {
+                            let (span_start, _) = store::span_columns(record.span);
+
+                            moves::note_the_arrival(
+                                transaction,
+                                &record.path,
+                                span_start,
+                                generation,
+                            )?;
                             added += 1;
                         }
                     }

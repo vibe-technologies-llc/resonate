@@ -11,7 +11,8 @@ use std::{ffi::OsStr, os::unix::fs::MetadataExt as _, process};
 
 use parking_lot::Mutex;
 use resonate_core::{
-    AlbumId, ChannelLayout, MediaLocation, SampleFormat, SampleRate, StreamSpec, TrackId,
+    AlbumId, ChannelLayout, Frames, MediaLocation, Resumable, Resumption, SampleFormat, SampleRate,
+    StreamSpec, TrackId, ZoneId,
 };
 use resonate_library::{
     AlbumQuery, ArtistQuery, Codec, CoverArt, Cut, Deleted, Error, Favoured, HiddenTracks,
@@ -25,7 +26,7 @@ use crate::support::{
     only_album, options, png, scan, scanned_sheet, scanned_two_discs, settled, stored, titles,
 };
 #[cfg(unix)]
-use crate::support::{Told, filed_under};
+use crate::support::{Told, cancelled_once_a_batch_is_written, filed_under, many_short_songs};
 
 #[test]
 fn an_empty_library_opens_and_reads_back_as_empty() -> Result<()> {
@@ -1783,24 +1784,12 @@ fn a_volume_not_mounted_keeps_every_row_on_it_whether_its_mount_point_is_empty_o
 #[test]
 fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted() -> Result<()> {
     let tree = Tree::new();
-    let elsewhere = Path::new("/dev/shm").join(format!("resonate-volume-{}", process::id()));
-
-    if fs::create_dir_all(&elsewhere).is_err() {
-        eprintln!("skipping: no second volume to link into");
+    let Some(elsewhere) = Elsewhere::beside(&tree, "volume") else {
         return Ok(());
-    }
+    };
 
-    let same_volume = fs::metadata(&elsewhere).map(|held| held.dev()).ok()
-        == fs::metadata(tree.path()).map(|held| held.dev()).ok();
-
-    if same_volume {
-        let _ = fs::remove_dir_all(&elsewhere);
-
-        eprintln!("skipping: the shared memory folder is on the fixture tree's volume");
-        return Ok(());
-    }
     fs::write(
-        elsewhere.join("far.wav"),
+        elsewhere.0.join("far.wav"),
         Wav::new().text(TITLE, "Far").build(),
     )
     .expect("the second volume is writable");
@@ -1808,7 +1797,7 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
 
     let link = tree.path().join("far");
 
-    std::os::unix::fs::symlink(&elsewhere, &link).expect("the fixture tree takes a link");
+    std::os::unix::fs::symlink(&elsewhere.0, &link).expect("the fixture tree takes a link");
 
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
@@ -1832,7 +1821,8 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
     fs::create_dir(&link).expect("the fixture mount point can be made");
 
     let unmounted = scan(&library, &following);
-    let _ = fs::remove_dir_all(&elsewhere);
+
+    drop(elsewhere);
 
     let canonical = tree
         .path()
@@ -1842,6 +1832,163 @@ fn a_folder_on_another_volume_is_noted_and_its_rows_kept_once_it_is_not_mounted(
     assert_eq!(noted, vec![canonical.join("far").display().to_string()]);
     assert_eq!(unmounted?.removed, 0);
     assert_eq!(titles(&all(&library)?), vec!["Far", "Near"]);
+    Ok(())
+}
+
+#[cfg(unix)]
+struct Elsewhere(PathBuf);
+
+#[cfg(unix)]
+impl Elsewhere {
+    fn beside(tree: &Tree, named: &str) -> Option<Self> {
+        let elsewhere = Path::new("/dev/shm").join(format!("resonate-{named}-{}", process::id()));
+
+        if fs::create_dir_all(&elsewhere).is_err() {
+            eprintln!("skipping: no second volume to link into");
+            return None;
+        }
+
+        let elsewhere = Self(elsewhere);
+        let same_volume = fs::metadata(&elsewhere.0).map(|held| held.dev()).ok()
+            == fs::metadata(tree.path()).map(|held| held.dev()).ok();
+
+        if same_volume {
+            eprintln!("skipping: the shared memory folder is on the fixture tree's volume");
+            return None;
+        }
+        Some(elsewhere)
+    }
+}
+
+#[cfg(unix)]
+impl Drop for Elsewhere {
+    fn drop(&mut self) {
+        let _ = fs::remove_dir_all(&self.0);
+    }
+}
+
+#[cfg(unix)]
+fn ids_of(tracks: &[Track]) -> BTreeSet<TrackId> {
+    tracks.iter().map(|track| track.id).collect()
+}
+
+#[cfg(unix)]
+fn the_first_under(tracks: &[Track], folder: &Path) -> Track {
+    tracks
+        .iter()
+        .find(|track| {
+            track
+                .location
+                .as_path()
+                .is_some_and(|path| path.starts_with(folder))
+        })
+        .expect("the interrupted scan wrote a song of the drive")
+        .clone()
+}
+
+#[cfg(unix)]
+fn unplugged(link: &Path) {
+    fs::remove_file(link).expect("the fixture link can be taken away");
+    fs::create_dir(link).expect("the fixture mount point can be made");
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_first_walked_by_a_scan_cancelled_partway_keeps_its_rows_and_favourite_once_unplugged()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(elsewhere) = Elsewhere::beside(&tree, "cancelled") else {
+        return Ok(());
+    };
+
+    tree.write("near.wav", &Wav::new().text(TITLE, "Near").build());
+    many_short_songs(&elsewhere.0);
+
+    let link = tree.path().join("far");
+
+    std::os::unix::fs::symlink(&elsewhere.0, &link).expect("the fixture tree takes a link");
+
+    let library = Library::open(&tree.path().join("library.db"))?;
+    let following = ScanOptions {
+        follow_symlinks: true,
+        ..options(&tree)
+    };
+
+    cancelled_once_a_batch_is_written(&library, &following)?;
+
+    let held = all(&library)?;
+    let far = the_first_under(&held, &link);
+
+    library.favour(Favoured::Track(far.id), true)?;
+    unplugged(&link);
+
+    let unmounted = scan(&library, &following)?;
+
+    assert_eq!(unmounted.removed, 0);
+    assert_eq!(ids_of(&all(&library)?), ids_of(&held));
+    assert!(
+        library
+            .track(far.id)?
+            .is_some_and(|track| track.favourite.is_some()),
+        "the favourite went with a row of the unplugged drive"
+    );
+    Ok(())
+}
+
+#[cfg(unix)]
+#[test]
+fn a_volume_first_walked_by_a_scan_whose_write_failed_keeps_its_rows_and_favourite_once_unplugged()
+-> Result<()> {
+    let tree = Tree::new();
+    let Some(elsewhere) = Elsewhere::beside(&tree, "refused") else {
+        return Ok(());
+    };
+
+    tree.write("near.wav", &Wav::new().text(TITLE, "Near").build());
+
+    let gone = tree.write("gone.wav", &Wav::new().text(TITLE, "Gone").build());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+    let following = ScanOptions {
+        follow_symlinks: true,
+        ..options(&tree)
+    };
+
+    scan(&library, &following)?;
+    fs::remove_file(&gone).expect("the file is taken away");
+    for title in ["One", "Two"] {
+        fs::write(
+            elsewhere.0.join(format!("{title}.wav")),
+            Wav::new().text(TITLE, title).build(),
+        )
+        .expect("the second volume is writable");
+    }
+
+    let link = tree.path().join("far");
+
+    std::os::unix::fs::symlink(&elsewhere.0, &link).expect("the fixture tree takes a link");
+    stopped_at_the_mark(&library, &database, &following)?;
+
+    let held: Vec<Track> = all(&library)?
+        .into_iter()
+        .filter(|track| track.title != "Gone")
+        .collect();
+    let far = the_first_under(&held, &link);
+
+    library.favour(Favoured::Track(far.id), true)?;
+    unplugged(&link);
+
+    let unmounted = scan(&library, &following)?;
+
+    assert_eq!(unmounted.removed, 1);
+    assert_eq!(titles(&all(&library)?), vec!["Near", "One", "Two"]);
+    assert_eq!(ids_of(&all(&library)?), ids_of(&held));
+    assert!(
+        library
+            .track(far.id)?
+            .is_some_and(|track| track.favourite.is_some()),
+        "the favourite went with a row of the unplugged drive"
+    );
     Ok(())
 }
 
@@ -2919,6 +3066,356 @@ fn a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can
     assert_eq!(row.id, heard.id);
     assert_eq!(row.plays, 1);
     assert!(library.track_at(&before, None)?.is_none());
+    Ok(())
+}
+
+const THE_MARK_REFUSED: &str = "CREATE TRIGGER the_mark_refused BEFORE UPDATE OF seen ON tracks
+     WHEN NEW.seen < 0
+     BEGIN SELECT RAISE(ABORT, 'the catalog refuses the mark'); END";
+
+const THE_MARK_ALLOWED: &str = "DROP TRIGGER the_mark_refused";
+
+fn stopped_at_the_mark(library: &Library, database: &Path, options: &ScanOptions) -> Result<()> {
+    beside(database)
+        .execute_batch(THE_MARK_REFUSED)
+        .expect("the catalog takes a trigger");
+
+    let stopped = library.scan(options.clone())?.join();
+
+    beside(database)
+        .execute_batch(THE_MARK_ALLOWED)
+        .expect("the catalog lets the trigger go");
+
+    assert!(
+        stopped.is_err(),
+        "the scan went on past the mark it was refused"
+    );
+    Ok(())
+}
+
+fn heard_favoured_and_queued(library: &Library, track: &Track) -> Result<()> {
+    let counted = library
+        .track_played(&track.location, track.span, Duration::ZERO)?
+        .expect("a counted play");
+
+    library.listened(counted.listen, Duration::from_secs(2))?;
+    library.favour(Favoured::Track(track.id), true)?;
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: vec![Resumable {
+                location: track.location.clone(),
+                span: track.span,
+                held: Some(track.id),
+            }],
+            order: vec![0],
+            row: 0,
+            at: Frames::ZERO,
+            shuffle: false,
+            next: None,
+        },
+    )
+}
+
+fn followed_as_it_was(library: &Library, database: &Path, was: &Track, to: &Path) -> Result<()> {
+    let now = library
+        .track_at(to, was.span)?
+        .expect("the row followed the file");
+
+    let listens: i64 = beside(database)
+        .query_row(
+            "SELECT count(*) FROM listens WHERE track_id = ?1",
+            [now.id.get() as i64],
+            |row| row.get(0),
+        )
+        .expect("the catalog counts the listens");
+    let resumed = library.resumption()?.expect("the queue was kept");
+
+    assert_eq!(now.id, was.id);
+    assert_eq!(now.plays, 1);
+    assert!(now.favourite.is_some(), "the favourite stayed behind");
+    assert_eq!(listens, 1);
+    assert_eq!(
+        resumed.rows,
+        vec![Resumable {
+            location: now.location.clone(),
+            span: now.span,
+            held: Some(was.id),
+        }]
+    );
+    Ok(())
+}
+
+fn watched_alone(library: &Library, tree: &Tree) -> Result<()> {
+    let watched = library
+        .scan_what_is_held(options(tree))?
+        .expect("the tree is a root")
+        .join()?;
+
+    assert!(
+        !watched.cancelled,
+        "the watch's scan reported itself cancelled"
+    );
+    Ok(())
+}
+
+fn every_root(tree: &Tree) -> ScanOptions {
+    ScanOptions {
+        roots: Vec::new(),
+        ..options(tree)
+    }
+}
+
+#[test]
+fn a_file_moved_as_a_scan_stopped_short_of_following_it_keeps_its_row_favourite_listens_and_queue_place()
+-> Result<()> {
+    let tree = Tree::new();
+    let before = tree.write(
+        "loose/echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+
+    tree.write(
+        "loose/seamus.wav",
+        &Wav::new().text(TITLE, "Seamus").build(),
+    );
+
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    scan(&library, &options(&tree))?;
+
+    let echoes = library
+        .track_at(&before, None)?
+        .expect("the scan stored the song");
+
+    heard_favoured_and_queued(&library, &echoes)?;
+
+    let after = tree.path().join("filed/Pink Floyd/06 Echoes.wav");
+
+    moved(&before, &after);
+    stopped_at_the_mark(&library, &database, &options(&tree))?;
+
+    assert!(
+        library.track_at(&after, None)?.is_some(),
+        "the stopped scan wrote nothing of the arrival"
+    );
+
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 1);
+    assert_eq!(stats.added, 0);
+    assert_eq!(stats.removed, 0);
+    assert_eq!(all(&library)?.len(), 2);
+    followed_as_it_was(&library, &database, &echoes, &after)
+}
+
+#[test]
+fn a_file_a_sheet_cuts_moved_as_a_scan_stopped_short_of_following_it_keeps_every_rows_identity()
+-> Result<()> {
+    let tree = Tree::new();
+
+    tree.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    scan(&library, &options(&tree))?;
+
+    let echoes = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the sheet's third row");
+
+    heard_favoured_and_queued(&library, &echoes)?;
+    fs::create_dir_all(tree.path().join("Pink Floyd")).expect("a writable temporary directory");
+    fs::rename(
+        tree.path().join("rip"),
+        tree.path().join("Pink Floyd/Meddle"),
+    )
+    .expect("the rip is moved by hand");
+    stopped_at_the_mark(&library, &database, &options(&tree))?;
+
+    let stats = scan(&library, &options(&tree))?;
+
+    assert_eq!(stats.moved, 3);
+    assert_eq!(stats.added, 0);
+    assert_eq!(stats.removed, 0);
+    followed_as_it_was(
+        &library,
+        &database,
+        &echoes,
+        &tree.path().join("Pink Floyd/Meddle/Meddle.wav"),
+    )
+}
+
+#[test]
+fn a_file_moved_into_a_root_the_watch_scanned_alone_is_followed_by_the_next_scan_of_every_root()
+-> Result<()> {
+    let catalog = Tree::new();
+    let source = Tree::new();
+    let destination = Tree::new();
+    let before = source.write(
+        "echoes.wav",
+        &Wav::new()
+            .text(TITLE, "Echoes")
+            .text(ARTIST, "Pink Floyd")
+            .build(),
+    );
+
+    source.write("seamus.wav", &Wav::new().text(TITLE, "Seamus").build());
+    destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
+
+    let database = catalog.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    for tree in [&source, &destination] {
+        scan(&library, &options(tree))?;
+    }
+
+    let echoes = library
+        .track_at(&before, None)?
+        .expect("the scan stored the song");
+
+    heard_favoured_and_queued(&library, &echoes)?;
+
+    let after = destination.path().join("Pink Floyd/Echoes.wav");
+
+    moved(&before, &after);
+    watched_alone(&library, &destination)?;
+
+    assert!(
+        library.track_at(&after, None)?.is_some(),
+        "the watch's scan wrote nothing of the arrival"
+    );
+
+    let stats = scan(&library, &every_root(&source))?;
+
+    assert_eq!(stats.moved, 1);
+    assert_eq!(stats.added, 0);
+    assert_eq!(stats.removed, 0);
+    assert!(library.track_at(&before, None)?.is_none());
+    followed_as_it_was(&library, &database, &echoes, &after)
+}
+
+#[test]
+fn a_file_a_sheet_cuts_moved_into_a_root_the_watch_scanned_alone_keeps_every_rows_identity()
+-> Result<()> {
+    let catalog = Tree::new();
+    let source = Tree::new();
+    let destination = Tree::new();
+
+    source.write("rip/Meddle.wav", &Wav::new().frames(44_100).build());
+    source.write("rip/Meddle.cue", MEDDLE_SHEET.as_bytes());
+    destination.write("dogs.wav", &Wav::new().text(TITLE, "Dogs").build());
+
+    let database = catalog.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    for tree in [&source, &destination] {
+        scan(&library, &options(tree))?;
+    }
+
+    let echoes = library
+        .tracks(&TrackQuery::default())?
+        .into_iter()
+        .find(|row| row.title == "Echoes")
+        .expect("the sheet's third row");
+
+    heard_favoured_and_queued(&library, &echoes)?;
+    fs::create_dir_all(destination.path().join("Pink Floyd"))
+        .expect("a writable temporary directory");
+    fs::rename(
+        source.path().join("rip"),
+        destination.path().join("Pink Floyd/Meddle"),
+    )
+    .expect("the rip is moved by hand");
+
+    watched_alone(&library, &destination)?;
+
+    let stats = scan(&library, &every_root(&source))?;
+
+    assert_eq!(stats.moved, 3);
+    assert_eq!(stats.added, 0);
+    assert_eq!(stats.removed, 0);
+    followed_as_it_was(
+        &library,
+        &database,
+        &echoes,
+        &destination.path().join("Pink Floyd/Meddle/Meddle.wav"),
+    )
+}
+
+#[test]
+fn a_followed_move_takes_the_advisory_and_the_frames_walked_the_arrival_was_probed_with()
+-> Result<()> {
+    let tree = Tree::new();
+    let song = tree.write(
+        "loose/song.wav",
+        &Wav::new()
+            .text(TITLE, "A song")
+            .described("ITUNESADVISORY", "1")
+            .build(),
+    );
+    let stream = tree.write("loose/walked.mp3", &a_variable_rate_stream());
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    scan(&library, &options(&tree))?;
+
+    let advised = library
+        .track_at(&song, None)?
+        .expect("the scan stored the song");
+    let walked = library
+        .track_at(&stream, None)?
+        .expect("the scan stored the stream");
+
+    beside(&database)
+        .execute(
+            "UPDATE tracks SET walked = NULL WHERE path = ?1",
+            [settled(&stream)],
+        )
+        .expect("the stream's walk is lost");
+
+    let song_after = tree.path().join("filed/song.wav");
+    let stream_after = tree.path().join("filed/walked.mp3");
+
+    moved(&song, &song_after);
+    moved(&stream, &stream_after);
+    tree.write(
+        "filed/song.wav",
+        &Wav::new()
+            .text(TITLE, "A song")
+            .described("ITUNESADVISORY", "2")
+            .build(),
+    );
+
+    let stats = scan(&library, &options(&tree))?;
+    let followed = library
+        .track_at(&song_after, None)?
+        .expect("the row followed the song");
+    let walked_after = library
+        .track_at(&stream_after, None)?
+        .expect("the row followed the stream");
+    let hinted = library
+        .hinting()
+        .walked(&MediaLocation::local(&stream_after));
+
+    assert_eq!(advised.explicit, Some(true));
+    assert_eq!(stats.moved, 2);
+    assert_eq!(stats.added, 0);
+    assert_eq!(followed.id, advised.id);
+    assert_eq!(followed.explicit, Some(false));
+    assert_eq!(walked_after.id, walked.id);
+    assert!(
+        hinted.is_some(),
+        "the followed row kept the walk it had lost rather than the arrival's"
+    );
     Ok(())
 }
 
