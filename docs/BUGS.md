@@ -82,18 +82,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-server/src/store.rs:868`). Validate retention before opening the
   store and safeguard the server API's sweep interval. Done when zero is refused
   before any stored space changes and a positive interval keeps its sweep schedule.
-- [L · 0.17.1] Require a strong recording match before deleting files across devices.
-  **High, architect.** Desktop and phone deletions use permissive holdings matchers.
-  A song sent without an album or duration can also match and trash distinct
-  recordings with the same artist and title
-  (`crates/resonate-library/src/synced.rs:806`, `:880`, `:1137`,
-  `crates/resonate-library/src/everywhere.rs:90`,
-  `crates/resonate-library/src/db/roots.rs:137`,
-  `crates/resonate-mobile/src/sync/everywhere.rs:53`,
-  `crates/resonate-mobile/src/sync.rs:1979`). Require an exact or otherwise
-  unambiguous identity for the destructive operation. Done when the intended
-  copy is removed and a different album, live take or conflicting recording ID
-  with the same name stays in the library.
 - [L · 0.17.1] Preserve a hand-added copy when a paired device's clock is ahead.
   **High, architect.** Deletion ordering accepts a remote stamp ahead of local
   time, then uses it as the cutoff for local file additions and for announcing
