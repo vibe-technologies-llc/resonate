@@ -23,6 +23,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Device sync
+- [S · 0.17.1] Flush a MusicBrainz copy's partial before its fetch returns. **Low, builder.**
+  A song transfer now syncs its partial to disc before the fetch answers, since the next attempt
+  measured a partial whose last write had not landed and resumed from the wrong byte; the export
+  transfer (`export_once`, `crates/resonate-sync/src/peer.rs`) still returns with its partial
+  unflushed. Flush it the same way. Done when an interrupted copy transfer resumed at once lands
+  bytes identical to the offered copy across repeated runs.
 - [L · 0.17.1] Keep a phone's incoming deletions pending until removal settles.
   **High, architect.** The ledger marks a deletion settled once the mobile catalog
   queues it. Polling clears the queue before Android or iOS attempts file removal.
@@ -47,16 +53,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   or stopping the current service and preserve the old pairing on refusal.
   Done when an invalid manual code leaves the stored and active group usable,
   including after a relaunch.
-- [L · 0.17.1] Bind a resumed song transfer to the original file revision.
-  **High, architect.** A partial is resumed when the sending device and byte
-  count match. A same-size edit between attempts can splice the old prefix
-  into a new file, and landing has no source content identifier to compare
-  (`crates/resonate-sync/src/peer.rs:892`, `:1140`, `:1231`, `:1277`,
-  `crates/resonate-library/src/filed.rs:220`,
-  `crates/resonate-codec/src/probe.rs:189`). Bind the partial to a verified
-  source revision and restart when it changes or cannot be established.
-  Done when a same-size source replacement restarts at zero and an unchanged
-  interrupted transfer resumes to the original bytes.
 - [M · 0.17.1] Keep the retry delay when a server link cannot apply its catch-up.
   **Medium, architect.** A catalog write refusal stops catch-up before the cursor advances.
   Every successful connection resets the delay even if the same record drops it again
