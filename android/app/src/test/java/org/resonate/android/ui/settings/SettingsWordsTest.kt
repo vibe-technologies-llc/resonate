@@ -378,6 +378,16 @@ class SettingsWordsTest {
     }
 
     @Test
+    fun aSyncThatFailedToStartIsToldApartFromOneStarting() {
+        assertEquals("Couldn't start", syncHeadline(English, status(SyncStanding.FAILED), config, true))
+        assertEquals(
+            "Sync could not start on this phone",
+            syncStanding(English, status(SyncStanding.FAILED), config, true),
+        )
+        assertEquals("Starting…", syncStanding(English, status(SyncStanding.OFF), config, true))
+    }
+
+    @Test
     fun thisDeviceLeadsThenTheReachableThenByName() {
         val ordered =
             orderedDevices(

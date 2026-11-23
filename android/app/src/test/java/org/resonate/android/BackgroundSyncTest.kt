@@ -60,6 +60,12 @@ class BackgroundSyncTest {
     }
 
     @Test
+    fun aSyncThatFailedToStartEndsThePassAtOnceAndIsQuiet() {
+        assertEquals(BackgroundPass.DONE, BackgroundSync.verdict(status(SyncStanding.FAILED), 0L, null))
+        assertTrue(BackgroundSync.quiet(status(SyncStanding.FAILED, settled = false)))
+    }
+
+    @Test
     fun aQuietSyncEndsThePassOnlyOnceHeardAndQuietLongEnough() {
         val quiet = status()
 

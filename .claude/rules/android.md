@@ -1703,9 +1703,31 @@ playlist* offer (`ServedTest`).
 document catalog, and `MobilePlayer` holds at most one running `Sync`, started and stopped as a
 whole (`sync_start` leaves the previous one first; `shutdown` stops it before anything else). Its
 ledger is `sync.sqlite` and its staging folder `sync-staging`, both beside `documents.sqlite`.
-A blank key mints one; `SyncStatus.code` hands it back and Kotlin stores it encrypted beside the
+**A pairing code is kept before anything can offer it.** `sync_start` never mints: a blank key with
+sync on is refused (`Error::NoPairingCode`) and a key that reads as no code is refused
+(`SyncOp::ReadCode`), both before the running group is left, so a typo or a lost write leaves the group
+that runs as it was (`a_code_that_reads_as_none_is_refused_before_the_group_running_is_left_and_the_kept_one_joins_it_again`,
+`a_blank_key_is_refused_so_no_code_is_offered_that_was_not_kept_first`). A front end mints with
+`sync_new_code` and writes the code first: Kotlin's `SyncSettingsReading.read` mints a blank key and
+writes it (`ProviderAccountStore.writeSync`) before it hands the settings on, so every copy of
+`syncConfig` carries it; a write that fails hands nothing on, says so once and is
+`SyncSettingsTrouble.CODE_UNKEPT`, which the sync screen shows with *Try again*
+(`LibraryFeatures.keepSyncCodeAgain`) and the next foreground reads again, minting afresh, since
+the code that was not kept was never offered (`SyncSettingsReadingTest`). Kotlin keeps the code encrypted beside the
 provider accounts, with the other choices (enabled, server, device name, the three follow switches,
-mobile data, `sync-nearby-only`) in plain preferences. **A read of them that throws leaves sync
+mobile data, `sync-nearby-only`) in plain preferences. **A typed code is read before it replaces
+anything**: `joinSync` asks `SyncPairing.joining`, which reads it through `sync_code_spelled` (the
+code's own spelling, `None` for no code) and saves the joined settings only for a code that reads,
+so the key stored is never one that cannot start (`SyncPairingTest`); the join field says *That is
+not a pairing code* and *Join* stays off until it reads. **A start that fails is told, not
+shown as starting**: where `sync_start` left the running group and the new one then failed (a
+ledger that will not open, a certificate named but gone), the boundary keeps the config that failed
+and `SyncStatus` answers `SyncStanding::Failed` with its code; `sync_retry` starts it again with no
+setting changed (`a_start_that_fails_is_told_as_failed_and_a_retry_takes_it_up_once_the_fault_clears`,
+`a_restart_whose_certificate_is_gone_is_told_as_failed_and_a_retry_takes_it_up_once_it_is_kept`), and
+`sync_stop` or the next start forgets it. The status row then reads *Couldn't start* with *Try again*
+(`LibraryFeatures.retrySync`) in place of *Sync now*, and every reading of whether sync runs takes
+`Failed` as off (`SyncStanding.runs`). **A read of them that throws leaves sync
 unset** (`SyncSettingsReading`): a `KeyStoreException` or `AEADBadTagException` never becomes a blank
 key that would mint a new group and be written over the kept one, as iOS refuses (`ios.md`); sync is
 neither started nor written back, the failure is said once, and the settings are read again each
@@ -1715,11 +1737,10 @@ own**: while the settings cannot be read the sync screen says so in place of its
 *Start over with a new group* (`sync_start_over`), whose confirmation says plainly that every device
 it synced with must be paired again. `LibraryFeatures.startSyncOver` asks
 `SyncSettingsReading.startOver`, which forgets the sealed code (`ProviderAccountStore.forgetSyncKey`),
-reads the plain choices again and takes a code minted by `syncNewCode`, as *Start a new group* does;
-the result is written and applied (a join waiting for the settings is taken then). Sync is on unless switched off and runs
+reads the plain choices again, which mints and writes a code through `syncNewCode`, as *Start a new group* does;
+the result is applied (a join waiting for the settings is taken then). Sync is on unless switched off and runs
 only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
-dialled, which runs with online off); `sync-nearby-only` defaults off, so the hosted server is dialled. A setting change restarts it; `sync_start` with a blank key
-reuses the code of the sync it replaces, so two starts in a row never mint two codes.
+dialled, which runs with online off); `sync-nearby-only` defaults off, so the hosted server is dialled. A setting change restarts it with the code kept, so two starts in a row never mint two codes.
 
 A song is found by recording id, else by folded artist, title words, album when named and a length
 within 2 s, the desktop rule; the lookup reads an in-memory index rebuilt whenever the catalog

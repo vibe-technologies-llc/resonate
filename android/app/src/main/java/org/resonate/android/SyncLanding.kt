@@ -1,7 +1,6 @@
 package org.resonate.android
 
 import androidx.annotation.StringRes
-import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 
 data class LandingFolder(
@@ -36,7 +35,7 @@ object SyncLanding {
 
     fun followsAgain(status: SyncStatus?): Boolean =
         status != null &&
-            status.standing != SyncStanding.OFF &&
+            status.standing.runs &&
             status.moving == 0u &&
             status.settled
 

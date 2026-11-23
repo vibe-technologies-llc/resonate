@@ -6,7 +6,7 @@ public enum SyncActivity: Equatable {
     case fetching(songs: Int, fraction: Double?)
 
     public static func of(_ status: SyncStatus?, landing: Int, asked: Bool) -> SyncActivity? {
-        guard let status, status.standing != .off else { return nil }
+        guard let status, status.standing.runs else { return nil }
         let active = status.transfers.filter { $0.state == .waiting || $0.state == .moving }
         if !active.isEmpty || landing > 0 {
             let sized = active.filter { $0.size > 0 }
@@ -83,6 +83,19 @@ public struct ContinuedProgress: Equatable {
     }
 }
 
+extension SyncStanding {
+    public var runs: Bool { self != .off && self != .failed }
+}
+
+public enum PairingCode {
+    public static func shown(running: String?, kept: String?, starting: String?) -> String? {
+        guard starting == nil else { return nil }
+        if let running, !running.isEmpty { return running }
+        guard let kept, !kept.isEmpty else { return nil }
+        return kept
+    }
+}
+
 public struct SyncSummary: Equatable, Sendable {
     public let standing: SyncStanding
     public let code: String
@@ -130,6 +143,8 @@ public func syncStanding(_ status: SyncSummary?, config: SyncConfig?, online: Bo
         return nearby == 0 ? said("sync.standing.unreachable") : said("sync.standing.unreachable.nearby", nearby)
     case .refused:
         return said("sync.standing.refused")
+    case .failed:
+        return said("sync.standing.failed")
     case .connecting:
         return nearby == 0 ? said("sync.standing.connecting") : said("sync.standing.connecting.nearby", nearby)
     case .off, nil:
@@ -187,7 +202,7 @@ public enum SyncAnswer: Equatable {
     ) -> SyncAnswer {
         guard waited >= answersAfter else { return .waiting }
         let others = status.devices.filter { !$0.thisDevice && ($0.online || $0.nearby) }
-        if status.standing == .off {
+        if !status.standing.runs {
             return .forget
         } else if activity == .syncing, status.settled {
             return .tell(others.isEmpty ? said("sync.answer.alone") : said("sync.answer.synced", others.count))

@@ -158,6 +158,31 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
         #expect(syncStanding(status(.off), config: config(), online: true) == "Starting…")
         #expect(syncStanding(SyncSummary?.none, config: config(), online: true) == "Starting…")
     }
+
+    @Test func aStartThatFailedIsToldApartFromOneStarting() {
+        #expect(syncStanding(status(.failed), config: config(), online: true) == "Sync could not start on this iPhone")
+        #expect(syncStanding(status(.off), config: config(), online: true) != syncStanding(status(.failed), config: config(), online: true))
+    }
+
+    @Test func onlyAStartedSyncRuns() {
+        #expect(!SyncStanding.off.runs)
+        #expect(!SyncStanding.failed.runs)
+        #expect(SyncStanding.connecting.runs)
+        #expect(SyncStanding.nearby.runs)
+    }
+}
+
+@Suite struct PairingCodeTests {
+    @Test func theRunningCodeIsShownElseTheOneKept() {
+        #expect(PairingCode.shown(running: "RUNNING", kept: "KEPT", starting: nil) == "RUNNING")
+        #expect(PairingCode.shown(running: "", kept: "KEPT", starting: nil) == "KEPT")
+        #expect(PairingCode.shown(running: nil, kept: "", starting: nil) == nil)
+    }
+
+    @Test func theOldCodeIsWithheldWhileANewGroupStartsAndTheNewOneShownOnceItIsReady() {
+        #expect(PairingCode.shown(running: "OLD", kept: "NEW", starting: "NEW") == nil)
+        #expect(PairingCode.shown(running: "NEW", kept: "NEW", starting: nil) == "NEW")
+    }
 }
 
 @Suite struct SyncRouteTests {
@@ -212,6 +237,7 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     @Test func nothingIsHappeningWhenSyncIsOffOrUnknownOrNothingWasAsked() {
         #expect(SyncActivity.of(nil, landing: 0, asked: true) == nil)
         #expect(SyncActivity.of(status(.off), landing: 3, asked: true) == nil)
+        #expect(SyncActivity.of(status(.failed), landing: 3, asked: true) == nil)
         #expect(SyncActivity.of(status(), landing: 0, asked: false) == nil)
     }
 
@@ -290,6 +316,7 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
 
     @Test func syncTurnedOffEndsTheAskWithoutAWord() {
         #expect(answer(status(.off)) == .forget)
+        #expect(answer(status(.failed)) == .forget)
     }
 
     @Test func aSettledSyncIsToldWithTheDevicesItReached() {

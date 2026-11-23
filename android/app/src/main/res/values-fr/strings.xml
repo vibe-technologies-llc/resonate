@@ -389,6 +389,8 @@
     <string name="features_sync_joining_when_read">Rejoindre dès que les paramètres de ce téléphone sont lus</string>
     <string name="features_sync_settings_unread">Les paramètres de synchronisation du périphérique ne peuvent pas être lus, donc synchronise attend jusqu’à ce qu’ils puissent être</string>
     <string name="features_sync_link_holds_no_code">Ce lien ne contient aucun code d’appariement</string>
+    <string name="features_sync_code_unkept">Le nouveau code d’appariement de ce téléphone n’a pas pu être enregistré, donc la synchronisation attend qu’il puisse l’être</string>
+    <string name="features_sync_not_a_code">Ce n’est pas un code d’appariement</string>
     <string name="features_sync_already_with_those">Ce téléphone se synchronise déjà avec ces appareils</string>
     <plurals name="features_sync_asking_for_missing">
         <item quantity="one">Demander %1$s pour %2$d chanson</item>
@@ -1682,6 +1684,7 @@
     <string name="sync_headline_waiting_online">En attente de fonctionnalités en ligne</string>
     <string name="sync_headline_connecting">Connexion...</string>
     <string name="sync_headline_refused">Refusé</string>
+    <string name="sync_headline_failed">Impossible de démarrer</string>
     <string name="sync_headline_catching_up">Rapprochement</string>
     <string name="sync_headline_not_syncing">Pas de synchronisation</string>
     <string name="sync_headline_looking">Recherche d’appareils</string>
@@ -1705,6 +1708,7 @@
     <string name="sync_standing_unreachable">Impossible d’atteindre le serveur</string>
     <string name="sync_standing_unreachable_nearby">Serveur inaccessible · %1$d sur ce réseau</string>
     <string name="sync_standing_refused">Le serveur a refusé ce périphérique</string>
+    <string name="sync_standing_failed">La synchronisation n’a pas pu démarrer sur ce téléphone</string>
     <string name="sync_standing_reaching">Atteindre le serveur</string>
     <string name="sync_standing_reaching_nearby">Atteindre le serveur · %1$d sur ce réseau</string>
     <string name="sync_device_this">Ce dispositif</string>
@@ -1848,6 +1852,7 @@
     <string name="sync_show_code">Afficher le code d’appariement</string>
     <string name="sync_copy">Copier</string>
     <string name="sync_join_code">Code d’un autre appareil</string>
+    <string name="sync_join_not_a_code">Ce n’est pas un code d’appariement</string>
     <string name="sync_new_group">Démarrer un nouveau groupe</string>
     <string name="sync_join">Joindre</string>
     <string name="sync_follow_header">Ce qui vous suit</string>
@@ -1910,6 +1915,8 @@
     <string name="sync_new_group_confirm">Démarrer un nouveau groupe</string>
     <string name="sync_unreadable">Les paramètres de sync ne peuvent pas être lus</string>
     <string name="sync_unreadable_told">Le code d’appariement de cet appareil ne peut pas être lu, donc il ne peut pas se synchroniser avec son groupe. Si cela reste ainsi, recommencer avec un nouveau groupe.</string>
+    <string name="sync_code_unkept">Impossible d’enregistrer un code d’appariement</string>
+    <string name="sync_code_unkept_told">La synchronisation démarre dès que cet appareil a enregistré son code d’appariement. Aucun code n’a été partagé avec d’autres appareils.</string>
     <string name="sync_start_over">Recommencer avec un nouveau groupe</string>
     <string name="sync_start_over_title">Recommencer avec un nouveau groupe ?</string>
     <string name="sync_start_over_text">Les paramètres qui ne peuvent pas être lus sont effacés et ce périphérique obtient un nouveau code d’appariement. Chaque périphérique avec lequel il est synchronisé doit être apparié à nouveau avec le nouveau code.</string>
@@ -1919,6 +1926,7 @@
     <string name="sync_forget">Oublie.</string>
     <string name="sync_nearby_only_action">Synchroniser uniquement sur ce réseau</string>
     <string name="sync_now">Synchronisez maintenant</string>
+    <string name="sync_try_again">Réessayer</string>
     <string name="sync_unnamed_device">Périphérique sans nom</string>
     <string name="sync_stop_driving">Arrête de conduire %1$s</string>
     <string name="sync_drive">Démarrer %1$s</string>

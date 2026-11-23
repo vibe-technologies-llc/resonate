@@ -389,7 +389,11 @@ sync seals its records and talks QUIC (TLS) of its own.
   Resonate's server, your own server with its address, or *This network only*, which is
   `SyncConfig.nearby_only` and defaults off (`sync-nearby-only`); *Public address*, a STUN server as `SyncConfig.stun` (`sync-stun`) on the hosted and own routes; on the own route *Server certificate*, a PEM chosen with `fileImporter` and read to at most `certificateBytesAtMost` through `Features.keepSyncCertificate` into `sync_keep_certificate`, its file name kept as `SyncConfig.certificate` (`sync-certificate`), with *Forget the certificate*; and the device name). `PairingSheet` shows the code with Copy (on the pasteboard `localOnly` and expiring after two minutes, so Universal Clipboard never hands it on) and Share,
   joins another device's code (confirmed where a code is held), and *Make a new code…* (confirmed)
-  is `Features.newSyncGroup`. The code is blurred and `privacySensitive` under *Tap to show* until
+  is `Features.newSyncGroup`. **A new group withholds the old code**: confirming *Make a new code…* or a
+  join sets `Features.syncCodeStarting` to the new code, and `PairingCode.shown` answers none while
+  it is set, so neither Copy nor Share can hand out the code still running while the restart is
+  under way; `applySync` clears it once the start with that code is answered (or `saveSync`'s write
+  is refused), and the code shown then is covered again (`PairingCodeTests`). The code is blurred and `privacySensitive` under *Tap to show* until
   tapped, covered again whenever the sheet opens or the scene leaves `.active` (so the App Switcher
   snapshot never shows it), and not selectable: Copy is the only way onto the pasteboard, which is `localOnly`. **A computer is paired by the system
   camera**: `Info.plist` registers the `resonate` URL scheme, so the Camera app or the Control
@@ -415,8 +419,18 @@ sync seals its records and talks QUIC (TLS) of its own.
 - **An online device on the sync page opens `DrivenDeviceView`** (`Destination.syncDevice(id)`, through `DrivenDevicePage`), which drives its zones: transport, volume, seek, and jump, move and remove by row. Its read every 500 ms (`sync_watch`) answers the position played on to the moment asked, so it never equals the last: `DrivenRead` sets the positions apart into `DrivenPlaces` (an observable read only by `DrivenPlaceLine` and `DrivenSeek`) and the rest is assigned only where it moved, so a playing device redraws its place line and slider, not every zone and queue row. The party page keeps its round trip and its clock's gap from the host's apart the same way (`TogetherState.partyRoundTripMs` and `partyApart`, read by `PartyRoundTrip` alone; `party` holds neither). **This iPhone is driven by another** as far as *Options*' `SyncControlPage` lets it (`sync-control`, `SyncControls`), and a sound begun from elsewhere activates the session (`SessionAsked`, `NowPlaying.update`) (`sync.md`'s *One device drives another's zones*).
 - **A sync setting is kept before sync restarts.** `saveSync` writes the keychain and defaults and
   assigns `syncConfig` on the main actor at once, then restarts on `Work.inSync`, so a second switch
-  flipped straight after builds on the first; `applySync` puts a minted code into the *current*
-  config only where its key is still the one that start used. `syncNetwork` runs on `Work.inSync`
+  flipped straight after builds on the first. **The code is in the keychain before sync can offer
+  it**: `readSecrets` reads the settings through `AccountStore.readSync(minting:)`, which mints a
+  blank key with `syncNewCode` and writes it before answering, so `syncConfig` never holds a blank
+  key and `sync_start` never mints (it refuses a blank key, `android.md`'s *Device sync*); a write
+  the keychain refuses throws `SyncCodeUnkept`, leaves `syncConfig` unset (`syncCodeUnkept`, the
+  sync page's *A pairing code could not be saved* with *Try again*) and is read again when the
+  scene next becomes active, minting afresh, since the lost code was never offered
+  (`aMintedKeyTheKeychainRefusesIsNeverHandedOnAndTheNextReadKeepsAnother`). `joinSync` keeps a
+  code only in the spelling `sync_code_spelled` reads. **A start that fails says so**: a
+  `SyncStanding.failed` status reads *Couldn't start*, the status section offers *Try again*
+  (`Features.retrySync`, `sync_retry`) in place of *Sync now*, and `SyncStanding.runs` takes it as
+  off wherever a view asks whether sync runs. `syncNetwork` runs on `Work.inSync`
   after the start with the network as it is then, and `syncForce` on `Work.aside`, so nothing on
   the main actor waits on `sync_start`'s lock. Sync runs while switched on and online, or with
   *This network only* whatever online says (`Features.syncRuns`).

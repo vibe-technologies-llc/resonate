@@ -3,6 +3,7 @@ package org.resonate.android.ui
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncTransferState
+import org.resonate.android.runs
 
 sealed interface SyncActivity {
     data object Syncing : SyncActivity
@@ -13,7 +14,7 @@ sealed interface SyncActivity {
 const val SYNC_ASKED_SHOWS_FOR_MS = 30_000L
 
 fun syncActivity(status: SyncStatus?, askedAtMs: Long?, nowMs: Long): SyncActivity? {
-    if (status == null || status.standing == SyncStanding.OFF) return null
+    if (status == null || !status.standing.runs) return null
     val active =
         status.transfers.filter {
             it.state == SyncTransferState.WAITING || it.state == SyncTransferState.MOVING

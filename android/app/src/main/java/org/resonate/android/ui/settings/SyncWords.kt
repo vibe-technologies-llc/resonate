@@ -23,6 +23,7 @@ fun syncHeadline(words: Words, status: SyncStatus?, config: SyncConfig, online: 
         SyncStanding.OFF -> words.string(R.string.sync_headline_off)
         SyncStanding.CONNECTING -> words.string(R.string.sync_headline_connecting)
         SyncStanding.REFUSED -> words.string(R.string.sync_headline_refused)
+        SyncStanding.FAILED -> words.string(R.string.sync_headline_failed)
         SyncStanding.UNREACHABLE ->
             words.string(
                 if (nearby) R.string.sync_headline_catching_up
@@ -59,6 +60,7 @@ fun syncStanding(words: Words, status: SyncStatus?, config: SyncConfig, online: 
             if (nearby == 0) words.string(R.string.sync_standing_unreachable)
             else words.string(R.string.sync_standing_unreachable_nearby, nearby)
         SyncStanding.REFUSED -> words.string(R.string.sync_standing_refused)
+        SyncStanding.FAILED -> words.string(R.string.sync_standing_failed)
         SyncStanding.CONNECTING ->
             if (nearby == 0) words.string(R.string.sync_standing_reaching)
             else words.string(R.string.sync_standing_reaching_nearby, nearby)

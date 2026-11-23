@@ -389,6 +389,8 @@
     <string name="features_sync_joining_when_read">Joining as soon as this phone\'s settings are read</string>
     <string name="features_sync_settings_unread">Device sync settings could not be read, so sync waits until they can be</string>
     <string name="features_sync_link_holds_no_code">That link holds no pairing code</string>
+    <string name="features_sync_code_unkept">This phone\'s new pairing code could not be saved, so sync waits until it can be</string>
+    <string name="features_sync_not_a_code">That is not a pairing code</string>
     <string name="features_sync_already_with_those">This phone already syncs with those devices</string>
     <plurals name="features_sync_asking_for_missing">
         <item quantity="one">Asking %1$s for %2$d song</item>
@@ -1682,6 +1684,7 @@
     <string name="sync_headline_waiting_online">Waiting for online features</string>
     <string name="sync_headline_connecting">Connecting…</string>
     <string name="sync_headline_refused">Refused</string>
+    <string name="sync_headline_failed">Couldn\'t start</string>
     <string name="sync_headline_catching_up">Catching up</string>
     <string name="sync_headline_not_syncing">Not syncing</string>
     <string name="sync_headline_looking">Looking for devices</string>
@@ -1705,6 +1708,7 @@
     <string name="sync_standing_unreachable">Can\'t reach the server</string>
     <string name="sync_standing_unreachable_nearby">Server unreachable · %1$d on this network</string>
     <string name="sync_standing_refused">The server refused this device</string>
+    <string name="sync_standing_failed">Sync could not start on this phone</string>
     <string name="sync_standing_reaching">Reaching the server</string>
     <string name="sync_standing_reaching_nearby">Reaching the server · %1$d on this network</string>
     <string name="sync_device_this">This device</string>
@@ -1848,6 +1852,7 @@
     <string name="sync_show_code">Show pairing code</string>
     <string name="sync_copy">Copy</string>
     <string name="sync_join_code">Code from another device</string>
+    <string name="sync_join_not_a_code">That is not a pairing code</string>
     <string name="sync_new_group">Start a new group</string>
     <string name="sync_join">Join</string>
     <string name="sync_follow_header">What follows you</string>
@@ -1910,6 +1915,8 @@
     <string name="sync_new_group_confirm">Start new group</string>
     <string name="sync_unreadable">Sync settings can\'t be read</string>
     <string name="sync_unreadable_told">This device\'s pairing code can\'t be read, so it can\'t sync with its group. If it stays this way, start over with a new group.</string>
+    <string name="sync_code_unkept">A pairing code couldn\'t be saved</string>
+    <string name="sync_code_unkept_told">Sync starts once this device has saved its pairing code. No code was shared with other devices.</string>
     <string name="sync_start_over">Start over with a new group</string>
     <string name="sync_start_over_title">Start over with a new group?</string>
     <string name="sync_start_over_text">The settings that can\'t be read are cleared and this device gets a new pairing code. Every device it synced with must be paired again with the new code.</string>
@@ -1919,6 +1926,7 @@
     <string name="sync_forget">Forget</string>
     <string name="sync_nearby_only_action">Sync only on this network</string>
     <string name="sync_now">Sync now</string>
+    <string name="sync_try_again">Try again</string>
     <string name="sync_unnamed_device">Unnamed device</string>
     <string name="sync_stop_driving">Stop driving %1$s</string>
     <string name="sync_drive">Drive %1$s</string>

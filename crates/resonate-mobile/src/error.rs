@@ -74,6 +74,7 @@ impl fmt::Display for RewriteOp {
 pub enum SyncOp {
     Start,
     Mint,
+    ReadCode,
     Missing,
     Keep,
     Handoffs,
@@ -85,6 +86,7 @@ impl fmt::Display for SyncOp {
         f.write_str(match self {
             Self::Start => words::errors::sync_start(),
             Self::Mint => words::errors::sync_mint(),
+            Self::ReadCode => words::errors::sync_read_code(),
             Self::Missing => words::errors::sync_missing(),
             Self::Keep => words::errors::sync_keep(),
             Self::Handoffs => words::errors::sync_handoffs(),
@@ -375,6 +377,8 @@ pub enum Error {
     },
     #[error("{}", words::errors::sync_off())]
     SyncOff,
+    #[error("{}", words::errors::no_pairing_code())]
+    NoPairingCode,
     #[error("{}", words::errors::unknown_sync_device())]
     UnknownSyncDevice,
     #[error("{}", words::errors::nothing_handed_off())]

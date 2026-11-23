@@ -6,32 +6,53 @@ import org.resonate.android.nativecore.SyncConfig
 
 class SyncSettingsUnread(message: String, cause: Exception) : Exception(message, cause)
 
+enum class SyncSettingsTrouble {
+    UNREAD,
+    CODE_UNKEPT,
+}
+
 class SyncSettingsReading(
     private val stored: () -> SyncConfig,
-    private val unread: (Exception) -> Unit,
+    private val kept: (SyncConfig) -> Unit,
+    private val minted: () -> String,
+    private val unread: (SyncSettingsTrouble, Exception) -> Unit,
     private val sealedForgotten: () -> Unit,
 ) {
-    private var said = false
-    private val unreadableNow = MutableStateFlow(false)
-    val unreadable: StateFlow<Boolean> = unreadableNow
+    private var said: SyncSettingsTrouble? = null
+    private val troubleNow = MutableStateFlow<SyncSettingsTrouble?>(null)
+    val trouble: StateFlow<SyncSettingsTrouble?> = troubleNow
 
     @Synchronized
-    fun read(): SyncConfig? =
-        try {
-            stored().also {
-                said = false
-                unreadableNow.value = false
+    fun read(): SyncConfig? {
+        val config =
+            try {
+                stored()
+            } catch (failure: Exception) {
+                return troubled(SyncSettingsTrouble.UNREAD, failure)
             }
-        } catch (failure: Exception) {
-            if (!said) unread(failure)
-            said = true
-            unreadableNow.value = true
-            null
-        }
+        val keyed =
+            if (config.key.isNotBlank()) config
+            else
+                try {
+                    config.copy(key = minted()).also(kept)
+                } catch (failure: Exception) {
+                    return troubled(SyncSettingsTrouble.CODE_UNKEPT, failure)
+                }
+        said = null
+        troubleNow.value = null
+        return keyed
+    }
 
     @Synchronized
-    fun startOver(minted: String): SyncConfig? {
+    fun startOver(): SyncConfig? {
         sealedForgotten()
-        return read()?.copy(key = minted)
+        return read()
+    }
+
+    private fun troubled(trouble: SyncSettingsTrouble, failure: Exception): SyncConfig? {
+        if (said != trouble) unread(trouble, failure)
+        said = trouble
+        troubleNow.value = trouble
+        return null
     }
 }

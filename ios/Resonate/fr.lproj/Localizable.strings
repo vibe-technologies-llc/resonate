@@ -1520,6 +1520,9 @@
 "sync.certificate.footer" = "Un certificat en forme de PEM, fait confiance aux autorités que cet iPhone fait déjà confiance. Nécessaire pour un serveur derrière une autorité privée.";
 "sync.certificate.forget" = "Oubliez le certificat";
 "sync.certificate.none" = "Aucun";
+"sync.code-unkept" = "Impossible d’enregistrer un code d’appariement";
+"sync.code-unkept.error" = "Le nouveau code d’appariement de cet iPhone n’a pas pu être enregistré, donc la synchronisation attend qu’il puisse l’être";
+"sync.code-unkept.footer" = "La synchronisation démarre dès que cet iPhone a enregistré son code d’appariement dans le porte-clés. Aucun code n’a été partagé avec d’autres appareils. Déverrouillez votre iPhone et réessayez.";
 "sync.connection.device-name" = "Le nom de cet iPhone";
 "sync.connection.device-name.footer" = "Ce que vos autres appareils appellent cet iPhone.";
 "sync.connection.save-name" = "Enregistrer le nom";
@@ -1624,11 +1627,13 @@
 "sync.musicbrainz.remove.confirm" = "Enlever la copie de MusicBrainz?";
 "sync.musicbrainz.remove.confirm.message" = "Lookups va demander à vos autres appareils et l’Internet à nouveau. Éteignez l’interrupteur d’abord, ou la copie est récupérée à nouveau.";
 "sync.musicbrainz.removed" = "La copie de MusicBrainz a été retirée";
+"sync.pairing.starting" = "Le nouveau code s’affiche dès que la synchronisation a démarré avec lui";
 "sync.songs.no-folder" = "Aucun dossier pour garder les chansons dans";
 "sync.songs.no-folder.detail" = "Ajoutez d’abord un dossier musical avec accès à l’écriture.";
 "sync.songs.when-asked" = "Quand on lui a demandé";
 "sync.standing.connected.alone" = "Aucun autre appareil en ligne";
 "sync.standing.connecting" = "Connexion...";
+"sync.standing.failed" = "La synchronisation n’a pas pu démarrer sur cet iPhone";
 "sync.standing.nearby.looking" = "Regarder sur ce réseau";
 "sync.standing.off" = "Désactivé";
 "sync.standing.refused" = "Le serveur a refusé cet iPhone";
@@ -1637,6 +1642,7 @@
 "sync.standing.waiting-for-online" = "En attente de fonctionnalités en ligne";
 "sync.state.catching-up" = "Rapprochement";
 "sync.state.connecting" = "Connexion...";
+"sync.state.failed" = "Impossible de démarrer";
 "sync.state.looking" = "Recherche d’appareils";
 "sync.state.not-syncing" = "Pas de synchronisation";
 "sync.state.off" = "Désactivé";

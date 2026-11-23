@@ -51,6 +51,7 @@ mod copied;
 pub(crate) use self::consulted::Layers;
 mod driving;
 mod everywhere;
+mod pairing;
 mod shared;
 mod standing;
 
@@ -91,6 +92,7 @@ pub(crate) struct Syncing {
     pub(crate) chosen_server: Mutex<Option<String>>,
     resolving: Mutex<Option<Arc<DocumentCatalog>>>,
     running: Arc<Mutex<Option<Running>>>,
+    failed: Mutex<Option<pairing::Failed>>,
     kept: std::sync::OnceLock<Option<Arc<resonate_musicbrainz::Kept>>>,
     unmetered: Arc<AtomicBool>,
     arrivals: Arc<AtomicU64>,
@@ -173,6 +175,7 @@ impl Syncing {
             chosen_server: Mutex::new(None),
             resolving: Mutex::new(None),
             running: Arc::new(Mutex::new(None)),
+            failed: Mutex::new(None),
             kept: std::sync::OnceLock::new(),
             unmetered: Arc::new(AtomicBool::new(false)),
             arrivals: Arc::new(AtomicU64::new(0)),
@@ -231,6 +234,7 @@ pub enum SyncStanding {
     Unreachable,
     Refused,
     Nearby,
+    Failed,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, uniffi::Enum)]
@@ -331,20 +335,8 @@ const fn nearby() -> Nearby {
 }
 
 #[uniffi::export]
-pub fn sync_new_code() -> Result<String> {
-    SyncKey::minted()
-        .map(|key| key.code())
-        .map_err(|source| Error::sync(SyncOp::Mint, source))
-}
-
-#[uniffi::export]
 pub fn sync_device_called(host: String) -> String {
     Me::called("", &host, THIS_PLATFORM, DEVICE_NAME).name
-}
-
-#[uniffi::export]
-pub fn sync_reads_as_a_code(code: String) -> bool {
-    SyncKey::from_code(&code).is_ok()
 }
 
 #[uniffi::export]
@@ -354,31 +346,6 @@ pub fn sync_code_in_link(link: String) -> Option<String> {
 
 #[uniffi::export]
 impl MobilePlayer {
-    pub fn sync_start(&self, mut config: SyncConfig) -> Result<SyncStatus> {
-        *self.syncing.reaching.lock() = Reaching::of(&config, &self.syncing.folder);
-
-        let mut running = self.syncing.running.lock();
-
-        if let Some(previous) = running.take() {
-            if config.key.trim().is_empty() {
-                config.key = previous.sync.code().to_owned();
-            }
-            previous.sync.leave();
-        }
-
-        let keeps_a_copy = config.enabled && config.musicbrainz_copy;
-
-        if config.enabled {
-            if !config.nearby_only {
-                self.require_online()?;
-            }
-            *running = Some(self.started(config)?);
-        }
-        drop(running);
-        self.syncing.copied.keep(keeps_a_copy, self.copy_reaching());
-        Ok(self.sync_status())
-    }
-
     pub fn sync_keep_certificate(&self, pem: Vec<u8>) -> Result<()> {
         certificate::keep(&self.syncing.folder, &pem)
     }
@@ -398,7 +365,13 @@ impl MobilePlayer {
     pub fn sync_stop(&self) {
         self.syncing.copied.keep(false, self.copy_reaching());
 
-        let previous = self.syncing.running.lock().take();
+        let previous = {
+            let mut running = self.syncing.running.lock();
+
+            *self.syncing.failed.lock() = None;
+            running.take()
+        };
+
         if let Some(previous) = previous {
             previous.sync.leave();
         }
@@ -408,9 +381,18 @@ impl MobilePlayer {
         let arrivals = self.syncing.arrivals.load(Ordering::Acquire);
         let running = self.syncing.running.lock();
         let Some(running) = running.as_ref() else {
+            let failed = self.syncing.failed.lock();
+
             return SyncStatus {
-                standing: SyncStanding::Off,
-                code: String::new(),
+                standing: if failed.is_some() {
+                    SyncStanding::Failed
+                } else {
+                    SyncStanding::Off
+                },
+                code: failed
+                    .as_ref()
+                    .map(|failed| failed.key.code())
+                    .unwrap_or_default(),
                 devices: Vec::new(),
                 moving: 0,
                 downloading: 0,
@@ -749,13 +731,7 @@ impl MobilePlayer {
         }
     }
 
-    fn started(&self, config: SyncConfig) -> Result<Running> {
-        let key = if config.key.trim().is_empty() {
-            SyncKey::minted()
-        } else {
-            SyncKey::from_code(&config.key)
-        }
-        .map_err(|source| Error::sync(SyncOp::Start, source))?;
+    fn started(&self, config: SyncConfig, key: SyncKey) -> Result<Running> {
         let folder = &self.syncing.folder;
         let reaching = Reaching::of(&config, folder);
         let catalog = Arc::new(DocumentCatalog {
@@ -4223,14 +4199,6 @@ mod tests {
         assert!(still.is_empty());
         assert!(!kept.exists());
         assert!(held);
-    }
-
-    #[test]
-    fn a_pairing_code_is_minted_and_read_back() {
-        let code = sync_new_code().expect("a pairing code");
-
-        assert!(sync_reads_as_a_code(code));
-        assert!(!sync_reads_as_a_code("not a code".into()));
     }
 
     #[test]

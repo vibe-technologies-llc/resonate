@@ -11,9 +11,9 @@ import org.resonate.android.R
 import org.resonate.android.nativecore.MusicPlaylist
 import org.resonate.android.nativecore.SavedSearch
 import org.resonate.android.nativecore.SharedPlaylist
-import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.Track
+import org.resonate.android.runs
 import org.resonate.android.ui.Resonate
 
 data class PlaylistSyncView(val kept: Boolean, val missing: UInt, val devices: List<SyncedDevice>)
@@ -47,7 +47,7 @@ class PlaylistViewModel(private val resonate: Resonate, private val id: ULong) :
 
     val sync: StateFlow<PlaylistSyncView?> =
         combine(features.playlistSync, features.syncStatus) { held, status ->
-                if (status == null || status.standing == SyncStanding.OFF) null
+                if (status == null || !status.standing.runs) null
                 else
                     PlaylistSyncView(
                         kept = held?.takeIf { it.playlist == id }?.kept ?: false,

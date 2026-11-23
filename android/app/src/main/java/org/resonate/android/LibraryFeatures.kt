@@ -77,12 +77,12 @@ import org.resonate.android.nativecore.SearchSong
 import org.resonate.android.nativecore.OutputStream
 import org.resonate.android.nativecore.Snapshot
 import org.resonate.android.nativecore.SyncConfig
-import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
 import org.resonate.android.nativecore.SyncedDevice
 import org.resonate.android.nativecore.TidalAuthorization
 import org.resonate.android.nativecore.Track
 import org.resonate.android.nativecore.syncCodeInLink
+import org.resonate.android.nativecore.syncCodeSpelled
 import org.resonate.android.nativecore.syncDeviceCalled
 import org.resonate.android.nativecore.syncNewCode
 import org.resonate.android.ui.home.HomeFeed
@@ -301,14 +301,19 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val syncSettings =
         SyncSettingsReading(
             accounts::readSync,
-            { failure ->
-                library.report(
-                    SyncSettingsUnread(library.words.string(R.string.features_sync_settings_unread), failure)
-                )
+            accounts::writeSync,
+            ::syncNewCode,
+            { trouble, failure ->
+                val said =
+                    when (trouble) {
+                        SyncSettingsTrouble.UNREAD -> R.string.features_sync_settings_unread
+                        SyncSettingsTrouble.CODE_UNKEPT -> R.string.features_sync_code_unkept
+                    }
+                library.report(SyncSettingsUnread(library.words.string(said), failure))
             },
             accounts::forgetSyncKey,
         )
-    val syncUnreadable = syncSettings.unreadable
+    val syncTrouble = syncSettings.trouble
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
     val musicbrainzCopy = MutableStateFlow<MusicbrainzCopy?>(null)
     val syncHandoffs = MutableStateFlow<List<HandedOff>>(emptyList())
@@ -738,14 +743,17 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun joinSync(code: String) {
-        val config = syncConfig.value
-        if (config == null) {
-            joinWaiting = code
-            library.notice(R.string.features_sync_joining_when_read)
-            return
+        when (val joining = SyncPairing.joining(syncConfig.value, code, ::syncCodeSpelled)) {
+            SyncJoining.NotACode -> library.notice(R.string.features_sync_not_a_code)
+            is SyncJoining.Waiting -> {
+                joinWaiting = joining.code
+                library.notice(R.string.features_sync_joining_when_read)
+            }
+            is SyncJoining.Joined -> {
+                joinWaiting = null
+                saveSync(joining.config)
+            }
         }
-        joinWaiting = null
-        saveSync(config.copy(key = code.trim(), enabled = true))
     }
 
     fun offerPairing(link: String) {
@@ -768,8 +776,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     fun startSyncOver() = work { native ->
         if (syncConfig.value != null) return@work
-        val fresh = syncSettings.startOver(syncNewCode()) ?: return@work
-        accounts.writeSync(fresh)
+        val fresh = syncSettings.startOver() ?: return@work
         syncConfig.value = fresh
         val waiting = joinWaiting
         if (waiting != null) joinSync(waiting) else applySync(native)
@@ -971,21 +978,30 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private fun syncWith(native: MobilePlayer) {
         val config = syncConfig.value ?: return
         native.togetherServer(config.server)
-        try {
-            val status =
-                if (config.enabled && (online.value || config.nearbyOnly))
-                    native.syncStart(config.copy(device = config.device.ifBlank { deviceCalled() }))
-                else {
-                    native.syncStop()
-                    native.syncStatus()
-                }
-            if (status.code.isNotEmpty() && status.code != config.key) {
-                val kept = config.copy(key = status.code)
-                accounts.writeSync(kept)
-                syncConfig.value = kept
+        syncedBy(native, config) {
+            if (config.enabled && (online.value || config.nearbyOnly))
+                native.syncStart(config.copy(device = config.device.ifBlank { deviceCalled() }))
+            else {
+                native.syncStop()
+                native.syncStatus()
             }
+        }
+    }
+
+    fun retrySync() = work { native ->
+        syncAccess.withLock {
+            val config = syncConfig.value ?: return@withLock
+            syncedBy(native, config) { native.syncRetry() }
+        }
+    }
+
+    fun keepSyncCodeAgain() = work(::readSyncAgain)
+
+    private fun syncedBy(native: MobilePlayer, config: SyncConfig, started: () -> SyncStatus) {
+        try {
+            val status = started()
             native.syncNetwork(unmetered)
-            beaconsHeard.hear(native, status.standing != SyncStanding.OFF)
+            beaconsHeard.hear(native, status.standing.runs)
             syncStatus.value = status
             paceInBackground(config)
         } catch (failure: Exception) {
@@ -1066,7 +1082,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     if (transferring.value) holdTransfers()
                     if (waiting.isNotEmpty()) landReceived(native, waiting) else syncKeeping.value = 0
                     syncHandoffs.value =
-                        if (status.standing == SyncStanding.OFF) emptyList() else native.syncHandoffs()
+                        if (status.standing.runs) native.syncHandoffs() else emptyList()
                     if (arrivals != status.arrivals) {
                         arrivals = status.arrivals
                         library.refresh()

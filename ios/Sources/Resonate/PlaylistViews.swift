@@ -325,7 +325,7 @@ struct PlaylistOptions: View {
                 Button("playlist.link.forget", systemImage: "link") { features.forgetPlaylistLink(id) }
             }
         }
-        if let sync, !fills, features.syncSummary?.standing != .off {
+        if let sync, !fills, features.syncSummary?.standing.runs != false {
             Section("playlist.devices") {
                 Toggle("playlist.devices.keep-songs", isOn: Binding(get: { sync.kept }, set: { features.keepSongs(id, $0) }))
                 if sync.missing > 0 {

@@ -85,6 +85,12 @@ private struct KeptProviderAccount: Codable {
     }
 }
 
+public struct SyncCodeUnkept: Swift.Error, LocalizedError {
+    public let failure: any Swift.Error
+
+    public var errorDescription: String? { said("sync.code-unkept.error") }
+}
+
 public struct AccountStore: Sendable {
     public static let plainSuite = "provider-accounts"
     static let musicbrainzCopyChosen = "sync-musicbrainz-copy-chosen"
@@ -191,6 +197,18 @@ public struct AccountStore: Sendable {
             musicbrainzCopy: flag(Self.musicbrainzCopyChosen, true),
             takesDeletions: flag(Self.deletionsFromOthers, true)
         )
+    }
+
+    public func readSync(minting minted: () throws -> String) throws -> SyncConfig {
+        var config = try readSync()
+        guard config.key.isEmpty else { return config }
+        do {
+            config.key = try minted()
+            try writeSync(config)
+        } catch {
+            throw SyncCodeUnkept(failure: error)
+        }
+        return config
     }
 
     public func writeSync(_ config: SyncConfig) throws {

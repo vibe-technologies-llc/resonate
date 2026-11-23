@@ -46,7 +46,7 @@ mod tests {
     use super::*;
     use crate::{
         harness::Harness,
-        sync::{SyncConfig, driving::SyncControl},
+        sync::{SyncConfig, SyncStanding, driving::SyncControl},
     };
 
     const CERTIFICATE: &str = "-----BEGIN CERTIFICATE-----
@@ -145,5 +145,41 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
         let started = harness.player.sync_start(nearby("ca.pem", ""));
 
         assert!(matches!(started, Err(Error::Sync { .. })));
+    }
+
+    #[test]
+    fn a_restart_whose_certificate_is_gone_is_told_as_failed_and_a_retry_takes_it_up_once_it_is_kept()
+     {
+        let harness = Harness::new();
+        let player = &harness.player;
+        let running = nearby("", "");
+        let replaced = SyncConfig {
+            certificate: "ca.pem".to_owned(),
+            ..running.clone()
+        };
+
+        let first = player.sync_start(running).expect("sync started");
+        let restarted = player.sync_start(replaced);
+        let failed = player.sync_status();
+
+        player
+            .sync_keep_certificate(CERTIFICATE.as_bytes().to_vec())
+            .expect("a certificate kept");
+
+        let retried = player.sync_retry().expect("the retry started sync");
+        let reaching = player.syncing.reaching.lock().clone();
+
+        player.sync_stop();
+
+        assert!(matches!(restarted, Err(Error::Sync { .. })));
+        assert_eq!(failed.standing, SyncStanding::Failed);
+        assert_eq!(failed.code, first.code);
+        assert!(failed.devices.is_empty());
+        assert_eq!(retried.standing, SyncStanding::Nearby);
+        assert_eq!(retried.code, first.code);
+        assert_eq!(
+            reaching.trusted.as_deref(),
+            Some(harness.folder.join(super::CERTIFICATE).as_path())
+        );
     }
 }

@@ -27,6 +27,8 @@ final class FakeItems: SecretItems, @unchecked Sendable {
 
     func script(_ operation: String, _ status: Int32) { lock.withLock { scripted[operation] = status } }
 
+    func unscript(_ operation: String) { lock.withLock { scripted[operation] = nil } }
+
     func has(_ account: String) -> Bool { lock.withLock { kept[account] != nil } }
 
     func hold(_ account: String, _ value: String) { lock.withLock { kept[account] = Data(value.utf8) } }
@@ -438,6 +440,27 @@ let interactionNotAllowed: Int32 = -25308
         #expect(try store.readSync() == config)
         #expect(items.value("sync-key") == "pair-me")
         #expect(UserDefaults(suiteName: defaults.names[0])?.string(forKey: "sync-key") == nil)
+    }
+
+    @Test func aBlankKeyIsMintedAndWrittenBeforeTheSettingsAreHandedOn() throws {
+        let read = try store.readSync(minting: { "MINTED" })
+
+        #expect(read.key == "MINTED")
+        #expect(items.value("sync-key") == "MINTED")
+        #expect(try store.readSync(minting: { "ANOTHER" }) == read)
+    }
+
+    @Test func aMintedKeyTheKeychainRefusesIsNeverHandedOnAndTheNextReadKeepsAnother() throws {
+        items.script("add", interactionNotAllowed)
+
+        #expect(throws: SyncCodeUnkept.self) { try store.readSync(minting: { "LOST" }) }
+        #expect(try store.readSync().key == "")
+
+        items.unscript("add")
+        let read = try store.readSync(minting: { "KEPT" })
+
+        #expect(read.key == "KEPT")
+        #expect(try store.readSync().key == "KEPT")
     }
 
     @Test func aSyncKeyTheKeychainRefusesKeepsTheSettingsAsTheyWere() throws {

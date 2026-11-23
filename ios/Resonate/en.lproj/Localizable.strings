@@ -1520,6 +1520,9 @@
 "sync.certificate.footer" = "A certificate in PEM form, trusted beside the authorities this iPhone already trusts. Needed for a server behind a private authority.";
 "sync.certificate.forget" = "Forget the certificate";
 "sync.certificate.none" = "None";
+"sync.code-unkept" = "A pairing code could not be saved";
+"sync.code-unkept.error" = "This iPhone's new pairing code could not be saved, so sync waits until it can be";
+"sync.code-unkept.footer" = "Sync starts once this iPhone has saved its pairing code in the keychain. No code was shared with other devices. Unlock your iPhone and try again.";
 "sync.connection.device-name" = "This iPhone's name";
 "sync.connection.device-name.footer" = "What your other devices call this iPhone.";
 "sync.connection.save-name" = "Save name";
@@ -1624,11 +1627,13 @@
 "sync.musicbrainz.remove.confirm" = "Remove the copy of MusicBrainz?";
 "sync.musicbrainz.remove.confirm.message" = "Lookups will ask your other devices and the internet again. Turn the switch off first, or the copy is fetched again.";
 "sync.musicbrainz.removed" = "The copy of MusicBrainz was removed";
+"sync.pairing.starting" = "The new code is shown once sync has started with it";
 "sync.songs.no-folder" = "No folder to keep songs in";
 "sync.songs.no-folder.detail" = "Add a music folder with write access first.";
 "sync.songs.when-asked" = "When asked";
 "sync.standing.connected.alone" = "No other device online";
 "sync.standing.connecting" = "Connecting…";
+"sync.standing.failed" = "Sync could not start on this iPhone";
 "sync.standing.nearby.looking" = "Looking on this network";
 "sync.standing.off" = "Off";
 "sync.standing.refused" = "The server refused this iPhone";
@@ -1637,6 +1642,7 @@
 "sync.standing.waiting-for-online" = "Waiting for online features";
 "sync.state.catching-up" = "Catching up";
 "sync.state.connecting" = "Connecting…";
+"sync.state.failed" = "Couldn't start";
 "sync.state.looking" = "Looking for devices";
 "sync.state.not-syncing" = "Not syncing";
 "sync.state.off" = "Off";

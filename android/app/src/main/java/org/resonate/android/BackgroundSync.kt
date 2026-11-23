@@ -38,7 +38,7 @@ object BackgroundSync {
     private val reachingSomeone = setOf(SyncStanding.CONNECTING, SyncStanding.CONNECTED)
 
     fun quiet(status: SyncStatus): Boolean =
-        status.standing == SyncStanding.OFF ||
+        !status.standing.runs ||
             (status.moving == 0u && (status.settled || nobodyToMeet(status)))
 
     private fun nobodyToMeet(status: SyncStatus): Boolean =
@@ -47,7 +47,7 @@ object BackgroundSync {
 
     fun verdict(status: SyncStatus, ranMs: Long, quietForMs: Long?): BackgroundPass =
         when {
-            status.standing == SyncStanding.OFF -> BackgroundPass.DONE
+            !status.standing.runs -> BackgroundPass.DONE
             quietForMs != null &&
                 quietForMs >= QUIET_FOR_MS &&
                 ranMs >= HEARD_FOR_AT_LEAST_MS -> BackgroundPass.DONE

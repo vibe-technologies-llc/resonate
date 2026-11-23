@@ -50,6 +50,13 @@ struct SyncView: View {
                         }
                     }
                 }
+            } else if features.syncCodeUnkept {
+                Section {
+                    Label("sync.code-unkept", systemImage: "exclamationmark.triangle")
+                    Button("common.try-again", systemImage: "arrow.clockwise") { features.readSecretsAgain() }
+                } footer: {
+                    Text("sync.code-unkept.footer")
+                }
             } else {
                 Section {
                     Label("sync.unread", systemImage: "exclamationmark.triangle")
@@ -98,6 +105,10 @@ struct SyncStatusSection: View {
                     guard var next = features.syncConfig else { return }
                     next.nearbyOnly = true
                     features.saveSync(next)
+                }
+            } else if features.syncSummary?.standing == .failed {
+                Button("common.try-again", systemImage: "arrow.clockwise") {
+                    features.retrySync()
                 }
             } else {
                 Button {
@@ -150,7 +161,7 @@ struct SyncStateRow: View {
                     ProgressView().accessibilityHidden(true)
                 } else if features.syncUpToDate {
                     Image(systemName: "checkmark.circle.fill").foregroundStyle(Color.confirmation)
-                } else if status?.standing == .unreachable || status?.standing == .refused {
+                } else if status?.standing == .unreachable || status?.standing == .refused || status?.standing == .failed {
                     Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(Color.warning)
                 } else if status?.standing == .nearby {
                     Image(systemName: "wifi").foregroundStyle(.secondary)
@@ -185,6 +196,7 @@ struct SyncStateRow: View {
         switch status.standing {
         case .connecting: return said("sync.state.connecting")
         case .refused: return said("sync.state.refused")
+        case .failed: return said("sync.state.failed")
         case .unreachable: return said(nearby ? "sync.state.catching-up" : "sync.state.not-syncing")
         case .nearby: return said(nearby ? "sync.state.catching-up" : "sync.state.looking")
         case .connected: return status.owed > 0 ? said("sync.state.sending", Int(status.owed)) : said("sync.state.catching-up")
@@ -356,7 +368,7 @@ struct PairingSheet: View {
                                 .accessibilityHint(said(revealed ? "sync.pairing.hides" : "sync.pairing.shows"))
                                 .accessibilityAddTraits(.isButton)
                         } else {
-                            Text("sync.pairing.not-made")
+                            Text(said(library.features.syncCodeStarting == nil ? "sync.pairing.not-made" : "sync.pairing.starting"))
                                 .foregroundStyle(.secondary)
                                 .frame(maxWidth: .infinity)
                         }
@@ -426,13 +438,17 @@ struct PairingSheet: View {
             .onChange(of: scenePhase) { _, phase in
                 if phase != .active { revealed = false }
             }
+            .onChange(of: code) { revealed = false }
             .confirmationDialog("sync.pairing.join.confirm", isPresented: $confirmingJoin, titleVisibility: .visible) {
                 Button("sync.pairing.join") { join() }
             } message: {
                 Text("sync.pairing.join.confirm.message")
             }
             .confirmationDialog("sync.pairing.new.confirm", isPresented: $confirmingNew, titleVisibility: .visible) {
-                Button("sync.pairing.new.confirm.action", role: .destructive) { library.features.newSyncGroup() }
+                Button("sync.pairing.new.confirm.action", role: .destructive) {
+                    revealed = false
+                    library.features.newSyncGroup()
+                }
             } message: {
                 Text("sync.pairing.new.confirm.message")
             }
@@ -441,9 +457,11 @@ struct PairingSheet: View {
 
     private var shownCode: String? {
         let features = library.features
-        if let code = features.syncSummary?.code, !code.isEmpty { return code }
-        guard let key = features.syncConfig?.key, !key.isEmpty else { return nil }
-        return key
+        return PairingCode.shown(
+            running: features.syncSummary?.code,
+            kept: features.syncConfig?.key,
+            starting: features.syncCodeStarting
+        )
     }
 
     private func join() {

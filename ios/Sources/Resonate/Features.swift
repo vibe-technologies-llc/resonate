@@ -160,6 +160,8 @@ final class Features {
     @ObservationIgnored private var portraitsLacking: Set<String> = []
     private(set) var portraitEpoch = 0
     var syncConfig: SyncConfig?
+    private(set) var syncCodeUnkept = false
+    private(set) var syncCodeStarting: String?
     @ObservationIgnored private var secretsUnread = false
     @ObservationIgnored private var unreadReported = false
     var syncStatus: SyncStatus? {
@@ -456,7 +458,7 @@ final class Features {
                 scrobbling: Result { try store.readScrobbling() },
                 spotify: Result { try store.readSpotify() },
                 recognition: Result { try store.readRecognitionKey() },
-                sync: Result { try store.readSync() }
+                sync: Result { try store.readSync(minting: { try syncNewCode() }) }
             )
         }) else { return }
         var failure: (any Swift.Error)?
@@ -479,8 +481,12 @@ final class Features {
         case .failure(let error): failure = error
         }
         switch read.sync {
-        case .success(let value): syncConfig = value
-        case .failure(let error): failure = error
+        case .success(let value):
+            syncConfig = value
+            syncCodeUnkept = false
+        case .failure(let error):
+            failure = error
+            syncCodeUnkept = error is SyncCodeUnkept
         }
         secretsUnread = failure != nil
         if let failure, !unreadReported {
@@ -599,6 +605,7 @@ final class Features {
                 try await Work.inSecrets { try store.writeSync(config) }
             } catch {
                 if self?.syncConfig == config { self?.syncConfig = previous }
+                if self?.syncCodeStarting == config.key { self?.syncCodeStarting = nil }
                 throw error
             }
             try await self?.applySync(native)
@@ -645,15 +652,19 @@ final class Features {
     }
 
     func joinSync(_ code: String) {
+        guard let spelled = syncCodeSpelled(code: code) else {
+            library.notice(said("sync.pairing.not-a-code"))
+            return
+        }
         guard var config = syncConfig else {
-            joinWaiting = code
+            joinWaiting = spelled
             library.notice(said("sync.join.waiting"))
             return
         }
         joinWaiting = nil
-        config.key = code.trimmingCharacters(in: .whitespacesAndNewlines)
+        config.key = spelled
         config.enabled = true
-        saveSync(config)
+        startGroup(config)
     }
 
     func offerPairing(_ link: String) {
@@ -672,9 +683,20 @@ final class Features {
         guard var config = syncConfig else { return }
         do {
             config.key = try syncNewCode()
-            saveSync(config)
+            startGroup(config)
         } catch {
             library.report(error)
+        }
+    }
+
+    private func startGroup(_ config: SyncConfig) {
+        if config.key != syncConfig?.key { syncCodeStarting = config.key }
+        saveSync(config)
+    }
+
+    func retrySync() {
+        work { [weak self] native in
+            try await self?.syncedBy(native) { try native.syncRetry() }
         }
     }
 
@@ -761,7 +783,7 @@ final class Features {
     }
 
     var syncUpToDate: Bool {
-        guard let summary = syncSummary, summary.standing != .off else { return false }
+        guard let summary = syncSummary, summary.standing.runs else { return false }
         return !syncActive && summary.settled
     }
 
@@ -874,26 +896,21 @@ final class Features {
         let enabled = syncRuns
         let server = config.server
         _ = try? await Work.aside { native.togetherServer(server: server) }
-        do {
-            let status = try await Work.inSync {
-                guard enabled else {
-                    native.syncStop()
-                    return native.syncStatus()
-                }
-                return try native.syncStart(config: config)
+        defer { if syncCodeStarting == config.key { syncCodeStarting = nil } }
+        try await syncedBy(native) {
+            guard enabled else {
+                native.syncStop()
+                return native.syncStatus()
             }
+            return try native.syncStart(config: config)
+        }
+    }
+
+    private func syncedBy(_ native: MobilePlayer, _ started: @escaping @Sendable () throws -> SyncStatus) async throws {
+        do {
+            let status = try await Work.inSync(started)
             let free = unmetered
             try await Work.inSync { native.syncNetwork(unmetered: free) }
-            if !status.code.isEmpty, var minted = syncConfig, minted.key == config.key, minted.key != status.code {
-                minted.key = status.code
-                let written = minted
-                let store = accounts
-                try await Work.inSecrets { try store.writeSync(written) }
-                if var latest = syncConfig, latest.key == config.key {
-                    latest.key = status.code
-                    syncConfig = latest
-                }
-            }
             syncStatus = status
             wakeSyncPoll()
             await announceNearby(native)
@@ -977,7 +994,7 @@ final class Features {
                 let (status, waiting, handoffs, record, shared, copy) = try await Work.aside {
                     let status = native.syncStatus()
                     let waiting = try native.syncReceived()
-                    let handoffs = status.standing == .off ? [] : try native.syncHandoffs()
+                    let handoffs = status.standing.runs ? try native.syncHandoffs() : []
                     return (status, waiting, handoffs, native.syncNearbyRecord(), native.sharedPlaylists(), native.musicbrainzCopy())
                 }
                 if musicbrainzCopy != copy { musicbrainzCopy = copy }

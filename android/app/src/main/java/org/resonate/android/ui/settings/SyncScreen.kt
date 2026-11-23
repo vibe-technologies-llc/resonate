@@ -81,9 +81,11 @@ import org.resonate.android.MusicDocuments
 import org.resonate.android.MusicFolder
 import org.resonate.android.R
 import org.resonate.android.SyncLanding
+import org.resonate.android.SyncSettingsTrouble
 import org.resonate.android.nativecore.DevicePlatform
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.SyncConfig
+import org.resonate.android.nativecore.syncCodeSpelled
 import org.resonate.android.nativecore.syncControlOffered
 import org.resonate.android.nativecore.SyncStanding
 import org.resonate.android.nativecore.SyncStatus
@@ -105,7 +107,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     private val features = resonate.features
 
     val config = features.syncConfig
-    val unreadable = features.syncUnreadable
+    val trouble = features.syncTrouble
     val status = features.syncStatus
     val musicbrainzCopy = features.musicbrainzCopy
     val folder = features.syncFolder
@@ -138,6 +140,10 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
     fun forgetCertificate() = features.forgetSyncCertificate()
 
     fun join(code: String) = features.joinSync(code)
+
+    fun retry() = features.retrySync()
+
+    fun keepCodeAgain() = features.keepSyncCodeAgain()
 
     fun newGroup() = features.newSyncGroup()
 
@@ -174,8 +180,9 @@ private fun standingIcon(status: SyncStatus?, config: SyncConfig, online: Boolea
     when {
         !config.enabled -> Icons.Rounded.CloudOff
         !online && !config.nearbyOnly -> Icons.Rounded.CloudOff
-        status?.standing == SyncStanding.REFUSED || status?.standing == SyncStanding.UNREACHABLE ->
-            Icons.Rounded.ErrorOutline
+        status?.standing == SyncStanding.REFUSED ||
+            status?.standing == SyncStanding.UNREACHABLE ||
+            status?.standing == SyncStanding.FAILED -> Icons.Rounded.ErrorOutline
         config.nearbyOnly -> Icons.Rounded.Wifi
         else -> Icons.Rounded.CloudSync
     }
@@ -206,7 +213,7 @@ fun SyncScreen() {
     val model = resonateViewModel { SyncViewModel(it) }
     val navigator = LocalNavigator.current
     val stored by model.config.collectAsStateWithLifecycle()
-    val unreadable by model.unreadable.collectAsStateWithLifecycle()
+    val trouble by model.trouble.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
     val chosen by model.folder.collectAsStateWithLifecycle()
     val folders by model.folders.collectAsStateWithLifecycle()
@@ -234,7 +241,18 @@ fun SyncScreen() {
     LaunchedEffect(Unit) { model.refreshFolders() }
     Page(stringResource(R.string.sync_title)) { padding ->
         val config = stored
-        if (config == null && unreadable) {
+        if (config == null && trouble == SyncSettingsTrouble.CODE_UNKEPT) {
+            EmptyState(
+                Icons.Rounded.ErrorOutline,
+                stringResource(R.string.sync_code_unkept),
+                Modifier.padding(padding).testTag("sync-code-unkept"),
+                detail = stringResource(R.string.sync_code_unkept_told),
+                action = stringResource(R.string.sync_try_again),
+                onAction = model::keepCodeAgain,
+            )
+            return@Page
+        }
+        if (config == null && trouble == SyncSettingsTrouble.UNREAD) {
             EmptyState(
                 Icons.Rounded.ErrorOutline,
                 stringResource(R.string.sync_unreadable),
@@ -268,7 +286,14 @@ fun SyncScreen() {
                 )
             }
             item(key = "status") {
-                StatusRow(config, status, online, askedAt, onSyncNow = model::syncNow) {
+                StatusRow(
+                    config,
+                    status,
+                    online,
+                    askedAt,
+                    onSyncNow = model::syncNow,
+                    onRetry = model::retry,
+                ) {
                     model.change { it.copy(nearbyOnly = true) }
                 }
             }
@@ -394,12 +419,16 @@ fun SyncScreen() {
                 }
             }
             item(key = "join") {
+                val spelled = remember(joinCode) { syncCodeSpelled(joinCode) }
+                val misread = joinCode.isNotBlank() && spelled == null
                 Field(
                     value = joinCode,
                     onValueChange = { joinCode = it },
                     label = stringResource(R.string.sync_join_code),
-                    secret = true,
                     modifier = Modifier.testTag("join-code"),
+                    supporting = if (misread) stringResource(R.string.sync_join_not_a_code) else null,
+                    secret = true,
+                    error = misread,
                 )
                 ButtonRow {
                     TextButton(onClick = { asking = Asking.NEW_GROUP }) {
@@ -407,7 +436,7 @@ fun SyncScreen() {
                     }
                     FilledTonalButton(
                         onClick = { asking = Asking.JOIN },
-                        enabled = joinCode.isNotBlank() && joinCode.trim() != code,
+                        enabled = spelled != null && spelled != code,
                         modifier = Modifier.testTag("join"),
                     ) {
                         Text(stringResource(R.string.sync_join))
@@ -731,6 +760,7 @@ private fun StatusRow(
     online: Boolean,
     askedAt: Long?,
     onSyncNow: () -> Unit,
+    onRetry: () -> Unit,
     onNearbyOnly: () -> Unit,
 ) {
     val now by
@@ -760,6 +790,12 @@ private fun StatusRow(
                     Icon(Icons.Rounded.Wifi, contentDescription = null, modifier = Modifier.size(18.dp))
                     Spacer(Modifier.width(8.dp))
                     Text(stringResource(R.string.sync_nearby_only_action))
+                }
+            } else if (status?.standing == SyncStanding.FAILED) {
+                FilledTonalButton(onClick = onRetry, modifier = Modifier.testTag("sync-retry")) {
+                    Icon(Icons.Rounded.Autorenew, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.sync_try_again))
                 }
             } else {
                 FilledTonalButton(onClick = onSyncNow, modifier = Modifier.testTag("sync-now")) {
