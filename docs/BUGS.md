@@ -523,14 +523,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/deleting.rs:112`). Distinguish unavailable from absent
   and keep the row when the outcome is unknown. Done when a provider returning zero
   and then a null cursor or a permission error leaves the copy in the catalog.
-- [M · 0.17.1] Preserve saved phone queues until startup restoration publishes them.
-  **Medium, architect.** Opening a player sends Resume asynchronously. A save or
-  shutdown before the engine publishes that command can replace a saved queue with
-  the fresh engine's empty queue (`crates/resonate-mobile/src/lib.rs:434`, `:770`,
-  `:850`, `crates/resonate-mobile/src/zoning.rs:696`). Wait for the restore to settle
-  or defer saving that zone until its queue is authoritative. Done when a file-backed
-  open with an intentionally delayed Resume leaves the first and secondary queues
-  intact across an immediate save and shutdown.
 - [M · 0.17.1] Keep a phone document's analysis when reopening an unchanged file.
   **Low, builder.** Android's open-with path can reindex a known document without a
   size or modification stamp. That clears the old stamp and triggers a reset of its
@@ -539,25 +531,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/catalog.rs:138`). Preserve known stamps when a read provides
   no newer one, while still invalidating analysis on confirmed changes. Done when indexing
   a stamped file from open-with keeps the analysis and scanning a changed file refreshes it.
-- [M · 0.17.1] Save phone queue edits while a document is still opening. **Low, architect.**
-  A buffering or paused row with no opened track suppresses all queue persistence,
-  including the last save at shutdown (`crates/resonate-mobile/src/lib.rs:251`, `:744`,
-  `:770`). Persist edits and the selected row while deferring the unresolved play
-  position. Done when a blocked open followed by shutdown preserves the changed
-  queue and reopens at the intended song without overwriting an older pending seek.
-- [M · 0.17.1] Save phone zones independently and keep removed zones removed. **Low, architect.**
-  A zone removed after the save enumerates it can make the save skip every later zone.
-  An in-flight volume upsert can also recreate the removed row
-  (`crates/resonate-mobile/src/lib.rs:763`,
-  `crates/resonate-mobile/src/zoning.rs:435`, `:530`, `:718`). Coordinate removal with
-  persistence and continue saving other zones after an error. Done when an interleaved
-  removal and save leave the deleted zone absent on disk and preserve the other queues.
-- [S · 0.17.1] Keep shuffle enabled when adding to an empty phone queue. **Low, builder.**
-  The empty-queue insertion builds a default resumption that disables the user's shuffle
-  setting (`crates/resonate-mobile/src/queue_edit.rs:57`, `:122`). Carry the existing
-  setting through the insertion. Done when Add to Queue and Play Next populate an empty
-  queue without toggling shuffle off.
-
 ## Providers and network
 - [M · 0.17.1] Ask for uncoded audio from the first seekable HTTP request.
   **Medium, architect.** The first Jellyfin, native TIDAL FLAC and relayed hifi stream
