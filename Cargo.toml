@@ -87,10 +87,10 @@ objc2-core-audio-types = {
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
 ahash = { version = "0.8.12", default-features = false, features = ["std", "runtime-rng"] }
 imbl = { version = "7.0.2", default-features = false }
-qrcode = { version = "0.14.1", default-features = false }
+qrcode = { version = "0.15.0", default-features = false }
 parking_lot = { version = "0.13.0", default-features = false }
 rayon = { version = "1.12.0", default-features = false }
-notify = { version = "8.2.2", default-features = false }
+notify = { version = "9.0.0", default-features = false }
 bytemuck = { version = "1.25.2", default-features = false }
 crossbeam-channel = { version = "0.5.17", default-features = false, features = ["std"] }
 futures-channel = { version = "0.3.34", default-features = false, features = ["alloc"] }
@@ -215,7 +215,7 @@ webpki-root-certs = { version = "1.0.12", default-features = false }
 uuid = { version = "1.29.3", default-features = false, features = ["std", "v4"] }
 if-addrs = { version = "0.15.0", default-features = false }
 socket2 = { version = "0.6.5", default-features = false }
-mdns-sd = { version = "0.21.7", default-features = false, features = ["async"] }
+mdns-sd = { version = "0.22.0", default-features = false, features = ["async"] }
 quinn = {
     version = "0.11.12",
     default-features = false,
