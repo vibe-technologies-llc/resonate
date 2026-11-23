@@ -178,6 +178,90 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   IDs for library and served items and exercise both index conversions. Done when a
   test restores a mixed window starting after row zero and lands on the original song.
 
+## Device sync
+- [M · 0.17.1] Pin device-sync frames from a released build.
+  **Medium, builder.** The frozen seed registry omits common device-sync
+  messages including Append, Welcome and peer Changes. A writer and reader
+  can change together and pass their round-trip tests
+  (`crates/resonate-sync/tests/seeds.rs:27`, `crates/resonate-sync/src/wire.rs:89`).
+  Add released bytes for the primary sync exchange and keep existing seeds.
+  Done when changing any of those frame layouts makes the compatibility
+  suite fail.
+- [M · 0.17.1] Prove the server's compaction budget preserves the prior log.
+  **Medium, builder.** The shared capacity test checks the head after refusal
+  and the session tests use default limits. Those assertions miss a change
+  that loses record or snapshot bytes while keeping the same head
+  (`crates/resonate-server/src/store.rs:837`, `:1569`,
+  `crates/resonate-server/src/serve.rs:948`, `:996`, `:1035`).
+  Exercise per-space limits with one-frame and staged requests and check the
+  returned refusals and actual retained bytes. Done when weakening the final
+  byte cap or removing the transaction rollback makes the test fail.
+- [M · 0.17.1] Check that disconnecting after staging frees its server capacity.
+  **Medium, builder.** The disconnect test can close before the stage is
+  persisted. The replacement session's Stale refusal is independent of the
+  old staged bytes (`crates/resonate-server/tests/compaction.rs:166`,
+  `crates/resonate-server/src/serve.rs:553`, `:1056`).
+  Wait for stored bytes to appear, then check capacity after the session ends.
+  Done when omitting its cleanup makes the test fail without waiting for a sweep.
+- [S · 0.17.1] Describe the nearby Bonjour record's actual encoding.
+  **Low, builder.** The rules describe the same TXT record as base32 in one place and
+  hex in another (`.claude/rules/sync.md:1198`, `:1242`,
+  `crates/resonate-sync/src/nearby.rs:295`). Align the Bonjour wording with the
+  encoder. Done when the two descriptions agree with the checked record format.
+- [S · 0.17.1] Make the documented WebSocket startup deadline match the listener.
+  **Low, builder.** The rules describe one allowance for upgrade and Hello.
+  The listener times each stage independently
+  (`.claude/rules/server.md:429`, `crates/resonate-server/src/serve.rs:341`,
+  `:369`). Enforce a shared deadline or document the actual allowances.
+  Done when the rule agrees with a test that delays both stages.
+- [S · 0.17.1] Round-trip the stored handoff row format through the sync fuzz target.
+  **Low, builder.** The row decoder is called without a round-trip assertion
+  even though it reads saved ledgers
+  (`fuzz/fuzz_targets/sync.rs:28`, `:40`,
+  `crates/resonate-sync/src/wire.rs:2528`,
+  `crates/resonate-sync/src/ledger.rs:1747`). Apply the existing decode and
+  write-back property to the saved row list and include a legacy row seed.
+  Done when decoded saved rows must survive a round trip.
+- [S · 0.17.1] Check the resume offset in the MusicBrainz copy transfer test.
+  **Low, builder.** The test's final bytes are the same after a true resume
+  and a transfer restarted at zero
+  (`crates/resonate-sync/tests/nearby.rs:420`, `:501`,
+  `crates/resonate-sync/src/peer.rs:1327`).
+  Observe the sender's initial seek or bytes transferred. Done when abandoning
+  a valid partial fails the test even though the finished file is identical.
+- [M · 0.17.1] Check nearby transport capabilities explicitly in tests.
+  **Low, builder.** Discovery tests can return early when an interface is
+  absent, and the Bonjour case assumes multicast works whenever a
+  non-loopback IPv4 address exists
+  (`crates/resonate-sync/tests/nearby.rs:229`, `:878`, `:1038`, `:1078`).
+  Make skips visible, test actual multicast availability, and preserve a
+  deterministic transport check. Done when a limited runner distinguishes
+  missing LAN coverage from a completed discovery check.
+- [M · 0.17.1] Exercise catch-up and writes after upgrading populated server stores.
+  **Low, builder.** The version loop migrates empty tables, so successful
+  upgrades can leave released record or snapshot data unreadable without
+  failing that test (`crates/resonate-server/src/store/released.rs:39`,
+  `crates/resonate-server/src/store.rs:1015`, `:1197`).
+  Populate released schemas with sealed record and snapshot rows and exercise
+  catch-up and writes after each upgrade. Done when every released snapshot
+  and remaining record is returned and the migrated store can accept new work.
+- [M · 0.17.1] Keep client-only discovery out of the sync server's dependency graph.
+  **Low, architect.** The server depends on the sync wire types, but its
+  normal build also includes the device discovery and peer certificate
+  dependencies (`crates/resonate-server/Cargo.toml:24`,
+  `crates/resonate-sync/Cargo.toml:13`, `crates/resonate-sync/src/lib.rs:11`,
+  `:16`). Make the device-only modules optional for server builds.
+  Done when the shipped server's normal dependency tree omits the
+  discovery stack and both server and device-sync suites pass.
+- [S · 0.17.1] Apply a Debian server upgrade to the running service.
+  **Low, builder.** The generated maintainer scripts reload systemd's
+  unit definitions but leave an active process on the old binary after
+  package upgrade (`packaging/deb/build.sh:118`,
+  `packaging/server/resonate-server.spec:43`).
+  Use the package lifecycle to refresh a running instance and preserve
+  its enabled state. Done when an upgrade loads the new binary while
+  installing on a stopped server leaves service startup to the operator.
+
 ## Providers and network
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
   `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,

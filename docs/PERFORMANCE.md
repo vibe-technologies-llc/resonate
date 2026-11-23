@@ -43,6 +43,34 @@ are in [ROADMAP.md](ROADMAP.md).
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
 
+## Device sync
+- [M · 0.17.1] Retry waiting remote listens when their songs become available.
+  **Medium, architect.** Each ledger look loads and decodes every uncredited listen, and
+  the desktop opens a catalog write transaction per listen even when the song is absent
+  (`crates/resonate-sync/src/service.rs:2368`, `:2387`,
+  `crates/resonate-sync/src/ledger.rs:3440`, `:3562`,
+  `crates/resonate-library/src/synced.rs:1317`). Use the catalog's song arrival tracking
+  to limit retries and leave short-lived write failures eligible for a later attempt.
+  Done when repeated looks over a large unchanged set make no repeated credit writes and
+  adding a missing song credits its listens exactly once.
+- [M · 0.17.1] Release Android transfer work while a sync landing folder is away.
+  **Medium, architect.** Any waiting song keeps the transfer flag on, even when
+  its selected folder is unavailable. Background polling stays at two seconds
+  and retains the foreground service while no landing can progress
+  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:861`, `:1050`,
+  `:1103`, `android/app/src/main/java/org/resonate/android/DownloadService.kt:54`).
+  Keep the queued songs and let an unavailable destination go quiet until it
+  returns. Done when a removed card leaves the songs pending without holding
+  a transfer notification and a reachable folder wakes the landing again.
+- [M · 0.17.1] Avoid a configured-root walk for every song received without a vault.
+  **Low, architect.** Landing a new sync file starts an incremental traversal
+  of the entire configured root. Each landing waits independently for a
+  conflicting walk to release the scan guard
+  (`crates/resonate-library/src/synced.rs:1584`, `:1617`, `:1719`).
+  Index the landed paths directly or coalesce arrivals in one walk and preserve
+  the existing catalog adoption checks. Done when one transfer batch takes no
+  full-root walk per song and all placed files appear in the catalog.
+
 ## iOS
 
 ## Later: Analysis
