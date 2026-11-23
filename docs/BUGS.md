@@ -13,28 +13,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   packed WAVE object with an intact header and damaged frames restores a copy that passes `verify`.
 
 ## Playback and output
-- [M · 0.17.1] Finish graph recovery when its deadline expires. **High, architect.**
-  If the backend stays disconnected, the engine clears the wait and sends the timeout to
-  `fail`, which treats the same disconnection as a fresh loss and starts another ten-second wait
-  (`crates/resonate-engine/src/engine/graph.rs:78`, `crates/resonate-engine/src/engine/graph.rs:152`,
-  `crates/resonate-engine/src/engine/graph.rs:375`). Carry the exhausted recovery state into
-  failure handling. Done when a fake backend that stays away emits a row failure within one
-  recovery window and a backend that comes back in that window still resumes the row.
-- [M · 0.17.1] Move out of Playing when a rebind retires the old output and fails.
-  **High, architect.** A device refusal during a settings rebind can leave the active row with
-  no output and no recovery scheduled. Tick-driven rebinds can leave the same state by logging
-  the error and returning (`crates/resonate-engine/src/engine/binding.rs:110`,
-  `crates/resonate-engine/src/engine/binding.rs:256`,
-  `crates/resonate-engine/src/engine/commands.rs:149`). Route stranded rows through the existing
-  device wait or row failure handling. Done when a settings rebind and an automatic rebind that
-  lose their output each resume on a recovered device or publish a terminal state.
-- [S · 0.17.1] Retire a disconnected sink survey receiver from the engine's wait set.
-  **Low, builder.** In an unwinding build a stopped survey worker leaves the engine polling a
-  disconnected receiver as if it were ready, consuming CPU until another receiver changes
-  (`crates/resonate-engine/src/engine.rs:686`, `crates/resonate-engine/src/engine.rs:821`,
-  `crates/resonate-engine/src/surveying.rs:75`). Include survey receiver changes in the wait set
-  comparison. Done when a test with a disconnected survey worker observes the wait set rebuilt and
-  the engine still answers transport commands.
 - [M · 0.17.1] Honor the initial spool deadline during a remote read. **Low, architect.**
   A single slow read can stall beyond the 750 ms initial spool budget because elapsed time is
   checked between reads and the source's read timeout defaults to five seconds
@@ -73,15 +51,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Done when an interrupted or temporarily refused removal remains pending after
   restart, a successful removal settles once, and a newer reversal cancels
   the queued removal.
-- [S · 0.17.1] Reject a zero-day retention setting before opening the server store.
-  **High, builder.** Zero is accepted as the idle limit. The sweeper then runs
-  without a delay and deletes spaces whose last touch precedes the current second,
-  including their records and snapshots
-  (`crates/resonate-server/src/main.rs:93`, `:276`,
-  `crates/resonate-server/src/serve.rs:291`,
-  `crates/resonate-server/src/store.rs:868`). Validate retention before opening the
-  store and safeguard the server API's sweep interval. Done when zero is refused
-  before any stored space changes and a positive interval keeps its sweep schedule.
 - [L · 0.17.1] Preserve a hand-added copy when a paired device's clock is ahead.
   **High, architect.** Deletion ordering accepts a remote stamp ahead of local
   time, then uses it as the cutoff for local file additions and for announcing
@@ -169,14 +138,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `:1614`). Try addresses with bounded or staggered attempts and preserve TLS
   name checks. Done when both transports can use a working second route after
   the first stalls.
-- [M · 0.17.1] Retain a sync space while devices are still using it.
-  **Medium, architect.** A device's connection refreshes the space's idle timestamp,
-  but subsequent appends and compactions do not. A continuously connected device
-  can write to a space that the idle sweeper treats as expired
-  (`crates/resonate-server/src/store.rs:244`, `:411`, `:788`, `:868`,
-  `crates/resonate-server/src/serve.rs:315`). Refresh activity with persisted work
-  and agree how active sessions protect empty spaces. Done when regular appends
-  preserve a space beyond the idle interval and a genuinely idle space still expires.
 - [M · 0.17.1] Release a follow when a device stops listing its songs.
   **Medium, builder.** A holdings read waits indefinitely for its next frame
   while the connection remains open. The follow remains active, so later requests
@@ -375,20 +336,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Track publication separately and retry it while the app stays open.
   Done when a rejected publication later succeeds without copying or indexing
   the song twice.
-- [S · 0.17.1] Release the server's frame reader on a session error.
-  **Low, builder.** An error in a session arm bypasses the reader cleanup.
-  Dropping its task handle detaches it until the read finishes or the connection
-  closes (`crates/resonate-server/src/reading.rs:115`,
-  `crates/resonate-server/src/serve.rs:898`, `:944`, `:1247`).
-  Tie the reader's lifetime to its session. Done when a failed store write stops
-  the reader and releases any frame permits it held.
-- [S · 0.17.1] Report failures to sweep unused spaces and stale compaction stages.
-  **Low, builder.** The sweeper checks the result of the idle pass alone.
-  A storage failure can leave capacity charged to a stale stage without any
-  diagnostic (`crates/resonate-server/src/serve.rs:291`, `:299`, `:308`,
-  `crates/resonate-server/src/store.rs:904`). Report each failed pass and run the
-  scheduled cleanup when the server opens. Done when an expired stage left
-  after a restart is reclaimed and a failed sweep emits a diagnostic.
 - [S · 0.17.1] Keep the playhead in a handoff that fits the server's record budget.
   **Low, builder.** The handoff is bounded by rows, but a long set of titles
   and credits can exceed the sealed record limit. Then the service clears
@@ -472,14 +419,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Give each import an owned stage and persist the validated bytes and the
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
-- [S · 0.17.1] Keep ANSI escapes out of the packaged server's journal.
-  **Low, builder.** The server uses the colour-enabled formatter's defaults,
-  so its service output can contain terminal escapes
-  (`crates/resonate-server/src/main.rs:199`, `Cargo.toml:262`,
-  `packaging/server/resonate-server.env:1`). Gate colour on the log output
-  or disable it for the unit. Done when journal output has plain levels
-  and messages.
-
 ## Catalog
 - [L · 0.17.1] Preserve a moved track across an interrupted scan. **High, architect.**
   New rows are committed before move reconciliation. If a scan stops there, the next scan
