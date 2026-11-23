@@ -4,6 +4,18 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
+- [M · 0.17.1] Prove the playback state before exercising a waiting boundary or a waiting row.
+  **Medium, builder.** The boundary tests can finish preparing the next row after the fixed sleep,
+  and the waiting-row settings test discards both command outcomes
+  (`crates/resonate-engine/tests/transport.rs:7314`, `crates/resonate-engine/tests/transport.rs:5378`).
+  Wait for the ring or fake sink to observe the precise boundary state, and assert both setting
+  requests landed before checking the position. Done when the tests cover the intended state
+  under delayed preparation and fail if either setting command is dropped.
+- [S · 0.17.1] Exercise levelling in the published output-settings guard. **Low, builder.**
+  The list of mutations omits levelling, so dropping its comparison would leave the guard green
+  (`crates/resonate-engine/src/state.rs:147`, `crates/resonate-engine/src/state.rs:365`,
+  `crates/resonate-engine/src/state.rs:471`). Done when a levelling-only change is published by the
+  test and removing its comparison makes that test fail.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
@@ -70,6 +82,32 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
+- [M · 0.17.1] Exercise tag-write failures after staging and during recovery. **Medium, builder.**
+  The failed staged-write fixture is rejected before staging, and the recovery fixtures begin
+  with an already torn file (`crates/resonate-codec/src/writing.rs:1790`,
+  `crates/resonate-codec/src/writing.rs:2238`, `crates/resonate-codec/src/writing.rs:2945`).
+  Inject failures after creating a rechunked WAVE stage, after a file changes during a staged
+  save, and during whole-copy write-back. Done when the tests prove ordinary failures leave the
+  original intact, discard their stage and retain a usable recovery copy for a torn write-back.
+- [M · 0.17.1] Prove a retag writes only the chosen roots and only on apply. **Medium, builder.**
+  Retag validates and filters the roots and guards its staging sweep with `apply`, but the
+  retag tests exercise all roots together and do not check the preview sweep
+  (`crates/resonate-library/src/retag.rs:229`, `crates/resonate-library/src/retag.rs:300`,
+  `crates/resonate-library/tests/retag.rs:267`). Done when a two-root fixture proves the other
+  root's bytes stay identical, an unknown root is refused, and preview leaves files and stages
+  untouched.
+- [M · 0.17.1] Prove interrupted retag undo keeps the original tags available. **Medium, builder.**
+  Cancellation and unreadable files can leave an undo unfinished. The current partial-undo
+  fixture depends on its runner being unable to write to a directory
+  (`crates/resonate-library/src/retag.rs:269`, `crates/resonate-library/src/retag.rs:878`,
+  `crates/resonate-library/src/retag.rs:1471`, `crates/resonate-library/tests/retag.rs:805`).
+  Use a gated tag sink and a temporarily missing file in the test. Done when cancellation,
+  refusal and absence preserve the notes for unfinished files and a later undo restores them.
+- [S · 0.17.1] Cover removing an unterminated final cue-sheet line. **Low, builder.**
+  The existing test inserts at the end, leaving the removal and mixed-edit paths without a
+  regression check (`crates/resonate-codec/src/sheet.rs:319`, `crates/resonate-codec/src/sheet.rs:598`).
+  Done when removing the final line alone and with an insertion preserves the preceding lines,
+  the chosen line ending and a legacy sheet's encoding.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the

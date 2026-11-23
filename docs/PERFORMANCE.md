@@ -8,6 +8,17 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
+- [S · 0.17.1] Budget accumulated Ogg header bytes during retag. **Medium, builder.** The page-count
+  cap still permits roughly 254 MiB of retained header packet data in one parse
+  (`crates/resonate-codec/src/ogg.rs:92`, `crates/resonate-codec/src/ogg.rs:133`,
+  `crates/resonate-codec/src/padded.rs:92`). Bound header bytes before extending the buffer and
+  preserve the tag writer's safe fallback. Done when an over-budget header ends the parse at the
+  byte limit and accepted headers still round-trip.
+- [S · 0.17.1] Index FLAC chapter titles once per comment block. **Low, builder.** The chapter
+  parser scans the comment list again for every candidate number, including candidates it later
+  discards (`crates/resonate-codec/src/chapters.rs:80`, `crates/resonate-codec/src/flac.rs:170`).
+  Build a lookup of the first title for each number. Done when a large comment block is parsed
+  without repeated scans and the tests keep the existing order and duplicate-title handling.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
