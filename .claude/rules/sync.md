@@ -58,7 +58,11 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   (`every_frame_an_earlier_build_wrote_is_read_as_its_kind_and_written_back_byte_for_byte`), every
   file in the folder having a kind (`every_seed_in_the_folder_is_held_by_a_kind`). A seed is frozen
   once its frame is sent, pinned by the FNV-1a of its bytes: a changed frame gets a new seed beside
-  it, never an edited one. `records` is the one seed no build since the first reads, its blob shorter
+  it, never an edited one. A round trip alone cannot see a writer and a reader changed together, so
+  `frames_a_released_build_wrote` holds the values behind the seeds produced by the `v0.16.1` release's
+  own encoder (every client and server frame of the main exchange, the peers' holdings, fetch, changes, tags and covers) and
+  `every_frame_a_released_build_wrote_is_what_this_build_writes_and_reads_from_the_same_values`
+  fails on a frame written otherwise than the seed or read as other values than it. `records` is the one seed no build since the first reads, its blob shorter
   than a seal (`records_whose_blob_is_shorter_than_a_seal_are_refused_as_no_build_since_the_first_sends_them`);
   `records-sealed` is the frame a server sends.
 - **Hand-encoded, no serde** (`wire.rs`): `Writer`/`Reader` with LEB128 lengths and zigzag signed

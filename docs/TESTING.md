@@ -86,14 +86,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   test restores a mixed window starting after row zero and lands on the original song.
 
 ## Device sync
-- [M · 0.17.1] Pin device-sync frames from a released build.
-  **Medium, builder.** The frozen seed registry omits common device-sync
-  messages including Append, Welcome and peer Changes. A writer and reader
-  can change together and pass their round-trip tests
-  (`crates/resonate-sync/tests/seeds.rs:27`, `crates/resonate-sync/src/wire.rs:89`).
-  Add released bytes for the primary sync exchange and keep existing seeds.
-  Done when changing any of those frame layouts makes the compatibility
-  suite fail.
 - [M · 0.17.1] Prove the server's compaction budget preserves the prior log.
   **Medium, builder.** The shared capacity test checks the head after refusal
   and the session tests use default limits. Those assertions miss a change
