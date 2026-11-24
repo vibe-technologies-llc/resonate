@@ -13,6 +13,16 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   per-neighbour share of its answers (`door.rs`); nothing on a LAN names a host better than its address
 
 
+## Playback and output
+- [S · 0.17.1] Answer a setting changed while a row waits for a device the same way every time.
+  **Low, builder.** `SetBuffer` sent while the row waits for a device answers `Err(Sink(NoSink))`
+  in about five runs of six and `Ok` otherwise, depending on whether the background survey has
+  answered before it arrives, while `SetForceGraphRate` always answers `Ok`; the setting is kept
+  either way (`crates/resonate-engine/src/engine/sinks.rs` `select_sink`,
+  `a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard`). Decide whether a
+  kept setting with no device to apply it to is a success, answer it so whatever the survey's
+  timing, and tighten that test to the one answer.
+
 ## Device sync
 - [M · 0.17.1] Keep unread sync changes through a compaction.
   **Medium, architect.** A reader skips an answer kind it cannot read or advances the
