@@ -704,6 +704,101 @@ fn a_song_from_another_device_is_filed_in_the_music_folder_and_catalogued() -> R
     Ok(())
 }
 
+fn filed_from_elsewhere(library: &Library, arriving: &[Recording]) -> Result<Vec<PathBuf>> {
+    let mut filed = Vec::new();
+
+    for (opening, recording) in (1_u8..).zip(arriving) {
+        let SongFiled::Filed(path) = library.file_song_from_elsewhere(
+            recording,
+            &HeldTags::default(),
+            "wav",
+            &mut Cursor::new(tagged_wav_opening_on("", "", "", opening)),
+        )?
+        else {
+            panic!("filed");
+        };
+
+        filed.push(path);
+    }
+    Ok(filed)
+}
+
+#[test]
+fn songs_from_another_device_landing_together_are_each_catalogued_by_their_identity_without_walking_the_root()
+-> Result<()> {
+    let tree = Tree::new();
+
+    tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &tree.root)?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+
+    let stray = tree.song("by hand/seamus.wav", "Seamus", "Pink Floyd", "Meddle");
+    let arriving = [
+        song("San Tropez", "Pink Floyd", "Meddle"),
+        song("One of These Days", "Pink Floyd", "Meddle"),
+        song("Fearless", "Pink Floyd", "Meddle"),
+    ];
+    let filed = filed_from_elsewhere(&library, &arriving)?;
+
+    for (recording, path) in arriving.iter().zip(&filed) {
+        let held = library.track_at(path, None)?.expect("catalogued");
+        let resolved = library.resolve_recording(recording)?.expect("resolved");
+
+        assert_eq!(held.title, recording.title);
+        assert_eq!(held.artist.as_deref(), Some(recording.artist.as_str()));
+        assert_eq!(resolved.location, MediaLocation::local(path));
+    }
+
+    assert_eq!(
+        library.track_at(&stray, None)?,
+        None,
+        "a song landing walked the whole root"
+    );
+
+    scan(&library, &tree.root)?;
+
+    assert!(library.track_at(&stray, None)?.is_some());
+    Ok(())
+}
+
+#[test]
+fn a_song_from_another_device_landing_below_a_cue_sheet_is_read_by_a_walk_that_weighs_the_sheet()
+-> Result<()> {
+    let tree = Tree::new();
+
+    tree.song("held/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &tree.root)?;
+    library.deliver_into(Some(DeliveryFolder {
+        path: tree.root.clone(),
+        layout: Layout::default(),
+    }));
+    fs::write(
+        tree.root.join("meddle.cue"),
+        "FILE \"elsewhere.wav\" WAVE\n  TRACK 01 AUDIO\n    INDEX 01 00:00:00\n",
+    )
+    .expect("a sheet");
+
+    let stray = tree.song("by hand/seamus.wav", "Seamus", "Pink Floyd", "Meddle");
+    let arriving = [song("San Tropez", "Pink Floyd", "Meddle")];
+    let filed = filed_from_elsewhere(&library, &arriving)?;
+
+    assert!(library.track_at(&filed[0], None)?.is_some());
+    assert!(
+        library.track_at(&stray, None)?.is_some(),
+        "a song landing below a sheet was read alone"
+    );
+    Ok(())
+}
+
 #[test]
 fn a_song_from_another_device_whose_extension_climbs_out_of_the_folder_is_refused() -> Result<()> {
     let tree = Tree::new();

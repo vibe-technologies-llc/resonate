@@ -112,6 +112,19 @@ impl Library {
         scan::start(Arc::clone(&self.inner), options, Replaced::default)
     }
 
+    pub(crate) fn read_the_landed(
+        &self,
+        root: &Path,
+        landed: &[PathBuf],
+    ) -> Result<scan::LandedRead> {
+        scan::read_the_landed(
+            &self.inner,
+            root,
+            landed,
+            self.shared().settle_after_a_scan(),
+        )
+    }
+
     fn settle_after_a_scan(self) -> impl FnOnce() -> Replaced + Send + 'static {
         move || {
             self.settle_replacements().unwrap_or_else(|error| {

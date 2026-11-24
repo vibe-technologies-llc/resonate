@@ -870,7 +870,7 @@ impl Library {
                 let settled = self.settled_turn(row, &cut);
 
                 self.root_stands(&filed.root)?;
-                if !synced::scanned_if_free(self, filed.root.clone()) {
+                if !synced::landed_read_if_free(self, filed.root.clone(), &filed.path) {
                     walking.unread.push(filed.root);
                 }
                 settled

@@ -31,14 +31,6 @@ are in [ROADMAP.md](ROADMAP.md).
   Keep the queued songs and let an unavailable destination go quiet until it
   returns. Done when a removed card leaves the songs pending without holding
   a transfer notification and a reachable folder wakes the landing again.
-- [M · 0.17.1] Avoid a configured-root walk for every song received without a vault.
-  **Low, architect.** Landing a new sync file starts an incremental traversal
-  of the entire configured root. Each landing waits independently for a
-  conflicting walk to release the scan guard
-  (`crates/resonate-library/src/synced.rs:1584`, `:1617`, `:1719`).
-  Index the landed paths directly or coalesce arrivals in one walk and preserve
-  the existing catalog adoption checks. Done when one transfer batch takes no
-  full-root walk per song and all placed files appear in the catalog.
 
 ## iOS
 

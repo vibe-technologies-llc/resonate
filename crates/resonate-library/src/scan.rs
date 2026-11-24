@@ -313,6 +313,207 @@ pub(crate) fn start_over_held(
     Ok(Some(PassHandle::of(PassKind::Scan, owned, thread)))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum LandedRead {
+    Read,
+    OwesTheRootAWalk,
+}
+
+enum Landing {
+    Probed(Box<Candidate>),
+    Unchanged,
+    PassedOver,
+    OwesAWalk,
+}
+
+pub(crate) fn read_the_landed(
+    inner: &Arc<Inner>,
+    root: &Path,
+    landed: &[PathBuf],
+    after: impl FnOnce() -> Replaced,
+) -> Result<LandedRead> {
+    let walking = inner.walk_the_tree()?;
+
+    Library::settle_removals_before_a_scan(inner, &walking)?;
+
+    let Some(root) = every_root(inner)?
+        .into_iter()
+        .find(|held| held.path == naming::composed(root.to_path_buf()))
+    else {
+        return Ok(LandedRead::OwesTheRootAWalk);
+    };
+    let landed: Vec<PathBuf> = landed
+        .iter()
+        .map(|path| naming::composed(path.clone()))
+        .collect();
+    let known = Known::at(inner, &landed)?;
+
+    let reading = LandedIn {
+        known: &known,
+        root: &root,
+        vault: inner.vault_root(),
+        points: &volumes::MountPoints::read(),
+        mounting: &volumes::Mounting::default(),
+    };
+    let mut candidates = Vec::new();
+
+    for path in &landed {
+        match reading.weighed(path) {
+            Landing::Probed(candidate) => candidates.push(candidate),
+            Landing::Unchanged | Landing::PassedOver => {}
+            Landing::OwesAWalk => return Ok(LandedRead::OwesTheRootAWalk),
+        }
+    }
+
+    let sources = Sources::local();
+    let progress = ScanProgress::default();
+    let generation = store::to_nanos(SystemTime::now());
+    let mut batch: Vec<Outcome> = candidates
+        .iter()
+        .flat_map(|candidate| match read_candidate(&sources, candidate) {
+            Ok(records) => records
+                .into_iter()
+                .map(|record| Outcome::Store(Box::new(record)))
+                .collect(),
+            Err(error) => {
+                tracing::debug!(%error, path = %candidate.path.display(), "a landed file would not probe, so the next walk reads it");
+                Vec::new()
+            }
+        })
+        .collect();
+
+    commit(
+        inner,
+        &Writing {
+            extract_cover_art: true,
+            progress: &progress,
+            generation,
+            mounting: reading.mounting,
+        },
+        &mut Cache::default(),
+        &mut batch,
+        &mut Vec::new(),
+    )?;
+
+    let stats = progress.snapshot();
+
+    if stats.added + stats.updated > 0 {
+        inner.write(store::sweep_orphans_if_owed)?;
+        inner.write(history::credit_the_unheld)?;
+        inner.write(|transaction| {
+            loose::gather_the_loose(
+                transaction,
+                &[root.id],
+                loose::Weighed::TitlesWrittenAt(generation),
+            )
+        })?;
+        inner.write(alternatives::settle_if_owed)?;
+        inner.restate_the_statistics();
+    }
+    drop(walking);
+    after();
+    Ok(LandedRead::Read)
+}
+
+struct LandedIn<'a> {
+    known: &'a Known,
+    root: &'a Root,
+    vault: Option<&'a Path>,
+    points: &'a volumes::MountPoints,
+    mounting: &'a volumes::Mounting,
+}
+
+impl LandedIn<'_> {
+    fn weighed(&self, path: &Path) -> Landing {
+        let Ok(below) = path.strip_prefix(&self.root.path) else {
+            return Landing::OwesAWalk;
+        };
+        let folders: Vec<&Path> = path
+            .ancestors()
+            .skip(1)
+            .take_while(|folder| folder.starts_with(&self.root.path))
+            .collect();
+
+        if below.components().count() > usize::from(MAX_DEPTH.get()) {
+            return Landing::OwesAWalk;
+        }
+        if !is_audio(path)
+            || is_passed_over(path)
+            || folders
+                .iter()
+                .any(|folder| *folder != self.root.path && is_passed_over(folder))
+            || self.vault.is_some_and(|vault| path.starts_with(vault))
+        {
+            return Landing::PassedOver;
+        }
+
+        let Ok(metadata) = fs::symlink_metadata(path) else {
+            return Landing::PassedOver;
+        };
+
+        if !metadata.is_file() || !folders.iter().all(|folder| is_a_folder_itself(folder)) {
+            return Landing::OwesAWalk;
+        }
+        if !self.mounted_where_it_was(&folders) || sheets_beside_or_above(&folders) {
+            return Landing::OwesAWalk;
+        }
+
+        let text = store::path_text(path);
+        let rows = self.known.rows(&text);
+        let file_size = metadata.len();
+        let modified = metadata.modified().unwrap_or(UNIX_EPOCH);
+
+        if !rows.is_empty()
+            && rows
+                .iter()
+                .all(|held| held.unchanged(file_size, modified, None))
+        {
+            return Landing::Unchanged;
+        }
+        Landing::Probed(Box::new(Candidate {
+            root_id: self.root.id,
+            path: path.to_path_buf(),
+            sleeve: sleeve(path, &self.root.path),
+            existing: rows.iter().map(|held| Some(held.id)).collect(),
+            file_size,
+            modified,
+        }))
+    }
+
+    fn mounted_where_it_was(&self, folders: &[&Path]) -> bool {
+        folders.iter().all(|folder| {
+            if volumes::is_mounted_among(folder, self.points) {
+                self.mounting.seen_at(folder);
+                true
+            } else {
+                !self.known.is_a_volume(folder)
+            }
+        })
+    }
+}
+
+fn is_a_folder_itself(folder: &Path) -> bool {
+    fs::symlink_metadata(folder).is_ok_and(|metadata| metadata.is_dir())
+}
+
+fn sheets_beside_or_above(folders: &[&Path]) -> bool {
+    folders
+        .iter()
+        .take(DEEPEST_FOLDER_A_SHEET_NAMES + 1)
+        .any(|folder| holds_a_sheet(folder))
+}
+
+fn holds_a_sheet(folder: &Path) -> bool {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return true;
+    };
+
+    entries.flatten().any(|entry| {
+        let path = entry.path();
+        is_a_sheet(&path) && !is_passed_over(&path)
+    })
+}
+
 struct Root {
     id: i64,
     path: PathBuf,
@@ -353,6 +554,23 @@ enum Placed {
     Below,
 }
 
+const KNOWN_ROWS: &str = "SELECT path, id, file_size, modified, sheet_modified, (probe_again OR
+    (coalesce(trim(artist), '') = '' AND EXISTS (SELECT 1 FROM songs_received s WHERE s.path = tracks.path AND s.recording LIKE 'named:%')) OR
+    (mbid IS NULL AND EXISTS (SELECT 1 FROM songs_received s WHERE s.path = tracks.path AND s.recording LIKE 'mbid:%'))) FROM tracks";
+
+type KnownRow = (String, i64, i64, i64, Option<i64>, bool);
+
+fn known_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<KnownRow> {
+    Ok((
+        row.get(0)?,
+        row.get(1)?,
+        row.get(2)?,
+        row.get(3)?,
+        row.get(4)?,
+        row.get(5)?,
+    ))
+}
+
 #[derive(Default)]
 struct Known {
     rows: BTreeMap<String, Vec<Stored>>,
@@ -367,45 +585,59 @@ impl Known {
             known.volumes = volumes::held(connection)?;
 
             let mut statement = connection
-                .prepare(
-                    "SELECT path, id, file_size, modified, sheet_modified, (probe_again OR
-                        (coalesce(trim(artist), '') = '' AND EXISTS (SELECT 1 FROM songs_received s WHERE s.path = tracks.path AND s.recording LIKE 'named:%')) OR
-                        (mbid IS NULL AND EXISTS (SELECT 1 FROM songs_received s WHERE s.path = tracks.path AND s.recording LIKE 'mbid:%'))) FROM tracks
-                     WHERE path >= ?1 AND path < ?2 ORDER BY path, span_start",
-                )
+                .prepare(&format!(
+                    "{KNOWN_ROWS} WHERE path >= ?1 AND path < ?2 ORDER BY path, span_start"
+                ))
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
             for root in roots {
                 let (from, past) = walked_from(&store::path_text(&root.path));
 
-                let rows = statement
-                    .query_map(params![from, past], |row| {
-                        Ok((
-                            row.get::<_, String>(0)?,
-                            row.get::<_, i64>(1)?,
-                            row.get::<_, i64>(2)?,
-                            row.get::<_, i64>(3)?,
-                            row.get::<_, Option<i64>>(4)?,
-                            row.get::<_, bool>(5)?,
-                        ))
-                    })
-                    .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
-                    .map_err(|source| Error::store(StoreOp::Query, source))?;
-
-                for (path, id, file_size, modified, sheet_modified, probe_again) in rows {
-                    known.rows.entry(path).or_default().push(Stored {
-                        id: TrackId::new(id as u64)?,
-                        file_size: file_size as u64,
-                        modified: store::from_nanos(modified),
-                        sheet_modified: sheet_modified.map(store::from_nanos),
-                        probe_again,
-                    });
-                }
+                known.hold(statement.query_map(params![from, past], known_row))?;
             }
             Ok(())
         })?;
 
         Ok(known)
+    }
+
+    fn at(inner: &Inner, paths: &[PathBuf]) -> Result<Self> {
+        let mut known = Self::default();
+
+        inner.read(|connection| {
+            known.volumes = volumes::held(connection)?;
+
+            let mut statement = connection
+                .prepare(&format!("{KNOWN_ROWS} WHERE path = ?1 ORDER BY span_start"))
+                .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+            for path in paths {
+                known.hold(statement.query_map(params![store::path_text(path)], known_row))?;
+            }
+            Ok(())
+        })?;
+
+        Ok(known)
+    }
+
+    fn hold(
+        &mut self,
+        rows: rusqlite::Result<impl Iterator<Item = rusqlite::Result<KnownRow>>>,
+    ) -> Result<()> {
+        let rows = rows
+            .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        for (path, id, file_size, modified, sheet_modified, probe_again) in rows {
+            self.rows.entry(path).or_default().push(Stored {
+                id: TrackId::new(id as u64)?,
+                file_size: file_size as u64,
+                modified: store::from_nanos(modified),
+                sheet_modified: sheet_modified.map(store::from_nanos),
+                probe_again,
+            });
+        }
+        Ok(())
     }
 
     fn is_a_volume(&self, directory: &Path) -> bool {
@@ -647,7 +879,7 @@ fn run(
     let written = write_all(
         inner,
         &Writing {
-            options,
+            extract_cover_art: options.extract_cover_art,
             progress,
             generation,
             mounting: &mounting,
@@ -2044,7 +2276,7 @@ fn read_candidate(sources: &Sources, candidate: &Candidate) -> Result<Vec<TrackR
 }
 
 struct Writing<'a> {
-    options: &'a ScanOptions,
+    extract_cover_art: bool,
     progress: &'a ScanProgress,
     generation: i64,
     mounting: &'a volumes::Mounting,
@@ -2077,7 +2309,7 @@ fn commit(
     reached: &mut Vec<i64>,
 ) -> Result<()> {
     let Writing {
-        options,
+        extract_cover_art,
         progress,
         generation,
         mounting,
@@ -2116,7 +2348,7 @@ fn commit(
                             cache,
                             record,
                             generation,
-                            options.extract_cover_art,
+                            extract_cover_art,
                         )?;
 
                         if !stored {

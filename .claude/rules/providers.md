@@ -1208,7 +1208,8 @@ service offers it.
   followed since the press is left queued before anything is asked, the rows behind it going on
   (`a_kept_list_named_as_a_followed_list_stands_beside_it`,
   `a_list_followed_since_the_press_asks_for_nothing_and_holds_nothing_up`).
-- **A landing registers its root before asking for the scan**, so a walk that refused the scan leaves a
+- **A landing registers its root before asking for its file to be read** (`landed_read_if_free`, the
+  file alone: `library.md`), so a walk that refused the read leaves a
   root the next pass can read under, in any process. The head of a pass reads a landed file no track
   names only through a root that reaches it (`roots_owed_a_read`), never by adding one, so a folder the
   listener forgot stays forgotten unless a new keep lands there

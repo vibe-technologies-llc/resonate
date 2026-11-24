@@ -23,6 +23,7 @@ use crate::{
     filed::{self, Beside, Unfiled},
     organise::{Named, Naming},
     playlist::{self, Row},
+    scan::LandedRead,
     sourced, store, undo, vaulted, volumes, words,
 };
 
@@ -1615,7 +1616,7 @@ pub(crate) fn file_song(
     match filed::landed_beside(library, &whole, reader) {
         Ok(Beside::Standing(path)) => {
             library.note_song_received_at(recording, &path, ReceivedAt::AlreadyHeld)?;
-            scanned_once_free(library, root);
+            landed_read_once_free(library, root, &path);
             Ok(SongFiled::Filed(path))
         }
         Ok(Beside::Placed { path, file }) => {
@@ -1633,7 +1634,7 @@ pub(crate) fn file_song(
             }
             tag_received(&path, recording, tags);
             library.note_song_received_at(recording, &path, ReceivedAt::NewlyPlaced)?;
-            scanned_once_free(library, root);
+            landed_read_once_free(library, root, &path);
             Ok(SongFiled::Filed(path))
         }
         Err(Unfiled::Catalog(error)) => Err(error),
@@ -1710,7 +1711,18 @@ pub(crate) fn vaulted_already(inner: &Inner, kept: &Kept) -> Result<Option<PathB
     })
 }
 
-pub(crate) fn scanned_if_free(library: &Library, root: PathBuf) -> bool {
+pub(crate) fn landed_read_if_free(library: &Library, root: PathBuf, landed: &Path) -> bool {
+    match library.read_the_landed(&root, &[landed.to_path_buf()]) {
+        Ok(LandedRead::Read) => true,
+        Ok(LandedRead::OwesTheRootAWalk) => scanned_if_free(library, root),
+        Err(error) => {
+            tracing::debug!(%error, "the file landed is read later");
+            false
+        }
+    }
+}
+
+fn scanned_if_free(library: &Library, root: PathBuf) -> bool {
     match library.scan(scanning(root)).and_then(PassHandle::join) {
         Ok(_) => true,
         Err(error) => {
@@ -1720,22 +1732,37 @@ pub(crate) fn scanned_if_free(library: &Library, root: PathBuf) -> bool {
     }
 }
 
+fn landed_read_once_free(library: &Library, root: PathBuf, landed: &Path) {
+    let landed = [landed.to_path_buf()];
+
+    match once_free(|| library.read_the_landed(&root, &landed)) {
+        Ok(LandedRead::Read) => {}
+        Ok(LandedRead::OwesTheRootAWalk) => scanned_once_free(library, root),
+        Err(error) => {
+            tracing::warn!(%error, "a song filed could not be read yet");
+        }
+    }
+}
+
 pub(crate) fn scanned_once_free(library: &Library, root: PathBuf) {
-    let mut tries = 1;
-    loop {
-        match library
+    if let Err(error) = once_free(|| {
+        library
             .scan(scanning(root.clone()))
             .and_then(PassHandle::join)
-        {
+    }) {
+        tracing::warn!(%error, "the folder a song was filed in could not be read yet");
+    }
+}
+
+fn once_free<T>(mut attempt: impl FnMut() -> Result<T>) -> Result<T> {
+    let mut tries = 1;
+    loop {
+        match attempt() {
             Err(Error::AlreadyWalking) if tries < SCANS_TRIED_AT_MOST => {
                 tries += 1;
                 thread::sleep(SCAN_TRIED_AGAIN_AFTER);
             }
-            Err(error) => {
-                tracing::warn!(%error, "the folder a song was filed in could not be read yet");
-                return;
-            }
-            Ok(_) => return,
+            outcome => return outcome,
         }
     }
 }

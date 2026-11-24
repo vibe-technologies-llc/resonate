@@ -390,7 +390,7 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   size, mtime and sheet mtime, none `probe_again`; `Candidate::existing` carries them all.
 - **One pass walks the tree at a time; a second is refused, not queued.** `Inner::walking` is the
   flag, `Walk` the guard. Taken by every pass walking or rewriting the tree: `Library::scan`,
-  `organise`, `retag`, `import` (each in its `start`, before the thread spawns), `prune_the_vault`,
+  `organise`, `retag`, `import` (each in its `start`, before the thread spawns), `read_the_landed`, `prune_the_vault`,
   `release_from_vault`, `delete_tracks`; and by the root edits a walk reads under: `add_root`,
   `remove_root`, `forget_the_gone`, `retire`. The thread owns the guard; `Drop` returns it on a
   panic. Taking never waits: `Error::AlreadyWalking` at once. Why: `Known::under` is a snapshot, so
@@ -543,6 +543,23 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   (`Library::scan_what_is_held`) walks only the named roots `roots` still holds and that are there,
   registers nothing, tidies no root beside them (`scan::Beside::LeftToTheWatch`), answers `None`
   where none is left; the window takes a root off what it owes only once a scan has taken it.
+- **A file landed is read alone, not its root walked.** A song from another device filed without a
+  vault (`sync.md`) and a keep's landing (`providers.md`) go through `scan::read_the_landed`: under
+  the `Walk` guard, after the removals under way are settled as a scan's start settles them, it
+  weighs each named file as the walk would (`LandedIn::weighed`: below a registered root, audio, no
+  dot-named folder between, not in the vault, no link on the way) and writes it through the scan's
+  own `commit`, so `recover_received`, the arrival noted for `moves` and a cover land as a walk's
+  would, then sweeps what an update orphaned, credits the unheld listens, gathers the loose and
+  settles the copies and the replacements. It reads only the rows of those paths (`Known::at`) and
+  marks no other row, so the prune, the move pairing and the tidy wait for the next walk, the
+  arrival left unsettled for it to weigh. **Where reading alone could differ from a walk, the root
+  is walked** (`LandedRead::OwesTheRootAWalk`): the folder is no registered root yet (its first
+  landing registers and reads it whole), a cue sheet stands beside the file or within
+  `DEEPEST_FOLDER_A_SHEET_NAMES` folders above it, a remembered volume on the way is not mounted, a
+  link or more than `MAX_DEPTH` folders lie between. A volume mounted on the way is noted with the
+  row as a walk notes it
+  (`songs_from_another_device_landing_together_are_each_catalogued_by_their_identity_without_walking_the_root`,
+  `a_song_from_another_device_landing_below_a_cue_sheet_is_read_by_a_walk_that_weighs_the_sheet`).
 - **A per-row statement is prepared once a connection.** `store::cached` runs literal SQL through
   `prepare_cached`; every per-row write uses it; per-row reads and the 39-column track upsert use
   `store::queried`. A scan cycles through more statements than rusqlite's default cache of 16, so

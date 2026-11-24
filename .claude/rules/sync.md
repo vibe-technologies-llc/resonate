@@ -695,12 +695,13 @@ or hid the row, or a second sender naming it otherwise is never refused and fetc
 (`a_song_whose_audio_the_vault_already_holds_under_another_recording_is_held_under_both`,
 `a_song_whose_audio_a_vault_import_keeps_is_held_though_its_file_is_gone_and_never_vaulted_beside_it`);
 every vault landing notes `songs_received` as a filing does. With no vault, a song is
-filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and its
-root scanned. Before scanning a newly placed file, the receiver writes the recording's title,
+filed in the music folder under `organise-as` like a delivery (`filed::landed_beside`) and that
+file alone read into the catalog (`scan::read_the_landed`, `library.md`), so a batch of songs costs
+a probe each and never a walk of the root a song. Before reading a newly placed file, the receiver writes the recording's title,
 artist, album and MBID and the supplied album artist, date and numbers into its tags, with
 existing file tags winning. A mobile download may have its identity only in the phone's catalog;
 copying its audio alone otherwise leaves a filename in place of the title and no artist to enrich.
-An incremental scan reprobes received rows missing an artist or a received MBID and fills absent
+The read, like an incremental scan, reprobes received rows missing an artist or a received MBID and fills absent
 identity from `songs_received` before storing the probe. Receipts retain the sender's original title, artist and album beside the matching keys, so recovery preserves capitalization;
 declared file tags still win. The appended `RECEIVED_SONGS_KEEP_THEIR_SPELLING` migration adds
 nullable columns, with older receipts falling back to their folded matching words until received again.
@@ -719,8 +720,9 @@ whole-file row held already is that song**: `filed::landed_beside` probes it as 
 finds a row of that file whose file stands, the placed copy is taken away again and the asked keys
 noted against the row's path, so a sender that renamed a song after sending it is never given a
 second copy (`a_song_its_sender_renamed_after_sending_it_is_known_by_its_audio_and_never_filed_again`);
-the scan after filing waits out another pass
-(`scanned_once_free`: `SCANS_TRIED_AT_MOST` tries `SCAN_TRIED_AGAIN_AFTER` apart) rather than leave
+the read after filing waits out another pass
+(`landed_read_once_free`: `SCANS_TRIED_AT_MOST` tries `SCAN_TRIED_AGAIN_AFTER` apart, the root
+walked instead only where the read alone cannot stand in for a walk) rather than leave
 the song uncatalogued to be fetched again, and a song it never caught is held while its file stands
 at the noted path
 (`a_song_from_another_device_is_held_by_what_was_asked_and_never_filed_twice`,
