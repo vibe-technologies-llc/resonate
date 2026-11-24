@@ -296,3 +296,56 @@ fn a_kept_queue_row_that_will_not_open_is_dropped_and_the_rest_resumed() -> Resu
     assert!(resumed.shuffle);
     Ok(())
 }
+
+#[test]
+fn a_selected_last_row_that_will_not_open_resumes_the_row_before_it_from_its_start() -> Result<()> {
+    let tree = Tree::new();
+    let database = tree.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: vec![
+                row("/music/0.flac"),
+                row("/music/1.flac"),
+                row("/music/2.flac"),
+            ],
+            order: vec![0, 1, 2],
+            row: 2,
+            at: PLAYED_INTO,
+            shuffle: false,
+            next: None,
+        },
+    )?;
+    beside(&database)
+        .execute(
+            "UPDATE resume_rows SET uri = 'nothing openable' WHERE position = 2",
+            [],
+        )
+        .expect("the kept queue takes a row naming nothing");
+
+    let resumed = library
+        .resumption()?
+        .expect("a queue one row short is resumed");
+    let drawn: Vec<MediaLocation> = resumed
+        .in_play_order()
+        .into_iter()
+        .map(|loaded| resumed.rows[loaded].location.clone())
+        .collect();
+
+    assert_eq!(
+        drawn,
+        vec![
+            MediaLocation::local("/music/0.flac"),
+            MediaLocation::local("/music/1.flac")
+        ]
+    );
+    assert_eq!(
+        drawn[resumed.landing()],
+        MediaLocation::local("/music/1.flac")
+    );
+    assert_eq!(resumed.at, Frames::ZERO);
+    assert!(!resumed.shuffle);
+    Ok(())
+}

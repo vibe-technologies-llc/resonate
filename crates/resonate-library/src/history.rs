@@ -239,7 +239,161 @@ mod tests {
     use rusqlite::Connection;
 
     use super::*;
-    use crate::schema;
+    use crate::{Library, schema};
+
+    const THIRTY_DAYS: u16 = 30;
+
+    fn the_clock() -> SystemTime {
+        UNIX_EPOCH + Duration::from_secs(1_000 * SECONDS_PER_DAY)
+    }
+
+    fn the_cutoff() -> i64 {
+        store::to_nanos(
+            HistoryKept::days(THIRTY_DAYS)
+                .before(the_clock())
+                .expect("a span reaches back"),
+        )
+    }
+
+    fn lay_down(library: &Library, statements: &str) {
+        library
+            .inner()
+            .write(|transaction| {
+                transaction
+                    .execute_batch(statements)
+                    .map_err(|source| Error::store(StoreOp::Insert, source))
+            })
+            .expect("the rows are laid down");
+    }
+
+    fn one_track(library: &Library) {
+        lay_down(
+            library,
+            "INSERT INTO roots (id, path) VALUES (1, '/music');
+             INSERT INTO tracks (id, root_id, path, title, sample_rate, channels, sample_format,
+                                 codec, file_size, modified, added, seen)
+             VALUES (1, 1, '/music/cold.flac', 'Cold', 44100, 2, 16, 1, 0, 0, 0, 0);",
+        );
+    }
+
+    fn listen_ids(library: &Library) -> Vec<i64> {
+        library
+            .inner()
+            .read(|connection| {
+                connection
+                    .prepare("SELECT id FROM listens ORDER BY id")
+                    .and_then(|mut query| {
+                        query
+                            .query_map([], |row| row.get(0))
+                            .and_then(Iterator::collect)
+                    })
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })
+            .expect("the listens")
+    }
+
+    fn unheld_times(library: &Library) -> Vec<i64> {
+        library
+            .inner()
+            .read(|connection| {
+                connection
+                    .prepare("SELECT at FROM unheld_listens ORDER BY at")
+                    .and_then(|mut query| {
+                        query
+                            .query_map([], |row| row.get(0))
+                            .and_then(Iterator::collect)
+                    })
+                    .map_err(|source| Error::store(StoreOp::Query, source))
+            })
+            .expect("the unheld listens")
+    }
+
+    #[test]
+    fn a_listen_is_forgotten_only_before_the_cutoff_and_only_once_the_slower_service_was_told() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        let cutoff = the_cutoff();
+        let a_day = SECONDS_PER_DAY as i64 * 1_000_000_000;
+        let a_second = 1_000_000_000;
+
+        one_track(&library);
+        lay_down(
+            &library,
+            &format!(
+                "INSERT INTO listens (id, track_id, at) VALUES
+                    (1, 1, {early}), (2, 1, {recent}), (3, 1, {second}), (4, 1, {nano}),
+                    (5, 1, {cutoff}), (6, 1, {after});
+                 INSERT INTO submissions (service, through, began)
+                    VALUES ('listenbrainz', 4, 0), ('lastfm', 2, 0);",
+                early = cutoff - 3 * a_day,
+                recent = cutoff - 2 * a_day,
+                second = cutoff - a_second,
+                nano = cutoff - 1,
+                after = cutoff + 1,
+            ),
+        );
+
+        let aged = age(library.inner(), HistoryKept::days(THIRTY_DAYS), the_clock())
+            .expect("the history ages");
+
+        assert_eq!(aged.listens, 2);
+        assert_eq!(
+            listen_ids(&library),
+            vec![3, 4, 5, 6],
+            "a listen the slower service was yet to be told of was forgotten, or one before the cutoff was kept"
+        );
+
+        lay_down(
+            &library,
+            "UPDATE submissions SET through = 4 WHERE service = 'lastfm';",
+        );
+
+        let aged = age(library.inner(), HistoryKept::days(THIRTY_DAYS), the_clock())
+            .expect("the history ages");
+
+        assert_eq!(aged.listens, 2);
+        assert_eq!(
+            listen_ids(&library),
+            vec![5, 6],
+            "the listen at the cutoff itself, or one after it, was forgotten"
+        );
+
+        let aged = age(library.inner(), HistoryKept::days(THIRTY_DAYS), the_clock())
+            .expect("the history ages");
+
+        assert_eq!(aged, Aged::default());
+    }
+
+    #[test]
+    fn an_unheld_listen_or_a_pass_is_forgotten_by_age_whatever_a_service_was_told() {
+        let library = Library::open_in_memory().expect("an in-memory catalog opens");
+        let cutoff = the_cutoff();
+
+        lay_down(
+            &library,
+            &format!(
+                "INSERT INTO unheld_listens (path, span_start, at) VALUES
+                    ('/away/a.flac', 0, {before}), ('/away/b.flac', 0, {cutoff}),
+                    ('/away/c.flac', 0, {after});
+                 INSERT INTO passes (at, heard) VALUES ({before}, 1), ({cutoff}, 1), ({after}, 1);
+                 INSERT INTO submissions (service, through, began)
+                    VALUES ('listenbrainz', 0, 0), ('lastfm', 0, 0);",
+                before = cutoff - 1,
+                after = cutoff + 1,
+            ),
+        );
+
+        let aged = age(library.inner(), HistoryKept::days(THIRTY_DAYS), the_clock())
+            .expect("the history ages");
+
+        assert_eq!(
+            aged,
+            Aged {
+                listens: 0,
+                passes: 1
+            }
+        );
+        assert_eq!(unheld_times(&library), vec![cutoff, cutoff + 1]);
+    }
 
     fn plan_of(connection: &Connection, sql: &str) -> String {
         connection

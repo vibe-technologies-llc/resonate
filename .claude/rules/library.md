@@ -79,7 +79,12 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   (`a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one`);
   `span_start`/`span_frames` follow `store::span`, so a cue row resumes as its cut.  A URI no longer
   naming a location drops that row alone (`resumed::Kept` renumbers over the rest; playing row
-  dropped = resume at the next row's start; no openable row = `None`). `keep_resumption` replaces
+  dropped = resume at the next row's start in play order, and where it was the last, at the start
+  of the row before it, `at` zero either way; no openable row = `None`;
+  `a_selected_last_row_that_will_not_open_resumes_the_row_before_it_from_its_start`). Each resumed
+  row's `held` is the catalog row of its own path and cut, none for a song played in place or a
+  row the catalog no longer holds, the location and span kept all the same
+  (`each_restored_queue_row_names_the_catalog_row_of_its_own_cut_and_a_pruned_one_names_none`). `keep_resumption` replaces
   all three in one transaction; `resumption` reads them in one read transaction.
 - **A favourite is when, not whether.** `tracks.favourite`, `albums.favourite`, `artists.favourite`
   are nullable nanosecond stamps, so the marking column also orders by when marked.
@@ -122,8 +127,12 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `Library::stop_telling` for each service whose settings hold no account: its `submissions` and
   `earlier_submissions` rows go (read first, so a reader-only process writes nothing). `HistoryKept`
   = `Forever` (default) or days. `Library::age_the_history` deletes `listens`, `unheld_listens`,
-  `passes`, `playlist_plays` older than it (`forgotten_before`), a listen only at or behind the
-  lowest `submissions` mark. `tracks.plays`/`played` are separate counters and stay. The binary ages
+  `passes`, `playlist_plays` strictly older than now less the span (`forgotten_before`; a row stamped
+  at the cutoff itself stays), a listen only at or behind the lowest `submissions` and
+  `earlier_submissions` mark, so the slower service holds the rows it was yet to be told of; an
+  unheld listen, a pass and a playlist play age by time alone
+  (`a_listen_is_forgotten_only_before_the_cutoff_and_only_once_the_slower_service_was_told`,
+  `an_unheld_listen_or_a_pass_is_forgotten_by_age_whatever_a_service_was_told`). `tracks.plays`/`played` are separate counters and stay. The binary ages
   in `open_library_with`; the settings pane arms a shorter span on the first press
   (`Armed::AgeTheHistory`, lowered by `disarm`) and keeps it on the second; a longer span or
   *Forever* is kept at once.

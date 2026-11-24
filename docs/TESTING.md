@@ -114,13 +114,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   regression check (`crates/resonate-codec/src/sheet.rs:319`, `crates/resonate-codec/src/sheet.rs:598`).
   Done when removing the final line alone and with an insertion preserves the preceding lines,
   the chosen line ending and a legacy sheet's encoding.
-- [M · 0.17.1] Test the exact history retention cutoff with two scrobblers.
-  **Medium, builder.** The ageing tests use fresh or 400-day-old samples and one
-  service, so they miss a shorter retention window or a lagging second service
-  (`crates/resonate-library/tests/history.rs:403`, `:468`,
-  `crates/resonate-library/tests/support/fakes.rs:89`). Use a fixed clock and different
-  submission cursors. Done when the test proves the cutoff boundary, ageing of unheld
-  listens, and protection for rows the slower service still needs.
 - [M · 0.17.1] Verify that a failed desktop upgrade rolls back and retries on disk.
   **Low, builder.** The released-stamp sweep lays out empty in-memory catalogs and checks
   the final stamp (`crates/resonate-library/src/schema_released_tests.rs:70`).
@@ -132,31 +125,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   populate only individual steps (`crates/resonate-mobile/src/catalog_released_tests.rs:111`).
   Add a populated old-version fixture with listening history, saved queue and favourites.
   Done when an upgrade keeps the identities and saved values across the full chain.
-- [S · 0.17.1] Pin down desktop resumption when the last saved row is unreadable.
-  **Low, builder.** The test for dropping the selected row has a successor, while the
-  last-row case clamps to the preceding song at its start
-  (`crates/resonate-library/src/resumed.rs:49`, `:160`, `.claude/rules/library.md:79`).
-  Decide and document the intended fallback. Done when a regression test covers a
-  saved queue whose selected last URI cannot be read.
-- [S · 0.17.1] Give same-size rescan fixtures a known modification time. **Low, builder.**
-  The incremental test writes the same bytes twice and expects a new timestamp, which
-  a coarse filesystem can round to the same value
-  (`crates/resonate-library/tests/stored.rs:415`, `:436`,
-  `crates/resonate-library/src/scan.rs:1380`). Set distinct fixture timestamps where
-  the test needs a changed stamp. Done when the enrichment assertions run reliably
-  with both fixture writes in the same clock tick.
 - [M · 0.17.1] Exercise unreadable-folder scans regardless of process privileges. **Low, builder.**
   The permission cases return successfully without checking scan behavior when the runner
   can read or search the fixture anyway (`crates/resonate-library/tests/scanning.rs:1659`,
   `:1698`). Inject the denied listing or metadata read into the existing scan cases.
   Done when the tests assert the protected rows stay even when the runner can bypass
   filesystem mode bits.
-- [M · 0.17.1] Prove which catalog row each restored desktop queue entry names. **Low, builder.**
-  The test for a catalog-backed queue entry only asserts that some track ID was found
-  (`crates/resonate-library/tests/history.rs:121`,
-  `crates/resonate-library/src/db/resuming.rs:57`). Assert the actual ID and add two cue
-  cuts of the same file. Done when the test catches assigning either cut to its neighbour
-  and a pruned row keeps its saved location without a catalog ID.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the

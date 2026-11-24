@@ -8,12 +8,12 @@ use resonate_library::{
 };
 
 use crate::support::{
-    ADA, ALBUM, ALBUM_ARTIST, ANSWERED, ARTIST, ASKED, COMPILATION, Canned, Fake, Fault, ISRC,
-    LABEL, MUSICBRAINZ_ALBUM, MUSICBRAINZ_ARTIST, MUSICBRAINZ_RELEASE_GROUP, ORBITERS,
-    ORBITERS_PICTURE, RATE, RECORDING, RELEASE, RELEASE_GROUP, RELEASE_TRACK, Stored, TITLE, TRACK,
-    Tree, WAITED, Wav, all, answer_track, artist_named, beside, enrich, matching, mbid, only_album,
-    options, orbiters, orbits, orbits_file, png, recorded, release_row, scan, scanned_orbits,
-    scanned_orbits_on_disk, stored, the_row_at, timed_words, words,
+    ADA, ALBUM, ALBUM_ARTIST, ANSWERED, ARTIST, ASKED, COMPILATION, Canned, FIRST_WRITE, Fake,
+    Fault, ISRC, LABEL, MUSICBRAINZ_ALBUM, MUSICBRAINZ_ARTIST, MUSICBRAINZ_RELEASE_GROUP, ORBITERS,
+    ORBITERS_PICTURE, RATE, RECORDING, RELEASE, RELEASE_GROUP, RELEASE_TRACK, SECOND_WRITE, Stored,
+    TITLE, TRACK, Tree, WAITED, Wav, all, answer_track, artist_named, beside, enrich, matching,
+    mbid, only_album, options, orbiters, orbits, orbits_file, png, recorded, release_row, scan,
+    scanned_orbits, scanned_orbits_on_disk, stored, the_row_at, timed_words, words,
 };
 
 const MUSICBRAINZ_ALBUM_ARTIST: &str = "MusicBrainz Album Artist Id";
@@ -419,7 +419,7 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
         .text(ARTIST, "the orbiters")
         .build();
 
-    let file = tree.write("1.wav", &tagged);
+    let file = tree.write_stamped("1.wav", &tagged, FIRST_WRITE);
     let database = tree.path().join("library.db");
     let library = Library::open(&database)?;
 
@@ -433,7 +433,7 @@ fn a_rescan_keeps_an_answered_tracks_names_unless_the_file_itself_was_retagged()
         "Meddle",
     );
 
-    tree.write("1.wav", &tagged);
+    tree.write_stamped("1.wav", &tagged, SECOND_WRITE);
 
     assert_eq!(scan(&library, &options(&tree))?.updated, 1);
     assert_eq!(

@@ -8,13 +8,17 @@ use std::{
         atomic::{AtomicU64, Ordering},
     },
     thread,
-    time::{Duration, Instant},
+    time::{Duration, Instant, UNIX_EPOCH},
 };
 
 use resonate_core::{PlaylistId, QueueStamp};
 use resonate_library::{
     Library, Playing, Result, ScanOptions, ScanStats, ScanSummary, SortOrder, Track, TrackQuery,
 };
+
+pub(crate) const FIRST_WRITE: Duration = Duration::from_secs(1_600_000_000);
+
+pub(crate) const SECOND_WRITE: Duration = Duration::from_secs(1_600_003_600);
 
 pub(crate) const RATE: u32 = 44_100;
 
@@ -83,6 +87,17 @@ impl Tree {
             fs::create_dir_all(parent).expect("a writable temporary directory");
         }
         fs::write(&path, bytes).expect("a writable temporary file");
+        path
+    }
+
+    pub(crate) fn write_stamped(&self, relative: &str, bytes: &[u8], stamp: Duration) -> PathBuf {
+        let path = self.write(relative, bytes);
+
+        fs::File::options()
+            .write(true)
+            .open(&path)
+            .and_then(|file| file.set_modified(UNIX_EPOCH + stamp))
+            .expect("a modification time the file keeps");
         path
     }
 

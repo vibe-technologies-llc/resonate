@@ -168,6 +168,17 @@ mod tests {
     }
 
     #[test]
+    fn the_last_row_in_play_order_dropped_resumes_the_one_before_it_from_its_start() {
+        let dropped = kept(&[true, true, false, true], vec![1, 3, 0, 2], 3, None)
+            .resumed()
+            .expect("a queue one row short resumes");
+
+        assert_eq!(named(&dropped), vec![1, 3, 0]);
+        assert_eq!(named(&dropped)[dropped.landing()], 0);
+        assert_eq!(dropped.at, Frames::ZERO);
+    }
+
+    #[test]
     fn the_queued_next_span_closes_over_a_dropped_row() {
         let resumed = kept(
             &[true, true, false, true, true],

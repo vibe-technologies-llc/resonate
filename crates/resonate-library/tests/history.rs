@@ -12,14 +12,14 @@ use resonate_core::{
 use resonate_library::{
     Aged, AlbumQuery, ArtistQuery, Error, Favoured, HistoryKept, Isrc, Library, Listen,
     ListeningService, LookupOp, Love, LovedNames, LovesTold, Mbid, PollOptions, Result,
-    ScanOptions, Scrobbler as _, SortOrder, TrackQuery, Window,
+    ScanOptions, Scrobbler as _, SortOrder, Track, TrackQuery, Window,
 };
 
 use crate::support::{
-    ALBUM, ARTIST, Delivering, HOURS, ISRC, MUSICBRAINZ, Offering, RECORDING, TITLE, TRACK, Told,
-    Tree, Wav, album_titled, all, artist_named, beside, cancelled_once_a_batch_is_written,
-    many_short_songs, matched, mbid, opened_with_a_vault, options, orbits_tree, scan,
-    scanned_shapes, the_row_of, titles, wanted_san_tropez,
+    ALBUM, ARTIST, Delivering, HOURS, ISRC, MEDDLE_SHEET, MUSICBRAINZ, Offering, RECORDING, TITLE,
+    TRACK, Told, Tree, Wav, album_titled, all, artist_named, beside,
+    cancelled_once_a_batch_is_written, many_short_songs, matched, mbid, opened_with_a_vault,
+    options, orbits_tree, scan, scanned_shapes, the_row_of, titles, wanted_san_tropez,
 };
 
 fn resumable(path: &str) -> Resumable {
@@ -122,6 +122,11 @@ fn a_song_played_in_place_counts_as_a_listen_against_its_uri_and_never_as_a_row(
 fn a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one() -> Result<()> {
     let (tree, library) = scanned_shapes();
     let cold = MediaLocation::local(tree.path().join("cold.wav"));
+
+    let cold_row = library
+        .track_at(tree.path().join("cold.wav").as_path(), None)?
+        .expect("the track the scan stored")
+        .id;
     let served = MediaLocation::from_uri("subsonic:track/so-1").expect("a served song");
 
     let resumption = Resumption {
@@ -151,9 +156,82 @@ fn a_saved_queue_keeps_a_song_played_in_place_by_its_uri_beside_a_held_one() -> 
         [served, cold]
     );
     assert_eq!(resumed.rows[0].held, None);
-    assert!(resumed.rows[1].held.is_some());
+    assert_eq!(resumed.rows[1].held, Some(cold_row));
     assert_eq!(resumed.row, 0);
     assert_eq!(resumed.at, Frames(4410));
+    Ok(())
+}
+
+#[test]
+fn each_restored_queue_row_names_the_catalog_row_of_its_own_cut_and_a_pruned_one_names_none()
+-> Result<()> {
+    let tree = Tree::new();
+
+    tree.write("Meddle.wav", &Wav::new().frames(44_100).build());
+    tree.write("Meddle.cue", MEDDLE_SHEET.as_bytes());
+
+    let pruned = tree.write(
+        "gone.wav",
+        &Wav::new().text(TITLE, "Gone").text(ARTIST, "Ada").build(),
+    );
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &options(&tree))?;
+
+    let held = |title: &str| -> Result<Track> {
+        Ok(library
+            .tracks(&TrackQuery::default())?
+            .into_iter()
+            .find(|track| track.title == title)
+            .expect("a scanned row"))
+    };
+    let gone = held("Gone")?;
+
+    fs::remove_file(&pruned).expect("the file is removed");
+    scan(&library, &options(&tree))?;
+
+    assert_eq!(library.track_at(&pruned, None)?, None);
+
+    let [first, second, third] = ["One of These Days", "A Pillow of Winds", "Echoes"].map(held);
+
+    let (first, second, third) = (first?, second?, third?);
+
+    assert_eq!(first.location, second.location);
+    assert_eq!(second.location, third.location);
+    assert_ne!(first.id, second.id);
+    assert_ne!(second.id, third.id);
+    assert_ne!(first.span, second.span);
+
+    let named = |track: &Track| Resumable {
+        location: track.location.clone(),
+        span: track.span,
+        held: None,
+    };
+    let queue = [&third, &first, &gone, &second];
+
+    library.keep_resumption(
+        ZoneId::FIRST,
+        &Resumption {
+            rows: queue.iter().map(|track| named(track)).collect(),
+            ..Resumption::default()
+        },
+    )?;
+
+    let resumed = library.resumption()?.expect("the queue kept");
+
+    assert_eq!(
+        resumed
+            .rows
+            .iter()
+            .map(|row| (row.location.clone(), row.span, row.held))
+            .collect::<Vec<_>>(),
+        vec![
+            (third.location.clone(), third.span, Some(third.id)),
+            (first.location.clone(), first.span, Some(first.id)),
+            (gone.location.clone(), gone.span, None),
+            (second.location.clone(), second.span, Some(second.id)),
+        ]
+    );
     Ok(())
 }
 
