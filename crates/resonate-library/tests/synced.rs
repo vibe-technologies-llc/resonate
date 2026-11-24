@@ -481,6 +481,44 @@ fn a_hidden_favourite_is_still_a_favourite_to_the_devices_it_syncs_with() -> Res
 }
 
 #[test]
+fn an_unfavourite_clears_the_favourite_on_every_copy_of_the_recording_and_a_look_keeps_it()
+-> Result<()> {
+    let tree = Tree::new();
+    let first = tree.song("one/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let second = tree.song("two/echoes.wav", "Echoes", "Pink Floyd", "Meddle");
+    let library = Library::open_in_memory()?;
+
+    scan(&library, &tree.root)?;
+
+    let carrying = library.track_at(&second, None)?.expect("the second copy");
+
+    library.favour(resonate_library::Favoured::Track(carrying.id), true)?;
+
+    assert!(
+        library
+            .track_at(&first, None)?
+            .expect("the first copy")
+            .favourite
+            .is_none()
+    );
+    assert_eq!(library.favoured_recordings()?.len(), 1);
+
+    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), false)?);
+
+    assert!(library.favoured_recordings()?.is_empty());
+    assert!(
+        library
+            .track_at(&second, None)?
+            .expect("the second copy")
+            .favourite
+            .is_none()
+    );
+    assert!(library.favour_recording(&song("Echoes", "Pink Floyd", "Meddle"), false)?);
+    assert!(library.favoured_recordings()?.is_empty());
+    Ok(())
+}
+
+#[test]
 fn favourites_and_listens_travel_as_recordings_and_one_from_elsewhere_is_never_sent_back()
 -> Result<()> {
     let tree = Tree::new();

@@ -1230,28 +1230,90 @@ pub(crate) fn favourites(inner: &Inner) -> Result<Vec<Recording>> {
 
 pub(crate) fn favour(inner: &Inner, recording: &Recording, favoured: bool) -> Result<bool> {
     let changed = inner.write(|transaction| {
-        let Some(cut) = resolved(transaction, recording)? else {
-            return Ok(None);
+        let cuts = if favoured {
+            resolved(transaction, recording)?.into_iter().collect()
+        } else {
+            confirmed_copies(transaction, recording)?
         };
-        let row = Row::of(&cut)?;
+
+        if cuts.is_empty() {
+            return Ok(None);
+        }
+
         let at = favoured.then(|| store::to_nanos(SystemTime::now()));
         let standing = if favoured { "IS NULL" } else { "IS NOT NULL" };
-        transaction
-            .execute(
-                &format!(
-                    "UPDATE tracks SET favourite = ?1
-                      WHERE path = ?2 AND span_start = ?3 AND favourite {standing}"
-                ),
-                params![at, row.path, row.start()],
-            )
-            .map(|changed| Some(changed > 0))
-            .map_err(|source| Error::store(StoreOp::Update, source))
+        let mut changed = false;
+
+        for cut in &cuts {
+            let row = Row::of(cut)?;
+
+            changed |= transaction
+                .execute(
+                    &format!(
+                        "UPDATE tracks SET favourite = ?1
+                          WHERE path = ?2 AND span_start = ?3 AND favourite {standing}"
+                    ),
+                    params![at, row.path, row.start()],
+                )
+                .map_err(|source| Error::store(StoreOp::Update, source))?
+                > 0;
+        }
+        Ok(Some(changed))
     })?;
 
     if changed == Some(true) {
         inner.arrived();
     }
     Ok(changed.is_some())
+}
+
+fn confirmed_copies(connection: &Connection, recording: &Recording) -> Result<Vec<Cut>> {
+    let key = recording.key();
+    let named = recording.named_key();
+    let mut cuts = Vec::new();
+
+    if let Some(mbid) = &recording.mbid {
+        let mut statement = connection
+            .prepare_cached("SELECT path, span_start, span_frames FROM tracks WHERE mbid = ?1")
+            .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+        let held = statement
+            .query_map(params![mbid.as_str()], cut_at)
+            .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+            .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+        cuts.extend(held);
+    }
+
+    let mut statement = connection
+        .prepare_cached(
+            "SELECT t.path, t.span_start, t.span_frames
+               FROM songs_received s JOIN tracks t ON t.path = s.path
+              WHERE s.recording IN (?1, ?2)",
+        )
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    let received = statement
+        .query_map(params![key.as_str(), named.as_str()], cut_at)
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))?;
+
+    cuts.extend(received);
+    cuts.extend(
+        named_alike(connection, recording, Among::HiddenToo)?
+            .into_iter()
+            .map(|(cut, _)| cut),
+    );
+
+    let mut distinct: Vec<Cut> = Vec::with_capacity(cuts.len());
+
+    for cut in cuts {
+        if !distinct.contains(&cut) {
+            distinct.push(cut);
+        }
+    }
+
+    Ok(distinct)
 }
 
 pub(crate) fn listens_after(

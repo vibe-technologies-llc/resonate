@@ -337,6 +337,11 @@ platforms; the catalog seam stays thin.
   and `settle` and `wanted` take only favoured rows no newer alike row unfavours, so an old `mbid:`
   tombstone never unfavours a song a newer `named:` row favours
   (`an_older_tombstone_under_one_key_never_unfavours_a_song_a_newer_favourite_under_another_keeps`).
+  **A synced unfavourite clears every confirmed copy**: the catalog's `favour_recording(false)`
+  clears each row the recording names by its MBID, by what was received for it or by
+  a matching title, artist, album and length (`confirmed_copies`), hidden ones too, so the next look finds no favourite
+  on a second copy to send back; a favourite is set on the one row the recording resolves to
+  (`an_unfavourite_clears_the_favourite_on_every_copy_of_the_recording_and_a_look_keeps_it`).
 - **Remote listens are credited where the song is held** (`Catalog::credit`), else kept and
   credited when it arrives; they are never sent on to a scrobbling service (the library's
   `listens.elsewhere`, Android's likewise). The ledger ages told listens past `LISTENS_KEPT_FOR` on every look, through the index on `at`

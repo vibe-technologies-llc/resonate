@@ -66,13 +66,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   that can be compared across reconnects with compatible wire and store changes.
   Done when a returning client catches up after another device recreates an
   expired space and writes past the returning client's cursor.
-- [M · 0.17.1] Clear a synced favourite across copies of the same recording.
-  **Medium, builder.** Desktop sync resolves an unfavourite to one row, while
-  the next look still reads a favourite on another copy and can send it back
-  (`crates/resonate-library/src/synced.rs:766`, `:1209`, `:1226`,
-  `crates/resonate-sync/src/ledger.rs:1488`). Apply the unfavourite to confirmed
-  copies of the recording. Done when the second copy carries the only favourite,
-  a remote removal clears it, and a subsequent look keeps the removal.
 - [M · 0.17.1] Give desktop command-line fetch batches a terminal result.
   **Medium, builder.** The CLI waits for every requested recording in the display
   transfer list. The service can remove a row when the file has arrived via
