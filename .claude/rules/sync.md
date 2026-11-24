@@ -1180,8 +1180,9 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `RustMediaPlayer` asks audio focus when a snapshot turns to sounding in any zone
   (`soundBegan`) and pauses the zones that sound where it is refused, and iOS's `NowPlaying` activates the session where
   the engine answered sounding with no `activate` asked of it since it last rested (`SessionAsked`).
-  As for any peer, a phone on a metered network with mobile data off refuses the connection and an
-  iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
+  As for any peer, a phone on a metered network with mobile data off refuses the connection (and
+  a connection already standing stops mirroring and answers no command, *Android and iOS send and
+  fetch songs only on an unmetered network*) and an iPhone suspended in the background answers nothing, so what drives it reads as `Unanswered`.
 - **`sync-deletions-from-others` is *Let my other devices delete songs here*, on by default on every
   front end.** The desktop reads it into `Catalogued::takes_deletions` (part of the `Arrangement`,
   so a change restarts the service) and draws it in the *Driven by your other devices* group; the
@@ -1507,7 +1508,12 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   (`allow_transfers`); incoming peers are refused meanwhile, a run under way stops before its next
   song as a cut-short run does, and a `Fetch` asked meanwhile is answered `Missing`
   (`Answering::transfers_allowed`, the flag the service holds); covers, Lyricsfiles and prints are
-  neither asked nor answered meanwhile.
+  neither asked nor answered meanwhile. A standing connection stays open, since its records go on,
+  but a drive stream on it stops with the flag: a mirror loop (`send_mirror`) checks it each look
+  and ends its stream, and a `Watch` or `Control` asked meanwhile is dropped unanswered, so the
+  watcher reads an ended stream and a command as `Controlling::Unanswered`. Allowing transfers
+  again lets a new watch and commands through on the same connection
+  (`a_standing_watch_and_command_stop_while_transfers_are_not_allowed_and_work_again_after`).
 
 ## Nearby
 

@@ -33,15 +33,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/catalog.rs:131`). Keep the file owned through the
   catalog commit and make cleanup retryable. Done when a failed alias write,
   a concurrent adoption and a failed unlink leave each file tracked or reclaimed.
-- [M · 0.17.1] Apply the phone's metered-network setting to existing drive streams.
-  **Low, builder.** Switching to metered data with transfers disabled blocks
-  new peer connections. A previously opened connection can keep sending
-  mirror frames and accepting drive commands
-  (`crates/resonate-sync/src/service.rs:1942`, `:3744`,
-  `crates/resonate-sync/src/peer.rs:228`, `:427`, `:457`). Enforce the network
-  policy on existing peer requests and streams. Done when an established
-  watch and subsequent commands stop on a metered transition and work again
-  after the connection is permitted.
 - [S · 0.17.1] Show a definite Android remote-watch failure when sync stops.
   **Low, builder.** The drive panel drops read failures and displays its
   waiting state even after a device is removed or sync turns off

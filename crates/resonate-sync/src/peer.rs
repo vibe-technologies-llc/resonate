@@ -196,7 +196,7 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             send_frame(&mut send, &FromPeer::HeldEnd.encoded()).await?;
         }
         ToPeer::Tags { recording } => {
-            let answer = if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+            let answer = if asked.answering.transfers_allowed() {
                 match blocking(move || catalog.tags(&recording).map_err(Error::Catalog)).await {
                     Ok(tags) => FromPeer::Tagged { tags },
                     Err(error) => {
@@ -211,19 +211,19 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             send_frame(&mut send, &answer.encoded()).await?;
         }
         ToPeer::Covers { releases } => {
-            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+            if asked.answering.transfers_allowed() {
                 send_covers(&mut send, catalog, releases).await?;
             }
             send_frame(&mut send, &FromPeer::CoversEnd.encoded()).await?;
         }
         ToPeer::Lyricsfiles { recordings } => {
-            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+            if asked.answering.transfers_allowed() {
                 send_lyricsfiles(&mut send, catalog, recordings).await?;
             }
             send_frame(&mut send, &FromPeer::LyricsfilesEnd.encoded()).await?;
         }
         ToPeer::Prints { files } => {
-            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+            if asked.answering.transfers_allowed() {
                 send_prints(&mut send, catalog, files).await?;
             }
             send_frame(&mut send, &FromPeer::PrintsEnd.encoded()).await?;
@@ -233,11 +233,17 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             command,
             queue_seen,
         } => {
-            let answer = controlled_here(&asked.answering, zone, command, queue_seen).await;
+            if asked.answering.transfers_allowed() {
+                let answer = controlled_here(&asked.answering, zone, command, queue_seen).await;
 
-            send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
+                send_frame(&mut send, &FromPeer::Controlled(answer).encoded()).await?;
+            }
         }
-        ToPeer::Watch { revisions } => send_mirror(&mut send, &asked.answering, revisions).await?,
+        ToPeer::Watch { revisions } => {
+            if asked.answering.transfers_allowed() {
+                send_mirror(&mut send, &asked.answering, revisions).await?
+            }
+        }
         ToPeer::Consult {
             asked: question,
             dates,
@@ -257,7 +263,7 @@ async fn answer(mut send: SendStream, mut recv: RecvStream, asked: Asked) -> Res
             offset,
             bound,
         } => {
-            if asked.answering.transfers_allowed.load(Ordering::Relaxed) {
+            if asked.answering.transfers_allowed() {
                 send_song(&mut send, catalog, recording, offset, bound).await?;
             } else {
                 send_frame(&mut send, &FromPeer::Missing.encoded()).await?;
@@ -272,8 +278,12 @@ impl Answering {
         self.controlled.read().clone()
     }
 
+    fn transfers_allowed(&self) -> bool {
+        self.transfers_allowed.load(Ordering::Relaxed)
+    }
+
     fn consultable(&self) -> Option<Arc<dyn Consultable>> {
-        if self.transfers_allowed.load(Ordering::Relaxed) {
+        if self.transfers_allowed() {
             self.consulted.read().clone()
         } else {
             None
@@ -467,7 +477,8 @@ async fn send_mirror(
     revisions: Revisions,
 ) -> Result<()> {
     let mut told: Option<(Vec<RemoteZone>, Instant)> = None;
-    loop {
+
+    while answering.transfers_allowed() {
         let (controlled, trust) = match answering.controlled() {
             Some(held) => held,
             None => {
@@ -505,6 +516,7 @@ async fn send_mirror(
         }
         tokio::time::sleep(MIRROR_LOOKED_AT_EVERY).await;
     }
+    Ok(())
 }
 
 pub async fn control(
@@ -1785,6 +1797,34 @@ mod tests {
         }
     }
 
+    struct DeskStage {
+        told: Mutex<Vec<RemoteCommand>>,
+    }
+
+    impl Controlled for DeskStage {
+        fn zones(&self) -> Vec<RemoteZone> {
+            vec![a_mirrored_zone("Desk")]
+        }
+
+        fn control(
+            &self,
+            _: ZoneId,
+            command: RemoteCommand,
+        ) -> std::result::Result<(), crate::Uncontrolled> {
+            self.told.lock().push(command);
+            Ok(())
+        }
+
+        fn control_if_the_queue_is_still(
+            &self,
+            zone: ZoneId,
+            _: u64,
+            command: RemoteCommand,
+        ) -> std::result::Result<(), crate::Uncontrolled> {
+            self.control(zone, command)
+        }
+    }
+
     fn a_song_of(seed: u8) -> Vec<u8> {
         (0..SONG_BYTES).map(|at| (at % 251) as u8 ^ seed).collect()
     }
@@ -1800,6 +1840,15 @@ mod tests {
     }
 
     async fn serving(song: Arc<OneSong>) -> (Endpoint, Endpoint, SocketAddr) {
+        let (sending, asking, address, _) = serving_driven(song, None).await;
+
+        (sending, asking, address)
+    }
+
+    async fn serving_driven(
+        song: Arc<OneSong>,
+        controlled: Option<Arc<dyn Controlled>>,
+    ) -> (Endpoint, Endpoint, SocketAddr, Arc<AtomicBool>) {
         let derived = crate::SyncKey::minted()
             .and_then(|key| key.derived())
             .expect("a key");
@@ -1814,12 +1863,13 @@ mod tests {
         let answering = Arc::new(Answering {
             catalog: song,
             consulted: RwLock::new(None),
-            controlled: RwLock::new(None),
+            controlled: RwLock::new(controlled.map(|held| (held, RemoteTrust::Everything))),
             ledger: Arc::new(Mutex::new(Ledger::in_memory().expect("a ledger"))),
             device: SENDER,
             heard,
             transfers_allowed: Arc::new(AtomicBool::new(true)),
         });
+        let transfers_allowed = Arc::clone(&answering.transfers_allowed);
 
         asking.set_default_client_config(identity.dialling().expect("dialling"));
 
@@ -1833,7 +1883,7 @@ mod tests {
                 }
             }
         });
-        (sending, asking, address)
+        (sending, asking, address, transfers_allowed)
     }
 
     async fn dialled_at(asking: &Endpoint, address: SocketAddr) -> Connection {
@@ -2436,5 +2486,73 @@ mod tests {
         assert_eq!(of_another, None);
         assert!(!staged.exists());
         assert!(!noted.exists());
+    }
+
+    #[tokio::test]
+    async fn a_standing_watch_and_command_stop_while_transfers_are_not_allowed_and_work_again_after()
+     {
+        let stage = Arc::new(DeskStage {
+            told: Mutex::new(Vec::new()),
+        });
+        let (_sending, asking, address, transfers_allowed) = serving_driven(
+            Arc::new(OneSong {
+                bytes: Mutex::new(Vec::new()),
+            }),
+            Some(Arc::clone(&stage) as Arc<dyn Controlled>),
+        )
+        .await;
+
+        let connection = dialled_at(&asking, address).await;
+        let device = DeviceId([3; 16]);
+
+        let mirrors = Arc::new(RwLock::new(BTreeMap::new()));
+        let watching = tokio::spawn({
+            let connection = connection.clone();
+            let mirrors = Arc::clone(&mirrors);
+
+            async move { watch(&connection, device, &mirrors, || true).await }
+        });
+
+        mirrored_as(&mirrors, device, &["Desk"]).await;
+
+        let before = control(&connection, ZoneId::FIRST, RemoteCommand::Play, None).await;
+
+        transfers_allowed.store(false, Ordering::Relaxed);
+
+        let ended = timeout(Duration::from_secs(10), watching)
+            .await
+            .expect("the standing watch ended when transfers were disallowed")
+            .expect("the watch task");
+
+        let refused = control(&connection, ZoneId::FIRST, RemoteCommand::Pause, None).await;
+        let unmirrored = Arc::new(RwLock::new(BTreeMap::new()));
+        let rewatched = watch(&connection, device, &unmirrored, || true).await;
+
+        assert!(ended.is_ok());
+        assert_eq!(before, Controlling::Done);
+        assert_eq!(refused, Controlling::Unanswered);
+        assert!(rewatched.is_ok());
+        assert!(mirrored_names(&unmirrored, device).is_empty());
+        assert_eq!(*stage.told.lock(), vec![RemoteCommand::Play]);
+        assert!(connection.close_reason().is_none());
+
+        transfers_allowed.store(true, Ordering::Relaxed);
+
+        let after = control(&connection, ZoneId::FIRST, RemoteCommand::Pause, None).await;
+        let rewatching = tokio::spawn({
+            let connection = connection.clone();
+            let mirrors = Arc::clone(&unmirrored);
+
+            async move { watch(&connection, device, &mirrors, || true).await }
+        });
+
+        mirrored_as(&unmirrored, device, &["Desk"]).await;
+        rewatching.abort();
+
+        assert_eq!(after, Controlling::Done);
+        assert_eq!(
+            *stage.told.lock(),
+            vec![RemoteCommand::Play, RemoteCommand::Pause]
+        );
     }
 }
