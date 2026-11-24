@@ -23,9 +23,10 @@ use resonate_audio::{
 use resonate_cast::{Finding, Searching as CastSearching};
 use resonate_codec::Sources;
 use resonate_core::{
-    ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, TrackId, ZoneId,
+    ChannelLayout, Frames, Gain, Resumable, Resumption, SampleFormat, SampleRate, Span, TrackId,
+    ZoneId,
 };
-use resonate_engine::{Command, EngineConfig, Player};
+use resonate_engine::{Command, EngineConfig, Player, QueueItem};
 use resonate_upnp::{Offering, Searching};
 
 use crate::{
@@ -34,6 +35,7 @@ use crate::{
     documents::{DOCUMENT_NOT_FOUND, DOCUMENT_REFUSED, GrantedFiles, location},
     downloads::Downloads,
     features::Services,
+    launch::Launch,
     offering::Offered,
     output::{self, Routing},
     rendering::{Kinds, Rendering},
@@ -232,6 +234,51 @@ impl Backend for Sounding {
     }
 }
 
+struct Fixtures {
+    folder: PathBuf,
+    opens_held: Arc<AtomicBool>,
+    documents: Arc<dyn Documents>,
+    told: UdpSocket,
+    offering: Offering,
+}
+
+impl Fixtures {
+    fn made() -> Self {
+        let folder = a_fresh_folder("queue");
+
+        for name in SONGS {
+            fs::write(folder.join(format!("{name}.wav")), silence()).expect("a song");
+        }
+
+        let opens_held = Arc::new(AtomicBool::new(false));
+        let documents: Arc<dyn Documents> = Arc::new(Folder {
+            root: folder.clone(),
+            opens_held: Arc::clone(&opens_held),
+        });
+        let told =
+            UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
+
+        told.set_read_timeout(Some(LOOKED_AGAIN_AFTER))
+            .expect("a read timeout");
+
+        let offering = Offering {
+            heard_on: SocketAddr::new(LOOPBACK, 0),
+            told: told.local_addr().expect("the told address"),
+            every: Duration::from_secs(3_600),
+            serving_on: LOOPBACK,
+            name: None,
+        };
+
+        Self {
+            folder,
+            opens_held,
+            documents,
+            told,
+            offering,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Device {
     None,
@@ -239,7 +286,7 @@ enum Device {
 }
 
 pub(crate) struct Harness {
-    pub(crate) player: MobilePlayer,
+    pub(crate) player: Arc<MobilePlayer>,
     pub(crate) songs: Vec<Track>,
     pub(crate) folder: PathBuf,
     pub(crate) told: UdpSocket,
@@ -284,36 +331,19 @@ impl Harness {
     }
 
     fn beside(device: Device, rendering: Rendering, catalog: &Path) -> Self {
-        let folder = a_fresh_folder("queue");
-
-        for name in SONGS {
-            fs::write(folder.join(format!("{name}.wav")), silence()).expect("a song");
-        }
-
-        let opens_held = Arc::new(AtomicBool::new(false));
-        let documents: Arc<dyn Documents> = Arc::new(Folder {
-            root: folder.clone(),
-            opens_held: Arc::clone(&opens_held),
-        });
+        let Fixtures {
+            folder,
+            opens_held,
+            documents,
+            told,
+            offering,
+        } = Fixtures::made();
         let served = crate::served::Served::default();
         let files = Arc::clone(&documents);
 
         let sources = Arc::new(served.sources(Sources::local().and(Arc::new(
             GrantedFiles::new(documents, "content").expect("a granted provider"),
         ))));
-        let told =
-            UdpSocket::bind(SocketAddr::new(LOOPBACK, 0)).expect("a socket told of the server");
-
-        told.set_read_timeout(Some(LOOKED_AGAIN_AFTER))
-            .expect("a read timeout");
-
-        let offering = Offering {
-            heard_on: SocketAddr::new(LOOPBACK, 0),
-            told: told.local_addr().expect("the told address"),
-            every: Duration::from_secs(3_600),
-            serving_on: LOOPBACK,
-            name: None,
-        };
 
         let kinds = rendering.kinds();
         let engines: Box<Engines> = {
@@ -334,7 +364,7 @@ impl Harness {
         )
         .expect("an engine over the backend");
 
-        let player = MobilePlayer {
+        let player = Arc::new(MobilePlayer {
             playing: Playing::start(engine, Arc::new(Routing::new()), None, engines),
             catalog: Arc::new(Catalog::open(catalog).expect("a catalog")),
             sources,
@@ -351,10 +381,45 @@ impl Harness {
             rendering,
             offered: Offered::on(folder.clone(), offering),
             releases: resonate_online::KeptRelease::in_folder(&folder),
-        };
+        });
 
         player.services.files.reach_through(files);
 
+        Self::with_songs_indexed(player, folder, told, opens_held)
+    }
+
+    pub(crate) fn launched_over(file: &CatalogFile) -> Self {
+        let Fixtures {
+            folder,
+            opens_held,
+            documents,
+            told,
+            offering,
+        } = Fixtures::made();
+
+        let launch = Launch {
+            rendering: Rendering::default(),
+            offered: Offered::on(folder.clone(), offering),
+            engine: Arc::new(move |zone, config, sources, _, kinds| {
+                engine_over(Device::None, zone, config, Arc::clone(sources), kinds)
+            }),
+        };
+        let player = MobilePlayer::launched(
+            file.0.to_str().expect("a folder named in text"),
+            documents,
+            launch,
+        )
+        .expect("a launched player");
+
+        Self::with_songs_indexed(player, folder, told, opens_held)
+    }
+
+    fn with_songs_indexed(
+        player: Arc<MobilePlayer>,
+        folder: PathBuf,
+        told: UdpSocket,
+        opens_held: Arc<AtomicBool>,
+    ) -> Self {
         let songs = SONGS
             .iter()
             .map(|name| {
@@ -431,6 +496,42 @@ impl Harness {
             .iter()
             .map(name_of)
             .collect()
+    }
+
+    pub(crate) fn arrangement(&self) -> (String, String, bool, Option<Span>) {
+        let player = self.player.playing.player().expect("an open player");
+        let queued = player.queued();
+        let titled = |item: &QueueItem| {
+            self.songs
+                .iter()
+                .find(|song| location(&song.uri).ok().as_ref() == Some(&item.location))
+                .map_or('?', name_of)
+        };
+
+        (
+            self.queued(),
+            queued
+                .in_list_order()
+                .iter()
+                .map(|item| titled(item))
+                .collect(),
+            player.state().shuffle,
+            queued.next,
+        )
+    }
+
+    pub(crate) fn queued_as(&self, names: &str) {
+        let began = Instant::now();
+
+        while self.queued() != names {
+            assert!(
+                began.elapsed() < SETTLED_WITHIN,
+                "the queue never became {names}: {}",
+                self.queued()
+            );
+
+            thread::sleep(LOOKED_AGAIN_AFTER);
+        }
     }
 
     pub(crate) fn queue_ids(&self) -> Vec<u64> {

@@ -1903,7 +1903,9 @@ mod tests {
             ]
         );
 
-        harness.player.served = Arc::new(Served::default());
+        Arc::get_mut(&mut harness.player)
+            .expect("the sole holder of the player")
+            .served = Arc::new(Served::default());
         harness.player.serve_from(vec![account]);
 
         let cached = harness

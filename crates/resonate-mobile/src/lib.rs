@@ -22,6 +22,7 @@ mod foreign;
 mod harness;
 mod history;
 mod language;
+mod launch;
 mod learnt;
 mod listening;
 mod logging;
@@ -41,6 +42,8 @@ mod playlist_links;
 mod playlists;
 mod profile_links;
 mod queue_edit;
+#[cfg(test)]
+mod relaunch_tests;
 mod rendering;
 mod replacing;
 #[cfg(test)]
@@ -70,12 +73,7 @@ mod words {
 mod wrapped;
 mod zoning;
 
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    sync::Arc,
-    time::Duration,
-};
+use std::{path::Path, sync::Arc, time::Duration};
 
 use parking_lot::Mutex;
 use resonate_codec::{Picturing, Sources, probe_pictured};
@@ -83,15 +81,15 @@ use resonate_core::{
     Frames, MediaLocation, Resumable, Resumption, SampleRate, TrackId, Volume, ZoneId,
 };
 use resonate_engine::{
-    Command, EngineConfig, OutputStatus, PlaybackState, PlayerState, QueueItem, QueueRows,
-    RepeatMode,
+    Command, OutputStatus, PlaybackState, PlayerState, QueueItem, QueueRows, RepeatMode,
 };
 use resonate_library::{NamedByTheFile, named_by_the_file};
 
 use crate::{
     arranged::{Arranged, Laid},
     catalog::Catalog,
-    documents::{GRANTED_SCHEMES, GrantedFiles, document_uri, location},
+    documents::{document_uri, location},
+    launch::Launch,
     one_file::{Probed, Spelled},
     stamp::DocumentStamp,
     vanished::Absorbing,
@@ -364,86 +362,11 @@ pub struct MobilePlayer {
 impl MobilePlayer {
     #[uniffi::constructor]
     pub fn new(folder: String, documents: Box<dyn Documents>) -> Result<Arc<Self>> {
-        fs::create_dir_all(&folder).map_err(|source| Error::Folder {
-            op: StoreOp::CreateFolder,
-            source,
-        })?;
-
-        let catalog = Arc::new(Catalog::open(&Path::new(&folder).join("documents.sqlite"))?);
-        let documents: Arc<dyn Documents> = Arc::from(documents);
-        let files = Arc::clone(&documents);
-        let served = Arc::new(served::Served::default());
-
-        let sources = Arc::new(GRANTED_SCHEMES.iter().try_fold(
-            served.sources(Sources::local().spooling_under(Path::new(&folder).to_path_buf())),
-            |sources, scheme| {
-                Ok::<_, Error>(
-                    sources.and(Arc::new(GrantedFiles::new(Arc::clone(&documents), scheme)?)),
-                )
-            },
-        )?);
-        let routing = Arc::new(output::Routing::new());
-        let kept = catalog.kept_zones()?;
-        let rendering = rendering::Rendering::on_the_network();
-
-        rendering.taught_from(&catalog)?;
-        if kept.iter().any(|zone| zone.renderer.is_some()) {
-            rendering.look_behind();
-        }
-
-        let config = EngineConfig {
-            volume: zoning::first_zones_volume(&kept),
-            sink: zoning::first_zones_sink(&kept),
-            ..EngineConfig::default()
-        };
-        let kinds = rendering.kinds();
-
-        let player = output::player(config, Arc::clone(&sources), &routing, kinds.clone())?;
-        let engines: Box<zoning::Engines> = {
-            let sources = Arc::clone(&sources);
-            Box::new(
-                move |_: ZoneId, config: EngineConfig, routing: &Arc<output::Routing>| {
-                    output::player(config, Arc::clone(&sources), routing, kinds.clone())
-                },
-            )
-        };
-
-        let playing = zoning::Playing::start(
-            player,
-            routing,
-            kept.iter().find(|zone| zone.id.is_first()),
-            engines,
-        );
-        let this = Arc::new(Self {
-            playing,
-            catalog,
-            sources,
-            preferences: Mutex::new(PlaybackPreferences::default()),
-            services: features::Services::default(),
-            playlist_undo: Mutex::new(Vec::new()),
-            downloads: downloads::Downloads::under(Path::new(&folder)),
-            syncing: sync::Syncing::under(PathBuf::from(&folder)),
-            enriching: enrichment::Enriching::default(),
-            room: room::Room::under(PathBuf::from(&folder)),
-            tagging: tagging::Tagging::under(PathBuf::from(&folder)),
-            served,
-            together: together::Together::default(),
-            rendering,
-            offered: offering::Offered::under(PathBuf::from(&folder)),
-            releases: resonate_online::KeptRelease::in_folder(Path::new(&folder)),
-        });
-
-        this.downloads.stall_by(this.services.downloads.clone());
-        this.services.files.reach_through(files);
-
-        let carried_over = this.catalog.carries_queues_over()?;
-
-        if carried_over {
-            this.resume_saved_in(ZoneId::FIRST)?;
-        }
-        watching::keep(&this, ZoneId::FIRST);
-        this.restore_zones(&kept, carried_over)?;
-        Ok(this)
+        Self::launched(
+            &folder,
+            Arc::from(documents),
+            Launch::on_the_phone(Path::new(&folder)),
+        )
     }
 
     pub fn index_document(&self, uri: String, name: String) -> Result<Track> {
@@ -994,7 +917,7 @@ impl MobilePlayer {
 
 #[cfg(test)]
 mod tests {
-    use resonate_core::{ChannelLayout, Frames, SampleFormat, Span, StreamSpec};
+    use resonate_core::{ChannelLayout, Frames, SampleFormat, StreamSpec};
     use resonate_engine::{OutputMode, SinkId, StreamVolume};
 
     use super::*;
@@ -1105,30 +1028,6 @@ mod tests {
         assert_eq!(resumed.queue_index, 1);
     }
 
-    fn arrangement(harness: &crate::harness::Harness) -> (String, String, bool, Option<Span>) {
-        let player = harness.player.playing.player().expect("an open player");
-        let queued = player.queued();
-        let named = |track: &Track| crate::harness::name_of(track);
-        let titled = |item: &QueueItem| {
-            harness
-                .songs
-                .iter()
-                .find(|song| location(&song.uri).ok().as_ref() == Some(&item.location))
-                .map_or('?', named)
-        };
-
-        (
-            harness.queued(),
-            queued
-                .in_list_order()
-                .iter()
-                .map(|item| titled(item))
-                .collect(),
-            player.state().shuffle,
-            queued.next,
-        )
-    }
-
     #[test]
     fn a_shuffled_queue_comes_back_shuffled_with_its_list_order_and_the_rows_played_next() {
         let harness = crate::harness::Harness::new();
@@ -1142,7 +1041,7 @@ mod tests {
             .expect("a row played next");
         harness.settled(|snapshot| snapshot.next_count == 1);
 
-        let saved = arrangement(&harness);
+        let saved = harness.arrangement();
 
         harness.player.save().expect("a save");
         harness.resumed("dcba", 0, 0);
@@ -1152,7 +1051,7 @@ mod tests {
             .expect("the saved queue resumed");
         harness.settled(|snapshot| snapshot.shuffle && snapshot.next_count == 1);
 
-        let resumed = arrangement(&harness);
+        let resumed = harness.arrangement();
 
         assert!(saved.2);
         assert_eq!(saved.1, "acbcd");
@@ -1319,7 +1218,7 @@ mod tests {
             .player
             .resume_saved_in(ZoneId::FIRST)
             .expect("the kept queue resumed");
-        harness.settled(|snapshot| snapshot.current.is_some());
+        harness.settled(|snapshot| snapshot.position_ms >= 500);
 
         assert_eq!(kept, (harness.ids("abcda"), 1, 500));
         assert_eq!(harness.queued(), "abcda");

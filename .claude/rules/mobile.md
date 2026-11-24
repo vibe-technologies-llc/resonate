@@ -1074,7 +1074,13 @@ whose stream nothing pulls, for a queue that plays) and WAVE documents through t
 `content` provider; that `Harness` (`harness.rs`, test-only) is shared by the organise, inspector,
 analysis, snapshot and listening tests. `Harness::over_the_catalog_in` opens it over a catalog file
 (`CatalogFile`, a folder of its own that outlives each harness), so a save and shutdown are read back
-by the next harness as by the next start. A listen counted for a song the catalog no longer holds
+by the next harness as by the next start. `Harness::launched_over` goes the whole way a start does: `MobilePlayer::launched`
+(`launch.rs`, which `MobilePlayer::new` calls with `Launch::on_the_phone`: the network rendering, the offering and the
+platform's engine) opens the catalog folder, resumes the first zone and opens each kept zone, the harness giving
+`Launch` a backend with no device and no network, so `relaunch_tests.rs` reads each zone's queue, shuffle order,
+play-next span, volume and the carry-over switch off a new player over the saved catalog. A snapshot names
+the row still opening as `current` with a position of 0, so a test that reads where a restore landed waits on
+`position_ms`, never on `current` alone. A listen counted for a song the catalog no longer holds
 stores nothing and settles nothing: `store_counting` keeps no visit unless the insert changed a row
 (`a_listen_counted_for_a_song_the_catalog_lost_does_not_settle_over_another_listen`). The enrichment tests drive the pass over a fake `Reference` through `Asking`
 (the reference and the client whose switch it reads): one cover per album, a miss left alone until
