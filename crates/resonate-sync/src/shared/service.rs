@@ -18,6 +18,7 @@ use tokio::{
 
 use crate::{
     Clock, DeviceId, Error, HeldShare, LocalPlaylistId, Refused, Result, Server, SpaceId, Stamp,
+    Welcomed,
     key::random_bytes,
     merge::projection_digest,
     quic::{to_the_server, trusted_roots},
@@ -45,7 +46,10 @@ use crate::{
     },
     wall_nanos,
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
-    wire::{FromServer, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, SpaceAsked, ToServer},
+    wire::{
+        FromServer, INCARNATION_VERSION, LARGEST_RECORD, PROTOCOL_VERSION, Refusal, SpaceAsked,
+        ToServer,
+    },
     words,
 };
 
@@ -175,6 +179,7 @@ impl Shared {
             revision: None,
             standings: BTreeMap::new(),
             closes_before_answer: BTreeMap::new(),
+            servers_before_incarnations: BTreeSet::new(),
             oversized: BTreeMap::new(),
             shown: Arc::clone(&shown),
             held: Arc::clone(&held),
@@ -291,6 +296,7 @@ struct Running {
     revision: Option<u64>,
     standings: BTreeMap<SpaceId, SharedStanding>,
     closes_before_answer: BTreeMap<String, u32>,
+    servers_before_incarnations: BTreeSet<String>,
     oversized: BTreeMap<SpaceId, Oversized>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
     held: Arc<RwLock<Vec<HeldShare>>>,
@@ -526,6 +532,7 @@ impl Running {
             alias: Some(local.name.clone()),
             seen: Some(digest_of(&local)),
             cursor: 0,
+            incarnation: None,
             list,
             written,
             records_since: 0,
@@ -614,6 +621,7 @@ impl Running {
             alias: None,
             seen: None,
             cursor: 0,
+            incarnation: None,
             list: SharedList::default(),
             written: Vec::new(),
             records_since: 0,
@@ -870,7 +878,7 @@ impl Running {
                 };
                 let head = heads.get(&space).copied();
                 let kept = &self.lists[at];
-                let moved = head.is_some_and(|(head, _)| head > kept.cursor);
+                let moved = head.is_some_and(|(head, _)| head != kept.cursor);
                 let closed = head.is_some_and(|(_, closed)| closed);
 
                 let unknown_to_it = head.is_none() && kept.access.may_edit();
@@ -1017,7 +1025,61 @@ impl Running {
         Ok((Outgoing::Quic(send), Incoming::Quic(recv)))
     }
 
+    fn share_version(&self, address: &str) -> u16 {
+        if self.servers_before_incarnations.contains(address) {
+            PROTOCOL_VERSION
+        } else {
+            INCARNATION_VERSION
+        }
+    }
+
+    fn falls_back(&mut self, address: &str, version: u16, error: &Error) -> bool {
+        let before_incarnations =
+            version == INCARNATION_VERSION && matches!(error, Error::Refused(Refusal::Version));
+
+        if before_incarnations {
+            tracing::info!(
+                server = address,
+                "the shared playlists' server tells no incarnation, so a space made anew is told by its head alone"
+            );
+            self.servers_before_incarnations.insert(address.to_owned());
+        }
+
+        before_incarnations
+    }
+
     async fn visited(&mut self, at: usize, address: &str, closed: bool) -> Result<()> {
+        if self.visited_saying(at, address, closed).await? == Visit::Done {
+            return Ok(());
+        }
+
+        let kept = self.lists[at].clone();
+
+        self.store.keep(&kept)?;
+        match self.visited_saying(at, address, closed).await? {
+            Visit::Done => Ok(()),
+            Visit::MadeAnew => Err(Error::SpaceMadeAnew),
+        }
+    }
+
+    async fn visited_saying(&mut self, at: usize, address: &str, closed: bool) -> Result<Visit> {
+        let version = self.share_version(address);
+
+        match self.visited_at(at, address, closed, version).await {
+            Err(error) if self.falls_back(address, version, &error) => {
+                self.visited_at(at, address, closed, PROTOCOL_VERSION).await
+            }
+            visited => visited,
+        }
+    }
+
+    async fn visited_at(
+        &mut self,
+        at: usize,
+        address: &str,
+        closed: bool,
+        version: u16,
+    ) -> Result<Visit> {
         let keys = self.lists[at].access.keys()?;
         let (mut send, mut recv) = self.reached(address).await?;
         let device = self.lists[at].device;
@@ -1026,7 +1088,7 @@ impl Running {
 
         let hello = match keys.write_token.clone() {
             Some(token) => ToServer::Share {
-                version: PROTOCOL_VERSION,
+                version,
                 space: keys.space,
                 token,
                 viewer: keys.read_token.digest(),
@@ -1067,12 +1129,18 @@ impl Running {
                     heard_closed = Some(sealed);
                     break;
                 }
+                Heard::MadeAnew => {
+                    send.finish().await;
+                    return Ok(Visit::MadeAnew);
+                }
             }
         }
 
         if let Some(sealed) = heard_closed {
             send.finish().await;
-            return self.heard_it_closed(at, &keys, &sealed).map(drop);
+            return self
+                .heard_it_closed(at, &keys, &sealed)
+                .map(|_| Visit::Done);
         }
 
         let mut closed_now = None;
@@ -1088,11 +1156,13 @@ impl Running {
         }
         send.finish().await;
         if let Some(sealed) = closed_now {
-            return self.heard_it_closed(at, &keys, &sealed).map(drop);
+            return self
+                .heard_it_closed(at, &keys, &sealed)
+                .map(|_| Visit::Done);
         }
 
         if self.lists[at].leaving {
-            return Ok(());
+            return Ok(Visit::Done);
         }
         if changed || self.lists[at].at.is_none() {
             self.materialised(at)?;
@@ -1102,7 +1172,7 @@ impl Running {
             self.store.keep(&kept)?;
         }
 
-        Ok(())
+        Ok(Visit::Done)
     }
 
     fn heard_in_a_session(
@@ -1113,16 +1183,15 @@ impl Running {
         target: &mut Option<u64>,
     ) -> Result<Heard> {
         let changed = match frame {
-            FromServer::Welcome { head, .. } => {
-                if head < self.lists[at].cursor {
-                    let kept = &mut self.lists[at];
-
-                    kept.cursor = 0;
-
-                    let whole = kept.list.as_ops();
-
-                    kept.owed.clear();
-                    kept.owe(whole);
+            FromServer::Welcome {
+                head, incarnation, ..
+            } => {
+                if self.lists[at].welcomed(head, incarnation) == Welcomed::MadeAnew {
+                    tracing::info!(
+                        "a shared playlist's space was made anew, so it is read from its start and sent whole"
+                    );
+                    self.oversized.remove(&keys.space);
+                    return Ok(Heard::MadeAnew);
                 }
                 *target = Some(head);
                 false
@@ -1360,15 +1429,9 @@ impl Running {
 
         kept.access = access;
         kept.space = keys.space;
-        kept.cursor = 0;
         kept.device = DeviceId::minted()?;
-        kept.records_since = 0;
-        kept.bytes_since = 0;
-
-        let whole = kept.list.as_ops();
-
-        kept.owed.clear();
-        kept.owe(whole);
+        kept.incarnation = None;
+        kept.owe_everything();
 
         let kept = kept.clone();
 
@@ -1386,6 +1449,7 @@ impl Running {
 
         for _ in 0..RESETS_OVERTAKEN_AT_MOST {
             match self.reset_once(space, removing).await? {
+                Reset::Again => {}
                 Reset::Made(moved) => {
                     let Some(kept) = self.lists.iter().find(|kept| kept.space == moved) else {
                         return Err(Error::Catalog(Refused::Unavailable));
@@ -1420,12 +1484,13 @@ impl Running {
             return Err(Error::Catalog(Refused::Unwritable));
         };
         let device = self.lists[at].device;
+        let version = self.share_version(&address);
 
         let (mut send, mut recv) = self.reached(&address).await?;
 
         send.send(
             &ToServer::Share {
-                version: PROTOCOL_VERSION,
+                version,
                 space: old_keys.space,
                 token,
                 viewer: old_keys.read_token.digest(),
@@ -1438,13 +1503,26 @@ impl Running {
 
         let mut changed = false;
 
-        if let Some(earlier) = self
-            .caught_up(at, &old_keys, &mut recv, &mut changed)
-            .await?
-        {
-            send.finish().await;
-            self.written_if(at, changed)?;
-            return self.followed(at, &old_keys, &earlier).map(Reset::Overtaken);
+        let caught_up = match self.caught_up(at, &old_keys, &mut recv, &mut changed).await {
+            Err(error) if self.falls_back(&address, version, &error) => return Ok(Reset::Again),
+            caught_up => caught_up?,
+        };
+
+        match caught_up {
+            CaughtUp::Level => {}
+            CaughtUp::Closed(earlier) => {
+                send.finish().await;
+                self.written_if(at, changed)?;
+                return self.followed(at, &old_keys, &earlier).map(Reset::Overtaken);
+            }
+            CaughtUp::MadeAnew => {
+                send.finish().await;
+
+                let kept = self.lists[at].clone();
+
+                self.store.keep(&kept)?;
+                return Ok(Reset::Again);
+            }
         }
 
         let told = sealed(
@@ -1476,6 +1554,7 @@ impl Running {
             )? {
                 Heard::Read { changed: read } => changed |= read,
                 Heard::Closed(word) => break word,
+                Heard::MadeAnew => return Err(Error::SpaceMadeAnew),
             }
         };
 
@@ -1506,11 +1585,11 @@ impl Running {
         keys: &crate::shared::SharedKeys,
         recv: &mut Incoming,
         changed: &mut bool,
-    ) -> Result<Option<Vec<u8>>> {
+    ) -> Result<CaughtUp> {
         let mut target = None;
         loop {
             if target.is_some_and(|target| self.lists[at].cursor >= target) {
-                return Ok(None);
+                return Ok(CaughtUp::Level);
             }
 
             let frame = within(async { recv.read().await }).await?;
@@ -1519,7 +1598,8 @@ impl Running {
             };
             match self.heard_in_a_session(at, keys, FromServer::decoded(&frame)?, &mut target)? {
                 Heard::Read { changed: read } => *changed |= read,
-                Heard::Closed(word) => return Ok(Some(word)),
+                Heard::Closed(word) => return Ok(CaughtUp::Closed(word)),
+                Heard::MadeAnew => return Ok(CaughtUp::MadeAnew),
             }
         }
     }
@@ -1631,11 +1711,25 @@ impl Running {
 enum Heard {
     Read { changed: bool },
     Closed(Vec<u8>),
+    MadeAnew,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Visit {
+    Done,
+    MadeAnew,
+}
+
+enum CaughtUp {
+    Level,
+    Closed(Vec<u8>),
+    MadeAnew,
 }
 
 enum Reset {
     Made(SpaceId),
     Overtaken(SpaceId),
+    Again,
 }
 
 fn seats_in(keys: &crate::shared::SharedKeys, sealed_seats: &[u8]) -> Vec<Seat> {

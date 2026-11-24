@@ -16,16 +16,15 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Device sync
-- [M · 0.17.1] Detect a shared playlist's rebuilt space even after its cursor catches up.
-  **Medium, builder.** A shared playlist still judges a `Welcome` by its head
-  alone, so once a member has remade an expired shared space and written past
-  another member's cursor, that member skips the new space's first records and
-  keeps its own ops marked sent (`crates/resonate-sync/src/shared/service.rs`
-  `heard_in_a_session`). The server already tells a `Share` said at
-  `INCARNATION_VERSION` the space's incarnation; keep it beside each list's
-  cursor (a step of the shared store) and say `Share` at that version with the
-  fallback `Hello` has. Done when a member returning to a remade shared space
-  reads it whole and its ops reach the others.
+- [M · 0.17.1] Detect a viewed shared playlist's rebuilt space even after its cursor catches up.
+  **Medium, builder.** A view link's `View` is said at `PROTOCOL_VERSION`, which
+  the server answers with no incarnation, so once an editor has remade an
+  expired shared space and written past a follower's cursor, the follower skips
+  the new space's first records (`crates/resonate-sync/src/shared/service.rs`
+  `visited_at`, `crates/resonate-server/src/serve.rs` `view`). Take `View` at
+  `INCARNATION_VERSION` on the server, telling the incarnation, and say it there
+  with the fallback `Share` has. Done when a follower returning to a remade
+  shared space reads it whole.
 - [M · 0.17.1] Expire the live display when a remote playback mirror goes quiet.
   **Medium, architect.** The watch lease stays active as a view polls it, so
   the last mirror can keep showing a moving position and active controls after

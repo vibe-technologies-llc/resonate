@@ -21,7 +21,10 @@ use resonate_sync::{
     shared::{
         LocalShared, MemberId, Shared, SharedCatalog, SharedSettings, SharedShown, SharedStanding,
     },
-    wire::{FromServer, LARGEST_FRAME, LONGEST_TEXT, Record, Refusal, SpaceHead, ToServer},
+    wire::{
+        FromServer, INCARNATION_VERSION, LARGEST_FRAME, LONGEST_TEXT, PROTOCOL_VERSION, Record,
+        Refusal, SpaceHead, ToServer,
+    },
 };
 use serde_json::json;
 use tokio::net::{TcpListener, TcpStream};
@@ -1316,6 +1319,175 @@ fn a_compaction_finding_the_space_full_backs_off_and_the_round_still_ends_well()
     assert_eq!(shown_on(&ada)[0].standing, SharedStanding::Reached);
     assert_eq!(shown_on(&ada)[0].owed, 0);
     assert_eq!(compactions, 1);
+}
+
+const EVERY_SPACE_UNTOUCHED_BEFORE_NOW: i64 = i64::MAX;
+
+fn written_by_ben(made: usize) -> String {
+    format!("Ben {made}")
+}
+
+#[test]
+fn a_member_back_in_a_shared_space_made_anew_and_written_past_their_cursor_reads_it_whole_and_their_own_edits_reach_the_others()
+ {
+    let kept_as = "server.sqlite";
+    let hosted = hosted_over("made-anew", |folder| {
+        Store::open(&folder.join(kept_as)).expect("a store")
+    });
+
+    let mut watching =
+        Store::open(&hosted.folder.join(kept_as)).expect("the server's store, read beside it");
+    let (ada, list, ben, theirs) = two_sharing(&hosted, &["One"]);
+
+    eventually("Ada seeing Ben", &ada, || {
+        shown_on(&ada)[0]
+            .people
+            .iter()
+            .any(|person| person.name == "Ben" && !person.me)
+    });
+    eventually("Ben's list settling", &ben, || {
+        ben.shelf.titles_of(theirs) == Some(vec!["One".to_owned()]) && shown_on(&ben)[0].owed == 0
+    });
+
+    let space = shown_on(&ada)[0].space;
+    let ben_shelf = Arc::clone(&ben.shelf);
+
+    drop(ben);
+
+    let head_before_the_edit = watching.head(space).expect("the head").0;
+
+    ada.shelf.edit(list, &["One", "Ada's"]);
+    eventually("Ada's edit kept by the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+            && watching
+                .head(space)
+                .is_ok_and(|(head, _)| head > head_before_the_edit)
+    });
+
+    let ada_shelf = Arc::clone(&ada.shelf);
+
+    drop(ada);
+
+    let head_before_the_sweep = watching.head(space).expect("the head").0;
+    let swept = watching
+        .sweep(EVERY_SPACE_UNTOUCHED_BEFORE_NOW)
+        .expect("swept");
+    let ben = hosted.person_on("Ben", ben_shelf);
+
+    eventually("Ben's list kept by the space made anew", &ben, || {
+        shown_on(&ben).first().is_some_and(|shown| shown.owed == 0)
+            && watching.head(space).is_ok_and(|(head, _)| head > 0)
+    });
+
+    let mut titles = vec!["One".to_owned()];
+
+    while watching.head(space).expect("the head").0 <= head_before_the_sweep {
+        let head = watching.head(space).expect("the head").0;
+
+        titles.push(written_by_ben(titles.len()));
+        ben.shelf.edit(
+            theirs,
+            &titles.iter().map(String::as_str).collect::<Vec<_>>(),
+        );
+        eventually("another of Ben's songs kept", &ben, || {
+            watching
+                .head(space)
+                .is_ok_and(|(written, _)| written > head)
+        });
+    }
+
+    let ada = hosted.person_on("Ada", ada_shelf);
+
+    eventually("every song of Ben's reaching Ada", &ada, || {
+        ada.shelf
+            .titles_of(list)
+            .is_some_and(|held| titles.iter().all(|title| held.contains(title)))
+    });
+    eventually("Ada's edit of before reaching Ben", &ben, || {
+        ben.shelf
+            .titles_of(theirs)
+            .is_some_and(|held| held.iter().any(|title| title == "Ada's"))
+    });
+
+    assert_eq!(swept, 1);
+    assert!(titles.len() > 1);
+}
+
+fn a_server_before_incarnations(heard: &ToServer) -> Vec<FromServer> {
+    match heard {
+        ToServer::Heads { asked, .. } => vec![FromServer::Heads {
+            heads: asked
+                .iter()
+                .map(|asked| SpaceHead {
+                    space: asked.space,
+                    head: 0,
+                    closed: false,
+                })
+                .collect(),
+        }],
+        ToServer::Share { version, .. } if *version != PROTOCOL_VERSION => {
+            vec![FromServer::Refused(Refusal::Version)]
+        }
+        ToServer::Share { .. } => vec![FromServer::Welcome {
+            online: Vec::new(),
+            seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            head: 0,
+            incarnation: None,
+        }],
+        ToServer::Append { blobs } => vec![FromServer::Appended {
+            count: u32::try_from(blobs.len()).expect("a count"),
+        }],
+        _ => Vec::new(),
+    }
+}
+
+fn shares_said(scripted: &Scripted) -> Vec<u16> {
+    scripted
+        .heard()
+        .iter()
+        .filter_map(|heard| match heard {
+            ToServer::Share { version, .. } => Some(*version),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_shared_list_on_a_server_before_incarnations_is_said_at_the_first_version_from_then_on() {
+    let scripted = Scripted::answering(a_server_before_incarnations);
+    let hosted = hosted("before-incarnations");
+
+    let ada = hosted.person_reaching("Ada", scripted.address);
+    let list = ada.shelf.made("Mix", &["One"]);
+
+    ada.shared.share(list).expect("shared");
+    eventually(
+        "the list sent to a server before incarnations",
+        &ada,
+        || {
+            shown_on(&ada)
+                .first()
+                .is_some_and(|shown| shown.standing == SharedStanding::Reached && shown.owed == 0)
+        },
+    );
+
+    let first = shares_said(&scripted);
+
+    ada.shelf.edit(list, &["One", "Two"]);
+    eventually("the edit sent too", &ada, || {
+        shares_said(&scripted).len() > first.len()
+            && shown_on(&ada)
+                .first()
+                .is_some_and(|shown| shown.standing == SharedStanding::Reached && shown.owed == 0)
+    });
+
+    let then = shares_said(&scripted);
+
+    assert_eq!(first, [INCARNATION_VERSION, PROTOCOL_VERSION]);
+    assert_eq!(
+        then,
+        [INCARNATION_VERSION, PROTOCOL_VERSION, PROTOCOL_VERSION]
+    );
 }
 
 const WHAT_THE_LIST_PAGE_SHOWS: &str = "return { \

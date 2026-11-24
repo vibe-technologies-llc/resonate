@@ -101,8 +101,9 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   way, its records kept (`a_store_of_before_incarnations_gives_each_space_one_of_its_own_and_keeps_its_records`);
   a held space keeps it, one swept and made again draws another
   (`a_space_swept_and_made_again_carries_another_incarnation_and_a_held_one_keeps_its_own`). The
-  server only tells it (`Store::incarnation`, in the `Welcome` of a `Hello` said at
-  `INCARNATION_VERSION`); a device compares it with the one it kept (`sync.md`).
+  server only tells it (`Store::incarnation`, in the `Welcome` of a `Hello` or `Share` said at
+  `INCARNATION_VERSION`); a device, or a shared list, compares it with the one it kept (`sync.md`,
+  `shared-playlists.md`).
 
 ## Sessions
 

@@ -6,7 +6,7 @@ use std::{
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 
 use crate::{
-    Clock, DeviceId, Error, LocalPlaylistId, Result, SpaceId, Stamp, StoreOp,
+    Clock, DeviceId, Error, LocalPlaylistId, Result, SpaceId, Stamp, StoreOp, Welcomed,
     error::Malformed,
     key::{DEVICE_BYTES, random_bytes},
     shared::{
@@ -18,6 +18,7 @@ use crate::{
         },
     },
     wall_nanos,
+    wire::Incarnation,
 };
 
 const V1: &str = "
@@ -52,7 +53,11 @@ CREATE TABLE owed (
 ) STRICT, WITHOUT ROWID;
 ";
 
-const MIGRATIONS: &[&str] = &[V1];
+const A_LIST_KNOWS_ITS_SPACE_BY_ITS_INCARNATION: &str = "
+ALTER TABLE lists ADD COLUMN incarnation INTEGER;
+";
+
+const MIGRATIONS: &[&str] = &[V1, A_LIST_KNOWS_ITS_SPACE_BY_ITS_INCARNATION];
 
 pub struct Store {
     connection: Connection,
@@ -75,6 +80,7 @@ pub struct Kept {
     pub alias: Option<String>,
     pub seen: Option<Vec<u8>>,
     pub cursor: u64,
+    pub incarnation: Option<Incarnation>,
     pub list: SharedList,
     pub written: Vec<EntryId>,
     pub records_since: u64,
@@ -93,6 +99,35 @@ impl Kept {
         let seq = self.owed.last().map_or(1, |(seq, _)| seq + 1);
 
         self.owed.push((seq, ops));
+    }
+
+    pub fn welcomed(&mut self, head: u64, told: Option<Incarnation>) -> Welcomed {
+        let another_incarnation =
+            matches!((self.incarnation, told), (Some(kept), Some(told)) if kept != told);
+        let welcomed = if head < self.cursor || another_incarnation {
+            Welcomed::MadeAnew
+        } else {
+            Welcomed::Continued
+        };
+
+        if welcomed == Welcomed::MadeAnew {
+            self.owe_everything();
+        }
+        if told.is_some() {
+            self.incarnation = told;
+        }
+
+        welcomed
+    }
+
+    pub fn owe_everything(&mut self) {
+        let whole = self.list.as_ops();
+
+        self.cursor = 0;
+        self.records_since = 0;
+        self.bytes_since = 0;
+        self.owed.clear();
+        self.owe(whole);
     }
 
     pub fn restamped_past_the_bound(&mut self, wall: i64) -> bool {
@@ -246,7 +281,8 @@ impl Store {
             .connection
             .prepare(
                 "SELECT space, code, server, device, local_id, local_created, alias, seen, cursor,
-                        state, written, records_since, bytes_since, leaving, member, personal
+                        state, written, records_since, bytes_since, leaving, member, personal,
+                        incarnation
                    FROM lists",
             )
             .map_err(|source| Error::store(StoreOp::Read, source))?;
@@ -270,6 +306,7 @@ impl Store {
                     leaving: row.get(13)?,
                     member: row.get(14)?,
                     personal: row.get(15)?,
+                    incarnation: row.get(16)?,
                 })
             })
             .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
@@ -351,6 +388,9 @@ impl Store {
             alias: raw.alias,
             seen: raw.seen,
             cursor: raw.cursor.cast_unsigned(),
+            incarnation: raw
+                .incarnation
+                .map(|incarnation| Incarnation(incarnation.cast_unsigned())),
             list,
             written,
             records_since: raw.records_since.cast_unsigned(),
@@ -373,15 +413,16 @@ impl Store {
             .execute(
                 "INSERT INTO lists (space, code, server, device, local_id, local_created, alias,
                                     seen, cursor, state, written, records_since, bytes_since, leaving,
-                                    member, personal)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)
+                                    member, personal, incarnation)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
                  ON CONFLICT(space) DO UPDATE SET
                     code = excluded.code, server = excluded.server, device = excluded.device,
                     local_id = excluded.local_id, local_created = excluded.local_created,
                     alias = excluded.alias, seen = excluded.seen, cursor = excluded.cursor,
                     state = excluded.state, written = excluded.written,
                     records_since = excluded.records_since, bytes_since = excluded.bytes_since,
-                    leaving = excluded.leaving, member = excluded.member, personal = excluded.personal",
+                    leaving = excluded.leaving, member = excluded.member, personal = excluded.personal,
+                    incarnation = excluded.incarnation",
                 params![
                     kept.space.0.as_slice(),
                     kept.access.code(),
@@ -399,6 +440,7 @@ impl Store {
                     i64::from(kept.leaving),
                     kept.me.member.0.as_slice(),
                     kept.me.personal.to_bytes().as_slice(),
+                    kept.incarnation.map(|incarnation| incarnation.0.cast_signed()),
                 ],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -450,6 +492,7 @@ struct Raw {
     leaving: i64,
     member: Vec<u8>,
     personal: Vec<u8>,
+    incarnation: Option<i64>,
 }
 
 const fn malformed() -> Error {
@@ -508,6 +551,7 @@ mod tests {
             alias: Some("Mix (2)".to_owned()),
             seen: Some(vec![7; 32]),
             cursor: 9,
+            incarnation: Some(Incarnation(11)),
             list,
             written: vec![EntryId([2; ENTRY_BYTES])],
             records_since: 2,
@@ -535,6 +579,128 @@ mod tests {
         assert_eq!(read[0].at, kept.at);
         assert_eq!(read[0].alias, kept.alias);
         assert_eq!(read[0].server, kept.server);
+        assert_eq!(read[0].incarnation, kept.incarnation);
+    }
+
+    const CURSOR_OF_BEFORE: u64 = 40;
+
+    #[test]
+    fn a_store_of_before_incarnations_keeps_its_lists_and_learns_the_first_incarnation_each_is_told()
+     {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == A_LIST_KNOWS_ITS_SPACE_BY_ITS_INCARNATION)
+            .expect("the step is in the chain");
+        let listed = a_list();
+
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("the store of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO lists (space, code, server, device, member, personal, cursor, state, written)
+                 VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6, ?7, ?8)",
+                params![
+                    listed.space.0.as_slice(),
+                    listed.access.code(),
+                    listed.device.0.as_slice(),
+                    listed.me.member.0.as_slice(),
+                    listed.me.personal.to_bytes().as_slice(),
+                    CURSOR_OF_BEFORE.cast_signed(),
+                    encoded_ops(&listed.list.as_ops()),
+                    [2_u8; ENTRY_BYTES].as_slice(),
+                ],
+            )
+            .expect("a list");
+        connection
+            .execute(
+                "INSERT INTO owed (space, seq, ops) VALUES (?1, 1, ?2)",
+                params![listed.space.0.as_slice(), encoded_ops(&[added()])],
+            )
+            .expect("an op owed");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let mut store = Store::laid_out(connection).expect("carried forward");
+
+        let mut carried = store.lists().expect("read").remove(0);
+
+        let kept_before = carried.incarnation;
+        let first = carried.welcomed(CURSOR_OF_BEFORE, Some(Incarnation(9)));
+
+        store.keep(&carried).expect("kept");
+
+        let read_again = store.lists().expect("read again").remove(0);
+
+        assert_eq!(carried.space, listed.space);
+        assert_eq!(carried.list, listed.list);
+        assert_eq!(carried.owed, [(1, vec![added()])]);
+        assert_eq!(kept_before, None);
+        assert_eq!(first, Welcomed::Continued);
+        assert_eq!(carried.cursor, CURSOR_OF_BEFORE);
+        assert_eq!(read_again.incarnation, Some(Incarnation(9)));
+        assert_eq!(read_again.cursor, CURSOR_OF_BEFORE);
+        assert_eq!(read_again.owed, [(1, vec![added()])]);
+    }
+
+    fn sent_through_the_cursor() -> Kept {
+        let mut kept = a_list();
+
+        kept.owed.clear();
+        kept.records_since = 4;
+        kept.bytes_since = 400;
+
+        kept
+    }
+
+    #[test]
+    fn a_space_of_another_incarnation_is_made_anew_though_its_head_is_past_the_cursor() {
+        let mut kept = sent_through_the_cursor();
+
+        let told_another = kept.welcomed(kept.cursor + 4, Some(Incarnation(12)));
+        let owed: Vec<SharedOp> = kept.owed.iter().flat_map(|(_, ops)| ops.clone()).collect();
+        let told_again = kept.welcomed(0, Some(Incarnation(12)));
+
+        assert_eq!(told_another, Welcomed::MadeAnew);
+        assert_eq!(kept.cursor, 0);
+        assert_eq!(kept.records_since, 0);
+        assert_eq!(kept.bytes_since, 0);
+        assert_eq!(owed, kept.list.as_ops());
+        assert_eq!(kept.incarnation, Some(Incarnation(12)));
+        assert_eq!(told_again, Welcomed::Continued);
+    }
+
+    #[test]
+    fn a_server_that_tells_no_incarnation_is_judged_by_its_head_alone_and_the_one_kept_stays() {
+        let mut kept = sent_through_the_cursor();
+
+        let cursor = kept.cursor;
+
+        let at_the_cursor = kept.welcomed(cursor, None);
+        let owed_at_the_cursor = kept.owed.len();
+        let below_the_cursor = kept.welcomed(cursor - 1, None);
+
+        assert_eq!(at_the_cursor, Welcomed::Continued);
+        assert_eq!(owed_at_the_cursor, 0);
+        assert_eq!(below_the_cursor, Welcomed::MadeAnew);
+        assert_eq!(kept.cursor, 0);
+        assert_eq!(kept.incarnation, Some(Incarnation(11)));
+    }
+
+    #[test]
+    fn a_space_of_the_same_incarnation_whose_head_fell_below_the_cursor_is_made_anew() {
+        let mut kept = sent_through_the_cursor();
+
+        let fallen = kept.welcomed(kept.cursor - 1, Some(Incarnation(11)));
+
+        assert_eq!(fallen, Welcomed::MadeAnew);
+        assert!(!kept.owed.is_empty());
     }
 
     #[test]
