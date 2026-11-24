@@ -24,17 +24,16 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/peer.rs:1057`). Record acknowledgement before suppressing
   retries or arrange a whole replay after a failed tell. Done when a transient
   write failure on a connected nearby peer clears and the change reaches it.
-- [L · 0.17.1] Detect a rebuilt server space even after its cursor catches up.
-  **Medium, architect.** A client notices a rebuilt space only when the reported
-  head is below its cursor. If another device has already written at least that
-  far, the old cursor skips the rebuilt space's earlier records and the client
-  keeps its own prior changes marked sent
-  (`crates/resonate-sync/src/service.rs:1657`, `:1671`,
-  `crates/resonate-server/src/serve.rs:829`, `:1117`,
-  `crates/resonate-server/src/store.rs:556`, `:868`). Give a space an incarnation
-  that can be compared across reconnects with compatible wire and store changes.
-  Done when a returning client catches up after another device recreates an
-  expired space and writes past the returning client's cursor.
+- [M · 0.17.1] Detect a shared playlist's rebuilt space even after its cursor catches up.
+  **Medium, builder.** A shared playlist still judges a `Welcome` by its head
+  alone, so once a member has remade an expired shared space and written past
+  another member's cursor, that member skips the new space's first records and
+  keeps its own ops marked sent (`crates/resonate-sync/src/shared/service.rs`
+  `heard_in_a_session`). The server already tells a `Share` said at
+  `INCARNATION_VERSION` the space's incarnation; keep it beside each list's
+  cursor (a step of the shared store) and say `Share` at that version with the
+  fallback `Hello` has. Done when a member returning to a remade shared space
+  reads it whole and its ops reach the others.
 - [M · 0.17.1] Give desktop command-line fetch batches a terminal result.
   **Medium, builder.** The CLI waits for every requested recording in the display
   transfer list. The service can remove a row when the file has arrived via

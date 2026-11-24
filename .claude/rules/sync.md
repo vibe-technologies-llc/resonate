@@ -126,11 +126,13 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   ledger applies them is held back by the stream's flow control, never queued in a phone's memory
   (`a_device_reads_no_further_from_the_server_than_the_frames_it_has_room_for`). A web link has no observed UDP address,
   so the server's `Welcome` and `Punched` carry `0.0.0.0:0`, which a device skips as a candidate.
-- **To the server**: `Hello` (version, space, token, device, cursor), `Append` (sealed blobs),
+- **To the server**: `Hello` (version, space, token, device, cursor; said at `INCARNATION_VERSION`,
+  2, below), `Append` (sealed blobs),
   `Compact` (through, snapshot parts), `Stage` (written as a `Compact` through 0 with no parts),
   `Staged` (tag 15, parts), `CompactStaged` (tag 16, through, the last parts), `Punch` (to a device, sealed candidates), `Relaying`,
   `Relay` (to a device, one datagram of at most `LARGEST_DATAGRAM`, 2048 bytes), `Bye`. **From
-  it**: `Welcome` (devices online, the address it saw, head), `Snapshot`, `Records` (a device's
+  it**: `Welcome` (devices online, the address it saw, head, and the space's `Incarnation` after the
+  head only for a `Hello` said at `INCARNATION_VERSION`), `Snapshot`, `Records` (a device's
   own records come back as a seq with no blob, so its cursor moves without the bytes), `Appended`,
   `Arrived`/`Left`, `Punched`, `Compacted`, `Staging` (tag 18), `Refused`, `Relayed` (from a device, one datagram). ALPN `resonate-sync/1` to the server,
   `resonate-peer/1` between devices.
@@ -180,7 +182,8 @@ listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR
 the stamps bullet below; `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`: `state.held_after`, below;
 `ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART`: `state.answers_after`, below;
 `CHANGES_UNREAD_ARE_CARRIED_FORWARD`: the `unread` table, a change this build could not read, kept
-to carry into a snapshot, below); `user_version` counts the steps laid, a change appends a
+to carry into a snapshot, below; `A_SPACE_IS_KNOWN_BY_ITS_INCARNATION`: `state.incarnation`, the
+server space's incarnation last told, NULL until a server tells one, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
 shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
@@ -596,8 +599,30 @@ platforms; the catalog seam stays thin.
   server (`Server::Nowhere`), what a look told its neighbours is marked sent, since a device met
   later is told the whole snapshot; `state.serverless` remembers it, and the first start with a
   server again owes everything (`Ledger::through_a_server`), so the server is given the whole state.
-  A `Welcome` whose head is below this device's cursor (a space swept and made anew) resets the
-  cursor and owes everything (`space_made_anew`, `Error::SpaceMadeAnew`), and the link is made again.
+  **A space swept and made anew is told by its incarnation**: the server stamps every space it
+  makes with a random `Incarnation` (`server.md`), and `Ledger::welcomed` weighs each `Welcome`
+  against `state.incarnation`. Another incarnation than the one kept, or a head below this device's
+  cursor, resets the cursor and owes everything (`Welcomed::MadeAnew`, the same reset as
+  `space_made_anew`), keeping the incarnation told, and the link fails `Error::SpaceMadeAnew` and is
+  made again, so the device reads the new space from its start and sends its own changes again
+  even where another device has already written past its old cursor
+  (`a_device_back_in_a_space_made_anew_and_written_past_its_cursor_reads_it_whole_and_sends_its_own_again`,
+  `a_space_of_another_incarnation_is_made_anew_though_its_head_is_past_the_cursor`). An incarnation
+  told where none is kept (a ledger of before, a first link) is learnt and trusted; a `Welcome`
+  telling none (a server before incarnations) leaves the kept one and is judged by its head alone
+  (`a_server_that_tells_no_incarnation_is_judged_by_its_head_alone_and_the_one_kept_stays`);
+  entering another space forgets it. **Both sides of the wire keep working across builds**: an
+  older build's reader refuses a trailing byte, so the server writes the incarnation only into the
+  `Welcome` answering a `Hello` at `INCARNATION_VERSION`, and a `Hello` at `PROTOCOL_VERSION` is
+  answered as the first build reads it
+  (`a_hello_of_the_first_version_is_welcomed_as_its_build_reads_and_only_the_incarnations_version_is_told_one`,
+  `a_welcome_without_its_incarnation_is_written_as_the_first_build_wrote_it_and_one_with_it_only_extends_it`).
+  A server before incarnations refuses that version as `Refusal::Version`; the device says its
+  `Hello` again at `PROTOCOL_VERSION` on a new connection and remembers the server for the rest of
+  the run (`server_before_incarnations`), so only its first link pays the refusal
+  (`a_server_before_incarnations_refusing_their_version_is_said_the_first_one_from_then_on`). The
+  seeds `welcome`, `welcome-incarnated` and `hello-incarnated` freeze both shapes. A shared
+  playlist's `Share` is still said at `PROTOCOL_VERSION` and judged by its head alone.
 - **Entering another space forgets the last one** (`enter_space`), so everything local is owed again;
   *regenerate* is just a new pairing code: each front end mints or clears the key and starts again.
 - **A device is forgotten by a tombstone, last writer wins like any note.** `Ledger::forget_device`

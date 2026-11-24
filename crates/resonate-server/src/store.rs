@@ -2,7 +2,7 @@ use std::{collections::HashSet, path::Path, time::Duration};
 
 use resonate_sync::{
     DeviceId, SpaceId,
-    wire::{BLOBS_A_FRAME_AT_MOST, LARGEST_FRAME, SpaceAsked, SpaceHead},
+    wire::{BLOBS_A_FRAME_AT_MOST, Incarnation, LARGEST_FRAME, SpaceAsked, SpaceHead},
 };
 use ring::digest::{Digest, SHA256, digest};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
@@ -67,12 +67,18 @@ CREATE TABLE staged (
 ) STRICT, WITHOUT ROWID;
 ";
 
+const EVERY_SPACE_CARRIES_AN_INCARNATION: &str = "
+ALTER TABLE spaces ADD COLUMN incarnation INTEGER NOT NULL DEFAULT 0;
+UPDATE spaces SET incarnation = random();
+";
+
 const MIGRATIONS: &[&str] = &[
     V1,
     RECORDS_ARE_KNOWN_BY_THEIR_DIGEST,
     A_SPACE_MAY_BE_SHARED_AND_CLOSED,
     A_CLOSING_WORD_IS_COUNTED_IN_ITS_SPACE,
     A_COMPACTION_MAY_BE_STAGED_IN_PARTS,
+    EVERY_SPACE_CARRIES_AN_INCARNATION,
 ];
 
 pub const SNAPSHOT_BYTES_A_FRAME: usize = LARGEST_FRAME / 2;
@@ -263,7 +269,7 @@ impl Store {
                 }
                 self.connection
                     .execute(
-                        "INSERT INTO spaces (id, token, created, touched) VALUES (?1, ?2, ?3, ?3)",
+                        "INSERT INTO spaces (id, token, created, touched, incarnation) VALUES (?1, ?2, ?3, ?3, random())",
                         params![space.0.as_slice(), token.as_slice(), now],
                     )
                     .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -412,6 +418,17 @@ impl Store {
             )
             .optional()
             .map(Option::unwrap_or_default)
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
+    pub fn incarnation(&self, space: SpaceId) -> Result<Option<Incarnation>> {
+        self.connection
+            .query_row(
+                "SELECT incarnation FROM spaces WHERE id = ?1",
+                params![space.0.as_slice()],
+                |row| Ok(Incarnation(row.get::<_, i64>(0)?.cast_unsigned())),
+            )
+            .optional()
             .map_err(|source| Error::store(StoreOp::Read, source))
     }
 
@@ -1223,6 +1240,92 @@ mod tests {
 
         assert_eq!(appended, Appended::Through(2));
         assert_eq!(store.head(SPACE).expect("head"), (2, 0));
+    }
+
+    #[test]
+    fn a_space_swept_and_made_again_carries_another_incarnation_and_a_held_one_keeps_its_own() {
+        let mut store = claimed();
+
+        let first = store.incarnation(SPACE).expect("read");
+        let held = store.claim(SPACE, &[3; 32], 2, || true).expect("held");
+        let still = store.incarnation(SPACE).expect("read");
+        let swept = store.sweep(3).expect("swept");
+        let gone = store.incarnation(SPACE).expect("read");
+        let made = store.claim(SPACE, &[3; 32], 4, || true).expect("made");
+        let again = store.incarnation(SPACE).expect("read");
+
+        assert!(first.is_some());
+        assert_eq!(held, Claim::Held);
+        assert_eq!(still, first);
+        assert_eq!(swept, 1);
+        assert_eq!(gone, None);
+        assert_eq!(made, Claim::Made);
+        assert!(again.is_some());
+        assert_ne!(again, first);
+    }
+
+    #[test]
+    fn a_store_of_before_incarnations_gives_each_space_one_of_its_own_and_keeps_its_records() {
+        const SHARED: SpaceId = SpaceId([6; 16]);
+
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == EVERY_SPACE_CARRIES_AN_INCARNATION)
+            .expect("the step is in the chain");
+
+        for step in &MIGRATIONS[..before] {
+            connection.execute_batch(step).expect("the store of before");
+        }
+        for space in [SPACE, SHARED] {
+            connection
+                .execute(
+                    "INSERT INTO spaces (id, token, created, touched, head, bytes) VALUES (?1, ?2, 1, 1, 1, 3)",
+                    params![space.0.as_slice(), [3_u8; 32].as_slice()],
+                )
+                .expect("a space");
+            connection
+                .execute(
+                    "INSERT INTO records (space, seq, device, blob, digest) VALUES (?1, 1, ?2, ?3, ?4)",
+                    params![
+                        space.0.as_slice(),
+                        DESK.0.as_slice(),
+                        [7_u8; 3].as_slice(),
+                        digest(&SHA256, &[7_u8; 3]).as_ref()
+                    ],
+                )
+                .expect("a record");
+        }
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let mut store = Store::over(connection).expect("carried forward");
+
+        let personal = store.incarnation(SPACE).expect("read");
+        let shared = store.incarnation(SHARED).expect("read");
+        let read_again = store.incarnation(SPACE).expect("read");
+        let resent = store
+            .append(SPACE, DESK, &[vec![7; 3]], 1 << 20, 2)
+            .expect("appended");
+        let kept = store.records_after(SPACE, 0, 10, 1 << 20).expect("read");
+
+        assert!(personal.is_some());
+        assert!(shared.is_some());
+        assert_ne!(personal, shared);
+        assert_eq!(read_again, personal);
+        assert_eq!(resent, Appended::Through(1));
+        assert_eq!(
+            kept.iter()
+                .map(|record| (record.seq, record.blob.clone()))
+                .collect::<Vec<_>>(),
+            [(1, vec![7; 3])]
+        );
+        assert_eq!(store.head(SPACE).expect("head"), (1, 0));
     }
 
     #[test]

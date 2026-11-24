@@ -11,7 +11,8 @@ use resonate_core::{
     SharedMedium, SharedRelease, SharedStudy, SharedTrack, WholeFile,
 };
 use resonate_sync::{
-    Catalog, Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId,
+    Catalog, Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId, Welcomed,
+    wire::Incarnation,
 };
 use rusqlite::Connection;
 
@@ -206,7 +207,10 @@ fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
         .execute_batch("DROP TABLE unread")
         .expect("no change kept unread yet");
     connection
-        .pragma_update(None, "user_version", laid - 4)
+        .execute_batch("ALTER TABLE state DROP COLUMN incarnation")
+        .expect("no incarnation kept yet");
+    connection
+        .pragma_update(None, "user_version", laid - 5)
         .expect("the steps not yet laid");
     drop(connection);
     device.ledger = Ledger::open(path).expect("the ledger opened by the build that restamps");
@@ -3105,4 +3109,94 @@ fn a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device() {
             .asked_back(&phone.shelf, &song("A"))
             .expect("nothing standing")
     );
+}
+
+const KEPT: Incarnation = Incarnation(11);
+const ANOTHER: Incarnation = Incarnation(12);
+const CURSOR: u64 = 5;
+
+fn welcomed_once_sent_through(cursor: u64) -> Device {
+    let mut desk = Device::new("Desk", &["A"]);
+
+    desk.shelf.make_playlist("Before", &["A"]);
+    desk.send();
+    desk.ledger.passed(cursor, 0).expect("passed");
+
+    let first = desk.ledger.welcomed(cursor, Some(KEPT)).expect("welcomed");
+
+    assert_eq!(first, Welcomed::Continued);
+    desk
+}
+
+#[test]
+fn a_space_of_another_incarnation_is_made_anew_though_its_head_is_past_the_cursor() {
+    let mut desk = welcomed_once_sent_through(CURSOR);
+
+    let owed_before = desk.ledger.owed_count().expect("owed");
+    let told_another = desk
+        .ledger
+        .welcomed(CURSOR + 4, Some(ANOTHER))
+        .expect("welcomed");
+    let cursor = desk.ledger.cursor().expect("the cursor");
+    let owed = desk.ledger.owed_count().expect("owed");
+    let learnt = desk.ledger.incarnation().expect("read");
+    let told_again = desk
+        .ledger
+        .welcomed(CURSOR + 4, Some(ANOTHER))
+        .expect("welcomed");
+    let told = desk.send();
+
+    assert_eq!(owed_before, 0);
+    assert_eq!(told_another, Welcomed::MadeAnew);
+    assert_eq!(cursor, 0);
+    assert!(owed > 0);
+    assert_eq!(learnt, Some(ANOTHER));
+    assert_eq!(told_again, Welcomed::Continued);
+    assert!(told.iter().any(|change| matches!(
+        change,
+        Change::Playlist(note) if note.body.as_ref().is_some_and(|body| body.name == "Before")
+    )));
+}
+
+#[test]
+fn a_server_that_tells_no_incarnation_is_judged_by_its_head_alone_and_the_one_kept_stays() {
+    let mut desk = welcomed_once_sent_through(CURSOR);
+
+    let at_the_cursor = desk.ledger.welcomed(CURSOR, None).expect("welcomed");
+    let kept = desk.ledger.incarnation().expect("read");
+    let below_the_cursor = desk.ledger.welcomed(CURSOR - 1, None).expect("welcomed");
+    let cursor = desk.ledger.cursor().expect("the cursor");
+
+    assert_eq!(at_the_cursor, Welcomed::Continued);
+    assert_eq!(kept, Some(KEPT));
+    assert_eq!(below_the_cursor, Welcomed::MadeAnew);
+    assert_eq!(cursor, 0);
+}
+
+#[test]
+fn a_space_of_the_same_incarnation_whose_head_fell_below_the_cursor_is_made_anew() {
+    let mut desk = welcomed_once_sent_through(CURSOR);
+
+    let fallen = desk
+        .ledger
+        .welcomed(CURSOR - 1, Some(KEPT))
+        .expect("welcomed");
+
+    assert_eq!(fallen, Welcomed::MadeAnew);
+    assert!(desk.ledger.owed_count().expect("owed") > 0);
+}
+
+#[test]
+fn entering_another_space_forgets_the_incarnation_of_the_last() {
+    let mut desk = welcomed_once_sent_through(CURSOR);
+
+    desk.ledger
+        .enter_space(SpaceId([6; 16]))
+        .expect("another space");
+
+    let forgotten = desk.ledger.incarnation().expect("read");
+    let first = desk.ledger.welcomed(0, Some(ANOTHER)).expect("welcomed");
+
+    assert_eq!(forgotten, None);
+    assert_eq!(first, Welcomed::Continued);
 }

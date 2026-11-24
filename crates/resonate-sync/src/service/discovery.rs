@@ -475,6 +475,7 @@ mod tests {
                     online: vec![PEER],
                     seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
                     head: 0,
+                    incarnation: None,
                 };
 
                 if accepted.outgoing.send(&welcome.encoded()).await.is_err() {

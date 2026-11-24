@@ -14,7 +14,8 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
 
 - **SQLite, five tables** (`store.rs`, `V1` in `MIGRATIONS`, the 0.1.0 baseline never edited, and
   the steps after it, those a release shipped pinned in `store/released.rs`, `release.md`): `spaces` (id, the SHA-256 of
-  the token, created, touched, bytes, head, snapshot through), `records` (space, seq, device,
+  the token, created, touched, bytes, head, snapshot through, and the incarnation the
+  `EVERY_SPACE_CARRIES_AN_INCARNATION` step added, below), `records` (space, seq, device,
   blob, and the blob's SHA-256 `digest` the second step `RECORDS_ARE_KNOWN_BY_THEIR_DIGEST` added,
   NULL for a record stored before it), `snapshots` (space, part, blob), and the
   `A_COMPACTION_MAY_BE_STAGED_IN_PARTS` step's `stagings` (space, id, touched, bytes, parts) and
@@ -95,6 +96,13 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   its own outcome** (`Pass`: `Held`, `Staged`, `Unused`, `Idle`): what it took away is an info
   line, a failure a warning naming the pass, so capacity charged to a stale staging is never held
   without a word (`every_pass_of_a_sweep_that_fails_is_reported_by_name`).
+- **A space made again is another incarnation.** `Store::claim` makes every space with SQLite's
+  `random()` as its `incarnation`, and the step gave each space it found one of its own the same
+  way, its records kept (`a_store_of_before_incarnations_gives_each_space_one_of_its_own_and_keeps_its_records`);
+  a held space keeps it, one swept and made again draws another
+  (`a_space_swept_and_made_again_carries_another_incarnation_and_a_held_one_keeps_its_own`). The
+  server only tells it (`Store::incarnation`, in the `Welcome` of a `Hello` said at
+  `INCARNATION_VERSION`); a device compares it with the one it kept (`sync.md`).
 
 ## Sessions
 
@@ -149,7 +157,9 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   still hands the frame over
   (`a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_host_turning_one_out`).
 - **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
-  then the stream ends. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
+  then the stream ends. A `Hello` or `Share` is taken at `PROTOCOL_VERSION` (answered with the
+  `Welcome` the first build reads) or `INCARNATION_VERSION` (its `Welcome` carrying the space's
+  incarnation after the head); `View`, `Heads` and `Room` at `PROTOCOL_VERSION` alone. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
   `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`
   (`LARGEST_ROOM_FRAME` plus an envelope), the first through `reading::read_the_first` and a room's
   through the read-ahead; a longer one ends the session before its bytes are held. **The first frame

@@ -11,7 +11,10 @@ use resonate_server::{Allowance, Limits, Server, Store};
 use resonate_sync::{
     DeviceId, Follow, Incoming, Me, Outgoing, Platform, Settings, Standing, Sync, SyncKey, connect,
     sealed, to_the_web, web_address,
-    wire::{FromServer, PROTOCOL_VERSION, Record, Refusal, ToServer, encoded_bundle},
+    wire::{
+        FromServer, INCARNATION_VERSION, PROTOCOL_VERSION, Record, Refusal, ToServer,
+        encoded_bundle,
+    },
 };
 use rustls::RootCertStore;
 use tokio::{
@@ -577,6 +580,7 @@ fn a_full_space(heard: &ToServer) -> Vec<FromServer> {
                 online: Vec::new(),
                 seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
                 head: RECORDS_PAST_A_COMPACTION,
+                incarnation: None,
             },
             FromServer::Records {
                 entries: (1..=RECORDS_PAST_A_COMPACTION)
@@ -624,6 +628,68 @@ fn a_compaction_refused_for_a_full_space_backs_off_and_keeps_the_session() {
     assert_eq!(desk.shown().standing, Standing::Connected);
     assert_eq!(hellos, 1);
     assert_eq!(compactions, 1);
+
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+fn a_server_before_incarnations(heard: &ToServer) -> Vec<FromServer> {
+    match heard {
+        ToServer::Hello { version, .. } if *version != PROTOCOL_VERSION => {
+            vec![FromServer::Refused(Refusal::Version)]
+        }
+        ToServer::Hello { .. } => vec![FromServer::Welcome {
+            online: Vec::new(),
+            seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            head: 0,
+            incarnation: None,
+        }],
+        ToServer::Append { blobs } => vec![FromServer::Appended {
+            count: u32::try_from(blobs.len()).expect("a count"),
+        }],
+        _ => Vec::new(),
+    }
+}
+
+fn versions_said(scripted: &Scripted) -> Vec<u16> {
+    scripted
+        .heard()
+        .iter()
+        .filter_map(|heard| match heard {
+            ToServer::Hello { version, .. } => Some(*version),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_server_before_incarnations_refusing_their_version_is_said_the_first_one_from_then_on() {
+    let folder = scratch("before-incarnations");
+    let scripted = Scripted::answering(a_server_before_incarnations);
+    let key = SyncKey::minted().expect("a key");
+    let shelf = Arc::new(Shelf::holding(&["A"]));
+
+    let desk = device_reaching(scripted.address, &folder, &key, "Desk", shelf);
+
+    eventually("the desk connected to a server before incarnations", || {
+        desk.shown().standing == Standing::Connected
+    });
+
+    let first = versions_said(&scripted);
+
+    desk.force();
+    eventually("the desk connected again", || {
+        versions_said(&scripted).len() > first.len() && desk.shown().standing == Standing::Connected
+    });
+
+    let then = versions_said(&scripted);
+
+    assert_eq!(first, [INCARNATION_VERSION, PROTOCOL_VERSION]);
+    assert_eq!(
+        then,
+        [INCARNATION_VERSION, PROTOCOL_VERSION, PROTOCOL_VERSION]
+    );
 
     drop(desk);
 

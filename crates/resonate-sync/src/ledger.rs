@@ -3,9 +3,11 @@ use std::{collections::BTreeMap, path::Path, time::Duration};
 use resonate_core::{Answer, Recording, RecordingKey, WholeFile};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
+pub use self::incarnation::Welcomed;
 use self::{
     answered::ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
     deletions::SONGS_DELETED_EVERYWHERE,
+    incarnation::A_SPACE_IS_KNOWN_BY_ITS_INCARNATION,
     set_back::kept_or_set_back,
     unheld::{
         HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART, UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
@@ -36,6 +38,7 @@ use crate::{
 
 mod answered;
 mod deletions;
+mod incarnation;
 #[cfg(test)]
 mod released;
 mod set_back;
@@ -229,6 +232,7 @@ const MIGRATIONS: &[&str] = &[
     HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART,
     ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
     CHANGES_UNREAD_ARE_CARRIED_FORWARD,
+    A_SPACE_IS_KNOWN_BY_ITS_INCARNATION,
 ];
 
 const STAMPS_PAST_THE_BOUND_ARE_RESTAMPED: &str = "
@@ -281,7 +285,7 @@ DELETE FROM playlist_folds;
 DELETE FROM query_folds;
 DELETE FROM deletions;
 DELETE FROM unread;
-UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, answers_mark = 0, resumed = NULL;
+UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, answers_mark = 0, resumed = NULL, incarnation = NULL;
 ";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -646,6 +650,13 @@ impl Ledger {
     pub fn space_made_anew(&mut self) -> Result<()> {
         let transaction = self.writing()?;
 
+        Self::made_anew(&transaction)?;
+        transaction
+            .commit()
+            .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    fn made_anew(transaction: &Transaction<'_>) -> Result<()> {
         transaction
             .execute_batch(OWE_EVERYTHING)
             .map_err(|source| Error::store(StoreOp::Write, source))?;
@@ -655,9 +666,7 @@ impl Ledger {
                 [],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        transaction
-            .commit()
-            .map_err(|source| Error::store(StoreOp::Write, source))
+        Ok(())
     }
 
     pub fn cursor(&self) -> Result<u64> {

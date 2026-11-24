@@ -43,7 +43,7 @@ use crate::{
     },
     fresh::{HeardOnce, Unfresh, wall_seconds},
     key::{Derived, PAIRING_LINK, hex, random_bytes},
-    ledger::{Follow, Me, lacked},
+    ledger::{Follow, Me, Welcomed, lacked},
     merge::one_recording_a_song,
     nearby::{
         BEACON_EVERY, BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST, Bonjour, Found, LARGEST_BEACON,
@@ -63,9 +63,10 @@ use crate::{
     stun::Reflector,
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
-        BLOBS_A_FRAME_AT_MOST, Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer, LARGEST_FRAME,
-        LARGEST_RECORD, LYRICSFILES_ASKED_AT_MOST, PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal,
-        ToServer, Unread, encoded_bundle, encoded_change, read_bundle,
+        BLOBS_A_FRAME_AT_MOST, Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer,
+        INCARNATION_VERSION, Incarnation, LARGEST_FRAME, LARGEST_RECORD, LYRICSFILES_ASKED_AT_MOST,
+        PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal, ToServer, Unread, encoded_bundle,
+        encoded_change, read_bundle,
     },
 };
 
@@ -375,6 +376,7 @@ struct Running {
     mirrors: RwLock<BTreeMap<DeviceId, Watched>>,
     watched: Mutex<BTreeMap<DeviceId, std::time::Instant>>,
     watching: Mutex<BTreeSet<DeviceId>>,
+    server_before_incarnations: AtomicBool,
 }
 
 pub struct AskedToControl {
@@ -930,6 +932,7 @@ impl Sync {
             mirrors: RwLock::new(BTreeMap::new()),
             watched: Mutex::new(BTreeMap::new()),
             watching: Mutex::new(BTreeSet::new()),
+            server_before_incarnations: AtomicBool::new(false),
         });
 
         let (commands, received) = mpsc::unbounded_channel();
@@ -1736,27 +1739,54 @@ async fn reached(
 }
 
 async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
-    let (carrier, mut send, recv, address) = reached(&running, &server).await?;
+    let version = if running.server_before_incarnations.load(Ordering::Relaxed) {
+        PROTOCOL_VERSION
+    } else {
+        INCARNATION_VERSION
+    };
+
+    match linked_saying(&running, &server, version).await {
+        Err(Error::Refused(Refusal::Version)) if version == INCARNATION_VERSION => {
+            tracing::info!(%server, "the sync server tells no incarnation, so a space made anew is told by its head alone");
+            running
+                .server_before_incarnations
+                .store(true, Ordering::Relaxed);
+            linked_saying(&running, &server, PROTOCOL_VERSION).await
+        }
+        linked => linked,
+    }
+}
+
+async fn linked_saying(running: &Running, server: &str, version: u16) -> Result<Link> {
+    let (carrier, mut send, recv, address) = reached(running, server).await?;
 
     let (reading, mut frames) = reading_from_the_server(recv, Arc::clone(&running.reflector));
-    let welcomed = within(welcomed(&running, &mut send, &mut frames)).await;
-    let (online, head, cursor) = match welcomed {
-        Ok(welcomed) => welcomed,
+    let greeted = within(welcomed(running, version, &mut send, &mut frames)).await;
+    let Greeted {
+        online,
+        head,
+        incarnation,
+        cursor,
+    } = match greeted {
+        Ok(greeted) => greeted,
         Err(error) => {
             reading.abort();
             carrier.close();
             return Err(error);
         }
     };
+    let ledger = Arc::clone(&running.ledger);
 
-    if head < cursor {
+    let parted = match blocking(move || ledger.lock().welcomed(head, incarnation)).await {
+        Ok(Welcomed::Continued) => None,
+        Ok(Welcomed::MadeAnew) => Some(Error::SpaceMadeAnew),
+        Err(error) => Some(error),
+    };
+
+    if let Some(error) = parted {
         reading.abort();
         carrier.close();
-
-        let ledger = Arc::clone(&running.ledger);
-
-        blocking(move || ledger.lock().space_made_anew()).await?;
-        return Err(Error::SpaceMadeAnew);
+        return Err(error);
     }
     tracing::info!(%server, "syncing with the server");
 
@@ -1789,14 +1819,22 @@ async fn linked(running: Arc<Running>, server: String) -> Result<Link> {
     })
 }
 
+struct Greeted {
+    online: Vec<DeviceId>,
+    head: u64,
+    incarnation: Option<Incarnation>,
+    cursor: u64,
+}
+
 async fn welcomed(
     running: &Running,
+    version: u16,
     send: &mut Outgoing,
     frames: &mut mpsc::Receiver<Result<FromServer>>,
-) -> Result<(Vec<DeviceId>, u64, u64)> {
+) -> Result<Greeted> {
     let cursor = running.ledger.lock().cursor()?;
     let hello = ToServer::Hello {
-        version: PROTOCOL_VERSION,
+        version,
         space: running.derived.space,
         token: running.derived.token.clone(),
         device: running.device,
@@ -1805,7 +1843,17 @@ async fn welcomed(
 
     send.send(&hello.encoded()).await?;
     match frames.recv().await {
-        Some(Ok(FromServer::Welcome { online, head, .. })) => Ok((online, head, cursor)),
+        Some(Ok(FromServer::Welcome {
+            online,
+            head,
+            incarnation,
+            ..
+        })) => Ok(Greeted {
+            online,
+            head,
+            incarnation,
+            cursor,
+        }),
         Some(Ok(FromServer::Refused(refusal))) => Err(Error::Refused(refusal)),
         Some(Err(error)) => Err(error),
         Some(Ok(_)) | None => Err(Error::Unwelcome),

@@ -11,8 +11,8 @@ use resonate_sync::{
     DeviceId, Duplex, Incoming as Reader, Outgoing as Writer, SpaceId, Token, accepted,
     server_transport,
     wire::{
-        FIRST_FRAME_AT_MOST, FromServer, LARGEST_FRAME, LARGEST_RECORD, PROTOCOL_VERSION,
-        ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN, SpaceAsked, ToServer,
+        FIRST_FRAME_AT_MOST, FromServer, INCARNATION_VERSION, LARGEST_FRAME, LARGEST_RECORD,
+        PROTOCOL_VERSION, ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN, SpaceAsked, ToServer,
     },
 };
 use ring::rand::{SecureRandom, SystemRandom};
@@ -107,6 +107,7 @@ struct Seat {
     device: DeviceId,
     after: u64,
     seen: SocketAddr,
+    tells_incarnation: bool,
 }
 
 struct Sent {
@@ -493,7 +494,7 @@ impl Server {
             after,
         } = door;
 
-        if version != PROTOCOL_VERSION {
+        if !matches!(version, PROTOCOL_VERSION | INCARNATION_VERSION) {
             return refuse(&mut send, Refusal::Version).await;
         }
 
@@ -541,6 +542,7 @@ impl Server {
             device,
             after,
             seen: address,
+            tells_incarnation: version == INCARNATION_VERSION,
         };
         let mut staging = None;
 
@@ -592,6 +594,7 @@ impl Server {
             online: Vec::new(),
             seen_at: address,
             head,
+            incarnation: None,
         };
 
         send.send(&welcome.encoded()).await?;
@@ -795,6 +798,7 @@ impl Server {
             device,
             after,
             seen,
+            tells_incarnation,
         } = seat;
         let Joined {
             mut notices,
@@ -804,7 +808,12 @@ impl Server {
         } = joined;
         let store = Arc::clone(&self.store);
 
-        let (head, _) = in_the_store(move || store.lock().head(space)).await?;
+        let (head, incarnation) = in_the_store(move || {
+            let store = store.lock();
+
+            Ok((store.head(space)?.0, store.incarnation(space)?))
+        })
+        .await?;
         let online = match kind {
             SpaceKind::Personal => others,
             SpaceKind::Shared => Vec::new(),
@@ -814,6 +823,7 @@ impl Server {
             online,
             seen_at: seen,
             head,
+            incarnation: incarnation.filter(|_| tells_incarnation),
         };
 
         send.send(&welcome.encoded()).await?;

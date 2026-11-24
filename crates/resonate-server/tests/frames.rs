@@ -10,7 +10,10 @@ use quinn::{
 use resonate_server::{Limits, Presented, Server, Store, listening, serving};
 use resonate_sync::{
     DeviceId, SpaceId, Token, read_frame, send_frame,
-    wire::{FIRST_FRAME_AT_MOST, FromServer, PROTOCOL_VERSION, Refusal, SERVER_ALPN, ToServer},
+    wire::{
+        FIRST_FRAME_AT_MOST, FromServer, INCARNATION_VERSION, PROTOCOL_VERSION, Refusal,
+        SERVER_ALPN, ToServer,
+    },
 };
 use rustls::{RootCertStore, crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{CertificateDer, PrivateKeyDer, PrivatePkcs8KeyDer};
@@ -225,4 +228,57 @@ async fn a_client_may_open_no_stream_and_send_no_datagram_beside_the_one_its_ses
         "a unidirectional stream was granted"
     );
     assert_eq!(datagrams, None);
+}
+
+async fn answered_at(serving: &Serving, version: u16, device: u8) -> Vec<u8> {
+    let (_client, connection) = connected(serving).await;
+    let (mut send, mut recv) = connection.open_bi().await.expect("a stream");
+    let hello = ToServer::Hello {
+        version,
+        space: SpaceId([7; 16]),
+        token: Token([9; 32]),
+        device: DeviceId([device; 16]),
+        after: 0,
+    };
+
+    send_frame(&mut send, &hello.encoded()).await.expect("said");
+    read_frame(&mut recv).await.expect("read").expect("a frame")
+}
+
+#[tokio::test]
+async fn a_hello_of_the_first_version_is_welcomed_as_its_build_reads_and_only_the_incarnations_version_is_told_one()
+ {
+    let serving = serving_with(Limits::default());
+
+    let first = answered_at(&serving, PROTOCOL_VERSION, 1).await;
+    let incarnated = answered_at(&serving, INCARNATION_VERSION, 2).await;
+    let later = answered_at(&serving, INCARNATION_VERSION + 1, 3).await;
+    let first_read = FromServer::decoded(&first).expect("a welcome");
+    let incarnated_read = FromServer::decoded(&incarnated).expect("a welcome");
+
+    assert!(
+        matches!(
+            first_read,
+            FromServer::Welcome {
+                incarnation: None,
+                ..
+            }
+        ),
+        "{first_read:?}"
+    );
+    assert_eq!(first_read.encoded(), first);
+    assert!(
+        matches!(
+            incarnated_read,
+            FromServer::Welcome {
+                incarnation: Some(_),
+                ..
+            }
+        ),
+        "{incarnated_read:?}"
+    );
+    assert_eq!(
+        FromServer::decoded(&later).expect("a refusal"),
+        FromServer::Refused(Refusal::Version)
+    );
 }

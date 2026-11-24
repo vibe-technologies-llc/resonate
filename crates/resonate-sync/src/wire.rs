@@ -26,6 +26,7 @@ use crate::{
 };
 
 pub const PROTOCOL_VERSION: u16 = 1;
+pub const INCARNATION_VERSION: u16 = 2;
 pub const SERVER_ALPN: &[u8] = b"resonate-sync/1";
 pub const PEER_ALPN: &[u8] = b"resonate-peer/1";
 pub const LARGEST_FRAME: usize = 32 * 1024 * 1024;
@@ -168,6 +169,9 @@ pub struct SpaceAsked {
     pub token: Token,
 }
 
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq)]
+pub struct Incarnation(pub u64);
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SpaceHead {
     pub space: SpaceId,
@@ -201,6 +205,7 @@ pub enum FromServer {
         online: Vec<DeviceId>,
         seen_at: SocketAddr,
         head: u64,
+        incarnation: Option<Incarnation>,
     },
     Snapshot {
         through: u64,
@@ -1472,6 +1477,7 @@ impl FromServer {
                 online,
                 seen_at,
                 head,
+                incarnation,
             } => {
                 writer.byte(0);
                 writer.length(online.len());
@@ -1480,6 +1486,9 @@ impl FromServer {
                 }
                 writer.address(*seen_at);
                 writer.number(*head);
+                if let Some(incarnation) = incarnation {
+                    writer.number(incarnation.0);
+                }
             }
             Self::Snapshot { through, parts } => {
                 writer.byte(1);
@@ -1595,6 +1604,11 @@ impl FromServer {
                     online,
                     seen_at: reader.address()?,
                     head: reader.number()?,
+                    incarnation: if reader.is_done() {
+                        None
+                    } else {
+                        Some(Incarnation(reader.number()?))
+                    },
                 }
             }
             1 => Self::Snapshot {
@@ -2866,6 +2880,49 @@ mod tests {
     }
 
     #[test]
+    fn a_welcome_without_its_incarnation_is_written_as_the_first_build_wrote_it_and_one_with_it_only_extends_it()
+     {
+        let device = DeviceId([1; DEVICE_BYTES]);
+        let seen_at: SocketAddr = "203.0.113.9:40000".parse().expect("address");
+
+        let welcome = |incarnation| FromServer::Welcome {
+            online: vec![device],
+            seen_at,
+            head: 12,
+            incarnation,
+        };
+        let mut first_build = Writer::new();
+
+        first_build.byte(0);
+        first_build.length(1);
+        first_build.device(device);
+        first_build.address(seen_at);
+        first_build.number(12);
+
+        let first_build = first_build.finish();
+        let plain = welcome(None);
+        let incarnated = welcome(Some(Incarnation(7)));
+
+        let old = plain.encoded();
+        let new = incarnated.encoded();
+        let mut read_as_the_first_build_reads = Reader::new(&new);
+
+        read_as_the_first_build_reads.byte().expect("the tag");
+        read_as_the_first_build_reads.count().expect("the count");
+        read_as_the_first_build_reads.device().expect("a device");
+        read_as_the_first_build_reads
+            .address()
+            .expect("the address");
+        read_as_the_first_build_reads.number().expect("the head");
+
+        assert_eq!(old, first_build);
+        assert_eq!(new[..old.len()], old[..]);
+        assert_eq!(FromServer::decoded(&old).expect("decoded"), plain);
+        assert_eq!(FromServer::decoded(&new).expect("decoded"), incarnated);
+        assert!(read_as_the_first_build_reads.done().is_err());
+    }
+
+    #[test]
     fn the_first_frame_ceiling_holds_the_largest_a_device_may_open_with() {
         let heads = ToServer::Heads {
             version: PROTOCOL_VERSION,
@@ -3029,6 +3086,13 @@ mod tests {
                 online: vec![DeviceId([1; DEVICE_BYTES])],
                 seen_at: "203.0.113.9:40000".parse().expect("address"),
                 head: 12,
+                incarnation: None,
+            },
+            FromServer::Welcome {
+                online: Vec::new(),
+                seen_at: "203.0.113.9:40000".parse().expect("address"),
+                head: 12,
+                incarnation: Some(Incarnation(u64::MAX)),
             },
             FromServer::Snapshot {
                 through: 3,

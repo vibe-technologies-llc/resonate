@@ -48,7 +48,7 @@ pub use crate::{
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{DEVICE_BYTES, Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
-    ledger::{Applied, Follow, Ledger, Looked, Me},
+    ledger::{Applied, Follow, Ledger, Looked, Me, Welcomed},
     nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
     quic::{check_trusted_certificate, read_frame, send_frame, server_transport},
     relay::{RELAYED_PORT, Relay},

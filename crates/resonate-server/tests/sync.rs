@@ -11,8 +11,8 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use resonate_core::{Answer, LONGEST_SHARED_LYRICS, SharedLyrics};
 use resonate_server::{Limits, Presented, Server, Store, listening, serving};
 use resonate_sync::{
-    AnswerNote, Change, DeviceId, Follow, Me, Platform, Settings, SongTags, Stamp, Standing, Sync,
-    SyncKey, opened, sealed,
+    AnswerNote, Change, DeviceId, Follow, Ledger, Me, Platform, Settings, SongTags, Stamp,
+    Standing, Sync, SyncKey, opened, sealed,
     wire::{
         LARGEST_FRAME, ReadBundle, Unread, bundle_of_encoded, encoded_bundle, encoded_change,
         read_bundle,
@@ -808,6 +808,120 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
     drop(tablet);
     drop(phone);
     drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+const EVERY_SPACE_UNTOUCHED_BEFORE_NOW: i64 = i64::MAX;
+
+fn cursor_of(ledger: &Path) -> Option<u64> {
+    Ledger::open(ledger).and_then(|ledger| ledger.cursor()).ok()
+}
+
+fn written_by_the_phone(made: usize) -> String {
+    format!("Phone {made}")
+}
+
+#[test]
+fn a_device_back_in_a_space_made_anew_and_written_past_its_cursor_reads_it_whole_and_sends_its_own_again()
+ {
+    let folder = scratch("made-anew");
+    let kept_at = folder.join("server.sqlite");
+
+    let hosted = hosted_over(&folder, Store::open(&kept_at).expect("a store"));
+    let key = SyncKey::minted().expect("a key");
+    let space = key.derived().expect("derived").space;
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+    let mut watching = Store::open(&kept_at).expect("the server's store, read beside it");
+    let desk_ledger = folder.join("Desk.sqlite");
+
+    desk_shelf.make_playlist("Before", &["A"]);
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+
+    eventually(
+        "the desk's playlist kept by the server and read back",
+        || {
+            let shown = desk.shown();
+            let head = watching.head(space).map_or(0, |(head, _)| head);
+
+            shown.standing == Standing::Connected
+                && shown.settled
+                && shown.owed == 0
+                && head > 0
+                && cursor_of(&desk_ledger).is_some_and(|cursor| cursor >= head)
+        },
+    );
+    drop(desk);
+
+    let desk_cursor = cursor_of(&desk_ledger).expect("the desk's cursor");
+    let swept = watching
+        .sweep(EVERY_SPACE_UNTOUCHED_BEFORE_NOW)
+        .expect("swept");
+
+    phone_shelf.make_playlist(&written_by_the_phone(0), &["A"]);
+
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+    let mut made = 0;
+
+    eventually(
+        "the phone's first playlist kept by the space made anew",
+        || {
+            let shown = phone.shown();
+            shown.settled && shown.owed == 0 && watching.head(space).is_ok_and(|(head, _)| head > 0)
+        },
+    );
+    while watching.head(space).expect("the head").0 <= desk_cursor {
+        let head = watching.head(space).expect("the head").0;
+
+        made += 1;
+        phone_shelf.make_playlist(&written_by_the_phone(made), &["A"]);
+        eventually("another of the phone's playlists kept", || {
+            watching
+                .head(space)
+                .is_ok_and(|(written, _)| written > head)
+        });
+    }
+
+    let desk = device(
+        &hosted,
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        Follow::default(),
+    );
+
+    eventually("every playlist of the phone's reaching the desk", || {
+        (0..=made).all(|at| {
+            desk_shelf
+                .playlist_named(&written_by_the_phone(at))
+                .is_some()
+        })
+    });
+    eventually("the desk's playlist of before reaching the phone", || {
+        phone_shelf.playlist_named("Before").is_some()
+    });
+
+    assert_eq!(swept, 1);
+
+    drop(desk);
+    drop(phone);
 
     let _ = fs::remove_dir_all(&folder);
 }

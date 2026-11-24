@@ -1250,6 +1250,7 @@ fn told_records_past_a_compaction() -> Vec<FromServer> {
             online: Vec::new(),
             seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
             head: RECORDS_PAST_A_COMPACTION,
+            incarnation: None,
         },
         FromServer::Records {
             entries: (1..=RECORDS_PAST_A_COMPACTION)

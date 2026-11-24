@@ -66,6 +66,11 @@ const SEEDS: &[Seed] = &[
         fingerprint: 0x936d_fc7c_5ea8_dbee,
     },
     Seed {
+        name: "hello-incarnated",
+        kind: Kind::ToServer,
+        fingerprint: 0x1899_eead_3df8_59c5,
+    },
+    Seed {
         name: "kept-end",
         kind: Kind::FromPeer,
         fingerprint: 0x086f_9e07_b51f_436d,
@@ -129,6 +134,16 @@ const SEEDS: &[Seed] = &[
         name: "viewing",
         kind: Kind::ToServer,
         fingerprint: 0x1817_61ca_ac82_a7e6,
+    },
+    Seed {
+        name: "welcome",
+        kind: Kind::FromServer,
+        fingerprint: 0x297b_3fd1_3f79_ba3d,
+    },
+    Seed {
+        name: "welcome-incarnated",
+        kind: Kind::FromServer,
+        fingerprint: 0xd71c_f0df_c6bf_8244,
     },
 ];
 
