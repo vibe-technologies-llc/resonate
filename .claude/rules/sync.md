@@ -1095,9 +1095,27 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   a device consult or a window call still holds cannot keep the run going) and then `sync.lock` let
   go (`a_leave_ends_the_run_it_takes_though_a_clone_is_still_held_elsewhere`,
   `a_run_stopped_while_held_elsewhere_is_over_when_the_stop_returns`). A device
-  that is off holds one arrangement whatever else is set, and a key minted at start is kept in the
-  arrangement (`Arrangement::keyed`), so the write that records it is not a change. A file that will
-  not read leaves what runs as it is. So the pane, `resonate sync --join` and `--leave` from another
+  that is off holds one arrangement whatever else is set, and a key minted at start is written into
+  the config the start was given (`key_of`) as well as the file, so the arrangement read back is the
+  same and the write that records it is not a change
+  (`a_key_minted_at_start_is_the_arrangement_the_file_then_reads_as`). A file that will
+  not read leaves what runs as it is.
+- **A start that did not begin is tried again, the settings unchanged.** Arranging answers what
+  became of the start (`Start`: `Running`, `Off`, `Busy` where another process holds `sync.lock`,
+  `Failed` where the start returned an error, logged) beside the arrangement, so settings read are
+  never taken for settings running. `Busy` and `Failed` leave the config they were given awaiting
+  (`Arranged::awaiting`, `only_a_start_refused_or_failed_is_tried_again`), and the watcher starts
+  again with it after `START_TRIED_AGAIN_FIRST_AFTER` (2 s), doubling each time up to
+  `START_TRIED_AGAIN_AT_MOST_AFTER` (30 s), on the same looks as the file's (`Following`,
+  `Retrying`, `a_start_is_tried_again_twice_as_late_each_time_up_to_a_ceiling_and_never_before_it_is_due`).
+  So a window closed hands syncing to a `resonate play` still running within half a minute
+  (`a_second_process_begins_syncing_once_the_first_lets_the_lock_go_with_the_settings_unchanged`)
+  and a start an unready data folder or ledger refused recovers on its own
+  (`a_start_that_failed_for_a_moment_recovers_on_its_own_with_the_settings_it_was_given`). A file
+  read meanwhile whose arrangement differs starts afresh (the backoff with it); one whose
+  arrangement is the same becomes the config the next try starts with, so a layout told since is
+  not taken back. Switched off, it is `Off` and nothing is awaited; a leave stops the watcher and
+  with it the tries. The watcher runs where there is a settings file or a start awaited. So the pane, `resonate sync --join` and `--leave` from another
   process, and a hand edit take effect within seconds, and *New code* (the pane clears `sync-key`)
   mints and joins a new space at once.
 - **The window's seam never goes absent.** `Service` implements `resonate_ui::Syncing` over

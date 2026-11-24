@@ -606,7 +606,8 @@ subject.
   `sync-nearby-only` (`Config::syncs`). The pane writes them and the running service follows the file
   (`sync.md`). **One process syncs a catalog**: `sync.lock` in the data folder is `try_lock`ed; a
   window holding it leaves `resonate play` and `resonate sync` unsynced (`Error::SyncBusy` for the
-  latter).
+  latter), and `resonate play` tries again until it is let go (`sync.md`'s *A start that did not
+  begin is tried again*).
 - `youtube-music` (off), `youtube-music-cookies`, `yt-dlp`, `youtube-music-keep-order` (on): nothing is
   registered while the first is off (`providers.md`'s *A YouTube Music account*). The cookies are a
   browser as `yt-dlp` spells it (`firefox`, `firefox:/path/to/profile`, how a fork such as Zen is

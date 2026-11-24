@@ -71,6 +71,17 @@ const SYNCING_ALONE: &str = "sync.lock";
 
 #[cfg(feature = "sync")]
 const SETTINGS_LOOKED_AT_EVERY: Duration = Duration::from_secs(2);
+#[cfg(feature = "sync")]
+const START_TRIED_AGAIN_FIRST_AFTER: Duration = Duration::from_secs(2);
+#[cfg(feature = "sync")]
+const START_TRIED_AGAIN_AT_MOST_AFTER: Duration = Duration::from_secs(30);
+#[cfg(feature = "sync")]
+const PACE: Pace = Pace {
+    looked_at_every: SETTINGS_LOOKED_AT_EVERY,
+    tried_again_first_after: START_TRIED_AGAIN_FIRST_AFTER,
+    tried_again_at_most_after: START_TRIED_AGAIN_AT_MOST_AFTER,
+};
+
 pub(crate) struct Syncing {
     #[cfg(feature = "sync")]
     service: Arc<Service>,
@@ -231,11 +242,124 @@ impl Arrangement {
             takes_deletions: Switch::SyncDeletionsFromOthers.on_unless_said(),
         }
     }
+}
 
-    fn keyed(self, code: &str) -> Self {
+#[cfg(feature = "sync")]
+enum Begun {
+    Running(Running),
+    Off,
+    Busy,
+}
+
+#[cfg(feature = "sync")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Start {
+    Running,
+    Off,
+    Busy,
+    Failed,
+}
+
+#[cfg(feature = "sync")]
+impl Start {
+    const fn settled(self) -> bool {
+        matches!(self, Self::Running | Self::Off)
+    }
+}
+
+#[cfg(feature = "sync")]
+struct Arranged {
+    arrangement: Arrangement,
+    awaiting: Option<Config>,
+}
+
+#[cfg(feature = "sync")]
+impl Arranged {
+    fn after(config: Config, start: Start) -> Self {
         Self {
-            key: SyncKey::from_code(code).ok().map(|key| key.code()),
-            ..self
+            arrangement: Arrangement::of(&config),
+            awaiting: (!start.settled()).then_some(config),
+        }
+    }
+}
+
+#[cfg(feature = "sync")]
+#[derive(Clone, Copy)]
+struct Pace {
+    looked_at_every: Duration,
+    tried_again_first_after: Duration,
+    tried_again_at_most_after: Duration,
+}
+
+#[cfg(feature = "sync")]
+struct Retrying {
+    config: Config,
+    due: Instant,
+    after: Duration,
+}
+
+#[cfg(feature = "sync")]
+impl Retrying {
+    fn first(config: Config, now: Instant, pace: Pace) -> Self {
+        let after = pace
+            .tried_again_first_after
+            .min(pace.tried_again_at_most_after);
+        Self {
+            config,
+            due: now + after,
+            after,
+        }
+    }
+
+    fn again(self, config: Config, now: Instant, pace: Pace) -> Self {
+        let after = self
+            .after
+            .saturating_mul(2)
+            .min(pace.tried_again_at_most_after);
+        Self {
+            config,
+            due: now + after,
+            after,
+        }
+    }
+}
+
+#[cfg(feature = "sync")]
+struct Following {
+    arranged: Arrangement,
+    retrying: Option<Retrying>,
+}
+
+#[cfg(feature = "sync")]
+impl Following {
+    fn from(arranged: Arranged, now: Instant, pace: Pace) -> Self {
+        Self {
+            arranged: arranged.arrangement,
+            retrying: arranged
+                .awaiting
+                .map(|config| Retrying::first(config, now, pace)),
+        }
+    }
+
+    fn due(&self, now: Instant) -> Option<Config> {
+        self.retrying
+            .as_ref()
+            .filter(|retrying| now >= retrying.due)
+            .map(|retrying| retrying.config.clone())
+    }
+
+    fn tried_again(&mut self, arranged: Arranged, now: Instant, pace: Pace) {
+        self.arranged = arranged.arrangement;
+        self.retrying = match (self.retrying.take(), arranged.awaiting) {
+            (Some(before), Some(config)) => Some(before.again(config, now, pace)),
+            (None, Some(config)) => Some(Retrying::first(config, now, pace)),
+            (_, None) => None,
+        };
+    }
+
+    fn read(&mut self, config: Config) {
+        if let Some(retrying) = self.retrying.as_mut() {
+            retrying.config = config;
         }
     }
 }
@@ -253,39 +377,37 @@ impl Service {
         config: &Config,
         settings: Option<&Path>,
         library: &Arc<Library>,
-    ) -> Arrangement {
-        let arrangement = Arrangement::of(config);
+    ) -> Arranged {
+        let mut config = config.clone();
+
+        let trust = Arrangement::of(&config).trust;
 
         self.running.emptied();
 
-        *self.trust.lock() = arrangement.trust;
-        self.filed_as.told_by(config);
+        *self.trust.lock() = trust;
+        self.filed_as.told_by(&config);
 
         let filed_as = Arc::clone(&self.filed_as);
-        match started(
-            config,
-            settings,
-            library,
-            follow_of(config.sync_songs),
-            filed_as,
-        ) {
-            Ok(Some(running)) => {
-                let code = running.sync.code().to_owned();
+        let follow = follow_of(config.sync_songs);
 
+        let start = match started(&mut config, settings, library, follow, filed_as) {
+            Ok(Begun::Running(running)) => {
                 if let Some(driven) = self.driven.lock().clone() {
-                    running.sync.control_with(driven, arrangement.trust);
+                    running.sync.control_with(driven, trust);
                 }
                 if self.running.seated(running).is_none() {
                     tracing::debug!("sync was left while it started, so the run is let go");
                 }
-                arrangement.keyed(&code)
+                Start::Running
             }
-            Ok(None) => arrangement,
+            Ok(Begun::Off) => Start::Off,
+            Ok(Begun::Busy) => Start::Busy,
             Err(error) => {
-                tracing::warn!(%error, "devices are not synchronised");
-                arrangement
+                tracing::warn!(%error, "devices are not synchronised, so the start is tried again");
+                Start::Failed
             }
-        }
+        };
+        Arranged::after(config, start)
     }
 }
 
@@ -325,37 +447,57 @@ impl Settling {
 }
 
 #[cfg(feature = "sync")]
+fn read_once_settled(settings: &Path, stamps: &mut Settling) -> Option<Config> {
+    if !stamps.settled_at(modified(settings)) {
+        return None;
+    }
+    config::load(Some(settings))
+        .inspect_err(|error| {
+            tracing::warn!(
+                %error,
+                "the sync settings went unread, so the ones held are kept"
+            );
+        })
+        .ok()
+}
+
+#[cfg(feature = "sync")]
 fn watching(
-    settings: PathBuf,
+    settings: Option<PathBuf>,
     seen: Option<SystemTime>,
-    arranged: Arrangement,
-    every: Duration,
+    arranged: Arranged,
+    pace: Pace,
     filed_as: Arc<FiledAs>,
-    mut arrange: impl FnMut(&Config) -> Arrangement + Send + 'static,
+    mut arrange: impl FnMut(&Config) -> Arranged + Send + 'static,
 ) -> Option<Sender<()>> {
     let (stop, stopped) = bounded(1);
     let started = thread::Builder::new()
         .name("resonate-sync-settings".to_owned())
         .spawn(move || {
             let mut stamps = Settling::from(seen);
-            let mut arranged = arranged;
+            let mut following = Following::from(arranged, Instant::now(), pace);
             loop {
-                match stopped.recv_timeout(every) {
+                match stopped.recv_timeout(pace.looked_at_every) {
                     Err(RecvTimeoutError::Timeout) => {}
                     Ok(()) | Err(RecvTimeoutError::Disconnected) => return,
                 }
-                if !stamps.settled_at(modified(&settings)) {
-                    continue;
-                }
-                match config::load(Some(&settings)) {
-                    Ok(config) if Arrangement::of(&config) != arranged => {
-                        arranged = arrange(&config);
+
+                let read = settings
+                    .as_deref()
+                    .and_then(|settings| read_once_settled(settings, &mut stamps));
+
+                if let Some(config) = read {
+                    if Arrangement::of(&config) != following.arranged {
+                        following = Following::from(arrange(&config), Instant::now(), pace);
+                        continue;
                     }
-                    Ok(config) => filed_as.told_by(&config),
-                    Err(error) => tracing::warn!(
-                        %error,
-                        "the sync settings went unread, so the ones held are kept"
-                    ),
+                    filed_as.told_by(&config);
+                    following.read(config);
+                }
+                if let Some(config) = following.due(Instant::now()) {
+                    let arranged = arrange(&config);
+
+                    following.tried_again(arranged, Instant::now(), pace);
                 }
             }
         });
@@ -455,20 +597,18 @@ pub(crate) fn start(config: &Config, settings: Option<&Path>, library: &Arc<Libr
         )));
     }
 
-    let watching = settings.map(Path::to_path_buf).and_then(|settings| {
-        let service = Arc::clone(&service);
-        let library = Arc::clone(library);
-        let own = settings.clone();
-        let filed_as = Arc::clone(&service.filed_as);
-        watching(
-            settings,
-            seen,
-            arranged,
-            SETTINGS_LOOKED_AT_EVERY,
-            filed_as,
-            move |config| service.arranged(config, Some(&own), &library),
-        )
-    });
+    let followed = settings.is_some() || arranged.awaiting.is_some();
+    let watching = followed
+        .then(|| {
+            let service = Arc::clone(&service);
+            let library = Arc::clone(library);
+            let own = settings.map(Path::to_path_buf);
+            let filed_as = Arc::clone(&service.filed_as);
+            watching(own.clone(), seen, arranged, PACE, filed_as, move |config| {
+                service.arranged(config, own.as_deref(), &library)
+            })
+        })
+        .flatten();
 
     Syncing { service, watching }
 }
@@ -500,19 +640,19 @@ fn follow_of(songs: Option<SyncedSongs>) -> Follow {
 
 #[cfg(feature = "sync")]
 fn started(
-    config: &Config,
+    config: &mut Config,
     settings: Option<&Path>,
     library: &Arc<Library>,
     follow: Follow,
     filed_as: Arc<FiledAs>,
-) -> Result<Option<Running>> {
+) -> Result<Begun> {
     if !config.syncs() {
-        return Ok(None);
+        return Ok(Begun::Off);
     }
 
     let Some(alone) = alone()? else {
         tracing::debug!("another Resonate synchronises this catalog");
-        return Ok(None);
+        return Ok(Begun::Busy);
     };
     let key = key_of(config, settings)?;
     let folder = config::private_data_dir()?;
@@ -548,7 +688,7 @@ fn started(
 
     #[cfg(feature = "online")]
     sync.consult_with(crate::musicbrainz::ConsultedHere::of(config));
-    Ok(Some(Running {
+    Ok(Begun::Running(Running {
         sync,
         #[cfg(feature = "ui")]
         library: Arc::clone(library),
@@ -581,7 +721,11 @@ pub(crate) fn code_reader() -> Option<fn(&str) -> bool> {
 
 #[cfg(feature = "sync")]
 fn alone() -> Result<Option<File>> {
-    let folder = config::private_data_dir()?;
+    alone_in(&config::private_data_dir()?)
+}
+
+#[cfg(feature = "sync")]
+fn alone_in(folder: &Path) -> Result<Option<File>> {
     let path = folder.join(SYNCING_ALONE);
     let file = File::options()
         .create(true)
@@ -600,7 +744,7 @@ fn alone() -> Result<Option<File>> {
 }
 
 #[cfg(feature = "sync")]
-fn key_of(config: &Config, settings: Option<&Path>) -> Result<SyncKey> {
+fn key_of(config: &mut Config, settings: Option<&Path>) -> Result<SyncKey> {
     if let Some(code) = &config.sync_key {
         return SyncKey::from_code(code).map_err(Error::Sync);
     }
@@ -610,6 +754,7 @@ fn key_of(config: &Config, settings: Option<&Path>) -> Result<SyncKey> {
     if let Some(settings) = settings {
         config::store(settings, ConfigKey::SyncKey, key.code())?;
     }
+    config.sync_key = Some(key.code());
     Ok(key)
 }
 
@@ -1403,7 +1548,16 @@ fn running(config: &Config, settings: &Path, library: &Arc<Library>) -> Result<R
     let filed_as = Arc::new(FiledAs::default());
 
     filed_as.told_by(config);
-    started(config, Some(settings), library, Follow::default(), filed_as)?.ok_or(Error::SyncBusy)
+    match started(
+        &mut config.clone(),
+        Some(settings),
+        library,
+        Follow::default(),
+        filed_as,
+    )? {
+        Begun::Running(running) => Ok(running),
+        Begun::Off | Begun::Busy => Err(Error::SyncBusy),
+    }
 }
 
 #[cfg(feature = "sync")]
@@ -2082,13 +2236,217 @@ mod tests {
 
     #[test]
     fn a_key_minted_at_start_is_the_arrangement_the_file_then_reads_as() {
-        let unkeyed = Config::default();
-        let minted = key();
+        let folder = crate::fixtures::scratch("sync-minted");
+        let settings = folder.join("config.toml");
+        let mut config = Config::default();
 
-        let started = Arrangement::of(&unkeyed).keyed(&minted.code());
+        fs::write(&settings, "").expect("a file");
 
-        assert!(started == Arrangement::of(&syncing_with(&minted)));
-        assert!(started != Arrangement::of(&unkeyed));
+        let unkeyed = Arrangement::of(&config);
+        let minted = key_of(&mut config, Some(&settings)).expect("a key is minted");
+        let read = config::load(Some(&settings)).expect("the settings read");
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(config.sync_key, Some(minted.code()));
+        assert!(Arrangement::of(&config) == Arrangement::of(&read));
+        assert!(Arrangement::of(&config) != unkeyed);
+    }
+
+    const QUICKLY: Pace = Pace {
+        looked_at_every: Duration::from_millis(20),
+        tried_again_first_after: Duration::from_millis(20),
+        tried_again_at_most_after: Duration::from_millis(80),
+    };
+
+    #[test]
+    fn only_a_start_refused_or_failed_is_tried_again() {
+        let config = syncing_with(&key());
+
+        let tried_again = [Start::Running, Start::Off, Start::Busy, Start::Failed]
+            .map(|start| Arranged::after(config.clone(), start).awaiting.is_some());
+
+        assert_eq!(tried_again, [false, false, true, true]);
+    }
+
+    #[test]
+    fn a_start_is_tried_again_twice_as_late_each_time_up_to_a_ceiling_and_never_before_it_is_due() {
+        let pace = Pace {
+            looked_at_every: Duration::from_secs(2),
+            tried_again_first_after: Duration::from_secs(2),
+            tried_again_at_most_after: Duration::from_secs(30),
+        };
+        let config = syncing_with(&key());
+        let began = Instant::now();
+
+        let mut following =
+            Following::from(Arranged::after(config.clone(), Start::Busy), began, pace);
+
+        let early = following.due(began + Duration::from_secs(1)).is_some();
+        let mut now = began;
+        let mut waits = Vec::new();
+
+        for _ in 0..6 {
+            let due = following.retrying.as_ref().map(|retrying| retrying.due);
+            let waited = due.map(|due| due - now);
+
+            now = due.expect("a start is awaited");
+            waits.push(waited.map(|waited| waited.as_secs()));
+            following.tried_again(Arranged::after(config.clone(), Start::Failed), now, pace);
+        }
+        following.tried_again(Arranged::after(config.clone(), Start::Running), now, pace);
+
+        let after_it_runs = following.due(now + Duration::from_secs(60)).is_some();
+
+        assert!(!early);
+        assert_eq!(
+            waits,
+            [Some(2), Some(4), Some(8), Some(16), Some(30), Some(30)]
+        );
+        assert!(!after_it_runs);
+    }
+
+    fn settings_held(name: &str, key: &SyncKey) -> (PathBuf, PathBuf) {
+        let folder = crate::fixtures::scratch(name);
+        let settings = folder.join("config.toml");
+
+        fs::write(&settings, format!("sync-key = \"{}\"\n", key.code())).expect("a file");
+        (folder, settings)
+    }
+
+    fn held_within(holding: &Mutex<Option<File>>, within: Duration) -> bool {
+        let deadline = Instant::now() + within;
+
+        while Instant::now() < deadline {
+            if holding.lock().is_some() {
+                return true;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        false
+    }
+
+    #[test]
+    fn a_second_process_begins_syncing_once_the_first_lets_the_lock_go_with_the_settings_unchanged()
+    {
+        let held = key();
+        let (folder, settings) = settings_held("sync-lock-let-go", &held);
+        let stamp = modified(&settings);
+        let first = alone_in(&folder)
+            .expect("the lock is reached")
+            .expect("the first process holds it");
+        let tried = Arc::new(AtomicUsize::new(0));
+        let holding = Arc::new(Mutex::new(None::<File>));
+
+        let second = {
+            let folder = folder.clone();
+            let tried = Arc::clone(&tried);
+            let holding = Arc::clone(&holding);
+            move |config: &Config| {
+                tried.fetch_add(1, Ordering::AcqRel);
+
+                let start = match alone_in(&folder) {
+                    Ok(Some(lock)) => {
+                        *holding.lock() = Some(lock);
+                        Start::Running
+                    }
+                    Ok(None) => Start::Busy,
+                    Err(_) => Start::Failed,
+                };
+                Arranged::after(config.clone(), start)
+            }
+        };
+        let refused = second(&syncing_with(&held));
+
+        let stop = watching(
+            Some(settings.clone()),
+            stamp,
+            refused,
+            QUICKLY,
+            Arc::default(),
+            second,
+        )
+        .expect("a thread follows the settings");
+
+        let refused_again = wait_for(&tried, 3);
+        let syncing_while_held = holding.lock().is_some();
+
+        drop(first);
+
+        let syncing = held_within(&holding, Duration::from_secs(5));
+        let tried_once_syncing = tried.load(Ordering::Acquire);
+
+        thread::sleep(Duration::from_millis(300));
+
+        let tried_after = tried.load(Ordering::Acquire);
+        let stamp_after = modified(&settings);
+        let read = fs::read_to_string(&settings).expect("the settings");
+
+        let _ = stop.try_send(());
+
+        drop(holding.lock().take());
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(refused_again);
+        assert!(!syncing_while_held);
+        assert!(syncing);
+        assert_eq!(tried_after, tried_once_syncing);
+        assert_eq!(stamp_after, stamp);
+        assert_eq!(read, format!("sync-key = \"{}\"\n", held.code()));
+    }
+
+    #[test]
+    fn a_start_that_failed_for_a_moment_recovers_on_its_own_with_the_settings_it_was_given() {
+        const FAILS_BEFORE_IT_STARTS: usize = 2;
+
+        let held = key();
+        let (folder, settings) = settings_held("sync-start-failed", &held);
+        let stamp = modified(&settings);
+        let given = Arrangement::of(&syncing_with(&held));
+        let tried = Arc::new(AtomicUsize::new(0));
+        let asked_with = Arc::new(Mutex::new(Vec::new()));
+
+        let failing = {
+            let tried = Arc::clone(&tried);
+            let asked_with = Arc::clone(&asked_with);
+            move |config: &Config| {
+                asked_with.lock().push(Arrangement::of(config));
+
+                let start = if tried.fetch_add(1, Ordering::AcqRel) < FAILS_BEFORE_IT_STARTS {
+                    Start::Failed
+                } else {
+                    Start::Running
+                };
+                Arranged::after(config.clone(), start)
+            }
+        };
+        let failed = failing(&syncing_with(&held));
+
+        let stop = watching(
+            Some(settings.clone()),
+            stamp,
+            failed,
+            QUICKLY,
+            Arc::default(),
+            failing,
+        )
+        .expect("a thread follows the settings");
+
+        let recovered = wait_for(&tried, FAILS_BEFORE_IT_STARTS + 1);
+
+        thread::sleep(Duration::from_millis(300));
+
+        let tried_after = tried.load(Ordering::Acquire);
+        let stamp_after = modified(&settings);
+
+        let _ = stop.try_send(());
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(recovered);
+        assert_eq!(tried_after, FAILS_BEFORE_IT_STARTS + 1);
+        assert!(asked_with.lock().iter().all(|asked| *asked == given));
+        assert_eq!(stamp_after, stamp);
     }
 
     fn wait_for(counted: &AtomicUsize, calls: usize) -> bool {
@@ -2145,20 +2503,20 @@ mod tests {
 
         fs::write(&settings, format!("sync-key = \"{}\"\n", held.code())).expect("a file");
 
-        let arranged = Arrangement::of(&syncing_with(&held));
+        let arranged = Arranged::after(syncing_with(&held), Start::Running);
         let rearranged = Arc::new(AtomicUsize::new(0));
         let counting = Arc::clone(&rearranged);
         let filed_as = Arc::new(FiledAs::default());
 
         let stop = watching(
-            settings.clone(),
+            Some(settings.clone()),
             modified(&settings),
             arranged,
-            Duration::from_millis(20),
+            QUICKLY,
             Arc::clone(&filed_as),
             move |config| {
                 counting.fetch_add(1, Ordering::AcqRel);
-                Arrangement::of(config)
+                Arranged::after(config.clone(), Start::Running)
             },
         )
         .expect("a thread follows the settings");

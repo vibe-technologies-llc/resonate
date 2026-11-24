@@ -83,14 +83,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/ledger.rs:1488`). Apply the unfavourite to confirmed
   copies of the recording. Done when the second copy carries the only favourite,
   a remote removal clears it, and a subsequent look keeps the removal.
-- [M · 0.17.1] Retry a desktop sync start after its lock becomes available.
-  **Medium, architect.** A startup blocked by another process or refused by
-  a temporary error is recorded as the current settings. The watcher retries
-  only after an arrangement change
-  (`crates/resonate/src/sync.rs:251`, `:283`, `:328`, `:509`).
-  Track successful starts separately and retry an enabled service with a bounded
-  delay. Done when a second process begins syncing after the first releases the
-  lock, and a transient startup failure recovers with the settings unchanged.
 - [M · 0.17.1] Give desktop command-line fetch batches a terminal result.
   **Medium, builder.** The CLI waits for every requested recording in the display
   transfer list. The service can remove a row when the file has arrived via
