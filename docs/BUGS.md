@@ -301,15 +301,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
 ## Catalog
-- [M · 0.17.1] Keep a song moved into a root that a scan names alone. **Medium, architect.**
-  `resonate scan R2` walks only the destination root, and its tidy of the other registered roots
-  forgets the old row as gone before any later scan can pair it with the arrival, so the song keeps
-  its file but loses its ID, favourite, listens and queue place (`crates/resonate-library/src/scan.rs`,
-  `tidy_the_roots_beside`; the size-only guard there cannot tell an unsettled arrival from a
-  same-sized stranger). Let the tidy hold a gone row whose likeness (size, length, codec, tagged
-  names) an unsettled arrival under a walked root shares, or pair it then. Done when a song moved
-  from R1 to R2 and scanned with `scan R2` keeps its ID and favourite, and the existing tidy tests
-  with same-sized fixtures still forget what is truly gone.
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as

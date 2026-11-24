@@ -687,7 +687,17 @@ fn run(
             store::mark_the_unreached(transaction, &ids, generation, &reached)
         })?;
 
-        let asked = inner.read(|connection| moves::to_be_heard(connection, &ids, generation))?;
+        let gone_beside = match beside {
+            Beside::Tidied => gone_from_the_roots_beside(inner, &ids, progress)?,
+            Beside::LeftToTheWatch => Vec::new(),
+        };
+        let reconciled = moves::Reconciled {
+            walked: &ids,
+            beside: &gone_beside,
+            generation,
+        };
+
+        let asked = inner.read(|connection| moves::to_be_heard(connection, &reconciled))?;
         let prints: AHashMap<PathBuf, String> = asked
             .into_iter()
             .filter_map(|path| heard_as(&path).map(|print| (path, print)))
@@ -695,7 +705,7 @@ fn run(
         let weighed_against_every_root = walked_every_root_there(inner, &ids)?;
 
         let moved = inner.write(|transaction| {
-            let followed = moves::follow_the_moved(transaction, &ids, generation, &|path| {
+            let followed = moves::follow_the_moved(transaction, &reconciled, &|path| {
                 prints.get(path).cloned()
             })?;
 
@@ -719,10 +729,7 @@ fn run(
         inner.write(|transaction| volumes::settle(transaction, &walked_roots, &mounted))?;
         inner.write(history::credit_the_unheld)?;
 
-        let tidied = match beside {
-            Beside::Tidied => tidy_the_roots_beside(inner, &ids, progress)?,
-            Beside::LeftToTheWatch => 0,
-        };
+        let tidied = tidy_the_roots_beside(inner, gone_beside, progress)?;
 
         progress.removed.store(removed + tidied, Ordering::Relaxed);
         if changed > 0 {
@@ -844,12 +851,12 @@ fn walked_every_root_there(inner: &Inner, walked: &[i64]) -> Result<bool> {
         .any(|root| root.path.is_dir()))
 }
 
-fn tidy_the_roots_beside(
+fn gone_from_the_roots_beside(
     inner: &Arc<Inner>,
     walked: &[i64],
     progress: &ScanProgress,
-) -> Result<u64> {
-    let mut tidied = 0;
+) -> Result<Vec<moves::GoneBeside>> {
+    let mut gone_beside = Vec::new();
     let absent = inner.read(volumes::absent)?;
 
     for root in roots_beside(inner, walked)? {
@@ -873,7 +880,7 @@ fn tidy_the_roots_beside(
 
         let catalogued: AHashSet<&Path> = held.iter().map(|(path, _)| path.as_path()).collect();
         let could_have_moved = sizes_of_files_not_catalogued(&root.path, &catalogued);
-        let gone: Vec<PathBuf> = gone
+        let paths: Vec<PathBuf> = gone
             .into_iter()
             .filter(|(_, size)| {
                 could_have_moved
@@ -883,13 +890,31 @@ fn tidy_the_roots_beside(
             .map(|(path, _)| path)
             .collect();
 
-        if gone.is_empty() {
-            continue;
+        if !paths.is_empty() {
+            gone_beside.push(moves::GoneBeside {
+                root: root.id,
+                paths,
+            });
+        }
+    }
+    Ok(gone_beside)
+}
+
+fn tidy_the_roots_beside(
+    inner: &Arc<Inner>,
+    gone_beside: Vec<moves::GoneBeside>,
+    progress: &ScanProgress,
+) -> Result<u64> {
+    let mut tidied = 0;
+
+    for gone in gone_beside {
+        if progress.is_cancelled() {
+            break;
         }
 
         tracing::debug!(
-            path = %root.path.display(),
-            files = gone.len(),
+            root = gone.root,
+            files = gone.paths.len(),
             "tidying a root this scan did not walk"
         );
         tidied += inner.write(|transaction| {
@@ -897,8 +922,8 @@ fn tidy_the_roots_beside(
                 transaction,
                 Forgetting::Tidied,
                 &[Rows::UnvaultedAtPaths {
-                    root: root.id,
-                    paths: &gone,
+                    root: gone.root,
+                    paths: &gone.paths,
                 }],
             )
         })?;

@@ -478,7 +478,7 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `volumes::settle` notes every one again after the prune and drops a row for one no longer
   mounted that no track and no playlist row sits under. A noted volume
   whose device is its parent's (empty mount point) or whose directory is gone keeps every row
-  `Known::at_or_under` names as `Outcome::Kept` and is not walked; `tidy_the_roots_beside` and
+  `Known::at_or_under` names as `Outcome::Kept` and is not walked; `gone_from_the_roots_beside` and
   `forget_the_gone` skip paths on one.
   - **Retiring a volume for good is the listener's call.** `Library::retire` (takes the `Walk`
     guard) takes a folder at or inside a root, forgets every row at or under it whose file is not
@@ -505,18 +505,27 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   the result channel's receiver before any join, so blocked workers wake, the job channel closes
   under the walker, and the scan returns the `Walk` guard.
 - **A scan tidies every root, prunes only walked ones, and touches a root not there not at all.**
-  `tidy_the_roots_beside` handles registered roots not walked: reads their distinct paths and
+  Registered roots not walked are weighed in two steps. `gone_from_the_roots_beside`, before the
+  moves are followed, reads their distinct paths and
   sizes (`store::sized_files_under`), keeps those still there (a file is gone only where its stat says
   `NotFound` or `NotADirectory`, `scan::is_gone`: a folder readable but not searchable answers `EACCES`,
-  which is no verdict), hands the rest to
-  `forget_rows` as `Forgetting::Tidied`, **except a path whose size an audio file nothing catalogues has**: that
-  may be a hand move no walk has paired yet, and forgetting it would cost its history, so it stays
+  which is no verdict) and answers the rest as `moves::GoneBeside`,
+  **except a path whose size an audio file nothing catalogues has**: that
+  may be a hand move inside that root no walk has paired yet, and forgetting it would cost its history, so it stays
   for the root's own walk (`moves`, then the prune) to pair or forget. The look is a `read_dir`
   of the root (`sizes_of_files_not_catalogued`, dot-names and system folders stepped over,
   links not followed, `MAX_DEPTH`), made only where something is gone; a folder it cannot list
   keeps every gone path of the root
-  (`a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can_pair_it`);
-  `store::sweep_orphans` runs once at the end where anything went. A bare `resonate scan` walks
+  (`a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can_pair_it`).
+  **What is gone beside is weighed as a move into the roots walked**: `moves::Reconciled` hands
+  those rows to `to_be_heard` and `follow_the_moved` beside the walked roots' unreached ones, so a
+  song moved from one root into the root a scan names alone is paired with its arrival by the one
+  matcher (likeness, sound, packets, print) and keeps its id, favourite, listens and queue place
+  (`a_song_moved_into_a_root_a_scan_names_alone_keeps_its_row_favourite_listens_and_queue_place`,
+  `a_file_a_sheet_cuts_moved_into_a_root_a_scan_names_alone_keeps_every_rows_identity`). Then
+  `tidy_the_roots_beside` hands what nothing paired to `forget_rows` as `Forgetting::Tidied`, a
+  same-sized stranger gone from the root beside included; `store::sweep_orphans` runs once at the
+  end where anything went. A bare `resonate scan` walks
   every root. `is_there` guards both: a registered root whose directory is missing is dropped from
   the walk and stepped over by the tidy (an unmounted drive is not an empty one); a root named on
   the command line is `Error::RootNotADirectory` where missing. A window-watch scan

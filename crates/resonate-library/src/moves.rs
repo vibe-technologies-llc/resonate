@@ -7,7 +7,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 use resonate_core::naming;
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, Params, Transaction, params};
 
 use crate::{
     enriched,
@@ -251,18 +251,48 @@ pub(crate) fn settle_the_arrivals(tx: &Transaction<'_>, roots: &[i64]) -> Result
     .map_err(|source| Error::store(StoreOp::Delete, source))
 }
 
+pub(crate) struct GoneBeside {
+    pub(crate) root: i64,
+    pub(crate) paths: Vec<PathBuf>,
+}
+
+pub(crate) struct Reconciled<'a> {
+    pub(crate) walked: &'a [i64],
+    pub(crate) beside: &'a [GoneBeside],
+    pub(crate) generation: i64,
+}
+
+impl Reconciled<'_> {
+    fn gone_beside(&self, tx: &Connection, shape: &str) -> Result<Vec<Row>> {
+        let narrowed = format!("{GONE_BESIDE_AT} AND {shape}");
+        let mut gone = Vec::new();
+
+        for beside in self.beside {
+            for path in &beside.paths {
+                gone.extend(rows(
+                    tx,
+                    &narrowed,
+                    params![self.generation, beside.root, store::path_text(path)],
+                )?);
+            }
+        }
+        Ok(gone)
+    }
+}
+
+const GONE_BESIDE_AT: &str = "t.root_id = ?2 AND t.path = ?3 AND t.vault_key IS NULL";
+
 pub(crate) fn to_be_heard(
     connection: &Connection,
-    roots: &[i64],
-    generation: i64,
+    reconciled: &Reconciled<'_>,
 ) -> Result<Vec<PathBuf>> {
-    if roots.is_empty() {
+    if reconciled.walked.is_empty() {
         return Ok(Vec::new());
     }
 
     let asked = RefCell::new(Vec::new());
 
-    wholes_moved(connection, &scoped(roots), generation, &|path| {
+    wholes_moved(connection, reconciled, &|path| {
         asked.borrow_mut().push(path.to_path_buf());
         None
     })?;
@@ -279,24 +309,21 @@ fn scoped(roots: &[i64]) -> String {
 
 pub(crate) fn follow_the_moved(
     tx: &Transaction<'_>,
-    roots: &[i64],
-    generation: i64,
+    reconciled: &Reconciled<'_>,
     heard: &dyn Fn(&Path) -> Option<String>,
 ) -> Result<Followed> {
-    if roots.is_empty() {
+    if reconciled.walked.is_empty() {
         return Ok(Followed::default());
     }
 
-    let scoped = scoped(roots);
+    let mut paired = wholes_moved(tx, reconciled, heard)?;
 
-    let mut paired = wholes_moved(tx, &scoped, generation, heard)?;
-
-    paired.extend(cuts_moved(tx, &scoped, generation)?);
+    paired.extend(cuts_moved(tx, reconciled)?);
     if paired.is_empty() {
         return Ok(Followed::default());
     }
 
-    let moves = follow(tx, &paired, generation)?;
+    let moves = follow(tx, &paired, reconciled.generation)?;
     Ok(Followed {
         rows: paired.iter().map(|pair| pair.rows() as u64).sum(),
         arrived_in_this_scan: paired.iter().map(|pair| pair.fresh as u64).sum(),
@@ -313,19 +340,21 @@ pub(crate) struct Followed {
 
 fn wholes_moved(
     tx: &Connection,
-    scoped: &str,
-    generation: i64,
+    reconciled: &Reconciled<'_>,
     heard: &dyn Fn(&Path) -> Option<String>,
 ) -> Result<Vec<Paired>> {
-    let gone = gone_from_where_spelled(
+    let scoped = scoped(reconciled.walked);
+
+    let mut gone = gone_from_where_spelled(
         rows(
             tx,
             &format!("seen = -?1 AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
-            generation,
+            params![reconciled.generation],
         )?,
         &Spelled::over(&Disc),
     );
 
+    gone.extend(reconciled.gone_beside(tx, WHOLE_AND_ALONE)?);
     if gone.is_empty() {
         return Ok(Vec::new());
     }
@@ -333,7 +362,7 @@ fn wholes_moved(
     let arrived = rows(
         tx,
         &format!("{ARRIVED_AND_REACHED} AND root_id IN ({scoped}) AND {WHOLE_AND_ALONE}"),
-        generation,
+        params![reconciled.generation],
     )?;
 
     let (mut paired, gone, arrived) = pairs(gone, arrived);
@@ -342,17 +371,19 @@ fn wholes_moved(
     Ok(paired)
 }
 
-fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Paired>> {
+fn cuts_moved(tx: &Connection, reconciled: &Reconciled<'_>) -> Result<Vec<Paired>> {
+    let scoped = scoped(reconciled.walked);
     let spelled = Spelled::over(&Disc);
-    let gone: Vec<Cut> = cuts(rows(
+    let mut gone: Vec<Cut> = cuts(rows(
         tx,
         &format!("seen = -?1 AND root_id IN ({scoped}) AND {CUT_OR_SHARED}"),
-        generation,
+        params![reconciled.generation],
     )?)
     .into_iter()
     .filter(|cut| !spelled.stands(&store::path_of(&cut.path)))
     .collect();
 
+    gone.extend(cuts(reconciled.gone_beside(tx, CUT_OR_SHARED)?));
     if gone.is_empty() {
         return Ok(Vec::new());
     }
@@ -363,7 +394,7 @@ fn cuts_moved(tx: &Connection, scoped: &str, generation: i64) -> Result<Vec<Pair
             "{ARRIVED_AND_REACHED} AND root_id IN ({scoped}) AND {CUT_OR_SHARED}
              AND {EVERY_ROW_AT_ITS_PATH_ARRIVED}"
         ),
-        generation,
+        params![reconciled.generation],
     )?);
 
     let mut left: AHashMap<CutLikeness, Vec<Cut>> = AHashMap::new();
@@ -408,9 +439,9 @@ fn cuts(rows: Vec<Row>) -> Vec<Cut> {
         .collect()
 }
 
-fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
+fn rows(tx: &Connection, narrowed: &str, bound: impl Params) -> Result<Vec<Row>> {
     let mut statement = tx
-        .prepare(&format!(
+        .prepare_cached(&format!(
             "SELECT t.path, t.root_id, t.album_id, t.file_size, t.duration, t.codec,
                     t.tagged_title, t.tagged_artist, t.sample_rate, t.channels, t.span_start,
                     t.span_frames, s.print, t.packets, t.id, t.added >= ?1
@@ -421,7 +452,7 @@ fn rows(tx: &Connection, narrowed: &str, generation: i64) -> Result<Vec<Row>> {
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     statement
-        .query_map(params![generation], |row| {
+        .query_map(bound, |row| {
             Ok(Row {
                 path: row.get(0)?,
                 root: row.get(1)?,
