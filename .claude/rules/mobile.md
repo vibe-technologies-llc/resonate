@@ -956,7 +956,9 @@ volume preference of its own
 (`sync_continue_from`, into the zone shown) and offer the zone shown's queue and place
 (`DocumentCatalog::resumption` reads the shown zone's `QueueKept` through the `shown` cell `Playing`
 shares with it, the first zone's `queue` and `resume` while it is shown;
-`a_handoff_offers_the_queue_and_place_of_the_zone_shown_and_not_the_first_zones`).
+`a_handoff_offers_the_queue_and_place_of_the_zone_shown_and_not_the_first_zones`). Showing a zone
+whose queue is empty answers no resumption, so a queue handed off before is withdrawn as a cleared
+one is (`sync.md`'s *A cleared queue withdraws its handoff*).
 
 ## The catalog offered on the network
 

@@ -838,7 +838,8 @@ will not open is left out of the holdings.
   `a_link_whose_catalog_refused_before_the_cursor_moved_waits_longer_each_time_and_progress_waits_the_first_again`).
   `Shown` (standing, devices, transfers, owed) is a snapshot the window and the phones read without
   asking the thread; `owed` is read again after every `Appended`.
-- **A record the server would refuse is never sent to it.** A bundle sealed past `LARGEST_RECORD`
+- **A record the server would refuse is never sent to it.** A handoff is cut to fit before it is
+  owed (*The desktop continues a handoff*); any other bundle sealed past `LARGEST_RECORD`
   (256 KiB, the server's default `--record-bytes`) is marked sent with a warning and reaches devices
   on the network in the snapshot; a `TooLarge` refusal from a server with a lower limit marks the
   largest bundle of that append sent and pushes again, so one large playlist never holds up the rest.
@@ -976,6 +977,30 @@ will not open is left out of the holdings.
   `Resumed::window_around` so the playhead is inside however far down the queue it is
   (`a_shuffled_queue_is_handed_off_in_the_order_it_plays_at_the_song_heard`,
   `a_queue_longer_than_a_handoff_hands_off_the_songs_around_the_playhead`).
+- **A handoff fits one record, keeping the song heard and the place in it.** The look that stamps
+  a handoff measures it as a bundle of its own (`fits_one_record`): under `BUNDLE_BYTES` plain it
+  fits, else `sealed_length` (deflated as `sealed` deflates, plus nonce and tag, no key needed)
+  is weighed against `LARGEST_RECORD`. One past it is cut by `Resumed::fitted`, which always
+  keeps the row at `at` and its `position` and searches for the most rows around it that fit,
+  one more following than preceding where the queue allows and the rows one side lacks taken from
+  the other, so a queue of long titles and credits is still appended rather than dropped as sent
+  (`a_handoff_too_large_keeps_the_most_rows_that_fit_around_the_playhead_the_extra_one_following`,
+  `a_queue_too_large_for_one_record_is_cut_around_the_playhead_and_continued_elsewhere_at_its_place`,
+  `a_queue_too_large_for_one_record_continues_on_a_phone_across_the_server_at_the_song_and_place_heard`).
+  The digest that decides whether a look stamps again is taken before the cut, so an unchanged
+  queue is never weighed twice.
+- **A cleared queue withdraws its handoff.** Where the catalog answers no resumption (the
+  desktop's saved queue empty or forgotten, the phone's shown zone empty) and this device's own
+  handoff still names rows (`hands_off_a_queue`), the look stamps an empty handoff
+  (`Resumed::default`) and owes it. Its stamp outranks the old note on every ledger, so the old
+  note arriving afterwards is passed over as any older note is, and `Sync::handoffs` leaves an
+  empty handoff out, as every earlier build already did: the withdrawal is no new shape on the
+  wire or in the `handoffs` table. A device that never handed a queue off tells nothing, and one
+  filled again is handed off again
+  (`a_handed_queue_keeps_its_place_and_order_until_cleared_and_an_older_note_never_brings_it_back`,
+  `a_device_that_never_handed_a_queue_off_tells_no_withdrawal`,
+  `a_queue_cleared_and_filled_again_with_the_same_songs_is_handed_off_again`,
+  `a_queue_cleared_on_the_desktop_withdraws_its_handoff_and_an_older_note_never_brings_it_back`).
 
 ## One device drives another's zones
 

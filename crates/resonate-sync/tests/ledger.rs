@@ -11,8 +11,9 @@ use resonate_core::{
     SharedMedium, SharedRelease, SharedStudy, SharedTrack, WholeFile,
 };
 use resonate_sync::{
-    Catalog, Change, Follow, Ledger, LocalListen, LocalPlaylistId, Me, Platform, SpaceId, Welcomed,
-    wire::Incarnation,
+    Catalog, Change, Follow, Handoff, Ledger, LocalListen, LocalPlaylistId, Me, Platform, Resumed,
+    SpaceId, SyncKey, Welcomed, opened, sealed,
+    wire::{Incarnation, LARGEST_RECORD, decoded_bundle, encoded_bundle},
 };
 use rusqlite::Connection;
 
@@ -3199,4 +3200,190 @@ fn entering_another_space_forgets_the_incarnation_of_the_last() {
 
     assert_eq!(forgotten, None);
     assert_eq!(first, Welcomed::Continued);
+}
+
+fn handing_off(device: &Device, resumed: Option<Resumed>) {
+    device.shelf.inside.lock().resumed = resumed;
+    device.shelf.moved();
+}
+
+fn handoff_of(device: &Device, from: &Device) -> Option<Handoff> {
+    device
+        .ledger
+        .handoffs()
+        .expect("handoffs")
+        .into_iter()
+        .find(|handoff| handoff.device == from.ledger.device())
+}
+
+fn handed_off(changes: &[Change]) -> Vec<&Handoff> {
+    changes
+        .iter()
+        .filter_map(|change| match change {
+            Change::Handoff(handoff) => Some(handoff),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_handed_queue_keeps_its_place_and_order_until_cleared_and_an_older_note_never_brings_it_back() {
+    let mut desk = Device::new("Desk", &["A", "B", "C"]);
+    let mut laptop = Device::new("Laptop", &["A", "B", "C"]);
+
+    handing_off(
+        &desk,
+        Some(Resumed {
+            rows: vec![song("C"), song("A"), song("B")],
+            at: 1,
+            position: Duration::from_secs(42),
+            playing: true,
+        }),
+    );
+
+    let handed = desk.send();
+
+    laptop.receive(&handed);
+
+    let held = handoff_of(&laptop, &desk).expect("the queue handed off");
+
+    handing_off(&desk, None);
+
+    let withdrawn = desk.send();
+
+    laptop.receive(&withdrawn);
+
+    let after_the_clear = handoff_of(&laptop, &desk).expect("the withdrawal");
+
+    laptop.receive(&handed);
+
+    let after_the_older_note = handoff_of(&laptop, &desk).expect("the withdrawal");
+    let told_again = desk.send();
+
+    assert_eq!(
+        held.rows
+            .iter()
+            .map(|row| row.title.as_str())
+            .collect::<Vec<_>>(),
+        ["C", "A", "B"]
+    );
+    assert_eq!(held.at, 1);
+    assert_eq!(held.position, Duration::from_secs(42));
+    assert!(held.playing);
+
+    assert_eq!(handed_off(&withdrawn).len(), 1);
+    assert!(after_the_clear.rows.is_empty());
+    assert!(after_the_clear.stamp > held.stamp);
+    assert_eq!(after_the_older_note, after_the_clear);
+    assert!(handed_off(&told_again).is_empty());
+}
+
+#[test]
+fn a_device_that_never_handed_a_queue_off_tells_no_withdrawal() {
+    let mut desk = Device::new("Desk", &["A"]);
+
+    handing_off(&desk, None);
+
+    let told = desk.send();
+
+    assert!(handed_off(&told).is_empty());
+}
+
+#[test]
+fn a_queue_cleared_and_filled_again_with_the_same_songs_is_handed_off_again() {
+    let mut desk = Device::new("Desk", &["A", "B"]);
+    let mut laptop = Device::new("Laptop", &["A", "B"]);
+    let queue = Resumed {
+        rows: vec![song("A"), song("B")],
+        at: 0,
+        position: Duration::from_secs(5),
+        playing: false,
+    };
+
+    handing_off(&desk, Some(queue.clone()));
+    sync(&mut desk, &mut laptop);
+    handing_off(&desk, None);
+    sync(&mut desk, &mut laptop);
+    handing_off(&desk, Some(queue));
+    sync(&mut desk, &mut laptop);
+
+    let held = handoff_of(&laptop, &desk).expect("the queue handed off again");
+
+    assert_eq!(held.rows.len(), 2);
+    assert_eq!(held.position, Duration::from_secs(5));
+}
+
+fn unrepeated(seed: u64, letters: usize) -> String {
+    let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+
+    (0..letters)
+        .map(|_| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            char::from(b'a' + u8::try_from(state % 26).expect("a letter"))
+        })
+        .collect()
+}
+
+#[test]
+fn a_queue_too_large_for_one_record_is_cut_around_the_playhead_and_continued_elsewhere_at_its_place()
+ {
+    let mut desk = Device::new("Desk", &[]);
+    let mut laptop = Device::new("Laptop", &[]);
+    let rows: Vec<Recording> = (0..500)
+        .map(|number| Recording {
+            title: unrepeated(number, 3_000),
+            ..song("")
+        })
+        .collect();
+    let derived = SyncKey::minted()
+        .expect("a key")
+        .derived()
+        .expect("derived");
+
+    handing_off(
+        &desk,
+        Some(Resumed {
+            rows: rows.clone(),
+            at: 300,
+            position: Duration::from_secs(90),
+            playing: true,
+        }),
+    );
+
+    let told = desk.send();
+    let handoff = (*handed_off(&told)[0]).clone();
+    let blob = sealed(
+        &derived.sealer,
+        derived.space,
+        &encoded_bundle(&[Change::Handoff(handoff.clone())]),
+    )
+    .expect("sealed");
+
+    let carried = decoded_bundle(
+        &opened(&derived.sealer, derived.space, &blob, LARGEST_RECORD * 64).expect("opened"),
+    )
+    .expect("decoded");
+
+    laptop.receive(&carried);
+
+    let held = handoff_of(&laptop, &desk).expect("the queue handed off");
+
+    let first = rows
+        .iter()
+        .position(|row| *row == held.rows[0])
+        .expect("a row of the queue");
+    let playing = usize::try_from(held.at).expect("an index");
+    let following = held.rows.len() - 1 - playing;
+
+    assert!(blob.len() <= LARGEST_RECORD);
+    assert!(held.rows.len() > 1);
+    assert!(held.rows.len() < rows.len());
+    assert_eq!(held.rows, rows[first..first + held.rows.len()]);
+    assert_eq!(held.rows[playing], rows[300]);
+    assert_eq!(held.position, Duration::from_secs(90));
+    assert!(held.playing);
+    assert!(following >= playing);
+    assert!(following - playing <= 1);
 }

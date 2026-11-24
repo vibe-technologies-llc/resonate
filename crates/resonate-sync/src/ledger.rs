@@ -30,9 +30,10 @@ use crate::{
         DIGEST_BYTES, Folds, Synced, absorbed, named_as_a_free_alias_of, names_alike,
         one_recording_a_song, projection_digest, query_digest, spliced,
     },
+    seal::sealed_length,
     wire::{
-        decoded_answer, decoded_recording, decoded_recordings, encoded_answer, encoded_change,
-        encoded_recording, encoded_recordings,
+        LARGEST_RECORD, decoded_answer, decoded_recording, decoded_recordings, encoded_answer,
+        encoded_bundle, encoded_change, encoded_recording, encoded_recordings,
     },
 };
 
@@ -1744,8 +1745,10 @@ impl Ledger {
     }
 
     fn look_at_resumption(&mut self, catalog: &dyn Catalog) -> Result<()> {
-        let Some(resumed) = catalog.resumption().map_err(Error::Catalog)? else {
-            return Ok(());
+        let resumed = match catalog.resumption().map_err(Error::Catalog)? {
+            Some(resumed) => resumed,
+            None if self.hands_off_a_queue()? => Resumed::default(),
+            None => return Ok(()),
         };
         let digest = resumed_digest(&resumed);
         let seen: Option<Vec<u8>> = self
@@ -1760,6 +1763,7 @@ impl Ledger {
         }
 
         let stamp = self.clock.now(self.device);
+        let resumed = resumed.fitted(|candidate| self.fits_one_record(stamp, candidate))?;
         let transaction = self
             .connection
             .transaction_with_behavior(TransactionBehavior::Immediate)
@@ -1788,6 +1792,38 @@ impl Ledger {
         transaction
             .commit()
             .map_err(|source| Error::store(StoreOp::Write, source))
+    }
+
+    fn hands_off_a_queue(&self) -> Result<bool> {
+        let rows: Option<Vec<u8>> = self
+            .connection
+            .query_row(
+                "SELECT rows FROM handoffs WHERE device = ?1",
+                params![self.device.0.as_slice()],
+                |row| row.get(0),
+            )
+            .optional()
+            .map_err(|source| Error::store(StoreOp::Read, source))?;
+
+        Ok(rows.is_some_and(|rows| {
+            decoded_recordings(&rows).map_or(true, |recordings| !recordings.is_empty())
+        }))
+    }
+
+    fn fits_one_record(&self, stamp: Stamp, resumed: &Resumed) -> Result<bool> {
+        let plain = encoded_bundle(&[Change::Handoff(Handoff {
+            device: self.device,
+            stamp,
+            rows: resumed.rows.clone(),
+            at: resumed.at,
+            position: resumed.position,
+            playing: resumed.playing,
+        })]);
+
+        if plain.len() <= BUNDLE_BYTES {
+            return Ok(true);
+        }
+        Ok(sealed_length(&plain)? <= LARGEST_RECORD)
     }
 
     fn look_at_layout(&mut self, catalog: &dyn Catalog) -> Result<()> {

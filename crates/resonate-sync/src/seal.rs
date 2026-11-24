@@ -9,17 +9,7 @@ pub const LARGEST_OPENED: usize = 64 * 1024 * 1024;
 pub const SEALED_AT_LEAST: usize = NONCE_LEN + MAX_TAG_LEN;
 
 pub fn sealed(sealer: &LessSafeKey, space: SpaceId, plain: &[u8]) -> Result<Vec<u8>> {
-    let mut packed = DeflateEncoder::new(Vec::with_capacity(plain.len() / 2), Compression::best());
-
-    packed.write_all(plain).map_err(|source| Error::Deflate {
-        op: DeflateOp::Pack,
-        source,
-    })?;
-
-    let mut in_out = packed.finish().map_err(|source| Error::Deflate {
-        op: DeflateOp::Pack,
-        source,
-    })?;
+    let mut in_out = deflated(plain)?;
 
     let nonce_bytes = random_bytes::<NONCE_LEN>()?;
 
@@ -36,6 +26,24 @@ pub fn sealed(sealer: &LessSafeKey, space: SpaceId, plain: &[u8]) -> Result<Vec<
     blob.extend_from_slice(&nonce_bytes);
     blob.extend_from_slice(&in_out);
     Ok(blob)
+}
+
+pub fn sealed_length(plain: &[u8]) -> Result<usize> {
+    Ok(SEALED_AT_LEAST + deflated(plain)?.len())
+}
+
+fn deflated(plain: &[u8]) -> Result<Vec<u8>> {
+    let mut packed = DeflateEncoder::new(Vec::with_capacity(plain.len() / 2), Compression::best());
+
+    packed.write_all(plain).map_err(|source| Error::Deflate {
+        op: DeflateOp::Pack,
+        source,
+    })?;
+
+    packed.finish().map_err(|source| Error::Deflate {
+        op: DeflateOp::Pack,
+        source,
+    })
 }
 
 pub fn opened(
@@ -103,6 +111,19 @@ mod tests {
             opened(&here.sealer, stranger.space, &blob, LARGEST_OPENED),
             Err(Error::Unsealed)
         ));
+    }
+
+    #[test]
+    fn the_length_a_record_seals_to_is_known_without_its_key() {
+        let derived = SyncKey::minted()
+            .expect("randomness")
+            .derived()
+            .expect("derived");
+        let plain = b"a queue handed to another device".repeat(300);
+
+        let blob = sealed(&derived.sealer, derived.space, &plain).expect("sealed");
+
+        assert_eq!(sealed_length(&plain).expect("weighed"), blob.len());
     }
 
     #[test]

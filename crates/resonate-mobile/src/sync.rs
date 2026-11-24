@@ -4354,6 +4354,127 @@ mod tests {
         assert!(resumed.rows.len() <= 500);
     }
 
+    fn unrepeated(seed: u64, letters: usize) -> String {
+        let mut state = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+
+        (0..letters)
+            .map(|_| {
+                state ^= state << 13;
+                state ^= state >> 7;
+                state ^= state << 17;
+                char::from(b'a' + u8::try_from(state % 26).expect("a letter"))
+            })
+            .collect()
+    }
+
+    fn long_titled_songs(player: &MobilePlayer) -> Vec<u64> {
+        (0..500)
+            .map(|number| {
+                song(
+                    player,
+                    &format!("content://test/{number}.flac"),
+                    &unrepeated(number, 3_000),
+                    None,
+                )
+                .id
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_queue_too_large_for_one_record_continues_on_a_phone_across_the_server_at_the_song_and_place_heard()
+     {
+        use resonate_sync::{
+            Change, Ledger, opened, sealed,
+            wire::{LARGEST_RECORD, decoded_bundle, encoded_bundle},
+        };
+
+        let there = folder("oversized-sender");
+        let sender = player(&there);
+        let sent = long_titled_songs(&sender);
+        let here = folder("oversized-receiver");
+        let receiver = player(&here);
+        let held = long_titled_songs(&receiver);
+        let derived = SyncKey::minted()
+            .expect("a key")
+            .derived()
+            .expect("derived");
+        let me = Me {
+            name: "Phone".into(),
+            platform: Platform::Android,
+        };
+        let ledger = || {
+            let mut ledger = Ledger::in_memory().expect("a ledger");
+
+            ledger.enter_space(derived.space).expect("a space");
+            ledger
+        };
+        let mut sending = ledger();
+        let mut receiving = ledger();
+
+        sender
+            .catalog
+            .save_queue(&sent, 300, 90_000)
+            .expect("a saved queue");
+        sending
+            .look(&documents_of(&sender, &there), &me)
+            .expect("a look");
+
+        let blobs = sending
+            .owed()
+            .expect("owed")
+            .iter()
+            .map(|bundle| sealed(&derived.sealer, derived.space, &encoded_bundle(bundle)))
+            .collect::<resonate_sync::Result<Vec<_>>>()
+            .expect("sealed");
+        let carried = blobs
+            .iter()
+            .flat_map(|blob| {
+                decoded_bundle(
+                    &opened(&derived.sealer, derived.space, blob, LARGEST_RECORD * 64)
+                        .expect("opened"),
+                )
+                .expect("decoded")
+            })
+            .collect::<Vec<_>>();
+
+        receiving
+            .arrived(&documents_of(&receiver, &here), &carried)
+            .expect("arrived");
+
+        let handoff = receiving
+            .handoffs()
+            .expect("handoffs")
+            .into_iter()
+            .find(|handoff| handoff.device == sending.device())
+            .expect("the queue handed off");
+        let resumption = receiver.handed_resumption(&handoff).expect("a resumption");
+
+        let _ = fs::remove_dir_all(there);
+        let _ = fs::remove_dir_all(here);
+
+        assert!(blobs.iter().all(|blob| blob.len() <= LARGEST_RECORD));
+        assert!(
+            carried
+                .iter()
+                .any(|change| matches!(change, Change::Handoff(_)))
+        );
+        assert!(handoff.rows.len() < sent.len());
+        assert_eq!(handoff.position, Duration::from_secs(90));
+        assert_eq!(
+            resumption.rows[0].held,
+            Some(TrackId::new(held[300]).expect("an id"))
+        );
+        assert_eq!(resumption.row, 0);
+        assert_eq!(
+            resumption.at,
+            Frames::from_duration(
+                Duration::from_secs(90),
+                SampleRate::new(44_100).expect("a rate")
+            )
+        );
+    }
+
     #[test]
     fn a_handoff_offers_the_queue_and_place_of_the_zone_shown_and_not_the_first_zones() {
         let folder = folder("zone-handoff");

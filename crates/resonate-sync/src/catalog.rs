@@ -47,7 +47,7 @@ pub struct RemoteListen {
     pub heard: Duration,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Resumed {
     pub rows: Vec<Recording>,
     pub at: u32,
@@ -63,6 +63,50 @@ impl Resumed {
         let first = playing.saturating_sub(HANDED_OFF_AT_MOST / 2);
 
         first..rows.min(first + HANDED_OFF_AT_MOST)
+    }
+
+    pub(crate) fn fitted(
+        self,
+        mut fits: impl FnMut(&Self) -> crate::Result<bool>,
+    ) -> crate::Result<Self> {
+        if self.rows.len() <= 1 || fits(&self)? {
+            return Ok(self);
+        }
+
+        let mut best = self.around_the_playhead(1);
+        let mut fewest_refused = self.rows.len();
+        let mut most_fitting = 1;
+
+        while fewest_refused - most_fitting > 1 {
+            let tried = most_fitting + (fewest_refused - most_fitting) / 2;
+            let candidate = self.around_the_playhead(tried);
+
+            if fits(&candidate)? {
+                best = candidate;
+                most_fitting = tried;
+            } else {
+                fewest_refused = tried;
+            }
+        }
+        Ok(best)
+    }
+
+    fn around_the_playhead(&self, kept: usize) -> Self {
+        let last = self.rows.len().saturating_sub(1);
+        let playing = usize::try_from(self.at).unwrap_or(usize::MAX).min(last);
+        let neighbours = kept.saturating_sub(1);
+
+        let following = (last - playing).min(neighbours.div_ceil(2));
+        let preceding = playing.min(neighbours - following);
+        let following = (last - playing).min(neighbours - preceding);
+        let first = playing - preceding;
+
+        Self {
+            rows: self.rows[first..=playing + following].to_vec(),
+            at: self.at - u32::try_from(first).unwrap_or(u32::MAX),
+            position: self.position,
+            playing: self.playing,
+        }
     }
 }
 
@@ -400,5 +444,83 @@ mod tests {
     #[test]
     fn a_playhead_past_the_end_is_clamped_to_the_last_row() {
         assert!(Resumed::window_around(5_000, 10).contains(&9));
+    }
+
+    fn queue(rows: u32, at: u32) -> Resumed {
+        Resumed {
+            rows: (0..rows)
+                .map(|number| Recording {
+                    mbid: None,
+                    title: number.to_string(),
+                    artist: String::new(),
+                    album: String::new(),
+                    length: None,
+                })
+                .collect(),
+            at,
+            position: Duration::from_secs(90),
+            playing: true,
+        }
+    }
+
+    fn titles(resumed: &Resumed) -> Vec<u32> {
+        resumed
+            .rows
+            .iter()
+            .map(|row| row.title.parse().expect("a number"))
+            .collect()
+    }
+
+    #[test]
+    fn a_handoff_that_fits_is_kept_whole() {
+        let fitted = queue(10, 4).fitted(|_| Ok(true)).expect("fitted");
+
+        assert_eq!(fitted, queue(10, 4));
+    }
+
+    #[test]
+    fn a_handoff_too_large_keeps_the_most_rows_that_fit_around_the_playhead_the_extra_one_following()
+     {
+        let fitted = queue(100, 50)
+            .fitted(|candidate| Ok(candidate.rows.len() <= 6))
+            .expect("fitted");
+
+        assert_eq!(titles(&fitted), [48, 49, 50, 51, 52, 53]);
+        assert_eq!(fitted.at, 2);
+        assert_eq!(fitted.position, Duration::from_secs(90));
+        assert!(fitted.playing);
+    }
+
+    #[test]
+    fn rows_one_side_lacks_are_taken_from_the_other() {
+        let at_the_start = queue(100, 1)
+            .fitted(|candidate| Ok(candidate.rows.len() <= 5))
+            .expect("fitted");
+        let at_the_end = queue(100, 98)
+            .fitted(|candidate| Ok(candidate.rows.len() <= 5))
+            .expect("fitted");
+
+        assert_eq!(titles(&at_the_start), [0, 1, 2, 3, 4]);
+        assert_eq!(at_the_start.at, 1);
+        assert_eq!(titles(&at_the_end), [95, 96, 97, 98, 99]);
+        assert_eq!(at_the_end.at, 3);
+    }
+
+    #[test]
+    fn the_playing_row_is_kept_even_where_nothing_fits() {
+        let fitted = queue(100, 70).fitted(|_| Ok(false)).expect("fitted");
+
+        assert_eq!(titles(&fitted), [70]);
+        assert_eq!(fitted.at, 0);
+    }
+
+    #[test]
+    fn a_playhead_past_the_end_stays_past_the_rows_kept() {
+        let fitted = queue(100, 100)
+            .fitted(|candidate| Ok(candidate.rows.len() <= 3))
+            .expect("fitted");
+
+        assert_eq!(titles(&fitted), [97, 98, 99]);
+        assert_eq!(fitted.at, 3);
     }
 }

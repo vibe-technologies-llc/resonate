@@ -3220,6 +3220,118 @@ mod tests {
     }
 
     #[test]
+    fn a_queue_cleared_on_the_desktop_withdraws_its_handoff_and_an_older_note_never_brings_it_back()
+    {
+        use resonate_sync::{Change, Handoff, Ledger, SpaceId};
+
+        let (folder, library, locations) = kept_songs(&["A", "B", "C"]);
+        let rows = locations
+            .into_iter()
+            .map(|location| resonate_core::Resumable {
+                location,
+                span: None,
+                held: None,
+            })
+            .collect();
+        let catalogued = Catalogued {
+            library: Arc::new(library),
+            filed_as: Arc::default(),
+            takes_deletions: true,
+        };
+        let me = Me {
+            name: "Desk".into(),
+            platform: Platform::Linux,
+        };
+        let ledger = || {
+            let mut ledger = Ledger::in_memory().expect("a ledger");
+
+            ledger.enter_space(SpaceId([6; 16])).expect("a space");
+            ledger
+        };
+        let mut desk = ledger();
+        let mut laptop = ledger();
+
+        let told = |desk: &mut Ledger| {
+            desk.look(&catalogued, &me).expect("a look");
+
+            let owed = desk
+                .owed()
+                .expect("owed")
+                .into_iter()
+                .flatten()
+                .collect::<Vec<_>>();
+
+            desk.sent(&owed).expect("sent");
+            owed
+        };
+        let handed_to = |laptop: &Ledger, desk: &Ledger| -> Option<Handoff> {
+            laptop
+                .handoffs()
+                .expect("handoffs")
+                .into_iter()
+                .find(|handoff| handoff.device == desk.device())
+        };
+
+        catalogued
+            .library
+            .keep_resumption(
+                resonate_core::ZoneId::FIRST,
+                &resonate_core::Resumption {
+                    rows,
+                    order: vec![2, 0, 1],
+                    row: 1,
+                    at: Frames(3 * 44_100),
+                    shuffle: true,
+                    next: None,
+                },
+            )
+            .expect("a resumption kept");
+
+        let handed = told(&mut desk);
+
+        laptop.arrived(&catalogued, &handed).expect("arrived");
+
+        let held = handed_to(&laptop, &desk).expect("the queue handed off");
+
+        catalogued
+            .library
+            .keep_resumption(
+                resonate_core::ZoneId::FIRST,
+                &resonate_core::Resumption::default(),
+            )
+            .expect("a cleared queue kept");
+
+        let withdrawn = told(&mut desk);
+
+        laptop.arrived(&catalogued, &withdrawn).expect("arrived");
+
+        let cleared = handed_to(&laptop, &desk).expect("the withdrawal");
+
+        laptop.arrived(&catalogued, &handed).expect("arrived again");
+
+        let after_the_older_note = handed_to(&laptop, &desk).expect("the withdrawal");
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(
+            held.rows
+                .iter()
+                .map(|row| row.title.as_str())
+                .collect::<Vec<_>>(),
+            ["C", "A", "B"]
+        );
+        assert_eq!(held.at, 1);
+        assert_eq!(held.position, Duration::from_secs(3));
+        assert!(
+            withdrawn
+                .iter()
+                .any(|change| matches!(change, Change::Handoff(_)))
+        );
+        assert!(cleared.rows.is_empty());
+        assert_eq!(after_the_older_note, cleared);
+    }
+
+    #[test]
     fn a_song_heard_that_the_catalog_cannot_name_hands_off_the_next_one_named_from_its_start() {
         let (folder, library, locations) = kept_songs(&["A", "C"]);
         let unscanned = resonate_core::MediaLocation::local(folder.join("B.wav"));

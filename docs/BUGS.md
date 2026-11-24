@@ -37,18 +37,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   the shared watch result and show that state in the controls. Done when
   traffic stops, the display expires and disables commands, and a fresh mirror
   restores the controls.
-- [M · 0.17.1] Withdraw a handoff when its source clears the queue.
-  **Medium, architect.** The desktop and phone catalogs return no resumption
-  for an empty saved queue. The ledger leaves the previous handoff intact,
-  so another device can still offer to continue the cleared queue
-  (`crates/resonate-library/src/resumed.rs:59`,
-  `crates/resonate/src/sync.rs:757`,
-  `crates/resonate-mobile/src/sync.rs:1649`,
-  `crates/resonate-sync/src/ledger.rs:1719`,
-  `crates/resonate-sync/src/service.rs:966`). Send a newer empty handoff when
-  a formerly published queue clears. Done when two ledgers retain a handed
-  position and play order, withdraw the handoff after a clear, and ignore
-  an older note that arrives afterwards.
 - [S · 0.17.1] Prefer usable LAN addresses before capping advertisements.
   **Low, builder.** Numeric order can keep several bridge addresses while dropping
   the actual LAN address from a beacon or WebSocket punch
@@ -63,14 +51,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/service.rs:770`). Update memberships as usable interfaces
   change. Done when an interface appearing after launch can receive beacons without
   restarting sync.
-- [S · 0.17.1] Keep the playhead in a handoff that fits the server's record budget.
-  **Low, builder.** The handoff is bounded by rows, but a long set of titles
-  and credits can exceed the sealed record limit. Then the service clears
-  the note as sent without appending it
-  (`crates/resonate-sync/src/catalog.rs:56`, `crates/resonate-sync/src/ledger.rs:4308`,
-  `crates/resonate-sync/src/service.rs:2455`, `:2466`). Fit the queue window to the
-  record budget while retaining the playing row and its offset. Done when an
-  oversized queue can be continued from another network at the expected position.
 - [M · 0.17.1] Reconcile app-private received files after an interrupted landing.
   **Low, architect.** A receive can rename bytes into the holding folder before
   an error leaves them untracked. Cleanup can also delete the catalog row
