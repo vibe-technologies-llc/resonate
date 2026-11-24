@@ -132,6 +132,12 @@ jobs:
             held=$(held_by -p "$crate" --no-default-features)
             check "$crate without its default features" "$held" "$@"
           }
+          refuse_shipped() {
+            local crate=$1 held
+            shift
+            held=$(held_by -p "$crate" -e normal)
+            check "$crate as shipped" "$held" "$@"
+          }
           only() {
             local crate=$1 reached
             shift
@@ -238,7 +244,9 @@ jobs:
           done
           refuse resonate-sync gpui resonate-library resonate-engine ureq serde serde_json
           only resonate-sync resonate-core resonate-words
+          refuse_headless resonate-sync mdns-sd if-addrs rcgen
           refuse resonate-server gpui resonate-library resonate-engine
+          refuse_shipped resonate-server mdns-sd if-addrs rcgen
           only resonate-server resonate-core resonate-sync resonate-providers resonate-fetch resonate-tidal resonate-words
           for by in $(held_by --workspace -i resonate-sync | grep '^resonate' | grep -vx resonate-sync || true); do
             case "$by" in

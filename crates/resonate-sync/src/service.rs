@@ -35,8 +35,8 @@ use self::{
     unsent::{Awaited, Awaiting, UNREACHED_AFTER, Unsent, awaited},
 };
 use crate::{
-    Catalog, Change, DeviceId, Error, Handoff, LayoutNote, Ledger, LocalPlaylistId, Platform,
-    Refused, Result, SyncKey,
+    Catalog, Change, DeviceId, Error, HOSTED_SERVER, Handoff, LayoutNote, Ledger, LocalPlaylistId,
+    Platform, Refused, Result, SyncKey,
     consulted::{
         AskedForExport, AskedToConsult, Consultable, Consulting, ExportFetched, ExportHeld,
         ExportPart, ExportReceiving,
@@ -73,7 +73,6 @@ use crate::{
 mod discovery;
 mod unsent;
 
-pub const HOSTED_SERVER: &str = resonate_core::RESONATE_SOCKET_ADDRESS;
 pub const SERVER_PORT: u16 = 443;
 const TRANSFERS_SHOWN_AT_MOST: usize = 200;
 const A_SONG_TAKES_AT_MOST: Duration = Duration::from_secs(20 * 60);

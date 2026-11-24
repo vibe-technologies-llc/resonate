@@ -217,6 +217,7 @@ pub(crate) fn read_spelled<const N: usize>(code: &str) -> Result<[u8; N]> {
     Ok(bytes)
 }
 
+#[cfg(feature = "device")]
 pub(crate) fn in_symbols(bytes: &[u8]) -> String {
     packed(bytes)
         .iter()
@@ -224,6 +225,7 @@ pub(crate) fn in_symbols(bytes: &[u8]) -> String {
         .collect()
 }
 
+#[cfg(feature = "device")]
 pub(crate) fn from_symbols(text: &str, at_most: usize) -> Option<Vec<u8>> {
     let symbols = text.trim();
 

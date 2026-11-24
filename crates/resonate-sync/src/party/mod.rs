@@ -3,10 +3,24 @@ mod clock;
 mod follow;
 mod key;
 mod said;
+#[cfg(feature = "device")]
 mod seat;
+#[cfg(feature = "device")]
 mod service;
 mod time;
+#[cfg(feature = "device")]
+mod utc;
 
+#[cfg(feature = "device")]
+pub use self::seat::{
+    Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard, SeatTakenUp, known_where_they_moved,
+};
+#[cfg(feature = "device")]
+pub use self::service::{
+    CHAT_KEPT_AT_MOST, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Party, PartyHanding,
+    PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim, RequestId,
+    TIME_TOLD_EVERY,
+};
 pub use self::{
     ahead::{Ahead, SONGS_FOUND_AHEAD, wanted_ahead},
     clock::{CLOCK_WINDOW, ServerClock},
@@ -16,14 +30,5 @@ pub use self::{
     },
     key::{PARTY_LINK, PartyKey, PartyKeys},
     said::{LONGEST_LINE, PartyChat, PartyLine, PartyNow, PartyReaction, PartySaid, PartySong},
-    seat::{
-        Going, PartyFinder, PartyFollowed, PartySeat, SeatHeard, SeatTakenUp,
-        known_where_they_moved,
-    },
-    service::{
-        CHAT_KEPT_AT_MOST, HANDED_OVER_WITHIN, LINES_A_PERSON_SAYS_AT_MOST, Party, PartyHanding,
-        PartyPerson, PartyReach, PartySettings, PartyShown, PartyWantingASong, RequestClaim,
-        RequestId, TIME_TOLD_EVERY,
-    },
     time::{PartyApart, PartyTimed, TIGHT_ROUND_TRIP, TIME_ASKED_EVERY, UtcClock},
 };

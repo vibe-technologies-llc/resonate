@@ -9,38 +9,50 @@ autotests = false
 doctest = false
 
 [features]
+default = ["device"]
+device = [
+    "dep:ahash",
+    "dep:if-addrs",
+    "dep:mdns-sd",
+    "dep:rcgen",
+    "dep:rustls-native-certs",
+    "dep:socket2",
+    "dep:tokio-rustls",
+    "dep:webpki-root-certs",
+    "tokio/fs"
+]
 faults = []
 
 [dependencies]
-ahash.workspace = true
+ahash = { workspace = true, optional = true }
 flate2.workspace = true
 futures-util.workspace = true
-if-addrs.workspace = true
-mdns-sd.workspace = true
+if-addrs = { workspace = true, optional = true }
+mdns-sd = { workspace = true, optional = true }
 parking_lot.workspace = true
 quinn.workspace = true
-rcgen.workspace = true
+rcgen = { workspace = true, optional = true }
 resonate-core.workspace = true
 resonate-words.workspace = true
 ring.workspace = true
 rusqlite.workspace = true
 rustls = { workspace = true, features = ["ring"] }
-rustls-native-certs.workspace = true
+rustls-native-certs = { workspace = true, optional = true }
 rustls-pki-types = { workspace = true, features = ["std"] }
-socket2.workspace = true
+socket2 = { workspace = true, optional = true }
 thiserror.workspace = true
-tokio = { workspace = true, features = ["fs", "io-util", "macros", "net", "rt", "sync", "time"] }
-tokio-rustls.workspace = true
+tokio = { workspace = true, features = ["io-util", "macros", "net", "rt", "sync", "time"] }
+tokio-rustls = { workspace = true, optional = true }
 tokio-tungstenite.workspace = true
 tracing.workspace = true
-webpki-root-certs.workspace = true
+webpki-root-certs = { workspace = true, optional = true }
 x25519-dalek = { workspace = true, features = ["static_secrets"] }
 
 [build-dependencies]
 resonate-words-build.workspace = true
 
 [dev-dependencies]
-resonate-sync = { path = ".", features = ["faults"] }
+resonate-sync = { path = ".", default-features = false, features = ["faults"] }
 proptest.workspace = true
 resonate-words-build.workspace = true
 

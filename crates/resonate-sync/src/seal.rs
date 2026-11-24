@@ -5,6 +5,7 @@ use ring::aead::{Aad, LessSafeKey, MAX_TAG_LEN, NONCE_LEN, Nonce};
 
 use crate::{DeflateOp, Error, Result, SpaceId, key::random_bytes};
 
+#[cfg(any(test, feature = "device"))]
 pub const LARGEST_OPENED: usize = 64 * 1024 * 1024;
 pub const SEALED_AT_LEAST: usize = NONCE_LEN + MAX_TAG_LEN;
 

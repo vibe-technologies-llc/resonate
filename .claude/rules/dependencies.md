@@ -226,7 +226,9 @@ here, add it there.
   (`no_recipe_builds_the_player_beside_the_sign_in_windows_engine`); the Flatpak's SDK has no
   WebKitGTK at all.
 - `resonate-sync`: core alone among workspace crates; no library, engine, gpui, `ureq`, serde.
-  Reached by the binary (behind `sync`), `resonate-driven`, `resonate-mobile` and `resonate-server` alone; `resonate-server`
+  Reached by the binary (behind `sync`), `resonate-driven`, `resonate-mobile` and `resonate-server` alone; the first three name
+  its `device` feature, which `[workspace.dependencies]` leaves off, and the server does not, so
+  its shipped tree has no `mdns-sd`, `if-addrs` or `rcgen` (`sync.md`); `resonate-server`
   reaches core, `resonate-sync` and, for its hifi-api gateway, `resonate-tidal` with the seam and
   `resonate-fetch` it already reaches (so `ureq` and serde, which the sync server otherwise lacks). `resonate-library` takes neither `quinn` nor `tokio`, and
   `cargo tree -p resonate --no-default-features` links neither.
@@ -319,7 +321,7 @@ here, add it there.
   queue, playlist and catalog reads stay `Vec`.
 - **`rustls-native-certs`**, **`webpki-root-certs`**, **`rustls`**: `resonate-fetch`'s, for a server
   behind a private CA (`providers.md`), and `resonate-sync`'s for the QUIC connection's roots
-  (`quic.rs`). The first reads the system store; the second is the Mozilla
+  (`quic/device.rs`, under `device`). The first reads the system store; the second is the Mozilla
   roots as DER (`RootCerts::Specific` is the only way to add the built-in set beside the system's).
   `rustls` (`std` alone) downcasts a refused certificate out of ureq's `io::Error`, so matches
   ureq's version. Not ureq's `platform-verifier`, which fails where the system store is empty.
@@ -356,12 +358,12 @@ here, add it there.
   signature check in `resonate-sync`; the crate rustls already links. **`x25519-dalek`**
   (`static_secrets`, pure Rust) is `resonate-sync`'s Diffie-Hellman for sealing a removal's new
   code to each person who stays (`shared/moved.rs`), the one piece of its cryptography `ring` does
-  not carry. **`rcgen`** (`ring`): the
+  not carry. **`rcgen`** (`ring`, under `device`): the
   space's peer certificate (a dev-dependency of `resonate-server` and `resonate-cast`, for the tests'
   self-signed ones). **`rustls-pki-types`** (`std`):
   PEM reading (`sync-server-certificate`, the server's chain and key). `rustls` takes `ring` there
   for the provider QUIC needs. The wire is hand-encoded, so no serde.
-- **`mdns-sd`** (`async`): pure Rust, its own daemon thread. `resonate-sync`'s Bonjour awaits its
+- **`mdns-sd`** (`async`): pure Rust, its own daemon thread. `resonate-sync`'s Bonjour (under `device`, with `if-addrs`) awaits its
   events on the sync runtime; `resonate-cast` browses `_googlecast._tcp` with blocking receives on
   a thread of its own, the `async` feature unused there but unified with sync's.
 - **`jiff`**: `resonate-core`'s, the one zone database (`Calendar`): `std`, `tz-system` (the

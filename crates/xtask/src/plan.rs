@@ -6,6 +6,7 @@ use std::{collections::BTreeSet, env, path::Path};
 pub const BINARY: &str = "resonate";
 pub const WINDOW: &str = "resonate-ui";
 pub const RULES_AND_COMMENTS: &str = "resonate-words-build";
+pub const SYNC: &str = "resonate-sync";
 pub const OFF_LINUX: [&str; 3] = ["resonate-mobile", "resonate-bindgen", "resonate-pipewire"];
 pub const BINARY_FEATURES_TOGETHER: &str = "online,mcp,discord,sync";
 pub const BINARY_FEATURES_ALONE: [&str; 5] = ["ui", "online", "mcp", "discord", "sync"];
@@ -112,6 +113,7 @@ struct Linted {
     every: Vec<String>,
     headless: Option<Vec<String>>,
     binary: bool,
+    sync: bool,
 }
 
 fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
@@ -125,6 +127,7 @@ fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
                 every,
                 headless: Some(headless),
                 binary: true,
+                sync: true,
             })
         }
         Selection::These(packages) => {
@@ -143,6 +146,7 @@ fn linted(selection: &Selection, linux: bool) -> Option<Linted> {
                 every: each_package(kept.iter().copied()),
                 headless: (!headless.is_empty()).then(|| each_package(headless)),
                 binary: kept.contains(BINARY),
+                sync: kept.contains(SYNC),
             })
         }
     }
@@ -212,6 +216,13 @@ pub fn lint(selection: &Selection, target: Option<&str>, locked: bool) -> Vec<St
                 &["--no-default-features", "--features", features],
             ));
         }
+    }
+    if linted.sync {
+        steps.push(clippy(
+            "sync without its device feature",
+            &each_package([SYNC]),
+            &["--no-default-features"],
+        ));
     }
     steps
 }

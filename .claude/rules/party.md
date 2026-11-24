@@ -58,7 +58,7 @@ leading silence) lines up by time, not waveform.
 ## Measuring the offset
 
 **Each seat asks a time server too, so two people's error is measured rather than bounded**
-(`party/time.rs`). The room's clock leaves each seat wrong by the asymmetry of its own path to the
+(`party/time.rs` weighs, `party/utc.rs` asks, a device's alone under `resonate-sync`'s `device`). The room's clock leaves each seat wrong by the asymmetry of its own path to the
 party's server, unknowable from that path; a nearby time server reached over a quick path is off by far
 less. So each seat runs `keep_utc` beside its session: SNTP over UDP to `party-time-server` (the
 binary's key, `PARTY_TIME_SERVER` in core, `time.cloudflare.com`, anycast so it is near everyone; blank

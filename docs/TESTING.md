@@ -78,14 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Mobile catalog
 
 ## Device sync
-- [M · 0.17.1] Keep client-only discovery out of the sync server's dependency graph.
-  **Low, architect.** The server depends on the sync wire types, but its
-  normal build also includes the device discovery and peer certificate
-  dependencies (`crates/resonate-server/Cargo.toml:24`,
-  `crates/resonate-sync/Cargo.toml:13`, `crates/resonate-sync/src/lib.rs:11`,
-  `:16`). Make the device-only modules optional for server builds.
-  Done when the shipped server's normal dependency tree omits the
-  discovery stack and both server and device-sync suites pass.
 
 ## Providers and network
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,

@@ -30,7 +30,7 @@ fn the_whole_workspace_is_linted_by_every_line_ci_runs() {
 
     let lines: Vec<String> = steps.iter().map(line).collect();
 
-    assert_eq!(steps.len(), 8);
+    assert_eq!(steps.len(), 9);
     assert_eq!(
         lines[0],
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --workspace --all-targets -- -D warnings"
@@ -44,10 +44,14 @@ fn the_whole_workspace_is_linted_by_every_line_ci_runs() {
         "cargo clippy --locked --target x86_64-unknown-linux-gnu --package resonate --all-targets --no-default-features --features online,mcp,discord,sync -- -D warnings"
     );
     assert!(
-        lines[3..]
+        lines[3..8]
             .iter()
             .zip(["ui", "online", "mcp", "discord", "sync"])
             .all(|(line, feature)| line.contains(&format!("--features {feature} --")))
+    );
+    assert_eq!(
+        lines[8],
+        "cargo clippy --locked --target x86_64-unknown-linux-gnu --package resonate-sync --all-targets --no-default-features -- -D warnings"
     );
 }
 
@@ -91,6 +95,19 @@ fn changed_packages_are_linted_alone_and_the_binary_lines_come_only_with_the_bin
     assert_eq!(window.len(), 1);
     assert_eq!(binary.len(), 8);
     assert!(lint(&Selection::These(BTreeSet::new()), None, false).is_empty());
+}
+
+#[test]
+fn the_sync_crate_is_linted_again_as_the_server_links_it_without_its_device_feature() {
+    let sync = lint(&these(&["resonate-server", "resonate-sync"]), None, false);
+    let server = lint(&these(&["resonate-server"]), None, false);
+
+    assert_eq!(sync.len(), 3);
+    assert_eq!(
+        line(&sync[2]),
+        "cargo clippy --package resonate-sync --all-targets --no-default-features -- -D warnings"
+    );
+    assert_eq!(server.len(), 2);
 }
 
 #[test]

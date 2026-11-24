@@ -141,7 +141,7 @@ hand-written over `httparse`, so a build without `online` still plays to a rende
 alone on Linux (its own PipeWire client per recording) and core, `resonate-audio` and the `wasapi` crate on Windows
 (capture and loopback on threads of its own, never `resonate-wasapi`) and core, `resonate-audio`, `resonate-apple` and `resonate-dsp` on macOS
 (a microphone through the HAL input unit, never `resonate-coreaudio`); `resonate-analysis` reaches `resonate-dsp`;
-`resonate-sync` reaches core alone and is reached by the binary, `resonate-driven`, `resonate-mobile` and the server;
+`resonate-sync` reaches core alone and is reached by the binary, `resonate-driven`, `resonate-mobile` and the server, the server without its `device` feature (discovery, peers, STUN, the relay, dialling);
 `resonate-driven` joins it to the engine and is reached by the binary and `resonate-mobile` alone;
 `resonate-signin` reaches core and `resonate-words` alone and is reached by the binary alone, never with its `window`
 feature, so `wry`, `tao` and WebKitGTK stay out of the binary's tree;

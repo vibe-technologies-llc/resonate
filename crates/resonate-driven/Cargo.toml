@@ -11,7 +11,7 @@ test = false
 [dependencies]
 resonate-core.workspace = true
 resonate-engine.workspace = true
-resonate-sync.workspace = true
+resonate-sync = { workspace = true, features = ["device"] }
 tracing.workspace = true
 
 [dev-dependencies]

@@ -25,6 +25,22 @@ It reaches `resonate-core` alone among workspace crates (the layering job refuse
 engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) and
 `resonate-server` reach it.
 
+- **What only a device runs sits behind the `device` feature**, a default that
+  `[workspace.dependencies]` turns off and the binary, `resonate-driven` and `resonate-mobile`
+  name again: the
+  service (`service.rs`), peers (`peer.rs`), nearby discovery (`nearby.rs`), STUN, the relay, the
+  party's and the shared lists' services (`party/service.rs`, `party/seat.rs`, `party/utc.rs`,
+  `shared/service.rs`, `shared/appending.rs`), dialling the server over QUIC and WebSocket
+  (`quic/device.rs`, `web/device.rs`, `routes.rs`) with the trusted roots and the peer
+  certificate, `fresh.rs` and an export's `ExportReceiving` (`consulted/receiving.rs`), with
+  `mdns-sd`, `if-addrs`, `rcgen`, `socket2`, `ahash`, `tokio-rustls`, `rustls-native-certs` and
+  `webpki-root-certs`. Without it the crate is what `resonate-server` links: the wire, framing,
+  sealing, key derivation, the ledger, the shared-list and party vocabulary and the server's side
+  of a WebSocket (`accepted`). A test of device code is gated with it, and the crate's own
+  dev-dependency leaves the default off, so `cargo xtask lint` lints the crate once more as the
+  server links it (`SYNC`'s line in `plan.rs`, `build.md`) and the layering job refuses
+  `mdns-sd`, `if-addrs` and `rcgen` in that tree and in the server's shipped one.
+
 ## The pairing key and what it derives
 
 - **One random key is the account.** `SyncKey` = 20 bytes from `ring`'s `SystemRandom`; its
@@ -115,7 +131,7 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   is deleted or answered by the song being added again, the stamp); a build without it skips it as
   any later tag and keeps every song, and a snapshot such a build compacts lacks it, so
   `owe_queries` owes the deletions too.
-- **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`: TCP,
+- **A server address of `ws://` or `wss://` runs the same frames over a WebSocket** (`web.rs`, its dialling in `web/device.rs`: TCP,
   TLS through `tokio-rustls` for `wss`, one binary message a frame, at most `LARGEST_FRAME`),
   for a server behind a proxy that carries no UDP (`server.md`). **A plain `ws://` goes only to this
   machine**: its host must resolve to loopback alone (`on_this_machine`, an IPv4 address mapped into
@@ -1629,7 +1645,7 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   already, so the ledger no longer lists it as owed. A tell on a connection that has gone is left
   to the next meeting's whole snapshot, and one refused as `Oversized` is not tried again. A test
   makes a tell fail through `faults.rs` (the `faults` feature the crate's own dev-dependency turns
-  on): `watch_tells_to` records every tell to a device, the connection it went over and its
+  on, present only beside `device`): `watch_tells_to` records every tell to a device, the connection it went over and its
   changes, and `fail_next` resets the stream of the next ones before a byte is written
   (`a_change_whose_tell_failed_reaches_a_device_still_connected_without_meeting_it_again`,
   `a_change_the_other_device_took_is_not_told_it_again_while_still_owed`).

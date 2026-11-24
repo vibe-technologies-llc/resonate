@@ -17,13 +17,13 @@ use tokio::{
 };
 
 use crate::{
-    Clock, DeviceId, Error, HeldShare, LocalPlaylistId, Refused, Result, Server, SpaceId, Stamp,
-    Welcomed,
+    Clock, DeviceId, Error, HOSTED_SERVER, HeldShare, LocalPlaylistId, Refused, Result, Server,
+    SpaceId, Stamp, Welcomed,
     key::random_bytes,
     merge::projection_digest,
     quic::{to_the_server, trusted_roots},
     seal::{opened, sealed},
-    service::{HOSTED_SERVER, InParts, Oversized, dialled_server, within},
+    service::{InParts, Oversized, dialled_server, within},
     shared::{
         Access,
         appending::{

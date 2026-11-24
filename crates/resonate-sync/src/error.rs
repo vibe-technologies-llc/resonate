@@ -122,6 +122,7 @@ pub enum Error {
     #[error("the QUIC crypto setup refused its TLS configuration")]
     QuicCrypto,
 
+    #[cfg(feature = "device")]
     #[error("the peer certificate could not be made")]
     Certificate(#[source] Box<rcgen::Error>),
 
@@ -259,6 +260,7 @@ impl Error {
         Self::Web(Box::new(source))
     }
 
+    #[cfg(feature = "device")]
     pub(crate) fn tls(op: TlsOp, source: rustls::Error) -> Self {
         Self::Tls {
             op,

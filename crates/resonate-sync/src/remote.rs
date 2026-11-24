@@ -9,11 +9,13 @@ use crate::{
 
 pub const ZONES_MIRRORED_AT_MOST: usize = 16;
 pub const ROWS_MIRRORED_AT_MOST: usize = 500;
+#[cfg(feature = "device")]
 pub const MIRROR_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 pub const MIRROR_TOLD_AGAIN_AFTER: Duration = Duration::from_secs(5);
 pub const MIRROR_EXPIRES_AFTER: Duration = MIRROR_TOLD_AGAIN_AFTER.saturating_mul(2);
 pub const MIRROR_GOES_STALE_AFTER: Duration = MIRROR_TOLD_AGAIN_AFTER.saturating_mul(3);
 pub const CONTROL_ANSWERED_WITHIN: Duration = Duration::from_secs(10);
+#[cfg(feature = "device")]
 const POSITION_DRIFTS_AT_MOST: Duration = Duration::from_secs(1);
 const PERMILLE: f32 = 1_000.0;
 const ZONE_AT_LEAST: usize = 8;
@@ -441,6 +443,7 @@ impl Watched {
     }
 }
 
+#[cfg(feature = "device")]
 pub fn told_alike(was: &[RemoteZone], told_at: Instant, now: &[RemoteZone], at: Instant) -> bool {
     let since = at.saturating_duration_since(told_at);
     was.len() == now.len()
@@ -659,6 +662,7 @@ mod tests {
         assert!(!RemoteTrust::Nothing.shows());
     }
 
+    #[cfg(feature = "device")]
     #[test]
     fn a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on() {
         let now = Instant::now();

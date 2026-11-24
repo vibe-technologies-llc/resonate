@@ -8,7 +8,11 @@ paths:
 
 `resonate-server` keeps what devices of one space append, hands it to the others and introduces
 devices to each other. It reaches `resonate-sync` (the wire, framing, transport) and core alone,
-and reads nothing it keeps: records are sealed on the devices (`sync.md`).
+and reads nothing it keeps: records are sealed on the devices (`sync.md`). It takes
+`resonate-sync` without its `device` feature, so its shipped tree (`cargo tree -p resonate-server
+-e normal`) holds no discovery, STUN, relay or peer certificate (`mdns-sd`, `if-addrs`, `rcgen`,
+refused by the layering job); its tests take the feature as a dev-dependency, since they drive
+real devices against it.
 
 ## What it keeps
 

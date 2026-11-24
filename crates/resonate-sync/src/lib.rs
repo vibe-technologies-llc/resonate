@@ -2,35 +2,43 @@ mod catalog;
 mod change;
 mod consulted;
 mod error;
-#[cfg(feature = "faults")]
+#[cfg(all(feature = "device", feature = "faults"))]
 #[doc(hidden)]
 pub mod faults;
+#[cfg(feature = "device")]
 mod fresh;
-#[cfg(fuzzing)]
+#[cfg(all(fuzzing, feature = "device"))]
 mod fuzzing;
 mod key;
 mod ledger;
 mod merge;
+#[cfg(feature = "device")]
 mod nearby;
 pub mod party;
+#[cfg(feature = "device")]
 mod peer;
 mod quic;
+#[cfg(feature = "device")]
 mod relay;
 mod remote;
 mod revision;
+#[cfg(feature = "device")]
 mod routes;
 mod seal;
+#[cfg(feature = "device")]
 mod service;
 pub mod shared;
+#[cfg(feature = "device")]
 mod stun;
 mod web;
 pub mod wire;
 
+#[cfg_attr(not(feature = "device"), allow(dead_code))]
 mod words {
     include!(concat!(env!("OUT_DIR"), "/words.rs"));
 }
 
-#[cfg(fuzzing)]
+#[cfg(all(fuzzing, feature = "device"))]
 pub use crate::fuzzing::read_a_stun_answer;
 pub use crate::{
     catalog::{
@@ -46,15 +54,13 @@ pub use crate::{
     },
     consulted::{
         AskedForExport, AskedToConsult, CONSULT_ANSWERED_WITHIN, Consultable, ConsultedAnswer,
-        Consulting, Dates, ExportDeclined, ExportFetched, ExportHeld, ExportPart, ExportReceiving,
-        KeptAnswer, OfferedExport, ReadsExport,
+        Consulting, Dates, ExportDeclined, ExportFetched, ExportHeld, ExportPart, KeptAnswer,
+        OfferedExport, ReadsExport,
     },
     error::{CodeRefused, DeflateOp, Error, FileOp, Malformed, Result, StoreOp, StreamOp, TlsOp},
     key::{DEVICE_BYTES, Derived, DeviceId, PAIRING_LINK, SpaceId, SyncKey, Token},
     ledger::{Applied, Follow, Ledger, Looked, Me, Welcomed},
-    nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
-    quic::{check_trusted_certificate, read_frame, send_frame, server_transport},
-    relay::{RELAYED_PORT, Relay},
+    quic::{read_frame, send_frame, server_transport},
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_EXPIRES_AFTER,
         MIRROR_GOES_STALE_AFTER, Mirror, Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand,
@@ -63,15 +69,21 @@ pub use crate::{
     },
     revision::{Bound, Revised, Revision},
     seal::{opened, sealed},
+    web::{Accepted, Duplex, Heard, Holds, Incoming, Outgoing, accepted},
+    wire::HOSTED_SERVER,
+};
+#[cfg(feature = "device")]
+pub use crate::{
+    consulted::ExportReceiving,
+    nearby::{BONJOUR_SERVICE, Broadcast, NEARBY_GROUP, NEARBY_PORT, Nearby, RECORD_KEY},
+    quic::check_trusted_certificate,
+    relay::{RELAYED_PORT, Relay},
     service::{
-        AskedToControl, AskedToFetch, ExportWanted, FetchOutcome, HOSTED_SERVER, SERVER_PORT,
-        Server, Settings, Shown, Standing, Sync, SyncDevice, Transfer, TransferState,
+        AskedToControl, AskedToFetch, ExportWanted, FetchOutcome, SERVER_PORT, Server, Settings,
+        Shown, Standing, Sync, SyncDevice, Transfer, TransferState,
     },
     stun::{Reflector, STUN_PORT},
-    web::{
-        Accepted, Duplex, Heard, Holds, Incoming, Outgoing, WEB_SERVER_PORT, WebAddress, accepted,
-        connect, to_the_web, web_address,
-    },
+    web::{WEB_SERVER_PORT, WebAddress, connect, to_the_web, web_address},
 };
 
 #[cfg(test)]

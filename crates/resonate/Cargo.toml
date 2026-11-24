@@ -59,7 +59,7 @@ resonate-musicbrainz = { workspace = true, optional = true, features = ["downloa
 resonate-online = { workspace = true, optional = true }
 resonate-jellyfin = { workspace = true, optional = true }
 resonate-subsonic = { workspace = true, optional = true }
-resonate-sync = { workspace = true, optional = true }
+resonate-sync = { workspace = true, optional = true, features = ["device"] }
 resonate-tidal = { workspace = true, optional = true }
 resonate-providers.workspace = true
 resonate-upnp.workspace = true

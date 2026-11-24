@@ -312,7 +312,7 @@ resonate-mpris = { version = "0.17.0", path = "crates/resonate-mpris" }
 resonate-musicbrainz = { version = "0.17.0", path = "crates/resonate-musicbrainz" }
 resonate-online = { version = "0.17.0", path = "crates/resonate-online" }
 resonate-providers = { version = "0.17.0", path = "crates/resonate-providers" }
-resonate-sync = { version = "0.17.0", path = "crates/resonate-sync" }
+resonate-sync = { version = "0.17.0", path = "crates/resonate-sync", default-features = false }
 resonate-dlna = { version = "0.17.0", path = "crates/providers/dlna" }
 resonate-inbox = { version = "0.17.0", path = "crates/providers/inbox" }
 resonate-jellyfin = { version = "0.17.0", path = "crates/providers/jellyfin" }

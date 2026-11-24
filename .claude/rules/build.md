@@ -21,7 +21,9 @@ paths:
 run through the `xtask` alias in `.cargo/config.toml`). `plan.rs` holds every line: `lint` is the
 default-feature workspace, the headless workspace without `resonate-ui`, and the binary with
 `BINARY_FEATURES_TOGETHER` and each of `BINARY_FEATURES_ALONE`, so a feature added to the binary is
-added there; off desktop Linux (a `--target` that is not one, or a Windows or Mac host) `OFF_LINUX`
+added there, and `SYNC` alone without its default features, the crate as `resonate-server` links it
+(every other line unifies `device` back on through the binary, `resonate-driven` or a
+dev-dependency, `sync.md`); off desktop Linux (a `--target` that is not one, or a Windows or Mac host) `OFF_LINUX`
 is left out, as CI's Windows and macOS jobs leave it. `test` is `cargo nextest run --workspace`,
 wrapped in `dbus-run-session` on Linux where it is on the path; `check` is `fmt --check`, `lint`
 and `test`; `android` and `ios` call the phones' own steps. CI's four clippy jobs run `cargo xtask
@@ -33,7 +35,7 @@ lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`)
   edges included), and lints and tests those; `RULES_AND_COMMENTS` is always tested, since the
   comment and rules-name checks read the whole tree. A root manifest, the lock,
   `rust-toolchain.toml` or `.cargo/` is every package. The binary's feature lines come only with
-  the binary.
+  the binary, and `SYNC`'s line only with `resonate-sync`.
 - **Output** is one line a step, each kept whole in `target/xtask/NN-<step>.log` (cleared at the
   start of a run, under `CARGO_TARGET_DIR` where set); a failure shows its last
   `LINES_SHOWN_OF_A_FAILURE` lines with cargo's and nextest's progress taken out, and a passing
@@ -46,8 +48,8 @@ lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`)
 - **`.github/workflows/ci.yml` runs what `CLAUDE.md`'s command list runs, and nothing it does not**
   (push to `master`, pull requests, `workflow_dispatch`; `archlinux` containers; the token reads
   the repository and nothing more, `permissions: contents: read`): clippy through `cargo xtask lint
-  --locked --verbose` (default features, the workspace headless, the binary without `ui` and with each feature alone, so code
-  dead without a feature is warned), headless tests of every crate but the window (built and run
+  --locked --verbose` (default features, the workspace headless, the binary without `ui` and with each feature alone, and
+  `resonate-sync` without `device`, so code dead without a feature is warned), headless tests of every crate but the window (built and run
   by `headless` under `dbus-run-session` so the MPRIS bus tests run) and, in
   the whole-workspace job, only the tests of `resonate` and `resonate-ui`, two of the three crates whose
   default features the headless job does not build (the third, `resonate-signin`, whose `window`
@@ -64,8 +66,9 @@ lint --locked --verbose` (the arm64 one with `--target aarch64-pc-windows-msvc`)
   `windows-tests` runs, with its excludes, `resonate-engine`'s tests taken apart and run one at a time, `macos.md`) and `macos-window` (the tests of `resonate` and `resonate-ui`, since
   the window builds for macOS on a Mac alone), each test step run whatever the one before
   answered, so one run names every failure of a build no machine here can run (`macos.md`). A command added to `CLAUDE.md` goes into the workflow (iOS and the DSP lab aside); a crate added to the
-  layering refusals gets a line. The layering job has six shapes: `refuse`, `refuse_headless` (no
-  default features), `only` (the workspace crates a crate may reach), `only_on` (the same in one
+  layering refusals gets a line. The layering job has seven shapes: `refuse`, `refuse_headless` (no
+  default features), `refuse_shipped` (normal edges alone, so a dev-dependency's features stay out:
+  `resonate-server` and `resonate-sync`'s `device` stack, `sync.md`), `only` (the workspace crates a crate may reach), `only_on` (the same in one
   target's tree), `reached_by_the_binary_alone` (`cargo tree -i`; `online`, `mcp`, `discord`),
   `reached_directly_on` (the workspace crates that may name a crate, in one target's tree), and one `cargo tree --target x86_64-pc-windows-msvc`
   refusal that holds PipeWire, Wayland and `rustix` out of the binary's Windows tree; `resonate-mpris`'s direct normal edges are checked

@@ -20,7 +20,7 @@ resonate-online.workspace = true
 resonate-providers.workspace = true
 resonate-jellyfin.workspace = true
 resonate-subsonic.workspace = true
-resonate-sync.workspace = true
+resonate-sync = { workspace = true, features = ["device"] }
 resonate-tidal.workspace = true
 resonate-monochrome.workspace = true
 resonate-musicbrainz.workspace = true

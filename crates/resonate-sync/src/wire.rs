@@ -27,6 +27,7 @@ use crate::{
 
 pub const PROTOCOL_VERSION: u16 = 1;
 pub const INCARNATION_VERSION: u16 = 2;
+pub const HOSTED_SERVER: &str = resonate_core::RESONATE_SOCKET_ADDRESS;
 pub const SERVER_ALPN: &[u8] = b"resonate-sync/1";
 pub const PEER_ALPN: &[u8] = b"resonate-peer/1";
 pub const LARGEST_FRAME: usize = 32 * 1024 * 1024;
