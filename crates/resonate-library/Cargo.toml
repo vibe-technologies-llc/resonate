@@ -8,6 +8,9 @@ autotests = false
 [lib]
 doctest = false
 
+[features]
+faults = []
+
 [dependencies]
 ahash.workspace = true
 crossbeam-channel.workspace = true
@@ -35,6 +38,7 @@ notify = { workspace = true, features = ["macos_fsevent"] }
 resonate-words-build.workspace = true
 
 [dev-dependencies]
+resonate-library = { path = ".", features = ["faults"] }
 image.workspace = true
 proptest.workspace = true
 resonate-words-build.workspace = true

@@ -14,6 +14,8 @@ use resonate_core::{
     AlbumId, ChannelLayout, Frames, MediaLocation, Resumable, Resumption, SampleFormat, SampleRate,
     StreamSpec, TrackId, ZoneId,
 };
+#[cfg(unix)]
+use resonate_library::faults;
 use resonate_library::{
     AlbumQuery, ArtistQuery, Codec, CoverArt, Cut, Deleted, Error, Favoured, HiddenTracks,
     ImageFormat, Library, LyricsAhead, NamesMoved, Removal, Result, ScanOptions, Sources, Track,
@@ -1780,18 +1782,18 @@ fn a_folder_the_scan_cannot_read_keeps_every_row_under_it() -> Result<()> {
 
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o000))
         .expect("the fixture folder takes a mode");
-    if fs::read_dir(&locked).is_ok() {
-        fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))
-            .expect("the fixture folder takes a mode");
-        eprintln!("skipping: this user reads a folder whatever its mode");
-        return Ok(());
-    }
 
+    let denied = faults::deny_listing(&locked);
     let stats = scan(&library, &options(&tree));
+
+    let refusals = denied.refusals();
+
+    drop(denied);
 
     fs::set_permissions(&locked, fs::Permissions::from_mode(0o755))
         .expect("the fixture folder takes a mode");
 
+    assert!(refusals > 0);
     assert_eq!(stats?.removed, 0);
     assert_eq!(titles(&all(&library)?), vec!["One", "Open", "Two"]);
     Ok(())
@@ -1819,18 +1821,18 @@ fn a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scan
 
     fs::set_permissions(&shut, fs::Permissions::from_mode(0o444))
         .expect("the fixture folder takes a mode");
-    if fs::metadata(shut.join("one.wav")).is_ok() {
-        fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
-            .expect("the fixture folder takes a mode");
-        eprintln!("skipping: this user searches a folder whatever its mode");
-        return Ok(());
-    }
 
+    let denied = faults::deny_stat(&shut.join("one.wav"));
     let stats = scan(&library, &options(&here));
+
+    let refusals = denied.refusals();
+
+    drop(denied);
 
     fs::set_permissions(&shut, fs::Permissions::from_mode(0o755))
         .expect("the fixture folder takes a mode");
 
+    assert!(refusals > 0);
     assert_eq!(stats?.removed, 0);
     assert_eq!(titles(&all(&library)?), vec!["Here", "One", "Open"]);
     Ok(())

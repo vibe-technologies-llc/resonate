@@ -11,6 +11,9 @@ mod enriched;
 mod error;
 mod everywhere;
 mod explore;
+#[cfg(feature = "faults")]
+#[doc(hidden)]
+pub mod faults;
 mod filed;
 mod filters;
 mod fingerprint;
@@ -47,6 +50,7 @@ mod playlist;
 mod pls;
 mod query;
 mod reach;
+mod reading;
 mod reference;
 mod renamed;
 mod replacing;

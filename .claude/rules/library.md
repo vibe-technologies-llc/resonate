@@ -528,6 +528,13 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   links not followed, `MAX_DEPTH`), made only where something is gone; a folder it cannot list
   keeps every gone path of the root
   (`a_scan_naming_one_root_leaves_a_hand_move_inside_another_to_the_walk_that_can_pair_it`).
+  **A denied read is injected, not fixtured** (`faults.rs`, the `faults` feature the crate's own
+  dev-dependency turns on): `deny_listing` makes the walk's `reading::directory` of a path answer
+  `PermissionDenied` and `deny_stat` does the same for `is_gone`'s `reading::metadata`, until the
+  returned `Denied` drops, `refusals` counting the reads it refused, so a runner that bypasses mode
+  bits (root, a container's override capability) still reaches the assertions that the rows stay
+  (`a_folder_the_scan_cannot_read_keeps_every_row_under_it`,
+  `a_folder_readable_but_not_searchable_keeps_its_rows_when_another_root_is_scanned`).
   **What is gone beside is weighed as a move into the roots walked**: `moves::Reconciled` hands
   those rows to `to_be_heard` and `follow_the_moved` beside the walked roots' unreached ones, so a
   song moved from one root into the root a scan names alone is paired with its arrival by the one

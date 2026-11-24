@@ -70,12 +70,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [M · 0.17.1] Exercise unreadable-folder scans regardless of process privileges. **Low, builder.**
-  The permission cases return successfully without checking scan behavior when the runner
-  can read or search the fixture anyway (`crates/resonate-library/tests/scanning.rs:1659`,
-  `:1698`). Inject the denied listing or metadata read into the existing scan cases.
-  Done when the tests assert the protected rows stay even when the runner can bypass
-  filesystem mode bits.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the

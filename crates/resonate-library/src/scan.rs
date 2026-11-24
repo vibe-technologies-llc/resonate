@@ -33,7 +33,7 @@ use crate::{
     history, loose, moves,
     numerals::{self, SEPARATORS},
     pass::{Cancelling, PassHandle, PassKind, ScanHandle},
-    stem,
+    reading, stem,
     store::{self, Cache, TrackRecord},
     undo, volumes,
 };
@@ -723,7 +723,7 @@ pub(crate) fn retire(inner: &Arc<Inner>, folder: &Path) -> Result<u64> {
 
 fn is_gone(path: &Path) -> bool {
     matches!(
-        fs::metadata(path),
+        reading::metadata(path),
         Err(error) if matches!(error.kind(), io::ErrorKind::NotFound | io::ErrorKind::NotADirectory)
     )
 }
@@ -1326,7 +1326,7 @@ fn walk(
         let mut audio = Vec::new();
         let mut sheets = Vec::new();
 
-        let entries = match fs::read_dir(&directory)
+        let entries = match reading::directory(&directory)
             .and_then(Iterator::collect::<io::Result<Vec<_>>>)
         {
             Ok(entries) => entries,
