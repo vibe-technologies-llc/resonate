@@ -2872,6 +2872,7 @@ dependencies = [
  "rustix",
  "same-file",
  "thiserror",
+ "tracing",
  "unicode-normalization",
 ]
 
