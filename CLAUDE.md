@@ -285,7 +285,8 @@ Invariants the layering protects (the rules files have the rest):
 - Tests needing the outside world skip without it: `resonate-pipewire` (`stream`, `reconnect`,
   `formats`), `resonate-listen` (`capture`, `reconnect`, `microphone`), `resonate-coreaudio`'s `stream` (macOS, an output device; `RESONATE_COREAUDIO_TESTS=required` makes a skip a failure), the reconnect, `formats` and
   `microphone` tests need `pw-cli` and host their own daemon; `resonate-mpris`'s `bus::` (session
-  bus; notification and headset presses run under `dbus-run-session`); `resonate-codec`'s
+  bus; notification and headset presses run under `dbus-run-session`); `resonate-sync`'s `nearby::` (a LAN
+  interface, IPv6 loopback, multicast delivery; `RESONATE_SYNC_NEARBY_TESTS=required` makes a skip a failure); `resonate-codec`'s
   `encoded::` (ffmpeg, `metaflac`, `wavpack`, `mac`, `lame`); `resonate-dsp`'s `restoration`
   (ffmpeg); `resonate-library`'s `cues::`, `keeps::`, `lossless::` and `retag::`
   (ffmpeg); `resonate-analysis`'s `references::` (ffmpeg with libvorbis, `fpcalc`, `lame`, and `faac`, `fdkaac`, `twolame` and ffmpeg's libopus where present, each skipped without); `resonate-online`'s `live` (`RESONATE_ONLINE_TESTS`); `resonate`'s `terminal::`

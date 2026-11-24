@@ -1640,5 +1640,13 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   `crates/resonate-sync/tests/nearby.rs` pairs two devices over loopback beacons with no server
   (records both ways, a song fetched, a rename back), and two told `Server::Nowhere` (standing
   `Nearby`, owing nothing once told), over records handed across as Swift hands them,
-  and over real Bonjour; a beacon or record of another code meets nobody. The last two skip on a
-  machine with no IPv4 interface but loopback.
+  and over real Bonjour; a beacon or record of another code meets nobody. The loopback pair
+  (`two_devices_of_one_key_on_one_network_sync_without_a_server`) and the IPv6 pair run on every
+  runner with the loopback they name, so the transport is always covered. A case that needs more
+  says so: with no IPv4 interface but loopback (a record names no loopback address), with no IPv6
+  loopback, or, for Bonjour, with no multicast datagram reaching a socket joined on a LAN
+  interface (`multicast_is_delivered` sends to the mDNS group and receives it first, since an
+  address alone does not mean the network forwards multicast), it prints `skipped: <the missing
+  capability>` through `passed_over` and returns. `RESONATE_SYNC_NEARBY_TESTS=required` makes each
+  such skip a failure, so a runner meant to have a LAN tells a missing one from a completed
+  discovery check.

@@ -78,14 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Mobile catalog
 
 ## Device sync
-- [M · 0.17.1] Check nearby transport capabilities explicitly in tests.
-  **Low, builder.** Discovery tests can return early when an interface is
-  absent, and the Bonjour case assumes multicast works whenever a
-  non-loopback IPv4 address exists
-  (`crates/resonate-sync/tests/nearby.rs:229`, `:878`, `:1038`, `:1078`).
-  Make skips visible, test actual multicast availability, and preserve a
-  deterministic transport check. Done when a limited runner distinguishes
-  missing LAN coverage from a completed discovery check.
 - [M · 0.17.1] Keep client-only discovery out of the sync server's dependency graph.
   **Low, architect.** The server depends on the sync wire types, but its
   normal build also includes the device discovery and peer certificate

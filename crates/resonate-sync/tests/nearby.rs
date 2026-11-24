@@ -1,7 +1,7 @@
 use std::{
     env, fs,
     io::{Cursor, Read, Seek, SeekFrom},
-    net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::Arc,
     thread,
@@ -26,6 +26,11 @@ use crate::shelf::{Shelf, song};
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(40);
 const NO_SERVER_HERE: &str = "127.0.0.1:9";
+const REQUIRED_BY: &str = "RESONATE_SYNC_NEARBY_TESTS";
+const MDNS_GROUP: Ipv4Addr = Ipv4Addr::new(224, 0, 0, 251);
+const MULTICAST_PROBE: &[u8] = b"resonate multicast probe";
+const MULTICAST_PROBE_TRIES: usize = 3;
+const MULTICAST_PROBE_WAITS: Duration = Duration::from_millis(700);
 
 fn scratch(name: &str) -> PathBuf {
     let folder = env::temp_dir().join(format!(
@@ -226,6 +231,95 @@ fn eventually(what: &str, done: impl Fn() -> bool) {
 
         thread::sleep(Duration::from_millis(100));
     }
+}
+
+fn passed_over(why: &str) {
+    assert!(
+        env::var(REQUIRED_BY).as_deref() != Ok("required"),
+        "{why}, and {REQUIRED_BY} asks for it"
+    );
+
+    eprintln!("skipped: {why}");
+}
+
+fn without_a_network() -> bool {
+    let without = !on_a_network();
+
+    if without {
+        passed_over("no non-loopback IPv4 interface");
+    }
+
+    without
+}
+
+fn without_ipv6_loopback() -> bool {
+    let without = !ipv6_loopback_here();
+
+    if without {
+        passed_over("no IPv6 loopback address");
+    }
+
+    without
+}
+
+fn lan_addresses_v4() -> Vec<Ipv4Addr> {
+    if_addrs::get_if_addrs()
+        .map(|interfaces| {
+            interfaces
+                .iter()
+                .filter(|interface| !interface.is_loopback())
+                .filter_map(|interface| match interface.ip() {
+                    IpAddr::V4(address) => Some(address),
+                    IpAddr::V6(_) => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn multicast_is_delivered() -> bool {
+    let Ok(receiver) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) else {
+        return false;
+    };
+    let Ok(sender) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) else {
+        return false;
+    };
+
+    let joined = lan_addresses_v4()
+        .iter()
+        .filter(|address| receiver.join_multicast_v4(&MDNS_GROUP, address).is_ok())
+        .count();
+    let Ok(port) = receiver.local_addr().map(|address| address.port()) else {
+        return false;
+    };
+
+    if joined == 0
+        || sender.set_multicast_loop_v4(true).is_err()
+        || receiver
+            .set_read_timeout(Some(MULTICAST_PROBE_WAITS))
+            .is_err()
+    {
+        return false;
+    }
+
+    let mut buffer = [0u8; 64];
+
+    (0..MULTICAST_PROBE_TRIES).any(|_| {
+        sender.send_to(MULTICAST_PROBE, (MDNS_GROUP, port)).is_ok()
+            && receiver
+                .recv_from(&mut buffer)
+                .is_ok_and(|(length, _)| &buffer[..length] == MULTICAST_PROBE)
+    })
+}
+
+fn without_multicast() -> bool {
+    let without = !multicast_is_delivered();
+
+    if without {
+        passed_over("no multicast datagram reached a socket joined on a LAN interface");
+    }
+
+    without
 }
 
 fn on_a_network() -> bool {
@@ -1146,7 +1240,7 @@ fn a_device_of_another_key_on_the_network_meets_nobody() {
 
 #[test]
 fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
-    if !on_a_network() {
+    if without_a_network() {
         return;
     }
 
@@ -1192,7 +1286,7 @@ fn a_device_told_another_by_its_platform_meets_it_by_the_record_alone() {
 
 #[test]
 fn a_device_meets_another_that_only_it_has_heard_of_whichever_dials_first() {
-    if !on_a_network() {
+    if without_a_network() {
         return;
     }
 
@@ -1289,6 +1383,12 @@ fn a_record_of_another_code_is_passed_over() {
         Nearby::told_by_the_platform(),
     );
     let Some(stranger_record) = stranger.nearby_record() else {
+        drop(stranger);
+        drop(desk);
+        passed_over("no address a record of this device could name");
+
+        let _ = fs::remove_dir_all(&folder);
+
         return;
     };
 
@@ -1306,7 +1406,7 @@ fn a_record_of_another_code_is_passed_over() {
 
 #[test]
 fn two_devices_advertising_over_bonjour_find_each_other() {
-    if !on_a_network() {
+    if without_a_network() || without_multicast() {
         return;
     }
 
@@ -1346,7 +1446,7 @@ fn two_devices_advertising_over_bonjour_find_each_other() {
 
 #[test]
 fn two_devices_told_of_each_other_over_ipv6_alone_meet_and_sync() {
-    if !ipv6_loopback_here() {
+    if without_ipv6_loopback() {
         return;
     }
 
