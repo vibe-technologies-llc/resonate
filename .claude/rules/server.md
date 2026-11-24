@@ -496,16 +496,27 @@ ticket presents no chain at all, so a client sees the renewed leaf on its next f
 copies the files once at start and a reload refreshes them only under systemd 260's
 `RefreshOnReload=`, newer than the distributions served (Ubuntu 26.04 has 259).
 `hand-over-credentials.sh`, installed as `/usr/lib/resonate-server/hand-over-credentials`, runs as
-root (the `+` prefix) as `ExecStartPre=` and as `ExecReload=`: it copies
+root (the `+` prefix) as `ExecStartPre=` and as `ExecReload=`, and copies
 `/etc/resonate-server/fullchain.pem` and `privkey.pem` (a root-owned Let's Encrypt key a dynamic
-user could not read) into the unit's `RuntimeDirectory=` (`/run/resonate-server`, `0700`) as
-`certificate` and `key`, `0400` and owned by whoever owns that directory (the dynamic user), each
-staged and renamed so the server never reads half a file, and on a reload then sends SIGHUP to
-`$MAINPID`. A copy that fails (a file missing) fails the reload and sends nothing, so the running
-server keeps its pair; `RESONATE_SERVER_CREDENTIALS_FROM` and `RESONATE_SERVER_CREDENTIALS_TO`
-move the two folders, which is how
-`the_hand_over_copies_the_pair_for_the_runtime_directorys_owner_alone` and
-`a_reload_hangs_up_on_the_server_only_once_the_pair_is_handed_over` run it.
+user could not read) as `certificate` and `key` into `/run/resonate-server-credentials`, where
+`--certificate` and `--key` point. **Root never writes inside a folder the server may change**: a
+compromised server could plant a link in its own `RuntimeDirectory=` between a copy and its rename
+and turn the hand-over into a root write elsewhere. So the folder is root's, directly under `/run`,
+`0750` and of the dynamic user's group (read from the `RuntimeDirectory=` systemd made and gave
+that user, `/run/resonate-server`, which the hand-over never writes into), and each file is `0440`,
+root's and of that group, so the server reads the pair and can change none of it. The script runs
+under `umask 077`, so a file is root's alone until its content is whole and only then opened to the
+group; each is staged in the same folder and renamed so the server never reads half a file. On a
+reload it then sends SIGHUP to `$MAINPID`; a copy that fails (a file missing) fails the reload and
+sends nothing, so the running server keeps its pair. `ExecStopPost=` runs it with `withdraw`, which
+removes the folder, so the key leaves `/run` with the server.
+`RESONATE_SERVER_CREDENTIALS_FROM`, `RESONATE_SERVER_RUNTIME_DIRECTORY` and
+`RESONATE_SERVER_CREDENTIALS_TO` move the three folders, which is how
+`the_hand_over_writes_a_folder_of_its_own_the_servers_group_reads_and_cannot_write`,
+`a_stopped_server_has_its_handed_over_pair_withdrawn` and
+`a_reload_hangs_up_on_the_server_only_once_the_pair_is_handed_over` run it as the test's own user
+(owner and group are then that user's; `the_hand_over_narrows_every_file_it_makes_before_writing_any`
+holds the umask and that nothing is given away from root).
 
 **After a renewal the operator runs `systemctl reload resonate-server`**, from the ACME client's
 deploy hook (certbot's `--deploy-hook 'systemctl reload resonate-server'`, or a script in

@@ -171,7 +171,7 @@ unit, its environment file and the two recipes that install them with the `reson
 dependency), set `RUSTFLAGS` as the player's recipes do, install the unit under systemd's unit
 directory and the environment file as `/etc/resonate-server/resonate-server.env`, kept across an
 upgrade (`backup=` / `%config(noreplace)`), install `hand-over-credentials.sh` as
-`/usr/lib/resonate-server/hand-over-credentials` (the unit runs it, `server.md`), and leave the
+`/usr/lib/resonate-server/hand-over-credentials` (the unit runs it as root to copy the pair into a root-owned `/run/resonate-server-credentials` the server's group reads, `server.md`), and leave the
 certificate and key to the listener. **An upgrade restarts a running server and an install starts
 none** in every format: the DEB's maintainer scripts (above), the spec's
 `%systemd_postun_with_restart` beside `%systemd_post`, and in both Arch recipes

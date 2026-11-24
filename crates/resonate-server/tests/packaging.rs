@@ -3,6 +3,7 @@ use std::{fs, path::PathBuf};
 const UNIT: &str = "server/resonate-server.service";
 const HAND_OVER: &str = "server/hand-over-credentials.sh";
 const INSTALLED_HAND_OVER: &str = "/usr/lib/resonate-server/hand-over-credentials";
+const HANDED_TO: &str = "/run/resonate-server-credentials";
 const ARCH_HOOK: &str = "server/resonate-server.hook";
 const ARCH_RECIPES: [&str; 2] = ["server/PKGBUILD", "release/server/PKGBUILD"];
 const SPEC: &str = "server/resonate-server.spec";
@@ -35,12 +36,17 @@ fn the_unit_hands_the_pair_over_before_it_starts_and_again_on_each_reload() {
     let starts = unit_value(&unit, "ExecStart");
     let before = unit_value(&unit, "ExecStartPre");
     let reloads = unit_value(&unit, "ExecReload");
+    let after = unit_value(&unit, "ExecStopPost");
 
     assert_eq!(unit_value(&unit, "RuntimeDirectory"), ["resonate-server"]);
-    assert_eq!(unit_value(&unit, "RuntimeDirectoryMode"), ["0700"]);
     assert!(
-        hand_over.contains(":-/run/resonate-server}"),
-        "the hand-over writes somewhere other than the unit's runtime directory"
+        hand_over.contains("runtime=${RESONATE_SERVER_RUNTIME_DIRECTORY:-/run/resonate-server}")
+    );
+    assert!(
+        hand_over.contains(&format!(
+            "to=${{RESONATE_SERVER_CREDENTIALS_TO:-{HANDED_TO}}}"
+        )),
+        "the hand-over writes somewhere the server does not read from"
     );
     assert!(
         unit_value(&unit, "LoadCredential").is_empty(),
@@ -49,9 +55,29 @@ fn the_unit_hands_the_pair_over_before_it_starts_and_again_on_each_reload() {
 
     assert_eq!(before, [format!("+{INSTALLED_HAND_OVER}")]);
     assert_eq!(reloads, [format!("+{INSTALLED_HAND_OVER} $MAINPID")]);
+    assert_eq!(after, [format!("+{INSTALLED_HAND_OVER} withdraw")]);
     assert_eq!(starts.len(), 1);
-    assert!(starts[0].contains("--certificate ${RUNTIME_DIRECTORY}/certificate"));
-    assert!(starts[0].contains("--key ${RUNTIME_DIRECTORY}/key"));
+    assert!(starts[0].contains(&format!("--certificate {HANDED_TO}/certificate")));
+    assert!(starts[0].contains(&format!("--key {HANDED_TO}/key")));
+    assert!(
+        !starts[0].contains("RUNTIME_DIRECTORY"),
+        "the server reads its pair from a folder it may write"
+    );
+}
+
+#[test]
+fn the_hand_over_narrows_every_file_it_makes_before_writing_any() {
+    let hand_over = packaging(HAND_OVER);
+
+    let narrowed = hand_over.find("umask 077").expect("a umask");
+    let first_write = hand_over.find("install ").expect("an install");
+
+    assert!(narrowed < first_write);
+    assert!(hand_over.contains("install -d -m 0750 -g \"$group\" \"$to\""));
+    assert!(
+        !hand_over.contains("-o "),
+        "the hand-over gives a file away from root"
+    );
 }
 
 #[test]
@@ -124,15 +150,22 @@ mod run {
             process::ExitStatusExt,
         },
         path::{Path, PathBuf},
-        process::{Command, Output, Stdio},
+        process::{Child, Command, Output, Stdio},
         time::{SystemTime, UNIX_EPOCH},
     };
 
     use super::{DEB_MAINTAINER_SCRIPTS, HAND_OVER, packaging_path};
 
-    const READ_BY_ITS_OWNER_ALONE: u32 = 0o400;
+    const READ_BY_OWNER_AND_GROUP: u32 = 0o440;
+    const ENTERED_BY_OWNER_AND_GROUP: u32 = 0o750;
     const PERMISSION_BITS: u32 = 0o7777;
     const HANGUP: i32 = 1;
+
+    struct Folders {
+        from: PathBuf,
+        runtime: PathBuf,
+        to: PathBuf,
+    }
 
     fn scratch(name: &str) -> PathBuf {
         let folder = env::temp_dir().join(format!(
@@ -147,81 +180,117 @@ mod run {
         folder
     }
 
-    fn handed_over(from: &Path, to: &Path, signalled: Option<u32>) -> Output {
+    fn laid_out(name: &str, chain: &str, key: &str) -> Folders {
+        let folder = scratch(name);
+        let folders = Folders {
+            from: folder.join("etc"),
+            runtime: folder.join("run"),
+            to: folder.join("credentials"),
+        };
+
+        fs::create_dir_all(&folders.from).expect("a source");
+        fs::create_dir_all(&folders.runtime).expect("a runtime directory");
+        renewed(&folders, chain, key);
+        folders
+    }
+
+    fn renewed(folders: &Folders, chain: &str, key: &str) {
+        fs::write(folders.from.join("fullchain.pem"), chain).expect("written");
+        fs::write(folders.from.join("privkey.pem"), key).expect("written");
+    }
+
+    fn handed_over(folders: &Folders, argument: Option<String>) -> Output {
         let mut command = Command::new("sh");
 
         command
             .arg(packaging_path(HAND_OVER))
-            .env("RESONATE_SERVER_CREDENTIALS_FROM", from)
-            .env("RESONATE_SERVER_CREDENTIALS_TO", to);
-        if let Some(pid) = signalled {
-            command.arg(pid.to_string());
-        }
+            .args(argument)
+            .env("RESONATE_SERVER_CREDENTIALS_FROM", &folders.from)
+            .env("RESONATE_SERVER_RUNTIME_DIRECTORY", &folders.runtime)
+            .env("RESONATE_SERVER_CREDENTIALS_TO", &folders.to);
         command.output().expect("the hand-over ran")
     }
 
-    fn own_uid(folder: &Path) -> u32 {
-        fs::metadata(folder).expect("the folder").uid()
+    fn a_stand_in_server() -> Child {
+        Command::new("sleep")
+            .arg("30")
+            .stdin(Stdio::null())
+            .spawn()
+            .expect("a stand-in server")
     }
 
     #[test]
-    fn the_hand_over_copies_the_pair_for_the_runtime_directorys_owner_alone() {
-        let folder = scratch("hand-over");
-        let from = folder.join("etc");
-        let to = folder.join("run");
+    fn the_hand_over_writes_a_folder_of_its_own_the_servers_group_reads_and_cannot_write() {
+        let folders = laid_out("hand-over", "first chain", "first key");
 
-        fs::create_dir_all(&from).expect("a source");
-        fs::create_dir_all(&to).expect("a runtime directory");
-        fs::write(from.join("fullchain.pem"), "first chain").expect("written");
-        fs::write(from.join("privkey.pem"), "first key").expect("written");
-
-        let output = handed_over(&from, &to, None);
+        let output = handed_over(&folders, None);
+        let runtime = fs::metadata(&folders.runtime).expect("the runtime directory");
+        let handed = fs::symlink_metadata(&folders.to).expect("the hand-over's folder");
+        let runner = fs::metadata(scratch("runner"))
+            .expect("a folder of the runner's")
+            .uid();
 
         assert!(output.status.success(), "{output:?}");
+        assert!(handed.is_dir());
+        assert_eq!(
+            handed.permissions().mode() & PERMISSION_BITS,
+            ENTERED_BY_OWNER_AND_GROUP
+        );
+        assert_eq!(handed.gid(), runtime.gid());
+        assert_eq!(handed.uid(), runner);
 
         for (copy, holds) in [("certificate", "first chain"), ("key", "first key")] {
-            let path = to.join(copy);
-            let metadata = fs::metadata(&path).expect("handed over");
+            let path = folders.to.join(copy);
+            let metadata = fs::symlink_metadata(&path).expect("handed over");
 
+            assert!(metadata.is_file());
             assert_eq!(fs::read_to_string(&path).expect("read"), holds);
             assert_eq!(
                 metadata.permissions().mode() & PERMISSION_BITS,
-                READ_BY_ITS_OWNER_ALONE
+                READ_BY_OWNER_AND_GROUP
             );
-            assert_eq!(metadata.uid(), own_uid(&to));
+            assert_eq!(metadata.gid(), runtime.gid());
+            assert_eq!(metadata.uid(), runner);
         }
 
         assert_eq!(
-            fs::read_dir(&to).expect("listed").count(),
+            fs::read_dir(&folders.to).expect("listed").count(),
             2,
             "the hand-over left a staged copy behind"
+        );
+        assert_eq!(
+            fs::read_dir(&folders.runtime).expect("listed").count(),
+            0,
+            "the hand-over wrote into the server's own folder"
         );
     }
 
     #[test]
+    fn a_stopped_server_has_its_handed_over_pair_withdrawn() {
+        let folders = laid_out("withdraw", "first chain", "first key");
+
+        let handed = handed_over(&folders, None);
+        let withdrawn = handed_over(&folders, Some("withdraw".to_owned()));
+
+        assert!(handed.status.success(), "{handed:?}");
+        assert!(withdrawn.status.success(), "{withdrawn:?}");
+        assert!(!folders.to.exists());
+    }
+
+    #[test]
     fn a_reload_hangs_up_on_the_server_only_once_the_pair_is_handed_over() {
-        let folder = scratch("hangup");
-        let from = folder.join("etc");
-        let to = folder.join("run");
+        let folders = laid_out("hangup", "first chain", "first key");
 
-        fs::create_dir_all(&from).expect("a source");
-        fs::create_dir_all(&to).expect("a runtime directory");
-        fs::write(from.join("fullchain.pem"), "first chain").expect("written");
-        fs::write(from.join("privkey.pem"), "first key").expect("written");
+        assert!(handed_over(&folders, None).status.success());
 
-        assert!(handed_over(&from, &to, None).status.success());
+        let mut kept = a_stand_in_server();
 
-        let mut kept = Command::new("sleep")
-            .arg("30")
-            .stdin(Stdio::null())
-            .spawn()
-            .expect("a stand-in server");
+        fs::remove_file(folders.from.join("fullchain.pem")).expect("the renewal lost");
 
-        fs::remove_file(from.join("fullchain.pem")).expect("the renewal lost");
-
-        let refused = handed_over(&from, &to, Some(kept.id()));
+        let refused = handed_over(&folders, Some(kept.id().to_string()));
         let kept_running = kept.try_wait().expect("asked").is_none();
-        let previous = fs::read_to_string(to.join("certificate")).expect("the earlier copy");
+        let previous =
+            fs::read_to_string(folders.to.join("certificate")).expect("the earlier copy");
 
         let _ = kept.kill();
         let _ = kept.wait();
@@ -230,26 +299,21 @@ mod run {
         assert!(kept_running, "a failed hand-over still hung up");
         assert_eq!(previous, "first chain");
 
-        fs::write(from.join("fullchain.pem"), "renewed chain").expect("written");
-        fs::write(from.join("privkey.pem"), "renewed key").expect("written");
+        renewed(&folders, "renewed chain", "renewed key");
 
-        let mut hung_up = Command::new("sleep")
-            .arg("30")
-            .stdin(Stdio::null())
-            .spawn()
-            .expect("a stand-in server");
+        let mut hung_up = a_stand_in_server();
 
-        let output = handed_over(&from, &to, Some(hung_up.id()));
+        let output = handed_over(&folders, Some(hung_up.id().to_string()));
         let ended = hung_up.wait().expect("it ended");
 
         assert!(output.status.success(), "{output:?}");
         assert_eq!(ended.signal(), Some(HANGUP));
         assert_eq!(
-            fs::read_to_string(to.join("certificate")).expect("read"),
+            fs::read_to_string(folders.to.join("certificate")).expect("read"),
             "renewed chain"
         );
         assert_eq!(
-            fs::read_to_string(to.join("key")).expect("read"),
+            fs::read_to_string(folders.to.join("key")).expect("read"),
             "renewed key"
         );
     }
