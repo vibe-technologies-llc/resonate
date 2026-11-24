@@ -981,6 +981,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     private fun syncWith(native: MobilePlayer, config: SyncConfig) {
         native.togetherServer(config.server)
+        if (SyncPairing.forgetsMusicbrainzRemoval(config)) native.syncForgetMusicbrainzRemoval()
         syncedBy(native, config) {
             if (config.enabled && (online.value || config.nearbyOnly))
                 native.syncStart(config.copy(device = config.device.ifBlank { deviceCalled() }))

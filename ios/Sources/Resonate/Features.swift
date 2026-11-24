@@ -897,8 +897,10 @@ final class Features {
         let enabled = syncRuns
         let server = config.server
         _ = try? await Work.aside { native.togetherServer(server: server) }
+        let forgets = config.forgetsMusicbrainzRemoval
         defer { if syncCodeStarting == config.key { syncCodeStarting = nil } }
         try await syncedBy(native) {
+            if forgets { native.syncForgetMusicbrainzRemoval() }
             guard enabled else {
                 native.syncStop()
                 return native.syncStatus()

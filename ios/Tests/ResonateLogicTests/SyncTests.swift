@@ -119,6 +119,19 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
         #expect(after == expected)
         #expect(after.afterMusicbrainzCopyRemoved() == after)
     }
+
+    @Test func aRemovalIsForgottenWhileTheSwitchIsOffWhateverSyncIsDoing() {
+        var off = config(enabled: false)
+        off.musicbrainzCopy = false
+        var offWhileSyncing = config(enabled: true)
+        offWhileSyncing.musicbrainzCopy = false
+        var on = config(enabled: false)
+        on.musicbrainzCopy = true
+
+        #expect(off.forgetsMusicbrainzRemoval)
+        #expect(offWhileSyncing.forgetsMusicbrainzRemoval)
+        #expect(!on.forgetsMusicbrainzRemoval)
+    }
 }
 
 @Suite struct FetchingHeadingTests {

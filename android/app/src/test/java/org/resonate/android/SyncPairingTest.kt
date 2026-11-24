@@ -48,6 +48,13 @@ class SyncPairingTest {
     }
 
     @Test
+    fun aRemovalIsForgottenWhileTheSwitchIsOffWhateverSyncIsDoing() {
+        assertTrue(SyncPairing.forgetsMusicbrainzRemoval(kept.copy(enabled = false, musicbrainzCopy = false)))
+        assertTrue(SyncPairing.forgetsMusicbrainzRemoval(kept.copy(enabled = true, musicbrainzCopy = false)))
+        assertFalse(SyncPairing.forgetsMusicbrainzRemoval(kept.copy(enabled = false, musicbrainzCopy = true)))
+    }
+
+    @Test
     fun onlyAStartedSyncRuns() {
         assertFalse(SyncStanding.OFF.runs)
         assertFalse(SyncStanding.FAILED.runs)

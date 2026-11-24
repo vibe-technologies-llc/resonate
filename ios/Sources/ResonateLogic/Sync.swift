@@ -158,6 +158,8 @@ extension SyncConfig {
         next.musicbrainzCopy = false
         return next
     }
+
+    public var forgetsMusicbrainzRemoval: Bool { !musicbrainzCopy }
 }
 
 public enum SyncRoute: Hashable {

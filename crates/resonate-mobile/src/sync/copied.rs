@@ -1106,8 +1106,7 @@ mod tests {
         assert!(!kept_here.join(COPY_RECEIVED).exists());
         assert!(!mirror_in(&kept_here).exists());
 
-        copied.keep(false, player.copy_reaching());
-        copied.forget_removal();
+        player.sync_forget_musicbrainz_removal();
         copied.keep(true, player.copy_reaching());
 
         eventually("the copy fetched again once turned back on", || {
@@ -1159,6 +1158,25 @@ mod tests {
         assert!(kept_on);
         assert!(!kept_here.join(REMOVED_BY_THE_LISTENER).exists());
         assert!(!player.syncing.copied.was_removed());
+    }
+
+    #[test]
+    fn a_removal_forgotten_with_sync_never_started_lets_the_copy_be_kept_again() {
+        let harness = Harness::new();
+        let player = &harness.player;
+        let kept_here = harness.folder.join("musicbrainz");
+
+        player.remove_musicbrainz_copy().expect("the copy removed");
+
+        let remembered = kept_here.join(REMOVED_BY_THE_LISTENER).exists();
+
+        player.sync_forget_musicbrainz_removal();
+        player.sync_forget_musicbrainz_removal();
+
+        assert!(remembered);
+        assert!(!kept_here.join(REMOVED_BY_THE_LISTENER).exists());
+        assert!(!player.syncing.copied.was_removed());
+        assert!(!Copied::under(kept_here).was_removed());
     }
 
     #[test]

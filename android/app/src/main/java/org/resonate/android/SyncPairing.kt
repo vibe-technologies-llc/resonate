@@ -22,6 +22,8 @@ object SyncPairing {
 
     fun afterMusicbrainzCopyRemoved(config: SyncConfig): SyncConfig =
         config.copy(musicbrainzCopy = false)
+
+    fun forgetsMusicbrainzRemoval(config: SyncConfig): Boolean = !config.musicbrainzCopy
 }
 
 val SyncStanding.runs: Boolean

@@ -367,6 +367,10 @@ impl MobilePlayer {
         self.syncing.copied.remove()
     }
 
+    pub fn sync_forget_musicbrainz_removal(&self) {
+        self.syncing.copied.forget_removal();
+    }
+
     pub fn sync_stop(&self) {
         self.syncing.copied.keep(false, self.copy_reaching());
 
