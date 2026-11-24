@@ -85,7 +85,7 @@ objc2-core-audio-types = {
 }
 
 thiserror = { version = "2.0.21", default-features = false, features = ["std"] }
-ahash = { version = "0.8.12", default-features = false, features = ["std", "runtime-rng"] }
+ahash = { version = "0.8.13", default-features = false, features = ["std", "runtime-rng"] }
 imbl = { version = "7.0.2", default-features = false }
 qrcode = { version = "0.15.0", default-features = false }
 parking_lot = { version = "0.13.0", default-features = false }
@@ -119,7 +119,7 @@ icu_datetime = { version = "2.4.0", default-features = false, features = ["compi
 icu_calendar = { version = "2.4.0", default-features = false }
 icu_locale_core = { version = "2.4.0", default-features = false }
 jiff = {
-    version = "1.0.2",
+    version = "1.0.3",
     default-features = false,
     features = ["std", "tz-system", "tzdb-zoneinfo"]
 }
@@ -200,7 +200,7 @@ toml_edit = { version = "0.25.20", default-features = false, features = ["parse"
 
 md-5 = { version = "0.11.0", default-features = false }
 sha2 = { version = "0.11.1", default-features = false }
-crc32fast = { version = "1.5.5", default-features = false, features = ["std"] }
+crc32fast = { version = "1.5.6", default-features = false, features = ["std"] }
 base64 = { version = "0.23.1", default-features = false, features = ["alloc"] }
 roxmltree = { version = "0.21.2", default-features = false, features = ["std"] }
 ureq = { version = "3.5.2", default-features = false, features = ["rustls", "gzip"] }
