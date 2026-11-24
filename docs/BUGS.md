@@ -37,20 +37,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   the shared watch result and show that state in the controls. Done when
   traffic stops, the display expires and disables commands, and a fresh mirror
   restores the controls.
-- [S · 0.17.1] Prefer usable LAN addresses before capping advertisements.
-  **Low, builder.** Numeric order can keep several bridge addresses while dropping
-  the actual LAN address from a beacon or WebSocket punch
-  (`crates/resonate-sync/src/nearby.rs:185`, `:202`,
-  `crates/resonate-sync/src/service.rs:1318`, `:2887`). Use the system's route and
-  interface information to rank addresses before the cap. Done when a LAN address
-  remains advertised alongside several virtual interfaces.
-- [M · 0.17.1] Refresh nearby multicast memberships when interfaces change.
-  **Low, builder.** The IPv6 beacon listener joins only the interfaces present when
-  sync starts, so a device can miss multicast discovery after Wi-Fi comes up if
-  Bonjour is unavailable (`crates/resonate-sync/src/nearby.rs:99`, `:116`,
-  `crates/resonate-sync/src/service.rs:770`). Update memberships as usable interfaces
-  change. Done when an interface appearing after launch can receive beacons without
-  restarting sync.
 - [M · 0.17.1] Reconcile app-private received files after an interrupted landing.
   **Low, architect.** A receive can rename bytes into the holding folder before
   an error leaves them untracked. Cleanup can also delete the catalog row

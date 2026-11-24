@@ -1520,7 +1520,14 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   `RSN1` ones, and it advertises the `RSN1` record a build with `RSN3` refuses, so the two meet
   through the server alone. A beacon names the QUIC port and the addresses `beacon_addresses_here` reads off the interfaces that
   are up, not loopback, not point to point: at most `ADDRESSES_BEACONED_AT_MOST` (6) IPv4 and
-  `IPV6_ADDRESSES_BEACONED_AT_MOST` (2) of the global or unique local IPv6 ones, which together still
+  `IPV6_ADDRESSES_BEACONED_AT_MOST` (2) of the global or unique local IPv6 ones, **ranked before the
+  cap** (`ranked_addresses`, over `LocalAddress`es): the interfaces holding the default route first
+  (found by connecting a UDP socket towards a public address, which sends nothing and reveals the
+  source address the kernel would use), then those not named like a bridge, tunnel or virtual
+  machine's (`is_virtual_interface`: `docker`, `br-`, `virbr`, `veth`, `tun`, `tap`, `wg`, `zt`,
+  `vmnet`, `vboxnet` and the like), then numeric order, so a LAN address is kept beside any number of
+  virtual ones (`a_lan_address_survives_the_cap_beside_six_virtual_interfaces`). A punch's
+  candidates read the same ranking (`addresses_here`, `global_addresses_here`), which together still
   fit one Bonjour text string even when distinct
   (`the_fullest_record_of_distinct_addresses_still_fits_one_bonjour_text_string`). A link local
   address is never named: it means nothing without the interface, which the datagram it came in
@@ -1528,10 +1535,14 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
 - **Broadcast** (`Broadcast`): sent at start and every `BEACON_EVERY` (15 s, jittered) to
   `NEARBY_GROUP` (239.255.41.73, one hop), the broadcast address and, over IPv6, `NEARBY_GROUP_V6`
   (`ff02::7273:a306`, link local scope), port `NEARBY_PORT` (41734). **IPv6 has a socket of its
-  own** (`bound_v6`: `IPV6_V6ONLY`, the IPv4 socket's port where free, joined to the group on every
-  interface holding an IPv6 address; none where the host has no IPv6, and IPv4 carries on alone), and
-  a group is told once per such interface with its index as the scope (`told_over_ipv6`), so a network
-  handing out IPv6 alone is found. A beacon heard over IPv6 is dialled where it came from with its
+  own** (`bound_v6`: `IPV6_V6ONLY`, the IPv4 socket's port where free; none where the host has no
+  IPv6, and IPv4 carries on alone), **joined to the group on every interface holding an IPv6 address
+  and followed as they change**: at each beacon tick `Memberships::follow` compares the interfaces
+  up now with the memberships held (`membership_changes`), joins the new ones and leaves the gone
+  ones (a failed leave is ignored, a failed join tried again at the next tick), so Wi-Fi coming up
+  after launch is heard without restarting sync (`an_interface_appearing_is_joined_and_one_gone_is_left`).
+  The IPv4 group is joined once, on the interface the kernel chooses. A group is told once per such
+  interface with its index as the scope (`told_over_ipv6`), so a network handing out IPv6 alone is found. A beacon heard over IPv6 is dialled where it came from with its
   scope kept, which is how a link local peer is reached, and an IPv6 candidate is dropped where the
   peer endpoint took IPv4 alone. Where the port is taken the socket binds anywhere: it still sends,
   and hears answers; an answer goes out of the socket of the family it was heard on

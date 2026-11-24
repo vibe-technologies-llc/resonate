@@ -1,4 +1,6 @@
 use std::{
+    cmp::Reverse,
+    collections::BTreeSet,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV6, UdpSocket},
     time::Duration,
 };
@@ -31,6 +33,26 @@ const RECORD_MAGIC: &[u8; 4] = b"RSN3";
 const DATAGRAM_MAGIC: &[u8; 4] = b"RSN2";
 const ONE_HOP: u32 = 1;
 const INSTANCE_BYTES: usize = 8;
+const ROUTE_PROBE_V4: IpAddr = IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1));
+const ROUTE_PROBE_V6: IpAddr =
+    IpAddr::V6(Ipv6Addr::new(0x2606, 0x4700, 0x4700, 0, 0, 0, 0, 0x1111));
+const VIRTUAL_INTERFACE_PREFIXES: [&str; 15] = [
+    "docker",
+    "br-",
+    "virbr",
+    "veth",
+    "vethernet",
+    "tun",
+    "utun",
+    "tap",
+    "wg",
+    "zt",
+    "vmnet",
+    "vboxnet",
+    "lxc",
+    "cni",
+    "flannel",
+];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Nearby {
@@ -96,7 +118,7 @@ pub fn bound(broadcast: &Broadcast) -> Result<UdpSocket> {
     Ok(socket)
 }
 
-pub fn bound_v6(broadcast: &Broadcast, shared_port: u16) -> Option<UdpSocket> {
+pub fn bound_v6(shared_port: u16) -> Option<UdpSocket> {
     let anywhere = |port| SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port);
     let bound_on = |port| {
         let socket = Socket::new(Domain::IPV6, Type::DGRAM, Some(Protocol::UDP))?;
@@ -106,30 +128,87 @@ pub fn bound_v6(broadcast: &Broadcast, shared_port: u16) -> Option<UdpSocket> {
         socket.set_nonblocking(true)?;
         Ok::<_, std::io::Error>(UdpSocket::from(socket))
     };
-    let socket = bound_on(shared_port)
+
+    bound_on(shared_port)
         .or_else(|error| {
             tracing::debug!(%error, port = shared_port, "the beacon port is taken over IPv6; answers alone will find this device");
             bound_on(0)
         })
         .inspect_err(|error| tracing::debug!(%error, "beacons cannot be heard over IPv6"))
-        .ok()?;
-    let interfaces = ipv6_interfaces_here();
+        .ok()
+}
 
-    for told in &broadcast.told {
-        let IpAddr::V6(group) = told.ip() else {
-            continue;
-        };
+pub type Membership = (Ipv6Addr, u32);
 
-        if !group.is_multicast() {
-            continue;
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct MembershipChanges {
+    pub join: Vec<Membership>,
+    pub leave: Vec<Membership>,
+}
+
+pub fn membership_changes(
+    joined: &BTreeSet<Membership>,
+    wanted: &BTreeSet<Membership>,
+) -> MembershipChanges {
+    MembershipChanges {
+        join: wanted.difference(joined).copied().collect(),
+        leave: joined.difference(wanted).copied().collect(),
+    }
+}
+
+pub fn memberships_wanted(groups: &[Ipv6Addr], interfaces: &[u32]) -> BTreeSet<Membership> {
+    groups
+        .iter()
+        .flat_map(|group| interfaces.iter().map(|interface| (*group, *interface)))
+        .collect()
+}
+
+#[derive(Debug)]
+pub struct Memberships {
+    groups: Vec<Ipv6Addr>,
+    joined: BTreeSet<Membership>,
+}
+
+impl Memberships {
+    pub fn of(told: &[SocketAddr]) -> Self {
+        let groups = told
+            .iter()
+            .filter_map(|told| match told.ip() {
+                IpAddr::V6(group) if group.is_multicast() => Some(group),
+                _ => None,
+            })
+            .collect();
+
+        Self {
+            groups,
+            joined: BTreeSet::new(),
         }
-        for interface in &interfaces {
-            if let Err(error) = socket.join_multicast_v6(&group, *interface) {
-                tracing::debug!(%error, %group, interface, "the beacon group could not be joined over IPv6");
+    }
+
+    pub fn follow(&mut self, socket: &tokio::net::UdpSocket) {
+        if self.groups.is_empty() {
+            return;
+        }
+
+        let wanted = memberships_wanted(&self.groups, &ipv6_interfaces_here());
+        let changes = membership_changes(&self.joined, &wanted);
+
+        for (group, interface) in changes.leave {
+            let _ = socket.leave_multicast_v6(&group, interface);
+
+            self.joined.remove(&(group, interface));
+        }
+        for (group, interface) in changes.join {
+            match socket.join_multicast_v6(&group, interface) {
+                Ok(()) => {
+                    self.joined.insert((group, interface));
+                }
+                Err(error) => {
+                    tracing::debug!(%error, %group, interface, "the beacon group could not be joined over IPv6");
+                }
             }
         }
     }
-    Some(socket)
 }
 
 pub fn ipv6_interfaces_here() -> Vec<u32> {
@@ -182,7 +261,57 @@ pub fn beacon_addresses_here() -> Vec<IpAddr> {
     addresses
 }
 
-pub fn addresses_here() -> Vec<IpAddr> {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LocalAddress {
+    pub interface: String,
+    pub address: IpAddr,
+    pub default_route: bool,
+}
+
+pub fn is_virtual_interface(name: &str) -> bool {
+    let name = name.to_lowercase();
+
+    VIRTUAL_INTERFACE_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+pub fn ranked_addresses(candidates: &[LocalAddress]) -> Vec<IpAddr> {
+    let mut ranked = candidates.iter().collect::<Vec<_>>();
+
+    ranked.sort_by_key(|candidate| {
+        (
+            Reverse(candidate.default_route),
+            is_virtual_interface(&candidate.interface),
+            candidate.address,
+        )
+    });
+
+    let mut seen = BTreeSet::new();
+
+    ranked
+        .into_iter()
+        .map(|candidate| candidate.address)
+        .filter(|address| seen.insert(*address))
+        .collect()
+}
+
+fn source_towards(target: IpAddr) -> Option<IpAddr> {
+    let unspecified = match target {
+        IpAddr::V4(_) => IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+        IpAddr::V6(_) => IpAddr::V6(Ipv6Addr::UNSPECIFIED),
+    };
+    let probe = UdpSocket::bind(SocketAddr::new(unspecified, 0)).ok()?;
+
+    probe.connect(SocketAddr::new(target, NEARBY_PORT)).ok()?;
+    probe
+        .local_addr()
+        .ok()
+        .map(|local| local.ip())
+        .filter(|address| !address.is_unspecified() && !address.is_loopback())
+}
+
+fn local_addresses() -> Vec<LocalAddress> {
     let interfaces = match if_addrs::get_if_addrs() {
         Ok(interfaces) => interfaces,
         Err(error) => {
@@ -190,40 +319,51 @@ pub fn addresses_here() -> Vec<IpAddr> {
             return Vec::new();
         }
     };
-    let mut addresses = interfaces
+    let usable = interfaces
         .into_iter()
         .filter(|interface| {
             interface.is_oper_up() && !interface.is_loopback() && !interface.is_p2p()
         })
-        .map(|interface| interface.ip())
-        .filter(IpAddr::is_ipv4)
+        .collect::<Vec<_>>();
+    let routed = [ROUTE_PROBE_V4, ROUTE_PROBE_V6]
+        .into_iter()
+        .filter_map(source_towards)
         .collect::<Vec<_>>();
 
-    addresses.sort();
-    addresses.dedup();
+    let default_interfaces = usable
+        .iter()
+        .filter(|interface| routed.contains(&interface.ip()))
+        .map(|interface| interface.name.clone())
+        .collect::<BTreeSet<_>>();
+
+    usable
+        .into_iter()
+        .map(|interface| LocalAddress {
+            default_route: default_interfaces.contains(&interface.name),
+            address: interface.ip(),
+            interface: interface.name,
+        })
+        .collect()
+}
+
+pub fn addresses_here() -> Vec<IpAddr> {
+    let candidates = local_addresses()
+        .into_iter()
+        .filter(|candidate| candidate.address.is_ipv4())
+        .collect::<Vec<_>>();
+    let mut addresses = ranked_addresses(&candidates);
+
     addresses.truncate(ADDRESSES_BEACONED_AT_MOST);
     addresses
 }
 
 pub fn global_addresses_here() -> Vec<IpAddr> {
-    let interfaces = match if_addrs::get_if_addrs() {
-        Ok(interfaces) => interfaces,
-        Err(error) => {
-            tracing::debug!(%error, "this device's addresses could not be read");
-            return Vec::new();
-        }
-    };
-    let mut addresses = interfaces
+    let candidates = local_addresses()
         .into_iter()
-        .filter(|interface| {
-            interface.is_oper_up() && !interface.is_loopback() && !interface.is_p2p()
-        })
-        .map(|interface| interface.ip())
-        .filter(is_reachable_over_ipv6)
+        .filter(|candidate| is_reachable_over_ipv6(&candidate.address))
         .collect::<Vec<_>>();
+    let mut addresses = ranked_addresses(&candidates);
 
-    addresses.sort();
-    addresses.dedup();
     addresses.truncate(GLOBAL_ADDRESSES_OFFERED_AT_MOST);
     addresses
 }
@@ -662,12 +802,7 @@ mod tests {
 
     #[test]
     fn a_beacon_sent_to_the_ipv6_loopback_is_heard_and_opens_under_its_code() {
-        let broadcast = Broadcast {
-            port: 0,
-            told: Vec::new(),
-        };
-        let (Some(sender), Some(listener)) = (bound_v6(&broadcast, 0), bound_v6(&broadcast, 0))
-        else {
+        let (Some(sender), Some(listener)) = (bound_v6(0), bound_v6(0)) else {
             return;
         };
         let here = SyncKey::minted()
@@ -739,5 +874,130 @@ mod tests {
         assert!(!reachable("::"));
         assert!(!reachable("ff02::1"));
         assert!(!reachable("192.168.1.4"));
+    }
+
+    fn local(interface: &str, address: [u8; 4], default_route: bool) -> LocalAddress {
+        LocalAddress {
+            interface: interface.into(),
+            address: IpAddr::V4(Ipv4Addr::from(address)),
+            default_route,
+        }
+    }
+
+    #[test]
+    fn a_lan_address_survives_the_cap_beside_six_virtual_interfaces() {
+        let candidates = vec![
+            local("docker0", [10, 0, 0, 1], false),
+            local("virbr0", [10, 0, 1, 1], false),
+            local("br-1a2b3c", [10, 0, 2, 1], false),
+            local("tun0", [10, 8, 0, 2], false),
+            local("wg0", [10, 9, 0, 2], false),
+            local("zt0", [10, 10, 0, 2], false),
+            local("wlan0", [192, 168, 1, 20], false),
+        ];
+        let mut ranked = ranked_addresses(&candidates);
+
+        ranked.truncate(ADDRESSES_BEACONED_AT_MOST);
+
+        assert!(ranked.contains(&IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20))));
+        assert_eq!(ranked[0], IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)));
+    }
+
+    #[test]
+    fn the_default_route_address_is_first_and_a_physical_one_beats_a_virtual_one() {
+        let candidates = vec![
+            local("docker0", [10, 0, 0, 1], false),
+            local("eth1", [172, 20, 0, 5], false),
+            local("eth0", [192, 168, 1, 20], true),
+            local("vmnet8", [10, 1, 0, 1], false),
+            local("eth2", [172, 16, 0, 5], false),
+        ];
+
+        assert_eq!(
+            ranked_addresses(&candidates),
+            vec![
+                IpAddr::V4(Ipv4Addr::new(192, 168, 1, 20)),
+                IpAddr::V4(Ipv4Addr::new(172, 16, 0, 5)),
+                IpAddr::V4(Ipv4Addr::new(172, 20, 0, 5)),
+                IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1)),
+                IpAddr::V4(Ipv4Addr::new(10, 1, 0, 1)),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_address_on_two_interfaces_is_ranked_once() {
+        let candidates = vec![
+            local("docker0", [10, 0, 0, 1], false),
+            local("eth0", [10, 0, 0, 1], false),
+        ];
+
+        assert_eq!(ranked_addresses(&candidates).len(), 1);
+    }
+
+    #[test]
+    fn virtual_interfaces_are_told_by_their_names_whatever_the_case() {
+        for name in [
+            "docker0",
+            "br-abc",
+            "virbr0",
+            "veth12",
+            "tun0",
+            "utun3",
+            "tap0",
+            "wg0",
+            "zt5",
+            "vmnet1",
+            "vboxnet0",
+            "vEthernet (WSL)",
+        ] {
+            assert!(is_virtual_interface(name), "{name}");
+        }
+        for name in [
+            "eth0", "wlan0", "enp3s0", "wlp2s0", "en0", "Ethernet", "Wi-Fi",
+        ] {
+            assert!(!is_virtual_interface(name), "{name}");
+        }
+    }
+
+    #[test]
+    fn an_interface_appearing_is_joined_and_one_gone_is_left() {
+        let group = NEARBY_GROUP_V6;
+        let joined = memberships_wanted(&[group], &[2, 3]);
+        let wanted = memberships_wanted(&[group], &[3, 7]);
+
+        assert_eq!(
+            membership_changes(&joined, &wanted),
+            MembershipChanges {
+                join: vec![(group, 7)],
+                leave: vec![(group, 2)],
+            }
+        );
+        assert_eq!(
+            membership_changes(&wanted, &wanted),
+            MembershipChanges {
+                join: Vec::new(),
+                leave: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn every_group_is_wanted_on_every_interface() {
+        let other = Ipv6Addr::new(0xff02, 0, 0, 0, 0, 0, 0, 1);
+        let wanted = memberships_wanted(&[NEARBY_GROUP_V6, other], &[4, 9]);
+
+        assert_eq!(wanted.len(), 4);
+        assert!(wanted.contains(&(other, 9)));
+    }
+
+    #[test]
+    fn only_the_multicast_ipv6_groups_a_broadcast_tells_are_followed() {
+        let told = Nearby::on_the_network()
+            .broadcast
+            .expect("a broadcast")
+            .told;
+
+        assert_eq!(Memberships::of(&told).groups, vec![NEARBY_GROUP_V6]);
     }
 }

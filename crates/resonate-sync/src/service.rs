@@ -47,9 +47,9 @@ use crate::{
     merge::one_recording_a_song,
     nearby::{
         BEACON_EVERY, BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST, Bonjour, Found, LARGEST_BEACON,
-        Nearby, RECORD_RESEALED_EVERY, addresses_here, beacon_addresses_here, beacon_recorded,
-        bound, bound_v6, datagram_of, global_addresses_here, heard_in, record_of, record_resolved,
-        told_over_ipv6,
+        Memberships, Nearby, RECORD_RESEALED_EVERY, addresses_here, beacon_addresses_here,
+        beacon_recorded, bound, bound_v6, datagram_of, global_addresses_here, heard_in, record_of,
+        record_resolved, told_over_ipv6,
     },
     peer::{
         Answering, ExportStaged, Heard, blocking, consult, control, covers_from, dialled,
@@ -866,6 +866,7 @@ struct Syncing {
     strangers_answered: BTreeMap<DeviceId, Instant>,
     punches_heard: HeardOnce,
     beacons_heard: HeardOnce,
+    memberships: Memberships,
     records_resolved: HeardOnce,
     unsent: Unsent,
     followed: BTreeMap<DeviceId, Instant>,
@@ -925,9 +926,10 @@ impl Sync {
             .as_ref()
             .and_then(|socket| socket.local_addr().ok())
             .map(|local| local.port());
+
         let beacon_socket_v6 = broadcast
             .zip(nearby_port)
-            .and_then(|(broadcast, port)| bound_v6(broadcast, port));
+            .and_then(|(_, port)| bound_v6(port));
 
         let (endpoint, reflector, beacons, beacons_v6) = {
             let _entered = runtime.enter();
@@ -2042,6 +2044,7 @@ impl Syncing {
         let now = Instant::now();
         let retry_at = running.server.as_ref().map(|_| now);
         let discovery = Discovery::new(running.stun.as_deref(), Arc::clone(&running.resolver));
+        let memberships = Memberships::of(&running.told);
 
         Self {
             running,
@@ -2060,6 +2063,7 @@ impl Syncing {
             strangers_answered: BTreeMap::new(),
             punches_heard: HeardOnce::new(PUNCH_SEALED_WITHIN, PUNCHES_HEARD_AT_MOST),
             beacons_heard: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
+            memberships,
             records_resolved: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
             unsent: Unsent::default(),
             followed: BTreeMap::new(),
@@ -3314,6 +3318,10 @@ impl Syncing {
     async fn beacon(&mut self) {
         if !self.running.transfers_allowed() || self.running.told.is_empty() {
             return;
+        }
+
+        if let Some(socket) = self.running.beacons_v6.as_ref() {
+            self.memberships.follow(socket);
         }
 
         let Some(beacon) = self.running.beacon(false) else {
