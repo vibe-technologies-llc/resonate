@@ -1,6 +1,6 @@
 use std::{
     collections::HashMap,
-    path::Path,
+    path::{Path, PathBuf},
     sync::{
         Arc,
         atomic::{AtomicU64, Ordering},
@@ -13,8 +13,8 @@ use resonate_core::{Span, ZoneId, titles::Rating};
 use resonate_library::{ExploreStore, NamedByTheFile};
 use resonate_providers::{Id, Song};
 use rusqlite::{
-    CachedStatement, Connection, OptionalExtension, TransactionBehavior, functions::FunctionFlags,
-    hooks::Action, params,
+    CachedStatement, Connection, OpenFlags, OptionalExtension, TransactionBehavior,
+    functions::FunctionFlags, hooks::Action, params,
 };
 
 use crate::{
@@ -809,6 +809,25 @@ impl Catalog {
 
     pub(crate) fn revision(&self) -> u64 {
         self.1.load(Ordering::Acquire)
+    }
+
+    pub(crate) fn reader_of_its_own(&self) -> rusqlite::Result<Option<Connection>> {
+        let Some(path) = self
+            .0
+            .lock()
+            .path()
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+        else {
+            return Ok(None);
+        };
+        let reader = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+
+        reader.busy_timeout(Duration::from_secs(5))?;
+        Ok(Some(reader))
     }
 
     pub(crate) fn carries_queues_over(&self) -> Result<bool> {

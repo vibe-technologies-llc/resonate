@@ -961,7 +961,14 @@ and brought in*) over the document catalog, so the JSON-lines writer (`line_of`)
 `resonate-online`'s `ListenBrainzHistory` and `LastfmHistory` are the desktop's. `history_from`
 reads the counted listens of documents (`HistoryFrom::Held`, a document's `Track` read as the
 scrobbler bills it) and then those of songs played in place (`HistoryFrom::Unheld`, the served
-URI as the location); a pass (`counted = 0`) is not a listen and is not written.
+URI as the location); a pass (`counted = 0`) is not a listen and is not written. **An export
+reads one snapshot without holding the catalog**: `history_pages` opens a read-only connection of
+its own on the catalog's file (`Catalog::reader_of_its_own`, the lock taken only to read the path)
+and begins a read transaction on it, so every page (`PinnedListens`) is read from the WAL snapshot
+the export began on while the player's one connection stays free to count, forget and play; a
+listen counted or forgotten between pages is neither written nor missed
+(`an_export_reads_one_snapshot_whatever_is_counted_or_forgotten_between_its_pages_and_leaves_the_catalog_free`).
+A catalog in memory (the tests') has no file to open a second connection on and answers `Unpinned`.
 `bring_in` resolves each recording strictly as a synced listen is (`SongsHeld`, the index
 `resolved_in` reads), and lands a song held as a counted `elsewhere` listen with the service's name
 as `origin_device` and the unix second as `origin_id`, `held_already` where the document has a

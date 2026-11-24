@@ -6,9 +6,9 @@ use std::{
 
 use resonate_core::seconds_since_the_epoch;
 use resonate_library::{
-    BroughtIn, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryRead, KeptListens,
-    ListeningService, LookupOp, SAME_LISTEN_WITHIN, Scrobbler, StoreOp, TokenHeld,
-    bring_in_history, bring_in_lines, history_lines,
+    BroughtIn, HeardElsewhere, HeardOnce, History, HistoryFrom, HistoryPages, HistoryRead,
+    KeptListens, ListeningService, LookupOp, SAME_LISTEN_WITHIN, Scrobbler, StoreOp, TokenHeld,
+    Unpinned, bring_in_history, bring_in_lines, history_lines,
 };
 use resonate_online::{Application, LastFm, LastfmHistory, ListenBrainz, ListenBrainzHistory};
 use rusqlite::{Connection, OptionalExtension as _, Transaction, params};
@@ -34,6 +34,8 @@ const THE_SERVED_AFTER: &str = "SELECT id, began, heard_ms, elsewhere, served FR
   WHERE id > ?1 AND counted = 1 AND track IS NULL AND served IS NOT NULL
   ORDER BY id
   LIMIT ?2";
+
+const A_SNAPSHOT_BEGUN: &str = "BEGIN; SELECT count(*) FROM sqlite_master";
 
 const THE_DOCUMENT_LENGTH: &str = "SELECT duration_ms FROM documents WHERE id = ?1";
 
@@ -184,27 +186,20 @@ impl KeptListens for PhoneListens<'_> {
         from: HistoryFrom,
         most: usize,
     ) -> resonate_library::Result<HistoryRead> {
-        let most = i64::try_from(most.max(1)).unwrap_or(i64::MAX);
-        let connection = self.0.0.lock();
+        history_page(&self.0.0.lock(), from, most)
+    }
 
-        let rows = match from {
-            HistoryFrom::Held(after) => held_after(&connection, after, most),
-            HistoryFrom::Unheld(after) => served_after(&connection, after, most),
-        }
-        .map_err(|source| resonate_library::Error::store(StoreOp::Query, source))?;
+    fn history_pages(&self) -> resonate_library::Result<Box<dyn HistoryPages + '_>> {
+        let store = |op| move |source| resonate_library::Error::store(op, source);
 
-        let full = rows.len() == usize::try_from(most).unwrap_or(usize::MAX);
-        let last = rows.last().map(|(id, _)| (*id).max(0).cast_unsigned());
-        let next = match (from, last, full) {
-            (HistoryFrom::Held(_), Some(last), true) => Some(HistoryFrom::Held(last)),
-            (HistoryFrom::Held(_), _, false) => Some(HistoryFrom::Unheld(0)),
-            (HistoryFrom::Unheld(_), Some(last), true) => Some(HistoryFrom::Unheld(last)),
-            (HistoryFrom::Held(_) | HistoryFrom::Unheld(_), _, _) => None,
+        let Some(reader) = self.0.reader_of_its_own().map_err(store(StoreOp::Open))? else {
+            return Ok(Box::new(Unpinned(self)));
         };
-        Ok(HistoryRead {
-            heard: rows.into_iter().map(|(_, heard)| heard).collect(),
-            next,
-        })
+
+        reader
+            .execute_batch(A_SNAPSHOT_BEGUN)
+            .map_err(store(StoreOp::Transaction))?;
+        Ok(Box::new(PinnedListens(reader)))
     }
 
     fn bring_in(
@@ -230,6 +225,41 @@ impl KeptListens for PhoneListens<'_> {
         transaction.commit().map_err(store(StoreOp::Update))?;
         Ok(brought)
     }
+}
+
+struct PinnedListens(Connection);
+
+impl HistoryPages for PinnedListens {
+    fn page(&mut self, from: HistoryFrom, most: usize) -> resonate_library::Result<HistoryRead> {
+        history_page(&self.0, from, most)
+    }
+}
+
+fn history_page(
+    connection: &Connection,
+    from: HistoryFrom,
+    most: usize,
+) -> resonate_library::Result<HistoryRead> {
+    let most = i64::try_from(most.max(1)).unwrap_or(i64::MAX);
+
+    let rows = match from {
+        HistoryFrom::Held(after) => held_after(connection, after, most),
+        HistoryFrom::Unheld(after) => served_after(connection, after, most),
+    }
+    .map_err(|source| resonate_library::Error::store(StoreOp::Query, source))?;
+
+    let full = rows.len() == usize::try_from(most).unwrap_or(usize::MAX);
+    let last = rows.last().map(|(id, _)| (*id).max(0).cast_unsigned());
+    let next = match (from, last, full) {
+        (HistoryFrom::Held(_), Some(last), true) => Some(HistoryFrom::Held(last)),
+        (HistoryFrom::Held(_), _, false) => Some(HistoryFrom::Unheld(0)),
+        (HistoryFrom::Unheld(_), Some(last), true) => Some(HistoryFrom::Unheld(last)),
+        (HistoryFrom::Held(_) | HistoryFrom::Unheld(_), _, _) => None,
+    };
+    Ok(HistoryRead {
+        heard: rows.into_iter().map(|(_, heard)| heard).collect(),
+        next,
+    })
 }
 
 fn held_after(
@@ -491,6 +521,105 @@ pub(crate) mod tests {
                 (Some(held_echoes), MOMENTS[2], 240_000, true, true),
             ]
         );
+    }
+
+    fn every_listen_read_by_pages_of_one(
+        pages: &mut dyn HistoryPages,
+        between: &mut dyn FnMut(),
+    ) -> Vec<(SystemTime, String)> {
+        let mut read = Vec::new();
+        let mut from = Some(HistoryFrom::START);
+
+        while let Some(at) = from {
+            let page = pages.page(at, 1).expect("a page reads");
+
+            read.extend(
+                page.heard
+                    .into_iter()
+                    .map(|heard| (heard.began, heard.location)),
+            );
+            from = page.next;
+            between();
+        }
+        read.sort();
+        read
+    }
+
+    #[test]
+    fn an_export_reads_one_snapshot_whatever_is_counted_or_forgotten_between_its_pages_and_leaves_the_catalog_free()
+     {
+        let folder = scratch("snapshot");
+
+        fs::create_dir_all(&folder).expect("a folder");
+
+        let phone = MobilePlayer {
+            catalog: Arc::new(Catalog::open(&folder.join("catalog.sqlite")).expect("a catalog")),
+            ..player()
+        };
+        let [echoes, say] = songs_held(&phone);
+
+        heard_here(&phone, echoes, MOMENTS[0], 200_000);
+        heard_here(&phone, say, MOMENTS[1], 100_000);
+        heard_here(&phone, echoes, MOMENTS[2], 30_000);
+        listened(
+            &phone,
+            "INSERT INTO listens (track, began, heard_ms, counted) VALUES (?1, ?2, 5000, 0)",
+            params![say, MOMENTS[2] + 60],
+        );
+        listened(
+            &phone,
+            "INSERT INTO listens (track, began, heard_ms, counted, served) VALUES (NULL, ?1, 90000, 1, 'subsonic://server/song/7')",
+            [MOMENTS[2] + 600],
+        );
+
+        let kept = PhoneListens(&phone.catalog);
+        let echoes_at = "content://test/Echoes.flac".to_owned();
+        let at_its_start = vec![
+            (moment(MOMENTS[0]), echoes_at.clone()),
+            (moment(MOMENTS[1]), "content://test/Say.flac".to_owned()),
+            (moment(MOMENTS[2]), echoes_at),
+            (
+                moment(MOMENTS[2] + 600),
+                "subsonic://server/song/7".to_owned(),
+            ),
+        ];
+
+        let mut free_between = Vec::new();
+        let mut moved = false;
+
+        let read = every_listen_read_by_pages_of_one(
+            &mut *kept.history_pages().expect("a snapshot begins"),
+            &mut || {
+                free_between.push(phone.catalog.0.try_lock().is_some());
+                if !moved {
+                    listened(&phone, "DELETE FROM listens WHERE began = ?1", [MOMENTS[2]]);
+                    listened(
+                        &phone,
+                        "UPDATE listens SET counted = 1 WHERE counted = 0",
+                        [],
+                    );
+                    listened(
+                        &phone,
+                        "INSERT INTO listens (track, began, heard_ms, counted, served) VALUES (NULL, ?1, 90000, 1, 'subsonic://server/song/8')",
+                        [MOMENTS[2] + 900],
+                    );
+                    moved = true;
+                }
+            },
+        );
+        let after = every_listen_read_by_pages_of_one(
+            &mut *kept.history_pages().expect("a snapshot begins"),
+            &mut || {},
+        );
+
+        drop(phone);
+        fs::remove_dir_all(&folder).expect("cleaned");
+
+        assert_eq!(read, at_its_start);
+        assert!(free_between.iter().all(|free| *free));
+        assert_eq!(free_between.len(), 6);
+        assert_eq!(after.len(), 5);
+        assert!(!after.contains(&at_its_start[2]));
     }
 
     #[test]

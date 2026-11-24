@@ -135,8 +135,8 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   one snapshot**: `KeptListens::history_pages` hands back `HistoryPages`, and `Library`'s
   (`PinnedHistory`) holds one checked-out reader inside a read transaction across every page, so a
   scan crediting a retained listen or a removal moving a held one to `unheld_listens` between pages
-  neither drops nor repeats a listen; a catalog with no such seam answers `Unpinned`, page by page,
-  as the phones' does (one connection behind a mutex). `Library::bring_in`
+  neither drops nor repeats a listen; a catalog with no such seam answers `Unpinned`, page by page
+  (the phones' pin a reader of their own, `mobile.md`). `Library::bring_in`
   lands a page a service read (`HeardElsewhere`: a moment and a `Recording`) in one write: each is
   resolved strictly as a remote listen is (`synced::resolved`), and a song held is credited as an
   `elsewhere` listen with the service's name as `origin_device` and the unix second as `origin_id`,

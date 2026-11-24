@@ -316,14 +316,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Mobile catalog
-- [M · 0.17.1] Export a phone's listening history from one snapshot. **Low, architect.**
-  The desktop's export now holds one read transaction across its pages (`KeptListens::history_pages`,
-  `PinnedHistory`), but the phones' catalog answers the unpinned default
-  (`crates/resonate-mobile/src/history.rs`): its one connection sits behind a mutex that a pinned
-  export would hold across pages, so a listen counted or forgotten between pages can be missed or
-  written twice. Read the phone's export from one snapshot (a second read-only connection, or the
-  pages copied under one hold) without holding up the player. Done when a listen counted and one
-  forgotten between pages leave the export with every listen present at its start exactly once.
 - [M · 0.17.1] Recover the original after an interrupted Android tag rewrite. **High, architect.**
   The document provider can truncate a song before the replacement bytes land. If the
   app stops during that write, the next tag edit can sweep the only intact copy
