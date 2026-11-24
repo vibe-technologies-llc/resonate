@@ -791,6 +791,99 @@ impl MediaProvider for Gated {
     }
 }
 
+struct SlowToPrepare {
+    source: SourceId,
+    bytes: Vec<u8>,
+    takes: Duration,
+    prepared: Arc<AtomicBool>,
+}
+
+impl MediaProvider for SlowToPrepare {
+    fn source(&self) -> &SourceId {
+        &self.source
+    }
+
+    fn open(&self, _: &MediaLocation) -> CodecResult<Media> {
+        thread::sleep(self.takes);
+        self.prepared.store(true, Ordering::Release);
+        Ok(Media {
+            stream: Box::new(Reading::new(Cursor::new(self.bytes.clone()))),
+            hint: None,
+        })
+    }
+}
+
+const NOT_DELAYED: Duration = Duration::ZERO;
+const A_PREPARATION_LONGER_THAN_THE_GRAPH_IS_PULLED_FOR: Duration = Duration::from_millis(600);
+const PREPARATIONS: [Duration; 2] = [
+    NOT_DELAYED,
+    A_PREPARATION_LONGER_THAN_THE_GRAPH_IS_PULLED_FOR,
+];
+const ENTERING_FRAMES_AHEAD_IN_THE_RING: usize = 1_000;
+
+struct Entering {
+    sources: Sources,
+    location: MediaLocation,
+    prepared: Arc<AtomicBool>,
+}
+
+fn prepared_after(preparation: Duration, bytes: Vec<u8>) -> Entering {
+    let source = SourceId::new("slow").expect("a lowercase name");
+    let prepared = Arc::new(AtomicBool::new(false));
+
+    Entering {
+        location: MediaLocation::new(source.clone(), "tracks/entering.wav"),
+        sources: Sources::local().and(Arc::new(SlowToPrepare {
+            source,
+            bytes,
+            takes: preparation,
+            prepared: Arc::clone(&prepared),
+        })),
+        prepared,
+    }
+}
+
+fn item_at(location: MediaLocation, id: u64) -> QueueItem {
+    QueueItem {
+        id: TrackId::new(id).expect("a non-zero track id"),
+        location,
+        span: None,
+    }
+}
+
+fn wait_for_the_boundary_to_wait(
+    player: &Player,
+    graph: &Arc<Mutex<Graph>>,
+    prepared: &AtomicBool,
+    leaving_frames: usize,
+) {
+    let stride = frame_bytes(SampleFormat::S16);
+
+    wait_for(
+        player,
+        |_| {
+            let held = graph.lock();
+            let Some(request) = held.requests.last() else {
+                return false;
+            };
+
+            let ring_full_at_least = frames_in(RING_DEPTH, request.spec.rate) * 9 / 10;
+            let played = held.played.len() / stride;
+            let ready = held.frames_ready();
+
+            prepared.load(Ordering::Acquire)
+                && (played + ready >= leaving_frames + ENTERING_FRAMES_AHEAD_IN_THE_RING
+                    || ready >= ring_full_at_least)
+        },
+        "the entering row to be prepared with the ring written as far as it goes",
+    );
+
+    assert!(
+        plays(player, 1),
+        "the graph read past the boundary while it was awaited"
+    );
+}
+
 struct Trickling {
     source: SourceId,
     bytes: Vec<u8>,
@@ -5647,13 +5740,31 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
     );
 
     let waiting_at = player.state().current.map(|current| current.position);
-    let _ = player
-        .request(Command::SetForceGraphRate(true))?
+    let deeper = Duration::from_millis(200);
+
+    let forced = player
+        .request(Command::SetForceGraphRate(false))?
         .wait_for(PATIENCE);
-    let _ = player
-        .request(Command::SetBuffer(Duration::from_millis(200)))?
+    let deepened = player
+        .request(Command::SetBuffer(deeper))?
         .wait_for(PATIENCE);
 
+    for (setting, outcome) in [("forced graph rate", forced), ("buffer", deepened)] {
+        assert!(
+            outcome
+                .as_ref()
+                .map_or_else(|error| error.cause() == Cause::NoDevice, |()| true),
+            "the {setting} was answered {outcome:?}"
+        );
+    }
+
+    let settings = player.output_settings();
+
+    assert!(
+        !settings.force_graph_rate,
+        "the forced graph rate was dropped"
+    );
+    assert_eq!(settings.buffer, deeper, "the buffer was dropped");
     assert_eq!(
         player.state().current.map(|current| current.position),
         waiting_at,
@@ -7190,6 +7301,23 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
     leaving_heard: i16,
     entering_heard: i16,
 ) -> Result<()> {
+    for preparation in PREPARATIONS {
+        a_level_asked_at_a_boundary_prepared_after(
+            preparation,
+            asked,
+            leaving_heard,
+            entering_heard,
+        )?;
+    }
+    Ok(())
+}
+
+fn a_level_asked_at_a_boundary_prepared_after(
+    preparation: Duration,
+    asked: Volume,
+    leaving_heard: i16,
+    entering_heard: i16,
+) -> Result<()> {
     const LEAVING_LEVEL: i16 = 8_000;
     const ENTERING_LEVEL: i16 = 12_000;
     const PULLED_BEFORE_THE_ASK: usize = 14_000;
@@ -7198,8 +7326,9 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
 
     let tree = Tree::new();
     let first = tree.write("first.wav", &steady(LEAVING_LEVEL, FRAMES));
-    let second = tree.write("second.wav", &steady(ENTERING_LEVEL, FRAMES));
-    let sources = Arc::new(Sources::local().hinted_by(Arc::new(QuieterOnOneRow {
+    let entering = prepared_after(preparation, steady(ENTERING_LEVEL, FRAMES));
+
+    let sources = Arc::new(entering.sources.hinted_by(Arc::new(QuieterOnOneRow {
         quiet: MediaLocation::local(&first),
         gain: -6.0206,
     })));
@@ -7215,7 +7344,7 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
     )?;
 
     player.send(Command::Load {
-        items: vec![track(&first, 1), track(&second, 2)],
+        items: vec![track(&first, 1), item_at(entering.location.clone(), 2)],
         start_at: 0,
         autoplay: true,
     })?;
@@ -7226,9 +7355,7 @@ fn a_level_asked_while_a_boundary_waits_reaches_each_row_at_its_own_gain(
         |_, graph| graph.played.len() >= PULLED_BEFORE_THE_ASK * frame,
         "the leaving row to play until its end is in the ring",
     );
-    thread::sleep(Duration::from_millis(300));
-
-    assert!(plays(&player, 1), "the boundary was reached before the ask");
+    wait_for_the_boundary_to_wait(&player, &graph, &entering.prepared, FRAMES);
 
     player
         .request(Command::SetVolume(asked))?
@@ -7294,6 +7421,7 @@ fn steady_in_twenty_four_bits(level: i16, frames: usize) -> Vec<u8> {
     wave(24, CHANNELS, &data)
 }
 
+#[derive(Clone)]
 enum AskedAtTheTurn {
     Nothing,
     Volume(Volume),
@@ -7539,6 +7667,28 @@ fn a_carried_resampler_steps_the_entering_gain_where_the_leaving_row_ends_though
 fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
     entering: &[u8],
     asked: AskedAtTheTurn,
+    heard: [i16; 2],
+) -> Result<()> {
+    let preparations: &[Duration] = match asked {
+        AskedAtTheTurn::Nothing => &[NOT_DELAYED],
+        AskedAtTheTurn::Volume(_) | AskedAtTheTurn::Equaliser(_) => &PREPARATIONS,
+    };
+
+    for &preparation in preparations {
+        the_leaving_tail_the_chain_holds_at_a_turn_prepared_after(
+            preparation,
+            entering,
+            asked.clone(),
+            heard,
+        )?;
+    }
+    Ok(())
+}
+
+fn the_leaving_tail_the_chain_holds_at_a_turn_prepared_after(
+    preparation: Duration,
+    entering: &[u8],
+    asked: AskedAtTheTurn,
     [leaving_heard, entering_heard]: [i16; 2],
 ) -> Result<()> {
     const PULLED_BEFORE_THE_LEAVING_ROW_ENDS: usize = 14_000;
@@ -7549,8 +7699,9 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
 
     let tree = Tree::new();
     let first = tree.write("first.wav", &steady(LEAVING_LEVEL, FRAMES));
-    let second = tree.write("second.wav", entering);
-    let sources = Arc::new(Sources::local().hinted_by(Arc::new(QuieterOnOneRow {
+    let turned_to = prepared_after(preparation, entering.to_vec());
+
+    let sources = Arc::new(turned_to.sources.hinted_by(Arc::new(QuieterOnOneRow {
         quiet: MediaLocation::local(&first),
         gain: -6.0206,
     })));
@@ -7568,7 +7719,7 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
     )?;
 
     player.send(Command::Load {
-        items: vec![track(&first, 1), track(&second, 2)],
+        items: vec![track(&first, 1), item_at(turned_to.location.clone(), 2)],
         start_at: 0,
         autoplay: true,
     })?;
@@ -7583,9 +7734,7 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
             |_, graph| graph.played.len() >= pulled_before_the_ask * frame,
             "the leaving row to play until its end is in the ring",
         );
-        thread::sleep(Duration::from_millis(300));
-
-        assert!(plays(&player, 1), "the boundary was reached before the ask");
+        wait_for_the_boundary_to_wait(&player, &graph, &turned_to.prepared, resampled(FRAMES));
 
         player.request(command)?.wait_for(PATIENCE)?;
     }
@@ -7634,8 +7783,8 @@ fn the_leaving_tail_the_chain_holds_at_a_gapless_turn_is_heard_at_its_own_gain(
 }
 
 fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
-    sources: Arc<Sources>,
-    items: Vec<QueueItem>,
+    first: &Path,
+    entering: Entering,
     asked: Frames,
 ) -> Result<()> {
     const ENTERING_LEVEL: i16 = 12_000;
@@ -7645,12 +7794,12 @@ fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
     let frame = frame_bytes(SampleFormat::S16);
     let (player, graph) = settled_over(
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
-        sources,
+        Arc::new(entering.sources),
         ring_deep(),
     )?;
 
     player.send(Command::Load {
-        items,
+        items: vec![track(first, 1), item_at(entering.location, 2)],
         start_at: 0,
         autoplay: true,
     })?;
@@ -7661,9 +7810,7 @@ fn a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
         |_, graph| graph.played.len() >= PULLED_BEFORE_THE_ASK * frame,
         "the leaving row to play until its end is in the ring",
     );
-    thread::sleep(Duration::from_millis(300));
-
-    assert!(plays(&player, 1), "the boundary was reached before the ask");
+    wait_for_the_boundary_to_wait(&player, &graph, &entering.prepared, FRAMES);
 
     let seeks = player.state().seeks;
 
@@ -7705,6 +7852,23 @@ fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
     settled: impl Fn(&Player, &[i16]) -> bool,
     what: &str,
 ) -> Result<()> {
+    for preparation in PREPARATIONS {
+        a_row_prepared_after_is_never_heard_once_an_edit_takes_it_away(
+            preparation,
+            edit.clone(),
+            &settled,
+            what,
+        )?;
+    }
+    Ok(())
+}
+
+fn a_row_prepared_after_is_never_heard_once_an_edit_takes_it_away(
+    preparation: Duration,
+    edit: Command,
+    settled: &impl Fn(&Player, &[i16]) -> bool,
+    what: &str,
+) -> Result<()> {
     const LEAVING_LEVEL: i16 = 8_000;
     const TAKEN_AWAY_LEVEL: i16 = 12_000;
     const PULLED_BEFORE_THE_EDIT: usize = 14_000;
@@ -7712,20 +7876,20 @@ fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
 
     let tree = Tree::new();
     let leaving = tree.write("leaving.wav", &steady(LEAVING_LEVEL, FRAMES));
-    let taken_away = tree.write("taken.wav", &steady(TAKEN_AWAY_LEVEL, FRAMES));
+    let taken_away = prepared_after(preparation, steady(TAKEN_AWAY_LEVEL, FRAMES));
     let following = tree.write("following.wav", &steady(FOLLOWING_LEVEL, FRAMES));
     let frame = frame_bytes(SampleFormat::S16);
 
     let (player, graph) = settled_over(
         vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])],
-        Arc::new(Sources::local()),
+        Arc::new(taken_away.sources),
         ring_deep(),
     )?;
 
     player.send(Command::Load {
         items: vec![
             track(&leaving, 1),
-            track(&taken_away, 2),
+            item_at(taken_away.location, 2),
             track(&following, 3),
         ],
         start_at: 0,
@@ -7738,12 +7902,7 @@ fn the_row_a_boundary_waits_to_enter_is_never_heard_once_an_edit_takes_it_away(
         |_, graph| graph.played.len() >= PULLED_BEFORE_THE_EDIT * frame,
         "the leaving row to play until its end is in the ring",
     );
-    thread::sleep(Duration::from_millis(300));
-
-    assert!(
-        plays(&player, 1),
-        "the boundary was reached before the edit"
-    );
+    wait_for_the_boundary_to_wait(&player, &graph, &taken_away.prepared, FRAMES);
 
     player.request(edit)?.wait_for(PATIENCE)?;
     play_until(
@@ -7815,13 +7974,15 @@ fn clearing_the_rows_a_boundary_waits_to_enter_leaves_none_of_them_heard() -> Re
 fn a_seek_past_the_end_refused_while_a_boundary_waits_leaves_the_handover_gapless() -> Result<()> {
     let tree = Tree::new();
     let first = tree.write("first.wav", &steady(8_000, FRAMES));
-    let second = tree.write("second.wav", &steady(12_000, FRAMES));
 
-    a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
-        Arc::new(Sources::local()),
-        vec![track(&first, 1), track(&second, 2)],
-        Frames(FRAMES as u64 * 4),
-    )
+    for preparation in PREPARATIONS {
+        a_seek_refused_while_a_boundary_waits_leaves_the_handover_gapless(
+            &first,
+            prepared_after(preparation, steady(12_000, FRAMES)),
+            Frames(FRAMES as u64 * 4),
+        )?;
+    }
+    Ok(())
 }
 
 #[test]

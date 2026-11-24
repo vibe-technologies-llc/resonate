@@ -4,18 +4,6 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
-- [M · 0.17.1] Prove the playback state before exercising a waiting boundary or a waiting row.
-  **Medium, builder.** The boundary tests can finish preparing the next row after the fixed sleep,
-  and the waiting-row settings test discards both command outcomes
-  (`crates/resonate-engine/tests/transport.rs:7314`, `crates/resonate-engine/tests/transport.rs:5378`).
-  Wait for the ring or fake sink to observe the precise boundary state, and assert both setting
-  requests landed before checking the position. Done when the tests cover the intended state
-  under delayed preparation and fail if either setting command is dropped.
-- [S · 0.17.1] Exercise levelling in the published output-settings guard. **Low, builder.**
-  The list of mutations omits levelling, so dropping its comparison would leave the guard green
-  (`crates/resonate-engine/src/state.rs:147`, `crates/resonate-engine/src/state.rs:365`,
-  `crates/resonate-engine/src/state.rs:471`). Done when a levelling-only change is published by the
-  test and removing its comparison makes that test fail.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 

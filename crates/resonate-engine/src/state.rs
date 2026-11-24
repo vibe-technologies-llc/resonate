@@ -342,7 +342,10 @@ pub enum Event {
 #[cfg(test)]
 mod tests {
     use resonate_audio::NodeName;
-    use resonate_core::eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q};
+    use resonate_core::{
+        Trim,
+        eq::{Band, BandGain, BandKind, Frequency, Preamp, Profile, Q},
+    };
     use resonate_dsp::Quality;
 
     use super::*;
@@ -405,6 +408,13 @@ mod tests {
 
         config.replay_gain = ReplayGainMode::Track;
         note("replay_gain", config);
+        *config = EngineConfig::default();
+
+        config.levelling = Levelling {
+            pre_amp: Trim::from_millibels(300).expect("a trim"),
+            ..Levelling::default()
+        };
+        note("levelling", config);
         *config = EngineConfig::default();
 
         config.prefer_bit_perfect = !EngineConfig::default().prefer_bit_perfect;
@@ -470,7 +480,7 @@ mod tests {
 
         assert_eq!(
             moved.len(),
-            17,
+            18,
             "a field OutputSettings publishes but already_says does not compare would stop the \
              engine publishing it; noticed {moved:?}"
         );
