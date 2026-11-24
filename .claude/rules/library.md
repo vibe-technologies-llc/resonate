@@ -1757,6 +1757,13 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   `Undo::kept_beside_or_away` keeps it under `spool::kept_under` instead, and where neither will take
   one the landing (whatever its length) goes through a whole staged copy, which is itself refused
   where nothing can be staged.
+  **A failure after staging is injected, not fixtured** (`faults.rs`, test builds only):
+  `once_staged_do` runs a closure in `landed_by` once the copy is filled and before `Taken::still_stands`
+  (another program changing the file mid-save, on a plain copy and on a rechunked WAVE's), and
+  `laying_fails_after` fails `laid_over` after that many runs have landed, so a write back is torn
+  with the track part rewritten and its whole copy kept as `.resonate-torn`
+  (`a_write_back_torn_partway_keeps_a_whole_copy_the_next_write_finishes_over_the_track`); every
+  such write leaves the original whole or as the other program changed it, and no staged copy.
   **A head is rebuilt, not rewritten.** For FLAC, ID3v2 (an untagged MPEG file too: a head of
   length zero), Ogg Vorbis and Opus, `Head` has lofty write into an in-memory copy of the head
   (FLAC and ID3v2 with up to `LEEWAY_PAST_THE_HEAD` of what follows, Ogg the header pages alone) and

@@ -469,6 +469,9 @@ fn laid_over(copy: &File, length: u64, track: &File) -> Result<(), Laying> {
         let held = read_as_far_as_it_goes(track, &mut standing[..bytes], at).unwrap_or(0);
 
         differing_runs(&chunk[..bytes], &standing[..held]).try_for_each(|run| {
+            #[cfg(test)]
+            crate::faults::before_laying_a_run().map_err(Laying::Partway)?;
+
             track
                 .write_all_at(&chunk[run.clone()], at + run.start as u64)
                 .map_err(Laying::Partway)

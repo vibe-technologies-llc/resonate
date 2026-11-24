@@ -88,13 +88,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
-- [M · 0.17.1] Exercise tag-write failures after staging and during recovery. **Medium, builder.**
-  The failed staged-write fixture is rejected before staging, and the recovery fixtures begin
-  with an already torn file (`crates/resonate-codec/src/writing.rs:1790`,
-  `crates/resonate-codec/src/writing.rs:2238`, `crates/resonate-codec/src/writing.rs:2945`).
-  Inject failures after creating a rechunked WAVE stage, after a file changes during a staged
-  save, and during whole-copy write-back. Done when the tests prove ordinary failures leave the
-  original intact, discard their stage and retain a usable recovery copy for a torn write-back.
 - [M · 0.17.1] Exercise unreadable-folder scans regardless of process privileges. **Low, builder.**
   The permission cases return successfully without checking scan behavior when the runner
   can read or search the fixture anyway (`crates/resonate-library/tests/scanning.rs:1659`,

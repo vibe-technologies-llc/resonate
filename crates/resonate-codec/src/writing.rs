@@ -1771,6 +1771,9 @@ fn landed_by<L: Lands>(
                 })
         })
         .and_then(|()| {
+            #[cfg(test)]
+            crate::faults::staged();
+
             if saving.taken().still_stands(path) {
                 return Ok(());
             }
@@ -2140,10 +2143,12 @@ mod tests {
     #[cfg(unix)]
     use std::os::unix::{fs as unix_fs, fs::MetadataExt as _};
     use std::{
+        cell::Cell,
         env, fs,
         io::Cursor,
         path::PathBuf,
         process,
+        rc::Rc,
         sync::atomic::{AtomicU64, Ordering},
         time::{Duration, SystemTime},
     };
@@ -2156,7 +2161,7 @@ mod tests {
     use crate::{
         ImageFormat, Pictured,
         insert::{Copying, Refusing},
-        journal::{WHOLE_SUFFIX, recorded_against},
+        journal::{WHOLE_SUFFIX, names_a_cut_short_write, recorded_against},
         left_alone::left_long_ago,
         riff,
     };
@@ -4944,5 +4949,294 @@ mod tests {
         named.dedup();
 
         assert_eq!(named.len(), held, "two fields answer to one name");
+    }
+
+    const PAGE: usize = 4096;
+
+    fn staged_under(root: &Path) -> usize {
+        fs::read_dir(root)
+            .expect("the folder")
+            .flatten()
+            .filter(|entry| entry.file_name().to_string_lossy().starts_with('.'))
+            .count()
+    }
+
+    fn staged_in(folder: &Folder) -> usize {
+        staged_under(&folder.root)
+    }
+
+    fn four_pages_and_a_tail() -> Vec<u8> {
+        vec![7; 4 * PAGE + 100]
+    }
+
+    type Filling = fn(&mut File) -> std::result::Result<(), FileEncodingError>;
+
+    struct Staging<'a> {
+        taken: Taken,
+        folder: &'a Folder,
+        staged_seen: Cell<usize>,
+        fill: Filling,
+    }
+
+    impl<'a> Staging<'a> {
+        fn over(path: &Path, folder: &'a Folder, fill: Filling) -> Self {
+            Self {
+                taken: Taken::of(path).expect("a writable file"),
+                folder,
+                staged_seen: Cell::new(0),
+                fill,
+            }
+        }
+    }
+
+    impl Lands for Staging<'_> {
+        fn taken(&self) -> Taken {
+            self.taken
+        }
+
+        fn staged_into(&self, file: &mut File) -> std::result::Result<(), FileEncodingError> {
+            self.staged_seen.set(staged_in(self.folder));
+            (self.fill)(file)
+        }
+
+        fn outgrown_head(&self, _: &Path) -> Option<(Head, Rebuilt)> {
+            None
+        }
+
+        fn in_place(&self, _: &Path, _: &MediaLocation) -> Result<bool> {
+            Ok(false)
+        }
+    }
+
+    fn left_cut_short(file: &mut File) -> std::result::Result<(), FileEncodingError> {
+        file.write_all(&[0xee; 64]).expect("a writable staged copy");
+        Err(FileEncodingError::from(io::Error::from(
+            io::ErrorKind::StorageFull,
+        )))
+    }
+
+    fn left_as_it_is(_: &mut File) -> std::result::Result<(), FileEncodingError> {
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn with_two_pages_changed(file: &mut File) -> std::result::Result<(), FileEncodingError> {
+        for page in [0, 3] {
+            file.seek(SeekFrom::Start((page * PAGE) as u64))
+                .and_then(|_| file.write_all(&[0xff]))
+                .expect("a writable staged copy");
+        }
+        Ok(())
+    }
+
+    #[cfg(unix)]
+    fn settled_refusing_to_shift(
+        staged: &Staged,
+        path: &Path,
+    ) -> std::result::Result<(), Unsettled> {
+        settled_over_asking(staged, path, &Refusing)
+    }
+
+    #[test]
+    fn a_write_that_fails_once_its_copy_is_staged_leaves_the_file_whole_and_discards_the_copy() {
+        let folder = Folder::new();
+        let original = four_pages_and_a_tail();
+
+        let location = folder.holding("echoes.bin", &original);
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let saving = Staging::over(&path, &folder, left_cut_short);
+
+        let landed = landed(&path, &location, &saving);
+
+        assert!(
+            matches!(landed, Err(Error::TagsUnwritten { .. })),
+            "{landed:?}"
+        );
+        assert!(saving.staged_seen.get() > 0, "no copy was staged first");
+        assert_eq!(fs::read(&path).expect("the file"), original);
+        assert_eq!(staged_in(&folder), 0, "the staged copy was left behind");
+    }
+
+    #[test]
+    fn a_file_whose_bytes_change_while_a_copy_is_staged_is_left_as_changed_and_the_copy_discarded()
+    {
+        let folder = Folder::new();
+        let original = four_pages_and_a_tail();
+
+        let location = folder.holding("echoes.bin", &original);
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let saving = Staging::over(&path, &folder, left_as_it_is);
+        let staged_when_changed = Rc::new(Cell::new(0));
+
+        crate::faults::once_staged_do({
+            let path = path.clone();
+            let root = folder.root.clone();
+            let seen = Rc::clone(&staged_when_changed);
+
+            move || {
+                let mut grown = fs::read(&path).expect("the file");
+
+                grown.push(0xaa);
+                fs::write(&path, grown).expect("a file another program changed");
+                seen.set(staged_under(&root));
+            }
+        });
+
+        let landed = landed(&path, &location, &saving);
+        let mut changed = original.clone();
+
+        changed.push(0xaa);
+
+        assert!(
+            matches!(landed, Err(Error::ChangedWhileWritten { .. })),
+            "{landed:?}"
+        );
+        assert!(staged_when_changed.get() > 0, "no copy was staged first");
+        assert_eq!(fs::read(&path).expect("the file"), changed);
+        assert_eq!(staged_in(&folder), 0, "the staged copy was left behind");
+    }
+
+    #[test]
+    fn a_file_touched_while_a_copy_is_staged_is_left_as_it_is_and_the_copy_discarded() {
+        let folder = Folder::new();
+        let original = four_pages_and_a_tail();
+
+        let location = folder.holding("echoes.bin", &original);
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let saving = Staging::over(&path, &folder, left_as_it_is);
+
+        crate::faults::once_staged_do({
+            let path = path.clone();
+
+            move || {
+                File::options()
+                    .write(true)
+                    .open(&path)
+                    .and_then(|file| {
+                        file.set_modified(SystemTime::now() + Duration::from_secs(3_600))
+                    })
+                    .expect("a file touched by another program");
+            }
+        });
+
+        let landed = landed(&path, &location, &saving);
+
+        assert!(
+            matches!(landed, Err(Error::ChangedWhileWritten { .. })),
+            "{landed:?}"
+        );
+        assert_eq!(fs::read(&path).expect("the file"), original);
+        assert_eq!(staged_in(&folder), 0, "the staged copy was left behind");
+    }
+
+    #[test]
+    fn a_wave_whose_rechunked_copy_cannot_be_filled_is_refused_with_the_file_whole_and_no_copy_left()
+     {
+        let folder = Folder::new();
+        let cut = a_wave_behind_an_id3_tag(4);
+
+        let location = folder.holding("cut.wav", &cut);
+        let path = location.as_path().expect("a local file").to_path_buf();
+
+        let written =
+            FileTags::default().write(&location, just(&[edited(TagField::Title, "Echoes")]));
+
+        assert!(
+            matches!(&written, Err(Error::Io { source, .. }) if source.kind() == io::ErrorKind::InvalidData),
+            "{written:?}"
+        );
+        assert_eq!(fs::read(&path).expect("the file"), cut);
+        assert_eq!(staged_in(&folder), 0, "the rechunked copy was left behind");
+    }
+
+    #[test]
+    fn a_wave_changed_after_its_rechunked_copy_is_staged_is_left_as_changed_and_the_copy_discarded()
+    {
+        let folder = Folder::new();
+        let whole = a_wave_behind_an_id3_tag(0);
+
+        let location = folder.holding("echoes.wav", &whole);
+        let path = location.as_path().expect("a local file").to_path_buf();
+        let staged_when_changed = Rc::new(Cell::new(0));
+
+        crate::faults::once_staged_do({
+            let path = path.clone();
+            let root = folder.root.clone();
+            let seen = Rc::clone(&staged_when_changed);
+
+            move || {
+                let mut grown = fs::read(&path).expect("the file");
+
+                grown.push(0xaa);
+                fs::write(&path, grown).expect("a file another program changed");
+                seen.set(staged_under(&root));
+            }
+        });
+
+        let written =
+            FileTags::default().write(&location, just(&[edited(TagField::Title, "Echoes")]));
+        let mut changed = whole.clone();
+
+        changed.push(0xaa);
+
+        assert!(
+            matches!(written, Err(Error::ChangedWhileWritten { .. })),
+            "{written:?}"
+        );
+        assert!(staged_when_changed.get() > 0, "no copy was staged first");
+        assert_eq!(fs::read(&path).expect("the file"), changed);
+        assert_eq!(staged_in(&folder), 0, "the rechunked copy was left behind");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_write_back_torn_partway_keeps_a_whole_copy_the_next_write_finishes_over_the_track() {
+        let folder = Folder::new();
+        let original = four_pages_and_a_tail();
+
+        let location = folder.holding("echoes.bin", &original);
+        let path = location.as_path().expect("a local file").to_path_buf();
+
+        fs::hard_link(&path, folder.root.join("also.bin")).expect("a hard link");
+
+        let saving = Staging::over(&path, &folder, with_two_pages_changed);
+        let staged = copied_beside(&path, folder_of(&path), &saving).expect("a staged copy");
+        let mut tagged = original.clone();
+
+        tagged[0] = 0xff;
+        tagged[3 * PAGE] = 0xff;
+
+        crate::faults::laying_fails_after(1);
+
+        let landed = landed_by(
+            &staged,
+            &path,
+            &location,
+            &saving,
+            settled_refusing_to_shift,
+        );
+        let torn = fs::read(&path).expect("the track");
+
+        let Err(Error::WrittenBackPartway { whole, .. }) = landed else {
+            panic!("a torn write back was not reported: {landed:?}");
+        };
+
+        assert!(names_a_cut_short_write(&whole));
+        assert!(!staged.path.exists(), "the staged copy was left as well");
+        assert!(
+            fs::read(&whole)
+                .expect("the whole copy")
+                .starts_with(&tagged)
+        );
+        assert_ne!(torn, original);
+        assert_ne!(torn, tagged);
+        assert_eq!(torn[0], 0xff);
+        assert_eq!(torn[3 * PAGE], 7);
+
+        drop(staged);
+        mend_what_a_dead_writer_left(&path);
+
+        assert_eq!(fs::read(&path).expect("the track"), tagged);
+        assert!(!whole.exists(), "the whole copy was left after the mend");
     }
 }

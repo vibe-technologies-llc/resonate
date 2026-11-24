@@ -10,6 +10,8 @@ mod cue;
 mod decoder;
 mod dsd;
 mod error;
+#[cfg(test)]
+mod faults;
 mod flac;
 mod framed;
 #[cfg(fuzzing)]
