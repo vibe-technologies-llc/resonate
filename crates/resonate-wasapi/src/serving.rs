@@ -796,11 +796,8 @@ mod tests {
         );
 
         wait_until(|| opened.seen.let_go());
+        wait_until(|| matches!(opened.stream.set_active(true), Err(Error::LoopStopped)));
 
-        assert!(matches!(
-            opened.stream.set_active(true),
-            Err(Error::LoopStopped)
-        ));
         assert!(matches!(
             opened
                 .stream
