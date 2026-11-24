@@ -25,14 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `INCARNATION_VERSION` on the server, telling the incarnation, and say it there
   with the fallback `Share` has. Done when a follower returning to a remade
   shared space reads it whole.
-- [M · 0.17.1] Reconcile app-private received files after an interrupted landing.
-  **Low, architect.** A receive can rename bytes into the holding folder before
-  an error leaves them untracked. Cleanup can also delete the catalog row
-  before unlinking the file
-  (`crates/resonate-mobile/src/sync.rs:982`, `:1036`, `:1244`, `:1798`,
-  `crates/resonate-mobile/src/catalog.rs:131`). Keep the file owned through the
-  catalog commit and make cleanup retryable. Done when a failed alias write,
-  a concurrent adoption and a failed unlink leave each file tracked or reclaimed.
 - [S · 0.17.1] Show a definite Android remote-watch failure when sync stops.
   **Low, builder.** The drive panel drops read failures and displays its
   waiting state even after a device is removed or sync turns off

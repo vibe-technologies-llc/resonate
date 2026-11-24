@@ -389,6 +389,37 @@ calls are unchanged. A copy a desktop filed under a layout of its own is found o
 note has arrived
 (`a_song_whose_audio_a_desk_filed_under_its_own_layout_is_taken_as_that_file_once_the_layout_arrives`).
 
+## A received file is always owned
+
+Every file in the app-private `sync-received` folder is owned by a catalog row or held by the
+landing writing it, so an interrupted landing or a refused unlink never leaves bytes nothing
+tracks (`sync/holding.rs`).
+
+- **A landing holds its file from before the rename until the row commits.** `landed_in_holding`
+  takes `Held::resumed` on the staged file, renames it in under `{pid}-{nanoseconds}-{nth}.{ext}`,
+  probes it, and only then decides: known by its file (`songs_received` noted, the copy removed),
+  folded into a waiting song of the same file, or kept waiting. The fold and the new `received` row
+  are one `IMMEDIATE` transaction that reads the waiting rows itself, so two landings of the same
+  file at once wait once, the second's keys going into `received_also`, and a fold never targets a
+  row a landing just forgot
+  (`the_same_file_landed_at_once_under_many_spellings_waits_once_and_leaves_nothing_untracked`).
+  Any failure after the rename, the alias write included, removes the copy before letting go of the
+  hold (`a_failed_alias_write_after_the_rename_leaves_the_received_file_tracked_or_reclaimed`).
+- **Forgetting removes the file before the last row goes.** Landing a waiting song and
+  `sync_refuse_received` delete its `received` row and write the file's name into
+  `received_leftovers` in one transaction (step 43, `A_RECEIVED_FILE_IS_FORGOTTEN_ONLY_ONCE_REMOVED`),
+  then unlink (`NotFound` counting as done), and only then delete the leftover row
+  (`holding::let_go`). A failed unlink keeps that row for the sweep and is not the caller's failure
+  (`a_failed_unlink_keeps_a_row_the_next_sweep_removes_with_its_file`).
+- **The sweep runs as the sync starts** (`holding::swept`, in `started`), in one `IMMEDIATE`
+  transaction: each leftover's file is unlinked and its row dropped, and a file no `received` or
+  leftover row names is removed once `writer_of` says its writer is gone (the pid in its name, or
+  none for a name from before, which is two parts). A row names its file by the file's name in the
+  holding folder, never the whole stored path, so a container the system moved (iOS) keeps its
+  waiting songs, which `waiting_songs` resolves the same way (`holding::kept_at`;
+  `a_catalog_of_before_leftovers_keeps_its_waiting_songs_and_its_orphans_are_swept`). A row
+  whose file is gone stays waiting until the front end lands or refuses it.
+
 ## Granted documents
 
 A document is a URI the front end resolves to a descriptor through the `Documents` callback.

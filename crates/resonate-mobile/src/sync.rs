@@ -51,6 +51,7 @@ mod copied;
 pub(crate) use self::consulted::Layers;
 mod driving;
 mod everywhere;
+mod holding;
 mod pairing;
 mod shared;
 mod standing;
@@ -183,6 +184,10 @@ impl Syncing {
             filed_as: FiledAs::default(),
             folder,
         }
+    }
+
+    fn holding(&self) -> PathBuf {
+        self.folder.join(RECEIVED)
     }
 
     pub(crate) fn files_by(&self, layout: &str) {
@@ -738,7 +743,7 @@ impl MobilePlayer {
             shared: Arc::clone(&self.syncing.shared),
             catalog: Arc::clone(&self.catalog),
             sources: Arc::clone(&self.sources),
-            received: folder.join(RECEIVED),
+            received: self.syncing.holding(),
             arrivals: Arc::clone(&self.syncing.arrivals),
             landings: AtomicU64::new(0),
             indexed: Mutex::new(None),
@@ -771,6 +776,9 @@ impl MobilePlayer {
             relay_only: false,
         };
 
+        if let Err(error) = holding::swept(&self.catalog, &self.syncing.holding()) {
+            tracing::warn!(%error, "the songs received from other devices could not be swept");
+        }
         *self.syncing.resolving.lock() = Some(Arc::clone(&catalog));
         *self.syncing.server.lock() = (!config.nearby_only).then(|| config.server.clone());
 
@@ -840,6 +848,7 @@ impl MobilePlayer {
     }
 
     fn waiting_songs(&self) -> Result<Vec<Waiting>> {
+        let holding = self.syncing.holding();
         let connection = self.catalog.0.lock();
         let mut query = connection
             .prepare(
@@ -879,7 +888,7 @@ impl MobilePlayer {
                         extension,
                         song,
                     },
-                    path: PathBuf::from(row.get::<_, String>(7)?),
+                    path: holding::kept_at(&holding, Path::new(&row.get::<_, String>(7)?)),
                     file,
                 })
             })
@@ -962,15 +971,13 @@ impl MobilePlayer {
 
             note_received(&transaction, &keys, track)
                 .and_then(|()| {
-                    transaction.execute(
-                        "DELETE FROM received WHERE id = ?1",
-                        [waiting.received.id as i64],
-                    )
+                    holding::forgotten(&transaction, waiting.received.id as i64, &waiting.path)
                 })
-                .and_then(|_| transaction.commit())
+                .and_then(|()| transaction.commit())
                 .map_err(|source| Error::store(StoreOp::Write, source))?;
         }
-        removed(&waiting.path)
+        holding::let_go(&self.catalog, &self.syncing.holding(), &waiting.path);
+        Ok(())
     }
 
     fn holds_the_same_bytes(&self, uri: &str, path: &Path) -> bool {
@@ -1010,12 +1017,19 @@ impl MobilePlayer {
     }
 
     fn forget_received(&self, id: u64, path: &Path) -> Result<()> {
-        self.catalog
-            .0
-            .lock()
-            .execute("DELETE FROM received WHERE id = ?1", [id as i64])
-            .map_err(|source| Error::store(StoreOp::Write, source))?;
-        removed(path)
+        {
+            let mut connection = self.catalog.0.lock();
+
+            let transaction = connection
+                .transaction()
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+
+            holding::forgotten(&transaction, id as i64, path)
+                .and_then(|()| transaction.commit())
+                .map_err(|source| Error::store(StoreOp::Write, source))?;
+        }
+        holding::let_go(&self.catalog, &self.syncing.holding(), path);
+        Ok(())
     }
 
     fn continue_from(&self, handoff: &Handoff) -> Result<u32> {
@@ -1208,43 +1222,6 @@ impl DocumentCatalog {
             }
         }
         Ok(None)
-    }
-
-    fn waiting_as_the_same_file(&self, file: WholeFile) -> Answered<Option<i64>> {
-        self.catalog
-            .0
-            .lock()
-            .query_row(
-                "SELECT id FROM received WHERE packets = ?1 AND frames = ?2 AND rate = ?3 ORDER BY id",
-                params![
-                    file.packets.cast_signed(),
-                    file.frames.cast_signed(),
-                    file.rate
-                ],
-                |row| row.get::<_, i64>(0),
-            )
-            .optional()
-            .map_err(unavailable)
-    }
-
-    fn folded_into_the_waiting(&self, waiting: i64, recording: &Recording) -> Answered<()> {
-        let connection = self.catalog.0.lock();
-
-        for key in keys_of(recording) {
-            connection
-                .execute(
-                    "INSERT OR IGNORE INTO received_also (received, recording) VALUES (?1, ?2)",
-                    params![waiting, key],
-                )
-                .map_err(unavailable)?;
-        }
-        Ok(())
-    }
-
-    fn landed_name(&self, extension: &str) -> PathBuf {
-        let stamp = playlists::created_now();
-        let nth = self.landings.fetch_add(1, Ordering::AcqRel);
-        self.received.join(format!("{stamp}-{nth}.{extension}"))
     }
 }
 
@@ -1784,59 +1761,7 @@ impl Catalog for DocumentCatalog {
 
             return Ok(true);
         }
-        fs::create_dir_all(&self.received).map_err(|_| Refused::Unwritable)?;
-
-        let path = self.landed_name(&extension);
-        let text = path.to_str().ok_or(Refused::Unwritable)?.to_owned();
-
-        fs::rename(staged, &path).map_err(|_| Refused::Unwritable)?;
-
-        let file = file_of(&self.sources, &path);
-
-        if let Some(file) = file {
-            if let Some(track) = self.held_as_the_same_file(file)? {
-                note_received(&self.catalog.0.lock(), &keys_of(recording), track)
-                    .map_err(unavailable)?;
-
-                let _ = fs::remove_file(&path);
-
-                self.arrived();
-                return Ok(true);
-            }
-            if let Some(waiting) = self.waiting_as_the_same_file(file)? {
-                self.folded_into_the_waiting(waiting, recording)?;
-
-                let _ = fs::remove_file(&path);
-
-                return Ok(true);
-            }
-        }
-
-        let kept = self.catalog.0.lock().execute(
-            "INSERT INTO received(path, extension, title, artist, album, recording, duration_ms, packets, frames, rate) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
-            params![
-                text,
-                extension,
-                recording.title,
-                recording.artist,
-                recording.album,
-                recording.mbid.as_ref().map(ToString::to_string),
-                recording
-                    .length
-                    .map(|length| i64::try_from(length.as_millis()).unwrap_or(i64::MAX)),
-                file.map(|file| file.packets.cast_signed()),
-                file.map(|file| file.frames.cast_signed()),
-                file.map(|file| file.rate),
-            ],
-        );
-
-        if let Err(error) = kept {
-            let _ = fs::remove_file(&path);
-
-            return Err(unavailable(error));
-        }
-        self.arrived();
-        Ok(true)
+        self.landed_in_holding(recording, &extension, staged)
     }
 
     fn takes_answers(&self) -> bool {
@@ -2228,17 +2153,6 @@ fn filled(from: &mut impl Read, buffer: &mut [u8]) -> io::Result<usize> {
         }
     }
     Ok(read)
-}
-
-fn removed(path: &Path) -> Result<()> {
-    match fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(source) => Err(Error::Received {
-            op: ReceivedOp::Finish,
-            source,
-        }),
-    }
 }
 
 fn keys_of(recording: &Recording) -> Vec<String> {
@@ -3142,7 +3056,7 @@ mod tests {
         let _ = fs::remove_dir_all(folder);
     }
 
-    fn granted(folder: &Path) -> (MobilePlayer, DocumentCatalog) {
+    pub(super) fn granted(folder: &Path) -> (MobilePlayer, DocumentCatalog) {
         let sources = Arc::new(
             Sources::local().and(Arc::new(
                 crate::documents::GrantedFiles::new(
@@ -3164,7 +3078,11 @@ mod tests {
         (player, documents)
     }
 
-    fn landed_waiting(documents: &DocumentCatalog, folder: &Path, recording: &Recording) {
+    pub(super) fn landed_waiting(
+        documents: &DocumentCatalog,
+        folder: &Path,
+        recording: &Recording,
+    ) {
         let staged = folder.join(format!("{}.part", recording.title));
 
         fs::write(&staged, crate::harness::silence()).expect("a staged song");
@@ -3176,7 +3094,7 @@ mod tests {
         );
     }
 
-    fn two_seconds_of(title: &str) -> Recording {
+    pub(super) fn two_seconds_of(title: &str) -> Recording {
         Recording {
             album: "Homogenic".into(),
             ..named(title, "Björk", 2)
