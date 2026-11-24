@@ -12,7 +12,7 @@ use resonate_sync::{
     Malformed, Platform, SongTags, SpaceId, Stamp, Token,
     wire::{
         FromPeer, FromServer, Record, Refusal, SpaceHead, ToPeer, ToServer, decoded_bundle,
-        encoded_bundle,
+        decoded_recordings, encoded_bundle, encoded_recordings,
     },
 };
 
@@ -23,6 +23,7 @@ enum Kind {
     ToPeer,
     FromPeer,
     Bundle,
+    Rows,
 }
 
 struct Seed {
@@ -131,6 +132,11 @@ const SEEDS: &[Seed] = &[
         name: "fetch-revised",
         kind: Kind::ToPeer,
         fingerprint: 0x2ffd_33e8_c62b_45f9,
+    },
+    Seed {
+        name: "handoff-rows",
+        kind: Kind::Rows,
+        fingerprint: 0x47a6_6aed_556d_4c1a,
     },
     Seed {
         name: "heads",
@@ -837,6 +843,7 @@ fn written_back(kind: Kind, bytes: &[u8]) -> Result<Vec<u8>, Error> {
         Kind::ToPeer => ToPeer::decoded(bytes).map(|frame| frame.encoded()),
         Kind::FromPeer => FromPeer::decoded(bytes).map(|frame| frame.encoded()),
         Kind::Bundle => decoded_bundle(bytes).map(|changes| encoded_bundle(&changes)),
+        Kind::Rows => decoded_recordings(bytes).map(|rows| encoded_recordings(&rows)),
     }
 }
 
@@ -928,5 +935,23 @@ fn records_whose_blob_is_shorter_than_a_seal_are_refused_as_no_build_since_the_f
             }))
         ),
         "{read:?}"
+    );
+}
+
+#[test]
+fn the_row_list_a_saved_handoff_holds_is_read_as_the_songs_it_names_and_written_back() {
+    let seed = SEEDS
+        .iter()
+        .find(|seed| seed.name == "handoff-rows")
+        .expect("the handoff rows seed");
+    let bytes = bytes_of(seed);
+
+    let rows = decoded_recordings(&bytes).expect("the rows decode");
+
+    assert_eq!(rows, [song_without_an_mbid(), song("Echoes")]);
+    assert_eq!(encoded_recordings(&rows), bytes);
+    assert_eq!(
+        decoded_recordings(&encoded_recordings(&rows)).expect("the rows decode again"),
+        rows
     );
 }

@@ -78,14 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Mobile catalog
 
 ## Device sync
-- [S · 0.17.1] Round-trip the stored handoff row format through the sync fuzz target.
-  **Low, builder.** The row decoder is called without a round-trip assertion
-  even though it reads saved ledgers
-  (`fuzz/fuzz_targets/sync.rs:28`, `:40`,
-  `crates/resonate-sync/src/wire.rs:2528`,
-  `crates/resonate-sync/src/ledger.rs:1747`). Apply the existing decode and
-  write-back property to the saved row list and include a legacy row seed.
-  Done when decoded saved rows must survive a round trip.
 - [M · 0.17.1] Check nearby transport capabilities explicitly in tests.
   **Low, builder.** Discovery tests can return early when an interface is
   absent, and the Bonjour case assumes multicast works whenever a
