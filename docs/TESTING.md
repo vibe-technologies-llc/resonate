@@ -78,17 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Mobile catalog
 
 ## Device sync
-- [S · 0.17.1] Describe the nearby Bonjour record's actual encoding.
-  **Low, builder.** The rules describe the same TXT record as base32 in one place and
-  hex in another (`.claude/rules/sync.md:1198`, `:1242`,
-  `crates/resonate-sync/src/nearby.rs:295`). Align the Bonjour wording with the
-  encoder. Done when the two descriptions agree with the checked record format.
-- [S · 0.17.1] Make the documented WebSocket startup deadline match the listener.
-  **Low, builder.** The rules describe one allowance for upgrade and Hello.
-  The listener times each stage independently
-  (`.claude/rules/server.md:429`, `crates/resonate-server/src/serve.rs:341`,
-  `:369`). Enforce a shared deadline or document the actual allowances.
-  Done when the rule agrees with a test that delays both stages.
 - [S · 0.17.1] Round-trip the stored handoff row format through the sync fuzz target.
   **Low, builder.** The row decoder is called without a round-trip assertion
   even though it reads saved ledgers

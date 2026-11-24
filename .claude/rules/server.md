@@ -157,7 +157,8 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   turned out lost its `RoomEnded`, read the reset as a connection lost and joined again, where Linux
   still hands the frame over
   (`a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_host_turning_one_out`).
-- **A `Hello` within 10 s or nothing**; a wrong version, token or a full space is a `Refused` frame,
+- **A `Hello` within 10 s or nothing**, the allowance (`Limits::hello_within`) one deadline taken when the connection is accepted and shared by every stage up to the `Hello`: a web socket's request line, upgrade and first frame, a QUIC stream's opening and its first frame
+  (`the_upgrade_and_the_hello_share_one_allowance_so_a_slow_client_does_not_get_two`); a wrong version, token or a full space is a `Refused` frame,
   then the stream ends. A `Hello` or `Share` is taken at `PROTOCOL_VERSION` (answered with the
   `Welcome` the first build reads) or `INCARNATION_VERSION` (its `Welcome` carrying the space's
   incarnation after the head); `View`, `Heads` and `Room` at `PROTOCOL_VERSION` alone. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
@@ -467,7 +468,7 @@ it off.
   stay on in that profile: each page names `<link rel="icon" href="data:,">` and the policy's
   `img-src data:` admits it, so Firefox never asks for `/favicon.ico` and the console holds no
   violation at all (`a_page_names_an_empty_icon_so_no_browser_asks_for_one_the_policy_refuses`).
-- At most 256 upgrades are in flight at once and the upgrade and `Hello` share the 10 s allowance.
+- At most 256 upgrades are in flight at once and the upgrade and `Hello` share the one 10 s allowance (`Limits::hello_within`).
   The server pings every 30 s and a reader silent for 90 s ends the session.
   `a_listener_behind_a_proxy_turns_away_a_connection_the_proxy_did_not_forward`.
 

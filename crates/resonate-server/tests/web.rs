@@ -27,6 +27,7 @@ use crate::{scripted::Scripted, shelf::Shelf};
 
 const SETTLES_WITHIN: Duration = Duration::from_secs(30);
 const REFUSED_WITHIN: Duration = Duration::from_secs(5);
+const STARTUP_ALLOWANCE: Duration = Duration::from_secs(2);
 const KIBIBYTE: usize = 1024;
 const BINARY_AND_FINAL: u8 = 0x82;
 const MASKED_WITH_A_LENGTH_OF_EIGHT_BYTES: u8 = 0x80 | 127;
@@ -694,4 +695,87 @@ fn a_server_before_incarnations_refusing_their_version_is_said_the_first_one_fro
     drop(desk);
 
     let _ = fs::remove_dir_all(&folder);
+}
+
+async fn welcomed_after_pausing(hosted: &Hosted, key: &SyncKey, pause: Duration) -> bool {
+    let mut stream = TcpStream::connect(hosted.address).await.expect("connected");
+
+    tokio::time::sleep(pause).await;
+
+    let asked = stream
+        .write_all(
+            format!(
+                "GET / HTTP/1.1\r\nHost: {}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n\
+                 Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\nSec-WebSocket-Version: 13\r\n\r\n",
+                hosted.address
+            )
+            .as_bytes(),
+        )
+        .await;
+
+    if asked.is_err() {
+        return false;
+    }
+
+    let mut answer = Vec::new();
+    let mut byte = [0; 1];
+
+    while !answer.ends_with(b"\r\n\r\n") {
+        if stream.read_exact(&mut byte).await.is_err() {
+            return false;
+        }
+        answer.push(byte[0]);
+    }
+
+    tokio::time::sleep(pause).await;
+
+    if stream
+        .write_all(&framed_by_hand(&hello(key)))
+        .await
+        .is_err()
+    {
+        return false;
+    }
+
+    let mut heard = Vec::new();
+    let mut chunk = [0; 4 * KIBIBYTE];
+
+    loop {
+        match timeout(REFUSED_WITHIN, stream.read(&mut chunk)).await {
+            Ok(Ok(read)) if read > 0 => heard.extend_from_slice(&chunk[..read]),
+            _ => return false,
+        }
+        if framed_by_the_server(&heard)
+            .into_iter()
+            .any(|(_, payload)| {
+                matches!(FromServer::decoded(payload), Ok(FromServer::Welcome { .. }))
+            })
+        {
+            return true;
+        }
+    }
+}
+
+#[test]
+fn the_upgrade_and_the_hello_share_one_allowance_so_a_slow_client_does_not_get_two() {
+    let hosted = hosted(
+        Limits {
+            hello_within: STARTUP_ALLOWANCE,
+            ..Limits::default()
+        },
+        None,
+    );
+    let key = SyncKey::minted().expect("a key");
+    let each_within = STARTUP_ALLOWANCE.mul_f32(0.35);
+    let each_past_half = STARTUP_ALLOWANCE.mul_f32(0.6);
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("a runtime");
+
+    let within = runtime.block_on(welcomed_after_pausing(&hosted, &key, each_within));
+    let past = runtime.block_on(welcomed_after_pausing(&hosted, &key, each_past_half));
+
+    assert!(within);
+    assert!(!past);
 }

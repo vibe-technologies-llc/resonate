@@ -1518,8 +1518,8 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
 - **A beacon is sealed like a record.** A datagram is `RSN2` then `seal::sealed` of a `SentBeacon`
   under the space's key (`datagram_of`), sealed afresh for every address it is sent to; a Bonjour
   record is `RSN3` then the sealed `SentBeacon` too (`record_of`), spelled in the pairing code's
-  base32 (`key::in_symbols`, 1.6 letters a byte, so the fullest record still fits one TXT string,
-  which hex's two did not), and resealed where the beacon moved or `RECORD_RESEALED_EVERY` (60 s)
+  base32 (`key::in_symbols`, no check letters, 1.6 letters a byte, so the fullest record still fits one TXT string,
+  which hex's two did not; `a_bonjour_record_is_the_sealed_beacon_in_base32_symbols_and_not_hex`), and resealed where the beacon moved or `RECORD_RESEALED_EVERY` (60 s)
   passed (`Advertised::still_says`), so an honest record is always fresh. Only a device of the code
   opens either, and a fresh nonce each time leaves an onlooker nothing to follow. **A record is
   heard only lately sealed, and its resolved addresses only once** (`beacon_recorded`,
@@ -1572,7 +1572,7 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   device answers by unicast**, so one that cannot hear multicast (a taken port, an Android without
   its lock) is still found.
 - **Bonjour** (`Bonjour`, `mdns-sd`): the device advertises `_resonate-sync._udp` under a random
-  instance name for the run, the hex of the sealed beacon as TXT key `b` (`RECORD_KEY`; the fullest
+  instance name for the run, the sealed beacon in base32 as TXT key `b` (`RECORD_KEY`, spelled by `key::in_symbols` as above; the fullest
   record fits one TXT string, `the_fullest_record_fits_one_bonjour_text_string_and_reads_back`), and
   browses the same type, taking every address an answer resolves (IPv4 and IPv6, a link local one
   with its interface index as scope). The record is resealed only where the beacon it carries moved

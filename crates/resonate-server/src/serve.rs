@@ -21,7 +21,7 @@ use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
     sync::{Semaphore, mpsc::Receiver},
-    time::{Instant, interval, timeout},
+    time::{Instant, interval, timeout, timeout_at},
 };
 
 use crate::{
@@ -66,6 +66,7 @@ pub struct Limits {
     pub rooms: usize,
     pub room_members: usize,
     pub host_back_within: Duration,
+    pub hello_within: Duration,
     pub room_bytes_per_second: u64,
     pub frame_bytes: usize,
 }
@@ -147,6 +148,7 @@ impl Default for Limits {
             rooms: 1024,
             room_members: 32,
             host_back_within: Duration::from_secs(30),
+            hello_within: HELLO_WITHIN,
             room_bytes_per_second: 512 * 1024,
             frame_bytes: 256 * 1024 * 1024,
         }
@@ -250,12 +252,14 @@ impl Server {
             let server = Arc::clone(&self);
             let certificates = Arc::clone(&android_certificates);
 
+            let deadline = Instant::now() + self.limits.hello_within;
+
             tokio::spawn(async move {
-                let Some(stream) = answered_as_a_page(stream, &certificates).await else {
+                let Some(stream) = answered_as_a_page(stream, &certificates, deadline).await else {
                     return;
                 };
                 let served = server
-                    .welcome_web(stream, forwarded_by, admitted, permit)
+                    .welcome_web(stream, forwarded_by, admitted, permit, deadline)
                     .await;
                 if let Err(error) = served {
                     tracing::debug!(%error, "a device's web session ended");
@@ -319,13 +323,21 @@ impl Server {
             .await
             .map_err(|source| resonate_sync::Error::Connection(Box::new(source)))?;
         let address = connection.remote_address();
-        let streams = timeout(HELLO_WITHIN, connection.accept_bi()).await;
+        let deadline = Instant::now() + self.limits.hello_within;
+
+        let streams = timeout_at(deadline, connection.accept_bi()).await;
         let Ok(Ok((send, recv))) = streams else {
             return Ok(());
         };
 
         let served = self
-            .hello(Writer::Quic(send), Reader::Quic(recv), address, admitted)
+            .hello(
+                Writer::Quic(send),
+                Reader::Quic(recv),
+                address,
+                admitted,
+                deadline,
+            )
             .await;
         let _ = timeout(WHAT_WAS_SAID_LEAVES_WITHIN, connection.closed()).await;
         served
@@ -337,8 +349,9 @@ impl Server {
         forwarded_by: Option<Arc<str>>,
         admitted: Option<Arc<Admitted>>,
         handshake: tokio::sync::OwnedSemaphorePermit,
+        deadline: Instant,
     ) -> Result<()> {
-        let upgraded = timeout(HELLO_WITHIN, accepted(stream, forwarded_by.as_deref())).await;
+        let upgraded = timeout_at(deadline, accepted(stream, forwarded_by.as_deref())).await;
         let Ok(upgraded) = upgraded else {
             return Ok(());
         };
@@ -355,8 +368,14 @@ impl Server {
             (None, None) => return Ok(()),
         };
         let unobserved = SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 0);
-        self.hello(upgraded.outgoing, upgraded.incoming, unobserved, admitted)
-            .await
+        self.hello(
+            upgraded.outgoing,
+            upgraded.incoming,
+            unobserved,
+            admitted,
+            deadline,
+        )
+        .await
     }
 
     async fn hello(
@@ -365,9 +384,10 @@ impl Server {
         mut recv: Reader,
         address: SocketAddr,
         admitted: Arc<Admitted>,
+        deadline: Instant,
     ) -> Result<()> {
-        let hello = timeout(
-            HELLO_WITHIN,
+        let hello = timeout_at(
+            deadline,
             read_the_first(&mut recv, FIRST_FRAME_AT_MOST, self.frames.clone()),
         )
         .await;
@@ -1182,8 +1202,12 @@ impl Server {
     }
 }
 
-async fn answered_as_a_page(mut stream: TcpStream, certificates: &[String]) -> Option<TcpStream> {
-    let asked = timeout(HELLO_WITHIN, page_asked_of(&stream))
+async fn answered_as_a_page(
+    mut stream: TcpStream,
+    certificates: &[String],
+    deadline: Instant,
+) -> Option<TcpStream> {
+    let asked = timeout_at(deadline, page_asked_of(&stream))
         .await
         .ok()
         .flatten();

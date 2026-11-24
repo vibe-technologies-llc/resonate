@@ -682,6 +682,31 @@ mod tests {
     }
 
     #[test]
+    fn a_bonjour_record_is_the_sealed_beacon_in_base32_symbols_and_not_hex() {
+        let here = SyncKey::minted()
+            .expect("a key")
+            .derived()
+            .expect("derived");
+        let beacon = beacon(1);
+
+        let record = record_of(&here, &beacon, NOW).expect("recorded");
+
+        let bytes = from_symbols(&record, LARGEST_BEACON).expect("symbols");
+
+        assert!(bytes.starts_with(RECORD_MAGIC));
+        assert_eq!(in_symbols(&bytes), record);
+        assert_eq!(record.len(), (bytes.len() * 8).div_ceil(5));
+        assert!(record.len() < bytes.len() * 2);
+        assert!(
+            record
+                .chars()
+                .all(|symbol| symbol.is_ascii_digit() || symbol.is_ascii_uppercase())
+        );
+        assert!(!record.contains(['I', 'L', 'O', 'U']));
+        assert_eq!(beacon_recorded(&here, &record, NOW), Ok(beacon));
+    }
+
+    #[test]
     fn the_fullest_record_fits_one_bonjour_text_string_and_reads_back() {
         let here = SyncKey::minted()
             .expect("a key")
