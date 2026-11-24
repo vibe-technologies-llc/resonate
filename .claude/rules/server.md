@@ -468,11 +468,49 @@ address and no inbound port is open. The old `sync.tecnio.dev` name is not serve
 
 
 `packaging/server/resonate-server.service`: `DynamicUser`, `StateDirectory=resonate-server` (the
-store), `CAP_NET_BIND_SERVICE` for UDP 443 and the usual hardening; the certificate chain and key
-are handed in as systemd credentials from `/etc/resonate-server/fullchain.pem` and `privkey.pem`
-(a root-owned Let's Encrypt key a dynamic user could not read); `resonate-server.env` sets `LISTEN`,
+store), `CAP_NET_BIND_SERVICE` for UDP 443 and the usual hardening; `resonate-server.env` sets `LISTEN`,
 `RUST_LOG` and `SERVER_ARGS` (empty; `--config /etc/resonate-server/config.toml` turns the gateway on). **The log is
 coloured only on a terminal**: `logs_in_colour` asks whether standard output is one and whether
 `NO_COLOR` is set, so the unit's journal holds plain levels and messages with no escapes
 (`what_the_server_logs_to_a_journal_carries_plain_levels_and_no_terminal_escapes`). SIGINT and SIGTERM close the endpoint and wait for it to go idle. The same directory holds the Arch and Fedora recipes that install the binary, the unit and
 `resonate-server.env` (`packaging.md`).
+
+### Renewing the certificate
+
+**SIGHUP reads the chain and key again, and a pair that does not hold is refused while the working
+one goes on being presented.** `Credentials` (`credentials.rs`) keeps the two paths and one
+`Presented`, rustls' `ResolvesServerCert` over an `Arc<CertifiedKey>` behind a lock; both TLS
+listeners are built on it (`serving` for QUIC, `gateway_tls` for the hifi gateway; the web socket
+listener has no TLS of its own), so every handshake asks it for the pair and a swap reaches the
+next handshake on both with no listener rebuilt and no session dropped. `Credentials::reload`
+parses the chain (`NoCertificate` when it holds none, `Pem` when a file does not read) and the key,
+and pairs them through `CertifiedKey::from_der`, which refuses a key that is not the leaf's or a
+leaf that does not parse (`Unpaired`); only a pair that passes replaces the one presented. The
+binary's `renewals` task reloads on each SIGHUP and logs the outcome, a refusal at `error`
+(`the_next_handshake_after_a_renewal_presents_the_renewed_chain_on_both_listeners`,
+`a_renewal_that_does_not_read_or_pair_keeps_the_working_chain_presented`,
+`the_server_presents_a_renewed_chain_once_it_is_hung_up_on`). A session resumed from an earlier
+ticket presents no chain at all, so a client sees the renewed leaf on its next full handshake.
+
+**The unit hands the pair over itself, never as systemd credentials**, since `LoadCredential=`
+copies the files once at start and a reload refreshes them only under systemd 260's
+`RefreshOnReload=`, newer than the distributions served (Ubuntu 26.04 has 259).
+`hand-over-credentials.sh`, installed as `/usr/lib/resonate-server/hand-over-credentials`, runs as
+root (the `+` prefix) as `ExecStartPre=` and as `ExecReload=`: it copies
+`/etc/resonate-server/fullchain.pem` and `privkey.pem` (a root-owned Let's Encrypt key a dynamic
+user could not read) into the unit's `RuntimeDirectory=` (`/run/resonate-server`, `0700`) as
+`certificate` and `key`, `0400` and owned by whoever owns that directory (the dynamic user), each
+staged and renamed so the server never reads half a file, and on a reload then sends SIGHUP to
+`$MAINPID`. A copy that fails (a file missing) fails the reload and sends nothing, so the running
+server keeps its pair; `RESONATE_SERVER_CREDENTIALS_FROM` and `RESONATE_SERVER_CREDENTIALS_TO`
+move the two folders, which is how
+`the_hand_over_copies_the_pair_for_the_runtime_directorys_owner_alone` and
+`a_reload_hangs_up_on_the_server_only_once_the_pair_is_handed_over` run it.
+
+**After a renewal the operator runs `systemctl reload resonate-server`**, from the ACME client's
+deploy hook (certbot's `--deploy-hook 'systemctl reload resonate-server'`, or a script in
+`/etc/letsencrypt/renewal-hooks/deploy/`), with `fullchain.pem` and `privkey.pem` in
+`/etc/resonate-server/` linked to the client's live copies. A reload never ends the server: a
+renewed pair that does not hold is logged and the old one stays in use until the files are put
+right and reloaded again. A restart reads the files afresh and fails on such a pair, so a restart
+is no way to renew.

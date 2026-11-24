@@ -7,7 +7,7 @@ use std::{
 use quinn::{
     ClientConfig, Connection, Endpoint, RecvStream, SendStream, crypto::rustls::QuicClientConfig,
 };
-use resonate_server::{Limits, Server, Store, listening, serving};
+use resonate_server::{Limits, Presented, Server, Store, listening, serving};
 use resonate_sync::{
     DeviceId, SpaceId, Token, read_frame, send_frame,
     wire::{FIRST_FRAME_AT_MOST, FromServer, PROTOCOL_VERSION, Refusal, SERVER_ALPN, ToServer},
@@ -61,7 +61,8 @@ pub fn serving_over(store: Store, limits: Limits) -> Serving {
         .expect("a certificate");
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
 
-    let config = serving(vec![certificate.der().clone()], key).expect("a configuration");
+    let config = serving(Presented::of(vec![certificate.der().clone()], key).expect("a pair"))
+        .expect("a configuration");
     let endpoint =
         listening(config, SocketAddr::from((Ipv4Addr::LOCALHOST, 0))).expect("listening");
     let address = endpoint.local_addr().expect("an address");

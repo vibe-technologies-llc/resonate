@@ -8,7 +8,6 @@ use std::{
 use resonate_providers::{Delivery, Opened};
 use resonate_tidal::HifiApi;
 use rustls::{crypto::ring::default_provider, version::TLS13};
-use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::{
     io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -19,7 +18,8 @@ use tokio::{
 use tokio_rustls::TlsAcceptor;
 
 use crate::{
-    Admitted as Counted, Allowance, Cache, Error, Fill, Guard, Hit, Keys, Result, Searches,
+    Admitted as Counted, Allowance, Cache, Error, Fill, Guard, Hit, Keys, Presented, Result,
+    Searches,
     ranges::{Span, Unsatisfiable, Wanted, windowed},
 };
 
@@ -128,16 +128,12 @@ pub struct Gateway {
     searches: Searches,
 }
 
-pub fn gateway_tls(
-    chain: Vec<CertificateDer<'static>>,
-    key: PrivateKeyDer<'static>,
-) -> Result<TlsAcceptor> {
+pub fn gateway_tls(presented: Arc<Presented>) -> Result<TlsAcceptor> {
     let mut tls = rustls::ServerConfig::builder_with_provider(Arc::new(default_provider()))
         .with_protocol_versions(&[&TLS13])
         .map_err(|source| Error::Tls(Box::new(source)))?
         .with_no_client_auth()
-        .with_single_cert(chain, key)
-        .map_err(|source| Error::Tls(Box::new(source)))?;
+        .with_cert_resolver(presented);
 
     tls.alpn_protocols = vec![HTTP_ALPN.to_vec()];
     Ok(TlsAcceptor::from(Arc::new(tls)))

@@ -1,0 +1,10 @@
+[Trigger]
+Type = Path
+Operation = Upgrade
+Target = usr/bin/resonate-server
+
+[Action]
+Description = Restarting a running resonate-server...
+When = PostTransaction
+Depends = systemd
+Exec = /usr/share/libalpm/scripts/systemd-hook restart resonate-server.service

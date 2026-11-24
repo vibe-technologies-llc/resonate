@@ -65,6 +65,14 @@ pub enum Error {
     #[error("{} holds no certificate", path.display())]
     NoCertificate { path: PathBuf },
 
+    #[error("the key at {} does not pair with the certificate at {}", key.display(), certificate.display())]
+    Unpaired {
+        certificate: PathBuf,
+        key: PathBuf,
+        #[source]
+        source: Box<rustls::Error>,
+    },
+
     #[error("{} could not be read", path.display())]
     ConfigRead {
         path: PathBuf,
@@ -100,7 +108,7 @@ pub enum Error {
     #[error("the server runtime could not start")]
     Runtime(#[source] io::Error),
 
-    #[error("the server could not listen for the signal to stop")]
+    #[error("the server could not listen for its signals")]
     Signals(#[source] io::Error),
 
     #[error("the store's worker went away")]

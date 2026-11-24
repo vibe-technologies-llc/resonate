@@ -1,7 +1,6 @@
 use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     num::NonZeroU64,
-    path::Path,
     sync::{Arc, atomic::Ordering},
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -18,7 +17,6 @@ use resonate_sync::{
 };
 use ring::rand::{SecureRandom, SystemRandom};
 use rustls::{crypto::ring::default_provider, version::TLS13};
-use rustls_pki_types::{CertificateDer, PrivateKeyDer, pem::PemObject};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::{TcpListener, TcpStream},
@@ -27,7 +25,8 @@ use tokio::{
 };
 
 use crate::{
-    Error, PemOp, Result,
+    Error, Result,
+    credentials::Presented,
     guard::{Admitted, Allowance, Guard},
     hub::{Hub, Joined, Notice, notice_weight, relayed_weight},
     pages,
@@ -153,47 +152,12 @@ impl Default for Limits {
     }
 }
 
-pub fn tls(certificate: &Path, key: &Path) -> Result<ServerConfig> {
-    let (chain, key) = pem(certificate, key)?;
-    serving(chain, key)
-}
-
-pub fn pem(
-    certificate: &Path,
-    key: &Path,
-) -> Result<(Vec<CertificateDer<'static>>, PrivateKeyDer<'static>)> {
-    let chain = CertificateDer::pem_file_iter(certificate)
-        .and_then(Iterator::collect::<std::result::Result<Vec<_>, _>>)
-        .map_err(|source| Error::Pem {
-            op: PemOp::Certificate,
-            path: certificate.to_path_buf(),
-            source,
-        })?;
-
-    if chain.is_empty() {
-        return Err(Error::NoCertificate {
-            path: certificate.to_path_buf(),
-        });
-    }
-
-    let key = PrivateKeyDer::from_pem_file(key).map_err(|source| Error::Pem {
-        op: PemOp::Key,
-        path: key.to_path_buf(),
-        source,
-    })?;
-    Ok((chain, key))
-}
-
-pub fn serving(
-    chain: Vec<CertificateDer<'static>>,
-    key: PrivateKeyDer<'static>,
-) -> Result<ServerConfig> {
+pub fn serving(presented: Arc<Presented>) -> Result<ServerConfig> {
     let mut tls = rustls::ServerConfig::builder_with_provider(Arc::new(default_provider()))
         .with_protocol_versions(&[&TLS13])
         .map_err(|source| Error::Tls(Box::new(source)))?
         .with_no_client_auth()
-        .with_single_cert(chain, key)
-        .map_err(|source| Error::Tls(Box::new(source)))?;
+        .with_cert_resolver(presented);
 
     tls.alpn_protocols = vec![SERVER_ALPN.to_vec()];
 

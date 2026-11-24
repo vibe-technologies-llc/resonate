@@ -9,7 +9,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use resonate_core::{Answer, LONGEST_SHARED_LYRICS, SharedLyrics};
-use resonate_server::{Limits, Server, Store, listening, serving};
+use resonate_server::{Limits, Presented, Server, Store, listening, serving};
 use resonate_sync::{
     Follow, Me, Platform, Settings, SongTags, Standing, Sync, SyncKey, wire::LARGEST_FRAME,
 };
@@ -82,7 +82,8 @@ fn hosted_over(folder: &Path, store: Store) -> Hosted {
     fs::write(&trusted, pem).expect("written");
 
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
-    let config = serving(vec![certificate.der().clone()], key).expect("a configuration");
+    let config = serving(Presented::of(vec![certificate.der().clone()], key).expect("a pair"))
+        .expect("a configuration");
     let runtime = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()

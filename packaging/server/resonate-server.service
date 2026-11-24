@@ -6,9 +6,11 @@ After=network-online.target
 [Service]
 Type=simple
 EnvironmentFile=/etc/resonate-server/resonate-server.env
-LoadCredential=certificate:/etc/resonate-server/fullchain.pem
-LoadCredential=key:/etc/resonate-server/privkey.pem
-ExecStart=/usr/bin/resonate-server --listen ${LISTEN} --certificate ${CREDENTIALS_DIRECTORY}/certificate --key ${CREDENTIALS_DIRECTORY}/key --store ${STATE_DIRECTORY}/records.sqlite --cache ${CACHE_DIRECTORY} $SERVER_ARGS
+RuntimeDirectory=resonate-server
+RuntimeDirectoryMode=0700
+ExecStartPre=+/usr/lib/resonate-server/hand-over-credentials
+ExecStart=/usr/bin/resonate-server --listen ${LISTEN} --certificate ${RUNTIME_DIRECTORY}/certificate --key ${RUNTIME_DIRECTORY}/key --store ${STATE_DIRECTORY}/records.sqlite --cache ${CACHE_DIRECTORY} $SERVER_ARGS
+ExecReload=+/usr/lib/resonate-server/hand-over-credentials $MAINPID
 DynamicUser=yes
 StateDirectory=resonate-server
 CacheDirectory=resonate-server

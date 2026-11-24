@@ -113,18 +113,19 @@ build_server() {
     install -Dm755 target/release/resonate-server "$stage/usr/bin/resonate-server"
     install -Dm644 packaging/server/resonate-server.service "$stage/usr/lib/systemd/system/resonate-server.service"
     install -Dm644 packaging/server/resonate-server.env "$stage/etc/resonate-server/resonate-server.env"
+    install -Dm755 packaging/server/hand-over-credentials.sh "$stage/usr/lib/resonate-server/hand-over-credentials"
     stage_documents resonate-server
 
     mkdir -p "$stage/DEBIAN"
     printf '/etc/resonate-server/resonate-server.env\n' >"$stage/DEBIAN/conffiles"
-    printf '#!/bin/sh\nset -e\nif [ -d /run/systemd/system ]; then\n    systemctl daemon-reload || true\nfi\n' >"$stage/DEBIAN/postinst"
-    printf '#!/bin/sh\nset -e\nif [ "$1" = remove ] && [ -d /run/systemd/system ]; then\n    systemctl stop resonate-server.service || true\nfi\n' >"$stage/DEBIAN/prerm"
-    printf '#!/bin/sh\nset -e\nif [ -d /run/systemd/system ]; then\n    systemctl daemon-reload || true\nfi\n' >"$stage/DEBIAN/postrm"
-    chmod 755 "$stage/DEBIAN/postinst" "$stage/DEBIAN/prerm" "$stage/DEBIAN/postrm"
+    local script
+    for script in postinst prerm postrm; do
+        install -m755 "packaging/deb/server/$script.sh" "$stage/DEBIAN/$script"
+    done
 
     local libraries
     libraries=$(shared_library_dependencies target/release/resonate-server)
-    write_control resonate-server net "${libraries:+$libraries, }systemd" \
+    write_control resonate-server net "${libraries:+$libraries, }systemd, init-system-helpers (>= 1.54~)" \
         'Sync server for Resonate: keeps sealed records and introduces devices' \
         'The Resonate sync server keeps records its devices sealed under keys it never holds, and introduces devices that share a pairing code. It runs as a hardened systemd service with a dynamic user. Built for x86-64-v3 processors.'
     seal resonate-server

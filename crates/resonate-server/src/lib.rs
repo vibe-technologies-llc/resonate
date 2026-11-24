@@ -1,4 +1,5 @@
 mod cache;
+mod credentials;
 mod error;
 mod gateway;
 mod guard;
@@ -37,12 +38,13 @@ pub fn read_a_request(request: &[u8], total: u64) {
 
 pub use crate::{
     cache::{Cache, Fill, Hit},
+    credentials::{Credentials, Presented},
     error::{CacheOp, ConfigField, Error, PemOp, Result, StoreOp},
     gateway::{Crowd, Gateway, Keeping, gateway_tls},
     guard::{Admitted, Allowance, Guard},
     keys::{Digest, Hifi, Keys, Minted},
     searches::{Recalled, Searches},
-    serve::{Limits, Server, listening, pem, serving, tls},
+    serve::{Limits, Server, listening, serving},
     store::{Capacity, Store},
     web::Web,
 };

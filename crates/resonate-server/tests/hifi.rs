@@ -9,7 +9,7 @@ use std::{
 
 use base64::{Engine, engine::general_purpose::STANDARD};
 use parking_lot::Mutex;
-use resonate_server::{Cache, Crowd, Digest, Gateway, Keeping, Keys, gateway_tls};
+use resonate_server::{Cache, Crowd, Digest, Gateway, Keeping, Keys, Presented, gateway_tls};
 use resonate_tidal::{HifiApi, MediaHosts};
 use rustls::{ClientConfig, RootCertStore, crypto::ring::default_provider, version::TLS13};
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer, ServerName};
@@ -110,7 +110,9 @@ async fn kept_through(
         .expect("a certificate");
     let key = PrivateKeyDer::Pkcs8(PrivatePkcs8KeyDer::from(signing.serialize_der()));
 
-    let acceptor = gateway_tls(vec![certificate.der().clone()], key).expect("an acceptor");
+    let acceptor =
+        gateway_tls(Presented::of(vec![certificate.der().clone()], key).expect("a pair"))
+            .expect("an acceptor");
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("a port");
     let address = listener.local_addr().expect("an address");
     let keys = Keys::new(vec![Digest::of(SECRET.as_bytes())]);

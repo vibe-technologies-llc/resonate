@@ -131,8 +131,15 @@ either:
   under `-C target-cpu=x86-64-v3`, the spec's `%install` layout (man pages gzipped, the zsh
   completion under `vendor-completions`), `Depends` from `dpkg-shlibdeps` plus `pipewire` and
   `libvulkan1` (loaded at run time) for the player or `systemd` for the server, and `dpkg-deb
-  --root-owner-group`. The server's environment file is a `conffiles` entry and its maintainer
-  scripts only reload systemd and stop the unit on removal.
+  --root-owner-group`. The server's environment file is a `conffiles` entry, and its maintainer
+  scripts are `deb/server/{postinst,prerm,postrm}.sh`, installed as they are, Debian's
+  `--restart-after-upgrade` by hand: `postinst configure` reloads systemd and, only where an older
+  version was configured, `deb-systemd-invoke try-restart`s the unit (a running server takes the
+  new binary, a stopped one stays stopped, a first install starts nothing); `prerm` stops it only
+  on `remove`; nothing enables or disables it, so the operator's choice is kept
+  (`init-system-helpers` is a `Depends` for `deb-systemd-invoke`;
+  `a_debian_upgrade_restarts_a_running_server_and_a_first_install_starts_none` runs them against
+  stand-ins for `systemctl` and `deb-systemd-invoke`).
 - **`release.yml` (`build.md`) builds these recipes in parallel jobs and `publish` attaches
   everything**, so one failing job leaves the others' assets. Asset names carry no `~` (`-` in its
   place) and the Arch packages are renamed `-x86_64_v3.pkg.tar.zst`.
@@ -163,10 +170,20 @@ unit, its environment file and the two recipes that install them with the `reson
 `--package resonate-server` (it reaches no PipeWire, GPUI or Vulkan, so the recipes name no such
 dependency), set `RUSTFLAGS` as the player's recipes do, install the unit under systemd's unit
 directory and the environment file as `/etc/resonate-server/resonate-server.env`, kept across an
-upgrade (`backup=` / `%config(noreplace)`), and leave the certificate and key to the listener. The
+upgrade (`backup=` / `%config(noreplace)`), install `hand-over-credentials.sh` as
+`/usr/lib/resonate-server/hand-over-credentials` (the unit runs it, `server.md`), and leave the
+certificate and key to the listener. **An upgrade restarts a running server and an install starts
+none** in every format: the DEB's maintainer scripts (above), the spec's
+`%systemd_postun_with_restart` beside `%systemd_post`, and in both Arch recipes
+`resonate-server.hook`, installed as `70-resonate-server-restart.hook` so it runs after systemd's
+own daemon-reload hook: a path trigger on `usr/bin/resonate-server` for `Upgrade` alone, running
+`systemd-hook restart` (a `try-restart`) after the transaction, as Arch's own packages restart
+theirs (`an_rpm_or_arch_upgrade_restarts_a_running_server_and_an_install_starts_none`). The
 spec reads the player's source archive (`resonate-<version>.tar.gz`) and is held to the workspace's
 version like the player's (`the_server_spec_builds_the_version_cargo_declares`);
-`every_server_package_installs_the_unit_and_its_environment` holds every recipe to the two files.
+`every_server_package_installs_the_unit_and_its_environment` holds every recipe to the two files and
+`every_server_recipe_installs_the_hand_over_where_the_unit_runs_it` to the hand-over (both under
+`crates/resonate-server/tests/packaging.rs` but the first, which is the binary crate's).
 CI builds the PKGBUILD (`server-package`: `makepkg` as a build user, `source` pointed at the runner's
 checkout, `check()` included); the release recipes build only in `release.yml`.
 

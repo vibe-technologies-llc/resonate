@@ -149,16 +149,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   reclaiming the copy and make the post-removal setting explicit. Done when
   removal during a refresh reclaims the copy and a later look honours the
   decision to remove it.
-- [M · 0.17.1] Carry renewed TLS credentials into a packaged sync service.
-  **Medium, architect.** The unit supplies a credential snapshot at startup,
-  and the server reads the chain and key once. Replacing the installed PEMs
-  leaves the running listener on the old chain
-  (`packaging/server/resonate-server.service:6`,
-  `crates/resonate-server/src/main.rs:236`, `:264`,
-  `crates/resonate-server/src/serve.rs:176`). Provide a supported renewal
-  handoff that updates or restarts the TLS listeners after validating the
-  new pair. Done when the next handshake after renewal presents the new
-  chain and a failed renewal preserves the working credentials.
 - [S · 0.17.1] Prefer usable LAN addresses before capping advertisements.
   **Low, builder.** Numeric order can keep several bridge addresses while dropping
   the actual LAN address from a beacon or WebSocket punch

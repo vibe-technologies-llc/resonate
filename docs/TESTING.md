@@ -177,14 +177,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `:16`). Make the device-only modules optional for server builds.
   Done when the shipped server's normal dependency tree omits the
   discovery stack and both server and device-sync suites pass.
-- [S · 0.17.1] Apply a Debian server upgrade to the running service.
-  **Low, builder.** The generated maintainer scripts reload systemd's
-  unit definitions but leave an active process on the old binary after
-  package upgrade (`packaging/deb/build.sh:118`,
-  `packaging/server/resonate-server.spec:43`).
-  Use the package lifecycle to refresh a running instance and preserve
-  its enabled state. Done when an upgrade loads the new binary while
-  installing on a stopped server leaves service startup to the operator.
 
 ## Providers and network
 - [S · 0.17.1] Prove that a provider can use a private certificate authority.

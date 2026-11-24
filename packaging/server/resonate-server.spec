@@ -31,7 +31,9 @@ cargo build --locked --release --package resonate-server
 %install
 install -Dm755 "${CARGO_TARGET_DIR:-target}/release/resonate-server" %{buildroot}%{_bindir}/resonate-server
 install -Dm644 packaging/server/resonate-server.service %{buildroot}%{_unitdir}/resonate-server.service
+%{_prefix}/lib/resonate-server/
 install -Dm644 packaging/server/resonate-server.env %{buildroot}%{_sysconfdir}/resonate-server/resonate-server.env
+install -Dm755 packaging/server/hand-over-credentials.sh %{buildroot}%{_prefix}/lib/resonate-server/hand-over-credentials
 
 %post
 %systemd_post resonate-server.service
@@ -47,6 +49,7 @@ install -Dm644 packaging/server/resonate-server.env %{buildroot}%{_sysconfdir}/r
 %doc README.md COPYRIGHT
 %{_bindir}/resonate-server
 %{_unitdir}/resonate-server.service
+%{_prefix}/lib/resonate-server/
 %dir %{_sysconfdir}/resonate-server
 %config(noreplace) %{_sysconfdir}/resonate-server/resonate-server.env
 

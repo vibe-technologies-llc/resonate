@@ -11,8 +11,8 @@ use std::{
 
 use clap::{CommandFactory, Parser, error::ErrorKind};
 use resonate_server::{
-    Allowance, Cache, Capacity, Error, Gateway, Hifi, Keeping, Limits, Minted, Server, Store, Web,
-    gateway_tls, listening, pem, serving,
+    Allowance, Cache, Capacity, Credentials, Error, Gateway, Hifi, Keeping, Limits, Minted, Server,
+    Store, Web, gateway_tls, listening, serving,
 };
 use resonate_sync::wire::LARGEST_RECORD;
 use tokio::net::TcpListener;
@@ -44,7 +44,7 @@ struct Args {
         long,
         value_name = "PEM",
         required_unless_present = "hifi_key",
-        help = "The certificate chain the server presents"
+        help = "The certificate chain the server presents, read again with its key on SIGHUP"
     )]
     certificate: Option<PathBuf>,
 
@@ -249,7 +249,7 @@ fn required(value: Option<PathBuf>, flag: &str) -> PathBuf {
 }
 
 fn run(args: Args) -> Result<(), Error> {
-    let (chain, key) = pem(
+    let credentials = Credentials::read(
         &required(args.certificate, "certificate"),
         &required(args.key, "key"),
     )?;
@@ -274,9 +274,9 @@ fn run(args: Args) -> Result<(), Error> {
 
     let gateway_acceptor = hifi
         .as_ref()
-        .map(|_| gateway_tls(chain.clone(), key.clone_key()))
+        .map(|_| gateway_tls(credentials.presented()))
         .transpose()?;
-    let config = serving(chain, key)?;
+    let config = serving(credentials.presented())?;
     let store = Store::open(&required(args.store, "store"))?.limited(Capacity {
         spaces: args.spaces,
         bytes: args.total_bytes,
@@ -346,6 +346,8 @@ fn run(args: Args) -> Result<(), Error> {
         };
         let terminated = termination()?;
 
+        tokio::spawn(renewals(credentials)?);
+
         tokio::select! {
             () = server.serve(endpoint.clone()) => {}
             () = serving_hifi => {}
@@ -367,6 +369,28 @@ fn termination() -> Result<impl std::future::Future<Output = ()>, Error> {
     Ok(async move {
         terminated.recv().await;
     })
+}
+
+#[cfg(unix)]
+fn renewals(credentials: Credentials) -> Result<impl Future<Output = ()>, Error> {
+    use tokio::signal::unix::{SignalKind, signal};
+
+    let mut hangups = signal(SignalKind::hangup()).map_err(Error::Signals)?;
+    Ok(async move {
+        while hangups.recv().await.is_some() {
+            match credentials.reload() {
+                Ok(()) => tracing::info!("presenting the certificate read again"),
+                Err(error) => {
+                    tracing::error!(%error, "kept presenting the certificate in use");
+                }
+            }
+        }
+    })
+}
+
+#[cfg(windows)]
+fn renewals(_: Credentials) -> Result<impl Future<Output = ()>, Error> {
+    Ok(std::future::pending::<()>())
 }
 
 #[cfg(windows)]
