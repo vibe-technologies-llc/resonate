@@ -54,4 +54,24 @@ import Testing
         #expect(!FileRemoval.isGone(after: POSIXError(.EIO), folderReachable: true))
         #expect(!FileRemoval.isGone(after: POSIXError(.EPERM), folderReachable: true))
     }
+
+    @Test func aCodeThatMeansNoSuchFileOnlyInAnotherDomainIsNeverGone() {
+        let interrupted = POSIXError(.EINTR)
+        let cocoaNumberedAsNoSuchFile = NSError(
+            domain: NSCocoaErrorDomain,
+            code: Int(POSIXErrorCode.ENOENT.rawValue)
+        )
+        let interruptedBeneath = NSError(
+            domain: NSCocoaErrorDomain,
+            code: CocoaError.Code.fileWriteUnknown.rawValue,
+            userInfo: [NSUnderlyingErrorKey: interrupted as NSError]
+        )
+
+        #expect(Int(POSIXErrorCode.EINTR.rawValue) == CocoaError.Code.fileNoSuchFile.rawValue)
+        #expect(!FileRemoval.isGone(after: interrupted, folderReachable: true))
+        #expect(!FileRemoval.isGone(after: cocoaNumberedAsNoSuchFile, folderReachable: true))
+        #expect(!FileRemoval.isGone(after: interruptedBeneath, folderReachable: true))
+        #expect(FileRemoval.isGone(after: POSIXError(.ENOENT), folderReachable: true))
+        #expect(FileRemoval.isGone(after: CocoaError(.fileNoSuchFile), folderReachable: true))
+    }
 }

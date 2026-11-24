@@ -403,11 +403,22 @@ space (`song_of`, `unmeasured`:
 `a_document_whose_uri_holds_an_escape_is_named_to_the_party_by_its_catalog_row`,
 `a_document_whose_uri_holds_an_escape_is_measured_by_its_kept_peaks`). Anything else, a bare path or a `file:` URI
 included, is `InvalidUri`, and so is a `resonate-folder` URI with a piece that, once percent-decoded, is `.` or `..` or holds a `/` or NUL (`a%2F..%2Fx`), the same refusal as the iOS app's `FolderURI.components(of:)`
-(`a_folder_uri_climbing_out_of_its_root_by_any_spelling_is_refused`). A negative descriptor says why: `document_not_found()` (no such
-document: Android's `FileNotFoundException`, iOS's unresolvable bookmark or `ENOENT`) reads as
-`NotFound`, `document_refused()` (any other failure) as `PermissionDenied`, and
-`hide_missing_songs` hides only a `NotFound`, so a provider's transient error leaves a song visible
-(`only_a_document_that_is_not_found_reads_as_not_found`), and the sync catalog's `holds` reads only a
+(`a_folder_uri_climbing_out_of_its_root_by_any_spelling_is_refused`). A negative descriptor says why: `document_not_found()` reads as
+`NotFound`, `document_refused()` as `PermissionDenied`, and **a vanished document is a confirmed
+absence, never a failed open alone**: a front end answers `document_not_found()` only where the
+open said no such document (Android's `FileNotFoundException` or `IllegalArgumentException`, iOS's
+`ENOENT` in the POSIX domain, `FileRemoval.saysNoSuchFile`) and the folder that should hold it was
+listed and does not, or a folder on the way was listed without the next one (for Android's
+Downloads, a MediaStore query finds no row) (`DocumentPresence` on
+both phones, `RowPresence.Absent`, `OpenFailure.NotFound`; `DocumentPresenceTest`,
+`DocumentPresenceTests`). Everything ambiguous is `document_refused()`: a bookmark that no longer
+resolves or a root no longer there, a revoked grant, a provider that answers no listing, a subfolder
+that cannot be listed though its parent names it, a document its folder still lists, a document id
+that does not name its folders (an opaque provider's), and any other error. `is_vanished` takes
+only a `NotFound`, so `hide_missing_songs` hides, and drops from the queue, only a confirmed absence,
+and a provider's or a bookmark's transient failure leaves the row and its queue rows as they were
+(`only_a_document_that_is_not_found_reads_as_not_found`,
+`a_file_the_provider_refuses_is_not_a_file_that_is_gone`), and the sync catalog's `holds` reads only a
 `NotFound` as not held, the same rule (`android.md`'s *Device sync*). `hide_unlisted_songs(prefixes, listed)` is
 the same pass given the URIs the front end saw listed: those are taken to exist and never opened
 (`a_document_the_listing_shows_is_not_opened_and_the_rest_are`); `hide_missing_songs` is it with

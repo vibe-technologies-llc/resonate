@@ -149,11 +149,15 @@ final class Folders: Documents, @unchecked Sendable {
     }
 
     func openDocument(uri: String) -> Int32 {
-        guard let document = try? resolved(uri) else { return documentNotFound() }
+        guard let document = try? resolved(uri) else { return documentRefused() }
         defer { document.close() }
         let descriptor = Darwin.open(document.url.path, O_RDONLY | O_CLOEXEC)
         if descriptor >= 0 { return descriptor }
-        return errno == ENOENT ? documentNotFound() : documentRefused()
+        let code = errno
+        return switch OpenFailure.opening(document.url, under: document.root, failedWith: code) {
+        case .notFound: documentNotFound()
+        case .refused: documentRefused()
+        }
     }
 
     func folders() -> [MusicFolder] {

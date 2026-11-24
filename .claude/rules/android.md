@@ -875,10 +875,15 @@ failed on no song, `hide_unlisted_songs` is given the prefixes of the readable f
 root answers a query, and MediaStore's Files collection while Downloads is on), so an unreadable
 grant never hides its songs, and the documents those folders list (`MusicDocuments.listed`: one
 query a directory, not one open a song): only a song the listing does not show is opened, so
-`NotFound` still decides (a deleted document under a tree grant fails to open with an
-`IllegalArgumentException`, from `FileSystemProvider.isChildDocument`, as well as a
-`FileNotFoundException`, and `openGranted` answers both `NotFound`; a `SecurityException` is a refusal),
-and a listing that fails part-way costs opens, never a wrong hiding. A pass that hid songs reads the catalog again, reloads the open
+`NotFound` still decides, and a listing that fails part-way costs opens, never a wrong hiding. A
+deleted document under a tree grant fails to open with an `IllegalArgumentException`, from
+`FileSystemProvider.isChildDocument`, as well as a `FileNotFoundException`, but so does a document
+whose provider died, whose volume went or whose subfolder cannot be reached, so `openGranted` asks
+`MusicDocuments.presence` before answering `NotFound` (`DocumentPresence.failure`): a tree
+document's folder is listed by its path-shaped document id, climbing toward the tree's root while a
+folder will not list (`DocumentPresence.inTree`, absent only where a folder that lists lacks the next
+step), and a MediaStore row is queried (`RowPresence.Absent` where the query finds none); anything
+else, a `SecurityException` and a null descriptor included, is a refusal (`mobile.md`). A pass that hid songs reads the catalog again, reloads the open
 playlist and, only when *Tell me what the library finds by itself* is on, says *N songs whose files are gone were hidden*; one that fails is reported once per
 distinct text. The queue drops hidden rows through the boundary's own `left_the_queue`.
 

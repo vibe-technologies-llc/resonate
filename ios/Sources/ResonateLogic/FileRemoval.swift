@@ -19,7 +19,7 @@ public enum FileRemoval {
         return FileManager.default.fileExists(atPath: folder.path, isDirectory: &directory) && directory.boolValue
     }
 
-    private static func saysNoSuchFile(_ failure: NSError) -> Bool {
+    static func saysNoSuchFile(_ failure: NSError) -> Bool {
         switch failure.domain {
         case NSCocoaErrorDomain where failure.code == CocoaError.Code.fileNoSuchFile.rawValue: true
         case NSPOSIXErrorDomain where failure.code == Int(POSIXErrorCode.ENOENT.rawValue): true

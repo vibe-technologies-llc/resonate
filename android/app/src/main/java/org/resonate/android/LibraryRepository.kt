@@ -8,7 +8,6 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.util.Log
 import androidx.annotation.StringRes
-import java.io.FileNotFoundException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineExceptionHandler
@@ -287,19 +286,30 @@ class LibraryRepository(private val context: Context) {
                             override fun openDocument(uri: String): Int =
                                 openedFiles.descriptor(uri) ?: openGranted(uri)
 
-                            private fun openGranted(uri: String): Int =
-                                try {
+                            private fun openGranted(uri: String): Int {
+                                val document = Uri.parse(uri)
+                                return try {
                                     context.contentResolver
-                                        .openFileDescriptor(Uri.parse(uri), "r")
-                                        ?.detachFd() ?: -1
-                                } catch (gone: FileNotFoundException) {
-                                    documentNotFound()
-                                } catch (gone: IllegalArgumentException) {
-                                    documentNotFound()
+                                        .openFileDescriptor(document, "r")
+                                        ?.detachFd() ?: documentRefused()
                                 } catch (failure: Exception) {
-                                    Log.w("Resonate", "Document grant could not be opened", failure)
-                                    documentRefused()
+                                    val answer =
+                                        DocumentPresence.failure(failure) {
+                                            MusicDocuments.presence(context, document)
+                                        }
+                                    when (answer) {
+                                        OpenFailure.NotFound -> documentNotFound()
+                                        OpenFailure.Refused -> {
+                                            Log.w(
+                                                "Resonate",
+                                                "Document grant could not be opened",
+                                                failure,
+                                            )
+                                            documentRefused()
+                                        }
+                                    }
                                 }
+                            }
                         },
                     )
                 opened = native

@@ -55,12 +55,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   refused without the multicast entitlement have not been seen
 
 ## iOS
-- [S · 0.17.1] Test iOS file removal errors with overlapping numeric codes. **Low, builder.**
-  The negatives use different numbers from the positive cases, so ignoring the error
-  domain would pass (`ios/Tests/ResonateLogicTests/FileRemovalTests.swift:41`,
-  `ios/Sources/ResonateLogic/FileRemoval.swift:22`). Add interrupted POSIX I/O and a
-  wrong-domain match. Done when those errors keep the catalog row eligible and
-  a real not-found result under a reachable folder still counts as gone.
 - [M · blocked: hardware] The Core Audio tests (`resonate-coreaudio`'s `stream`: a tone through
   the shared sink, a hog-mode rate switch and its restoration, a 24-bit ramp read back bit for bit
   through a loopback device) need an output device, and the hog and bit-exact halves a device named

@@ -199,6 +199,25 @@ object MusicDocuments {
         }
     }
 
+    fun presence(context: Context, uri: Uri): RowPresence {
+        val authority = uri.authority ?: return RowPresence.Unknown
+        return when {
+            authority == MediaStore.AUTHORITY -> rowPresence(context, uri)
+            DocumentsContract.isTreeUri(uri) ->
+                DocumentPresence.inTree(
+                    SafTree(
+                        context,
+                        DocumentsContract.buildTreeDocumentUri(
+                            authority,
+                            DocumentsContract.getTreeDocumentId(uri),
+                        ),
+                    ),
+                    DocumentsContract.getDocumentId(uri),
+                )
+            else -> RowPresence.Unknown
+        }
+    }
+
     private fun rowPresence(context: Context, uri: Uri): RowPresence =
         MediaStoreRemoval.presence {
             context.contentResolver

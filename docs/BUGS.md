@@ -191,16 +191,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`Shifting::readers_can_be_asked` is false), so the copy is written back over the same inode as
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
-## Mobile catalog
-- [L · 0.17.1] Keep mobile queue entries when a document provider is temporarily unavailable.
-  **Medium, architect.** A folder can pass a readability check before a document open
-  fails. The iOS bookmark-open path and Android's raw-descriptor path can then report
-  not-found without establishing the document is missing. The catalog hides it and
-  removes it from the queue (`ios/Sources/Resonate/Folders.swift:156`,
-  `android/app/src/main/java/org/resonate/android/LibraryRepository.kt:290`,
-  `crates/resonate-mobile/src/vanished.rs:63`). Preserve the row after an ambiguous
-  open failure. Done when bookmark loss and an unavailable subfolder leave rows and
-  queue entries intact, and confirmed absence still hides the song.
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
