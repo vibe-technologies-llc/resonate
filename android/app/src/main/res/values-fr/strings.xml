@@ -392,6 +392,7 @@
     <string name="features_scrobble_lastfm_signed_out">Signé hors Last.fm</string>
     <string name="features_sync_joining_when_read">Rejoindre dès que les paramètres de ce téléphone sont lus</string>
     <string name="features_sync_settings_unread">Les paramètres de synchronisation du périphérique ne peuvent pas être lus, donc synchronise attend jusqu’à ce qu’ils puissent être</string>
+    <string name="features_sync_settings_unsaved">Les paramètres de synchronisation n’ont pas pu être enregistrés, ils restent donc tels qu’ils étaient</string>
     <string name="features_sync_link_holds_no_code">Ce lien ne contient aucun code d’appariement</string>
     <string name="features_sync_code_unkept">Le nouveau code d’appariement de ce téléphone n’a pas pu être enregistré, donc la synchronisation attend qu’il puisse l’être</string>
     <string name="features_sync_not_a_code">Ce n’est pas un code d’appariement</string>

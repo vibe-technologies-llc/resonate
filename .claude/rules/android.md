@@ -1744,12 +1744,12 @@ sync on is refused (`Error::NoPairingCode`) and a key that reads as no code is r
 (`SyncOp::ReadCode`), both before the running group is left, so a typo or a lost write leaves the group
 that runs as it was (`a_code_that_reads_as_none_is_refused_before_the_group_running_is_left_and_the_kept_one_joins_it_again`,
 `a_blank_key_is_refused_so_no_code_is_offered_that_was_not_kept_first`). A front end mints with
-`sync_new_code` and writes the code first: Kotlin's `SyncSettingsReading.read` mints a blank key and
+`sync_new_code` and writes the code first: Kotlin's `SyncSettingsKeeping.read` mints a blank key and
 writes it (`ProviderAccountStore.writeSync`) before it hands the settings on, so every copy of
 `syncConfig` carries it; a write that fails hands nothing on, says so once and is
 `SyncSettingsTrouble.CODE_UNKEPT`, which the sync screen shows with *Try again*
 (`LibraryFeatures.keepSyncCodeAgain`) and the next foreground reads again, minting afresh, since
-the code that was not kept was never offered (`SyncSettingsReadingTest`). Kotlin keeps the code encrypted beside the
+the code that was not kept was never offered (`SyncSettingsKeepingTest`). Kotlin keeps the code encrypted beside the
 provider accounts, with the other choices (enabled, server, device name, the three follow switches,
 mobile data, `sync-nearby-only`) in plain preferences. **A typed code is read before it replaces
 anything**: `joinSync` asks `SyncPairing.joining`, which reads it through `sync_code_spelled` (the
@@ -1764,19 +1764,33 @@ setting changed (`a_start_that_fails_is_told_as_failed_and_a_retry_takes_it_up_o
 `sync_stop` or the next start forgets it. The status row then reads *Couldn't start* with *Try again*
 (`LibraryFeatures.retrySync`) in place of *Sync now*, and every reading of whether sync runs takes
 `Failed` as off (`SyncStanding.runs`). **A read of them that throws leaves sync
-unset** (`SyncSettingsReading`): a `KeyStoreException` or `AEADBadTagException` never becomes a blank
+unset** (`SyncSettingsKeeping`): a `KeyStoreException` or `AEADBadTagException` never becomes a blank
 key that would mint a new group and be written over the kept one, as iOS refuses (`ios.md`); sync is
 neither started nor written back, the failure is said once, and the settings are read again each
 time the app comes to the foreground until they read (`LibraryFeatures.readSyncAgain`,
-`SyncSettingsReadingTest`). **A key lost for good is started over by the listener, never on its
+`SyncSettingsKeepingTest`). **A key lost for good is started over by the listener, never on its
 own**: while the settings cannot be read the sync screen says so in place of its list and offers
 *Start over with a new group* (`sync_start_over`), whose confirmation says plainly that every device
 it synced with must be paired again. `LibraryFeatures.startSyncOver` asks
-`SyncSettingsReading.startOver`, which forgets the sealed code (`ProviderAccountStore.forgetSyncKey`),
+`SyncSettingsKeeping.startOver`, which forgets the sealed code (`ProviderAccountStore.forgetSyncKey`),
 reads the plain choices again, which mints and writes a code through `syncNewCode`, as *Start a new group* does;
 the result is applied (a join waiting for the settings is taken then). Sync is on unless switched off and runs
 only while online is, unless `nearby_only` (*Only this network*: `Server::Nowhere`, no server
 dialled, which runs with online off); `sync-nearby-only` defaults off, so the hosted server is dialled. A setting change restarts it with the code kept, so two starts in a row never mint two codes.
+**A sync setting is kept, then shown, then applied, in the order asked** (`SyncSettingsKeeping`):
+`LibraryFeatures.changeSync` hands the keeper an edit (the sync page's switches and names, a certificate kept or
+forgotten, a join, a new group), which `ask` queues on the caller's thread and `keepAsked` lays, in that order, on
+the settings last kept, writing each (`ProviderAccountStore.writeSync`) before `config`, the `syncConfig` the page
+draws, shows it. Every start of the service goes through `applying`, one mutex, and takes the settings last kept
+at that moment; an apply whose change a later apply already served (its generation passed) is skipped, so two quick
+changes reach the preferences and the running sync in order and the last wins on both, never one restart undoing
+the next. A retry and the background pace hold the same mutex (`serving`) without counting as an apply. A write
+that fails moves nothing: it is said (`SyncSettingsUnsaved`, the settings staying as they were), the page and the
+service stay on the settings last kept and the next change builds on those, never on the refused ones a
+`SharedPreferences` commit leaves in memory. **The store is read once**: a later `read` (the engine opened again)
+answers the settings held, and reading, minting a blank key's code and keeping a change share one lock, so a
+startup read or the code it mints never writes over a newer change, and a change asked while the code is minted is
+laid on top of it (`SyncSettingsKeepingTest`).
 
 A song is found by recording id, else by folded artist, title words, album when named and a length
 within 2 s, the desktop rule; the lookup reads an in-memory index rebuilt whenever the catalog

@@ -392,6 +392,7 @@
     <string name="features_scrobble_lastfm_signed_out">Signed out of Last.fm</string>
     <string name="features_sync_joining_when_read">Joining as soon as this phone\'s settings are read</string>
     <string name="features_sync_settings_unread">Device sync settings could not be read, so sync waits until they can be</string>
+    <string name="features_sync_settings_unsaved">Device sync settings could not be saved, so they stay as they were</string>
     <string name="features_sync_link_holds_no_code">That link holds no pairing code</string>
     <string name="features_sync_code_unkept">This phone\'s new pairing code could not be saved, so sync waits until it can be</string>
     <string name="features_sync_not_a_code">That is not a pairing code</string>

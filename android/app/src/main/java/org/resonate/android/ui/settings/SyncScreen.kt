@@ -122,9 +122,7 @@ class SyncViewModel(private val resonate: Resonate) : ViewModel() {
 
     fun refreshFolders() = features.refreshFolders()
 
-    fun change(edit: (SyncConfig) -> SyncConfig) {
-        config.value?.let { features.saveSync(edit(it)) }
-    }
+    fun change(edit: (SyncConfig) -> SyncConfig) = features.changeSync(edit)
 
     val nameForOthers = features.together.nameForOthers
 

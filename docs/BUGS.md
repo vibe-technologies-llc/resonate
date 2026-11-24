@@ -47,16 +47,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/quic.rs:319`, `:346`). Keep the partial frame across
   watch checks or restart the stream when the read is cancelled. Done when a frame
   split across the polling deadline can reach the mirror without desynchronising it.
-- [M · 0.17.1] Keep Android's saved and applied sync settings in the same order.
-  **Medium, architect.** Settings are published before the background preference
-  write. A failed write leaves the screen on the new value, and rapid saves can
-  write different generations from the one the service applies
-  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:704`, `:963`,
-  `:2393`, `android/app/src/main/java/org/resonate/android/ProviderAccountStore.kt:122`).
-  Serialize persistence and application and keep the last saved settings on failure.
-  Done when two rapid changes reach disk and the service in order and a failed save
-  leaves the persisted configuration visible. Canonicalising a pairing key
-  during startup must also preserve a newer settings change.
 - [M · 0.17.1] Retry nearby changes until the other device acknowledges them.
   **Medium, architect.** A nearby-only look clears owed changes after scheduling
   a send. If that stream fails, the connection can stay up and the sender's

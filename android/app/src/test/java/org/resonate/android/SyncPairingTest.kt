@@ -25,8 +25,10 @@ class SyncPairingTest {
     @Test
     fun aCodeThatReadsIsJoinedInItsOwnSpellingWithSyncTurnedOn() {
         val joining = SyncPairing.joining(kept, "  good-code \n", spelled)
+        val joined = (joining as SyncJoining.Joined).into(kept.copy(favourites = true))
 
-        assertEquals(SyncJoining.Joined(kept.copy(key = "GOOD-CODE", enabled = true)), joining)
+        assertEquals(SyncJoining.Joined("GOOD-CODE"), joining)
+        assertEquals(kept.copy(key = "GOOD-CODE", enabled = true, favourites = true), joined)
     }
 
     @Test

@@ -297,9 +297,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val lyricNudges = Mutex()
     private val searchRequest = AtomicLong()
     private var visualization: Job? = null
-    val syncConfig = MutableStateFlow<SyncConfig?>(null)
     private val syncSettings =
-        SyncSettingsReading(
+        SyncSettingsKeeping(
             accounts::readSync,
             accounts::writeSync,
             ::syncNewCode,
@@ -311,8 +310,17 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     }
                 library.report(SyncSettingsUnread(library.words.string(said), failure))
             },
+            { failure ->
+                library.report(
+                    SyncSettingsUnsaved(
+                        library.words.string(R.string.features_sync_settings_unsaved),
+                        failure,
+                    )
+                )
+            },
             accounts::forgetSyncKey,
         )
+    val syncConfig: StateFlow<SyncConfig?> = syncSettings.config
     val syncTrouble = syncSettings.trouble
     val syncStatus = MutableStateFlow<SyncStatus?>(null)
     val musicbrainzCopy = MutableStateFlow<MusicbrainzCopy?>(null)
@@ -334,7 +342,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private val syncApplied = MutableStateFlow(false)
     val together =
         Together(context, library, settings, scope, online, syncConfig, syncApplied) { loadPlaylists() }
-    private val syncAccess = Mutex()
     private var syncPolling: Job? = null
     private var network: ConnectivityManager.NetworkCallback? = null
     private val beaconsHeard = multicastHearing<MobilePlayer>(context, "resonate-sync")
@@ -470,7 +477,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
         }
         refreshFolders()
-        syncConfig.value = syncSettings.read()
+        syncSettings.read()
         together.begin(native)
         joinWaiting?.let(::joinSync)
         watchNetwork()
@@ -706,11 +713,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun saveSync(config: SyncConfig) {
-        syncConfig.value = config
-        work { native ->
-            accounts.writeSync(config)
-            applySync(native)
+    fun changeSync(edit: (SyncConfig) -> SyncConfig) {
+        syncSettings.ask(edit)
+        scope.launch {
+            val upTo = syncSettings.keepAsked() ?: return@launch
+            work { native -> applySync(native, upTo) }
         }
     }
 
@@ -721,8 +728,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     context.contentResolver.readUpTo(uri, SYNC_CERTIFICATE_BYTES_AT_MOST)
                 }
             native.syncKeepCertificate(read.bytes)
-            val config = syncConfig.value ?: return@work
-            saveSync(config.copy(certificate = read.name))
+            changeSync { it.copy(certificate = read.name) }
         }
     }
 
@@ -737,8 +743,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun forgetSyncCertificate() {
         work { native ->
             native.syncForgetCertificate()
-            val config = syncConfig.value ?: return@work
-            saveSync(config.copy(certificate = ""))
+            changeSync { it.copy(certificate = "") }
         }
     }
 
@@ -751,7 +756,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             }
             is SyncJoining.Joined -> {
                 joinWaiting = null
-                saveSync(joining.config)
+                changeSync(joining::into)
             }
         }
     }
@@ -766,18 +771,10 @@ class LibraryFeatures(private val context: Context, private val library: Library
         }
     }
 
-    fun newSyncGroup() = work { native ->
-        val config = syncConfig.value ?: return@work
-        val fresh = config.copy(key = syncNewCode())
-        accounts.writeSync(fresh)
-        syncConfig.value = fresh
-        applySync(native)
-    }
+    fun newSyncGroup() = changeSync { it.copy(key = syncNewCode()) }
 
     fun startSyncOver() = work { native ->
-        if (syncConfig.value != null) return@work
-        val fresh = syncSettings.startOver() ?: return@work
-        syncConfig.value = fresh
+        syncSettings.startOver() ?: return@work
         val waiting = joinWaiting
         if (waiting != null) joinSync(waiting) else applySync(native)
     }
@@ -851,7 +848,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     fun setSyncInBackground(enabled: Boolean) {
         syncsInBackground.value = enabled
         settings.edit().putBoolean(SYNC_IN_BACKGROUND_KEY, enabled).apply()
-        work { syncAccess.withLock { syncConfig.value?.let(::paceInBackground) } }
+        work { syncSettings.serving { it?.let(::paceInBackground) } }
     }
 
     private fun wakesInBackground(config: SyncConfig): Boolean =
@@ -919,7 +916,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
 
     private suspend fun readSyncAgain(native: MobilePlayer) {
         if (syncConfig.value != null) return
-        syncConfig.value = syncSettings.read() ?: return
+        syncSettings.read() ?: return
         val waiting = joinWaiting
         if (waiting != null) joinSync(waiting) else applySync(native)
     }
@@ -967,16 +964,15 @@ class LibraryFeatures(private val context: Context, private val library: Library
         return syncDeviceCalled(named ?: Build.MODEL.orEmpty())
     }
 
-    private suspend fun applySync(native: MobilePlayer) {
+    private suspend fun applySync(native: MobilePlayer, upTo: Long? = null) {
         try {
-            syncAccess.withLock { syncWith(native) }
+            syncSettings.applying(upTo) { syncWith(native, it) }
         } finally {
             syncApplied.value = true
         }
     }
 
-    private fun syncWith(native: MobilePlayer) {
-        val config = syncConfig.value ?: return
+    private fun syncWith(native: MobilePlayer, config: SyncConfig) {
         native.togetherServer(config.server)
         syncedBy(native, config) {
             if (config.enabled && (online.value || config.nearbyOnly))
@@ -989,9 +985,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     fun retrySync() = work { native ->
-        syncAccess.withLock {
-            val config = syncConfig.value ?: return@withLock
-            syncedBy(native, config) { native.syncRetry() }
+        syncSettings.serving { config ->
+            if (config != null) syncedBy(native, config) { native.syncRetry() }
         }
     }
 
