@@ -30,7 +30,10 @@ use tokio::{
     time::{Instant, MissedTickBehavior, interval, sleep_until, timeout},
 };
 
-use self::unsent::{Awaited, Awaiting, Unsent, awaited};
+use self::{
+    discovery::{Discovery, Public, Resolver, resolved_by_the_system},
+    unsent::{Awaited, Awaiting, Unsent, awaited},
+};
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, LayoutNote, Ledger, LocalPlaylistId, Platform,
     Refused, Result, SyncKey,
@@ -57,7 +60,7 @@ use crate::{
     remote::{Controlled, Controlling, RemoteCommand, Watched},
     routes::{each_once, first_answering},
     seal::{LARGEST_OPENED, opened, sealed},
-    stun::{Reflector, STUN_PORT},
+    stun::Reflector,
     web::{Incoming, Outgoing, connect, to_the_web, web_address},
     wire::{
         BLOBS_A_FRAME_AT_MOST, Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer, LARGEST_FRAME,
@@ -66,6 +69,7 @@ use crate::{
     },
 };
 
+mod discovery;
 mod unsent;
 
 pub const HOSTED_SERVER: &str = resonate_core::RESONATE_SOCKET_ADDRESS;
@@ -347,6 +351,7 @@ struct Running {
     follow: Follow,
     server: Option<String>,
     stun: Option<String>,
+    resolver: Resolver,
     staging: PathBuf,
     endpoint: Endpoint,
     reflector: Arc<Reflector>,
@@ -447,6 +452,7 @@ enum Event {
     Followed(DeviceId),
     Unclaimed(Vec<PassedOver>),
     Dropped(usize, Error),
+    Discovered(Option<SocketAddr>),
 }
 
 struct Pushed {
@@ -792,10 +798,15 @@ struct Syncing {
     looked_once: bool,
     seen_revision: u64,
     oversized: Oversized,
+    discovery: Discovery,
 }
 
 impl Sync {
     pub fn start(settings: Settings, catalog: Arc<dyn Catalog>) -> Result<Self> {
+        Self::started(settings, catalog, resolved_by_the_system())
+    }
+
+    fn started(settings: Settings, catalog: Arc<dyn Catalog>, resolver: Resolver) -> Result<Self> {
         let derived = settings.key.derived()?;
         let identity = PeerIdentity::of(&derived)?;
         let roots = trusted_roots(settings.trusted.as_deref())?;
@@ -890,6 +901,7 @@ impl Sync {
                 .stun
                 .map(|stun| stun.trim().to_owned())
                 .filter(|stun| !stun.is_empty()),
+            resolver,
             staging: settings.staging,
             endpoint,
             reflector,
@@ -1563,30 +1575,6 @@ fn routed_candidates(server_address: SocketAddr, port: u16) -> Vec<SocketAddr> {
     candidates
 }
 
-async fn resolve_stun(stun: &str) -> Result<SocketAddr> {
-    let (host, port) = match stun.rsplit_once(':') {
-        Some((host, port)) if !host.contains(':') => match port.parse() {
-            Ok(port) => (host, port),
-            Err(_) => (stun, STUN_PORT),
-        },
-        _ => (stun, STUN_PORT),
-    };
-
-    let addresses = tokio::net::lookup_host((host, port))
-        .await
-        .map_err(|source| Error::Resolve {
-            server: stun.into(),
-            source,
-        })?
-        .collect::<Vec<_>>();
-    addresses
-        .into_iter()
-        .find(SocketAddr::is_ipv4)
-        .ok_or_else(|| Error::Unresolved {
-            server: stun.into(),
-        })
-}
-
 pub(crate) async fn resolve(server: &str) -> Result<(Vec<SocketAddr>, String)> {
     let (host, port) = host_and_port(server.trim());
 
@@ -1901,6 +1889,8 @@ impl Syncing {
     fn new(running: Arc<Running>) -> Self {
         let now = Instant::now();
         let retry_at = running.server.as_ref().map(|_| now);
+        let discovery = Discovery::new(running.stun.as_deref(), Arc::clone(&running.resolver));
+
         Self {
             running,
             server: None,
@@ -1935,6 +1925,7 @@ impl Syncing {
             looked_once: false,
             seen_revision: 0,
             oversized: Oversized::default(),
+            discovery,
         }
     }
 
@@ -2102,6 +2093,7 @@ impl Syncing {
                 }
             }
             Event::Met(device, connection) => self.met(device, connection, true, true).await?,
+            Event::Discovered(public) => self.discovered(public)?,
             Event::Dropped(id, error) => {
                 if self
                     .server
@@ -2202,7 +2194,7 @@ impl Syncing {
                 self.server_online.insert(device);
                 self.publish_devices();
                 if self.unsent.holds(device) {
-                    self.punch(device).await?;
+                    self.punch(device)?;
                 }
                 self.follow(device).await?;
             }
@@ -2933,7 +2925,7 @@ impl Syncing {
 
     async fn reach(&mut self, device: DeviceId) -> Result<()> {
         if self.server_online.contains(&device) {
-            self.punch(device).await
+            self.punch(device)
         } else {
             self.dial_neighbour(device);
             Ok(())
@@ -2996,8 +2988,32 @@ impl Syncing {
         }
     }
 
-    async fn punch(&mut self, device: DeviceId) -> Result<()> {
-        let candidates = self.candidates().await;
+    fn punch(&mut self, device: DeviceId) -> Result<()> {
+        if self.server.is_none() {
+            return Ok(());
+        }
+        match self.discovery.public_for(
+            device,
+            std::time::Instant::now(),
+            &self.running.reflector,
+            &self.running.events,
+        ) {
+            Public::Known(public) => self.punch_offering(device, public),
+            Public::Awaited => Ok(()),
+        }
+    }
+
+    fn discovered(&mut self, public: Option<SocketAddr>) -> Result<()> {
+        let awaiting = self.discovery.learnt(public, std::time::Instant::now());
+
+        for device in awaiting {
+            self.punch_offering(device, public)?;
+        }
+        Ok(())
+    }
+
+    fn punch_offering(&mut self, device: DeviceId, public: Option<SocketAddr>) -> Result<()> {
+        let candidates = self.candidates(public);
         let Some(link) = self.server.as_ref() else {
             return Ok(());
         };
@@ -3018,7 +3034,7 @@ impl Syncing {
         Ok(())
     }
 
-    async fn candidates(&self) -> Vec<SocketAddr> {
+    fn candidates(&self, public: Option<SocketAddr>) -> Vec<SocketAddr> {
         let Ok(port) = self.running.endpoint.local_addr().map(|local| local.port()) else {
             return Vec::new();
         };
@@ -3038,25 +3054,8 @@ impl Syncing {
                     .map(|ip| SocketAddr::new(ip, port)),
             );
         }
-        if let Some(public) = self.public_address().await {
-            candidates.push(public);
-        }
+        candidates.extend(public);
         candidates
-    }
-
-    async fn public_address(&self) -> Option<SocketAddr> {
-        let stun = self.running.stun.as_deref()?;
-        let asked = async {
-            let server = resolve_stun(stun).await?;
-            self.running.reflector.ask(server).await
-        };
-        match asked.await {
-            Ok(public) => Some(public),
-            Err(error) => {
-                tracing::debug!(%error, stun, "the public address could not be learned");
-                None
-            }
-        }
     }
 
     async fn punched(
@@ -3108,7 +3107,7 @@ impl Syncing {
             if !may_answer(table, device, at_most) {
                 return Ok(());
             }
-            self.punch(device).await?;
+            self.punch(device)?;
         }
         if self.running.relay_only {
             candidates.clear();

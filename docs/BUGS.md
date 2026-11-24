@@ -16,13 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Device sync
-- [M · 0.17.1] Keep address discovery off the sync command loop.
-  **Medium, architect.** Each punch waits for the configured STUN name and replies in
-  the loop that handles server frames, commands and Stop. Several waiting devices
-  repeat the delay in series (`crates/resonate-sync/src/service.rs:1288`, `:1492`,
-  `:2783`, `:2861`, `:2906`). Bound the lookup, share recent results across punches,
-  and deliver the result without holding up the loop. Done when stalled resolution
-  and a silent STUN server both leave status, commands and shutdown responsive.
 - [M · 0.17.1] Retry nearby changes until the other device acknowledges them.
   **Medium, architect.** A nearby-only look clears owed changes after scheduling
   a send. If that stream fails, the connection can stay up and the sender's

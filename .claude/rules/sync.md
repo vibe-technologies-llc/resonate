@@ -1169,6 +1169,20 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   device reached through a server it cannot see UDP from (a web link) still offers its public
   address; on a QUIC link it is added beside what the server saw. A web link's local candidates are
   the interfaces' IPv4 addresses (`addresses_here`) at the peer port.
+- **The command loop never waits on STUN.** `Syncing::punch` asks the loop's `Discovery` for the
+  public address: an answer learnt within `PUBLIC_ADDRESS_KEPT_FOR` (30 s, a silence or a failure
+  kept as long as an address) is offered at once, so every punch in the window shares one lookup;
+  otherwise the punch waits in `Discovery`'s set of devices, one task (`learn`) resolves the name
+  and sends the binding request, and its answer comes back as `Event::Discovered`, which sends every
+  waiting punch with it, or with no public address where none was learnt. The name is resolved on a
+  thread of its own (`resolved`), never the runtime's blocking pool, since dropping the runtime at
+  Stop would wait on a `getaddrinfo` that never returns; it is given up after
+  `STUN_NAME_RESOLVED_WITHIN` (2 s, `Error::StunNameStalled`), and while that thread still hangs no
+  second one is started. The binding request is bounded by `Reflector::ask`'s three tries 700 ms
+  apart. So a stalled name or a silent server holds up no command, status nor Stop
+  (`a_stun_name_that_never_resolves_holds_up_no_command_nor_stop_and_the_punch_goes_ahead`,
+  `a_stun_server_that_never_answers_holds_up_no_command_nor_stop`,
+  `punches_within_the_window_share_one_lookup_and_one_past_it_asks_again`).
 - **The server introduces, the devices connect.** `Punch` carries the asker's LAN candidates sealed;
   the server hands the asked device the asker's observed address and those candidates; the asked
   device dials them and punches back with its own; both dial every candidate at once and the first

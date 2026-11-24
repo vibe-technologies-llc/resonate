@@ -159,6 +159,12 @@ pub enum Error {
     #[error("{server} resolves to no address")]
     Unresolved { server: Box<str> },
 
+    #[error("{server} did not resolve in time")]
+    StunNameStalled { server: Box<str> },
+
+    #[error("the STUN server's name could not be looked up off the sync thread")]
+    StunResolver(#[source] io::Error),
+
     #[error("the sync socket could not be bound")]
     Bind(#[source] io::Error),
 
