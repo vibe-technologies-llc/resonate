@@ -203,7 +203,10 @@ fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
         .execute_batch("ALTER TABLE state DROP COLUMN held_after")
         .expect("the songs of one second not yet told apart");
     connection
-        .pragma_update(None, "user_version", laid - 3)
+        .execute_batch("DROP TABLE unread")
+        .expect("no change kept unread yet");
+    connection
+        .pragma_update(None, "user_version", laid - 4)
         .expect("the steps not yet laid");
     drop(connection);
     device.ledger = Ledger::open(path).expect("the ledger opened by the build that restamps");

@@ -11,6 +11,7 @@ use self::{
         HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART, UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
         name_the_answers,
     },
+    unread::CHANGES_UNREAD_ARE_CARRIED_FORWARD,
 };
 use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
@@ -39,6 +40,7 @@ mod deletions;
 mod released;
 mod set_back;
 mod unheld;
+mod unread;
 mod waiting_listens;
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;
@@ -226,6 +228,7 @@ const MIGRATIONS: &[&str] = &[
     STAMPS_PAST_THE_BOUND_ARE_RESTAMPED,
     HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART,
     ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
+    CHANGES_UNREAD_ARE_CARRIED_FORWARD,
 ];
 
 const STAMPS_PAST_THE_BOUND_ARE_RESTAMPED: &str = "
@@ -277,6 +280,7 @@ DELETE FROM answers;
 DELETE FROM playlist_folds;
 DELETE FROM query_folds;
 DELETE FROM deletions;
+DELETE FROM unread;
 UPDATE state SET cursor = 0, since_snapshot = 0, bytes_since = 0, listens_mark = 0, answers_mark = 0, resumed = NULL;
 ";
 
@@ -327,6 +331,7 @@ pub struct Ledger {
     answers_tried_at: Option<u64>,
     deletions_tried_at: Option<u64>,
     listens_tried_at: Option<u64>,
+    unread_read_again: bool,
 }
 
 struct AnswerSlot {
@@ -558,6 +563,7 @@ impl Ledger {
             answers_tried_at: None,
             deletions_tried_at: None,
             listens_tried_at: None,
+            unread_read_again: false,
         })
     }
 
@@ -3280,7 +3286,7 @@ impl Ledger {
     }
 
     pub fn settle(&mut self, catalog: &dyn Catalog) -> Result<usize> {
-        let mut settled = 0;
+        let mut settled = self.read_again_what_was_unread(catalog)?;
 
         let mut locals = None;
 

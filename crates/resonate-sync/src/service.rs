@@ -62,7 +62,7 @@ use crate::{
     wire::{
         BLOBS_A_FRAME_AT_MOST, Beacon, COVERS_ASKED_AT_MOST, Candidates, FromServer, LARGEST_FRAME,
         LARGEST_RECORD, LYRICSFILES_ASKED_AT_MOST, PRINTS_ASKED_AT_MOST, PROTOCOL_VERSION, Refusal,
-        ToServer, decoded_bundle, encoded_bundle, encoded_change,
+        ToServer, Unread, encoded_bundle, encoded_change, read_bundle,
     },
 };
 
@@ -2394,10 +2394,23 @@ impl Syncing {
                         &blob,
                         LARGEST_OPENED,
                     )
-                    .and_then(|plain| decoded_bundle(&plain))
+                    .and_then(|plain| read_bundle(&plain))
                     {
-                        Ok(changes) => {
-                            ledger.arrived(running.catalog.as_ref(), &changes)?;
+                        Ok(read) => {
+                            let refused = read
+                                .unread
+                                .iter()
+                                .filter(|unread| matches!(unread, Unread::Refused(_)))
+                                .count();
+
+                            if refused > 0 {
+                                tracing::warn!(
+                                    refused,
+                                    "synced changes that do not read were kept to carry forward beside the rest of their record"
+                                );
+                            }
+                            ledger.arrived(running.catalog.as_ref(), &read.changes)?;
+                            ledger.unread_arrived(&read.unread)?;
                         }
                         Err(error) => {
                             tracing::warn!(%error, "a synced record could not be read");
@@ -2659,11 +2672,11 @@ impl Syncing {
             let through = ledger.cursor()?;
             let mut pieces = Pieces::default();
 
-            for changes in ledger.snapshot()? {
+            for plain in ledger.snapshot_bundles()? {
                 pieces.push(sealed(
                     &running.derived.sealer,
                     running.derived.space,
-                    &encoded_bundle(&changes),
+                    &plain,
                 )?);
                 if parts_refused && pieces.more_than_a_frame() {
                     tracing::warn!(

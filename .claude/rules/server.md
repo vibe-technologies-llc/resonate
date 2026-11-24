@@ -42,7 +42,9 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   `a_view_link_cannot_claim_a_shared_list_before_its_owner_does`).
 - **A compaction replaces what it covers and only moves forward**: `through` must be past the
   snapshot held and within the head (`Compacted::Stale` otherwise); records at or below it and the
-  old snapshot go in one transaction. **A compaction that grows the space is weighed against
+  old snapshot go in one transaction. The server cannot read what a snapshot leaves out, so the
+  compacting device carries every change it could not read into the parts it sends (`sync.md`'s
+  `Ledger::snapshot_bundles`); the store keeps the parts as they come. **A compaction that grows the space is weighed against
   `--total-bytes` as an append is** (the snapshot's bytes less the bytes the space held, against
   `totals_in`), so claiming spaces and compacting each to a snapshot near `--space-bytes` cannot
   pass the total; one that shrinks a space is never refused by a full total

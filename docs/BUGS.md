@@ -24,16 +24,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   timing, and tighten that test to the one answer.
 
 ## Device sync
-- [M · 0.17.1] Keep unread sync changes through a compaction.
-  **Medium, architect.** A reader skips an answer kind it cannot read or advances the
-  cursor after a bundle decode failure. Its snapshot contains only changes it interpreted,
-  so compaction can discard a newer kind or readable neighbours of a malformed change
-  (`crates/resonate-sync/src/wire.rs:982`, `:2350`,
-  `crates/resonate-sync/src/service.rs:2288`, `:2560`,
-  `crates/resonate-server/src/store.rs:790`). Preserve changes the snapshot cannot
-  represent and apply independently framed changes that still read. Done when an older
-  reader's compaction keeps a newer study answer available to a joining device and a
-  malformed known change leaves its valid siblings recoverable.
 - [M · 0.17.1] Keep address discovery off the sync command loop.
   **Medium, architect.** Each punch waits for the configured STUN name and replies in
   the loop that handles server frames, commands and Stop. Several waiting devices

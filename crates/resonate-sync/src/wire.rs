@@ -41,9 +41,9 @@ const CANDIDATES_READ_AS_NONE_BEFORE: u8 = 0;
 const CANDIDATES_BOUND_TO_A_PAIR: u8 = 1;
 const BAND_LEVELS_AT_MOST: usize = 256;
 const BAND_PEAKS_AT_MOST: usize = 1_024;
-const ANSWER_LYRICS: u8 = 0;
-const ANSWER_STUDY: u8 = 1;
-const ANSWER_RELEASE: u8 = 2;
+pub(crate) const ANSWER_LYRICS: u8 = 0;
+pub(crate) const ANSWER_STUDY: u8 = 1;
+pub(crate) const ANSWER_RELEASE: u8 = 2;
 const ANSWER_BAND_PEAKS: u8 = 3;
 const ANSWER_KINDS: &[u8] = &[
     ANSWER_LYRICS,
@@ -2259,6 +2259,16 @@ pub fn encoded_bundle(changes: &[Change]) -> Vec<u8> {
     writer.finish()
 }
 
+pub fn bundle_of_encoded<T: AsRef<[u8]>>(changes: &[T]) -> Vec<u8> {
+    let mut writer = Writer::new();
+
+    writer.length(changes.len());
+    for change in changes {
+        writer.bytes(change.as_ref());
+    }
+    writer.finish()
+}
+
 pub fn encoded_change(change: &Change) -> Vec<u8> {
     let mut writer = Writer::new();
 
@@ -2402,6 +2412,55 @@ pub fn encoded_change(change: &Change) -> Vec<u8> {
         }
     }
     writer.finish()
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Unread {
+    Later(Vec<u8>),
+    Refused(Vec<u8>),
+}
+
+impl Unread {
+    pub fn encoded(&self) -> &[u8] {
+        match self {
+            Self::Later(encoded) | Self::Refused(encoded) => encoded,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ReadBundle {
+    pub changes: Vec<Change>,
+    pub unread: Vec<Unread>,
+}
+
+pub fn read_bundle(bytes: &[u8]) -> Result<ReadBundle> {
+    read_bundle_knowing(bytes, ANSWER_KINDS)
+}
+
+pub(crate) fn read_bundle_knowing(bytes: &[u8], answers: &[u8]) -> Result<ReadBundle> {
+    let mut reader = Reader::new(bytes);
+
+    let count = reader.count()?;
+    let mut read = ReadBundle {
+        changes: reserved(count),
+        unread: Vec::new(),
+    };
+
+    for _ in 0..count {
+        let encoded = reader.bytes(LARGEST_BLOB)?;
+        match decoded_change(encoded, answers) {
+            Ok(Some(change)) => read.changes.push(change),
+            Ok(None) => read.unread.push(Unread::Later(encoded.to_vec())),
+            Err(_) => read.unread.push(Unread::Refused(encoded.to_vec())),
+        }
+    }
+    reader.done()?;
+    Ok(read)
+}
+
+pub(crate) fn read_change(encoded: &[u8]) -> Result<Option<Change>> {
+    decoded_change(encoded, ANSWER_KINDS)
 }
 
 pub fn decoded_bundle(bytes: &[u8]) -> Result<Vec<Change>> {

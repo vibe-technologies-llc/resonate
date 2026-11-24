@@ -79,13 +79,21 @@ engine, gpui, `ureq`, serde); the binary, the mobile boundary (Android and iOS) 
   build adds reads as `Other` (`every_platform_reads_back_and_a_later_one_reads_as_other`), and the
   ledger keeps the same codes.
 - **A bundle's changes are each length-prefixed**, so a change of a later build's tag is skipped,
-  not refused (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped`). **A saved
+  not refused (`a_bundle_of_every_change_reads_back_and_an_unknown_change_is_skipped`). **A record
+  from the server is read change by change** (`read_bundle`): a later build's tag or answer kind is
+  `Unread::Later`, a known change that does not read is `Unread::Refused`, and the changes beside
+  either are applied, so one malformed change never costs its siblings; the ledger keeps both kinds
+  of unread change and carries them into its snapshot (*The ledger*). `decoded_bundle` stays strict,
+  for a neighbour's `Changes`, the seeds and the fuzz target. A record that does not open under the
+  key, or whose bundle's own framing breaks, is still passed over and the cursor moves past it:
+  every build seals and frames a record alike, so such a record is damaged, not later. **A saved
   query is `Change::Query` (wire tag 6)**: key, stamp, then a body (name, optional text, sort code,
   reading code, optional row cap) or none for a tombstone; a build without it skips it as it skips any
   later tag. The two codes are the library's `SortOrder::code` and `Direction::code` (`coded` reads
   them back; `store::sort_code` and `direction_code` are the same numbers), which the desktop and the
-  phones both store and so are never renumbered. One cost of that tolerance: a build without tag 6 that compacts the
-  server's log writes a snapshot lacking the queries. **A device hearing a `Compacted` it did not ask
+  phones both store and so are never renumbered. One cost of that tolerance: a build without tag 6 and
+  from before `CHANGES_UNREAD_ARE_CARRIED_FORWARD` that compacts the server's log writes a snapshot
+  lacking the queries. **A device hearing a `Compacted` it did not ask
   for owes every query again** (`Ledger::owe_queries`) and pushes at once, so the records after the
   snapshot carry them to a device joining from the server alone
   (`saved_queries_compacted_away_by_a_build_without_them_are_told_to_the_server_again`). Its own is
@@ -170,7 +178,9 @@ table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an inde
 listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS`:
 `answers.named` and `state.held_mark`, below; `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: data only, in
 the stamps bullet below; `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`: `state.held_after`, below;
-`ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART`: `state.answers_after`, below); `user_version` counts the steps laid, a change appends a
+`ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART`: `state.answers_after`, below;
+`CHANGES_UNREAD_ARE_CARRIED_FORWARD`: the `unread` table, a change this build could not read, kept
+to carry into a snapshot, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
 shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
@@ -375,7 +385,7 @@ platforms; the catalog seam stays thin.
   the study they belong to and lands them only on a copy of the same file already holding a study
   at this `JUDGED_UNDER`, never over peaks it holds; peaks measured alone later keep the study's
   `studied` stamp, so only a device pairing afresh is told them. A kind a later build adds skips
-  the change, as an unknown tag does
+  the change, as an unknown tag does, and the change is kept unread to carry forward
   (`an_answer_of_a_kind_a_later_build_adds_is_skipped_and_the_rest_read`), so a build reading only
   lyrics and studies skips a release whole
   (`a_release_reads_back_and_a_build_knowing_only_lyrics_and_studies_skips_it`). **A release is kept
@@ -523,7 +533,23 @@ platforms; the catalog seam stays thin.
   `a_song_asked_for_after_its_deletion_answers_the_deletion_for_every_device`,
   `a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_even_after_sync_now`,
   `a_ledger_of_before_deletions_travelled_keeps_its_layouts_and_knows_no_deletion`).
-- **A snapshot is the merged state**, cut into bundles of at most `BUNDLE_BYTES`; a device compacts
+- **A snapshot is the merged state and every change this build could not read**
+  (`Ledger::snapshot_bundles`), cut into bundles of at most `BUNDLE_BYTES`. The `unread` table keeps
+  each `Unread` a record brought, by the SHA-256 of its encoding and whether it was refused, and the
+  snapshot writes them back byte for byte after the merged state: the later ones share bundles,
+  since every build skips them, and each refused one is a bundle of its own, since a build that
+  refuses a change refuses its whole bundle. The server cannot tell what a snapshot leaves out, so
+  only the compacting device can keep a kind a newer device wrote, or a change its build refuses,
+  from a device joining from the snapshot alone
+  (`an_answer_an_older_reader_cannot_read_reaches_a_device_joining_from_its_compaction`,
+  `a_change_that_does_not_read_travels_alone_and_its_siblings_survive_the_compaction`,
+  `a_change_no_device_here_reads_and_the_siblings_of_one_that_does_not_read_outlive_a_compaction`).
+  The first `settle` after a ledger opens reads every kept change again, applies those the build
+  now reads and forgets them, so an upgraded device takes what it once skipped
+  (`a_change_kept_unread_is_taken_once_the_build_reads_it_and_kept_no_longer`,
+  `a_ledger_laid_before_unread_changes_were_kept_carries_what_it_held_and_keeps_them`). A neighbour
+  is told only what was read: a `Changes` carries `Change`s, and a released build refuses a whole
+  `Changes` holding one it refuses. A device compacts
   the server's log past `COMPACT_PAST_RECORDS` (512) or `COMPACT_PAST_BYTES` (4 MiB) since the last
   snapshot, and a `Compacted` from any device resets every device's count to the records it has
   read past that `through`: the cursor less `through`, since the server's seqs run without a gap,

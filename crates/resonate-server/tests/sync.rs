@@ -11,7 +11,12 @@ use base64::{Engine, engine::general_purpose::STANDARD};
 use resonate_core::{Answer, LONGEST_SHARED_LYRICS, SharedLyrics};
 use resonate_server::{Limits, Presented, Server, Store, listening, serving};
 use resonate_sync::{
-    Follow, Me, Platform, Settings, SongTags, Standing, Sync, SyncKey, wire::LARGEST_FRAME,
+    AnswerNote, Change, DeviceId, Follow, Me, Platform, Settings, SongTags, Stamp, Standing, Sync,
+    SyncKey, opened, sealed,
+    wire::{
+        LARGEST_FRAME, ReadBundle, Unread, bundle_of_encoded, encoded_bundle, encoded_change,
+        read_bundle,
+    },
 };
 use rustls_pki_types::{PrivateKeyDer, PrivatePkcs8KeyDer};
 
@@ -803,6 +808,125 @@ fn a_state_past_a_frames_share_is_compacted_in_parts_and_a_third_device_catches_
     drop(tablet);
     drop(phone);
     drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+const RECORDS_PAST_A_COMPACTION: usize = 520;
+const A_CHANGE_OF_A_LATER_BUILD: [u8; 4] = [200, 1, 2, 3];
+const A_FAVOURITE_CUT_SHORT: [u8; 3] = [2, 1, 0];
+const WRITTEN_BY: DeviceId = DeviceId([9; 16]);
+
+fn the_words_of_song() -> Answer {
+    Answer::Lyrics(SharedLyrics {
+        text: "Every word a later build kept beside".into(),
+        synced: false,
+    })
+}
+
+#[test]
+fn a_change_no_device_here_reads_and_the_siblings_of_one_that_does_not_read_outlive_a_compaction() {
+    let folder = scratch("unread-carried");
+    let kept_at = folder.join("server.sqlite");
+    let key = SyncKey::minted().expect("a key");
+    let derived = key.derived().expect("derived");
+    let now = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("after the epoch")
+            .as_secs(),
+    )
+    .expect("a second");
+    let words = Change::Answer(AnswerNote {
+        recording: song("Song"),
+        stamp: Stamp {
+            nanos: now * 1_000_000_000,
+            device: WRITTEN_BY,
+        },
+        answer: the_words_of_song(),
+    });
+    let mixed = bundle_of_encoded(&[
+        A_CHANGE_OF_A_LATER_BUILD.to_vec(),
+        A_FAVOURITE_CUT_SHORT.to_vec(),
+        encoded_change(&words),
+    ]);
+
+    let mut blobs = vec![sealed(&derived.sealer, derived.space, &mixed).expect("sealed")];
+
+    blobs
+        .extend((0..RECORDS_PAST_A_COMPACTION).map(|_| {
+            sealed(&derived.sealer, derived.space, &encoded_bundle(&[])).expect("sealed")
+        }));
+
+    let mut store = Store::open(&kept_at).expect("a store");
+
+    store
+        .claim(derived.space, &derived.token.digest(), now, || true)
+        .expect("claimed");
+    store
+        .append(derived.space, WRITTEN_BY, &blobs, u64::MAX, now)
+        .expect("appended");
+
+    let hosted = hosted_over(&folder, store);
+    let watching = Store::open(&kept_at).expect("the server's store, read beside it");
+    let phone_shelf = Arc::new(Shelf::holding(&["Song"]));
+
+    let phone = device(
+        &hosted,
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Follow::default(),
+    );
+
+    eventually("the phone compacting the log", || {
+        watching
+            .head(derived.space)
+            .is_ok_and(|(_, through)| through > 0)
+    });
+
+    let snapshot = watching
+        .snapshot(derived.space)
+        .expect("read")
+        .expect("a snapshot");
+    let read = snapshot
+        .parts
+        .iter()
+        .map(|part| {
+            let plain =
+                opened(&derived.sealer, derived.space, part, LARGEST_FRAME).expect("opened");
+            read_bundle(&plain).expect("a part reads")
+        })
+        .collect::<Vec<_>>();
+
+    let tablet_shelf = Arc::new(Shelf::holding(&["Song"]));
+    let tablet = device(
+        &hosted,
+        &folder,
+        &key,
+        "Tablet",
+        Arc::clone(&tablet_shelf),
+        Follow::default(),
+    );
+
+    eventually("the words reaching the tablet from the snapshot", || {
+        tablet_shelf.answers_of("Song") == [the_words_of_song()]
+    });
+
+    assert_eq!(phone_shelf.answers_of("Song"), [the_words_of_song()]);
+    assert!(read.iter().any(|part| part.changes.contains(&words)));
+    assert!(read.iter().any(|part| {
+        part.unread
+            .contains(&Unread::Later(A_CHANGE_OF_A_LATER_BUILD.to_vec()))
+    }));
+    assert!(read.contains(&ReadBundle {
+        changes: Vec::new(),
+        unread: vec![Unread::Refused(A_FAVOURITE_CUT_SHORT.to_vec())],
+    }));
+
+    drop(tablet);
+    drop(phone);
 
     let _ = fs::remove_dir_all(&folder);
 }
