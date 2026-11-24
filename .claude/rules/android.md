@@ -1040,26 +1040,42 @@ SAF or MediaStore document has no path, so Android passes an empty one and the b
 staging. **The document is replaced only by bytes that were read back whole.** `Stage` is a folder of
 its own under `tag-staging` beside `documents.sqlite`, named `<pid>-<n>` and holding a `held` file
 under `writer::Held` (a sweeper, run by the next stage made, asks `writer::writer_of` and removes
-a folder whose writer is gone, so a killed run leaves nothing for ever), an `original/` and a
+a folder whose writer is gone and which holds no `pending` record, so a killed run leaves nothing for ever), an `original/` and a
 `working/` folder, each holding the song under its own name cut by `naming::named_within`. The steps, each
 undone by the next if it fails: the document is copied through the `content` provider into `working/`
 (`CopiedAside`), so every failure up to here has touched nothing; the tags are read and planned there
 (`planned`), and an edit that changes no field ends as *unchanged* having read the document once and
-written nothing; the working copy is copied to `original/` and its CRC-32 taken; `FileTags` writes the
+written nothing; `Stage::set_aside` copies the working copy to `original/`, syncs the file and its folder
+and takes its CRC-32; `FileTags` writes the
 working copy, with its own staged copy and journal beside it, and reads it back (`TagsUnconfirmed`
 as on a path), so a write the desktop's writer or its read-back refuses never reaches the document;
-then `DocumentRewriting::rewrite_document(uri)` hands back a descriptor opened `"wt"`, which truncates
-the document at once, and `put_back` copies the working file into it and flushes. The document is
+then `Stage::pend` writes the **pending record**, `pending` in the stage's folder (`1`, the original's
+CRC-32 in hex and the URI, a line each; written as `pending.staged`, synced, renamed and the folder
+synced, `Recorded` if any step fails, so the document is still untouched), and only then does
+`put_back` open the working file and ask `DocumentRewriting::rewrite_document(uri)` for a descriptor opened `"wt"`, which truncates
+the document at once, and copy the working file into it and flush. The document is
 then read again through the provider and its CRC-32 compared with the working copy's: only a document
-that holds the very bytes verified is accepted, and only then is the catalog row set to what the
+that holds the very bytes verified is accepted, and only then is the record removed (`Stage::settled`), the catalog row set to what the
 working copy reads, the analysis dropped and an undo step kept, so **the row never claims tags the
-file does not hold**. A descriptor refused (`TagsDocument { Opened }`: a revoked grant, a MediaStore
-row the app does not own) has truncated nothing and ends the song as failed. Any later failure (a write
-cut short, a provider keeping nothing, a CRC that differs) has already emptied the document, so the
-original is written back the same way and its CRC checked; a restored document is a failed song with
-its first error, nothing changed. **An original that cannot be written back is never deleted**:
-`keep_original` moves it to `tag-unrestored/` (never swept) and `TagsUnrestored { kept }` says so,
-since the stage's folder is otherwise removed whatever happened. A song costs up to three copies of
+file does not hold**. Any failure after the record (a descriptor refused, a write cut short, a provider keeping nothing, a CRC that differs)
+first reads the document: one that still holds the original's CRC (a refused descriptor that truncated nothing: a revoked grant, a MediaStore
+row the app does not own) is a failed song with its first error; otherwise the
+original is written back the same way and its CRC checked, and a restored document is a failed song with
+its first error, nothing changed. **An original that cannot be written back is never deleted**: a stage
+whose record was not settled keeps its folder when dropped (only `working/` goes); `kept_aside` moves the
+whole folder, record and all, to `tag-unrestored/` and syncs it, and where the move fails the folder stays in
+`tag-staging`, which the sweeper never empties of a recorded folder; `TagsUnrestored { kept }` names the original either way.
+**A pending record puts its original back before anything else is written**: `rewrite_documents_with`
+(Android's start) and every edit of a document run `put_back_pending`, which claims each recorded folder in
+`tag-staging` and `tag-unrestored` with `Held::taken_over` (a living stage's flock refuses it, so a rewrite in
+flight is never touched, while a dead run's or a dropped stage's is taken at once), checks the original against
+the record's CRC, and accepts a document already holding it or writes the original back and verifies it; only
+then is the folder removed (`Pending::settled`). One it cannot put back stays, and an edit of that document is refused as
+`TagsUnrestored` rather than copying the damaged document as its new working copy
+(`a_rewrite_ended_mid_write_is_put_back_by_the_next_run`, which ends a child run of the test binary inside the
+provider's truncation, `an_original_whose_move_aside_fails_stays_staged_and_the_next_run_puts_it_back`,
+`the_next_edit_of_a_damaged_document_puts_its_original_back_before_writing`). A record in a form other than `1`
+is left where it lies, and a file an older release kept loose in `tag-unrestored/` is never touched. A song costs up to three copies of
 its file on the app's storage at once (`original/`, `working/` and the writer's own staged copy) and
 one read of the document to verify, one song at a time; a full disk is `CopiedAside` before the
 document is touched. **A MediaStore row the app does not own is written only after the listener
@@ -1089,9 +1105,12 @@ first failure's sentence
 (`tags_written_to_a_document_reach_it_through_a_staged_copy_and_one_undo_puts_them_back`,
 `a_write_back_cut_short_puts_the_original_bytes_back_and_the_row_keeps_its_tags`,
 `a_document_that_does_not_hold_what_was_written_is_put_back_as_it_was`,
-`an_original_that_cannot_be_put_back_is_kept_whole`,
+`an_original_that_cannot_be_put_back_is_kept_whole_and_the_next_run_puts_it_back`,
+`a_descriptor_refused_after_the_provider_emptied_the_document_puts_the_original_back`,
+`an_edit_of_a_document_whose_original_cannot_yet_be_put_back_is_refused`,
 `a_document_refused_for_writing_is_left_untouched`,
-`a_stage_a_dead_writer_left_is_swept_and_a_living_one_is_not`).
+`a_stage_a_dead_writer_left_is_swept_and_a_living_one_is_not`,
+`a_stage_a_dead_writer_left_with_a_pending_rewrite_is_never_swept_but_claimed`).
 
 **The sheet is iOS's** (`TagEditor.kt`, `Sheets.editingTags`, `TagEditing`): *Edit tags* in the song
 sheet where `TagEditing.writable` says its kind is writable (`audioExtensions()` asked once of

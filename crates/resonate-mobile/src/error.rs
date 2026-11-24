@@ -52,20 +52,20 @@ impl fmt::Display for DownloadOp {
 #[derive(Clone, Copy, Debug)]
 pub enum RewriteOp {
     CopiedAside,
+    Recorded,
     Opened,
     Written,
     ReadBack,
-    PutBack,
 }
 
 impl fmt::Display for RewriteOp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
             Self::CopiedAside => words::errors::rewrite_copied_aside(),
+            Self::Recorded => words::errors::rewrite_recorded(),
             Self::Opened => words::errors::rewrite_opened(),
             Self::Written => words::errors::rewrite_written(),
             Self::ReadBack => words::errors::rewrite_read_back(),
-            Self::PutBack => words::errors::rewrite_put_back(),
         })
     }
 }

@@ -243,17 +243,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Mobile catalog
-- [M · 0.17.1] Recover the original after an interrupted Android tag rewrite. **High, architect.**
-  The document provider can truncate a song before the replacement bytes land. If the
-  app stops during that write, the next tag edit can sweep the only intact copy
-  (`android/app/src/main/java/org/resonate/android/TagEditing.kt:183`,
-  `crates/resonate-mobile/src/rewriting.rs:137`, `:166`,
-  `crates/resonate-mobile/src/tagging.rs:312`, `:340`). Sync the original and record the
-  pending rewrite before opening the destination, with the source already readable.
-  Retain the original until success or
-  restoration is durable, including when moving the backup aside fails. Done when an
-  interrupted write followed by a new process, and a restore failure followed by a
-  failed backup move, both leave a verified copy recoverable.
 - [L · 0.17.1] Recheck the file a phone will keep before deleting identical copies.
   **High, architect.** A saved preview can outlive the kept file or its contents.
   Android deletes the other files directly from that preview. iOS checks for a matching

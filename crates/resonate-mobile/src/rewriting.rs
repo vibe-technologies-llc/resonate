@@ -1,7 +1,7 @@
 use std::{
     ffi::{OsStr, OsString},
     fs::{self, File},
-    io::{self, Read},
+    io::{self, Read, Write},
     path::{Path, PathBuf},
     process,
     sync::atomic::{AtomicU64, Ordering},
@@ -24,6 +24,9 @@ const UNRESTORED: &str = "tag-unrestored";
 const HELD: &str = "held";
 const ORIGINAL: &str = "original";
 const WORKING: &str = "working";
+const PENDING: &str = "pending";
+const PENDING_STAGED: &str = "pending.staged";
+const PENDING_FORM: &str = "1";
 const UNNAMED_SONG: &str = "song";
 const READ_IN_CHUNKS_OF: usize = 1 << 16;
 
@@ -37,6 +40,7 @@ pub trait DocumentRewriting: Send + Sync {
 pub(crate) struct Stage {
     folder: PathBuf,
     leaf: OsString,
+    pending: bool,
     _held: Held,
 }
 
@@ -70,6 +74,7 @@ impl Stage {
         let stage = Self {
             folder,
             leaf: leaf_of(name),
+            pending: false,
             _held: held,
         };
 
@@ -86,39 +91,167 @@ impl Stage {
         self.folder.join(WORKING).join(&self.leaf)
     }
 
-    pub(crate) fn keep_original(&self, under: &Path) -> Result<PathBuf> {
-        let unrestored = under.join(UNRESTORED);
+    pub(crate) fn set_aside(&self) -> Result<u32> {
         let refused = |source| Error::TagsDocument {
-            op: RewriteOp::PutBack,
+            op: RewriteOp::CopiedAside,
             source,
         };
 
-        fs::create_dir_all(&unrestored).map_err(refused)?;
-
-        let kept = unrestored.join(naming::named_within(
-            "",
-            self.leaf.as_os_str(),
-            format!(".{}", self.folder_name()),
-        ));
-
-        fs::rename(self.original(), &kept).map_err(refused)?;
-        Ok(kept)
+        fs::copy(self.working(), self.original()).map_err(refused)?;
+        File::open(self.original())
+            .and_then(|original| original.sync_all())
+            .and_then(|()| synced_folder(&self.folder.join(ORIGINAL)))
+            .map_err(refused)?;
+        crc_of_file(&self.original())
     }
 
-    fn folder_name(&self) -> String {
-        self.folder
-            .file_name()
-            .map(|name| name.to_string_lossy().into_owned())
-            .unwrap_or_default()
+    pub(crate) fn pend(&mut self, uri: &str, original: u32) -> Result<()> {
+        let staged = self.folder.join(PENDING_STAGED);
+        let record = format!("{PENDING_FORM}\n{original:08x}\n{uri}");
+
+        let written = File::create_new(&staged)
+            .and_then(|mut file| {
+                file.write_all(record.as_bytes())?;
+                file.sync_all()
+            })
+            .and_then(|()| fs::rename(&staged, self.folder.join(PENDING)))
+            .and_then(|()| synced_folder(&self.folder));
+
+        if let Err(source) = written {
+            let _ = fs::remove_file(&staged);
+            let _ = fs::remove_file(self.folder.join(PENDING));
+
+            return Err(Error::TagsDocument {
+                op: RewriteOp::Recorded,
+                source,
+            });
+        }
+        self.pending = true;
+        Ok(())
+    }
+
+    pub(crate) fn settled(&mut self) {
+        if let Err(error) = fs::remove_file(self.folder.join(PENDING)) {
+            tracing::warn!(%error, folder = %self.folder.display(), "a settled rewrite's record could not be removed");
+        }
+        self.pending = false;
+    }
+
+    pub(crate) fn kept_aside(&mut self, under: &Path) -> PathBuf {
+        let unrestored = under.join(UNRESTORED);
+        let Some(name) = self.folder.file_name().map(OsStr::to_owned) else {
+            return self.original();
+        };
+
+        let kept = unrestored.join(name);
+        let moved = fs::create_dir_all(&unrestored)
+            .and_then(|()| fs::rename(&self.folder, &kept))
+            .and_then(|()| synced_folder(&unrestored));
+
+        match moved {
+            Ok(()) => {
+                self.folder = kept;
+
+                let _ = synced_folder(&under.join(STAGING));
+            }
+            Err(error) => {
+                tracing::warn!(%error, folder = %self.folder.display(), "an unrestored original stays where it was staged");
+            }
+        }
+        self.original()
     }
 }
 
 impl Drop for Stage {
     fn drop(&mut self) {
-        if let Err(error) = fs::remove_dir_all(&self.folder) {
+        let removed = if self.pending {
+            fs::remove_dir_all(self.folder.join(WORKING))
+        } else {
+            fs::remove_dir_all(&self.folder)
+        };
+        if let Err(error) = removed {
             tracing::debug!(%error, folder = %self.folder.display(), "a staged song could not be removed");
         }
     }
+}
+
+pub(crate) struct Pending {
+    folder: PathBuf,
+    pub(crate) uri: String,
+    pub(crate) original_crc: u32,
+    _held: Held,
+}
+
+impl Pending {
+    pub(crate) fn original(&self) -> PathBuf {
+        let originals = self.folder.join(ORIGINAL);
+
+        fs::read_dir(&originals)
+            .ok()
+            .and_then(|mut entries| entries.find_map(|entry| entry.ok()))
+            .map_or(originals, |entry| entry.path())
+    }
+
+    pub(crate) fn settled(self) {
+        let removed = fs::remove_file(self.folder.join(PENDING))
+            .and_then(|()| fs::remove_dir_all(&self.folder));
+
+        match removed {
+            Ok(()) => tracing::info!(uri = self.uri, "an interrupted tag rewrite was settled"),
+            Err(error) => {
+                tracing::warn!(%error, folder = %self.folder.display(), "a settled rewrite could not be removed")
+            }
+        }
+    }
+}
+
+pub(crate) fn pending_under(under: &Path) -> Vec<Pending> {
+    [STAGING, UNRESTORED]
+        .iter()
+        .filter_map(|area| fs::read_dir(under.join(area)).ok())
+        .flat_map(|entries| entries.flatten())
+        .map(|entry| entry.path())
+        .filter(|folder| folder.join(PENDING).is_file())
+        .filter_map(claimed)
+        .collect()
+}
+
+fn claimed(folder: PathBuf) -> Option<Pending> {
+    let held = match Held::taken_over(&folder.join(HELD)) {
+        Ok(held) => held,
+        Err(error) if error.kind() == io::ErrorKind::WouldBlock => return None,
+        Err(error) => {
+            tracing::warn!(%error, folder = %folder.display(), "an interrupted tag rewrite could not be claimed");
+            return None;
+        }
+    };
+    let record = fs::read_to_string(folder.join(PENDING)).ok();
+    let Some((uri, original_crc)) = record.as_deref().and_then(read_record) else {
+        tracing::warn!(folder = %folder.display(), "an interrupted tag rewrite's record could not be read");
+        return None;
+    };
+    Some(Pending {
+        folder,
+        uri,
+        original_crc,
+        _held: held,
+    })
+}
+
+fn read_record(record: &str) -> Option<(String, u32)> {
+    let mut lines = record.splitn(3, '\n');
+
+    if lines.next()? != PENDING_FORM {
+        return None;
+    }
+
+    let original_crc = u32::from_str_radix(lines.next()?, 16).ok()?;
+    let uri = lines.next().filter(|uri| !uri.is_empty())?;
+    Some((uri.to_owned(), original_crc))
+}
+
+fn synced_folder(folder: &Path) -> io::Result<()> {
+    File::open(folder)?.sync_all()
 }
 
 fn leaf_of(name: &str) -> OsString {
@@ -149,7 +282,9 @@ fn sweep(staging: &Path) {
         };
         let folder = entry.path();
 
-        if writer::writer_of(&folder.join(HELD), stamped) == Writer::Living {
+        if folder.join(PENDING).exists()
+            || writer::writer_of(&folder.join(HELD), stamped) == Writer::Living
+        {
             continue;
         }
         match fs::remove_dir_all(&folder) {
@@ -164,6 +299,11 @@ fn sweep(staging: &Path) {
 }
 
 pub(crate) fn put_back(rewriting: &dyn DocumentRewriting, uri: &str, from: &Path) -> Result<()> {
+    let failed = |source| Error::TagsDocument {
+        op: RewriteOp::Written,
+        source,
+    };
+    let mut source = File::open(from).map_err(failed)?;
     let descriptor = answered(Callback::RewriteDocument, || {
         rewriting.rewrite_document(uri.to_owned())
     })
@@ -172,11 +312,6 @@ pub(crate) fn put_back(rewriting: &dyn DocumentRewriting, uri: &str, from: &Path
         op: RewriteOp::Opened,
         source,
     })?;
-    let failed = |source| Error::TagsDocument {
-        op: RewriteOp::Written,
-        source,
-    };
-    let mut source = File::open(from).map_err(failed)?;
 
     io::copy(&mut source, &mut document).map_err(failed)?;
     if let Err(error) = document.sync_all() {
@@ -242,6 +377,85 @@ mod tests {
         drop((living, beside));
 
         let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn a_stage_a_dead_writer_left_with_a_pending_rewrite_is_never_swept_but_claimed() {
+        let data = under("pending");
+        let dead = data.join(STAGING).join(format!("{NEVER_A_PROCESS}-0"));
+        let recordless = data.join(STAGING).join(format!("{NEVER_A_PROCESS}-1"));
+
+        for folder in [&dead, &recordless] {
+            fs::create_dir_all(folder.join(ORIGINAL)).expect("a dead stage");
+            fs::write(folder.join(HELD), b"").expect("its held file");
+            fs::write(folder.join(ORIGINAL).join("song.flac"), b"bytes").expect("its copy");
+        }
+        fs::write(dead.join(PENDING), "1\n0000002a\ncontent://test/song.flac").expect("its record");
+
+        let stage = Stage::made(&data, "song.flac").expect("a stage");
+
+        assert!(dead.join(ORIGINAL).join("song.flac").is_file());
+        assert!(!recordless.exists());
+
+        let pending = pending_under(&data);
+
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].uri, "content://test/song.flac");
+        assert_eq!(pending[0].original_crc, 42);
+        assert_eq!(pending[0].original(), dead.join(ORIGINAL).join("song.flac"));
+        assert!(pending_under(&data).is_empty());
+
+        drop((stage, pending));
+
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn a_pending_rewrite_held_by_a_living_stage_is_not_claimed_until_the_stage_is_dropped() {
+        let data = under("living");
+
+        let mut stage = Stage::made(&data, "song.flac").expect("a stage");
+
+        fs::write(stage.working(), b"bytes").expect("a working copy");
+
+        let original = stage.set_aside().expect("an original set aside");
+
+        stage
+            .pend("content://test/song.flac", original)
+            .expect("a record");
+
+        assert!(pending_under(&data).is_empty());
+
+        let folder = stage.folder.clone();
+
+        drop(stage);
+
+        let pending = pending_under(&data);
+
+        assert!(!folder.join(WORKING).exists());
+        assert_eq!(pending.len(), 1);
+        assert_eq!(pending[0].original_crc, original);
+        assert_eq!(
+            fs::read(pending[0].original()).expect("the original"),
+            b"bytes"
+        );
+
+        pending.into_iter().for_each(Pending::settled);
+
+        assert!(!folder.exists());
+
+        let _ = fs::remove_dir_all(&data);
+    }
+
+    #[test]
+    fn a_record_in_a_form_not_known_is_not_read() {
+        assert_eq!(
+            read_record("1\n0000002a\ncontent://test/a.flac"),
+            Some(("content://test/a.flac".to_owned(), 42))
+        );
+        assert_eq!(read_record("2\n0000002a\ncontent://test/a.flac"), None);
+        assert_eq!(read_record("1\nzz\ncontent://test/a.flac"), None);
+        assert_eq!(read_record("1\n0000002a\n"), None);
     }
 
     #[test]
