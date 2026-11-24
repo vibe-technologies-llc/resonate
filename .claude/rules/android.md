@@ -376,7 +376,7 @@ stored row untouched where its stamp and `INDEXING_REVISION` match and it is not
 unchanged library is neither opened, probed nor written (the catalog revision stays, and the search
 index with it) and an unknown size and time (both 0) always indexes; the folder's cover and sidecar
 lyrics are still offered for the known row. A file changed from outside, a hidden row, a row with no stamp
-and a bump of `INDEXING_REVISION` all index again, and `index_document` (no stamp) clears the stamp.
+and a bump of `INDEXING_REVISION` all index again, and `index_document` (no stamp) keeps the stamp the row holds, with the analysis it guards (`Catalog::tagged` answers `Restamped`, and only `Moved` drops the in-memory analysis; the stored study falls to the `size`/`modified` triggers only when a stamp differs), yet leaves `indexed_by` empty so the next scan confirms the file against its stamp and a change found then resets the analysis.
 `take_the_place_of_missing` reads the hidden rows only where one exists (`any_missing`, a covering
 partial index), so a scan is not quadratic in the library. **What it may take the place of depends on
 who indexed** (`vanished::Absorbing`): a scan (`index_document`, `scan_document`) takes any hidden

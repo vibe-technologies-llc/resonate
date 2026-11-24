@@ -288,14 +288,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/deleting.rs:112`). Distinguish unavailable from absent
   and keep the row when the outcome is unknown. Done when a provider returning zero
   and then a null cursor or a permission error leaves the copy in the catalog.
-- [M · 0.17.1] Keep a phone document's analysis when reopening an unchanged file.
-  **Low, builder.** Android's open-with path can reindex a known document without a
-  size or modification stamp. That clears the old stamp and triggers a reset of its
-  cached analysis (`android/app/src/main/java/org/resonate/android/OpenedFiles.kt:186`,
-  `crates/resonate-mobile/src/catalog_extras.rs:190`,
-  `crates/resonate-mobile/src/catalog.rs:138`). Preserve known stamps when a read provides
-  no newer one, while still invalidating analysis on confirmed changes. Done when indexing
-  a stamped file from open-with keeps the analysis and scanning a changed file refreshes it.
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its

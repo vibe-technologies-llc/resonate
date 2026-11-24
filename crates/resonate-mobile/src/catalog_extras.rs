@@ -20,7 +20,7 @@ use crate::{
         LibraryBreakdown, LibraryShare, LibraryStatistics, ListenedOnDay, ListenedTo,
         ListeningDetail,
     },
-    stamp::{DocumentStamp, INDEXING_REVISION},
+    stamp::{DocumentStamp, INDEXING_REVISION, Restamped},
     words,
 };
 
@@ -182,6 +182,16 @@ fn held_ahead(connection: &Connection, id: u64) -> Result<LyricsAhead> {
         .unwrap_or_default())
 }
 
+fn held_stamp(connection: &Connection, id: u64) -> Result<(Option<i64>, Option<i64>)> {
+    connection
+        .query_row(
+            "SELECT size, modified FROM documents WHERE id = ?1",
+            [id as i64],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .map_err(|source| Error::store(StoreOp::Read, source))
+}
+
 fn read_error(source: rusqlite::Error) -> Error {
     Error::store(StoreOp::Read, source)
 }
@@ -192,11 +202,21 @@ impl Catalog {
         id: u64,
         info: &MediaInfo,
         stamp: Option<DocumentStamp>,
-    ) -> Result<()> {
+    ) -> Result<Restamped> {
         let tags = &info.tags;
+        let connection = self.0.lock();
 
-        self.0.lock().execute("UPDATE documents SET album_artist = coalesce(nullif(?2, ''), album_artist), genre = coalesce(nullif(?3, ''), genre), date = coalesce(nullif(?4, ''), date), track_number = ?5, disc_number = ?6, bits = ?7, channels = ?8, recording = coalesce(?9, recording), release = coalesce(?10, release), artist_mbid = coalesce(?11, artist_mbid), isrc = coalesce(?12, isrc), size = ?13, modified = ?14, indexed_by = ?15 WHERE id = ?1", params![id as i64, tags.album_artist, tags.genre, tags.date, tags.track_number, tags.disc_number, info.bits_per_coded_sample, info.spec.channels.count().get(), tags.musicbrainz_track_id, tags.musicbrainz_album_id, tags.musicbrainz_artist_id, tags.isrc, stamp.map(DocumentStamp::size_column), stamp.map(DocumentStamp::modified_column), stamp.map(|_| INDEXING_REVISION)]).map_err(|source| Error::store(StoreOp::Write, source))?;
-        Ok(())
+        let before = held_stamp(&connection, id)?;
+
+        connection.execute("UPDATE documents SET album_artist = coalesce(nullif(?2, ''), album_artist), genre = coalesce(nullif(?3, ''), genre), date = coalesce(nullif(?4, ''), date), track_number = ?5, disc_number = ?6, bits = ?7, channels = ?8, recording = coalesce(?9, recording), release = coalesce(?10, release), artist_mbid = coalesce(?11, artist_mbid), isrc = coalesce(?12, isrc), size = coalesce(?13, size), modified = coalesce(?14, modified), indexed_by = ?15 WHERE id = ?1", params![id as i64, tags.album_artist, tags.genre, tags.date, tags.track_number, tags.disc_number, info.bits_per_coded_sample, info.spec.channels.count().get(), tags.musicbrainz_track_id, tags.musicbrainz_album_id, tags.musicbrainz_artist_id, tags.isrc, stamp.map(DocumentStamp::size_column), stamp.map(DocumentStamp::modified_column), stamp.map(|_| INDEXING_REVISION)]).map_err(|source| Error::store(StoreOp::Write, source))?;
+
+        let after = held_stamp(&connection, id)?;
+
+        Ok(if before == after {
+            Restamped::Kept
+        } else {
+            Restamped::Moved
+        })
     }
 
     #[cfg(test)]

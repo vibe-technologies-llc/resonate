@@ -91,7 +91,7 @@ use crate::{
     documents::{document_uri, location},
     launch::Launch,
     one_file::{Probed, Spelled},
-    stamp::DocumentStamp,
+    stamp::{DocumentStamp, Restamped},
     vanished::Absorbing,
 };
 pub use crate::{
@@ -444,8 +444,9 @@ impl MobilePlayer {
             by_the_file,
         )?;
 
-        self.services.analyses.lock().remove(&track.id);
-        self.catalog.tagged(track.id, &info, stamp)?;
+        if self.catalog.tagged(track.id, &info, stamp)? == Restamped::Moved {
+            self.services.analyses.lock().remove(&track.id);
+        }
         if let Some(picture) = picture.into_copied() {
             self.catalog
                 .keep_artwork(track.id, &picture.bytes, "embedded", true)?;
