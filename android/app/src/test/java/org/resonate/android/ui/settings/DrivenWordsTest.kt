@@ -6,6 +6,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.English
+import org.resonate.android.nativecore.Exception as NativeFailure
 import org.resonate.android.nativecore.RemoteAnswer
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.RemoteDevice
@@ -87,5 +88,28 @@ class DrivenWordsTest {
         assertFalse(DrivenWords.controllable(RemoteDevice(RemoteStanding.EXPIRED, zones)))
         assertFalse(DrivenWords.controllable(RemoteDevice(RemoteStanding.WAITING, emptyList())))
         assertFalse(DrivenWords.controllable(RemoteDevice(RemoteStanding.REFUSED, emptyList())))
+    }
+
+    @Test
+    fun syncSwitchedOffOrTheDeviceForgottenEndsTheWatchAndAnyOtherFailureKeepsAsking() {
+        val device = RemoteDevice(RemoteStanding.MIRRORED, listOf(zone(640u, 2u)))
+
+        assertEquals(DrivenWatch.Heard(device), DrivenWords.watched(Result.success(device)))
+        assertEquals(
+            DrivenWatch.Ended(DrivenEnd.SYNC_OFF),
+            DrivenWords.watched(Result.failure(NativeFailure.SyncOff("off"))),
+        )
+        assertEquals(
+            DrivenWatch.Ended(DrivenEnd.DEVICE_GONE),
+            DrivenWords.watched(Result.failure(NativeFailure.UnknownSyncDevice("gone"))),
+        )
+        assertEquals(
+            DrivenWatch.Asking,
+            DrivenWords.watched(Result.failure(NativeFailure.Sync("a dropped read"))),
+        )
+        assertEquals(
+            DrivenWatch.Asking,
+            DrivenWords.watched(Result.failure(IllegalStateException("a native call failed"))),
+        )
     }
 }

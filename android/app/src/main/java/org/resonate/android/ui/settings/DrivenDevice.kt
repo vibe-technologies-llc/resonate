@@ -44,6 +44,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.resonate.android.R
 import org.resonate.android.Words
+import org.resonate.android.nativecore.Exception as NativeFailure
 import org.resonate.android.nativecore.RemoteAnswer
 import org.resonate.android.nativecore.RemoteControl
 import org.resonate.android.nativecore.RemoteDevice
@@ -64,6 +65,19 @@ const val DRIVEN_ROWS_MORE = 50
 const val DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING = 2
 
 data class DrivenRow(val row: UInt, val song: RemoteSong, val playing: Boolean)
+
+enum class DrivenEnd {
+    SYNC_OFF,
+    DEVICE_GONE,
+}
+
+sealed interface DrivenWatch {
+    data object Asking : DrivenWatch
+
+    data class Heard(val device: RemoteDevice) : DrivenWatch
+
+    data class Ended(val end: DrivenEnd) : DrivenWatch
+}
 
 object DrivenWords {
     fun clock(millis: ULong): String {
@@ -139,6 +153,24 @@ object DrivenWords {
 
     fun controllable(device: RemoteDevice): Boolean = device.standing == RemoteStanding.MIRRORED
 
+    fun watched(outcome: Result<RemoteDevice>): DrivenWatch =
+        outcome.fold(
+            onSuccess = { DrivenWatch.Heard(it) },
+            onFailure = { failure ->
+                when (failure) {
+                    is NativeFailure.SyncOff -> DrivenWatch.Ended(DrivenEnd.SYNC_OFF)
+                    is NativeFailure.UnknownSyncDevice -> DrivenWatch.Ended(DrivenEnd.DEVICE_GONE)
+                    else -> DrivenWatch.Asking
+                }
+            },
+        )
+
+    fun ending(end: DrivenEnd): Int =
+        when (end) {
+            DrivenEnd.SYNC_OFF -> R.string.driven_sync_off
+            DrivenEnd.DEVICE_GONE -> R.string.driven_device_gone
+        }
+
     fun refusal(words: Words, answer: RemoteAnswer): String? =
         when (answer) {
             RemoteAnswer.DONE -> null
@@ -154,10 +186,14 @@ object DrivenWords {
 @Composable
 fun DrivenDevice(resonate: Resonate, device: String, press: (UInt, RemoteControl, ULong?) -> Unit) {
     val shown by
-        produceState<RemoteDevice?>(null, device) {
+        produceState<DrivenWatch>(DrivenWatch.Asking, device) {
             try {
                 while (true) {
-                    value = resonate.read { native -> withContext(Dispatchers.IO) { native.syncWatch(device) } }.getOrNull()
+                    value =
+                        DrivenWords.watched(
+                            resonate.read { native -> withContext(Dispatchers.IO) { native.syncWatch(device) } }
+                        )
+                    if (value is DrivenWatch.Ended) break
                     delay(DRIVEN_READ_EVERY_MS)
                 }
             } finally {
@@ -168,8 +204,10 @@ fun DrivenDevice(resonate: Resonate, device: String, press: (UInt, RemoteControl
         Modifier.fillMaxWidth().padding(horizontal = Sizes.gutter, vertical = 4.dp).testTag("driven-device"),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        val now = shown
+        val watch = shown
+        val now = (watch as? DrivenWatch.Heard)?.device
         when {
+            watch is DrivenWatch.Ended -> Note(stringResource(DrivenWords.ending(watch.end)))
             now == null || now.standing == RemoteStanding.WAITING ->
                 Note(stringResource(R.string.driven_asking))
             now.standing == RemoteStanding.REFUSED ->
