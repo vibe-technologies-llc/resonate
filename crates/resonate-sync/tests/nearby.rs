@@ -1767,3 +1767,71 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
 
     let _ = fs::remove_dir_all(&folder);
 }
+
+#[test]
+fn a_device_back_after_its_asker_stopped_waiting_is_never_told_that_command() {
+    let folder = scratch("lapsed");
+    let key = SyncKey::minted().expect("a key");
+    let stage = Arc::new(Stage::paused());
+
+    let desk_away = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+    let desk_id = desk_away.device();
+
+    drop(desk_away);
+
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+
+    let given_up = phone.ask_to_control(desk_id, ZoneId::FIRST, RemoteCommand::Play, None);
+    let still_awaited = phone.ask_to_control(
+        desk_id,
+        ZoneId::FIRST,
+        RemoteCommand::Volume(Permille::new(400)),
+        None,
+    );
+
+    drop(given_up);
+
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&phone),
+    );
+
+    desk.control_with(
+        Arc::clone(&stage) as Arc<dyn Controlled>,
+        RemoteTrust::Everything,
+    );
+
+    let quieter = still_awaited.answer();
+    let paused = phone.control(desk_id, ZoneId::FIRST, RemoteCommand::Pause);
+
+    assert_eq!(desk.device(), desk_id);
+    assert_eq!(quieter, Controlling::Done);
+    assert_eq!(paused, Controlling::Done);
+    assert_eq!(
+        *stage.told.lock(),
+        [
+            RemoteCommand::Volume(Permille::new(400)),
+            RemoteCommand::Pause
+        ]
+    );
+
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}

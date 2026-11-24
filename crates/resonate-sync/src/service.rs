@@ -30,6 +30,7 @@ use tokio::{
     time::{Instant, MissedTickBehavior, interval, sleep_until, timeout},
 };
 
+use self::unsent::{Awaited, Awaiting, Unsent, awaited};
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, LayoutNote, Ledger, LocalPlaylistId, Platform,
     Refused, Result, SyncKey,
@@ -48,12 +49,12 @@ use crate::{
         told_over_ipv6,
     },
     peer::{
-        Answering, DIAL_WITHIN, ExportStaged, Heard, blocking, consult, control, covers_from,
-        dialled, dialled_within, export_from, fetch, holdings_of, kept_from, lyricsfiles_from,
-        meet, prints_from, serve, tell, watch,
+        Answering, ExportStaged, Heard, blocking, consult, control, covers_from, dialled,
+        dialled_within, export_from, fetch, holdings_of, kept_from, lyricsfiles_from, meet,
+        prints_from, serve, tell, watch,
     },
     quic::{KEEP_THE_SERVER_EVERY, PeerIdentity, to_the_server, trusted_roots},
-    remote::{CONTROL_ANSWERED_WITHIN, Controlled, Controlling, RemoteCommand, Watched},
+    remote::{Controlled, Controlling, RemoteCommand, Watched},
     routes::{each_once, first_answering},
     seal::{LARGEST_OPENED, opened, sealed},
     stun::{Reflector, STUN_PORT},
@@ -64,6 +65,8 @@ use crate::{
         ToServer, decoded_bundle, encoded_bundle, encoded_change,
     },
 };
+
+mod unsent;
 
 pub const HOSTED_SERVER: &str = resonate_core::RESONATE_SOCKET_ADDRESS;
 pub const SERVER_PORT: u16 = 443;
@@ -208,6 +211,12 @@ impl Shown {
         }
     }
 
+    fn unreached(&mut self, recordings: &[Recording], from: DeviceId) {
+        for recording in recordings {
+            self.listed_waiting_as(recording, from, TransferState::Failed);
+        }
+    }
+
     fn unlisted_waiting(&mut self, recording: &Recording, from: DeviceId) {
         self.transfers.retain(|transfer| {
             !(transfer.names(recording, from) && transfer.state == TransferState::Waiting)
@@ -285,6 +294,7 @@ enum Command {
         command: RemoteCommand,
         queue_seen: Option<u64>,
         answer: std_mpsc::Sender<Controlling>,
+        awaited: Awaited,
     },
     Watch(DeviceId),
     Consult {
@@ -362,12 +372,15 @@ struct Running {
     watching: Mutex<BTreeSet<DeviceId>>,
 }
 
-pub struct AskedToControl(std_mpsc::Receiver<Controlling>);
+pub struct AskedToControl {
+    answered: std_mpsc::Receiver<Controlling>,
+    awaiting: Awaiting,
+}
 
 impl AskedToControl {
     pub fn answer(self) -> Controlling {
-        self.0
-            .recv_timeout(DIAL_WITHIN + CONTROL_ANSWERED_WITHIN)
+        self.answered
+            .recv_timeout(self.awaiting.left())
             .unwrap_or(Controlling::Unanswered)
     }
 }
@@ -383,6 +396,7 @@ enum Work {
         command: RemoteCommand,
         queue_seen: Option<u64>,
         answer: std_mpsc::Sender<Controlling>,
+        awaited: Awaited,
     },
     Watch,
     Consult {
@@ -762,7 +776,7 @@ struct Syncing {
     punches_heard: HeardOnce,
     beacons_heard: HeardOnce,
     records_resolved: HeardOnce,
-    waiting: BTreeMap<DeviceId, Vec<Work>>,
+    unsent: Unsent,
     followed: BTreeMap<DeviceId, Instant>,
     following: BTreeSet<DeviceId>,
     follow_owed: BTreeSet<DeviceId>,
@@ -1092,6 +1106,7 @@ impl Sync {
         drawn: Option<u64>,
     ) -> AskedToControl {
         let (answer, answered) = std_mpsc::channel();
+        let (awaited, awaiting) = awaited(std::time::Instant::now());
         let queue_seen = command.names_a_row().then_some(drawn).flatten();
 
         let asked = Command::Control {
@@ -1100,9 +1115,10 @@ impl Sync {
             command,
             queue_seen,
             answer,
+            awaited,
         };
         let _ = self.commands.send(asked);
-        AskedToControl(answered)
+        AskedToControl { answered, awaiting }
     }
 
     fn queue_revision_mirrored(&self, device: DeviceId, zone: ZoneId) -> Option<u64> {
@@ -1280,6 +1296,13 @@ impl Running {
         self.shown.write().queued(recording, from);
     }
 
+    fn still_watched(&self, device: DeviceId) -> bool {
+        self.watched
+            .lock()
+            .get(&device)
+            .is_some_and(|asked| asked.elapsed() < WATCH_LAPSES_AFTER)
+    }
+
     fn transfer(&self, recording: &Recording, from: DeviceId, change: impl FnOnce(&mut Transfer)) {
         self.shown.write().transfer(recording, from, change);
     }
@@ -1373,7 +1396,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     Ok(())
                 }
                 Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
-                Some(Command::Control { device, zone, command, queue_seen, answer }) => syncing.want(device, Work::Control { zone, command, queue_seen, answer }).await,
+                Some(Command::Control { device, zone, command, queue_seen, answer, awaited }) => syncing.want(device, Work::Control { zone, command, queue_seen, answer, awaited }).await,
                 Some(Command::Consult { device, asked, answer }) => syncing.want(device, Work::Consult { asked, answer }).await,
                 Some(Command::Export { device, asked }) => syncing.want(device, Work::Export(asked)).await,
                 Some(Command::KeptOwed) => {
@@ -1414,7 +1437,10 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                 beacon_at = Instant::now() + jittered(BEACON_EVERY);
                 Ok(())
             }
-            _ = watch.tick() => syncing.watched().await,
+            _ = watch.tick() => {
+                syncing.expire_unsent();
+                syncing.watched().await
+            }
             () = until(due) => Ok(()),
         };
 
@@ -1893,7 +1919,7 @@ impl Syncing {
             punches_heard: HeardOnce::new(PUNCH_SEALED_WITHIN, PUNCHES_HEARD_AT_MOST),
             beacons_heard: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
             records_resolved: HeardOnce::new(BEACON_SENT_WITHIN, BEACONS_HEARD_AT_MOST),
-            waiting: BTreeMap::new(),
+            unsent: Unsent::default(),
             followed: BTreeMap::new(),
             following: BTreeSet::new(),
             follow_owed: BTreeSet::new(),
@@ -2033,9 +2059,7 @@ impl Syncing {
             }
             Event::Punched(device, Some(connection)) | Event::Relayed(device, Some(connection)) => {
                 self.watch_closing(device, &connection);
-                for work in self.waiting.remove(&device).unwrap_or_default() {
-                    self.spawn(device, connection.clone(), work);
-                }
+                self.send_unsent(device, &connection);
                 self.ask_for_covers(device, &connection);
                 self.ask_for_kept(device, &connection);
                 self.ask_for_lyricsfiles(device, &connection);
@@ -2177,7 +2201,7 @@ impl Syncing {
             FromServer::Arrived { device } => {
                 self.server_online.insert(device);
                 self.publish_devices();
-                if self.waiting.contains_key(&device) {
+                if self.unsent.holds(device) {
                     self.punch(device).await?;
                 }
                 self.follow(device).await?;
@@ -2802,6 +2826,13 @@ impl Syncing {
     }
 
     async fn want(&mut self, device: DeviceId, work: Work) -> Result<()> {
+        if work.unawaited(
+            std::time::Instant::now(),
+            self.running.still_watched(device),
+        ) {
+            self.unreached_work(device, work);
+            return Ok(());
+        }
         match &work {
             Work::Fetch { recordings, .. } => {
                 for recording in recordings {
@@ -2829,13 +2860,8 @@ impl Syncing {
             return Ok(());
         }
 
-        let first = !self.waiting.contains_key(&device);
-        let queued = self.waiting.entry(device).or_default();
+        let first = self.unsent.queue(device, work, std::time::Instant::now());
 
-        if matches!(work, Work::Follow) && queued.iter().any(|work| matches!(work, Work::Follow)) {
-            return Ok(());
-        }
-        queued.push(work);
         if first && self.running.transfers_allowed() {
             self.reach(device).await?;
         }
@@ -2849,6 +2875,30 @@ impl Syncing {
         spawn_work(Arc::clone(&self.running), device, connection, work);
     }
 
+    fn send_unsent(&mut self, device: DeviceId, connection: &Connection) {
+        let now = std::time::Instant::now();
+        let watched = self.running.still_watched(device);
+
+        for work in self.unsent.taken(device) {
+            if work.unawaited(now, watched) {
+                self.unreached_work(device, work);
+            } else {
+                self.spawn(device, connection.clone(), work);
+            }
+        }
+    }
+
+    fn expire_unsent(&mut self) {
+        let running = &self.running;
+        let lapsed = self.unsent.lapsed(std::time::Instant::now(), |device| {
+            running.still_watched(device)
+        });
+
+        for (device, work) in lapsed {
+            self.unreached_work(device, work);
+        }
+    }
+
     fn reached(&self, device: DeviceId) -> bool {
         self.peers
             .get(&device)
@@ -2860,7 +2910,7 @@ impl Syncing {
             return Ok(());
         }
 
-        let devices = self.waiting.keys().copied().collect::<Vec<_>>();
+        let devices = self.unsent.devices();
 
         for device in devices {
             self.reach(device).await?;
@@ -2878,7 +2928,7 @@ impl Syncing {
     }
 
     fn relayed_or_unreached(&mut self, device: DeviceId) {
-        let wanted = self.waiting.contains_key(&device) && !self.peers.contains_key(&device);
+        let wanted = self.unsent.holds(device) && !self.peers.contains_key(&device);
 
         if !wanted || self.server.is_none() || !self.running.reflector.relay().is_attached() {
             self.unreached(device);
@@ -2916,20 +2966,20 @@ impl Syncing {
         if self.peers.contains_key(&device) {
             return;
         }
-        for work in self.waiting.remove(&device).unwrap_or_default() {
-            match work {
-                Work::Fetch { recordings, .. } => {
-                    for recording in &recordings {
-                        self.running.transfer(recording, device, |transfer| {
-                            transfer.state = TransferState::Failed;
-                        });
-                    }
-                }
-                Work::Watch => {
-                    self.running.watching.lock().remove(&device);
-                }
-                Work::Follow | Work::Control { .. } | Work::Consult { .. } | Work::Export(_) => {}
+        for work in self.unsent.taken(device) {
+            self.unreached_work(device, work);
+        }
+    }
+
+    fn unreached_work(&self, device: DeviceId, work: Work) {
+        match work {
+            Work::Fetch { recordings, .. } => {
+                self.running.shown.write().unreached(&recordings, device);
             }
+            Work::Watch => {
+                self.running.watching.lock().remove(&device);
+            }
+            Work::Follow | Work::Control { .. } | Work::Consult { .. } | Work::Export(_) => {}
         }
     }
 
@@ -2949,7 +2999,10 @@ impl Syncing {
             self.running.derived.space,
             &candidates.encoded(),
         )?;
-        link.say(&ToServer::Punch { to: device, sealed })
+
+        link.say(&ToServer::Punch { to: device, sealed })?;
+        self.unsent.tried(device, std::time::Instant::now());
+        Ok(())
     }
 
     async fn candidates(&self) -> Vec<SocketAddr> {
@@ -3031,7 +3084,7 @@ impl Syncing {
             }
         };
 
-        if !self.waiting.contains_key(&device) {
+        if !self.unsent.holds(device) {
             let known = self.knows_device(device);
             let (table, at_most) = if known {
                 (&mut self.punched_back, KNOWN_DEVICES_ANSWERED_AT_MOST)
@@ -3230,6 +3283,7 @@ impl Syncing {
         };
 
         self.dialled_at.insert(device, Redial { at: now, wait });
+        self.unsent.tried(device, std::time::Instant::now());
 
         let running = Arc::clone(&self.running);
 
@@ -3349,9 +3403,7 @@ impl Syncing {
             standing.connection.close(0_u32.into(), b"met already");
         }
         self.watch_closing(device, &connection);
-        for work in self.waiting.remove(&device).unwrap_or_default() {
-            self.spawn(device, connection.clone(), work);
-        }
+        self.send_unsent(device, &connection);
         self.ask_for_covers(device, &connection);
         self.ask_for_kept(device, &connection);
         self.ask_for_lyricsfiles(device, &connection);
@@ -3525,6 +3577,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
             command,
             queue_seen,
             answer,
+            ..
         } => {
             let _ = answer.send(control(connection, zone, command, queue_seen).await);
 
@@ -3555,13 +3608,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
             return;
         }
         Work::Watch => {
-            let still_watched = || {
-                running
-                    .watched
-                    .lock()
-                    .get(&device)
-                    .is_some_and(|asked| asked.elapsed() < WATCH_LAPSES_AFTER)
-            };
+            let still_watched = || running.still_watched(device);
 
             if let Err(error) = watch(connection, device, &running.mirrors, still_watched).await {
                 tracing::debug!(%error, "another device's zones could not be watched");

@@ -14,13 +14,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Device sync
-- [M · 0.17.1] Expire remote playback commands when their answers time out.
-  **Medium, architect.** The request can report that a device did not answer, while the
-  command stays queued and plays, pauses or skips when that device later reconnects
-  (`crates/resonate-sync/src/service.rs:366`, `:2729`, `:3446`). Carry a deadline with the
-  command and settle explicit transfer rows when their reachability attempts expire.
-  Done when a device that returns after the deadline receives no expired command and
-  a fetch to an unreachable device leaves Waiting.
 - [S · 0.17.1] Retry an explicit fetch when a concurrent follow skips the song.
   **Medium, builder.** An automatic follow treats a deletion mark as if the song were already
   held and drops a concurrent explicit request that was waiting for the same fetch claim

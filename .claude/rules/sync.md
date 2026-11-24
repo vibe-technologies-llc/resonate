@@ -818,7 +818,13 @@ will not open is left out of the holdings.
   fetch's rows do), not as
   each one is reached, so `Shown::waiting` is how many are queued and `Shown::downloading` how many
   move; the apps say both (`SyncStatus::downloading`, `waiting`). A connection that closes turns the
-  rest to `Failed`, as before.
+  rest to `Failed`, as before. **An asked fetch leaves `Waiting` once its device goes unreached**:
+  a dial or punch that fails turns its rows `Failed` at once (`unreached`), and one waiting with no
+  answer for `UNREACHED_AFTER` (`SERVER_ANSWERS_WITHIN`, `DIAL_WITHIN` and `RELAY_DIAL_WITHIN`, a
+  punch's whole round, counted again from each punch or dial, `Unsent::tried`) is dropped and its
+  rows turned `Failed` as well
+  (`an_asked_fetch_lapses_once_its_device_goes_unreached_and_its_rows_stop_waiting`); a follow's
+  fetches and the follow itself wait for the device to come back.
 - **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `wss://resonate.tecnio.dev/`, a web socket through Cloudflare Tunnel,
   **the default on every front end**; the one host `resonate_core::RESONATE_HOST` names serves the hifi gateway too, `server.md`),
   `At` another (`sync-server`; blank is the hosted one; `ws://`/`wss://` for a web
@@ -912,7 +918,15 @@ through the relay as QUIC), so the server never carries a command or a mirror an
 - **The driving side** asks through the service like a fetch (`Work::Control`, `Work::Watch` through
   `Syncing::want`: the standing connection, else a punch or a dial, the same transfers gate).
   `Sync::control(device, zone, command)` waits at most `DIAL_WITHIN` plus
-  `CONTROL_ANSWERED_WITHIN` (10 s) and answers `Controlling`; `Sync::watch(device)` starts or keeps
+  `CONTROL_ANSWERED_WITHIN` (10 s) and answers `Controlling`. **A command is sent only while its
+  answer can still be heard**: `Sync::ask_to_control` stamps it (`Awaited`, the asker keeping
+  `Awaiting`, whose `answer` waits to the same instant), and work waiting for its device (`Unsent`)
+  drops a command once `DIAL_WITHIN` has passed since it was asked or its asker stopped waiting
+  (the `AskedToControl` dropped), checked as it is asked, every `WATCH_EVERY` (`expire_unsent`)
+  and again as the connection comes (`send_unsent`), so a device back later is never told it
+  (`a_command_lapses_once_its_asker_stops_waiting_or_it_could_no_longer_be_answered_in_time`,
+  `a_device_back_after_its_asker_stopped_waiting_is_never_told_that_command`); a waiting watch
+  is dropped the same way once no front end renews it (`Running::still_watched`). `Sync::watch(device)` starts or keeps
   one watch (`Running::watching`), renewed by each call and ended `WATCH_LAPSES_AFTER` (30 s)
   after the last; `Sync::watched(device)` is a `Watched` (`Waiting`, `Mirrored(Mirror)`,
   `Refused(Controlling)`) and `unwatch` drops it
