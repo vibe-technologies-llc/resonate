@@ -127,19 +127,6 @@ impl Shelf {
         self.arrive(recording, bytes, false);
     }
 
-    pub fn add_songs_in_one_instant(&self, recordings: &[Recording], at: i64) {
-        let mut inside = self.inside.lock();
-
-        for recording in recordings {
-            let bytes = recording.title.as_bytes().repeat(1000);
-
-            inside.arrivals.push((recording.clone(), at, false));
-            inside.songs.push((recording.clone(), bytes));
-        }
-        drop(inside);
-        self.moved();
-    }
-
     fn arrive(&self, recording: Recording, bytes: Vec<u8>, received: bool) {
         let mut inside = self.inside.lock();
 
@@ -174,6 +161,19 @@ impl Shelf {
 
 #[allow(dead_code)]
 impl Shelf {
+    pub fn add_songs_in_one_instant(&self, recordings: &[Recording], at: i64) {
+        let mut inside = self.inside.lock();
+
+        for recording in recordings {
+            let bytes = recording.title.as_bytes().repeat(1000);
+
+            inside.arrivals.push((recording.clone(), at, false));
+            inside.songs.push((recording.clone(), bytes));
+        }
+        drop(inside);
+        self.moved();
+    }
+
     pub fn delete_everywhere(&self, title: &str) {
         let mut inside = self.inside.lock();
         let gone = song(title);
