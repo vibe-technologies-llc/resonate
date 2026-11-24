@@ -38,7 +38,7 @@ mod tests {
 
     const SQL_OPENINGS: &[&str] = &[
         "SELECT", "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "WITH", "AND", "FROM",
-        "PRAGMA",
+        "PRAGMA", "BEGIN",
     ];
 
     fn reads_as_sql(text: &str) -> bool {

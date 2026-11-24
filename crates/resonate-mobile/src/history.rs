@@ -35,7 +35,7 @@ const THE_SERVED_AFTER: &str = "SELECT id, began, heard_ms, elsewhere, served FR
   ORDER BY id
   LIMIT ?2";
 
-const A_SNAPSHOT_BEGUN: &str = "BEGIN; SELECT count(*) FROM sqlite_master";
+const A_SNAPSHOT_BEGUN: &str = "BEGIN DEFERRED; SELECT count(*) FROM sqlite_master";
 
 const THE_DOCUMENT_LENGTH: &str = "SELECT duration_ms FROM documents WHERE id = ?1";
 
