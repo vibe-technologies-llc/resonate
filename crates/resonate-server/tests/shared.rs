@@ -264,7 +264,15 @@ impl SharedCatalog for Shelf {
 struct Hosted {
     address: SocketAddr,
     folder: PathBuf,
-    _runtime: tokio::runtime::Runtime,
+    runtime: Option<tokio::runtime::Runtime>,
+}
+
+impl Drop for Hosted {
+    fn drop(&mut self) {
+        drop(self.runtime.take());
+
+        let _ = fs::remove_dir_all(&self.folder);
+    }
 }
 
 fn hosted(name: &str) -> Hosted {
@@ -307,7 +315,7 @@ fn hosted_over(name: &str, store: impl FnOnce(&Path) -> Store) -> Hosted {
     Hosted {
         address,
         folder,
-        _runtime: runtime,
+        runtime: Some(runtime),
     }
 }
 
@@ -979,6 +987,10 @@ fn a_list_shared_with_no_server_reachable_waits_and_arrives_once_one_is() {
     });
 
     assert!(shown_on(&person)[0].owed > 0);
+
+    drop(person);
+
+    let _ = fs::remove_dir_all(&folder);
 }
 
 #[test]
