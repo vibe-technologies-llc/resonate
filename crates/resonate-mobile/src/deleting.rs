@@ -18,7 +18,7 @@ use crate::{
     foreign::{Callback, answered},
     rewriting::crc_of,
     sync::{RECORDING_COLUMNS, recording_at},
-    vanished::{handed_over, referring_tables},
+    vanished::{handed_over, is_vanished, referring_tables},
 };
 
 const HELD_WITH_THEIR_SIZES: &str =
@@ -133,10 +133,10 @@ impl MobilePlayer {
     pub fn fold_identical_songs(&self, kept: u64, copies: Vec<u64>) -> Result<SongsForgotten> {
         self.catalog.track(kept)?;
 
-        let gone = self.held_uris(&copies);
-        let gone = gone
+        let gone = self
+            .held_uris(&copies)
             .into_iter()
-            .filter(|(id, _)| *id != kept)
+            .filter(|(id, uri)| *id != kept && self.confirmed_gone(uri))
             .collect::<BTreeMap<_, _>>();
         let left_the_queue = self.drop_from_queue(&gone.values().cloned().collect());
 
@@ -157,7 +157,7 @@ impl MobilePlayer {
         let gone = self
             .held_uris(&ids)
             .into_iter()
-            .filter(|(_, uri)| !self.stands_again(uri))
+            .filter(|(_, uri)| self.confirmed_gone(uri))
             .collect::<BTreeMap<_, _>>();
         let left_the_queue = self.drop_from_queue(&gone.values().cloned().collect());
 
@@ -212,8 +212,14 @@ impl MobilePlayer {
         self.opened(uri)?.byte_len()
     }
 
-    fn stands_again(&self, uri: &str) -> bool {
-        location(uri).is_ok_and(|at| self.sources.open(&at).is_ok())
+    fn confirmed_gone(&self, uri: &str) -> bool {
+        match location(uri) {
+            Ok(at) => self
+                .sources
+                .open(&at)
+                .is_err_and(|error| is_vanished(&error)),
+            Err(_) => true,
+        }
     }
 
     fn held_uris(&self, ids: &[u64]) -> BTreeMap<u64, String> {

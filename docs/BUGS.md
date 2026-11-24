@@ -262,14 +262,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/vanished.rs:63`). Preserve the row after an ambiguous
   open failure. Done when bookmark loss and an unavailable subfolder leave rows and
   queue entries intact, and confirmed absence still hides the song.
-- [M · 0.17.1] Require a confirmed MediaStore result before settling a delete.
-  **Medium, builder.** After a delete returns zero, a denied query or null cursor
-  reads the same as an empty result. The copy-fold path then removes the catalog and
-  queue entries for a file that may still exist
-  (`android/app/src/main/java/org/resonate/android/MusicDocuments.kt:189`, `:202`,
-  `crates/resonate-mobile/src/deleting.rs:112`). Distinguish unavailable from absent
-  and keep the row when the outcome is unknown. Done when a provider returning zero
-  and then a null cursor or a permission error leaves the copy in the catalog.
 ## Formats
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its

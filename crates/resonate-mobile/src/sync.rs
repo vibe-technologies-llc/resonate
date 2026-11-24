@@ -2323,7 +2323,12 @@ mod tests {
         MobilePlayer {
             playing: crate::zoning::Playing::closed(),
             catalog: Arc::new(catalog::Catalog::open(Path::new(":memory:")).expect("a catalog")),
-            sources: Arc::new(Sources::local()),
+            sources: Arc::new(
+                Sources::local().and(Arc::new(
+                    crate::documents::GrantedFiles::new(Arc::new(Nothing), "content")
+                        .expect("a granted provider"),
+                )),
+            ),
             preferences: Mutex::new(PlaybackPreferences::default()),
             services: Services::default(),
             playlist_undo: Mutex::new(Vec::new()),
@@ -2792,6 +2797,14 @@ mod tests {
         assert_eq!(player.sync_received().expect("the waiting songs").len(), 1);
 
         let _ = fs::remove_dir_all(folder);
+    }
+
+    struct Nothing;
+
+    impl crate::Documents for Nothing {
+        fn open_document(&self, _: String) -> i32 {
+            crate::documents::DOCUMENT_NOT_FOUND
+        }
     }
 
     struct Here(PathBuf);

@@ -532,6 +532,7 @@ mod tests {
         let harness = Harness::new();
         let [kept, copy] = [harness.song('a').id, harness.song('b').id];
 
+        std::fs::remove_file(harness.folder.join("b.wav")).expect("deleted by the front end");
         harness.player.favourite(copy, true).expect("a favourite");
 
         let playlist = harness
@@ -616,6 +617,59 @@ mod tests {
                 .collect::<Vec<_>>(),
             harness.ids("c")
         );
+    }
+
+    fn refused_not_absent(harness: &Harness, name: &str) {
+        let path = harness.folder.join(name);
+
+        std::fs::remove_file(&path).expect("deleted by the front end");
+        std::os::unix::fs::symlink(&path, &path).expect("a file the provider can only refuse");
+    }
+
+    #[test]
+    fn a_deleted_song_whose_file_is_refused_rather_than_absent_stays_in_the_catalog_and_the_queue()
+    {
+        let harness = Harness::new();
+
+        harness.resumed("abc", 0, 0);
+
+        let unknown = harness.song('b').id;
+
+        refused_not_absent(&harness, "b.wav");
+
+        let forgotten = harness
+            .player
+            .forget_deleted_songs(vec![unknown])
+            .expect("a deletion");
+
+        assert_eq!(forgotten.forgotten, 0);
+        assert_eq!(forgotten.left_the_queue, 0);
+        assert_eq!(harness.queued(), "abc");
+        assert!(harness.player.catalog.track(unknown).is_ok());
+    }
+
+    #[test]
+    fn a_copy_folded_while_its_file_stands_or_cannot_be_told_from_standing_stays_where_it_was() {
+        let harness = Harness::new();
+
+        harness.resumed("abc", 0, 0);
+
+        let kept = harness.song('a').id;
+        let standing = harness.song('b').id;
+        let unknown = harness.song('c').id;
+
+        refused_not_absent(&harness, "c.wav");
+
+        let folded = harness
+            .player
+            .fold_identical_songs(kept, vec![standing, unknown])
+            .expect("a fold");
+
+        assert_eq!(folded.forgotten, 0);
+        assert_eq!(folded.left_the_queue, 0);
+        assert_eq!(harness.queued(), "abc");
+        assert!(harness.player.catalog.track(standing).is_ok());
+        assert!(harness.player.catalog.track(unknown).is_ok());
     }
 
     #[test]

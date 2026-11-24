@@ -1125,10 +1125,12 @@ changes?*, so *Keep editing* leaves it open), and the notice counts saved, uncha
 
 **A song is deleted by the front end, then forgotten; identical files fold into one** (`deleting.rs`).
 The front end removes the file (Rust holds only a descriptor), then `forget_deleted_songs(ids)` drops,
-of the songs whose documents no longer open, the queue rows naming each (the playing one moving on), steps the revision of every playlist holding
+of the songs whose documents are confirmed gone, the queue rows naming each (the playing one moving on), steps the revision of every playlist holding
 it and deletes its row with every row referring to it (playlist rows, listens, lyrics, artwork,
 studies; a picture nothing else shows goes too), answering `SongsForgotten` (rows forgotten, queue
-rows left); its listens leave the totals, as a hidden song's already do, and the keys of the song and of its `songs_received` rows go into `songs_deleted` in the same transaction, so a follow never fetches it back (`sync.md`); `fold_identical_songs` marks nothing. **A document that opens again is not forgotten**: a sync pass may fetch a song between its file going and the forgetting, and its landing, made at the freed name, is the same URI and so upserts onto the very row being deleted; forgetting it would leave the file standing unindexed and the song marked deleted, to be fetched again beside that file as a `name (1)` (`a_song_landed_again_where_it_was_deleted_before_the_deletion_was_forgotten_stays_held`). The queue rows it deletes leave
+rows left); its listens leave the totals, as a hidden song's already do, and the keys of the song and of its `songs_received` rows go into `songs_deleted` in the same transaction, so a follow never fetches it back (`sync.md`); `fold_identical_songs` marks nothing. **Only a confirmed absence settles a deletion**: both `forget_deleted_songs` and `fold_identical_songs` act on a song only where its document's open fails as `NotFound` (`confirmed_gone`, `is_vanished`), so a document that opens or is refused (a null descriptor, a `SecurityException`) keeps its row and its queue rows, and a fold of a copy whose file stands changes nothing
+(`a_deleted_song_whose_file_is_refused_rather_than_absent_stays_in_the_catalog_and_the_queue`,
+`a_copy_folded_while_its_file_stands_or_cannot_be_told_from_standing_stays_where_it_was`). **A document that opens again is not forgotten**: a sync pass may fetch a song between its file going and the forgetting, and its landing, made at the freed name, is the same URI and so upserts onto the very row being deleted; forgetting it would leave the file standing unindexed and the song marked deleted, to be fetched again beside that file as a `name (1)` (`a_song_landed_again_where_it_was_deleted_before_the_deletion_was_forgotten_stays_held`). The queue rows it deletes leave
 holes in `queue.position`, so the saved place is read by position, not by index (`place_among_rows`, for
 resume and the sync handoff alike): a position still standing is its row at its time, one that is gone
 is the next remaining row from its start
@@ -1159,7 +1161,7 @@ chooses the copy kept, *Delete copies*, confirmed) remove each file (`MusicDocum
 `deleteDocument`, a MediaStore delete, or the opened copy), and only the songs whose files went are
 forgotten or folded; a file the app does not own in MediaStore (a `SecurityException`) is collected and
 asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`), and one that
-stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`).
+stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`). **A MediaStore delete that removed no row is settled only by a query that finds none**: `MediaStoreRemoval.settled` asks `RowPresence` (`MediaStoreRemoval.presence`: a row is `Standing`, none is `Absent`, a null cursor or a `SecurityException` is `Unknown`), and only `Absent` lets the deletion stand, so an unreadable answer is a file kept and reported, never forgotten (`MediaStoreRemovalTest`).
 
 **Find higher quality versions** is an entry of a plain playlist's menu (not a saved search's, nor
 where the playlist may not be edited) opening `HigherVersionsSheet` (*Higher quality versions of

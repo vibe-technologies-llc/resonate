@@ -189,7 +189,7 @@ object MusicDocuments {
     fun delete(context: Context, uri: Uri) {
         if (uri.authority == MediaStore.AUTHORITY) {
             val removed = context.contentResolver.delete(uri, null, null)
-            check(removed > 0 || !rowStands(context, uri)) {
+            check(MediaStoreRemoval.settled(removed) { rowPresence(context, uri) }) {
                 context.getString(R.string.deletion_song_not_removed)
             }
         } else {
@@ -199,12 +199,10 @@ object MusicDocuments {
         }
     }
 
-    private fun rowStands(context: Context, uri: Uri): Boolean =
-        try {
+    private fun rowPresence(context: Context, uri: Uri): RowPresence =
+        MediaStoreRemoval.presence {
             context.contentResolver
                 .query(uri, arrayOf(MediaStore.MediaColumns._ID), null, null, null)
-                ?.use { it.moveToFirst() } ?: false
-        } catch (gone: SecurityException) {
-            false
+                ?.use { it.moveToFirst() }
         }
 }
