@@ -121,6 +121,12 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   manifest's own permissions have never been in the path
 
 ## Mobile catalog
+- [S · 0.17.1] Make the phone's queue-through-shutdown test wait for the position it asserts.
+  **Low, builder.** `a_queue_edited_while_its_song_opens_is_kept_through_a_shutdown_and_reopens_where_it_was_owed`
+  (`crates/resonate-mobile/src/lib.rs:1289`) fails under load, reading the saved row as
+  `('b', 1, 0)` where `('b', 1, 500)` is expected, and passes alone: the position it asserts is
+  saved by work the test does not wait for. Wait on the saved state rather than on time. Done when
+  the whole `resonate-mobile` suite passes repeatedly while other builds load the machine.
 - [M · 0.17.1] Exercise phone restores through a new player on the saved catalog.
   **Medium, builder.** The save and queue tests use an already-open harness and the
   released-step tests reopen only the catalog (`crates/resonate-mobile/src/harness.rs:309`,
