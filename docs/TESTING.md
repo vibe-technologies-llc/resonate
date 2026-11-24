@@ -76,14 +76,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   manifest's own permissions have never been in the path
 
 ## Mobile catalog
-- [M · 0.17.1] Test Android queue restoration from a window with a nonzero start.
-  **Medium, builder.** The current positive test builds media IDs with the helper it
-  checks. It never exercises conversion between a saved queue position and a Media3
-  window index (`android/app/src/test/java/org/resonate/android/ResumedQueueTest.kt:35`,
-  `android/app/src/main/java/org/resonate/android/PlaybackService.kt:48`,
-  `android/app/src/main/java/org/resonate/android/RustMediaPlayer.kt:279`). Assert fixed
-  IDs for library and served items and exercise both index conversions. Done when a
-  test restores a mixed window starting after row zero and lands on the original song.
 
 ## Device sync
 - [M · 0.17.1] Prove the server's compaction budget preserves the prior log.

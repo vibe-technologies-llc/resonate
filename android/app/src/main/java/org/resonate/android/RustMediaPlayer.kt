@@ -278,7 +278,7 @@ class RustMediaPlayer(private val context: Context, private val library: Library
     ): ListenableFuture<*> {
         val held = library.queueRead.value
         if (mediaItems.isNotEmpty() && namesTheQueueHeld(mediaItems.map { it.mediaId }, held.tracks)) {
-            val row = held.first + startIndex.coerceIn(held.tracks.indices)
+            val row = QueueWindow.row(startIndex, held)
             library.request { it.jumpToAt(row.toUInt(), startPositionMs.coerceAtLeast(0).toULong()) }
             return Futures.immediateVoidFuture()
         }

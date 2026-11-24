@@ -53,7 +53,7 @@ private suspend fun LibraryRepository.savedQueue(): MediaSession.MediaItemsWithS
         }
     return MediaSession.MediaItemsWithStartPosition(
         saved.tracks.map { it.mediaItem() },
-        (place.queueIndex.toInt() - saved.first).coerceIn(saved.tracks.indices),
+        QueueWindow.windowIndex(place.queueIndex.toInt(), saved),
         place.positionMs.toLong(),
     )
 }
