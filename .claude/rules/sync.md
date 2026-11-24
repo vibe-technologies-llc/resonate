@@ -982,7 +982,11 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   anything else changed) or `MIRROR_TOLD_AGAIN_AFTER` (5 s) passed. The watcher stamps each frame
   `heard_at` and plays the position on itself (`Mirror::position_of`, held at the song's length),
   so a second's readout needs no frame; a watch hearing nothing for `MIRROR_GOES_STALE_AFTER`
-  (15 s) ends (`a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on`).
+  (15 s) ends (`a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on`). **The
+  watcher reads through a `FrameReader`**, which keeps the bytes of a frame it has begun across its
+  `MIRROR_POLLED_EVERY` (1 s) checks, so a frame split across the deadline is whole when it ends
+  (`a_mirror_frame_split_across_the_polling_deadline_reaches_the_mirror_intact`); a plain
+  `read_frame` under `timeout` loses the bytes it consumed and reads the rest as a length.
 - **The seam is `Controlled`** (`zones`, `control`, `control_if_the_queue_is_still`;
   `Uncontrolled::{NoSuchZone, NoSuchRow, QueueMoved, Failed}`), handed to a running `Sync` by `control_with(controlled, trust)`; `trust` changes it
   live and `uncontrolled` takes it away. A device given none answers `Uncontrollable`, so a
@@ -1257,7 +1261,10 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each
   chunk) gives up after `A_FETCH_GOES_QUIET_AFTER` (30 s), so a sender stuck on an evicted file fails
-  that song and the run goes on to the next. **A song is believed only up to
+  that song and the run goes on to the next, and a follow's holdings read (`holdings_of`) gives up
+  after `A_LISTING_GOES_QUIET_AFTER` (30 s) between frames, so a device that stops listing ends the
+  follow as incomplete, freeing its slot for the next one
+  (`a_device_that_stops_listing_its_songs_is_given_up_on_and_asked_again_on_the_same_connection`). **A song is believed only up to
   `LARGEST_SONG_FETCHED` (4 GiB, the most a vault's delivery holds)**: a `Sending` announcing more is
   `Error::SongTooLarge` and the stream is stopped before a note or a byte is staged, so a paired
   device cannot fill the disc under `sync-staging`

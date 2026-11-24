@@ -355,6 +355,67 @@ pub async fn read_frame_held<H>(
     }
 }
 
+const CHUNK_READ_AT_MOST: usize = 64 * 1024;
+
+pub struct FrameReader {
+    stream: RecvStream,
+    buffered: Vec<u8>,
+}
+
+impl FrameReader {
+    pub const fn over(stream: RecvStream) -> Self {
+        Self {
+            stream,
+            buffered: Vec::new(),
+        }
+    }
+
+    pub async fn next(&mut self) -> Result<Option<Vec<u8>>> {
+        loop {
+            if let Some(payload) = self.taken()? {
+                return Ok(Some(payload));
+            }
+            match self.stream.read_chunk(CHUNK_READ_AT_MOST, true).await {
+                Ok(Some(chunk)) => self.buffered.extend_from_slice(&chunk.bytes),
+                Ok(None) if self.buffered.is_empty() => return Ok(None),
+                Ok(None) => {
+                    return Err(Error::stream(
+                        StreamOp::Read,
+                        std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
+                    ));
+                }
+                Err(source) => return Err(Error::stream(StreamOp::Read, source)),
+            }
+        }
+    }
+
+    pub fn stop(&mut self) {
+        let _ = self.stream.stop(0_u32.into());
+    }
+
+    fn taken(&mut self) -> Result<Option<Vec<u8>>> {
+        let Some(length) = self.buffered.first_chunk::<FRAME_LENGTH_BYTES>() else {
+            return Ok(None);
+        };
+        let length = usize::try_from(u32::from_be_bytes(*length)).unwrap_or(usize::MAX);
+
+        if length > LARGEST_FRAME {
+            return Err(Error::Oversized { length });
+        }
+
+        let end = FRAME_LENGTH_BYTES + length;
+
+        if self.buffered.len() < end {
+            return Ok(None);
+        }
+
+        let payload = self.buffered[FRAME_LENGTH_BYTES..end].to_vec();
+
+        self.buffered.drain(..end);
+        Ok(Some(payload))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::{env, fs, process};

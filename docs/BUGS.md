@@ -31,22 +31,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `:2783`, `:2861`, `:2906`). Bound the lookup, share recent results across punches,
   and deliver the result without holding up the loop. Done when stalled resolution
   and a silent STUN server both leave status, commands and shutdown responsive.
-- [M · 0.17.1] Release a follow when a device stops listing its songs.
-  **Medium, builder.** A holdings read waits indefinitely for its next frame
-  while the connection remains open. The follow remains active, so later requests
-  can only mark another follow due
-  (`crates/resonate-sync/src/peer.rs:983`, `:994`,
-  `crates/resonate-sync/src/service.rs:1975`, `:2736`, `:3435`, `:3570`).
-  Bound the idle wait and complete the follow on expiry. Done when a paused list
-  releases the follow slot and a later request succeeds on the same connection.
-- [M · 0.17.1] Keep the remote playback mirror aligned across slow frame reads.
-  **Medium, builder.** The watcher times out a frame read and starts another on
-  the same stream. If it consumed part of the prior frame, the next read treats
-  the remaining bytes as a length
-  (`crates/resonate-sync/src/peer.rs:597`,
-  `crates/resonate-sync/src/quic.rs:319`, `:346`). Keep the partial frame across
-  watch checks or restart the stream when the read is cancelled. Done when a frame
-  split across the polling deadline can reach the mirror without desynchronising it.
 - [M · 0.17.1] Retry nearby changes until the other device acknowledges them.
   **Medium, architect.** A nearby-only look clears owed changes after scheduling
   a send. If that stream fails, the connection can stay up and the sender's

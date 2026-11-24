@@ -30,7 +30,7 @@ use crate::{
         CONSULT_ANSWERED_WITHIN, Consultable, Consulting, Dates, ExportFetched, ExportHeld,
         ExportPart, ExportReceiving, KEPT_PAGES_A_MEETING,
     },
-    quic::{PEER_NAME, read_frame, send_frame},
+    quic::{FrameReader, PEER_NAME, read_frame, send_frame},
     remote::{
         CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER,
         MIRROR_LOOKED_AT_EVERY, MIRROR_TOLD_AGAIN_AFTER, Mirror, RemoteCommand, RemoteZone,
@@ -48,6 +48,8 @@ const HELD_PER_FRAME: usize = 512;
 const CHUNKS_IN_FLIGHT: usize = 8;
 const NOTED_EXTENSION: &str = "from";
 pub const A_FETCH_GOES_QUIET_AFTER: Duration = Duration::from_secs(30);
+const A_LISTING_GOES_QUIET_AFTER: Duration = Duration::from_secs(30);
+const MIRROR_POLLED_EVERY: Duration = MIRROR_LOOKED_AT_EVERY.saturating_mul(4);
 pub const LARGEST_SONG_FETCHED: u64 = 4 * 1024 * 1024 * 1024;
 
 pub async fn dialled(
@@ -589,7 +591,7 @@ async fn watched_as(
     revisions: Revisions,
     watching: &mut Watching,
 ) -> Result<()> {
-    let (mut send, mut recv) = connection
+    let (mut send, recv) = connection
         .open_bi()
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
@@ -597,10 +599,11 @@ async fn watched_as(
     send_frame(&mut send, &ToPeer::Watch { revisions }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
 
+    let mut frames = FrameReader::over(recv);
     let mut heard_at = Instant::now();
 
     while still_watched() && connection.close_reason().is_none() {
-        let frame = match timeout(MIRROR_LOOKED_AT_EVERY * 4, read_frame(&mut recv)).await {
+        let frame = match timeout(MIRROR_POLLED_EVERY, frames.next()).await {
             Err(_) if heard_at.elapsed() < MIRROR_GOES_STALE_AFTER => continue,
             Err(_) => break,
             Ok(frame) => frame?,
@@ -625,7 +628,7 @@ async fn watched_as(
         }
     }
 
-    let _ = recv.stop(0_u32.into());
+    frames.stop();
     Ok(())
 }
 
@@ -1021,6 +1024,10 @@ async fn streamed_from<R: Read + Seek + Send + 'static>(
 }
 
 pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
+    holdings_within(connection, A_LISTING_GOES_QUIET_AFTER).await
+}
+
+async fn holdings_within(connection: &Connection, quiet_after: Duration) -> Result<Vec<Held>> {
     let (mut send, mut recv) = connection
         .open_bi()
         .await
@@ -1031,7 +1038,7 @@ pub async fn holdings_of(connection: &Connection) -> Result<Vec<Held>> {
 
     let mut holdings = Vec::new();
 
-    while let Some(frame) = read_frame(&mut recv).await? {
+    while let Some(frame) = quiet_within(quiet_after, read_frame(&mut recv)).await? {
         match FromPeer::decoded(&frame)? {
             FromPeer::Held { items } => holdings.extend(items),
             FromPeer::HeldEnd => break,
@@ -1249,14 +1256,19 @@ fn noted_revision(note: &str, device: DeviceId) -> Option<(u64, Revision)> {
 }
 
 async fn quietly_short<T>(waiting: impl Future<Output = Result<T>>) -> Result<T> {
-    timeout(A_FETCH_GOES_QUIET_AFTER, waiting)
-        .await
-        .unwrap_or_else(|_| {
-            Err(Error::stream(
-                StreamOp::Read,
-                std::io::Error::from(std::io::ErrorKind::TimedOut),
-            ))
-        })
+    quiet_within(A_FETCH_GOES_QUIET_AFTER, waiting).await
+}
+
+async fn quiet_within<T>(
+    quiet_after: Duration,
+    waiting: impl Future<Output = Result<T>>,
+) -> Result<T> {
+    timeout(quiet_after, waiting).await.unwrap_or_else(|_| {
+        Err(Error::stream(
+            StreamOp::Read,
+            std::io::Error::from(std::io::ErrorKind::TimedOut),
+        ))
+    })
 }
 
 async fn bound_partial(staged: &Path, noted: &Path, device: DeviceId) -> Option<Partial> {
@@ -1852,8 +1864,34 @@ mod tests {
     }
 
     async fn met_answering(
-        answer: impl Fn(&[u8]) -> Option<Vec<u8>> + Send + 'static,
+        answer: impl Fn(&[u8]) -> Option<Vec<u8>> + Send + Sync + 'static,
     ) -> (Endpoint, Endpoint, Connection) {
+        let answer = Arc::new(answer);
+
+        met_streams(move |mut send, mut recv| {
+            let answer = Arc::clone(&answer);
+
+            async move {
+                let Ok(Some(asked)) = read_frame(&mut recv).await else {
+                    return;
+                };
+                let Some(told) = answer(&asked) else {
+                    drop(send);
+                    return;
+                };
+                let _ = send.write_all(&told).await;
+                let _ = send.finish();
+            }
+        })
+        .await
+    }
+
+    async fn met_streams<Handled>(
+        handle: impl Fn(SendStream, RecvStream) -> Handled + Send + 'static,
+    ) -> (Endpoint, Endpoint, Connection)
+    where
+        Handled: Future<Output = ()> + Send + 'static,
+    {
         let derived = crate::SyncKey::minted()
             .and_then(|key| key.derived())
             .expect("a key");
@@ -1878,16 +1916,8 @@ mod tests {
             let Ok(connection) = incoming.await else {
                 return;
             };
-            while let Ok((mut send, mut recv)) = connection.accept_bi().await {
-                let Ok(Some(asked)) = read_frame(&mut recv).await else {
-                    continue;
-                };
-                let Some(told) = answer(&asked) else {
-                    drop(send);
-                    continue;
-                };
-                let _ = send.write_all(&told).await;
-                let _ = send.finish();
+            while let Ok((send, recv)) = connection.accept_bi().await {
+                tokio::spawn(handle(send, recv));
             }
         });
 
@@ -1925,6 +1955,167 @@ mod tests {
 
         framed.extend_from_slice(payload);
         framed
+    }
+
+    fn a_mirrored_zone(name: &str) -> RemoteZone {
+        RemoteZone {
+            zone: ZoneId::FIRST,
+            name: name.into(),
+            playback: crate::RemotePlayback::Paused,
+            playing: None,
+            position: Duration::ZERO,
+            length: None,
+            volume: crate::Permille::WHOLE,
+            queue_length: 0,
+            first_row: 0,
+            rows: Vec::new(),
+            queue_revision: None,
+        }
+    }
+
+    fn mirrored_names(
+        mirrors: &RwLock<BTreeMap<DeviceId, Watched>>,
+        device: DeviceId,
+    ) -> Vec<String> {
+        mirrors
+            .read()
+            .get(&device)
+            .and_then(Watched::mirror)
+            .map(|mirror| mirror.zones.iter().map(|zone| zone.name.clone()).collect())
+            .unwrap_or_default()
+    }
+
+    async fn mirrored_as(
+        mirrors: &RwLock<BTreeMap<DeviceId, Watched>>,
+        device: DeviceId,
+        names: &[&str],
+    ) {
+        timeout(Duration::from_secs(10), async {
+            while mirrored_names(mirrors, device) != names {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .expect("the mirror reads as told");
+    }
+
+    #[tokio::test]
+    async fn a_mirror_frame_split_across_the_polling_deadline_reaches_the_mirror_intact() {
+        let first = framed(
+            &FromPeer::Zones {
+                zones: vec![a_mirrored_zone("Desk")],
+                revisions: Revisions::Carried,
+            }
+            .encoded(),
+        );
+        let second = framed(
+            &FromPeer::Zones {
+                zones: vec![a_mirrored_zone("Kitchen")],
+                revisions: Revisions::Carried,
+            }
+            .encoded(),
+        );
+        let split_at = first.len() / 2;
+        let (_answering, _asking, connection) = met_streams(move |mut send, mut recv| {
+            let first = first.clone();
+            let second = second.clone();
+
+            async move {
+                let Ok(Some(_)) = read_frame(&mut recv).await else {
+                    return;
+                };
+                let _ = send.write_all(&first[..split_at]).await;
+
+                tokio::time::sleep(MIRROR_POLLED_EVERY + Duration::from_millis(400)).await;
+
+                let _ = send.write_all(&first[split_at..]).await;
+
+                tokio::time::sleep(Duration::from_millis(300)).await;
+
+                let _ = send.write_all(&second).await;
+                let _ = send.finish();
+            }
+        })
+        .await;
+        let mirrors = Arc::new(RwLock::new(BTreeMap::new()));
+        let device = DeviceId([3; 16]);
+
+        let watching = tokio::spawn({
+            let mirrors = Arc::clone(&mirrors);
+
+            async move { watch(&connection, device, &mirrors, || true).await }
+        });
+
+        mirrored_as(&mirrors, device, &["Desk"]).await;
+        mirrored_as(&mirrors, device, &["Kitchen"]).await;
+
+        let ended = timeout(Duration::from_secs(10), watching)
+            .await
+            .expect("the watch ended with the stream")
+            .expect("the watch task");
+
+        assert!(ended.is_ok());
+    }
+
+    #[tokio::test]
+    async fn a_device_that_stops_listing_its_songs_is_given_up_on_and_asked_again_on_the_same_connection()
+     {
+        let quiet_after = Duration::from_millis(400);
+        let held = Held {
+            recording: echoes(),
+            size: 1,
+            extension: "flac".into(),
+        };
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let listing = held.clone();
+        let (_answering, _asking, connection) = met_streams(move |mut send, mut recv| {
+            let listing = listing.clone();
+            let times = asked.fetch_add(1, Ordering::SeqCst);
+
+            async move {
+                let Ok(Some(_)) = read_frame(&mut recv).await else {
+                    return;
+                };
+                let items = FromPeer::Held {
+                    items: vec![listing],
+                };
+                let _ = send_frame(&mut send, &items.encoded()).await;
+
+                if times == 0 {
+                    tokio::time::sleep(Duration::from_secs(60)).await;
+                    return;
+                }
+
+                let _ = send_frame(&mut send, &FromPeer::HeldEnd.encoded()).await;
+                let _ = send.finish();
+            }
+        })
+        .await;
+
+        let stalled = timeout(
+            Duration::from_secs(10),
+            holdings_within(&connection, quiet_after),
+        )
+        .await
+        .expect("the listing was given up on");
+
+        assert!(matches!(
+            stalled,
+            Err(Error::Stream {
+                op: StreamOp::Read,
+                ..
+            })
+        ));
+
+        let again = timeout(
+            Duration::from_secs(10),
+            holdings_within(&connection, quiet_after),
+        )
+        .await
+        .expect("the second listing ended")
+        .expect("listed");
+
+        assert_eq!(again, vec![held]);
     }
 
     #[tokio::test]
