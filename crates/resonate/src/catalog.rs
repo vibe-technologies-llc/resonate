@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Component, Path};
 
     const PROPER: &[&str] = &[
         "Resonate",
@@ -32,6 +32,16 @@ mod tests {
 
     const STILL_TO_MOVE: &[&str] = &[];
 
+    fn spelled(path: &Path) -> String {
+        path.components()
+            .filter_map(|part| match part {
+                Component::Normal(name) => Some(name.to_string_lossy()),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            .join("/")
+    }
+
     #[test]
     fn every_word_the_terminal_says_is_said_through_its_catalog() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
@@ -41,8 +51,8 @@ mod tests {
         let unmoved: Vec<String> = found
             .iter()
             .filter(|(path, _)| {
-                let path = path.to_string_lossy();
-                !STILL_TO_MOVE.contains(&path.as_ref()) && !NOT_WORDS.contains(&path.as_ref())
+                let path = spelled(path);
+                !STILL_TO_MOVE.contains(&path.as_str()) && !NOT_WORDS.contains(&path.as_str())
             })
             .flat_map(|(path, prose)| {
                 prose
@@ -52,7 +62,7 @@ mod tests {
             .collect();
         let moved: Vec<&&str> = STILL_TO_MOVE
             .iter()
-            .filter(|path| !found.keys().any(|found| found.to_string_lossy() == **path))
+            .filter(|path| !found.keys().any(|found| spelled(found) == **path))
             .collect();
 
         assert!(
