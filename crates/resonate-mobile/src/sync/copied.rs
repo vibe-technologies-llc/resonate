@@ -210,7 +210,7 @@ impl Copied {
     }
 
     fn follow(&self, reaching: &Reaching) {
-        let mut amendments_asked: Option<Instant> = None;
+        let mut amendments = AmendmentTimer::default();
         while self.keeps() {
             let Some(running) = reaching.running.upgrade() else {
                 return;
@@ -238,13 +238,14 @@ impl Copied {
                 self.rest(LOOKED_AT_AGAIN_AFTER);
                 continue;
             };
-            let due_for_amendments =
-                amendments_asked.is_none_or(|asked| asked.elapsed() >= AMENDMENTS_ASKED_EVERY);
+            let due_for_amendments = amendments.due(Instant::now());
             match self.looked_for(reaching, &devices, due_for_amendments) {
-                Looked::Current => {
-                    amendments_asked = Some(Instant::now());
+                Looked::Current { amendments_asked } => {
+                    if amendments_asked {
+                        amendments.asked(Instant::now());
+                    }
                     self.stand(MusicbrainzCopyStanding::Held);
-                    self.rest(AMENDMENTS_ASKED_EVERY);
+                    self.rest(amendments.remaining(Instant::now()));
                 }
                 Looked::Unheld => {
                     self.stand(if self.mirrored.held().is_some() {
@@ -303,13 +304,17 @@ impl Copied {
                     }
                     self.reopened();
                     self.amended_from(reaching, *device);
-                    return Looked::Current;
+                    return Looked::Current {
+                        amendments_asked: true,
+                    };
                 }
                 Some(ExportFetched::AlreadyHeld) => {
                     if amendments {
                         self.amended_from(reaching, *device);
                     }
-                    return Looked::Current;
+                    return Looked::Current {
+                        amendments_asked: amendments,
+                    };
                 }
                 Some(ExportFetched::NotHeld | ExportFetched::Failed) => {}
                 None => return Looked::Stopped,
@@ -402,8 +407,30 @@ impl Copied {
     }
 }
 
+#[derive(Default)]
+struct AmendmentTimer {
+    last_asked: Option<Instant>,
+}
+
+impl AmendmentTimer {
+    fn due(&self, now: Instant) -> bool {
+        self.remaining(now).is_zero()
+    }
+
+    fn asked(&mut self, now: Instant) {
+        self.last_asked = Some(now);
+    }
+
+    fn remaining(&self, now: Instant) -> Duration {
+        self.last_asked.map_or(Duration::ZERO, |asked| {
+            AMENDMENTS_ASKED_EVERY.saturating_sub(now.saturating_duration_since(asked))
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 enum Looked {
-    Current,
+    Current { amendments_asked: bool },
     Unheld,
     NoRoom,
     Stopped,
@@ -656,5 +683,87 @@ mod tests {
         );
 
         player.sync_stop();
+    }
+
+    #[test]
+    fn a_look_not_yet_due_for_amendments_asks_for_none_and_one_due_asks() {
+        let offered = a_desk_offers_a_copy_to_a_phone_whose_room_is(roomy, "amending");
+        let player = &offered.harness.player;
+
+        eventually("the copy kept on the phone", || {
+            player.syncing.copied.wake();
+            player.musicbrainz_copy().standing == MusicbrainzCopyStanding::Held
+        });
+
+        let reaching = player.copy_reaching();
+        let devices = {
+            let running = player.syncing.running.lock();
+            devices_online(running.as_ref().expect("running"))
+        };
+
+        let hurried = player.syncing.copied.looked_for(&reaching, &devices, false);
+        let due = player.syncing.copied.looked_for(&reaching, &devices, true);
+
+        player.sync_stop();
+
+        assert!(!devices.is_empty());
+        assert_eq!(
+            hurried,
+            Looked::Current {
+                amendments_asked: false
+            }
+        );
+        assert_eq!(
+            due,
+            Looked::Current {
+                amendments_asked: true
+            }
+        );
+    }
+
+    #[test]
+    fn a_timer_never_asked_is_due_and_rests_for_nothing() {
+        let now = Instant::now();
+        let timer = AmendmentTimer::default();
+
+        assert!(timer.due(now));
+        assert_eq!(timer.remaining(now), Duration::ZERO);
+    }
+
+    #[test]
+    fn wakes_within_the_hour_that_ask_for_nothing_leave_the_next_due_tick_asking() {
+        let start = Instant::now();
+        let mut timer = AmendmentTimer::default();
+
+        timer.asked(start);
+
+        let wakes = (1..60).map(|minute| start + Duration::from_secs(minute * 60));
+
+        for wake in wakes {
+            assert!(!timer.due(wake));
+        }
+
+        let due = start + AMENDMENTS_ASKED_EVERY;
+
+        assert!(timer.due(due));
+        assert_eq!(
+            timer.remaining(start + Duration::from_secs(10 * 60)),
+            Duration::from_secs(50 * 60)
+        );
+    }
+
+    #[test]
+    fn an_amendment_request_restarts_the_hour() {
+        let start = Instant::now();
+        let mut timer = AmendmentTimer::default();
+
+        timer.asked(start);
+
+        let again = start + AMENDMENTS_ASKED_EVERY;
+
+        timer.asked(again);
+
+        assert!(!timer.due(again + Duration::from_secs(60)));
+        assert!(timer.due(again + AMENDMENTS_ASKED_EVERY));
     }
 }

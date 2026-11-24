@@ -1,26 +1,89 @@
-use std::{fs, path::Path};
+use std::{
+    fs,
+    io::{self, Write as _},
+    path::Path,
+    process,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
+use resonate_core::{
+    file_facts::sync_directory,
+    writer::{self, Held, Writer},
+};
 use resonate_sync::check_trusted_certificate;
 
 use super::{CERTIFICATE, STAGED_CERTIFICATE};
 use crate::{Error, Result, StoreOp};
 
+static STAGED: AtomicU64 = AtomicU64::new(0);
+
 pub(super) fn keep(folder: &Path, pem: &[u8]) -> Result<()> {
-    let staged = folder.join(STAGED_CERTIFICATE);
+    sweep(folder);
 
-    fs::write(&staged, pem).map_err(written)?;
+    let staged = folder.join(format!(
+        "{}-{}.{STAGED_CERTIFICATE}",
+        process::id(),
+        STAGED.fetch_add(1, Ordering::Relaxed)
+    ));
+    let held = Held::made(&staged).map_err(written)?;
 
-    let checked = check_trusted_certificate(&staged).map_err(|source| Error::SyncCertificate {
-        source: Box::new(source),
-    });
+    let installed = stage(&held, &staged, pem).and_then(|()| install(folder, &staged));
 
-    if let Err(refusal) = checked {
+    if installed.is_err() {
         let _ = fs::remove_file(&staged);
-
-        return Err(refusal);
     }
+    drop(held);
+    installed
+}
 
-    fs::rename(&staged, folder.join(CERTIFICATE)).map_err(written)
+fn stage(held: &Held, staged: &Path, pem: &[u8]) -> Result<()> {
+    let mut file = held.file();
+
+    file.write_all(pem)
+        .and_then(|()| file.sync_all())
+        .map_err(written)?;
+
+    check_trusted_certificate(staged).map_err(|source| Error::SyncCertificate {
+        source: Box::new(source),
+    })
+}
+
+fn install(folder: &Path, staged: &Path) -> Result<()> {
+    fs::rename(staged, folder.join(CERTIFICATE))
+        .and_then(|()| sync_directory(folder))
+        .map_err(written)
+}
+
+fn sweep(folder: &Path) {
+    let Ok(entries) = fs::read_dir(folder) else {
+        return;
+    };
+
+    for entry in entries.filter_map(io::Result::ok) {
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+
+        let gone = if name == STAGED_CERTIFICATE {
+            true
+        } else {
+            stamp_of(name).is_some_and(|stamp| writer::writer_of(&path, stamp) == Writer::Gone)
+        };
+
+        if gone {
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
+fn stamp_of(name: &str) -> Option<u32> {
+    name.ends_with(STAGED_CERTIFICATE)
+        .then(|| name.split_once('-'))
+        .flatten()?
+        .0
+        .parse()
+        .ok()
 }
 
 pub(super) fn forget(folder: &Path) -> Result<()> {
@@ -39,7 +102,7 @@ fn written(source: std::io::Error) -> Error {
 
 #[cfg(test)]
 mod tests {
-    use std::fs;
+    use std::{fs, thread};
 
     use resonate_sync::SyncKey;
 
@@ -59,6 +122,15 @@ bmF0ZS50ZXN0MAUGAytlcANBAFZ/s8JwQNWvIr2EU4Qr0GS2S2fA9XPGO5Tr7moO
 uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
 -----END CERTIFICATE-----
 ";
+
+    fn staged_in(folder: &Path) -> Vec<String> {
+        fs::read_dir(folder)
+            .expect("the folder")
+            .filter_map(io::Result::ok)
+            .filter_map(|entry| entry.file_name().into_string().ok())
+            .filter(|name| name.ends_with(STAGED_CERTIFICATE))
+            .collect()
+    }
 
     fn nearby(certificate: &str, stun: &str) -> SyncConfig {
         SyncConfig {
@@ -133,9 +205,93 @@ uRACi1+SkHU377h5XBXccA0ghqVn5cUhYbvxj5+8g3VD/Ak=
             fs::read_to_string(harness.folder.join(super::CERTIFICATE)).expect("the kept one"),
             CERTIFICATE
         );
-        assert!(!harness.folder.join(super::STAGED_CERTIFICATE).exists());
+        assert!(staged_in(&harness.folder).is_empty());
         assert!(player.sync_forget_certificate().is_ok());
         assert!(player.sync_forget_certificate().is_ok());
+    }
+
+    #[test]
+    fn racing_imports_and_refused_ones_leave_one_complete_certificate_installed() {
+        let harness = Harness::new();
+        let player = &harness.player;
+        let doubled = format!("{CERTIFICATE}{CERTIFICATE}");
+
+        let outcomes = thread::scope(|scope| {
+            (0..12)
+                .map(|import| {
+                    let pem = match import % 3 {
+                        0 => CERTIFICATE.as_bytes().to_vec(),
+                        1 => doubled.as_bytes().to_vec(),
+                        _ => b"not a certificate".to_vec(),
+                    };
+                    scope.spawn(move || player.sync_keep_certificate(pem))
+                })
+                .collect::<Vec<_>>()
+                .into_iter()
+                .map(|import| import.join().expect("an import"))
+                .collect::<Vec<_>>()
+        });
+
+        let kept = fs::read_to_string(harness.folder.join(super::CERTIFICATE)).expect("the kept");
+
+        assert!(kept == CERTIFICATE || kept == doubled);
+        assert!(check_trusted_certificate(&harness.folder.join(super::CERTIFICATE)).is_ok());
+        assert!(staged_in(&harness.folder).is_empty());
+        assert_eq!(
+            outcomes
+                .iter()
+                .filter(|outcome| matches!(outcome, Err(Error::SyncCertificate { .. })))
+                .count(),
+            4
+        );
+        assert_eq!(outcomes.iter().filter(|outcome| outcome.is_ok()).count(), 8);
+    }
+
+    #[test]
+    fn a_stage_that_cannot_be_made_fails_and_leaves_the_kept_certificate_alone() {
+        let harness = Harness::new();
+        let player = &harness.player;
+
+        player
+            .sync_keep_certificate(CERTIFICATE.as_bytes().to_vec())
+            .expect("a certificate kept");
+
+        let folder = harness.folder.join(super::CERTIFICATE);
+        let refused = keep(&folder, CERTIFICATE.as_bytes());
+
+        assert!(matches!(refused, Err(Error::SyncCertificateFile { .. })));
+        assert_eq!(
+            fs::read_to_string(&folder).expect("the kept one"),
+            CERTIFICATE
+        );
+    }
+
+    #[test]
+    fn a_stage_a_dead_writer_left_is_swept_and_a_living_one_is_left_alone() {
+        let harness = Harness::new();
+        let player = &harness.player;
+        let dead = harness
+            .folder
+            .join(format!("{}-0.{STAGED_CERTIFICATE}", u32::MAX - 1));
+        let legacy = harness.folder.join(STAGED_CERTIFICATE);
+        let living = harness
+            .folder
+            .join(format!("{}-7.{STAGED_CERTIFICATE}", process::id()));
+
+        fs::write(&dead, b"half").expect("a dead stage");
+        fs::write(&legacy, b"half").expect("a legacy stage");
+
+        let held = Held::made(&living).expect("a living stage");
+
+        player
+            .sync_keep_certificate(CERTIFICATE.as_bytes().to_vec())
+            .expect("a certificate kept");
+
+        assert!(!dead.exists());
+        assert!(!legacy.exists());
+        assert!(living.exists());
+
+        drop(held);
     }
 
     #[test]

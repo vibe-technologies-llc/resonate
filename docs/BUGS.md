@@ -264,21 +264,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `ios/Sources/Resonate/Features.swift:592`). Synchronize the displayed choice
   with the persistence result. Done when a failed route change restores the
   prior selection and the control reflects the active route.
-- [S · 0.17.1] Advance the phone's amendment timer only after an amendment check.
-  **Low, builder.** A network wake inside the hourly interval can see an
-  unchanged copy, skip amendments and reset the timer anyway. Frequent wakes
-  postpone amendments indefinitely
-  (`crates/resonate-mobile/src/sync.rs:504`,
-  `crates/resonate-mobile/src/sync/copied.rs:241`, `:308`). Record the last
-  actual amendment request. Done when repeated network wakes within an hour
-  still allow the next due tick to request amendments.
-- [M · 0.17.1] Commit each imported phone sync certificate from its own stage.
-  **Low, builder.** Two imports can write the same staging file. The rename
-  can report success before the new certificate and its directory are synced
-  (`crates/resonate-mobile/src/sync/certificate.rs:8`, `:23`).
-  Give each import an owned stage and persist the validated bytes and the
-  replacement before reporting success. Done when racing imports and a
-  failed stage leave one complete validated certificate installed.
 ## Catalog
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file

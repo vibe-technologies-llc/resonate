@@ -546,7 +546,10 @@ export it holds, so a device holding the same dump answers `AlreadyHeld` and sen
 received whole into `musicbrainz.sqlite.received` (resumed from a `.received-from` note across
 calls and restarts) is opened as a `Mirror` before `received_copy` renames it over `MIRROR_FILE`,
 removing the amendments of the dump before; then `ExportPart::Amendments` is asked (at once, and
-every `AMENDMENTS_ASKED_EVERY`, an hour), landing through `received_amendments`, which refuses a
+every `AMENDMENTS_ASKED_EVERY`, an hour, counted from the last request actually made by `AmendmentTimer`, so a wake that
+finds the copy unchanged inside the hour asks for none and neither restarts the hour nor rests longer than what is left of it:
+`wakes_within_the_hour_that_ask_for_nothing_leave_the_next_due_tick_asking`,
+`a_look_not_yet_due_for_amendments_asks_for_none_and_one_due_asks`), landing through `received_amendments`, which refuses a
 file not of the copy's dump (`AmendmentsOfAnotherExport`). The `Mirrored` is swapped as each lands,
 so lookups answer from it at once. Before a copy is fetched `room_in` (`fs4::available_space`) must
 leave `ROOM_LEFT_AT_LEAST` (2 GB) past `ROOM_A_COPY_TAKES` (12 GB) less what is already received,
@@ -1305,9 +1308,13 @@ replacement migrated into `versions_wanted` (a want of no `served`) still asks a
 `SyncConfig.stun` (a `host` or `host:port`, blank asks none) and `SyncConfig.certificate` (the name of the
 certificate kept, blank trusting none) are the desktop's `sync-stun` and `sync-server-certificate`
 (`sync.md`). The certificate's PEM is the boundary's: `sync_keep_certificate(pem)` stages it beside the
-ledger, requires `resonate_sync::check_trusted_certificate` to find at least one certificate every root
-store accepts and only then renames it over `sync-server-certificate.pem`, so a refused file
-(`Error::SyncCertificate`) leaves the one kept as it was; `sync_forget_certificate` removes it. `sync_start`,
+ledger under a name of its own (the process and a counter before `STAGED_CERTIFICATE`, held under `Held::made`, and a
+stage whose writer is gone swept at the next import), syncs the bytes, requires `resonate_sync::check_trusted_certificate`
+to find at least one certificate every root store accepts and only then renames it over
+`sync-server-certificate.pem` and syncs the folder before it answers, so racing imports leave one whole certificate
+and a refused file (`Error::SyncCertificate`) leaves the one kept as it was
+(`racing_imports_and_refused_ones_leave_one_complete_certificate_installed`,
+`a_stage_a_dead_writer_left_is_swept_and_a_living_one_is_left_alone`); `sync_forget_certificate` removes it. `sync_start`,
 called with sync on or off, records the pair as `Syncing::reaching` (`Reaching::of`: the kept file's path when
 `certificate` is named, the trimmed STUN or none), which `Sync` and shared playlists receive as `trusted` and
 `stun` and a party as `trusted`, so a `resonate-server` behind a private authority pairs a phone and a phone on
