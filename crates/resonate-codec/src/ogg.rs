@@ -19,6 +19,7 @@ const LARGEST_PAGE: usize = FIXED_HEADER_BYTES + LACING_FULL + LACING_FULL * LAC
 const SEGMENTS_A_PAGE: usize = 32;
 pub(crate) const PAGE_BODY_AT_MOST: usize = LACING_FULL * SEGMENTS_A_PAGE;
 const MOST_PAGES: usize = 4_096;
+const HEADER_BYTES_AT_MOST: usize = 16 << 20;
 const COMMENT_AT: usize = 1;
 
 const GRANULE_AT: usize = 6;
@@ -95,6 +96,7 @@ pub(crate) fn headers<S: Read + ?Sized>(codec: Codec, source: &mut S) -> Option<
     let mut open: Vec<u8> = Vec::new();
     let mut serial = 0;
     let mut length = 0_u64;
+    let mut held = 0_usize;
 
     for sequence in 0..MOST_PAGES {
         let mut fixed = [0_u8; FIXED_HEADER_BYTES];
@@ -130,6 +132,12 @@ pub(crate) fn headers<S: Read + ?Sized>(codec: Codec, source: &mut S) -> Option<
         source.read_exact(&mut lacing).ok()?;
 
         let body_bytes: usize = lacing.iter().map(|lace| usize::from(*lace)).sum();
+
+        held = held.checked_add(body_bytes)?;
+        if held > HEADER_BYTES_AT_MOST {
+            return None;
+        }
+
         let mut body = vec![0_u8; body_bytes];
 
         source.read_exact(&mut body).ok()?;
@@ -842,6 +850,23 @@ mod tests {
         assert_eq!(parsed.pages, 2);
         assert_eq!(parsed.serial, 0xABCD);
         assert_eq!(parsed.packets[1].len(), 8 + 500);
+    }
+
+    #[test]
+    fn headers_over_the_byte_budget_end_the_parse_while_those_at_it_are_read_back() {
+        let identification = opus_packets(&comment_of(0))[0].len();
+        let at_the_budget = HEADER_BYTES_AT_MOST - identification - b"OpusTags".len();
+
+        let accepted = head_with(at_the_budget);
+        let refused = head_with(at_the_budget + 1);
+
+        let parsed = headers(Codec::Opus, &mut Cursor::new(&accepted)).expect("the budget's own");
+
+        assert_eq!(
+            parsed.packets.iter().map(Vec::len).sum::<usize>(),
+            HEADER_BYTES_AT_MOST
+        );
+        assert!(headers(Codec::Opus, &mut Cursor::new(&refused)).is_none());
     }
 
     #[test]

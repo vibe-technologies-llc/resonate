@@ -1,4 +1,4 @@
-use std::num::NonZeroU32;
+use std::{collections::HashMap, num::NonZeroU32};
 
 use resonate_core::{Frames, SampleRate};
 use symphonia::core::meta::{ChapterGroup, ChapterGroupItem, StandardTag, Tag};
@@ -77,7 +77,23 @@ fn title_of(tags: &[Tag]) -> Option<String> {
     })
 }
 
+fn first_titles(comments: &[(String, String)]) -> HashMap<&str, &str> {
+    let mut titles = HashMap::new();
+
+    for (key, title) in comments {
+        let number = key
+            .strip_prefix(COMMENT_PREFIX)
+            .and_then(|rest| rest.strip_suffix(NAME_SUFFIX));
+
+        if let Some(number) = number {
+            titles.entry(number).or_insert(title.as_str());
+        }
+    }
+    titles
+}
+
 pub(crate) fn of_comments(comments: &[(String, String)]) -> Vec<Marked> {
+    let titles = first_titles(comments);
     let mut marked: Vec<(u32, Marked)> = comments
         .iter()
         .filter_map(|(key, value)| {
@@ -87,15 +103,7 @@ pub(crate) fn of_comments(comments: &[(String, String)]) -> Vec<Marked> {
                 return None;
             }
 
-            let title = comments
-                .iter()
-                .find(|(named, _)| {
-                    named
-                        .strip_prefix(COMMENT_PREFIX)
-                        .and_then(|rest| rest.strip_suffix(NAME_SUFFIX))
-                        == Some(number)
-                })
-                .and_then(|(_, title)| named(title));
+            let title = titles.get(number).and_then(|title| named(title));
             Some((
                 number.parse().ok()?,
                 Marked {
@@ -270,6 +278,55 @@ mod tests {
                 (Frames(62 * 48_000 + 24_000), Some("Roast Mutton")),
                 (Frames(3_600 * 48_000), None),
             ]
+        );
+    }
+
+    #[test]
+    fn the_first_title_of_a_number_names_its_chapter_whatever_follows_it() {
+        let comments = [
+            ("CHAPTER001", "00:00:00.000"),
+            ("CHAPTER001NAME", " "),
+            ("CHAPTER001NAME", "Second"),
+            ("CHAPTER002", "00:00:05.000"),
+            ("CHAPTER002NAME", "First"),
+            ("CHAPTER002NAME", "Second"),
+            ("CHAPTER003", "00:00:09.000"),
+            ("CHAPTER03NAME", "Another number"),
+        ]
+        .map(|(key, value)| (key.to_owned(), value.to_owned()));
+
+        let marked = of_comments(&comments);
+
+        assert_eq!(
+            marked
+                .iter()
+                .map(|held| held.title.as_deref())
+                .collect::<Vec<_>>(),
+            vec![None, Some("First"), None]
+        );
+    }
+
+    #[test]
+    fn a_large_comment_block_names_every_chapter_it_numbers() {
+        let comments: Vec<(String, String)> = (1..=MOST_CHAPTERS)
+            .flat_map(|number| {
+                [
+                    (format!("CHAPTER{number:03}"), "00:00:01.000".to_owned()),
+                    (
+                        format!("CHAPTER{number:03}NAME"),
+                        format!("Chapter {number}"),
+                    ),
+                ]
+            })
+            .collect();
+
+        let marked = of_comments(&comments);
+
+        assert_eq!(marked.len(), MOST_CHAPTERS);
+        assert_eq!(marked[0].title.as_deref(), Some("Chapter 1"));
+        assert_eq!(
+            marked[MOST_CHAPTERS - 1].title.as_deref(),
+            Some("Chapter 999")
         );
     }
 
