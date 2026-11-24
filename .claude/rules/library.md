@@ -43,7 +43,9 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   version cannot tell same-count builds apart). `STAMPS_RELEASED` (`schema_released_tests.rs`) is
   every stamp a release wrote, as a literal, so an edit to `V1` or a released step fails
   `every_stamp_a_release_shipped_is_hashed_as_it_shipped` instead of wiping a listener's catalog on
-  upgrade (`release.md`).
+  upgrade (`release.md`). A failed upgrade of a populated file catalog leaves its schema, rows and
+  stamp as they were and a retry completes it
+  (`a_failed_upgrade_of_a_populated_catalog_on_disk_leaves_it_as_it_was_and_a_retry_completes_it`).
   (`a_catalog_laid_out_at_the_first_release_is_carried_forward_not_refused`,
   `every_step_of_the_chain_stamps_a_catalog_differently`,
   `a_catalog_another_schema_wrote_is_refused_rather_than_read`,

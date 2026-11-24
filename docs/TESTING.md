@@ -109,22 +109,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `crates/resonate-library/src/retag.rs:1471`, `crates/resonate-library/tests/retag.rs:805`).
   Use a gated tag sink and a temporarily missing file in the test. Done when cancellation,
   refusal and absence preserve the notes for unfinished files and a later undo restores them.
-- [S · 0.17.1] Cover removing an unterminated final cue-sheet line. **Low, builder.**
-  The existing test inserts at the end, leaving the removal and mixed-edit paths without a
-  regression check (`crates/resonate-codec/src/sheet.rs:319`, `crates/resonate-codec/src/sheet.rs:598`).
-  Done when removing the final line alone and with an insertion preserves the preceding lines,
-  the chosen line ending and a legacy sheet's encoding.
-- [M · 0.17.1] Verify that a failed desktop upgrade rolls back and retries on disk.
-  **Low, builder.** The released-stamp sweep lays out empty in-memory catalogs and checks
-  the final stamp (`crates/resonate-library/src/schema_released_tests.rs:70`).
-  Exercise a populated file catalog with an injected migration failure. Done when the
-  failure leaves the old schema, rows and stamp intact, and retry reaches the current
-  stamp with the rows preserved.
-- [M · 0.17.1] Carry populated mobile state through the full released migration chain.
-  **Low, builder.** The released-version sweep uses an empty catalog, and focused tests
-  populate only individual steps (`crates/resonate-mobile/src/catalog_released_tests.rs:111`).
-  Add a populated old-version fixture with listening history, saved queue and favourites.
-  Done when an upgrade keeps the identities and saved values across the full chain.
 - [M · 0.17.1] Exercise unreadable-folder scans regardless of process privileges. **Low, builder.**
   The permission cases return successfully without checking scan behavior when the runner
   can read or search the fixture anyway (`crates/resonate-library/tests/scanning.rs:1659`,

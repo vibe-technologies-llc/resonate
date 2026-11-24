@@ -915,4 +915,90 @@ mod tests {
             "FILE \"one.flac\" WAVE\n  TRACK 01 AUDIO\n    PERFORMER \"Ada\"\n    INDEX 01 00:00:00"
         );
     }
+
+    #[test]
+    fn an_unterminated_final_line_taken_away_leaves_the_lines_before_it_and_their_ending() {
+        let text = "FILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"One\"\r\n    PERFORMER \"Ada\"";
+        let sheet = SheetText::read(text.as_bytes());
+
+        let written = sheet
+            .edited(
+                &location(),
+                &[edit(SheetScope::Track(1), SheetField::Performer, None)],
+            )
+            .expect("an edit the sheet can hold");
+
+        assert_eq!(
+            String::from_utf8(written).expect("still UTF-8"),
+            "FILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"One\"\r\n"
+        );
+    }
+
+    #[test]
+    fn an_unterminated_final_line_taken_away_beside_an_insertion_is_ended_once_in_the_sheets_ending()
+     {
+        let text = "FILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"One\"\r\n    PERFORMER \"Ada\"";
+        let sheet = SheetText::read(text.as_bytes());
+
+        let written = sheet
+            .edited(
+                &location(),
+                &[
+                    edit(SheetScope::Track(1), SheetField::Performer, None),
+                    edit(SheetScope::Track(1), SheetField::Isrc, Some("GBAYE0000001")),
+                ],
+            )
+            .expect("an edit the sheet can hold");
+
+        assert_eq!(
+            String::from_utf8(written).expect("still UTF-8"),
+            "FILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"One\"\r\n    ISRC GBAYE0000001\r\n"
+        );
+    }
+
+    #[test]
+    fn an_unterminated_final_line_taken_away_from_a_code_page_sheet_keeps_the_code_page() {
+        let text = "TITLE \"Caf\u{e9} del Mar\"\r\nFILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Entr\u{e9}e\"\r\n    PERFORMER \"Ada\"";
+        let bytes = encoded(text, TextEncoding::WINDOWS_1252).expect("a Latin sheet");
+        let sheet = SheetText::read(&bytes);
+
+        assert!(matches!(sheet.encoding(), TextEncoding::Legacy(_)));
+
+        let alone = sheet
+            .edited(
+                &location(),
+                &[edit(SheetScope::Track(1), SheetField::Performer, None)],
+            )
+            .expect("an edit the sheet can hold");
+        let beside_an_insertion = sheet
+            .edited(
+                &location(),
+                &[
+                    edit(SheetScope::Track(1), SheetField::Performer, None),
+                    edit(
+                        SheetScope::Track(1),
+                        SheetField::Songwriter,
+                        Some("Andr\u{e9}"),
+                    ),
+                ],
+            )
+            .expect("a name the code page can spell");
+
+        assert_eq!(
+            alone,
+            encoded(
+                "TITLE \"Caf\u{e9} del Mar\"\r\nFILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Entr\u{e9}e\"\r\n",
+                TextEncoding::WINDOWS_1252
+            )
+            .expect("the edited sheet in its code page")
+        );
+        assert_eq!(
+            beside_an_insertion,
+            encoded(
+                "TITLE \"Caf\u{e9} del Mar\"\r\nFILE \"one.flac\" WAVE\r\n  TRACK 01 AUDIO\r\n    TITLE \"Entr\u{e9}e\"\r\n    SONGWRITER \"Andr\u{e9}\"\r\n",
+                TextEncoding::WINDOWS_1252
+            )
+            .expect("the edited sheet in its code page")
+        );
+    }
 }

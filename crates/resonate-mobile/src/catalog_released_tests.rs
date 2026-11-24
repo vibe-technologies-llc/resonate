@@ -213,3 +213,155 @@ fn a_catalog_of_before_larger_covers_owes_its_fetched_covers_one_ask_and_keeps_t
     assert!(owed, "the larger covers were not owed after the step");
     assert_eq!(kept, 1, "the step took a fetched cover away");
 }
+
+#[test]
+fn a_populated_first_release_catalog_keeps_its_songs_queue_favourites_and_listens_across_every_step()
+ {
+    let folder = env::temp_dir().join(format!("resonate-mobile-populated-{}", process::id()));
+    let _ = fs::remove_dir_all(&folder);
+
+    fs::create_dir_all(&folder).expect("a folder");
+
+    let path = folder.join("documents.sqlite");
+    let laid = Connection::open(&path).expect("a catalog");
+
+    laid.create_scalar_function(
+        "folded",
+        1,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |context| Ok(resonate_core::folded_letters(&context.get::<String>(0)?)),
+    )
+    .expect("the fold");
+    laid.execute_batch(MIGRATIONS[0])
+        .expect("the first release's schema");
+    laid.execute_batch(
+        "INSERT INTO documents (id, uri, name, title, artist, album, duration_ms, rate, codec, favourite, size, modified)
+         VALUES (7, 'content://tree/a.flac', 'a.flac', 'First', 'Ada', 'Album', 180000, 44100, 'FLAC', 1, 1000, 1600000000000),
+                (8, 'content://tree/b.flac', 'b.flac', 'Second', 'Ada', 'Album', 200000, 48000, 'FLAC', 0, 2000, NULL),
+                (9, 'content://tree/c.flac', 'c.flac', 'Third', 'Bo', 'Other', 220000, 96000, 'FLAC', 1, 3000, 1650000000000);
+         INSERT INTO resume (id, row_at, position_ms) VALUES (1, 2, 90500);
+         INSERT INTO queue (position, track) VALUES (0, 9), (1, 7), (2, 8);
+         INSERT INTO listens (id, track, began, heard_ms, counted, elsewhere)
+         VALUES (11, 7, 1700000000, 180000, 1, 0), (13, 9, 1700000500, 30000, 0, 1);
+         INSERT INTO submissions (service, through) VALUES ('listenbrainz', 20);
+         INSERT INTO playlists (id, name, folded, revision, created) VALUES (3, 'Evening', 'evening', 4, 1700);
+         INSERT INTO playlist_rows (playlist, position, track) VALUES (3, 0, 8), (3, 1, 7);
+         INSERT INTO loves_told (service, recording) VALUES ('listenbrainz', '4d5e6f70-0000-4000-8000-000000000001');",
+    )
+    .expect("a populated catalog");
+    laid.pragma_update(None, "user_version", 1_u32)
+        .expect("the stamp");
+    drop(laid);
+
+    drop(Catalog::open(&path).expect("the catalog is carried to the last step"));
+
+    let opened = Connection::open(&path).expect("the catalog again");
+
+    let version: u32 = opened
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .expect("the stamp read");
+    let documents: Vec<(i64, String, String, i64, i64)> = rows_of(
+        &opened,
+        "SELECT id, uri, title, favourite, coalesce(added, 0) FROM documents ORDER BY id",
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        },
+    );
+    let queue: Vec<(i64, i64)> = rows_of(
+        &opened,
+        "SELECT position, track FROM queue ORDER BY position",
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+    let resume: (i64, i64) = opened
+        .query_row(
+            "SELECT row_at, position_ms FROM resume WHERE id = 1",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("the saved place");
+    let listens: Vec<(i64, i64, i64, i64, i64, i64)> = rows_of(
+        &opened,
+        "SELECT id, track, began, heard_ms, counted, elsewhere FROM listens ORDER BY id",
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+                row.get(5)?,
+            ))
+        },
+    );
+    let playlist: (String, i64, i64) = opened
+        .query_row(
+            "SELECT name, revision, created FROM playlists WHERE id = 3",
+            [],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("the playlist");
+    let playlist_rows: Vec<(i64, i64)> = rows_of(
+        &opened,
+        "SELECT position, track FROM playlist_rows WHERE playlist = 3 ORDER BY position",
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    );
+    let told: i64 = opened
+        .query_row("SELECT count(*) FROM loves_told", [], |row| row.get(0))
+        .expect("the loves told");
+
+    opened
+        .execute_batch("INSERT INTO listens (track, began, heard_ms) VALUES (7, 1700001000, 1000)")
+        .expect("a listen after the upgrade");
+
+    let next_listen = opened.last_insert_rowid();
+
+    drop(opened);
+
+    let _ = fs::remove_dir_all(&folder);
+
+    assert_eq!(usize::try_from(version).expect("a count"), MIGRATIONS.len());
+    assert_eq!(
+        documents
+            .iter()
+            .map(|(id, uri, title, favourite, _)| (*id, uri.as_str(), title.as_str(), *favourite))
+            .collect::<Vec<_>>(),
+        vec![
+            (7, "content://tree/a.flac", "First", 1),
+            (8, "content://tree/b.flac", "Second", 0),
+            (9, "content://tree/c.flac", "Third", 1),
+        ]
+    );
+    assert_eq!(documents[0].4, 1_600_000_000);
+    assert_eq!(documents[2].4, 1_650_000_000);
+    assert!(documents[1].4 > 0, "a document with no time was dated");
+    assert_eq!(queue, vec![(0, 9), (1, 7), (2, 8)]);
+    assert_eq!(resume, (2, 90_500));
+    assert_eq!(
+        listens,
+        vec![
+            (11, 7, 1_700_000_000, 180_000, 1, 0),
+            (13, 9, 1_700_000_500, 30_000, 0, 1),
+        ]
+    );
+    assert_eq!(playlist, ("Evening".to_owned(), 4, 1700));
+    assert_eq!(playlist_rows, vec![(0, 8), (1, 7)]);
+    assert_eq!(told, 1);
+    assert_eq!(next_listen, 21);
+}
+
+fn rows_of<T>(
+    connection: &Connection,
+    statement: &str,
+    read: impl FnMut(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+) -> Vec<T> {
+    connection
+        .prepare(statement)
+        .and_then(|mut query| query.query_map([], read).and_then(Iterator::collect))
+        .expect("the rows")
+}
