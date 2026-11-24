@@ -20,6 +20,7 @@ pub(crate) fn staged() {
     }
 }
 
+#[cfg(unix)]
 pub(crate) fn laying_fails_after(runs: usize) {
     RUNS_LAID_BEFORE_FAILING.with(|armed| armed.set(Some(runs)));
 }

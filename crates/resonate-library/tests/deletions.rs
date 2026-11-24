@@ -101,8 +101,10 @@ fn a_song_deleted_on_a_drive_not_plugged_in_keeps_its_row_and_mark_and_one_gone_
     Ok(())
 }
 
+#[cfg(unix)]
 struct AnsweredGone;
 
+#[cfg(unix)]
 impl Trashes for AnsweredGone {
     fn trash(&self, _: &Path) -> Removal {
         Removal::AlreadyGone
