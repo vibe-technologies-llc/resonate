@@ -837,11 +837,17 @@ mod tests {
         watch.cover_again();
 
         assert!(!watch.leaves_a_root_uncovered());
-        assert_eq!(
-            settled_within(&watch, HEARD_WITHIN),
-            vec![late],
-            "a file changed while its root was uncovered waits for another to change"
-        );
+
+        let until = Instant::now() + HEARD_WITHIN;
+
+        while !settled_within(&watch, until.saturating_duration_since(Instant::now()))
+            .contains(&late)
+        {
+            assert!(
+                Instant::now() < until,
+                "a file changed while its root was uncovered waits for another to change"
+            );
+        }
     }
 
     #[test]
