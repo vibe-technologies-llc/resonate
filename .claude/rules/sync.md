@@ -945,7 +945,10 @@ will not open is left out of the holdings.
   and `resonate sync --handoff` (`Handed`, `Opening::place`) load the songs, autoplaying, and then
   send `Command::Seek(at)`, which the engine keeps as the place to open at; a seek that fails
   is logged and the song plays from its start. The phones do the same through `Command::Resume`
-  (`resonate-mobile`'s `continue_from`).
+  (`resonate-mobile`'s `continue_from`, its rows from `handed_resumption`), resolving each row as the
+  visible catalog does, by name or by the recording key a received file was noted under
+  (`held_strictly`), so a received file with other tags resumes under its original identity
+  (`a_received_file_with_other_tags_resumes_a_handoff_under_its_original_identity_at_the_handed_position`).
 - **A handoff is chosen by its device's id, never its name.** The window's offers (`HandedOff`) carry the id and `Syncing::continue_from` takes it (`handoff_of`), so two devices sharing a name each continue their own queue. A device named on the command line (`chosen`: `--handoff`, `--forget`, `--fetch`'s `--from`, `--control`) is found by its id, else by its name, and a name that two devices carry is refused as `Error::AmbiguousDevice`, which lists their ids. `--from` is accepted only beside `--fetch`.
 - **A handoff's `at` is the first row the catalog can name at or after the playhead**, and `position` rides only when that row is the one playing (`Catalogued::resumption`); with every later row unnamed `at` is past the end and the receiver plays nothing (`a_song_heard_that_the_catalog_cannot_name_hands_off_the_next_one_named_from_its_start`).
 - **A handoff is cut from the play order, in a window holding the row heard.** Both devices

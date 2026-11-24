@@ -43,14 +43,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   individual requests and bound the batch wait. Done when an already-held song,
   a concurrent fetch and an unreachable device all complete the command with
   an accurate result.
-- [S · 0.17.1] Resolve previously received song aliases when continuing a handoff on a phone.
-  **Medium, builder.** Handoff playback uses the name index alone. A song that
-  sync recognises by its received recording key can be skipped, losing its
-  playback position or leaving the handoff empty
-  (`crates/resonate-mobile/src/sync.rs:1045`, `:1662`, `:1932`). Reuse the visible
-  received-key resolver for queue rows. Done when a received file with different
-  tags resumes under its original recording identity at the handed-off position.
-- [M · 0.17.1] Expire the live display when a remote playback mirror goes quiet.
   **Medium, architect.** The watch lease stays active as a view polls it, so
   the last mirror can keep showing a moving position and active controls after
   the device leaves

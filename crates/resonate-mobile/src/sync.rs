@@ -1019,14 +1019,25 @@ impl MobilePlayer {
     }
 
     fn continue_from(&self, handoff: &Handoff) -> Result<u32> {
+        let resumption = self.handed_resumption(handoff)?;
+        let held = counted(resumption.rows.len());
+
+        self.command(Command::Resume(resumption))?;
+        Ok(held)
+    }
+
+    fn handed_resumption(&self, handoff: &Handoff) -> Result<Resumption> {
         let first = usize::try_from(handoff.at).unwrap_or_default();
         let mut tracks = Vec::new();
         let mut handed_row_held = false;
 
         {
-            let indexed = Indexed::read(&self.catalog.0.lock()).map_err(read_error)?;
+            let connection = self.catalog.0.lock();
+            let indexed = Indexed::read(&connection).map_err(read_error)?;
             for (row, recording) in handoff.rows.iter().enumerate().skip(first) {
-                if let Some(id) = indexed.visible.resolved(recording).first().copied() {
+                if let Some(id) =
+                    held_strictly(&indexed, &connection, recording).map_err(read_error)?
+                {
                     handed_row_held |= row == first;
                     tracks.push(id);
                 }
@@ -1060,13 +1071,12 @@ impl MobilePlayer {
             })
             .collect::<Result<Vec<_>>>()?;
 
-        self.command(Command::Resume(Resumption {
+        Ok(Resumption {
             rows,
             row: 0,
             at: Frames::from_duration(position, rate),
             ..Resumption::default()
-        }))?;
-        Ok(counted(tracks.len()))
+        })
     }
 }
 
@@ -4212,6 +4222,101 @@ mod tests {
         assert!(still.is_empty());
         assert!(!kept.exists());
         assert!(held);
+    }
+
+    fn handed(rows: Vec<Recording>, at: u32, seconds: u64) -> Handoff {
+        let device = DeviceId([7; 16]);
+
+        Handoff {
+            device,
+            stamp: resonate_sync::Stamp { nanos: 1, device },
+            rows,
+            at,
+            position: Duration::from_secs(seconds),
+            playing: true,
+        }
+    }
+
+    fn received_as_hunter(player: &MobilePlayer, uri: &str) -> (Track, Recording) {
+        let landed = song(player, uri, "Hunter (2015 Remaster)", None);
+        let asked = SearchSong {
+            title: "Hunter".into(),
+            artist: "Björk".into(),
+            album: "Homogenic".into(),
+            duration_ms: Some(305_000),
+            ..SearchSong::default()
+        };
+
+        player
+            .note_received_as(&asked, landed.id)
+            .expect("noted as the one asked for");
+        (landed, recording_of(&asked))
+    }
+
+    #[test]
+    fn a_received_file_with_other_tags_resumes_a_handoff_under_its_original_identity_at_the_handed_position()
+     {
+        let folder = folder("handoff-alias");
+        let player = player(&folder);
+        let (landed, hunter) = received_as_hunter(&player, "content://test/landed.flac");
+        let joga = song(&player, "content://test/joga.flac", "Jóga", None);
+        let handoff = handed(
+            vec![
+                named("Unknown", "Nobody", 100),
+                hunter,
+                recording_of(&SearchSong {
+                    title: "Jóga".into(),
+                    artist: "Björk".into(),
+                    album: "Homogenic".into(),
+                    duration_ms: Some(305_000),
+                    ..SearchSong::default()
+                }),
+            ],
+            1,
+            90,
+        );
+
+        let resumption = player.handed_resumption(&handoff).expect("a resumption");
+
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(
+            resumption
+                .rows
+                .iter()
+                .map(|row| row.held)
+                .collect::<Vec<_>>(),
+            vec![
+                Some(TrackId::new(landed.id).expect("an id")),
+                Some(TrackId::new(joga.id).expect("an id")),
+            ]
+        );
+        assert_eq!(resumption.row, 0);
+        assert_eq!(
+            resumption.at,
+            Frames::from_duration(
+                Duration::from_secs(90),
+                SampleRate::new(44_100).expect("a rate")
+            )
+        );
+    }
+
+    #[test]
+    fn a_handoff_whose_every_row_is_a_received_file_with_other_tags_is_not_empty() {
+        let folder = folder("handoff-all-aliases");
+        let player = player(&folder);
+        let (landed, hunter) = received_as_hunter(&player, "content://test/landed.flac");
+        let handoff = handed(vec![hunter], 0, 12);
+
+        let resumption = player.handed_resumption(&handoff).expect("a resumption");
+
+        let _ = fs::remove_dir_all(folder);
+
+        assert_eq!(resumption.rows.len(), 1);
+        assert_eq!(
+            resumption.rows[0].held,
+            Some(TrackId::new(landed.id).expect("an id"))
+        );
     }
 
     #[test]
