@@ -301,13 +301,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
 ## Catalog
-- [S · 0.17.1] Settle a pending removal before a scan prunes its file. **Low, builder.**
-  A delete whose run ended after the trash took the file is settled when the catalog next opens or
-  before the next delete (`deleted::settle`, `removals_pending`), but an open that could not take
-  the walk lock skips it, and a scan then prunes the gone row first, so the every-device notice for
-  that song is never queued (`crates/resonate-library/src/deleted.rs`, `scan.rs`). Settle pending
-  removals at the start of a scan, under its walk guard. Done when a run ended after the move,
-  an open behind another walker and a scan leave the deletion noticed to devices exactly once.
 - [M · 0.17.1] Keep a song moved into a root that a scan names alone. **Medium, architect.**
   `resonate scan R2` walks only the destination root, and its tidy of the other registered roots
   forgets the old row as gone before any later scan can pair it with the arrival, so the song keeps

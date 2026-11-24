@@ -1,5 +1,6 @@
 use std::{
     path::{Path, PathBuf},
+    sync::Arc,
     time::SystemTime,
 };
 
@@ -8,7 +9,7 @@ use resonate_core::{Recording, TrackId, naming};
 use rusqlite::{OptionalExtension as _, params};
 
 use super::{
-    Library, Walk,
+    Inner, Library, Walk,
     statements::{ASK_AGAIN_FOR_WHAT_A_FORGOTTEN_DELIVERY_HELD, REMEMBER_THE_DELIVERY_FORGOTTEN},
 };
 use crate::{
@@ -254,6 +255,13 @@ impl Library {
             Err(Error::AlreadyWalking) => Ok(()),
             Err(error) => Err(error),
         }
+    }
+
+    pub(crate) fn settle_removals_before_a_scan(inner: &Arc<Inner>, walk: &Walk) -> Result<()> {
+        Self {
+            inner: Arc::clone(inner),
+        }
+        .settle_removals_under_way(walk)
     }
 
     fn settle_removals_under_way(&self, _walk: &Walk) -> Result<()> {

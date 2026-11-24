@@ -27,7 +27,7 @@ use rusqlite::params;
 
 use crate::{
     Error, Replaced, Result, StoreOp, alternatives,
-    db::Inner,
+    db::{Inner, Library},
     enriched::stripped_title,
     forgetting::{Forgetting, Rows, forget_rows},
     history, loose, moves,
@@ -270,7 +270,8 @@ pub(crate) fn start(
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
         .spawn(move || {
-            let outcome = roots(&inner, &options.roots)
+            let outcome = Library::settle_removals_before_a_scan(&inner, &walking)
+                .and_then(|()| roots(&inner, &options.roots))
                 .and_then(|roots| run(&inner, &options, roots, Beside::Tidied, &progress));
 
             drop(walking);
@@ -301,7 +302,8 @@ pub(crate) fn start_over_held(
     let thread = thread::Builder::new()
         .name("resonate-scan".to_owned())
         .spawn(move || {
-            let outcome = run(&inner, &options, roots, Beside::LeftToTheWatch, &progress);
+            let outcome = Library::settle_removals_before_a_scan(&inner, &walking)
+                .and_then(|()| run(&inner, &options, roots, Beside::LeftToTheWatch, &progress));
 
             drop(walking);
             outcome.map(|summary| replaced_after(summary, after))

@@ -236,6 +236,74 @@ fn a_run_ended_once_the_file_moved_is_settled_once_reopened_and_tells_every_devi
     Ok(())
 }
 
+fn walk_held_by_another_process(database: &Path) -> fs::File {
+    let mut named = database.as_os_str().to_owned();
+
+    named.push(".walk");
+
+    let lock = OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(PathBuf::from(named))
+        .expect("the walk's lock opens");
+
+    lock.try_lock().expect("the walk's lock is free");
+    lock
+}
+
+#[test]
+fn a_run_ended_once_the_file_moved_is_settled_by_a_scan_when_the_open_met_another_walker_and_tells_every_device_once()
+-> Result<()> {
+    let tree = Tree::new();
+    let catalog = Tree::new();
+    let cold = tree.write("cold.wav", &song("Cold"));
+    let database = catalog.path().join("library.db");
+    let library = Library::open(&database)?;
+
+    library.trash_through(Some(Arc::new(EndsTheRun {
+        moves_first: true,
+        ended: AtomicBool::new(false),
+    })));
+    scan(&library, &options(&tree))?;
+
+    let row = row_of(&library, &cold)?;
+    let interrupted = panic::catch_unwind(AssertUnwindSafe(|| {
+        library.delete_tracks_everywhere(&[row])
+    }));
+
+    assert!(interrupted.is_err());
+
+    drop(library);
+
+    let held = walk_held_by_another_process(&database);
+    let reopened = Library::open(&database)?;
+
+    assert!(!cold.exists());
+    assert!(reopened.track_at(&cold, None)?.is_some());
+    assert!(reopened.deleted_everywhere_to_tell()?.is_empty());
+
+    drop(held);
+    scan(&reopened, &options(&tree))?;
+
+    let waiting = reopened.deleted_everywhere_to_tell()?;
+
+    assert!(reopened.track_at(&cold, None)?.is_none());
+    assert!(reopened.deleted_recording(&recording("Cold"))?);
+    assert_eq!(
+        waiting
+            .iter()
+            .map(|told| told.recording.title.as_str())
+            .collect::<Vec<_>>(),
+        ["Cold"]
+    );
+
+    scan(&reopened, &options(&tree))?;
+
+    assert_eq!(reopened.deleted_everywhere_to_tell()?.len(), 1);
+    Ok(())
+}
+
 #[test]
 fn a_run_ended_once_the_file_moved_is_settled_before_the_next_deletion_of_the_same_catalog()
 -> Result<()> {

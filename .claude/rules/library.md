@@ -2051,14 +2051,17 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   clears `anew` on the keys it shares with a removal still pending), queues what every device
   is told, forgets the rows of the files gone and drops their pending rows together, so each
   happens once. A run that ends between the two leaves its paths pending: the next deletion,
-  under the `Walk` guard, and the catalog's open, where it can take the guard
-  (`settle_removals_left_under_way`; another process walking leaves them), weigh each file
+  under the `Walk` guard, the catalog's open, where it can take the guard
+  (`settle_removals_left_under_way`; another process walking leaves them), and the start of a
+  scan, under its guard before it walks (`settle_removals_before_a_scan`, so a scan never prunes
+  the row of a file a removal moved before the notice for every device was queued), weigh each file
   (`deleted::found_at`): standing is kept, gone by `OutOfReach::has_gone` is settled as removed,
   and out of reach stays pending
   (`a_removal_left_out_of_reach_waits_and_never_takes_back_a_mark_a_removed_copy_shares`,
   `a_run_ended_before_the_file_moved_takes_its_mark_back_once_reopened_and_tells_no_device`,
   `a_run_ended_once_the_file_moved_is_settled_once_reopened_and_tells_every_device_once`,
-  `a_run_ended_once_the_file_moved_is_settled_before_the_next_deletion_of_the_same_catalog`).
+  `a_run_ended_once_the_file_moved_is_settled_before_the_next_deletion_of_the_same_catalog`,
+  `a_run_ended_once_the_file_moved_is_settled_by_a_scan_when_the_open_met_another_walker_and_tells_every_device_once`).
   `forgive_deletion` and `forgive_deletions` pass over a key `removal_marks` holds, since the
   song is still held while its file moves (`sync.md`); folding a copy (`Why::Folded`) notes nothing, and the
   mark is forgiven by *Sync now* or once the song is held again (`sync.md`)
