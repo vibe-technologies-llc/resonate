@@ -9,6 +9,7 @@ const LOGGED: SpaceId = SpaceId([6; 16]);
 const DESK: DeviceId = DeviceId([2; 16]);
 const TABLET: DeviceId = DeviceId([4; 16]);
 const THE_FIRST_RELEASE_TO_KNOW_DIGESTS: usize = 2;
+const THE_FIRST_RELEASE_TO_KNOW_INCARNATIONS: usize = 6;
 const SEALED_BYTES: usize = 61;
 const MOST: usize = 16;
 const BYTES: usize = 1 << 20;
@@ -23,6 +24,7 @@ const STEPS_RELEASED: &[(&str, u64)] = &[
         0xa105_fe7c_9bff_e1e2,
     ),
     ("A_COMPACTION_MAY_BE_STAGED_IN_PARTS", 0xaacc_78ac_5a4d_8640),
+    ("EVERY_SPACE_CARRIES_AN_INCARNATION", 0x3f48_dd5a_ef73_6af7),
 ];
 
 const FNV_OFFSET: u64 = 0xcbf2_9ce4_8422_2325;
@@ -91,6 +93,11 @@ fn sealed_parts(seeds: &[u8]) -> Vec<Vec<u8>> {
 fn populated(counted: usize) -> Connection {
     let connection = Connection::open_in_memory().expect("a store in memory");
     let digested = counted >= THE_FIRST_RELEASE_TO_KNOW_DIGESTS;
+    let space_laid = if counted >= THE_FIRST_RELEASE_TO_KNOW_INCARNATIONS {
+        "INSERT INTO spaces (id, token, created, touched, head, bytes, snapshot_through, incarnation) VALUES (?1, ?2, 1, 1, ?3, ?4, ?5, random())"
+    } else {
+        "INSERT INTO spaces (id, token, created, touched, head, bytes, snapshot_through) VALUES (?1, ?2, 1, 1, ?3, ?4, ?5)"
+    };
 
     for step in &MIGRATIONS[..counted] {
         connection.execute_batch(step).expect("a released step");
@@ -106,7 +113,7 @@ fn populated(counted: usize) -> Connection {
     ] {
         connection
             .execute(
-                "INSERT INTO spaces (id, token, created, touched, head, bytes, snapshot_through) VALUES (?1, ?2, 1, 1, ?3, ?4, ?5)",
+                space_laid,
                 params![
                     space.0.as_slice(),
                     [3_u8; 32].as_slice(),

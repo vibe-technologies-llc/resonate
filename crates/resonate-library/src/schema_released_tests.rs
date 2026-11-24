@@ -51,6 +51,10 @@ const STAMPS_RELEASED: &[u32] = &[
     0x3a68_61cb,
     0x6e22_369e,
     0x257b_cf27,
+    0x7a85_bf1d,
+    0xb584_2ce7,
+    0xd769_bcc2,
+    0x3da1_f2b5,
 ];
 
 const TIMED_GROUP: &str = "11111111-1111-4111-8111-111111111111";

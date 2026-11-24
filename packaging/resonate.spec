@@ -83,6 +83,8 @@ install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_co
 %{_datadir}/fish/vendor_completions.d/resonate.fish
 
 %changelog
+* Tue Nov 24 2026 Resonate - 0.17.0-1
+- Features; see the GitHub release for the list
 * Sat Nov 21 2026 Resonate - 0.16.0-1
 - Features; see the GitHub release for the list
 * Fri Nov 20 2026 Resonate - 0.15.0-1

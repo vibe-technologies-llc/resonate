@@ -54,6 +54,8 @@ install -Dm755 packaging/server/hand-over-credentials.sh %{buildroot}%{_prefix}/
 %config(noreplace) %{_sysconfdir}/resonate-server/resonate-server.env
 
 %changelog
+* Tue Nov 24 2026 Resonate - 0.17.0-1
+- Features; see the GitHub release for the list
 * Sat Nov 21 2026 Resonate - 0.16.0-1
 - Features; see the GitHub release for the list
 * Fri Nov 20 2026 Resonate - 0.15.0-1
