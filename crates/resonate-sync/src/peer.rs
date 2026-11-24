@@ -1560,6 +1560,43 @@ async fn export_once(
         .open(asked.staged)
         .await
         .map_err(|source| file_failed(FileOp::Stage, asked.staged, source))?;
+
+    let streamed = exported_into(
+        &mut file, &mut recv, asked, receiving, allowed, offset, size,
+    )
+    .await;
+
+    file.sync_all()
+        .await
+        .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
+
+    let Some(have) = streamed? else {
+        return Ok(Some(ExportFetched::Failed));
+    };
+
+    if have != size {
+        let _ = fs::remove_file(asked.staged).await;
+        let _ = fs::remove_file(asked.noted).await;
+
+        return Err(Error::stream(
+            StreamOp::Read,
+            std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
+        ));
+    }
+
+    let _ = fs::remove_file(asked.noted).await;
+    Ok(Some(ExportFetched::Whole(offered)))
+}
+
+async fn exported_into(
+    file: &mut fs::File,
+    recv: &mut RecvStream,
+    asked: &ExportStaged<'_>,
+    receiving: &ExportReceiving,
+    allowed: &(impl Fn() -> bool + Sync),
+    offset: u64,
+    size: u64,
+) -> Result<Option<u64>> {
     let mut have = offset;
 
     receiving.heard(have, size);
@@ -1570,10 +1607,7 @@ async fn export_once(
         if !allowed() {
             let _ = recv.stop(0_u32.into());
 
-            file.sync_all()
-                .await
-                .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
-            return Ok(Some(ExportFetched::Failed));
+            return Ok(None);
         }
 
         let read = quietly_short(async {
@@ -1592,21 +1626,7 @@ async fn export_once(
         have += u64::try_from(read).unwrap_or(u64::MAX);
         receiving.heard(have, size);
     }
-    file.sync_all()
-        .await
-        .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
-    if have != size {
-        let _ = fs::remove_file(asked.staged).await;
-        let _ = fs::remove_file(asked.noted).await;
-
-        return Err(Error::stream(
-            StreamOp::Read,
-            std::io::Error::from(std::io::ErrorKind::UnexpectedEof),
-        ));
-    }
-
-    let _ = fs::remove_file(asked.noted).await;
-    Ok(Some(ExportFetched::Whole(offered)))
+    Ok(Some(have))
 }
 
 fn file_failed(op: FileOp, path: &Path, source: std::io::Error) -> Error {

@@ -1,6 +1,6 @@
 use std::{
     env, fs,
-    io::Cursor,
+    io::{Cursor, Read, Seek, SeekFrom},
     net::{Ipv4Addr, Ipv6Addr, SocketAddr, UdpSocket},
     path::{Path, PathBuf},
     sync::Arc,
@@ -368,6 +368,7 @@ struct Consulted {
     kept: Mutex<Vec<KeptAnswer>>,
     marks: Mutex<Vec<(DeviceId, u64)>>,
     copy: Mutex<Option<(String, Vec<u8>)>>,
+    sought: Arc<Mutex<Vec<u64>>>,
 }
 
 impl Consultable for Consulted {
@@ -423,10 +424,35 @@ impl Consultable for Consulted {
             dump,
             sequence: 0,
             size: bytes.len() as u64,
-            reader: Box::new(Cursor::new(bytes)),
+            reader: Box::new(Noting {
+                inner: Cursor::new(bytes),
+                sought: Arc::clone(&self.sought),
+            }),
         })
     }
 }
+
+struct Noting {
+    inner: Cursor<Vec<u8>>,
+    sought: Arc<Mutex<Vec<u64>>>,
+}
+
+impl Read for Noting {
+    fn read(&mut self, buffer: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buffer)
+    }
+}
+
+impl Seek for Noting {
+    fn seek(&mut self, to: SeekFrom) -> std::io::Result<u64> {
+        if let SeekFrom::Start(offset) = to {
+            self.sought.lock().push(offset);
+        }
+        self.inner.seek(to)
+    }
+}
+
+const PARTIAL_BYTES: usize = 100 * 1024;
 
 fn copy_of_the_export(length: usize) -> Vec<u8> {
     (0..length)
@@ -497,8 +523,9 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
     assert_eq!(fetched, bytes);
     assert_eq!(so_far, (bytes.len() as u64, bytes.len() as u64));
     assert!(!noted.exists());
+    assert_eq!(*desk_answers.sought.lock(), [0]);
 
-    fs::write(&staged, &bytes[..100 * 1024]).expect("a partial");
+    fs::write(&staged, &bytes[..PARTIAL_BYTES]).expect("a partial");
     fs::write(
         &noted,
         format!("{} {} 0 {dump}", desk.device(), bytes.len()),
@@ -512,6 +539,7 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
 
     assert_eq!(resumed, ExportFetched::Whole(held.clone()));
     assert_eq!(after_resuming, bytes);
+    assert_eq!(*desk_answers.sought.lock(), [0, PARTIAL_BYTES as u64]);
 
     fs::write(&staged, b"of another export").expect("a stale partial");
     fs::write(

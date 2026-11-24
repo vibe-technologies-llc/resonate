@@ -14,12 +14,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Device sync
-- [S · 0.17.1] Flush a MusicBrainz copy's partial before its fetch returns. **Low, builder.**
-  A song transfer now syncs its partial to disc before the fetch answers, since the next attempt
-  measured a partial whose last write had not landed and resumed from the wrong byte; the export
-  transfer (`export_once`, `crates/resonate-sync/src/peer.rs`) still returns with its partial
-  unflushed. Flush it the same way. Done when an interrupted copy transfer resumed at once lands
-  bytes identical to the offered copy across repeated runs.
 - [M · 0.17.1] Expire remote playback commands when their answers time out.
   **Medium, architect.** The request can report that a device did not answer, while the
   command stays queued and plays, pauses or skips when that device later reconnects

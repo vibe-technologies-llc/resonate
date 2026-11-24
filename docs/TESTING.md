@@ -222,13 +222,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   `crates/resonate-sync/src/ledger.rs:1747`). Apply the existing decode and
   write-back property to the saved row list and include a legacy row seed.
   Done when decoded saved rows must survive a round trip.
-- [S · 0.17.1] Check the resume offset in the MusicBrainz copy transfer test.
-  **Low, builder.** The test's final bytes are the same after a true resume
-  and a transfer restarted at zero
-  (`crates/resonate-sync/tests/nearby.rs:420`, `:501`,
-  `crates/resonate-sync/src/peer.rs:1327`).
-  Observe the sender's initial seek or bytes transferred. Done when abandoning
-  a valid partial fails the test even though the finished file is identical.
 - [M · 0.17.1] Check nearby transport capabilities explicitly in tests.
   **Low, builder.** Discovery tests can return early when an interface is
   absent, and the Bonjour case assumes multicast works whenever a

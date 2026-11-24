@@ -1257,7 +1257,10 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   byte moves. A part is staged where the asker says and resumed from a note beside it (`device size
   sequence dump`, `export_note`), a note naming another device, size or export starting it over;
   `ExportReceiving::so_far` is the bytes received and of how many. A transfer stops at its next chunk
-  once transfers are not allowed, the part kept. A build without the request drops the stream, read
+  once transfers are not allowed, the part kept, and whichever way a transfer ends its partial's
+  bytes are synced first (`exported_into`, then `sync_all`, as a song's is), so the next attempt
+  measures all that was written; the test reads the offset the sender seeks to, so a copy fetched
+  again from zero fails though the finished file is the same. A build without the request drops the stream, read
   as `NotHeld`
   (`a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_at_all`,
   `a_copy_of_musicbrainz_asked_and_offered_reads_back_and_an_unknown_part_is_refused`).
