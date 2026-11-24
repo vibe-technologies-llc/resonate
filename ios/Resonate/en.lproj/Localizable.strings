@@ -1605,6 +1605,7 @@
 "sync.songs.fetch-automatically.footer" = "A playlist's menu can always fetch its missing songs from a device.";
 "sync.songs.folder" = "Keep songs in";
 "sync.songs.folder.footer" = "Songs from your other devices are saved in this folder and added to your library.";
+"sync.songs.folder.unavailable" = "%@ (unavailable)";
 "sync.songs.kept-playlists" = "Kept playlists";
 "sync.songs.kept-playlists.detail" = "Playlists set to keep their songs here";
 "sync.songs.mobile-data" = "Use mobile data";

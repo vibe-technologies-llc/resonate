@@ -166,6 +166,35 @@ public enum SyncRoute: Hashable {
             self = .own
         }
     }
+
+    public static func shown(composingAddress: Bool, config: SyncConfig) -> SyncRoute {
+        composingAddress && !hasAddress(config) ? .own : SyncRoute(config)
+    }
+
+    public static func change(to route: SyncRoute, from config: SyncConfig) -> SyncRouteChange {
+        var next = config
+        switch route {
+        case .hosted:
+            next.nearbyOnly = false
+            next.server = ""
+        case .nearby:
+            next.nearbyOnly = true
+        case .own:
+            guard hasAddress(config) else { return .askForAddress }
+            next.nearbyOnly = false
+        }
+        return next == config ? .keep : .save(next)
+    }
+
+    private static func hasAddress(_ config: SyncConfig) -> Bool {
+        !config.server.trimmingCharacters(in: .whitespaces).isEmpty
+    }
+}
+
+public enum SyncRouteChange: Equatable {
+    case keep
+    case askForAddress
+    case save(SyncConfig)
 }
 
 public struct KeyedTransfer {
@@ -224,15 +253,41 @@ public enum LandingDestination: Equatable {
     public static var nowhereText: String { said("sync.landing.nowhere") }
 
     public static func of(_ folders: [MusicFolder], chosen: String?) -> LandingDestination {
-        guard let folder = folders.first(where: { $0.id == chosen && $0.writable }) ?? folders.first(where: \.writable) else {
-            return .nowhere
-        }
+        guard let folder = target(folders, chosen: chosen) else { return .nowhere }
         return folder.readable ? .into(folder) : .away
+    }
+
+    static func target(_ folders: [MusicFolder], chosen: String?) -> MusicFolder? {
+        folders.first(where: { $0.id == chosen && $0.writable }) ?? folders.first(where: \.writable)
     }
 
     public var folder: MusicFolder? {
         if case .into(let folder) = self { return folder }
         return nil
+    }
+}
+
+public struct LandingFolders: Equatable {
+    public struct Option: Equatable, Identifiable {
+        public let folder: MusicFolder
+        public var id: String { folder.id }
+        public var available: Bool { folder.readable }
+
+        public var label: String {
+            available ? folder.name : said("sync.songs.folder.unavailable", folder.name)
+        }
+    }
+
+    public let options: [Option]
+    public let selected: String?
+
+    public init(_ folders: [MusicFolder], chosen: String?) {
+        options = folders.filter(\.writable).map(Option.init)
+        selected = LandingDestination.target(folders, chosen: chosen)?.id
+    }
+
+    public func replacement(_ id: String) -> MusicFolder? {
+        options.first { $0.id == id && $0.available }?.folder
     }
 }
 

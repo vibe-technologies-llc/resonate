@@ -1605,6 +1605,7 @@
 "sync.songs.fetch-automatically.footer" = "Le menu d’une playlist peut toujours récupérer ses chansons manquantes à partir d’un appareil.";
 "sync.songs.folder" = "Gardez les chansons dans";
 "sync.songs.folder.footer" = "Les chansons de vos autres appareils sont enregistrées dans ce dossier et ajoutées à votre bibliothèque.";
+"sync.songs.folder.unavailable" = "%@ (indisponible)";
 "sync.songs.kept-playlists" = "Listes de lecture conservées";
 "sync.songs.kept-playlists.detail" = "Listes de lecture prêtes à garder leurs chansons ici";
 "sync.songs.mobile-data" = "Utiliser les données mobiles";

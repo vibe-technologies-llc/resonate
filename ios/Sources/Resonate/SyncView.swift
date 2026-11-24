@@ -500,7 +500,7 @@ struct SyncSongsPage: View {
 
     var body: some View {
         let features = library.features
-        let destinations = library.folderList.filter { $0.readable && $0.writable }
+        let folders = LandingFolders(library.folderList, chosen: features.syncFolder)
         ThemedForm {
             Section {
                 SyncSwitch(title: said("sync.songs.favourites"), detail: said("sync.songs.favourites.detail"), choice: \.favourites)
@@ -536,17 +536,16 @@ struct SyncSongsPage: View {
                 Text("sync.musicbrainz.footer")
             }
             Section {
-                if let first = destinations.first {
-                    let kept = destinations.first { $0.id == features.syncFolder } ?? first
+                if let selected = folders.selected {
                     Picker("sync.songs.folder", selection: Binding(
-                        get: { kept.id },
+                        get: { selected },
                         set: { chosen in
-                            guard let folder = destinations.first(where: { $0.id == chosen }) else { return }
+                            guard let folder = folders.replacement(chosen) else { return }
                             features.chooseSyncFolder(folder)
                         }
                     )) {
-                        ForEach(destinations) { folder in
-                            Text(folder.name).tag(folder.id)
+                        ForEach(folders.options) { option in
+                            Text(option.label).tag(option.id)
                         }
                     }
                 } else {
@@ -580,7 +579,7 @@ struct SyncConnectionPage: View {
         [UTType(filenameExtension: "pem"), UTType(filenameExtension: "crt"), .x509Certificate, .plainText, .data].compactMap { $0 }
 
     @Environment(Library.self) private var library
-    @State private var chosen: SyncRoute?
+    @State private var composingAddress = false
     @State private var choosingCertificate = false
     @State private var stun = ""
     @State private var server = ""
@@ -591,7 +590,7 @@ struct SyncConnectionPage: View {
         let features = library.features
         ThemedForm {
             if let config = features.syncConfig {
-                let route = chosen ?? SyncRoute(config)
+                let route = SyncRoute.shown(composingAddress: composingAddress, config: config)
                 Section {
                     Picker("sync.route", selection: Binding(get: { route }, set: { choose($0, config) })) {
                         Label("sync.route.hosted", systemImage: "cloud").tag(SyncRoute.hosted)
@@ -696,19 +695,15 @@ struct SyncConnectionPage: View {
     }
 
     private func choose(_ route: SyncRoute, _ config: SyncConfig) {
-        chosen = route
-        var next = config
-        switch route {
-        case .hosted:
-            next.nearbyOnly = false
-            next.server = ""
-        case .nearby:
-            next.nearbyOnly = true
-        case .own:
-            guard !config.server.trimmingCharacters(in: .whitespaces).isEmpty else { return }
-            next.nearbyOnly = false
+        switch SyncRoute.change(to: route, from: config) {
+        case .askForAddress:
+            composingAddress = true
+        case .save(let next):
+            composingAddress = false
+            library.features.saveSync(next)
+        case .keep:
+            composingAddress = false
         }
-        if next != config { library.features.saveSync(next) }
     }
 
     private func trimmed(_ text: String) -> String {

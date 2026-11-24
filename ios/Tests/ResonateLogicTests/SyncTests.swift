@@ -198,6 +198,44 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     @Test func anAddressTypedIsYourOwnServer() {
         #expect(SyncRoute(config(server: "https://own.example")) == .own)
     }
+
+    @Test func theRouteShownFollowsTheSavedConfigurationNotTheLastTap() {
+        #expect(SyncRoute.shown(composingAddress: false, config: config()) == .hosted)
+        #expect(SyncRoute.shown(composingAddress: false, config: config(nearbyOnly: true)) == .nearby)
+        #expect(SyncRoute.shown(composingAddress: true, config: config(server: "https://own.example")) == .own)
+        #expect(SyncRoute.shown(composingAddress: true, config: config(nearbyOnly: true, server: "https://own.example")) == .nearby)
+    }
+
+    @Test func anOwnServerWithNoAddressYetIsShownWhileItsAddressIsTyped() {
+        #expect(SyncRoute.shown(composingAddress: true, config: config()) == .own)
+        #expect(SyncRoute.shown(composingAddress: true, config: config(nearbyOnly: true)) == .own)
+    }
+
+    @Test func aRouteChangeIsSavedAsTheConfigurationItMakes() {
+        let own = config(server: "https://own.example")
+
+        #expect(SyncRoute.change(to: .nearby, from: own) == .save(config(nearbyOnly: true, server: "https://own.example")))
+        #expect(SyncRoute.change(to: .hosted, from: own) == .save(config()))
+        #expect(SyncRoute.change(to: .own, from: config(nearbyOnly: true, server: "https://own.example")) == .save(own))
+    }
+
+    @Test func aRouteAlreadyInForceIsKeptAndAnOwnServerWithNoAddressAsksForOne() {
+        #expect(SyncRoute.change(to: .hosted, from: config()) == .keep)
+        #expect(SyncRoute.change(to: .own, from: config()) == .askForAddress)
+        #expect(SyncRoute.change(to: .own, from: config(server: "   ")) == .askForAddress)
+    }
+
+    @Test func aFailedWriteLeavesTheSavedRouteShownWhateverWasTapped() {
+        let saved = config(server: "https://own.example")
+
+        guard case .save(let attempted) = SyncRoute.change(to: .hosted, from: saved) else {
+            Issue.record("a change of route was not saved")
+            return
+        }
+
+        #expect(SyncRoute(attempted) == .hosted)
+        #expect(SyncRoute.shown(composingAddress: false, config: saved) == .own)
+    }
 }
 
 @Suite struct SyncTransferKeysTests {
@@ -367,6 +405,45 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     @Test func noWritableFolderLeavesNowhereToLand() {
         #expect(LandingDestination.of([shared], chosen: nil) == .nowhere)
         #expect(LandingDestination.of([], chosen: "music") == .nowhere)
+    }
+}
+
+@Suite struct LandingFoldersTests {
+    let music = MusicFolder(id: "music", name: "Music", path: "/music", readable: true, writable: true)
+    let drive = MusicFolder(id: "drive", name: "Drive", path: "/drive", readable: false, writable: true)
+    let shared = MusicFolder(id: "shared", name: "Shared", path: "/shared", readable: true, writable: false)
+
+    @Test func anUnavailableChosenFolderIsStillTheOneShownSelectedAndMarkedUnavailable() {
+        let folders = LandingFolders([music, drive], chosen: "drive")
+
+        #expect(folders.selected == "drive")
+        #expect(folders.options.map(\.label) == ["Music", "Drive (unavailable)"])
+        #expect(folders.options.map(\.available) == [true, false])
+        #expect(LandingDestination.of([music, drive], chosen: "drive") == .away)
+    }
+
+    @Test func thePickerNamesTheFolderTheLandingWouldUse() {
+        for chosen in [nil, "music", "drive", "shared", "gone"] {
+            let folders = LandingFolders([shared, drive, music], chosen: chosen)
+            let target = LandingDestination.target([shared, drive, music], chosen: chosen)
+
+            #expect(folders.selected == target?.id)
+        }
+    }
+
+    @Test func aReachableFolderIsOfferedAsAReplacementAndAnUnreachableOneIsNot() {
+        let folders = LandingFolders([music, drive, shared], chosen: "drive")
+
+        #expect(folders.replacement("music") == music)
+        #expect(folders.replacement("drive") == nil)
+        #expect(folders.replacement("shared") == nil)
+        #expect(folders.replacement("gone") == nil)
+    }
+
+    @Test func foldersWithoutWriteAccessAreNotOffered() {
+        #expect(LandingFolders([shared, music], chosen: nil).options.map(\.id) == ["music"])
+        #expect(LandingFolders([shared], chosen: nil).selected == nil)
+        #expect(LandingFolders([], chosen: "music").selected == nil)
     }
 }
 

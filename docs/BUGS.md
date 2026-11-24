@@ -95,21 +95,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/sync/driving.rs:377`). Preserve the typed outcome
   and retire the watch for a known unavailable device. Done when those
   transitions replace the waiting state and a transient read can still recover.
-- [S · 0.17.1] Show the actual chosen iOS landing folder when it is unavailable.
-  **Low, builder.** The folder picker filters out an unreadable saved
-  destination and shows another folder selected, while the landing logic
-  holds the songs until the saved one returns
-  (`ios/Sources/Resonate/SyncView.swift:485`, `:521`,
-  `ios/Sources/ResonateLogic/Sync.swift:211`). Show the unavailable choice and
-  let the listener choose a reachable replacement. Done when the picker and
-  the landing status agree with one available and one unavailable folder.
-- [S · 0.17.1] Restore the saved iOS sync route after a settings write fails.
-  **Low, builder.** The connection picker keeps its local choice after the
-  main configuration reverts to the saved route
-  (`ios/Sources/Resonate/SyncView.swift:565`, `:576`, `:680`,
-  `ios/Sources/Resonate/Features.swift:592`). Synchronize the displayed choice
-  with the persistence result. Done when a failed route change restores the
-  prior selection and the control reflects the active route.
 - [S · 0.17.1] Turn the phones' MusicBrainz copy switch off when the copy is removed.
   **Low, builder.** Removing the copy now keeps it from being fetched again until
   `SyncConfig.musicbrainz_copy` is turned off and on, but Android and iOS leave their
