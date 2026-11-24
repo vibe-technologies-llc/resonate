@@ -140,4 +140,41 @@ import Testing
         reveal.startOver()
         #expect(!reveal.shown)
     }
+
+    @Test func atTheTopTheFieldStandsInItsOwnRoomAboveTheRowsAndScrollsAwayWithThem() {
+        var reveal = SearchReveal()
+        let band = 60.0
+
+        #expect(reveal.raised(within: band) == 0)
+
+        reveal.scrolled(to: 0, within: 2000)
+        #expect(reveal.raised(within: band) == 0)
+
+        reveal.scrolled(to: 20, within: 2000)
+        #expect(reveal.raised(within: band) == 20)
+
+        reveal.scrolled(to: 45, within: 2000)
+        #expect(!reveal.shown)
+        #expect(reveal.raised(within: band) == 45)
+
+        reveal.scrolled(to: 400, within: 2000)
+        #expect(reveal.raised(within: band) == band)
+
+        reveal.scrolled(to: 0, within: 2000)
+        #expect(reveal.raised(within: band) == 0)
+    }
+
+    @Test func aFieldShownByScrollingUpStandsWhollyOverTheRows() {
+        var reveal = SearchReveal()
+        let band = 60.0
+
+        reveal.scrolled(to: 500, within: 2000)
+        reveal.scrolled(to: 470, within: 2000)
+        #expect(reveal.shown)
+        #expect(reveal.raised(within: band) == 0)
+
+        reveal.scrolled(to: 0, within: 2000)
+        reveal.scrolled(to: -30, within: 2000)
+        #expect(reveal.raised(within: band) == 0)
+    }
 }

@@ -135,6 +135,11 @@ public struct SearchReveal: Equatable, Sendable {
         }
     }
 
+    public func raised(within band: Double) -> Double {
+        guard !shown else { return 0 }
+        return min(max(last ?? 0, 0), max(band, 0))
+    }
+
     public mutating func startOver() {
         shown = false
         last = nil

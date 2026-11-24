@@ -49,20 +49,29 @@ struct ScrollPlace: Equatable {
 final class LibrarySearchReveal {
     private(set) var shown = false
     private(set) var band: CGFloat = 0
+    private(set) var raised: CGFloat = 0
     @ObservationIgnored private var reveal = SearchReveal()
 
     func scrolled(_ place: ScrollPlace) {
         reveal.scrolled(to: place.offset, within: place.range)
         if shown != reveal.shown { shown = reveal.shown }
+        raise()
     }
 
     func startOver() {
         reveal.startOver()
         if shown { shown = false }
+        raise()
     }
 
     func measured(band height: CGFloat) {
         if band != height { band = height }
+        raise()
+    }
+
+    private func raise() {
+        let now = CGFloat(reveal.raised(within: Double(band)))
+        if raised != now { raised = now }
     }
 }
 
@@ -70,15 +79,17 @@ private struct RevealsLibrarySearch: ViewModifier {
     @Environment(LibrarySearchReveal.self) private var reveal: LibrarySearchReveal?
 
     func body(content: Content) -> some View {
-        content.onScrollGeometryChange(for: ScrollPlace.self) { geometry in
-            let insets = geometry.contentInsets
-            return ScrollPlace(
-                offset: Double(geometry.contentOffset.y + insets.top),
-                range: Double(geometry.contentSize.height + insets.top + insets.bottom - geometry.containerSize.height)
-            )
-        } action: { _, place in
-            reveal?.scrolled(place)
-        }
+        content
+            .contentMargins(.top, reveal?.band ?? 0, for: .scrollContent)
+            .onScrollGeometryChange(for: ScrollPlace.self) { geometry in
+                let insets = geometry.contentInsets
+                return ScrollPlace(
+                    offset: Double(geometry.contentOffset.y + insets.top),
+                    range: Double(geometry.contentSize.height + insets.top + insets.bottom - geometry.containerSize.height)
+                )
+            } action: { _, place in
+                reveal?.scrolled(place)
+            }
     }
 }
 
@@ -100,7 +111,10 @@ struct LibrarySearchField: View {
 
     var body: some View {
         @Bindable var search = library.librarySearch
-        let shown = reveal.shown || focused || !search.text.isEmpty || voiceOver
+        let held = focused || !search.text.isEmpty || voiceOver
+        let raised = held ? 0 : reveal.raised
+        let shown = held || reveal.shown || raised < reveal.band
+        let showing = reveal.band > 0 ? 1 - raised / reveal.band : (shown ? 1 : 0)
         VStack(spacing: 0) {
             field(search)
                 .padding(.horizontal, 16)
@@ -112,11 +126,11 @@ struct LibrarySearchField: View {
                     .transition(.opacity)
             }
         }
-        .offset(y: shown ? 0 : -reveal.band)
-        .opacity(shown ? 1 : 0)
-        .allowsHitTesting(shown)
+        .offset(y: -raised)
+        .opacity(showing)
+        .allowsHitTesting(raised < reveal.band / 2)
         .accessibilityHidden(!shown)
-        .motion(Self.slides, calm: Arrival.animation, value: shown)
+        .motion(Self.slides, calm: Arrival.animation, value: held || reveal.shown)
         .motion(Arrival.animation, value: focused)
     }
 
@@ -441,7 +455,6 @@ struct ShelfHeader<Controls: View>: View {
 
 struct LibraryFound: View {
     @Environment(Library.self) private var library
-    @Environment(LibrarySearchReveal.self) private var reveal: LibrarySearchReveal?
     let scope: SearchScope
 
     var body: some View {
@@ -450,7 +463,6 @@ struct LibraryFound: View {
             SearchResults(search: search, scope: .constant(scope)) { Keyboard.stow() }.equatable().themedRows()
         }
         .listStyle(.plain)
-        .contentMargins(.top, reveal?.band ?? 0, for: .scrollContent)
         .scrollDismissesKeyboard(.immediately)
         .revealsLibrarySearch()
         .environment(SelectedSongs?.none)

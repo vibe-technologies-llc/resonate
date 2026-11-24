@@ -1444,16 +1444,20 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   (`SearchHistoryView`, `keep-search-history` in the same suite, on unless set), and while it is
   off `SearchModel` keeps nothing and offers nothing; turning it off forgets what both searches
   kept.
-  **The field is hidden until the shelf scrolls up**, anywhere in the
-  list or as a pull down at its top (`SearchReveal`, `ResonateLogic`, held by
-  `LibraryShelvesTests`: shown once the list has moved `turnsAfter` (24 pt) up, gone once it has
-  moved as far down, a turn counting afresh; the pull's bounce back to the top and a bounce past
-  the foot count nothing). A page opens and a change of shelf starts with it hidden. Every shelf's
-  scroll view reports its place (`revealsLibrarySearch`, `onScrollGeometryChange`) to
-  `LibrarySearchReveal`, read by the field alone, which slides down from under the row and fades
-  in a spring (a fade under Reduce Motion) over the rows, never moving the bar or the content, so
-  nothing a scroll does lays the page out again; a margin kept for it at the top of the browsed
-  shelves stood empty while it was hidden. It stays while focused, while it holds text and while
+  **At the top of a shelf the field stands in a room of its own above the rows, and scrolls away
+  with them; further down it is hidden until the shelf scrolls up**, anywhere in the list
+  (`SearchReveal`, `ResonateLogic`, held by `LibraryShelvesTests`: shown once the list has moved
+  `turnsAfter` (24 pt) up, gone once it has moved as far down, a turn counting afresh; the pull's
+  bounce back to the top and a bounce past the foot count nothing). Every shelf's scroll view
+  keeps a top margin the field's height (`revealsLibrarySearch`, `contentMargins`) and reports its
+  place (`onScrollGeometryChange`) to `LibrarySearchReveal`, read by the field alone. Not shown by
+  a scroll up, the field is raised as far as the list has scrolled into that margin
+  (`SearchReveal.raised`, at most the field's height) and fades as it goes, so it rides the margin
+  exactly and the margin never stands empty; floating over the rows, it covered *Play* and
+  *Shuffle* at the top of Songs, where nothing lay above them to scroll to, and came back with
+  every pull. Shown by a scroll up, it slides down from under the row and fades in a spring (a
+  fade under Reduce Motion) over the rows, never moving the bar or the content, so nothing a
+  scroll does lays the page out again. It stays while focused, while it holds text and while
   VoiceOver runs. The whole search capsule takes a tap, including its icon and padding, so a tap
   in the glass focuses the field above the shelf's actions. The results and the browsed music are
   two `List`s (`SongsList`), so a search beginning or ending swaps one list for the other instead
