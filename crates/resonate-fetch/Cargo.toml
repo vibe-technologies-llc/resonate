@@ -19,6 +19,8 @@ webpki-root-certs.workspace = true
 [dev-dependencies]
 flate2.workspace = true
 parking_lot.workspace = true
+rcgen.workspace = true
+rustls = { workspace = true, features = ["ring"] }
 
 [lints]
 workspace = true

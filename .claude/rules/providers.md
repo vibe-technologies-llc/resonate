@@ -362,7 +362,11 @@ time) is weighed against `Library::last_tried` (`landed_since`).
 plumbing, so a `ureq` bump is made once:
 
 - **Agents**: `USER_AGENT`, `Patience` (`answered_within`, `broken_off_after`, `resumed_after`),
-  `Trusted` (`BuiltInRoots`, or `SystemStoreToo` for a listener's own server), `asking_agent`
+  `Trusted` (`BuiltInRoots`, or `SystemStoreToo` for a listener's own server: `trust.rs` builds the
+  policy from the built-in roots beside the system's through `built_in_beside`, so a test holds a
+  private root as the system's own and reaches a TLS server signed by it,
+  `a_server_signed_by_a_private_root_is_reached_once_the_system_holds_that_root`, which the built-in
+  roots alone refuse, `a_server_signed_by_a_private_root_is_refused_by_the_built_in_roots_alone`), `asking_agent`
   (`timeout_global` of `answered_within`), `downloading_agent` (`stall.rs`'s `BrokenOffAfter`: a
   silent body closes after `broken_off_after`, one still delivering is read however long; no
   whole-body deadline, and the response phase keeps the `answered_within` the agent was configured

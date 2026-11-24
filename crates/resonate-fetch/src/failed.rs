@@ -67,6 +67,8 @@ pub fn as_io(error: ureq::Error) -> io::Error {
 
 #[cfg(test)]
 mod tests {
+    use ureq::Timeout;
+
     use super::*;
 
     fn provider() -> SourceId {
@@ -137,5 +139,158 @@ mod tests {
 
         assert!(matches!(unaddressable, Error::Unaddressable { .. }));
         assert!(unaddressable.is_the_provider_away());
+    }
+
+    fn untrusted() -> ureq::Error {
+        ureq::Error::Rustls(rustls::Error::InvalidCertificate(
+            rustls::CertificateError::UnknownIssuer,
+        ))
+    }
+
+    fn io_kind_of(error: Error) -> ErrorKind {
+        let Error::Io { source, .. } = error else {
+            panic!("an I/O failure of the provider");
+        };
+
+        source.kind()
+    }
+
+    #[test]
+    fn a_request_that_ran_out_of_time_in_any_phase_is_the_provider_away_timed_out() {
+        for phase in [
+            Timeout::Global,
+            Timeout::PerCall,
+            Timeout::Resolve,
+            Timeout::Connect,
+            Timeout::SendRequest,
+            Timeout::PerRead,
+            Timeout::PerWrite,
+            Timeout::SendBody,
+            Timeout::RecvResponse,
+            Timeout::RecvBody,
+        ] {
+            let timed_out = unreached(provider(), ProviderOp::Search, ureq::Error::Timeout(phase));
+
+            assert!(timed_out.is_the_provider_away(), "{phase:?}");
+            assert_eq!(io_kind_of(timed_out), ErrorKind::TimedOut, "{phase:?}");
+            assert_eq!(
+                as_io(ureq::Error::Timeout(phase)).kind(),
+                ErrorKind::TimedOut,
+                "{phase:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_body_that_stalled_is_the_provider_away_timed_out() {
+        let stalled = unreached(provider(), ProviderOp::Search, ureq::Error::BodyStalled);
+
+        assert!(stalled.is_the_provider_away());
+        assert_eq!(io_kind_of(stalled), ErrorKind::TimedOut);
+        assert_eq!(as_io(ureq::Error::BodyStalled).kind(), ErrorKind::TimedOut);
+    }
+
+    #[test]
+    fn a_certificate_the_client_refuses_is_permission_denied_to_a_reader() {
+        let in_the_handshake = ureq::Error::Io(io::Error::new(
+            ErrorKind::InvalidData,
+            rustls::Error::InvalidCertificate(rustls::CertificateError::Expired),
+        ));
+
+        assert_eq!(as_io(untrusted()).kind(), ErrorKind::PermissionDenied);
+        assert_eq!(as_io(in_the_handshake).kind(), ErrorKind::PermissionDenied);
+    }
+
+    #[test]
+    fn a_tls_failure_that_is_no_refused_certificate_is_a_refused_connection_to_a_reader() {
+        let handshake = ureq::Error::Rustls(rustls::Error::HandshakeNotComplete);
+
+        assert_eq!(as_io(handshake).kind(), ErrorKind::ConnectionRefused);
+        assert_eq!(
+            as_io(ureq::Error::Tls("no protocol in common")).kind(),
+            ErrorKind::ConnectionRefused
+        );
+    }
+
+    #[test]
+    fn a_failure_to_connect_is_a_refused_connection_to_a_reader() {
+        for error in [
+            ureq::Error::ConnectionFailed,
+            ureq::Error::InvalidProxyUrl,
+            ureq::Error::TlsRequired,
+            ureq::Error::RequireHttpsOnly("http://music.local/rest".to_owned()),
+        ] {
+            let described = error.to_string();
+
+            assert_eq!(
+                as_io(error).kind(),
+                ErrorKind::ConnectionRefused,
+                "{described}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_host_that_is_not_found_is_not_found_to_a_reader() {
+        assert_eq!(as_io(ureq::Error::HostNotFound).kind(), ErrorKind::NotFound);
+    }
+
+    #[test]
+    fn an_address_that_does_not_read_is_invalid_input_to_a_reader() {
+        let kind = as_io(ureq::Error::BadUri("music.local/rest".to_owned())).kind();
+
+        assert_eq!(kind, ErrorKind::InvalidInput);
+    }
+
+    #[test]
+    fn a_status_the_client_was_told_to_treat_as_an_error_is_refused_and_aborts_a_reader() {
+        let refused = unreached(provider(), ProviderOp::Search, ureq::Error::StatusCode(503));
+
+        assert!(matches!(refused, Error::Refused { status: 503, .. }));
+        assert_eq!(
+            as_io(ureq::Error::StatusCode(503)).kind(),
+            ErrorKind::ConnectionAborted
+        );
+    }
+
+    #[test]
+    fn a_transport_failure_already_an_io_error_keeps_its_own_kind_for_a_reader() {
+        for kind in [
+            ErrorKind::ConnectionReset,
+            ErrorKind::UnexpectedEof,
+            ErrorKind::BrokenPipe,
+        ] {
+            let failed = ureq::Error::Io(io::Error::from(kind));
+
+            assert_eq!(as_io(failed).kind(), kind);
+        }
+    }
+
+    #[test]
+    fn a_response_that_cannot_be_read_keeps_a_class_apart_from_every_transport_failure() {
+        for error in [
+            ureq::Error::BodyExceedsLimit(4),
+            ureq::Error::TooManyRedirects,
+            ureq::Error::RedirectFailed,
+            ureq::Error::LargeResponseHeader(2, 1),
+        ] {
+            let described = error.to_string();
+            let unreadable = unreached(provider(), ProviderOp::Search, error);
+
+            assert!(
+                matches!(unreadable, Error::Unreadable { .. }),
+                "{described}"
+            );
+            assert!(!unreadable.is_the_provider_away(), "{described}");
+        }
+
+        assert_eq!(
+            as_io(ureq::Error::LargeResponseHeader(2, 1)).kind(),
+            ErrorKind::InvalidData
+        );
+        assert_eq!(
+            as_io(ureq::Error::TooManyRedirects).kind(),
+            ErrorKind::InvalidData
+        );
     }
 }
