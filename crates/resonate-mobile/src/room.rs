@@ -552,13 +552,35 @@ mod tests {
 
     use super::*;
 
-    fn folder(name: &str) -> PathBuf {
+    struct Scratch(PathBuf);
+
+    impl std::ops::Deref for Scratch {
+        type Target = PathBuf;
+
+        fn deref(&self) -> &PathBuf {
+            &self.0
+        }
+    }
+
+    impl AsRef<Path> for Scratch {
+        fn as_ref(&self) -> &Path {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn folder(name: &str) -> Scratch {
         let folder =
             std::env::temp_dir().join(format!("resonate-room-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&folder);
 
         fs::create_dir_all(&folder).expect("a folder");
-        folder
+        Scratch(folder)
     }
 
     #[test]
