@@ -563,9 +563,30 @@ impl RootView {
             body = body.child(note(words::settings_sync::no_other_device()));
         }
         if let Some((id, name)) = self.settings_pane.read(cx).remotely.driving.clone() {
-            body = body.child(self.driven_zones(&id, &name, cx));
+            let listed = devices.iter().any(|device| device.id == id);
+
+            body = body.child(self.driven_zones(&id, &name, listed, cx));
         }
         body
+    }
+
+    fn stop_driving(&mut self, cx: &mut Context<Self>) {
+        let syncing = cx.global::<ResonateApp>().syncing.clone();
+        let held = self.settings_pane.update(cx, |pane, _| {
+            let held = pane.remotely.driving.take();
+
+            if held.is_some() {
+                pane.remotely.driving_redraws.stop();
+            }
+            held
+        });
+
+        if let Some((held, _)) = held {
+            if let Some(syncing) = syncing.as_ref() {
+                syncing.unwatch(&held);
+            }
+            cx.notify();
+        }
     }
 
     fn drive_the_device(&mut self, id: &str, name: &str, cx: &mut Context<Self>) {
@@ -602,7 +623,24 @@ impl RootView {
         cx.notify();
     }
 
-    fn driven_zones(&mut self, id: &str, name: &str, cx: &mut Context<Self>) -> Div {
+    fn stop_driving_button(&mut self, id: &str, cx: &mut Context<Self>) -> Stateful<Div> {
+        let control = format!("sync-stop-driving-{id}");
+
+        self.in_the_ring_at(
+            control.clone(),
+            kit::button(
+                SharedString::from(control),
+                Some(Icon::Close),
+                words::settings_sync::stop_driving(),
+                words::settings_sync::stop_driving_hint(),
+                Tone::Ghost,
+            ),
+            |this, _, cx| this.stop_driving(cx),
+            cx,
+        )
+    }
+
+    fn driven_zones(&mut self, id: &str, name: &str, listed: bool, cx: &mut Context<Self>) -> Div {
         self.settings_pane.update(cx, |pane, cx| {
             pane.remotely.driving_redraws.beats_while_drawn(
                 DRIVEN_REDRAWN_EVERY,
@@ -621,6 +659,10 @@ impl RootView {
             .flex_col()
             .gap_2()
             .child(kit::row_name(words::settings_sync::playing_on(name)));
+
+        if !listed {
+            panel = panel.child(self.stop_driving_button(id, cx));
+        }
         match shown {
             RemoteShown::Waiting => panel.child(note(words::settings_sync::driving_waits())),
             RemoteShown::Refused => panel.child(note(words::settings_sync::driving_refused())),
@@ -1364,6 +1406,19 @@ impl RootView {
         let id = device.id.clone();
         let name = device.name.clone();
         let control = format!("sync-forget-{}", device.id);
+        let driven = self
+            .settings_pane
+            .read(cx)
+            .remotely
+            .driving
+            .as_ref()
+            .is_some_and(|(held, _)| *held == device.id);
+        let row = if driven {
+            row.child(self.stop_driving_button(&device.id, cx))
+        } else {
+            row
+        };
+
         row.child(self.in_the_ring_at(
             control.clone(),
             kit::button(
@@ -1401,6 +1456,17 @@ impl RootView {
             return;
         };
         let notice = if syncing.forget(id) {
+            let driven = self
+                .settings_pane
+                .read(cx)
+                .remotely
+                .driving
+                .as_ref()
+                .is_some_and(|(held, _)| held == id);
+
+            if driven {
+                self.stop_driving(cx);
+            }
             Notice::Done(words::settings_sync::off_the_list(name))
         } else {
             Notice::Trouble(words::settings_sync::not_taken_off_the_list(name))
@@ -1717,6 +1783,7 @@ mod tests {
         unwatched: Mutex<Vec<String>>,
         second: AtomicBool,
         away: AtomicBool,
+        gone: AtomicBool,
         refused: AtomicBool,
         paused: AtomicBool,
     }
@@ -1756,7 +1823,11 @@ mod tests {
                 nearby: false,
                 this: false,
             };
-            let mut devices = vec![desk.clone()];
+            let mut devices = if self.gone.load(Ordering::Relaxed) {
+                Vec::new()
+            } else {
+                vec![desk.clone()]
+            };
 
             if self.second.load(Ordering::Relaxed) {
                 devices.push(SyncedDevice {
@@ -1775,8 +1846,9 @@ mod tests {
 
         fn force(&self) {}
 
-        fn forget(&self, _: &str) -> bool {
-            false
+        fn forget(&self, device: &str) -> bool {
+            self.gone.store(device == "desk", Ordering::Relaxed);
+            device == "desk"
         }
 
         fn missing_from(&self, _: PlaylistId) -> usize {
@@ -1990,6 +2062,59 @@ mod tests {
                 .is_beating()
         }));
         assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.driving.is_some()));
+    }
+
+    #[gpui::test]
+    fn a_driven_device_gone_offline_still_offers_to_stop_and_forgetting_it_leaves_the_panel(
+        cx: &mut TestAppContext,
+    ) {
+        let (mut driven, stage) = opened_on_the_sync_group(cx);
+
+        driven.click("sync-drive-desk");
+        driven.settle();
+
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.driving.is_some()));
+
+        stage.away.store(true, Ordering::Relaxed);
+        driven.until_drawn("sync-stop-driving-desk");
+        driven.click("sync-stop-driving-desk");
+        driven.settle();
+
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.driving.is_none()));
+        assert!(stage.unwatched.lock().iter().any(|device| device == "desk"));
+        assert!(driven.cx.debug_bounds("sync-stop-driving-desk").is_none());
+        assert!(driven.cx.debug_bounds("sync-forget-desk").is_some());
+    }
+
+    #[gpui::test]
+    fn forgetting_the_driven_device_leaves_its_panel_at_once(cx: &mut TestAppContext) {
+        let (mut driven, stage) = opened_on_the_sync_group(cx);
+
+        driven.click("sync-drive-desk");
+        driven.settle();
+        stage.away.store(true, Ordering::Relaxed);
+        driven.until_drawn("sync-stop-driving-desk");
+        driven.click("sync-forget-desk");
+        driven.settle();
+
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.driving.is_none()));
+        assert!(stage.unwatched.lock().iter().any(|device| device == "desk"));
+        assert!(driven.cx.debug_bounds("remote-desk-1-toggle").is_none());
+    }
+
+    #[gpui::test]
+    fn a_driven_device_missing_from_the_list_is_stopped_from_its_panel(cx: &mut TestAppContext) {
+        let (mut driven, stage) = opened_on_the_sync_group(cx);
+
+        driven.click("sync-drive-desk");
+        driven.settle();
+        stage.gone.store(true, Ordering::Relaxed);
+        stage.second.store(true, Ordering::Relaxed);
+        driven.until_drawn("sync-stop-driving-desk");
+        driven.click("sync-stop-driving-desk");
+        driven.settle();
+
+        assert!(driven.read(|root, cx| root.settings_pane.read(cx).remotely.driving.is_none()));
     }
 
     #[test]

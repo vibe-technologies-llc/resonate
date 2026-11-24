@@ -211,13 +211,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/service.rs:2455`, `:2466`). Fit the queue window to the
   record budget while retaining the playing row and its offset. Done when an
   oversized queue can be continued from another network at the expected position.
-- [S · 0.17.1] Let desktop listeners stop driving a device after it goes offline.
-  **Low, builder.** The drive panel remains selected after its device disappears
-  or is removed, and the stop action exists only on an online device's row
-  (`crates/resonate-ui/src/views/settings/sync.rs:565`, `:1323`, `:1395`).
-  Keep a stop action available for the selected device and clear a forgotten
-  device's panel. Done when an offline device can be dismissed and removal
-  immediately leaves the drive panel.
 - [M · 0.17.1] Reconcile app-private received files after an interrupted landing.
   **Low, architect.** A receive can rename bytes into the holding folder before
   an error leaves them untracked. Cleanup can also delete the catalog row

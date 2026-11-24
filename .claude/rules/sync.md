@@ -972,7 +972,13 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   pane region alone (`Parts::the_pane_moved`, `ui.md`) every `DRIVEN_REDRAWN_EVERY` (500 ms) while the driven page is drawn: leaving the page or the
   pane ends the redraws and the device stays driven, the beat resuming when the page is drawn again
   (`a_driven_device_is_sought_jumped_moved_and_emptied_from_its_rows`,
-  `driving_a_device_redraws_the_window_only_while_its_page_is_drawn`).
+  `driving_a_device_redraws_the_window_only_while_its_page_is_drawn`). *Stop driving* stays on the
+  driven device's row whatever its standing, an offline one carrying it beside *Remove*, and on the
+  panel itself when the device is no longer listed; it unwatches, and forgetting the driven device
+  does the same at once (`stop_driving`,
+  `a_driven_device_gone_offline_still_offers_to_stop_and_forgetting_it_leaves_the_panel`,
+  `forgetting_the_driven_device_leaves_its_panel_at_once`,
+  `a_driven_device_missing_from_the_list_is_stopped_from_its_panel`).
 - **The phones drive through the boundary** (`resonate-mobile`'s `sync/driving.rs`):
   `sync_watch(device)` (a `RemoteDevice`: `RemoteStanding` and `RemoteZoneState`s, the position
   played on to the moment asked), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
