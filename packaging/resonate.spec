@@ -1,5 +1,5 @@
 Name:           resonate
-Version:        0.17.0
+Version:        0.17.1
 Release:        1%{?dist}
 Summary:        High-fidelity music player with native PipeWire output
 License:        AGPL-3.0-or-later
@@ -83,6 +83,8 @@ install -Dm644 "$generated/resonate.fish" %{buildroot}%{_datadir}/fish/vendor_co
 %{_datadir}/fish/vendor_completions.d/resonate.fish
 
 %changelog
+* Tue Nov 24 2026 Resonate - 0.17.1-1
+- Takes the place of 0.17.0, whose release was not finished; see the GitHub release for the list
 * Tue Nov 24 2026 Resonate - 0.17.0-1
 - Features; see the GitHub release for the list
 * Sat Nov 21 2026 Resonate - 0.16.0-1

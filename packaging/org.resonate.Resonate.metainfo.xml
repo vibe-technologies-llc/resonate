@@ -84,6 +84,7 @@
   </keywords>
 
   <releases>
+    <release version="0.17.1" date="2026-11-24" type="stable"/>
     <release version="0.17.0" date="2026-11-24" type="stable"/>
     <release version="0.16.0" date="2026-11-21" type="stable"/>
     <release version="0.15.0" date="2026-11-20" type="stable"/>
