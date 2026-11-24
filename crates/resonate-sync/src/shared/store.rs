@@ -110,8 +110,10 @@ impl Kept {
             Welcomed::Continued
         };
 
-        if welcomed == Welcomed::MadeAnew {
-            self.owe_everything();
+        match welcomed {
+            Welcomed::MadeAnew if self.access.may_edit() => self.owe_everything(),
+            Welcomed::MadeAnew => self.read_from_the_start(),
+            Welcomed::Continued => {}
         }
         if told.is_some() {
             self.incarnation = told;
@@ -123,11 +125,15 @@ impl Kept {
     pub fn owe_everything(&mut self) {
         let whole = self.list.as_ops();
 
+        self.read_from_the_start();
+        self.owe(whole);
+    }
+
+    fn read_from_the_start(&mut self) {
         self.cursor = 0;
         self.records_since = 0;
         self.bytes_since = 0;
         self.owed.clear();
-        self.owe(whole);
     }
 
     pub fn restamped_past_the_bound(&mut self, wall: i64) -> bool {
@@ -701,6 +707,22 @@ mod tests {
 
         assert_eq!(fallen, Welcomed::MadeAnew);
         assert!(!kept.owed.is_empty());
+    }
+
+    #[test]
+    fn a_view_of_a_space_of_another_incarnation_reads_it_from_its_start_and_owes_nothing() {
+        let mut kept = a_list();
+
+        kept.access = kept.access.viewing().expect("a view key");
+
+        let told_another = kept.welcomed(kept.cursor + 4, Some(Incarnation(12)));
+
+        assert_eq!(told_another, Welcomed::MadeAnew);
+        assert_eq!(kept.cursor, 0);
+        assert_eq!(kept.records_since, 0);
+        assert_eq!(kept.bytes_since, 0);
+        assert!(kept.owed.is_empty());
+        assert_eq!(kept.incarnation, Some(Incarnation(12)));
     }
 
     #[test]

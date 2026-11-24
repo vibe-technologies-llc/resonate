@@ -52,12 +52,17 @@ impl Scripted {
                             return;
                         };
                         let answers = answer(&frame);
+                        let answered_once = matches!(frame, ToServer::View { .. });
 
                         heard.lock().push(frame);
                         for answered in answers {
                             if session.outgoing.send(&answered.encoded()).await.is_err() {
                                 return;
                             }
+                        }
+                        if answered_once {
+                            session.outgoing.finish().await;
+                            return;
                         }
                     }
                 });

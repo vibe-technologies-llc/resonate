@@ -389,6 +389,11 @@ const SEEDS: &[Seed] = &[
         fingerprint: 0x1817_61ca_ac82_a7e6,
     },
     Seed {
+        name: "viewing-incarnated",
+        kind: Kind::ToServer,
+        fingerprint: 0xa708_0640_e84f_a71d,
+    },
+    Seed {
         name: "welcome",
         kind: Kind::FromServer,
         fingerprint: 0x297b_3fd1_3f79_ba3d,

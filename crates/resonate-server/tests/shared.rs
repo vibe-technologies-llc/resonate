@@ -1490,6 +1490,179 @@ fn a_shared_list_on_a_server_before_incarnations_is_said_at_the_first_version_fr
     );
 }
 
+fn written_by_ada(made: usize) -> String {
+    format!("Ada {made}")
+}
+
+#[test]
+fn a_viewer_back_at_a_shared_space_made_anew_and_written_past_their_cursor_reads_it_whole() {
+    let kept_as = "server.sqlite";
+    let hosted = hosted_over("viewed-anew", |folder| {
+        Store::open(&folder.join(kept_as)).expect("a store")
+    });
+
+    let mut watching =
+        Store::open(&hosted.folder.join(kept_as)).expect("the server's store, read beside it");
+    let ada = hosted.person("Ada", Shelf::default());
+    let list = ada.shelf.made("Mix", &["One"]);
+
+    let invites = ada.shared.share(list).expect("shared");
+
+    eventually("the list reaching the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+    });
+
+    let viewer = hosted.person("Viewer", Shelf::default());
+
+    viewer
+        .shared
+        .join(&code_in(&invites.view), None)
+        .expect("joined");
+    eventually("the viewer's copy arriving", &viewer, || {
+        shown_on(&viewer)
+            .first()
+            .and_then(|shown| shown.at)
+            .is_some_and(|copy| viewer.shelf.titles_of(copy) == Some(vec!["One".to_owned()]))
+    });
+
+    let space = shown_on(&ada)[0].space;
+    let copy = local_of(&viewer);
+    let viewer_shelf = Arc::clone(&viewer.shelf);
+
+    drop(viewer);
+
+    let head_before_the_edit = watching.head(space).expect("the head").0;
+
+    ada.shelf.edit(list, &["One", "Ada's"]);
+    eventually("Ada's edit kept by the server", &ada, || {
+        shown_on(&ada)[0].owed == 0
+            && watching
+                .head(space)
+                .is_ok_and(|(head, _)| head > head_before_the_edit)
+    });
+
+    let ada_shelf = Arc::clone(&ada.shelf);
+
+    drop(ada);
+
+    let head_before_the_sweep = watching.head(space).expect("the head").0;
+    let swept = watching
+        .sweep(EVERY_SPACE_UNTOUCHED_BEFORE_NOW)
+        .expect("swept");
+    let ada = hosted.person_on("Ada", ada_shelf);
+
+    eventually("Ada's list kept by the space made anew", &ada, || {
+        shown_on(&ada).first().is_some_and(|shown| shown.owed == 0)
+            && watching.head(space).is_ok_and(|(head, _)| head > 0)
+    });
+
+    let mut titles = vec!["One".to_owned(), "Ada's".to_owned()];
+
+    while watching.head(space).expect("the head").0 <= head_before_the_sweep {
+        let head = watching.head(space).expect("the head").0;
+
+        titles.push(written_by_ada(titles.len()));
+        ada.shelf
+            .edit(list, &titles.iter().map(String::as_str).collect::<Vec<_>>());
+        eventually("another of Ada's songs kept", &ada, || {
+            watching
+                .head(space)
+                .is_ok_and(|(written, _)| written > head)
+        });
+    }
+
+    let viewer = hosted.person_on("Viewer", viewer_shelf);
+
+    eventually("the whole remade list reaching the viewer", &viewer, || {
+        viewer
+            .shelf
+            .titles_of(copy)
+            .is_some_and(|held| titles.iter().all(|title| held.contains(title)))
+    });
+
+    assert_eq!(swept, 1);
+    assert!(titles.len() > 2);
+    assert_eq!(shown_on(&viewer)[0].owed, 0);
+}
+
+fn a_viewed_server_before_incarnations(heard: &ToServer) -> Vec<FromServer> {
+    match heard {
+        ToServer::Heads { asked, .. } => vec![FromServer::Heads {
+            heads: asked
+                .iter()
+                .map(|asked| SpaceHead {
+                    space: asked.space,
+                    head: 1,
+                    closed: false,
+                })
+                .collect(),
+        }],
+        ToServer::View { version, .. } if *version != PROTOCOL_VERSION => {
+            vec![FromServer::Refused(Refusal::Version)]
+        }
+        ToServer::View { .. } => vec![FromServer::Welcome {
+            online: Vec::new(),
+            seen_at: SocketAddr::from((Ipv4Addr::UNSPECIFIED, 0)),
+            head: 0,
+            incarnation: None,
+        }],
+        heard => a_server_before_incarnations(heard),
+    }
+}
+
+fn views_said(scripted: &Scripted) -> Vec<u16> {
+    scripted
+        .heard()
+        .iter()
+        .filter_map(|heard| match heard {
+            ToServer::View { version, .. } => Some(*version),
+            _ => None,
+        })
+        .collect()
+}
+
+#[test]
+fn a_view_link_on_a_server_before_incarnations_is_said_at_the_first_version_from_then_on() {
+    let scripted = Scripted::answering(a_viewed_server_before_incarnations);
+    let hosted = hosted("viewed-before-incarnations");
+
+    let ada = hosted.person_reaching("Ada", scripted.address);
+    let list = ada.shelf.made("Mix", &["One"]);
+
+    let invites = ada.shared.share(list).expect("shared");
+    let viewer = hosted.person_reaching("Viewer", scripted.address);
+
+    viewer
+        .shared
+        .join(&code_in(&invites.view), None)
+        .expect("joined");
+    eventually(
+        "the list viewed on a server before incarnations",
+        &viewer,
+        || {
+            shown_on(&viewer)
+                .first()
+                .is_some_and(|shown| shown.standing == SharedStanding::Reached)
+        },
+    );
+
+    let first = views_said(&scripted);
+
+    eventually("the list viewed again", &viewer, || {
+        views_said(&scripted).len() > first.len()
+    });
+
+    let then = views_said(&scripted);
+
+    assert_eq!(first, [INCARNATION_VERSION, PROTOCOL_VERSION]);
+    assert!(
+        then[first.len()..]
+            .iter()
+            .all(|version| *version == PROTOCOL_VERSION),
+        "{then:?}"
+    );
+}
+
 const WHAT_THE_LIST_PAGE_SHOWS: &str = "return { \
      hidden: document.getElementById(\"list\").hidden, \
      name: document.getElementById(\"name\").textContent, \

@@ -222,12 +222,17 @@ fails `Refused::Unavailable`. It never stops in an older reset's space
 a list keeps the `Incarnation` its server last told beside its cursor (the shared store's second
 step, `A_LIST_KNOWS_ITS_SPACE_BY_ITS_INCARNATION`: `lists.incarnation`, NULL for a list kept before
 it and for one just shared, joined or moved until a server tells one), and an editor says its
-`Share` at `INCARNATION_VERSION`. `Kept::welcomed` weighs each `Welcome`: another incarnation than
-the one kept, or a head below the cursor, owes the whole list again from cursor 0
-(`owe_everything`, as a move does), and the visit ends and begins again after 0, so a member back
-in a space another member remade and wrote past reads it from its start and sends its own ops again
+`Share`, a view link its `View`, at `INCARNATION_VERSION`. `Kept::welcomed` weighs each `Welcome`:
+another incarnation than the one kept, or a head below the cursor, owes an editor's whole list
+again from cursor 0 (`owe_everything`, as a move does) and only sets a view link's cursor back to 0
+with nothing owed (`read_from_the_start`, since a view link cannot write and a list owing ops would
+be visited at every poll), and the visit ends and begins again after 0, so a member back in a space
+another member remade and wrote past reads it from its start and sends its own ops again
 (`a_member_back_in_a_shared_space_made_anew_and_written_past_their_cursor_reads_it_whole_and_their_own_edits_reach_the_others`,
-`a_space_of_another_incarnation_is_made_anew_though_its_head_is_past_the_cursor`). A `Welcome`
+`a_space_of_another_incarnation_is_made_anew_though_its_head_is_past_the_cursor`), and a view link
+back at such a space reads it whole
+(`a_viewer_back_at_a_shared_space_made_anew_and_written_past_their_cursor_reads_it_whole`,
+`a_view_of_a_space_of_another_incarnation_reads_it_from_its_start_and_owes_nothing`). A `Welcome`
 telling none is judged by its head alone and leaves the kept one
 (`a_server_that_tells_no_incarnation_is_judged_by_its_head_alone_and_the_one_kept_stays`); one told
 where none is kept is learnt and trusted
@@ -236,9 +241,11 @@ where none is kept is learnt and trusted
 below it too; a remade space whose head stands exactly at the cursor is noticed at the next write
 to it. A server before incarnations refuses the version as `Refusal::Version`: the list is visited
 again at `PROTOCOL_VERSION` and the server remembered for the run (`servers_before_incarnations`; a
-reset falls back the same way), so only the first visit pays the refusal
-(`a_shared_list_on_a_server_before_incarnations_is_said_at_the_first_version_from_then_on`). A view
-link's `View` is still said at `PROTOCOL_VERSION` and told no incarnation.
+reset and a view link's `View` fall back the same way), so only the first visit pays the refusal
+(`a_shared_list_on_a_server_before_incarnations_is_said_at_the_first_version_from_then_on`,
+`a_view_link_on_a_server_before_incarnations_is_said_at_the_first_version_from_then_on`). The
+browser's page says its `View` at `PROTOCOL_VERSION` and is told no incarnation: it holds no cursor
+and reads the space whole each time.
 
 **No session is held open** (`shared/service.rs`): one thread, `Heads` every five minutes and every five
 seconds while a list is shown (`Shared::watch`), and a session only for a space that moved, is unknown

@@ -1025,7 +1025,7 @@ impl Running {
         Ok((Outgoing::Quic(send), Incoming::Quic(recv)))
     }
 
-    fn share_version(&self, address: &str) -> u16 {
+    fn version_said_to(&self, address: &str) -> u16 {
         if self.servers_before_incarnations.contains(address) {
             PROTOCOL_VERSION
         } else {
@@ -1063,7 +1063,7 @@ impl Running {
     }
 
     async fn visited_saying(&mut self, at: usize, address: &str, closed: bool) -> Result<Visit> {
-        let version = self.share_version(address);
+        let version = self.version_said_to(address);
 
         match self.visited_at(at, address, closed, version).await {
             Err(error) if self.falls_back(address, version, &error) => {
@@ -1096,7 +1096,7 @@ impl Running {
                 after,
             },
             None => ToServer::View {
-                version: PROTOCOL_VERSION,
+                version,
                 space: keys.space,
                 token: keys.read_token.clone(),
                 device: DeviceId::minted()?,
@@ -1484,7 +1484,7 @@ impl Running {
             return Err(Error::Catalog(Refused::Unwritable));
         };
         let device = self.lists[at].device;
-        let version = self.share_version(&address);
+        let version = self.version_said_to(&address);
 
         let (mut send, mut recv) = self.reached(&address).await?;
 

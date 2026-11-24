@@ -625,10 +625,10 @@ platforms; the catalog seam stays thin.
   `Hello` again at `PROTOCOL_VERSION` on a new connection and remembers the server for the rest of
   the run (`server_before_incarnations`), so only its first link pays the refusal
   (`a_server_before_incarnations_refusing_their_version_is_said_the_first_one_from_then_on`). The
-  seeds `welcome`, `welcome-incarnated` and `hello-incarnated` freeze both shapes. A shared
-  playlist's `Share` is said at `INCARNATION_VERSION` too, falling back the same way, and its list
-  keeps the incarnation beside its cursor (`shared-playlists.md`); a view link's `View` is still
-  said at `PROTOCOL_VERSION` and judged by its head alone.
+  seeds `welcome`, `welcome-incarnated`, `hello-incarnated` and `viewing-incarnated` freeze both
+  shapes. A shared playlist's `Share`, and a view link's `View`, are said at `INCARNATION_VERSION`
+  too, falling back the same way, and the list keeps the incarnation beside its cursor
+  (`shared-playlists.md`).
 - **Entering another space forgets the last one** (`enter_space`), so everything local is owed again;
   *regenerate* is just a new pairing code: each front end mints or clears the key and starts again.
 - **A device is forgotten by a tombstone, last writer wins like any note.** `Ledger::forget_device`

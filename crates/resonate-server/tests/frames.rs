@@ -282,3 +282,86 @@ async fn a_hello_of_the_first_version_is_welcomed_as_its_build_reads_and_only_th
         FromServer::Refused(Refusal::Version)
     );
 }
+
+const SHARED: SpaceId = SpaceId([11; 16]);
+const VIEW_TOKEN: Token = Token([5; 32]);
+
+async fn shared_by_an_editor(serving: &Serving) {
+    let (_client, connection) = connected(serving).await;
+    let (mut send, mut recv) = connection.open_bi().await.expect("a stream");
+    let share = ToServer::Share {
+        version: INCARNATION_VERSION,
+        space: SHARED,
+        token: Token([9; 32]),
+        viewer: VIEW_TOKEN.digest(),
+        device: DeviceId([1; 16]),
+        after: 0,
+    };
+
+    send_frame(&mut send, &share.encoded()).await.expect("said");
+
+    let welcomed = read_frame(&mut recv).await.expect("read").expect("a frame");
+
+    assert!(
+        matches!(
+            FromServer::decoded(&welcomed),
+            Ok(FromServer::Welcome { .. })
+        ),
+        "the editor was not welcomed"
+    );
+}
+
+async fn viewed_at(serving: &Serving, version: u16) -> Vec<u8> {
+    let (_client, connection) = connected(serving).await;
+    let (mut send, mut recv) = connection.open_bi().await.expect("a stream");
+    let view = ToServer::View {
+        version,
+        space: SHARED,
+        token: VIEW_TOKEN,
+        device: DeviceId([2; 16]),
+        after: 0,
+    };
+
+    send_frame(&mut send, &view.encoded()).await.expect("said");
+    read_frame(&mut recv).await.expect("read").expect("a frame")
+}
+
+#[tokio::test]
+async fn a_view_of_the_first_version_is_welcomed_as_its_build_reads_and_only_the_incarnations_version_is_told_one()
+ {
+    let serving = serving_with(Limits::default());
+
+    shared_by_an_editor(&serving).await;
+
+    let first = viewed_at(&serving, PROTOCOL_VERSION).await;
+    let incarnated = viewed_at(&serving, INCARNATION_VERSION).await;
+    let later = viewed_at(&serving, INCARNATION_VERSION + 1).await;
+    let first_read = FromServer::decoded(&first).expect("a welcome");
+    let incarnated_read = FromServer::decoded(&incarnated).expect("a welcome");
+
+    assert!(
+        matches!(
+            first_read,
+            FromServer::Welcome {
+                incarnation: None,
+                ..
+            }
+        ),
+        "{first_read:?}"
+    );
+    assert_eq!(first_read.encoded(), first);
+    assert!(
+        matches!(
+            incarnated_read,
+            FromServer::Welcome {
+                incarnation: Some(_),
+                ..
+            }
+        ),
+        "{incarnated_read:?}"
+    );
+    assert_eq!(
+        FromServer::decoded(&later).expect("a refusal"),
+        FromServer::Refused(Refusal::Version)
+    );
+}

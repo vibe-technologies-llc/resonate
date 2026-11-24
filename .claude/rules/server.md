@@ -101,9 +101,9 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   way, its records kept (`a_store_of_before_incarnations_gives_each_space_one_of_its_own_and_keeps_its_records`);
   a held space keeps it, one swept and made again draws another
   (`a_space_swept_and_made_again_carries_another_incarnation_and_a_held_one_keeps_its_own`). The
-  server only tells it (`Store::incarnation`, in the `Welcome` of a `Hello` or `Share` said at
-  `INCARNATION_VERSION`); a device, or a shared list, compares it with the one it kept (`sync.md`,
-  `shared-playlists.md`).
+  server only tells it (`Store::incarnation`, in the `Welcome` of a `Hello`, `Share` or `View` said
+  at `INCARNATION_VERSION`); a device, or a shared list edited or viewed, compares it with the one
+  it kept (`sync.md`, `shared-playlists.md`).
 
 ## Sessions
 
@@ -159,9 +159,11 @@ and reads nothing it keeps: records are sealed on the devices (`sync.md`).
   (`a_party_tells_its_guests_the_song_and_their_names_and_ends_with_its_host_turning_one_out`).
 - **A `Hello` within 10 s or nothing**, the allowance (`Limits::hello_within`) one deadline taken when the connection is accepted and shared by every stage up to the `Hello`: a web socket's request line, upgrade and first frame, a QUIC stream's opening and its first frame
   (`the_upgrade_and_the_hello_share_one_allowance_so_a_slow_client_does_not_get_two`); a wrong version, token or a full space is a `Refused` frame,
-  then the stream ends. A `Hello` or `Share` is taken at `PROTOCOL_VERSION` (answered with the
-  `Welcome` the first build reads) or `INCARNATION_VERSION` (its `Welcome` carrying the space's
-  incarnation after the head); `View`, `Heads` and `Room` at `PROTOCOL_VERSION` alone. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
+  then the stream ends. A `Hello`, `Share` or `View` is taken at `PROTOCOL_VERSION` (answered with
+  the `Welcome` the first build reads) or `INCARNATION_VERSION` (its `Welcome` carrying the space's
+  incarnation after the head)
+  (`a_view_of_the_first_version_is_welcomed_as_its_build_reads_and_only_the_incarnations_version_is_told_one`);
+  `Heads` and `Room` at `PROTOCOL_VERSION` alone. **The first frame is read to at most `FIRST_FRAME_AT_MOST`** (resonate-sync's
   `wire`: a full `Heads` plus an envelope, about 12 KiB) and a room's frames to `ROOM_FRAME_AT_MOST`
   (`LARGEST_ROOM_FRAME` plus an envelope), the first through `reading::read_the_first` and a room's
   through the read-ahead; a longer one ends the session before its bytes are held. **The first frame

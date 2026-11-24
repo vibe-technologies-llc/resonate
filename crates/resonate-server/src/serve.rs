@@ -11,8 +11,9 @@ use resonate_sync::{
     DeviceId, Duplex, Incoming as Reader, Outgoing as Writer, SpaceId, Token, accepted,
     server_transport,
     wire::{
-        FIRST_FRAME_AT_MOST, FromServer, INCARNATION_VERSION, LARGEST_FRAME, LARGEST_RECORD,
-        PROTOCOL_VERSION, ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN, SpaceAsked, ToServer,
+        FIRST_FRAME_AT_MOST, FromServer, INCARNATION_VERSION, Incarnation, LARGEST_FRAME,
+        LARGEST_RECORD, PROTOCOL_VERSION, ROOM_FRAME_AT_MOST, Record, Refusal, SERVER_ALPN,
+        SpaceAsked, ToServer,
     },
 };
 use ring::rand::{SecureRandom, SystemRandom};
@@ -109,6 +110,12 @@ struct Seat {
     after: u64,
     seen: SocketAddr,
     tells_incarnation: bool,
+}
+
+struct Viewed {
+    head: u64,
+    incarnation: Option<Incarnation>,
+    closed: Option<Vec<u8>>,
 }
 
 struct Sent {
@@ -587,34 +594,40 @@ impl Server {
             ..
         } = door;
 
-        if version != PROTOCOL_VERSION {
+        if !matches!(version, PROTOCOL_VERSION | INCARNATION_VERSION) {
             return refuse(&mut send, Refusal::Version).await;
         }
 
         let store = Arc::clone(&self.store);
         let digest = token.digest();
-        let (may, head, closed) = in_the_store(move || {
+        let Some(viewed) = in_the_store(move || {
             let mut store = store.lock();
 
             if !store.may_view(space, &digest, now())? {
-                return Ok((false, 0, None));
+                return Ok(None);
             }
 
-            let (head, _) = store.head(space)?;
-
-            Ok((true, head, store.closed(space)?))
+            Ok(Some(Viewed {
+                head: store.head(space)?.0,
+                incarnation: store.incarnation(space)?,
+                closed: store.closed(space)?,
+            }))
         })
-        .await?;
-
-        if !may {
+        .await?
+        else {
             return refuse(&mut send, Refusal::Token).await;
-        }
+        };
+        let Viewed {
+            head,
+            incarnation,
+            closed,
+        } = viewed;
 
         let welcome = FromServer::Welcome {
             online: Vec::new(),
             seen_at: address,
             head,
-            incarnation: None,
+            incarnation: incarnation.filter(|_| version == INCARNATION_VERSION),
         };
 
         send.send(&welcome.encoded()).await?;

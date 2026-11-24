@@ -16,15 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Device sync
-- [M · 0.17.1] Detect a viewed shared playlist's rebuilt space even after its cursor catches up.
-  **Medium, builder.** A view link's `View` is said at `PROTOCOL_VERSION`, which
-  the server answers with no incarnation, so once an editor has remade an
-  expired shared space and written past a follower's cursor, the follower skips
-  the new space's first records (`crates/resonate-sync/src/shared/service.rs`
-  `visited_at`, `crates/resonate-server/src/serve.rs` `view`). Take `View` at
-  `INCARNATION_VERSION` on the server, telling the incarnation, and say it there
-  with the fallback `Share` has. Done when a follower returning to a remade
-  shared space reads it whole.
 - [S · 0.17.1] Show a definite Android remote-watch failure when sync stops.
   **Low, builder.** The drive panel drops read failures and displays its
   waiting state even after a device is removed or sync turns off
