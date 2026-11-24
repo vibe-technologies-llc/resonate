@@ -2161,7 +2161,7 @@ mod tests {
     use crate::{
         ImageFormat, Pictured,
         insert::{Copying, Refusing},
-        journal::{WHOLE_SUFFIX, names_a_cut_short_write, recorded_against},
+        journal::{WHOLE_SUFFIX, recorded_against},
         left_alone::left_long_ago,
         riff,
     };
@@ -5221,7 +5221,7 @@ mod tests {
             panic!("a torn write back was not reported: {landed:?}");
         };
 
-        assert!(names_a_cut_short_write(&whole));
+        assert!(crate::journal::names_a_cut_short_write(&whole));
         assert!(!staged.path.exists(), "the staged copy was left as well");
         assert!(
             fs::read(&whole)
