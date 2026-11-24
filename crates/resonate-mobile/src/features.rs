@@ -565,8 +565,7 @@ impl MobilePlayer {
             findings: study.judgement.findings.iter().map(Finding::told).collect(),
         };
 
-        self.catalog
-            .keep_study(id, &report, &study.band_figures())?;
+        self.catalog.keep_studied(id, study)?;
         Ok(report)
     }
 

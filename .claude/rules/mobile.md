@@ -598,8 +598,12 @@ weigh; the ledger still passes it on in its snapshot.
   file (`documents_forget_which_file_they_were` clears it when `size` or `modified` moves).
   `studies` gained `studied`, `studied_under` (`JUDGED_UNDER`) and the figures the catalog lacked
   (`cutoff_hz`, `cutoff_drop`, `lossy_guess`, `upsampled_from`, `declared_bits`,
-  `loudness_range`, `mono_as_stereo`), all written by `keep_studied`; `keep_study` (the analysis
-  pane, which has no such figures) leaves `studied_under` null. `studies_to_share` lists a row
+  `loudness_range`, `mono_as_stereo`), all written by `keep_studied`, which the analysis pane
+  calls too with the study it drew from, so opening the pane keeps a studied song's
+  `studied_under`, findings, print and recognition and writes a song never studied one that is
+  shared (`opening_the_analysis_pane_on_a_song_studied_before_keeps_its_study_print_and_recognition`,
+  `opening_the_analysis_pane_on_a_song_never_studied_writes_a_study_that_is_shared`); a print
+  already kept is never replaced by the pane's. `studies_to_share` lists a row
   judged under this build with whole band levels (the file-change trigger clears them) on a
   document with a kept identity; a study from before the migration is listed once its song is
   studied again. `take_study` lands on every visible document whose rate, frame count and
@@ -627,8 +631,7 @@ weigh; the ledger still passes it on in its snapshot.
   catalog's step 15 (`STUDIES_KEEP_THEIR_PRINT_AND_WHAT_IT_WAS_HEARD_AS`) gave `studies` the
   desktop's `print`, `print_length`, `recognised` (nanoseconds) and `heard_as`, `heard_score`,
   `heard_title`, `heard_artist`, all cleared by the `documents_forget_what_was_printed` trigger when a
-  document's `size` or `modified` moves. The pass's `keep_studied` keeps the print its study made
-  (the analysis pane's `keep_study` none, its row being judged under no build); `land_study`
+  document's `size` or `modified` moves. The pass's `keep_studied` keeps the print its study made, never replacing one already kept; `land_study`
   clears them where it replaces a study of another judgement. `recognised_through` (the pass and
   `recognise_track`) keeps the top match heard (`HeardAs::top_of`) and stamps `recognised` through
   `keep_recognition`; a study that made no print is `Unheard` with `recognised` left null, so a print

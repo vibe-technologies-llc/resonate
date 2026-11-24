@@ -17,8 +17,8 @@ use crate::{
     catalog::{Catalog, picture_crc, read},
     documents::document_uri,
     features::{
-        AnalysisReport, LibraryBreakdown, LibraryShare, LibraryStatistics, ListenedOnDay,
-        ListenedTo, ListeningDetail,
+        LibraryBreakdown, LibraryShare, LibraryStatistics, ListenedOnDay, ListenedTo,
+        ListeningDetail,
     },
     stamp::{DocumentStamp, INDEXING_REVISION},
     words,
@@ -36,7 +36,7 @@ struct Figures<'a> {
     band_levels: &'a [u8],
     band_peaks: [u8; BAND_PEAKS_BYTES],
     print: Option<&'a Chromaprint>,
-    measured: Option<Measured>,
+    measured: Measured,
 }
 
 struct Measured {
@@ -70,7 +70,7 @@ pub(crate) struct LandedStudy<'a> {
 
 const STUDY_UPSERT: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo, print, print_length, band_peaks)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22)
-     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, print = excluded.print, print_length = excluded.print_length, band_peaks = excluded.band_peaks";
+     ON CONFLICT(track) DO UPDATE SET verdict = excluded.verdict, peak = excluded.peak, rms = excluded.rms, true_peak = excluded.true_peak, loudness = excluded.loudness, dynamic_range = excluded.dynamic_range, clipped = excluded.clipped, bits = excluded.bits, band_levels = excluded.band_levels, studied = excluded.studied, studied_under = excluded.studied_under, cutoff_hz = excluded.cutoff_hz, cutoff_drop = excluded.cutoff_drop, lossy_guess = excluded.lossy_guess, upsampled_from = excluded.upsampled_from, declared_bits = excluded.declared_bits, loudness_range = excluded.loudness_range, mono_as_stereo = excluded.mono_as_stereo, print = coalesce(studies.print, excluded.print), print_length = coalesce(studies.print_length, excluded.print_length), band_peaks = excluded.band_peaks";
 
 const LANDED_STUDY: &str = "INSERT INTO studies (track, verdict, peak, rms, true_peak, loudness, dynamic_range, clipped, bits, band_levels, studied, studied_under, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, declared_bits, loudness_range, mono_as_stereo)
      VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
@@ -454,31 +454,6 @@ impl Catalog {
         })
     }
 
-    pub(crate) fn keep_study(
-        &self,
-        id: u64,
-        report: &AnalysisReport,
-        figures: &BandFigures,
-    ) -> Result<()> {
-        self.keep_figures(
-            id,
-            Figures {
-                verdict: &report.verdict,
-                peak: report.peak,
-                rms: report.rms,
-                true_peak: report.true_peak,
-                loudness: report.loudness_lufs,
-                dynamic_range: report.dynamic_range,
-                clipped: report.clipped,
-                bits: report.bits_in_use,
-                band_levels: figures.levels.as_bytes(),
-                band_peaks: figures.peaks.to_bytes(),
-                print: None,
-                measured: None,
-            },
-        )
-    }
-
     pub(crate) fn keep_studied(&self, id: u64, study: &Study) -> Result<()> {
         self.keep_figures(
             id,
@@ -494,7 +469,7 @@ impl Catalog {
                 band_levels: study.band_figures().levels.as_bytes(),
                 band_peaks: study.band_peaks.to_bytes(),
                 print: study.print.as_ref(),
-                measured: Some(Measured {
+                measured: Measured {
                     cutoff_hz: study.judgement.cutoff.map(|cutoff| cutoff.hz),
                     cutoff_drop: study.judgement.cutoff.map(|cutoff| cutoff.drop_db),
                     lossy_guess: study.judgement.lossy_guess().map(LossyGuess::as_str),
@@ -502,13 +477,13 @@ impl Catalog {
                     declared_bits: study.examined.declared_bits,
                     loudness_range: study.loudness.range,
                     mono_as_stereo: study.levels.stereo.is_some_and(|stereo| stereo.identical),
-                }),
+                },
             },
         )
     }
 
     fn keep_figures(&self, id: u64, figures: Figures<'_>) -> Result<()> {
-        let measured = figures.measured.as_ref();
+        let measured = &figures.measured;
         let connection = self.0.lock();
 
         connection
@@ -526,14 +501,14 @@ impl Catalog {
                     figures.bits,
                     figures.band_levels,
                     nanos_now(),
-                    measured.map(|_| i64::from(JUDGED_UNDER)),
-                    measured.and_then(|measured| measured.cutoff_hz),
-                    measured.and_then(|measured| measured.cutoff_drop),
-                    measured.and_then(|measured| measured.lossy_guess),
-                    measured.and_then(|measured| measured.upsampled_from),
-                    measured.and_then(|measured| measured.declared_bits),
-                    measured.and_then(|measured| measured.loudness_range),
-                    measured.map(|measured| measured.mono_as_stereo),
+                    i64::from(JUDGED_UNDER),
+                    measured.cutoff_hz,
+                    measured.cutoff_drop,
+                    measured.lossy_guess,
+                    measured.upsampled_from,
+                    measured.declared_bits,
+                    measured.loudness_range,
+                    measured.mono_as_stereo,
                     figures.print.map(Chromaprint::encoded),
                     figures.print.map(print_seconds),
                     figures.band_peaks.as_slice(),

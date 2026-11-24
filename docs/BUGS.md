@@ -345,13 +345,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   Require a readable kept file and verify distinct identity and matching content
   before each removal. Done when both a stale preview and two document aliases that
   cannot be proven distinct leave the files intact.
-- [M · 0.17.1] Keep full study results when opening the phone's Analyse pane. **Medium, builder.**
-  The pane computes a study, then persists a summary that clears the algorithm version,
-  findings and fingerprint from a previously studied song
-  (`crates/resonate-mobile/src/features.rs:543`, `:566`,
-  `crates/resonate-mobile/src/catalog_extras.rs:71`, `:457`). Persist the full study or
-  let the summary update only the fields it owns. Done when opening the pane on an
-  already measured song keeps its recognition data and it remains eligible to share.
 - [L · 0.17.1] Keep mobile queue entries when a document provider is temporarily unavailable.
   **Medium, architect.** A folder can pass a readability check before a document open
   fails. The iOS bookmark-open path and Android's raw-descriptor path can then report

@@ -474,7 +474,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   answers the preamp in dB (`None` for nothing measured or all of it silent, held to the phone's
   `PREAMP_AT_MOST_DB`), stopping the fit before it through `Services::fitting`; an empty queue
   still reads the catalog. The pass and the analysis pane keep the bands with the study
-  (`keep_studied`, `keep_study`). **A study kept before the bands is measured alone, as on the
+  (`keep_studied`). **A study kept before the bands is measured alone, as on the
   desktop**: `enrichment::measure_the_unmeasured` runs first in an opted-in recognition pass's study thread
   (a recognition key is required, so fetching artwork alone spends no battery decoding audio), over `Catalog::bands_to_measure`
   (every visible document whose study lacks the 29-byte `band_levels` or the whole `band_peaks` of `BAND_PEAKS_BYTES`),

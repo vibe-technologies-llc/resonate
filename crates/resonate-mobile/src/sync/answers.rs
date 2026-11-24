@@ -577,7 +577,6 @@ mod tests {
 
     use super::*;
     use crate::{
-        features::AnalysisReport,
         harness::{FOLDER, Harness, RATE, silence},
         sync::tests::{documents_of, folder, named, player, song},
     };
@@ -1167,50 +1166,26 @@ mod tests {
     }
 
     #[test]
-    fn a_study_of_a_file_that_changed_or_kept_by_the_analysis_pane_alone_is_not_sent() {
+    fn a_study_of_a_file_that_changed_is_not_sent() {
         let harness = Harness::new();
         let documents = documents_over(&harness);
-        let [a, b] = [0, 1].map(|nth| harness.songs[nth].id);
+        let a = harness.songs[0].id;
         let at = location(&format!("{FOLDER}a.wav")).expect("a document");
 
         let study = resonate_analysis::study(&harness.player.sources, &at, None, &Watch::default())
             .expect("a study");
         let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
 
-        for id in [a, b] {
-            harness
-                .player
-                .catalog
-                .keep_identity(id, &scanned)
-                .expect("identified");
-        }
-
-        let report = AnalysisReport {
-            track_id: b,
-            verdict: study.judgement.verdict.as_str().to_owned(),
-            peak: study.levels.peak,
-            rms: study.levels.rms,
-            true_peak: study.loudness.true_peak,
-            loudness_lufs: study.loudness.integrated,
-            dynamic_range: study.loudness.dynamic_range.map(u32::from),
-            clipped: study.levels.clipped,
-            bits_in_use: study.levels.bits_in_use.map(u32::from),
-            waveform: Vec::new(),
-            spectrum: Vec::new(),
-            spectrum_step_hz: 0.0,
-            findings: Vec::new(),
-        };
-
+        harness
+            .player
+            .catalog
+            .keep_identity(a, &scanned)
+            .expect("identified");
         harness
             .player
             .catalog
             .keep_studied(a, &study)
             .expect("kept");
-        harness
-            .player
-            .catalog
-            .keep_study(b, &report, &study.band_figures())
-            .expect("kept by the pane");
 
         let listed = documents.studies_to_share(0, 10).expect("listed");
 
@@ -1225,6 +1200,118 @@ mod tests {
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].recording.title, "a");
         assert!(after_the_file_changed.is_empty());
+    }
+
+    #[test]
+    fn opening_the_analysis_pane_on_a_song_studied_before_keeps_its_study_print_and_recognition() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let id = harness.songs[0].id;
+
+        studied_on_the_phone(&harness, id, Some(a_print()));
+        harness
+            .player
+            .catalog
+            .keep_recognition(id, Some(&heard_as_echoes()), Agreement::Agrees)
+            .expect("recognised");
+
+        let before = study_figures(&harness, id);
+        let shared_before = documents.studies_to_share(0, 10).expect("listed");
+
+        harness.player.analyse_track(id).expect("an analysis");
+
+        let after = study_figures(&harness, id);
+        let heard = heard_on_the_phone(&harness, id);
+        let shared_after = documents.studies_to_share(0, 10).expect("listed");
+
+        assert_eq!(before.0, Some(i64::from(JUDGED_UNDER)));
+        assert_eq!(after, before);
+        assert_eq!(heard.print.as_deref(), Some(a_print().encoded()));
+        assert_eq!(heard.heard_as.as_deref(), Some(ECHOES));
+        assert_eq!(heard.agreement.as_deref(), Some("agrees"));
+        assert!(heard.recognised);
+        assert_eq!(shared_before.len(), 1);
+        assert_eq!(shared_after.len(), 1);
+        assert_eq!(shared_after[0].recording.title, "a");
+    }
+
+    #[test]
+    fn opening_the_analysis_pane_on_a_song_never_studied_writes_a_study_that_is_shared() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let id = harness.songs[0].id;
+        let at = location(&format!("{FOLDER}a.wav")).expect("a document");
+
+        let scanned = probe_scanned(&harness.player.sources, &at).expect("a scan");
+
+        harness
+            .player
+            .catalog
+            .keep_identity(id, &scanned)
+            .expect("identified");
+
+        let studies_before = studies_held(&harness, id);
+
+        harness.player.analyse_track(id).expect("an analysis");
+
+        let studies_after = studies_held(&harness, id);
+        let figures = study_figures(&harness, id);
+        let listed = documents.studies_to_share(0, 10).expect("listed");
+
+        assert_eq!(studies_before, 0);
+        assert_eq!(studies_after, 1);
+        assert_eq!(figures.0, Some(i64::from(JUDGED_UNDER)));
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].recording.title, "a");
+    }
+
+    fn studies_held(harness: &Harness, id: u64) -> i64 {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT count(*) FROM studies WHERE track = ?1",
+                [id as i64],
+                |row| row.get(0),
+            )
+            .expect("a count")
+    }
+
+    type StudyFigures = (
+        Option<i64>,
+        String,
+        Option<i64>,
+        Option<f64>,
+        Option<String>,
+        Option<i64>,
+        Option<Vec<u8>>,
+    );
+
+    fn study_figures(harness: &Harness, id: u64) -> StudyFigures {
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .query_row(
+                "SELECT studied_under, verdict, cutoff_hz, cutoff_drop, lossy_guess, upsampled_from, band_levels
+                   FROM studies WHERE track = ?1",
+                [id as i64],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                    ))
+                },
+            )
+            .expect("a study")
     }
 
     const ECHOES: &str = "b84ee12a-09ef-421b-82de-0441a926375b";
