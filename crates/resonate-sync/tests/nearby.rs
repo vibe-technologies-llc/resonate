@@ -16,9 +16,9 @@ use resonate_core::{
 use resonate_sync::{
     Broadcast, Change, Consultable, ConsultedAnswer, Consulting, Controlled, Controlling, DeviceId,
     ExportDeclined, ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted,
-    FetchOutcome, Follow, KeptAnswer, Me, Nearby, OfferedExport, Permille, Platform, RemoteCommand,
-    RemotePlayback, RemoteRow, RemoteZone, Server, Settings, Standing, Sync, SyncKey,
-    TransferState, Uncontrolled, Watched,
+    FetchOutcome, Follow, KeptAnswer, MIRROR_EXPIRES_AFTER, Me, Nearby, OfferedExport, Permille,
+    Platform, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone, Server, Settings, Standing,
+    Sync, SyncKey, TransferState, Uncontrolled, Watched,
     faults::{self, Told},
 };
 
@@ -2176,6 +2176,81 @@ fn a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_
             RemoteCommand::Next,
         ]
     );
+
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_mirror_expires_once_its_device_goes_quiet_and_a_fresh_one_is_live_again() {
+    let folder = scratch("quiet");
+    let key = SyncKey::minted().expect("a key");
+    let stage = Arc::new(Stage::paused());
+
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+    let desk_id = desk.device();
+
+    desk.control_with(
+        Arc::clone(&stage) as Arc<dyn Controlled>,
+        RemoteTrust::Everything,
+    );
+
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&desk),
+    );
+    let live = || {
+        phone.watch(desk_id);
+        matches!(phone.watched(desk_id), Watched::Mirrored(_))
+    };
+    let expired = || {
+        phone.watch(desk_id);
+        matches!(phone.watched(desk_id), Watched::Expired { .. })
+    };
+
+    eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
+    eventually("the desk's zone mirrored on the phone", live);
+
+    drop(desk);
+
+    let gone_at = Instant::now();
+
+    eventually("the mirror expired once the desk went quiet", expired);
+
+    let expired_within = gone_at.elapsed();
+    let kept = phone.watched(desk_id);
+
+    assert!(expired_within <= MIRROR_EXPIRES_AFTER + Duration::from_secs(1));
+    assert_eq!(
+        kept.mirror().map(|mirror| mirror.zones.len()),
+        Some(1),
+        "the last mirror is kept to be shown as expired"
+    );
+
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&phone),
+    );
+
+    desk.control_with(
+        Arc::clone(&stage) as Arc<dyn Controlled>,
+        RemoteTrust::Everything,
+    );
+    eventually("a fresh mirror from the desk back again", live);
 
     drop(phone);
     drop(desk);

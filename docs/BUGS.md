@@ -25,17 +25,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `INCARNATION_VERSION` on the server, telling the incarnation, and say it there
   with the fallback `Share` has. Done when a follower returning to a remade
   shared space reads it whole.
-- [M · 0.17.1] Expire the live display when a remote playback mirror goes quiet.
-  **Medium, architect.** The watch lease stays active as a view polls it, so
-  the last mirror can keep showing a moving position and active controls after
-  the device leaves
-  (`crates/resonate-sync/src/remote.rs:385`,
-  `crates/resonate-sync/src/service.rs:1070`, `:3482`,
-  `crates/resonate-mobile/src/sync/driving.rs:354`,
-  `ios/Sources/Resonate/DrivenDeviceView.swift:138`). Carry mirror expiry through
-  the shared watch result and show that state in the controls. Done when
-  traffic stops, the display expires and disables commands, and a fresh mirror
-  restores the controls.
 - [M · 0.17.1] Reconcile app-private received files after an interrupted landing.
   **Low, architect.** A receive can rename bytes into the holding folder before
   an error leaves them untracked. Cleanup can also delete the catalog row

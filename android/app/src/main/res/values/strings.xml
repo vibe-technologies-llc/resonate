@@ -1830,6 +1830,7 @@
     <string name="driven_refused_unanswered">The other device did not answer</string>
     <string name="driven_asking">Asking the device what it plays…</string>
     <string name="driven_refused_device">This device does not let others drive it, or cannot be driven</string>
+    <string name="driven_expired">Nothing heard from the device for a while; its controls come back when it is heard again</string>
     <string name="driven_seek_state">%1$s of %2$s</string>
     <string name="driven_previous">Previous song</string>
     <string name="driven_pause">Pause</string>

@@ -11,7 +11,8 @@ pub const ZONES_MIRRORED_AT_MOST: usize = 16;
 pub const ROWS_MIRRORED_AT_MOST: usize = 500;
 pub const MIRROR_LOOKED_AT_EVERY: Duration = Duration::from_millis(250);
 pub const MIRROR_TOLD_AGAIN_AFTER: Duration = Duration::from_secs(5);
-pub const MIRROR_GOES_STALE_AFTER: Duration = Duration::from_secs(15);
+pub const MIRROR_EXPIRES_AFTER: Duration = MIRROR_TOLD_AGAIN_AFTER.saturating_mul(2);
+pub const MIRROR_GOES_STALE_AFTER: Duration = MIRROR_TOLD_AGAIN_AFTER.saturating_mul(3);
 pub const CONTROL_ANSWERED_WITHIN: Duration = Duration::from_secs(10);
 const POSITION_DRIFTS_AT_MOST: Duration = Duration::from_secs(1);
 const PERMILLE: f32 = 1_000.0;
@@ -392,8 +393,8 @@ impl Mirror {
         zone.length.map_or(heard, |length| heard.min(length))
     }
 
-    pub fn stale(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.heard_at) >= MIRROR_GOES_STALE_AFTER
+    pub fn expired(&self, now: Instant) -> bool {
+        now.saturating_duration_since(self.heard_at) >= MIRROR_EXPIRES_AFTER
     }
 
     pub fn zone(&self, zone: ZoneId) -> Option<&RemoteZone> {
@@ -406,14 +407,36 @@ pub enum Watched {
     #[default]
     Waiting,
     Mirrored(Mirror),
+    Expired {
+        mirror: Mirror,
+        expired_at: Instant,
+    },
     Refused(Controlling),
 }
 
 impl Watched {
     pub const fn mirror(&self) -> Option<&Mirror> {
         match self {
-            Self::Mirrored(mirror) => Some(mirror),
+            Self::Mirrored(mirror) | Self::Expired { mirror, .. } => Some(mirror),
             Self::Waiting | Self::Refused(_) => None,
+        }
+    }
+
+    pub fn as_of(self, now: Instant) -> Self {
+        match self {
+            Self::Mirrored(mirror) if mirror.expired(now) => Self::Mirrored(mirror).gone_quiet(now),
+            held => held,
+        }
+    }
+
+    pub(crate) fn gone_quiet(self, now: Instant) -> Self {
+        match self {
+            Self::Mirrored(mirror) => {
+                let expired_at = now.min(mirror.heard_at + MIRROR_EXPIRES_AFTER);
+
+                Self::Expired { mirror, expired_at }
+            }
+            held => held,
         }
     }
 }
@@ -670,5 +693,73 @@ mod tests {
             playing.playing_row().map(|row| row.title.as_str()),
             Some("One of These Days")
         );
+    }
+
+    #[test]
+    fn a_mirror_unheard_for_twice_its_telling_interval_expires_and_a_fresh_one_is_live_again() {
+        let heard_at = Instant::now();
+        let playing = zone(RemotePlayback::Playing, Duration::from_secs(10));
+
+        let mirror = Mirror {
+            zones: vec![playing],
+            heard_at,
+        };
+        let still_heard = heard_at + MIRROR_EXPIRES_AFTER - Duration::from_millis(1);
+        let quiet = heard_at + MIRROR_EXPIRES_AFTER;
+        let long_quiet = heard_at + Duration::from_secs(60);
+
+        let live = Watched::Mirrored(mirror.clone()).as_of(still_heard);
+        let expired = Watched::Mirrored(mirror.clone()).as_of(long_quiet);
+        let fresh = Watched::Mirrored(Mirror {
+            heard_at: long_quiet,
+            ..mirror.clone()
+        })
+        .as_of(long_quiet);
+
+        assert_eq!(MIRROR_EXPIRES_AFTER, MIRROR_TOLD_AGAIN_AFTER * 2);
+        assert!(MIRROR_EXPIRES_AFTER < MIRROR_GOES_STALE_AFTER);
+        assert_eq!(live, Watched::Mirrored(mirror.clone()));
+        assert_eq!(
+            expired,
+            Watched::Expired {
+                mirror: mirror.clone(),
+                expired_at: quiet,
+            }
+        );
+        assert!(matches!(fresh, Watched::Mirrored(_)));
+        assert_eq!(
+            Watched::Refused(Controlling::Untrusted).as_of(long_quiet),
+            Watched::Refused(Controlling::Untrusted)
+        );
+        assert_eq!(Watched::Waiting.as_of(long_quiet), Watched::Waiting);
+    }
+
+    #[test]
+    fn a_watch_ended_early_expires_its_mirror_where_it_stood_and_its_place_stops_there() {
+        let heard_at = Instant::now();
+        let playing = zone(RemotePlayback::Playing, Duration::from_secs(10));
+
+        let mirror = Mirror {
+            zones: vec![playing.clone()],
+            heard_at,
+        };
+        let ended = heard_at + Duration::from_secs(2);
+
+        let quiet = Watched::Mirrored(mirror.clone()).gone_quiet(ended);
+
+        let Watched::Expired { mirror, expired_at } = quiet.clone() else {
+            panic!("an expired mirror, not {quiet:?}");
+        };
+
+        assert_eq!(expired_at, ended);
+        assert_eq!(
+            mirror.position_of(&playing, expired_at),
+            Duration::from_secs(12)
+        );
+        assert_eq!(
+            quiet.clone().as_of(heard_at + Duration::from_secs(60)),
+            quiet
+        );
+        assert_eq!(quiet.mirror(), Some(&mirror));
     }
 }

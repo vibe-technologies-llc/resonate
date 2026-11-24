@@ -186,7 +186,7 @@ pub(crate) enum Press {
 }
 
 impl Press {
-    const fn takes(self) -> bool {
+    pub(crate) const fn takes(self) -> bool {
         matches!(self, Self::Takes)
     }
 }
@@ -469,7 +469,16 @@ pub(crate) fn icon_button(
     icon: Icon,
     saying: impl Into<SharedString>,
 ) -> Stateful<Div> {
-    mark_when(Press::Takes, id, icon, saying, BUTTON_GROUP)
+    icon_button_when(Press::Takes, id, icon, saying)
+}
+
+pub(crate) fn icon_button_when(
+    press: Press,
+    id: impl Into<ElementId>,
+    icon: Icon,
+    saying: impl Into<SharedString>,
+) -> Stateful<Div> {
+    mark_when(press, id, icon, saying, BUTTON_GROUP)
 }
 
 pub(crate) fn lit_mark(

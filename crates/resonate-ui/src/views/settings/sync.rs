@@ -19,7 +19,7 @@ use crate::{
     views::{
         focus,
         hint::Names,
-        kit::{self, EndsInAnEllipsis, Found, Tone},
+        kit::{self, EndsInAnEllipsis, Found, Press, Tone},
         root::RootView,
         settings::{Armed, Rows, SettingsPane, note, switch_row},
         spoken::{self, Reading, Spoken},
@@ -671,14 +671,27 @@ impl RootView {
             }
             RemoteShown::Zones(zones) => {
                 for zone in zones {
-                    panel = panel.child(self.driven_zone(id, &zone, cx));
+                    panel = panel.child(self.driven_zone(id, &zone, Press::Takes, cx));
+                }
+                panel
+            }
+            RemoteShown::Expired(zones) => {
+                panel = panel.child(note(words::settings_sync::driving_expired(name)));
+                for zone in zones {
+                    panel = panel.child(self.driven_zone(id, &zone, Press::Greyed, cx));
                 }
                 panel
             }
         }
     }
 
-    fn driven_zone(&mut self, id: &str, zone: &RemoteZoneShown, cx: &mut Context<Self>) -> Div {
+    fn driven_zone(
+        &mut self,
+        id: &str,
+        zone: &RemoteZoneShown,
+        press: Press,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let place = zone.length.map_or_else(
             || elapsed::clock(zone.position),
             |length| {
@@ -742,13 +755,18 @@ impl RootView {
             let control = format!("sync-drive-{which}-{}", zone.zone);
             let device = id.to_owned();
             let at = zone.zone;
+            let mark =
+                kit::icon_button_when(press, SharedString::from(control.clone()), icon, saying);
 
-            transport = transport.child(self.in_the_ring_at(
-                control.clone(),
-                kit::icon_button(SharedString::from(control), icon, saying),
-                move |this, _, cx| this.press_on_the_device(&device, at, key, None, cx),
-                cx,
-            ));
+            transport = transport.child(match press {
+                Press::Takes => self.in_the_ring_at(
+                    control,
+                    mark,
+                    move |this, _, cx| this.press_on_the_device(&device, at, key, None, cx),
+                    cx,
+                ),
+                Press::Greyed => mark,
+            });
         }
 
         let heading = div()
@@ -782,8 +800,11 @@ impl RootView {
                     .child(kit::figure(place)),
             )
             .child(transport);
-        let rail = self.driven_rail(id, zone, cx);
-        let rows = self.driven_rows(id, zone, cx);
+        let rail = press
+            .takes()
+            .then(|| self.driven_rail(id, zone, cx))
+            .flatten();
+        let rows = self.driven_rows(id, zone, press, cx);
 
         div()
             .flex()
@@ -939,13 +960,22 @@ impl RootView {
         )
     }
 
-    fn driven_rows(&mut self, id: &str, zone: &RemoteZoneShown, cx: &mut Context<Self>) -> Div {
+    fn driven_rows(
+        &mut self,
+        id: &str,
+        zone: &RemoteZoneShown,
+        press: Press,
+        cx: &mut Context<Self>,
+    ) -> Div {
         let shown = rows_shown(zone, self.settings_pane.read(cx).remotely.driving_rows);
         let more = zone.rows.len().saturating_sub(shown.len());
         let mut list = div().flex().flex_col();
 
         for (row, song) in shown {
-            list = list.child(self.driven_row(id, zone, row, song, cx));
+            list = list.child(match press {
+                Press::Takes => self.driven_row(id, zone, row, song, cx),
+                Press::Greyed => greyed_driven_row(zone, row, song),
+            });
         }
         if more > 0 {
             let control = format!("sync-drive-more-{}", zone.zone);
@@ -983,11 +1013,7 @@ impl RootView {
         let at = zone.zone;
         let drawn = zone.queue_revision;
         let playing = zone.playing == Some(row);
-        let saying = if song.artist.is_empty() {
-            song.title.clone()
-        } else {
-            format!("{} — {}", song.title, song.artist)
-        };
+        let saying = song_billed(song);
         let jump = format!("sync-drive-jump-{at}-{row}");
         let device = id.to_owned();
         let named = SharedString::from(jump.clone()).into();
@@ -1000,31 +1026,12 @@ impl RootView {
             .flex()
             .flex_1()
             .min_w(px(0.0))
-            .items_center()
-            .gap_2()
             .px_2()
             .py_0p5()
             .rounded_md()
             .cursor_pointer()
             .hover(|row| row.bg(rgb(theme::hover())))
-            .child(
-                div()
-                    .flex_1()
-                    .min_w(px(0.0))
-                    .text_size(px(theme::text_sm()))
-                    .text_color(rgb(if playing {
-                        theme::accent()
-                    } else {
-                        theme::text()
-                    }))
-                    .truncate()
-                    .ends_in_an_ellipsis()
-                    .child(saying),
-            )
-            .children(
-                song.length
-                    .map(|length| kit::figure(elapsed::clock(length))),
-            );
+            .child(driven_song(song, playing));
         let mut line = div()
             .flex()
             .items_center()
@@ -1740,6 +1747,54 @@ fn stepped_on(position: Duration, length: Duration) -> Duration {
     (position + DRIVEN_SEEK_STEP).min(length)
 }
 
+fn song_billed(song: &RemoteRowShown) -> String {
+    if song.artist.is_empty() {
+        song.title.clone()
+    } else {
+        format!("{} — {}", song.title, song.artist)
+    }
+}
+
+fn driven_song(song: &RemoteRowShown, playing: bool) -> Div {
+    div()
+        .flex()
+        .flex_1()
+        .min_w(px(0.0))
+        .items_center()
+        .gap_2()
+        .child(
+            div()
+                .flex_1()
+                .min_w(px(0.0))
+                .text_size(px(theme::text_sm()))
+                .text_color(rgb(if playing {
+                    theme::accent()
+                } else {
+                    theme::text()
+                }))
+                .truncate()
+                .ends_in_an_ellipsis()
+                .child(song_billed(song)),
+        )
+        .children(
+            song.length
+                .map(|length| kit::figure(elapsed::clock(length))),
+        )
+}
+
+fn greyed_driven_row(zone: &RemoteZoneShown, row: usize, song: &RemoteRowShown) -> Div {
+    div().flex().items_center().gap_1().child(
+        div()
+            .flex()
+            .flex_1()
+            .min_w(px(0.0))
+            .px_2()
+            .py_0p5()
+            .opacity(kit::GREYED)
+            .child(driven_song(song, zone.playing == Some(row))),
+    )
+}
+
 fn rows_shown(zone: &RemoteZoneShown, most: usize) -> Vec<(usize, &RemoteRowShown)> {
     let from = zone
         .playing
@@ -1786,6 +1841,7 @@ mod tests {
         gone: AtomicBool,
         refused: AtomicBool,
         paused: AtomicBool,
+        expired: AtomicBool,
     }
 
     fn row(title: &str) -> RemoteRowShown {
@@ -1881,6 +1937,9 @@ mod tests {
             zone.sounding = !self.paused.load(Ordering::Relaxed);
             if device == "phone" {
                 zone.zone = 7;
+            }
+            if self.expired.load(Ordering::Relaxed) {
+                return RemoteShown::Expired(vec![zone]);
             }
             RemoteShown::Zones(vec![zone])
         }
@@ -2028,6 +2087,39 @@ mod tests {
             pressed[1..]
                 .iter()
                 .all(|(_, _, _, drawn)| *drawn == Some(DRAWN_REVISION))
+        );
+    }
+
+    #[gpui::test]
+    fn a_driven_device_gone_quiet_greys_its_controls_until_a_fresh_mirror_restores_them(
+        cx: &mut TestAppContext,
+    ) {
+        let (mut driven, stage) = opened_on_the_sync_group(cx);
+
+        driven.click("sync-drive-desk");
+        driven.until_drawn("sync-drive-seek-1");
+        stage.expired.store(true, Ordering::Relaxed);
+        driven.until_ticking(DRIVEN_REDRAWN_EVERY, |root, cx| {
+            root.settings_pane.read(cx).remotely.songs.is_empty()
+        });
+        driven.click("sync-drive-toggle-1");
+        driven.click("sync-drive-next-1");
+        driven.settle();
+
+        assert!(driven.cx.debug_bounds("sync-drive-seek-1").is_none());
+        assert!(driven.cx.debug_bounds("sync-drive-jump-1-2").is_none());
+        assert!(driven.cx.debug_bounds("sync-drive-remove-1-1").is_none());
+        assert!(stage.pressed.lock().is_empty());
+
+        stage.expired.store(false, Ordering::Relaxed);
+        driven.cx.executor().advance_clock(DRIVEN_REDRAWN_EVERY);
+        driven.until_drawn("sync-drive-seek-1");
+        driven.click("sync-drive-toggle-1");
+        driven.until(|_, _| stage.pressed.lock().len() == 1);
+
+        assert_eq!(
+            *stage.pressed.lock(),
+            vec![("desk".to_owned(), 1, RemoteKey::Toggle, None)]
         );
     }
 

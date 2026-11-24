@@ -1830,6 +1830,7 @@
     <string name="driven_refused_unanswered">L’autre appareil ne répond pas</string>
     <string name="driven_asking">Demander à l’appareil ce qu’il joue...</string>
     <string name="driven_refused_device">Ce périphérique ne permet pas aux autres de le conduire, ou ne peut pas être conduit</string>
+    <string name="driven_expired">Aucune nouvelle de l’appareil depuis un moment ; ses commandes reviennent dès qu’il se fait entendre à nouveau</string>
     <string name="driven_seek_state">%1$s de %2$s</string>
     <string name="driven_previous">Chanson précédente</string>
     <string name="driven_pause">Pause</string>

@@ -41,15 +41,22 @@ struct DrivenDeviceView: View {
             case .refused:
                 Text(said("driven.refused", device.name))
                     .foregroundStyle(.secondary)
-            case .mirrored:
+            case .mirrored, .expired:
+                let controllable = shown?.controllable ?? false
+                if !controllable {
+                    Text(said("driven.expired", device.name))
+                        .foregroundStyle(.secondary)
+                }
                 ForEach(shown?.zones ?? [], id: \.zone) { zone in
                     Section(zone.name) {
                         zoneRows(zone)
                     }
+                    .disabled(!controllable)
                     if !zone.rows.isEmpty {
                         Section(said("driven.queue", Int(zone.queueLength))) {
                             queueRows(zone)
                         }
+                        .disabled(!controllable)
                     }
                 }
             }
@@ -148,6 +155,7 @@ struct DrivenDeviceView: View {
     }
 
     private func press(_ zone: RemoteZoneState, _ remote: RemoteControl) {
+        guard shown?.controllable == true else { return }
         let id = device.id
         let number = zone.zone
         let drawn = zone.queueRevision

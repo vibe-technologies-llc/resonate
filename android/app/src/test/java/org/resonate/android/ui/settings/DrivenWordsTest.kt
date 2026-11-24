@@ -1,13 +1,17 @@
 package org.resonate.android.ui.settings
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.resonate.android.English
 import org.resonate.android.nativecore.RemoteAnswer
 import org.resonate.android.nativecore.RemoteControl
+import org.resonate.android.nativecore.RemoteDevice
 import org.resonate.android.nativecore.RemotePlaying
 import org.resonate.android.nativecore.RemoteSong
+import org.resonate.android.nativecore.RemoteStanding
 import org.resonate.android.nativecore.RemoteZoneState
 
 class DrivenWordsTest {
@@ -73,5 +77,15 @@ class DrivenWordsTest {
         assertEquals(RemoteControl.Seek(0uL), DrivenWords.seekTo(zone, -1f))
         assertNull(DrivenWords.seekTo(zone.copy(lengthMillis = null), 0.5f))
         assertEquals(0f, DrivenWords.share(zone.copy(lengthMillis = 0uL)))
+    }
+
+    @Test
+    fun onlyAFreshMirrorTakesCommandsAndAnExpiredOneIsShownWithoutThem() {
+        val zones = listOf(zone(640u, 2u))
+
+        assertTrue(DrivenWords.controllable(RemoteDevice(RemoteStanding.MIRRORED, zones)))
+        assertFalse(DrivenWords.controllable(RemoteDevice(RemoteStanding.EXPIRED, zones)))
+        assertFalse(DrivenWords.controllable(RemoteDevice(RemoteStanding.WAITING, emptyList())))
+        assertFalse(DrivenWords.controllable(RemoteDevice(RemoteStanding.REFUSED, emptyList())))
     }
 }

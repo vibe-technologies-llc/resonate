@@ -1274,6 +1274,7 @@ impl Sync {
             .get(&device)
             .cloned()
             .unwrap_or_default()
+            .as_of(std::time::Instant::now())
     }
 
     pub fn leave(self) {
@@ -1415,6 +1416,12 @@ impl Running {
 
     fn queued(&self, recording: &Recording, from: DeviceId) {
         self.shown.write().queued(recording, from);
+    }
+
+    fn mirror_gone_quiet(&self, device: DeviceId) {
+        if let Some(watched) = self.mirrors.write().get_mut(&device) {
+            *watched = std::mem::take(watched).gone_quiet(std::time::Instant::now());
+        }
     }
 
     fn still_watched(&self, device: DeviceId) -> bool {
@@ -3888,7 +3895,9 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
                 tracing::debug!(%error, "another device's zones could not be watched");
             }
             running.watching.lock().remove(&device);
-            if !still_watched() {
+            if still_watched() {
+                running.mirror_gone_quiet(device);
+            } else {
                 running.watched.lock().remove(&device);
                 running.mirrors.write().remove(&device);
             }

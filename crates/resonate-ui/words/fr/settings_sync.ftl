@@ -20,6 +20,7 @@ drive-hint = Jouer, faire une pause, sauter, rechercher, définir le volume et c
 stop-driving-hint = Arrête de montrer ce que cet appareil joue
 driving-waits = Demander à l’appareil ce qu’il joue...
 driving-refused = Ce périphérique ne permet pas aux autres de le conduire, ou ne peut pas être conduit
+driving-expired = Aucune nouvelle de { $name } depuis un moment ; ses commandes reviennent dès qu’il se fait entendre à nouveau
 not-driven = L’autre appareil n’a pas pris que
 driven-position = Position sur l ’ autre dispositif
 jump-hint = Jouez cette chanson sur l’autre appareil

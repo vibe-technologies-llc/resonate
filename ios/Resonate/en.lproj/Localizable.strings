@@ -124,6 +124,7 @@
 "downloads.title" = "Downloads";
 "downloads.waiting-for-unmetered" = "Waiting for a network that is not metered";
 "driven.asking" = "Asking %@ what it plays…";
+"driven.expired" = "Nothing heard from %@ for a while; its controls come back when it is heard again.";
 "driven.finding" = "Finding the device…";
 "driven.louder" = "Louder";
 "driven.next" = "Next song";

@@ -124,6 +124,7 @@
 "downloads.title" = "Téléchargements";
 "downloads.waiting-for-unmetered" = "Attendre un réseau qui n’est pas mesuré";
 "driven.asking" = "Demander %@ ce qu’il joue...";
+"driven.expired" = "Aucune nouvelle de %@ depuis un moment ; ses commandes reviennent dès qu’il se fait entendre à nouveau.";
 "driven.finding" = "Trouver l’appareil...";
 "driven.louder" = "Plus fort";
 "driven.next" = "Chanson suivante";

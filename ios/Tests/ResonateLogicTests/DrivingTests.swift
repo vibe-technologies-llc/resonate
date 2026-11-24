@@ -93,4 +93,16 @@ import Testing
         #expect(early.places == [1: 1_000])
         #expect(later.places == [1: 1_500])
     }
+
+    @Test func onlyAFreshMirrorTakesCommandsAndAnExpiredOneIsShownWithoutThem() {
+        let zone = RemoteZoneState(
+            zone: 1, name: "Kitchen", playing: .playing, playingRow: 0, positionMillis: 20_000,
+            lengthMillis: 200_000, volumePermille: 500, queueLength: 1, firstRow: 0, queueRevision: 3, rows: []
+        )
+
+        #expect(RemoteDevice(standing: .mirrored, zones: [zone]).controllable)
+        #expect(!RemoteDevice(standing: .expired, zones: [zone]).controllable)
+        #expect(!RemoteDevice(standing: .waiting, zones: []).controllable)
+        #expect(!RemoteDevice(standing: .refused, zones: []).controllable)
+    }
 }

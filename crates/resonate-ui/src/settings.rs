@@ -1108,6 +1108,7 @@ pub enum RemoteShown {
     #[default]
     Waiting,
     Zones(Vec<RemoteZoneShown>),
+    Expired(Vec<RemoteZoneShown>),
     Refused,
 }
 

@@ -1413,7 +1413,7 @@ fn mirrored(sync: &Sync, device: DeviceId, named: &str, since: Instant) -> Resul
                     answer,
                 });
             }
-            Watched::Waiting | Watched::Mirrored(_) => {}
+            Watched::Waiting | Watched::Mirrored(_) | Watched::Expired { .. } => {}
         }
         if Instant::now() >= deadline {
             return Err(Error::NothingMirrored(named.into()));
@@ -1870,13 +1870,22 @@ impl Running {
 }
 
 #[cfg(all(feature = "sync", feature = "ui"))]
-fn zone_shown(mirror: &Mirror, zone: &RemoteZone) -> resonate_ui::RemoteZoneShown {
+fn zones_shown(mirror: &Mirror, at: Instant) -> Vec<resonate_ui::RemoteZoneShown> {
+    mirror
+        .zones
+        .iter()
+        .map(|zone| zone_shown(mirror, zone, at))
+        .collect()
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+fn zone_shown(mirror: &Mirror, zone: &RemoteZone, at: Instant) -> resonate_ui::RemoteZoneShown {
     resonate_ui::RemoteZoneShown {
         zone: zone.zone.get(),
         name: zone.name.clone(),
         song: zone.playing_row().map(billed),
         sounding: zone.playback == RemotePlayback::Playing,
-        position: mirror.position_of(zone, Instant::now()),
+        position: mirror.position_of(zone, at),
         length: zone.length,
         volume: zone.volume.get(),
         playing: zone.playing,
@@ -1922,13 +1931,12 @@ impl resonate_ui::Syncing for Running {
         match self.sync.watched(id) {
             Watched::Waiting => resonate_ui::RemoteShown::Waiting,
             Watched::Refused(_) => resonate_ui::RemoteShown::Refused,
-            Watched::Mirrored(mirror) => resonate_ui::RemoteShown::Zones(
-                mirror
-                    .zones
-                    .iter()
-                    .map(|zone| zone_shown(&mirror, zone))
-                    .collect(),
-            ),
+            Watched::Mirrored(mirror) => {
+                resonate_ui::RemoteShown::Zones(zones_shown(&mirror, Instant::now()))
+            }
+            Watched::Expired { mirror, expired_at } => {
+                resonate_ui::RemoteShown::Expired(zones_shown(&mirror, expired_at))
+            }
         }
     }
 

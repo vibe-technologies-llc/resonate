@@ -1056,7 +1056,19 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   anything else changed) or `MIRROR_TOLD_AGAIN_AFTER` (5 s) passed. The watcher stamps each frame
   `heard_at` and plays the position on itself (`Mirror::position_of`, held at the song's length),
   so a second's readout needs no frame; a watch hearing nothing for `MIRROR_GOES_STALE_AFTER`
-  (15 s) ends (`a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on`). **The
+  (thrice `MIRROR_TOLD_AGAIN_AFTER`, 15 s) ends (`a_playing_zone_is_told_again_only_where_it_moved_other_than_by_playing_on`).
+  **A mirror goes quiet apart from its lease**: the lease (`Sync::watch`, below) is the viewer still
+  wanting to look, freshness is when the mirror was last heard. A mirror unheard for
+  `MIRROR_EXPIRES_AFTER` (twice `MIRROR_TOLD_AGAIN_AFTER`, 10 s, so one frame lost is forgiven) is
+  `Watched::Expired { mirror, expired_at }`: `Sync::watched` reads the held one `as_of` now, and a
+  watch that ends while still leased (the device left, its stream ended or went stale) turns its
+  mirror expired at once (`gone_quiet`, `Running::mirror_gone_quiet`). The last mirror is kept to be
+  shown, its positions read at `expired_at`, so the place stops where it stood; the next renewal asks
+  again and a fresh frame makes it `Mirrored` again
+  (`a_mirror_unheard_for_twice_its_telling_interval_expires_and_a_fresh_one_is_live_again`,
+  `a_watch_ended_early_expires_its_mirror_where_it_stood_and_its_place_stops_there`,
+  `a_mirror_expires_once_its_device_goes_quiet_and_a_fresh_one_is_live_again`). Every front end
+  takes no command from an expired mirror. **The
   watcher reads through a `FrameReader`**, which keeps the bytes of a frame it has begun across its
   `MIRROR_POLLED_EVERY` (1 s) checks, so a frame split across the deadline is whole when it ends
   (`a_mirror_frame_split_across_the_polling_deadline_reaches_the_mirror_intact`); a plain
@@ -1085,7 +1097,7 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   is dropped the same way once no front end renews it (`Running::still_watched`). `Sync::watch(device)` starts or keeps
   one watch (`Running::watching`), renewed by each call and ended `WATCH_LAPSES_AFTER` (30 s)
   after the last; `Sync::watched(device)` is a `Watched` (`Waiting`, `Mirrored(Mirror)`,
-  `Refused(Controlling)`) and `unwatch` drops it
+  `Expired`, `Refused(Controlling)`) and `unwatch` drops it
   (`a_device_drives_the_zones_another_plays_and_sees_them_change_as_far_as_it_is_trusted`).
 - **The reading is one crate over the engine and the wire.** `resonate-sync` may not see the engine,
   so `resonate-driven` (core, engine, `resonate-sync`; reached by the binary behind `sync` and by
@@ -1120,8 +1132,13 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   zone in `Remotely::driving_rails`); and the mirrored rows (`driven_row`, `rows_shown`: from
   `DRIVEN_ROWS_BEFORE_THE_ONE_PLAYING` above the row playing, `DRIVEN_ROWS_AT_FIRST`, 12, until *N
   more* adds `DRIVEN_ROWS_MORE`), a press on one jumping to it, with up, down and remove marks, up and
-  down offered only where the queue has a neighbour. `resonate_ui::Syncing` has `watch` (renews the
-  watch and answers a `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Refused`), `unwatch`
+  down offered only where the queue has a neighbour. An expired mirror (`RemoteShown::Expired`) is
+  drawn under a note that nothing has been heard, its zones with greyed transport marks
+  (`kit::icon_button_when`, `Press::Greyed`), no seek rail and rows that take no press, and the
+  sidebar's card of songs playing elsewhere drops it
+  (`a_driven_device_gone_quiet_greys_its_controls_until_a_fresh_mirror_restores_them`).
+  `resonate_ui::Syncing` has `watch` (renews the
+  watch and answers a `RemoteShown`: `Waiting`, `Zones(Vec<RemoteZoneShown>)`, `Expired`, `Refused`), `unwatch`
   and `press` (a `RemoteKey`, run on the background executor since it waits for the answer; a refusal
   is a toast), with defaults so a seam with no sync answers `Refused`; `driving_redraws` (a `Pulse`) redraws the
   pane region alone (`Parts::the_pane_moved`, `ui.md`) every `DRIVEN_REDRAWN_EVERY` (500 ms) while the driven page is drawn: leaving the page or the
@@ -1136,7 +1153,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   `a_driven_device_missing_from_the_list_is_stopped_from_its_panel`).
 - **The phones drive through the boundary** (`resonate-mobile`'s `sync/driving.rs`):
   `sync_watch(device)` (a `RemoteDevice`: `RemoteStanding` and `RemoteZoneState`s, the position
-  played on to the moment asked), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
+  played on to the moment asked, or to the moment it expired where the standing is `Expired`:
+  `an_expired_mirror_reaches_the_phones_as_expired_with_its_place_held_where_it_went_quiet`), `sync_unwatch` and `sync_control(device, zone, RemoteControl)`
   answering a `RemoteAnswer`; `sync_control` takes the running sync's lock only to ask
   (`Sync::ask_to_control`, an `AskedToControl` whose `answer` waits outside it), so a status poll
   never waits behind a command. Android's Device sync page gives an online device a *Drive* button
@@ -1147,7 +1165,9 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   every 500 ms while shown: a `CommittingSlider` to seek and every mirrored row, a tap jumping, a swipe
   removing and the context menu moving up, down and removing (`DrivenRows`, `ResonateLogic`,
   `DrivingTests`), a row past the top of a `UInt32` saturating there as `counted` saturates it at
-  the boundary, never trapping.
+  the boundary, never trapping. On both, an `Expired` standing shows the zones under a note that
+  nothing has been heard, every command disabled (Android's `DrivenWords.controllable`, iOS's
+  `RemoteDevice.controllable`, which `press` also asks), until a fresh mirror enables them again.
 - **A phone is driven too.** `sync_start` hands its `Sync` `MobilePlayer::driven`: a
   `resonate_driven::Driven` over the boundary's `Zones`, each row named by `NamedByTheCatalog`
   (`sync/driving.rs`: the document's title, artist and length, kept per URI until the catalog's

@@ -56,9 +56,10 @@ pub use crate::{
     quic::{check_trusted_certificate, read_frame, send_frame, server_transport},
     relay::{RELAYED_PORT, Relay},
     remote::{
-        CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_GOES_STALE_AFTER, Mirror,
-        Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand, RemotePlayback, RemoteRow, RemoteZone,
-        Revisions, Uncontrolled, Watched, ZONES_MIRRORED_AT_MOST,
+        CONTROL_ANSWERED_WITHIN, Controlled, Controlling, MIRROR_EXPIRES_AFTER,
+        MIRROR_GOES_STALE_AFTER, Mirror, Permille, ROWS_MIRRORED_AT_MOST, RemoteCommand,
+        RemotePlayback, RemoteRow, RemoteZone, Revisions, Uncontrolled, Watched,
+        ZONES_MIRRORED_AT_MOST,
     },
     revision::{Bound, Revised, Revision},
     seal::{opened, sealed},

@@ -137,6 +137,8 @@ object DrivenWords {
         return RemoteControl.Seek((length.toDouble() * share.coerceIn(0f, 1f)).toULong())
     }
 
+    fun controllable(device: RemoteDevice): Boolean = device.standing == RemoteStanding.MIRRORED
+
     fun refusal(words: Words, answer: RemoteAnswer): String? =
         when (answer) {
             RemoteAnswer.DONE -> null
@@ -172,14 +174,23 @@ fun DrivenDevice(resonate: Resonate, device: String, press: (UInt, RemoteControl
                 Note(stringResource(R.string.driven_asking))
             now.standing == RemoteStanding.REFUSED ->
                 Note(stringResource(R.string.driven_refused_device))
+            now.standing == RemoteStanding.EXPIRED -> {
+                Note(stringResource(R.string.driven_expired))
+                now.zones.forEach { zone -> DrivenZone(zone, enabled = false) {} }
+            }
             now.zones.isEmpty() -> Note(stringResource(R.string.driven_asking))
-            else -> now.zones.forEach { zone -> DrivenZone(zone) { control -> press(zone.zone, control, zone.queueRevision) } }
+            else -> {
+                val enabled = DrivenWords.controllable(now)
+                now.zones.forEach { zone ->
+                    DrivenZone(zone, enabled) { control -> press(zone.zone, control, zone.queueRevision) }
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun DrivenZone(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
+private fun DrivenZone(zone: RemoteZoneState, enabled: Boolean, press: (RemoteControl) -> Unit) {
     val sounding = zone.playing == RemotePlaying.PLAYING
     val words = words()
     Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surfaceContainerHigh) {
@@ -200,6 +211,7 @@ private fun DrivenZone(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
                 CommitSlider(
                     value = DrivenWords.share(zone),
                     onCommit = { share -> DrivenWords.seekTo(zone, share)?.let(press) },
+                    enabled = enabled,
                     trackHeight = 4.dp,
                     stateText = { share ->
                         val at = (zone.lengthMillis ?: 0uL).toDouble() * share
@@ -213,13 +225,13 @@ private fun DrivenZone(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
                 )
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = { press(RemoteControl.Previous) }) {
+                IconButton(onClick = { press(RemoteControl.Previous) }, enabled = enabled) {
                     Icon(
                         Icons.Rounded.SkipPrevious,
                         contentDescription = stringResource(R.string.driven_previous),
                     )
                 }
-                IconButton(onClick = { press(RemoteControl.Toggle) }) {
+                IconButton(onClick = { press(RemoteControl.Toggle) }, enabled = enabled) {
                     Icon(
                         if (sounding) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
                         contentDescription =
@@ -228,35 +240,35 @@ private fun DrivenZone(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
                             ),
                     )
                 }
-                IconButton(onClick = { press(RemoteControl.Next) }) {
+                IconButton(onClick = { press(RemoteControl.Next) }, enabled = enabled) {
                     Icon(
                         Icons.Rounded.SkipNext,
                         contentDescription = stringResource(R.string.driven_next),
                     )
                 }
-                IconButton(onClick = { press(RemoteControl.Volume(DrivenWords.quieter(zone))) }) {
+                IconButton(onClick = { press(RemoteControl.Volume(DrivenWords.quieter(zone))) }, enabled = enabled) {
                     Icon(
                         Icons.AutoMirrored.Rounded.VolumeDown,
                         contentDescription = stringResource(R.string.driven_quieter),
                     )
                 }
-                IconButton(onClick = { press(RemoteControl.Volume(DrivenWords.louder(zone))) }) {
+                IconButton(onClick = { press(RemoteControl.Volume(DrivenWords.louder(zone))) }, enabled = enabled) {
                     Icon(
                         Icons.AutoMirrored.Rounded.VolumeUp,
                         contentDescription = stringResource(R.string.driven_louder),
                     )
                 }
             }
-            DrivenRows(zone, press)
+            DrivenRows(zone, enabled, press)
         }
     }
 }
 
 @Composable
-private fun DrivenRows(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
+private fun DrivenRows(zone: RemoteZoneState, enabled: Boolean, press: (RemoteControl) -> Unit) {
     var most by remember(zone.zone) { mutableIntStateOf(DRIVEN_ROWS_AT_FIRST) }
     val shown = DrivenWords.rowsShown(zone, most)
-    shown.forEach { row -> DrivenQueueRow(zone, row, press) }
+    shown.forEach { row -> DrivenQueueRow(zone, row, enabled, press) }
     if (zone.rows.size > shown.size + DrivenWords.rowsBefore(zone)) {
         TextButton(onClick = { most += DRIVEN_ROWS_MORE }) {
             Text(stringResource(R.string.driven_show_more))
@@ -265,7 +277,7 @@ private fun DrivenRows(zone: RemoteZoneState, press: (RemoteControl) -> Unit) {
 }
 
 @Composable
-private fun DrivenQueueRow(zone: RemoteZoneState, row: DrivenRow, press: (RemoteControl) -> Unit) {
+private fun DrivenQueueRow(zone: RemoteZoneState, row: DrivenRow, enabled: Boolean, press: (RemoteControl) -> Unit) {
     val playingWord = stringResource(R.string.driven_playing)
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text(
@@ -278,6 +290,7 @@ private fun DrivenQueueRow(zone: RemoteZoneState, row: DrivenRow, press: (Remote
             modifier =
                 Modifier.weight(1f)
                     .clickable(
+                        enabled = enabled,
                         role = Role.Button,
                         onClickLabel = stringResource(R.string.driven_play_this),
                     ) {
@@ -288,7 +301,7 @@ private fun DrivenQueueRow(zone: RemoteZoneState, row: DrivenRow, press: (Remote
                     .testTag("driven-row-${zone.zone}-${row.row}"),
         )
         DrivenWords.moveUp(row.row)?.let { up ->
-            IconButton(onClick = { press(up) }) {
+            IconButton(onClick = { press(up) }, enabled = enabled) {
                 Icon(
                     Icons.Rounded.KeyboardArrowUp,
                     contentDescription = stringResource(R.string.driven_move_up, row.song.title),
@@ -296,14 +309,14 @@ private fun DrivenQueueRow(zone: RemoteZoneState, row: DrivenRow, press: (Remote
             }
         }
         DrivenWords.moveDown(row.row, zone.queueLength)?.let { down ->
-            IconButton(onClick = { press(down) }) {
+            IconButton(onClick = { press(down) }, enabled = enabled) {
                 Icon(
                     Icons.Rounded.KeyboardArrowDown,
                     contentDescription = stringResource(R.string.driven_move_down, row.song.title),
                 )
             }
         }
-        IconButton(onClick = { press(RemoteControl.Remove(row.row)) }) {
+        IconButton(onClick = { press(RemoteControl.Remove(row.row)) }, enabled = enabled) {
             Icon(
                 Icons.Rounded.Close,
                 contentDescription = stringResource(R.string.driven_remove, row.song.title),

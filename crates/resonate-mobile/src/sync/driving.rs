@@ -237,6 +237,7 @@ pub enum RemoteAnswer {
 pub enum RemoteStanding {
     Waiting,
     Mirrored,
+    Expired,
     Refused,
 }
 
@@ -363,13 +364,21 @@ pub(crate) fn device_of(watched: &Watched, now: Instant) -> RemoteDevice {
         },
         Watched::Mirrored(mirror) => RemoteDevice {
             standing: RemoteStanding::Mirrored,
-            zones: mirror
-                .zones
-                .iter()
-                .map(|zone| zone_state(mirror, zone, now))
-                .collect(),
+            zones: zone_states(mirror, now),
+        },
+        Watched::Expired { mirror, expired_at } => RemoteDevice {
+            standing: RemoteStanding::Expired,
+            zones: zone_states(mirror, *expired_at),
         },
     }
+}
+
+fn zone_states(mirror: &Mirror, at: Instant) -> Vec<RemoteZoneState> {
+    mirror
+        .zones
+        .iter()
+        .map(|zone| zone_state(mirror, zone, at))
+        .collect()
 }
 
 #[uniffi::export]
@@ -426,8 +435,8 @@ pub(super) mod tests {
     use resonate_core::Recording;
     use resonate_sync::{
         Broadcast, Catalog as SyncCatalog, Controlled, Follow, Held, LocalListen, LocalPlaylist,
-        LocalPlaylistId, Me, Nearby, Opened, Platform, Refused, RemoteListen, Resumed, Server,
-        Settings, SongTags, Sync, SyncKey, Uncontrolled,
+        LocalPlaylistId, MIRROR_EXPIRES_AFTER, Me, Nearby, Opened, Platform, Refused, RemoteListen,
+        Resumed, Server, Settings, SongTags, Sync, SyncKey, Uncontrolled,
     };
 
     use super::*;
@@ -782,5 +791,47 @@ pub(super) mod tests {
             command_of(RemoteControl::Move { from: 4, to: 1 }),
             RemoteCommand::Move { from: 4, to: 1 }
         );
+    }
+
+    #[test]
+    fn an_expired_mirror_reaches_the_phones_as_expired_with_its_place_held_where_it_went_quiet() {
+        let heard_at = Instant::now();
+        let zone = RemoteZone {
+            zone: ZoneId::FIRST,
+            name: "Living room".into(),
+            playback: RemotePlayback::Playing,
+            playing: Some(0),
+            position: Duration::from_secs(10),
+            length: Some(Duration::from_secs(240)),
+            volume: Permille::new(700),
+            queue_length: 1,
+            first_row: 0,
+            rows: Vec::new(),
+            queue_revision: Some(4),
+        };
+
+        let mirror = Mirror {
+            zones: vec![zone],
+            heard_at,
+        };
+
+        let quiet = Watched::Mirrored(mirror.clone()).as_of(heard_at + Duration::from_secs(60));
+        let fresh = Watched::Mirrored(Mirror {
+            heard_at: heard_at + Duration::from_secs(60),
+            ..mirror
+        });
+
+        let expired = device_of(&quiet, heard_at + Duration::from_secs(60));
+        let much_later = device_of(&quiet, heard_at + Duration::from_secs(600));
+        let live_again = device_of(&fresh, heard_at + Duration::from_secs(61));
+
+        assert_eq!(expired.standing, RemoteStanding::Expired);
+        assert_eq!(
+            expired.zones[0].position_millis,
+            millis(Duration::from_secs(10) + MIRROR_EXPIRES_AFTER)
+        );
+        assert_eq!(much_later, expired);
+        assert_eq!(live_again.standing, RemoteStanding::Mirrored);
+        assert_eq!(live_again.zones[0].position_millis, 11_000);
     }
 }

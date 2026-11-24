@@ -57,6 +57,12 @@ public enum DrivenRows {
     }
 }
 
+public extension RemoteDevice {
+    var controllable: Bool {
+        standing == .mirrored
+    }
+}
+
 public struct DrivenRead: Equatable, Sendable {
     public let still: RemoteDevice
     public let places: [UInt32: UInt64]

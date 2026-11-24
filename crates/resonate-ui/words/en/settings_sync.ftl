@@ -20,6 +20,7 @@ drive-hint = Play, pause, skip, seek, set the volume and change the queue of wha
 stop-driving-hint = Stop showing what this device plays
 driving-waits = Asking the device what it plays…
 driving-refused = This device does not let others drive it, or cannot be driven
+driving-expired = Nothing heard from { $name } for a while; its controls come back when it is heard again
 not-driven = The other device did not take that
 driven-position = Position on the other device
 jump-hint = Play this song on the other device
