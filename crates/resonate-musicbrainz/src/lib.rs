@@ -19,7 +19,7 @@ pub use crate::{
     mirror::{
         AMENDED_FILE, AmendedTo, Archives, Building, Built, CopyPart, FORMAT, Keeping, KeptTables,
         MIRROR_FILE, Made, Mirror, Offered, OfferedFile, Phase, TABLES_FILE, built_from,
-        held_for_building, mirror_in, received_amendments, received_copy,
+        exported_after, held_for_building, mirror_in, received_amendments, received_copy,
         removed_beside_the_mirror, removed_copy,
         replicated::{PACKETS_A_BATCH, Packet, Replicated, packet_read, replicated},
         settled,

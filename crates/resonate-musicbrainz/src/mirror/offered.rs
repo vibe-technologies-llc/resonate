@@ -217,6 +217,23 @@ fn swept_snapshots(folder: &Path) {
     }
 }
 
+pub fn exported_after(offered: &str, held: &str) -> bool {
+    match (dump_stamp(offered), dump_stamp(held)) {
+        (Some(offered), Some(held)) => offered > held,
+        _ => false,
+    }
+}
+
+fn dump_stamp(dump: &str) -> Option<Vec<u64>> {
+    dump.split('-')
+        .map(|part| {
+            Some(part)
+                .filter(|part| part.bytes().all(|byte| byte.is_ascii_digit()))
+                .and_then(|part| part.parse().ok())
+        })
+        .collect()
+}
+
 pub fn removed_copy(folder: &Path) -> Result<()> {
     super::removed_beside_the_mirror(folder)?;
     removed(&mirror_in(folder))
@@ -269,6 +286,18 @@ mod tests {
             unlocked_uri_of(Path::new("/m\u{fc}sik/x.sqlite")),
             "file:/m%C3%BCsik/x.sqlite?nolock=1"
         );
+    }
+
+    #[test]
+    fn an_export_is_after_another_only_where_both_are_dumps_and_it_was_made_later() {
+        assert!(exported_after("20261111-002335", "20261104-002222"));
+        assert!(exported_after("20261111-002336", "20261111-002335"));
+        assert!(exported_after("20270101-000000", "20261231-235959"));
+        assert!(!exported_after("20261104-002222", "20261111-002335"));
+        assert!(!exported_after("20261111-002335", "20261111-002335"));
+        assert!(!exported_after("LATEST", "20261111-002335"));
+        assert!(!exported_after("20261111-002335", ""));
+        assert!(!exported_after("20261111--002335", "20261104-002222"));
     }
 
     #[test]

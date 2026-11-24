@@ -30,7 +30,10 @@ pub use self::{
         Archives, Building, Built, Keeping, Phase, built_from, held_for_building,
         removed_beside_the_mirror, settled,
     },
-    offered::{CopyPart, Offered, OfferedFile, received_amendments, received_copy, removed_copy},
+    offered::{
+        CopyPart, Offered, OfferedFile, exported_after, received_amendments, received_copy,
+        removed_copy,
+    },
     tables::{KeptTables, TABLES_FILE},
 };
 use self::{

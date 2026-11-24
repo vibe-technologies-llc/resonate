@@ -15,10 +15,10 @@ use resonate_core::{
 };
 use resonate_sync::{
     Broadcast, Consultable, ConsultedAnswer, Consulting, Controlled, Controlling, DeviceId,
-    ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted, FetchOutcome, Follow,
-    KeptAnswer, Me, Nearby, OfferedExport, Permille, Platform, RemoteCommand, RemotePlayback,
-    RemoteRow, RemoteZone, Server, Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled,
-    Watched,
+    ExportDeclined, ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted,
+    FetchOutcome, Follow, KeptAnswer, Me, Nearby, OfferedExport, Permille, Platform, RemoteCommand,
+    RemotePlayback, RemoteRow, RemoteZone, Server, Settings, Standing, Sync, SyncKey,
+    TransferState, Uncontrolled, Watched,
 };
 
 use crate::shelf::{Shelf, song};
@@ -566,6 +566,116 @@ fn a_copy_of_musicbrainz_one_device_holds_reaches_another_whole_resumed_or_not_a
 
     assert_eq!(already, ExportFetched::AlreadyHeld);
     assert_eq!(unheld, ExportFetched::NotHeld);
+
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_export_the_asker_declines_moves_no_byte_and_one_called_off_leaves_no_part() {
+    let folder = scratch("declined");
+    let key = SyncKey::minted().expect("a key");
+    let bytes = copy_of_the_export(300 * 1024);
+    let dump = "20261111-002335".to_owned();
+    let desk_answers = Arc::new(Consulted::default());
+
+    *desk_answers.copy.lock() = Some((dump.clone(), bytes.clone()));
+
+    let desk = device(
+        &folder,
+        &key,
+        "Desk",
+        Arc::new(Shelf::holding(&["A"])),
+        None,
+    );
+
+    desk.consult_with(Arc::clone(&desk_answers) as Arc<dyn Consultable>);
+
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::new(Shelf::holding(&["A"])),
+        Some(&desk),
+    );
+
+    phone.consult_with(Arc::new(Consulted::default()) as Arc<dyn Consultable>);
+
+    let staged = folder.join("phone-musicbrainz.sqlite.part");
+    let noted = folder.join("phone-musicbrainz.sqlite.from");
+
+    let wanted = || ExportWanted {
+        part: ExportPart::Copy,
+        held: None,
+        staged: staged.clone(),
+        noted: noted.clone(),
+    };
+    let judged = Arc::new(Mutex::new(Vec::new()));
+    let judging = Arc::clone(&judged);
+    let no_room = Arc::new(ExportReceiving::judged_by(move |offered, remaining| {
+        judging.lock().push((offered.clone(), remaining));
+        Err(ExportDeclined::NoRoom { remaining })
+    }));
+    let not_newer = Arc::new(ExportReceiving::judged_by(|_, _| {
+        Err(ExportDeclined::NotNewer)
+    }));
+    let called_off = Arc::new(ExportReceiving::default());
+
+    eventually("the phone meeting the desk", || {
+        phone
+            .shown()
+            .devices
+            .iter()
+            .any(|device| device.online && !device.this)
+    });
+
+    fs::write(&staged, &bytes[..PARTIAL_BYTES]).expect("a partial");
+    fs::write(
+        &noted,
+        format!("{} {} 0 {dump}", desk.device(), bytes.len()),
+    )
+    .expect("its note");
+
+    let without_room = phone
+        .ask_for_export(desk.device(), wanted(), no_room)
+        .answer();
+    let partial_kept = fs::read(&staged).expect("the partial kept");
+    let note_kept = noted.exists();
+
+    let older = phone
+        .ask_for_export(desk.device(), wanted(), not_newer)
+        .answer();
+
+    called_off.call_off();
+
+    let off = phone
+        .ask_for_export(desk.device(), wanted(), called_off)
+        .answer();
+
+    assert_eq!(
+        without_room,
+        ExportFetched::Declined(ExportDeclined::NoRoom {
+            remaining: (bytes.len() - PARTIAL_BYTES) as u64
+        })
+    );
+    assert_eq!(
+        *judged.lock(),
+        [(
+            ExportHeld {
+                dump: dump.clone(),
+                sequence: 0
+            },
+            (bytes.len() - PARTIAL_BYTES) as u64
+        )]
+    );
+    assert_eq!(partial_kept, &bytes[..PARTIAL_BYTES]);
+    assert!(note_kept);
+    assert_eq!(older, ExportFetched::Declined(ExportDeclined::NotNewer));
+    assert_eq!(off, ExportFetched::CalledOff);
+    assert!(!staged.exists());
+    assert!(!noted.exists());
 
     drop(phone);
     drop(desk);

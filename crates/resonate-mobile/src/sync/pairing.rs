@@ -38,6 +38,10 @@ impl MobilePlayer {
     pub fn sync_start(&self, config: SyncConfig) -> Result<SyncStatus> {
         let key = config.enabled.then(|| key_of(&config)).transpose()?;
 
+        if !config.musicbrainz_copy {
+            self.syncing.copied.forget_removal();
+        }
+
         *self.syncing.reaching.lock() = Reaching::of(&config, &self.syncing.folder);
 
         let mut running = self.syncing.running.lock();

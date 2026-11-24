@@ -102,6 +102,7 @@ nothing-handed-off = that device is playing nothing held here
 unknown-received-song = that song from another device is no longer waiting
 received = The song from another device could not be { $op }
 musicbrainz-copy-not-removed = The copy of MusicBrainz could not be removed: { $source }
+musicbrainz-copy-removal-not-kept = The copy of MusicBrainz was removed, but this phone could not note that it is not to be fetched again: { $source }
 sync-certificate = That file is not a certificate this device can trust: { $source }
 sync-certificate-file = The server's certificate could not be { $op }
 layout-unreadable = The layout cannot be read: { $source }

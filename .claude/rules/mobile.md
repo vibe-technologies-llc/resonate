@@ -553,7 +553,16 @@ the one a device built** (`sync/copied.rs`, over `sync.md`'s *A copy of MusicBra
 devices*). `SyncConfig.musicbrainz_copy` (default on) starts `Copied::keep`, a
 `resonate-musicbrainz-copy` thread while sync runs: whenever transfers are allowed (unmetered, or
 mobile data allowed) it asks the online devices, nearby first, for `ExportPart::Copy` stating the
-export it holds, so a device holding the same dump answers `AlreadyHeld` and sends nothing. A copy
+export it holds, so a device holding the same dump answers `AlreadyHeld` and sends nothing. Each
+ask carries an `ExportReceiving::judged_by` of its own (`Copied::judge`), which weighs the offer's
+header before a byte moves: a copy whose dump is not `exported_after` the one held, or amendments of
+the held dump at an earlier packet, are `ExportDeclined::NotNewer` and the next device is asked; an
+offer whose remaining bytes (its size less the part already received) would leave less than
+`ROOM_LEFT_AT_LEAST` free beside the copy kept is `ExportDeclined::NoRoom`. Either way the copy held
+stands as it was (told `Held`, or `NoRoom` where none is held), so a copy is replaced only by a later
+export that fits beside it (`an_earlier_export_offered_leaves_the_copy_held_as_it_was`,
+`a_later_export_with_no_room_beside_the_copy_leaves_the_copy_held_as_it_was`,
+`a_later_export_with_room_beside_the_copy_replaces_it`). A copy
 received whole into `musicbrainz.sqlite.received` (resumed from a `.received-from` note across
 calls and restarts) is opened as a `Mirror` before `received_copy` renames it over `MIRROR_FILE`,
 removing the amendments of the dump before; then `ExportPart::Amendments` is asked (at once, and
@@ -571,9 +580,22 @@ minutes) after a miss; `sync_network` wakes it, `sync_stop` and turning the swit
 (a transfer under way stops at its next chunk, the part kept for the next ask).
 `musicbrainz_copy()` answers a `MusicbrainzCopy` (the standing, the dump, its bytes, the packet its
 amendments follow to and when, and while receiving the bytes so far and of how many);
-`remove_musicbrainz_copy()` lets the `Mirrored` go and removes the copy, its amendments and any
-part received (`removed_copy`, `MusicbrainzCopyNotRemoved`)
-(`a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`).
+
+**Removing the copy is the listener's decision, kept.** `remove_musicbrainz_copy()` (`Copied::remove`)
+holds the keeper's `settling` lock, under which an ask begins and a received part lands, so neither
+happens meanwhile. It marks the copy removed (`REMOVED_BY_THE_LISTENER`, a file beside the copy that
+`Copied::under` reads back), which ends the keeper; calls the receive under way off
+(`ExportReceiving::call_off`, which the transfer heeds at once, removing its own part and answering
+`ExportFetched::CalledOff`) and waits up to `A_RECEIVE_CALLED_OFF_SETTLES_WITHIN` (10 s) for its
+answer; and only then lets the `Mirrored` go and removes the copy, its amendments and any part
+received (`removed_copy`, `MusicbrainzCopyNotRemoved`; a mark that could not be written is
+`MusicbrainzCopyRemovalNotKept`). A part answered whole meanwhile is not landed. While removed,
+`Copied::keep` keeps nothing and tells `Off` whatever `SyncConfig.musicbrainz_copy` says, across
+restarts; a `sync_start` with `musicbrainz_copy` off forgets the removal (`Copied::forget_removal`), so
+the switch turned off and on again asks for the copy once more
+(`a_copy_removed_while_received_calls_the_receive_off_and_is_fetched_again_only_once_turned_back_on`,
+`a_copy_turned_off_in_the_settings_forgets_that_it_was_removed`,
+`a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`).
 
 **Taken by default.** A phone keeps a copy unless the listener turns it off, since lookups answered on
 the phone are quicker, work without the internet and spare MusicBrainz's servers, and the room

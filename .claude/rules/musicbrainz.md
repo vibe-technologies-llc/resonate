@@ -459,7 +459,9 @@ to sync's `Consultable::export`. The receiver lands them with `received_copy` (o
 first, then the amendments of the dump before removed and the file renamed over `MIRROR_FILE`) and
 `received_amendments` (opened as amendments of the copy's dump, else
 `AmendmentsOfAnotherExport`, then renamed over `AMENDED_FILE`); `removed_copy` takes the copy and
-everything beside it away
+everything beside it away. Which of two exports is the later is `exported_after`, reading each dump's
+name as its figures (`an_export_is_after_another_only_where_both_are_dumps_and_it_was_made_later`), so
+a receiver replaces its copy only with a later one
 (`a_copy_and_its_amendments_offered_by_one_device_land_whole_on_another`,
 `a_received_file_that_is_no_copy_is_refused_and_the_copy_held_stays`). A phone is the receiver
 (`mobile.md`'s *A copy of MusicBrainz fetched from a desktop*); the desktop builds its own and only

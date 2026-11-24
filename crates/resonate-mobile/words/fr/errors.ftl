@@ -102,6 +102,7 @@ nothing-handed-off = que l’appareil ne joue rien tenu ici
 unknown-received-song = que la chanson d’un autre appareil n’attend plus
 received = La chanson d’un autre appareil ne pouvait pas être { $op }
 musicbrainz-copy-not-removed = La copie de MusicBrainz n’a pas pu être retirée : { $source }
+musicbrainz-copy-removal-not-kept = La copie de MusicBrainz a été retirée, mais ce téléphone n’a pas pu noter qu’elle ne doit plus être récupérée : { $source }
 sync-certificate = Ce fichier n’est pas un certificat auquel cet appareil peut faire confiance : { $source }
 sync-certificate-file = Le certificat du serveur ne pouvait pas être { $op }
 layout-unreadable = La mise en page ne peut pas être lue : { $source }

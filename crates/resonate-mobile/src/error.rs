@@ -396,6 +396,11 @@ pub enum Error {
         #[source]
         source: Box<resonate_musicbrainz::Error>,
     },
+    #[error("{}", words::errors::musicbrainz_copy_removal_not_kept(source.to_string()))]
+    MusicbrainzCopyRemovalNotKept {
+        #[source]
+        source: io::Error,
+    },
     #[error("{}", words::errors::sync_certificate(source.to_string()))]
     SyncCertificate {
         #[source]

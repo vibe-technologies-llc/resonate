@@ -1433,9 +1433,15 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   song is, or `Missing` where the `Consultable` offers none (`Consultable::export`, default none).
   `Sync::ask_for_export(device, ExportWanted, ExportReceiving)` goes through `Work::Export` and
   `want()`, as a fetch does, and answers an `AskedForExport` whose `answer` or `answer_within` is
-  `ExportFetched::{Whole, AlreadyHeld, NotHeld, Failed}`. `ExportWanted::held` names the dump and
-  sequence the asker holds: an offer of exactly that is `AlreadyHeld`, the stream stopped before a
-  byte moves. A part is staged where the asker says and resumed from a note beside it (`device size
+  `ExportFetched::{Whole, AlreadyHeld, Declined, CalledOff, NotHeld, Failed}`. `ExportWanted::held`
+  names the dump and sequence the asker holds: an offer of exactly that is `AlreadyHeld`, the stream
+  stopped before a byte moves. An `ExportReceiving::judged_by` weighs any other offer's header (the
+  dump and sequence, and the bytes still to come past a part resumed) and may decline it as
+  `ExportDeclined::{NotNewer, NoRoom}`, answered `Declined` with the part kept as it was; a default
+  `ExportReceiving` takes every offer. `ExportReceiving::call_off` ends the receive at once, even
+  mid-read (`until_called_off`), removes its part and note and answers `CalledOff`; one called off
+  before it began moves nothing
+  (`an_export_the_asker_declines_moves_no_byte_and_one_called_off_leaves_no_part`). A part is staged where the asker says and resumed from a note beside it (`device size
   sequence dump`, `export_note`), a note naming another device, size or export starting it over;
   `ExportReceiving::so_far` is the bytes received and of how many. A transfer stops at its next chunk
   once transfers are not allowed, the part kept, and whichever way a transfer ends its partial's

@@ -57,25 +57,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   a formerly published queue clears. Done when two ledgers retain a handed
   position and play order, withdraw the handoff after a clear, and ignore
   an older note that arrives afterwards.
-- [M · 0.17.1] Check free space and freshness before replacing a phone's MusicBrainz copy.
-  **Medium, architect.** Once a copy exists, the phone accepts a different
-  export without checking whether it is older or whether the staged file fits
-  alongside the kept copy
-  (`crates/resonate-mobile/src/sync/copied.rs:280`, `:396`,
-  `crates/resonate-sync/src/peer.rs:1343`,
-  `crates/resonate-musicbrainz/src/mirror/offered.rs:90`, `:225`).
-  Compare export versions and check the offered remaining bytes before
-  downloading. Done when an older copy or a newer offer without room
-  leaves the existing mirror intact and a newer offer with room replaces it.
-- [M · 0.17.1] Coordinate removing the phone's MusicBrainz copy with its receiver.
-  **Medium, architect.** Removal unlinks the receive paths without stopping
-  the keeper. An open download can retain the file's space, and the next look
-  can fetch the copy again
-  (`crates/resonate-mobile/src/sync/copied.rs:104`, `:174`, `:344`,
-  `crates/resonate-sync/src/peer.rs:1376`). Settle or cancel the receive before
-  reclaiming the copy and make the post-removal setting explicit. Done when
-  removal during a refresh reclaims the copy and a later look honours the
-  decision to remove it.
 - [S · 0.17.1] Prefer usable LAN addresses before capping advertisements.
   **Low, builder.** Numeric order can keep several bridge addresses while dropping
   the actual LAN address from a beacon or WebSocket punch
@@ -137,6 +118,15 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `ios/Sources/Resonate/Features.swift:592`). Synchronize the displayed choice
   with the persistence result. Done when a failed route change restores the
   prior selection and the control reflects the active route.
+- [S · 0.17.1] Turn the phones' MusicBrainz copy switch off when the copy is removed.
+  **Low, builder.** Removing the copy now keeps it from being fetched again until
+  `SyncConfig.musicbrainz_copy` is turned off and on, but Android and iOS leave their
+  switch on, so it reads on while nothing is kept, and Android's line says it is looking
+  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt`,
+  `android/app/src/main/java/org/resonate/android/ui/settings/SyncWords.kt`,
+  `ios/Sources/Resonate/Features.swift`). Save the switch off after
+  `removeMusicbrainzCopy`. Done when a removed copy shows the switch off and turning it
+  on fetches the copy again on both phones.
 ## Catalog
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file

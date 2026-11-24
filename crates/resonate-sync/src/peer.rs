@@ -1517,6 +1517,10 @@ async fn export_once(
     receiving: &ExportReceiving,
     allowed: &(impl Fn() -> bool + Sync),
 ) -> Result<Option<ExportFetched>> {
+    if receiving.called_off() {
+        return Ok(Some(called_off(asked).await));
+    }
+
     let offset = resumable(asked.staged, asked.noted, device).await;
     let (mut send, mut recv) = quietly_short(async {
         connection
@@ -1562,6 +1566,11 @@ async fn export_once(
 
         return Ok(None);
     }
+    if let Err(declined) = receiving.judged(&offered, size.saturating_sub(offset)) {
+        let _ = recv.stop(0_u32.into());
+
+        return Ok(Some(ExportFetched::Declined(declined)));
+    }
     fs::write(asked.noted, &note)
         .await
         .map_err(|source| file_failed(FileOp::Stage, asked.noted, source))?;
@@ -1578,6 +1587,11 @@ async fn export_once(
     )
     .await;
 
+    if receiving.called_off() {
+        drop(file);
+
+        return Ok(Some(called_off(asked).await));
+    }
     file.sync_all()
         .await
         .map_err(|source| file_failed(FileOp::Write, asked.staged, source))?;
@@ -1600,6 +1614,13 @@ async fn export_once(
     Ok(Some(ExportFetched::Whole(offered)))
 }
 
+async fn called_off(asked: &ExportStaged<'_>) -> ExportFetched {
+    let _ = fs::remove_file(asked.staged).await;
+    let _ = fs::remove_file(asked.noted).await;
+
+    ExportFetched::CalledOff
+}
+
 async fn exported_into(
     file: &mut fs::File,
     recv: &mut RecvStream,
@@ -1616,18 +1637,24 @@ async fn exported_into(
     let mut chunk = vec![0; CHUNK_BYTES];
 
     while have < size {
-        if !allowed() {
+        if !allowed() || receiving.called_off() {
             let _ = recv.stop(0_u32.into());
 
             return Ok(None);
         }
 
-        let read = quietly_short(async {
-            recv.read(&mut chunk)
-                .await
-                .map_err(|source| Error::stream(StreamOp::Read, source))
-        })
-        .await?;
+        let read = tokio::select! {
+            read = quietly_short(async {
+                recv.read(&mut chunk)
+                    .await
+                    .map_err(|source| Error::stream(StreamOp::Read, source))
+            }) => read?,
+            () = receiving.until_called_off() => {
+                let _ = recv.stop(0_u32.into());
+
+                return Ok(None);
+            }
+        };
         let Some(read) = read else {
             break;
         };
