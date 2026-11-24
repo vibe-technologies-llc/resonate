@@ -2,6 +2,9 @@ mod catalog;
 mod change;
 mod consulted;
 mod error;
+#[cfg(feature = "faults")]
+#[doc(hidden)]
+pub mod faults;
 mod fresh;
 #[cfg(fuzzing)]
 mod fuzzing;

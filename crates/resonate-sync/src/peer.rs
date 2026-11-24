@@ -1112,6 +1112,15 @@ pub async fn tell(
         .await
         .map_err(|source| Error::Connection(Box::new(source)))?;
 
+    #[cfg(feature = "faults")]
+    if let Err(error) =
+        crate::faults::before_telling(device, connection.stable_id(), whole, &changes)
+    {
+        let _ = send.reset(0_u32.into());
+
+        return Err(Error::stream(StreamOp::Write, error));
+    }
+
     send_frame(&mut send, &ToPeer::Changes { whole, changes }.encoded()).await?;
     send.finish().map_err(|_| Error::StreamClosed)?;
     match read_frame(&mut recv).await? {

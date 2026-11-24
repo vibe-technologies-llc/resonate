@@ -8,6 +8,9 @@ autotests = false
 [lib]
 doctest = false
 
+[features]
+faults = []
+
 [dependencies]
 ahash.workspace = true
 flate2.workspace = true
@@ -37,6 +40,7 @@ x25519-dalek = { workspace = true, features = ["static_secrets"] }
 resonate-words-build.workspace = true
 
 [dev-dependencies]
+resonate-sync = { path = ".", features = ["faults"] }
 proptest.workspace = true
 resonate-words-build.workspace = true
 

@@ -16,14 +16,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 ## Playback and output
 
 ## Device sync
-- [M · 0.17.1] Retry nearby changes until the other device acknowledges them.
-  **Medium, architect.** A nearby-only look clears owed changes after scheduling
-  a send. If that stream fails, the connection can stay up and the sender's
-  per-device digest set suppresses the same change
-  (`crates/resonate-sync/src/service.rs:2408`, `:2521`, `:3285`, `:3320`,
-  `crates/resonate-sync/src/peer.rs:1057`). Record acknowledgement before suppressing
-  retries or arrange a whole replay after a failed tell. Done when a transient
-  write failure on a connected nearby peer clears and the change reaches it.
 - [M · 0.17.1] Detect a shared playlist's rebuilt space even after its cursor catches up.
   **Medium, builder.** A shared playlist still judges a `Welcome` by its head
   alone, so once a member has remade an expired shared space and written past

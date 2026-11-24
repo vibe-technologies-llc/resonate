@@ -14,11 +14,12 @@ use resonate_core::{
     WholeFile, ZoneId,
 };
 use resonate_sync::{
-    Broadcast, Consultable, ConsultedAnswer, Consulting, Controlled, Controlling, DeviceId,
+    Broadcast, Change, Consultable, ConsultedAnswer, Consulting, Controlled, Controlling, DeviceId,
     ExportDeclined, ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted,
     FetchOutcome, Follow, KeptAnswer, Me, Nearby, OfferedExport, Permille, Platform, RemoteCommand,
     RemotePlayback, RemoteRow, RemoteZone, Server, Settings, Standing, Sync, SyncKey,
     TransferState, Uncontrolled, Watched,
+    faults::{self, Told},
 };
 
 use crate::shelf::{Shelf, song};
@@ -972,6 +973,136 @@ fn two_devices_told_to_use_no_server_stand_nearby_and_owe_nothing_once_they_have
         desk_shelf.playlist_named("Summer days").is_some()
     });
 
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+fn names_playlist(told: &Told, name: &str) -> bool {
+    told.changes.iter().any(|change| {
+        matches!(change, Change::Playlist(note) if note.body.as_ref().is_some_and(|body| body.name == name))
+    })
+}
+
+#[test]
+fn a_change_whose_tell_failed_reaches_a_device_still_connected_without_meeting_it_again() {
+    let folder = scratch("retold");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
+    desk_shelf.make_playlist("Summer", &["A"]);
+    phone_shelf.make_playlist("Commute", &["A"]);
+
+    let desk = device_through(
+        &folder,
+        &key,
+        "Desk",
+        Arc::clone(&desk_shelf),
+        None,
+        Follow::default(),
+        Server::Nowhere,
+    );
+    let phone = device_through(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        Follow::default(),
+        Server::Nowhere,
+    );
+
+    eventually("the desk's playlist reaching the phone", || {
+        phone_shelf.playlist_named("Summer").is_some()
+    });
+    eventually("the phone's playlist reaching the desk", || {
+        desk_shelf.playlist_named("Commute").is_some()
+    });
+
+    let tells = faults::watch_tells_to(phone.device());
+
+    tells.fail_next(1);
+    desk_shelf.make_playlist("Later", &["A"]);
+    eventually("the tell of the new playlist failing", || {
+        !tells.failed().is_empty()
+    });
+    eventually("the new playlist reaching the phone all the same", || {
+        phone_shelf.playlist_named("Later").is_some()
+    });
+
+    let failed = tells.failed();
+    let told = tells.told();
+
+    assert_eq!(failed.len(), 1);
+    assert!(names_playlist(&failed[0], "Later"));
+    assert!(
+        told.iter()
+            .all(|told| told.connection == failed[0].connection)
+    );
+    assert!(
+        told.iter()
+            .any(|told| told.whole && names_playlist(told, "Later"))
+    );
+
+    drop(tells);
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn a_change_the_other_device_took_is_not_told_it_again_while_still_owed() {
+    let folder = scratch("taken-once");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["A"]));
+
+    desk_shelf.make_playlist("Summer", &["A"]);
+    phone_shelf.make_playlist("Commute", &["A"]);
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+    );
+
+    eventually("the desk's playlist reaching the phone", || {
+        phone_shelf.playlist_named("Summer").is_some()
+    });
+    eventually("the phone's playlist reaching the desk", || {
+        desk_shelf.playlist_named("Commute").is_some()
+    });
+
+    let tells = faults::watch_tells_to(phone.device());
+
+    desk_shelf.make_playlist("Later", &["A"]);
+    eventually("the new playlist reaching the phone", || {
+        phone_shelf.playlist_named("Later").is_some()
+    });
+    desk_shelf.make_playlist("Later still", &["A"]);
+    eventually("the next playlist reaching the phone", || {
+        phone_shelf.playlist_named("Later still").is_some()
+    });
+
+    let told = tells.told();
+
+    assert!(desk.shown().owed > 0);
+    assert!(tells.failed().is_empty());
+    assert_eq!(
+        told.iter()
+            .filter(|told| names_playlist(told, "Later"))
+            .count(),
+        1
+    );
+    assert!(told.iter().all(|told| !told.whole));
+
+    drop(tells);
     drop(phone);
     drop(desk);
 

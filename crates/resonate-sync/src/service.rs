@@ -100,6 +100,8 @@ const SNAPSHOT_FRAME_SHARE: usize = LARGEST_FRAME / 2;
 const FIRST_REDIAL: Duration = Duration::from_secs(1);
 const LAST_REDIAL: Duration = Duration::from_secs(30);
 const DIAL_BACK_AFTER: Duration = Duration::from_millis(500);
+const FIRST_RETELL: Duration = Duration::from_secs(1);
+const LAST_RETELL: Duration = Duration::from_secs(5 * 60);
 const DIALS_CROSS_WITHIN: Duration = Duration::from_secs(5);
 const HEARD_FOR: Duration = Duration::from_secs(60);
 const WATCH_LAPSES_AFTER: Duration = Duration::from_secs(30);
@@ -520,6 +522,9 @@ enum Event {
     Unmet(DeviceId),
     Redial(DeviceId),
     Gone(DeviceId, usize),
+    Told(DeviceId, usize),
+    Untold(DeviceId, usize),
+    Retell(DeviceId, usize),
     CutShort(DeviceId),
     Followed(DeviceId),
     Unclaimed(Vec<PassedOver>),
@@ -605,7 +610,15 @@ type ToldDigest = [u8; SHA256_OUTPUT_LEN];
 struct Neighbour {
     connection: Connection,
     told: AHashSet<ToldDigest>,
+    retell_after: Duration,
+    retelling: bool,
     met_at: Instant,
+}
+
+impl Neighbour {
+    fn on(&self, connection: usize) -> bool {
+        self.connection.stable_id() == connection
+    }
 }
 
 #[derive(Default)]
@@ -2250,6 +2263,13 @@ impl Syncing {
                     self.unlinked(Parting::Failed(error));
                 }
             }
+            Event::Told(device, id) => {
+                if let Some(neighbour) = self.neighbour_on(device, id) {
+                    neighbour.retell_after = FIRST_RETELL;
+                }
+            }
+            Event::Untold(device, id) => self.retell_later(device, id),
+            Event::Retell(device, id) => self.retell(device, id).await?,
             Event::Gone(device, id) => {
                 if self
                     .peers
@@ -2261,7 +2281,7 @@ impl Syncing {
                 if self
                     .neighbours
                     .get(&device)
-                    .is_some_and(|neighbour| neighbour.connection.stable_id() == id)
+                    .is_some_and(|neighbour| neighbour.on(id))
                 {
                     self.neighbours.remove(&device);
                     self.dialled_at.remove(&device);
@@ -2776,7 +2796,13 @@ impl Syncing {
                 .cloned()
                 .collect::<Vec<_>>();
             if !fresh.is_empty() {
-                spawn_tell(*device, neighbour.connection.clone(), false, fresh);
+                spawn_tell(
+                    self.running.events.clone(),
+                    *device,
+                    neighbour.connection.clone(),
+                    false,
+                    fresh,
+                );
             }
         }
         Ok(owed)
@@ -3478,6 +3504,48 @@ impl Syncing {
         });
     }
 
+    fn neighbour_on(&mut self, device: DeviceId, connection: usize) -> Option<&mut Neighbour> {
+        self.neighbours
+            .get_mut(&device)
+            .filter(|neighbour| neighbour.on(connection))
+    }
+
+    fn retell_later(&mut self, device: DeviceId, connection: usize) {
+        let Some(neighbour) = self
+            .neighbour_on(device, connection)
+            .filter(|neighbour| neighbour.connection.close_reason().is_none())
+        else {
+            return;
+        };
+
+        if neighbour.retelling {
+            return;
+        }
+
+        let wait = neighbour.retell_after;
+
+        neighbour.retelling = true;
+        neighbour.retell_after = (wait * 2).min(LAST_RETELL);
+        self.send_later(wait, Event::Retell(device, connection));
+    }
+
+    async fn retell(&mut self, device: DeviceId, connection: usize) -> Result<()> {
+        if self.neighbour_on(device, connection).is_none() {
+            return Ok(());
+        }
+
+        let (changes, told) = self.whole().await?;
+        let events = self.running.events.clone();
+        let Some(neighbour) = self.neighbour_on(device, connection) else {
+            return Ok(());
+        };
+
+        neighbour.retelling = false;
+        neighbour.told = told;
+        spawn_tell(events, device, neighbour.connection.clone(), true, changes);
+        Ok(())
+    }
+
     async fn whole(&self) -> Result<(Vec<Change>, AHashSet<ToldDigest>)> {
         let ledger = Arc::clone(&self.running.ledger);
         let snapshot = blocking(move || ledger.lock().snapshot()).await?;
@@ -3533,7 +3601,13 @@ impl Syncing {
             let (changes, told) = self.whole().await?;
             for (device, neighbour) in &mut self.neighbours {
                 neighbour.told.clone_from(&told);
-                spawn_tell(*device, neighbour.connection.clone(), true, changes.clone());
+                spawn_tell(
+                    self.running.events.clone(),
+                    *device,
+                    neighbour.connection.clone(),
+                    true,
+                    changes.clone(),
+                );
             }
         }
         for device in self.neighbours.keys().copied().collect::<Vec<_>>() {
@@ -3585,10 +3659,18 @@ impl Syncing {
                 Neighbour {
                     connection: connection.clone(),
                     told,
+                    retell_after: FIRST_RETELL,
+                    retelling: false,
                     met_at: Instant::now(),
                 },
             );
-            spawn_tell(device, connection, true, changes);
+            spawn_tell(
+                self.running.events.clone(),
+                device,
+                connection,
+                true,
+                changes,
+            );
             tracing::info!("syncing with a device on this network");
         }
         self.publish_devices();
@@ -3612,11 +3694,27 @@ async fn neighbour_dialled(
     Ok((met, connection))
 }
 
-fn spawn_tell(device: DeviceId, connection: Connection, whole: bool, changes: Vec<Change>) {
+fn spawn_tell(
+    events: UnboundedSender<Event>,
+    device: DeviceId,
+    connection: Connection,
+    whole: bool,
+    changes: Vec<Change>,
+) {
     tokio::spawn(async move {
-        if let Err(error) = tell(&connection, device, whole, changes).await {
-            tracing::debug!(%error, "changes could not be told to a device on this network");
-        }
+        let id = connection.stable_id();
+        let event = match tell(&connection, device, whole, changes).await {
+            Ok(()) => Event::Told(device, id),
+            Err(error @ Error::Oversized { .. }) => {
+                tracing::warn!(%error, "changes too large for one frame are not told to a device on this network");
+                return;
+            }
+            Err(error) => {
+                tracing::debug!(%error, "changes could not be told to a device on this network");
+                Event::Untold(device, id)
+            }
+        };
+        let _ = events.send(event);
     });
 }
 

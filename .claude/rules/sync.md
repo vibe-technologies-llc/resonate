@@ -1546,10 +1546,25 @@ announce a device, both carrying the same sealed beacon, and either finds the ot
   phone then met it all at once
   (`a_device_meeting_again_long_after_its_last_connection_is_kept_whoever_dialled`).
 - **After every look, what is owed goes to each neighbour**, less what it was told on this
-  connection (`told`: SHA-256 of each encoded change). `owed` is cleared only by the server's
-  `Appended`, so the server still gets all of it once back. Nothing is relayed: what came from the
-  server or from one neighbour is not passed to another, since each device on the network meets each
-  other one.
+  connection (`told`: SHA-256 of each encoded change, entered as the tell is sent so a look while it
+  is in flight sends nothing twice). `owed` is cleared only by the server's `Appended`, so the
+  server still gets all of it once back. Nothing is relayed: what came from the server or from one
+  neighbour is not passed to another, since each device on the network meets each other one.
+- **A tell counts as told only once answered `Taken`**, which every released build already sends
+  after `arrived`, so the wire is unchanged. Each tell's outcome comes back to the loop as an event
+  (`Event::Told`, `Event::Untold`, naming the connection), as discovery's does, and is never awaited
+  there. A tell that failed on a connection still standing (a write or stream failure, no answer)
+  makes `retell_later` replay the whole `Ledger::snapshot` as `Changes { whole }` on that same
+  connection, `told` set afresh to it, after `FIRST_RETELL` (1 s) doubling to `LAST_RETELL` (5 min)
+  while tells keep failing; one replay waits at a time and a `Taken` sets the wait back to the
+  first. The whole is what a replay tells because with no server the look marked the change sent
+  already, so the ledger no longer lists it as owed. A tell on a connection that has gone is left
+  to the next meeting's whole snapshot, and one refused as `Oversized` is not tried again. A test
+  makes a tell fail through `faults.rs` (the `faults` feature the crate's own dev-dependency turns
+  on): `watch_tells_to` records every tell to a device, the connection it went over and its
+  changes, and `fail_next` resets the stream of the next ones before a byte is written
+  (`a_change_whose_tell_failed_reaches_a_device_still_connected_without_meeting_it_again`,
+  `a_change_the_other_device_took_is_not_told_it_again_while_still_owed`).
 - **Android holds a `WifiManager.MulticastLock` while sync runs** (`CHANGE_WIFI_MULTICAST_STATE`),
   for the beacons and `mdns-sd` alike.
 - `Settings::nearby`: `Nearby::on_the_network()` on Linux and Android (broadcast and Bonjour),

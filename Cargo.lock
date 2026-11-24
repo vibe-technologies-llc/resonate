@@ -7620,6 +7620,7 @@ dependencies = [
  "quinn",
  "rcgen",
  "resonate-core",
+ "resonate-sync",
  "resonate-words",
  "resonate-words-build",
  "ring",
