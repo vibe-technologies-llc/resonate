@@ -714,10 +714,16 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   `replace_lossy_songs` read it (`a_playlists_lossy_songs_are_listed_once_each_with_the_lossless_copy_held`,
   `a_song_playing_a_lesser_copy_is_offered_the_best_and_one_playing_the_best_is_not_listed`).
   `Library::replace(chosen)` moves no file, so it takes no `Walk` and runs beside any pass
-  (`a_replacement_is_kept_while_another_pass_walks_the_tree_since_it_moves_no_file`); in one write
-  it weighs each row afresh: a track no longer the whole file it named is passed over; a held copy
-  still a lossless whole file above it, its file there or its vault object there (`vault_path` under
-  the open vault), is kept beside it (`replacing::kept_beside`: `chosen::choose`, then the
+  (`a_replacement_is_kept_while_another_pass_walks_the_tree_since_it_moves_no_file`). **No file is
+  looked at under a connection**: it reads each row's whole file (path, `vault_path`, whether
+  lossless, `file_size`, `modified`), looks for each lossless file or its vault object with no
+  connection held (`Evidence::weigh`), so a stalled mount never holds the only writer, then in one
+  write weighs each row against that evidence, a row no longer the one read standing `Changed` and
+  its tick passed over whole
+  (`a_replacement_weighing_a_stalled_file_leaves_the_catalog_writable_meanwhile`,
+  `a_copy_scanned_again_while_its_file_was_weighed_is_never_kept_beside_the_song`): a track no
+  longer the whole file it named is passed over; a held copy still a lossless whole file above it,
+  its file there or its vault object there (`vault_path` under the open vault), is kept beside it (`replacing::kept_beside`: `chosen::choose`, then the
   replacement and its want go); a lossless track is never wanted or kept, only given a held copy of
   higher `Quality`; else a release row the track still holds is wanted (`INSERT OR REPLACE` into
   `replacements`, then `elsewhere::rearmed`, which clears `offered`, `tried` and `misses` of a
@@ -779,8 +785,11 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   release row NULL, so only the lossy track's own MBID speaks for it, or held by the lossy track or
   by that copy), the lossy track is still a lossy whole file, the copy a lossless whole file other
   than it with its file there or its vault object there, and the two last alike within
-  `LENGTHS_AGREE_WITHIN` where both lengths are known; every pair is weighed again and kept beside
-  in one write (`kept_beside_on`); it then settles the versions kept (`settle_the_versions_kept`)
+  `LENGTHS_AGREE_WITHIN` where both lengths are known; the files are looked for between the reads
+  and the write, with no connection held, and every pair is weighed again against the rows read and
+  kept beside in one write (`kept_beside_on`), a pair whose row changed meanwhile left waiting
+  (`a_settle_weighing_a_stalled_file_leaves_the_catalog_writable_meanwhile`,
+  `a_copy_scanned_again_while_a_settle_weighed_its_file_leaves_the_song_waiting`); it then settles the versions kept (`settle_the_versions_kept`)
   and answers a `Replaced`, `beside` counting both. Nobody is watching, so a copy only named alike
   (`TheSong`) is never taken, nor a lossy copy offered, nor the delivery of a row another song now
   holds, nor a copy of the recording lasting otherwise

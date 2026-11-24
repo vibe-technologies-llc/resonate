@@ -1,6 +1,6 @@
 use std::{
     iter,
-    path::PathBuf,
+    path::{Path, PathBuf},
     sync::atomic::{AtomicUsize, Ordering},
     thread,
     time::{Duration, SystemTime},
@@ -45,7 +45,7 @@ const THE_SAME_SONG_ELSEWHERE: &str = "SELECT other.id,
 const HOW_A_WHOLE_FILE_STANDS: &str = concat!(
     "SELECT tracks.path, (",
     lossless_codecs!(),
-    "), tracks.vault_path FROM tracks",
+    "), tracks.vault_path, tracks.file_size, tracks.modified FROM tracks",
     " WHERE tracks.id = ?1 AND tracks.span_start = 0 AND tracks.span_frames IS NULL"
 );
 
@@ -183,7 +183,10 @@ enum Standing {
     Gone,
     Lossy,
     Lossless,
+    Changed,
 }
+
+type Present<'a> = &'a dyn Fn(&Path) -> bool;
 
 #[derive(Clone, Copy)]
 struct Evidenced {
@@ -205,38 +208,135 @@ struct RowAsked {
 
 type Forgotten = AHashMap<WantId, Vec<ForgottenDelivery>>;
 
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct WholeFile {
     path: PathBuf,
     within_the_vault: Option<PathBuf>,
     lossless: bool,
+    size: i64,
+    modified: i64,
 }
 
 impl WholeFile {
-    fn standing(&self, vault: Option<&Vault>) -> Standing {
+    fn standing(&self, vault: Option<&Vault>, present: Present<'_>) -> Standing {
         if !self.lossless {
             Standing::Lossy
-        } else if self.path.is_file() || self.object_is_held(vault) {
+        } else if present(&self.path) || self.object_is_held(vault, present) {
             Standing::Lossless
         } else {
             Standing::Gone
         }
     }
 
-    fn object_is_held(&self, vault: Option<&Vault>) -> bool {
+    fn object_is_held(&self, vault: Option<&Vault>, present: Present<'_>) -> bool {
         self.within_the_vault
             .as_deref()
             .zip(vault)
-            .is_some_and(|(within, vault)| vault.at(within).is_ok_and(|object| object.is_file()))
+            .is_some_and(|(within, vault)| vault.at(within).is_ok_and(|object| present(&object)))
+    }
+}
+
+struct Weighed {
+    row: Option<WholeFile>,
+    standing: Standing,
+}
+
+#[derive(Default)]
+struct Evidence {
+    weighed: AHashMap<TrackId, Weighed>,
+}
+
+impl Evidence {
+    fn weigh(
+        &mut self,
+        track: TrackId,
+        row: Option<WholeFile>,
+        vault: Option<&Vault>,
+        present: Present<'_>,
+    ) -> Standing {
+        if let Some(weighed) = self
+            .weighed
+            .get(&track)
+            .filter(|weighed| weighed.row == row)
+        {
+            return weighed.standing;
+        }
+
+        let standing = row
+            .as_ref()
+            .map_or(Standing::Gone, |file| file.standing(vault, present));
+
+        self.weighed.insert(track, Weighed { row, standing });
+        standing
+    }
+
+    fn standing_of(&self, connection: &Connection, track: TrackId) -> Result<Standing> {
+        let Some(weighed) = self.weighed.get(&track) else {
+            return Ok(Standing::Changed);
+        };
+        Ok(if whole_file(connection, track)? == weighed.row {
+            weighed.standing
+        } else {
+            Standing::Changed
+        })
+    }
+
+    fn standing(&self, connection: &Connection, track: &Track) -> Result<Standing> {
+        let standing = self.standing_of(connection, track.id)?;
+        let names_the_row = self
+            .weighed
+            .get(&track.id)
+            .and_then(|weighed| weighed.row.as_ref())
+            .is_some_and(|file| track.location.as_path() == Some(file.path.as_path()));
+
+        Ok(if standing == Standing::Changed || names_the_row {
+            standing
+        } else {
+            Standing::Gone
+        })
     }
 }
 
 impl Library {
     pub fn replace(&self, chosen: &[Replaceable]) -> Result<Replacing> {
+        self.replace_weighing(chosen, &|path| path.is_file())
+    }
+
+    fn replace_weighing(&self, chosen: &[Replaceable], present: Present<'_>) -> Result<Replacing> {
+        let evidence = self.evidence_for(chosen, present)?;
         let now = SystemTime::now();
-        let vault = self.inner.vault.as_deref();
         let kept_into = self.delivering_into();
         self.inner
-            .write(|transaction| settled(transaction, chosen, now, vault, kept_into.as_ref()))
+            .write(|transaction| settled(transaction, chosen, now, &evidence, kept_into.as_ref()))
+    }
+
+    fn evidence_for(&self, chosen: &[Replaceable], present: Present<'_>) -> Result<Evidence> {
+        let vault = self.inner.vault.as_deref();
+        let rows = self.inner.read(|connection| {
+            chosen
+                .iter()
+                .map(|one| {
+                    let held = one
+                        .held
+                        .as_ref()
+                        .filter(|copy| copy.id != one.track.id)
+                        .map(|copy| Ok::<_, Error>((copy.id, whole_file(connection, copy.id)?)))
+                        .transpose()?;
+                    Ok((one.track.id, whole_file(connection, one.track.id)?, held))
+                })
+                .collect::<Result<Vec<_>>>()
+        })?;
+        let mut evidence = Evidence::default();
+
+        for (track, row, held) in rows {
+            if evidence.weigh(track, row, vault, present) == Standing::Gone {
+                continue;
+            }
+            if let Some((copy, row)) = held {
+                evidence.weigh(copy, row, vault, present);
+            }
+        }
+        Ok(evidence)
     }
 
     pub fn settle_replacements(&self) -> Result<Replaced> {
@@ -306,21 +406,25 @@ impl Library {
     }
 
     fn settled_beside(&self) -> Result<u64> {
-        let evidenced = self.evidenced()?;
+        self.settled_beside_weighing(&|path| path.is_file())
+    }
+
+    fn settled_beside_weighing(&self, present: Present<'_>) -> Result<u64> {
+        let (evidenced, evidence) = self.evidenced(present)?;
 
         if evidenced.is_empty() {
             return Ok(0);
         }
 
-        let vault = self.inner.vault.as_deref();
         let now = SystemTime::now();
         self.inner
-            .write(|transaction| kept_beside_on(transaction, vault, &evidenced, now))
+            .write(|transaction| kept_beside_on(transaction, &evidence, &evidenced, now))
     }
 
-    fn evidenced(&self) -> Result<Vec<Evidenced>> {
+    fn evidenced(&self, present: Present<'_>) -> Result<(Vec<Evidenced>, Evidence)> {
         let vault = self.inner.vault.as_deref();
         let awaiting = self.inner.read(awaiting)?;
+        let mut evidence = Evidence::default();
         let mut found = Vec::new();
 
         for one in awaiting {
@@ -334,14 +438,26 @@ impl Library {
                 .chain(one.kept.iter().copied())
                 .chain(recorded.iter().map(|copy| copy.id))
                 .collect();
-            let kept = self.inner.read(|connection| {
+            let (lossy, weighable) = self.inner.read(|connection| {
+                let lossy = whole_file(connection, one.taken)?;
+                let mut weighable = Vec::new();
+
                 for &kept in &candidates {
-                    if may_be_kept_beside(connection, vault, one.taken, kept)? {
-                        return Ok(Some(kept));
+                    if may_be_weighed_beside(connection, one.taken, kept)? {
+                        weighable.push((kept, whole_file(connection, kept)?));
                     }
                 }
-                Ok(None)
+                Ok((lossy, weighable))
             })?;
+
+            if evidence.weigh(one.taken, lossy, vault, present) != Standing::Lossy {
+                continue;
+            }
+
+            let kept = weighable.into_iter().find_map(|(kept, row)| {
+                (evidence.weigh(kept, row, vault, present) == Standing::Lossless).then_some(kept)
+            });
+
             if let Some(kept) = kept {
                 found.push(Evidenced {
                     taken: one.taken,
@@ -349,7 +465,7 @@ impl Library {
                 });
             }
         }
-        Ok(found)
+        Ok((found, evidence))
     }
 
     pub fn songs_to_better_in(&self, playlist: PlaylistId) -> Result<Vec<Replaceable>> {
@@ -822,7 +938,7 @@ fn settled(
     transaction: &Transaction<'_>,
     chosen: &[Replaceable],
     now: SystemTime,
-    vault: Option<&Vault>,
+    evidence: &Evidence,
     kept_into: Option<&DeliveryFolder>,
 ) -> Result<Replacing> {
     let mut seen = AHashSet::new();
@@ -833,16 +949,24 @@ fn settled(
             continue;
         }
 
-        let stands = standing(transaction, vault, &one.track)?;
+        let stands = evidence.standing(transaction, &one.track)?;
 
-        if stands == Standing::Gone {
+        if matches!(stands, Standing::Gone | Standing::Changed) {
+            continue;
+        }
+
+        let copy_stands = match &one.held {
+            Some(copy) if copy.id != one.track.id => Some(evidence.standing(transaction, copy)?),
+            Some(_) | None => None,
+        };
+
+        if copy_stands == Some(Standing::Changed) {
             continue;
         }
 
         let held = match &one.held {
             Some(copy)
-                if copy.id != one.track.id
-                    && standing(transaction, vault, copy)? == Standing::Lossless
+                if copy_stands == Some(Standing::Lossless)
                     && (stands == Standing::Lossy
                         || Quality::of(copy).is_above(Quality::of(&one.track))) =>
             {
@@ -903,34 +1027,32 @@ fn settled(
     Ok(replacing)
 }
 
-fn standing(connection: &Connection, vault: Option<&Vault>, track: &Track) -> Result<Standing> {
-    let Some(named) = track.location.as_path() else {
-        return Ok(Standing::Gone);
-    };
-    Ok(match whole_file(connection, track.id)? {
-        Some(file) if file.path == named => file.standing(vault),
-        Some(_) | None => Standing::Gone,
-    })
-}
-
-fn standing_of(connection: &Connection, vault: Option<&Vault>, track: TrackId) -> Result<Standing> {
-    Ok(whole_file(connection, track)?.map_or(Standing::Gone, |file| file.standing(vault)))
-}
-
 fn whole_file(connection: &Connection, track: TrackId) -> Result<Option<WholeFile>> {
-    let found: Option<(String, bool, Option<String>)> = connection
+    let found: Option<(String, bool, Option<String>, i64, i64)> = connection
         .query_row(
             HOW_A_WHOLE_FILE_STANDS,
             params![track.get() as i64],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .optional()
         .map_err(|source| Error::store(StoreOp::Query, source))?;
-    Ok(found.map(|(path, lossless, within)| WholeFile {
-        path: store::path_of(&path),
-        within_the_vault: within.as_deref().map(store::path_of),
-        lossless,
-    }))
+    Ok(
+        found.map(|(path, lossless, within, size, modified)| WholeFile {
+            path: store::path_of(&path),
+            within_the_vault: within.as_deref().map(store::path_of),
+            lossless,
+            size,
+            modified,
+        }),
+    )
 }
 
 fn any_replacement_waits(connection: &Connection) -> Result<bool> {
@@ -982,15 +1104,20 @@ fn awaiting(connection: &Connection) -> Result<Vec<Awaiting>> {
     Ok(found)
 }
 
+fn may_be_weighed_beside(connection: &Connection, lossy: TrackId, kept: TrackId) -> Result<bool> {
+    Ok(waits_on_a_row_of_its_own(connection, lossy, kept)?
+        && lengths_agree(connection, lossy, kept)?)
+}
+
 fn may_be_kept_beside(
     connection: &Connection,
-    vault: Option<&Vault>,
+    evidence: &Evidence,
     lossy: TrackId,
     kept: TrackId,
 ) -> Result<bool> {
     Ok(waits_on_a_row_of_its_own(connection, lossy, kept)?
-        && standing_of(connection, vault, lossy)? == Standing::Lossy
-        && standing_of(connection, vault, kept)? == Standing::Lossless
+        && evidence.standing_of(connection, lossy)? == Standing::Lossy
+        && evidence.standing_of(connection, kept)? == Standing::Lossless
         && lengths_agree(connection, lossy, kept)?)
 }
 
@@ -1090,14 +1217,14 @@ fn delivered_for(
 
 fn kept_beside_on(
     transaction: &Transaction<'_>,
-    vault: Option<&Vault>,
+    evidence: &Evidence,
     evidenced: &[Evidenced],
     now: SystemTime,
 ) -> Result<u64> {
     let mut beside = 0;
 
     for &Evidenced { taken: lossy, kept } in evidenced {
-        if !may_be_kept_beside(transaction, vault, lossy, kept)? {
+        if !may_be_kept_beside(transaction, evidence, lossy, kept)? {
             continue;
         }
         replacing::kept_beside(transaction, lossy, kept, now)?;
@@ -1114,4 +1241,198 @@ fn still_held_by(connection: &Connection, row: ReleaseTrackId, track: TrackId) -
             |row| row.get(0),
         )
         .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{
+        cell::Cell,
+        sync::{Arc, mpsc},
+    };
+
+    use resonate_core::SampleFormat;
+    use rusqlite::params_from_iter;
+
+    use super::*;
+    use crate::Codec;
+
+    const AN_ASIDE_IS_WAITED_ON_FOR: Duration = Duration::from_secs(10);
+
+    const THE_RECORDING: &str = "0b6c2b3c-5b7e-4c1c-9d9a-4c7d2f1a7e11";
+
+    const ANOTHER_ROOT_IS_ADDED: &str = "INSERT INTO roots (path) VALUES ('/elsewhere')";
+
+    const THE_COPY_IS_SCANNED_AGAIN: &str =
+        "UPDATE tracks SET modified = modified + 1 WHERE codec = ?1";
+
+    fn written_aside(library: &Library, sql: &'static str, bound: Vec<Value>) -> bool {
+        let inner = Arc::clone(&library.inner);
+        let (written, writes) = mpsc::channel();
+
+        thread::spawn(move || {
+            let outcome = inner.write(|transaction| {
+                transaction
+                    .execute(sql, params_from_iter(bound))
+                    .map(drop)
+                    .map_err(|source| Error::store(StoreOp::Update, source))
+            });
+            let _ = written.send(outcome.is_ok());
+        });
+        writes
+            .recv_timeout(AN_ASIDE_IS_WAITED_ON_FOR)
+            .unwrap_or(false)
+    }
+
+    fn the_copy_is_scanned_again(library: &Library) -> bool {
+        written_aside(
+            library,
+            THE_COPY_IS_SCANNED_AGAIN,
+            vec![Value::Integer(store::codec_code(Codec::Flac))],
+        )
+    }
+
+    fn another_root_is_added(library: &Library) -> bool {
+        written_aside(library, ANOTHER_ROOT_IS_ADDED, Vec::new())
+    }
+
+    fn a_lossy_song_and_its_lossless_copy(library: &Library) -> Result<(Track, Track)> {
+        let ids = library.inner.write(|transaction| {
+            transaction
+                .execute("INSERT INTO roots (id, path) VALUES (1, '/music')", [])
+                .map_err(|source| Error::store(StoreOp::Insert, source))?;
+            [
+                ("/music/Echoes.opus", Codec::Opus),
+                ("/music/Echoes.flac", Codec::Flac),
+            ]
+            .into_iter()
+            .map(|(path, codec)| {
+                transaction
+                    .query_row(
+                        "INSERT INTO tracks (root_id, path, title, sample_rate, channels,
+                                                 sample_format, codec, file_size, modified,
+                                                 added, seen, mbid)
+                             VALUES (1, ?1, 'Echoes', 44100, 2, ?2, ?3, 0, 0, 0, 0, ?4)
+                             RETURNING id",
+                        params![
+                            path,
+                            store::format_code(SampleFormat::S16),
+                            store::codec_code(codec),
+                            THE_RECORDING
+                        ],
+                        |row| row.get::<_, i64>(0),
+                    )
+                    .map_err(|source| Error::store(StoreOp::Insert, source))
+                    .and_then(|id| Ok(TrackId::new(id.cast_unsigned())?))
+            })
+            .collect::<Result<Vec<_>>>()
+        })?;
+        let mut tracks = library.tracks_with_ids(&ids)?;
+
+        tracks.sort_by_key(|track| track.id);
+
+        let copy = tracks.pop().expect("the lossless copy is held");
+        let lossy = tracks.pop().expect("the lossy song is held");
+        Ok((lossy, copy))
+    }
+
+    fn ticked(lossy: &Track, copy: &Track) -> [Replaceable; 1] {
+        [Replaceable {
+            track: lossy.clone(),
+            held: Some(copy.clone()),
+            release_track: None,
+            pending: false,
+            looked: None,
+        }]
+    }
+
+    fn waiting_for_its_recording(library: &Library, lossy: &Track) -> Result<()> {
+        library.inner.write(|transaction| {
+            transaction
+                .execute(
+                    A_LOSSY_SONG_WAITS,
+                    params![lossy.id.get() as i64, Option::<i64>::None, 0],
+                )
+                .map(drop)
+                .map_err(|source| Error::store(StoreOp::Insert, source))
+        })
+    }
+
+    #[test]
+    fn a_replacement_weighing_a_stalled_file_leaves_the_catalog_writable_meanwhile() -> Result<()> {
+        let library = Library::open_in_memory()?;
+
+        let (lossy, copy) = a_lossy_song_and_its_lossless_copy(&library)?;
+        let answered = Cell::new(false);
+
+        let replacing = library.replace_weighing(&ticked(&lossy, &copy), &|_| {
+            answered.set(another_root_is_added(&library));
+            true
+        })?;
+
+        assert!(answered.get(), "another write waited on the stalled file");
+        assert_eq!(replacing.beside, 1, "{replacing:?}");
+        assert_eq!(library.version_chosen_for(lossy.id)?, Some(copy.id));
+        Ok(())
+    }
+
+    #[test]
+    fn a_copy_scanned_again_while_its_file_was_weighed_is_never_kept_beside_the_song() -> Result<()>
+    {
+        let library = Library::open_in_memory()?;
+
+        let (lossy, copy) = a_lossy_song_and_its_lossless_copy(&library)?;
+        let answered = Cell::new(false);
+
+        let replacing = library.replace_weighing(&ticked(&lossy, &copy), &|_| {
+            answered.set(the_copy_is_scanned_again(&library));
+            true
+        })?;
+
+        assert!(answered.get(), "the copy was not scanned again");
+        assert_eq!(replacing, Replacing::default());
+        assert_eq!(library.version_chosen_for(lossy.id)?, None);
+        Ok(())
+    }
+
+    #[test]
+    fn a_settle_weighing_a_stalled_file_leaves_the_catalog_writable_meanwhile() -> Result<()> {
+        let library = Library::open_in_memory()?;
+
+        let (lossy, copy) = a_lossy_song_and_its_lossless_copy(&library)?;
+        let answered = Cell::new(false);
+
+        waiting_for_its_recording(&library, &lossy)?;
+
+        let beside = library.settled_beside_weighing(&|_| {
+            answered.set(another_root_is_added(&library));
+            true
+        })?;
+
+        assert!(answered.get(), "another write waited on the stalled file");
+        assert_eq!(beside, 1);
+        assert_eq!(library.version_chosen_for(lossy.id)?, Some(copy.id));
+        Ok(())
+    }
+
+    #[test]
+    fn a_copy_scanned_again_while_a_settle_weighed_its_file_leaves_the_song_waiting() -> Result<()>
+    {
+        let library = Library::open_in_memory()?;
+
+        let (lossy, _) = a_lossy_song_and_its_lossless_copy(&library)?;
+        let answered = Cell::new(false);
+
+        waiting_for_its_recording(&library, &lossy)?;
+
+        let beside = library.settled_beside_weighing(&|_| {
+            answered.set(the_copy_is_scanned_again(&library));
+            true
+        })?;
+
+        assert!(answered.get(), "the copy was not scanned again");
+        assert_eq!(beside, 0);
+        assert_eq!(library.version_chosen_for(lossy.id)?, None);
+        assert!(library.inner.read(any_replacement_waits)?);
+        Ok(())
+    }
 }

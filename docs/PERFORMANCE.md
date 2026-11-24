@@ -8,12 +8,6 @@ are in [ROADMAP.md](ROADMAP.md).
 ## Android
 
 ## Performance and scale
-- [M · 0.17.1] Check file availability outside the catalog's replacement write lock.
-  **Low, architect.** A replacement or downloaded variant can stat a stalled mount while
-  holding the only SQLite writer (`crates/resonate-library/src/db/replacing.rs:215`, `:821`,
-  `:1091`). Collect file evidence before the write and validate the catalog rows inside it.
-  Done when a delayed stat leaves other catalog writes responsive and a changed candidate
-  is skipped.
 - [L · blocked: gpui] Every frame the visualiser or lyrics pane asks for is a whole-window GPU
   paint: gpui 0.2.2, the latest release, draws the scene whole; damage tracking open upstream (zed
   #62455)
