@@ -6,7 +6,10 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use self::{
     deletions::SONGS_DELETED_EVERYWHERE,
     set_back::kept_or_set_back,
-    unheld::{UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS, name_the_answers},
+    unheld::{
+        HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART, UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
+        name_the_answers,
+    },
 };
 use crate::{
     DeviceId, Error, Result, SpaceId, StoreOp,
@@ -220,6 +223,7 @@ const MIGRATIONS: &[&str] = &[
     LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED,
     UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
     STAMPS_PAST_THE_BOUND_ARE_RESTAMPED,
+    HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART,
 ];
 
 const STAMPS_PAST_THE_BOUND_ARE_RESTAMPED: &str = "

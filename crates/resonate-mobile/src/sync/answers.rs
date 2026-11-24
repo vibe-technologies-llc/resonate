@@ -6,7 +6,7 @@ use resonate_core::{
 };
 use resonate_library::{KeptPrint, LyricText, weighed_again};
 use resonate_lyrics::read_lyrics;
-use resonate_sync::HeldSince;
+use resonate_sync::{HeldMark, HeldSince};
 use rusqlite::{OptionalExtension, Row, params};
 
 use super::{
@@ -30,13 +30,12 @@ struct Alike {
     frames: Option<i64>,
 }
 
-struct ArrivedDocument {
-    id: i64,
-    held: HeldSince,
-}
-
 impl DocumentCatalog {
-    pub(super) fn documents_held_after(&self, mark: i64, most: usize) -> Answered<Vec<HeldSince>> {
+    pub(super) fn documents_held_after(
+        &self,
+        mark: HeldMark,
+        most: usize,
+    ) -> Answered<Vec<HeldSince>> {
         let most = i64::try_from(most).unwrap_or(i64::MAX);
         let connection = self.catalog.0.lock();
 
@@ -44,12 +43,13 @@ impl DocumentCatalog {
             .prepare_cached(&format!(
                 "SELECT d.id, d.added, d.packets, d.frames, d.rate, {RECORDING_COLUMNS}
                    FROM documents d
-                  WHERE d.missing = 0 AND d.added >= ?1
-                  ORDER BY d.added, d.id LIMIT ?2"
+                  WHERE d.missing = 0
+                    AND (d.added > ?1 OR (d.added = ?1 AND (?2 IS NULL OR d.id > ?2)))
+                  ORDER BY d.added, d.id LIMIT ?3"
             ))
             .and_then(|mut query| {
                 query
-                    .query_map(params![mark, most], |row| {
+                    .query_map(params![mark.at, mark.after, most], |row| {
                         let file =
                             match (row.get::<_, Option<i64>>(2)?, row.get::<_, Option<i64>>(3)?) {
                                 (Some(packets), Some(frames)) => Some(WholeFile {
@@ -59,14 +59,12 @@ impl DocumentCatalog {
                                 }),
                                 _ => None,
                             };
-                        Ok(ArrivedDocument {
+                        Ok(HeldSince {
+                            at: row.get(1)?,
                             id: row.get(0)?,
-                            held: HeldSince {
-                                at: row.get(1)?,
-                                recording: recording_at(row, 5)?,
-                                received_under: Vec::new(),
-                                file,
-                            },
+                            recording: recording_at(row, 5)?,
+                            received_under: Vec::new(),
+                            file,
                         })
                     })?
                     .collect::<rusqlite::Result<Vec<_>>>()
@@ -76,13 +74,13 @@ impl DocumentCatalog {
             .prepare_cached("SELECT recording FROM songs_received WHERE track = ?1")
             .map_err(unavailable)?;
 
-        for document in &mut arrived {
-            document.held.received_under = received
-                .query_map(params![document.id], |row| row.get(0))
+        for held in &mut arrived {
+            held.received_under = received
+                .query_map(params![held.id], |row| row.get(0))
                 .and_then(Iterator::collect)
                 .map_err(unavailable)?;
         }
-        Ok(arrived.into_iter().map(|document| document.held).collect())
+        Ok(arrived)
     }
 
     pub(super) fn lyrics_to_share(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
@@ -787,14 +785,72 @@ mod tests {
                 .expect("received");
         }
 
-        let listed = documents.documents_held_after(150, 10).expect("listed");
-        let every = documents.documents_held_after(0, 10).expect("listed");
+        let listed = documents
+            .documents_held_after(
+                HeldMark {
+                    at: 150,
+                    after: None,
+                },
+                10,
+            )
+            .expect("listed");
+        let every = documents
+            .documents_held_after(HeldMark { at: 0, after: None }, 10)
+            .expect("listed");
 
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].at, 200);
         assert_eq!(listed[0].recording.title, "Hunter");
         assert_eq!(listed[0].received_under, ["named:asked"]);
         assert_eq!(every.len(), 2);
+
+        let _ = fs::remove_dir_all(folder);
+    }
+
+    #[test]
+    fn songs_added_in_one_second_are_listed_past_a_page_by_their_document() {
+        let folder = folder("held-in-one-second");
+        let player = player(&folder);
+
+        let documents = documents_of(&player, &folder);
+        let tied = ["Joga", "Hunter", "Bachelorette"].map(|title| {
+            song(&player, &format!("content://a/{title}"), title, None)
+                .id
+                .cast_signed()
+        });
+
+        player
+            .catalog
+            .0
+            .lock()
+            .execute("UPDATE documents SET added = 300", [])
+            .expect("dated");
+
+        let first = documents
+            .documents_held_after(
+                HeldMark {
+                    at: 300,
+                    after: None,
+                },
+                2,
+            )
+            .expect("listed");
+        let rest = documents
+            .documents_held_after(HeldMark::past(&first[1]), 2)
+            .expect("listed");
+        let later = documents
+            .documents_held_after(HeldMark::past(&rest[0]), 2)
+            .expect("listed");
+
+        assert_eq!(
+            first.iter().map(|held| held.id).collect::<Vec<_>>(),
+            tied[..2]
+        );
+        assert_eq!(
+            rest.iter().map(|held| held.id).collect::<Vec<_>>(),
+            tied[2..]
+        );
+        assert!(later.is_empty());
 
         let _ = fs::remove_dir_all(folder);
     }

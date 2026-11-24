@@ -196,8 +196,11 @@ fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
         .execute("UPDATE state SET clock = ?1", [i64::MAX])
         .expect("a clock frozen there");
     connection
-        .pragma_update(None, "user_version", laid - 1)
-        .expect("the step not yet laid");
+        .execute_batch("ALTER TABLE state DROP COLUMN held_after")
+        .expect("the songs of one second not yet told apart");
+    connection
+        .pragma_update(None, "user_version", laid - 2)
+        .expect("the steps not yet laid");
     drop(connection);
     device.ledger = Ledger::open(path).expect("the ledger opened by the build that restamps");
 }
@@ -1822,6 +1825,71 @@ fn a_catalog_that_cannot_say_what_it_came_to_hold_is_offered_every_unheld_answer
         phone.shelf.answers_of("Song 1100"),
         [sung("Song 1100", false)]
     );
+}
+
+#[test]
+fn songs_held_in_one_instant_past_a_whole_page_each_take_their_answer_across_a_restart() {
+    let folder = scratch_folder("held-in-one-instant");
+    let path = folder.join("sync.sqlite");
+    let songs = (0..650)
+        .map(|at| song(&format!("Tied {at}")))
+        .collect::<Vec<_>>();
+    let mut desk = Device::new("Desk", &[]);
+    let mut phone = Device::new("Phone", &[]);
+
+    phone.ledger = Ledger::open(&path).expect("a ledger");
+    phone.ledger.enter_space(SPACE).expect("a space");
+    for held in &songs {
+        desk.shelf
+            .answer_here(&held.title, sung(&held.title, false));
+    }
+    sync(&mut desk, &mut phone);
+    phone.shelf.inside.lock().held_listings_before_refusing = Some(1);
+    phone.shelf.add_songs_in_one_instant(&songs, days_ago(0));
+
+    let interrupted = phone.ledger.settle(&phone.shelf);
+    let answered_before_the_restart = songs
+        .iter()
+        .filter(|held| !phone.shelf.answers_of(&held.title).is_empty())
+        .count();
+
+    phone.ledger = Ledger::open(&path).expect("the ledger again");
+    phone.shelf.inside.lock().held_listings_before_refusing = None;
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let unanswered = songs
+        .iter()
+        .filter(|held| phone.shelf.answers_of(&held.title) != [sung(&held.title, false)])
+        .count();
+
+    drop(phone);
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert!(interrupted.is_err());
+    assert_eq!(answered_before_the_restart, 500);
+    assert_eq!(unanswered, 0);
+}
+
+#[test]
+fn a_song_arriving_just_after_the_last_page_was_read_takes_its_answer_on_the_next_settle() {
+    let mut desk = Device::new("Desk", &[]);
+    let mut phone = Device::new("Phone", &[]);
+
+    for title in ["A", "B"] {
+        desk.shelf.answer_here(title, sung(title, false));
+    }
+    sync(&mut desk, &mut phone);
+    phone.shelf.inside.lock().arriving_after_the_last_page = Some(song("B"));
+    phone.shelf.add_song(song("A"), b"A".repeat(1000));
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let b_while_it_arrived = phone.shelf.answers_of("B");
+
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    assert_eq!(phone.shelf.answers_of("A"), [sung("A", false)]);
+    assert!(b_while_it_arrived.is_empty());
+    assert_eq!(phone.shelf.answers_of("B"), [sung("B", false)]);
 }
 
 #[test]

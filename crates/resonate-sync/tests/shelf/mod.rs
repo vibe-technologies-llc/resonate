@@ -10,7 +10,7 @@ use std::{
 use parking_lot::{Condvar, Mutex};
 use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
 use resonate_sync::{
-    Catalog, DeletedEverywhere, Held, HeldShare, HeldSince, LocalListen, LocalPlaylist,
+    Catalog, DeletedEverywhere, Held, HeldMark, HeldShare, HeldSince, LocalListen, LocalPlaylist,
     LocalPlaylistId, LocalQuery, Opened, QueryBody, Refused, RemoteListen, Resumed, SongTags,
     SongsHeldAfter,
 };
@@ -69,6 +69,8 @@ pub struct Inside {
     pub takes_no_answers: bool,
     pub answers_offered: usize,
     pub arrivals_untracked: bool,
+    pub held_listings_before_refusing: Option<usize>,
+    pub arriving_after_the_last_page: Option<Recording>,
     pub covers: BTreeMap<String, Vec<u8>>,
     pub uncovered: Vec<Mbid>,
     pub lyricsfiles: Vec<(Recording, SharedLyricsfile)>,
@@ -123,6 +125,19 @@ impl Shelf {
 
     pub fn add_song(&self, recording: Recording, bytes: Vec<u8>) {
         self.arrive(recording, bytes, false);
+    }
+
+    pub fn add_songs_in_one_instant(&self, recordings: &[Recording], at: i64) {
+        let mut inside = self.inside.lock();
+
+        for recording in recordings {
+            let bytes = recording.title.as_bytes().repeat(1000);
+
+            inside.arrivals.push((recording.clone(), at, false));
+            inside.songs.push((recording.clone(), bytes));
+        }
+        drop(inside);
+        self.moved();
     }
 
     fn arrive(&self, recording: Recording, bytes: Vec<u8>, received: bool) {
@@ -867,19 +882,26 @@ impl Catalog for Shelf {
         Ok(answers)
     }
 
-    fn songs_held_after(&self, mark: i64, most: usize) -> Result<SongsHeldAfter, Refused> {
-        let inside = self.inside.lock();
+    fn songs_held_after(&self, mark: HeldMark, most: usize) -> Result<SongsHeldAfter, Refused> {
+        let mut inside = self.inside.lock();
 
         if inside.arrivals_untracked {
             return Ok(SongsHeldAfter::Untracked);
+        }
+        if let Some(left) = inside.held_listings_before_refusing.as_mut() {
+            if *left == 0 {
+                return Err(Refused::Unavailable);
+            }
+            *left -= 1;
         }
 
         let mut held = inside
             .arrivals
             .iter()
-            .filter(|(_, at, _)| *at >= mark)
-            .map(|(recording, at, _)| HeldSince {
+            .zip(0_i64..)
+            .map(|((recording, at, _), id)| HeldSince {
                 at: *at,
+                id,
                 recording: recording.clone(),
                 received_under: inside
                     .received_as
@@ -889,10 +911,21 @@ impl Catalog for Shelf {
                     .collect(),
                 file: None,
             })
+            .filter(|song| mark.lists(song))
             .collect::<Vec<_>>();
 
-        held.sort_by_key(|song| song.at);
+        held.sort_by_key(|song| (song.at, song.id));
         held.truncate(most);
+
+        let last_page = held.len() < most;
+        let arriving = inside.arriving_after_the_last_page.take_if(|_| last_page);
+
+        drop(inside);
+        if let Some(arriving) = arriving {
+            let bytes = arriving.title.as_bytes().repeat(1000);
+
+            self.add_song(arriving, bytes);
+        }
         Ok(SongsHeldAfter::Listed(held))
     }
 

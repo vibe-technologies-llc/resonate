@@ -6,7 +6,7 @@ use rusqlite::{Connection, OptionalExtension, params};
 use super::{AnswerSlot, Ledger};
 use crate::{
     Error, Result, StoreOp,
-    catalog::{Catalog, HeldSince, SongsHeldAfter},
+    catalog::{Catalog, HeldMark, HeldSince, SongsHeldAfter},
     wire::{decoded_answer, decoded_recording},
 };
 
@@ -15,6 +15,10 @@ ALTER TABLE state ADD COLUMN held_mark INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE answers ADD COLUMN named TEXT NOT NULL DEFAULT '';
 CREATE INDEX answers_not_here_by_name ON answers(named) WHERE here = 0;
 CREATE INDEX answers_not_here_by_file ON answers(file) WHERE here = 0;
+";
+
+pub(super) const HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART: &str = "
+ALTER TABLE state ADD COLUMN held_after INTEGER;
 ";
 
 const HELD_LOOKED_AT_ONCE: usize = 500;
@@ -88,12 +92,37 @@ impl Ledger {
             None => self.offer_every_unheld_answer(catalog)?,
         };
 
-        self.answers_tried_at = Some(catalog.revision());
+        self.answers_tried_at = Some(revision);
         Ok(settled)
     }
 
+    fn held_mark(&self) -> Result<HeldMark> {
+        self.connection
+            .query_row(
+                "SELECT held_mark, held_after FROM state WHERE id = 1",
+                [],
+                |row| {
+                    Ok(HeldMark {
+                        at: row.get(0)?,
+                        after: row.get(1)?,
+                    })
+                },
+            )
+            .map_err(|source| Error::store(StoreOp::Read, source))
+    }
+
+    fn keep_held_mark(&self, mark: HeldMark) -> Result<()> {
+        self.connection
+            .execute(
+                "UPDATE state SET held_mark = ?1, held_after = ?2 WHERE id = 1",
+                params![mark.at, mark.after],
+            )
+            .map_err(|source| Error::store(StoreOp::Write, source))?;
+        Ok(())
+    }
+
     fn offer_to_songs_held_since(&mut self, catalog: &dyn Catalog) -> Result<Option<usize>> {
-        let mut mark = self.state_number("held_mark")?.cast_signed();
+        let mut mark = self.held_mark()?;
         let mut settled = 0;
 
         loop {
@@ -104,10 +133,11 @@ impl Ledger {
                 SongsHeldAfter::Untracked => return Ok(None),
                 SongsHeldAfter::Listed(songs) => songs,
             };
-            let Some(last) = songs.iter().map(|song| song.at).max() else {
+            let Some(last) = songs.iter().max_by_key(|song| (song.at, song.id)) else {
                 break;
             };
             let whole_page = songs.len() >= HELD_LOOKED_AT_ONCE;
+            let moved_on = mark.lists(last);
 
             for song in &songs {
                 for row in self.unheld_answers_naming(song)? {
@@ -116,18 +146,13 @@ impl Ledger {
                     }
                 }
             }
-            mark = if whole_page && last <= mark {
-                mark.saturating_add(1)
+            mark = if whole_page {
+                HeldMark::past(last)
             } else {
-                last
+                HeldMark::from_the_second_of(last)
             };
-            self.connection
-                .execute(
-                    "UPDATE state SET held_mark = max(held_mark, ?1) WHERE id = 1",
-                    params![mark],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-            if !whole_page {
+            self.keep_held_mark(mark)?;
+            if !whole_page || !moved_on {
                 break;
             }
         }
@@ -325,6 +350,7 @@ mod tests {
             .expect("read");
         let held_without_its_mbid = HeldSince {
             at: 1,
+            id: 1,
             recording: Recording {
                 mbid: None,
                 ..identified()
@@ -336,10 +362,71 @@ mod tests {
         let found = ledger
             .unheld_answers_naming(&held_without_its_mbid)
             .expect("read");
-        let mark = ledger.state_number("held_mark").expect("a mark");
+        let mark = ledger.held_mark().expect("a mark");
 
         assert_eq!(named, identified().named_key().as_str());
         assert_eq!(found.len(), 1);
-        assert_eq!(mark, 0);
+        assert_eq!(mark, HeldMark { at: 0, after: None });
+    }
+
+    #[test]
+    fn a_mark_kept_before_songs_of_one_second_were_told_apart_lists_that_second_from_its_first_song()
+     {
+        let connection = Connection::open_in_memory().expect("a connection");
+        let before = MIGRATIONS
+            .iter()
+            .position(|step| *step == HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART)
+            .expect("the step is in the chain");
+
+        for step in &MIGRATIONS[..before] {
+            connection
+                .execute_batch(step)
+                .expect("the ledger of before");
+        }
+        connection
+            .execute(
+                "INSERT INTO state (id, device, held_mark) VALUES (1, ?1, 1700000000)",
+                params![[3_u8; 16].as_slice()],
+            )
+            .expect("a state row with a mark");
+        connection
+            .pragma_update(
+                None,
+                "user_version",
+                u32::try_from(before).expect("a count"),
+            )
+            .expect("stamped");
+
+        let ledger = Ledger::over(connection).expect("carried forward");
+
+        let kept = ledger.held_mark().expect("a mark");
+        let first_of_that_second = HeldSince {
+            at: 1_700_000_000,
+            id: i64::MIN,
+            recording: identified(),
+            received_under: Vec::new(),
+            file: None,
+        };
+        let a_second_before = HeldSince {
+            at: 1_699_999_999,
+            ..first_of_that_second.clone()
+        };
+        let next = HeldMark::past(&first_of_that_second);
+
+        ledger.keep_held_mark(next).expect("kept");
+
+        let kept_again = ledger.held_mark().expect("a mark");
+
+        assert_eq!(
+            kept,
+            HeldMark {
+                at: 1_700_000_000,
+                after: None
+            }
+        );
+        assert!(kept.lists(&first_of_that_second));
+        assert!(!kept.lists(&a_second_before));
+        assert_eq!(kept_again, next);
+        assert!(!kept_again.lists(&first_of_that_second));
     }
 }

@@ -100,9 +100,36 @@ pub struct DeletedEverywhere {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HeldSince {
     pub at: i64,
+    pub id: i64,
     pub recording: Recording,
     pub received_under: Vec<String>,
     pub file: Option<WholeFile>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HeldMark {
+    pub at: i64,
+    pub after: Option<i64>,
+}
+
+impl HeldMark {
+    pub const fn past(song: &HeldSince) -> Self {
+        Self {
+            at: song.at,
+            after: Some(song.id),
+        }
+    }
+
+    pub const fn from_the_second_of(song: &HeldSince) -> Self {
+        Self {
+            at: song.at,
+            after: None,
+        }
+    }
+
+    pub fn lists(self, song: &HeldSince) -> bool {
+        (song.at, Some(song.id)) > (self.at, self.after)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -252,7 +279,7 @@ pub trait Catalog: Send + Sync + 'static {
         Ok(false)
     }
 
-    fn songs_held_after(&self, mark: i64, most: usize) -> Result<SongsHeldAfter, Refused> {
+    fn songs_held_after(&self, mark: HeldMark, most: usize) -> Result<SongsHeldAfter, Refused> {
         let _ = (mark, most);
         Ok(SongsHeldAfter::Untracked)
     }

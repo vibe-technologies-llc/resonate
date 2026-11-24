@@ -169,7 +169,7 @@ the `layouts` table, a device's organise layout, below; `SONGS_DELETED_EVERYWHER
 table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an index on a told
 listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS`:
 `answers.named` and `state.held_mark`, below; `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: data only, in
-the stamps bullet below); `user_version` counts the steps laid, a change appends a
+the stamps bullet below; `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`: `state.held_after`, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
 shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
@@ -383,16 +383,29 @@ platforms; the catalog seam stays thin.
   timed ones, re-listed by the catalog that took them, spread with a newer stamp; the row itself is
   last writer wins (`plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread`). An
   answer for a song not held is kept (`here = 0`, under its `named` key too) and offered again only
-  once its song arrives: whenever the catalog's revision moved, `settle` asks
-  `Catalog::songs_held_after(state.held_mark)` (`HELD_LOOKED_AT_ONCE`, 500, a page; `at >= mark`, the
-  mark stepping as the answers' does and kept in the ledger, so a start offers nothing again) and
-  offers only the unheld rows naming each song listed: by its key, its named key, that key with no
+  once its song arrives: whenever the catalog's revision moved since the revision read as the
+  last settle *began* (so a song committed while it read is looked at by the next settle,
+  `a_song_arriving_just_after_the_last_page_was_read_takes_its_answer_on_the_next_settle`), `settle`
+  asks `Catalog::songs_held_after` with a `HeldMark` (`HELD_LOOKED_AT_ONCE`, 500, a page). A
+  `HeldSince` is a second `at` and an `id` the catalog keeps for the song (the phones' document id),
+  and the catalog lists the songs after the mark in `(at, id)` order (`HeldMark::lists`): the mark's
+  `at` is `state.held_mark` and its `after` is `state.held_after`, none meaning that second from its
+  first song. A whole page moves the mark past its last song (`HeldMark::past`), so a page boundary
+  inside one second skips none of it; a shorter page moves it to the start of its last song's second
+  (`HeldMark::from_the_second_of`), so that second is read again next time. The mark is kept in the
+  ledger after every page, so a start goes on where the last run stopped and offers nothing again
+  (`songs_held_in_one_instant_past_a_whole_page_each_take_their_answer_across_a_restart`), and a
+  mark kept before `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART` has no `after` and reads its second
+  whole, as it was read then
+  (`a_mark_kept_before_songs_of_one_second_were_told_apart_lists_that_second_from_its_first_song`).
+  It offers only the unheld rows naming each song listed: by its key, its named key, that key with no
   album, the keys it was received under, or its `WholeFile` for a study or peaks
   (`an_answer_for_a_song_not_held_yet_lands_once_the_song_arrives`,
   `an_answer_for_a_song_not_held_is_offered_again_only_once_its_song_arrives`,
   `an_answer_for_a_song_not_held_is_not_offered_again_by_a_ledger_opened_anew`,
   `a_song_received_under_the_name_an_answer_was_told_by_takes_the_answer`). The phones list a
-  document from its `added` second with its `songs_received` keys and its file; a catalog that
+  document from its `added` second and its id, with its `songs_received` keys and its file
+  (`songs_added_in_one_second_are_listed_past_a_page_by_their_document`); a catalog that
   answers `SongsHeldAfter::Untracked` (the default, and the desktop's, whose library keeps no such
   list) is offered every unheld row in pages of `UNHELD_OFFERED_AT_ONCE` (500) instead
   (`a_catalog_that_cannot_say_what_it_came_to_hold_is_offered_every_unheld_answer_in_pages`).

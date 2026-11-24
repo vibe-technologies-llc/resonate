@@ -31,9 +31,9 @@ mod words {
 pub use crate::fuzzing::read_a_stun_answer;
 pub use crate::{
     catalog::{
-        Catalog, DeletedEverywhere, Held, HeldShare, HeldSince, LocalListen, LocalPlaylist,
-        LocalPlaylistId, LocalQuery, Opened, ReadSeek, Refused, RemoteListen, Resumed, SongTags,
-        SongsHeldAfter,
+        Catalog, DeletedEverywhere, Held, HeldMark, HeldShare, HeldSince, LocalListen,
+        LocalPlaylist, LocalPlaylistId, LocalQuery, Opened, ReadSeek, Refused, RemoteListen,
+        Resumed, SongTags, SongsHeldAfter,
     },
     change::{
         AnswerNote, Change, Clock, DeletionNote, DeviceForgotten, DeviceNote, FavouriteNote,

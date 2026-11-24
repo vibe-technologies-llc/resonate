@@ -136,15 +136,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   a formerly published queue clears. Done when two ledgers retain a handed
   position and play order, withdraw the handoff after a clear, and ignore
   an older note that arrives afterwards.
-- [M · 0.17.1] Keep unheld answers eligible across a full page of tied arrivals.
-  **Medium, architect.** Phone documents can share one added second after
-  bulk work or migration. When 500 rows fill a page at that second, the
-  ledger advances to the next second and skips the rest
-  (`crates/resonate-mobile/src/catalog.rs:57`, `:62`,
-  `crates/resonate-mobile/src/sync/answers.rs:39`,
-  `crates/resonate-sync/src/ledger/unheld.rs:95`, `:119`). Keep a stable
-  secondary key in the cursor. Done when a page boundary inside one
-  timestamp offers every newly held song its kept answers across restart.
 - [M · 0.17.1] Check free space and freshness before replacing a phone's MusicBrainz copy.
   **Medium, architect.** Once a copy exists, the phone accepts a different
   export without checking whether it is older or whether the staged file fits
@@ -174,12 +165,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   handoff that updates or restarts the TLS listeners after validating the
   new pair. Done when the next handshake after renewal presents the new
   chain and a failed renewal preserves the working credentials.
-- [S · 0.17.1] Recheck held answers after a catalog addition during settlement.
-  **Low, builder.** The ledger remembers the catalog revision after checking for new songs.
-  A song committed after the final page read can have its revision consumed before its
-  kept answers are checked (`crates/resonate-sync/src/ledger/unheld.rs:80`, `:91`, `:99`).
-  Remember the starting revision. Done when an addition just after the last page receives
-  its waiting answer on the next settle without an unrelated catalog edit.
 - [S · 0.17.1] Prefer usable LAN addresses before capping advertisements.
   **Low, builder.** Numeric order can keep several bridge addresses while dropping
   the actual LAN address from a beacon or WebSocket punch
