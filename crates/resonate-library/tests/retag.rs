@@ -1,21 +1,23 @@
 #[cfg(all(unix, not(target_os = "macos")))]
 use std::ffi::OsStr;
 use std::{
-    fs,
+    env, fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
+        mpsc,
     },
     time::{Duration, SystemTime},
 };
 
+use parking_lot::Mutex;
 use resonate_core::{MediaLocation, TrackId};
 use resonate_library::{
-    AlbumQuery, CoverArt, Favoured, FileTags, ImageFormat, Library, LookupOp, LyricText, Picturing,
-    Popularity, Rated, Result, RetagOptions, RetagSummary, ScanOptions, SheetEdit, SheetField,
-    SheetScope, TagEdit, TagField, TagSet, TagSink, TagSource, TrackQuery, Unwritten,
+    AlbumQuery, CoverArt, Error, Favoured, FileTags, ImageFormat, Library, LookupOp, LyricText,
+    Picturing, Popularity, Rated, Result, RetagOptions, RetagSummary, ScanOptions, SheetEdit,
+    SheetField, SheetScope, TagEdit, TagField, TagSet, TagSink, TagSource, TrackQuery, Unwritten,
 };
 
 use crate::support::{
@@ -256,6 +258,188 @@ fn only_what_a_lookup_answered_for_is_written_into_the_file() -> Result<()> {
         again.retagging.writes
     );
     assert_eq!(again.stats.unchanged, 1);
+    Ok(())
+}
+
+const LEFT_BY_A_DEAD_WRITER: &str = "01 Echoes.aiff.resonate-staging";
+
+struct TwoRoots {
+    one: Tree,
+    other: Tree,
+    database: PathBuf,
+    library: Library,
+    in_one: PathBuf,
+    in_other: PathBuf,
+}
+
+impl TwoRoots {
+    fn answered() -> Result<Self> {
+        let one = Tree::new();
+        let other = Tree::new();
+        let misspelt = |title: &str| {
+            Aiff::new()
+                .text(TITLE, title)
+                .text(ARTIST, "The Orbiters")
+                .build()
+        };
+
+        let in_one = one.write("1.aiff", &misspelt("Echos"));
+        let in_other = other.write("2.aiff", &misspelt("Fearles"));
+        let database = one.path().join("library.db");
+        let library = Library::open(&database)?;
+
+        scan(
+            &library,
+            &ScanOptions {
+                roots: vec![one.path().to_path_buf(), other.path().to_path_buf()],
+                ..options(&one)
+            },
+        )?;
+        answer_track(&database, &in_one, "Echoes", "The Orbiters", "Orbits");
+        answer_track(&database, &in_other, "Fearless", "The Orbiters", "Orbits");
+        Ok(Self {
+            one,
+            other,
+            database,
+            library,
+            in_one,
+            in_other,
+        })
+    }
+
+    fn retagged_under(&self, roots: Vec<PathBuf>, apply: bool) -> Result<RetagSummary> {
+        self.library
+            .retag(
+                Arc::new(FileTags::default()),
+                RetagOptions {
+                    roots,
+                    apply,
+                    undo: false,
+                    lyrics: Vec::new(),
+                },
+            )?
+            .join()
+    }
+
+    fn bytes(&self) -> [Vec<u8>; 2] {
+        [&self.in_one, &self.in_other].map(|file| fs::read(file).expect("a file to read"))
+    }
+
+    fn stamps(&self) -> [SystemTime; 2] {
+        [&self.in_one, &self.in_other].map(|file| {
+            fs::metadata(file)
+                .and_then(|held| held.modified())
+                .expect("a file's time")
+        })
+    }
+}
+
+#[test]
+fn a_retag_naming_one_root_writes_into_that_root_and_leaves_the_other_byte_for_byte() -> Result<()>
+{
+    let roots = TwoRoots::answered()?;
+    let before = roots.bytes();
+    let stamped = roots.stamps();
+
+    let named = roots.retagged_under(vec![roots.one.path().to_path_buf()], true)?;
+
+    assert_eq!(named.stats.written, 1);
+    assert_eq!(named.retagging.writes.len(), 1);
+    assert_eq!(named.retagging.writes[0].path, roots.in_one);
+    assert_eq!(tags_of(&roots.in_one).title.as_deref(), Some("Echoes"));
+    assert_eq!(
+        roots.bytes()[1],
+        before[1],
+        "a root the run was not given was written into"
+    );
+    assert_eq!(roots.stamps()[1], stamped[1]);
+    assert_ne!(roots.bytes()[0], before[0]);
+
+    let rest = roots.retagged_under(vec![roots.other.path().to_path_buf()], true)?;
+
+    assert_eq!(rest.stats.written, 1);
+    assert_eq!(tags_of(&roots.in_other).title.as_deref(), Some("Fearless"));
+    Ok(())
+}
+
+#[test]
+fn a_retag_naming_a_root_the_catalog_does_not_hold_is_refused_and_writes_nothing() -> Result<()> {
+    let roots = TwoRoots::answered()?;
+    let before = roots.bytes();
+    let elsewhere = env::temp_dir();
+
+    let refused = roots.retagged_under(
+        vec![roots.one.path().to_path_buf(), elsewhere.clone()],
+        true,
+    );
+
+    assert!(
+        matches!(refused, Err(Error::NotARoot { ref path }) if *path == elsewhere),
+        "a root the catalog does not hold was not refused: {refused:?}"
+    );
+    assert_eq!(roots.bytes(), before, "a refused run wrote a file");
+    assert!(
+        !roots.library.retag_walks_back()?,
+        "a refused run noted something to put back"
+    );
+    Ok(())
+}
+
+#[test]
+fn a_retag_preview_leaves_every_file_and_staging_file_alone_and_only_an_apply_sweeps_the_stage()
+-> Result<()> {
+    let roots = TwoRoots::answered()?;
+    let staged = roots.one.write_stamped(
+        LEFT_BY_A_DEAD_WRITER,
+        b"half a file",
+        Duration::from_secs(1),
+    );
+
+    beside(&roots.database)
+        .execute(
+            "INSERT INTO staged_writes (path, pid) VALUES (?1, ?2)",
+            rusqlite::params![
+                staged.to_str().expect("a path the catalog can hold"),
+                u32::MAX
+            ],
+        )
+        .expect("the stage is noted as a run's that is gone");
+
+    let before = roots.bytes();
+    let stamped = roots.stamps();
+    let noted_stages = || -> i64 {
+        beside(&roots.database)
+            .query_row("SELECT count(*) FROM staged_writes", [], |row| row.get(0))
+            .expect("the stages are counted")
+    };
+
+    for named in [
+        Vec::new(),
+        vec![roots.one.path().to_path_buf()],
+        vec![roots.other.path().to_path_buf()],
+    ] {
+        let preview = roots.retagged_under(named, false)?;
+
+        assert_eq!(preview.stats.written, 0, "a preview wrote something");
+        assert!(!preview.retagging.writes.is_empty());
+        assert_eq!(roots.bytes(), before, "a preview changed a file");
+        assert_eq!(roots.stamps(), stamped);
+        assert!(staged.exists(), "a preview swept a staging file");
+        assert_eq!(noted_stages(), 1, "a preview forgot a staging file");
+        assert!(
+            !roots.library.retag_walks_back()?,
+            "a preview noted something to put back"
+        );
+    }
+
+    let applied = roots.retagged_under(Vec::new(), true)?;
+
+    assert_eq!(applied.stats.written, 2);
+    assert!(
+        !staged.exists(),
+        "an apply left a dead writer's staging file"
+    );
+    assert_eq!(noted_stages(), 0);
     Ok(())
 }
 
@@ -778,57 +962,287 @@ fn a_tag_run_keeps_the_words_kept_for_every_file_it_wrote_and_asks_again_after_a
     Ok(())
 }
 
-#[test]
-fn a_tag_walk_back_cut_short_keeps_what_it_did_not_put_back_for_the_next_one() -> Result<()> {
-    let tree = Tree::new();
-    let written = |name: &str| {
-        tree.write(
-            name,
-            &Aiff::new()
-                .text(TITLE, "Echos")
-                .text(ARTIST, "The Orbiters")
-                .build(),
-        )
-    };
-    let open = written("open/1.aiff");
-    let shut = written("shut/2.aiff");
-    let database = tree.path().join("library.db");
-    let library = Library::open(&database)?;
+const A_GATE_HOLDS_FOR: Duration = Duration::from_secs(60);
 
-    scan(&library, &options(&tree))?;
-    answer_track(&database, &open, "Echoes", "The Orbiters", "Orbits");
-    answer_track(&database, &shut, "Echoes", "The Orbiters", "Orbits");
-    retagged(&library, true)?;
+struct Gate {
+    at: PathBuf,
+    reached: mpsc::Sender<()>,
+    released: Mutex<mpsc::Receiver<()>>,
+}
 
-    assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
+struct Interrupting {
+    tags: FileTags,
+    refused: Option<PathBuf>,
+    gate: Option<Gate>,
+}
 
-    forbid_writing(&shut);
-    if can_write(&shut) {
-        allow_writing(&shut);
-        eprintln!("skipping: this user writes a file whatever its mode");
-        return Ok(());
+impl Interrupting {
+    fn refusing(file: &Path) -> Self {
+        Self {
+            tags: FileTags::default(),
+            refused: Some(file.to_path_buf()),
+            gate: None,
+        }
     }
 
-    let cut_short = walked_back(&library, true)?;
+    fn holding_after(file: &Path) -> (Self, mpsc::Receiver<()>, mpsc::Sender<()>) {
+        let (reached, arrival) = mpsc::channel();
+        let (release, released) = mpsc::channel();
 
-    allow_writing(&shut);
+        let sink = Self {
+            tags: FileTags::default(),
+            refused: None,
+            gate: Some(Gate {
+                at: file.to_path_buf(),
+                reached,
+                released: Mutex::new(released),
+            }),
+        };
 
-    assert_eq!(cut_short.stats.written, 1);
-    assert_eq!(cut_short.retagging.passed_over.len(), 1);
-    assert_eq!(tags_of(&open).title.as_deref(), Some("Echos"));
-    assert_eq!(tags_of(&shut).title.as_deref(), Some("Echoes"));
-    assert!(library.retag_walks_back()?);
+        (sink, arrival, release)
+    }
+}
 
-    let rest = walked_back(&library, true)?;
+impl TagSource for Interrupting {
+    fn read(
+        &self,
+        location: &MediaLocation,
+        picturing: Picturing,
+    ) -> resonate_codec::Result<resonate_library::Tagged> {
+        self.tags.read(location, picturing)
+    }
+}
 
-    assert_eq!(rest.stats.written, 1, "the file left behind was forgotten");
-    assert_eq!(tags_of(&shut).title.as_deref(), Some("Echos"));
-    assert_eq!(
-        tags_of(&open).title.as_deref(),
-        Some("Echos"),
-        "a file already put back had the run written into it again"
-    );
-    Ok(())
+impl TagSink for Interrupting {
+    fn writes(&self, location: &MediaLocation) -> bool {
+        self.tags.writes(location)
+    }
+
+    fn write(
+        &self,
+        location: &MediaLocation,
+        writing: resonate_codec::Writing<'_>,
+    ) -> resonate_codec::Result<()> {
+        let path = location.as_path().expect("a local file");
+
+        if self.refused.as_deref() == Some(path) {
+            return Err(resonate_codec::Error::Unwritable {
+                location: location.clone(),
+            });
+        }
+        self.tags.write(location, writing)?;
+        if let Some(gate) = self.gate.as_ref().filter(|gate| gate.at == path) {
+            gate.reached.send(()).expect("the test waits at the gate");
+            gate.released
+                .lock()
+                .recv_timeout(A_GATE_HOLDS_FOR)
+                .expect("the test lets the write go");
+        }
+        Ok(())
+    }
+
+    fn rated(&self, location: &MediaLocation) -> resonate_codec::Result<Rated> {
+        self.tags.rated(location)
+    }
+}
+
+const MISSPELT_AND_RIGHT: [(&str, &str); 3] = [
+    ("Echos", "Echoes"),
+    ("Fearles", "Fearless"),
+    ("San Trope", "San Tropez"),
+];
+
+fn titles_where(put_back: [bool; 3]) -> Vec<Option<String>> {
+    put_back
+        .into_iter()
+        .zip(MISSPELT_AND_RIGHT)
+        .map(|(back, (misspelt, right))| Some(if back { misspelt } else { right }.to_owned()))
+        .collect()
+}
+
+struct ThreeFilesRetagged {
+    _tree: Tree,
+    database: PathBuf,
+    library: Library,
+    files: Vec<PathBuf>,
+}
+
+impl ThreeFilesRetagged {
+    fn written() -> Result<Self> {
+        let tree = Tree::new();
+        let files: Vec<PathBuf> = MISSPELT_AND_RIGHT
+            .iter()
+            .enumerate()
+            .map(|(at, (misspelt, _))| {
+                tree.write(
+                    &format!("{}.aiff", at + 1),
+                    &Aiff::new()
+                        .text(TITLE, misspelt)
+                        .text(ARTIST, "The Orbiters")
+                        .build(),
+                )
+            })
+            .collect();
+        let database = tree.path().join("library.db");
+        let library = Library::open(&database)?;
+
+        scan(&library, &options(&tree))?;
+        for (file, (_, right)) in files.iter().zip(MISSPELT_AND_RIGHT) {
+            answer_track(&database, file, right, "The Orbiters", "Orbits");
+        }
+
+        let run = retagged(&library, true)?;
+
+        assert_eq!(run.stats.written, 3);
+        Ok(Self {
+            _tree: tree,
+            database,
+            library,
+            files,
+        })
+    }
+
+    fn titles(&self) -> Vec<Option<String>> {
+        self.files.iter().map(|file| tags_of(file).title).collect()
+    }
+
+    fn noted(&self) -> Vec<String> {
+        let reader = beside(&self.database);
+        let mut statement = reader
+            .prepare("SELECT path FROM retagged ORDER BY path")
+            .expect("the notes are readable");
+
+        statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
+            .expect("the notes answer their paths")
+    }
+
+    fn title_kept_for(&self, file: &Path) -> Option<String> {
+        beside(&self.database)
+            .query_row(
+                "SELECT was FROM retagged_fields WHERE path = ?1 AND field = ?2",
+                rusqlite::params![
+                    file.to_str().expect("a path the catalog can hold"),
+                    TagField::Title.as_str()
+                ],
+                |row| row.get(0),
+            )
+            .expect("a note of the title")
+    }
+
+    fn named(&self, files: &[usize]) -> Vec<String> {
+        files
+            .iter()
+            .map(|at| {
+                self.files[*at]
+                    .to_str()
+                    .expect("a path the catalog can hold")
+                    .to_owned()
+            })
+            .collect()
+    }
+
+    fn walked_back_by(&self, sink: Arc<dyn TagSink>) -> Result<resonate_library::RetagHandle> {
+        self.library.retag(
+            sink,
+            RetagOptions {
+                roots: Vec::new(),
+                apply: true,
+                undo: true,
+                lyrics: Vec::new(),
+            },
+        )
+    }
+
+    fn assert_the_unfinished_are_kept(&self, unfinished: usize) {
+        assert!(self.library.retag_walks_back().expect("the notes read"));
+        assert_eq!(
+            self.noted(),
+            self.named(&[unfinished]),
+            "the notes kept are not the files left unfinished"
+        );
+        assert_eq!(
+            self.title_kept_for(&self.files[unfinished]).as_deref(),
+            Some(MISSPELT_AND_RIGHT[unfinished].0),
+            "the original title was not kept for the file left unfinished"
+        );
+    }
+
+    fn assert_a_later_walk_back_finishes(&self, unfinished: usize) -> Result<()> {
+        let rest = walked_back(&self.library, true)?;
+
+        assert_eq!(rest.stats.written, 1, "{:?}", rest.retagging.passed_over);
+        assert!(rest.retagging.passed_over.is_empty());
+        assert_eq!(self.titles(), titles_where([true; 3]));
+        assert_eq!(
+            tags_of(&self.files[unfinished]).title.as_deref(),
+            Some(MISSPELT_AND_RIGHT[unfinished].0)
+        );
+        Ok(())
+    }
+}
+
+#[test]
+fn a_tag_walk_back_cancelled_between_files_keeps_the_notes_of_those_it_did_not_reach() -> Result<()>
+{
+    let run = ThreeFilesRetagged::written()?;
+    let (gated, arrived, release) = Interrupting::holding_after(&run.files[1]);
+
+    let handle = run.walked_back_by(Arc::new(gated))?;
+
+    arrived
+        .recv_timeout(A_GATE_HOLDS_FOR)
+        .expect("the walk back reaches the second file");
+    handle.cancel();
+    release.send(()).expect("the write is waiting");
+
+    let cut_short = handle.join()?;
+
+    assert!(cut_short.cancelled);
+    assert_eq!(cut_short.stats.written, 2);
+    assert_eq!(run.titles(), titles_where([true, true, false]));
+
+    run.assert_the_unfinished_are_kept(2);
+    run.assert_a_later_walk_back_finishes(2)
+}
+
+#[test]
+fn a_tag_walk_back_that_a_file_refuses_keeps_that_files_notes_for_the_next_one() -> Result<()> {
+    let run = ThreeFilesRetagged::written()?;
+    let refused = run
+        .walked_back_by(Arc::new(Interrupting::refusing(&run.files[1])))?
+        .join()?;
+
+    assert!(!refused.cancelled);
+    assert_eq!(refused.stats.written, 2);
+    assert_eq!(why_passed_over(&refused), [Unwritten::Refused]);
+    assert_eq!(run.titles(), titles_where([true, false, true]));
+
+    run.assert_the_unfinished_are_kept(1);
+    run.assert_a_later_walk_back_finishes(1)
+}
+
+#[test]
+fn a_tag_walk_back_that_finds_a_file_missing_keeps_its_notes_until_the_file_is_back() -> Result<()>
+{
+    let run = ThreeFilesRetagged::written()?;
+    let away = run.files[1].with_extension("away");
+
+    moved(&run.files[1], &away);
+
+    let absent = walked_back(&run.library, true);
+
+    moved(&away, &run.files[1]);
+
+    let absent = absent?;
+
+    assert_eq!(absent.stats.written, 2);
+    assert_eq!(why_passed_over(&absent), [Unwritten::Unreadable]);
+    assert_eq!(run.titles(), titles_where([true, false, true]));
+
+    run.assert_the_unfinished_are_kept(1);
+    run.assert_a_later_walk_back_finishes(1)
 }
 
 #[test]

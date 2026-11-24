@@ -95,20 +95,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   Inject failures after creating a rechunked WAVE stage, after a file changes during a staged
   save, and during whole-copy write-back. Done when the tests prove ordinary failures leave the
   original intact, discard their stage and retain a usable recovery copy for a torn write-back.
-- [M · 0.17.1] Prove a retag writes only the chosen roots and only on apply. **Medium, builder.**
-  Retag validates and filters the roots and guards its staging sweep with `apply`, but the
-  retag tests exercise all roots together and do not check the preview sweep
-  (`crates/resonate-library/src/retag.rs:229`, `crates/resonate-library/src/retag.rs:300`,
-  `crates/resonate-library/tests/retag.rs:267`). Done when a two-root fixture proves the other
-  root's bytes stay identical, an unknown root is refused, and preview leaves files and stages
-  untouched.
-- [M · 0.17.1] Prove interrupted retag undo keeps the original tags available. **Medium, builder.**
-  Cancellation and unreadable files can leave an undo unfinished. The current partial-undo
-  fixture depends on its runner being unable to write to a directory
-  (`crates/resonate-library/src/retag.rs:269`, `crates/resonate-library/src/retag.rs:878`,
-  `crates/resonate-library/src/retag.rs:1471`, `crates/resonate-library/tests/retag.rs:805`).
-  Use a gated tag sink and a temporarily missing file in the test. Done when cancellation,
-  refusal and absence preserve the notes for unfinished files and a later undo restores them.
 - [M · 0.17.1] Exercise unreadable-folder scans regardless of process privileges. **Low, builder.**
   The permission cases return successfully without checking scan behavior when the runner
   can read or search the fixture anyway (`crates/resonate-library/tests/scanning.rs:1659`,

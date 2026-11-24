@@ -2006,7 +2006,11 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   writes the run again. **A walk back cut short leaves the rest to the next**: `Noted::walking_back`
   holds the record read; a write that fails or reads back otherwise has its old note put back
   (`note_again`); unless every noted file was put back (`retag::walked_back`) the files that were
-  lose their notes. `resonate tag --undo` previews, `--undo --apply` writes; the tags part of *Rescan, refresh and retag*
+  lose their notes; a cancellation, a refusal and a file gone missing each keep the notes of the files
+  left unfinished, through a sink that holds or refuses a write
+  (`a_tag_walk_back_cancelled_between_files_keeps_the_notes_of_those_it_did_not_reach`,
+  `a_tag_walk_back_that_a_file_refuses_keeps_that_files_notes_for_the_next_one`,
+  `a_tag_walk_back_that_finds_a_file_missing_keeps_its_notes_until_the_file_is_back`). `resonate tag --undo` previews, `--undo --apply` writes; the tags part of *Rescan, refresh and retag*
   offers *Put the last run back* behind a second press wherever `Library::retag_walks_back` says a
   run is noted. **A replaced picture is kept once**: `retagged_pictures`, `retagged.picture_id`:
   `KeptPictures` weighs each against the last eight kept (`PICTURES_WEIGHED_AGAINST`), by pointer
