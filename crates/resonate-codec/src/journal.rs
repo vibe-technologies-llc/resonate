@@ -12,6 +12,7 @@ use resonate_core::{
     file_facts, naming, os_bytes,
     owner::Owner,
     positioned::FileExt as _,
+    unreplacing::renamed_over_nothing,
     writer::{self, Held, Writer},
 };
 
@@ -185,47 +186,6 @@ fn under_a_fresh_name<T>(
         }
     }
     Err(collided)
-}
-
-#[cfg(unix)]
-fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
-    use rustix::{
-        fs::{CWD, RenameFlags, renameat_with},
-        io::Errno,
-    };
-
-    match renameat_with(CWD, from, CWD, to, RenameFlags::NOREPLACE) {
-        Ok(()) => Ok(()),
-        Err(Errno::INVAL | Errno::NOSYS | Errno::OPNOTSUPP) => linked_over_nothing(from, to),
-        Err(errno) => Err(errno.into()),
-    }
-}
-
-#[cfg(not(unix))]
-fn renamed_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
-    linked_over_nothing(from, to)
-}
-
-fn linked_over_nothing(from: &Path, to: &Path) -> io::Result<()> {
-    match fs::hard_link(from, to) {
-        Ok(()) => fs::remove_file(from).inspect_err(|_| link_taken_back(to)),
-        Err(error)
-            if matches!(
-                error.kind(),
-                io::ErrorKind::AlreadyExists | io::ErrorKind::CrossesDevices
-            ) =>
-        {
-            Err(error)
-        }
-        Err(_) if fs::symlink_metadata(to).is_ok() => Err(io::ErrorKind::AlreadyExists.into()),
-        Err(_) => fs::rename(from, to),
-    }
-}
-
-fn link_taken_back(to: &Path) {
-    if let Err(error) = fs::remove_file(to) {
-        tracing::warn!(path = %to.display(), %error, "a link made for a kept copy whose staged name stayed could not be taken back");
-    }
 }
 
 fn restored(file: &File, stood: u64, changes: &[Change<'_>]) -> io::Result<()> {
@@ -1393,6 +1353,8 @@ mod tests {
     #[cfg(all(unix, not(target_os = "macos")))]
     use std::os::unix::ffi::OsStrExt as _;
     use std::{env, slice};
+
+    use resonate_core::unreplacing::renamed_onto_a_name_reserved;
 
     use super::*;
     use crate::{
@@ -2635,6 +2597,28 @@ mod tests {
             Mended::WrittenBack
         );
         assert_eq!(fs::read(&track).expect("the track"), theirs);
+    }
+
+    #[test]
+    fn a_move_with_no_exclusive_rename_and_no_link_keeps_a_competing_name_and_lands_under_a_fresh_one()
+     {
+        let folder = Folder::new("reserved-collision");
+        let track = OsStr::new("Echoes.flac");
+        let staged = folder.0.join(".Echoes.ours.flac");
+        let planted = kept_next(&folder.0, "Echoes.flac", WHOLE_SUFFIX, 0);
+
+        fs::write(&staged, b"ours").expect("our staged copy");
+        fs::write(&planted, b"theirs").expect("another writer's copy under the next name");
+
+        let (landed, ()) = under_a_fresh_name(&folder.0, track, WHOLE_SUFFIX, |copy| {
+            renamed_onto_a_name_reserved(&staged, copy)
+        })
+        .expect("a fresh name is taken");
+
+        assert_ne!(landed, planted);
+        assert_eq!(fs::read(&planted).expect("their copy"), b"theirs");
+        assert_eq!(fs::read(&landed).expect("our copy"), b"ours");
+        assert!(!staged.exists(), "the staged name stayed");
     }
 
     #[test]

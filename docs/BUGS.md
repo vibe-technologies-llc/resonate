@@ -301,13 +301,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replacement before reporting success. Done when racing imports and a
   failed stage leave one complete validated certificate installed.
 ## Catalog
-- [S · 0.17.1] Reserve a tag recovery file's destination when no exclusive rename exists. **Low, builder.**
-  The library's fallback move now creates the destination name exclusively before renaming onto it
-  (`unreplacing.rs`, `renamed_onto_a_name_reserved`), but the codec's own `renamed_over_nothing`
-  (`crates/resonate-codec/src/journal.rs`) still checks and then renames where links are refused,
-  so a recovery file that appears between the two can be replaced. Share one helper (in core) or
-  give the codec the same reservation. Done when a fallback test with links refused keeps a
-  competing destination and still lands the journal under a fresh name.
 - [S · 0.17.1] Settle a pending removal before a scan prunes its file. **Low, builder.**
   A delete whose run ended after the trash took the file is settled when the catalog next opens or
   before the next delete (`deleted::settle`, `removals_pending`), but an open that could not take

@@ -39,6 +39,7 @@ mod synced;
 pub mod text;
 mod time;
 pub mod titles;
+pub mod unreplacing;
 mod volume;
 #[cfg(any(windows, test))]
 mod volume_mounts;

@@ -1823,8 +1823,10 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   it `.resonate-torn` and answers `codec::Error::WrittenBackPartway`. **A kept name is never taken
   from another writer:** a pid is not unique across pid namespaces (Flatpak), so a journal, whole or
   torn name may already stand. The journal is made `create_new` and the copy renamed without
-  replacing (`renamed_over_nothing`: `renameat2(RENAME_NOREPLACE)`, else a hard link then
-  unlink); a name found taken is left as it stands and the next count tried
+  replacing (`resonate_core::unreplacing::renamed_over_nothing`, the move the library shares: `renameat2(RENAME_NOREPLACE)`, else a hard link then
+  unlink, else a name reserved by `File::create_new` and renamed onto, never a name checked and
+  renamed over
+  (`a_move_with_no_exclusive_rename_and_no_link_keeps_a_competing_name_and_lands_under_a_fresh_one`)); a name found taken is left as it stands and the next count tried
   (`under_a_fresh_name`, `NAMES_TRIED_AT_MOST` of them, then the write is refused as
   `AlreadyExists`), and only a file this writer made is removed when its own write fails, so what
   another writer kept stays for the sweep and the mend
@@ -2182,7 +2184,7 @@ guard and re-keys a sleeve-keyed album after moves land.
   `MOVES_PER_BATCH` (256) at a time, cut by `batches` only between units (a unit is one move, or a
   whole cycle, below); cancel heard before each unit, never inside one. Per move: `standing` re-weigh
   (vanished source `SourceGone`, destination now taken `Collided`), rename with sidecars, record in
-  `done`. **Every rename refuses an existing name**: `unreplacing::renamed_over_nothing` is
+  `done`. **Every rename refuses an existing name**: `unreplacing::renamed_over_nothing` (`resonate-core`'s, shared with the codec's journal) is
   `renameat2(RENAME_NOREPLACE)` (`renameatx_np(RENAME_EXCL)` on a Mac, both through rustix; Windows begins at the link), where
   the volume offers no such rename falling back to `hard_link` then unlink, and where it offers no
   link either to a name reserved by `File::create_new` and renamed onto
