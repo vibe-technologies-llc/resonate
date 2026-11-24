@@ -63,6 +63,8 @@ pub struct Inside {
     pub favourites: Vec<Recording>,
     pub listens: Vec<LocalListen>,
     pub credited: Vec<RemoteListen>,
+    pub credits_asked: usize,
+    pub refuses_crediting: bool,
     pub dies_after_crediting: bool,
     pub resumed: Option<Resumed>,
     pub deleted_by_hand: Vec<String>,
@@ -680,6 +682,10 @@ impl Catalog for Shelf {
     fn credit(&self, listen: &RemoteListen) -> Result<bool, Refused> {
         let mut inside = self.inside.lock();
 
+        inside.credits_asked += 1;
+        if inside.refuses_crediting {
+            return Err(Refused::Unavailable);
+        }
         if !Self::holds_song(&inside, &listen.recording) {
             return Ok(false);
         }

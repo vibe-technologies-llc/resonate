@@ -337,6 +337,19 @@ platforms; the catalog seam stays thin.
   (`origin_device`, `origin_id`), so `Catalog::credit` of a listen already credited changes nothing and
   answers true; the ledger's `credited` mark may therefore lag the catalog (a crash between the two) and
   `settle` only repeats a no-op (`a_listen_credited_before_the_ledger_could_say_so_is_credited_once`).
+  **A waiting listen is asked after again only once the catalog could hold its song**: `settle`
+  passes over the uncredited listens while `Catalog::revision` stands where it stood before the last
+  whole pass (`listens_tried_at`, in memory as answers' and deletions' marks are; a song landed,
+  scanned or imported writes a track row, which moves the desktop's revision, and a document or a
+  received song moves a phone's), and a pass asks once for each recording the catalog answered
+  absent. A credit refused, in a pass or as a listen arrives, leaves the mark unset, so the next
+  look asks again though the catalog never moved
+  (`listens_waiting_on_songs_absent_here_are_asked_after_again_only_once_the_catalog_moves`,
+  `a_listen_a_failing_catalog_refused_is_credited_by_a_later_settle_though_the_catalog_never_moved`).
+  The library's `credit` resolves the song through a read before it opens a write, so an absent
+  song takes no write lock
+  (`a_listen_of_a_song_not_here_is_answered_by_a_read_while_another_connection_holds_the_write`);
+  the phone's resolves before it inserts alike.
   **A song deleted and found again keeps its listens as they were**: the library's `unheld_listens`
   holds each listen's id, `elsewhere` and origin, and `credit_the_unheld` writes it back under them,
   so `listens_after` owes none of them again (`library.md`).

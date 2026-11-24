@@ -13,15 +13,6 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## Device sync
-- [M · 0.17.1] Retry waiting remote listens when their songs become available.
-  **Medium, architect.** Each ledger look loads and decodes every uncredited listen, and
-  the desktop opens a catalog write transaction per listen even when the song is absent
-  (`crates/resonate-sync/src/service.rs:2368`, `:2387`,
-  `crates/resonate-sync/src/ledger.rs:3440`, `:3562`,
-  `crates/resonate-library/src/synced.rs:1317`). Use the catalog's song arrival tracking
-  to limit retries and leave short-lived write failures eligible for a later attempt.
-  Done when repeated looks over a large unchanged set make no repeated credit writes and
-  adding a missing song credits its listens exactly once.
 - [M · 0.17.1] Release Android transfer work while a sync landing folder is away.
   **Medium, architect.** Any waiting song keeps the transfer flag on, even when
   its selected folder is unavailable. Background polling stays at two seconds

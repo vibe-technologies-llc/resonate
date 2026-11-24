@@ -1319,20 +1319,15 @@ pub(crate) fn credit(
     at: i64,
     heard: Duration,
 ) -> Result<bool> {
+    if inner
+        .read(|connection| track_to_credit(connection, recording))?
+        .is_none()
+    {
+        return Ok(false);
+    }
+
     let credited = inner.write(|transaction| {
-        let Some(cut) = resolved(transaction, recording)? else {
-            return Ok(Credited::NotHere);
-        };
-        let row = Row::of(&cut)?;
-        let track: Option<i64> = transaction
-            .query_row(
-                "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
-                params![row.path, row.start()],
-                |row| row.get(0),
-            )
-            .optional()
-            .map_err(|source| Error::store(StoreOp::Query, source))?;
-        let Some(track) = track else {
+        let Some(track) = track_to_credit(transaction, recording)? else {
             return Ok(Credited::NotHere);
         };
         let heard = i64::try_from(heard.as_nanos()).unwrap_or(i64::MAX);
@@ -1360,6 +1355,22 @@ pub(crate) fn credit(
         inner.arrived();
     }
     Ok(credited != Credited::NotHere)
+}
+
+fn track_to_credit(connection: &Connection, recording: &Recording) -> Result<Option<i64>> {
+    let Some(cut) = resolved(connection, recording)? else {
+        return Ok(None);
+    };
+    let row = Row::of(&cut)?;
+
+    connection
+        .query_row(
+            "SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2",
+            params![row.path, row.start()],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|source| Error::store(StoreOp::Query, source))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -1956,6 +1967,35 @@ mod tests {
                 Ok(())
             })
             .expect("read");
+    }
+
+    #[test]
+    fn a_listen_of_a_song_not_here_is_answered_by_a_read_while_another_connection_holds_the_write()
+    {
+        let scratch = Scratch::new("credit-unheld");
+        let music = scratch.path.join("music");
+        let catalog = scratch.path.join("catalog.db");
+
+        fs::create_dir_all(&music).expect("a folder");
+        fs::write(music.join("echoes.wav"), named_wav("Echoes")).expect("a written song");
+
+        let window = Library::open(&catalog).expect("a catalog on disc");
+        let other = Library::open(&catalog).expect("the same catalog opened again");
+
+        window
+            .scan(scanning(music))
+            .expect("scan")
+            .join()
+            .expect("scanned");
+
+        let heard = Duration::from_secs(60);
+        let unheld = other
+            .inner()
+            .write(|_| credit(window.inner(), &song("Absent"), &[1; 16], 7, 1_000, heard));
+        let held = credit(window.inner(), &song("Echoes"), &[1; 16], 8, 1_000, heard);
+
+        assert!(!unheld.expect("answered while the write is held elsewhere"));
+        assert!(held.expect("credited"));
     }
 
     #[test]

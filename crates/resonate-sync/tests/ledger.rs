@@ -1158,6 +1158,91 @@ fn a_listen_credited_before_the_ledger_could_say_so_is_credited_once() {
 }
 
 #[test]
+fn listens_waiting_on_songs_absent_here_are_asked_after_again_only_once_the_catalog_moves() {
+    let titles = (0..300).map(|at| format!("Song {at}")).collect::<Vec<_>>();
+    let named = titles.iter().map(String::as_str).collect::<Vec<_>>();
+    let mut desk = Device::new("Desk", &named);
+    let mut phone = Device::new("Phone", &[]);
+
+    for title in &titles {
+        desk.shelf.listen_here(title, days_ago(2));
+        desk.shelf.listen_here(title, days_ago(1));
+    }
+    sync(&mut desk, &mut phone);
+
+    let asked_on_arrival = phone.shelf.inside.lock().credits_asked;
+
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    let asked = phone.shelf.inside.lock().credits_asked;
+
+    for _ in 0..3 {
+        phone.ledger.settle(&phone.shelf).expect("settled again");
+        phone.look();
+    }
+
+    assert_eq!(asked_on_arrival, 2 * titles.len());
+    assert_eq!(asked - asked_on_arrival, titles.len());
+    assert_eq!(phone.shelf.inside.lock().credits_asked, asked);
+    assert!(phone.shelf.inside.lock().credited.is_empty());
+
+    phone.shelf.add_song(song("Song 7"), b"7".to_vec());
+    phone
+        .ledger
+        .settle(&phone.shelf)
+        .expect("settled once a song arrived");
+    phone
+        .ledger
+        .settle(&phone.shelf)
+        .expect("settled once more");
+
+    let credited = phone
+        .shelf
+        .inside
+        .lock()
+        .credited
+        .iter()
+        .map(|listen| listen.recording.title.clone())
+        .collect::<Vec<_>>();
+
+    assert_eq!(credited, ["Song 7", "Song 7"]);
+    assert_eq!(
+        phone.shelf.inside.lock().credits_asked - asked,
+        titles.len() + 1
+    );
+}
+
+#[test]
+fn a_listen_a_failing_catalog_refused_is_credited_by_a_later_settle_though_the_catalog_never_moved()
+{
+    let mut desk = Device::new("Desk", &["A"]);
+    let mut phone = Device::new("Phone", &["A"]);
+
+    desk.shelf.listen_here("A", days_ago(3));
+    sync(&mut desk, &mut phone);
+    phone.ledger.settle(&phone.shelf).expect("settled");
+
+    assert_eq!(phone.shelf.inside.lock().credited.len(), 1);
+
+    desk.shelf.listen_here("A", days_ago(2));
+    phone.shelf.inside.lock().refuses_crediting = true;
+
+    let changes = desk.send();
+
+    assert!(phone.ledger.arrived(&phone.shelf, &changes).is_err());
+    assert!(phone.ledger.settle(&phone.shelf).is_err());
+
+    phone.shelf.inside.lock().refuses_crediting = false;
+    phone
+        .ledger
+        .settle(&phone.shelf)
+        .expect("settled once the catalog writes again");
+    phone.ledger.settle(&phone.shelf).expect("settled again");
+
+    assert_eq!(phone.shelf.inside.lock().credited.len(), 2);
+}
+
+#[test]
 fn a_snapshot_brings_a_new_device_to_the_same_state() {
     let mut desk = Device::new("Desk", &["A", "B"]);
     let mut phone = Device::new("Phone", &["A", "B"]);

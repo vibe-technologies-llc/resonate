@@ -39,6 +39,7 @@ mod deletions;
 mod released;
 mod set_back;
 mod unheld;
+mod waiting_listens;
 
 pub const BUNDLE_BYTES: usize = 192 * 1024;
 pub const LISTENS_LOOKED_AT_ONCE: usize = 2_000;
@@ -325,6 +326,7 @@ pub struct Ledger {
     clock: Clock,
     answers_tried_at: Option<u64>,
     deletions_tried_at: Option<u64>,
+    listens_tried_at: Option<u64>,
 }
 
 struct AnswerSlot {
@@ -555,6 +557,7 @@ impl Ledger {
             clock,
             answers_tried_at: None,
             deletions_tried_at: None,
+            listens_tried_at: None,
         })
     }
 
@@ -3166,25 +3169,16 @@ impl Ledger {
             return Ok(false);
         }
 
-        let credited = catalog
-            .credit(&RemoteListen {
+        self.credit_arrived(
+            catalog,
+            &RemoteListen {
                 from: listen.device,
                 id: listen.id,
                 recording: listen.recording.clone(),
                 at: listen.at,
                 heard: listen.heard,
-            })
-            .map_err(Error::Catalog)?;
-
-        if credited {
-            self.connection
-                .execute(
-                    "UPDATE listens SET credited = 1 WHERE device = ?1 AND id = ?2",
-                    params![listen.device.0.as_slice(), listen.id.cast_signed()],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-        }
-        Ok(credited)
+            },
+        )
     }
 
     fn answer_arrived(&mut self, catalog: &dyn Catalog, note: &AnswerNote) -> Result<bool> {
@@ -3364,18 +3358,7 @@ impl Ledger {
             }
         }
 
-        for (device, id, listen) in self.uncredited_listens()? {
-            if catalog.credit(&listen).map_err(Error::Catalog)? {
-                self.connection
-                    .execute(
-                        "UPDATE listens SET credited = 1 WHERE device = ?1 AND id = ?2",
-                        params![device, id],
-                    )
-                    .map_err(|source| Error::store(StoreOp::Write, source))?;
-                settled += 1;
-            }
-        }
-
+        settled += self.settle_listens(catalog)?;
         settled += self.settle_answers(catalog)?;
         settled += self.settle_deletions(catalog)?;
         Ok(settled)
@@ -3484,45 +3467,6 @@ impl Ledger {
             .filter(|row| !row.here)
             .map(|row| (row.key.clone(), row.recording.clone()))
             .collect())
-    }
-
-    fn uncredited_listens(&self) -> Result<Vec<(Vec<u8>, i64, RemoteListen)>> {
-        let mut statement = self
-            .connection
-            .prepare("SELECT device, id, recording, at, heard FROM listens WHERE credited = 0")
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, Vec<u8>>(0)?,
-                    row.get::<_, i64>(1)?,
-                    row.get::<_, Vec<u8>>(2)?,
-                    row.get::<_, i64>(3)?,
-                    row.get::<_, i64>(4)?,
-                ))
-            })
-            .map_err(|source| Error::store(StoreOp::Read, source))?;
-        let mut listens = Vec::new();
-
-        for row in rows {
-            let (device, id, recording, at, heard) =
-                row.map_err(|source| Error::store(StoreOp::Read, source))?;
-            let from = device_from(&device);
-
-            listens.push((
-                device,
-                id,
-                RemoteListen {
-                    from,
-                    id: id.cast_unsigned(),
-                    recording: decoded_recording(&recording)?,
-                    at,
-                    heard: Duration::from_millis(heard.cast_unsigned()),
-                },
-            ));
-        }
-        Ok(listens)
     }
 
     pub fn wanted(&self, follow: Follow, catalog: &dyn Catalog) -> Result<Vec<Recording>> {
