@@ -927,6 +927,21 @@ will not open is left out of the holdings.
   rows turned `Failed` as well
   (`an_asked_fetch_lapses_once_its_device_goes_unreached_and_its_rows_stop_waiting`); a follow's
   fetches and the follow itself wait for the device to come back.
+- **An asked fetch answers each song it was asked for, and its wait is bounded.** `Sync::ask_to_fetch`
+  is `fetch` with a reply: the work carries `FetchAnswers` and the service tells one `FetchOutcome`
+  per song, whatever the transfer list shows (`Arrived`, `AlreadyHeld` once `held_already` is true,
+  `Claimed` when another transfer holds the song, which `Running::passed_over` still replays later
+  without a reply, `Unreachable` when the device is never reached (`unreached_work`), the connection
+  closes or transfers are off, `Failed`). `AskedToFetch::outcomes` returns every asked song in order and
+  gives up on a silent batch: `UNREACHED_AFTER` plus `A_SONG_TAKES_AT_MOST` (20 minutes) for the
+  first outcome, `A_SONG_TAKES_AT_MOST` for each next one, the songs left `Unanswered`, as are
+  those whose work was dropped with the service. A follow's fetches carry no reply. The CLI's
+  `sync --fetch` asks in batches of `FETCHED_AT_A_TIME` and says the count that arrived, then one line
+  a kind of outcome that did not (`unarrived_lines`), never reading the transfer list
+  (`an_asked_fetch_answers_each_song_as_it_arrived_or_was_held_already`,
+  `an_asked_song_another_fetch_holds_is_answered_as_claimed_and_the_rest_as_they_arrive`,
+  `an_asked_fetch_from_a_device_that_went_away_is_answered_as_unreachable`,
+  `a_fetch_batch_stops_waiting_once_an_outcome_is_overdue_and_answers_the_rest_as_unanswered`).
 - **Server**: `Settings::server` is a `Server`: `Hosted` (`HOSTED_SERVER`, `wss://resonate.tecnio.dev/`, a web socket through Cloudflare Tunnel,
   **the default on every front end**; the one host `resonate_core::RESONATE_HOST` names serves the hifi gateway too, `server.md`),
   `At` another (`sync-server`; blank is the hosted one; `ws://`/`wss://` for a web

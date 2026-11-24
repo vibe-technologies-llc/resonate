@@ -60,8 +60,8 @@ pub use crate::{
     revision::{Bound, Revised, Revision},
     seal::{opened, sealed},
     service::{
-        AskedToControl, ExportWanted, HOSTED_SERVER, SERVER_PORT, Server, Settings, Shown,
-        Standing, Sync, SyncDevice, Transfer, TransferState,
+        AskedToControl, AskedToFetch, ExportWanted, FetchOutcome, HOSTED_SERVER, SERVER_PORT,
+        Server, Settings, Shown, Standing, Sync, SyncDevice, Transfer, TransferState,
     },
     stun::{Reflector, STUN_PORT},
     web::{

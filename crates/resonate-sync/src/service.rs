@@ -32,7 +32,7 @@ use tokio::{
 
 use self::{
     discovery::{Discovery, Public, Resolver, resolved_by_the_system},
-    unsent::{Awaited, Awaiting, Unsent, awaited},
+    unsent::{Awaited, Awaiting, UNREACHED_AFTER, Unsent, awaited},
 };
 use crate::{
     Catalog, Change, DeviceId, Error, Handoff, LayoutNote, Ledger, LocalPlaylistId, Platform,
@@ -76,6 +76,7 @@ mod unsent;
 pub const HOSTED_SERVER: &str = resonate_core::RESONATE_SOCKET_ADDRESS;
 pub const SERVER_PORT: u16 = 443;
 const TRANSFERS_SHOWN_AT_MOST: usize = 200;
+const A_SONG_TAKES_AT_MOST: Duration = Duration::from_secs(20 * 60);
 const FIRST_RETRY: Duration = Duration::from_secs(5);
 const LAST_RETRY: Duration = Duration::from_secs(30 * 60);
 const LOOK_AFTER: Duration = Duration::from_millis(300);
@@ -288,6 +289,7 @@ enum Command {
     Fetch {
         recordings: Vec<Recording>,
         from: DeviceId,
+        answers: Option<FetchAnswers>,
     },
     Transfers(bool),
     Heard(Beacon),
@@ -392,10 +394,78 @@ impl AskedToControl {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FetchOutcome {
+    Arrived,
+    AlreadyHeld,
+    Claimed,
+    Unreachable,
+    Failed,
+    Unanswered,
+}
+
+#[derive(Clone)]
+struct FetchAnswers(std_mpsc::Sender<(Recording, FetchOutcome)>);
+
+impl FetchAnswers {
+    fn told(&self, recording: &Recording, outcome: FetchOutcome) {
+        let _ = self.0.send((recording.clone(), outcome));
+    }
+}
+
+pub struct AskedToFetch {
+    asked: Vec<Recording>,
+    answered: std_mpsc::Receiver<(Recording, FetchOutcome)>,
+    first_within: Duration,
+    next_within: Duration,
+}
+
+impl AskedToFetch {
+    fn new(
+        asked: Vec<Recording>,
+        answered: std_mpsc::Receiver<(Recording, FetchOutcome)>,
+        first_within: Duration,
+        next_within: Duration,
+    ) -> Self {
+        Self {
+            asked,
+            answered,
+            first_within,
+            next_within,
+        }
+    }
+
+    pub fn outcomes(self) -> Vec<(Recording, FetchOutcome)> {
+        let mut outcomes = vec![None; self.asked.len()];
+        let mut within = self.first_within;
+
+        while outcomes.iter().any(Option::is_none) {
+            let Ok((recording, outcome)) = self.answered.recv_timeout(within) else {
+                break;
+            };
+            let unanswered = outcomes
+                .iter()
+                .enumerate()
+                .position(|(at, answered)| answered.is_none() && self.asked[at] == recording);
+
+            if let Some(at) = unanswered {
+                outcomes[at] = Some(outcome);
+            }
+            within = self.next_within;
+        }
+        self.asked
+            .into_iter()
+            .zip(outcomes)
+            .map(|(recording, outcome)| (recording, outcome.unwrap_or(FetchOutcome::Unanswered)))
+            .collect()
+    }
+}
+
 enum Work {
     Fetch {
         recordings: Vec<Recording>,
         asked: bool,
+        answers: Option<FetchAnswers>,
     },
     Follow,
     Control {
@@ -1002,7 +1072,28 @@ impl Sync {
     }
 
     pub fn fetch(&self, recordings: Vec<Recording>, from: DeviceId) {
-        let _ = self.commands.send(Command::Fetch { recordings, from });
+        let _ = self.commands.send(Command::Fetch {
+            recordings,
+            from,
+            answers: None,
+        });
+    }
+
+    pub fn ask_to_fetch(&self, recordings: Vec<Recording>, from: DeviceId) -> AskedToFetch {
+        let (answers, answered) = std_mpsc::channel();
+        let asked = AskedToFetch::new(
+            recordings.clone(),
+            answered,
+            UNREACHED_AFTER.saturating_add(A_SONG_TAKES_AT_MOST),
+            A_SONG_TAKES_AT_MOST,
+        );
+
+        let _ = self.commands.send(Command::Fetch {
+            recordings,
+            from,
+            answers: Some(FetchAnswers(answers)),
+        });
+        asked
     }
 
     pub fn refused(&self, recording: &Recording) {
@@ -1410,7 +1501,7 @@ async fn run(running: Arc<Running>, mut inbound: Inbound) {
                     syncing.forgot();
                     Ok(())
                 }
-                Some(Command::Fetch { recordings, from }) => syncing.want(from, Work::Fetch { recordings, asked: true }).await,
+                Some(Command::Fetch { recordings, from, answers }) => syncing.want(from, Work::Fetch { recordings, asked: true, answers }).await,
                 Some(Command::Control { device, zone, command, queue_seen, answer, awaited }) => syncing.want(device, Work::Control { zone, command, queue_seen, answer, awaited }).await,
                 Some(Command::Consult { device, asked, answer }) => syncing.want(device, Work::Consult { asked, answer }).await,
                 Some(Command::Export { device, asked }) => syncing.want(device, Work::Export(asked)).await,
@@ -2127,7 +2218,15 @@ impl Syncing {
                         .push(passed.recording);
                 }
                 for ((device, asked), recordings) in again {
-                    self.want(device, Work::Fetch { recordings, asked }).await?;
+                    self.want(
+                        device,
+                        Work::Fetch {
+                            recordings,
+                            asked,
+                            answers: None,
+                        },
+                    )
+                    .await?;
                 }
             }
             Event::Unmet(device) => {
@@ -3026,8 +3125,17 @@ impl Syncing {
 
     fn unreached_work(&self, device: DeviceId, work: Work) {
         match work {
-            Work::Fetch { recordings, .. } => {
+            Work::Fetch {
+                recordings,
+                answers,
+                ..
+            } => {
                 self.running.shown.write().unreached(&recordings, device);
+                if let Some(answers) = answers {
+                    for recording in &recordings {
+                        answers.told(recording, FetchOutcome::Unreachable);
+                    }
+                }
             }
             Work::Watch => {
                 self.running.watching.lock().remove(&device);
@@ -3631,7 +3739,7 @@ fn spawn_work(running: Arc<Running>, device: DeviceId, connection: Connection, w
 }
 
 async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connection, work: Work) {
-    let (recordings, asked) = match work {
+    let (recordings, asked, answers) = match work {
         Work::Control {
             zone,
             command,
@@ -3683,13 +3791,15 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
         Work::Fetch {
             recordings,
             asked: true,
+            answers,
         } => {
             running.asked_again(&recordings).await;
-            (recordings, true)
+            (recordings, true, answers)
         }
         Work::Fetch {
             recordings,
             asked: false,
+            answers,
         } => {
             let wanted = running.not_failed_lately(recordings.clone()).await;
 
@@ -3698,7 +3808,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
                     running.unlisted_waiting(recording, device);
                 }
             }
-            (wanted, false)
+            (wanted, false, answers)
         }
         Work::Follow => match followed_songs(running, connection).await {
             Ok(recordings) => {
@@ -3707,7 +3817,7 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
                 for recording in &recordings {
                     running.queued(recording, device);
                 }
-                (recordings, false)
+                (recordings, false, None)
             }
             Err(error) => {
                 tracing::debug!(%error, "a device's songs could not be listed");
@@ -3719,15 +3829,26 @@ async fn worked(running: &Arc<Running>, device: DeviceId, connection: &Connectio
     while let Some(recording) = left.next() {
         if connection.close_reason().is_some() || !running.transfers_allowed() {
             running.listed_waiting_as(&recording, device, TransferState::Failed);
+            if let Some(answers) = &answers {
+                answers.told(&recording, FetchOutcome::Unreachable);
+            }
             for unasked in left.by_ref() {
                 running.listed_waiting_as(&unasked, device, TransferState::Failed);
+                if let Some(answers) = &answers {
+                    answers.told(&unasked, FetchOutcome::Unreachable);
+                }
             }
 
             let _ = running.events.send(Event::CutShort(device));
 
             return;
         }
-        fetch_one(running, device, connection, recording, asked).await;
+
+        let outcome = fetch_one(running, device, connection, &recording, asked).await;
+
+        if let (Some(answers), Some(outcome)) = (&answers, outcome) {
+            answers.told(&recording, outcome);
+        }
     }
 }
 
@@ -3784,36 +3905,46 @@ async fn fetch_one(
     running: &Arc<Running>,
     device: DeviceId,
     connection: &Connection,
-    recording: Recording,
+    recording: &Recording,
     asked: bool,
-) {
-    if !running.fetching.claim(&recording) {
-        running.unlisted_waiting(&recording, device);
-        running.passed_over(device, recording, asked);
-        return;
+) -> Option<FetchOutcome> {
+    if !running.fetching.claim(recording) {
+        running.unlisted_waiting(recording, device);
+        running.passed_over(device, recording.clone(), asked);
+        return Some(FetchOutcome::Claimed);
     }
 
-    let held = if held_already(running, &recording).await {
-        running.unlisted_waiting(&recording, device);
-        true
-    } else if !asked && deleted_here(running, &recording).await {
-        running.unlisted_waiting(&recording, device);
-        false
+    let outcome = if held_already(running, recording).await {
+        running.unlisted_waiting(recording, device);
+        Some(FetchOutcome::AlreadyHeld)
+    } else if !asked && deleted_here(running, recording).await {
+        running.unlisted_waiting(recording, device);
+        None
     } else {
-        let landed = fetch_claimed(running, device, connection, &recording).await;
+        let landed = fetch_claimed(running, device, connection, recording).await;
 
         if landed && asked {
-            asked_back(running, &recording).await;
+            asked_back(running, recording).await;
         }
-        landed
+        Some(if landed {
+            FetchOutcome::Arrived
+        } else {
+            FetchOutcome::Failed
+        })
     };
 
-    running.fetching.release(&recording);
+    running.fetching.release(recording);
 
-    let again = running.unpassed(&recording);
+    let again = running.unpassed(recording);
+    let held = matches!(
+        outcome,
+        Some(FetchOutcome::AlreadyHeld | FetchOutcome::Arrived)
+    );
+
     if !held && !again.is_empty() {
         let _ = running.events.send(Event::Unclaimed(again));
     }
+    outcome
 }
 
 async fn asked_back(running: &Arc<Running>, recording: &Recording) {
@@ -4140,6 +4271,59 @@ mod tests {
             mbid: Some(Mbid::new(ECHOES).expect("an mbid")),
             ..named(title)
         }
+    }
+
+    #[test]
+    fn a_fetch_batch_stops_waiting_once_an_outcome_is_overdue_and_answers_the_rest_as_unanswered() {
+        let asked = vec![named("Echoes"), named("Time"), named("Money")];
+        let (answers, answered) = std_mpsc::channel();
+
+        let batch = AskedToFetch::new(
+            asked,
+            answered,
+            Duration::from_secs(5),
+            Duration::from_millis(100),
+        );
+        let answers = FetchAnswers(answers);
+
+        answers.told(&named("Time"), FetchOutcome::Arrived);
+        answers.told(&named("Echoes"), FetchOutcome::Claimed);
+
+        let started = std::time::Instant::now();
+        let outcomes = batch.outcomes();
+
+        assert!(started.elapsed() < Duration::from_secs(2));
+        assert_eq!(
+            outcomes,
+            [
+                (named("Echoes"), FetchOutcome::Claimed),
+                (named("Time"), FetchOutcome::Arrived),
+                (named("Money"), FetchOutcome::Unanswered),
+            ]
+        );
+
+        drop(answers);
+    }
+
+    #[test]
+    fn a_fetch_batch_whose_work_was_dropped_answers_every_song_as_unanswered_at_once() {
+        let (answers, answered) = std_mpsc::channel();
+        let batch = AskedToFetch::new(
+            vec![named("Echoes")],
+            answered,
+            Duration::from_secs(60),
+            Duration::from_secs(60),
+        );
+
+        drop(answers);
+
+        let started = std::time::Instant::now();
+
+        assert_eq!(
+            batch.outcomes(),
+            [(named("Echoes"), FetchOutcome::Unanswered)]
+        );
+        assert!(started.elapsed() < Duration::from_secs(2));
     }
 
     #[test]

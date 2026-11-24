@@ -233,6 +233,7 @@ mod tests {
             Work::Fetch {
                 recordings: vec![song("Echoes")],
                 asked: true,
+                answers: None,
             },
             queued_at,
         );
@@ -241,6 +242,7 @@ mod tests {
             Work::Fetch {
                 recordings: vec![song("Time")],
                 asked: false,
+                answers: None,
             },
             queued_at,
         );

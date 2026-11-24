@@ -1,7 +1,6 @@
 use std::sync::Arc;
 #[cfg(feature = "sync")]
 use std::{
-    collections::BTreeSet,
     fs::{self, File},
     path::{Path, PathBuf},
     sync::atomic::{AtomicU64, Ordering as Atomically},
@@ -29,13 +28,14 @@ use resonate_library::{
 };
 #[cfg(feature = "sync")]
 use resonate_mpris::ZoneAsked;
+#[cfg(all(feature = "sync", feature = "ui"))]
+use resonate_sync::TransferState;
 #[cfg(feature = "sync")]
 use resonate_sync::{
-    Catalog, Controlled, Controlling, DeletedEverywhere, DeviceId, Follow, Handoff, Held,
-    HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me, Mirror, Nearby, Opened,
-    Platform, QueryBody, Refused, RemoteCommand, RemoteListen, RemotePlayback, RemoteRow,
-    RemoteZone, Resumed, Server, Settings, SongTags, Standing, Sync, SyncDevice, SyncKey,
-    TransferState, Watched,
+    Catalog, Controlled, Controlling, DeletedEverywhere, DeviceId, FetchOutcome, Follow, Handoff,
+    Held, HeldShare, LocalListen, LocalPlaylist, LocalPlaylistId, LocalQuery, Me, Mirror, Nearby,
+    Opened, Platform, QueryBody, Refused, RemoteCommand, RemoteListen, RemotePlayback, RemoteRow,
+    RemoteZone, Resumed, Server, Settings, SongTags, Standing, Sync, SyncDevice, SyncKey, Watched,
 };
 
 use crate::config::Config;
@@ -1354,13 +1354,21 @@ pub(crate) fn asked(
                 return Ok(None);
             }
 
-            let landed = fetched_in_batches(
-                &missing,
-                |batch| sync.fetch(batch, device.id),
-                |batch| transferred(sync, batch),
-            );
+            let outcomes = fetched_in_batches(&missing, |batch| {
+                sync.ask_to_fetch(batch, device.id).outcomes()
+            });
 
-            said!("{}", words::sync::came_from(from, landed, missing.len()));
+            said!(
+                "{}",
+                words::sync::came_from(
+                    from,
+                    count_of(&outcomes, FetchOutcome::Arrived),
+                    missing.len()
+                )
+            );
+            for line in unarrived_lines(&outcomes, from) {
+                said!("{line}");
+            }
             Ok(None)
         }
         Asked::Handoff { from } => {
@@ -1628,38 +1636,41 @@ fn chosen(devices: Vec<SyncDevice>, wanted: &str) -> Result<Option<SyncDevice>> 
 #[cfg(feature = "sync")]
 fn fetched_in_batches(
     missing: &[Recording],
-    mut fetch: impl FnMut(Vec<Recording>),
-    mut wait: impl FnMut(&[Recording]) -> usize,
-) -> usize {
+    mut fetch: impl FnMut(Vec<Recording>) -> Vec<(Recording, FetchOutcome)>,
+) -> Vec<FetchOutcome> {
     missing
         .chunks(FETCHED_AT_A_TIME)
-        .map(|batch| {
-            fetch(batch.to_vec());
-            wait(batch)
-        })
-        .sum()
+        .flat_map(|batch| fetch(batch.to_vec()))
+        .map(|(_, outcome)| outcome)
+        .collect()
 }
 
 #[cfg(feature = "sync")]
-fn transferred(sync: &Sync, asked: &[Recording]) -> usize {
-    let mut waiting = asked.iter().map(Recording::key).collect::<BTreeSet<_>>();
-    let mut landed = 0;
-    loop {
-        for transfer in sync.shown().transfers {
-            let arrived = match transfer.state {
-                TransferState::Landed => true,
-                TransferState::Failed => false,
-                TransferState::Waiting | TransferState::Moving => continue,
-            };
-            if waiting.remove(&transfer.recording.key()) && arrived {
-                landed += 1;
-            }
-        }
-        if waiting.is_empty() {
-            return landed;
-        }
-        thread::sleep(TRANSFERS_LOOKED_AT_EVERY);
-    }
+fn count_of(outcomes: &[FetchOutcome], wanted: FetchOutcome) -> usize {
+    outcomes
+        .iter()
+        .filter(|outcome| **outcome == wanted)
+        .count()
+}
+
+#[cfg(feature = "sync")]
+fn unarrived_lines(outcomes: &[FetchOutcome], from: &str) -> Vec<String> {
+    let held = count_of(outcomes, FetchOutcome::AlreadyHeld);
+    let claimed = count_of(outcomes, FetchOutcome::Claimed);
+    let unreachable = count_of(outcomes, FetchOutcome::Unreachable);
+    let failed = count_of(outcomes, FetchOutcome::Failed);
+    let unanswered = count_of(outcomes, FetchOutcome::Unanswered);
+
+    [
+        (held > 0).then(|| words::sync::fetch_already_held(held)),
+        (claimed > 0).then(|| words::sync::fetch_claimed(claimed)),
+        (unreachable > 0).then(|| words::sync::fetch_unreachable(from, unreachable)),
+        (failed > 0).then(|| words::sync::fetch_failed(failed)),
+        (unanswered > 0).then(|| words::sync::fetch_unanswered(unanswered)),
+    ]
+    .into_iter()
+    .flatten()
+    .collect()
 }
 
 #[cfg(feature = "sync")]
@@ -2147,14 +2158,39 @@ mod tests {
         let missing = (0..250).map(recording).collect::<Vec<_>>();
         let asked = std::cell::RefCell::new(Vec::new());
 
-        let landed = fetched_in_batches(
-            &missing,
-            |batch| asked.borrow_mut().push(batch.len()),
-            |batch| batch.len(),
-        );
+        let outcomes = fetched_in_batches(&missing, |batch| {
+            asked.borrow_mut().push(batch.len());
+            batch
+                .into_iter()
+                .map(|recording| (recording, FetchOutcome::Arrived))
+                .collect()
+        });
 
-        assert_eq!(landed, 250);
+        assert_eq!(count_of(&outcomes, FetchOutcome::Arrived), 250);
         assert_eq!(*asked.borrow(), [100, 100, 50]);
+    }
+
+    #[test]
+    fn every_outcome_but_arriving_is_told_once_with_its_count() {
+        let outcomes = [
+            FetchOutcome::Arrived,
+            FetchOutcome::AlreadyHeld,
+            FetchOutcome::Claimed,
+            FetchOutcome::Claimed,
+            FetchOutcome::Unreachable,
+            FetchOutcome::Failed,
+            FetchOutcome::Unanswered,
+        ];
+
+        let told = unarrived_lines(&outcomes, "Desk");
+
+        assert_eq!(told.len(), 5);
+        assert!(told[0].contains('1') && told[0].contains("already here"));
+        assert!(told[1].contains('2') && told[1].contains("another transfer"));
+        assert!(told[2].contains("Desk") && told[2].contains("could not be reached"));
+        assert!(told[3].contains("failed to arrive"));
+        assert!(told[4].contains("no answer in time"));
+        assert!(unarrived_lines(&[FetchOutcome::Arrived], "Desk").is_empty());
     }
 
     fn key() -> SyncKey {

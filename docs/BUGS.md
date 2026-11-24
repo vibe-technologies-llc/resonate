@@ -34,15 +34,7 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   cursor (a step of the shared store) and say `Share` at that version with the
   fallback `Hello` has. Done when a member returning to a remade shared space
   reads it whole and its ops reach the others.
-- [M · 0.17.1] Give desktop command-line fetch batches a terminal result.
-  **Medium, builder.** The CLI waits for every requested recording in the display
-  transfer list. The service can remove a row when the file has arrived via
-  another operation or a fetch claim exists, leaving the terminal command waiting
-  with no deadline (`crates/resonate/src/sync.rs:1450`, `:1465`,
-  `crates/resonate-sync/src/service.rs:3601`). Use authoritative outcomes for
-  individual requests and bound the batch wait. Done when an already-held song,
-  a concurrent fetch and an unreachable device all complete the command with
-  an accurate result.
+- [M · 0.17.1] Expire the live display when a remote playback mirror goes quiet.
   **Medium, architect.** The watch lease stays active as a view polls it, so
   the last mirror can keep showing a moving position and active controls after
   the device leaves

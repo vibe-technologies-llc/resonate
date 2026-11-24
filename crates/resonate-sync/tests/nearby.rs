@@ -15,9 +15,10 @@ use resonate_core::{
 };
 use resonate_sync::{
     Broadcast, Consultable, ConsultedAnswer, Consulting, Controlled, Controlling, DeviceId,
-    ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted, Follow, KeptAnswer, Me,
-    Nearby, OfferedExport, Permille, Platform, RemoteCommand, RemotePlayback, RemoteRow,
-    RemoteZone, Server, Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled, Watched,
+    ExportFetched, ExportHeld, ExportPart, ExportReceiving, ExportWanted, FetchOutcome, Follow,
+    KeptAnswer, Me, Nearby, OfferedExport, Permille, Platform, RemoteCommand, RemotePlayback,
+    RemoteRow, RemoteZone, Server, Settings, Standing, Sync, SyncKey, TransferState, Uncontrolled,
+    Watched,
 };
 
 use crate::shelf::{Shelf, song};
@@ -1305,6 +1306,136 @@ fn a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_f
     drop(phone);
     drop(laptop);
     drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_asked_fetch_answers_each_song_as_it_arrived_or_was_held_already() {
+    let folder = scratch("asked-outcomes");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A", "C"]));
+    let phone_shelf = Arc::new(Shelf::holding(&["C"]));
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_told(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        &[&desk],
+        Follow::default(),
+    );
+
+    eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
+
+    let outcomes = phone
+        .ask_to_fetch(vec![song("A"), song("C")], desk.device())
+        .outcomes();
+
+    assert_eq!(
+        outcomes,
+        [
+            (song("A"), FetchOutcome::Arrived),
+            (song("C"), FetchOutcome::AlreadyHeld)
+        ]
+    );
+    assert!(holds_title(&phone_shelf, "A"));
+
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_asked_song_another_fetch_holds_is_answered_as_claimed_and_the_rest_as_they_arrive() {
+    let folder = scratch("asked-claimed");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let laptop_shelf = Arc::new(Shelf::holding(&["A", "B"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+
+    desk_shelf.opening.shut();
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let laptop = device(
+        &folder,
+        &key,
+        "Laptop",
+        Arc::clone(&laptop_shelf),
+        Some(&desk),
+    );
+
+    let phone = device_told(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        &[&desk, &laptop],
+        Follow::default(),
+    );
+
+    eventually("the phone meeting both", || {
+        nearby_of(&phone, "Desk") && nearby_of(&phone, "Laptop")
+    });
+    phone.fetch(vec![song("A")], desk.device());
+    eventually("the desk asked for the song", || {
+        desk_shelf.inside.lock().opened > 0
+    });
+
+    let outcomes = phone
+        .ask_to_fetch(vec![song("A"), song("B")], laptop.device())
+        .outcomes();
+
+    assert_eq!(
+        outcomes,
+        [
+            (song("A"), FetchOutcome::Claimed),
+            (song("B"), FetchOutcome::Arrived)
+        ]
+    );
+
+    desk_shelf.opening.open();
+
+    drop(phone);
+    drop(laptop);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
+fn an_asked_fetch_from_a_device_that_went_away_is_answered_as_unreachable() {
+    let folder = scratch("asked-unreachable");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_told(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        &[&desk],
+        Follow::default(),
+    );
+
+    eventually("the phone meeting the desk", || nearby_of(&phone, "Desk"));
+
+    let gone = desk.device();
+
+    drop(desk);
+
+    let started = Instant::now();
+    let outcomes = phone.ask_to_fetch(vec![song("A")], gone).outcomes();
+
+    assert_eq!(outcomes, [(song("A"), FetchOutcome::Unreachable)]);
+    assert!(started.elapsed() < SETTLES_WITHIN);
+    assert!(!holds_title(&phone_shelf, "A"));
+
+    drop(phone);
 
     let _ = fs::remove_dir_all(&folder);
 }

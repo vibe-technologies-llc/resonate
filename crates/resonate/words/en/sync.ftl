@@ -14,6 +14,26 @@ came-from = { $landed } of { $missing ->
     [one] { $missing } song
    *[other] { $missing } songs
 } came from { $from }
+fetch-already-held = { $count ->
+    [one] { $count } song was already here
+   *[other] { $count } songs were already here
+}
+fetch-claimed = { $count ->
+    [one] { $count } song was already being fetched by another transfer
+   *[other] { $count } songs were already being fetched by another transfer
+}
+fetch-unreachable = { $count ->
+    [one] { $from } could not be reached for { $count } song
+   *[other] { $from } could not be reached for { $count } songs
+}
+fetch-failed = { $count ->
+    [one] { $count } song failed to arrive
+   *[other] { $count } songs failed to arrive
+}
+fetch-unanswered = { $count ->
+    [one] { $count } song had no answer in time
+   *[other] { $count } songs had no answer in time
+}
 zone = Zone
 state = State
 playing = Playing
