@@ -120,7 +120,21 @@ impl Engine {
         }
 
         let at = self.position();
-        self.rebind(Some(at), None)
+        let rebound = self.rebind(Some(at), None);
+        self.kept_while_waiting_for_a_device(rebound)
+    }
+
+    fn kept_while_waiting_for_a_device(&self, rebound: Result<()>) -> Result<()> {
+        match rebound {
+            Err(Error::Sink(resonate_audio::Error::NoSink))
+                if self.output.is_none()
+                    && (self.waiting_for_a_device || self.graph_lost.is_some()) =>
+            {
+                tracing::debug!("a setting is kept for the device the row waits for");
+                Ok(())
+            }
+            rebound => rebound,
+        }
     }
 
     fn reuses_stream(&self) -> bool {

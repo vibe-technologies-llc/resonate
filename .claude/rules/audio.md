@@ -773,7 +773,13 @@ ring an `Output` holds), `arms.rs` and `splicing.rs`. A method another file call
   with a row waiting for a device or the graph) is not bound from: `wait_for_the_survey` keeps the row
   at its frame in `unbound`, publishes `Loading`, and the command answers `Ok`; the answer binds via
   `bind_the_row_waiting_for_a_device` or `bind_the_row_the_graph_let_go`, each of which reads an `Ok`
-  that left no output as the row waiting again, never as bound.
+  that left no output as the row waiting again, never as bound. **A setting kept while the row waits
+  for a device answers `Ok` whatever the survey's timing**: `rebind_where_it_stands` (every
+  setting's rebind runs through it) reads a `NoSink` from a row with no output that waits for a
+  device or the graph as the row still waiting, never as the setting's failure; the setting is
+  applied where the next device binds the row
+  (`a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard`, both orders of
+  the survey and the command).
 - **Every stream opens off the engine thread.** `Backend::opener` hands out an `Opener` (PipeWire:
   the cloneable `Survey`, whose `open` waits up to `STREAM_OPENED_WITHIN`); `Streaming` is a
   `resonate-stream-open` worker taking one `Asked` at a time while the transport stays `Loading`.

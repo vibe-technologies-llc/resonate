@@ -5720,6 +5720,15 @@ fn a_device_announced_while_the_survey_is_out_still_binds_the_row_waiting_for_on
 
 #[test]
 fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard() -> Result<()> {
+    for survey_answered_first in [true, false] {
+        a_setting_is_kept_and_answered_ok_while_the_row_waits(survey_answered_first)?;
+    }
+    Ok(())
+}
+
+fn a_setting_is_kept_and_answered_ok_while_the_row_waits(
+    survey_answered_first: bool,
+) -> Result<()> {
     let (player, graph, source) =
         two_rows_playing_over(vec![sink(&[SampleRate::HZ_44100], &[SampleFormat::S16])])?;
     let block = BLOCK_FRAMES * frame_bytes(SampleFormat::S16);
@@ -5732,12 +5741,28 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
         "the first block to play",
     );
 
+    let (open_the_gate, gate) = unbounded::<()>();
+    let surveyed = graph.lock().enumerations;
+
+    if !survey_answered_first {
+        graph.lock().survey_gate = Some(gate);
+    }
+
     fail_the_stream_as_the_graph_becomes(&graph, Vec::clear);
     wait_for(
         &player,
         |player| player.state().playback == PlaybackState::Buffering && bound_to(player).is_none(),
         "the row to wait for a device",
     );
+    wait_for(
+        &player,
+        |_| graph.lock().enumerations > surveyed,
+        "the survey to be asked after the device went",
+    );
+
+    if survey_answered_first {
+        thread::sleep(A_SHORT_DOZE);
+    }
 
     let waiting_at = player.state().current.map(|current| current.position);
     let deeper = Duration::from_millis(200);
@@ -5749,14 +5774,14 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
         .request(Command::SetBuffer(deeper))?
         .wait_for(PATIENCE);
 
-    for (setting, outcome) in [("forced graph rate", forced), ("buffer", deepened)] {
-        assert!(
-            outcome
-                .as_ref()
-                .map_or_else(|error| error.cause() == Cause::NoDevice, |()| true),
-            "the {setting} was answered {outcome:?}"
-        );
-    }
+    assert!(
+        forced.is_ok(),
+        "the forced graph rate was answered {forced:?} (survey answered first: {survey_answered_first})"
+    );
+    assert!(
+        deepened.is_ok(),
+        "the buffer was answered {deepened:?} (survey answered first: {survey_answered_first})"
+    );
 
     let settings = player.output_settings();
 
@@ -5771,6 +5796,7 @@ fn a_setting_changed_while_the_row_waits_for_a_device_keeps_where_it_was_heard()
         "a setting moved the waiting row on"
     );
 
+    drop(open_the_gate);
     announce(
         &graph,
         SinkInfo {
