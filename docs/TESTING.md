@@ -78,22 +78,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Mobile catalog
 
 ## Device sync
-- [M · 0.17.1] Prove the server's compaction budget preserves the prior log.
-  **Medium, builder.** The shared capacity test checks the head after refusal
-  and the session tests use default limits. Those assertions miss a change
-  that loses record or snapshot bytes while keeping the same head
-  (`crates/resonate-server/src/store.rs:837`, `:1569`,
-  `crates/resonate-server/src/serve.rs:948`, `:996`, `:1035`).
-  Exercise per-space limits with one-frame and staged requests and check the
-  returned refusals and actual retained bytes. Done when weakening the final
-  byte cap or removing the transaction rollback makes the test fail.
-- [M · 0.17.1] Check that disconnecting after staging frees its server capacity.
-  **Medium, builder.** The disconnect test can close before the stage is
-  persisted. The replacement session's Stale refusal is independent of the
-  old staged bytes (`crates/resonate-server/tests/compaction.rs:166`,
-  `crates/resonate-server/src/serve.rs:553`, `:1056`).
-  Wait for stored bytes to appear, then check capacity after the session ends.
-  Done when omitting its cleanup makes the test fail without waiting for a sweep.
 - [S · 0.17.1] Describe the nearby Bonjour record's actual encoding.
   **Low, builder.** The rules describe the same TXT record as base32 in one place and
   hex in another (`.claude/rules/sync.md:1198`, `:1242`,
@@ -121,14 +105,6 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   Make skips visible, test actual multicast availability, and preserve a
   deterministic transport check. Done when a limited runner distinguishes
   missing LAN coverage from a completed discovery check.
-- [M · 0.17.1] Exercise catch-up and writes after upgrading populated server stores.
-  **Low, builder.** The version loop migrates empty tables, so successful
-  upgrades can leave released record or snapshot data unreadable without
-  failing that test (`crates/resonate-server/src/store/released.rs:39`,
-  `crates/resonate-server/src/store.rs:1015`, `:1197`).
-  Populate released schemas with sealed record and snapshot rows and exercise
-  catch-up and writes after each upgrade. Done when every released snapshot
-  and remaining record is returned and the migrated store can accept new work.
 - [M · 0.17.1] Keep client-only discovery out of the sync server's dependency graph.
   **Low, architect.** The server depends on the sync wire types, but its
   normal build also includes the device discovery and peer certificate
