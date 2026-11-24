@@ -1008,7 +1008,7 @@ file's module (`keeps::…`), and a test that starts its own binary again names 
   recording, device to device** (`lyricsfiles_wanted`, `lyricsfile_to_share`, `take_shared_lyricsfile`):
   it lands through `sung::keep` on the copy holding the recording strictly, never over a Lyricsfile.
   `Library::synced_revision`
-  counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer.
+  counts these writes, which `data_version` cannot see; `catalog_revision` adds every other writer, and where the writer connection is busy it keeps the last `data_version` it read (`written_elsewhere_or_last_seen`), so a busy-to-idle step moves nothing unchanged.
 
 ## Enrichment
 
@@ -2040,7 +2040,7 @@ name as a performer. Names are append-only: the undo record keeps fields by `Tag
   then the file moved by `unreplacing::renamed_over_nothing`, which never replaces a file trashed
   meanwhile (that name's record is taken back and the next discriminator tried:
   `a_name_taken_in_the_trash_meanwhile_is_never_moved_over_and_its_record_is_taken_back`), the
-  record removed if the rename fails, and `files` and the folder the file left synced after; `Path=`
+  record removed if the rename fails, and `files` and the folder the file left synced after; a deletion run holds one `deleted::Run`, whose `trash::Suffixes` remembers per `info` folder and name the next discriminator to try, so a batch of same-named files starts there instead of replaying every occupied one, and a single `send` or a later run starts at the plain name (`a_batch_of_same_named_files_takes_a_bounded_number_of_attempts_each_and_keeps_every_record`, `a_run_that_begins_again_starts_from_the_plain_name`); `Path=`
   percent-encoded (relative to `$topdir` there), `DeletionDate` the listener's local time.
   **Sidecars go with the file that was removed** (`deleted::sidecars_of`): a `<stem>.lrc`
   (any case) unless another audio file in the folder shares the stem, and a `.cue` in the same

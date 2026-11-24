@@ -132,25 +132,32 @@ pub(crate) fn files_of(connection: &Connection, tracks: &[TrackId]) -> Result<BT
         .collect()
 }
 
+#[derive(Debug, Default)]
+pub(crate) struct Run {
+    #[cfg(unix)]
+    suffixes: crate::trash::Suffixes,
+}
+
 pub(crate) fn removed(
     path: &Path,
     data_home: Option<&Path>,
     through: Option<&dyn Trashes>,
+    run: &mut Run,
 ) -> Removal {
     if let Some(through) = through {
         return through.trash(path);
     }
 
-    sent_to_the_hand_written_trash(path, data_home)
+    sent_to_the_hand_written_trash(path, data_home, run)
 }
 
 #[cfg(unix)]
-fn sent_to_the_hand_written_trash(path: &Path, data_home: Option<&Path>) -> Removal {
+fn sent_to_the_hand_written_trash(path: &Path, data_home: Option<&Path>, run: &mut Run) -> Removal {
     use std::time::SystemTime;
 
     use crate::{TrashOp, trash};
 
-    match trash::send(path, data_home, SystemTime::now()) {
+    match trash::send(path, data_home, SystemTime::now(), &mut run.suffixes) {
         Ok(()) => Removal::Removed,
         Err(Error::Trash {
             op: TrashOp::Stat,
@@ -165,7 +172,7 @@ fn sent_to_the_hand_written_trash(path: &Path, data_home: Option<&Path>) -> Remo
 }
 
 #[cfg(windows)]
-fn sent_to_the_hand_written_trash(path: &Path, _: Option<&Path>) -> Removal {
+fn sent_to_the_hand_written_trash(path: &Path, _: Option<&Path>, _: &mut Run) -> Removal {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == io::ErrorKind::NotFound => Removal::AlreadyGone,
         _ => {

@@ -1,4 +1,5 @@
 use std::{
+    collections::HashMap,
     env,
     ffi::{OsStr, OsString},
     fs::{self, DirBuilder, OpenOptions},
@@ -25,6 +26,9 @@ const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
 const SECONDS_PER_HOUR: u64 = SECONDS_PER_MINUTE * MINUTES_PER_HOUR;
 
+#[derive(Debug, Default)]
+pub(crate) struct Suffixes(HashMap<(PathBuf, OsString), u32>);
+
 pub(crate) fn environment_data_home() -> Option<PathBuf> {
     let named = |variable: &str| env::var_os(variable).map(PathBuf::from);
     named("XDG_DATA_HOME")
@@ -48,7 +52,21 @@ impl Bin {
     }
 }
 
-pub(crate) fn send(file: &Path, data_home: Option<&Path>, at: SystemTime) -> Result<()> {
+pub(crate) fn send(
+    file: &Path,
+    data_home: Option<&Path>,
+    at: SystemTime,
+    suffixes: &mut Suffixes,
+) -> Result<()> {
+    sent_counting(file, data_home, at, suffixes).map(drop)
+}
+
+fn sent_counting(
+    file: &Path,
+    data_home: Option<&Path>,
+    at: SystemTime,
+    suffixes: &mut Suffixes,
+) -> Result<u32> {
     let held =
         fs::symlink_metadata(file).map_err(|source| trash_fault(TrashOp::Stat, file, source))?;
     let bin = bin_for(file, held.dev(), data_home)?;
@@ -66,14 +84,20 @@ pub(crate) fn send(file: &Path, data_home: Option<&Path>, at: SystemTime) -> Res
         percent_encoded(recorded)
     );
 
-    let mut discriminator = 0_u32;
+    let key = (bin.info.clone(), name.to_os_string());
+    let mut discriminator = suffixes.0.get(&key).copied().unwrap_or(0);
+    let mut attempts = 0_u32;
+
     loop {
         let (stem, info_name) = names_for(name, discriminator);
 
-        discriminator += 1;
+        attempts += 1;
         match moved_in(file, &bin, &stem, &info_name, &record)? {
-            Moved::Landed => return Ok(()),
-            Moved::NameTaken => {}
+            Moved::Landed => {
+                suffixes.0.insert(key, discriminator + 1);
+                return Ok(attempts);
+            }
+            Moved::NameTaken => discriminator += 1,
         }
     }
 }
@@ -418,7 +442,13 @@ mod tests {
 
         fs::write(&file, b"deleted now").expect("a file to trash");
 
-        send(&file, Some(&data_home), at(1_774_778_400)).expect("trashed");
+        send(
+            &file,
+            Some(&data_home),
+            at(1_774_778_400),
+            &mut Suffixes::default(),
+        )
+        .expect("trashed");
 
         assert!(!file.exists());
         assert_eq!(
@@ -429,6 +459,94 @@ mod tests {
         assert_eq!(
             fs::read(bin.files.join("echoes.flac")).expect("the first stays"),
             b"trashed before"
+        );
+    }
+
+    #[test]
+    fn a_batch_of_same_named_files_takes_a_bounded_number_of_attempts_each_and_keeps_every_record()
+    {
+        let scratch = Scratch::new("batch");
+        let data_home = scratch.0.join("data");
+        let bin = made(&data_home.join(TRASH_FOLDER)).expect("a trash");
+        let batch = 24_u32;
+        let mut attempts = Vec::new();
+        let mut suffixes = Suffixes::default();
+
+        fs::write(bin.files.join("echoes.flac"), b"trashed before")
+            .expect("a file already trashed");
+        fs::write(bin.info.join("echoes.flac.trashinfo"), b"kept record")
+            .expect("a record already kept");
+
+        for index in 0..batch {
+            let folder = scratch.0.join(format!("album-{index}"));
+            let file = folder.join("echoes.flac");
+
+            fs::create_dir_all(&folder).expect("a folder");
+            fs::write(&file, format!("deleted {index}")).expect("a file to trash");
+            attempts.push(
+                sent_counting(&file, Some(&data_home), at(1_774_778_400), &mut suffixes)
+                    .expect("trashed"),
+            );
+        }
+
+        assert_eq!(attempts[0], 2, "attempts per file: {attempts:?}");
+        assert!(
+            attempts[1..].iter().all(|&made| made == 1),
+            "attempts per file: {attempts:?}"
+        );
+        assert_eq!(
+            fs::read(bin.files.join("echoes.flac")).expect("the first stays"),
+            b"trashed before"
+        );
+        assert_eq!(
+            fs::read(bin.info.join("echoes.flac.trashinfo")).expect("its record stays"),
+            b"kept record"
+        );
+
+        for index in 0..batch {
+            assert_eq!(
+                fs::read(bin.files.join(format!("echoes.flac.{}", index + 1)))
+                    .expect("a name each"),
+                format!("deleted {index}").as_bytes()
+            );
+        }
+    }
+
+    #[test]
+    fn a_run_that_begins_again_starts_from_the_plain_name() {
+        let scratch = Scratch::new("freed");
+        let data_home = scratch.0.join("data");
+        let bin = made(&data_home.join(TRASH_FOLDER)).expect("a trash");
+
+        let mut run = Suffixes::default();
+
+        for _ in 0..2 {
+            let file = scratch.0.join("echoes.flac");
+
+            fs::write(&file, b"deleted").expect("a file to trash");
+            sent_counting(&file, Some(&data_home), at(1_774_778_400), &mut run).expect("trashed");
+        }
+
+        assert!(bin.files.join("echoes.flac.1").exists());
+
+        fs::remove_dir_all(&bin.files).expect("the trash emptied");
+        fs::remove_dir_all(&bin.info).expect("the trash emptied");
+        made(&data_home.join(TRASH_FOLDER)).expect("a trash");
+
+        let file = scratch.0.join("echoes.flac");
+
+        fs::write(&file, b"deleted later").expect("a file to trash");
+        sent_counting(
+            &file,
+            Some(&data_home),
+            at(1_774_778_400),
+            &mut Suffixes::default(),
+        )
+        .expect("trashed");
+
+        assert_eq!(
+            fs::read(bin.files.join("echoes.flac")).expect("the plain name again"),
+            b"deleted later"
         );
     }
 

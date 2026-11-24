@@ -205,15 +205,16 @@ impl Library {
         let mut gone = Vec::with_capacity(files.len());
         let mut emptied = Vec::new();
         let mut kept = Vec::new();
+        let mut run = deleted::Run::default();
 
         for path in files {
             let sidecars = deleted::sidecars_of(&path);
-            match deleted::removed(&path, data_home.as_deref(), through) {
+            match deleted::removed(&path, data_home.as_deref(), through, &mut run) {
                 Removal::Removed => {
                     done.files += 1;
                     done.sidecars_kept
                         .extend(sidecars.into_iter().filter(|sidecar| {
-                            deleted::removed(sidecar, data_home.as_deref(), through)
+                            deleted::removed(sidecar, data_home.as_deref(), through, &mut run)
                                 == Removal::Kept
                         }));
                     emptied.extend(path.parent().map(Path::to_path_buf));

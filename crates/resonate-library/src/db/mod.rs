@@ -34,7 +34,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{
         Arc,
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
     },
     time::{Duration, Instant, SystemTime},
 };
@@ -105,6 +105,7 @@ pub(crate) struct Inner {
     vault: Option<Arc<Vault>>,
     playlists: AtomicU64,
     arrivals: AtomicU64,
+    last_written_elsewhere: AtomicI64,
     named: Arc<AtomicU64>,
     written: Arc<AtomicU64>,
     heard: Arc<AtomicU64>,
@@ -665,10 +666,19 @@ impl Inner {
 
     fn written_elsewhere(&self) -> Option<i64> {
         let writer = self.writer.try_lock()?;
-        writer
+        let version = writer
             .query_row("PRAGMA data_version", [], |row| row.get(0))
             .inspect_err(|error| tracing::debug!(%error, "the catalog's data version went unread"))
-            .ok()
+            .ok()?;
+
+        self.last_written_elsewhere
+            .store(version, Ordering::Release);
+        Some(version)
+    }
+
+    pub(crate) fn written_elsewhere_or_last_seen(&self) -> i64 {
+        self.written_elsewhere()
+            .unwrap_or_else(|| self.last_written_elsewhere.load(Ordering::Acquire))
     }
 
     fn vocabulary(&self) -> Result<Arc<Spellings>> {
@@ -1208,6 +1218,7 @@ impl Library {
                 vault,
                 playlists: AtomicU64::new(0),
                 arrivals: AtomicU64::new(0),
+                last_written_elsewhere: AtomicI64::new(0),
                 named,
                 written,
                 heard,
