@@ -1,6 +1,7 @@
 package org.resonate.android
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Test
 
 class DeletionSentencesTest {
@@ -28,5 +29,19 @@ class DeletionSentencesTest {
     fun foldedCopiesAreCounted() {
         assertEquals("Deleted 1 identical file; each song keeps one", DeletionSentences.folded(English, 1))
         assertEquals("Deleted 4 identical files; each song keeps one", DeletionSentences.folded(English, 4))
+    }
+
+    @Test
+    fun copiesNoLongerConfirmedAreToldBesideFilesAFolderKept() {
+        assertEquals(
+            "2 copies were kept; they could no longer be confirmed as copies of the song kept",
+            DeletionSentences.stayed(English, Deleted(0, 0, unconfirmed = 2)),
+        )
+        assertEquals(
+            "1 file could not be deleted; its folder would not let go of it; " +
+                "1 copy was kept; it could no longer be confirmed as a copy of the song kept",
+            DeletionSentences.stayed(English, Deleted(0, 1, folded = 3, unconfirmed = 1)),
+        )
+        assertNull(DeletionSentences.stayed(English, Deleted(0, 0, folded = 3)))
     }
 }

@@ -162,6 +162,22 @@
 			<string>%lld fichiers ne pouvaient pas être supprimés; leurs dossiers ne les laisseraient pas partir</string>
 		</dict>
 	</dict>
+	<key>deleting.copies-unconfirmed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld copie a été gardée; elle ne pouvait plus être confirmée comme copie de la chanson gardée</string>
+			<key>other</key>
+			<string>%lld copies ont été gardées; elles ne pouvaient plus être confirmées comme copies de la chanson gardée</string>
+		</dict>
+	</dict>
 	<key>deleting.identical.deleted</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>

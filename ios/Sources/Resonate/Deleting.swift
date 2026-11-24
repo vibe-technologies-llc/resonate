@@ -4,11 +4,14 @@ import SwiftUI
 
 enum DeletionFailure: LocalizedError {
     case filesKept(Int)
+    case copiesUnconfirmed(Int)
 
     var errorDescription: String? {
         switch self {
         case .filesKept(let count):
             said("deleting.files-kept", count)
+        case .copiesUnconfirmed(let count):
+            said("deleting.copies-unconfirmed", count)
         }
     }
 }
@@ -68,14 +71,28 @@ extension Library {
         var folded: UInt32 = 0
         var leftTheQueue: UInt32 = 0
         var stuck = 0
+        var unconfirmed = 0
         var unfolded: (any Swift.Error)?
 
         for set in sets {
             let keptUri = set.kept.uri
             let named = set.copies.map { DoomedFile(id: $0.id, uri: $0.uri) }
-            let copies = (try? await Work.aside { named.filter { !folders.holdOneFile($0.uri, keptUri) } }) ?? []
-            let gone = (try? await Work.aside { copies.filter { folders.deleteSong($0.uri) }.map(\.id) }) ?? []
-            stuck += copies.count - gone.count
+            let removed = (try? await Work.aside {
+                var tally = RemovedCopies()
+                for copy in named {
+                    guard folders.provenApart(copy.uri, keptUri),
+                        native.confirmIdenticalCopy(kept: keptUri, copy: copy.uri)
+                    else {
+                        tally.unconfirmed += 1
+                        continue
+                    }
+                    if folders.deleteSong(copy.uri) { tally.gone.append(copy.id) } else { tally.stuck += 1 }
+                }
+                return tally
+            }) ?? RemovedCopies(stuck: named.count)
+            let gone = removed.gone
+            stuck += removed.stuck
+            unconfirmed += removed.unconfirmed
             guard !gone.isEmpty else { continue }
             let kept = set.kept.id
             do {
@@ -87,12 +104,16 @@ extension Library {
             }
         }
         await songsLeft(SongsForgotten(forgotten: folded, leftTheQueue: leftTheQueue))
-        if let unfolded, stuck > 0 {
-            report(unfolded, after: explained(DeletionFailure.filesKept(stuck)))
+        let stayed = [
+            stuck > 0 ? explained(DeletionFailure.filesKept(stuck)) : nil,
+            unconfirmed > 0 ? explained(DeletionFailure.copiesUnconfirmed(unconfirmed)) : nil,
+        ].compactMap { $0 }.joined(separator: "; ")
+        if let unfolded, !stayed.isEmpty {
+            report(unfolded, after: stayed)
         } else if let unfolded {
             report(unfolded)
-        } else if stuck > 0 {
-            report(DeletionFailure.filesKept(stuck))
+        } else if !stayed.isEmpty {
+            fail(stayed)
         } else if folded > 0 {
             notice(said("deleting.identical.deleted", Int(folded)))
         }
@@ -110,6 +131,12 @@ extension Library {
 private struct DoomedFile: Sendable {
     let id: UInt64
     let uri: String
+}
+
+private struct RemovedCopies: Sendable {
+    var gone: [UInt64] = []
+    var stuck = 0
+    var unconfirmed = 0
 }
 
 struct DeleteSongsConfirmation: ViewModifier {

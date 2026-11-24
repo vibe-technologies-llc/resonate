@@ -1150,7 +1150,20 @@ inode, regular files alone; `Services::files` holds the `Documents` to ask) and 
 weighed, the one playing else the one `kept_first` keeps, so a file catalogued under two spellings of its
 name is never offered as its own copy, whose deletion would take the only file and send a sync to fetch it
 back (`one_file_named_by_two_rows_is_never_offered_as_a_copy_of_itself`,
-`a_second_row_naming_a_file_leaves_its_true_copies_offered_and_the_row_kept_out`). `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each
+`a_second_row_naming_a_file_leaves_its_true_copies_offered_and_the_row_kept_out`). **A copy is removed
+only once confirmed again against the file kept**, since a preview may outlive the kept file or its
+bytes: before each removal a phone asks `confirm_identical_copy(kept, copy)` with the two URIs it
+holds, which opens both documents and answers true only where the kept one opens as a regular file
+(`CopyVerdict::KeptUnreadable` else), the copy does too (`CopyUnreadable`), their inode numbers differ
+(`NotProvenApart`; `FileIdentity::proven_apart_from` reads the inode alone, since a FUSE view such as
+Android's `/storage` reports the lower file's inode under a device of its own, so two names of one file
+may differ in device alone) and their lengths and bytes are the same, read through the very descriptors
+whose identity was taken (`same_bytes`, else `Differs`). A copy refused keeps its file and its row
+(`every_copy_stays_where_the_file_kept_changed_after_the_preview`,
+`every_copy_stays_where_the_file_kept_is_gone_or_refused_after_the_preview`,
+`two_names_of_one_file_are_never_confirmed_as_copies_and_the_file_stays`,
+`files_sharing_an_inode_are_not_proven_apart_even_on_two_devices`,
+`a_distinct_identical_copy_is_confirmed_deleted_and_folded_into_the_one_kept`). `fold_identical_songs(kept, copies)`, called after the copies' files are gone, hands each
 copy's favourite, playlist rows, listens, lyrics and studies to the one kept (`handed_over`, the
 missing-song merge) and drops its queue rows
 (`folding_a_copy_hands_its_favourite_and_playlist_rows_to_the_one_kept`,
@@ -1159,7 +1172,9 @@ through `SongDeletion`**: the song sheet's *Delete song* (shown where the song's
 a copy in `files/opened`, `songDeletable`; confirmed) and Library tools' *Identical songs* (a tap
 chooses the copy kept, *Delete copies*, confirmed) remove each file (`MusicDocuments.delete`: a SAF
 `deleteDocument`, a MediaStore delete, or the opened copy), and only the songs whose files went are
-forgotten or folded; a file the app does not own in MediaStore (a `SecurityException`) is collected and
+forgotten or folded; *Delete copies* asks `confirm_identical_copy` before each removal
+(`SongDeletion.foldCopies`) and tells a copy refused as *N copies were kept; they could no longer be
+confirmed as copies of the song kept* (`DeletionSentences.stayed`); a file the app does not own in MediaStore (a `SecurityException`) is collected and
 asked of the listener once with `MediaStore.createDeleteRequest` (`Host.confirmDelete`), and one that
 stays is told as *N files could not be deleted* (`DeletionSentences`, `SongDeletionTest`). **A MediaStore delete that removed no row is settled only by a query that finds none**: `MediaStoreRemoval.settled` asks `RowPresence` (`MediaStoreRemoval.presence`: a row is `Standing`, none is `Absent`, a null cursor or a `SecurityException` is `Unknown`), and only `Absent` lets the deletion stand, so an unreadable answer is a file kept and reported, never forgotten (`MediaStoreRemovalTest`).
 

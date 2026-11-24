@@ -79,7 +79,7 @@ pub(crate) fn digest_of(mut stream: impl Read) -> Option<u64> {
     }
 }
 
-pub(crate) fn same_bytes(mut one: impl Read, mut other: impl Read) -> bool {
+pub fn same_bytes(mut one: impl Read, mut other: impl Read) -> bool {
     let mut held = vec![0_u8; COMPARED_AT_ONCE];
     let mut copied = vec![0_u8; COMPARED_AT_ONCE];
 

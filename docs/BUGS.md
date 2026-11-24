@@ -233,16 +233,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Mobile catalog
-- [L · 0.17.1] Recheck the file a phone will keep before deleting identical copies.
-  **High, architect.** A saved preview can outlive the kept file or its contents.
-  Android deletes the other files directly from that preview. iOS checks for a matching
-  file identity, but a failed lookup still lets deletion proceed
-  (`android/app/src/main/java/org/resonate/android/SongDeletion.kt:60`,
-  `crates/resonate-mobile/src/deleting.rs:172`,
-  `ios/Sources/Resonate/Deleting.swift:65`, `ios/Sources/Resonate/Folders.swift:415`).
-  Require a readable kept file and verify distinct identity and matching content
-  before each removal. Done when both a stale preview and two document aliases that
-  cannot be proven distinct leave the files intact.
 - [L · 0.17.1] Keep mobile queue entries when a document provider is temporarily unavailable.
   **Medium, architect.** A folder can pass a readability check before a document open
   fails. The iOS bookmark-open path and Android's raw-descriptor path can then report

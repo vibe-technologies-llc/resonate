@@ -51,11 +51,6 @@ struct FileStamp: Sendable {
     }
 }
 
-struct FileNumber: Equatable {
-    let device: UInt64
-    let inode: UInt64
-}
-
 struct ScopedDocument {
     let url: URL
     let root: URL
@@ -412,20 +407,18 @@ final class Folders: Documents, @unchecked Sendable {
         return gone
     }
 
-    func holdOneFile(_ one: String, _ other: String) -> Bool {
-        guard let first = fileNumber(of: one), let second = fileNumber(of: other) else { return false }
-        return first == second
+    func provenApart(_ one: String, _ other: String) -> Bool {
+        guard let first = inode(of: one), let second = inode(of: other) else { return false }
+        return first != second
     }
 
-    private func fileNumber(of uri: String) -> FileNumber? {
+    private func inode(of uri: String) -> UInt64? {
         guard let document = try? resolved(uri) else { return nil }
         defer { document.close() }
         guard let attributes = try? FileManager.default.attributesOfItem(atPath: document.url.path),
-            attributes[.type] as? FileAttributeType == .typeRegular,
-            let device = (attributes[.systemNumber] as? NSNumber)?.uint64Value,
-            let inode = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
+            attributes[.type] as? FileAttributeType == .typeRegular
         else { return nil }
-        return FileNumber(device: device, inode: inode)
+        return (attributes[.systemFileNumber] as? NSNumber)?.uint64Value
     }
 
     private func removed(_ uri: String, unreachableIsGone: Bool) -> Bool {

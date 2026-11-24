@@ -10,13 +10,14 @@ import org.resonate.android.nativecore.IdenticalSongs
 import org.resonate.android.nativecore.Track
 import org.resonate.android.ui.shownTitle
 
-data class FilesRemoved(val gone: List<Track>, val kept: Int)
+data class FilesRemoved(val gone: List<Track>, val kept: Int, val unconfirmed: Int = 0)
 
 data class Deleted(
     val removed: Int,
     val kept: Int,
     val folded: Int = 0,
     val titles: List<String> = emptyList(),
+    val unconfirmed: Int = 0,
 )
 
 object DeletionSentences {
@@ -29,6 +30,17 @@ object DeletionSentences {
 
     fun folded(words: Words, count: Int): String =
         words.plural(R.plurals.deletion_folded, count, count)
+
+    fun unconfirmed(words: Words, count: Int): String =
+        words.plural(R.plurals.deletion_copies_unconfirmed, count, count)
+
+    fun stayed(words: Words, deleted: Deleted): String? =
+        listOfNotNull(
+                kept(words, deleted.kept).takeIf { deleted.kept > 0 },
+                unconfirmed(words, deleted.unconfirmed).takeIf { deleted.unconfirmed > 0 },
+            )
+            .takeIf { it.isNotEmpty() }
+            ?.joinToString("; ")
 
     fun title(words: Words, titles: List<String>): String =
         if (titles.size == 1) words.string(R.string.deletion_title_one, titles.single())
@@ -62,22 +74,33 @@ class SongDeletion(
             library.holding { native ->
                 var folded = 0
                 var kept = 0
+                var unconfirmed = 0
                 for (set in sets) {
-                    val removed = removeFiles(set.copies)
+                    val removed =
+                        removeFiles(set.copies) { native.confirmIdenticalCopy(set.kept.uri, it.uri) }
                     kept += removed.kept
+                    unconfirmed += removed.unconfirmed
                     if (removed.gone.isEmpty()) continue
                     val told = native.foldIdenticalSongs(set.kept.id, removed.gone.map { it.id })
                     folded += told.forgotten.toInt()
                 }
-                Deleted(0, kept, folded)
+                Deleted(0, kept, folded, unconfirmed = unconfirmed)
             }
         }
 
-    private suspend fun removeFiles(tracks: List<Track>): FilesRemoved {
+    private suspend fun removeFiles(
+        tracks: List<Track>,
+        confirmed: (Track) -> Boolean = { true },
+    ): FilesRemoved {
         val gone = mutableListOf<Track>()
         val asking = mutableListOf<Track>()
         var kept = 0
+        var unconfirmed = 0
         for (track in tracks) {
+            if (!confirmed(track)) {
+                unconfirmed++
+                continue
+            }
             try {
                 remove(track.uri)
                 gone += track
@@ -91,7 +114,7 @@ class SongDeletion(
         if (asking.isNotEmpty()) {
             if (consent(asking.map { Uri.parse(it.uri) })) gone += asking else kept += asking.size
         }
-        return FilesRemoved(gone, kept)
+        return FilesRemoved(gone, kept, unconfirmed)
     }
 
     private fun remove(uri: String) {

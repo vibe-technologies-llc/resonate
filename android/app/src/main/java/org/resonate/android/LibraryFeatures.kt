@@ -1582,10 +1582,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     suspend fun deleteCopies(sets: List<IdenticalSongs>, consent: suspend (List<Uri>) -> Boolean) {
         val deleted = SongDeletion(context, library, consent).foldCopies(sets)
         if (deleted.folded > 0) songsLeft()
-        if (deleted.kept > 0)
-            library.report(
-                IllegalStateException(DeletionSentences.kept(library.words, deleted.kept))
-            )
+        val stayed = DeletionSentences.stayed(library.words, deleted)
+        if (stayed != null) library.report(IllegalStateException(stayed))
         else if (deleted.folded > 0)
             library.notice(DeletionSentences.folded(library.words, deleted.folded))
     }

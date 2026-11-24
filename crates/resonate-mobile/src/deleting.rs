@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
+    fs::File,
     os::unix::fs::MetadataExt,
     sync::{Arc, OnceLock},
     time::{SystemTime, UNIX_EPOCH},
@@ -7,7 +8,7 @@ use std::{
 
 use parking_lot::Mutex;
 use resonate_core::{Mbid, Recording};
-use resonate_library::{identical_among, kept_first};
+use resonate_library::{identical_among, kept_first, same_bytes};
 use rusqlite::{OptionalExtension, Transaction};
 
 use crate::{
@@ -60,6 +61,21 @@ pub(crate) struct FileIdentity {
     length: u64,
 }
 
+impl FileIdentity {
+    fn proven_apart_from(self, other: Self) -> bool {
+        self.inode != other.inode
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum CopyVerdict {
+    Identical,
+    KeptUnreadable,
+    CopyUnreadable,
+    NotProvenApart,
+    Differs,
+}
+
 impl Files {
     pub(crate) fn reach_through(&self, documents: Arc<dyn Documents>) {
         if self.0.set(documents).is_err() {
@@ -68,16 +84,41 @@ impl Files {
     }
 
     pub(crate) fn identity_of(&self, uri: &str) -> Option<FileIdentity> {
+        self.opened_with_identity(uri).map(|(_, identity)| identity)
+    }
+
+    pub(crate) fn copy_verdict(&self, kept: &str, copy: &str) -> CopyVerdict {
+        let Some((held, kept_identity)) = self.opened_with_identity(kept) else {
+            return CopyVerdict::KeptUnreadable;
+        };
+        let Some((copied, copy_identity)) = self.opened_with_identity(copy) else {
+            return CopyVerdict::CopyUnreadable;
+        };
+
+        if !kept_identity.proven_apart_from(copy_identity) {
+            CopyVerdict::NotProvenApart
+        } else if kept_identity.length == copy_identity.length && same_bytes(held, copied) {
+            CopyVerdict::Identical
+        } else {
+            CopyVerdict::Differs
+        }
+    }
+
+    fn opened_with_identity(&self, uri: &str) -> Option<(File, FileIdentity)> {
         let documents = self.0.get()?;
         let descriptor = answered(Callback::OpenDocument, || {
             documents.open_document(uri.to_owned())
         })?;
-        let metadata = owned(descriptor).ok()?.metadata().ok()?;
+        let file = owned(descriptor).ok()?;
+        let metadata = file.metadata().ok()?;
 
-        metadata.is_file().then(|| FileIdentity {
-            device: metadata.dev(),
-            inode: metadata.ino(),
-            length: metadata.len(),
+        metadata.is_file().then(|| {
+            let identity = FileIdentity {
+                device: metadata.dev(),
+                inode: metadata.ino(),
+                length: metadata.len(),
+            };
+            (file, identity)
         })
     }
 }
@@ -128,6 +169,21 @@ impl MobilePlayer {
             .into_iter()
             .filter_map(|id| self.catalog.track(id).ok())
             .collect())
+    }
+
+    pub fn confirm_identical_copy(&self, kept: String, copy: String) -> bool {
+        match self.services.files.copy_verdict(&kept, &copy) {
+            CopyVerdict::Identical => true,
+            verdict => {
+                tracing::info!(
+                    ?verdict,
+                    kept,
+                    copy,
+                    "a copy is kept since it is not confirmed identical"
+                );
+                false
+            }
+        }
     }
 
     pub fn fold_identical_songs(&self, kept: u64, copies: Vec<u64>) -> Result<SongsForgotten> {
@@ -477,9 +533,10 @@ fn forgotten_in(
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
     use super::*;
+    use crate::harness::{FOLDER, Harness, silence};
 
     fn named(name: &str) -> Track {
         Track {
@@ -591,5 +648,165 @@ mod tests {
             .expect("forgotten");
 
         assert!(deletions_remembered(&catalog) > 0);
+    }
+
+    fn the_one_set(harness: &Harness) -> IdenticalSongs {
+        let mut found = harness
+            .player
+            .identical_songs()
+            .expect("the identical songs");
+
+        assert_eq!(found.len(), 1);
+        found.remove(0)
+    }
+
+    fn deleted_as_a_phone_would(harness: &Harness, set: &IdenticalSongs) -> SongsForgotten {
+        let gone = set
+            .copies
+            .iter()
+            .filter(|copy| {
+                harness
+                    .player
+                    .confirm_identical_copy(set.kept.uri.clone(), copy.uri.clone())
+            })
+            .filter(|copy| fs::remove_file(harness.folder.join(&copy.name)).is_ok())
+            .map(|copy| copy.id)
+            .collect();
+
+        harness
+            .player
+            .fold_identical_songs(set.kept.id, gone)
+            .expect("a fold")
+    }
+
+    fn standing(harness: &Harness, set: &IdenticalSongs) -> usize {
+        set.copies
+            .iter()
+            .filter(|copy| {
+                harness.folder.join(&copy.name).exists()
+                    && harness.player.catalog.track(copy.id).is_ok()
+            })
+            .count()
+    }
+
+    #[test]
+    fn a_distinct_identical_copy_is_confirmed_deleted_and_folded_into_the_one_kept() {
+        let harness = Harness::new();
+
+        let set = the_one_set(&harness);
+        let folded = deleted_as_a_phone_would(&harness, &set);
+
+        assert_eq!(set.copies.len(), 3);
+        assert_eq!(folded.forgotten, 3);
+        assert_eq!(standing(&harness, &set), 0);
+        assert!(harness.folder.join(&set.kept.name).exists());
+        assert!(harness.player.catalog.track(set.kept.id).is_ok());
+    }
+
+    #[test]
+    fn every_copy_stays_where_the_file_kept_changed_after_the_preview() {
+        let harness = Harness::new();
+        let mut changed = silence();
+
+        if let Some(last) = changed.last_mut() {
+            *last ^= 1;
+        }
+
+        let set = the_one_set(&harness);
+
+        fs::write(harness.folder.join(&set.kept.name), changed).expect("the kept file changed");
+
+        let verdict = harness
+            .player
+            .services
+            .files
+            .copy_verdict(&set.kept.uri, &set.copies[0].uri);
+        let folded = deleted_as_a_phone_would(&harness, &set);
+
+        assert_eq!(verdict, CopyVerdict::Differs);
+        assert_eq!(folded.forgotten, 0);
+        assert_eq!(standing(&harness, &set), set.copies.len());
+    }
+
+    #[test]
+    fn every_copy_stays_where_the_file_kept_is_gone_or_refused_after_the_preview() {
+        let harness = Harness::new();
+
+        let set = the_one_set(&harness);
+        let kept = harness.folder.join(&set.kept.name);
+
+        fs::remove_file(&kept).expect("the kept file removed");
+
+        let removed = harness
+            .player
+            .services
+            .files
+            .copy_verdict(&set.kept.uri, &set.copies[0].uri);
+
+        std::os::unix::fs::symlink(&kept, &kept).expect("a kept file only refused");
+
+        let refused = harness
+            .player
+            .services
+            .files
+            .copy_verdict(&set.kept.uri, &set.copies[0].uri);
+        let folded = deleted_as_a_phone_would(&harness, &set);
+
+        assert_eq!(removed, CopyVerdict::KeptUnreadable);
+        assert_eq!(refused, CopyVerdict::KeptUnreadable);
+        assert_eq!(folded.forgotten, 0);
+        assert_eq!(standing(&harness, &set), set.copies.len());
+    }
+
+    #[test]
+    fn two_names_of_one_file_are_never_confirmed_as_copies_and_the_file_stays() {
+        let harness = Harness::new();
+        let kept = harness.song('a').clone();
+
+        fs::hard_link(harness.folder.join("a.wav"), harness.folder.join("e.wav"))
+            .expect("a second link to the file");
+
+        let alias = harness
+            .player
+            .index_document(format!("{FOLDER}./a.wav"), "a.wav".into())
+            .expect("a second row naming the same file");
+        let linked = harness
+            .player
+            .index_document(format!("{FOLDER}e.wav"), "e.wav".into())
+            .expect("a row naming the second link");
+
+        let set = IdenticalSongs {
+            kept: kept.clone(),
+            copies: vec![alias.clone(), linked.clone()],
+        };
+
+        let verdicts = [&alias, &linked].map(|copy| {
+            harness
+                .player
+                .services
+                .files
+                .copy_verdict(&kept.uri, &copy.uri)
+        });
+        let folded = deleted_as_a_phone_would(&harness, &set);
+
+        assert_eq!(verdicts, [CopyVerdict::NotProvenApart; 2]);
+        assert_eq!(folded.forgotten, 0);
+        assert!(harness.folder.join("a.wav").exists());
+        assert!(harness.folder.join("e.wav").exists());
+        assert!(harness.player.catalog.track(alias.id).is_ok());
+        assert!(harness.player.catalog.track(linked.id).is_ok());
+    }
+
+    #[test]
+    fn files_sharing_an_inode_are_not_proven_apart_even_on_two_devices() {
+        let file = |device, inode| FileIdentity {
+            device,
+            inode,
+            length: 10,
+        };
+
+        assert!(!file(1, 7).proven_apart_from(file(1, 7)));
+        assert!(!file(1, 7).proven_apart_from(file(2, 7)));
+        assert!(file(1, 7).proven_apart_from(file(1, 8)));
     }
 }

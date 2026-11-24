@@ -317,6 +317,10 @@
         <item quantity="one">%1$d file could not be deleted; its folder would not let go of it</item>
         <item quantity="other">%1$d files could not be deleted; their folders would not let go of them</item>
     </plurals>
+    <plurals name="deletion_copies_unconfirmed">
+        <item quantity="one">%1$d copy was kept; it could no longer be confirmed as a copy of the song kept</item>
+        <item quantity="other">%1$d copies were kept; they could no longer be confirmed as copies of the song kept</item>
+    </plurals>
     <string name="deletion_deleted_one">Deleted “%1$s”</string>
     <plurals name="deletion_deleted_songs">
         <item quantity="one">Deleted %1$d song</item>

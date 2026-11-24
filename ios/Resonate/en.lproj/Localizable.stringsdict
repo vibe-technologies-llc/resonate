@@ -162,6 +162,22 @@
 			<string>%lld files could not be deleted; their folders would not let go of them</string>
 		</dict>
 	</dict>
+	<key>deleting.copies-unconfirmed</key>
+	<dict>
+		<key>NSStringLocalizedFormatKey</key>
+		<string>%#@count@</string>
+		<key>count</key>
+		<dict>
+			<key>NSStringFormatSpecTypeKey</key>
+			<string>NSStringPluralRuleType</string>
+			<key>NSStringFormatValueTypeKey</key>
+			<string>lld</string>
+			<key>one</key>
+			<string>%lld copy was kept; it could no longer be confirmed as a copy of the song kept</string>
+			<key>other</key>
+			<string>%lld copies were kept; they could no longer be confirmed as copies of the song kept</string>
+		</dict>
+	</dict>
 	<key>deleting.identical.deleted</key>
 	<dict>
 		<key>NSStringLocalizedFormatKey</key>
