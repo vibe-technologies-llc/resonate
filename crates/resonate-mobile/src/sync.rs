@@ -14,9 +14,9 @@ use std::{
 use parking_lot::Mutex;
 use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
-    AUDIO_EXTENSIONS, Answer, Answered as Learnt, Frames, Mbid, MediaLocation, Recording,
-    Resumable, Resumption, SampleRate, SharedPrint, TrackId, WholeFile, ZoneId, folded_letters,
-    naming::named_within, title_words,
+    AUDIO_EXTENSIONS, Answer, Answered as Learnt, AnswersMark, Frames, Mbid, MediaLocation,
+    Recording, Resumable, Resumption, SampleRate, SharedPrint, TrackId, WholeFile, ZoneId,
+    folded_letters, naming::named_within, title_words,
 };
 use resonate_engine::Command;
 use resonate_library::Layout;
@@ -1833,12 +1833,12 @@ impl Catalog for DocumentCatalog {
         true
     }
 
-    fn answers_after(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
+    fn answers_after(&self, mark: AnswersMark, most: usize) -> Answered<Vec<Learnt>> {
         let mut learnt = self.lyrics_to_share(mark, most)?;
 
         learnt.extend(self.studies_to_share(mark, most)?);
         learnt.extend(self.band_peaks_to_share(mark, most)?);
-        learnt.sort_by_key(|learnt| learnt.at);
+        learnt.sort_by_key(|learnt| (learnt.at, learnt.id));
         learnt.truncate(most);
         Ok(learnt)
     }

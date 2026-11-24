@@ -8,7 +8,9 @@ use std::{
 };
 
 use parking_lot::{Condvar, Mutex};
-use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
+use resonate_core::{
+    Answer, Answered, AnswersMark, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile,
+};
 use resonate_sync::{
     Catalog, DeletedEverywhere, Held, HeldMark, HeldShare, HeldSince, LocalListen, LocalPlaylist,
     LocalPlaylistId, LocalQuery, Opened, QueryBody, Refused, RemoteListen, Resumed, SongTags,
@@ -71,6 +73,7 @@ pub struct Inside {
     pub answers_offered: usize,
     pub arrivals_untracked: bool,
     pub held_listings_before_refusing: Option<usize>,
+    pub answer_listings_before_refusing: Option<usize>,
     pub arriving_after_the_last_page: Option<Recording>,
     pub covers: BTreeMap<String, Vec<u8>>,
     pub uncovered: Vec<Mbid>,
@@ -163,6 +166,16 @@ impl Shelf {
 
 #[allow(dead_code)]
 impl Shelf {
+    pub fn answer_here_in_one_instant(&self, answers: &[(Recording, Answer)], at: i64) {
+        let mut inside = self.inside.lock();
+
+        for (recording, answer) in answers {
+            Self::answered_at(&mut inside, recording.clone(), answer.clone(), at);
+        }
+        drop(inside);
+        self.moved();
+    }
+
     pub fn add_songs_in_one_instant(&self, recordings: &[Recording], at: i64) {
         let mut inside = self.inside.lock();
 
@@ -246,9 +259,15 @@ impl Shelf {
     }
 
     fn answered(inside: &mut Inside, recording: Recording, answer: Answer) {
+        let at = inside.next_answered + 1;
+
+        Self::answered_at(inside, recording, answer, at);
+    }
+
+    fn answered_at(inside: &mut Inside, recording: Recording, answer: Answer, at: i64) {
         inside.next_answered += 1;
 
-        let at = inside.next_answered;
+        let id = inside.next_answered;
 
         inside.answers.retain(|held| {
             !(held.recording.names_the_same_song_as(&recording)
@@ -258,6 +277,7 @@ impl Shelf {
         inside.answers.push(Answered {
             recording,
             at,
+            id,
             answer,
         });
     }
@@ -875,17 +895,24 @@ impl Catalog for Shelf {
         !self.inside.lock().takes_no_answers
     }
 
-    fn answers_after(&self, mark: i64, most: usize) -> Result<Vec<Answered>, Refused> {
-        let mut answers = self
-            .inside
-            .lock()
+    fn answers_after(&self, mark: AnswersMark, most: usize) -> Result<Vec<Answered>, Refused> {
+        let mut inside = self.inside.lock();
+
+        if let Some(left) = inside.answer_listings_before_refusing.as_mut() {
+            if *left == 0 {
+                return Err(Refused::Unavailable);
+            }
+            *left -= 1;
+        }
+
+        let mut answers = inside
             .answers
             .iter()
-            .filter(|answered| answered.at >= mark)
+            .filter(|answered| mark.lists(answered))
             .cloned()
             .collect::<Vec<_>>();
 
-        answers.sort_by_key(|answered| answered.at);
+        answers.sort_by_key(|answered| (answered.at, answered.id));
         answers.truncate(most);
         Ok(answers)
     }

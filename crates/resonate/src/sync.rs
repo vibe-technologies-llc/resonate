@@ -978,7 +978,11 @@ impl Catalog for Catalogued {
         true
     }
 
-    fn answers_after(&self, mark: i64, most: usize) -> Answered<Vec<resonate_core::Answered>> {
+    fn answers_after(
+        &self,
+        mark: resonate_core::AnswersMark,
+        most: usize,
+    ) -> Answered<Vec<resonate_core::Answered>> {
         self.library
             .answers_to_share(mark, most)
             .map_err(|error| refused(&error))

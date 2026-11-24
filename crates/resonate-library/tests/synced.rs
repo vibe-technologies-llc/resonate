@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     env, fs,
     io::{Cursor, Read},
     num::NonZeroUsize,
@@ -12,7 +13,9 @@ use std::{
 };
 
 use resonate_analysis::Watch;
-use resonate_core::{Answer, Answered, Chromaprint, Link, Mbid, MediaLocation, Recording};
+use resonate_core::{
+    Answer, Answered, AnswersMark, Chromaprint, Link, Mbid, MediaLocation, Recording,
+};
 use resonate_library::{
     Agreement, Album, AlbumQuery, CoverArt, Credit, Cut, DeliveryFolder, Direction, HeardAs,
     HeardElsewhere, HeldTags, HistoryFrom, ImageFormat, ImportOptions, Layout, Library,
@@ -2058,6 +2061,75 @@ fn answers_of(answered: &[Answered]) -> Vec<(&str, &Answer)> {
 }
 
 #[test]
+fn answers_kept_in_one_instant_are_listed_past_a_page_by_their_row_and_kind() -> Result<()> {
+    let tree = Tree::new();
+    let catalog = tree.root.join("catalog.sqlite");
+    let library = Library::open(&catalog)?;
+    let songs = [
+        tree.song("Floyd/Meddle/echoes.wav", "Echoes", "Pink Floyd", "Meddle"),
+        tree.song(
+            "Floyd/Meddle/fearless.wav",
+            "Fearless",
+            "Pink Floyd",
+            "Meddle",
+        ),
+        tree.song("Floyd/Meddle/seamus.wav", "Seamus", "Pink Floyd", "Meddle"),
+    ];
+
+    scan(&library, &tree.root)?;
+
+    let studied = MediaLocation::local(&songs[0]);
+    let track = library.track_held(&studied, None)?.expect("a held track");
+    let study = resonate_analysis::study(&library.sources(), &studied, None, &Watch::default())
+        .expect("a study");
+
+    library.note_study(track, &study)?;
+    for song in &songs {
+        let words = LyricText {
+            text: "Overhead the albatross".into(),
+            synced: false,
+            lyricsfile: None,
+        };
+
+        library.keep_lyrics(&MediaLocation::local(song), None, Some(&words))?;
+    }
+
+    let connection = rusqlite::Connection::open(&catalog).expect("the catalog beside it");
+
+    connection
+        .execute_batch(
+            "UPDATE lyrics_kept SET taken = 1700000000000000000;
+             UPDATE track_studies SET studied = 1700000000000000000;",
+        )
+        .expect("every answer kept in one instant");
+
+    let every = library.answers_to_share(AnswersMark::default(), 10)?;
+    let mut paged = Vec::new();
+    let mut mark = AnswersMark::default();
+
+    loop {
+        let page = library.answers_to_share(mark, 2)?;
+        let Some(last) = page.last() else {
+            break;
+        };
+
+        mark = AnswersMark::past(last);
+        paged.extend(page);
+    }
+
+    let ids = paged
+        .iter()
+        .map(|answered| answered.id)
+        .collect::<BTreeSet<_>>();
+
+    assert_eq!(every.len(), 5);
+    assert!(every.iter().all(|answered| answered.at == every[0].at));
+    assert_eq!(paged, every);
+    assert_eq!(ids.len(), every.len());
+    Ok(())
+}
+
+#[test]
 fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_as_they_went()
 -> Result<()> {
     let tree = Tree::new();
@@ -2083,12 +2155,12 @@ fn a_study_and_kept_words_land_on_a_catalog_holding_the_same_file_and_read_back_
 
     here.keep_lyrics(&location, None, Some(&words))?;
 
-    let shared = here.answers_to_share(0, 10)?;
+    let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let taken = shared
         .iter()
         .map(|answered| there.take_shared_answer(&answered.recording, &answered.answer))
         .collect::<Result<Vec<_>>>()?;
-    let read_back = there.answers_to_share(0, 10)?;
+    let read_back = there.answers_to_share(AnswersMark::default(), 10)?;
 
     assert_eq!(shared.len(), 3);
     assert_eq!(taken, [true, true, true]);
@@ -2216,7 +2288,7 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
 
     here.note_study(track, &study)?;
 
-    let shared = here.answers_to_share(0, 10)?;
+    let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let another_take = Recording {
         length: Some(Duration::from_secs(u64::from(SECONDS) + 30)),
         ..song("Echoes", "Pink Floyd", "Meddle")
@@ -2238,7 +2310,11 @@ fn a_study_of_another_encode_or_words_for_another_take_are_never_written() -> Re
             .study_of(&MediaLocation::local(&other_encode), None)?
             .is_none()
     );
-    assert!(there.answers_to_share(0, 10)?.is_empty());
+    assert!(
+        there
+            .answers_to_share(AnswersMark::default(), 10)?
+            .is_empty()
+    );
     Ok(())
 }
 
@@ -2302,7 +2378,7 @@ fn a_print_and_its_recognition_land_on_a_copy_that_is_the_same_file_and_are_weig
             .expect("a study");
 
     elsewhere.note_study(elsewhere_track, &elsewhere_study)?;
-    for answered in here.answers_to_share(0, 10)? {
+    for answered in here.answers_to_share(AnswersMark::default(), 10)? {
         for library in [&agreeing, &disagreeing] {
             library.take_shared_answer(&answered.recording, &answered.answer)?;
         }
@@ -2478,12 +2554,12 @@ fn a_release_landed_on_one_catalog_lands_on_another_holding_the_album_and_is_not
     here.land_release(album, &release)?;
     here.rematch(album)?;
 
-    let shared = here.answers_to_share(0, 10)?;
+    let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let taken = shared
         .iter()
         .map(|answered| there.take_shared_answer(&answered.recording, &answered.answer))
         .collect::<Result<Vec<_>>>()?;
-    let read_back = there.answers_to_share(0, 10)?;
+    let read_back = there.answers_to_share(AnswersMark::default(), 10)?;
     let landed = album_of(&there)?;
     let floyd = there
         .artist_named("Pink Floyd")?
@@ -2533,7 +2609,7 @@ fn a_release_the_album_held_there_does_not_strictly_match_is_never_written() -> 
     here.land_release(album, &meddle(&["One of These Days", "Echoes"]))?;
     here.rematch(album)?;
 
-    let shared = here.answers_to_share(0, 10)?;
+    let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let another_band = Recording {
         artist: "Pink Fluid".into(),
         ..shared[0].recording.clone()
@@ -2545,7 +2621,11 @@ fn a_release_the_album_held_there_does_not_strictly_match_is_never_written() -> 
     assert!(!there.take_shared_answer(&another_band, &shared[0].answer)?);
     assert_eq!(album_of(&there)?.mbid, None);
     assert_eq!(album_of(&shorter)?.mbid, None);
-    assert!(there.answers_to_share(0, 10)?.is_empty());
+    assert!(
+        there
+            .answers_to_share(AnswersMark::default(), 10)?
+            .is_empty()
+    );
     Ok(())
 }
 
@@ -2578,7 +2658,7 @@ fn a_release_shared_by_a_track_held_under_another_name_lands_through_any_other_t
     here.land_release(album, &release)?;
     here.rematch(album)?;
 
-    let shared = here.answers_to_share(0, 10)?;
+    let shared = here.answers_to_share(AnswersMark::default(), 10)?;
     let taken = there.take_shared_answer(&shared[0].recording, &shared[0].answer)?;
 
     assert_eq!(shared.len(), 1);

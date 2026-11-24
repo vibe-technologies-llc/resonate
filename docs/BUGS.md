@@ -14,13 +14,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Device sync
-- [M · 0.17.1] Keep kept answers eligible across a full page of one instant. **Medium, architect.**
-  The answers' own mark (`answers_mark`, `Catalog::answers_after`) still steps past an instant
-  whose page is full, as `held_mark` did before `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`, and the
-  phones time kept lyrics to the second, so more than `ANSWERS_LOOKED_AT_ONCE` answers kept in one
-  second skip the rest (`crates/resonate-sync/src/ledger.rs`, the phones' `sync/answers.rs`, the
-  library's `answers.rs`). Carry a secondary key in that mark too, with a ledger step. Done when
-  more than a page of answers kept in one instant are all told, across a reopen.
 - [M · 0.17.1] Keep unread sync changes through a compaction.
   **Medium, architect.** A reader skips an answer kind it cannot read or advances the
   cursor after a bundle decode failure. Its snapshot contains only changes it interpreted,

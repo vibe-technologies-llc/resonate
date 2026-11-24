@@ -5,9 +5,9 @@ use std::{
 
 use resonate_analysis::{BAND_PEAKS_BYTES, BANDS, BandPeaks, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_core::{
-    AlbumId, Answer, Answered, Figure, Link, Mbid, Recording, SharedBandPeaks, SharedCredit,
-    SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint, SharedRecognition, SharedRelease,
-    SharedStudy, SharedTrack, TrackId, WholeFile,
+    AlbumId, Answer, AnswerKind, Answered, AnswersMark, Figure, Link, Mbid, Recording,
+    SharedBandPeaks, SharedCredit, SharedLyrics, SharedLyricsfile, SharedMedium, SharedPrint,
+    SharedRecognition, SharedRelease, SharedStudy, SharedTrack, TrackId, WholeFile,
 };
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, params};
 
@@ -39,8 +39,22 @@ struct ReleaseHead {
 }
 
 const WHOLE_FILE: &str = "t.span_start = 0 AND t.span_frames IS NULL";
+const ANSWER_ROW: &str = "answer_row";
 
-pub(crate) fn after(inner: &Inner, mark: i64, most: usize) -> Result<Vec<Answered>> {
+const RELEASES_ANSWERED_SINCE: &str =
+    "SELECT a.id, a.answered, a.mbid, a.release_group, a.release_title, a.date, a.country,
+       a.label, a.catalog_number, a.barcode, a.kind, a.disambiguation,
+       coalesce(a.front_cover, 0)
+  FROM albums a
+ WHERE a.answered >= ?1 AND (a.answered > ?1 OR ?3 IS NULL OR a.id > ?3)
+   AND a.mbid IS NOT NULL AND a.release_title IS NOT NULL
+   AND a.pressing_fit IS NULL
+   AND EXISTS (SELECT 1 FROM release_credits c WHERE c.album_id = a.id)
+   AND EXISTS (SELECT 1 FROM release_tracks rt
+                WHERE rt.album_id = a.id AND rt.track_id IS NOT NULL)
+ ORDER BY a.answered, a.id LIMIT ?2";
+
+pub(crate) fn after(inner: &Inner, mark: AnswersMark, most: usize) -> Result<Vec<Answered>> {
     let most = i64::try_from(most).unwrap_or(i64::MAX);
     let mut answered = inner.read(|connection| {
         let mut answered = lyrics_after(connection, mark, most)?;
@@ -51,18 +65,19 @@ pub(crate) fn after(inner: &Inner, mark: i64, most: usize) -> Result<Vec<Answere
         Ok(answered)
     })?;
 
-    answered.sort_by_key(|answered| answered.at);
+    answered.sort_by_key(|answered| (answered.at, answered.id));
     answered.truncate(usize::try_from(most).unwrap_or(usize::MAX));
     Ok(answered)
 }
 
 fn lyrics_kept_since() -> String {
     format!(
-        "SELECT k.taken, k.text, k.synced, {RECORDING_COLUMNS}
+        "SELECT k.taken, k.text, k.synced, {RECORDING_COLUMNS}, k.rowid AS {ANSWER_ROW}
            FROM lyrics_kept k JOIN tracks t ON t.path = k.path AND t.span_start = k.span_start
            {RECORDING_JOINS}
           WHERE k.text IS NOT NULL AND k.taken >= ?1
-          ORDER BY k.taken LIMIT ?2"
+            AND (k.taken > ?1 OR ?3 IS NULL OR k.rowid > ?3)
+          ORDER BY k.taken, k.rowid LIMIT ?2"
     )
 }
 
@@ -71,63 +86,80 @@ fn studies_kept_since() -> String {
         "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.verdict, s.cutoff_hz,
                 s.cutoff_drop, s.lossy_guess, s.upsampled_from, s.bits_in_use, s.declared_bits,
                 s.peak, s.rms, s.true_peak, s.loudness, s.loudness_range, s.dynamic_range,
-                s.clipped, s.mono_as_stereo, s.band_levels, {RECORDING_COLUMNS}
+                s.clipped, s.mono_as_stereo, s.band_levels, {RECORDING_COLUMNS},
+                s.track_id AS {ANSWER_ROW}
            FROM track_studies s JOIN tracks t ON t.id = s.track_id
            {RECORDING_JOINS}
           WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_levels) = ?4
+            AND (s.studied > ?1 OR ?5 IS NULL OR s.track_id > ?5)
             AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
-          ORDER BY s.studied LIMIT ?2"
+          ORDER BY s.studied, s.track_id LIMIT ?2"
     )
 }
 
 fn band_peaks_kept_since() -> String {
     format!(
-        "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.band_peaks, {RECORDING_COLUMNS}
+        "SELECT s.studied, t.packets, t.duration, t.sample_rate, s.band_peaks, {RECORDING_COLUMNS},
+                s.track_id AS {ANSWER_ROW}
            FROM track_studies s JOIN tracks t ON t.id = s.track_id
            {RECORDING_JOINS}
           WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_peaks) = ?4
+            AND (s.studied > ?1 OR ?5 IS NULL OR s.track_id > ?5)
             AND t.packets IS NOT NULL AND t.duration IS NOT NULL AND {WHOLE_FILE}
-          ORDER BY s.studied LIMIT ?2"
+          ORDER BY s.studied, s.track_id LIMIT ?2"
     )
 }
 
-fn lyrics_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
+fn lyrics_after(connection: &Connection, mark: AnswersMark, most: i64) -> Result<Vec<Answered>> {
     let mut statement = connection
         .prepare_cached(&lyrics_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let rows = statement
-        .query_map(params![mark, most], |row| {
-            let at: i64 = row.get(0)?;
-            let lyrics = SharedLyrics {
-                text: row.get(1)?,
-                synced: row.get(2)?,
-            };
-            Ok(recording_at(row, 3)?.map(|recording| Answered {
-                recording,
-                at,
-                answer: Answer::Lyrics(lyrics),
-            }))
-        })
+        .query_map(
+            params![mark.at, most, mark.rows_after(AnswerKind::Lyrics)],
+            |row| {
+                let at: i64 = row.get(0)?;
+                let id = AnswerKind::Lyrics.id_of_row(row.get(ANSWER_ROW)?);
+                let lyrics = SharedLyrics {
+                    text: row.get(1)?,
+                    synced: row.get(2)?,
+                };
+                Ok(recording_at(row, 3)?.map(|recording| Answered {
+                    recording,
+                    at,
+                    id,
+                    answer: Answer::Lyrics(lyrics),
+                }))
+            },
+        )
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     Ok(rows.into_iter().flatten().collect())
 }
 
-fn studies_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
+fn studies_after(connection: &Connection, mark: AnswersMark, most: i64) -> Result<Vec<Answered>> {
     let mut statement = connection
         .prepare_cached(&studies_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let rows = statement
         .query_map(
-            params![mark, most, i64::from(JUDGED_UNDER), BANDS as i64],
+            params![
+                mark.at,
+                most,
+                i64::from(JUDGED_UNDER),
+                BANDS as i64,
+                mark.rows_after(AnswerKind::Study)
+            ],
             |row| {
                 let at: i64 = row.get(0)?;
+                let id = AnswerKind::Study.id_of_row(row.get(ANSWER_ROW)?);
                 let study = study_at(row)?;
                 Ok(recording_at(row, 20)?.map(|recording| Answered {
                     recording,
                     at,
+                    id,
                     answer: Answer::Study(study),
                 }))
             },
@@ -137,16 +169,27 @@ fn studies_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<An
     Ok(rows.into_iter().flatten().collect())
 }
 
-fn band_peaks_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
+fn band_peaks_after(
+    connection: &Connection,
+    mark: AnswersMark,
+    most: i64,
+) -> Result<Vec<Answered>> {
     let mut statement = connection
         .prepare_cached(&band_peaks_kept_since())
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let rows = statement
         .query_map(
-            params![mark, most, i64::from(JUDGED_UNDER), BAND_PEAKS_BYTES as i64],
+            params![
+                mark.at,
+                most,
+                i64::from(JUDGED_UNDER),
+                BAND_PEAKS_BYTES as i64,
+                mark.rows_after(AnswerKind::BandPeaks)
+            ],
             |row| {
                 let at: i64 = row.get(0)?;
+                let id = AnswerKind::BandPeaks.id_of_row(row.get(ANSWER_ROW)?);
                 let peaks = SharedBandPeaks {
                     file: WholeFile {
                         packets: row.get::<_, i64>(1)?.cast_unsigned(),
@@ -159,6 +202,7 @@ fn band_peaks_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec
                 Ok(recording_at(row, 5)?.map(|recording| Answered {
                     recording,
                     at,
+                    id,
                     answer: Answer::BandPeaks(peaks),
                 }))
             },
@@ -423,40 +467,32 @@ fn write_shared_study(
     Ok(())
 }
 
-fn releases_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<Answered>> {
+fn releases_after(connection: &Connection, mark: AnswersMark, most: i64) -> Result<Vec<Answered>> {
     let mut statement = connection
-        .prepare_cached(
-            "SELECT a.id, a.answered, a.mbid, a.release_group, a.release_title, a.date, a.country,
-                    a.label, a.catalog_number, a.barcode, a.kind, a.disambiguation,
-                    coalesce(a.front_cover, 0)
-               FROM albums a
-              WHERE a.answered >= ?1 AND a.mbid IS NOT NULL AND a.release_title IS NOT NULL
-                AND a.pressing_fit IS NULL
-                AND EXISTS (SELECT 1 FROM release_credits c WHERE c.album_id = a.id)
-                AND EXISTS (SELECT 1 FROM release_tracks rt
-                             WHERE rt.album_id = a.id AND rt.track_id IS NOT NULL)
-              ORDER BY a.answered LIMIT ?2",
-        )
+        .prepare_cached(RELEASES_ANSWERED_SINCE)
         .map_err(|source| Error::store(StoreOp::Prepare, source))?;
 
     let heads = statement
-        .query_map(params![mark, most], |row| {
-            Ok(ReleaseHead {
-                album: row.get(0)?,
-                at: row.get(1)?,
-                id: row.get(2)?,
-                group: row.get(3)?,
-                title: row.get(4)?,
-                date: row.get(5)?,
-                country: row.get(6)?,
-                label: row.get(7)?,
-                catalog_number: row.get(8)?,
-                barcode: row.get(9)?,
-                kind: row.get(10)?,
-                disambiguation: row.get(11)?,
-                has_front_cover: row.get(12)?,
-            })
-        })
+        .query_map(
+            params![mark.at, most, mark.rows_after(AnswerKind::Release)],
+            |row| {
+                Ok(ReleaseHead {
+                    album: row.get(0)?,
+                    at: row.get(1)?,
+                    id: row.get(2)?,
+                    group: row.get(3)?,
+                    title: row.get(4)?,
+                    date: row.get(5)?,
+                    country: row.get(6)?,
+                    label: row.get(7)?,
+                    catalog_number: row.get(8)?,
+                    barcode: row.get(9)?,
+                    kind: row.get(10)?,
+                    disambiguation: row.get(11)?,
+                    has_front_cover: row.get(12)?,
+                })
+            },
+        )
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))?;
 
@@ -493,6 +529,7 @@ fn releases_after(connection: &Connection, mark: i64, most: i64) -> Result<Vec<A
         answered.push(Answered {
             recording,
             at: head.at,
+            id: AnswerKind::Release.id_of_row(head.album),
             answer: Answer::Release(Box::new(release)),
         });
     }
@@ -1175,16 +1212,21 @@ mod tests {
         let judged = i64::from(JUDGED_UNDER);
 
         for (sql, binds, index) in [
-            (lyrics_kept_since(), vec![0, 64], "lyrics_kept_by_taken"),
+            (lyrics_kept_since(), vec![0, 64, 5], "lyrics_kept_by_taken"),
             (
                 studies_kept_since(),
-                vec![0, 64, judged, BANDS as i64],
+                vec![0, 64, judged, BANDS as i64, 5],
                 "track_studies_by_studied",
             ),
             (
                 band_peaks_kept_since(),
-                vec![0, 64, judged, BAND_PEAKS_BYTES as i64],
+                vec![0, 64, judged, BAND_PEAKS_BYTES as i64, 5],
                 "track_studies_by_studied",
+            ),
+            (
+                RELEASES_ANSWERED_SINCE.to_owned(),
+                vec![0, 64, 5],
+                "albums_by_answered",
             ),
         ] {
             let plan: Vec<String> = connection
@@ -1204,6 +1246,10 @@ mod tests {
             assert!(
                 !plan.iter().any(|step| step.contains("TEMP B-TREE")),
                 "{sql} sorts what it read: {plan:?}"
+            );
+            assert!(
+                !plan.iter().any(|step| step.starts_with("SCAN")),
+                "{sql} scans past its mark: {plan:?}"
             );
         }
     }

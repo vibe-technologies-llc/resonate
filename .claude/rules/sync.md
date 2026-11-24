@@ -169,7 +169,8 @@ the `layouts` table, a device's organise layout, below; `SONGS_DELETED_EVERYWHER
 table and `state.joined`, below; `LISTENS_AGE_BY_WHEN_THEY_WERE_PLAYED`: an index on a told
 listen's `at`, so a look's aging never scans the table; `UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS`:
 `answers.named` and `state.held_mark`, below; `STAMPS_PAST_THE_BOUND_ARE_RESTAMPED`: data only, in
-the stamps bullet below; `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`: `state.held_after`, below); `user_version` counts the steps laid, a change appends a
+the stamps bullet below; `HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART`: `state.held_after`, below;
+`ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART`: `state.answers_after`, below); `user_version` counts the steps laid, a change appends a
 step, and a stamp past the list is `Error::LedgerVersion`
 (`a_ledger_laid_out_at_the_first_release_is_carried_forward_with_what_it_held`); the steps a release
 shipped are pinned by their text's hash in `ledger/released.rs`'s `STEPS_RELEASED` (`release.md`). All merging lives here, once for both
@@ -374,11 +375,25 @@ platforms; the catalog seam stays thin.
   the kind and the file** (a study per encode; lyrics kind 0 and a release kind 2 with no file, so
   the words and the release of one song are two rows,
   `a_release_travels_beside_the_words_of_its_song_and_is_not_sent_back`), holds the encoded answer, `here`, stamp and `owed`. A look reads
-  `Catalog::answers_after(answers_mark)` (`ANSWERS_LOOKED_AT_ONCE`, 500, up to
-  `ANSWER_PAGES_A_LOOK` pages; the catalog answers `at >= mark`, the mark moves to the last `at`, and
-  a whole page of one instant steps past it) and stamps and owes only an answer whose encoding
-  differs from the row's, so an answer landed from elsewhere and listed again here is never sent
-  back. **An arrival is offered to the catalog whatever its stamp** (unless the row already holds it
+  `Catalog::answers_after` with an `AnswersMark` (`ANSWERS_LOOKED_AT_ONCE`, 500, up to
+  `ANSWER_PAGES_A_LOOK` pages) and stamps and owes only an answer whose encoding differs from the
+  row's, so an answer landed from elsewhere and listed again here is never sent back. An `Answered`
+  is an instant `at` and an `id` the catalog keeps for it, `AnswerKind::id_of_row` of the row and
+  the kind, so lyrics, a study, its peaks and a release, each from a table of its own, never share
+  one, and the catalog lists the answers after the mark in `(at, id)` order (`AnswersMark::lists`),
+  each table bounding its rows of the mark's instant by `AnswersMark::rows_after`. The mark's `at`
+  is `state.answers_mark` and its `after` is `state.answers_after`, none meaning that instant from
+  its first answer. A whole page moves the mark past its last answer (`AnswersMark::past`), so a
+  page boundary inside one instant skips none of it (the phones time their lyrics to the second);
+  a shorter page moves it to the start of its last answer's instant
+  (`AnswersMark::from_the_instant_of`), so an answer kept later in that instant is read next time.
+  The mark is kept with each page, so a start goes on where the last run stopped
+  (`answers_kept_in_one_instant_past_a_whole_page_are_each_told_across_a_reopen`), and a mark kept
+  before `ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART` has no `after` and reads its instant whole, as it
+  was read then
+  (`a_mark_kept_before_answers_of_one_instant_were_told_apart_lists_that_instant_from_its_first_answer`).
+  **A catalog lists what it keeps, travelling or not**: the look leaves out what `Answer::travels`
+  refuses, so a page a catalog thinned never reads as its last. **An arrival is offered to the catalog whatever its stamp** (unless the row already holds it
   here): the catalog keeps the richer, so plainer words told later never undo timed ones, and the
   timed ones, re-listed by the catalog that took them, spread with a newer stamp; the row itself is
   last writer wins (`plainer_words_told_later_never_undo_timed_ones_and_the_timed_ones_spread`). An
@@ -569,12 +584,15 @@ and none taken, so such a catalog only records a deletion, *The ledger*), and a 
 moves with any of these.
 Failures are a `Refused` the implementation logs (errors.md: no boxed error). **Answers**
 (`takes_answers`, `answers_after`, `take_answer`) are the library's `answers.rs`
-(`Library::answers_to_share`, `take_shared_answer`): kept lyrics with text and studies at this
-build's `JUDGED_UNDER` with whole band levels of a whole-file row with a packets digest, in `at`
-order, each read off an index in that order (`lyrics_kept_by_taken`, partial on a kept text, and
-`track_studies_by_studied` on `(studied_under, studied)`), so a look that follows every revision
-reads only what was kept since its mark
-(`a_sync_look_reads_the_answers_kept_since_its_mark_off_an_index_in_their_order`); **covers** (`covers_wanted`, `cover`, `take_cover`; default none) are the library's
+(`Library::answers_to_share`, `take_shared_answer`): kept lyrics with text, studies at this
+build's `JUDGED_UNDER` with whole band levels of a whole-file row with a packets digest, their
+peaks, and releases, in `(at, id)` order, each read off an index in that order
+(`lyrics_kept_by_taken`, partial on a kept text, `track_studies_by_studied` on `(studied_under,
+studied)` and `albums_by_answered`, partial on a release that may travel), the row a tie is broken
+by being the one each index ends on (`lyrics_kept`'s rowid, `track_studies.track_id`, `albums.id`),
+so a look that follows every revision reads only what was kept since its mark
+(`a_sync_look_reads_the_answers_kept_since_its_mark_off_an_index_in_their_order`,
+`answers_kept_in_one_instant_are_listed_past_a_page_by_their_row_and_kind`); **covers** (`covers_wanted`, `cover`, `take_cover`; default none) are the library's
 `Library::covers_wanted` (the release ids of albums holding no picture, newest album first),
 `cover_to_share` (the picture of an album of that release id, a closest pressing's only where the
 picture is not the file's own) and `take_shared_cover` (sniffed as an image, else refused, and landed

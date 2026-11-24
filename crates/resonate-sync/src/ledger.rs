@@ -1,9 +1,10 @@
 use std::{collections::BTreeMap, path::Path, time::Duration};
 
-use resonate_core::{Answer, Answered, Recording, RecordingKey, WholeFile};
+use resonate_core::{Answer, Recording, RecordingKey, WholeFile};
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use self::{
+    answered::ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
     deletions::SONGS_DELETED_EVERYWHERE,
     set_back::kept_or_set_back,
     unheld::{
@@ -32,6 +33,7 @@ use crate::{
     },
 };
 
+mod answered;
 mod deletions;
 #[cfg(test)]
 mod released;
@@ -41,8 +43,6 @@ mod unheld;
 pub const BUNDLE_BYTES: usize = 192 * 1024;
 pub const LISTENS_LOOKED_AT_ONCE: usize = 2_000;
 pub const LISTENS_KEPT_FOR: Duration = Duration::from_secs(400 * 24 * 60 * 60);
-pub const ANSWERS_LOOKED_AT_ONCE: usize = 500;
-const ANSWER_PAGES_A_LOOK: usize = 8;
 const ANSWER_OF_LYRICS: i64 = 0;
 const ANSWER_OF_A_STUDY: i64 = 1;
 const ANSWER_OF_A_RELEASE: i64 = 2;
@@ -224,6 +224,7 @@ const MIGRATIONS: &[&str] = &[
     UNHELD_ANSWERS_WAIT_FOR_THEIR_SONGS,
     STAMPS_PAST_THE_BOUND_ARE_RESTAMPED,
     HELD_SONGS_OF_ONE_SECOND_ARE_TOLD_APART,
+    ANSWERS_OF_ONE_INSTANT_ARE_TOLD_APART,
 ];
 
 const STAMPS_PAST_THE_BOUND_ARE_RESTAMPED: &str = "
@@ -1798,89 +1799,6 @@ impl Ledger {
                 params![self.device.0.as_slice(), layout, stamp.nanos],
             )
             .map_err(|source| Error::store(StoreOp::Write, source))?;
-        Ok(())
-    }
-
-    fn look_at_answers(&mut self, catalog: &dyn Catalog) -> Result<()> {
-        if !catalog.takes_answers() {
-            return Ok(());
-        }
-
-        let mut mark = self.state_number("answers_mark")?.cast_signed();
-
-        for _ in 0..ANSWER_PAGES_A_LOOK {
-            let answered = catalog
-                .answers_after(mark, ANSWERS_LOOKED_AT_ONCE)
-                .map_err(Error::Catalog)?;
-            let Some(last) = answered.iter().map(|answered| answered.at).max() else {
-                break;
-            };
-            let whole_page = answered.len() >= ANSWERS_LOOKED_AT_ONCE;
-
-            let transaction = self
-                .connection
-                .transaction_with_behavior(TransactionBehavior::Immediate)
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-
-            for answered in answered.iter().filter(|answered| answered.answer.travels()) {
-                let Answered {
-                    recording, answer, ..
-                } = answered;
-
-                let slot = AnswerSlot::of(recording, answer);
-                let encoded = encoded_answer(answer);
-                let held: Option<Vec<u8>> = transaction
-                    .query_row(
-                        "SELECT answer FROM answers WHERE key = ?1 AND kind = ?2 AND file = ?3",
-                        params![slot.key.as_str(), slot.kind, slot.file],
-                        |row| row.get(0),
-                    )
-                    .optional()
-                    .map_err(|source| Error::store(StoreOp::Read, source))?;
-
-                if held.as_deref() == Some(encoded.as_slice()) {
-                    continue;
-                }
-
-                let stamp = self.clock.now(self.device);
-
-                transaction
-                    .execute(
-                        "INSERT INTO answers (key, kind, file, recording, answer, here, nanos, stamped_by, owed, named)
-                         VALUES (?1, ?2, ?3, ?4, ?5, 1, ?6, ?7, 1, ?8)
-                         ON CONFLICT (key, kind, file) DO UPDATE SET recording = ?4, answer = ?5, here = 1,
-                             nanos = ?6, stamped_by = ?7, owed = 1, named = ?8",
-                        params![
-                            slot.key.as_str(),
-                            slot.kind,
-                            slot.file,
-                            encoded_recording(recording),
-                            encoded,
-                            stamp.nanos,
-                            self.device.0.as_slice(),
-                            recording.named_key().as_str()
-                        ],
-                    )
-                    .map_err(|source| Error::store(StoreOp::Write, source))?;
-            }
-            mark = if whole_page && last <= mark {
-                mark.saturating_add(1)
-            } else {
-                last
-            };
-            transaction
-                .execute(
-                    "UPDATE state SET answers_mark = max(answers_mark, ?1) WHERE id = 1",
-                    params![mark],
-                )
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-            transaction
-                .commit()
-                .map_err(|source| Error::store(StoreOp::Write, source))?;
-            if !whole_page {
-                break;
-            }
-        }
         Ok(())
     }
 

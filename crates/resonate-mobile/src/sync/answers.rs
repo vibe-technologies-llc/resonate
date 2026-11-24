@@ -1,8 +1,8 @@
 use resonate_analysis::{BAND_PEAKS_BYTES, BANDS, BandPeaks, JUDGED_UNDER, LossyGuess, Verdict};
 use resonate_codec::{Sources, probe_scanned};
 use resonate_core::{
-    Answer, Figure, Recording, SharedBandPeaks, SharedLyrics, SharedPrint, SharedRecognition,
-    SharedStudy, SourceId, WholeFile,
+    Answer, AnswerKind, AnswersMark, Figure, Recording, SharedBandPeaks, SharedLyrics, SharedPrint,
+    SharedRecognition, SharedStudy, SourceId, WholeFile,
 };
 use resonate_library::{KeptPrint, LyricText, weighed_again};
 use resonate_lyrics::read_lyrics;
@@ -22,6 +22,7 @@ use crate::{
 };
 
 const NEARLY_THE_SAME_MILLISECOND: i64 = 1;
+const ANSWER_ROW: &str = "answer_row";
 
 struct Alike {
     id: u64,
@@ -83,45 +84,55 @@ impl DocumentCatalog {
         Ok(arrived)
     }
 
-    pub(super) fn lyrics_to_share(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
+    pub(super) fn lyrics_to_share(&self, mark: AnswersMark, most: usize) -> Answered<Vec<Learnt>> {
         let most = i64::try_from(most).unwrap_or(i64::MAX);
         let rows = {
             let connection = self.catalog.0.lock();
             let mut query = connection
                 .prepare_cached(&format!(
-                    "SELECT l.asked, l.text, {RECORDING_COLUMNS}
+                    "SELECT l.asked, l.text, l.track, {RECORDING_COLUMNS}
                        FROM lyrics l JOIN documents d ON d.id = l.track
                       WHERE l.text IS NOT NULL AND d.missing = 0 AND l.asked * ?3 >= ?1
+                        AND (l.asked * ?3 > ?1 OR ?4 IS NULL OR l.track > ?4)
                       ORDER BY l.asked, l.track LIMIT ?2"
                 ))
                 .map_err(unavailable)?;
             query
-                .query_map(params![mark, most, NANOS_A_SECOND], |row| {
-                    Ok((
-                        row.get::<_, i64>(0)?,
-                        row.get::<_, String>(1)?,
-                        recording_at(row, 2)?,
-                    ))
-                })
+                .query_map(
+                    params![
+                        mark.at,
+                        most,
+                        NANOS_A_SECOND,
+                        mark.rows_after(AnswerKind::Lyrics)
+                    ],
+                    |row| {
+                        Ok((
+                            row.get::<_, i64>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, i64>(2)?,
+                            recording_at(row, 3)?,
+                        ))
+                    },
+                )
                 .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
                 .map_err(unavailable)?
         };
 
         Ok(rows
             .into_iter()
-            .map(|(asked, text, recording)| Learnt {
+            .map(|(asked, text, track, recording)| Learnt {
                 recording,
                 at: asked.saturating_mul(NANOS_A_SECOND),
+                id: AnswerKind::Lyrics.id_of_row(track),
                 answer: Answer::Lyrics(SharedLyrics {
                     synced: is_synced(&text),
                     text,
                 }),
             })
-            .filter(|learnt| learnt.answer.travels())
             .collect())
     }
 
-    pub(super) fn studies_to_share(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
+    pub(super) fn studies_to_share(&self, mark: AnswersMark, most: usize) -> Answered<Vec<Learnt>> {
         let most = i64::try_from(most).unwrap_or(i64::MAX);
         let connection = self.catalog.0.lock();
         let mut query = connection
@@ -130,22 +141,30 @@ impl DocumentCatalog {
                         s.cutoff_drop, s.lossy_guess, s.upsampled_from, s.bits, s.declared_bits,
                         s.peak, s.rms, s.true_peak, s.loudness, s.loudness_range,
                         s.dynamic_range, s.clipped, s.mono_as_stereo, s.band_levels,
-                        {RECORDING_COLUMNS}
+                        {RECORDING_COLUMNS}, s.track AS {ANSWER_ROW}
                    FROM studies s JOIN documents d ON d.id = s.track
                   WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_levels) = ?4
+                    AND (s.studied > ?1 OR ?5 IS NULL OR s.track > ?5)
                     AND d.missing = 0 AND d.packets IS NOT NULL AND d.frames IS NOT NULL
                   ORDER BY s.studied, s.track LIMIT ?2"
             ))
             .map_err(unavailable)?;
         query
             .query_map(
-                params![mark, most, i64::from(JUDGED_UNDER), BANDS as i64],
+                params![
+                    mark.at,
+                    most,
+                    i64::from(JUDGED_UNDER),
+                    BANDS as i64,
+                    mark.rows_after(AnswerKind::Study)
+                ],
                 |row| {
                     let at: i64 = row.get(0)?;
                     let study = study_at(row)?;
                     Ok(Learnt {
                         recording: recording_at(row, 20)?,
                         at,
+                        id: AnswerKind::Study.id_of_row(row.get(ANSWER_ROW)?),
                         answer: Answer::Study(study),
                     })
                 },
@@ -154,21 +173,33 @@ impl DocumentCatalog {
             .map_err(unavailable)
     }
 
-    pub(super) fn band_peaks_to_share(&self, mark: i64, most: usize) -> Answered<Vec<Learnt>> {
+    pub(super) fn band_peaks_to_share(
+        &self,
+        mark: AnswersMark,
+        most: usize,
+    ) -> Answered<Vec<Learnt>> {
         let most = i64::try_from(most).unwrap_or(i64::MAX);
         let connection = self.catalog.0.lock();
         let mut query = connection
             .prepare_cached(&format!(
-                "SELECT s.studied, d.packets, d.frames, d.rate, s.band_peaks, {RECORDING_COLUMNS}
+                "SELECT s.studied, d.packets, d.frames, d.rate, s.band_peaks, {RECORDING_COLUMNS},
+                        s.track AS {ANSWER_ROW}
                    FROM studies s JOIN documents d ON d.id = s.track
                   WHERE s.studied >= ?1 AND s.studied_under = ?3 AND length(s.band_peaks) = ?4
+                    AND (s.studied > ?1 OR ?5 IS NULL OR s.track > ?5)
                     AND d.missing = 0 AND d.packets IS NOT NULL AND d.frames IS NOT NULL
                   ORDER BY s.studied, s.track LIMIT ?2"
             ))
             .map_err(unavailable)?;
         query
             .query_map(
-                params![mark, most, i64::from(JUDGED_UNDER), BAND_PEAKS_BYTES as i64],
+                params![
+                    mark.at,
+                    most,
+                    i64::from(JUDGED_UNDER),
+                    BAND_PEAKS_BYTES as i64,
+                    mark.rows_after(AnswerKind::BandPeaks)
+                ],
                 |row| {
                     let at: i64 = row.get(0)?;
                     let peaks = SharedBandPeaks {
@@ -183,6 +214,7 @@ impl DocumentCatalog {
                     Ok(Learnt {
                         recording: recording_at(row, 5)?,
                         at,
+                        id: AnswerKind::BandPeaks.id_of_row(row.get(ANSWER_ROW)?),
                         answer: Answer::BandPeaks(peaks),
                     })
                 },
@@ -725,13 +757,22 @@ mod tests {
                 .expect("kept lyrics");
         }
 
-        let listed = documents.lyrics_to_share(0, 10).expect("listed");
+        let listed = documents
+            .lyrics_to_share(AnswersMark::default(), 10)
+            .expect("listed");
         let after_now = documents
-            .lyrics_to_share(i64::MAX, 10)
+            .lyrics_to_share(
+                AnswersMark {
+                    at: i64::MAX,
+                    after: None,
+                },
+                10,
+            )
             .expect("listed after the future");
 
         let mut told: Vec<_> = listed
             .iter()
+            .filter(|learnt| learnt.answer.travels())
             .map(|learnt| match &learnt.answer {
                 Answer::Lyrics(lyrics) => (
                     learnt.recording.title.clone(),
@@ -753,6 +794,7 @@ mod tests {
                 ("Joga".to_owned(), true, true),
             ]
         );
+        assert_eq!(listed.len(), 3);
         assert!(after_now.is_empty());
         assert!(documents.takes_answers());
 
@@ -914,7 +956,9 @@ mod tests {
             .take_lyrics(&named("Joga", "Björk", 305), &lyrics_of(TIMED, true))
             .expect("landed");
 
-        let listed = documents.lyrics_to_share(0, 10).expect("listed");
+        let listed = documents
+            .lyrics_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].answer, Answer::Lyrics(lyrics_of(TIMED, true)));
@@ -1041,7 +1085,9 @@ mod tests {
             .keep_identity(tone, &scanned)
             .expect("identified");
 
-        let listed = documents.band_peaks_to_share(0, 10).expect("listed");
+        let listed = documents
+            .band_peaks_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         assert_eq!(listed.len(), 1);
 
@@ -1136,6 +1182,58 @@ mod tests {
     }
 
     #[test]
+    fn answers_kept_in_one_second_are_listed_past_a_page_by_their_document_and_kind() {
+        let harness = Harness::new();
+        let documents = documents_over(&harness);
+        let study = study_of(whole_file_of(&harness, "a.wav"), "fake");
+
+        for song in &harness.songs {
+            harness
+                .player
+                .catalog
+                .keep_lyrics(song.id, Some(TIMED), None, "lrclib")
+                .expect("kept lyrics");
+        }
+        documents.take_study(&study).expect("landed");
+        harness
+            .player
+            .catalog
+            .0
+            .lock()
+            .execute_batch(&format!(
+                "UPDATE lyrics SET asked = 300;
+                 UPDATE studies SET studied = 300 * {NANOS_A_SECOND};"
+            ))
+            .expect("every answer kept in one second");
+
+        let every = documents
+            .answers_after(AnswersMark::default(), 100)
+            .expect("listed");
+        let mut paged = Vec::new();
+        let mut mark = AnswersMark::default();
+
+        loop {
+            let page = documents.answers_after(mark, 2).expect("a page");
+            let Some(last) = page.last() else {
+                break;
+            };
+
+            mark = AnswersMark::past(last);
+            paged.extend(page);
+        }
+
+        let studies = every
+            .iter()
+            .filter(|learnt| matches!(learnt.answer, Answer::Study(_)))
+            .count();
+
+        assert!(every.len() > harness.songs.len());
+        assert!(studies > 0);
+        assert!(every.iter().all(|learnt| learnt.at == every[0].at));
+        assert_eq!(paged, every);
+    }
+
+    #[test]
     fn landed_studies_are_listed_for_sending_exactly_as_they_arrived_beside_kept_words() {
         let harness = Harness::new();
         let documents = documents_over(&harness);
@@ -1160,7 +1258,9 @@ mod tests {
             b,
         );
 
-        let listed = documents.answers_after(0, 100).expect("listed");
+        let listed = documents
+            .answers_after(AnswersMark::default(), 100)
+            .expect("listed");
 
         let studies: Vec<_> = listed
             .iter()
@@ -1177,7 +1277,13 @@ mod tests {
         assert_eq!(studies, vec![study.clone(), study]);
         assert_eq!(words, 1);
         assert!(listed.windows(2).all(|pair| pair[0].at <= pair[1].at));
-        assert_eq!(documents.answers_after(0, 2).expect("a page").len(), 2);
+        assert_eq!(
+            documents
+                .answers_after(AnswersMark::default(), 2)
+                .expect("a page")
+                .len(),
+            2
+        );
     }
 
     #[test]
@@ -1197,7 +1303,9 @@ mod tests {
             .keep_studied(tone, &study)
             .expect("kept");
 
-        let before_it_was_known = documents.studies_to_share(0, 10).expect("listed");
+        let before_it_was_known = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         harness
             .player
@@ -1205,7 +1313,9 @@ mod tests {
             .keep_identity(tone, &scanned)
             .expect("identified");
 
-        let listed = documents.studies_to_share(0, 10).expect("listed");
+        let listed = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         assert!(before_it_was_known.is_empty());
         assert_eq!(listed.len(), 1);
@@ -1243,7 +1353,9 @@ mod tests {
             .keep_studied(a, &study)
             .expect("kept");
 
-        let listed = documents.studies_to_share(0, 10).expect("listed");
+        let listed = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         change(
             &harness,
@@ -1251,7 +1363,9 @@ mod tests {
             a,
         );
 
-        let after_the_file_changed = documents.studies_to_share(0, 10).expect("listed");
+        let after_the_file_changed = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].recording.title, "a");
@@ -1272,13 +1386,17 @@ mod tests {
             .expect("recognised");
 
         let before = study_figures(&harness, id);
-        let shared_before = documents.studies_to_share(0, 10).expect("listed");
+        let shared_before = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         harness.player.analyse_track(id).expect("an analysis");
 
         let after = study_figures(&harness, id);
         let heard = heard_on_the_phone(&harness, id);
-        let shared_after = documents.studies_to_share(0, 10).expect("listed");
+        let shared_after = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         assert_eq!(before.0, Some(i64::from(JUDGED_UNDER)));
         assert_eq!(after, before);
@@ -1312,7 +1430,9 @@ mod tests {
 
         let studies_after = studies_held(&harness, id);
         let figures = study_figures(&harness, id);
-        let listed = documents.studies_to_share(0, 10).expect("listed");
+        let listed = documents
+            .studies_to_share(AnswersMark::default(), 10)
+            .expect("listed");
 
         assert_eq!(studies_before, 0);
         assert_eq!(studies_after, 1);

@@ -584,9 +584,12 @@ keeps (`sync.md`), over the document catalog, in `sync/answers.rs`. A release (`
 is settled and written nowhere, since the document catalog keeps no release a strict landing could
 weigh; the ledger still passes it on in its snapshot.
 
-- **Words.** `lyrics_to_share` lists every `lyrics` row with text of a visible document, in `asked`
-  order (`at` is `asked` in nanoseconds), timed or not by `is_synced`, and only those `Answer::travels`
-  admits. `take_lyrics` lands only on a document the recording is held strictly by (the in-memory
+- **Words.** `lyrics_to_share` lists every `lyrics` row with text of a visible document, in
+  `(asked, track)` order (`at` is `asked` in nanoseconds, the `id` of `AnswerKind::id_of_row` the
+  document's), timed or not by `is_synced`, travelling or not (the ledger's look leaves out what
+  `Answer::travels` refuses); studies and their peaks are listed in `(studied, track)` order the
+  same way, so answers kept in one second are listed past a page
+  (`answers_kept_in_one_second_are_listed_past_a_page_by_their_document_and_kind`). `take_lyrics` lands only on a document the recording is held strictly by (the in-memory
   `Indexed` resolves it, else `songs_received` does, through `resolved_in`, then the document's recording id is the recording's, or both lengths are
   known and within 2 s), parsed first, as a row with no Lyricsfile and origin `SHARED_LYRICS`, and
   never where the row keeps words as rich already (`LyricText::detail`). `SHARED_LYRICS` is due for

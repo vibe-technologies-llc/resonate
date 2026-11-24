@@ -5,7 +5,9 @@ use std::{
     time::Duration,
 };
 
-use resonate_core::{Answer, Answered, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile};
+use resonate_core::{
+    Answer, Answered, AnswersMark, Mbid, Recording, SharedLyricsfile, SharedPrint, WholeFile,
+};
 
 use crate::{change::QueryBody, key::DeviceId};
 
@@ -269,7 +271,7 @@ pub trait Catalog: Send + Sync + 'static {
         false
     }
 
-    fn answers_after(&self, mark: i64, most: usize) -> Result<Vec<Answered>, Refused> {
+    fn answers_after(&self, mark: AnswersMark, most: usize) -> Result<Vec<Answered>, Refused> {
         let _ = (mark, most);
         Ok(Vec::new())
     }

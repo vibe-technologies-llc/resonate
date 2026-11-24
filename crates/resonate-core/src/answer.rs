@@ -237,7 +237,66 @@ pub enum Answer {
 pub struct Answered {
     pub recording: Recording,
     pub at: i64,
+    pub id: i64,
     pub answer: Answer,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AnswerKind {
+    Lyrics,
+    Study,
+    BandPeaks,
+    Release,
+}
+
+const ANSWER_KINDS: i64 = 4;
+
+impl AnswerKind {
+    const fn tag(self) -> i64 {
+        match self {
+            Self::Lyrics => 0,
+            Self::Study => 1,
+            Self::BandPeaks => 2,
+            Self::Release => 3,
+        }
+    }
+
+    pub const fn id_of_row(self, row: i64) -> i64 {
+        row.saturating_mul(ANSWER_KINDS).saturating_add(self.tag())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct AnswersMark {
+    pub at: i64,
+    pub after: Option<i64>,
+}
+
+impl AnswersMark {
+    pub const fn past(answered: &Answered) -> Self {
+        Self {
+            at: answered.at,
+            after: Some(answered.id),
+        }
+    }
+
+    pub const fn from_the_instant_of(answered: &Answered) -> Self {
+        Self {
+            at: answered.at,
+            after: None,
+        }
+    }
+
+    pub fn lists(self, answered: &Answered) -> bool {
+        (answered.at, Some(answered.id)) > (self.at, self.after)
+    }
+
+    pub const fn rows_after(self, kind: AnswerKind) -> Option<i64> {
+        match self.after {
+            Some(after) => Some(after.saturating_sub(kind.tag()).div_euclid(ANSWER_KINDS)),
+            None => None,
+        }
+    }
 }
 
 impl Answer {
@@ -271,6 +330,63 @@ mod tests {
         assert_eq!(quiet.value(), -23.5);
         assert_eq!(Figure::from_bits(quiet.bits()), quiet);
         assert_eq!(Figure::of(f32::NAN), Figure::of(f32::NAN));
+    }
+
+    #[test]
+    fn a_kind_reads_past_a_mark_exactly_the_rows_whose_ids_the_mark_lists() {
+        let kinds = [
+            AnswerKind::Lyrics,
+            AnswerKind::Study,
+            AnswerKind::BandPeaks,
+            AnswerKind::Release,
+        ];
+        let answered = |id: i64| Answered {
+            recording: Recording {
+                mbid: None,
+                title: "Joga".into(),
+                artist: "Björk".into(),
+                album: String::new(),
+                length: None,
+            },
+            at: 7,
+            id,
+            answer: Answer::Lyrics(SharedLyrics {
+                text: "A line".into(),
+                synced: false,
+            }),
+        };
+
+        for after in -9..40 {
+            let mark = AnswersMark {
+                at: 7,
+                after: Some(after),
+            };
+
+            for kind in kinds {
+                let bound = mark.rows_after(kind).expect("a bound");
+
+                for row in -3..12 {
+                    assert_eq!(
+                        mark.lists(&answered(kind.id_of_row(row))),
+                        row > bound,
+                        "{kind:?} row {row} after {after}"
+                    );
+                }
+            }
+        }
+
+        let whole_instant = AnswersMark { at: 7, after: None };
+        let ids = kinds.map(|kind| kind.id_of_row(1));
+
+        assert!(
+            kinds
+                .iter()
+                .all(|kind| whole_instant.rows_after(*kind).is_none())
+        );
+        assert!(ids.iter().all(|id| whole_instant.lists(&answered(*id))));
+        assert!(ids.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(!AnswersMark::past(&answered(5)).lists(&answered(5)));
+        assert!(AnswersMark::from_the_instant_of(&answered(5)).lists(&answered(5)));
     }
 
     #[test]

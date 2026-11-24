@@ -113,10 +113,10 @@ impl Library {
 
     pub fn answers_to_share(
         &self,
-        after: i64,
+        mark: resonate_core::AnswersMark,
         most: usize,
     ) -> Result<Vec<resonate_core::Answered>> {
-        answers::after(&self.inner, after, most)
+        answers::after(&self.inner, mark, most)
     }
 
     pub fn take_shared_answer(

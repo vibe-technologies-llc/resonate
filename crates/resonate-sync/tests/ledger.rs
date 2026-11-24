@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
     process, thread,
@@ -196,10 +197,13 @@ fn reopened_as_an_older_build_left_it(device: &mut Device, path: &Path) {
         .execute("UPDATE state SET clock = ?1", [i64::MAX])
         .expect("a clock frozen there");
     connection
+        .execute_batch("ALTER TABLE state DROP COLUMN answers_after")
+        .expect("the answers of one instant not yet told apart");
+    connection
         .execute_batch("ALTER TABLE state DROP COLUMN held_after")
         .expect("the songs of one second not yet told apart");
     connection
-        .pragma_update(None, "user_version", laid - 2)
+        .pragma_update(None, "user_version", laid - 3)
         .expect("the steps not yet laid");
     drop(connection);
     device.ledger = Ledger::open(path).expect("the ledger opened by the build that restamps");
@@ -1868,6 +1872,45 @@ fn songs_held_in_one_instant_past_a_whole_page_each_take_their_answer_across_a_r
     assert!(interrupted.is_err());
     assert_eq!(answered_before_the_restart, 500);
     assert_eq!(unanswered, 0);
+}
+
+#[test]
+fn answers_kept_in_one_instant_past_a_whole_page_are_each_told_across_a_reopen() {
+    let folder = scratch_folder("answered-in-one-instant");
+    let path = folder.join("sync.sqlite");
+    let answers = (0..650)
+        .map(|nth| {
+            let title = format!("Tied {nth}");
+
+            (song(&title), sung(&title, false))
+        })
+        .collect::<Vec<_>>();
+    let mut desk = device_over_a_file("Desk", &[], &path);
+
+    desk.shelf.answer_here_in_one_instant(&answers, days_ago(0));
+    desk.shelf.inside.lock().answer_listings_before_refusing = Some(1);
+
+    let interrupted = desk.ledger.look(&desk.shelf, &desk.me);
+
+    desk.ledger = Ledger::open(&path).expect("the ledger again");
+    desk.shelf.inside.lock().answer_listings_before_refusing = None;
+
+    let told = desk
+        .send()
+        .into_iter()
+        .filter_map(|change| match change {
+            Change::Answer(note) => Some(note.recording.title),
+            _ => None,
+        })
+        .collect::<BTreeSet<_>>();
+    let told_again = answers_in(&desk.send());
+
+    drop(desk);
+    fs::remove_dir_all(&folder).expect("cleared");
+
+    assert!(interrupted.is_err());
+    assert_eq!(told.len(), answers.len());
+    assert_eq!(told_again, 0);
 }
 
 #[test]
