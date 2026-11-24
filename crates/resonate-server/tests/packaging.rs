@@ -22,6 +22,10 @@ fn packaging(name: &str) -> String {
     fs::read_to_string(&path).unwrap_or_else(|error| panic!("{}: {error}", path.display()))
 }
 
+fn opens_a_section(line: &str) -> bool {
+    line.starts_with('%') && !line.starts_with("%{")
+}
+
 fn unit_value<'a>(unit: &'a str, key: &str) -> Vec<&'a str> {
     unit.lines()
         .filter_map(|line| line.strip_prefix(key)?.strip_prefix('='))
@@ -98,6 +102,27 @@ fn every_server_recipe_installs_the_hand_over_where_the_unit_runs_it() {
     }
 
     assert!(packaging(SPEC).contains("%{_prefix}/lib/resonate-server/hand-over-credentials"));
+}
+
+#[test]
+fn every_line_the_spec_runs_to_install_installs_a_file() {
+    let spec = packaging(SPEC);
+
+    let installing: Vec<&str> = spec
+        .lines()
+        .skip_while(|line| *line != "%install")
+        .skip(1)
+        .take_while(|line| !opens_a_section(line))
+        .filter(|line| !line.is_empty())
+        .collect();
+
+    assert!(!installing.is_empty());
+    for line in installing {
+        assert!(
+            line.starts_with("install "),
+            "the spec's %install runs {line:?}, which installs nothing"
+        );
+    }
 }
 
 #[test]
