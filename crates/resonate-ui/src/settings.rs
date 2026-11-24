@@ -1063,6 +1063,7 @@ pub struct SyncShown {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HandedOff {
+    pub id: String,
     pub device: String,
     pub songs: usize,
 }
@@ -1204,7 +1205,7 @@ pub trait Syncing: Send + Sync {
 
     fn handed_off(&self) -> Vec<HandedOff>;
 
-    fn continue_from(&self, device: &str) -> Continuing;
+    fn continue_from(&self, id: &str) -> Continuing;
 
     fn watch(&self, _device: &str) -> RemoteShown {
         RemoteShown::Refused

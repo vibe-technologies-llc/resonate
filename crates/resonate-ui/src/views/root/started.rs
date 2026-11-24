@@ -202,11 +202,11 @@ impl RootView {
         self.queue_served(locations, at, cx);
     }
 
-    pub(crate) fn continue_from(&mut self, device: &str, cx: &mut Context<Self>) {
+    pub(crate) fn continue_from(&mut self, id: &str, device: &str, cx: &mut Context<Self>) {
         let Some(syncing) = cx.global::<ResonateApp>().syncing.clone() else {
             return;
         };
-        let Continuing { cuts, at } = syncing.continue_from(device);
+        let Continuing { cuts, at } = syncing.continue_from(id);
 
         if cuts.is_empty() {
             self.report(Notice::Trouble(words::root::nothing_continued(device)), cx);

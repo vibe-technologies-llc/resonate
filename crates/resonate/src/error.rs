@@ -710,6 +710,13 @@ pub enum Error {
     NoSuchDevice(Box<str>),
 
     #[cfg(feature = "sync")]
+    #[error("{name} names {} synced devices; give the id of one of them: {}", .devices.len(), listed(.devices))]
+    AmbiguousDevice {
+        name: Box<str>,
+        devices: Box<[resonate_sync::DeviceId]>,
+    },
+
+    #[cfg(feature = "sync")]
     #[error("{device} did not take the command: {answer:?}")]
     NotControlled {
         device: Box<str>,
@@ -742,6 +749,15 @@ pub enum Error {
 }
 
 pub type Result<T> = result::Result<T, Error>;
+
+#[cfg(feature = "sync")]
+fn listed(devices: &[resonate_sync::DeviceId]) -> String {
+    devices
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 #[cfg(feature = "sync")]
 fn spelled_members(members: &[resonate_sync::shared::MemberId]) -> String {

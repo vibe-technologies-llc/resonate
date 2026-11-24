@@ -1431,18 +1431,39 @@ fn standing_of(standing: Standing) -> &'static str {
 fn device_named(sync: &Sync, name: &str) -> Result<SyncDevice> {
     let deadline = Instant::now() + CONNECTED_WITHIN;
     loop {
-        if let Some(device) = sync
-            .shown()
-            .devices
-            .into_iter()
-            .find(|device| !device.this && device.name.eq_ignore_ascii_case(name.trim()))
-        {
+        if let Some(device) = chosen(sync.shown().devices, name)? {
             return Ok(device);
         }
         if Instant::now() >= deadline {
             return Err(Error::NoSuchDevice(name.into()));
         }
         thread::sleep(TRANSFERS_LOOKED_AT_EVERY);
+    }
+}
+
+#[cfg(feature = "sync")]
+fn chosen(devices: Vec<SyncDevice>, wanted: &str) -> Result<Option<SyncDevice>> {
+    let wanted = wanted.trim();
+    let mut others = devices
+        .into_iter()
+        .filter(|device| !device.this)
+        .collect::<Vec<_>>();
+
+    if let Some(at) = others
+        .iter()
+        .position(|device| device.id.to_string().eq_ignore_ascii_case(wanted))
+    {
+        return Ok(Some(others.swap_remove(at)));
+    }
+    others.retain(|device| device.name.eq_ignore_ascii_case(wanted));
+
+    match others.len() {
+        0 => Ok(None),
+        1 => Ok(others.pop()),
+        _ => Err(Error::AmbiguousDevice {
+            name: wanted.into(),
+            devices: others.into_iter().map(|device| device.id).collect(),
+        }),
     }
 }
 
@@ -1864,30 +1885,11 @@ impl resonate_ui::Syncing for Running {
     }
 
     fn handed_off(&self) -> Vec<resonate_ui::HandedOff> {
-        let devices = self.sync.shown().devices;
-        self.handoffs()
-            .into_iter()
-            .filter_map(|handoff| {
-                let device = devices.iter().find(|device| device.id == handoff.device)?;
-                let first = usize::try_from(handoff.at).unwrap_or_default();
-                Some(resonate_ui::HandedOff {
-                    device: device.name.clone(),
-                    songs: handoff.rows.len().saturating_sub(first),
-                })
-            })
-            .filter(|handed| handed.songs > 0)
-            .collect()
+        offered(self.handoffs(), &self.sync.shown().devices)
     }
 
-    fn continue_from(&self, device: &str) -> resonate_ui::Continuing {
-        let Some(device) = self.named(device) else {
-            return resonate_ui::Continuing::default();
-        };
-        let Some(handoff) = self
-            .handoffs()
-            .into_iter()
-            .find(|handoff| handoff.device == device.id)
-        else {
+    fn continue_from(&self, id: &str) -> resonate_ui::Continuing {
+        let Some(handoff) = handoff_of(self.handoffs(), &self.sync.shown().devices, id) else {
             return resonate_ui::Continuing::default();
         };
         match continuing(&self.library, &handoff.rows, handoff.at, handoff.position) {
@@ -1898,6 +1900,37 @@ impl resonate_ui::Syncing for Running {
             }
         }
     }
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+fn offered(handoffs: Vec<Handoff>, devices: &[SyncDevice]) -> Vec<resonate_ui::HandedOff> {
+    handoffs
+        .into_iter()
+        .filter_map(|handoff| {
+            let device = devices
+                .iter()
+                .find(|device| !device.this && device.id == handoff.device)?;
+            let first = usize::try_from(handoff.at).unwrap_or_default();
+
+            Some(resonate_ui::HandedOff {
+                id: device.id.to_string(),
+                device: device.name.clone(),
+                songs: handoff.rows.len().saturating_sub(first),
+            })
+        })
+        .filter(|handed| handed.songs > 0)
+        .collect()
+}
+
+#[cfg(all(feature = "sync", feature = "ui"))]
+fn handoff_of(handoffs: Vec<Handoff>, devices: &[SyncDevice], id: &str) -> Option<Handoff> {
+    let device = devices
+        .iter()
+        .find(|device| !device.this && device.id.to_string() == id)?;
+
+    handoffs
+        .into_iter()
+        .find(|handoff| handoff.device == device.id)
 }
 
 #[cfg(all(feature = "sync", unix))]
@@ -2265,6 +2298,75 @@ mod tests {
 
         let library = scanned(&folder);
         (folder, library)
+    }
+
+    fn device(id: u8, name: &str, this: bool) -> SyncDevice {
+        SyncDevice {
+            id: DeviceId([id; resonate_sync::DEVICE_BYTES]),
+            name: name.to_owned(),
+            platform: Platform::Linux,
+            online: true,
+            nearby: false,
+            this,
+        }
+    }
+
+    #[cfg(feature = "ui")]
+    fn handing(id: u8, titles: &[&str]) -> Handoff {
+        let device = DeviceId([id; resonate_sync::DEVICE_BYTES]);
+
+        Handoff {
+            device,
+            stamp: resonate_sync::Stamp { nanos: 1, device },
+            rows: titles.iter().map(|title| heard(title)).collect(),
+            at: 0,
+            position: Duration::ZERO,
+            playing: true,
+        }
+    }
+
+    #[test]
+    fn two_devices_sharing_a_name_are_told_apart_by_their_id_and_refused_by_the_name() {
+        let devices = vec![
+            device(1, "Phone", false),
+            device(2, "Phone", false),
+            device(3, "Laptop", true),
+            device(4, "Tablet", false),
+        ];
+        let second = devices[1].id.to_string().to_uppercase();
+
+        let by_id = chosen(devices.clone(), &second).expect("chosen");
+        let by_name = chosen(devices.clone(), " tablet ").expect("chosen");
+        let nobody = chosen(devices.clone(), "Laptop").expect("chosen");
+        let ambiguous = chosen(devices.clone(), "phone");
+
+        assert_eq!(by_id.map(|found| found.id), Some(devices[1].id));
+        assert_eq!(by_name.map(|found| found.id), Some(devices[3].id));
+        assert!(nobody.is_none());
+        assert!(matches!(
+            ambiguous,
+            Err(Error::AmbiguousDevice { ref devices, .. }) if devices.len() == 2
+        ));
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn two_same_named_devices_each_continue_their_own_queue() {
+        let devices = vec![device(1, "Phone", false), device(2, "Phone", false)];
+        let handoffs = vec![handing(1, &["One", "Two"]), handing(2, &["Three"])];
+
+        let offers = offered(handoffs.clone(), &devices);
+        let first = handoff_of(handoffs.clone(), &devices, &offers[0].id).expect("a handoff");
+        let second = handoff_of(handoffs.clone(), &devices, &offers[1].id).expect("a handoff");
+        let unknown = handoff_of(handoffs, &devices, "name");
+
+        assert_eq!(offers.len(), 2);
+        assert_ne!(offers[0].id, offers[1].id);
+        assert_eq!(offers[0].songs, 2);
+        assert_eq!(offers[1].songs, 1);
+        assert_eq!(first.rows.len(), 2);
+        assert_eq!(second.rows[0].title, "Three");
+        assert!(unknown.is_none());
     }
 
     #[test]

@@ -106,13 +106,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   individual requests and bound the batch wait. Done when an already-held song,
   a concurrent fetch and an unreachable device all complete the command with
   an accurate result.
-- [M · 0.17.1] Keep device IDs with desktop handoff choices.
-  **Medium, builder.** The desktop turns each handoff's device ID into its label,
-  then resolves the first matching label when the listener continues. Devices
-  with the same name can open the wrong queue
-  (`crates/resonate/src/sync.rs:1431`, `:1585`, `:1866`, `:1882`).
-  Pass the selected ID through the UI and surface ambiguity in name-based commands.
-  Done when either of two same-named devices can be selected and continues its own queue.
 - [S · 0.17.1] Resolve previously received song aliases when continuing a handoff on a phone.
   **Medium, builder.** Handoff playback uses the name index alone. A song that
   sync recognises by its received recording key can be skipped, losing its
@@ -201,13 +194,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/service.rs:770`). Update memberships as usable interfaces
   change. Done when an interface appearing after launch can receive beacons without
   restarting sync.
-- [S · 0.17.1] Validate the desktop sync command's source option.
-  **Low, builder.** The command accepts `--from` on its own and alongside
-  `--handoff`, then silently disregards it
-  (`crates/resonate-cli/src/grammar.rs:351`, `:360`,
-  `crates/resonate/src/connected.rs:23`). Tie it to `--fetch` in the grammar.
-  Done when both unused forms are refused and the existing fetch and handoff
-  commands still parse.
 - [S · 0.17.1] Retry Android MediaStore publication after adopting a received song.
   **Low, builder.** A song is already indexed when the update that clears its
   MediaStore pending state can fail. The error instead increments the receive

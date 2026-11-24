@@ -360,6 +360,8 @@ pub struct SyncArgs {
     #[arg(
         long,
         value_name = "DEVICE",
+        requires = "fetch",
+        conflicts_with = "handoff",
         help = words::grammar::sync_args_from()
     )]
     pub from: Option<String>,

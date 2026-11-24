@@ -1232,6 +1232,7 @@ impl RootView {
             .take(HANDOFFS_OFFERED)
             .enumerate()
             .map(|(at, handed)| {
+                let id = handed.id.clone();
                 let device = handed.device.clone();
                 self.in_the_pane_ring(
                     kit::button(
@@ -1241,7 +1242,7 @@ impl RootView {
                         words::queue::continue_from_hint(handed.device.as_str(), handed.songs),
                         Tone::Ghost,
                     ),
-                    move |this, _, cx| this.continue_from(&device, cx),
+                    move |this, _, cx| this.continue_from(&id, &device, cx),
                     cx,
                 )
             })
