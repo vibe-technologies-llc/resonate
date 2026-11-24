@@ -3733,11 +3733,12 @@ async fn fetch_one(
         return;
     }
 
-    let held = if held_already(running, &recording).await
-        || (!asked && deleted_here(running, &recording).await)
-    {
+    let held = if held_already(running, &recording).await {
         running.unlisted_waiting(&recording, device);
         true
+    } else if !asked && deleted_here(running, &recording).await {
+        running.unlisted_waiting(&recording, device);
+        false
     } else {
         let landed = fetch_claimed(running, device, connection, &recording).await;
 

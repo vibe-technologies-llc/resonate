@@ -21,12 +21,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   second skip the rest (`crates/resonate-sync/src/ledger.rs`, the phones' `sync/answers.rs`, the
   library's `answers.rs`). Carry a secondary key in that mark too, with a ledger step. Done when
   more than a page of answers kept in one instant are all told, across a reopen.
-- [S · 0.17.1] Retry an explicit fetch when a concurrent follow skips the song.
-  **Medium, builder.** An automatic follow treats a deletion mark as if the song were already
-  held and drops a concurrent explicit request that was waiting for the same fetch claim
-  (`crates/resonate-sync/src/service.rs:3608`, `:3614`, `:3628`). Distinguish a skipped
-  automatic fetch from a completed or already-held song. Done when an explicit request made
-  during the deletion check is replayed and lands the song.
 - [M · 0.17.1] Keep unread sync changes through a compaction.
   **Medium, architect.** A reader skips an answer kind it cannot read or advances the
   cursor after a bundle decode failure. Its snapshot contains only changes it interpreted,

@@ -1169,7 +1169,8 @@ through the relay as QUIC), so the server never carries a command or a mirror an
   **A song passed over because another transfer held it is asked again if that one lets go of it
   unheld**: the run notes the device and song (`Running::passed_over`, and whether it was asked), and
   a transfer that releases its claim without the song held sends them back as `Event::Unclaimed`,
-  each fetched again from the device it was asked of
+  each fetched again from the device it was asked of (a follow that skips the song for its deletion
+  mark lets go of it unheld too, so an asked fetch passed over meanwhile is replayed and lands it)
   (`a_song_passed_over_while_another_device_fetched_it_is_fetched_once_that_one_fails`). Only whole-file songs are offered (a rooted file, or a vaulted object as `Vault::offer` gives it). A transfer is staged under
   `sync-staging` and resumes from what it holds; the catalog lands it once whole.
 - **One broken song never holds the others up.** Every wait of a fetch (the stream, the header, each

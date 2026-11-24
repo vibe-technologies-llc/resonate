@@ -1401,6 +1401,49 @@ fn a_song_deleted_from_the_app_after_a_follow_listed_it_is_not_fetched_back() {
 }
 
 #[test]
+fn an_asked_song_passed_over_while_a_follow_weighed_its_deletion_is_fetched_once_the_follow_skips_it()
+ {
+    let folder = scratch("asked-during-deletion-check");
+    let key = SyncKey::minted().expect("a key");
+    let desk_shelf = Arc::new(Shelf::holding(&["A"]));
+    let phone_shelf = Arc::new(Shelf::holding(&[]));
+
+    desk_shelf.favour_here("A", true);
+    phone_shelf.inside.lock().deleted_after_the_first_look = vec!["A".into()];
+    phone_shelf.weighing.shut();
+
+    let desk = device(&folder, &key, "Desk", Arc::clone(&desk_shelf), None);
+    let phone = device_following(
+        &folder,
+        &key,
+        "Phone",
+        Arc::clone(&phone_shelf),
+        Some(&desk),
+        following_favourites(),
+    );
+
+    eventually("the follow weighing the song's deletion", || {
+        phone_shelf.inside.lock().weighed > 0
+    });
+    phone.fetch(vec![song("A")], desk.device());
+    thread::sleep(Duration::from_secs(1));
+
+    assert!(!holds_title(&phone_shelf, "A"));
+
+    phone_shelf.weighing.open();
+
+    eventually(
+        "the asked song landing once the follow let go of it",
+        || holds_title(&phone_shelf, "A"),
+    );
+
+    drop(phone);
+    drop(desk);
+
+    let _ = fs::remove_dir_all(&folder);
+}
+
+#[test]
 fn a_song_deleted_from_every_device_is_not_followed_back_from_one_that_kept_it_even_after_sync_now()
 {
     let folder = scratch("deleted-everywhere");

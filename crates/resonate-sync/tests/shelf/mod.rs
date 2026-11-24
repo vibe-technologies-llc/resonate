@@ -20,6 +20,7 @@ pub struct Shelf {
     pub inside: Mutex<Inside>,
     pub opening: Gate,
     pub listing: Gate,
+    pub weighing: Gate,
     revision: AtomicU64,
 }
 
@@ -79,6 +80,7 @@ pub struct Inside {
     pub lacking_prints: Vec<WholeFile>,
     pub opened: usize,
     pub listed: usize,
+    pub weighed: usize,
     pub refuses_landing: bool,
     pub refuses_favouring: bool,
     pub favours_refused: usize,
@@ -698,7 +700,13 @@ impl Catalog for Shelf {
             return Ok(false);
         }
 
-        Ok(inside.deleted_here.contains(&recording.title))
+        let deleted = inside.deleted_here.contains(&recording.title);
+
+        inside.weighed += 1;
+        drop(inside);
+        self.weighing.pass();
+
+        Ok(deleted)
     }
 
     fn forgive_deletion(&self, recording: &Recording) -> Result<(), Refused> {
