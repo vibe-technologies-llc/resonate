@@ -8,6 +8,7 @@ use std::{
 };
 
 use resonate_core::{
+    file_facts::sync_directory,
     naming,
     writer::{self, Held, Writer},
 };
@@ -100,7 +101,7 @@ impl Stage {
         fs::copy(self.working(), self.original()).map_err(refused)?;
         File::open(self.original())
             .and_then(|original| original.sync_all())
-            .and_then(|()| synced_folder(&self.folder.join(ORIGINAL)))
+            .and_then(|()| sync_directory(&self.folder.join(ORIGINAL)))
             .map_err(refused)?;
         crc_of_file(&self.original())
     }
@@ -115,7 +116,7 @@ impl Stage {
                 file.sync_all()
             })
             .and_then(|()| fs::rename(&staged, self.folder.join(PENDING)))
-            .and_then(|()| synced_folder(&self.folder));
+            .and_then(|()| sync_directory(&self.folder));
 
         if let Err(source) = written {
             let _ = fs::remove_file(&staged);
@@ -146,13 +147,13 @@ impl Stage {
         let kept = unrestored.join(name);
         let moved = fs::create_dir_all(&unrestored)
             .and_then(|()| fs::rename(&self.folder, &kept))
-            .and_then(|()| synced_folder(&unrestored));
+            .and_then(|()| sync_directory(&unrestored));
 
         match moved {
             Ok(()) => {
                 self.folder = kept;
 
-                let _ = synced_folder(&under.join(STAGING));
+                let _ = sync_directory(&under.join(STAGING));
             }
             Err(error) => {
                 tracing::warn!(%error, folder = %self.folder.display(), "an unrestored original stays where it was staged");
@@ -248,10 +249,6 @@ fn read_record(record: &str) -> Option<(String, u32)> {
     let original_crc = u32::from_str_radix(lines.next()?, 16).ok()?;
     let uri = lines.next().filter(|uri| !uri.is_empty())?;
     Some((uri.to_owned(), original_crc))
-}
-
-fn synced_folder(folder: &Path) -> io::Result<()> {
-    File::open(folder)?.sync_all()
 }
 
 fn leaf_of(name: &str) -> OsString {
