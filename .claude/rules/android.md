@@ -1515,7 +1515,9 @@ native failure, a `LinkageError` included, so a screen never waits for ever.
 `StoredChoices.musicbrainzCopy`: `mobile.md`'s *Taken by default*, `StoredChoicesTest`), its line
 `musicbrainzCopyLine` over the `musicbrainz_copy()` that `pollSync` reads into
 `LibraryFeatures.musicbrainzCopy` (sizes in GB by `gigabytes`), with *Remove the copy* (confirmed,
-`removeMusicbrainzCopy`) while one is held (`SettingsWordsTest`).
+`removeMusicbrainzCopy`) while one is held (`SettingsWordsTest`). A removal saves the switch off
+(`SyncPairing.afterMusicbrainzCopyRemoved`, `SyncPairingTest`), so the line reads *off* and turning
+it on again is what asks for the copy.
 
 **A song is deleted from every device beside its plain *Delete*** (`mobile.md`'s *A song deleted
 from every device*): while sync is on (`LibraryFeatures.syncsWithOtherDevices`) the song sheet offers

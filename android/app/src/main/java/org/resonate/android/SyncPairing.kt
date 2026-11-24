@@ -19,6 +19,9 @@ object SyncPairing {
         return if (config == null) SyncJoining.Waiting(code)
         else SyncJoining.Joined(code)
     }
+
+    fun afterMusicbrainzCopyRemoved(config: SyncConfig): SyncConfig =
+        config.copy(musicbrainzCopy = false)
 }
 
 val SyncStanding.runs: Boolean

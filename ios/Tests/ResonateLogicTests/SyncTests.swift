@@ -105,6 +105,22 @@ func config(enabled: Bool = true, nearbyOnly: Bool = false, server: String = "")
     }
 }
 
+@Suite struct MusicbrainzCopyRemovalTests {
+    @Test func aRemovedCopyTurnsItsSwitchOffAndTouchesNothingElse() {
+        var keeping = config(server: "https://own.example")
+        keeping.musicbrainzCopy = true
+        keeping.favourites = true
+
+        let after = keeping.afterMusicbrainzCopyRemoved()
+
+        var expected = keeping
+        expected.musicbrainzCopy = false
+        #expect(!after.musicbrainzCopy)
+        #expect(after == expected)
+        #expect(after.afterMusicbrainzCopyRemoved() == after)
+    }
+}
+
 @Suite struct FetchingHeadingTests {
     @Test func theHeadingSaysHowManyAreDownloadingAndHowManyWait() {
         #expect(fetchingHeading(downloading: 0, waiting: 0) == "Fetching")

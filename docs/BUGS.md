@@ -32,15 +32,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-mobile/src/sync/driving.rs:377`). Preserve the typed outcome
   and retire the watch for a known unavailable device. Done when those
   transitions replace the waiting state and a transient read can still recover.
-- [S · 0.17.1] Turn the phones' MusicBrainz copy switch off when the copy is removed.
-  **Low, builder.** Removing the copy now keeps it from being fetched again until
-  `SyncConfig.musicbrainz_copy` is turned off and on, but Android and iOS leave their
-  switch on, so it reads on while nothing is kept, and Android's line says it is looking
-  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt`,
-  `android/app/src/main/java/org/resonate/android/ui/settings/SyncWords.kt`,
-  `ios/Sources/Resonate/Features.swift`). Save the switch off after
-  `removeMusicbrainzCopy`. Done when a removed copy shows the switch off and turning it
-  on fetches the copy again on both phones.
 ## Catalog
 - [M · blocked: platform] On macOS and Windows a retag that grows a hard-linked track's head while it
   plays still shifts the bytes under the decoder: neither can tell who holds a file

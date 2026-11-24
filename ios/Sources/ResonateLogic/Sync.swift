@@ -152,6 +152,14 @@ public func syncStanding(_ status: SyncSummary?, config: SyncConfig?, online: Bo
     }
 }
 
+extension SyncConfig {
+    public func afterMusicbrainzCopyRemoved() -> SyncConfig {
+        var next = self
+        next.musicbrainzCopy = false
+        return next
+    }
+}
+
 public enum SyncRoute: Hashable {
     case hosted
     case own

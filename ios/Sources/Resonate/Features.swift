@@ -630,6 +630,7 @@ final class Features {
                 return native.musicbrainzCopy()
             }
             self?.musicbrainzCopy = copy
+            if let config = self?.syncConfig { self?.saveSync(config.afterMusicbrainzCopyRemoved()) }
             self?.library.notice(said("sync.musicbrainz.removed"))
         }
     }

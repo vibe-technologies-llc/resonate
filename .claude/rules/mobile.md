@@ -623,7 +623,9 @@ received (`removed_copy`, `MusicbrainzCopyNotRemoved`; a mark that could not be 
 `MusicbrainzCopyRemovalNotKept`). A part answered whole meanwhile is not landed. While removed,
 `Copied::keep` keeps nothing and tells `Off` whatever `SyncConfig.musicbrainz_copy` says, across
 restarts; a `sync_start` with `musicbrainz_copy` off forgets the removal (`Copied::forget_removal`), so
-the switch turned off and on again asks for the copy once more
+the switch turned off and on again asks for the copy once more; both phones save the switch off
+after a removal (`SyncPairing.afterMusicbrainzCopyRemoved`, `SyncConfig.afterMusicbrainzCopyRemoved`), so
+it reads off and turning it on is what fetches
 (`a_copy_removed_while_received_calls_the_receive_off_and_is_fetched_again_only_once_turned_back_on`,
 `a_copy_turned_off_in_the_settings_forgets_that_it_was_removed`,
 `a_phone_keeping_a_copy_fetches_it_from_a_desk_and_serves_lookups_from_it`).

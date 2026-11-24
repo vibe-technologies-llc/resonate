@@ -739,6 +739,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         work { native ->
             withContext(Dispatchers.IO) { native.removeMusicbrainzCopy() }
             musicbrainzCopy.value = native.musicbrainzCopy()
+            changeSync(SyncPairing::afterMusicbrainzCopyRemoved)
             library.notice(R.string.sync_musicbrainz_copy_removed)
         }
     }

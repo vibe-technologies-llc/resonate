@@ -37,6 +37,17 @@ class SyncPairingTest {
     }
 
     @Test
+    fun aRemovedCopyOfMusicbrainzTurnsItsSwitchOffAndTouchesNothingElse() {
+        val keeping = kept.copy(musicbrainzCopy = true, favourites = true, key = "GOOD-CODE")
+
+        val after = SyncPairing.afterMusicbrainzCopyRemoved(keeping)
+
+        assertFalse(after.musicbrainzCopy)
+        assertEquals(keeping.copy(musicbrainzCopy = false), after)
+        assertEquals(after, SyncPairing.afterMusicbrainzCopyRemoved(after))
+    }
+
+    @Test
     fun onlyAStartedSyncRuns() {
         assertFalse(SyncStanding.OFF.runs)
         assertFalse(SyncStanding.FAILED.runs)

@@ -382,7 +382,8 @@ sync seals its records and talks QUIC (TLS) of its own.
   (`HandoffRows`, keyed and asked by `HandedOff.id`), the active then ten latest finished
   transfers, and *Options*, each a `Destination`: *Songs* (`SyncSongsPage`: the three follow switches, mobile data, *Keep a copy of MusicBrainz*
   (`SyncConfig.musicbrainz_copy`, on by default, kept as `sync-musicbrainz-copy-chosen`: `mobile.md`'s *Taken by default*; its line `musicbrainzCopyLine` over the
-  `musicbrainz_copy()` the sync poll reads, and *Remove the copy*, confirmed; `mobile.md`'s *A copy of
+  `musicbrainz_copy()` the sync poll reads, and *Remove the copy*, confirmed, which saves the switch off
+  (`SyncConfig.afterMusicbrainzCopyRemoved`, `MusicbrainzCopyRemovalTests`); `mobile.md`'s *A copy of
   MusicBrainz fetched from a desktop*), *Let my other devices delete songs here*
   (`SyncConfig.takes_deletions`, on by default, kept as `sync-deletions-from-others`; `mobile.md`'s *A
   song deleted from every device*), the folder picker and the landing notice) and *Connection* (`SyncConnectionPage`: *Sync through*
