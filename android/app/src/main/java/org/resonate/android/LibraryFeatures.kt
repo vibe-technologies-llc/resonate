@@ -13,7 +13,6 @@ import android.os.SystemClock
 import android.provider.DocumentsContract
 import android.provider.Settings
 import android.util.LruCache
-import androidx.annotation.StringRes
 import java.util.TimeZone
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
@@ -126,13 +125,10 @@ data class MusicFolder(val uri: Uri, val name: String, val readable: Boolean, va
 
 data class PlaylistSync(val playlist: ULong, val missing: UInt, val kept: Boolean)
 
-data class RefusedLanding(val until: Long, val tries: Int)
-
-private const val LANDING_PAUSE_MS = 60000L
 private const val LYRIC_FRAME_EVERY_MS = 33L
-private const val LANDING_TRIES_AT_MOST = 3
 private const val MISSING_CHECKED_EVERY_MS = 15000L
 private const val DEVICE_NAME_SETTING = "device_name"
+private const val UNPUBLISHED_LANDINGS_KEY = "unpublished-sync-landings"
 private const val SYNC_CERTIFICATE_BYTES_AT_MOST = 1048576uL
 private const val RECENT_SEARCHES_KEY = "recent-searches"
 private const val REMEMBER_SEARCHES_KEY = "remember-searches"
@@ -330,6 +326,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
     val syncKeeping = MutableStateFlow(0)
     @Volatile private var landingHeldBack: LandingDestination? = null
     @Volatile private var landingAsked = false
+    private val landing = LandingLedger()
+    @Volatile private var landingWork = landing.work(0, LandingDestination.Nowhere, false)
     val pairingOffered = MutableStateFlow<String?>(null)
     @Volatile private var joinWaiting: String? = null
     val playlistSync = MutableStateFlow<PlaylistSync?>(null)
@@ -348,7 +346,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
     @Volatile private var unmetered = false
     @Volatile private var connection = ConnectionMeter.UNKNOWN
     @Volatile private var foreground = true
-    private val landingRefused = mutableMapOf<ULong, RefusedLanding>()
+    @Volatile private var foldersReadAt = 0L
 
     fun downloadServiceReady() {
         downloads.serviceStarted()
@@ -475,6 +473,11 @@ class LibraryFeatures(private val context: Context, private val library: Library
             } catch (failure: Exception) {
                 library.report(failure)
             }
+        }
+        try {
+            settleUnpublishedLandings(native)
+        } catch (failure: Exception) {
+            library.report(failure)
         }
         refreshFolders()
         syncSettings.read()
@@ -798,6 +801,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
             syncFolder.value,
         )
 
+    private fun landingWorkOf(waiting: Int, moving: Boolean): LandingWork =
+        landing.work(waiting, landingNow(folders.value), moving)
+
     private fun landingMayHaveOpened() {
         val known = folders.value
         val now = landingNow(known)
@@ -1061,8 +1067,9 @@ class LibraryFeatures(private val context: Context, private val library: Library
     private suspend fun pollSync() {
         var arrivals = 0uL
         while (currentCoroutineContext().isActive) {
-            val quick = foreground || transferring.value || backgroundSyncs.get() > 0
-            withTimeoutOrNull(if (quick) 2000L else 30000L) { pollSoon.receive() }
+            withTimeoutOrNull(landingWork.pollEveryMs(foreground, backgroundSyncs.get())) {
+                pollSoon.receive()
+            }
             try {
                 takeDeletionsFromOtherDevices(
                     library.holding { native -> native.takeDeletionsFromOtherDevices() }
@@ -1073,9 +1080,22 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     syncStatus.value = status
                     musicbrainzCopy.value = native.musicbrainzCopy()
                     val waiting = native.syncReceived()
-                    transferring.value = status.moving > 0u || waiting.isNotEmpty()
+                    landing.settle(waiting.map { it.id })
+                    landingWork = landingWorkOf(waiting.size, status.moving > 0u)
+                    transferring.value = landingWork.transferring
                     if (transferring.value) holdTransfers()
-                    if (waiting.isNotEmpty()) landReceived(native, waiting) else syncKeeping.value = 0
+                    if (waiting.isNotEmpty() || landing.unpublishedCount > 0) {
+                        landReceived(native, waiting)
+                    } else {
+                        syncKeeping.value = 0
+                    }
+                    val remaining = if (waiting.isEmpty()) 0 else native.syncReceived().size
+                    landingWork = landingWorkOf(remaining, status.moving > 0u)
+                    transferring.value = landingWork.transferring
+                    syncNotice.value = landingWork.notice(library.words)
+                    if (landingWork.rereadsFolders(SystemClock.elapsedRealtime(), foldersReadAt)) {
+                        refreshFolders()
+                    }
                     syncHandoffs.value =
                         if (status.standing.runs) native.syncHandoffs() else emptyList()
                     if (arrivals != status.arrivals) {
@@ -1112,24 +1132,25 @@ class LibraryFeatures(private val context: Context, private val library: Library
     }
 
     private suspend fun landReceived(native: MobilePlayer, waiting: List<ReceivedSong>) {
+        publishAgain()
+        if (landing.unpublishedCount > 0 || waiting.isEmpty()) {
+            syncKeeping.value = 0
+            return
+        }
         val known = folders.value
         val destination = landingNow(known)
         val folder =
             when (destination) {
                 is LandingDestination.Into -> known.first { it.uri.toString() == destination.id }
-                LandingDestination.Away -> {
-                    holdLandingBack(destination, SyncLanding.AWAY)
-                    return
-                }
+                LandingDestination.Away,
                 LandingDestination.Nowhere -> {
-                    holdLandingBack(destination, SyncLanding.NOWHERE)
+                    holdLandingBack(destination)
                     return
                 }
             }
         landingHeldBack = null
         val now = System.currentTimeMillis()
-        landingRefused.keys.retainAll(waiting.map { it.id }.toSet())
-        val due = waiting.filter { (landingRefused[it.id]?.until ?: 0L) <= now }
+        val due = waiting.filter { landing.isDue(it.id, now) }
         syncKeeping.value = due.size
         val landed =
             try {
@@ -1138,7 +1159,6 @@ class LibraryFeatures(private val context: Context, private val library: Library
                 syncKeeping.value = 0
             }
         if (landed > 0) {
-            syncNotice.value = null
             library.refresh()
             refreshWanted(native)
             refreshArtwork()
@@ -1149,10 +1169,60 @@ class LibraryFeatures(private val context: Context, private val library: Library
         if (due.isNotEmpty()) landingAsked = false
     }
 
-    private fun holdLandingBack(destination: LandingDestination, @StringRes said: Int) {
+    private fun holdLandingBack(destination: LandingDestination) {
         landingHeldBack = destination
         syncKeeping.value = 0
-        syncNotice.value = context.getString(said)
+    }
+
+    private fun publishAgain() {
+        for (document in landing.duePublications(System.currentTimeMillis())) {
+            publishLanded(Uri.parse(document))
+        }
+    }
+
+    private fun publishLanded(uri: Uri) {
+        val document = uri.toString()
+        try {
+            if (!MusicDocuments.published(context, uri)) {
+                notPublished(document, library.words.string(R.string.transfer_not_made_available))
+                return
+            }
+            landing.published(document)
+            settings.edit().remove("unfinished-sync-landing").commit()
+        } catch (failure: Exception) {
+            notPublished(document, LandingLedger.said(library.words, failure))
+            library.report(failure)
+        }
+    }
+
+    private fun notPublished(document: String, said: String) {
+        if (!landing.notPublished(document, System.currentTimeMillis(), said)) return
+        val unpublished =
+            settings.getStringSet(UNPUBLISHED_LANDINGS_KEY, emptySet()).orEmpty() + document
+        settings.edit().putStringSet(UNPUBLISHED_LANDINGS_KEY, unpublished).commit()
+        if (settings.getString("unfinished-sync-landing", null) == document) {
+            settings.edit().remove("unfinished-sync-landing").commit()
+        }
+    }
+
+    private fun settleUnpublishedLandings(native: MobilePlayer) {
+        val left = settings.getStringSet(UNPUBLISHED_LANDINGS_KEY, emptySet()).orEmpty()
+        if (left.isEmpty()) return
+        val indexed = native.songUris().toSet()
+        val stranded = DownloadPlan.stranded(left.toList(), indexed)
+        val unsettled = mutableSetOf<String>()
+        for (value in left) {
+            try {
+                MusicDocuments.settleLeftover(context, Uri.parse(value), value in stranded)
+            } catch (failure: Exception) {
+                unsettled += value
+                library.report(failure)
+            }
+        }
+        val edit = settings.edit()
+        if (unsettled.isEmpty()) edit.remove(UNPUBLISHED_LANDINGS_KEY)
+        else edit.putStringSet(UNPUBLISHED_LANDINGS_KEY, unsettled)
+        edit.commit()
     }
 
     private suspend fun landEach(
@@ -1163,6 +1233,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
         var landed = 0
         for ((place, received) in due.withIndex()) {
             currentCoroutineContext().ensureActive()
+            if (landing.unpublishedCount > 0) break
             syncKeeping.value = due.size - place
             var created: Uri? = null
             try {
@@ -1173,7 +1244,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
                     standing.isNotEmpty() &&
                         native.syncReceiveStanding(received.id, layout, standing) != null
                 ) {
-                    landingRefused.remove(received.id)
+                    landing.landed(received.id)
                     landed++
                     continue
                 }
@@ -1185,25 +1256,20 @@ class LibraryFeatures(private val context: Context, private val library: Library
                         received.name,
                     )
                 created = uri
-                check(
-                    settings.edit().putString("unfinished-sync-landing", uri.toString()).commit()
-                ) {
-                    context.getString(R.string.features_sync_landing_not_recorded)
+                if (!settings.edit().putString("unfinished-sync-landing", uri.toString()).commit()) {
+                    throw LandingFailed(R.string.features_sync_landing_not_recorded)
                 }
                 val descriptor =
                     requireNotNull(context.contentResolver.openFileDescriptor(uri, "w")).detachFd()
                 native.syncReceive(received.id, descriptor, uri.toString())
                 created = null
-                MusicDocuments.publish(context, uri)
-                settings.edit().remove("unfinished-sync-landing").commit()
-                landingRefused.remove(received.id)
+                landing.landed(received.id)
                 landed++
+                publishLanded(uri)
             } catch (cancelled: CancellationException) {
                 throw cancelled
             } catch (failure: Exception) {
-                refuseLanding(native, received.id)
-                syncNotice.value =
-                    failure.message ?: library.words.string(R.string.features_sync_landing_not_kept)
+                refuseLanding(native, received.id, LandingLedger.said(library.words, failure))
                 library.report(failure)
             } finally {
                 created?.let { uri ->
@@ -1219,14 +1285,8 @@ class LibraryFeatures(private val context: Context, private val library: Library
         return landed
     }
 
-    private fun refuseLanding(native: MobilePlayer, id: ULong) {
-        val tries = (landingRefused[id]?.tries ?: 0) + 1
-        if (tries < LANDING_TRIES_AT_MOST) {
-            landingRefused[id] =
-                RefusedLanding(System.currentTimeMillis() + LANDING_PAUSE_MS, tries)
-            return
-        }
-        landingRefused.remove(id)
+    private fun refuseLanding(native: MobilePlayer, id: ULong, said: String) {
+        if (!landing.refuse(id, System.currentTimeMillis(), said)) return
         try {
             native.syncRefuseReceived(id)
         } catch (failure: Exception) {
@@ -1264,6 +1324,7 @@ class LibraryFeatures(private val context: Context, private val library: Library
             settings.getStringSet("folders", emptySet()).orEmpty()
 
     fun refreshFolders() {
+        foldersReadAt = SystemClock.elapsedRealtime()
         scope.launch {
             val granted =
                 context.contentResolver.persistedUriPermissions

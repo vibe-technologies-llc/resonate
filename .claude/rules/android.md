@@ -1823,7 +1823,29 @@ failure leaves it waiting (`a_song_that_fails_to_land_waits_for_the_front_end_to
 **A failed landing holds back that song alone**: it deletes only the new document and waits a
 minute before that song is tried again, the rest landing meanwhile; a song refused
 `LANDING_TRIES_AT_MOST` (3) times in a row is dropped with `sync_refuse_received`, which tells the
-sync service (`Sync::refused`) so the song is not fetched again at once. A received song's
+sync service (`Sync::refused`) so the song is not fetched again at once. **The landing poll's state is
+one `LandingLedger`** (refusals, publications waiting and the last failure; `LandingLedgerTest`), from
+which `LandingWork` (the waiting songs, the publications, the destination and whether songs move) derives
+the notice, the transfer flag and the poll's pace, so the three never disagree. **A publication is
+tracked apart from the landing**: a song `sync_receive` indexed has left the receive queue, so the
+MediaStore update that clears its pending state (`MusicDocuments.published`; only Downloads has one)
+failing is never a refusal, and the document is retried every `PUBLICATION_PAUSE_MS` (10 s) while the
+app stays open, before any further song lands (the journal holds one URI). **A publication that never
+succeeds is bounded**: after `PUBLICATION_TRIES_AT_MOST` (5) tries (the first at the landing) it stops
+being due and frees the queue, so one refused document costs that song alone; the song stays indexed
+and its document pending, its URI moves from the journal into the `unpublished-sync-landings` set
+(`notPublished`), and the next start settles each as it settles the journal
+(`settleUnpublishedLandings`: published where the catalog indexes it, deleted where not, kept in the
+set where that fails too). A restart settles the journal as a leftover does. **The notice is derived**: the *held back* sentence while songs wait for a
+destination out of reach, else the last failure while anything is pending (`LandingLedger.said`: a
+`LandingFailed` or the boundary's own message, both already in the language spoken, else the generic
+*could not be kept*), and nothing once the queue settles, a song dropped after its last refusal
+clearing it; a later song starts with no failure. **A destination out of reach holds no transfer**:
+songs waiting for an `Away` or `Nowhere` destination leave `transferring` to songs moving from
+another device alone, so the data-sync foreground service ends, the carry-on job is not scheduled and
+the background poll falls back to 30 s (`LandingWork.pollEveryMs`), which reads the folders again at
+most every 30 s while songs are held back (`LandingWork.rereadsFolders`), so a card put back wakes the
+landing through `landingMayHaveOpened`. A received song's
 file name drops `/ \ ? : * " < > |` and control characters, so a FAT, exFAT or SMB folder takes it. A
 download's file name does too (`downloads::file_stem_of`, the one stem both use).
 `SyncedDevice.id` names a device (the hex `DeviceId`; names repeat after a reinstall), which
@@ -1846,7 +1868,7 @@ download card says *Waiting for a network that is not metered* (`DownloadPlan.me
 repository closes), so beacons and Bonjour from devices on the same network are heard (`sync.md`'s *Nearby*); the status text counts them when the server is away and a
 playlist's menu offers fetching from a nearby device whatever the server's standing. Kotlin polls the status every two
 seconds while the Activity is started (30 s otherwise), refreshes the library and playlists when
-`SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or wait. A landing that kept songs says *Kept N songs from your devices* only when that same switch is on.
+`SyncStatus.arrivals` moves, and keeps the data-sync foreground service while songs move or can land. A landing that kept songs says *Kept N songs from your devices* only when that same switch is on.
 
 **Sync goes on with the app closed** (`BackgroundSync.kt`). The engine lives only while something
 retains `LibraryRepository` (playback, a download, a party), so once the last owner lets go sync
@@ -1860,7 +1882,7 @@ background* (`sync-in-background` in the `library-features` preferences, on by d
 page's switch), sync and online (or *Only this network*) are on, and cancels both jobs otherwise. A
 wake already scheduled with the same period is left alone, since scheduling again would restart its
 clock. **The carry-on** (`CARRY_ON_JOB`, one-off, any network) is scheduled by
-`MainActivity.onStop` through `carryOnInBackground` when sync is not quiet or songs wait to land, so
+`MainActivity.onStop` through `carryOnInBackground` when sync is not quiet or songs wait to land in a destination that can be reached, so
 leaving the app mid-transfer neither freezes nor ends it; one already pending is never replaced,
 which would stop it running. A pass makes `pollSync` poll every two seconds (and at once, through
 `pollSoon`) and publishes each poll's status after landing what arrived (`SyncPass`, stamped when

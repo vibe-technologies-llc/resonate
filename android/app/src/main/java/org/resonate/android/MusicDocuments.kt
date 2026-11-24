@@ -174,12 +174,14 @@ object MusicDocuments {
         MimeTypeMap.getSingleton()
             .getMimeTypeFromExtension(name.substringAfterLast('.', "").lowercase())
 
-    fun publish(context: Context, uri: Uri) {
-        if (uri.authority != MediaStore.AUTHORITY) return
+    fun published(context: Context, uri: Uri): Boolean {
+        if (uri.authority != MediaStore.AUTHORITY) return true
         val values = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
-        check(context.contentResolver.update(uri, values, null, null) == 1) {
-            context.getString(R.string.transfer_not_made_available)
-        }
+        return context.contentResolver.update(uri, values, null, null) == 1
+    }
+
+    fun publish(context: Context, uri: Uri) {
+        check(published(context, uri)) { context.getString(R.string.transfer_not_made_available) }
     }
 
     fun settleLeftover(context: Context, uri: Uri, stranded: Boolean) {

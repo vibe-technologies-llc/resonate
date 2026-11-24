@@ -122,15 +122,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `crates/resonate-sync/src/service.rs:770`). Update memberships as usable interfaces
   change. Done when an interface appearing after launch can receive beacons without
   restarting sync.
-- [S · 0.17.1] Retry Android MediaStore publication after adopting a received song.
-  **Low, builder.** A song is already indexed when the update that clears its
-  MediaStore pending state can fail. The error instead increments the receive
-  refusal counter for a song that has already left the receive queue
-  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:1184`, `:1193`,
-  `android/app/src/main/java/org/resonate/android/MusicDocuments.kt:177`).
-  Track publication separately and retry it while the app stays open.
-  Done when a rejected publication later succeeds without copying or indexing
-  the song twice.
 - [S · 0.17.1] Keep the playhead in a handoff that fits the server's record budget.
   **Low, builder.** The handoff is bounded by rows, but a long set of titles
   and credits can exceed the sealed record limit. Then the service clears
@@ -156,13 +147,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   policy on existing peer requests and streams. Done when an established
   watch and subsequent commands stop on a metered transition and work again
   after the connection is permitted.
-- [S · 0.17.1] Clear stale Android sync landing notices when the queue settles.
-  **Low, builder.** The poll leaves the previous landing error on screen when
-  the waiting queue becomes empty after the final refusal
-  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:1064`, `:1129`,
-  `:1192`, `:1211`). Derive the notice from pending work and report a localised
-  message for a landing failure. Done when the final refusal clears the pending
-  notice and a later received song shows its own status.
 - [S · 0.17.1] Show a definite Android remote-watch failure when sync stops.
   **Low, builder.** The drive panel drops read failures and displays its
   waiting state even after a device is removed or sync turns off

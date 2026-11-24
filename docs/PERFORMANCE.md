@@ -13,15 +13,6 @@ are in [ROADMAP.md](ROADMAP.md).
   #62455)
 
 ## Device sync
-- [M · 0.17.1] Release Android transfer work while a sync landing folder is away.
-  **Medium, architect.** Any waiting song keeps the transfer flag on, even when
-  its selected folder is unavailable. Background polling stays at two seconds
-  and retains the foreground service while no landing can progress
-  (`android/app/src/main/java/org/resonate/android/LibraryFeatures.kt:861`, `:1050`,
-  `:1103`, `android/app/src/main/java/org/resonate/android/DownloadService.kt:54`).
-  Keep the queued songs and let an unavailable destination go quiet until it
-  returns. Done when a removed card leaves the songs pending without holding
-  a transfer notification and a reachable folder wakes the landing again.
 
 ## iOS
 
