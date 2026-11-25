@@ -204,7 +204,7 @@ Parametric, arbitrary bands, bound per device, AutoEq behind it. Chain: `audio.m
   the shares of any partition cover every frequency at least once (`sum of share_S * B_S >= 1`),
   so a steady tone anywhere is bounded at its own response, and a node pays for a frequency in its
   skirt only by the share of it the node holds. The levels are 0, 1 and eight geometric steps from
-  the curve's quietest gain (at least 0.25) to its loudest; each moment takes its least level and
+  the curve's quietest gain (at least 0.25, or the loudest where that is quieter, so a net-cut chain still answers) to its loudest; each moment takes its least level and
   the bound is the loudest moment's. **The solved bound** (`tones.rs`): the partition is one
   feasible answer of the tone model's dual, so each moment and level is also solved exactly as a
   linear programme, `min sum lambda_S * P_S` subject to `sum lambda_S * B_S(span) >= D(span)` over
@@ -695,7 +695,11 @@ tested.
   spectrum is made once a distinct response channel and shared by `Arc` across the stream's channels
   that wrap onto it (a mono response is transformed once); the history ring walks newest first by
   splitting at the head, no `%` per partition; `Impulse::loudest_gain` transforms on a 2-3-5-smooth
-  even length of at least four points a tap, not a power of two. **A response is bounded in bytes**:
+  even length of at least four points a tap, not a power of two, then reads the true response
+  again around the four loudest grid peaks (`refined_gain`: three rounds of eight points across the
+  grid step, each round narrowing on the best), since a resonance between two grid points sits
+  about 0.2 dB above any bin and would clip past `with_headroom`; it only ever returns a response
+  the taps really have, never more. **A response is bounded in bytes**:
   `RESPONSE_BYTES_AT_MOST` (512 MiB) refuses with `Error::ResponseTooLarge` both a redraw at another
   rate (`Impulse::at`, taps held) and a `prepare` whose filter and history spectra would pass it,
   before any is allocated; `partition_frames_at` grows it with the rate (flat cost); a track's end

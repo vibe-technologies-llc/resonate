@@ -28,6 +28,9 @@ const POINTS_A_BLOCK: usize = 128;
 const TURNS_WORTH_A_THREAD: usize = 1 << 24;
 const RESAMPLED_A_BLOCK_AT_A_TIME: usize = 4_096;
 const SPECTRUM_POINTS_A_TAP: usize = 4;
+const PEAKS_REFINED: usize = 4;
+const POINTS_A_ROUND: usize = 8;
+const ROUNDS_OF_REFINING: usize = 3;
 const BYTES_A_TAP: u64 = size_of::<f64>() as u64;
 const BYTES_A_BIN: u64 = size_of::<Complex<f64>>() as u64;
 pub const RESPONSE_BYTES_AT_MOST: u64 = 512 * 1_024 * 1_024;
@@ -185,15 +188,67 @@ impl Impulse {
             }
             spectra.push(spectrum);
         }
-        if self.crossed {
-            return crossed_gain(&spectra);
+
+        let gains = gains_by_bin(&spectra, self.crossed);
+        let grid_peak = gains.iter().copied().fold(0.0_f64, f64::max);
+        let step_hz = f64::from(self.rate.hz()) / size as f64;
+
+        let peaks = loudest_bins(&gains);
+        let refined = self.refined_gain(&peaks, step_hz);
+
+        grid_peak.max(refined)
+    }
+
+    fn refined_gain(&self, bins: &[usize], step_hz: f64) -> f64 {
+        let mut centres: Vec<f64> = bins.iter().map(|bin| *bin as f64 * step_hz).collect();
+        let mut reach = step_hz;
+        let mut loudest = 0.0_f64;
+
+        for _ in 0..ROUNDS_OF_REFINING {
+            let hertz: Vec<f64> = centres
+                .iter()
+                .flat_map(|centre| {
+                    (0..POINTS_A_ROUND).map(move |point| {
+                        let across = 2.0 * point as f64 / (POINTS_A_ROUND - 1) as f64 - 1.0;
+                        centre + across * reach
+                    })
+                })
+                .collect();
+            let gains = self.gains_at(&hertz);
+
+            for (centre, (hertz, gains)) in centres.iter_mut().zip(
+                hertz
+                    .chunks(POINTS_A_ROUND)
+                    .zip(gains.chunks(POINTS_A_ROUND)),
+            ) {
+                let best = gains
+                    .iter()
+                    .enumerate()
+                    .max_by(|(_, one), (_, other)| one.total_cmp(other));
+
+                if let Some((point, gain)) = best {
+                    loudest = loudest.max(*gain);
+                    *centre = hertz[point];
+                }
+            }
+            reach *= 2.0 / (POINTS_A_ROUND - 1) as f64;
         }
-        spectra
+        loudest
+    }
+
+    fn gains_at(&self, hertz: &[f64]) -> Vec<f64> {
+        let spectra: Vec<Vec<Complex<f64>>> = self
+            .taps
             .iter()
-            .flatten()
-            .map(Complex::norm_sqr)
-            .fold(0.0_f64, f64::max)
-            .sqrt()
+            .map(|channel| {
+                response_of(channel, hertz, self.rate)
+                    .into_iter()
+                    .map(|(real, imaginary)| Complex::new(real, imaginary))
+                    .collect()
+            })
+            .collect();
+
+        gains_by_bin(&spectra, self.crossed)
     }
 
     #[must_use]
@@ -254,16 +309,58 @@ impl Impulse {
     }
 }
 
-fn crossed_gain(spectra: &[Vec<Complex<f64>>]) -> f64 {
+fn gains_by_bin(spectra: &[Vec<Complex<f64>>], crossed: bool) -> Vec<f64> {
+    if crossed {
+        return crossed_gains(spectra);
+    }
+
+    let bins = spectra.iter().map(Vec::len).max().unwrap_or(0);
+
+    (0..bins)
+        .map(|bin| {
+            spectra
+                .iter()
+                .filter_map(|spectrum| spectrum.get(bin))
+                .map(|value| value.norm())
+                .fold(0.0_f64, f64::max)
+        })
+        .collect()
+}
+
+fn crossed_gains(spectra: &[Vec<Complex<f64>>]) -> Vec<f64> {
     let [left_to_left, left_to_right, right_to_left, right_to_right] = spectra else {
-        return 0.0;
+        return Vec::new();
     };
     left_to_left
         .iter()
         .zip(left_to_right)
         .zip(right_to_left.iter().zip(right_to_right))
         .map(|((ll, lr), (rl, rr))| (ll.norm() + rl.norm()).max(lr.norm() + rr.norm()))
-        .fold(0.0_f64, f64::max)
+        .collect()
+}
+
+fn loudest_bins(gains: &[f64]) -> Vec<usize> {
+    let last = gains.len().saturating_sub(1);
+    let before = |bin: usize| gains[if bin == 0 { 1.min(last) } else { bin - 1 }];
+    let after = |bin: usize| {
+        gains[if bin == last {
+            last.saturating_sub(1)
+        } else {
+            bin + 1
+        }]
+    };
+
+    let mut peaks: Vec<usize> = (0..gains.len())
+        .filter(|bin| gains[*bin] >= before(*bin) && gains[*bin] >= after(*bin))
+        .collect();
+
+    if peaks.len() > PEAKS_REFINED {
+        peaks.select_nth_unstable_by(PEAKS_REFINED, |one, other| {
+            gains[*other].total_cmp(&gains[*one])
+        });
+        peaks.truncate(PEAKS_REFINED);
+    }
+    peaks
 }
 
 pub fn response_of(taps: &[f64], hertz: &[f64], rate: SampleRate) -> Vec<(f64, f64)> {
@@ -1006,6 +1103,79 @@ mod tests {
         assert!((flat.loudest_gain() - 1.0).abs() < 1e-9);
         assert!((doubled.loudest_gain() - 1.0).abs() < 1e-9);
         assert!((alternating.loudest_gain() - 2.0).abs() < 1e-9);
+    }
+
+    fn a_resonance_between_two_grid_points(taps: usize) -> (Vec<f64>, Vec<f64>) {
+        let size = smooth_length_from(taps * SPECTRUM_POINTS_A_TAP);
+        let between = size as f64 / 10.0 + 0.5;
+
+        let angle = std::f64::consts::TAU * between / size as f64;
+
+        let resonance = (0..taps).map(|tap| (angle * tap as f64).cos()).collect();
+        let centre = between * f64::from(RATE.hz()) / size as f64;
+        let around = (0..2_001)
+            .map(|point| centre + (point as f64 - 1_000.0) * 0.5)
+            .collect();
+        (resonance, around)
+    }
+
+    fn magnitudes(taps: &[f64], hertz: &[f64]) -> Vec<f64> {
+        response_of(taps, hertz, RATE)
+            .into_iter()
+            .map(|(real, imaginary)| real.hypot(imaginary))
+            .collect()
+    }
+
+    #[test]
+    fn the_loudest_gain_reads_a_resonance_that_falls_between_grid_points() {
+        let (resonance, around) = a_resonance_between_two_grid_points(64);
+        let impulse = Impulse::new(RATE, vec![resonance]).expect("an impulse");
+
+        let true_peak = magnitudes(&impulse.taps[0], &around)
+            .into_iter()
+            .fold(0.0_f64, f64::max);
+
+        assert!((impulse.loudest_gain() - true_peak).abs() < true_peak * 1e-4);
+    }
+
+    #[test]
+    fn headroom_holds_a_resonance_between_grid_points_under_full_scale() {
+        let (resonance, around) = a_resonance_between_two_grid_points(64);
+        let held = Impulse::new(RATE, vec![resonance])
+            .expect("an impulse")
+            .with_headroom();
+
+        let loudest = magnitudes(&held.taps[0], &around)
+            .into_iter()
+            .fold(0.0_f64, f64::max);
+
+        assert!(loudest <= 1.0 + 1e-6, "{loudest}");
+        assert!(loudest > 1.0 - 1e-3, "{loudest}");
+    }
+
+    #[test]
+    fn headroom_holds_a_crossed_resonance_between_grid_points_under_full_scale() {
+        let (resonance, around) = a_resonance_between_two_grid_points(64);
+        let silent = vec![0.0; 64];
+
+        let held = Impulse::crossed(
+            RATE,
+            vec![resonance.clone(), silent.clone(), resonance, silent],
+        )
+        .expect("an impulse")
+        .with_headroom();
+
+        let left_to_left = magnitudes(&held.taps[0], &around);
+        let right_to_left = magnitudes(&held.taps[2], &around);
+
+        let loudest = left_to_left
+            .iter()
+            .zip(&right_to_left)
+            .map(|(one, other)| one + other)
+            .fold(0.0_f64, f64::max);
+
+        assert!(loudest <= 1.0 + 1e-6, "{loudest}");
+        assert!(loudest > 1.0 - 1e-3, "{loudest}");
     }
 
     #[test]
