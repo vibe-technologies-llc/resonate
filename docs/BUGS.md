@@ -4,24 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.18.1] Bound the TTML reader's nesting depth. **High, builder.** `take_children_of` recurses
-  once per element with no depth bound (`crates/resonate-lyrics/src/ttml.rs:173-195`; roxmltree
-  bounds only entity depth), and a 4 MiB Lyricsfile holds about 590 000 levels, so a Better Lyrics
-  answer (`crates/resonate-lyrics/src/betterlyrics.rs:28`, scored at `lyrics.rs:114`, `:148`) or a
-  TTML sidecar overflows the lookup thread's stack and aborts the player, again on every lookup of
-  that track. Walk the tree iteratively or refuse past a small depth as an unreadable sheet. Done
-  when a test feeding 100 000 nested `<span>` elements gets an unreadable sheet back instead of an
-  abort.
-- [S · 0.18.1] Refuse a `file://` URI naming another host on Windows unless the listener chose it.
-  **Medium, builder.** `path_of_uri_rest` turns any authority into a UNC path
-  (`crates/resonate-core/src/windows_uri.rs:32-52`, written verbatim at `:64-70`, reached from
-  `media.rs:285`; `crates/resonate-library/src/sheet.rs:372-375` sends a sheet's non-local authority
-  there on purpose), so an M3U or XSPF, a resumed queue, `OpenUri` or an MCP call naming
-  `file://attacker.example/s/a.flac` makes the first stat or probe open an SMB connection that hands
-  the account's NTLM response to that host; Unix refuses the same URI. Admit a share only where its
-  host already roots a library folder or the listener typed it, and read any other as a missing
-  location. Done when a sheet naming `file://elsewhere/share/a.flac` reads that row as missing
-  without a filesystem call, in the portable `windows_uri` tests.
 - [M · 0.18.1] Stop network agents following redirects off the host they were sent to. **Medium,
   architect.** `configured()` and `asking_agent` keep ureq's ten redirects with no host or scheme
   check (`crates/resonate-fetch/src/agents.rs:53-62`, `:98-110`), so Subsonic
@@ -142,11 +124,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   replication token, Subsonic's `t` and `s` and Jellyfin's `api_key` reach a shared log. Strip the
   query from logged URLs and add a `ureq=warn` directive. Done when a test of `from_ureq` prints no
   query, and the default filter holds ureq at warn.
-- [S · 0.18.1] Refuse `..` in a Unix file URI as Windows does. **Low, builder.** `from_uri` and
-  `local_path_of` accept dot segments on Unix (`crates/resonate-core/src/media.rs:222-247`,
-  `:275-281`), while `path_of_uri_rest` refuses them on Windows (`windows_uri.rs:25-31`), so a URI
-  from a sheet or a peer reaches outside the folder it names. Refuse them on every host. Done when
-  `file:///music/../etc/a.flac` is refused by the portable tests.
 - [S · 0.18.1] Serve only a regular file from the media server. **Low, builder.** `bytes_of` opens
   whatever the catalog names (`crates/resonate/src/offering.rs:707-720`), following a link and
   blocking on a FIFO put in a track's place. Open without following links and require a regular
@@ -529,17 +506,14 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   before rather than refusing every such write; Linux and Android wait for the readers under a lease
 
 ## Formats
-- [S · 0.18.1] Open a lyric sidecar only when it is a regular file. **Low, builder.**
-  `sidecar.rs:98-108` opens before checking `is_file` and `beside.rs:257-262` never checks
-  (`crates/resonate-lyrics/src/`), so a FIFO named `Song.lrc` blocks the lookup thread; a written
-  sidecar is checked by `exists()` then renamed (`beside.rs:284-289`) and names that are not UTF-8
-  are passed over (`:235-249`). Check the kind on the open handle and replace without the race. Done
-  when a FIFO sidecar is passed over at once in a test.
-- [S · 0.18.1] Escape Better Lyrics text written as LRC, and read TTML's other time units. **Low,
-  builder.** `lrc_of` writes text unescaped (`crates/resonate-lyrics/src/betterlyrics.rs:56-79`), so
-  a line `[offset:30000] x` reads back as an offset; and `moment` reads only clock times and seconds
-  (`ttml.rs:271-297`), so `ms`, `m`, `h`, `t` and frames make the whole set unsynced silently.
-  Escape a leading bracket and read every unit TTML defines. Done when both are tested.
+- [S · 0.18.1] Keep a SYLT line led by a bracket text when it is written as LRC. **Low, builder.**
+  `crates/resonate-codec/src/sylt.rs` writes timed words as LRC without `escaped_for_lrc`, so a
+  line opening on `[offset:…]` or a stamp reads back as a tag, as Better Lyrics' did. Escape it the
+  same way. Done when such a line round-trips, in a test.
+- [S · 0.18.1] Refuse `..` in a sheet's file URI on Unix. **Low, builder.** `sheet::local_file`
+  still normalises `file:///a/../b` lexically (`crates/resonate-library/src/sheet.rs`), though
+  `MediaLocation::from_uri` now refuses dot segments. Read such a row as missing. Done when a sheet
+  row naming `file:///music/../etc/a.flac` reads as missing, in a test.
 - [M · blocked: symphonia] A file embedding a huge picture still costs one materialisation:
   symphonia 0.6.1 reads it into its own buffer before `probe_cover_art` can weigh it; its
   `limit_visual_bytes` is honoured by no reader

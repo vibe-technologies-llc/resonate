@@ -260,7 +260,8 @@ here, add it there.
   (`resonate-codec`), `getuid` (`resonate-discord`), `geteuid` (core's `Owner`, on Unix alone: the user a private folder or a file must belong to), `time`'s `clock_gettime(Monotonic)`
   (`resonate-pipewire`'s callback and Oboe's, Android alone, to read how far a device timestamp
   lies from now; `realtime.md`), `system`'s `uname` (the binary alone: the host a sync device is
-  named for), `fs::statfs` (the library on macOS: the type a root's volume says it is).
+  named for), `fs::statfs` (the library on macOS: the type a root's volume says it is), `fs`'s open flags
+  (`resonate-lyrics` on Unix: a sidecar opened without blocking, kept only as a regular file).
 - **`unicode-width`**: `Table` and the readout (CJK = two columns). `unicode-segmentation` is
   `resonate-ui`'s, text editing.
 - **`jxl-encoder`** (`std`, `jpeg-reencoding`; no `butteraugli-loop`): `resonate-vault`'s alone, the
