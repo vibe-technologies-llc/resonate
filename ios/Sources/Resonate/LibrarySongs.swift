@@ -11,13 +11,42 @@ struct LibrarySongs: View {
     @Environment(Library.self) private var library
 
     var body: some View {
-        if library.librarySearch.isAsked {
-            LibraryFound(scope: .songs)
-                .toolbar { LibraryToolbar() }
-                .id(SongsList.searched)
+        let searching = library.librarySearch.isAsked
+        Group {
+            if searching {
+                LibraryFound(scope: .songs)
+                    .id(SongsList.searched)
+            } else {
+                SongsBrowsed()
+                    .id(SongsList.browsed)
+            }
+        }
+        .toolbar { SongsToolbar(searching: searching) }
+    }
+}
+
+private struct SongsToolbar: ToolbarContent {
+    @Environment(Library.self) private var library
+    @Environment(SelectedSongs.self) private var selected
+    let searching: Bool
+
+    var body: some ToolbarContent {
+        if selected.selecting {
+            ToolbarItem(placement: .topBarLeading) {
+                Button("selection.clear", systemImage: "xmark") { selected.clear() }
+            }
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("selection.all") { selected.selectAll(library.tracks) }
+            }
         } else {
-            SongsBrowsed()
-                .id(SongsList.browsed)
+            if !library.tracks.isEmpty {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("common.select", systemImage: "checkmark.circle") { selected.begin() }
+                        .disabled(searching)
+                }
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            }
+            LibraryToolbar()
         }
     }
 }
@@ -63,24 +92,6 @@ struct SongsBrowsed: View {
         }
         .safeAreaBar(edge: .bottom, spacing: 0) {
             if selecting { SongSelectionBar() }
-        }
-        .toolbar {
-            if selecting {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button("selection.clear", systemImage: "xmark") { selected.clear() }
-                }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button("selection.all") { selected.selectAll(library.tracks) }
-                }
-            } else {
-                if !tracks.isEmpty {
-                    ToolbarItem(placement: .topBarTrailing) {
-                        Button("common.select", systemImage: "checkmark.circle") { selected.begin() }
-                    }
-                    ToolbarSpacer(.fixed, placement: .topBarTrailing)
-                }
-                LibraryToolbar()
-            }
         }
         .onChange(of: library.filter) { window = RowWindow() }
         .onChange(of: tracks.count) {

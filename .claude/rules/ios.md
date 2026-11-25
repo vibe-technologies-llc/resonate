@@ -1505,7 +1505,10 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
 - **A result answers while the keyboard is up.** The Search tab attaches its system search field to a stable
   view outside the changing result list. Downloads stays in the toolbar and *Save as playlist*
   sits beside the scope chooser, so the first character cannot replace items in the field's
-  toolbar. The Search tab dismisses the keyboard interactively on a drag and the Library tab
+  toolbar. The Library tab's Songs shelf holds one toolbar over its browsed list and its results
+  alike (`SongsToolbar`), *Select* disabled rather than taken away while a search is asked: with a
+  toolbar on each list, the first character typed and the last deleted replaced the bar's items
+  under the focused field and the keyboard went down. The Search tab dismisses the keyboard interactively on a drag and the Library tab
   dismisses it immediately. Choosing a result (a song played, an album or artist opened) drops the field's focus first
   (`Keyboard.stow`, `SearchResults.chosen`), resigning the first responder rather than binding `searchFocused`, whose focus binding fought the system field as it moved above the keyboard. A library search shows no spinner: the last answer
   stays until the next lands, a few hundred milliseconds after the last keystroke. A toolbar
