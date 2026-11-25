@@ -4,20 +4,13 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [M · 0.18.1] Stop network agents following redirects off the host they were sent to. **Medium,
-  architect.** `configured()` and `asking_agent` keep ureq's ten redirects with no host or scheme
-  check (`crates/resonate-fetch/src/agents.rs:53-62`, `:98-110`), so Subsonic
-  (`crates/providers/subsonic/src/lib.rs:75-80`, `:238-241`, `:276-278`), Jellyfin and Emby
-  (`crates/providers/jellyfin/src/lib.rs:129-134`, `:276-282`, `:734`), Monochrome
-  (`crates/providers/monochrome/src/lib.rs:30-35`, `:152-221`) and the hosted hifi-api
-  (`crates/providers/tidal/src/asker.rs:40-46`, `hifi.rs:518-689`, `hifi_served.rs:46-52`) follow a
-  `302` to loopback, a LAN address or plain http and read the answer as audio, a cover or JSON,
-  again on every seek; only TIDAL's media and relay agents and ytmusic's in-place agent set
-  `max_redirects(0)` (`asker.rs:50`, `hifi.rs:381`, `crates/providers/ytmusic/src/in_place.rs:49`).
-  A hosted service on by default or a server the listener named can make the machine issue blind
-  GETs inside its network. Set `max_redirects(0)` in `configured()` and follow by hand only to the
-  same host and never from https to http. Done when each provider's fake server answering `302` to a
-  second loopback port sees no request arrive on that port.
+- [S · 0.18.1] Hold the MusicBrainz download agent to its origin's redirects. **Low, builder.**
+  `crates/resonate-musicbrainz/src/download.rs` builds on `configured()` and puts ureq's ten
+  redirects back (`REDIRECTS_UREQ_FOLLOWS`), so the export and replication fetches still follow a
+  redirect to any https host, while every provider now follows through `resonate_fetch::followed`
+  within the origin asked. Find where MetaBrainz's servers redirect (the export mirror may hand off
+  to another host), follow through `followed` or an allowlist of those hosts, and drop the setting.
+  Done when a fake server's `302` to another loopback port is not followed, in a test.
 - [S · 0.18.1] Fetch a media server's description only from a neighbour. **Medium, builder.**
   `could_be_another_address_beside` admits public, link-local and this machine's own addresses
   (`crates/resonate-upnp/src/located.rs:109-117`), so one spoofed answer to a server search makes
