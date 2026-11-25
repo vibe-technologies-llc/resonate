@@ -40,20 +40,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   network can rebind a name to the listener's address and read the catalog. Answer only a `Host`
   naming an address the server listens on. Done when a request with `Host: evil.example` is refused
   in a test.
-- [M · 0.18.1] Treat a Cast record as unproved until its receiver answers. **Low, architect.** The
-  cap of 64 bounds receivers held, not attempts, so unroutable records cost the serial browse three
-  seconds each and 64 forged ones shut out real receivers (`crates/resonate-cast/src/casting.rs:29`,
-  `:95-97`, `:620-654`); a record with a held receiver's id at another address moves the sink
-  silently, with no `Reformatted` (`casting.rs:693-715`); and `bonjour.rs:38-71` takes loopback or
-  port 0 and drops the IPv6 scope, so a receiver reachable only link-local is never reached. Count
-  attempts within the cap, keep a held receiver's address until the new one answers as that
-  receiver, and filter and keep scopes in Bonjour's answers. Done when tests show a forged record at
-  another address leaves the sink where it was and a scoped link-local receiver is reached.
-- [S · 0.18.1] Cap the title a Cast LOAD carries. **Low, builder.** The title goes uncapped into
-  LOAD (`crates/resonate-cast/src/stream.rs:211`, `:552`) and `framed` never holds an outgoing
-  message to `MESSAGE_BYTES_AT_MOST` (`frame.rs:74-77`), so a tag of megabytes makes a frame the
-  receiver drops. Cut the text and refuse an oversized frame. Done when a 1 MiB title loads with its
-  cut form, in a test.
 - [M · 0.18.1] Harden the Windows Discord pipe. **Low, architect.** The pipe is opened with no
   security quality of service (`crates/resonate-discord/src/pipe.rs:44-51` through interprocess's
   `CreateFileW(..., FILE_FLAG_OVERLAPPED, ...)`), so a squatting server holding
@@ -155,13 +141,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `StopCapture` (`:1025-1029`) disconnect first; a data thread inside `process` then reads freed
   memory. Disconnect inside `Opened::drop` ahead of the listener. Done when the hosted-daemon tests
   drop a streaming client during shutdown and graph loss under a sanitiser build without a fault.
-- [S · 0.18.1] Give the Cast handshake a whole deadline. **Medium, builder.** `Link::connect` times
-  each read at five seconds but not the handshake (`crates/resonate-cast/src/link.rs:101-127`), so a
-  peer trickling a byte every four seconds holds the single browse thread (`casting.rs:645`), the
-  volume thread (`:850`) or an open (`stream.rs:171`) for ever. Bound the whole handshake. Done when
-  a test peer that accepts TCP and then trickles or says nothing is given up within the deadline
-  (`link.rs` has no test today, and the fake receiver in
-  `crates/resonate-cast/tests/receiver.rs:363-423` always completes the handshake).
 - [M · 0.18.1] Bound an imported equaliser profile's peak. **Medium, builder.** The APO reader
   clamps each band and the preamp to ±40 dB (`crates/resonate-eq/src/apo.rs:143-182`, `:543-557`,
   `crates/resonate-core/src/eq.rs:83`) and takes 32 bands with no bound on their sum, and import
