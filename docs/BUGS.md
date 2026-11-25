@@ -11,15 +11,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   within the origin asked. Find where MetaBrainz's servers redirect (the export mirror may hand off
   to another host), follow through `followed` or an allowlist of those hosts, and drop the setting.
   Done when a fake server's `302` to another loopback port is not followed, in a test.
-- [S · 0.18.1] Fetch a media server's description only from a neighbour. **Medium, builder.**
-  `could_be_another_address_beside` admits public, link-local and this machine's own addresses
-  (`crates/resonate-upnp/src/located.rs:109-117`), so one spoofed answer to a server search makes
-  `ServerFound::reached` and `Addresses::admit` GET whatever port and path its LOCATION names
-  (`servers.rs:56-84`, `:120-150`), about 32 blind requests a search. Require
-  `neighbours::is_a_neighbour`, as the event callback already does (`events.rs:70-79`), and tighten
-  the fuzz invariant at `fuzzing.rs:205`. Done when a search answer naming an address the sender
-  does not hold is dropped without a request, and the test that pins a LOCATION on another address
-  (`crates/resonate-upnp/tests/elsewhere.rs:236-267`) states the neighbour policy instead.
 - [M · 0.18.1] Give each peer its own share of the media server's pending heads. **Medium,
   architect.** The 32 pending heads are shared by every peer
   (`crates/resonate-upnp/src/door.rs:298`, `offered.rs:43`) and the stream server admits any peer
@@ -51,16 +42,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   QoS, bound the write and flush as the reader is bounded, bound the channel and cancel the read on
   drop. Done when tests on Windows show a pipe that never reads ends the session within
   `ANSWERS_WITHIN` and leaves no thread behind.
-- [S · 0.18.1] Tell the model over MCP that catalog text is data. **Low, builder.** Tags and service
-  playlist names reach the model as user-role prompt content
-  (`crates/resonate-mcp/src/prompts.rs:148-165`) and `INSTRUCTIONS` never says they are data
-  (`server.rs:60-77`), so a tag written as an instruction can steer a destructive tool, guarded only
-  by the client's approval. Say so in `INSTRUCTIONS` and each prompt and fence the embedded block.
-  Done when a prompt test shows the catalog block fenced and introduced as data.
-- [S · 0.18.1] Cap a playlist name's length. **Low, builder.** `wanted_name` takes any length
-  (`crates/resonate-library/src/playlist.rs:2265`), and MCP's name and query arguments are uncapped,
-  so names of megabytes persist and are repeated in every `resources/list`. Refuse past a fixed
-  length. Done when a 4 MiB name is refused through MCP and the library, in tests.
 - [S · 0.18.1] Offer a shared-playlist link from the bus before joining it. **Low, builder.**
   `OpenUri` and `AddTracks` ask `Host::invited` first
   (`crates/resonate-mpris/src/interfaces.rs:270-274`, `:469-473`), and the binary joins a shared
