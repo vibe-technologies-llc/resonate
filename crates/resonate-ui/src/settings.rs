@@ -675,6 +675,8 @@ pub trait SignsInToJellyfin: Send + Sync {
     fn begun(&self, address: &str) -> JellyfinBegun;
 
     fn approved(&self, code: &str, stopped: &AtomicBool) -> JellyfinSignIn;
+
+    fn logged_out(&self, address: &str, session: &JellyfinSession);
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

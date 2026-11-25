@@ -103,6 +103,28 @@ impl Asked {
     fn is(&self, method: &str, path: &str) -> bool {
         self.method == method && self.path == path
     }
+
+    fn token(&self) -> Option<&str> {
+        let one = token_in(self.authorization.as_deref());
+
+        one.filter(|token| token_in(self.emby_authorization.as_deref()) == Some(*token))
+    }
+
+    fn is_a_stream(&self) -> bool {
+        self.path.ends_with("/stream")
+    }
+
+    fn carries_the_token(&self) -> bool {
+        self.token() == Some(TOKEN)
+            || (self.is_a_stream() && self.parameter("api_key") == Some(TOKEN))
+    }
+}
+
+fn token_in(header: Option<&str>) -> Option<&str> {
+    header
+        .and_then(|header| header.split_once(r#"Token=""#))
+        .and_then(|(_, rest)| rest.split_once('"'))
+        .map(|(token, _)| token)
 }
 
 fn unescaped(text: &str) -> String {
@@ -307,7 +329,14 @@ fn library(asked: &Asked, _: usize) -> Canned {
     if asked.is("POST", "/Users/AuthenticateByName") {
         return signed_in();
     }
-    if asked.parameter("api_key") != Some(TOKEN) {
+    if asked.is("POST", "/Sessions/Logout") {
+        return if asked.token() == Some(TOKEN) {
+            Canned::status(204)
+        } else {
+            Canned::status(401)
+        };
+    }
+    if !asked.carries_the_token() {
         return Canned::status(401);
     }
     match (asked.method.as_str(), asked.path.as_str()) {
@@ -403,7 +432,8 @@ fn one_sign_in_serves_every_request_and_each_carries_its_token_never_the_passwor
         fake.heard()
             .iter()
             .filter(|asked| asked.path != "/Users/AuthenticateByName")
-            .all(|asked| asked.parameter("api_key") == Some(TOKEN)
+            .all(|asked| asked.token() == Some(TOKEN)
+                && asked.parameter("api_key").is_none()
                 && !asked.query.iter().any(|(_, value)| value == "sesame"))
     );
     assert_eq!(jellyfin.flavour(), Some(Flavour::Jellyfin));
@@ -594,7 +624,7 @@ fn a_kept_session_is_asked_with_its_token_and_never_signs_in() {
     assert!(
         fake.heard()
             .iter()
-            .all(|asked| asked.parameter("api_key") == Some(TOKEN))
+            .all(|asked| asked.token() == Some(TOKEN) && asked.parameter("api_key").is_none())
     );
 }
 
@@ -778,7 +808,138 @@ fn a_song_is_streamed_as_stored_and_a_seek_back_asks_the_server_from_there() {
 
     assert_eq!(asked[0].parameter("static"), Some("true"));
     assert_eq!(asked[0].parameter("api_key"), Some(TOKEN));
+    assert_eq!(asked[1].parameter("api_key"), Some(TOKEN));
     assert_eq!(asked[1].range, Some(5));
+}
+
+#[test]
+fn the_token_is_in_a_query_only_where_a_stream_is_reopened_by_its_address() {
+    let fake = Fake::serving(library);
+    let jellyfin = fake.kept();
+
+    jellyfin.artists().expect("the artists");
+    jellyfin.album(&id("al-1")).expect("an album");
+    jellyfin.search("meddle").expect("a search");
+    jellyfin.cover(&id("al-1"), 300).expect("a cover");
+    jellyfin.favour(&id("so-1"), true).expect("a favourite");
+    jellyfin.favour(&id("so-1"), false).expect("a favourite");
+    jellyfin.streamed(&id("so-1")).expect("a stream");
+
+    let heard = fake.heard();
+
+    assert!(heard.len() > 8);
+    for asked in &heard {
+        assert_eq!(asked.token(), Some(TOKEN), "{asked:?}");
+        assert_eq!(
+            asked.parameter("api_key").is_some(),
+            asked.is_a_stream(),
+            "{asked:?}"
+        );
+    }
+}
+
+#[test]
+fn no_error_names_the_token_whichever_way_a_request_failed() {
+    let fake = Fake::serving(library);
+    let jellyfin = fake.kept();
+
+    let missing = jellyfin.song(&id("so-9")).expect_err("a missing song");
+    let stream = jellyfin
+        .streamed(&id("so-9"))
+        .err()
+        .expect("a stream the server does not hold");
+
+    for error in [&missing, &stream] {
+        assert!(!format!("{error}").contains(TOKEN), "{error}");
+        assert!(!format!("{error:?}").contains(TOKEN), "{error:?}");
+    }
+
+    let dropped = Server {
+        url: "127.0.0.1:1".to_owned(),
+        user: String::new(),
+        password: String::new(),
+        kept: Some(KeptSession {
+            token: TOKEN.to_owned(),
+            user: USER_ID.to_owned(),
+            device: "kept-device".to_owned(),
+        }),
+    };
+    let unreachable = Jellyfin::at(dropped)
+        .streamed(&id("so-1"))
+        .err()
+        .expect("a server nobody answers");
+
+    assert!(!format!("{unreachable}").contains(TOKEN), "{unreachable}");
+    assert!(
+        !format!("{unreachable:?}").contains(TOKEN),
+        "{unreachable:?}"
+    );
+}
+
+#[test]
+fn a_password_sign_in_names_the_same_device_on_every_launch() {
+    let fake = Fake::serving(library);
+
+    fake.jellyfin().artists().expect("the artists");
+    fake.jellyfin().artists().expect("the artists again");
+
+    let signed = fake.heard_at("/Users/AuthenticateByName");
+
+    assert_eq!(signed.len(), 2);
+    assert_eq!(signed[0].authorization, signed[1].authorization);
+}
+
+#[test]
+fn a_kept_session_is_logged_out_with_its_token_in_the_header() {
+    let fake = Fake::serving(library);
+
+    fake.kept().log_out().expect("logged out");
+
+    let heard = fake.heard();
+
+    assert_eq!(heard.len(), 1);
+    assert!(heard[0].is("POST", "/Sessions/Logout"));
+    assert_eq!(heard[0].token(), Some(TOKEN));
+    assert!(heard[0].query.is_empty());
+}
+
+#[test]
+fn a_session_signed_in_by_password_is_logged_out_and_a_fresh_one_never_signs_in_to_log_out() {
+    let fake = Fake::serving(library);
+    let jellyfin = fake.jellyfin();
+
+    jellyfin.log_out().expect("nothing to log out");
+
+    assert!(fake.heard().is_empty());
+
+    jellyfin.artists().expect("the artists");
+    jellyfin.log_out().expect("logged out");
+
+    let heard = fake.heard();
+
+    assert!(
+        heard
+            .last()
+            .expect("a request")
+            .is("POST", "/Sessions/Logout")
+    );
+    assert_eq!(heard.last().and_then(Asked::token), Some(TOKEN));
+    assert_eq!(fake.heard_at("/Users/AuthenticateByName").len(), 1);
+
+    jellyfin.artists().expect("signed in again");
+
+    assert_eq!(fake.heard_at("/Users/AuthenticateByName").len(), 2);
+}
+
+#[test]
+fn a_log_out_the_server_refuses_is_the_refusal_it_carries() {
+    let fake = Fake::serving(|_, _| Canned::status(500));
+    let jellyfin = fake.kept();
+
+    assert!(matches!(
+        jellyfin.log_out(),
+        Err(Error::Refused { status: 500, .. })
+    ));
 }
 
 fn is_redirected_elsewhere(error: &Error, asked: ProviderOp) -> bool {

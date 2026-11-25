@@ -4,8 +4,8 @@ use std::sync::{
 };
 
 use gpui::{
-    BorrowAppContext as _, Context, Div, InteractiveElement as _, ParentElement as _, Styled as _,
-    Task, div,
+    App, BorrowAppContext as _, Context, Div, InteractiveElement as _, ParentElement as _,
+    Styled as _, Task, div,
 };
 
 use crate::{
@@ -20,6 +20,11 @@ use crate::{
 };
 
 const EMBY_ROUTE: &str = "/emby";
+
+pub(super) struct HeldSession {
+    address: String,
+    session: JellyfinSession,
+}
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum Shown {
@@ -210,7 +215,43 @@ impl RootView {
         self.the_sources_moved(cx);
     }
 
-    pub(super) fn let_go_of_the_jellyfin_session(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn jellyfin_session_held(&self, cx: &App) -> Option<HeldSession> {
+        let online = &cx.global::<ResonateApp>().online;
+        let address = online.jellyfin.trim();
+
+        (!address.is_empty()
+            && !online.jellyfin_token.is_empty()
+            && !online.jellyfin_device.is_empty())
+        .then(|| HeldSession {
+            address: address.to_owned(),
+            session: JellyfinSession {
+                token: online.jellyfin_token.clone(),
+                user_id: online.jellyfin_user_id.clone(),
+                device: online.jellyfin_device.clone(),
+                name: online.jellyfin_user.clone(),
+            },
+        })
+    }
+
+    fn log_the_jellyfin_session_out(&self, leaving: HeldSession, cx: &mut Context<Self>) {
+        let Some(signs_in) = cx.global::<ResonateApp>().signs_in_to_jellyfin.clone() else {
+            return;
+        };
+
+        cx.background_executor()
+            .spawn(async move { signs_in.logged_out(&leaving.address, &leaving.session) })
+            .detach();
+    }
+
+    pub(super) fn let_go_of_the_jellyfin_session(
+        &mut self,
+        leaving: Option<HeldSession>,
+        cx: &mut Context<Self>,
+    ) {
+        if let Some(leaving) = leaving {
+            self.log_the_jellyfin_session_out(leaving, cx);
+        }
+
         let online = &cx.global::<ResonateApp>().online;
         let held = [
             &online.jellyfin_token,

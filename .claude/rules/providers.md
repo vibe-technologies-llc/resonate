@@ -499,7 +499,12 @@ plumbing, so a `ureq` bump is made once:
 `resonate-inbox` is the reference provider: `Inbox::at` over the folder the `inbox` key names, read
 never written. A file directly inside whose stem is the recording MBID, then track MBID, then ISRC,
 ignoring case, matches. Only audio is offered (`resonate_core::names_audio` over `AUDIO_EXTENSIONS`):
-a `.cue`, `.jpg` or rip log is never delivered ahead of it.
+a `.cue`, `.jpg` or rip log is never delivered ahead of it. **A symbolic link is passed over**: the
+listing skips an entry whose own type is a link and `settled` looks at the file with
+`symlink_metadata`, so a link named for a recording delivers nothing, even one swapped in after the
+listing was read
+(`a_link_named_for_a_recording_is_never_delivered_whatever_it_points_at`,
+`a_file_swapped_for_a_link_after_the_listing_was_read_is_not_delivered`).
 
 - **Folder read once a poll**: the listing is held with the folder's modification and change times,
   reread only if either moved or it is older than `LISTING_TRUSTED_FOR`.
@@ -530,6 +535,14 @@ given and `online` is on.
 - **The log never sees a request's address.** Every URL carries the user, token and salt and ureq's
   `BadUri`/`Http` errors print all of it, so `told` logs those two as a sentence alone
   (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
+- **Forgetting a session logs it out** (`Jellyfin::log_out`, `POST Sessions/Logout` with the token in
+  its header): the held session, or a kept one built without asking the server, and nothing at all
+  where none is held, so a fresh client never signs in only to leave. The binary's `resonate jellyfin
+  --forget` and the window's forget, a typed password or a changed address
+  (`SignsInToJellyfin::logged_out`, given the session held before the fields moved, run off the
+  window's thread) call it first, and a log-out the server refuses or never answers is told to the log
+  and never stops the forgetting (`a_kept_session_is_logged_out_with_its_token_in_the_header`,
+  `forgetting_goes_on_when_the_server_cannot_log_the_session_out`).
 - **A deadline for an answer, for a download silence alone.** API requests carry
   `Patience::answered_within` as `timeout_global`, and the whole search is held to it, each page
   asked within what is left (`Error::Io` `TimedOut` once spent). A download's agent bounds each read
@@ -640,13 +653,23 @@ catalog is the server's, browsed through its API and never copied into `resonate
 
 - **The password is sent once, to sign in.** `POST Users/AuthenticateByName` with `{"Username",
   "Pw"}` in the body and the `Authorization: MediaBrowser Client="Resonate", Device="Resonate",
-  DeviceId="<uuid>", Version="<crate version>"` header (also as `X-Emby-Authorization`, which Emby
+  DeviceId="<id>", Version="<crate version>"` header (also as `X-Emby-Authorization`, which Emby
   reads); the answer's `AccessToken` and `User.Id` are the `Session`, held under a `Mutex` so
-  concurrent callers sign in once. The device id is a v4 UUID generated per `Jellyfin` (so per
-  `Made` cell, one per process and account), never a name, host or setting; the User-Agent stays
-  bare. Every later request carries the token as `api_key` in its query, because a `Seeking` asks
-  again by URL alone. A 401 on a request drops the session, signs in again and asks once more; a
-  second is the `Refused` it was. A 401 or 403 at the sign-in is `Error::Unwelcome` under
+  concurrent callers sign in once. **The device id of a password sign-in is the same on every
+  launch**: `device_of` is a v5 UUID of the address (trimmed, lower case) and the user name under a
+  namespace of the crate's own, so the server sees one device however often the player starts and no
+  launch leaves a token of its own behind; it is never a name, host or setting, and the User-Agent
+  stays bare. A kept session names the device it was issued to, and a Quick Connect attempt (no
+  password) a fresh v4 UUID, since that one is stored
+  (`a_password_sign_in_names_the_same_device_on_every_launch`,
+  `a_password_sign_in_names_the_same_device_every_launch_and_another_for_another_account`).
+  **Every later request carries the token in a header**, `Authorization` and `X-Emby-Authorization`
+  with `, Token="<token>"` added to the sign-in's value (`Jellyfin::bearing`), never in the query: only
+  the stream's address, which a `Seeking` asks again by alone, carries `api_key`
+  (`Session::reopenable_url`;
+  `the_token_is_in_a_query_only_where_a_stream_is_reopened_by_its_address`). No error's text carries the
+  token (`no_error_names_the_token_whichever_way_a_request_failed`). A 401 on a request drops the
+  session, signs in again and asks once more; a second is the `Refused` it was. A 401 or 403 at the sign-in is `Error::Unwelcome` under
   `ProviderOp::SignIn`. `Server`'s `Debug` prints `<withheld>`, `Session` has no `Debug`, and
   `told` keeps ureq's address-printing errors out of the log, as Subsonic's does
   (`an_address_without_a_scheme_is_never_told_to_the_log_with_its_token`).
@@ -946,7 +969,12 @@ fetched whole and lands as a track row.
   asking again through an
   unreached server or a 500+ (`sign_in::Passing`;
   `a_device_sign_in_asks_again_through_a_server_that_did_not_answer_this_time`); `Debug` never prints
-  the device code. The window's *Sign in to TIDAL* writes the token into the field, the global
+  the device code. **The page the listener is sent to is TIDAL's or none**: `verification_page` accepts
+  `https` (port 443, no userinfo) on `tidal.com` and its subdomains alone, whichever of
+  `verificationUriComplete` and `verificationUri` was named, and anything else (`file:`, plain
+  `http`, another host) is `Error::Unreadable` under `ProviderOp::SignIn`, since the window and the terminal
+  open it (`only_a_page_on_tidals_own_hosts_over_https_is_a_verification_page`,
+  `a_verification_page_off_tidals_hosts_or_not_over_https_refuses_the_sign_in`). The window's *Sign in to TIDAL* writes the token into the field, the global
   `Online` and `tidal-refresh-token`. `resonate tidal` is the same windowless
   (`providers::sign_in_to_tidal`): refuses with `OnlineOff` or `NoTidalClient` before asking, waits
   with the first interrupt as cancel (`SignInCancelled`), writes via `config::store`

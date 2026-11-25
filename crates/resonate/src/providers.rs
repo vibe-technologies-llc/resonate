@@ -282,6 +282,23 @@ impl resonate_ui::SignsInToJellyfin for QuickConnects {
             }
         }
     }
+
+    fn logged_out(&self, address: &str, session: &resonate_ui::JellyfinSession) {
+        let leaving = Jellyfin::at(resonate_jellyfin::Server {
+            url: address.to_owned(),
+            user: session.name.clone(),
+            password: String::new(),
+            kept: Some(resonate_jellyfin::KeptSession {
+                token: session.token.clone(),
+                user: session.user_id.clone(),
+                device: session.device.clone(),
+            }),
+        });
+
+        if let Err(error) = leaving.log_out() {
+            tracing::debug!(%error, "the Jellyfin server did not log the session out");
+        }
+    }
 }
 
 #[cfg(all(feature = "ui", feature = "online"))]

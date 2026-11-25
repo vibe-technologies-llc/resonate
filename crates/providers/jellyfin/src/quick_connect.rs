@@ -110,17 +110,20 @@ impl QuickConnect {
         let op = ProviderOp::SignIn;
         let url = format!("{root}/QuickConnect/Enabled");
 
-        let response =
-            match self
-                .jellyfin
-                .called_within(&self.jellyfin.asking, op, &Call::Get, &url, None)
-            {
-                Ok(response) => response,
-                Err(Error::Refused { status, .. }) if status < FIRST_SERVER_ERROR => {
-                    return Ok(false);
-                }
-                Err(error) => return Err(error),
-            };
+        let response = match self.jellyfin.called_within(
+            &self.jellyfin.asking,
+            op,
+            &Call::Get,
+            &url,
+            None,
+            None,
+        ) {
+            Ok(response) => response,
+            Err(Error::Refused { status, .. }) if status < FIRST_SERVER_ERROR => {
+                return Ok(false);
+            }
+            Err(error) => return Err(error),
+        };
         let bytes = self.jellyfin.read_whole(op, response)?;
         Ok(String::from_utf8_lossy(&bytes).trim() == ENABLED)
     }
@@ -136,13 +139,14 @@ impl QuickConnect {
             &Call::SigningIn(ASKED_WITH_NOTHING),
             &url,
             None,
+            None,
         ) {
             Err(Error::Refused {
                 status: METHOD_NOT_ALLOWED,
                 ..
             }) => self
                 .jellyfin
-                .called_within(agent, op, &Call::Introducing, &url, None),
+                .called_within(agent, op, &Call::Introducing, &url, None, None),
             answered => answered,
         }
         .map_err(|error| self.denied_where_refused(error))?;
@@ -202,7 +206,7 @@ impl QuickConnect {
         let deadline = Instant::now() + A_POLL_ANSWERED_WITHIN;
 
         let response =
-            asking.called_within(&asking.asking, op, &Call::Get, &url, Some(deadline))?;
+            asking.called_within(&asking.asking, op, &Call::Get, &url, None, Some(deadline))?;
         let bytes = asking.read_whole(op, response)?;
         let polled: Polled = asking.document(&bytes, op)?;
         Ok(polled.authenticated)
@@ -213,8 +217,14 @@ impl QuickConnect {
         let url = format!("{}/Users/AuthenticateWithQuickConnect", asking.roots().0);
         let body = serde_json::json!({ "Secret": approving.secret }).to_string();
 
-        let response =
-            asking.called_within(&asking.asking, op, &Call::SigningIn(&body), &url, None)?;
+        let response = asking.called_within(
+            &asking.asking,
+            op,
+            &Call::SigningIn(&body),
+            &url,
+            None,
+            None,
+        )?;
         let bytes = asking.read_whole(op, response)?;
         let signed: Authenticated = asking.document(&bytes, op)?;
         Ok(SignedIn {

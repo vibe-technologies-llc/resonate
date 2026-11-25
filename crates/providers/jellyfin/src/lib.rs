@@ -49,6 +49,7 @@ const UNAUTHORIZED: u16 = 401;
 const FORBIDDEN: u16 = 403;
 const NOT_FOUND: u16 = 404;
 const LARGEST_ANSWER: u64 = 8 * 1024 * 1024;
+const DEVICE_NAMESPACE: Uuid = Uuid::from_u128(0x6f1c_5a3e_9b24_4d7a_8c10_52e7_a94b_3d68);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Server {
@@ -109,11 +110,20 @@ struct Session {
 
 impl Session {
     fn url(&self, path: &str, asked: &[(&str, &str)]) -> String {
-        let mut url = format!("{}{path}?api_key={}", self.root, escaped(&self.token));
+        let mut url = format!("{}{path}", self.root);
 
-        for (name, value) in asked {
-            let _ = write!(url, "&{name}={}", escaped(value));
+        for (nth, (name, value)) in asked.iter().enumerate() {
+            let separator = if nth == 0 { '?' } else { '&' };
+            let _ = write!(url, "{separator}{name}={}", escaped(value));
         }
+        url
+    }
+
+    fn reopenable_url(&self, path: &str, asked: &[(&str, &str)]) -> String {
+        let mut url = self.url(path, asked);
+        let separator = if asked.is_empty() { '?' } else { '&' };
+
+        let _ = write!(url, "{separator}api_key={}", escaped(&self.token));
         url
     }
 }
@@ -158,6 +168,25 @@ fn flavour_of(root: &str) -> Flavour {
     }
 }
 
+fn device_of(server: &Server) -> Arc<str> {
+    match &server.kept {
+        Some(kept) => Arc::from(kept.device.as_str()),
+        None if server.password.is_empty() => Arc::from(Uuid::new_v4().simple().to_string()),
+        None => {
+            let account = format!(
+                "{}\n{}",
+                server.url.trim().trim_end_matches('/').to_ascii_lowercase(),
+                server.user
+            );
+            Arc::from(
+                Uuid::new_v5(&DEVICE_NAMESPACE, account.as_bytes())
+                    .simple()
+                    .to_string(),
+            )
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct Jellyfin {
     source: SourceId,
@@ -172,10 +201,7 @@ pub struct Jellyfin {
 
 impl Jellyfin {
     pub fn at(server: Server) -> Self {
-        let device = server.kept.as_ref().map_or_else(
-            || Arc::from(Uuid::new_v4().simple().to_string()),
-            |kept| Arc::from(kept.device.as_str()),
-        );
+        let device = device_of(&server);
         Self {
             source: SourceId::new(JELLYFIN).unwrap_or_else(|_| SourceId::local()),
             server,
@@ -220,6 +246,22 @@ impl Jellyfin {
             r#"MediaBrowser Client="{CLIENT}", Device="{DEVICE}", DeviceId="{}", Version="{VERSION}""#,
             self.device
         )
+    }
+
+    fn authorization_with(&self, token: &str) -> String {
+        format!(r#"{}, Token="{token}""#, self.authorization())
+    }
+
+    fn bearing<B>(&self, request: RequestBuilder<B>, token: Option<&str>) -> RequestBuilder<B> {
+        match token {
+            Some(token) => {
+                let authorization = self.authorization_with(token);
+                request
+                    .header("Authorization", &authorization)
+                    .header("X-Emby-Authorization", &authorization)
+            }
+            None => request,
+        }
     }
 
     fn roots(&self) -> (String, Option<String>) {
@@ -276,10 +318,14 @@ impl Jellyfin {
         agent: &Agent,
         call: &Call<'_>,
         url: &str,
+        token: Option<&str>,
         deadline: Option<Instant>,
     ) -> std::result::Result<http::Response<Body>, Unanswered> {
         match call {
-            Call::Get => followed(url, |url| bounded(agent.get(url), deadline).call()),
+            Call::Get => followed(url, |url| {
+                self.bearing(bounded(agent.get(url), deadline), token)
+                    .call()
+            }),
             Call::Introducing => {
                 let authorization = self.authorization();
                 followed(url, |url| {
@@ -289,8 +335,12 @@ impl Jellyfin {
                         .call()
                 })
             }
-            Call::Delete => Ok(bounded(agent.delete(url), deadline).call()?),
-            Call::Post => Ok(bounded(agent.post(url), deadline).send_empty()?),
+            Call::Delete => Ok(self
+                .bearing(bounded(agent.delete(url), deadline), token)
+                .call()?),
+            Call::Post => Ok(self
+                .bearing(bounded(agent.post(url), deadline), token)
+                .send_empty()?),
             Call::SigningIn(body) => {
                 let authorization = self.authorization();
                 let request = agent
@@ -309,6 +359,7 @@ impl Jellyfin {
         op: ProviderOp,
         call: &Call<'_>,
         url: &str,
+        token: Option<&str>,
         deadline: Option<Instant>,
     ) -> Result<http::Response<Body>> {
         let mut retried = 0;
@@ -320,7 +371,7 @@ impl Jellyfin {
             }
 
             let response = self
-                .sent(agent, call, url, deadline)
+                .sent(agent, call, url, token, deadline)
                 .map_err(|error| self.unreachable(op, error))?;
 
             if response.status().is_success() {
@@ -385,7 +436,14 @@ impl Jellyfin {
         let url = format!("{root}/Users/AuthenticateByName");
 
         let response = self
-            .called_within(&self.asking, op, &Call::SigningIn(&body), &url, deadline)
+            .called_within(
+                &self.asking,
+                op,
+                &Call::SigningIn(&body),
+                &url,
+                None,
+                deadline,
+            )
             .map_err(|error| match error {
                 Error::Refused { status, .. } if matches!(status, UNAUTHORIZED | FORBIDDEN) => {
                     Error::Unwelcome {
@@ -462,7 +520,14 @@ impl Jellyfin {
         let mut renewed = false;
         loop {
             let session = self.session(deadline)?;
-            match self.called_within(agent, op, call, &url(&session), deadline) {
+            match self.called_within(
+                agent,
+                op,
+                call,
+                &url(&session),
+                Some(&session.token),
+                deadline,
+            ) {
                 Err(Error::Refused {
                     status: UNAUTHORIZED,
                     ..
@@ -485,6 +550,28 @@ impl Jellyfin {
                 answered => return answered,
             }
         }
+    }
+
+    pub fn log_out(&self) -> Result<()> {
+        let op = ProviderOp::SignIn;
+        let held = self.session.lock().take();
+        let session = match (held, &self.server.kept) {
+            (Some(session), _) => session,
+            (None, Some(_)) => Arc::new(self.sign_in(None)?),
+            (None, None) => return Ok(()),
+        };
+        let url = session.url("/Sessions/Logout", &[]);
+        let deadline = Instant::now() + self.patience.answered_within;
+
+        let response = self.called_within(
+            &self.asking,
+            op,
+            &Call::Post,
+            &url,
+            Some(&session.token),
+            Some(deadline),
+        )?;
+        self.read_whole(op, response).map(drop)
     }
 
     fn item_id<'a>(&self, id: &'a Id, op: ProviderOp) -> Result<&'a str> {
@@ -705,8 +792,9 @@ impl Jellyfin {
     pub fn streamed(&self, id: &Id) -> Result<Streamed> {
         let op = ProviderOp::Stream;
         let id = self.item_id(id, op)?;
-        let url_of =
-            |session: &Session| session.url(&format!("/Audio/{id}/stream"), &[("static", "true")]);
+        let url_of = |session: &Session| {
+            session.reopenable_url(&format!("/Audio/{id}/stream"), &[("static", "true")])
+        };
 
         let response = self.asked(&self.downloading, op, &Call::Get, None, url_of)?;
         let media_type = response.body().mime_type().map(str::to_owned);
@@ -800,15 +888,39 @@ mod tests {
     }
 
     #[test]
-    fn a_request_carries_the_token_escaped_and_never_the_password() {
-        let url =
-            session("http://music.local:8096").url("/Items", &[("SearchTerm", "Echoes & more")]);
+    fn a_request_names_neither_the_token_nor_the_password_in_its_address() {
+        let session = session("http://music.local:8096");
+        let url = session.url("/Items", &[("SearchTerm", "Echoes & more")]);
+        let bare = session.url("/Items", &[]);
 
         assert_eq!(
             url,
-            "http://music.local:8096/Items?api_key=tok%2Fen&SearchTerm=Echoes%20%26%20more"
+            "http://music.local:8096/Items?SearchTerm=Echoes%20%26%20more"
         );
-        assert!(!url.contains("sesame"));
+        assert_eq!(bare, "http://music.local:8096/Items");
+        assert!(!url.contains("tok") && !url.contains("sesame"));
+    }
+
+    #[test]
+    fn only_an_address_a_stream_reopens_by_carries_the_token_escaped() {
+        let session = session("http://music.local:8096");
+
+        assert_eq!(
+            session.reopenable_url("/Audio/a/stream", &[("static", "true")]),
+            "http://music.local:8096/Audio/a/stream?static=true&api_key=tok%2Fen"
+        );
+        assert_eq!(
+            session.reopenable_url("/Audio/a/stream", &[]),
+            "http://music.local:8096/Audio/a/stream?api_key=tok%2Fen"
+        );
+    }
+
+    #[test]
+    fn a_token_is_sent_in_the_authorization_beside_the_device() {
+        let header = jellyfin().authorization_with("tok-1");
+
+        assert!(header.starts_with(r#"MediaBrowser Client="Resonate""#));
+        assert!(header.ends_with(&format!(r#"Version="{VERSION}", Token="tok-1""#)));
     }
 
     #[test]
@@ -823,7 +935,10 @@ mod tests {
     #[test]
     fn the_authorization_names_the_build_and_a_generated_device_and_nothing_of_the_listener() {
         let one = jellyfin();
-        let another = jellyfin();
+        let another = Jellyfin::at(Server {
+            password: String::new(),
+            ..one.server.clone()
+        });
         let header = one.authorization();
 
         assert!(
@@ -834,6 +949,25 @@ mod tests {
         assert!(!header.contains("sesame"));
         assert_ne!(header, another.authorization());
         assert_eq!(header, one.clone().authorization());
+    }
+
+    #[test]
+    fn a_password_sign_in_names_the_same_device_every_launch_and_another_for_another_account() {
+        let named = |url: &str, user: &str| {
+            Jellyfin::at(Server {
+                url: url.to_owned(),
+                user: user.to_owned(),
+                password: "sesame".to_owned(),
+                kept: None,
+            })
+            .authorization()
+        };
+        let first = named("http://music.local:8096/", "listener");
+
+        assert_eq!(first, named("HTTP://music.local:8096", "listener"));
+        assert_ne!(first, named("http://music.local:8096", "someone"));
+        assert_ne!(first, named("http://other.local:8096", "listener"));
+        assert!(!first.contains("music.local") && !first.contains("listener"));
     }
 
     #[test]
@@ -887,7 +1021,7 @@ mod tests {
             password: "sesame".to_owned(),
             kept: None,
         });
-        let url = session(&jellyfin.server.url).url("/Items", &[]);
+        let url = session(&jellyfin.server.url).reopenable_url("/Items", &[]);
 
         let refused = jellyfin
             .asking

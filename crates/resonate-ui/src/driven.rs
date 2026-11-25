@@ -7532,6 +7532,7 @@ mod tests {
         answer: crate::JellyfinSignIn,
         asked: parking_lot::Mutex<Vec<String>>,
         awaited: parking_lot::Mutex<Vec<String>>,
+        left: parking_lot::Mutex<Vec<(String, String)>>,
     }
 
     impl QuickConnectsOnce {
@@ -7541,6 +7542,7 @@ mod tests {
                 answer,
                 asked: parking_lot::Mutex::default(),
                 awaited: parking_lot::Mutex::default(),
+                left: parking_lot::Mutex::default(),
             })
         }
     }
@@ -7554,6 +7556,12 @@ mod tests {
         fn approved(&self, code: &str, _: &AtomicBool) -> crate::JellyfinSignIn {
             self.awaited.lock().push(code.to_owned());
             self.answer.clone()
+        }
+
+        fn logged_out(&self, address: &str, session: &crate::JellyfinSession) {
+            self.left
+                .lock()
+                .push((address.to_owned(), session.token.clone()));
         }
     }
 
@@ -7714,7 +7722,7 @@ mod tests {
             crate::JellyfinBegun::Code("123456".to_owned()),
             crate::JellyfinSignIn::SignedIn(a_session()),
         );
-        let mut driven = jellyfin_shown(cx, signs_in);
+        let mut driven = jellyfin_shown(cx, Arc::clone(&signs_in));
 
         driven.click("jellyfin-quick-connect");
         driven.until(|_, cx| cx.global::<ResonateApp>().online.jellyfin_token == "token-1");
@@ -7731,6 +7739,15 @@ mod tests {
             assert!(online.jellyfin_device.is_empty());
             assert_eq!(online.jellyfin_password, "another");
         });
+
+        let left = Arc::clone(&signs_in);
+
+        driven.until(move |_, _| !left.left.lock().is_empty());
+
+        assert_eq!(
+            *signs_in.left.lock(),
+            [("http://music.local:8096".to_owned(), "token-1".to_owned())]
+        );
     }
 
     struct SignsInToYoutubeOnce {

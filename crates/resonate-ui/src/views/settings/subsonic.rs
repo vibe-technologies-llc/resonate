@@ -185,6 +185,13 @@ impl RootView {
             self.report(not_a_server(), cx);
             return;
         }
+
+        let lets_the_session_go = service == Service::Jellyfin
+            && (account == Account::Server || (account == Account::Password && !given.is_empty()));
+        let leaving = lets_the_session_go
+            .then(|| self.jellyfin_session_held(cx))
+            .flatten();
+
         self.account_field(service, account, cx)
             .clone()
             .update(cx, |field, cx| field.hold(given.clone(), cx));
@@ -197,12 +204,10 @@ impl RootView {
         } else {
             words::settings_subsonic::server_asked_from_now_on(service.name())
         };
-        let lets_the_session_go = service == Service::Jellyfin
-            && (account == Account::Server || (account == Account::Password && !given.is_empty()));
 
         self.store(&account.setting(service, given), cx);
         if lets_the_session_go {
-            self.let_go_of_the_jellyfin_session(cx);
+            self.let_go_of_the_jellyfin_session(leaving, cx);
         }
         if service == Service::Jellyfin && account == Account::Server {
             self.stop_quick_connect(cx);
@@ -284,6 +289,10 @@ impl RootView {
     }
 
     pub(crate) fn forget_the_account(&mut self, service: Service, cx: &mut Context<Self>) {
+        let leaving = (service == Service::Jellyfin)
+            .then(|| self.jellyfin_session_held(cx))
+            .flatten();
+
         for account in Account::ALL {
             self.account_field(service, account, cx)
                 .clone()
@@ -294,7 +303,7 @@ impl RootView {
             self.store(&account.setting(service, String::new()), cx);
         }
         if service == Service::Jellyfin {
-            self.let_go_of_the_jellyfin_session(cx);
+            self.let_go_of_the_jellyfin_session(leaving, cx);
         }
     }
 
