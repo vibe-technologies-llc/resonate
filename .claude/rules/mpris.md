@@ -204,7 +204,7 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   closed one is warned of and dropped with its notifier, `Awake` and `Gripping` (the portal lets an
   inhibit go with the connection that asked), and another is opened at once, then at most every
   `REOPENED_AT_MOST_EVERY` (10 s) (`Reopening`), its fresh `Gripping` taking the inhibit again
-  where sound is wanted. The poll's own connection is only noticed (`Serving`): warned of once,
+  where sound is wanted. The poll's own connection is only noticed (`BusConnection`): warned of once,
   publishing to it stops while headsets and the desktop's errands go on; claiming the name again
   on a new connection is not built. The poll's telling is one function,
   `tell_the_desktop`, for the bus loop and for Windows's pipe service, which has no bus to publish

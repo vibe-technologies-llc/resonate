@@ -688,7 +688,7 @@ fn announce(
     let mut told = None;
 
     let mut watched = snapshot(shared, playlists, None);
-    let mut serving = Serving::Open;
+    let mut serving = BusConnection::Open;
 
     while !stop.load(Ordering::Acquire) {
         thread::sleep(POLL);
@@ -730,12 +730,12 @@ fn announce(
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum Serving {
+enum BusConnection {
     Open,
     Closed,
 }
 
-impl Serving {
+impl BusConnection {
     fn still(&mut self, connection: &Connection) -> bool {
         if *self == Self::Open && connection.is_closed() {
             tracing::warn!(
