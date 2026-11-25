@@ -25,6 +25,15 @@ pub(crate) fn call(
     call_within(service, action, arguments, http::ANSWERED_WITHIN)
 }
 
+pub(crate) fn call_before(
+    service: &Service,
+    action: Action,
+    arguments: &[(&str, &str)],
+    deadline: Instant,
+) -> Result<Answered> {
+    call_within(service, action, arguments, http::answering_by(deadline))
+}
+
 pub(crate) fn call_within(
     service: &Service,
     action: Action,

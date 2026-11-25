@@ -234,7 +234,11 @@ codec are dev-dependencies, for the end-to-end tests.
 
 `rendering::Rendering` holds both kinds (`Kinds`): the `renderers` key, `sinks --renderers` and a
 sink named `upnp:` or `cast:` (`names_a_renderer`) look for both, the two first searches run side
-by side, and the settings pane's one switch looks or rests for both. `sinks` lists receivers with
+by side, and the settings pane's one switch looks or rests for both. Each kind that started is
+kept: `Kinds` holds an `Option` for each, so a Cast that cannot start leaves UPnP listed and the
+other way round, and no rendering at all only where neither did
+(`upnp_renderers_are_still_listed_when_cast_cannot_start`,
+`cast_receivers_are_kept_when_upnp_cannot_start_and_nothing_started_is_no_rendering`). `sinks` lists receivers with
 *the network* as what drives them.
 
 ## On the phones

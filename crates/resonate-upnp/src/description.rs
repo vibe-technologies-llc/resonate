@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use roxmltree::{Document, Node, ParsingOptions};
 
 use crate::{
@@ -16,6 +18,10 @@ const RENDERING_KIND: &str = ":service:RenderingControl:";
 const OPENHOME_VOLUME_KIND: &str = "urn:av-openhome-org:service:Volume:";
 
 const CONNECTION_KIND: &str = ":service:ConnectionManager:";
+
+const NAME_BYTES_AT_MOST: usize = 256;
+
+const UDN_BYTES_AT_MOST: usize = 256;
 
 const SERVER_KIND: &str = ":device:MediaServer:";
 
@@ -44,16 +50,23 @@ pub(crate) struct ServerDescribed {
     pub directory: Service,
 }
 
-pub(crate) fn described(location: &Located) -> Result<Described> {
-    read(location, &fetched(location)?)
+pub(crate) fn described_before(location: &Located, deadline: Instant) -> Result<Described> {
+    read(location, &fetched(location, deadline)?)
 }
 
 pub(crate) fn server_described(location: &Located) -> Result<ServerDescribed> {
-    read_server(location, &fetched(location)?)
+    server_described_before(location, Instant::now() + http::ANSWERED_WITHIN)
 }
 
-fn fetched(location: &Located) -> Result<String> {
-    let answer = http::exchange(
+pub(crate) fn server_described_before(
+    location: &Located,
+    deadline: Instant,
+) -> Result<ServerDescribed> {
+    read_server(location, &fetched(location, deadline)?)
+}
+
+fn fetched(location: &Located, deadline: Instant) -> Result<String> {
+    let answer = http::exchange_before(
         &Asking {
             method: "GET",
             to: location,
@@ -61,6 +74,7 @@ fn fetched(location: &Located) -> Result<String> {
             body: &[],
         },
         Asked::Description,
+        Instant::now() + http::answering_by(deadline),
     )?;
 
     if answer.status != 200 {
@@ -120,12 +134,12 @@ pub(crate) fn read_server(location: &Located, text: &str) -> Result<ServerDescri
 
     let directory =
         service_of(*device, location, &base, DIRECTORY_KIND).ok_or(Error::NotAServer)?;
-    let udn = child_text(*device, "UDN").ok_or(Error::NotAServer)?;
-    let name = child_text(*device, "friendlyName").unwrap_or(udn);
+    let udn = udn_of(*device).ok_or(Error::NotAServer)?;
+    let name = name_of(*device, &udn);
 
     Ok(ServerDescribed {
         udn: Udn::new(udn),
-        name: name.to_owned(),
+        name,
         directory,
     })
 }
@@ -150,17 +164,37 @@ pub(crate) fn read(location: &Located, text: &str) -> Result<Described> {
 
     let transport =
         service_of(*device, location, &base, TRANSPORT_KIND).ok_or(Error::NotARenderer)?;
-    let udn = child_text(*device, "UDN").ok_or(Error::NotARenderer)?;
-    let name = child_text(*device, "friendlyName").unwrap_or(udn);
+    let udn = udn_of(*device).ok_or(Error::NotARenderer)?;
+    let name = name_of(*device, &udn);
 
     Ok(Described {
         udn: Udn::new(udn),
-        name: name.to_owned(),
+        name,
         transport,
         rendering: service_of(*device, location, &base, RENDERING_KIND),
         openhome_volume: service_of(*device, location, &base, OPENHOME_VOLUME_KIND),
         connection: service_of(*device, location, &base, CONNECTION_KIND),
     })
+}
+
+fn cleaned(text: &str, at_most: usize) -> String {
+    let shown: String = text.chars().filter(|letter| !letter.is_control()).collect();
+    let (kept, _) = shown.split_at(shown.floor_char_boundary(at_most));
+
+    kept.trim().to_owned()
+}
+
+fn udn_of(device: Node<'_, '_>) -> Option<String> {
+    child_text(device, "UDN")
+        .map(|udn| cleaned(udn, UDN_BYTES_AT_MOST))
+        .filter(|udn| !udn.is_empty())
+}
+
+fn name_of(device: Node<'_, '_>, udn: &str) -> String {
+    child_text(device, "friendlyName")
+        .map(|name| cleaned(name, NAME_BYTES_AT_MOST))
+        .filter(|name| !name.is_empty())
+        .unwrap_or_else(|| udn.to_owned())
 }
 
 fn service_of(
@@ -393,5 +427,42 @@ mod tests {
             read(&location, dtd),
             Err(Error::NotADocument { .. })
         ));
+    }
+
+    #[test]
+    fn a_name_and_a_udn_are_cleaned_of_control_characters_and_cut_on_a_letter() {
+        let location = Located::parse("http://10.0.0.4:80/d.xml").expect("reads");
+        let sprawling = format!("Living\nroom\r\t{}", "é\n".repeat(1 << 19));
+        let udn = format!("uuid:\u{85}a{}", "b".repeat(1 << 20));
+        let text = format!(
+            r#"<root><device><deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType><friendlyName>{sprawling}</friendlyName><UDN>{udn}</UDN><serviceList>
+            <service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>/av</controlURL></service>
+            </serviceList></device></root>"#
+        );
+
+        let described = read(&location, &text).expect("describes a renderer");
+
+        assert!(described.name.starts_with("Livingroom"));
+        assert!(described.name.len() <= NAME_BYTES_AT_MOST);
+        assert!(described.name.chars().all(|letter| !letter.is_control()));
+        assert!(described.udn.as_str().starts_with("uuid:ab"));
+        assert!(described.udn.as_str().len() <= UDN_BYTES_AT_MOST);
+        assert!(
+            described
+                .udn
+                .as_str()
+                .chars()
+                .all(|letter| !letter.is_control())
+        );
+    }
+
+    #[test]
+    fn a_name_of_nothing_but_controls_is_the_udn_instead() {
+        let location = Located::parse("http://10.0.0.4:80/d.xml").expect("reads");
+        let text = "<root><device><deviceType>urn:schemas-upnp-org:device:MediaRenderer:1</deviceType><friendlyName>&#10;&#10;</friendlyName><UDN>uuid:x</UDN><serviceList><service><serviceType>urn:schemas-upnp-org:service:AVTransport:1</serviceType><controlURL>/av</controlURL></service></serviceList></device></root>";
+
+        let described = read(&location, text).expect("describes a renderer");
+
+        assert_eq!(described.name, "uuid:x");
     }
 }

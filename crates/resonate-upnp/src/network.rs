@@ -4,14 +4,14 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     sync::{
         Arc,
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicU64, Ordering},
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, unbounded};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, MutexGuard};
 use resonate_audio::{
     AudioSource, HardwareVolume, Learning, Learnt, Plugged, RENDERER_IDS_FROM, SinkChange, SinkId,
     SinkInfo, SinkPort, SinkResult, SinkStream, StreamRequest,
@@ -31,6 +31,8 @@ const SEARCHES_MISSED_BEFORE_GONE: u8 = 2;
 const RENDERERS_AT_MOST: usize = 64;
 
 const DESCRIBED_FROM_A_SEARCH_AT_MOST: usize = 32;
+
+const DESCRIBING_A_ROUND_TAKES_AT_MOST: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Searching {
@@ -69,6 +71,7 @@ struct Looking {
 
 struct Shared {
     searching: Searching,
+    describing_within: Duration,
     server: Mutex<Option<Arc<Server>>>,
     holders: Holders,
     known: Mutex<Known>,
@@ -77,6 +80,8 @@ struct Shared {
     located: Mutex<BTreeSet<Located>>,
     multicasting: AtomicBool,
     round: Mutex<()>,
+    exchanging: Mutex<()>,
+    changed: AtomicU64,
     listeners: Mutex<Vec<Sender<SinkChange>>>,
     turns: Sender<Turn>,
 }
@@ -108,9 +113,17 @@ impl Network {
     }
 
     pub fn resting(searching: Searching) -> Result<Self> {
+        Self::resting_describing_within(searching, DESCRIBING_A_ROUND_TAKES_AT_MOST)
+    }
+
+    pub fn resting_describing_within(
+        searching: Searching,
+        describing_within: Duration,
+    ) -> Result<Self> {
         let (turns, turned) = unbounded();
         let shared = Arc::new(Shared {
             searching,
+            describing_within,
             server: Mutex::new(None),
             holders: Holders::default(),
             known: Mutex::new(Known::default()),
@@ -119,6 +132,8 @@ impl Network {
             located: Mutex::new(BTreeSet::new()),
             multicasting: AtomicBool::new(false),
             round: Mutex::new(()),
+            exchanging: Mutex::new(()),
+            changed: AtomicU64::new(0),
             listeners: Mutex::new(Vec::new()),
             turns,
         });
@@ -135,7 +150,7 @@ impl Network {
     }
 
     pub fn vouch(&self, vouched: Vouched) {
-        let _one_at_a_time = self.shared.round.lock();
+        let _one_at_a_time = self.shared.changing();
         let previous = mem::replace(&mut *self.shared.vouched.lock(), vouched);
         let changes = self.shared.described_again_where_vouching_moved(&previous);
 
@@ -143,7 +158,7 @@ impl Network {
     }
 
     pub fn teach(&self, learnt: Learnt) {
-        let _one_at_a_time = self.shared.round.lock();
+        let _one_at_a_time = self.shared.changing();
 
         *self.shared.learnt.lock() = learnt;
 
@@ -164,7 +179,7 @@ impl Network {
             .clone()
             .ok_or(Error::NoSuchRenderer(sink))?;
         let learning = learning::learn(&renderer, sink, &server, &self.shared.holders)?;
-        let _one_at_a_time = self.shared.round.lock();
+        let _one_at_a_time = self.shared.changing();
 
         self.shared
             .learnt
@@ -248,7 +263,7 @@ impl Network {
         self.shared.multicasting.store(false, Ordering::Release);
         drop(looking);
 
-        let _one_at_a_time = self.shared.round.lock();
+        let _one_at_a_time = self.shared.changing();
         let gone = self.shared.retire_unlocated();
 
         self.shared.announce(&gone);
@@ -259,7 +274,7 @@ impl Network {
             return;
         }
 
-        let _one_at_a_time = self.shared.round.lock();
+        let _one_at_a_time = self.shared.changing();
         let gone: Vec<SinkChange> = mem::take(&mut self.shared.known.lock().held)
             .into_keys()
             .map(SinkChange::Removed)
@@ -436,8 +451,16 @@ impl Shared {
         }
     }
 
+    fn changing(&self) -> Changing<'_> {
+        Changing {
+            _one_at_a_time: self.round.lock(),
+            changed: &self.changed,
+        }
+    }
+
     fn round(&self) -> Result<()> {
-        let _one_at_a_time = self.round.lock();
+        let _one_at_a_time = self.exchanging.lock();
+        let began_at = self.changed.load(Ordering::Acquire);
         let addresses = self.located();
         let found = match self.multicasting.load(Ordering::Acquire).then(|| {
             ssdp::search(
@@ -465,12 +488,18 @@ impl Shared {
         let mut described_from_the_search = 0;
         let vouched = self.vouched.lock().clone();
         let by_address = addresses.iter().filter(|at| !heard.contains(at));
+        let asked: Vec<&Located> = heard.iter().chain(by_address).collect();
+        let deadline = Instant::now() + self.describing_within;
 
-        for location in heard.iter().chain(by_address) {
+        for location in &asked {
             let sighted = heard.contains(location);
 
-            if let Some(id) = self.known.lock().holding_at(location) {
+            if let Some(id) = self.known.lock().standing_at(location, &asked) {
                 seen.push((id, sighted));
+                continue;
+            }
+            if Instant::now() >= deadline {
+                tracing::debug!(%location, "a device was not described: the round has run out of time");
                 continue;
             }
             if sighted {
@@ -482,12 +511,19 @@ impl Shared {
                 }
                 described_from_the_search += 1;
             }
-            match self.described(location.clone(), &vouched) {
+            match self.described_before((*location).clone(), &vouched, deadline) {
                 Ok(renderer) => reached.push((renderer, sighted)),
                 Err(error) => {
                     tracing::debug!(%error, %location, "a device at an address is not a renderer this player can stream to");
                 }
             }
+        }
+
+        let _settling = self.round.lock();
+
+        if self.changed.load(Ordering::Acquire) != began_at {
+            tracing::debug!("a round's findings were dropped: the renderers changed while it ran");
+            return Ok(());
         }
 
         let mut known = self.known.lock();
@@ -551,7 +587,19 @@ impl Shared {
     }
 
     fn described(&self, location: Located, vouched: &Vouched) -> Result<Renderer> {
-        let renderer = Renderer::reached(location, vouched)?;
+        self.taught_what_is_learnt(Renderer::reached(location, vouched)?)
+    }
+
+    fn described_before(
+        &self,
+        location: Located,
+        vouched: &Vouched,
+        deadline: Instant,
+    ) -> Result<Renderer> {
+        self.taught_what_is_learnt(Renderer::reached_before(location, vouched, deadline)?)
+    }
+
+    fn taught_what_is_learnt(&self, renderer: Renderer) -> Result<Renderer> {
         let learnt = self.learnt.lock();
         Ok(renderer.taught(learnt.of([&renderer.node_name()])))
     }
@@ -606,7 +654,29 @@ impl Shared {
     }
 }
 
+struct Changing<'a> {
+    _one_at_a_time: MutexGuard<'a, ()>,
+    changed: &'a AtomicU64,
+}
+
+impl Drop for Changing<'_> {
+    fn drop(&mut self) {
+        self.changed.fetch_add(1, Ordering::AcqRel);
+    }
+}
+
 impl Known {
+    fn standing_at(&self, location: &Located, asked: &[&Located]) -> Option<SinkId> {
+        self.held
+            .iter()
+            .find(|(_, held)| {
+                held.renderer.location() == location
+                    || (held.aliases.contains(location)
+                        && asked.contains(&held.renderer.location()))
+            })
+            .map(|(id, _)| *id)
+    }
+
     fn holding_at(&self, location: &Located) -> Option<SinkId> {
         self.held
             .iter()

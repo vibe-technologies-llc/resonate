@@ -1,4 +1,8 @@
-use std::{collections::BTreeSet, fmt, time::Duration};
+use std::{
+    collections::BTreeSet,
+    fmt,
+    time::{Duration, Instant},
+};
 
 use resonate_audio::{NodeName, Plays, RENDERER_NODES};
 use resonate_core::{StreamSpec, Volume};
@@ -19,6 +23,8 @@ const WAVE_ASSUMED: &str = "http-get:*:audio/wav:*";
 const PERCENT: f32 = 100.0;
 
 const OPENHOME_STEPS_UNSAID: u32 = 100;
+
+const DESCRIBED_WITHIN: Duration = Duration::from_secs(15);
 
 const PLAYING: &str = "PLAYING";
 
@@ -113,7 +119,15 @@ pub struct Renderer {
 
 impl Renderer {
     pub fn reached(location: Located, vouched: &Vouched) -> Result<Self> {
-        let described = description::described(&location)?;
+        Self::reached_before(location, vouched, Instant::now() + DESCRIBED_WITHIN)
+    }
+
+    pub(crate) fn reached_before(
+        location: Located,
+        vouched: &Vouched,
+        deadline: Instant,
+    ) -> Result<Self> {
+        let described = description::described_before(&location, deadline)?;
         let flac_unsaid = vouched.flac_unsaid_for(&described.udn);
 
         if flac_unsaid == FlacUnsaid::AnyRate {
@@ -121,27 +135,29 @@ impl Renderer {
         }
 
         let carriages = match described.connection.as_ref() {
-            Some(connection) => match soap::call(connection, Action::GetProtocolInfo, &[]) {
-                Ok(answered) => {
-                    let carriages = Carriage::accepted_by(
-                        answered.named("Sink").unwrap_or_default(),
-                        flac_unsaid,
-                    );
+            Some(connection) => {
+                match soap::call_before(connection, Action::GetProtocolInfo, &[], deadline) {
+                    Ok(answered) => {
+                        let carriages = Carriage::accepted_by(
+                            answered.named("Sink").unwrap_or_default(),
+                            flac_unsaid,
+                        );
 
-                    if carriages.is_empty() {
-                        return Err(Error::TakesNoCarriage);
+                        if carriages.is_empty() {
+                            return Err(Error::TakesNoCarriage);
+                        }
+                        carriages
                     }
-                    carriages
+                    Err(error) => {
+                        tracing::debug!(%error, udn = %described.udn, "a renderer did not say what it takes; WAVE is offered");
+                        Carriage::accepted_by(WAVE_ASSUMED, flac_unsaid)
+                    }
                 }
-                Err(error) => {
-                    tracing::debug!(%error, udn = %described.udn, "a renderer did not say what it takes; WAVE is offered");
-                    Carriage::accepted_by(WAVE_ASSUMED, flac_unsaid)
-                }
-            },
+            }
             None => Carriage::accepted_by(WAVE_ASSUMED, flac_unsaid),
         };
         let openhome = described.openhome_volume.map(|service| {
-            let steps = soap::call(&service, Action::Characteristics, &[])
+            let steps = soap::call_before(&service, Action::Characteristics, &[], deadline)
                 .ok()
                 .and_then(|answered| answered.named("VolumeMax").map(str::to_owned))
                 .and_then(|max| max.trim().parse().ok())
@@ -153,14 +169,16 @@ impl Renderer {
             }
         });
         let volume = match (openhome.as_ref(), described.rendering.as_ref()) {
-            (Some(openhome), _) => soap::call(&openhome.service, Action::Volume, &[])
-                .ok()
-                .and_then(|answered| {
-                    let step = answered.named("Value")?.trim().parse().ok()?;
-                    openhome.steps.volume_at(step)
-                }),
+            (Some(openhome), _) => {
+                soap::call_before(&openhome.service, Action::Volume, &[], deadline)
+                    .ok()
+                    .and_then(|answered| {
+                        let step = answered.named("Value")?.trim().parse().ok()?;
+                        openhome.steps.volume_at(step)
+                    })
+            }
             (None, Some(rendering)) => {
-                soap::call(rendering, Action::GetVolume, &[INSTANCE, MASTER])
+                soap::call_before(rendering, Action::GetVolume, &[INSTANCE, MASTER], deadline)
                     .ok()
                     .and_then(|answered| volume_of(&answered))
             }

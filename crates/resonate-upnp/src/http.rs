@@ -44,6 +44,12 @@ pub(crate) enum Length {
     UntilClosed,
 }
 
+pub(crate) fn answering_by(deadline: Instant) -> Duration {
+    deadline
+        .saturating_duration_since(Instant::now())
+        .min(ANSWERED_WITHIN)
+}
+
 pub(crate) fn exchange(asking: &Asking<'_>, asked: Asked) -> Result<Answer> {
     exchange_before(asking, asked, Instant::now() + ANSWERED_WITHIN)
 }

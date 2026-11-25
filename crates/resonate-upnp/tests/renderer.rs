@@ -93,6 +93,7 @@ struct Heard {
     fetch_ended: bool,
     searches: usize,
     udn: Option<&'static str>,
+    answers_from: Option<SocketAddr>,
     decodes_at_most: Option<(u32, u16)>,
     undecodable: bool,
 }
@@ -226,11 +227,14 @@ fn answer_searches(ssdp: &UdpSocket, described_at: SocketAddr, heard: &Mutex<Hea
             continue;
         }
 
-        let udn = {
+        let (udn, described_at) = {
             let mut held = heard.lock();
 
             held.searches += 1;
-            held.udn.unwrap_or(UDN)
+            (
+                held.udn.unwrap_or(UDN),
+                held.answers_from.unwrap_or(described_at),
+            )
         };
         let answer = format!(
             "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: \
@@ -2376,4 +2380,128 @@ fn a_renderer_a_stream_holds_is_not_tried_and_teaching_what_was_learnt_offers_it
 
     assert_eq!(changes.try_recv(), Ok(SinkChange::Reformatted(sink.id)));
     assert!(!the_renderer(&network).supports(high_flac()));
+}
+
+fn held_at(network: &Network) -> Located {
+    let renderers = network.renderers();
+
+    assert_eq!(renderers.len(), 1);
+    renderers[0].1.location().clone()
+}
+
+fn until_held_at(network: &Network, wanted: &Located) {
+    let since = Instant::now();
+
+    while held_at(network) != *wanted {
+        assert!(
+            since.elapsed() < WAITED_AT_MOST,
+            "waited too long for the renderer to be held at {wanted}"
+        );
+
+        thread::sleep(LOOKS_EVERY);
+    }
+}
+
+#[test]
+fn a_renderer_that_moves_from_one_address_to_another_and_back_is_followed_each_way() {
+    let home = Fake::start();
+    let away = Fake::start();
+    let network = Network::resting(Searching {
+        every: Duration::from_millis(100),
+        ..home.searching()
+    })
+    .expect("rests");
+
+    network.look(FirstSearch::Awaited).expect("looks");
+
+    let sink = the_renderer(&network);
+
+    assert_eq!(held_at(&network), home.description_address());
+
+    home.heard.lock().answers_from = Some(away.described_at);
+    until_held_at(&network, &away.description_address());
+
+    home.heard.lock().answers_from = None;
+    until_held_at(&network, &home.description_address());
+
+    assert_eq!(the_renderer(&network).id, sink.id);
+}
+
+fn silent_addresses(count: usize) -> (Vec<TcpListener>, Vec<Located>) {
+    let listeners: Vec<TcpListener> = (0..count)
+        .map(|_| TcpListener::bind("127.0.0.1:0").expect("a loopback listener nobody answers on"))
+        .collect();
+    let addresses = listeners
+        .iter()
+        .map(|listener| {
+            let at = listener.local_addr().expect("its address");
+
+            Located::parse(&format!("http://{at}/description.xml")).expect("reads")
+        })
+        .collect();
+
+    (listeners, addresses)
+}
+
+const ROUND_DESCRIBES_FOR: Duration = Duration::from_millis(300);
+
+const WELL_PAST_A_ROUND: Duration = Duration::from_millis(1_500);
+
+#[test]
+fn a_round_over_five_silent_renderers_is_over_at_its_deadline_and_lists_none() {
+    let deaf = Deaf::start();
+    let (_silent, addresses) = silent_addresses(5);
+    let network = Network::resting_describing_within(
+        deaf.searching(Duration::from_secs(3_600)),
+        ROUND_DESCRIBES_FOR,
+    )
+    .expect("rests");
+
+    for address in addresses {
+        network.locate(address).expect("a resting network holds it");
+    }
+
+    let began = Instant::now();
+
+    network
+        .look_at_addresses(FirstSearch::Awaited)
+        .expect("reaches");
+
+    assert!(
+        began.elapsed() < WELL_PAST_A_ROUND,
+        "took {:?}",
+        began.elapsed()
+    );
+    assert!(network.sinks().is_empty());
+}
+
+#[test]
+fn resting_and_stopping_multicast_do_not_wait_out_a_round_over_silent_renderers() {
+    let deaf = Deaf::start();
+    let (_silent, addresses) = silent_addresses(5);
+    let network = Network::resting_describing_within(
+        deaf.searching(Duration::from_secs(3_600)),
+        Duration::from_secs(10),
+    )
+    .expect("rests");
+
+    for address in addresses {
+        network.locate(address).expect("a resting network holds it");
+    }
+    network
+        .look_at_addresses(FirstSearch::Behind)
+        .expect("reaches");
+
+    thread::sleep(Duration::from_millis(100));
+
+    let began = Instant::now();
+
+    network.rest();
+
+    assert!(
+        began.elapsed() < ROUND_DESCRIBES_FOR,
+        "took {:?}",
+        began.elapsed()
+    );
+    assert!(network.sinks().is_empty());
 }

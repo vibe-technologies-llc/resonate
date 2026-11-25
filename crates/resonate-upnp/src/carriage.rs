@@ -83,19 +83,23 @@ impl Shape {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Carriage {
     wrapping: Wrapping,
-    said: Shape,
+    said: Vec<Shape>,
     played: Vec<Shape>,
 }
 
 impl Carriage {
-    pub const fn new(
-        wrapping: Wrapping,
-        rates: Vec<SampleRate>,
-        layouts: Vec<ChannelLayout>,
-    ) -> Self {
+    pub fn new(wrapping: Wrapping, rates: Vec<SampleRate>, layouts: Vec<ChannelLayout>) -> Self {
         Self {
             wrapping,
-            said: Shape { rates, layouts },
+            said: vec![Shape { rates, layouts }],
+            played: Vec::new(),
+        }
+    }
+
+    fn of(wrapping: Wrapping, said: Vec<Shape>) -> Self {
+        Self {
+            wrapping,
+            said,
             played: Vec::new(),
         }
     }
@@ -105,7 +109,7 @@ impl Carriage {
     }
 
     fn shapes(&self) -> impl Iterator<Item = &Shape> {
-        std::iter::once(&self.said).chain(&self.played)
+        self.said.iter().chain(&self.played)
     }
 
     pub fn formats(&self) -> Vec<SinkFormats> {
@@ -163,20 +167,20 @@ impl Carriage {
         for (layout, highest) in plays.surround() {
             let layouts: Vec<ChannelLayout> = layouts_of(layout.count().get())
                 .into_iter()
-                .filter(|layout| !self.said.layouts.contains(layout))
+                .filter(|layout| !self.said.iter().any(|shape| shape.layouts.contains(layout)))
                 .collect();
 
             if layouts.is_empty() {
                 continue;
             }
 
-            let mut rates: Vec<SampleRate> = self
-                .said
-                .rates
-                .iter()
-                .copied()
-                .filter(|rate| *rate <= highest)
-                .collect();
+            let mut rates: Vec<SampleRate> = Vec::new();
+
+            for rate in self.said.iter().flat_map(|shape| &shape.rates) {
+                if *rate <= highest && !rates.contains(rate) {
+                    rates.push(*rate);
+                }
+            }
 
             if !rates.contains(&highest) {
                 rates.push(highest);
@@ -236,17 +240,19 @@ impl Carriage {
 
         let mut carriages = Vec::new();
 
-        if flac.entries > 0 {
+        if !flac.entries.is_empty() {
             let carriage = flac.carriage(Wrapping::Flac, &RATES_OFFERED, flac_unsaid);
-            if !carriage.said.rates.is_empty() {
+            if !carriage.said.is_empty() {
                 carriages.push(carriage);
             }
         }
-        if wave.entries > 0 {
-            wave.rates.clear();
+        if !wave.entries.is_empty() {
+            for entry in &mut wave.entries {
+                entry.rates.clear();
+            }
             carriages.push(wave.carriage(Wrapping::Wave, &RATES_OFFERED, flac_unsaid));
         }
-        if l16.entries > 0 {
+        if !l16.entries.is_empty() {
             carriages.push(l16.carriage(Wrapping::L16, &L16_RATES_UNSAID, flac_unsaid));
         }
         carriages
@@ -255,30 +261,36 @@ impl Carriage {
 
 #[derive(Default)]
 struct Seen {
-    entries: usize,
+    entries: Vec<Entry>,
+}
+
+#[derive(Default)]
+struct Entry {
     rates: Vec<SampleRate>,
     counts: Vec<u8>,
 }
 
 impl Seen {
     fn read<'a>(&mut self, parameters: impl Iterator<Item = &'a str>) {
-        self.entries += 1;
+        let mut entry = Entry::default();
+
         for parameter in parameters {
             let parameter = parameter.trim();
             if let Some(rate) = parameter.strip_prefix("rate=")
                 && let Ok(hz) = rate.parse()
                 && let Ok(rate) = SampleRate::new(hz)
-                && !self.rates.contains(&rate)
+                && !entry.rates.contains(&rate)
             {
-                self.rates.push(rate);
+                entry.rates.push(rate);
             } else if let Some(count) = parameter.strip_prefix("channels=")
                 && let Ok(count) = count.parse::<u8>()
                 && (1..=CHANNELS_AT_MOST).contains(&count)
-                && !self.counts.contains(&count)
+                && !entry.counts.contains(&count)
             {
-                self.counts.push(count);
+                entry.counts.push(count);
             }
         }
+        self.entries.push(entry);
     }
 
     fn carriage(
@@ -287,6 +299,19 @@ impl Seen {
         unsaid: &[SampleRate],
         flac_unsaid: FlacUnsaid,
     ) -> Carriage {
+        let shapes = self
+            .entries
+            .into_iter()
+            .map(|entry| entry.shape(wrapping, unsaid, flac_unsaid))
+            .filter(|shape| !shape.rates.is_empty())
+            .collect();
+
+        Carriage::of(wrapping, merged(shapes))
+    }
+}
+
+impl Entry {
+    fn shape(self, wrapping: Wrapping, unsaid: &[SampleRate], flac_unsaid: FlacUnsaid) -> Shape {
         let stated = !self.rates.is_empty();
         let mut rates = if stated { self.rates } else { unsaid.to_vec() };
 
@@ -308,8 +333,50 @@ impl Seen {
                 }
             }
         }
-        Carriage::new(wrapping, rates, layouts)
+        Shape { rates, layouts }
     }
+}
+
+fn merged(shapes: Vec<Shape>) -> Vec<Shape> {
+    let by_rates = merged_where(
+        shapes,
+        |one, other| one.rates == other.rates,
+        |shape, other| {
+            for layout in other.layouts {
+                if !shape.layouts.contains(&layout) {
+                    shape.layouts.push(layout);
+                }
+            }
+        },
+    );
+
+    merged_where(
+        by_rates,
+        |one, other| one.layouts == other.layouts,
+        |shape, other| {
+            for rate in other.rates {
+                if !shape.rates.contains(&rate) {
+                    shape.rates.push(rate);
+                }
+            }
+        },
+    )
+}
+
+fn merged_where(
+    shapes: Vec<Shape>,
+    same: impl Fn(&Shape, &Shape) -> bool,
+    join: impl Fn(&mut Shape, Shape),
+) -> Vec<Shape> {
+    let mut merged: Vec<Shape> = Vec::new();
+
+    for shape in shapes {
+        match merged.iter_mut().find(|held| same(held, &shape)) {
+            Some(held) => join(held, shape),
+            None => merged.push(shape),
+        }
+    }
+    merged
 }
 
 fn layouts_of(count: u8) -> Vec<ChannelLayout> {
@@ -355,7 +422,11 @@ pub(crate) fn tried_in(said: &[Carriage], trial: Trial) -> Option<(Carriage, Str
     } else {
         let carriage = said.get(surround_tried_in(said)?)?;
 
-        if !carriage.said.rates.contains(&trial.rate()) {
+        if !carriage
+            .said
+            .iter()
+            .any(|shape| shape.rates.contains(&trial.rate()))
+        {
             return None;
         }
         carriage.wrapping
@@ -377,8 +448,10 @@ pub(crate) fn tried_in(said: &[Carriage], trial: Trial) -> Option<(Carriage, Str
 
 fn surround_tried_in(said: &[Carriage]) -> Option<usize> {
     said.iter().position(|carriage| {
-        carriage.said.rates.contains(&SURROUND_TRIED_FIRST_AT)
-            && carriage.said.layouts.contains(&ChannelLayout::Stereo)
+        carriage.said.iter().any(|shape| {
+            shape.rates.contains(&SURROUND_TRIED_FIRST_AT)
+                && shape.layouts.contains(&ChannelLayout::Stereo)
+        })
     })
 }
 
@@ -640,5 +713,43 @@ mod tests {
 
         assert_eq!(formats.len(), 5);
         assert_eq!(rates, RATES_OFFERED);
+    }
+
+    #[test]
+    fn each_protocol_info_entry_is_read_whole_so_a_rate_is_never_crossed_with_another_entrys_channels()
+     {
+        let said = accepted(
+            "http-get:*:audio/flac;rate=96000;channels=2:*,http-get:*:audio/flac;rate=48000;channels=6:*",
+        );
+        let flac = &said[0];
+        let at = |rate, layout| StreamSpec::new(rate, layout, SampleFormat::S24);
+
+        assert!(flac.carries(at(SampleRate::HZ_96000, ChannelLayout::Stereo)));
+        assert!(flac.carries(at(SampleRate::HZ_48000, ChannelLayout::Surround51)));
+        assert!(!flac.carries(at(SampleRate::HZ_96000, ChannelLayout::Surround51)));
+        assert!(!flac.carries(at(SampleRate::HZ_48000, ChannelLayout::Stereo)));
+
+        let (formats, rates) = unite(&said);
+
+        assert!(formats.iter().all(|offered| {
+            let both = offered.rates.contains(&SampleRate::HZ_96000)
+                && offered.channels.contains(&ChannelLayout::Surround51);
+            !both
+        }));
+        assert_eq!(rates, [SampleRate::HZ_48000, SampleRate::HZ_96000]);
+    }
+
+    #[test]
+    fn entries_naming_the_same_channels_or_the_same_rates_are_one_shape() {
+        let flac = &accepted(
+            "http-get:*:audio/flac;rate=48000:*,http-get:*:audio/flac;rate=96000:*,http-get:*:audio/flac;rate=48000;channels=6:*,http-get:*:audio/flac;rate=96000;channels=6:*",
+        )[0];
+
+        assert_eq!(flac.formats().len(), 2);
+        assert!(flac.carries(StreamSpec::new(
+            SampleRate::HZ_96000,
+            ChannelLayout::Surround51,
+            SampleFormat::S24
+        )));
     }
 }

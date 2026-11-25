@@ -1,4 +1,9 @@
-use std::{collections::BTreeMap, net::SocketAddr, sync::Arc, time::Duration};
+use std::{
+    collections::BTreeMap,
+    net::SocketAddr,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use parking_lot::Mutex;
 
@@ -17,6 +22,8 @@ pub const BROWSED_A_PAGE: u32 = 200;
 pub const PAGES_AT_MOST: usize = 25;
 
 pub const BROWSE_ANSWERED_WITHIN: Duration = Duration::from_secs(10);
+
+const DESCRIBED_ROUND_WITHIN: Duration = Duration::from_secs(10);
 
 const SERVERS_AT_MOST: usize = 64;
 
@@ -117,14 +124,14 @@ pub struct Paged {
 }
 
 impl ServerFound {
-    pub(crate) fn reached(heard: &Answered) -> Result<Self> {
+    pub(crate) fn reached(heard: &Answered, deadline: Instant) -> Result<Self> {
         let sender = heard.location.at_ip(heard.sender);
 
         if heard.location.is_at(heard.sender) {
-            return Self::described_at(heard.location.clone(), vec![sender]);
+            return Self::described_at(heard.location.clone(), vec![sender], deadline);
         }
 
-        match Self::described_at(sender.clone(), vec![sender.clone()]) {
+        match Self::described_at(sender.clone(), vec![sender.clone()], deadline) {
             Ok(server)
                 if heard
                     .udn
@@ -142,8 +149,11 @@ impl ServerFound {
         }
 
         let heard_as = heard.udn.clone().ok_or(Error::LocationUnvouched)?;
-        let server =
-            Self::described_at(heard.location.clone(), vec![heard.location.clone(), sender])?;
+        let server = Self::described_at(
+            heard.location.clone(),
+            vec![heard.location.clone(), sender],
+            deadline,
+        )?;
 
         if !is_the_same_device(&server.udn, &heard_as) {
             return Err(Error::DescribedAsAnother {
@@ -154,8 +164,8 @@ impl ServerFound {
         Ok(server)
     }
 
-    fn described_at(located: Located, own: Vec<Located>) -> Result<Self> {
-        let described = description::server_described(&located)?;
+    fn described_at(located: Located, own: Vec<Located>, deadline: Instant) -> Result<Self> {
+        let described = description::server_described_before(&located, deadline)?;
         let addresses = Arc::new(Addresses {
             udn: described.udn.clone(),
             described_at: located.clone(),
@@ -352,6 +362,7 @@ fn criteria_for(words: &str) -> String {
 pub struct MediaServers {
     to: SocketAddr,
     within: Duration,
+    describing_within: Duration,
     known: Mutex<BTreeMap<Udn, Held>>,
     round: Mutex<()>,
 }
@@ -371,8 +382,16 @@ impl MediaServers {
         Self {
             to,
             within,
+            describing_within: DESCRIBED_ROUND_WITHIN,
             known: Mutex::new(BTreeMap::new()),
             round: Mutex::new(()),
+        }
+    }
+
+    pub fn describing_within(self, describing_within: Duration) -> Self {
+        Self {
+            describing_within,
+            ..self
         }
     }
 
@@ -382,6 +401,7 @@ impl MediaServers {
 
         let mut seen = Vec::new();
         let mut reached = Vec::new();
+        let deadline = Instant::now() + self.describing_within;
 
         for answered in heard {
             let location = &answered.location;
@@ -397,7 +417,11 @@ impl MediaServers {
                 tracing::debug!(%location, "a media server answering the search was not described: enough are held");
                 continue;
             }
-            match ServerFound::reached(&answered) {
+            if Instant::now() >= deadline {
+                tracing::debug!(%location, "a media server answering the search was not described: the round has run out of time");
+                continue;
+            }
+            match ServerFound::reached(&answered, deadline) {
                 Ok(server) => reached.push((server, answered.location)),
                 Err(error) => {
                     tracing::debug!(%error, %location, "a device answering the search for media servers is not one");
@@ -502,6 +526,46 @@ mod tests {
         assert_eq!(
             criteria,
             "upnp:class derivedfrom \"object.item.audioItem\" and (dc:title contains \"say \\\"hi\\\" \\\\ there\" or upnp:artist contains \"say \\\"hi\\\" \\\\ there\" or upnp:album contains \"say \\\"hi\\\" \\\\ there\")"
+        );
+    }
+
+    #[test]
+    fn a_round_over_five_silent_media_servers_is_over_at_its_deadline() {
+        let search = std::net::UdpSocket::bind("127.0.0.1:0").expect("a loopback socket");
+        let search_at = search.local_addr().expect("its address");
+        let silent: Vec<std::net::TcpListener> = (0..5)
+            .map(|_| std::net::TcpListener::bind("127.0.0.1:0").expect("a loopback listener"))
+            .collect();
+        let locations: Vec<SocketAddr> = silent
+            .iter()
+            .map(|listener| listener.local_addr().expect("its address"))
+            .collect();
+
+        std::thread::spawn(move || {
+            let mut buffer = [0; 2048];
+
+            while let Ok((_, from)) = search.recv_from(&mut buffer) {
+                for (number, at) in locations.iter().enumerate() {
+                    let answer = format!(
+                        "HTTP/1.1 200 OK\r\nCACHE-CONTROL: max-age=1800\r\nLOCATION: http://{at}/d.xml\r\nST: urn:schemas-upnp-org:device:MediaServer:1\r\nUSN: uuid:silent-{number}::urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n"
+                    );
+
+                    let _ = search.send_to(answer.as_bytes(), from);
+                }
+            }
+        });
+
+        let servers = MediaServers::searching(search_at, Duration::from_millis(300))
+            .describing_within(Duration::from_millis(300));
+        let began = Instant::now();
+
+        let found = servers.found().expect("searches");
+
+        assert!(found.is_empty());
+        assert!(
+            began.elapsed() < Duration::from_millis(1_500),
+            "took {:?}",
+            began.elapsed()
         );
     }
 }

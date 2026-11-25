@@ -71,20 +71,37 @@ engine is a dev-dependency, for the end-to-end test.
   **A round describes a bounded number of what it heard** (`room_to_describe`): at most
   `DESCRIBED_FROM_A_SEARCH_AT_MOST` (32) devices a round, each one's failure counted, and none once
   `RENDERERS_AT_MOST` (64) are held; the rest are passed over with a debug line. The renderers the
-  listener gave by address are theirs and outside both bounds. Describing is serial under the round
-  lock, so the bounds are what a host answering the search can cost it.
+  listener gave by address are theirs and outside both bounds. Describing is serial, but outside the
+  state lock: a round holds `Shared::exchanging` (one round at a time) and takes `Shared::round`
+  only to settle its findings, so `rest`, `stop_multicasting`, `vouch` and `teach` never wait out a
+  silent renderer. Each of those takes the lock through `Shared::changing`, which counts a change
+  when it ends (`Shared::changed`), and a round whose count moved while it ran drops what it found
+  rather than listing a renderer the network has since rested or vouched away. The describing is
+  bounded as a whole (`Network::resting_describing_within`, `DESCRIBING_A_ROUND_TAKES_AT_MOST`, 10 s):
+  every exchange of a description is given what is left of the round's deadline
+  (`Renderer::reached_before`, `http::answering_by`), and a device not yet described once it has
+  run out waits for the next round, while a held one is still seen
+  (`a_round_over_five_silent_renderers_is_over_at_its_deadline_and_lists_none`,
+  `resting_and_stopping_multicast_do_not_wait_out_a_round_over_silent_renderers`).
 - **The description is read as the device wrote it**: `URLBase` where present, else the description's
   own address, joins every `controlURL` (absolute, rooted or relative to the description's folder:
   `Located::join`); an address or reference holding a control character (a CR or LF would inject headers into the hand-written request line) or a space is `UnreadableAddress` (`an_address_or_a_reference_holding_a_control_character_or_a_space_is_refused`); a `URLBase` or a `controlURL` naming another host than the description's
   (`Located::is_on_host_of`, the port free) is not taken, so no description points the SOAP posts
   (a stream's token and a song's title among them) at another machine or a loopback service; the renderer is the `device` (nested in a `deviceList` or not) whose `deviceType`
-  names a MediaRenderer, else the first holding an AVTransport service. XML through `roxmltree`
+  names a MediaRenderer, else the first holding an AVTransport service. Its `friendlyName` and `UDN`
+  are cleaned and cut before they are kept (`description::cleaned`: control characters dropped, then
+  at most `NAME_BYTES_AT_MOST` and `UDN_BYTES_AT_MOST`, 256 bytes each, cut on a letter; a name
+  left empty is the UDN) (`a_name_and_a_udn_are_cleaned_of_control_characters_and_cut_on_a_letter`). XML through `roxmltree`
   with no DTD and `NODES_AT_MOST` nodes; HTTP answers capped at `ANSWER_BYTES_AT_MOST` (1 MiB).
 - **What it takes decides how it is fed** (`Carriage`, from `ConnectionManager`'s
   `GetProtocolInfo` `Sink`; a renderer holds a list of them, `Carriage::accepted_by`, in preference
   order): `audio/flac` (or `x-flac`) is `Wrapping::Flac`, S16 and S24 at 44.1 to 96 kHz where the
   protocol info states no rate, else at the rates it states (`rate=`) however high (*The stream*:
-  FLAC above 96 kHz); `audio/wav`
+  FLAC above 96 kHz; **each `protocolInfo` entry is read whole**, its rates paired with its own
+  `channels=` and never crossed with another entry's, so 96 kHz stereo beside 48 kHz six-channel
+  plans neither 96 kHz six-channel nor 48 kHz stereo; `Seen` keeps an `Entry` apiece, and
+  `merged` joins entries only where one of the two lists is equal, which loses no pair:
+  `each_protocol_info_entry_is_read_whole_so_a_rate_is_never_crossed_with_another_entrys_channels`); `audio/wav`
   (or `x-wav`, `wave`, `vnd.wave`) is `Wrapping::Wave`, S16 and S24 at 44.1 to 192 kHz; `audio/L16`
   is `Wrapping::L16` at the rates it lists (44.1 and 48 kHz where none), S16. None of the three is
   `Error::TakesNoCarriage` and the device is not listed. A renderer with no ConnectionManager, or
@@ -201,9 +218,11 @@ engine is a dev-dependency, for the end-to-end test.
   appears when it is on. A held address's renderer is never `SEARCHES_MISSED_BEFORE_GONE`'s to
   drop, since the search would not have found it anyway; a renderer is dropped when its address
   is, at once (`unlocate`) unless the search heard it too (`Held::heard`), and an address the
-  renderer was described at before it moved (`Held::aliases`) still counts as held, so a
-  multi-homed renderer given by one address and found at another is not described again every
-  round. A search that cannot be sent (no multicast route, the iOS refusal) is a warning, not a
+  renderer was described at before it moved (`Held::aliases`) counts as held only while the address
+  it is held at now is also asked about in the round (`Known::standing_at`), so a multi-homed
+  renderer given by one address and found at another is not described again every round, while
+  one that moved from A to B and back to A, heard at A alone, is described at A again and followed
+  (`a_renderer_that_moves_from_one_address_to_another_and_back_is_followed_each_way`). A search that cannot be sent (no multicast route, the iOS refusal) is a warning, not a
   failed round, where an address is held: the addresses are reached, nothing is counted missed,
   and with none held it is `Error::Search` as before. Cast's addresses are `Casting::locate` (`cast.md`).
 - **Searched again every `Searching::every` (60 s)**; a renderer missing from
@@ -385,7 +404,7 @@ wanted names a renderer; the last two wait for the first search. The window alwa
 list can switch it: `Rendering::switch` hands `resonate-ui` a `Renderers` (`looking`, `look`), the
 switch row under the devices calls it and stores `Setting::Switched(Switch::Renderers, _)`, and renderers appear in
 or leave the list through the sink changes `Beside` forwards. The `renderers-at` key (`binary.md`) holds the addresses of renderers the search cannot hear:
-`Kinds::resting` hands each to `Network::locate` while the network rests, and a run holding any
+`Kinds::started` hands each to `Network::locate` while the network rests, and a run holding any
 reaches them at start without a search (`Rendering::of`'s `Asked::Addresses`, the window's
 `for_the_window`): only the key `renderers`, a `sink` naming a renderer or `sinks --renderers`
 multicast, and Cast's browse is mDNS and is never started for an address. `sinks --renderer-at URL`
@@ -705,7 +724,9 @@ core and `resonate-audio`.
   device whose `deviceType` names a MediaServer and holds ContentDirectory, else the first holding
   ContentDirectory, its control address on the description's host or `Error::NotAServer`), at most
   32 a round and 64 held; a server missing two rounds in a row is gone, a known UDN at a new address
-  replaced, and the list answered in name order. `MediaServers::server(udn)` is a held server, else
+  replaced, and the list answered in name order. The round's describing is bounded by
+  `MediaServers::describing_within` (`DESCRIBED_ROUND_WITHIN`, 10 s), each description given what
+  is left (`a_round_over_five_silent_media_servers_is_over_at_its_deadline`). `MediaServers::server(udn)` is a held server, else
   one more round, else `Error::NoSuchServer`: a server queued in an earlier run is found again by its
   UDN wherever it now answers (`a_server_that_leaves_is_gone_after_two_searches_miss_it_and_then_is_said_not_to_answer`).
 - **Browse is paged** (`ServerFound::page_of_children`, `children`): `BrowseDirectChildren` with
