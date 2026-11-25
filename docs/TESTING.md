@@ -4,6 +4,53 @@ Proof and plumbing: what no test, fuzz target, hardware or CI step yet covers, a
 packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Playback and output
+- [M · 0.18.1] Hold every DSP stage to its latency claim. **Medium, builder.** `frames_held` and
+  `frames_short_of_its_latency` are referenced by no lab suite or integration test, `Restore` is
+  checked by a band level of its left channel alone
+  (`crates/resonate-dsp/tests/restoration.rs:236-287`), and the lab's claimed and measured latency
+  rows (768 against 0) are not tied to each other (`dsp-lab/src/suites/restore.rs:147-176`);
+  restoration and the guard run only at 44.1 kHz stereo, never mono, many channels, low or high
+  rates, a reset or a track shorter than a hop. Add a contract test over every `Processor` that
+  feeds odd block sizes, records `frames_held`, flushes and cross-correlates both channels with the
+  input, at 8 to 192 kHz. Done when that test fails against today's `Restore`.
+- [M · 0.18.1] Prove that a DSP stage's `process` allocates nothing. **Medium, builder.**
+  `realtime.md` says `process` never allocates, but no counting allocator exists in the tree, and
+  `Restore::new` leaves its buffers empty (`crates/resonate-dsp/src/restore.rs:323-334`). Add a test
+  per stage under a counting `#[global_allocator]` that prepares, warms up and asserts no allocation
+  across varied blocks, a reset and a gain change. Done when the test runs for every stage.
+- [M · 0.18.1] Drive the resampler over every rate pair with audio. **Medium, builder.** The lab's
+  pairs stop at 44.1, 48, 96 and 192 kHz (`dsp-lab/src/suites/resample/mod.rs:31-39`), the bench at
+  a few (`crates/resonate-dsp/benches/stages.rs:40-47`), and the one grid test only builds a
+  resampler and passes over any `Err` (`crates/resonate-dsp/src/resample.rs:2226-2248`), so the
+  staged compaction's underflow at 1/29 to 1/32 is reached by nothing. Add a property test over rate
+  pair, quality, phase, block size and reset that asserts finite output and the expected frames, and
+  fail the grid on an unexpected `Err`. Done when the property test finds the compaction underflow
+  before its fix.
+- [M · 0.18.1] Fail the lab's `--against` when a reading goes missing. **Medium, builder.**
+  `weighed` passes over a baseline row whose case was not measured, a metric gone is only printed
+  (`dsp-lab/src/lab/readings.rs:140-168`), `held_to` succeeds with nothing compared
+  (`dsp-lab/src/main.rs:111-124`), and a worker's panic becomes an empty result (`runner.rs:61-63`).
+  On a whole run fail on a missing row or metric and carry a panic as an error. Done when deleting a
+  subject makes `measure --against baseline.tsv` fail.
+- [M · 0.18.1] Build and run the equaliser a fuzzed profile describes. **Medium, builder.** The
+  `equaliser` target stops at a text round trip (`fuzz/fuzz_targets/equaliser.rs:7-11`),
+  `measurement` never fits (`measurement.rs:12-22`), and `Store::read_in` and `targets::parse` have
+  no target. Build the stage at 44.1, 96 and 192 kHz, call `fitted_preamp` and process an impulse,
+  asserting finite bounded output. Done when a profile of 32 bands at +40 dB fails the target before
+  its fix.
+- [S · 0.18.1] Hold the DSP lab and the bench ceilings closer to what they measure. **Low,
+  builder.** The chain's THD and IMD use `AMONG_DITHER` (10 dB) beside float and 24-bit readings
+  near −170 dB, `LEVEL`'s 2 % allows 4.9 dB at −245 dB, and `SHARE` lets a ripple rise 50 %
+  (`dsp-lab/src/lab/metric.rs:18-24`); the bench passes over a measured name with no ceiling and
+  never asks for a listed one (`crates/resonate-dsp/benches/stages.rs:85-103`), and its ceilings sit
+  about four times above the costs recorded. Use the dither tolerance only for dithered sinks, cap
+  the relative terms, and fail on a bench without a ceiling. Done when a 5 dB loss on a float chain
+  fails `--against`.
+- [S · 0.18.1] Build and test the DSP lab in the local gate. **Low, builder.** `cargo xtask check`
+  only formats `dsp-lab/` (`crates/xtask/src/plan.rs:14`), so its 43 tests and its build against
+  `resonate-dsp` and `resonate-engine` go unchecked until someone measures by hand. Lint and test it
+  with `--no-default-features` in `cargo xtask check`. Done when a change breaking the lab's build
+  fails the gate.
 - [L · blocked: hardware] No forced graph rate change proved against hardware (the only card here
   offers 48 kHz alone), nor DoP against a DAC that decodes it
 
@@ -66,10 +113,40 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   processor is an arm64 Mach-O
 
 ## Identification
+- [M · 0.18.1] Check the Chromaprint print against a committed one. **Medium, builder.** The one
+  correctness test compares with `fpcalc` and skips without it
+  (`crates/resonate-analysis/tests/references.rs:389-435`), which CI does not install
+  (`.github/workflows/ci.yml:21-24`); the others are self-consistency or `starts_with("AQA")`
+  (`crates/resonate-analysis/src/print.rs:168-169`), and only an 11 025 Hz input is compared. Commit
+  a golden print of a seeded signal at 44.1, 48 and 96 kHz and install `chromaprint` where the tests
+  run. Done when a change to the filterbank fails without `fpcalc`.
 - [S · blocked: registered key] AcoustID never reached with a real key; its fixture is written from
   the documentation and `tests/live.rs` has no AcoustID test
 
 ## Catalog
+- [M · 0.18.1] Build the MusicBrainz copy from a hostile or failing export. **Medium, builder.**
+  `crates/resonate-musicbrainz/tests/mirror.rs:112-160` always writes a valid schema and well-formed
+  COPY text, and no test builds over an existing copy with a cut archive, a wrong `SCHEMA_SEQUENCE`
+  or an oversized row, or shows a failed build leaves the old copy answering and nothing staged. Add
+  those builds. Done when each fails with its error and the old copy still answers.
+- [M · 0.18.1] Fuzz the lyric readers at the sizes their costs appear. **Medium, builder.** `lrc`,
+  `ttml` and `lyricsfile` check only for a panic (`fuzz/fuzz_targets/lrc.rs:5-7`), their seeds are
+  under 500 bytes and the documented run leaves `-max_len` at libFuzzer's 4 KiB, where neither the
+  quadratic LRC scan nor deep TTML nesting can appear. Document `-max_len=262144`, add a dictionary
+  of stamps and elements, and assert words within the input's length. Done when the target finds the
+  TTML depth overflow before its fix.
+- [S · 0.18.1] Replace the lyric fixtures holding real songs. **Low, builder.**
+  `crates/resonate-lyrics/tests/fixtures/ttml_duet.ttml` and `ttml_worded.ttml` are verbatim service
+  answers carrying a real song's whole lyrics and its songwriters' names. Write invented lyrics and
+  names of the same structure. Done when no fixture names a real songwriter.
+- [S · 0.18.1] Run AutoEq's index matching by default. **Low, builder.** The only integration test
+  of `resonate-eq` skips unless `RESONATE_AUTOEQ_INDEX` names the whole index
+  (`crates/resonate-eq/tests/whole_index.rs:5-11`). Commit a few hundred index lines with the misses
+  and run them by default. Done when the suggestion test runs without the variable.
+- [S · 0.18.1] Prove that a write against a broken settings file leaves it untouched. **Low,
+  builder.** No test of `crates/resonate/src/config/tests/writing.rs` writes a setting against a
+  file that does not parse. Add it. Done when the file is byte for byte the same after the refused
+  write.
 - [S · blocked: flatpak] Trashing through the portal is proved from a `bwrap` sandbox built to
   Flatpak's pattern (`.flatpak-info`, a filtering `xdg-dbus-proxy`, `bwrapinfo.json`), not from a
   `flatpak run` of the real manifest: no `flatpak` is installed here, so the document portal and the
@@ -80,6 +157,24 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
 ## Device sync
 
 ## Providers and network
+- [M · 0.18.1] Hold the providers' server-driven limits in tests. **Medium, builder.** No fake keeps
+  answering full pages or claims a huge total, so `PAGES_AT_MOST`
+  (`crates/providers/subsonic/src/lib.rs:35`) and Jellyfin's caps
+  (`crates/providers/jellyfin/src/lib.rs:38-41`) are unproved; every `Retry-After` is `0` or `1`, so
+  the four `LONGEST_RETRY_AFTER` clamps never act; and Jellyfin's fake cannot cut or stall a body.
+  Add an endless-pages fake, make the retry ceiling a field a test can lower, and give Jellyfin's
+  fake the `Sent` modes. Done when removing each cap fails a test.
+- [M · 0.18.1] Let the fake renderer fault, stall and lie. **Medium, builder.** The renderer fake
+  always answers 200 with a fixed name (`crates/resonate-upnp/tests/renderer.rs:245`, `:271-420`),
+  and `ANSWER_BYTES_AT_MOST` and `HEAD_BYTES_AT_MOST` (`crates/resonate-upnp/src/http.rs:11-15`) are
+  referenced by no test. Give `Profile` a fault on a named action, an answer that never comes, an
+  oversized body and a long name. Done when each ends the stream cleanly or drops the sink in a
+  test.
+- [S · 0.18.1] Fix MusicBrainz's manual redirect count and test it. **Low, builder.** The loop
+  errors on exactly ten hops and a hop skips `reachable` and the pacing
+  (`crates/resonate-online/src/client.rs:962-986`), and no test sends a relative `Location`, a
+  downgrade or the limit. Count hops right, pace each and test the three. Done when those tests
+  pass.
 - [S · blocked: a listener's account] `resonate-ytmusic`'s gated live test (`tests/live.rs`,
   `RESONATE_YTMUSIC_TESTS`, with `RESONATE_YTMUSIC_COOKIES`, `RESONATE_YTMUSIC_SONG`,
   `RESONATE_YTMUSIC_PLAYLIST`) has never been run: it lists an album song, reads the head of its best
@@ -104,6 +199,71 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   iOS, a browser in front of a backgrounded process on Android) has not been seen on a device
 
 ## Testing
+- [M · 0.18.1] Run the binary's subcommands as processes in a test. **Medium, builder.**
+  `crates/resonate/tests` spawns the binary only for `play` and `mcp` (`terminal.rs:109`,
+  `signals.rs:37`), and `organising.rs`, `kinship.rs`, `share.rs`, `sync.rs`, `vault.rs`,
+  `studies.rs`, `playlists.rs`, `served.rs`, `suggest.rs` and `updates.rs` have no test module, so
+  no exit status, output or file written by a subcommand is asserted, which let every filed
+  command-line bug through. Add `tests/cli.rs` running each mutating subcommand's failing and
+  succeeding case under the `Home` that `signals.rs` builds. Done when `dedupe --apply` with a
+  refused trash fails it before the fix.
+- [M · 0.18.1] Make a skipped test fail where its requirement is meant to be present. **Medium,
+  builder.** The session-bus, pseudo-terminal, portal, live service, PipeWire stream, capture, Cast
+  multicast and reference-tool suites all print a skip and pass
+  (`crates/resonate-mpris/tests/bus.rs:586`, `crates/resonate/tests/terminal.rs:197-210`,
+  `crates/resonate-online/tests/live.rs:32-43`, `crates/resonate-pipewire/tests/stream.rs:48-69`,
+  `crates/resonate-dsp/tests/restoration.rs:236-262`,
+  `crates/resonate-analysis/tests/references.rs`), with no `RESONATE_*_TESTS=required` switch as
+  `coreaudio` and `nearby::` have, and the child-run helpers name their test by a typed string, so a
+  rename runs nothing and passes. Add the switch to each, set it where CI provides the requirement,
+  and take the child's name from `module_path!()` and fail on zero tests run. Done when CI without a
+  session bus fails the bus suite.
+- [M · 0.18.1] Test the portal's trash where it can fail. **Medium, builder.** Both portal tests
+  skip without `xdg-desktop-portal`, `bwrap` and `xdg-dbus-proxy`, none of which CI installs
+  (`crates/resonate-mpris/tests/trash.rs:85-89`, `:152-157`, `.github/workflows/ci.yml:19-22`), and
+  they assert only success. Install them in CI and add a refusal case asserting the `Trashing`
+  variant. Done when a refused trash is tested.
+- [M · 0.18.1] Stand in for the portal's inhibit and record what notifications say. **Medium,
+  builder.** No test stands in for `org.freedesktop.portal.Desktop`, so holding and releasing the
+  idle inhibit is proved only by `Gripping::toward` (`crates/resonate-mpris/src/idle.rs:115-128`);
+  the notification stand-in ignores the summary, body, hints and replacement
+  (`crates/resonate-mpris/tests/bus.rs:3605-3634`); and no fixture in the MCP or MPRIS suites holds
+  hostile tag text, a NUL, markup, a newline or 10 kB (`crates/resonate-mcp/tests/server.rs:72-90`,
+  `bus.rs:148-180`). Record both stand-ins' calls and parameterise the fixtures. Done when pause
+  releases the inhibit and a NUL title is notified, in tests.
+- [M · 0.18.1] Test MCP's `refresh_playlist` and pin each tool's hints. **Medium, builder.** No test
+  calls `refresh_playlist` (`crates/resonate-mcp/src/tools.rs:174-213`, `:902-907`), and the
+  annotation test compares `destroys()` with itself (`crates/resonate-mcp/tests/server.rs:881-923`).
+  Test a refresh, a list with no link and a failed fetch leaving rows, and pin hints by a table of
+  names. Done when a tool losing its destructive hint fails.
+- [M · 0.18.1] Make the layering job fail when `cargo tree` does. **Medium, builder.** Its loops end
+  `|| true` (`.github/workflows/ci.yml:144`, `:153`, `:163`, `:173`, `:217`, `:232`, `:239`, `:251`,
+  `:258`, `:276`, `:280`), which under `pipefail` swallows a failing `cargo tree`, and `check
+  "$(held_by ...)"` (`:207`, `:212`, `:215`, `:230`, `:288-304`) is not caught by `set -e`, so a
+  renamed crate or a target that stops resolving enforces nothing and passes. Capture `held_by` into
+  a variable first and keep `|| true` on the `grep` alone. Done when a nonexistent crate fails the
+  job.
+- [M · 0.18.1] Select the tests that read files outside their crate in `--changed`. **Medium,
+  builder.** `owner()` maps a changed file to the member holding it
+  (`crates/xtask/src/changed.rs:112-146`), so a change under `packaging/`, `.github/`, `fuzz/seeds/`
+  or `docs/` selects only `resonate-words-build`, while `resonate`, `resonate-server`,
+  `resonate-codec`, `resonate-sync` and `resonate-musicbrainz` have tests reading them. Map those
+  paths to their readers, or treat an unowned file as workspace-wide. Done when touching
+  `packaging/resonate.spec` selects `resonate`.
+- [S · 0.18.1] Stop a session in MCP's drain test while its scan still runs. **Low, builder.**
+  `crates/resonate-mcp/tests/server.rs:1949-1984` stops 200 ms into a one-file scan that has
+  finished by then, so it passes whether or not passes drain. Use the gated 40-file tree. Done when
+  the test fails with draining removed.
+- [S · 0.18.1] Walk every commented config the tree holds for comments. **Low, builder.** `ROOTS`
+  leaves out `.cargo/` and `.config/` (`crates/resonate-words-build/tests/comments.rs:3-12`), and
+  `Tongue::of` knows no `.pro`, `.properties`, `.install`, `.service`, `.hook` or `.rb`
+  (`crates/resonate-words-build/src/comments.rs:26-38`). Add them and update `rust-style.md`'s list.
+  Done when `# x` in `android/gradle.properties` fails the test.
+- [S · 0.18.1] Raise the DSP lab's lock with the workspace and correct `AGENTS.md`'s fmt line.
+  **Low, builder.** `dsp-lab/Cargo.lock` still names every `resonate-*` crate at 0.17.0 and differs
+  in eight external versions, and `AGENTS.md:82` says `xtask fmt` covers the workspace and `fuzz/`
+  though `DETACHED` holds `dsp-lab` too. Refresh the lock in the version raise and correct the line.
+  Done when both match.
 - [S · blocked: a second compositor] The drag test has run on KWin alone: no other compositor
   (`sway`, `weston`, `mutter`, `cage`, `labwc`) is installed here, so another's data-device and
   drag-icon behaviour is untried
@@ -165,7 +325,24 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   (taken against an ordinary ten) have not been read from a live portal, and the light palettes have
   been held by the contrast tests but not looked at in a window
 
+## Release
+- [M · 0.18.1] Sign apart from the build. **Medium, architect.** Each signing secret is set on the
+  one step that runs `build.ps1`, `build.sh` or `gradlew assembleRelease`
+  (`.github/workflows/release.yml:219-224`, `:249-258`, `:291-300`, `android-apk.yml:34-43`,
+  `macos-dmg.yml:37-45`), so every build script and proc-macro of about 1 086 packages, gpui's git
+  tree included, can read them, and the Android keystore is on disk before Gradle starts; the
+  secrets are repository-wide and `android-apk.yml` and `macos-dmg.yml` run from any branch. Build
+  with no secrets, sign in a following step, put the secrets in an environment limited to `v*` tags
+  and give the dispatch workflows the same. Done when no build step's environment names a signing
+  secret.
+
 ## Dependencies
+- [S · 0.18.1] Gate on advisories in the local check. **Low, builder.** `heapless` 0.8.0, which
+  `flacenc` brings (`Cargo.toml:174`), carries ten unsound advisories fixed in 0.9.4, beyond the
+  trees the blocked entry below names, and nothing in the tree gates on an advisory: there is no
+  `deny.toml` or `audit.toml` and no step runs `cargo audit`. Run it as an `xtask` step with the
+  entries below ignored by name, and move to a `flacenc` on `heapless` 0.9. Done when a new advisory
+  fails `cargo xtask check`.
 - [S · blocked: gpui] `cargo audit`'s other warnings are other crates' trees: `glib` 0.18.5 unsound
   (RUSTSEC-2024-0429) under `tao`, `webkit2gtk` and wry, for `resonate-signin`'s window alone; zbus
   5 under gpui's accesskit and ashpd, beside `resonate-mpris`'s zbus 6 (two built), with
