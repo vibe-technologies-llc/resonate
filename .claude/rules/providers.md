@@ -655,14 +655,21 @@ catalog is the server's, browsed through its API and never copied into `resonate
   "Pw"}` in the body and the `Authorization: MediaBrowser Client="Resonate", Device="Resonate",
   DeviceId="<id>", Version="<crate version>"` header (also as `X-Emby-Authorization`, which Emby
   reads); the answer's `AccessToken` and `User.Id` are the `Session`, held under a `Mutex` so
-  concurrent callers sign in once. **The device id of a password sign-in is the same on every
-  launch**: `device_of` is a v5 UUID of the address (trimmed, lower case) and the user name under a
-  namespace of the crate's own, so the server sees one device however often the player starts and no
-  launch leaves a token of its own behind; it is never a name, host or setting, and the User-Agent
-  stays bare. A kept session names the device it was issued to, and a Quick Connect attempt (no
-  password) a fresh v4 UUID, since that one is stored
-  (`a_password_sign_in_names_the_same_device_on_every_launch`,
-  `a_password_sign_in_names_the_same_device_every_launch_and_another_for_another_account`).
+  concurrent callers sign in once. **The device id of a password sign-in is the install's own**: a random v4 UUID
+  minted once and kept where the install keeps its Jellyfin state, so the server sees one device per
+  install however often the player starts, and two installs signing in as one user (the desktop and
+  a phone, two desktops) never share one, since the server revokes the token an earlier sign-in
+  as the same device held. `Jellyfin::keeping_device` takes the stored id (an account's `device`
+  with no token beside it, `JellyfinLogin::install_device`) and otherwise tells the id it minted to
+  the caller, which keeps it; a kept session and a Quick Connect attempt are left as they were. The
+  binary keeps it as `jellyfin-device` (`Renewed::keep_device`, a settings file that lacks it is
+  given one on first use, so older files load); a forgotten session clears it with the rest and the next sign-in mints another. The phones
+  pass the account's `device` through and mint a fresh id per client where none is stored (a
+  platform persisting the minted id is not wired yet); it is never a name, host or setting, and the User-Agent stays
+  bare. A kept session names the device it was issued to
+  (`a_password_sign_in_names_the_device_this_install_keeps_on_every_launch`,
+  `two_installs_signing_in_as_one_user_name_devices_of_their_own`,
+  `a_jellyfin_password_account_keeps_the_device_it_mints_and_reuses_the_one_kept`).
   **Every later request carries the token in a header**, `Authorization` and `X-Emby-Authorization`
   with `, Token="<token>"` added to the sign-in's value (`Jellyfin::bearing`), never in the query: only
   the stream's address, which a `Seeking` asks again by alone, carries `api_key`

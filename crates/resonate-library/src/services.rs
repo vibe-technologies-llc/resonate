@@ -89,6 +89,7 @@ pub struct JellyfinLogin {
     pub user: String,
     pub password: String,
     pub session: Option<JellyfinSession>,
+    pub install_device: Option<String>,
 }
 
 #[derive(Clone, PartialEq, Eq)]
@@ -294,6 +295,7 @@ fn jellyfin(
             user: given(user).unwrap_or_default(),
             password: String::new(),
             session,
+            install_device: None,
         }));
     }
     Some(Reachable::Jellyfin(JellyfinLogin {
@@ -301,6 +303,7 @@ fn jellyfin(
         user: given(user)?,
         password: typed(password)?,
         session: None,
+        install_device: given(device),
     }))
 }
 
@@ -481,6 +484,32 @@ mod tests {
             Reachable::Jellyfin(JellyfinLogin { session: Some(_), password, .. }) if password.is_empty()
         ));
         assert!(half.is_empty());
+    }
+
+    #[test]
+    fn a_jellyfin_password_login_carries_the_device_this_install_kept() {
+        let jellyfin = |session: [&str; 3]| ServiceAccount::Jellyfin {
+            server: "https://jellyfin.home.arpa".to_owned(),
+            user: "ada".to_owned(),
+            password: "pass".to_owned(),
+            token: session[0].to_owned(),
+            user_id: session[1].to_owned(),
+            device: session[2].to_owned(),
+        };
+        let install_device =
+            |session: [&str; 3]| match reachable([jellyfin(session)], HostedServices::Declined)
+                .remove(0)
+            {
+                Reachable::Jellyfin(login) => login.install_device,
+                other => panic!("{other:?}"),
+            };
+
+        assert_eq!(
+            install_device(["", "", "install-1"]),
+            Some("install-1".to_owned())
+        );
+        assert_eq!(install_device(["", "", ""]), None);
+        assert_eq!(install_device(["token", "user", "issued"]), None);
     }
 
     #[test]

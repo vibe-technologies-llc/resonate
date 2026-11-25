@@ -877,16 +877,48 @@ fn no_error_names_the_token_whichever_way_a_request_failed() {
 }
 
 #[test]
-fn a_password_sign_in_names_the_same_device_on_every_launch() {
+fn a_password_sign_in_names_the_device_this_install_keeps_on_every_launch() {
     let fake = Fake::serving(library);
+    let told = Arc::new(Mutex::new(Vec::new()));
+    let noted = Arc::clone(&told);
 
-    fake.jellyfin().artists().expect("the artists");
-    fake.jellyfin().artists().expect("the artists again");
+    let minted = fake
+        .jellyfin()
+        .keeping_device(None, move |device| noted.lock().push(device.to_owned()));
+
+    minted.artists().expect("the artists");
+
+    let device = told.lock().first().cloned().expect("a minted device");
+
+    fake.jellyfin()
+        .keeping_device(Some(&device), |_| {
+            panic!("a kept device is not minted again")
+        })
+        .artists()
+        .expect("the artists again");
 
     let signed = fake.heard_at("/Users/AuthenticateByName");
 
     assert_eq!(signed.len(), 2);
     assert_eq!(signed[0].authorization, signed[1].authorization);
+    assert!(
+        signed[1]
+            .authorization
+            .as_deref()
+            .is_some_and(|header| header.contains(&format!(r#"DeviceId="{device}""#)))
+    );
+}
+
+#[test]
+fn two_installs_signing_in_as_one_user_name_devices_of_their_own() {
+    let fake = Fake::serving(library);
+
+    fake.jellyfin().artists().expect("the first install");
+    fake.jellyfin().artists().expect("the second install");
+
+    let signed = fake.heard_at("/Users/AuthenticateByName");
+
+    assert_ne!(signed[0].authorization, signed[1].authorization);
 }
 
 #[test]

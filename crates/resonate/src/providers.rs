@@ -600,6 +600,8 @@ impl Made {
                 })
             })),
             Reachable::Jellyfin(login) => Built::Jellyfin(self.jellyfin.made_for(login, |login| {
+                let minting = Arc::clone(&self.renewed);
+
                 Jellyfin::at(resonate_jellyfin::Server {
                     url: login.url.clone(),
                     user: login.user.clone(),
@@ -612,6 +614,9 @@ impl Made {
                             user: session.user.clone(),
                             device: session.device.clone(),
                         }),
+                })
+                .keeping_device(login.install_device.as_deref(), |device| {
+                    minting.keep_device(device);
                 })
             })),
             Reachable::Tidal(login) => {
@@ -684,6 +689,16 @@ impl Renewed {
                 ..account.clone()
             },
             Some(_) | None => account.clone(),
+        }
+    }
+
+    fn keep_device(&self, device: &str) {
+        let Some(settings) = &self.settings else {
+            return;
+        };
+
+        if let Err(error) = config::store(settings, ConfigKey::JellyfinDevice, device.to_owned()) {
+            tracing::warn!(%error, "the device this install signs in to Jellyfin as could not be kept");
         }
     }
 
@@ -1015,6 +1030,48 @@ mod tests {
         assert!(ready(&kept));
         assert!(!ready(&half_kept));
         assert!(jellyfin_of(&kept).is_some_and(|login| login.session.is_some()));
+    }
+
+    #[cfg(feature = "online")]
+    #[test]
+    fn a_jellyfin_password_account_keeps_the_device_it_mints_and_reuses_the_one_kept() {
+        let folder = std::env::temp_dir().join(format!("resonate-device-{}", std::process::id()));
+
+        std::fs::create_dir_all(&folder).expect("a writable temporary directory");
+
+        let settings = folder.join("config.toml");
+        let login = |install_device: Option<&str>| {
+            Reachable::Jellyfin(JellyfinLogin {
+                url: "http://music.local:8096".to_owned(),
+                user: "listener".to_owned(),
+                password: "sesame".to_owned(),
+                session: None,
+                install_device: install_device.map(str::to_owned),
+            })
+        };
+        let kept = || {
+            std::fs::read_to_string(&settings).ok().and_then(|text| {
+                text.lines()
+                    .find_map(|line| line.strip_prefix("jellyfin-device = "))
+                    .map(|device| device.trim_matches('"').to_owned())
+            })
+        };
+
+        Made::new(Some(settings.clone())).built(&login(Some("install-1")));
+
+        assert_eq!(kept(), None);
+
+        Made::new(Some(settings.clone())).built(&login(None));
+
+        let minted = kept().expect("a device kept in the settings");
+
+        assert!(!minted.is_empty());
+
+        Made::new(Some(settings.clone())).built(&login(Some(&minted)));
+
+        assert_eq!(kept(), Some(minted));
+
+        std::fs::remove_dir_all(&folder).expect("the temporary directory removed");
     }
 
     #[cfg(feature = "online")]

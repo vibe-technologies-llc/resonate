@@ -49,7 +49,6 @@ const UNAUTHORIZED: u16 = 401;
 const FORBIDDEN: u16 = 403;
 const NOT_FOUND: u16 = 404;
 const LARGEST_ANSWER: u64 = 8 * 1024 * 1024;
-const DEVICE_NAMESPACE: Uuid = Uuid::from_u128(0x6f1c_5a3e_9b24_4d7a_8c10_52e7_a94b_3d68);
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct Server {
@@ -171,19 +170,7 @@ fn flavour_of(root: &str) -> Flavour {
 fn device_of(server: &Server) -> Arc<str> {
     match &server.kept {
         Some(kept) => Arc::from(kept.device.as_str()),
-        None if server.password.is_empty() => Arc::from(Uuid::new_v4().simple().to_string()),
-        None => {
-            let account = format!(
-                "{}\n{}",
-                server.url.trim().trim_end_matches('/').to_ascii_lowercase(),
-                server.user
-            );
-            Arc::from(
-                Uuid::new_v5(&DEVICE_NAMESPACE, account.as_bytes())
-                    .simple()
-                    .to_string(),
-            )
-        }
+        None => Arc::from(Uuid::new_v4().simple().to_string()),
     }
 }
 
@@ -227,6 +214,20 @@ impl Jellyfin {
     fn issued_to(mut self, device: &str) -> Self {
         self.device = Arc::from(device);
         self
+    }
+
+    #[must_use]
+    pub fn keeping_device(self, stored: Option<&str>, told: impl FnOnce(&str)) -> Self {
+        if self.server.kept.is_some() || self.server.password.is_empty() {
+            return self;
+        }
+        match stored.map(str::trim).filter(|stored| !stored.is_empty()) {
+            Some(stored) => self.issued_to(stored),
+            None => {
+                told(&self.device);
+                self
+            }
+        }
     }
 
     pub const fn server(&self) -> &Server {
@@ -952,22 +953,55 @@ mod tests {
     }
 
     #[test]
-    fn a_password_sign_in_names_the_same_device_every_launch_and_another_for_another_account() {
-        let named = |url: &str, user: &str| {
-            Jellyfin::at(Server {
-                url: url.to_owned(),
-                user: user.to_owned(),
-                password: "sesame".to_owned(),
-                kept: None,
-            })
-            .authorization()
-        };
-        let first = named("http://music.local:8096/", "listener");
+    fn a_password_sign_in_names_the_device_this_install_keeps_and_tells_of_one_it_mints() {
+        let told = Mutex::new(Vec::new());
+        let telling = |device: &str| told.lock().push(device.to_owned());
 
-        assert_eq!(first, named("HTTP://music.local:8096", "listener"));
-        assert_ne!(first, named("http://music.local:8096", "someone"));
-        assert_ne!(first, named("http://other.local:8096", "listener"));
-        assert!(!first.contains("music.local") && !first.contains("listener"));
+        let kept = jellyfin().keeping_device(Some("install-1"), telling);
+        let minted = jellyfin().keeping_device(None, telling);
+        let blank = jellyfin().keeping_device(Some("  "), telling);
+        let told = told.into_inner();
+
+        assert!(kept.authorization().contains(r#"DeviceId="install-1""#));
+        assert_eq!(told.len(), 2);
+        assert!(
+            minted
+                .authorization()
+                .contains(&format!(r#"DeviceId="{}""#, told[0]))
+        );
+        assert!(
+            blank
+                .authorization()
+                .contains(&format!(r#"DeviceId="{}""#, told[1]))
+        );
+        assert_ne!(told[0], told[1]);
+    }
+
+    #[test]
+    fn a_session_that_is_kept_or_a_sign_in_with_no_password_keeps_no_install_device() {
+        let kept = Jellyfin::at(Server {
+            url: "http://music.local:8096".to_owned(),
+            user: String::new(),
+            password: String::new(),
+            kept: Some(KeptSession {
+                token: "t".to_owned(),
+                user: "u".to_owned(),
+                device: "issued".to_owned(),
+            }),
+        })
+        .keeping_device(Some("install-1"), |_| {
+            panic!("a kept session mints nothing")
+        });
+        let quick = Jellyfin::at(Server {
+            url: "http://music.local:8096".to_owned(),
+            user: String::new(),
+            password: String::new(),
+            kept: None,
+        })
+        .keeping_device(Some("install-1"), |_| panic!("a code mints nothing"));
+
+        assert!(kept.authorization().contains(r#"DeviceId="issued""#));
+        assert!(!quick.authorization().contains("install-1"));
     }
 
     #[test]

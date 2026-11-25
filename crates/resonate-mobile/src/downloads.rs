@@ -692,8 +692,8 @@ impl Downloads {
                     password: login.password.clone(),
                 }))
             }
-            Reachable::Jellyfin(login) => {
-                Reached::Jellyfin(resonate_jellyfin::Jellyfin::at(resonate_jellyfin::Server {
+            Reachable::Jellyfin(login) => Reached::Jellyfin(
+                resonate_jellyfin::Jellyfin::at(resonate_jellyfin::Server {
                     url: login.url.clone(),
                     user: login.user.clone(),
                     password: login.password.clone(),
@@ -705,8 +705,9 @@ impl Downloads {
                             user: session.user.clone(),
                             device: session.device.clone(),
                         }),
-                }))
-            }
+                })
+                .keeping_device(login.install_device.as_deref(), |_| {}),
+            ),
             Reachable::Tidal(login) => {
                 let refreshed = Arc::clone(&self.refreshed);
                 Reached::Tidal(
