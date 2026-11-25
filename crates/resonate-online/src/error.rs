@@ -123,7 +123,7 @@ pub enum Error {
 
 impl Error {
     pub fn from_ureq(host: Host, op: LookupOp, error: ureq::Error) -> Self {
-        tracing::debug!(%error, ?host, ?op, "a request failed");
+        tracing::debug!(error = %without_queries(&error.to_string()), ?host, ?op, "a request failed");
 
         let unreachable = |kind: io::ErrorKind| Self::Unreachable {
             host,
@@ -226,6 +226,29 @@ impl From<Error> for resonate_library::Error {
     }
 }
 
+fn without_queries(text: &str) -> String {
+    const SCHEME_END: &str = "://";
+
+    let mut written = String::with_capacity(text.len());
+    let mut rest = text;
+
+    while let Some(at) = rest.find(SCHEME_END) {
+        let (head, tail) = rest.split_at(at + SCHEME_END.len());
+        let end = tail
+            .find(|letter: char| letter.is_whitespace() || "\"'<>)]".contains(letter))
+            .unwrap_or(tail.len());
+
+        let (address, after) = tail.split_at(end);
+
+        written.push_str(head);
+        written.push_str(address.split(['?', '#']).next().unwrap_or(address));
+        rest = after;
+    }
+
+    written.push_str(rest);
+    written
+}
+
 fn switched_off() -> io::Error {
     io::Error::from(io::ErrorKind::NetworkDown)
 }
@@ -239,6 +262,70 @@ mod tests {
     #[test]
     fn error_stays_small_enough_for_result_large_err() {
         assert!(size_of::<Error>() <= 128, "{}", size_of::<Error>());
+    }
+
+    #[derive(Clone, Default)]
+    struct Logged(std::sync::Arc<parking_lot::Mutex<Vec<u8>>>);
+
+    impl io::Write for Logged {
+        fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+            self.0.lock().extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
+
+    impl tracing_subscriber::fmt::MakeWriter<'_> for Logged {
+        type Writer = Self;
+
+        fn make_writer(&self) -> Self::Writer {
+            self.clone()
+        }
+    }
+
+    #[test]
+    fn a_failed_request_is_logged_with_no_query_of_the_address() {
+        const SECRET: &str = "a-token-the-listener-registered";
+
+        let logged = Logged::default();
+        let subscriber = tracing_subscriber::fmt()
+            .with_max_level(tracing::Level::DEBUG)
+            .with_ansi(false)
+            .with_writer(logged.clone())
+            .finish();
+
+        let classified = tracing::subscriber::with_default(subscriber, || {
+            Error::from_ureq(
+                Host::MusicBrainz,
+                LookupOp::Release,
+                ureq::Error::RequireHttpsOnly(format!(
+                    "http://media.example/rest/ping?t={SECRET}&s=salt&api_key={SECRET}#frag"
+                )),
+            )
+        });
+        let logged = String::from_utf8(logged.0.lock().clone()).expect("logged as text");
+
+        assert!(matches!(classified, Error::Unreachable { .. }));
+        assert!(
+            logged.contains("http://media.example/rest/ping"),
+            "{logged}"
+        );
+        assert!(!logged.contains(SECRET), "{logged}");
+        assert!(!logged.contains("api_key"), "{logged}");
+    }
+
+    #[test]
+    fn a_query_is_cut_from_each_address_in_a_sentence() {
+        assert_eq!(
+            without_queries(
+                "GET (https://a.example/x?k=1) then \"http://b.example/y?z=2#f\" ended"
+            ),
+            "GET (https://a.example/x) then \"http://b.example/y\" ended"
+        );
+        assert_eq!(without_queries("no address here?"), "no address here?");
     }
 
     #[test]

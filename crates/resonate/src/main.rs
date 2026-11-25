@@ -168,7 +168,11 @@ use crate::{
 
 const LOG_FILTER: &str = "RESONATE_LOG";
 
-const DEFAULT_LOG: &str = "warn,resonate=info,symphonia=off";
+const DEFAULT_LOG: &str = "warn,resonate=info,symphonia=off,ureq=warn,ureq_proto=warn";
+
+const HTTP_CLIENT_AT_WARN: &str = "ureq=warn,ureq_proto=warn";
+
+const HTTP_CLIENT_TARGET: &str = "ureq";
 
 fn main() -> ExitCode {
     gaming::watch();
@@ -232,11 +236,21 @@ fn init_logging() -> Result<()> {
 }
 
 fn wanted_filter() -> (EnvFilter, Option<ParseError>) {
-    let Ok(wanted) = env::var(LOG_FILTER) else {
+    filter_of(env::var(LOG_FILTER).ok().as_deref())
+}
+
+fn filter_of(wanted: Option<&str>) -> (EnvFilter, Option<ParseError>) {
+    let Some(wanted) = wanted else {
         return (EnvFilter::new(DEFAULT_LOG), None);
     };
 
-    match EnvFilter::try_new(wanted) {
+    let kept_quiet = if wanted.contains(HTTP_CLIENT_TARGET) {
+        wanted.to_owned()
+    } else {
+        format!("{wanted},{HTTP_CLIENT_AT_WARN}")
+    };
+
+    match EnvFilter::try_new(kept_quiet) {
         Ok(filter) => (filter, None),
         Err(refused) => (EnvFilter::new(DEFAULT_LOG), Some(refused)),
     }
@@ -737,6 +751,19 @@ mod tests {
     use clap::Parser as _;
 
     use super::*;
+
+    #[test]
+    fn the_http_client_stays_at_warn_unless_the_listener_names_it() {
+        let spelt = |wanted| filter_of(wanted).0.to_string();
+
+        assert!(spelt(None).contains("ureq=warn"));
+        assert!(spelt(Some("trace")).contains("ureq=warn"));
+        assert!(spelt(Some("trace")).contains("ureq_proto=warn"));
+        assert!(spelt(Some("resonate=debug")).contains("ureq=warn"));
+        assert!(!spelt(Some("ureq=trace")).contains("ureq=warn"));
+        assert!(filter_of(Some("trace")).1.is_none());
+        assert!(filter_of(Some("=[")).1.is_some());
+    }
 
     #[test]
     fn a_length_to_listen_for_is_held_to_what_the_setting_takes() {

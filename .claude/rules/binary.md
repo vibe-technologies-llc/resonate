@@ -328,8 +328,11 @@ what follows describes Unix, where `signals.rs` and termios are used.
   to the millisecond so a minute rolls over, not `1:60.000`); a *listening* total through
   `stats::heard_for`. Every other clock (`played`, the readout, `sync`'s zones) is `resonate_core::elapsed::clock`, and `ago` is `elapsed::since`, so the terminal says years where the window does.
 - **Logs go to stderr** whatever the subcommand (stdout holds tables, links, `mcp`'s protocol).
-  `RESONATE_LOG` goes through `EnvFilter::try_new`; unparsable warns and falls back to
-  `DEFAULT_LOG`.
+  `RESONATE_LOG` goes through `EnvFilter::try_new` (`filter_of`); unparsable warns and falls back to
+  `DEFAULT_LOG`. The HTTP client is held at `warn` (`ureq`, `ureq_proto`) in the default and
+  after a listener's own filter unless it names `ureq`, since ureq logs whole addresses at trace and
+  a query carries a token (`the_http_client_stays_at_warn_unless_the_listener_names_it`);
+  `Error::from_ureq` logs its error with each address's query cut.
 - **`play` with nothing to play exits 1** (`NoFileNamed`, `NothingPlayableNamed`), as does a queue
   that ran out with every track failed and none started (`Played`, `Error::NothingPlayed`; a signal
   or `q` ending it early is no failure). A key whose command fails ends the loop through the same
