@@ -21,7 +21,6 @@ fn still_fresh(taken: SystemTime, within: Duration) -> bool {
     SystemTime::now()
         .duration_since(taken)
         .is_ok_and(|age| age < within)
-        || taken > SystemTime::now()
 }
 
 enum Remembered<T> {
@@ -342,6 +341,18 @@ mod tests {
         assert!(still_fresh(
             SystemTime::now() - Duration::from_secs(40 * 24 * 60 * 60),
             ASK_AGAIN_ABOUT_A_DEVICE
+        ));
+    }
+
+    #[test]
+    fn a_stamp_ahead_of_now_is_stale_so_a_clock_set_back_asks_again() {
+        let a_day_ahead = SystemTime::now() + Duration::from_secs(24 * 60 * 60);
+
+        assert!(!still_fresh(a_day_ahead, ASK_AGAIN_ABOUT_THE_INDEX));
+        assert!(!still_fresh(a_day_ahead, ASK_AGAIN_ABOUT_A_DEVICE));
+        assert!(matches!(
+            Remembered::aged("kept", a_day_ahead, ASK_AGAIN_ABOUT_THE_INDEX),
+            Remembered::Stale("kept")
         ));
     }
 
