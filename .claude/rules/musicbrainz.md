@@ -117,9 +117,19 @@ table `copy::TABLES` names as PostgreSQL COPY text. A field is tab-separated, `\
 backslash escapes are read, octal and hex included (`\x` with no hex digit is an `x`, as PostgreSQL reads it). A row that is short of the projected columns is `Error::Columns`, and a final row with no line end is `Error::CutRow`, since PostgreSQL ends every row with one: a cut table is refused, never half kept. A row is read by `row_read`, up to `ROW_LONGEST_BYTES` (8 MiB) so the allocation itself is bounded, and a longer one is `Error::RowTooLong`; an entry the import does not read is read through `drained`, which looks at the cancel as it goes (`an_entry_nobody_wants_is_read_through_checking_the_cancel_it_is_handed`). Only the projected columns go into
 `musicbrainz.staging.sqlite`.
 
-- **Column positions follow MusicBrainz's `CreateTables.sql`** at schema sequence 31. A row shorter
-  than a projection needs is `Error::Columns`, and a table missing from its archive is
-  `MissingTable`, so a schema change refuses the build rather than misreading it.
+- **Column positions follow MusicBrainz's `CreateTables.sql`** at schema sequence 31
+  (`SCHEMA_THE_COLUMNS_FOLLOW`), so the schema is pinned: an archive whose `SCHEMA_SEQUENCE` names
+  another is `DumpSchema` as that entry is read, and one naming none is `DumpPart`, so a schema
+  that inserts or moves a column is refused rather than read into the wrong fields
+  (`an_export_of_another_schema_is_refused_before_its_columns_are_read`,
+  `an_export_naming_no_schema_is_refused`). The core and derived archives must name the same
+  `REPLICATION_SEQUENCE`, else `ArchivesApart`, since tables of two exports follow neither
+  (`archives_of_two_replication_sequences_are_refused_as_apart`). A row shorter than a projection
+  needs is `Error::Columns`, and a table missing from its archive is `MissingTable`.
+- **A table is one plain file.** An entry is matched by its name, so one the import reads (a table
+  of its archive or a sequence file) must be a regular file, else `EntryNotAFile`, and come once,
+  else `EntryTwice`: a link named `mbdump/artist` is no present, empty table and a repeated entry
+  is never loaded twice (`a_table_held_as_a_link_is_refused_and_so_is_one_held_twice`).
 - **The staging is indexed, then the small tables are read into memory** (`LookedUp`: names of
   types, credits, release groups and releases by id, about a gigabyte for the full export). The
   documents are then written kind by kind.

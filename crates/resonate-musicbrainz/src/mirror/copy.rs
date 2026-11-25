@@ -16,6 +16,7 @@ pub struct Table {
 }
 
 pub const NULL: &[u8] = b"\\N";
+pub const SCHEMA_THE_COLUMNS_FOLLOW: u32 = 31;
 
 const IDENTIFIED_BY: &str = "id";
 

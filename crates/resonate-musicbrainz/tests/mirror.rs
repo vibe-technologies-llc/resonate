@@ -110,6 +110,14 @@ const DUMPED_AT_SEQUENCE: u64 = 100;
 const SCHEMA: u32 = 31;
 
 fn archived(into: impl Write, files: &[(String, String)]) {
+    archived_then(into, files, |_| {});
+}
+
+fn archived_then<W: Write>(
+    into: W,
+    files: &[(String, String)],
+    then: impl FnOnce(&mut tar::Builder<bzip2::write::BzEncoder<W>>),
+) {
     let packed = bzip2::write::BzEncoder::new(into, bzip2::Compression::fast());
     let mut builder = tar::Builder::new(packed);
 
@@ -123,6 +131,7 @@ fn archived(into: impl Write, files: &[(String, String)]) {
             .append_data(&mut header, name, body.as_bytes())
             .expect("a file in the archive");
     }
+    then(&mut builder);
     builder
         .into_inner()
         .expect("a whole archive")
@@ -132,14 +141,37 @@ fn archived(into: impl Write, files: &[(String, String)]) {
         .expect("a flushed archive");
 }
 
+#[derive(Clone, Copy)]
+struct Stamped {
+    replication: u64,
+    schema: u32,
+}
+
+const STAMPED: Stamped = Stamped {
+    replication: DUMPED_AT_SEQUENCE,
+    schema: SCHEMA,
+};
+
 fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
+    archive_then(path, STAMPED, tables, |_| {});
+}
+
+fn archive_then(
+    path: &Path,
+    stamped: Stamped,
+    tables: &[(&str, Vec<String>)],
+    then: impl FnOnce(&mut tar::Builder<bzip2::write::BzEncoder<fs::File>>),
+) {
     let file = fs::File::create(path).expect("an archive file");
     let mut files = vec![
         (
             "REPLICATION_SEQUENCE".to_owned(),
-            format!("{DUMPED_AT_SEQUENCE}\n"),
+            format!("{}\n", stamped.replication),
         ),
-        ("SCHEMA_SEQUENCE".to_owned(), format!("{SCHEMA}\n")),
+        (
+            "SCHEMA_SEQUENCE".to_owned(),
+            format!("{}\n", stamped.schema),
+        ),
     ];
 
     for (name, rows) in tables {
@@ -150,16 +182,14 @@ fn archive(path: &Path, tables: &[(&str, Vec<String>)]) {
         }
         files.push((format!("mbdump/{name}"), body));
     }
-    archived(file, &files);
+    archived_then(file, &files, then);
 }
 
 fn dump(into: &Path) -> Archives {
     dump_beside(into, &[])
 }
 
-fn dump_beside(into: &Path, beside: &[(&str, Vec<String>)]) -> Archives {
-    let core = into.join("mbdump.tar.bz2");
-    let derived = into.join("mbdump-derived.tar.bz2");
+fn core_tables(beside: &[(&str, Vec<String>)]) -> Vec<(&'static str, Vec<String>)> {
     let mut core_tables = vec![
         ("area", vec![line(14, &[(0, "10"), (2, "United Kingdom")])]),
         (
@@ -383,24 +413,35 @@ fn dump_beside(into: &Path, beside: &[(&str, Vec<String>)]) -> Archives {
             held.extend(rows.iter().cloned());
         }
     }
-    archive(&core, &core_tables);
-    archive(
-        &derived,
-        &[
-            ("artist_tag", vec![line(4, &[(0, "1"), (1, "1"), (2, "5")])]),
-            (
-                "release_group_meta",
-                vec![line(7, &[(0, "1"), (2, "1993"), (3, "2"), (4, "22")])],
-            ),
-            ("release_meta", vec![line(5, &[(0, "1"), (4, "present")])]),
-            ("tag", vec![line(3, &[(0, "1"), (1, "alternative rock")])]),
-        ],
-    );
+    core_tables
+}
+
+fn derived_tables() -> Vec<(&'static str, Vec<String>)> {
+    vec![
+        ("artist_tag", vec![line(4, &[(0, "1"), (1, "1"), (2, "5")])]),
+        (
+            "release_group_meta",
+            vec![line(7, &[(0, "1"), (2, "1993"), (3, "2"), (4, "22")])],
+        ),
+        ("release_meta", vec![line(5, &[(0, "1"), (4, "present")])]),
+        ("tag", vec![line(3, &[(0, "1"), (1, "alternative rock")])]),
+    ]
+}
+
+fn archives_in(into: &Path) -> Archives {
     Archives {
-        core,
-        derived,
+        core: into.join("mbdump.tar.bz2"),
+        derived: into.join("mbdump-derived.tar.bz2"),
         dump: "20261104-002222".to_owned(),
     }
+}
+
+fn dump_beside(into: &Path, beside: &[(&str, Vec<String>)]) -> Archives {
+    let archives = archives_in(into);
+
+    archive(&archives.core, &core_tables(beside));
+    archive(&archives.derived, &derived_tables());
+    archives
 }
 
 fn mbid(text: &str) -> Mbid {
@@ -426,6 +467,173 @@ fn built_from_archives(scratch: &Scratch, archives: &Archives, keeping: Keeping)
 
 fn built(scratch: &Scratch) -> Mirror {
     built_keeping(scratch, Keeping::TheMirror)
+}
+
+fn refused_from(scratch: &Scratch, archives: &Archives) -> Error {
+    let folder = scratch.0.join("musicbrainz");
+    let held = held_for_building(&folder).expect("the building lock");
+
+    built_from(
+        archives,
+        &folder,
+        Keeping::TheMirrorAndItsTables,
+        &Building::default(),
+        &held,
+    )
+    .expect_err("the build is refused")
+}
+
+fn nothing_left_in(folder: &Path) -> Vec<String> {
+    fs::read_dir(folder)
+        .expect("the folder")
+        .flatten()
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.contains("sqlite"))
+        .collect()
+}
+
+#[test]
+fn an_export_of_another_schema_is_refused_before_its_columns_are_read() {
+    let scratch = Scratch::new("schema-32");
+    let archives = archives_in(&scratch.0);
+    let later = Stamped {
+        schema: SCHEMA + 1,
+        ..STAMPED
+    };
+
+    archive_then(&archives.core, later, &core_tables(&[]), |_| {});
+    archive(&archives.derived, &derived_tables());
+
+    let refused = refused_from(&scratch, &archives);
+
+    assert!(
+        matches!(
+            refused,
+            Error::DumpSchema {
+                found: 32,
+                reads: 31,
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+    assert_eq!(
+        nothing_left_in(&scratch.0.join("musicbrainz")),
+        Vec::<String>::new()
+    );
+}
+
+#[test]
+fn an_export_naming_no_schema_is_refused() {
+    let scratch = Scratch::new("schema-unstated");
+    let archives = archives_in(&scratch.0);
+    let files: Vec<(String, String)> = vec![(
+        "REPLICATION_SEQUENCE".to_owned(),
+        format!("{DUMPED_AT_SEQUENCE}\n"),
+    )];
+
+    archive(&archives.core, &core_tables(&[]));
+    archived(
+        fs::File::create(&archives.derived).expect("an archive file"),
+        &files,
+    );
+
+    let refused = refused_from(&scratch, &archives);
+
+    assert!(
+        matches!(
+            refused,
+            Error::DumpPart {
+                part: "SCHEMA_SEQUENCE",
+                ..
+            }
+        ),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn archives_of_two_replication_sequences_are_refused_as_apart() {
+    let scratch = Scratch::new("apart");
+    let archives = archives_in(&scratch.0);
+    let later = Stamped {
+        replication: DUMPED_AT_SEQUENCE + 1,
+        ..STAMPED
+    };
+
+    archive(&archives.core, &core_tables(&[]));
+    archive_then(&archives.derived, later, &derived_tables(), |_| {});
+
+    let refused = refused_from(&scratch, &archives);
+
+    assert!(
+        matches!(
+            refused,
+            Error::ArchivesApart {
+                core: Some(DUMPED_AT_SEQUENCE),
+                derived: Some(101)
+            }
+        ),
+        "{refused:?}"
+    );
+}
+
+#[test]
+fn a_table_held_as_a_link_is_refused_and_so_is_one_held_twice() {
+    let scratch = Scratch::new("linked");
+    let archives = archives_in(&scratch.0);
+    let without_artists: Vec<_> = core_tables(&[])
+        .into_iter()
+        .filter(|(name, _)| *name != "artist")
+        .collect();
+
+    archive(&archives.derived, &derived_tables());
+
+    let mut refusals = Vec::new();
+
+    for kind in [tar::EntryType::Symlink, tar::EntryType::Link] {
+        archive_then(&archives.core, STAMPED, &without_artists, |builder| {
+            let mut header = tar::Header::new_gnu();
+
+            header.set_entry_type(kind);
+            header.set_size(0);
+            header.set_mode(0o777);
+            builder
+                .append_link(&mut header, "mbdump/artist", "mbdump/area")
+                .expect("a link in the archive");
+        });
+        refusals.push(refused_from(&scratch, &archives));
+    }
+
+    let artists = core_tables(&[])
+        .into_iter()
+        .find(|(name, _)| *name == "artist")
+        .map(|(_, rows)| rows.join("\n") + "\n")
+        .expect("the artists");
+
+    archive_then(&archives.core, STAMPED, &core_tables(&[]), |builder| {
+        let mut header = tar::Header::new_gnu();
+
+        header.set_size(artists.len() as u64);
+        header.set_mode(0o644);
+        header.set_cksum();
+        builder
+            .append_data(&mut header, "mbdump/artist", artists.as_bytes())
+            .expect("the artists again");
+    });
+
+    let twice = refused_from(&scratch, &archives);
+
+    assert!(
+        refusals
+            .iter()
+            .all(|refused| matches!(refused, Error::EntryNotAFile { entry: "artist" })),
+        "{refusals:?}"
+    );
+    assert!(
+        matches!(twice, Error::EntryTwice { entry: "artist" }),
+        "{twice:?}"
+    );
 }
 
 #[test]

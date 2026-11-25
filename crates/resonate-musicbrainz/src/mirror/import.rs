@@ -20,7 +20,8 @@ use zstd::dict::EncoderDictionary;
 use super::{
     AMENDED_FILE, BLOCKS_INDEXED, FORMAT, MIRROR_FILE, SCHEMA,
     copy::{
-        Archive, ROW_LONGEST_BYTES, Row, TABLES, Table, fields, row_read, table_named, unescaped,
+        Archive, ROW_LONGEST_BYTES, Row, SCHEMA_THE_COLUMNS_FOLLOW, TABLES, Table, fields,
+        row_read, table_named, unescaped,
     },
     documents::{Builders, CODES_JOINED_BY, Document, rows_of, table_of, words_of},
     looked_up::{LookedUp, Shared, store_read},
@@ -231,21 +232,24 @@ pub fn built_from(
 
         building.enter(Phase::Importing);
 
-        let sequenced = imported(
+        let core = imported(
             &archives.core,
             Archive::Core,
             &staging,
             building,
             &mut tally,
         )?;
-
-        imported(
+        let derived = imported(
             &archives.derived,
             Archive::Derived,
             &staging,
             building,
             &mut tally,
         )?;
+
+        if core != derived {
+            return Err(Error::ArchivesApart { core, derived });
+        }
         building.enter(Phase::Indexing);
         indexed(&staging, building)?;
         building.enter(Phase::Placing);
@@ -272,8 +276,12 @@ pub fn built_from(
         )?;
         drop(looked_up);
         if keeping == Keeping::TheMirrorAndItsTables {
-            let Some(sequenced) = sequenced else {
+            let Some(replication) = core else {
                 return Err(Error::Unsequenced);
+            };
+            let sequenced = Sequenced {
+                replication,
+                schema: SCHEMA_THE_COLUMNS_FOLLOW,
             };
 
             building.enter(Phase::Settling);
@@ -411,13 +419,71 @@ fn drained(mut entry: impl Read, path: &Path, building: &Building) -> Result<()>
     }
 }
 
+#[derive(Clone, Copy)]
+enum Wanted {
+    Replication,
+    Schema,
+    Table(&'static Table),
+}
+
+impl Wanted {
+    fn of(name: &str, from: Archive) -> Option<Self> {
+        match name {
+            REPLICATION_SEQUENCE => Some(Self::Replication),
+            SCHEMA_SEQUENCE => Some(Self::Schema),
+            _ => table_named(name)
+                .filter(|table| table.from == from)
+                .map(Self::Table),
+        }
+    }
+
+    const fn entry(self) -> &'static str {
+        match self {
+            Self::Replication => REPLICATION_SEQUENCE,
+            Self::Schema => SCHEMA_SEQUENCE,
+            Self::Table(table) => table.name,
+        }
+    }
+}
+
+fn held_once<R: Read>(
+    entry: &tar::Entry<'_, R>,
+    wanted: Wanted,
+    seen: &mut BTreeSet<&'static str>,
+) -> Result<()> {
+    let named = wanted.entry();
+
+    if !entry.header().entry_type().is_file() {
+        return Err(Error::EntryNotAFile { entry: named });
+    }
+    if !seen.insert(named) {
+        return Err(Error::EntryTwice { entry: named });
+    }
+    Ok(())
+}
+
+fn schema_pinned(stated: Option<u64>, path: &Path) -> Result<()> {
+    match stated {
+        Some(found) if found == u64::from(SCHEMA_THE_COLUMNS_FOLLOW) => Ok(()),
+        Some(found) => Err(Error::DumpSchema {
+            path: path.to_path_buf(),
+            found,
+            reads: SCHEMA_THE_COLUMNS_FOLLOW,
+        }),
+        None => Err(Error::DumpPart {
+            path: path.to_path_buf(),
+            part: SCHEMA_SEQUENCE,
+        }),
+    }
+}
+
 fn imported(
     path: &Path,
     from: Archive,
     staging: &Connection,
     building: &Building,
     tally: &mut Tally,
-) -> Result<Option<Sequenced>> {
+) -> Result<Option<u64>> {
     let file = File::open(path).map_err(Error::archive(path, ArchiveOp::Open))?;
     let total = file.metadata().map(|meta| meta.len()).unwrap_or(0);
 
@@ -438,7 +504,6 @@ fn imported(
         .map_err(Error::archive(path, ArchiveOp::Entry))?;
     let mut seen = BTreeSet::new();
     let mut replication = None;
-    let mut schema = None;
 
     for entry in entries {
         let mut entry = entry.map_err(Error::archive(path, ArchiveOp::Entry))?;
@@ -449,20 +514,25 @@ fn imported(
             .to_string_lossy()
             .into_owned();
 
-        if name == REPLICATION_SEQUENCE {
-            replication = sequence_in(&mut entry, path)?;
+        let Some(wanted) = Wanted::of(&name, from) else {
             drained(entry, path, building)?;
             continue;
-        }
-        if name == SCHEMA_SEQUENCE {
-            schema = sequence_in(&mut entry, path)?.and_then(|schema| u32::try_from(schema).ok());
-            drained(entry, path, building)?;
-            continue;
-        }
+        };
 
-        let Some(table) = table_named(&name).filter(|table| table.from == from) else {
-            drained(entry, path, building)?;
-            continue;
+        held_once(&entry, wanted, &mut seen)?;
+
+        let table = match wanted {
+            Wanted::Replication => {
+                replication = sequence_in(&mut entry, path)?;
+                drained(entry, path, building)?;
+                continue;
+            }
+            Wanted::Schema => {
+                schema_pinned(sequence_in(&mut entry, path)?, path)?;
+                drained(entry, path, building)?;
+                continue;
+            }
+            Wanted::Table(table) => table,
         };
 
         tracing::info!(table = table.name, "reading a table of the dump");
@@ -477,19 +547,19 @@ fn imported(
         )?;
 
         tally.insert(table.name, counted);
-        seen.insert(table.name);
+    }
+    if !seen.contains(SCHEMA_SEQUENCE) {
+        return Err(Error::DumpPart {
+            path: path.to_path_buf(),
+            part: SCHEMA_SEQUENCE,
+        });
     }
     for table in TABLES.iter().filter(|table| table.from == from) {
         if !seen.contains(table.name) {
             return Err(Error::MissingTable { table: table.name });
         }
     }
-    Ok(replication
-        .zip(schema)
-        .map(|(replication, schema)| Sequenced {
-            replication,
-            schema,
-        }))
+    Ok(replication)
 }
 
 fn loaded(

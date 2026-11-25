@@ -110,6 +110,32 @@ pub enum Error {
     #[error("the dump lacks its {table} table")]
     MissingTable { table: &'static str },
 
+    #[error("the dump archive {path} lacks its {part}")]
+    DumpPart { path: PathBuf, part: &'static str },
+
+    #[error(
+        "the dump archive {path} is of schema {found}, and its columns are read as schema {reads}"
+    )]
+    DumpSchema {
+        path: PathBuf,
+        found: u64,
+        reads: u32,
+    },
+
+    #[error(
+        "the dump's core archive is of replication sequence {core:?}, its derived archive of {derived:?}"
+    )]
+    ArchivesApart {
+        core: Option<u64>,
+        derived: Option<u64>,
+    },
+
+    #[error("the dump's {entry} is not a plain file")]
+    EntryNotAFile { entry: &'static str },
+
+    #[error("the dump holds its {entry} more than once")]
+    EntryTwice { entry: &'static str },
+
     #[cfg(feature = "download")]
     #[error("the dump archive {file} does not match the checksum its directory lists")]
     Checksum { file: String },
