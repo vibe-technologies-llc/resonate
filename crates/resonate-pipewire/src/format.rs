@@ -173,7 +173,10 @@ impl Spanned {
     const fn holds(self, value: i32) -> bool {
         value >= self.min
             && value <= self.max
-            && (self.step <= 1 || (value - self.min) % self.step == 0)
+            && (self.step <= 1
+                || value
+                    .abs_diff(self.min)
+                    .is_multiple_of(self.step.unsigned_abs()))
     }
 }
 
@@ -1454,6 +1457,38 @@ mod tests {
                 SampleRate::HZ_192000
             ],
             "a step that skips 44.1 kHz still offered it"
+        );
+    }
+
+    #[test]
+    fn a_step_from_the_lowest_integer_answers_without_overflowing() {
+        let widest = Spanned {
+            default: 0,
+            min: i32::MIN,
+            max: i32::MAX,
+            step: 3,
+        };
+
+        assert!(widest.holds(i32::MIN));
+        assert!(widest.holds(i32::MAX));
+        assert!(widest.holds(1));
+        assert!(!widest.holds(0));
+        assert!(!widest.holds(48_000));
+
+        let rates = rates_of(spanning(ChoiceEnum::Step {
+            default: 48_000,
+            min: i32::MIN,
+            max: i32::MAX,
+            step: 2,
+        }));
+
+        assert_eq!(
+            rates.iter().map(|rate| rate.hz()).collect::<Vec<_>>(),
+            vec![
+                8_000, 16_000, 22_050, 32_000, 44_100, 48_000, 64_000, 88_200, 96_000, 176_400,
+                192_000, 352_800, 384_000, 705_600, 768_000
+            ],
+            "an odd rate was taken as a step of two from an even floor"
         );
     }
 
