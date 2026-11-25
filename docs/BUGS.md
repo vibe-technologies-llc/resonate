@@ -45,14 +45,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Playback and output
-- [M · 0.18.1] Disconnect a PipeWire stream before its listener is dropped. **Medium, architect.**
-  `Opened::drop` drops the listener, and with it the callback data the realtime thread reads,
-  without `stream.disconnect()` (`crates/resonate-pipewire/src/client.rs:224-228`), and `Shutdown`
-  (`:1123-1128`), the loop's tail (`:1151-1154`) and `lose_the_graph` (`:1158-1177`, reached from
-  `Heard::Never` at `:1076-1087`) clear streams the same way, while `Close` (`:1059-1064`) and
-  `StopCapture` (`:1025-1029`) disconnect first; a data thread inside `process` then reads freed
-  memory. Disconnect inside `Opened::drop` ahead of the listener. Done when the hosted-daemon tests
-  drop a streaming client during shutdown and graph loss under a sanitiser build without a fault.
+- [S · 0.18.1] Drop a node's listener before the node when it leaves the graph. **High, builder.**
+  `watch_the_registry`'s global-remove handler drops a `(Node, NodeListener)` pair whose first
+  element goes first (`crates/resonate-pipewire/src/client.rs`, `nodes.borrow_mut().remove(&id)`), so
+  the proxy is destroyed before its listener and removing the listener writes into freed memory;
+  `devices` and `metadatas` are held the same way. AddressSanitizer reports it in
+  `formats::a_sink_leaving_under_an_open_stream_is_announced_and_the_stream_still_closes`. Drop the
+  listener first, as `Opened` does. Done when that test runs clean under AddressSanitizer.
 - [S · 0.18.1] Bound a profile the phones import by its whole peak. **Low, builder.** The desktop's
   `Store::read_in` now refuses a profile whose preamp and stacked bands pass `BOOST_AT_MOST_DB`
   (`Error::PeakTooHigh`), but the phones' `parse_eq_profile` (`crates/resonate-mobile/src/equaliser.rs`)
@@ -85,17 +84,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   a spoofed UDN re-points the sink. Count an alias only when the current location is heard too, and
   describe the new address otherwise. Done when a test renderer moving A, B, A is followed back to
   A.
-- [S · 0.18.1] Drop a capture the caller gave up on, and the PipeWire start thread. **Low,
-  builder.** A capture answered after its five-second timeout stays in `heard` unnamed
-  (`crates/resonate-pipewire/src/client.rs:801-803`, `:1001-1024`), and a start that times out
-  leaves the loop thread running for ever (`:729-757`). Mark an abandoned request so the loop drops
-  what it builds, and stop the thread on a start that failed. Done when hosted-daemon tests show
-  neither stream nor thread outliving its timeout.
-- [S · 0.18.1] Keep `Spanned::holds` from overflowing on a node's range. **Low, builder.** `value -
-  self.min` overflows for a node advertising `min = i32::MIN`
-  (`crates/resonate-pipewire/src/format.rs:173-177`) and panics inside an `extern "C"` callback in a
-  checked build. Use checked or widened arithmetic. Done when a unit test with `i32::MIN` bounds
-  answers.
 - [S · 0.18.1] Report the frames `Restore` holds. **Low, builder.** `Restore` claims `size - hop`
   frames of latency (`crates/resonate-dsp/src/restore.rs:1428`) but holds up to a hop more and
   implements neither `frames_held` nor `frames_short_of_its_latency`, which only `TruePeak` does
