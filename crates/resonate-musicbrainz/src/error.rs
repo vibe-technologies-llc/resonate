@@ -107,6 +107,17 @@ pub enum Error {
     )]
     RowTooLong { table: &'static str, longest: usize },
 
+    #[error(
+        "the dump's {table} table holds the id {id}, outside the ids from 0 to {}",
+        u32::MAX
+    )]
+    IdOutOfRange { table: &'static str, id: i64 },
+
+    #[error(
+        "the dump's {table} table holds the id {id}, too far past the rest to be held in memory"
+    )]
+    IdsPastMemory { table: &'static str, id: i64 },
+
     #[error("the dump lacks its {table} table")]
     MissingTable { table: &'static str },
 

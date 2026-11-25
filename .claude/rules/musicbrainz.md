@@ -154,6 +154,14 @@ backslash escapes are read, octal and hex included (`\x` with no hex digit is an
   awaits and takes them back in order, so ordinals, blocks and dictionaries are exactly the serial
   build's. A builder that fails, or panics in a build that unwinds, answers its chunk with the
   error; builders all gone is `BuildersStopped`.
+- **The ids are walked as held, never as a span of numbers.** A chunk is the next `IDS_A_CHUNK`
+  ids after the last one walked (`last_of_a_chunk`), so ids far apart cost no empty chunks
+  (`a_recording_numbered_far_past_the_rest_is_built_from_the_ids_held`,
+  `recordings_walked_over_many_chunks_are_each_built_once_at_every_boundary`). An id no `u32`
+  holds is `IdOutOfRange` (`read_as_an_id`), refused as a kind's ids are first looked at and as
+  `Shared` places a held id in a list indexed by it; a list the memory cannot grow to an id is
+  `IdsPastMemory`, never an aborted allocation
+  (`an_id_past_what_an_id_is_read_up_to_is_refused_quickly`).
 - **One document per entity:**
   - A release (`ReleaseDoc`: the `Release` the online client answers, with its status).
   - A recording (`Recording`, with at most `RELEASES_OF_A_RECORDING_KEPT` releases, earliest

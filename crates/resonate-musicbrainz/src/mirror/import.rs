@@ -24,7 +24,7 @@ use super::{
         row_read, table_named, unescaped,
     },
     documents::{Builders, CODES_JOINED_BY, Document, rows_of, table_of, words_of},
-    looked_up::{LookedUp, Shared, store_read},
+    looked_up::{LookedUp, Shared, read_as_an_id, store_read},
     tables::{Sequenced, TABLES_FILE, kept_beside_the_build},
     weighed::placed_by_weight,
 };
@@ -1264,30 +1264,22 @@ impl Writing<'_> {
         packed: &mpsc::Receiver<io::Result<Packed>>,
     ) -> Result<()> {
         let kind = packer.kind;
+        let walker = reader_of(self.staging)?;
+
+        if !holds_ids(&walker, kind)? {
+            return Ok(());
+        }
+
         let builders = all_cores_but(1);
         let readers = (0..builders)
             .map(|_| reader_of(self.staging))
             .collect::<Result<Vec<_>>>()?;
-        let Some(first) = readers.first() else {
-            return Ok(());
-        };
-
-        let Some((lowest, highest)) = id_span(first, kind)? else {
-            return Ok(());
-        };
-
-        let count = usize::try_from((highest - lowest) / IDS_A_CHUNK + 1).unwrap_or(0);
-        let chunk = |at: usize| {
-            let from = i64::try_from(at)
-                .unwrap_or(i64::MAX)
-                .saturating_mul(IDS_A_CHUNK)
-                .saturating_add(lowest);
-            Chunk {
-                at,
-                from,
-                to: from.saturating_add(IDS_A_CHUNK),
-            }
-        };
+        let mut walking = walker
+            .prepare(&format!(
+                "SELECT max(id) FROM (SELECT id FROM {} WHERE id > ?1 ORDER BY id LIMIT {IDS_A_CHUNK})",
+                table_of(kind)
+            ))
+            .map_err(store_read(Store::Staging))?;
         let (ask, asked) = mpsc::channel::<Chunk>();
         let asked = parking_lot::Mutex::new(asked);
         let (told, heard) = mpsc::channel::<(usize, Result<Vec<Document>>)>();
@@ -1304,13 +1296,28 @@ impl Writing<'_> {
             drop(told);
 
             let ahead = builders * CHUNKS_AHEAD_A_BUILDER;
+            let mut seen_up_to = Some(i64::MIN);
             let mut sent = 0;
+            let mut next = 0;
             let mut waiting = BTreeMap::new();
 
-            for next in 0..count {
-                while sent < count && sent < next + ahead {
-                    ask.send(chunk(sent)).map_err(|_| Error::BuildersStopped)?;
-                    sent += 1;
+            loop {
+                while sent < next + ahead
+                    && let Some(after) = seen_up_to
+                {
+                    seen_up_to = last_of_a_chunk(&mut walking, after)?;
+                    if let Some(last) = seen_up_to {
+                        ask.send(Chunk {
+                            at: sent,
+                            after,
+                            last,
+                        })
+                        .map_err(|_| Error::BuildersStopped)?;
+                        sent += 1;
+                    }
+                }
+                if next == sent {
+                    return Ok(());
                 }
 
                 let built = loop {
@@ -1322,19 +1329,26 @@ impl Writing<'_> {
 
                     waiting.insert(at, built);
                 };
+
                 for document in built? {
                     self.documented(packer, packed, document)?;
                 }
+                next += 1;
             }
-            Ok(())
         })
     }
 }
 
+fn last_of_a_chunk(walking: &mut Statement<'_>, after: i64) -> Result<Option<i64>> {
+    walking
+        .query_row([after], |row| row.get(0))
+        .map_err(store_read(Store::Staging))
+}
+
 struct Chunk {
     at: usize,
-    from: i64,
-    to: i64,
+    after: i64,
+    last: i64,
 }
 
 fn reader_of(staging: &Path) -> Result<Connection> {
@@ -1352,15 +1366,22 @@ fn reader_of(staging: &Path) -> Result<Connection> {
     Ok(reader)
 }
 
-fn id_span(reader: &Connection, kind: Entity) -> Result<Option<(i64, i64)>> {
+fn holds_ids(reader: &Connection, kind: Entity) -> Result<bool> {
+    let table = table_of(kind);
     let span: (Option<i64>, Option<i64>) = reader
         .query_row(
-            &format!("SELECT min(id), max(id) FROM {}", table_of(kind)),
+            &format!("SELECT min(id), max(id) FROM {table}"),
             [],
             |row| Ok((row.get(0)?, row.get(1)?)),
         )
         .map_err(store_read(Store::Staging))?;
-    Ok(span.0.zip(span.1))
+    let Some((lowest, highest)) = span.0.zip(span.1) else {
+        return Ok(false);
+    };
+
+    read_as_an_id(table, lowest)?;
+    read_as_an_id(table, highest)?;
+    Ok(true)
 }
 
 fn built_between(
@@ -1372,7 +1393,7 @@ fn built_between(
 ) -> Result<Vec<Document>> {
     let failed = store_read(Store::Staging);
     let mut rows = rows_of
-        .query(params![chunk.from, chunk.to])
+        .query(params![chunk.after, chunk.last])
         .map_err(&failed)?;
     let mut built = Vec::new();
 
@@ -1395,7 +1416,7 @@ fn built_by_a_builder(
     let prepared = Builders::prepared(reader).and_then(|builders| {
         reader
             .prepare(&format!(
-                "{} WHERE id >= ?1 AND id < ?2 ORDER BY id",
+                "{} WHERE id > ?1 AND id <= ?2 ORDER BY id",
                 rows_of(kind)
             ))
             .map(|rows_of| (builders, rows_of))

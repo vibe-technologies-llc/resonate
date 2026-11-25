@@ -492,6 +492,129 @@ fn nothing_left_in(folder: &Path) -> Vec<String> {
         .collect()
 }
 
+const PAST_EVERY_ID: i64 = 1 << 62;
+const FAR_PAST_THE_REST: &str = "4000000000";
+const FAR_RECORDING: &str = "0a1ac1a2-6b8f-4e2a-9bc6-1f1c6f9d0099";
+const FAR_ARTIST: &str = "8ed2e0b3-aa4c-4e13-bec3-dc7393420099";
+const A_REFUSAL_TAKES_AT_MOST: Duration = Duration::from_secs(60);
+
+fn far_recording(id: &str) -> String {
+    line(
+        9,
+        &[
+            (0, id),
+            (1, FAR_RECORDING),
+            (2, "Far Away"),
+            (3, "1"),
+            (4, "200000"),
+        ],
+    )
+}
+
+fn far_artist(id: &str) -> String {
+    line(
+        19,
+        &[
+            (0, id),
+            (1, FAR_ARTIST),
+            (2, "Far"),
+            (3, "Far"),
+            (13, ""),
+            (16, "f"),
+        ],
+    )
+}
+
+#[test]
+fn an_id_past_what_an_id_is_read_up_to_is_refused_quickly() {
+    let past = PAST_EVERY_ID.to_string();
+
+    for (table, row) in [
+        ("recording", far_recording(&past)),
+        ("artist", far_artist(&past)),
+    ] {
+        let scratch = Scratch::new(&format!("past-every-id-{table}"));
+        let archives = dump_beside(&scratch.0, &[(table, vec![row])]);
+        let began = std::time::Instant::now();
+
+        let refused = refused_from(&scratch, &archives);
+        let took = began.elapsed();
+
+        assert!(
+            matches!(
+                refused,
+                Error::IdOutOfRange { table: refusing, id: PAST_EVERY_ID } if refusing == table
+            ),
+            "{refused:?}"
+        );
+        assert!(took < A_REFUSAL_TAKES_AT_MOST, "{table} took {took:?}");
+    }
+}
+
+#[test]
+fn a_recording_numbered_far_past_the_rest_is_built_from_the_ids_held() {
+    let scratch = Scratch::new("far-recording");
+    let archives = dump_beside(
+        &scratch.0,
+        &[("recording", vec![far_recording(FAR_PAST_THE_REST)])],
+    );
+
+    let mirror = built_from_archives(&scratch, &archives, Keeping::TheMirror);
+
+    let far = mirror
+        .recording(&mbid(FAR_RECORDING))
+        .expect("a read")
+        .expect("the recording");
+    let near = mirror
+        .recording(&mbid(CREEP))
+        .expect("a read")
+        .expect("the recording");
+
+    assert_eq!(far.title, "Far Away");
+    assert_eq!(near.title, "Creep");
+}
+
+const RECORDINGS_OVER_CHUNKS: usize = 2 * 2048 + 5;
+const FIRST_SPACED_ROW: usize = 10_000;
+const SPACED_BY: usize = 3;
+
+#[test]
+fn recordings_walked_over_many_chunks_are_each_built_once_at_every_boundary() {
+    let scratch = Scratch::new("over-chunks");
+    let recordings = (0..RECORDINGS_OVER_CHUNKS)
+        .map(|at| {
+            line(
+                9,
+                &[
+                    (0, &(FIRST_SPACED_ROW + at * SPACED_BY).to_string()),
+                    (1, &prolific_gid(0xc, at)),
+                    (2, &format!("Spaced {at}")),
+                    (3, "1"),
+                    (4, "200000"),
+                ],
+            )
+        })
+        .collect();
+
+    let archives = dump_beside(&scratch.0, &[("recording", recordings)]);
+
+    let mirror = built_from_archives(&scratch, &archives, Keeping::TheMirror);
+
+    let titles: Vec<Option<String>> = (0..RECORDINGS_OVER_CHUNKS)
+        .map(|at| {
+            mirror
+                .recording(&mbid(&prolific_gid(0xc, at)))
+                .expect("a read")
+                .map(|recording| recording.title)
+        })
+        .collect();
+    let wanted: Vec<Option<String>> = (0..RECORDINGS_OVER_CHUNKS)
+        .map(|at| Some(format!("Spaced {at}")))
+        .collect();
+
+    assert_eq!(titles, wanted);
+}
+
 #[test]
 fn an_export_of_another_schema_is_refused_before_its_columns_are_read() {
     let scratch = Scratch::new("schema-32");

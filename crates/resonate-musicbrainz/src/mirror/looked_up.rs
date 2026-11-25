@@ -10,6 +10,8 @@ use crate::{
     wire::{MBID_BYTES, mbid_of},
 };
 
+const CREDITS_HELD_FROM: &str = "artist_credit_name";
+
 pub(crate) const NAMED_TABLES: [&str; 10] = [
     "artist_type",
     "gender",
@@ -114,13 +116,22 @@ pub(crate) fn small(id: i64) -> u32 {
     u32::try_from(id).unwrap_or(0)
 }
 
-fn placed<T>(slots: &mut Vec<Option<T>>, id: i64, value: T) {
-    let at = at(id);
+pub(crate) fn read_as_an_id(table: &'static str, id: i64) -> Result<u32> {
+    u32::try_from(id).map_err(|_| Error::IdOutOfRange { table, id })
+}
+
+fn placed<T>(slots: &mut Vec<Option<T>>, table: &'static str, id: i64, value: T) -> Result<()> {
+    let at = usize::try_from(read_as_an_id(table, id)?)
+        .map_err(|_| Error::IdOutOfRange { table, id })?;
 
     if slots.len() <= at {
+        slots
+            .try_reserve(at + 1 - slots.len())
+            .map_err(|_| Error::IdsPastMemory { table, id })?;
         slots.resize_with(at + 1, || None);
     }
     slots[at] = Some(value);
+    Ok(())
 }
 
 pub fn gid_bytes(gid: &str) -> Option<[u8; MBID_BYTES]> {
@@ -246,7 +257,7 @@ impl Shared {
                 let id: i64 = row.get(0).map_err(&failed)?;
                 let gid: String = row.get(1).map_err(&failed)?;
                 if let Some(gid) = gid_bytes(&gid) {
-                    placed(&mut artists, id, gid);
+                    placed(&mut artists, "artist", id, gid)?;
                 }
             }
         }
@@ -272,14 +283,24 @@ impl Shared {
                     Some((held, rows)) if *held == credit => rows.push(named),
                     _ => {
                         if let Some((held, rows)) = current.take() {
-                            placed(&mut credits, held, rows.into_boxed_slice());
+                            placed(
+                                &mut credits,
+                                CREDITS_HELD_FROM,
+                                held,
+                                rows.into_boxed_slice(),
+                            )?;
                         }
                         current = Some((credit, vec![named]));
                     }
                 }
             }
             if let Some((held, rows)) = current {
-                placed(&mut credits, held, rows.into_boxed_slice());
+                placed(
+                    &mut credits,
+                    CREDITS_HELD_FROM,
+                    held,
+                    rows.into_boxed_slice(),
+                )?;
             }
         }
         building.looked_at()?;
@@ -339,6 +360,7 @@ impl Shared {
 
                 placed(
                     &mut groups,
+                    "release_group",
                     id,
                     GroupInfo {
                         gid,
@@ -354,7 +376,7 @@ impl Shared {
                             .map(String::into_boxed_str),
                         pressings: 0,
                     },
-                );
+                )?;
             }
         }
         building.looked_at()?;
@@ -414,6 +436,7 @@ impl Shared {
 
                 placed(
                     &mut releases,
+                    "release",
                     id,
                     ReleaseInfo {
                         gid,
@@ -431,7 +454,7 @@ impl Shared {
                             .unwrap_or_default()
                             .into_boxed_slice(),
                     },
-                );
+                )?;
             }
         }
         for release in releases.iter().flatten() {
