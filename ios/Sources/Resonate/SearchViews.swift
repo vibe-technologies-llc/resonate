@@ -74,12 +74,14 @@ struct SearchResults: View, Equatable {
         } header: {
             SeeAllHeader(title: SearchScope.songs.label, more: found.trackCount > songsAtTop) { scope = .songs }
         }
+        .listSectionSeparator(.hidden, edges: .top)
         if showsCollections, !found.albums.isEmpty {
             Section {
                 AlbumShelf(albums: Array(found.albums.prefix(Self.topCollections)), query: query, picked: picked)
             } header: {
                 SeeAllHeader(title: SearchScope.albums.label, more: found.albums.count > Self.topCollections) { scope = .albums }
             }
+            .listSectionSeparator(.hidden, edges: .top)
         }
         if showsCollections, !found.artists.isEmpty {
             Section {
@@ -87,6 +89,7 @@ struct SearchResults: View, Equatable {
             } header: {
                 SeeAllHeader(title: SearchScope.artists.label, more: found.artists.count > Self.topCollections) { scope = .artists }
             }
+            .listSectionSeparator(.hidden, edges: .top)
         }
     }
 
@@ -103,6 +106,7 @@ struct SearchResults: View, Equatable {
                 Text(said("search.showing-best", found.tracks.count))
             }
         }
+        .listSectionSeparator(.hidden, edges: .top)
     }
 
     @ViewBuilder

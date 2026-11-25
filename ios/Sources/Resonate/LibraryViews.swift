@@ -13,12 +13,14 @@ struct LibraryView: View {
     var body: some View {
         let search = library.librarySearch
         let shelf = navigation.libraryShelf
-        LibraryShelfContent(shelf: shelf)
-            .overlay(alignment: .top) { LibrarySearchField(shelf: shelf) }
-            .safeAreaBar(edge: .top, spacing: 0) {
-                if arrangement == .stack { LibraryShelfRow(indicator: indicator) }
-            }
-            .environment(reveal)
+        ZStack(alignment: .top) {
+            LibraryShelfContent(shelf: shelf)
+            LibrarySearchField(shelf: shelf)
+        }
+        .safeAreaBar(edge: .top, spacing: 0) {
+            if arrangement == .stack { LibraryShelfRow(indicator: indicator) }
+        }
+        .environment(reveal)
         .refreshable {
             library.rescan()
             library.features.loadPlaylists()
