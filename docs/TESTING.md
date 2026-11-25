@@ -164,6 +164,11 @@ packaging that need a decision. Format and ordering are in [ROADMAP.md](ROADMAP.
   the four `LONGEST_RETRY_AFTER` clamps never act; and Jellyfin's fake cannot cut or stall a body.
   Add an endless-pages fake, make the retry ceiling a field a test can lower, and give Jellyfin's
   fake the `Sent` modes. Done when removing each cap fails a test.
+- [S · 0.18.1] Fuzz the media server's Host reader. **Low, builder.** `offered::addressed` reads the
+  `Host` header the media server now answers only when it names the address a request arrived at
+  (`crates/resonate-upnp/src/offered.rs`), and the `upnp` fuzz target never reaches it. Feed it the
+  request heads the target already builds, holding that a name is never admitted. Done when the
+  target calls it and its seeds pass.
 - [M · 0.18.1] Let the fake renderer fault, stall and lie. **Medium, builder.** The renderer fake
   always answers 200 with a fixed name (`crates/resonate-upnp/tests/renderer.rs:245`, `:271-420`),
   and `ANSWER_BYTES_AT_MOST` and `HEAD_BYTES_AT_MOST` (`crates/resonate-upnp/src/http.rs:11-15`) are

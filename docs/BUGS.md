@@ -11,26 +11,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   within the origin asked. Find where MetaBrainz's servers redirect (the export mirror may hand off
   to another host), follow through `followed` or an allowlist of those hosts, and drop the setting.
   Done when a fake server's `302` to another loopback port is not followed, in a test.
-- [M · 0.18.1] Give each peer its own share of the media server's pending heads. **Medium,
-  architect.** The 32 pending heads are shared by every peer
-  (`crates/resonate-upnp/src/door.rs:298`, `offered.rs:43`) and the stream server admits any peer
-  (`serve.rs:31`, `:44`, `:155`), so one host holding 32 idle connections, renewed every five
-  seconds, shuts out every control point and a renderer's own fetch. Count pending heads per address
-  within the cap. Done when a test holding 32 idle connections from one address still has a second
-  address served.
-- [S · 0.18.1] Put a whole deadline on a slow reader and a share per sender on SSDP and
-  subscriptions. **Low, builder.** The media server's write timeout is per call
-  (`crates/resonate-upnp/src/offered.rs:51`, `:53`, `:442`, `:737`), so a reader taking a byte every
-  few seconds holds an answer slot indefinitely; the SSDP answer budget and the 32 subscribers have
-  no per-sender share (`announce.rs:34`, `:178-190`, `events.rs:19`, `:191-203`), and a hung
-  subscriber holds the events thread two seconds a telling. Give an answer a total deadline and each
-  sender a share. Done when a trickling reader is cut at the deadline and one sender's flood leaves
-  another's search answered, in tests.
-- [S · 0.18.1] Check the Host header on the media server's routes. **Low, builder.**
-  `crates/resonate-upnp/src/offered.rs:308-337` answers any `Host`, so a page in a browser on the
-  network can rebind a name to the listener's address and read the catalog. Answer only a `Host`
-  naming an address the server listens on. Done when a request with `Host: evil.example` is refused
-  in a test.
 - [M · 0.18.1] Harden the Windows Discord pipe. **Low, architect.** The pipe is opened with no
   security quality of service (`crates/resonate-discord/src/pipe.rs:44-51` through interprocess's
   `CreateFileW(..., FILE_FLAG_OVERLAPPED, ...)`), so a squatting server holding
