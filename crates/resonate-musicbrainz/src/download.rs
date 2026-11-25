@@ -14,7 +14,7 @@ use crate::{ArchiveOp, Archives, Building, Error, Packet, Phase, Result, packet_
 
 pub const DUMP_SERVER: &str = "https://data.metabrainz.org/pub/musicbrainz/data/fullexport";
 pub const REPLICATION_SERVER: &str = "https://metabrainz.org/api/musicbrainz";
-pub const LARGEST_PACKET: u64 = 1024 * 1024 * 1024;
+pub const LARGEST_PACKET: u64 = 64 * 1024 * 1024;
 pub const CORE_ARCHIVE: &str = "mbdump.tar.bz2";
 pub const DERIVED_ARCHIVE: &str = "mbdump-derived.tar.bz2";
 const CHECKSUMS: &str = "SHA256SUMS";
@@ -232,21 +232,59 @@ fn packet_from(
         return Err(too_large);
     }
 
-    let mut packed = Vec::new();
+    let mut received = Received {
+        inner: response
+            .into_body()
+            .into_reader()
+            .take(largest.saturating_add(1)),
+        read: 0,
+        failure: None,
+    };
 
-    response
-        .into_body()
-        .into_reader()
-        .take(largest.saturating_add(1))
-        .read_to_end(&mut packed)
-        .map_err(|source| Error::Fetch {
+    let packet = packet_read(&mut received, sequence);
+
+    if let Some(refusal) = received.refusal(url, largest, too_large) {
+        return Err(refusal);
+    }
+    packet.map(Some)
+}
+
+struct Received<R> {
+    inner: io::Take<R>,
+    read: u64,
+    failure: Option<io::Error>,
+}
+
+impl<R: Read> Read for Received<R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        match self.inner.read(buf) {
+            Ok(read) => {
+                self.read += read as u64;
+                Ok(read)
+            }
+            Err(failure) => {
+                let kind = failure.kind();
+
+                self.failure = Some(failure);
+                Err(kind.into())
+            }
+        }
+    }
+}
+
+impl<R: Read> Received<R> {
+    fn refusal(&mut self, url: &str, largest: u64, too_large: Error) -> Option<Error> {
+        if self.failure.is_none() {
+            let _ = io::copy(self, &mut io::sink());
+        }
+        if self.read > largest {
+            return Some(too_large);
+        }
+        self.failure.take().map(|source| Error::Fetch {
             url: url.to_owned(),
             source,
-        })?;
-    if packed.len() as u64 > largest {
-        return Err(too_large);
+        })
     }
-    packet_read(packed.as_slice(), sequence).map(Some)
 }
 
 pub fn forget_downloads(folder: &Path) {

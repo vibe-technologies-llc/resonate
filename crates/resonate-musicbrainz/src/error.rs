@@ -102,6 +102,11 @@ pub enum Error {
     #[error("the dump's {table} table ends in a row cut short")]
     CutRow { table: &'static str },
 
+    #[error(
+        "the dump's {table} table has a row longer than the {longest} bytes a row is read up to"
+    )]
+    RowTooLong { table: &'static str, longest: usize },
+
     #[error("the dump lacks its {table} table")]
     MissingTable { table: &'static str },
 
@@ -161,6 +166,16 @@ pub enum Error {
 
     #[error("replication packet {sequence} lacks its {part}")]
     PacketPart { sequence: u64, part: &'static str },
+
+    #[error(
+        "a line of replication packet {sequence} is longer than the {longest} bytes a line is read up to"
+    )]
+    PacketRowTooLong { sequence: u64, longest: usize },
+
+    #[error(
+        "replication packet {sequence} unpacks to more than the {largest} bytes it is read up to"
+    )]
+    PacketInflated { sequence: u64, largest: u64 },
 
     #[error("a change to {table} in replication packet {sequence} is malformed at byte {at}")]
     PacketChange {

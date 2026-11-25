@@ -19,7 +19,9 @@ use zstd::dict::EncoderDictionary;
 
 use super::{
     AMENDED_FILE, BLOCKS_INDEXED, FORMAT, MIRROR_FILE, SCHEMA,
-    copy::{Archive, TABLES, Table, fields, table_named, unescaped},
+    copy::{
+        Archive, ROW_LONGEST_BYTES, Row, TABLES, Table, fields, row_read, table_named, unescaped,
+    },
     documents::{Builders, CODES_JOINED_BY, Document, rows_of, table_of, words_of},
     looked_up::{LookedUp, Shared, store_read},
     tables::{Sequenced, TABLES_FILE, kept_beside_the_build},
@@ -35,6 +37,7 @@ pub const DICTIONARY_BYTES: usize = 112 * 1024;
 pub const SAMPLED_BYTES: usize = 16 * 1024 * 1024;
 const ROWS_BETWEEN_LOOKS: u64 = 65_536;
 const READ_AT_ONCE: usize = 1024 * 1024;
+const BYTES_BETWEEN_LOOKS: usize = 16 * 1024 * 1024;
 const STAGING_FILE: &str = "musicbrainz.staging.sqlite";
 const PLACED_FILE: &str = "musicbrainz.placed.sqlite";
 const BUILDING_FILE: &str = "musicbrainz.sqlite.building";
@@ -388,6 +391,26 @@ fn sequence_in(entry: impl Read, path: &Path) -> Result<Option<u64>> {
     Ok(text.trim().parse().ok())
 }
 
+fn drained(mut entry: impl Read, path: &Path, building: &Building) -> Result<()> {
+    let mut chunk = vec![0; READ_AT_ONCE];
+    let mut since_look = 0;
+
+    loop {
+        let read = entry
+            .read(&mut chunk)
+            .map_err(Error::archive(path, ArchiveOp::Read))?;
+
+        if read == 0 {
+            return Ok(());
+        }
+        since_look += read;
+        if since_look >= BYTES_BETWEEN_LOOKS {
+            since_look = 0;
+            building.looked_at()?;
+        }
+    }
+}
+
 fn imported(
     path: &Path,
     from: Archive,
@@ -418,7 +441,8 @@ fn imported(
     let mut schema = None;
 
     for entry in entries {
-        let entry = entry.map_err(Error::archive(path, ArchiveOp::Entry))?;
+        let mut entry = entry.map_err(Error::archive(path, ArchiveOp::Entry))?;
+
         let name = entry
             .path()
             .map_err(Error::archive(path, ArchiveOp::Entry))?
@@ -426,15 +450,18 @@ fn imported(
             .into_owned();
 
         if name == REPLICATION_SEQUENCE {
-            replication = sequence_in(entry, path)?;
+            replication = sequence_in(&mut entry, path)?;
+            drained(entry, path, building)?;
             continue;
         }
         if name == SCHEMA_SEQUENCE {
-            schema = sequence_in(entry, path)?.and_then(|schema| u32::try_from(schema).ok());
+            schema = sequence_in(&mut entry, path)?.and_then(|schema| u32::try_from(schema).ok());
+            drained(entry, path, building)?;
             continue;
         }
 
         let Some(table) = table_named(&name).filter(|table| table.from == from) else {
+            drained(entry, path, building)?;
             continue;
         };
 
@@ -442,7 +469,7 @@ fn imported(
 
         let counted = loaded(
             table,
-            BufReader::with_capacity(READ_AT_ONCE, entry),
+            BufReader::with_capacity(READ_AT_ONCE, &mut entry),
             path,
             staging,
             building,
@@ -489,21 +516,25 @@ fn loaded(
             .map_err(Error::store(Store::Staging, StoreOp::Write))?;
         let mut line = Vec::new();
         let mut values: Vec<Option<String>> = Vec::with_capacity(table.columns.len());
+        let mut since_look = 0;
 
         loop {
-            line.clear();
-
-            let read = rows
-                .read_until(b'\n', &mut line)
-                .map_err(Error::archive(path, ArchiveOp::Read))?;
-
-            if read == 0 {
-                break;
+            match row_read(&mut rows, &mut line).map_err(Error::archive(path, ArchiveOp::Read))? {
+                Row::End => break,
+                Row::Cut => return Err(Error::CutRow { table: table.name }),
+                Row::TooLong => {
+                    return Err(Error::RowTooLong {
+                        table: table.name,
+                        longest: ROW_LONGEST_BYTES,
+                    });
+                }
+                Row::Whole => {}
             }
-            if line.last() != Some(&b'\n') {
-                return Err(Error::CutRow { table: table.name });
+            since_look += line.len();
+            if since_look >= BYTES_BETWEEN_LOOKS {
+                since_look = 0;
+                building.looked_at()?;
             }
-            line.pop();
 
             let mut split = Vec::with_capacity(wanted);
 
@@ -1403,6 +1434,59 @@ mod tests {
         let refused = read(b"1\tgid\tOne\tx\n2\tgid\tTw", &staging);
 
         assert!(matches!(refused, Err(Error::CutRow { table: "area" })));
+    }
+
+    #[test]
+    fn a_row_past_the_longest_row_is_refused_as_too_long_and_one_at_it_is_read() {
+        let staging = laid_out();
+        let mut at_most = b"1\tgid\t".to_vec();
+
+        at_most.resize(ROW_LONGEST_BYTES, b'x');
+        at_most.push(b'\n');
+
+        let mut past = at_most.clone();
+
+        past.pop();
+        past.extend_from_slice(b"x\n");
+
+        read(&at_most, &staging).expect("a row at the longest");
+
+        let refused = read(&past, &laid_out());
+
+        assert!(matches!(
+            refused,
+            Err(Error::RowTooLong {
+                table: "area",
+                longest: ROW_LONGEST_BYTES
+            })
+        ));
+    }
+
+    #[test]
+    fn a_row_with_no_line_end_for_the_longest_row_and_more_is_refused_as_too_long() {
+        let staging = laid_out();
+        let rows = vec![b'x'; ROW_LONGEST_BYTES * 2];
+
+        let refused = read(&rows, &staging);
+
+        assert!(matches!(
+            refused,
+            Err(Error::RowTooLong { table: "area", .. })
+        ));
+    }
+
+    #[test]
+    fn an_entry_nobody_wants_is_read_through_checking_the_cancel_it_is_handed() {
+        let building = Building::default();
+        let entry = vec![0_u8; BYTES_BETWEEN_LOOKS * 2];
+        let path = Path::new("mbdump.tar.bz2");
+
+        drained(entry.as_slice(), path, &building).expect("an entry read to its end");
+        building.cancel();
+
+        let cancelled = drained(entry.as_slice(), path, &building);
+
+        assert!(matches!(cancelled, Err(Error::Cancelled)));
     }
 
     #[test]

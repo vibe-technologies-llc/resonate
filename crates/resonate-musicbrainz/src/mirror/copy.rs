@@ -1,3 +1,5 @@
+use std::io::{self, BufRead, Read};
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Archive {
     Core,
@@ -367,6 +369,33 @@ pub fn table_named(entry: &str) -> Option<&'static Table> {
 
 pub fn table_called(name: &str) -> Option<&'static Table> {
     TABLES.iter().find(|table| table.name == name)
+}
+
+pub const ROW_LONGEST_BYTES: usize = 8 * 1024 * 1024;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Row {
+    End,
+    Whole,
+    Cut,
+    TooLong,
+}
+
+pub fn row_read(rows: &mut impl BufRead, line: &mut Vec<u8>) -> io::Result<Row> {
+    line.clear();
+
+    let read = Read::take(&mut *rows, ROW_LONGEST_BYTES as u64 + 1).read_until(b'\n', line)?;
+
+    Ok(if read == 0 {
+        Row::End
+    } else if line.last() == Some(&b'\n') {
+        line.pop();
+        Row::Whole
+    } else if line.len() > ROW_LONGEST_BYTES {
+        Row::TooLong
+    } else {
+        Row::Cut
+    })
 }
 
 pub fn fields<'a>(line: &'a [u8], into: &mut Vec<&'a [u8]>) {

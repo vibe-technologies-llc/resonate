@@ -1,6 +1,7 @@
 use std::{
+    cell::Cell,
     collections::{BTreeMap, BTreeSet},
-    io::{BufRead, BufReader, Read},
+    io::{self, BufRead, BufReader, Read},
     path::Path,
 };
 
@@ -10,7 +11,7 @@ use rusqlite::{Connection, types::Value};
 use super::{
     Mirror,
     amended::{AMENDED_FILE, Amending, made_at, prepared_for_amending},
-    copy::{Table, fields, table_called, unescaped},
+    copy::{ROW_LONGEST_BYTES, Row, Table, fields, row_read, table_called, unescaped},
     documents::{Builders, rows_of},
     import::Building,
     looked_up::{LookedUp, gid_bytes, store_read},
@@ -31,6 +32,8 @@ const DBMIRROR2: u64 = 2;
 const SCHEMA_OF_TABLES: &str = "musicbrainz.";
 const PENDING_COLUMNS_AT_LEAST: usize = 6;
 const LONGEST_SEQUENCE_FILE: u64 = 64;
+const LARGEST_PACKET_UNPACKED: u64 = 512 * 1024 * 1024;
+const JSON_DEEPEST: usize = 64;
 const TRUE: &str = "t";
 const FALSE: &str = "f";
 
@@ -46,6 +49,7 @@ enum Json {
 struct Parser<'a> {
     bytes: &'a [u8],
     at: usize,
+    depth: usize,
 }
 
 impl<'a> Parser<'a> {
@@ -145,6 +149,18 @@ impl<'a> Parser<'a> {
         (self.at > start).then(|| String::from_utf8_lossy(&self.bytes[start..self.at]).into_owned())
     }
 
+    fn nested(&mut self, open: u8, close: u8) -> Option<Json> {
+        if self.depth >= JSON_DEEPEST {
+            return None;
+        }
+        self.depth += 1;
+
+        let skipped = self.skipped(open, close);
+
+        self.depth -= 1;
+        skipped.map(|()| Json::Nested)
+    }
+
     fn skipped(&mut self, open: u8, close: u8) -> Option<()> {
         self.eat(open)?;
         self.space();
@@ -171,8 +187,8 @@ impl<'a> Parser<'a> {
             b'n' => self.word(b"null").map(|()| Json::Null),
             b't' => self.word(b"true").map(|()| Json::Bool(true)),
             b'f' => self.word(b"false").map(|()| Json::Bool(false)),
-            b'{' => self.skipped(b'{', b'}').map(|()| Json::Nested),
-            b'[' => self.skipped(b'[', b']').map(|()| Json::Nested),
+            b'{' => self.nested(b'{', b'}'),
+            b'[' => self.nested(b'[', b']'),
             _ => self.number().map(Json::Number),
         }
     }
@@ -210,6 +226,7 @@ fn object_of(text: &str) -> std::result::Result<Vec<(String, Json)>, usize> {
     Parser {
         bytes: text.as_bytes(),
         at: 0,
+        depth: 0,
     }
     .object()
 }
@@ -286,16 +303,27 @@ fn table_of(named: &str) -> Option<&'static Table> {
 
 type Pending = (i64, i64, Change);
 
-fn pending_in(rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
+fn pending_in(mut rows: impl BufRead, sequence: u64) -> Result<Vec<Change>> {
     let mut pending: Vec<Pending> = Vec::new();
+    let mut line = Vec::new();
 
-    for line in rows.split(b'\n') {
+    loop {
         let mut split = Vec::with_capacity(PENDING_COLUMNS_AT_LEAST + 2);
-        let line = line.map_err(|_| Error::PacketPart {
+        let row = row_read(&mut rows, &mut line).map_err(|_| Error::PacketPart {
             sequence,
             part: PENDING_DATA,
         })?;
 
+        match row {
+            Row::End => break,
+            Row::TooLong => {
+                return Err(Error::PacketRowTooLong {
+                    sequence,
+                    longest: ROW_LONGEST_BYTES,
+                });
+            }
+            Row::Whole | Row::Cut => {}
+        }
         if line.is_empty() {
             continue;
         }
@@ -347,8 +375,45 @@ pub(crate) fn read_pending_changes(rows: &[u8]) {
     }
 }
 
+struct Unpacked<'a, R> {
+    inner: R,
+    left: u64,
+    exceeded: &'a Cell<bool>,
+}
+
+impl<R: Read> Read for Unpacked<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        let allowed = (buf.len() as u64).min(self.left.saturating_add(1)) as usize;
+        let read = self.inner.read(&mut buf[..allowed])?;
+
+        if read as u64 > self.left {
+            self.exceeded.set(true);
+            return Err(io::ErrorKind::FileTooLarge.into());
+        }
+        self.left -= read as u64;
+        Ok(read)
+    }
+}
+
 pub fn packet_read(packed: impl Read, asked: u64) -> Result<Packet> {
-    let decoded = bzipped::decoded(packed);
+    let exceeded = Cell::new(false);
+    let unpacked = Unpacked {
+        inner: bzipped::decoded(packed),
+        left: LARGEST_PACKET_UNPACKED,
+        exceeded: &exceeded,
+    };
+    let read = packet_in(unpacked, asked);
+
+    if exceeded.get() {
+        return Err(Error::PacketInflated {
+            sequence: asked,
+            largest: LARGEST_PACKET_UNPACKED,
+        });
+    }
+    read
+}
+
+fn packet_in(decoded: impl Read, asked: u64) -> Result<Packet> {
     let mut archive = tar::Archive::new(decoded);
 
     let entries = archive.entries().map_err(|_| Error::PacketPart {
@@ -875,7 +940,129 @@ pub fn replicated(
 
 #[cfg(test)]
 mod tests {
+    use std::{io::Write, time::Instant};
+
+    use bzip2::{Compression, write::BzEncoder};
+
     use super::*;
+
+    const MEBIBYTE: usize = 1024 * 1024;
+    const GIGABYTE: u64 = 1024 * 1024 * 1024;
+    const THE_LONGEST_A_TEST_WAITS: std::time::Duration = std::time::Duration::from_secs(60);
+
+    fn packed_entry_of(name: &str, byte: u8, length: u64) -> Vec<u8> {
+        let mut header = tar::Header::new_gnu();
+
+        header.set_path(name).expect("a name");
+        header.set_size(length);
+        header.set_mode(0o644);
+        header.set_cksum();
+
+        let mut encoder = BzEncoder::new(Vec::new(), Compression::fast());
+        let chunk = vec![byte; MEBIBYTE];
+
+        encoder.write_all(header.as_bytes()).expect("a header");
+        for _ in 0..length / MEBIBYTE as u64 {
+            encoder.write_all(&chunk).expect("a chunk");
+        }
+        encoder.finish().expect("a packet")
+    }
+
+    #[test]
+    fn a_packet_unpacking_to_a_gigabyte_is_refused_within_a_bounded_read() {
+        let packed = packed_entry_of("mbdump/unread", 0, GIGABYTE);
+        let started = Instant::now();
+
+        let read = packet_read(packed.as_slice(), 101);
+
+        assert!(packed.len() < 512 * 1024, "{}", packed.len());
+        assert!(
+            matches!(
+                read,
+                Err(Error::PacketInflated {
+                    sequence: 101,
+                    largest: LARGEST_PACKET_UNPACKED
+                })
+            ),
+            "{:?}",
+            read.err()
+        );
+        assert!(started.elapsed() < THE_LONGEST_A_TEST_WAITS);
+    }
+
+    #[test]
+    fn a_pending_line_with_no_line_end_is_refused_past_the_longest_row() {
+        let packed = packed_entry_of(PENDING_DATA, b'x', 9 * MEBIBYTE as u64);
+
+        let read = packet_read(packed.as_slice(), 101);
+
+        assert!(
+            matches!(
+                read,
+                Err(Error::PacketRowTooLong {
+                    sequence: 101,
+                    longest: ROW_LONGEST_BYTES
+                })
+            ),
+            "{:?}",
+            read.err()
+        );
+    }
+
+    #[test]
+    fn a_pending_line_of_the_longest_row_is_read_and_one_byte_more_is_not() {
+        let at_most = vec![b'x'; ROW_LONGEST_BYTES];
+        let past = vec![b'x'; ROW_LONGEST_BYTES + 1];
+
+        assert!(matches!(
+            pending_in(at_most.as_slice(), 1),
+            Err(Error::PacketColumns { .. })
+        ));
+        assert!(matches!(
+            pending_in(past.as_slice(), 1),
+            Err(Error::PacketRowTooLong { .. })
+        ));
+    }
+
+    #[test]
+    fn json_nested_past_the_deepest_is_refused_where_a_stack_would_overflow() {
+        let brackets = 100_000;
+        let nested = format!(r#"{{"id":1,"name":"A","x":{}"#, "[".repeat(brackets));
+        let line = format!("3\tmusicbrainz.label\ti\t100\t\\N\t{nested}\t\\N\t\\N\n");
+
+        let refused = pending_in(line.as_bytes(), 1);
+
+        assert!(object_of(&nested).is_err());
+        assert!(
+            matches!(
+                refused,
+                Err(Error::PacketChange {
+                    sequence: 1,
+                    table: "label",
+                    ..
+                })
+            ),
+            "{:?}",
+            refused.err()
+        );
+    }
+
+    #[test]
+    fn json_nested_as_deep_as_the_deepest_is_still_read() {
+        let within = format!(
+            r#"{{"x":{}1{}}}"#,
+            "[".repeat(JSON_DEEPEST),
+            "]".repeat(JSON_DEEPEST)
+        );
+        let past = format!(
+            r#"{{"x":{}1{}}}"#,
+            "[".repeat(JSON_DEEPEST + 1),
+            "]".repeat(JSON_DEEPEST + 1)
+        );
+
+        assert!(object_of(&within).is_ok());
+        assert!(object_of(&past).is_err());
+    }
 
     #[test]
     fn a_row_as_json_reads_its_text_numbers_booleans_and_nulls() {

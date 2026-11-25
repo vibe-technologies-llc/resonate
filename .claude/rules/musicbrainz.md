@@ -114,7 +114,7 @@ decodes both and requires a decoded value to read back as itself.
 `mbdump-derived.tar.bz2` (`decoded_across`, `mibz2`'s `BzReader::parallel` on every core but `THREADS_THE_READ_KEEPS`,
 the one parsing and inserting and the decoder's own reader, then `tar`) and reads each
 table `copy::TABLES` names as PostgreSQL COPY text. A field is tab-separated, `\N` is null, and
-backslash escapes are read, octal and hex included (`\x` with no hex digit is an `x`, as PostgreSQL reads it). A row that is short of the projected columns is `Error::Columns`, and a final row with no line end is `Error::CutRow`, since PostgreSQL ends every row with one: a cut table is refused, never half kept. Only the projected columns go into
+backslash escapes are read, octal and hex included (`\x` with no hex digit is an `x`, as PostgreSQL reads it). A row that is short of the projected columns is `Error::Columns`, and a final row with no line end is `Error::CutRow`, since PostgreSQL ends every row with one: a cut table is refused, never half kept. A row is read by `row_read`, up to `ROW_LONGEST_BYTES` (8 MiB) so the allocation itself is bounded, and a longer one is `Error::RowTooLong`; an entry the import does not read is read through `drained`, which looks at the cancel as it goes (`an_entry_nobody_wants_is_read_through_checking_the_cancel_it_is_handed`). Only the projected columns go into
 `musicbrainz.staging.sqlite`.
 
 - **Column positions follow MusicBrainz's `CreateTables.sql`** at schema sequence 31. A row shorter
@@ -370,11 +370,18 @@ build to resume
 them** (`mirror/replicated.rs`, `tables.rs`, `amended.rs`). A packet is
 `replication-<N>-v2.tar.bz2` under `REPLICATION_SERVER`, asked with the listener's MetaBrainz
 token in the query string (`download::packet`; a 404 is a packet not yet published, 400, 401 or 403
-`TokenRefused`). A packet is read up to `LARGEST_PACKET` (1 GiB): one declaring a larger
-`Content-Length`, or running one byte past it, is `PacketTooLarge`, never cut short into a
-bzip2 or parse error
-(`a_packet_larger_than_a_packet_is_read_up_to_is_refused_as_too_large`). Its `mbdump/pending_data` lines are dbmirror2's JSON, one change a line, read by a
-parser written here (no serde in this crate): `packet_read` keeps only the tables `copy::TABLES`
+`TokenRefused`). A packet is streamed from the response into `packet_read`, never held whole, and
+read up to `LARGEST_PACKET` (64 MiB compressed): one declaring a larger `Content-Length`, or running
+one byte past it, is `PacketTooLarge`, never cut short into a bzip2 or parse error
+(`a_packet_larger_than_a_packet_is_read_up_to_is_refused_as_too_large`). What it unpacks to is
+bounded too, at `LARGEST_PACKET_UNPACKED` (512 MiB, `PacketInflated`), so a small packet expanding
+to a gigabyte is refused after the cap's worth of work
+(`a_packet_unpacking_to_a_gigabyte_is_refused_within_a_bounded_read`). The figures are ceilings a
+stream of hourly changes stays far under, not measurements of a packet. Its `mbdump/pending_data`
+lines are dbmirror2's JSON, one change a line, each read up to `ROW_LONGEST_BYTES` (8 MiB;
+`PacketRowTooLong`), read by a parser written here (no serde in this crate) that answers `None` past
+`JSON_DEEPEST` (64) levels of nesting, so a column of brackets is a malformed change and no stack
+overflow (`json_nested_past_the_deepest_is_refused_where_a_stack_would_overflow`): `packet_read` keeps only the tables `copy::TABLES`
 projects, maps each row to the projected columns (`projected`: a column missing is `PacketColumn`,
 a boolean is PostgreSQL's `t` or `f`) and orders the changes by their transaction's last change,
 then their own. `REPLICATION_SEQUENCE` naming another number than the one asked is
