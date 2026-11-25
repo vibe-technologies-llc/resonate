@@ -628,6 +628,9 @@ file until `ASKED_AGAIN_AFTER` (a day) has passed or the clock went back before 
 and writes what it heard; a failed ask keeps what was heard before and writes nothing, and while
 not `reaching` nothing is asked. Only a release whose version `outdates_this_build` is answered.
 `KeptRelease::heard_now` writes an answer asked outside the pacing (`resonate update`). The file is
+read as untrusted: a stamp no clock holds (`checked_add` refuses it) or a `page` that is not under
+`RELEASE_PAGES` (https GitHub) makes the whole file unreadable
+(`a_stamp_past_what_a_clock_holds_or_a_page_off_github_is_passed_over`). The file is
 a cache: unreadable, it is asked again, and a write that fails is logged and asked again, so it
 needs no migration and no error crosses (`the_releases_are_asked_at_most_once_a_day`, against a
 server on loopback, `nothing_is_asked_while_offline_and_a_failed_ask_keeps_what_was_heard`,

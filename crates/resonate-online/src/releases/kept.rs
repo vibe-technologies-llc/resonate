@@ -5,7 +5,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use super::{Release, Version};
+use super::{RELEASE_PAGES, Release, Version};
 
 const KEPT_IN: &str = "latest-release";
 const CHECKED_AT: &str = "checked";
@@ -45,10 +45,16 @@ impl Heard {
         for line in text.lines() {
             match line.split_once(' ') {
                 Some((CHECKED_AT, seconds)) => {
-                    checked = Some(UNIX_EPOCH + Duration::from_secs(seconds.trim().parse().ok()?));
+                    let since_epoch = Duration::from_secs(seconds.trim().parse().ok()?);
+
+                    checked = Some(UNIX_EPOCH.checked_add(since_epoch)?);
                 }
                 Some((LATEST_VERSION, spelt)) => version = Some(Version::read(spelt)?),
-                Some((LATEST_PAGE, spelt)) => page = Some(spelt.trim().to_owned()),
+                Some((LATEST_PAGE, spelt)) => {
+                    let spelt = spelt.trim();
+
+                    page = Some(spelt.starts_with(RELEASE_PAGES).then(|| spelt.to_owned())?);
+                }
                 _ => {}
             }
         }
@@ -207,6 +213,49 @@ mod tests {
         assert_eq!(Heard::read("checked soon\n"), None);
         assert_eq!(Heard::read("checked 5\nlatest 1.0.0\n"), None);
         assert_eq!(Heard::read("checked 5\nlatest soon\npage x\n"), None);
+    }
+
+    #[test]
+    fn a_stamp_past_what_a_clock_holds_or_a_page_off_github_is_passed_over() {
+        let page = "https://github.com/someone/resonate/releases/tag/v99.0.0";
+
+        assert!(Heard::read(&format!("checked 5\nlatest 99.0.0\npage {page}\n")).is_some());
+        assert_eq!(
+            Heard::read(&format!(
+                "checked {}\nlatest 99.0.0\npage {page}\n",
+                u64::MAX
+            )),
+            None
+        );
+        assert_eq!(Heard::read(&format!("checked {}\n", u64::MAX)), None);
+        assert_eq!(
+            Heard::read("checked 5\nlatest 99.0.0\npage file:///etc/passwd\n"),
+            None
+        );
+        assert_eq!(
+            Heard::read("checked 5\nlatest 99.0.0\npage http://github.com/x\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn a_kept_file_that_is_not_to_be_trusted_is_asked_over_again() {
+        let kept = kept_in_a_scratch_folder();
+
+        fs::create_dir_all(kept.path.parent().expect("a folder")).expect("a folder");
+        fs::write(
+            &kept.path,
+            format!(
+                "checked {}\nlatest 99.0.0\npage file:///etc/passwd\n",
+                u64::MAX
+            ),
+        )
+        .expect("a kept file");
+
+        let asked = kept.newer_lately(morning(), true, || Ok::<_, Error>(Some(released("99.0.0"))));
+
+        assert_eq!(asked, Some(released("99.0.0")));
+        assert_eq!(kept.heard().map(|heard| heard.checked), Some(morning()));
     }
 
     #[test]
