@@ -10,11 +10,19 @@ use crate::{
 
 impl ListOffered {
     pub(crate) fn asking(&self) -> &'static str {
-        words::list_offer::asking()
+        if self.own_server {
+            words::list_offer::asking_from_a_program()
+        } else {
+            words::list_offer::asking()
+        }
     }
 
     pub(crate) fn saying(&self) -> String {
-        words::list_offer::saying(self.server.as_str())
+        if self.own_server {
+            words::list_offer::saying_from_a_program(self.server.as_str())
+        } else {
+            words::list_offer::saying(self.server.as_str())
+        }
     }
 }
 
@@ -108,9 +116,23 @@ mod tests {
         let offered = ListOffered {
             link: "resonate://shared/E-ABCDE?server=wss%3A%2F%2Fstranger.example%2F".to_owned(),
             server: "wss://stranger.example/".to_owned(),
+            own_server: false,
         };
 
         assert_eq!(offered.asking(), "Join a playlist on another server?");
         assert!(offered.saying().contains("wss://stranger.example/"));
+    }
+
+    #[test]
+    fn a_link_naming_the_server_in_use_is_asked_about_as_one_another_program_handed_over() {
+        let offered = ListOffered {
+            link: "resonate://shared/E-ABCDE".to_owned(),
+            server: "wss://music.example/".to_owned(),
+            own_server: true,
+        };
+
+        assert_eq!(offered.asking(), "Join a shared playlist?");
+        assert!(offered.saying().contains("wss://music.example/"));
+        assert!(!offered.saying().contains("other than the one you use"));
     }
 }

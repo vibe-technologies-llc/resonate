@@ -2828,6 +2828,31 @@ fn open_uri_hands_a_local_file_to_the_front_end_and_refuses_the_rest() {
 }
 
 #[test]
+fn open_uri_of_a_shared_playlist_link_is_put_to_the_front_end_to_offer_and_opens_nothing() {
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let player = harness.proxy(PLAYER);
+    let links = [
+        "resonate://shared/E-ABCDE-12345",
+        "https://resonate.tecnio.dev/s/#E-ABCDE-12345",
+    ];
+
+    for link in links {
+        player
+            .call::<_, _, ()>("OpenUri", &link)
+            .expect("OpenUri of a link is answered once it is offered");
+    }
+
+    assert_eq!(*harness.invited.lock(), links);
+    assert!(
+        harness.opened.lock().is_empty(),
+        "a link was opened as a song"
+    );
+    assert!(harness.player.queue().is_empty());
+}
+
+#[test]
 fn a_seek_is_announced_from_the_count_the_engine_publishes_and_nothing_else_is() {
     let Some(harness) = Harness::start() else {
         return;

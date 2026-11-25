@@ -15,13 +15,15 @@ use resonate_library::{Library, PlaylistName, SyncedPlaylist};
 #[cfg(feature = "ui")]
 use resonate_sync::DeviceId;
 #[cfg(feature = "ui")]
+use resonate_sync::HOSTED_SERVER;
+#[cfg(feature = "ui")]
 use resonate_sync::party::{
     PartyChat, PartyHanding, PartyReach, PartyReaction, SittingOut, Standing,
 };
 #[cfg(any(feature = "ui", test))]
 use resonate_sync::shared::MemberId;
 use resonate_sync::{
-    HOSTED_SERVER, HeldShare, LocalPlaylistId, Refused,
+    HeldShare, LocalPlaylistId, Refused,
     shared::{
         Invitation, Invited, LocalShared, PersonShown, Shared, SharedCatalog, SharedSettings,
         SharedShown, SharedStanding, invitation_in,
@@ -523,7 +525,25 @@ pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
 pub(crate) enum Arrival {
     #[cfg(feature = "ui")]
     Pasted,
+    #[cfg(feature = "ui")]
     FromOutside,
+    FromTheBus,
+}
+
+impl Arrival {
+    #[cfg(feature = "ui")]
+    fn asks_first_of_a_list(self, invitation: &Invitation) -> bool {
+        match self {
+            Self::Pasted => false,
+            Self::FromOutside => !names_the_server_in_use(invitation),
+            Self::FromTheBus => true,
+        }
+    }
+
+    #[cfg(not(feature = "ui"))]
+    fn asks_first_of_a_list(self, _invitation: &Invitation) -> bool {
+        true
+    }
 }
 
 pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
@@ -535,7 +555,7 @@ pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
         #[cfg(feature = "ui")]
         return match arrival {
             Arrival::Pasted => crate::party_room::accept(text),
-            Arrival::FromOutside => crate::party_room::offer(text),
+            Arrival::FromOutside | Arrival::FromTheBus => crate::party_room::offer(text),
         };
         #[cfg(not(feature = "ui"))]
         return {
@@ -544,7 +564,7 @@ pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
         };
     }
 
-    if arrival == Arrival::FromOutside && another_server_named(&invitation).is_some() {
+    if arrival.asks_first_of_a_list(&invitation) {
         #[cfg(feature = "ui")]
         return crate::party_room::offer(text);
         #[cfg(not(feature = "ui"))]
@@ -571,10 +591,19 @@ pub(crate) fn accepted(text: &str, arrival: Arrival) -> bool {
     true
 }
 
-fn another_server_named(invitation: &Invitation) -> Option<&str> {
-    let home = HOME_SERVER.lock().clone();
+#[cfg(feature = "ui")]
+pub(crate) fn server_in_use() -> String {
+    HOME_SERVER
+        .lock()
+        .clone()
+        .unwrap_or_else(|| HOSTED_SERVER.to_owned())
+}
 
-    invitation.naming_a_server_other_than(home.as_deref().unwrap_or(HOSTED_SERVER))
+#[cfg(feature = "ui")]
+pub(crate) fn names_the_server_in_use(invitation: &Invitation) -> bool {
+    invitation
+        .naming_a_server_other_than(&server_in_use())
+        .is_none()
 }
 
 fn settled(shared: &Shared) {
@@ -841,6 +870,7 @@ mod tests {
         assert_eq!(unset.shared_name, None);
     }
 
+    #[cfg(feature = "ui")]
     fn naming(server: Option<&str>) -> Invitation {
         Invitation {
             to: Invited::Playlist,
@@ -849,30 +879,24 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "ui")]
     #[test]
     fn a_link_names_another_server_only_where_it_is_not_the_one_this_device_uses() {
         *HOME_SERVER.lock() = None;
 
         let stranger = naming(Some("wss://stranger.example/"));
 
-        assert_eq!(another_server_named(&naming(None)), None);
-        assert_eq!(
-            another_server_named(&naming(Some(HOSTED_SERVER))),
-            None,
+        assert!(names_the_server_in_use(&naming(None)));
+        assert!(
+            names_the_server_in_use(&naming(Some(HOSTED_SERVER))),
             "a page of the hosted server names it"
         );
-        assert_eq!(
-            another_server_named(&stranger),
-            Some("wss://stranger.example/")
-        );
+        assert!(!names_the_server_in_use(&stranger));
 
         *HOME_SERVER.lock() = Some("wss://stranger.example".to_owned());
 
-        assert_eq!(another_server_named(&stranger), None);
-        assert_eq!(
-            another_server_named(&naming(Some(HOSTED_SERVER))),
-            Some(HOSTED_SERVER)
-        );
+        assert!(names_the_server_in_use(&stranger));
+        assert!(!names_the_server_in_use(&naming(Some(HOSTED_SERVER))));
 
         *HOME_SERVER.lock() = None;
     }

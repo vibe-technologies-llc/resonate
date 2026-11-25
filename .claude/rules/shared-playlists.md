@@ -57,16 +57,25 @@ A list on a server other than the hosted one names it in its links, and its page
 
 **A link from outside that names a server other than this device's asks before it joins**, since joining
 makes the device reach that server every five minutes. `together::accepted` with `Arrival::FromOutside`
-(an argument, `OpenUri`) compares the link's server with `HOME_SERVER`, the address `server_of` gave
-the settings (the hosted one by default; `Invitation::naming_a_server_other_than` ignores case and a trailing slash): a link
+(an argument) compares the link's server with `HOME_SERVER`, the address `server_of` gave
+the settings (the hosted one by default, `together::server_in_use`; `Invitation::naming_a_server_other_than` ignores case and a trailing slash): a link
 naming none, or the device's own, joins at once as before, and any other goes to `party_room::offer`,
-which tells the window `Followed::ListOffered(ListOffered { link, server })` as it does a party's. A
+which tells the window `Followed::ListOffered(ListOffered { link, server, own_server })` as it does a party's. A
 build with no window refuses it. The window's sheet is `views/list_offer.rs` (`Sheet::OfferingAList`,
 *Join a playlist on another server?*, saying the server named; focus lands on *Cancel*, no key
 confirms, escape declines and the window is raised), and *Join* hands the link to
 `Together::accept`, as pasting does. A link pasted or typed (`Arrival::Pasted`) joins at once. The phones ask the same way (`mobile.md`)
 (`a_link_names_another_server_only_where_it_is_not_the_one_this_device_uses`,
 `a_list_on_a_stranger_server_from_outside_asks_first_and_focus_lands_on_the_control_that_declines`).
+
+**A link from the session bus asks whatever server it names.** `Host::invited` (`OpenUri`, `AddTracks`)
+reaches `together::accepted` with `Arrival::FromTheBus`, which offers every shared-playlist link as it
+does a party's, since any program allowed to talk to MPRIS, a sandboxed one included, could otherwise
+join the listener to a stranger's list. A link naming the server in use (or none) is told with
+`own_server` set, and the sheet then reads *Join a shared playlist?*, saying another program asked. A second launch handing a link to the running
+window travels the same bus call, so it asks too
+(`a_shared_list_from_the_bus_is_held_for_an_offer_whatever_server_it_names`,
+`open_uri_of_a_shared_playlist_link_is_put_to_the_front_end_to_offer_and_opens_nothing`).
 
 ## The merge
 

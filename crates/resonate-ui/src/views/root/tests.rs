@@ -1163,6 +1163,7 @@ mod driven {
                     Followed::ListOffered(ListOffered {
                         link: A_LIST_LINK.to_owned(),
                         server: "wss://stranger.example/".to_owned(),
+                        own_server: false,
                     }),
                     cx,
                 );

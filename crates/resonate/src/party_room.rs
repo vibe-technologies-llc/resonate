@@ -15,7 +15,7 @@ use resonate_sync::{
         Going, Party, PartyChat, PartyFinder as _, PartyFollowed, PartyShown, PartyWantingASong,
         RequestId,
     },
-    shared::{Invitation, Invited, invitation_in},
+    shared::{Invited, invitation_in},
 };
 use resonate_ui::{Followed, ListOffered, PartyRequestId};
 
@@ -80,11 +80,18 @@ static OFFERING: Mutex<Offering> = Mutex::new(Offering::Waiting(Vec::new()));
 
 fn tell_of(link: String, told: &Sender<Followed>) {
     let followed = match invitation_in(&link) {
-        Some(Invitation {
-            to: Invited::Playlist,
-            server: Some(server),
-            ..
-        }) => Followed::ListOffered(ListOffered { link, server }),
+        Some(invitation) if invitation.to == Invited::Playlist => {
+            let own_server = crate::together::names_the_server_in_use(&invitation);
+            let server = invitation
+                .server
+                .unwrap_or_else(crate::together::server_in_use);
+
+            Followed::ListOffered(ListOffered {
+                link,
+                server,
+                own_server,
+            })
+        }
         _ => Followed::PartyOffered(link),
     };
     if told.send(followed).is_err() {
@@ -107,12 +114,7 @@ pub(crate) fn out_of_the_window() {
 }
 
 pub(crate) fn offer(text: &str) -> bool {
-    let asks_first = |one: Invitation| match one.to {
-        Invited::Party => true,
-        Invited::Playlist => one.server.is_some(),
-    };
-
-    if !invitation_in(text).is_some_and(asks_first) {
+    if invitation_in(text).is_none() {
         return false;
     }
 
@@ -400,9 +402,9 @@ mod tests {
 
     #[test]
     fn only_a_link_that_asks_first_is_offered() {
-        assert!(!offer("resonate://shared/E-ABCDE"));
         assert!(!offer("resonate://pair/ABCDE"));
         assert!(!offer("a song.flac"));
+        assert!(offer("resonate://shared/E-ABCDE"));
         assert!(offer(A_PARTY));
         assert!(offer("https://resonate.tecnio.dev/p/#ABCDE"));
         assert!(offer(
@@ -426,6 +428,50 @@ mod tests {
             vec![Followed::ListOffered(ListOffered {
                 link: link.to_owned(),
                 server: "wss://stranger.example/".to_owned(),
+                own_server: false,
+            })]
+        );
+    }
+
+    #[test]
+    fn a_shared_list_from_the_bus_is_held_for_an_offer_whatever_server_it_names() {
+        use crate::together::{Arrival, accepted};
+
+        let own = "resonate://shared/E-ABCDE";
+        let hosted = "https://resonate.tecnio.dev/s/#E-FGHIJ";
+        let stranger = "resonate://shared/E-KLMNO?server=wss%3A%2F%2Fstranger.example%2F";
+
+        for link in [own, hosted, stranger] {
+            assert!(accepted(link, Arrival::FromTheBus));
+        }
+
+        let Offering::Waiting(links) = &*OFFERING.lock() else {
+            panic!("no window was opened, so the offers wait for one");
+        };
+
+        assert_eq!(
+            links,
+            &[own.to_owned(), hosted.to_owned(), stranger.to_owned()]
+        );
+    }
+
+    #[test]
+    fn a_shared_list_naming_no_server_is_told_with_the_one_in_use_as_its_own() {
+        let (told, listening) = unbounded();
+        let mut offering = Offering::Waiting(Vec::new());
+
+        offering.opened_to(told);
+
+        let link = "resonate://shared/E-ABCDE";
+
+        offering.offer(link.to_owned());
+
+        assert_eq!(
+            heard(&listening),
+            vec![Followed::ListOffered(ListOffered {
+                link: link.to_owned(),
+                server: crate::together::server_in_use(),
+                own_server: true,
             })]
         );
     }

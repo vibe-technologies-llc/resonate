@@ -502,6 +502,7 @@ pub enum Followed {
 pub struct ListOffered {
     pub link: String,
     pub server: String,
+    pub own_server: bool,
 }
 
 struct Withheld;
