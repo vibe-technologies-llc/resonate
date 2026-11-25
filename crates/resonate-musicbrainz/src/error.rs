@@ -204,6 +204,9 @@ pub enum Error {
     #[error("the tables beside the mirror are of the export {tables}, the mirror of {mirror}")]
     TablesOfAnotherExport { tables: String, mirror: String },
 
+    #[error("the {store} store moved its sequence in {changed} rows where it keeps one")]
+    SequenceUnkept { store: Store, changed: usize },
+
     #[error("replication packet {asked} names itself {found}")]
     PacketSequence { asked: u64, found: u64 },
 

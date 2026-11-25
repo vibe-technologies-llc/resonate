@@ -449,6 +449,15 @@ then their own. `REPLICATION_SEQUENCE` naming another number than the one asked 
   `supersedes` is left out of codes, lists and searches, so an amended release is found by its new
   title and no longer by its old one. A new build removes the amended file, so the copy keeps one
   dump's worth of base.
+- **The amended file is laid in one transaction and checked against the tables.** `made_at` lays
+  the schema and its one `amended_from` row together, and keeps a file already there only where
+  that row names the tables' dump and sequence; any other (the schema alone, from a creation cut
+  short, or another export or sequence) is cleared and laid again, so no amendment is hidden
+  while replication reports success
+  (`an_amendments_file_holding_only_its_schema_is_laid_again`,
+  `amendments_where_the_tables_stand_are_kept_and_any_others_are_laid_again`). A sequence moved
+  where no single row keeps it, in the tables or the amendments, is `SequenceUnkept`
+  (`a_sequence_moved_where_no_row_keeps_it_is_refused`).
 - **Packets are applied a batch at a time, in one transaction.** `replicated` takes the build hold,
   asks packet after packet up to `PACKETS_A_BATCH` (24) inside `BEGIN IMMEDIATE`, each change applied
   and its touches gathered, then rewrites every touched document once and commits the tables and

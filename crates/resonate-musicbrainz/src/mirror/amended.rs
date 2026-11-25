@@ -1,7 +1,7 @@
 use std::{path::Path, time::Duration};
 
 use resonate_core::Mbid;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, TransactionBehavior, params};
 use zstd::dict::EncoderDictionary;
 
 use super::documents::{Document, words_of};
@@ -50,6 +50,14 @@ fn failed(op: StoreOp) -> impl FnOnce(rusqlite::Error) -> Error {
     Error::store(Store::Amended, op)
 }
 
+pub(crate) fn one_sequence_moved(store: Store, changed: usize) -> Result<()> {
+    if changed == 1 {
+        Ok(())
+    } else {
+        Err(Error::SequenceUnkept { store, changed })
+    }
+}
+
 const fn codes_of(kind: Entity) -> Option<&'static str> {
     match kind {
         Entity::Release => Some("barcodes"),
@@ -65,32 +73,98 @@ const fn code_column(kind: Entity) -> &'static str {
     }
 }
 
-pub(crate) fn made_at(path: &Path, dump: &str, sequence: u64, at: u64) -> Result<()> {
-    let amended = Connection::open(path).map_err(failed(StoreOp::Open))?;
+fn stated_in(amended: &Connection) -> Result<Option<AmendedTo>> {
     let laid: bool = amended
         .query_row(
-            "SELECT count(*) > 0 FROM sqlite_schema WHERE name = 'amended_from'",
+            "SELECT count(*) > 0 FROM sqlite_schema WHERE type = 'table' AND name = 'amended_from'",
             [],
             |row| row.get(0),
         )
         .map_err(failed(StoreOp::Read))?;
 
     if !laid {
-        amended
-            .execute_batch(AMENDED_SCHEMA)
-            .map_err(failed(StoreOp::LayOut))?;
-        amended
-            .execute(
-                "INSERT INTO amended_from (dump, sequence, at) VALUES (?1, ?2, ?3)",
-                params![
-                    dump,
-                    i64::try_from(sequence).unwrap_or(i64::MAX),
-                    i64::try_from(at).unwrap_or(i64::MAX)
-                ],
+        return Ok(None);
+    }
+
+    let rows: i64 = amended
+        .query_row("SELECT count(*) FROM amended_from", [], |row| row.get(0))
+        .map_err(failed(StoreOp::Read))?;
+
+    if rows != 1 {
+        return Ok(None);
+    }
+    amended_to_in(amended, "")
+}
+
+fn quoted(name: &str) -> String {
+    format!("\"{}\"", name.replace('"', "\"\""))
+}
+
+fn cleared_out(amended: &Connection) -> Result<()> {
+    for virtual_first in [true, false] {
+        let held: Vec<(String, String)> = amended
+            .prepare(
+                "SELECT type, name FROM sqlite_schema WHERE type IN ('table', 'view') \
+                 AND name NOT LIKE 'sqlite\\_%' ESCAPE '\\' \
+                 AND (sql LIKE 'CREATE VIRTUAL%') = ?1",
             )
-            .map_err(failed(StoreOp::Write))?;
+            .and_then(|mut statement| {
+                statement
+                    .query_map([virtual_first], |row| Ok((row.get(0)?, row.get(1)?)))?
+                    .collect()
+            })
+            .map_err(failed(StoreOp::Read))?;
+
+        for (kind, name) in held {
+            let dropped = if kind == "view" { "VIEW" } else { "TABLE" };
+
+            amended
+                .execute_batch(&format!("DROP {dropped} IF EXISTS {};", quoted(&name)))
+                .map_err(failed(StoreOp::LayOut))?;
+        }
     }
     Ok(())
+}
+
+pub(crate) fn made_at(path: &Path, dump: &str, sequence: u64, at: u64) -> Result<()> {
+    let mut amended = Connection::open(path).map_err(failed(StoreOp::Open))?;
+
+    amended
+        .busy_timeout(WAITED_FOR_A_WRITER)
+        .map_err(failed(StoreOp::Configure))?;
+
+    let laying = amended
+        .transaction_with_behavior(TransactionBehavior::Immediate)
+        .map_err(failed(StoreOp::Write))?;
+
+    match stated_in(&laying)? {
+        Some(to) if to.dump == dump && to.sequence == sequence => {
+            return laying.commit().map_err(failed(StoreOp::Write));
+        }
+        Some(to) => tracing::info!(
+            amended = %to.dump,
+            amended_to = to.sequence,
+            tables = %dump,
+            tables_to = sequence,
+            "the changes kept beside the copy of MusicBrainz are not where its tables stand and are laid again"
+        ),
+        None => {}
+    }
+    cleared_out(&laying)?;
+    laying
+        .execute_batch(AMENDED_SCHEMA)
+        .map_err(failed(StoreOp::LayOut))?;
+    laying
+        .execute(
+            "INSERT INTO amended_from (dump, sequence, at) VALUES (?1, ?2, ?3)",
+            params![
+                dump,
+                i64::try_from(sequence).unwrap_or(i64::MAX),
+                i64::try_from(at).unwrap_or(i64::MAX)
+            ],
+        )
+        .map_err(failed(StoreOp::Write))?;
+    laying.commit().map_err(failed(StoreOp::Write))
 }
 
 pub(crate) fn amended_to_in(connection: &Connection, prefix: &str) -> Result<Option<AmendedTo>> {
@@ -259,7 +333,8 @@ impl Amending<'_> {
     }
 
     pub(crate) fn sequenced_at(&self, sequence: u64, at: u64) -> Result<()> {
-        self.connection
+        let changed = self
+            .connection
             .execute(
                 "UPDATE amended.amended_from SET sequence = ?1, at = ?2",
                 params![
@@ -267,8 +342,9 @@ impl Amending<'_> {
                     i64::try_from(at).unwrap_or(i64::MAX)
                 ],
             )
-            .map(drop)
-            .map_err(failed(StoreOp::Write))
+            .map_err(failed(StoreOp::Write))?;
+
+        one_sequence_moved(Store::Amended, changed)
     }
 }
 
@@ -383,5 +459,156 @@ impl Amended {
 
     pub(crate) fn supersedes(&self, kind: Entity, id: &Mbid) -> Result<bool> {
         Ok(self.placed(id, kind)?.is_some())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::{env, fs, path::PathBuf, process};
+
+    use super::*;
+    use crate::mirror::tables;
+
+    const DUMP: &str = "20261104-002222";
+    const LATER_DUMP: &str = "20261111-002335";
+
+    fn a_place_for(named: &str) -> (PathBuf, PathBuf) {
+        let folder = env::temp_dir().join(format!(
+            "resonate-musicbrainz-amended-{named}-{}",
+            process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+
+        fs::create_dir_all(&folder).expect("a scratch folder");
+
+        let path = folder.join(AMENDED_FILE);
+
+        (folder, path)
+    }
+
+    fn documents_in(path: &Path) -> i64 {
+        Connection::open(path)
+            .expect("the amendments")
+            .query_row("SELECT count(*) FROM documents", [], |row| row.get(0))
+            .expect("the documents counted")
+    }
+
+    fn a_document_in(path: &Path) {
+        Connection::open(path)
+            .expect("the amendments")
+            .execute(
+                "INSERT INTO documents (kind, mbid, packed) VALUES (1, x'00', NULL)",
+                [],
+            )
+            .expect("a document");
+    }
+
+    #[test]
+    fn an_amendments_file_holding_only_its_schema_is_laid_again() {
+        let (folder, path) = a_place_for("schema-only");
+
+        Connection::open(&path)
+            .expect("the amendments")
+            .execute_batch(AMENDED_SCHEMA)
+            .expect("the schema alone");
+
+        let hidden = Amended::open(&path, DUMP).expect("opened").is_none();
+
+        made_at(&path, DUMP, 9, 1).expect("laid again");
+
+        let opened = Amended::open(&path, DUMP)
+            .expect("opened")
+            .map(|amended| amended.to);
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert!(hidden);
+        assert_eq!(
+            opened,
+            Some(AmendedTo {
+                dump: DUMP.to_owned(),
+                sequence: 9,
+                at: 1
+            })
+        );
+    }
+
+    #[test]
+    fn amendments_where_the_tables_stand_are_kept_and_any_others_are_laid_again() {
+        let (folder, path) = a_place_for("compared");
+
+        made_at(&path, DUMP, 9, 1).expect("laid");
+        a_document_in(&path);
+        made_at(&path, DUMP, 9, 2).expect("kept");
+
+        let kept = documents_in(&path);
+
+        made_at(&path, DUMP, 10, 3).expect("laid again");
+
+        let another_sequence = documents_in(&path);
+
+        a_document_in(&path);
+        made_at(&path, LATER_DUMP, 10, 4).expect("laid again");
+
+        let another_export = documents_in(&path);
+        let to = Amended::open(&path, LATER_DUMP)
+            .expect("opened")
+            .map(|amended| amended.to);
+
+        let _ = fs::remove_dir_all(&folder);
+
+        assert_eq!(kept, 1);
+        assert_eq!(another_sequence, 0);
+        assert_eq!(another_export, 0);
+        assert_eq!(
+            to,
+            Some(AmendedTo {
+                dump: LATER_DUMP.to_owned(),
+                sequence: 10,
+                at: 4
+            })
+        );
+    }
+
+    #[test]
+    fn a_sequence_moved_where_no_row_keeps_it_is_refused() {
+        let connection = Connection::open_in_memory().expect("a store");
+
+        connection
+            .execute_batch(
+                "ATTACH DATABASE ':memory:' AS amended;
+                 CREATE TABLE amended.amended_from (dump TEXT NOT NULL, sequence INTEGER NOT NULL, at INTEGER NOT NULL);
+                 CREATE TABLE kept (format INTEGER NOT NULL, dump TEXT NOT NULL, sequence INTEGER NOT NULL, schema INTEGER NOT NULL);",
+            )
+            .expect("laid out with no rows");
+
+        let amending = Amending {
+            connection: &connection,
+            dictionaries: &[],
+        };
+
+        let amended = amending.sequenced_at(8, 1);
+        let kept = tables::sequenced_at(&connection, 8);
+
+        assert!(
+            matches!(
+                amended,
+                Err(Error::SequenceUnkept {
+                    store: Store::Amended,
+                    changed: 0
+                })
+            ),
+            "{amended:?}"
+        );
+        assert!(
+            matches!(
+                kept,
+                Err(Error::SequenceUnkept {
+                    store: Store::Tables,
+                    changed: 0
+                })
+            ),
+            "{kept:?}"
+        );
     }
 }

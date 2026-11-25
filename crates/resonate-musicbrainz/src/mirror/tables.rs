@@ -2,7 +2,7 @@ use std::{path::Path, time::Duration};
 
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params_from_iter, types::Value};
 
-use super::{copy::Table, import::ROWS_WEIGHED_BY_ANALYZE};
+use super::{amended::one_sequence_moved, copy::Table, import::ROWS_WEIGHED_BY_ANALYZE};
 use crate::{Error, Result, Store, StoreOp};
 
 pub const TABLES_FILE: &str = "musicbrainz.tables.sqlite";
@@ -140,13 +140,14 @@ pub(crate) fn opened(path: &Path) -> Result<(Connection, KeptTables)> {
 }
 
 pub(crate) fn sequenced_at(tables: &Connection, sequence: u64) -> Result<()> {
-    tables
+    let changed = tables
         .execute(
             "UPDATE kept SET sequence = ?1",
             [i64::try_from(sequence).unwrap_or(i64::MAX)],
         )
-        .map(drop)
-        .map_err(written)
+        .map_err(written)?;
+
+    one_sequence_moved(Store::Tables, changed)
 }
 
 fn matching(table: &Table) -> String {
