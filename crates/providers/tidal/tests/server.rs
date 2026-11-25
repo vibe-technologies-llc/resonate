@@ -1322,6 +1322,34 @@ fn a_device_code_asked_for_at_an_interval_no_clock_holds_waits_out_its_life_and_
     assert!(matches!(answer, Err(Error::AuthorizationLapsed { .. })));
 }
 
+#[test]
+fn a_verification_page_off_tidals_hosts_or_not_over_https_refuses_the_sign_in() {
+    for page in [
+        "file:///etc/passwd",
+        "http://link.tidal.com/ABCDE",
+        "https://link.tidal.com.evil.example/ABCDE",
+        "javascript:alert(1)",
+    ] {
+        for field in ["verificationUri", "verificationUriComplete"] {
+            let body = format!(
+                r#"{{"deviceCode":"device-1","userCode":"ABCDE","{field}":"{page}","expiresIn":300,"interval":1}}"#
+            );
+            let fake = Fake::serving(move |_, _, _| Canned::json(&body));
+
+            assert!(
+                matches!(
+                    fake.signing_in().authorizing(&client()),
+                    Err(Error::Unreadable {
+                        op: ProviderOp::SignIn,
+                        ..
+                    })
+                ),
+                "{field}: {page}"
+            );
+        }
+    }
+}
+
 fn wrapped(canned: Canned) -> Canned {
     let body = String::from_utf8(canned.body).expect("a json body");
     Canned {

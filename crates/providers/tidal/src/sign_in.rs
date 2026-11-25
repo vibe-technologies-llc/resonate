@@ -29,6 +29,9 @@ const UNAUTHORISED: u16 = 401;
 const TOO_MANY_REQUESTS: u16 = 429;
 const SERVER_ERRORS_FROM: u16 = 500;
 const SECURE: &str = "https://";
+const SECURE_SCHEME: &str = "https";
+const SECURE_PORT: u16 = 443;
+const TIDAL_DOMAIN: &str = "tidal.com";
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,6 +80,26 @@ fn with_scheme(at: &str) -> String {
     } else {
         format!("{SECURE}{at}")
     }
+}
+
+fn verification_page(at: &str) -> Option<String> {
+    let page = with_scheme(at);
+    let uri: http::Uri = page.parse().ok()?;
+    let host = uri.host()?.to_ascii_lowercase();
+
+    let securely = uri
+        .scheme_str()
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case(SECURE_SCHEME))
+        && uri.port_u16().is_none_or(|port| port == SECURE_PORT);
+    let anonymously = uri
+        .authority()
+        .is_some_and(|authority| !authority.as_str().contains('@'));
+    let on_tidal = host == TIDAL_DOMAIN
+        || host
+            .strip_suffix(TIDAL_DOMAIN)
+            .is_some_and(|subdomain| subdomain.ends_with('.'));
+
+    (securely && anonymously && on_tidal).then_some(page)
 }
 
 impl Default for TidalSignIn {
@@ -256,7 +279,7 @@ impl SignsIn for TidalSignIn {
         let verify_at = device
             .verification_uri_complete
             .or(device.verification_uri)
-            .map(|at| with_scheme(&at))
+            .and_then(|at| verification_page(&at))
             .ok_or_else(|| self.unreadable())?;
         Ok(Authorizing::new(
             device.user_code,
@@ -315,6 +338,33 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn only_a_page_on_tidals_own_hosts_over_https_is_a_verification_page() {
+        for good in [
+            "link.tidal.com/ABCDE",
+            "https://link.tidal.com/ABCDE",
+            "HTTPS://Link.Tidal.com/ABCDE",
+            "https://tidal.com/",
+            "https://link.tidal.com:443/ABCDE",
+        ] {
+            assert!(verification_page(good).is_some(), "{good}");
+        }
+        for bad in [
+            "file:///etc/passwd",
+            "http://link.tidal.com/ABCDE",
+            "javascript:alert(1)",
+            "https://link.tidal.com.evil.example/ABCDE",
+            "https://evil-tidal.com/ABCDE",
+            "https://link.tidal.com@evil.example/ABCDE",
+            "https://evil.example/link.tidal.com",
+            "https://link.tidal.com:8443/ABCDE",
+            "ftp://link.tidal.com/ABCDE",
+            "",
+        ] {
+            assert!(verification_page(bad).is_none(), "{bad}");
+        }
+    }
 
     #[test]
     fn a_verification_page_named_without_its_scheme_is_reached_over_https() {
