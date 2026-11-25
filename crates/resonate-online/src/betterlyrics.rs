@@ -2,7 +2,7 @@ use std::fmt::Write;
 
 use resonate_core::SourceId;
 use resonate_library::{LookupOp, LyricText, LyricsAsked};
-use resonate_lyrics::{LyricOp, Lyrics, Timing, Voice, read_ttml};
+use resonate_lyrics::{LyricOp, Lyrics, Timing, Voice, escaped_for_lrc, read_ttml};
 use serde::Deserialize;
 
 use crate::{Client, Error, Host, lyrics::Failed, query::Params};
@@ -67,11 +67,14 @@ fn lrc_of(lyrics: &Lyrics) -> String {
                 hundredths % 100
             );
         }
+
+        let text = escaped_for_lrc(&line.text);
+
         match line.voice {
             Voice::Two if line.at.is_some() => {
-                let _ = write!(sheet, "[v2: {}]", line.text);
+                let _ = write!(sheet, "[v2: {text}]");
             }
-            Voice::One | Voice::Two => sheet.push_str(&line.text),
+            Voice::One | Voice::Two => sheet.push_str(&text),
         }
         sheet.push('\n');
     }
@@ -171,6 +174,28 @@ mod tests {
 
         assert_eq!(sheet.lines()[0].voice, Voice::Two);
         assert_eq!(sheet.lines()[0].text, "Ooh, ooh");
+    }
+
+    #[test]
+    fn a_line_that_opens_with_an_lrc_tag_is_written_as_text_and_read_back_as_text() {
+        let lyrics = read_ttml(
+            source(),
+            r#"<tt xmlns="http://www.w3.org/ns/ttml"><body><div>
+                <p begin="1.0">[offset:30000] x</p>
+                <p begin="2.0">[ti:Another Song] y</p>
+            </div></body></tt>"#,
+        )
+        .expect("the document reads")
+        .lyrics
+        .expect("the document holds lines");
+        let sheet = lrc_of(&lyrics);
+        let read = resonate_lyrics::read_lyrics(source(), &sheet)
+            .expect("the sheet reads")
+            .expect("the sheet holds lines");
+
+        assert_eq!(read.lines()[0].text, "[offset:30000] x");
+        assert_eq!(read.lines()[0].at, Some(Duration::from_secs(1)));
+        assert_eq!(read.lines()[1].text, "[ti:Another Song] y");
     }
 
     #[test]

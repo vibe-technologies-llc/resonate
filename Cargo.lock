@@ -7366,6 +7366,7 @@ dependencies = [
  "resonate-core",
  "resonate-words",
  "roxmltree 0.21.2",
+ "rustix",
  "serde",
  "serde-saphyr",
  "thiserror 2.0.21",

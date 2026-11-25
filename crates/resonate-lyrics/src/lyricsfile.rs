@@ -69,6 +69,7 @@ pub enum Unread {
     NotADocument,
     AnotherVersion,
     TooMany,
+    TooDeep,
 }
 
 #[derive(Debug)]

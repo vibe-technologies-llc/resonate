@@ -1,4 +1,4 @@
-use std::{iter, time::Duration};
+use std::{borrow::Cow, iter, time::Duration};
 
 use resonate_core::{SourceId, folded_letters};
 
@@ -6,6 +6,8 @@ use crate::{
     Credits, Error, LyricLine, LyricOp, Lyrics, Result, SungWord, Voice, Wanted, model::MOST_LINES,
 };
 
+const ESCAPE: char = '\\';
+const BRACKET: char = '[';
 const SECONDS_PER_MINUTE: u64 = 60;
 const MINUTES_PER_HOUR: u64 = 60;
 const COLONS_WHEN_HOURS_ARE_WRITTEN: usize = 2;
@@ -348,6 +350,7 @@ impl Reading {
         }
 
         let (voice, sung) = voiced_text(rest.trim());
+        let sung = unescaped(sung);
         let headed;
 
         let text = if heading.is_empty() {
@@ -399,7 +402,7 @@ impl Reading {
             return Ok(());
         }
 
-        let text = rest.trim();
+        let text = unescaped(rest.trim());
 
         if !identified && !text.is_empty() {
             self.hold(text)?;
@@ -494,6 +497,42 @@ fn lyric_of(timed: Timed, shift: i64) -> LyricLine {
     };
 
     line.voiced(timed.voice)
+}
+
+pub fn escaped_for_lrc(text: &str) -> Cow<'_, str> {
+    if is_taken_by_the_reader(text) || leads_with_escaped_bracket(text) {
+        Cow::Owned(format!("{ESCAPE}{text}"))
+    } else {
+        Cow::Borrowed(text)
+    }
+}
+
+fn unescaped(text: &str) -> &str {
+    let Some(rest) = text.strip_prefix(ESCAPE) else {
+        return text;
+    };
+
+    if leads_with_escaped_bracket(rest)
+        || (rest.starts_with(BRACKET) && is_taken_by_the_reader(rest))
+    {
+        rest
+    } else {
+        text
+    }
+}
+
+fn is_taken_by_the_reader(text: &str) -> bool {
+    let opens_something =
+        brackets(text).is_some_and(|(inside, tail)| match Bracket::read(inside) {
+            Bracket::Text => heads_a_timed_line(tail),
+            Bracket::Moment(_) | Bracket::Identifying { .. } => true,
+        });
+
+    opens_something || voiced_text(text).1.len() != text.len()
+}
+
+fn leads_with_escaped_bracket(text: &str) -> bool {
+    text.starts_with(ESCAPE) && text.trim_start_matches(ESCAPE).starts_with(BRACKET)
 }
 
 fn voiced_text(text: &str) -> (Voice, &str) {
@@ -1026,6 +1065,53 @@ mod tests {
                 "all that you see",
             ]
         );
+    }
+
+    #[test]
+    fn a_line_led_by_a_bracket_the_reader_would_take_is_read_back_as_text_once_escaped() {
+        let texts = [
+            "[offset:30000] x",
+            "[ti:Another Song] x",
+            "[00:09.00] x",
+            "[v2: x] y",
+            "[Chorus] [00:12.00]x",
+            "[v1: x]",
+            "[length:3:00] x",
+            "\\[already] x",
+            "\\\\[twice] x",
+            "[",
+        ];
+
+        for text in texts {
+            let sheet = format!(
+                "[00:01.00]{}\n[00:02.00][v2: {}]\n{}\n",
+                escaped_for_lrc(text),
+                escaped_for_lrc(text),
+                escaped_for_lrc(text)
+            );
+            let read = lyrics(&sheet).expect("a set");
+
+            assert_eq!(read.lines()[0].text, text, "{sheet}");
+            assert_eq!(read.lines()[0].at, Some(Duration::from_secs(1)), "{sheet}");
+            assert_eq!(read.lines()[1].text, text, "{sheet}");
+            assert_eq!(read.lines()[1].voice, Voice::Two, "{sheet}");
+            assert_eq!(read.lines().len(), 3, "{sheet}");
+            assert_eq!(read.lines()[2].text, text, "{sheet}");
+            assert_eq!(read.lines()[2].at, None, "{sheet}");
+        }
+
+        assert_eq!(escaped_for_lrc("all that you touch"), "all that you touch");
+        assert_eq!(escaped_for_lrc("a [bracket] inside"), "a [bracket] inside");
+        assert_eq!(escaped_for_lrc("[Chorus] x"), "[Chorus] x");
+        assert_eq!(escaped_for_lrc("[v2: x] y"), "[v2: x] y");
+    }
+
+    #[test]
+    fn a_marker_written_by_hand_is_text_and_a_backslash_before_it_is_left_as_written() {
+        let read = lyrics("[00:01.00][Chorus] x\n[00:02.00]\\[Chorus] y\n").expect("a set");
+
+        assert_eq!(read.lines()[0].text, "[Chorus] x");
+        assert_eq!(read.lines()[1].text, "\\[Chorus] y");
     }
 
     #[test]

@@ -155,7 +155,12 @@ dependency (tested without a window).
   `LARGEST_SHEET`), keeping whole lines: bytes are cut back to the last line break *before* their
   encoding is weighed, so a UTF-8 file cut inside a letter is not guessed a legacy code page
   (`a_sidecar_in_utf8_cut_inside_a_letter_still_reads_as_utf8`). An unreadable candidate is logged
-  and the walk goes on (an oversized `Echoes.lrc` does not stop `Echoes.txt`).
+  and the walk goes on (an oversized `Echoes.lrc` does not stop `Echoes.txt`). **A candidate is opened
+  only if it is a regular file** (`regular.rs`: opened without blocking and without a controlling terminal on Unix, the kind
+  read from the open handle), so a FIFO named `Song.lrc` is passed over at once rather than blocking
+  the lookup thread; the write's read-back of a standing sheet does the same
+  (`a_fifo_named_as_a_sidecar_is_passed_over_at_once_for_the_text_file_behind_it`). Names are
+  compared lossily, so a track or sheet whose name is not UTF-8 still names its sheet.
 - **A `.txt` is words only where it reads as words** (`Written::Text`, `reads_as_sung`): an unsynced
   set from one is passed over unless fewer than one line in `UNSUNG_LINES_AT_MOST_ONE_IN` is
   unsung: past `LONGEST_SUNG_LINE`, under half letters, holding a link, or a `name: value`/`name =
@@ -201,8 +206,10 @@ dependency (tested without a window).
   phone's listing of a granted folder refuse and replace alike; `KeptSheet::ending` and `body` say
   the name's ending and the text, `lyric_folders` the folder names (`WITHIN`).
 - **The write is staged and renamed over.** `.<name>.<pid>.resonate-staging` beside the track,
-  `Held` from creation and synced, then renamed onto the sheet (`LeftAlone` looking once more that
-  nothing landed there meanwhile); a dead writer's staging for the same sheet is swept by the next
+  `Held` from creation and synced, then renamed onto the sheet: `Standing::LeftAlone` by
+  `unreplacing::renamed_over_nothing`, which refuses an existing name atomically (`SidecarStands`),
+  `Replaced` by a plain rename, so a sheet that lands meanwhile is never overwritten
+  (`a_sheet_that_lands_while_the_write_is_staged_is_never_renamed_over`); a dead writer's staging for the same sheet is swept by the next
   write (`staged_for`, `writer::writer_of`;
   `a_staged_sheet_a_dead_writer_left_is_swept_by_the_next_write`).
 - **The tags are the second home, through the retag** (`library.md`'s *Fetched lyrics go into a
@@ -230,6 +237,16 @@ dependency (tested without a window).
   shift stays. Unparsable `[length:]`: the sheet declares none, not zero (zero would make every
   sheet name another track). `span` reads a length (`mm:ss`, `mm:ss.xx`, `h:mm:ss`, told apart by
   counting colons); a *moment* tries `moment` first so `[00:04:75]` keeps its hundredths.
+- **Text a writer puts after a stamp is escaped with `escaped_for_lrc` only where the reader would
+  mis-take it, and `unescaped` undoes exactly that.** A text is escaped (one backslash in front)
+  when its leading bracket opens what the reader takes (a moment, an id tag, a `[v1:`/`[v2:` voice
+  marker, or a marker ahead of a stamp, all decided by the reader's own `Bracket::read`,
+  `heads_a_timed_line` and `voiced_text` through `is_taken_by_the_reader`) or when it already leads
+  with backslashes then `[`. `[Chorus] x` stays as it is on disk, read as text anyway, and a
+  hand-written `\[Chorus]` is left as written. So `[offset:30000] x` written by Better Lyrics'
+  `lrc_of` reads back as that text, not as an offset
+  (`a_line_led_by_a_bracket_the_reader_would_take_is_read_back_as_text_once_escaped`,
+  `a_marker_written_by_hand_is_text_and_a_backslash_before_it_is_left_as_written`).
 - **A line repeats once per timestamp on it**, hence `LARGEST_SHEET`, `LARGEST_SET`, `MOST_LINES`;
   past any: `Error::Unreadable { op: Parse }`. In the reader because `Embedded` is handed a tag from
   an untrusted file. `model::MOST_LINES` is the one count: a Lyricsfile's `lines` past it are
@@ -255,8 +272,13 @@ dependency (tested without a window).
   `begin`/`end`, each `<span>` with a `begin` a word (its `end` the word's), text between spans
   joined to the word before; a word sung in syllables (`good`, `bye`) is two timed parts with no
   space between. Whitespace runs
-  read as one space. Clock values: seconds, `m:ss.fff`, `h:mm:ss.fff`, an `s` suffix
-  (`a_ttml_clock_is_read_in_seconds_minutes_or_hours`). A `<body dur>` is the declared length,
+  read as one space. Clock values: seconds, `m:ss.fff`, `h:mm:ss.fff`
+  (`a_ttml_clock_is_read_in_seconds_minutes_or_hours`) and every offset-time metric: `h`, `m`, `s`,
+  `ms`, `f` frames (against `ttp:frameRate`, 30 unless said, and `ttp:frameRateMultiplier`) and `t`
+  ticks (against `ttp:tickRate`, else the frame rate times `ttp:subFrameRate` where a frame rate is
+  said, else 1), read by `Clocks` from the root
+  (`every_offset_time_metric_ttml_defines_is_read`,
+  `frames_and_ticks_are_counted_against_the_rates_the_document_declares`). A `<body dur>` is the declared length,
   weighed by `Lyricsfile::declares_another_length_than`.
 - **Singers are the declared agents, in declaration order**: the first `ttm:agent type="person"`
   in the head is voice one, any other person voice two; a group (`v1000`, all together) is voice
@@ -266,4 +288,7 @@ dependency (tested without a window).
 - **What is beside the words is left out**: a span with any `ttm:role` (`x-bg` backing vocals,
   `x-translation`, `x-roman`) is not read (`background_and_translated_words_are_left_beside_the_line`).
 - **A line with no `begin` makes the whole set unsynced**; one with no word spans is line-timed.
-  Bounded as the Lyricsfile: `LARGEST_LYRICSFILE`, `MOST_LINES`, `MOST_WORDS`, a node limit, no DTD.
+  Bounded as the Lyricsfile: `LARGEST_LYRICSFILE`, `MOST_LINES`, `MOST_WORDS`, a node limit, no DTD,
+  and `MOST_DEPTH` of nested elements, past which the sheet is `Unread::TooDeep` before any walk
+  recurses (a 4 MiB document holds hundreds of thousands of levels)
+  (`a_document_nested_past_the_bound_is_unreadable_rather_than_overflowing_the_stack`).

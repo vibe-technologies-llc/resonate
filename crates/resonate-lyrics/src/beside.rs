@@ -8,12 +8,12 @@ use std::{
 
 use resonate_core::{
     naming::{NAME_BYTES_AT_MOST, named_within},
-    text,
+    text, unreplacing,
     writer::{self, Held, Writer},
 };
 
 use crate::{
-    Error, Result,
+    Error, Result, regular,
     sidecar::{BESIDE, WITHIN},
 };
 
@@ -241,9 +241,9 @@ fn names_in(folder: &Path) -> Result<Vec<(String, PathBuf)>> {
 
     Ok(entries
         .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name().to_str()?.to_lowercase();
-            Some((name, entry.path()))
+        .map(|entry| {
+            let name = entry.file_name().to_string_lossy().to_lowercase();
+            (name, entry.path())
         })
         .collect())
 }
@@ -257,8 +257,13 @@ fn ending_after(name: &str, stem: &str) -> Option<usize> {
 fn says(path: &Path, body: &str) -> Result<bool> {
     let mut held = Vec::new();
 
-    File::open(path)
-        .and_then(|file| file.take(READ_BACK_AT_MOST).read_to_end(&mut held))
+    let file = regular::opened(path).map_err(|cause| unwritten(path, SidecarOp::Look, cause))?;
+    let Some(file) = file else {
+        return Ok(false);
+    };
+
+    file.take(READ_BACK_AT_MOST)
+        .read_to_end(&mut held)
         .map_err(|cause| unwritten(path, SidecarOp::Look, cause))?;
 
     Ok(text::decoded(&held).0 == body)
@@ -280,13 +285,19 @@ fn settled(
 
     let landed = written_into(held.file(), body)
         .map_err(|cause| unwritten(&staged, SidecarOp::Stage, cause))
-        .and_then(|()| {
-            if standing == Standing::LeftAlone && target.exists() {
-                return Err(Error::SidecarStands {
-                    path: target.to_path_buf(),
-                });
+        .and_then(|()| match standing {
+            Standing::LeftAlone => {
+                unreplacing::renamed_over_nothing(&staged, target).map_err(|cause| {
+                    match cause.kind() {
+                        io::ErrorKind::AlreadyExists => Error::SidecarStands {
+                            path: target.to_path_buf(),
+                        },
+                        _ => unwritten(target, SidecarOp::Settle, cause),
+                    }
+                })
             }
-            fs::rename(&staged, target).map_err(|cause| unwritten(target, SidecarOp::Settle, cause))
+            Standing::Replaced => fs::rename(&staged, target)
+                .map_err(|cause| unwritten(target, SidecarOp::Settle, cause)),
         });
 
     if landed.is_err() {
@@ -535,6 +546,78 @@ mod tests {
             fs::read_to_string(folder.0.join("Echoes.lrc")).expect("our text"),
             SYNCED
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_standing_as_the_sheet_is_not_opened_to_see_what_it_says() {
+        use rustix::fs::{CWD, FileType, Mode, mknodat};
+
+        let folder = Folder::new();
+        let track = folder.track();
+        let fifo = folder.0.join("Echoes.lrc");
+
+        mknodat(CWD, &fifo, FileType::Fifo, Mode::RUSR | Mode::WUSR, 0).expect("a fifo");
+
+        let (told, hears) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let _ = told.send(write_beside(&track, kept(SYNCED), Standing::Replaced));
+        });
+
+        let replaced = hears
+            .recv_timeout(Duration::from_secs(10))
+            .expect("the write did not block")
+            .expect("a sheet written");
+
+        assert_eq!(replaced, Beside::Written(fifo.clone()));
+        assert_eq!(fs::read_to_string(&fifo).expect("its text"), SYNCED);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_sheet_whose_name_is_not_utf8_is_still_a_sheet_standing_beside_the_track() {
+        use std::{ffi::OsStr, os::unix::ffi::OsStrExt};
+
+        let folder = Folder::new();
+        let track = folder.0.join(OsStr::from_bytes(b"Ech\xffoes.flac"));
+
+        fs::write(&track, b"fLaC").expect("a track");
+        fs::write(
+            folder.0.join(OsStr::from_bytes(b"Ech\xffoes.lrc")),
+            "[00:02.00]theirs\n",
+        )
+        .expect("a sheet of their own");
+
+        let refused = write_beside(&track, kept(SYNCED), Standing::LeftAlone);
+
+        assert!(
+            matches!(refused, Err(Error::SidecarStands { .. })),
+            "{refused:?}"
+        );
+    }
+
+    #[test]
+    fn a_sheet_that_lands_while_the_write_is_staged_is_never_renamed_over() {
+        let folder = Folder::new();
+        let target = folder.0.join("Echoes.lrc");
+
+        fs::write(&target, "theirs").expect("a sheet that landed");
+
+        let refused = settled(
+            &folder.0,
+            &OsString::from("Echoes.lrc"),
+            &target,
+            SYNCED,
+            Standing::LeftAlone,
+        );
+
+        assert!(
+            matches!(&refused, Err(Error::SidecarStands { path }) if *path == target),
+            "{refused:?}"
+        );
+        assert_eq!(fs::read_to_string(&target).expect("their text"), "theirs");
+        assert!(folder.holding(STAGED).is_empty());
     }
 
     #[test]

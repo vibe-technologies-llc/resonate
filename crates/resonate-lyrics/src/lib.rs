@@ -5,6 +5,7 @@ mod lrc;
 mod lyricsfile;
 mod model;
 mod provider;
+mod regular;
 mod sidecar;
 mod ttml;
 
@@ -33,6 +34,7 @@ pub use crate::{
     },
     embedded::Embedded,
     error::{Error, LyricOp, Result},
+    lrc::escaped_for_lrc,
     lyricsfile::{LARGEST_LYRICSFILE, Lyricsfile, Unread, read_lyricsfile},
     model::{
         Blending, Credits, Detail, LyricLine, Lyrics, Singing, SungWord, Sweep, Timing, Voice,

@@ -1,6 +1,6 @@
 use std::{
     ffi::OsStr,
-    fs::{self, File},
+    fs,
     io::{self, Read},
     path::{Path, PathBuf},
     sync::{
@@ -15,7 +15,7 @@ use resonate_core::{SourceId, text};
 
 use crate::{
     Detail, Error, LARGEST_LYRICSFILE, LyricOp, LyricProvider, Lyrics, Result, Wanted, lrc,
-    read_lyricsfile,
+    read_lyricsfile, regular,
 };
 
 const SIDECAR: &str = "sidecar";
@@ -96,16 +96,12 @@ impl Sidecar {
     }
 
     fn head(&self, path: &Path, bound: u64) -> Result<Option<Vec<u8>>> {
-        let file = match File::open(path) {
-            Ok(file) => file,
+        let file = match regular::opened(path) {
+            Ok(Some(file)) => file,
+            Ok(None) => return Ok(None),
             Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(None),
             Err(cause) => return Err(self.unreachable(cause)),
         };
-        let found = file.metadata().map_err(|cause| self.unreachable(cause))?;
-
-        if !found.is_file() {
-            return Ok(None);
-        }
 
         let mut head = Vec::new();
 
@@ -957,6 +953,38 @@ mod tests {
         let tree = Tree::new();
 
         assert!(found(&tree.track("Echoes.flac")).is_none());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_fifo_named_as_a_sidecar_is_passed_over_at_once_for_the_text_file_behind_it() {
+        use rustix::fs::{CWD, FileType, Mode, mknodat};
+
+        let tree = Tree::new();
+
+        mknodat(
+            CWD,
+            tree.root.join("Echoes.lrc"),
+            FileType::Fifo,
+            Mode::RUSR | Mode::WUSR,
+            0,
+        )
+        .expect("a fifo");
+        tree.write("Echoes.txt", "[00:01.00]all that you touch");
+
+        let wanted = tree.track("Echoes.flac");
+        let (told, hears) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let _ = told.send(found(&wanted).map(|lyrics| lyrics.lines().len()));
+        });
+
+        assert_eq!(
+            hears
+                .recv_timeout(Duration::from_secs(10))
+                .expect("the lookup did not block"),
+            Some(1)
+        );
     }
 
     #[test]
