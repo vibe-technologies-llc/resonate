@@ -71,12 +71,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `fit_recorded_sweep` fits and applies (`crates/resonate-mobile/src/measurement.rs:153-177`).
   Compare the peak with a robust noise floor and refuse with a typed reason. Done when a test
   recording of white noise is refused and a recorded sweep under noise is still heard.
-- [S · 0.18.1] Describe a renderer again when it answers from another address. **Medium, builder.**
-  `round` counts a hit on an alias as seen (`crates/resonate-upnp/src/network.rs:463-480`, aliases
-  matched at `:610-616`), so a renderer that moved A to B and back stays at the dead B for good, and
-  a spoofed UDN re-points the sink. Count an alias only when the current location is heard too, and
-  describe the new address otherwise. Done when a test renderer moving A, B, A is followed back to
-  A.
 - [S · 0.18.1] Report the frames `Restore` holds. **Low, builder.** `Restore` claims `size - hop`
   frames of latency (`crates/resonate-dsp/src/restore.rs:1428`) but holds up to a hop more and
   implements neither `frames_held` nor `frames_short_of_its_latency`, which only `TruePeak` does
@@ -84,22 +78,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   at the gapless boundary, the published position and `HeardAt`, and claims 768 held after a reset.
   Implement both. Done when a chain test with restoration reports the frames held after a push and
   after a reset.
-- [S · 0.18.1] Pair a renderer's rates with its channel counts per protocolInfo entry. **Low,
-  builder.** `crates/resonate-upnp/src/carriage.rs:228-293` crosses rates and channel counts across
-  entries, so a renderer offering 96 kHz stereo and 48 kHz six-channel is sent 96 kHz six-channel.
-  Read each entry whole. Done when that pair of entries plans only what each offers, in a test.
-- [S · 0.18.1] Release the renderer round's lock between exchanges. **Low, builder.** The round
-  holds its lock across serial three-second exchanges with no total deadline
-  (`crates/resonate-upnp/src/network.rs:439-501`, `servers.rs:379-420`), so resting or stopping
-  multicast waits out every dead renderer. Exchange outside the lock and bound the round. Done when
-  a test round with five silent renderers rests within its deadline.
-- [S · 0.18.1] Cap a renderer's name and UDN. **Low, builder.** friendlyName and UDN are taken whole
-  with control characters kept (`crates/resonate-upnp/src/description.rs:123-124`, `:153-154`). Cut
-  and clean both. Done when a description with a 1 MiB name holding newlines lists a short clean
-  one.
-- [S · 0.18.1] Keep UPnP renderers when Cast fails to start. **Low, builder.** `Kinds::resting`
-  drops the UPnP kind it built when Cast fails (`crates/resonate/src/rendering.rs:29-60`). Keep each
-  kind that started. Done when a test with Cast refused still lists UPnP renderers.
 - [S · 0.18.1] Correct the equaliser's rule about bands past Nyquist. **Low, builder.** `angle_at`'s
   clamp to π never fires, since `design` passes a band over below `applies_at`
   (`crates/resonate-core/src/eq.rs:61-63`, `:543-558`), and `.claude/rules/eq.md:74-75` says every
