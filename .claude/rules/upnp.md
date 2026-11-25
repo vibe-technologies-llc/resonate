@@ -408,7 +408,10 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   the file or a cut's decode, and its `AudioKind`), `cover`, `searched` (one `Kind`'s rows a typed `Query` holds `Within` a scope, in a
   `Page`, or `Searched::Unanswered`) and `revision`, each answering `None` for a row it does not hold and its own
   `Failure` (logged, a SOAP `501`) where it cannot read. The binary's `offering::Shelves` fills it
-  over `Library`. The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
+  over `Library`, and serves a song's file only if it is a regular file (`regular_file`: opened
+  with no link followed and no waiting, the kind read from the open handle), so a FIFO or a link in
+  a track's place is answered as no such song at once
+  (`only_a_regular_file_is_served_a_fifo_or_a_link_in_a_tracks_place_is_not`). The crate owns the tree: the root (`0`) holds `Shelf::TOP`, Artists (an artist,
   then the albums by or holding them, then the songs), Albums, Songs and Playlists; a top shelf's
   title is the crate's catalog word (`offered.ftl`) and its count the catalog's `total`.
 - **An object id is the server's own spelling, read back strictly** (`Object::read`): `0`,

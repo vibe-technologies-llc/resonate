@@ -1,6 +1,7 @@
 use std::{
     collections::{BTreeMap, HashMap},
-    fs::{self, File},
+    fs::{self, File, OpenOptions},
+    io,
     path::Path,
     sync::Arc,
 };
@@ -523,6 +524,34 @@ fn song_of(track: &Track, album: Option<&str>) -> Option<Song> {
     })
 }
 
+#[cfg(unix)]
+fn without_following_or_waiting(options: &mut OpenOptions) -> &mut OpenOptions {
+    use std::os::unix::fs::OpenOptionsExt as _;
+
+    use rustix::fs::OFlags;
+
+    options.custom_flags(
+        (OFlags::NOFOLLOW | OFlags::NONBLOCK | OFlags::NOCTTY)
+            .bits()
+            .cast_signed(),
+    )
+}
+
+#[cfg(windows)]
+fn without_following_or_waiting(options: &mut OpenOptions) -> &mut OpenOptions {
+    use std::os::windows::fs::OpenOptionsExt as _;
+
+    const FILE_FLAG_OPEN_REPARSE_POINT: u32 = 0x0020_0000;
+
+    options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT)
+}
+
+fn regular_file(path: &Path) -> io::Result<Option<File>> {
+    let file = without_following_or_waiting(OpenOptions::new().read(true)).open(path)?;
+
+    Ok(file.metadata()?.is_file().then_some(file))
+}
+
 impl Shelves {
     fn cut_opened(&self, track: &Track, span: FrameSpan) -> Option<Opened> {
         let (announced, frames) = waved(track)?;
@@ -707,12 +736,16 @@ impl Catalog for Shelves {
         let Some(kind) = kind_of(path) else {
             return Ok(None);
         };
-        match File::open(path) {
-            Ok(file) => Ok(Some(Opened {
+        match regular_file(path) {
+            Ok(Some(file)) => Ok(Some(Opened {
                 bytes: Box::new(file),
                 kind,
                 content: Content::Untouched,
             })),
+            Ok(None) => {
+                tracing::debug!(path = %path.display(), "a song asked for on the network is no regular file");
+                Ok(None)
+            }
             Err(error) => {
                 tracing::debug!(%error, path = %path.display(), "a song asked for on the network is not there");
                 Ok(None)
@@ -1280,6 +1313,66 @@ mod tests {
             shelves.song(first.id).expect("read").map(|song| song.album),
             Some(Some("Record".to_owned()))
         );
+    }
+
+    #[cfg(unix)]
+    fn served_within(shelves: Arc<Shelves>, id: TrackId) -> Option<bool> {
+        let (told, hears) = std::sync::mpsc::channel();
+
+        std::thread::spawn(move || {
+            let _ = told.send(shelves.bytes_of(id).map(|opened| opened.is_some()).ok());
+        });
+
+        hears
+            .recv_timeout(Duration::from_secs(10))
+            .expect("it did not block")
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn only_a_regular_file_is_served_a_fifo_or_a_link_in_a_tracks_place_is_not() {
+        use rustix::fs::{CWD, FileType, Mode, mknodat};
+
+        let root = scratch("served-regular");
+
+        fs::write(root.join("a.wav"), silent_wave(1)).expect("a song");
+        fs::write(root.join("b.wav"), silent_wave(2)).expect("a song");
+        fs::write(root.join("c.wav"), silent_wave(3)).expect("a song");
+
+        let library = Arc::new(scanned(&root));
+        let rows = library.tracks(&TrackQuery::default()).expect("the rows");
+        let shelves = Arc::new(Shelves::over(Arc::clone(&library)));
+        let track_at = |name: &str| {
+            rows.iter()
+                .find(|track| track.location.to_string().ends_with(name))
+                .expect("a song")
+                .id
+        };
+
+        let (plain, fifo, link) = (track_at("a.wav"), track_at("b.wav"), track_at("c.wav"));
+
+        fs::remove_file(root.join("b.wav")).expect("the song goes");
+        mknodat(
+            CWD,
+            root.join("b.wav"),
+            FileType::Fifo,
+            Mode::RUSR | Mode::WUSR,
+            0,
+        )
+        .expect("a fifo");
+
+        fs::remove_file(root.join("c.wav")).expect("the song goes");
+        std::os::unix::fs::symlink(root.join("a.wav"), root.join("c.wav")).expect("a link");
+
+        let served = (
+            served_within(Arc::clone(&shelves), plain),
+            served_within(Arc::clone(&shelves), fifo),
+            served_within(Arc::clone(&shelves), link),
+        );
+
+        let _ = fs::remove_dir_all(&root);
+
+        assert_eq!(served, (Some(true), Some(false), Some(false)));
     }
 
     const SHEET_RATE: u32 = 44_100;
