@@ -352,11 +352,7 @@ fn a_search_is_signed_out_of_the_songs_filter_as_the_web_client_read_from_the_se
     );
     for asked in music.asked() {
         assert_eq!(asked.header("cookie"), None);
-        assert!(
-            asked
-                .header("user-agent")
-                .is_some_and(|agent| agent.starts_with("resonate/"))
-        );
+        assert_eq!(asked.header("user-agent"), Some("resonate"));
     }
 }
 

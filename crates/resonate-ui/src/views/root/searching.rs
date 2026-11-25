@@ -114,16 +114,6 @@ impl RootView {
         if self
             .settings_fields
             .read(cx)
-            .contact
-            .read(cx)
-            .is_focused(window)
-        {
-            self.put_back_contact(window, cx);
-            return;
-        }
-        if self
-            .settings_fields
-            .read(cx)
             .acoustid
             .read(cx)
             .is_focused(window)

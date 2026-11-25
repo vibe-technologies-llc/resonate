@@ -83,7 +83,7 @@ the root's list:
   minimum length, the settings filter, the equaliser's figure, AutoEq search and *Keep as*) and the
   subscriptions on them, which tell the root what was done in a field as an `Entered` or a `Left`
   naming it; the root holds one subscription to each and `RootView::entered` and `RootView::left`
-  answer through the handlers that store a setting (`contact_given`, `contact_left` and kin), since
+  answer through the handlers that store a setting (`acoustid_key_given`, `acoustid_key_left` and kin), since
   writing the settings, the toasts and the window's focus are the root's.
 - `SettingsPane` (`views/settings/pane.rs`): the settings pane's own state in three groups,
   `SettingsShown` (the category and page shown, the body's and the category rail's scrolls, the armed press, the music folder's and the room's
@@ -2456,19 +2456,12 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   create, create-and-add, rename, or save/revise a search. The `Naming` variant (`Query` under
   *tracks*, `New`/`Rename` under playlists) picks the heading drawing the row (one entity can't be in
   the frame twice). The row cap rides beside the name as segments and the order as a `kit::pick` opening the
-  Sort dialogue on `Ordered::SavedSearch` (a saved query = search, order, row cap). *Edit search* = `RootView::revise_search`. The Online card's fields follow one pattern:
-  `SettingsFields::contact` is filled by `Field::hold` (the saved contact is in the box when the window opens,
-  put back trimmed on enter); `contact_given` stores `Setting::Contact`, moves the global, reports it
-  is sent from the next request (`online.md`); press outside = `leave_contact` (gives typed text if it
-  differs), escape = `put_back_contact`. The field losing focus any other way (tab: `field::Blurred`)
-  takes what was typed through `contact_left` and kin without taking the caret back to the window
-  (`take_the_contact` is the one giving; `contact_given` adds the refocus); the typed folder adds
-  itself the same way and escape clears it first
-  (`tab_out_of_an_online_field_gives_what_was_typed_without_taking_the_caret_back`). Same pair for
-  AcoustID key, AudD and ListenBrainz tokens, Subsonic and TIDAL accounts, organise layout (`layout_left`
-  keeps a valid one, reports a refused one)
-  (`a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back`), ahead of
-  the naming row in `dismiss_search`.
+  Sort dialogue on `Ordered::SavedSearch` (a saved query = search, order, row cap). *Edit search* = `RootView::revise_search`.
+  Settings fields such as the AcoustID key take the saved value through `Field::hold` when opened.
+  Enter trims and stores the value, a press outside takes changed text, and Escape restores the
+  saved value. The `field::Blurred` event on Tab stores changed text without returning the caret
+  to the window (`tab_out_of_an_online_field_gives_what_was_typed_without_taking_the_caret_back`).
+  The music folder uses the same events and clears pending text on Escape.
 - **A run of rows is dragged where it goes; the keyboard reaches one before moving it.**
   `views/reorder.rs`: `Shift` names the list edited (`Queue`, `Playlist`, browse `Listing`); `Step`
   up/down and `Step::landing` are the one arithmetic behind arrows, drop and keys. A row is drag source
@@ -2837,8 +2830,8 @@ redraws on a timer while shown, reading in-memory state only (the party pane's, 
   batch is one toast; dropping the writer sends what is gathered and joins the thread. A keyless group
   (folders, *Rescan, refresh and retag*, About's) offers no mark (test-held).
 - **A setting is found by typing, not by remembering the tab.** `Typed::finding` = the pane's own
-  `Field`, reached by `ctrl-,` or a press, counted by `RootView::editing`, cleared and blurred by escape
-  ahead of the contact field in `dismiss_search`. `Narrowing` matches every word against a group's
+  `Field`, reached by `ctrl-,` or a press and counted by `RootView::editing`. Escape clears and blurs it
+  through `dismiss_search`. `Narrowing` matches every word against a group's
   title, hint, category and other names (`sink` finds the device, `latency` the buffer, `sacd` DoP).
   With a query the heading reads *Found*, the rail draws match counts, and the body draws matching
   groups from *every* category and page, whole and working, under a link naming where they are kept

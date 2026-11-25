@@ -22,9 +22,8 @@ use resonate_lyrics::Lyricists;
 use resonate_online::OnlineLyrics;
 #[cfg(feature = "online")]
 use resonate_online::{
-    AcoustId, Application, Audd, AutoEq, ByEar, Client, Identity, Introduction, LastFm,
-    ListenBrainz, Online, Release, Releases, Repository, Shazam, SpotifyAccount, SpotifyGrant,
-    SpotifyGrants, SpotifySignIn,
+    AcoustId, Application, Audd, AutoEq, ByEar, Client, LastFm, ListenBrainz, Online, Release,
+    Releases, Repository, Shazam, SpotifyAccount, SpotifyGrant, SpotifyGrants, SpotifySignIn,
 };
 
 #[cfg(feature = "online")]
@@ -36,9 +35,6 @@ use crate::{
     error::ConfigKey,
     signals,
 };
-
-#[cfg(feature = "online")]
-static INTRODUCTION: OnceLock<Introduction> = OnceLock::new();
 
 #[cfg(feature = "online")]
 static CLIENT: OnceLock<Arc<Client>> = OnceLock::new();
@@ -59,20 +55,9 @@ pub enum Asking {
 }
 
 #[cfg(feature = "online")]
-fn identity(contact: Option<String>) -> Identity {
-    Identity {
-        contact,
-        ..Identity::of_this_build()
-    }
-}
-
-#[cfg(feature = "online")]
 fn client(config: &Config) -> Arc<Client> {
-    let client = CLIENT.get_or_init(|| {
-        Arc::new(
-            Client::introduced(introduction(config).clone()).gated_by(metered::for_lookups(config)),
-        )
-    });
+    let client =
+        CLIENT.get_or_init(|| Arc::new(Client::default().gated_by(metered::for_lookups(config))));
 
     client.reach(REACHING.load(Ordering::Relaxed));
     Arc::clone(client)
@@ -87,65 +72,6 @@ fn client_for(config: &Config, asking: Asking) -> Arc<Client> {
         }
     }
 }
-
-#[cfg(feature = "online")]
-fn introduction(config: &Config) -> &'static Introduction {
-    INTRODUCTION.get_or_init(|| {
-        let said = identity(config.contact.clone());
-        match config.read_from.clone() {
-            Some(path) => {
-                let followed = Followed {
-                    path,
-                    seen: Mutex::new(None),
-                };
-                Introduction::following(&said, Arc::new(move || followed.moved()))
-            }
-            None => Introduction::as_(&said),
-        }
-    })
-}
-
-#[cfg(feature = "online")]
-struct Followed {
-    path: PathBuf,
-    seen: Mutex<Option<SystemTime>>,
-}
-
-#[cfg(feature = "online")]
-impl Followed {
-    fn moved(&self) -> Option<Identity> {
-        let stamp = fs::metadata(&self.path)
-            .and_then(|held| held.modified())
-            .ok();
-
-        {
-            let mut seen = self.seen.lock();
-
-            if *seen == stamp {
-                return None;
-            }
-            *seen = stamp;
-        }
-
-        match config::contact_in(&self.path) {
-            Ok(contact) => Some(identity(contact)),
-            Err(error) => {
-                tracing::warn!(%error, "the contact in the settings went unread, so what was said goes on being said");
-                None
-            }
-        }
-    }
-}
-
-#[cfg(all(feature = "online", feature = "ui"))]
-pub fn introduce(contact: Option<&str>) {
-    if let Some(introduction) = INTRODUCTION.get() {
-        introduction.change_to(&identity(contact.map(str::to_owned)));
-    }
-}
-
-#[cfg(all(not(feature = "online"), feature = "ui"))]
-pub fn introduce(_contact: Option<&str>) {}
 
 #[cfg(all(feature = "online", feature = "ui"))]
 pub fn reach(config: &Config, on: bool) {

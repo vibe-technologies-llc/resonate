@@ -284,7 +284,6 @@ pub(crate) enum Group {
     AfterScan,
     Metered,
     Lyrics,
-    Contact,
     Studies,
     Recognition,
     Listening,
@@ -323,7 +322,7 @@ pub(crate) enum Group {
 }
 
 impl Group {
-    pub(crate) const ALL: [Self; 83] = [
+    pub(crate) const ALL: [Self; 82] = [
         Self::Device,
         Self::DeviceVolume,
         Self::SampleRate,
@@ -371,7 +370,6 @@ impl Group {
         Self::AfterScan,
         Self::Metered,
         Self::Lyrics,
-        Self::Contact,
         Self::Studies,
         Self::Recognition,
         Self::Listening,
@@ -865,14 +863,6 @@ impl Group {
                 hint: words::settings_find::lyrics_hint(),
                 also_called: words::settings_find::lyrics_lrclib_better_lyrics_betterlyrics_ttml(),
                 keys: &[ConfigKey::FetchLyrics, ConfigKey::LyricsLanguageFromLocale],
-            },
-            Self::Contact => Described {
-                category: Category::Online,
-                page: None,
-                title: words::settings_find::contact(),
-                hint: words::settings_find::contact_hint(),
-                also_called: words::settings_find::user_agent_email_identity_request(),
-                keys: &[ConfigKey::Contact],
             },
             Self::Studies => Described {
                 category: Category::Recognition,

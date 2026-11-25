@@ -22,7 +22,16 @@ public final class SearchModel {
     )
 
     public var text = "" {
-        didSet { if text != oldValue { ask() } }
+        didSet {
+            let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard trimmed != query else { return }
+            query = trimmed
+            ask()
+        }
+    }
+    public private(set) var query = ""
+    public var includesLibrary = true {
+        didSet { if includesLibrary != oldValue { ask(settling: false) } }
     }
     public private(set) var found = SearchModel.nothing
     public private(set) var answered = ""
@@ -32,20 +41,24 @@ public final class SearchModel {
     @ObservationIgnored private let answering: @Sendable (String) async throws -> LibrarySearch
     @ObservationIgnored private let reporting: @MainActor (any Swift.Error) -> Void
     @ObservationIgnored private let settle: Duration
+    @ObservationIgnored private let ignoringLinks: Bool
     @ObservationIgnored private let remembered: UserDefaults?
     @ObservationIgnored private var pending: Task<Void, Never>?
+    @ObservationIgnored private var running: Task<LibrarySearch, any Swift.Error>?
     @ObservationIgnored private var generation = 0
 
     public init(
         answering asking: @escaping @Sendable (String) async throws -> LibrarySearch,
         reporting: @escaping @MainActor (any Swift.Error) -> Void,
         remembering: Bool,
+        ignoringLinks: Bool = false,
         historySuite: String = SearchModel.historySuite,
         settle: Duration = SearchModel.settle
     ) {
         self.answering = asking
         self.reporting = reporting
         self.settle = settle
+        self.ignoringLinks = ignoringLinks
         remembered = remembering ? UserDefaults(suiteName: historySuite) : nil
         recents = Self.kept(remembered) ? remembered?.stringArray(forKey: Self.recentsKey) ?? [] : []
     }
@@ -54,7 +67,6 @@ public final class SearchModel {
         remembered?.object(forKey: historyKeptKey) as? Bool ?? true
     }
 
-    public var query: String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
     public var isAsked: Bool { !query.isEmpty }
     public var hasAnswer: Bool { !answered.isEmpty }
     public var matchedNothing: Bool { hasAnswer && found.trackCount == 0 }
@@ -107,27 +119,38 @@ public final class SearchModel {
     private func ask(settling: Bool = true) {
         generation += 1
         pending?.cancel()
+        running?.cancel()
         let asked = generation
         let query = query
 
-        guard !query.isEmpty else {
-            found = Self.nothing
-            answered = ""
-            asking = false
+        guard includesLibrary, !query.isEmpty, !ignoringLinks || !OnlineAsked.isLink(query) else {
+            if hasAnswer {
+                found = Self.nothing
+                answered = ""
+            }
+            if asking { asking = false }
             pending = nil
             return
         }
 
-        asking = true
+        if !asking { asking = true }
         let settle = settle
         pending = Task { [weak self] in
             if settling {
                 do { try await Task.sleep(for: settle) } catch { return }
             }
             guard let self else { return }
+            if let running { _ = await running.result }
+            guard asked == generation else { return }
+
+            let lookup = Task { [weak self, answering] in
+                defer { self?.running = nil }
+                return try await answering(query)
+            }
+            running = lookup
 
             do {
-                let answer = try await answering(query)
+                let answer = try await lookup.value
                 guard asked == generation else { return }
                 let shown = found
                 let refreshed = answered == query

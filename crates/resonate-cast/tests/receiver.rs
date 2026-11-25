@@ -931,7 +931,7 @@ fn a_receiver_listed_is_reached_and_offered_as_a_sink() {
     assert_eq!(heard.kinds(), ["GET_STATUS"]);
     assert_eq!(
         heard.said("CONNECT").expect("a connect")["userAgent"],
-        json!(format!("resonate/{}", env!("CARGO_PKG_VERSION")))
+        json!("resonate")
     );
 }
 

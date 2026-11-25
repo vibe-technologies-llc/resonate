@@ -126,7 +126,7 @@ per-source files, since a whole-module build writes no other), and
 `xtool install xtool/Resonate.app`. `ios/install.py [-c debug|release] [--udid]` is that whole run
 in one: it fetches the latest xtool AppImage from the GitHub release (refused unless it matches the
 release's sha256 digest; kept in `$XDG_CACHE_HOME/resonate` and fetched again only when the digest
-moves; asked as `resonate/<version>`), checks xtool's sign-in and the `darwin` SDK, then builds the
+moves; asked as `resonate`), checks xtool's sign-in and the `darwin` SDK, then builds the
 native library, the app and the metadata in the configuration asked (release by default) and
 installs. The generator writes what Apple's processor writes for the
 same input, field for field, for what Resonate uses alone: `AppIntent`s with literal titles and
@@ -1212,7 +1212,7 @@ every route change (a pair of headphones at the same rate included), not from th
   subtitled *Saved search*, its text and its order, direction and cap (`SavedSearch.reading`) under
   the header and its songs plain `TrackRow`s (`SavedSearchRows`): no *Add songs*, Edit, swipe or move,
   and no *Your devices* section in its options, which offer *Edit search* (`revise_search`, as
-  `Features.reviseSearch`); the playlist picker lists lists alone. The Search tab's toolbar offers
+  `Features.reviseSearch`); the playlist picker lists lists alone. The Search tab's scope bar offers
   *Save as playlist* while it holds a library search, and both open `SavedSearchSheet`: a name, the
   search text, an order picker of `SearchOrder.offered`, a *Descending* toggle and a *Limit* (blank for
   every row, else a whole number above zero), the draft's rules being `ResonateLogic`'s
@@ -1419,9 +1419,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
 - **The library is searched in Rust, never filtered in Swift.** `SearchModel` (`SearchModel.swift`;
   `Library.librarySearch` for the Library tab, `Library.tabSearch` for
   the Search tab, so each tab's text is its own) asks `search_library`
-  on `Work.aside` 150 ms after the last keystroke (the desktop's `SEARCH_SETTLE`), cancels the
-  settle before, refuses a stale answer by generation and keeps the last answer on screen until the
-  next lands; blank text asks nothing. Rows light matched text through `highlights`, its UTF-16
+  on `Work.onScreen` 150 ms after the last keystroke (the desktop's `SEARCH_SETTLE`). Only
+  one native search runs at a time per model. The next one waits for the active call and checks
+  its generation before starting, so obsolete queries cannot pile up scans of the catalog.
+  The last answer stays until the next lands. Blank text asks nothing, and edits that leave the
+  trimmed text unchanged keep the same request. Rows light matched text through `highlights`, its UTF-16
   ranges turned into `String` indices by `NSRange` and widened to whole characters (`lit`). A
   catalog read that changed what is shown, or a favourite, asks again without the settle; an answer
   equal to the one shown (compared off the main actor) assigns nothing. **A refresh never reorders
@@ -1482,10 +1484,10 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   the system segmented picker on a `.bar` material read as a grey strip over the themed field). *All* shows at
   most three library songs and *All library results* before the online results, so album and artist
   shelves cannot push online songs several screens down. *Library* shows the full Top with its
-  song, album and artist sections and *See all*; *Online* starts with online results. The same
-  `tabSearch.text` and `Features.onlineQuery` move together whichever area is shown, including
-  *Did you mean* and Listen's *Find it*. A shared link shows online alone and hides
-  the picker. With online features off no request leaves and `OnlineOffRow` opens Settings.
+  song, album and artist sections and *See all*. Each scope requests the results it displays.
+  Search text from typing, *Did you mean* and Listen's *Find it* follows the same path.
+  A shared link asks online only and hides the picker. With online features off no request leaves
+  and `OnlineOffRow` opens Settings.
   Downloads live on a toolbar button's page (`DownloadsButton`), also on the online Songs and
   release pages, never above their results; its filled icon and spoken active count follow the
   queue independently of the search page. The page keeps provider setup, retry, cancellation and
@@ -1500,9 +1502,11 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
 - **Search's rows sit close**: *See all* reaches 12 pt above and below
   its line through its content shape while laying out at the line's height
   (`SeeAllHeader.reachBeyondTheLine`), so a header never stands 44 pt tall.
-- **A result answers while the keyboard is up.** The Search tab's and the Library tab's result lists
-  stow the keyboard as soon as they are dragged (`scrollDismissesKeyboard(.immediately)`), and
-  choosing a result (a song played, an album or artist opened) drops the field's focus first
+- **A result answers while the keyboard is up.** The Search tab attaches its system search field to a stable
+  view outside the changing result list. Downloads stays in the toolbar and *Save as playlist*
+  sits beside the scope chooser, so the first character cannot replace items in the field's
+  toolbar. The Search tab dismisses the keyboard interactively on a drag and the Library tab
+  dismisses it immediately. Choosing a result (a song played, an album or artist opened) drops the field's focus first
   (`Keyboard.stow`, `SearchResults.chosen`), resigning the first responder rather than binding `searchFocused`, whose focus binding fought the system field as it moved above the keyboard. A library search shows no spinner: the last answer
   stays until the next lands, a few hundred milliseconds after the last keystroke. A toolbar
   spinner added and removed with each keystroke rebuilt the bar under the focused field, and one

@@ -1,6 +1,5 @@
 use std::{
     collections::{BTreeMap, BTreeSet},
-    fmt,
     io::{Read as _, Write as _},
     sync::{
         Arc, LazyLock,
@@ -11,18 +10,15 @@ use std::{
 };
 
 use flate2::{Compression, write::GzEncoder};
-use parking_lot::{Condvar, Mutex, RwLock};
+use parking_lot::{Condvar, Mutex};
 use resonate_core::Gate;
-use resonate_fetch::retry_after;
+use resonate_fetch::{USER_AGENT, retry_after};
 use resonate_library::LookupOp;
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use ureq::{
     Agent, Body,
-    http::{
-        HeaderMap, Response, StatusCode, Uri,
-        header::{AUTHORIZATION, LOCATION, USER_AGENT},
-    },
+    http::{HeaderMap, Response, StatusCode, header::AUTHORIZATION},
 };
 
 use crate::{Error, Host, Result, query::Params};
@@ -52,7 +48,6 @@ pub(crate) fn passed_over_when_refused<T>(answered: Result<Option<T>>) -> Result
 }
 pub(crate) const LARGEST_INDEX: usize = 2 * 1024 * 1024;
 
-const NAME: &str = "resonate";
 const CONTENT_LANGUAGE: &str = "en_US";
 const FORM: &str = "application/x-www-form-urlencoded";
 const JSON: &str = "application/json";
@@ -138,139 +133,6 @@ const RETRY_AFTER_AT_MOST: Duration = Duration::from_secs(10);
 const COOLING_AT_MOST: Duration = Duration::from_secs(24 * 60 * 60);
 const RETRY_AFTER_BY_DEFAULT: Duration = Duration::from_secs(2);
 const BUSY_RETRIES: u32 = 3;
-const REDIRECTS_FOLLOWED: u32 = 10;
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Identity {
-    pub version: &'static str,
-    pub contact: Option<String>,
-}
-
-impl Identity {
-    pub fn of_this_build() -> Self {
-        Self {
-            version: env!("CARGO_PKG_VERSION"),
-            contact: None,
-        }
-    }
-
-    pub fn user_agent(&self) -> String {
-        let contact = self
-            .contact
-            .as_deref()
-            .map(str::trim)
-            .filter(|contact| !contact.is_empty());
-
-        match contact {
-            Some(contact) => format!("{} ( {contact} )", self.named()),
-            None => self.named(),
-        }
-    }
-
-    pub fn user_agent_to(&self, host: Host) -> String {
-        if host.asks_who_is_asking() {
-            self.user_agent()
-        } else {
-            self.named()
-        }
-    }
-
-    fn named(&self) -> String {
-        format!("{NAME}/{}", self.version)
-    }
-}
-
-impl Host {
-    const fn asks_who_is_asking(self) -> bool {
-        match self {
-            Self::MusicBrainz
-            | Self::CoverArtArchive
-            | Self::ListenBrainz
-            | Self::Commons
-            | Self::Wikidata => true,
-            Self::Lrclib
-            | Self::BetterLyrics
-            | Self::AutoEq
-            | Self::GitHub
-            | Self::AcoustId
-            | Self::Shazam
-            | Self::AppleArtwork
-            | Self::AppleMusic
-            | Self::Audd
-            | Self::Deezer
-            | Self::DeezerPictures
-            | Self::Spotify
-            | Self::SpotifyPictures
-            | Self::SpotifyAccounts
-            | Self::SpotifyApi
-            | Self::SoundCloud
-            | Self::SoundCloudPictures
-            | Self::NullPointer
-            | Self::SongLink
-            | Self::LastFm
-            | Self::Youtube
-            | Self::TidalEmbed
-            | Self::Tidal => false,
-        }
-    }
-}
-
-pub type Reintroduction = Arc<dyn Fn() -> Option<Identity> + Send + Sync>;
-
-#[derive(Clone)]
-pub struct Introduction {
-    said: Arc<RwLock<Identity>>,
-    follows: Option<Reintroduction>,
-}
-
-impl fmt::Debug for Introduction {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("Introduction")
-            .field("said", &self.said.read().user_agent())
-            .field("follows", &self.follows.is_some())
-            .finish()
-    }
-}
-
-impl Introduction {
-    pub fn as_(identity: &Identity) -> Self {
-        Self {
-            said: Arc::new(RwLock::new(identity.clone())),
-            follows: None,
-        }
-    }
-
-    pub fn following(identity: &Identity, follows: Reintroduction) -> Self {
-        Self {
-            follows: Some(follows),
-            ..Self::as_(identity)
-        }
-    }
-
-    pub fn change_to(&self, identity: &Identity) {
-        *self.said.write() = identity.clone();
-    }
-
-    pub fn user_agent(&self) -> String {
-        self.heard_again();
-        self.said.read().user_agent()
-    }
-
-    pub fn user_agent_to(&self, host: Host) -> String {
-        self.heard_again();
-        self.said.read().user_agent_to(host)
-    }
-
-    fn named(&self) -> String {
-        self.said.read().named()
-    }
-
-    fn heard_again(&self) {
-        if let Some(identity) = self.follows.as_ref().and_then(|follows| follows()) {
-            self.change_to(&identity);
-        }
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Carried {
@@ -503,7 +365,6 @@ impl Pacing {
 
 pub struct Client {
     agent: Agent,
-    introduction: Introduction,
     pacing: Pacing,
     clock: Arc<dyn Clock>,
     reaching: Arc<AtomicBool>,
@@ -512,37 +373,25 @@ pub struct Client {
     cancelled: Option<Arc<AtomicBool>>,
 }
 
-impl Client {
-    pub fn new(identity: Identity) -> Self {
-        Self::introduced(Introduction::as_(&identity))
-    }
-
-    pub fn introduced(introduction: Introduction) -> Self {
+impl Default for Client {
+    fn default() -> Self {
         Self::paced_by(
-            introduction,
             Arc::new(WallClock),
             Carried::Encrypted,
             EVERY_CLIENT_IN_THE_PROCESS.clone(),
         )
     }
+}
 
+impl Client {
     #[cfg(test)]
-    pub(crate) fn on_clock(
-        introduction: Introduction,
-        clock: Arc<dyn Clock>,
-        carried: Carried,
-    ) -> Self {
-        Self::paced_by(introduction, clock, carried, Pacing::default())
+    pub(crate) fn on_clock(clock: Arc<dyn Clock>, carried: Carried) -> Self {
+        Self::paced_by(clock, carried, Pacing::default())
     }
 
-    fn paced_by(
-        introduction: Introduction,
-        clock: Arc<dyn Clock>,
-        carried: Carried,
-        pacing: Pacing,
-    ) -> Self {
+    fn paced_by(clock: Arc<dyn Clock>, carried: Carried, pacing: Pacing) -> Self {
         let config = Agent::config_builder()
-            .user_agent(Identity::of_this_build().named().as_str())
+            .user_agent(USER_AGENT)
             .https_only(carried == Carried::Encrypted)
             .timeout_connect(Some(CONNECT_WITHIN))
             .timeout_global(Some(ANSWER_WITHIN))
@@ -551,7 +400,6 @@ impl Client {
 
         Self {
             agent: config.new_agent(),
-            introduction,
             pacing,
             clock,
             reaching: Arc::new(AtomicBool::new(true)),
@@ -564,7 +412,6 @@ impl Client {
     pub fn yielding(&self) -> Self {
         Self {
             agent: self.agent.clone(),
-            introduction: self.introduction.clone(),
             pacing: self.pacing.clone(),
             clock: Arc::clone(&self.clock),
             reaching: Arc::clone(&self.reaching),
@@ -577,10 +424,6 @@ impl Client {
     pub fn cancellable(mut self, cancelled: Arc<AtomicBool>) -> Self {
         self.cancelled = Some(cancelled);
         self
-    }
-
-    pub fn user_agent(&self) -> String {
-        self.introduction.user_agent()
     }
 
     pub fn gated_by(mut self, metered: Gate) -> Self {
@@ -779,7 +622,6 @@ impl Client {
             .max_redirects(0)
             .timeout_global(Some(Duration::from_secs(600)))
             .build()
-            .header(USER_AGENT, self.introduction.user_agent_to(host))
             .header(
                 "Content-Type",
                 format!("multipart/form-data; boundary={boundary}"),
@@ -885,9 +727,8 @@ impl Client {
             }
             self.reachable(host, op)?;
 
-            let introduced = self.introduction.user_agent_to(host);
             let sent = match sending {
-                Sending::Get { authorization } => self.got(url, &introduced, authorization),
+                Sending::Get { authorization } => self.got(url, authorization),
                 Sending::Post(posted) => {
                     let request = self
                         .agent
@@ -895,7 +736,6 @@ impl Client {
                         .config()
                         .max_redirects(0)
                         .build()
-                        .header(USER_AGENT, &introduced)
                         .header("Content-Type", posted.content_type.as_str())
                         .header("Content-Language", CONTENT_LANGUAGE);
                     let request = match &posted.authorization {
@@ -945,45 +785,14 @@ impl Client {
     fn got(
         &self,
         url: &str,
-        introduced: &str,
         authorization: Option<&str>,
     ) -> std::result::Result<Response<Body>, ureq::Error> {
-        let request = self.agent.get(url).header(USER_AGENT, introduced);
-        let request = match authorization {
+        let request = self.agent.get(url);
+        match authorization {
             Some(authorization) => request.header(AUTHORIZATION, authorization),
             None => request,
-        };
-        let named = self.introduction.named();
-
-        if introduced == named {
-            return request.call();
         }
-
-        let origin = host_of(url);
-        let mut at = url.to_owned();
-        let mut response = request.config().max_redirects(0).build().call()?;
-
-        for _ in 0..REDIRECTS_FOLLOWED {
-            let Some(next) = redirected_to(&at, &response) else {
-                return Ok(response);
-            };
-            let said = if host_of(&next) == origin {
-                introduced
-            } else {
-                named.as_str()
-            };
-
-            response = self
-                .agent
-                .get(&next)
-                .header(USER_AGENT, said)
-                .config()
-                .max_redirects(0)
-                .build()
-                .call()?;
-            at = next;
-        }
-        Err(ureq::Error::TooManyRedirects)
+        .call()
     }
 
     fn wait_ended(&self, host: Host, op: LookupOp) -> Error {
@@ -1042,47 +851,6 @@ impl Client {
             }
         }
     }
-}
-
-fn host_of(url: &str) -> Option<String> {
-    let uri = url.parse::<Uri>().ok()?;
-    Some(uri.host()?.to_ascii_lowercase())
-}
-
-fn redirected_to(at: &str, response: &Response<Body>) -> Option<String> {
-    let redirects = matches!(
-        response.status(),
-        StatusCode::MOVED_PERMANENTLY
-            | StatusCode::FOUND
-            | StatusCode::SEE_OTHER
-            | StatusCode::TEMPORARY_REDIRECT
-            | StatusCode::PERMANENT_REDIRECT
-    );
-
-    if !redirects {
-        return None;
-    }
-
-    let location = response.headers().get(LOCATION)?.to_str().ok()?;
-
-    if location
-        .parse::<Uri>()
-        .is_ok_and(|uri| uri.scheme().is_some())
-    {
-        return Some(location.to_owned());
-    }
-
-    let from = at.parse::<Uri>().ok()?;
-    let scheme = from.scheme_str()?;
-
-    if location.starts_with("//") {
-        return Some(format!("{scheme}:{location}"));
-    }
-
-    let authority = from.authority()?;
-    location
-        .starts_with('/')
-        .then(|| format!("{scheme}://{authority}{location}"))
 }
 
 fn busy(status: StatusCode) -> bool {
@@ -1215,11 +983,7 @@ mod tests {
     fn a_cap_bounds_the_body_as_it_is_decoded_rather_than_as_it_arrived() {
         const CAP: usize = 64 * 1024;
 
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            Faked::new(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(Faked::new(), Carried::Plain);
         let (url, served) = serving_gzipped(vec![0; CAP * 16]);
 
         let read = client.bytes(Host::CoverArtArchive, LookupOp::Cover, &url, CAP);
@@ -1288,11 +1052,7 @@ mod tests {
 
         std::fs::write(&path, b"test audio bytes").expect("a fixture");
 
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            Faked::new(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(Faked::new(), Carried::Plain);
         let (url, served) = serving_one_post();
 
         let read = client.upload_file_to(&path, &url);
@@ -1372,11 +1132,10 @@ mod tests {
     }
 
     #[test]
-    fn a_contact_is_not_carried_through_a_redirect_to_another_host() {
-        let introduction = Introduction::as_(&identity(Some("someone who typed a contact")));
-        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
+    fn gets_send_the_same_user_agent_through_redirects() {
+        let client = Client::on_clock(Faked::new(), Carried::Plain);
         let landed = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok";
-        let told = "user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n";
+        let told = "user-agent: resonate\r\n";
 
         let (elsewhere, landing) = serving_one_get(landed.to_owned());
         let (same, staying) = serving_one_get(redirecting_to(&format!(
@@ -1397,20 +1156,16 @@ mod tests {
         let second = staying.join().expect("the same host again");
         let last = landing.join().expect("the other host");
 
-        assert!(first.contains(told), "{first}");
-        assert!(second.contains(told), "{second}");
-        assert!(
-            last.contains("user-agent: resonate/9.9.9\r\n"),
-            "another host was told the contact: {last}"
-        );
-        assert_eq!(last.matches("user-agent: ").count(), 1, "{last}");
+        for head in [first, second, last] {
+            assert!(head.contains(told), "{head}");
+            assert_eq!(head.matches("user-agent: ").count(), 1, "{head}");
+        }
     }
 
     #[test]
-    fn a_contact_is_not_carried_through_a_redirected_post_to_another_host() {
-        let introduction = Introduction::as_(&identity(Some("someone who typed a contact")));
-        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
-        let told = "user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n";
+    fn posts_send_the_user_agent_and_refuse_redirects() {
+        let client = Client::on_clock(Faked::new(), Carried::Plain);
+        let told = "user-agent: resonate\r\n";
         let elsewhere = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
         let landing = elsewhere.local_addr().expect("a bound address").port();
 
@@ -1470,11 +1225,7 @@ mod tests {
     fn the_address_asked_is_never_logged_since_a_key_may_ride_in_its_query() {
         const KEY: &str = "a-key-the-listener-registered";
 
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            Faked::new(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(Faked::new(), Carried::Plain);
         let logged = Logged::default();
         let subscriber = tracing_subscriber::fmt()
             .with_max_level(tracing::Level::DEBUG)
@@ -1515,125 +1266,8 @@ mod tests {
     }
 
     #[test]
-    fn a_contact_given_after_the_client_was_built_is_what_the_next_request_says() {
-        let introduction = Introduction::as_(&identity(None));
-        let client = Client::on_clock(introduction.clone(), Faked::new(), Carried::Plain);
-
-        introduction.change_to(&identity(Some("someone who typed a contact")));
-
-        let (url, served) = serving_one_post();
-
-        let _: Option<serde_json::Value> = client
-            .posted(
-                Host::MusicBrainz,
-                LookupOp::Recognise,
-                &url,
-                &Posted::packed_form(Params::new().with("client", "a key")),
-            )
-            .expect("an answer");
-        let (head, _) = served.join().expect("the server");
-
-        assert_eq!(head.matches("user-agent: ").count(), 1, "{head}");
-        assert!(
-            head.contains("user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n"),
-            "{head}"
-        );
-        assert_eq!(
-            client.user_agent(),
-            "resonate/9.9.9 ( someone who typed a contact )"
-        );
-    }
-
-    #[test]
-    fn a_contact_is_told_to_the_hosts_that_ask_who_is_asking_and_no_other() {
-        let introduction = Introduction::as_(&identity(Some("someone who typed a contact")));
-        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
-
-        for (host, told) in [
-            (Host::MusicBrainz, true),
-            (Host::CoverArtArchive, true),
-            (Host::ListenBrainz, true),
-            (Host::Wikidata, true),
-            (Host::Shazam, false),
-            (Host::Audd, false),
-            (Host::AcoustId, false),
-            (Host::Spotify, false),
-            (Host::AutoEq, false),
-        ] {
-            let (url, served) = serving_one_post();
-            let _: Option<serde_json::Value> = client
-                .posted(
-                    host,
-                    LookupOp::Recognise,
-                    &url,
-                    &Posted::packed_form(Params::new().with("client", "a key")),
-                )
-                .expect("an answer");
-            let (head, _) = served.join().expect("the server");
-
-            let said = if told {
-                "user-agent: resonate/9.9.9 ( someone who typed a contact )\r\n"
-            } else {
-                "user-agent: resonate/9.9.9\r\n"
-            };
-
-            assert!(head.contains(said), "{host:?} was told {head}");
-            assert_eq!(head.matches("user-agent: ").count(), 1, "{head}");
-        }
-    }
-
-    #[test]
-    fn an_introduction_that_follows_a_file_says_what_the_file_says_by_the_next_request() {
-        let written: Arc<Mutex<Option<Option<String>>>> = Arc::new(Mutex::new(None));
-        let read = Arc::clone(&written);
-        let introduction = Introduction::following(
-            &identity(None),
-            Arc::new(move || {
-                read.lock()
-                    .take()
-                    .map(|contact| identity(contact.as_deref()))
-            }),
-        );
-        let client = Client::on_clock(introduction, Faked::new(), Carried::Plain);
-
-        assert_eq!(client.user_agent(), "resonate/9.9.9");
-
-        *written.lock() = Some(Some("someone who edited the file".to_owned()));
-
-        let (url, served) = serving_one_post();
-        let _: Option<serde_json::Value> = client
-            .posted(
-                Host::ListenBrainz,
-                LookupOp::Recognise,
-                &url,
-                &Posted::packed_form(Params::new().with("client", "a key")),
-            )
-            .expect("an answer");
-        let (head, _) = served.join().expect("the server");
-
-        assert!(
-            head.contains("user-agent: resonate/9.9.9 ( someone who edited the file )\r\n"),
-            "{head}"
-        );
-
-        assert_eq!(
-            client.user_agent(),
-            "resonate/9.9.9 ( someone who edited the file )",
-            "a file that has not moved since changed what is said"
-        );
-
-        *written.lock() = Some(None);
-
-        assert_eq!(client.user_agent(), "resonate/9.9.9");
-    }
-
-    #[test]
     fn a_packed_form_is_posted_gzipped_and_says_so() {
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            Faked::new(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(Faked::new(), Carried::Plain);
         let (url, served) = serving_one_post();
         let fields = Params::new()
             .with("client", "a key")
@@ -1667,7 +1301,7 @@ mod tests {
 
     #[test]
     fn a_client_that_meets_the_network_refuses_a_plain_address() {
-        let client = Client::new(identity(None));
+        let client = Client::default();
         let (url, _served) = serving_gzipped(Vec::new());
 
         let read = client.bytes(Host::CoverArtArchive, LookupOp::Cover, &url, 1);
@@ -1698,11 +1332,7 @@ mod tests {
     #[test]
     fn a_client_switched_off_asks_nothing_until_switched_on_again() {
         let clock = Faked::new();
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(clock.clone(), Carried::Plain);
         let listener = TcpListener::bind("127.0.0.1:0").expect("a loopback port");
 
         listener
@@ -1752,12 +1382,7 @@ mod tests {
         metering.report(meter);
 
         let gate = Gate::new(metering.clone(), shut);
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            Faked::new(),
-            Carried::Plain,
-        )
-        .gated_by(gate.clone());
+        let client = Client::on_clock(Faked::new(), Carried::Plain).gated_by(gate.clone());
         (client, gate, metering)
     }
 
@@ -1874,11 +1499,7 @@ mod tests {
     }
 
     fn fetched(clock: &Arc<Faked>, answers: Vec<Answer>) -> (u16, usize) {
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(clock.clone(), Carried::Plain);
         fetched_by(&client, answers)
     }
 
@@ -1929,40 +1550,10 @@ mod tests {
         }
     }
 
-    fn identity(contact: Option<&str>) -> Identity {
-        Identity {
-            version: "9.9.9",
-            contact: contact.map(str::to_owned),
-        }
-    }
-
-    #[test]
-    fn the_user_agent_names_the_build_and_nothing_else_unless_a_contact_is_given() {
-        assert_eq!(identity(None).user_agent(), "resonate/9.9.9");
-        assert_eq!(identity(Some("")).user_agent(), "resonate/9.9.9");
-        assert_eq!(identity(Some("   ")).user_agent(), "resonate/9.9.9");
-        assert_eq!(
-            identity(Some("a contact the user typed")).user_agent(),
-            "resonate/9.9.9 ( a contact the user typed )"
-        );
-
-        let built = Identity::of_this_build();
-
-        assert_eq!(built.contact, None);
-        assert_eq!(
-            Client::new(built).user_agent(),
-            format!("resonate/{}", env!("CARGO_PKG_VERSION"))
-        );
-    }
-
     #[test]
     fn two_musicbrainz_requests_are_a_second_apart_and_other_hosts_a_quarter() {
         let clock = Faked::new();
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(clock.clone(), Carried::Plain);
 
         client.pace(Host::MusicBrainz);
         client.pace(Host::MusicBrainz);
@@ -2010,18 +1601,8 @@ mod tests {
         let clock = Faked::new();
         let pacing = Pacing::default();
 
-        let reference = Client::paced_by(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-            pacing.clone(),
-        );
-        let recogniser = Client::paced_by(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-            pacing,
-        );
+        let reference = Client::paced_by(clock.clone(), Carried::Plain, pacing.clone());
+        let recogniser = Client::paced_by(clock.clone(), Carried::Plain, pacing);
 
         reference.pace(Host::MusicBrainz);
         recogniser.pace(Host::MusicBrainz);
@@ -2032,19 +1613,15 @@ mod tests {
             vec![MUSICBRAINZ_INTERVAL, MUSICBRAINZ_INTERVAL]
         );
 
-        let first = Client::new(identity(None));
-        let second = Client::introduced(Introduction::as_(&identity(Some("a contact"))));
+        let first = Client::default();
+        let second = Client::default();
 
         assert!(Arc::ptr_eq(&first.pacing.0, &second.pacing.0));
         assert!(Arc::ptr_eq(&first.pacing.0, &first.yielding().pacing.0));
     }
 
     fn listener_and_its_yielding_twin(clock: &Arc<Faked>) -> (Client, Client) {
-        let listener = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let listener = Client::on_clock(clock.clone(), Carried::Plain);
         let yielding = listener.yielding();
         (listener, yielding)
     }
@@ -2200,16 +1777,11 @@ mod tests {
     }
 
     #[test]
-    fn the_yielding_twin_shares_the_queue_the_switch_and_the_introduction() {
-        let introduction = Introduction::as_(&identity(None));
-        let listener = Client::on_clock(introduction.clone(), Faked::new(), Carried::Plain);
+    fn the_yielding_twin_shares_the_queue_and_the_switch() {
+        let listener = Client::on_clock(Faked::new(), Carried::Plain);
         let yielding = listener.yielding();
 
         assert!(Arc::ptr_eq(&listener.pacing.0, &yielding.pacing.0));
-
-        introduction.change_to(&identity(Some("someone who typed a contact")));
-
-        assert_eq!(yielding.user_agent(), listener.user_agent());
 
         listener.reach(false);
 
@@ -2245,11 +1817,7 @@ mod tests {
     #[test]
     fn a_host_busy_through_every_retry_is_asked_once_until_it_answers() {
         let clock = Faked::new();
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(clock.clone(), Carried::Plain);
 
         let (status, served) = fetched_by(&client, vec![BUSY, BUSY, BUSY, BUSY]);
 
@@ -2287,11 +1855,7 @@ mod tests {
     #[test]
     fn a_host_busy_through_every_retry_is_still_waited_on_as_long_as_it_asked() {
         let clock = Faked::new();
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(clock.clone(), Carried::Plain);
 
         let (status, served) = fetched_by(&client, vec![BUSY, BUSY, BUSY, busy_for(7)]);
 
@@ -2369,11 +1933,7 @@ mod tests {
         const AN_HOUR: u64 = 60 * 60;
 
         let clock = Faked::new();
-        let client = Client::on_clock(
-            Introduction::as_(&identity(None)),
-            clock.clone(),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(clock.clone(), Carried::Plain);
         let asked = |url: &str| {
             client.exchange(
                 Host::MusicBrainz,

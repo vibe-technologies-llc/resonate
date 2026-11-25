@@ -14,7 +14,7 @@ use parking_lot::Mutex;
 use resonate_audio::{AudioSource, GraphTime, StreamClock};
 use resonate_core::{Ratio, StreamSpec};
 
-use crate::{Carriage, http::USER_AGENT, wire::Wire};
+use crate::{Carriage, http::SERVED_AS, wire::Wire};
 
 const QUANTA_A_SECOND: u64 = 100;
 
@@ -195,7 +195,7 @@ impl Feed {
     fn answer_head(&self) -> String {
         format!(
             "HTTP/1.1 200 OK\r\nContent-Type: {}\r\nConnection: close\r\nCache-Control: \
-             no-cache\r\nAccept-Ranges: none\r\nServer: {USER_AGENT}\r\ntransferMode.dlna.org: \
+             no-cache\r\nAccept-Ranges: none\r\nServer: {SERVED_AS}\r\ntransferMode.dlna.org: \
              Streaming\r\ncontentFeatures.dlna.org: DLNA.ORG_OP=00;DLNA.ORG_CI=0\r\n\r\n",
             self.carriage.kind_of(self.spec)
         )

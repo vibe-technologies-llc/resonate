@@ -179,9 +179,9 @@ Invariants the layering protects (the rules files have the rest):
   `Fingerprints`, `Corrections`, `LyricProvider`. `resonate-musicbrainz::Layered` wraps it, so a
   lookup is answered by what was kept, the local copy of the export, a synced device, then the
   network (`musicbrainz.md`).
-- **A request says what this build is and nothing else**: User-Agent `resonate/<version>`; a contact,
-  AcoustID key, Spotify client ID, AudD or ListenBrainz token is sent only where typed into a setting, each empty by
-  default; `online = false` stops every request (`online.md`).
+- **A request uses the User-Agent `resonate`.** An AcoustID key, Spotify client ID, AudD or
+  ListenBrainz token is sent only where typed into a setting, each empty by default.
+  `online = false` stops every request (`online.md`).
 - **A metered connection is one `resonate_core::Metering`, read through `Gate`s**: a detector
   (`resonate-mpris` on NetworkManager, Windows's connection cost and a Mac's path monitor, the phones' own callbacks) reports `Meter::{Unknown,
   Unmetered, Metered}`; a gate is shut only by `Metered`, so unknown never blocks. Both switches

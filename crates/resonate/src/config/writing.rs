@@ -13,7 +13,7 @@ use toml_edit::{DocumentMut, Item, Table};
 
 #[cfg(unix)]
 use super::places::READ_BY_ITS_OWNER_ALONE;
-use super::reading::{Retired, document};
+use super::reading::{REMOVED_CONTACT, Retired, document};
 use crate::{ConfigKey, Error, Result, ValueKind};
 
 const LOCK_SUFFIX: &str = ".lock";
@@ -167,10 +167,11 @@ pub fn edit(path: &Path, edits: impl FnOnce(&mut Editing<'_>) -> Result<()>) -> 
     let _alone = held_alone(&target)?;
     let mut document = document(&target, &read_or_empty(&target)?)?;
 
+    let changed = document.remove(REMOVED_CONTACT).is_some();
     let mut editing = Editing {
         document: &mut document,
         target: &target,
-        changed: false,
+        changed,
     };
 
     edits(&mut editing)?;

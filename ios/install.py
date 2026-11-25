@@ -4,7 +4,6 @@ import json
 import os
 from pathlib import Path
 import platform
-import plistlib
 import subprocess
 import sys
 import urllib.request
@@ -26,8 +25,6 @@ parser.add_argument(
 args = parser.parse_args()
 sys.stdout.reconfigure(line_buffering=True)
 ios = Path(__file__).resolve().parent
-version = plistlib.loads((ios / "Resonate/Info.plist").read_bytes())["CFBundleShortVersionString"]
-agent = f"resonate/{version}"
 
 
 def step(what):
@@ -42,7 +39,7 @@ def run(command, cwd=ios):
 
 
 def asked(url):
-    return urllib.request.Request(url, headers={"User-Agent": agent, "Accept": "application/vnd.github+json"})
+    return urllib.request.Request(url, headers={"User-Agent": "resonate", "Accept": "application/vnd.github+json"})
 
 
 def sha256_of(path):

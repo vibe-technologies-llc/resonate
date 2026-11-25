@@ -152,7 +152,7 @@ codec are dev-dependencies, for the end-to-end tests.
   binary without `online` must not link `serde_json` (`refuse_headless`), and receivers are wanted
   there as UPnP renderers are.
 - **A `Link` is one TLS connection and its `resonate-cast-link` thread.** It `CONNECT`s to
-  `receiver-0` as `sender-0` with `userAgent` `resonate/<version>` and nothing else identifying
+  `receiver-0` as `sender-0` with `userAgent` `resonate` and nothing else identifying
   the listener, `PING`s every 5 s, answers the receiver's `PING` with `PONG`, and counts the
   receiver gone after `SILENT_AT_MOST` (16 s) with nothing heard or a `CLOSE` from `receiver-0`.
   An ask carries a fresh `requestId` and waits for the answer bearing it (`ANSWERED_WITHIN`, 5 s;

@@ -91,7 +91,6 @@ struct ListenSheet: View {
         navigation.tab = .search
         let heard = [song.artist, song.title].filter { !$0.isEmpty }.joined(separator: " ")
         library.tabSearch.text = heard
-        library.features.onlineQuery = heard
     }
 
     private func openSettings() {

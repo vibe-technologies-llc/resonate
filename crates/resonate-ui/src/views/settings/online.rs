@@ -522,17 +522,6 @@ impl RootView {
         cx.notify();
     }
 
-    pub(super) fn contact_group(&mut self, cx: &mut Context<Self>) -> Rows {
-        kit::rows()
-            .child(self.text_field(
-                "contact",
-                &self.settings_fields.read(cx).contact.clone(),
-                |this, window, cx| this.leave_contact(window, cx),
-                cx,
-            ))
-            .note(words::settings_online::contact_note())
-    }
-
     pub(super) fn recognition_group(&mut self, cx: &mut Context<Self>) -> Rows {
         kit::rows()
             .child(

@@ -24,9 +24,9 @@ Un chemin est une chaîne de caractères. Une chaîne vide équivaut à une clé
 en début de chemin désigne le dossier personnel. Une clé marquée
 .B secret
 ne figure jamais dans le journal ni dans les informations de débogage.
-Dans ses requêtes, le lecteur s’identifie par
-.IR resonate/<version> ,
-et transmet un contact, une clé ou un jeton uniquement si cette valeur a été renseignée ici.
+Le lecteur utilise
+.B resonate
+comme agent utilisateur. Il transmet une clé ou un jeton uniquement si cette valeur a été renseignée ici.
 .SH SORTIE AUDIO
 .TP
 .B sink
@@ -354,10 +354,6 @@ false.
 .B identify-by-sound
 Booléen. Laissez une recherche reconnaître un track par son son lorsque ses balises ne nomment
 rien. Par défaut: false.
-.TP
-.B contact
-Chaîne, secret. Une adresse de contact envoyée avec des demandes aux services qui en demandent
-une. Par défaut : none.
 .TP
 .B explore
 Booléen. Afficher l’étagère Explorer et mélanger les onglets. La recherche nécessite en ligne.

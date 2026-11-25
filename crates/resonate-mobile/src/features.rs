@@ -16,7 +16,7 @@ use resonate_library::{
     Reference, SongLink, SongsAsked, Sounded, TrackToAsk, Wording, agreement,
     in_the_order_worth_offering, ranked_songs,
 };
-use resonate_online::{Client, Identity, Online};
+use resonate_online::{Client, Online};
 use resonate_providers::A_LISTING_NAMED_ALIKE_MAY_DIFFER_BY;
 use rusqlite::params;
 
@@ -64,12 +64,10 @@ impl Default for Services {
         let downloads = Gate::new(metering.clone(), false);
         let spotify_grants = Arc::new(crate::spotify::KeptByThePhone::default());
 
-        let online = Online::with_client(Arc::new(
-            Client::new(Identity::of_this_build()).gated_by(lookups.clone()),
-        ))
-        .with_spotify(Arc::new(resonate_online::SpotifyAccount::new(
-            Arc::clone(&spotify_grants) as Arc<dyn resonate_online::SpotifyGrants>,
-        )));
+        let online = Online::with_client(Arc::new(Client::default().gated_by(lookups.clone())))
+            .with_spotify(Arc::new(resonate_online::SpotifyAccount::new(
+                Arc::clone(&spotify_grants) as Arc<dyn resonate_online::SpotifyGrants>,
+            )));
 
         online.client().reach(false);
 

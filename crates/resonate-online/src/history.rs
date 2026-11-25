@@ -468,10 +468,7 @@ mod tests {
 
     #[test]
     fn a_listenbrainz_page_is_asked_by_the_user_named_and_before_the_last_one_heard() {
-        let history = ListenBrainzHistory::new(
-            Arc::new(Client::new(crate::client::Identity::of_this_build())),
-            "a b".to_owned(),
-        );
+        let history = ListenBrainzHistory::new(Arc::new(Client::default()), "a b".to_owned());
 
         assert_eq!(history.asked(None), "/1/user/a%20b/listens?count=1000");
         assert_eq!(

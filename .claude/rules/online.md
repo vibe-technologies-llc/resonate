@@ -14,7 +14,7 @@ client; `cargo tree -p resonate-library` has no `ureq`/`serde`. Android capture 
 
 **Nothing about the listener leaves without their say.** `Config::is_on(Switch::Online)` (`online`, default
 true) gates every request: `online::reference` is `None` when off, so `resonate enrich` says
-`Error::OnlineOff` (build without the feature: `Error::NoReference`). `contact`, `acoustid-key`,
+`Error::OnlineOff` (build without the feature: `Error::NoReference`). `acoustid-key`,
 `audd-token`, `listenbrainz-token` and the `lastfm-` keys are empty by default, listener-set only.
 No AcoustID key: no fingerprint leaves. AudD: a clip only with a token. Shazam: no key, only a
 signature, when the listener asks to listen or `identify-by-sound` is on and a lookup has nothing
@@ -25,21 +25,11 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
 
 ## The client
 
-- **One `Client` serves every host, saying only what this build is.** `Identity::user_agent_to` =
-  `resonate/<version>`, plus ` ( <contact> )` only if `Identity::contact` is non-blank and the host
-  `Host::asks_who_is_asking`: MetaBrainz (MusicBrainz, Cover Art Archive, ListenBrainz), Wikimedia
-  (Commons, Wikidata) (`a_contact_is_told_to_the_hosts_that_ask_who_is_asking_and_no_other`).
-  `online::identity` fills the contact from `Config::contact` alone. **A redirect carries the contact
-  only to the host first asked**: ureq keeps every header but credentials across one, so a GET
-  carrying a contact follows redirects itself (`Client::got`, at most `REDIRECTS_FOLLOWED`)
-  (`a_contact_is_not_carried_through_a_redirect_to_another_host`) and a POST follows none, its
-  redirect answered as the `Refused` status it is, as an upload's is
-  (`a_contact_is_not_carried_through_a_redirected_post_to_another_host`).
-- **Identity and reachability are read per request.** `Introduction` = User-Agent behind a shared
-  `RwLock` (`online::INTRODUCTION`, `online::introduce`): a contact typed in settings is heard by
-  every sharing client from the next request. `Introduction::following` carries a `Reintroduction`
-  asked before each request; the binary's `Followed` reads only the `contact` key
-  (`config::contact_in`), only where the config file's mtime moved. `Client::reach` is a switch
+- **One `Client` serves every host with the User-Agent `resonate`.** The agent takes the same
+  `resonate_fetch::USER_AGENT` as the provider clients. GETs follow redirects with the fixed
+  User-Agent (`gets_send_the_same_user_agent_through_redirects`). POSTs and uploads return
+  redirect statuses as refusals (`posts_send_the_user_agent_and_refuse_redirects`).
+- **Reachability is checked for each request.** `Client::reach` is a switch
   `exchange` reads before taking a turn: off, `Error::Offline` with nothing sent
   (`Setting::Switched(Switch::Online, _)` and forgetting the key call `online::reach`). The binary also keeps it in `online::REACHING`, set on
   the process client every time it is handed out, so a switch turned off before the client was first
@@ -69,11 +59,11 @@ and not the local network: the catalog offered as a MediaServer (`resonate offer
 - **Pacing reserves a slot (no sleep after a call), one queue per process.** `Client::pace`
   reserves from a `Pacing` (`BTreeMap<Host, Instant>` behind a `parking_lot::Mutex`): next slot =
   later of now and last slot + host interval, written back under the lock, slept towards outside
-  it. Every `Client::new`/`Client::introduced` client shares `EVERY_CLIENT_IN_THE_PROCESS`; only a
+  it. Every `Client::default` client shares `EVERY_CLIENT_IN_THE_PROCESS`; only a
   test's `Client::on_clock` gets its own (asserted on a `Faked` `Clock`'s record of sleeps). The
   `*_INTERVAL` constants in `client.rs` are the per-host decisions.
 - **The listener goes first; a yielding client waits.** A client is a `Listener` or, from
-  `Client::yielding`, its `Yielding` twin (shares agent, introduction, queue, `reach` switch). A
+  `Client::yielding`, its `Yielding` twin (shares agent, queue, `reach` switch). A
   listener's `exchange` holds a `Listening` guard on the host from before its first slot through
   every busy retry (`Turns::listening`); dropping stamps `listener_answered` and wakes the
   `Paced::answered` condvar. A yielding caller waits while any listener is counted, then asks only
@@ -502,9 +492,9 @@ nothing asked** (`no_account_asks_nothing_of_the_api_and_a_pasted_link_keeps_its
   (a `LastfmSignIn` of key and secret in, a `LastfmApproval` out), which the binary's `ByToken`
   answers with `lastfm_approval`. These types, `lastfm::Application`,
   `lastfm::Session` and the window's `settings::Online` print no secret in `Debug`
-  (`<withheld>` for every token, password, secret and the contact:
+  (`<withheld>` for every token, password and secret:
   `an_application_and_a_session_print_neither_secret_nor_session_key`,
-  `the_online_settings_print_no_secret_and_no_contact`).
+  `the_online_settings_print_no_secret`).
 
 ## Lyrics: LRCLIB and Better Lyrics, scored per song
 
@@ -606,7 +596,7 @@ feature the twins answer `None`, `Error::NoReference`, `Corrected::uncorrected()
 the binary reads the same names either way. **`reference` hands `Online` to `musicbrainz::layered`**, which puts the kept answers, the local
 copy of MusicBrainz and the synced devices before it (`musicbrainz.md`); with `online` off the
 reference is those layers alone, and only where a copy is held. All is built over the one `Arc<Client>` in
-`online::CLIENT` (made on first use over `INTRODUCTION`; `online::YIELDING` holds its yielding
+`online::CLIENT` (made on first use, with `online::YIELDING` holding its yielding
 twin): one agent and its connections per process.
 
 A failed optional Deezer twin lookup preserves the names and codes already read from song.link.
@@ -615,7 +605,7 @@ A failed optional Deezer twin lookup preserves the names and codes already read 
 
 `releases.rs` asks GitHub's API (`Host::GitHub`, `api.github.com`, the others' pace and gated like
 any lookup, metered included) `/repos/<owner>/<name>/releases/latest` under
-`LookupOp::LatestRelease`, saying only `resonate/<version>`. **The repository is named by the build,
+`LookupOp::LatestRelease`, with the User-Agent `resonate`. **The repository is named by the build,
 never written in the tree**: `Repository::of_this_build` reads `RESONATE_RELEASES` (`owner/name`, held by
 `Repository::named`) with `option_env!`, which `release.yml` sets to `github.repository` for every
 job, the APK's native library included, so a build from a checkout, the `-git` recipes and the

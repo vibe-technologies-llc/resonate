@@ -2681,7 +2681,6 @@ mod tests {
         LinkedPlaylist, LinkedProfile, PlaylistLink, ProfileLink, RecordingAsked, RecordingMatch,
         ReleaseAsked, ReleaseMatch, SongLink, SongsAsked, StreamAsked,
     };
-    use resonate_online::Identity;
 
     use super::*;
     use crate::{PlaybackPreferences, features::Services};
@@ -2938,7 +2937,7 @@ mod tests {
     fn asking(fake: &Arc<Fake>) -> Asking {
         Asking {
             reference: Arc::clone(fake) as Arc<dyn Reference>,
-            client: Arc::new(Client::new(Identity::of_this_build())),
+            client: Arc::new(Client::default()),
             printer: None,
         }
     }
@@ -3213,9 +3212,7 @@ mod tests {
         let metering = Metering::new();
 
         let asking = Asking {
-            client: Arc::new(
-                Client::new(Identity::of_this_build()).gated_by(Gate::new(metering.clone(), true)),
-            ),
+            client: Arc::new(Client::default().gated_by(Gate::new(metering.clone(), true))),
             ..asking(&fake)
         };
 

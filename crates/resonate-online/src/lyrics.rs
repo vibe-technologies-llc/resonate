@@ -340,10 +340,7 @@ mod tests {
 
     #[test]
     fn the_provider_is_named_online_and_refuses_a_track_nothing_has_named() {
-        let provider = OnlineLyrics::new(
-            Arc::new(Client::new(crate::Identity::of_this_build())),
-            None,
-        );
+        let provider = OnlineLyrics::new(Arc::new(Client::default()), None);
 
         assert_eq!(provider.source().as_str(), ONLINE_LYRICS);
 

@@ -1,4 +1,4 @@
-lookups-note = MusicBrainz for what a release and an artist are, the Cover Art Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and Better Lyrics for lyrics. Nothing sent identifies you unless a contact is given below.
+lookups-note = MusicBrainz for what a release and an artist are, the Cover Art Archive for a cover, Wikimedia Commons for a portrait, LRCLIB and Better Lyrics for lyrics.
 mirror-note = MusicBrainz's own export, a 7.5 GB download read into a copy of about 10 GB kept here, compressed and indexed; the build wants some 50 GB of room for about an hour. A lookup is answered from it in milliseconds, before the network, and a synced device without a copy asks this one.
 mirror-absent = No copy is held yet. Building one fetches the export and reads it, which takes a while; lookups go on as before meanwhile.
 metered-note = A connection the system reports as metered, a phone's hotspot or a capped plan, is the one these switches are about; one it cannot tell is taken as not metered. A song played in place is neither skipped nor held.
@@ -20,7 +20,6 @@ quickest-to-answer-enough-for-a = Quickest to answer; enough for a clear recordi
 enough-for-most-songs-even-over = Enough for most songs, even over a little noise.
 the-best-chance-with-a-noisy = The best chance with a noisy room, a quiet passage or a rarer song.
 a-length-of-your-own-set = A length of your own, set in the settings file.
-contact-note = Sent in the User-Agent to MusicBrainz, the Cover Art Archive, ListenBrainz and Wikimedia, which ask who is asking, from the next request on. Leave it empty to send nothing.
 reach-the-network = Reach the network
 off-the-library-is-what-the = Off, the library is what the files say
 keep-a-copy-of-musicbrainz-here = Keep a copy of MusicBrainz here

@@ -268,7 +268,6 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
                 download_on_metered: config.is_on(Switch::DownloadOnMetered),
                 studies: config.is_on(Switch::Study),
                 lyrics: config.is_on(Switch::FetchLyrics),
-                contact: config.contact.clone().unwrap_or_default(),
                 acoustid_key: config.acoustid_key.clone().unwrap_or_default(),
                 audd_token: config.audd_token.clone().unwrap_or_default(),
                 listenbrainz_token: config.listenbrainz_token.clone().unwrap_or_default(),

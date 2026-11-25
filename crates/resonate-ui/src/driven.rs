@@ -3785,63 +3785,6 @@ mod tests {
         assert_eq!(marked, Some(LONGEST_CONTENT - 2..LONGEST_CONTENT));
     }
 
-    #[gpui::test]
-    fn a_contact_typed_and_left_with_the_pointer_is_kept_and_one_left_with_escape_is_put_back(
-        cx: &mut TestAppContext,
-    ) {
-        let mut driven = Driven::open(cx, catalog());
-        let contact = |driven: &mut Driven| {
-            driven.read(|_, cx| cx.global::<ResonateApp>().online.contact.clone())
-        };
-        let typed = |driven: &mut Driven, text: &str| {
-            let root = driven.root.clone();
-
-            driven.cx.update(|_, cx| {
-                let field = root
-                    .read(cx)
-                    .settings_fields
-                    .read(cx)
-                    .contact
-                    .clone()
-                    .clone();
-
-                field.update(cx, |field, cx| field.hold(text.to_owned(), cx));
-            });
-        };
-
-        driven.focus_on(|root, cx| root.settings_fields.read(cx).contact.clone());
-        typed(&mut driven, "me@example.test");
-        driven.cx.update(|window, cx| {
-            let root = driven.root.clone();
-
-            root.update(cx, |root, cx| root.leave_contact(window, cx));
-        });
-        driven.settle();
-
-        assert_eq!(contact(&mut driven), "me@example.test");
-
-        driven.focus_on(|root, cx| root.settings_fields.read(cx).contact.clone());
-        typed(&mut driven, "someone@else.test");
-        driven.cx.update(|window, cx| {
-            let root = driven.root.clone();
-
-            root.update(cx, |root, cx| root.put_back_contact(window, cx));
-        });
-        driven.settle();
-
-        assert_eq!(contact(&mut driven), "me@example.test");
-        assert_eq!(
-            driven.read(|root, cx| root
-                .settings_fields
-                .read(cx)
-                .contact
-                .read(cx)
-                .text()
-                .to_owned()),
-            "me@example.test"
-        );
-    }
-
     fn showing_settings(driven: &mut Driven, category: SettingsCategory) {
         driven.root.update(&mut driven.cx, |root, cx| {
             root.set_pane(Pane::Settings, cx);
@@ -3986,39 +3929,6 @@ mod tests {
         cx: &mut TestAppContext,
     ) {
         let mut driven = Driven::open(cx, catalog());
-
-        showing_settings(&mut driven, SettingsCategory::Online);
-
-        typed_into(
-            &mut driven,
-            |root, cx| root.settings_fields.read(cx).contact.clone(),
-            "me@example.test",
-        );
-        driven.cx.simulate_keystrokes("tab");
-        driven.settle();
-
-        assert_eq!(
-            driven.read(|_, cx| cx.global::<ResonateApp>().online.contact.clone()),
-            "me@example.test"
-        );
-        assert!(
-            !driven.cx.update(|window, cx| {
-                let root = driven.root.read(cx);
-                root.settings_fields
-                    .read(cx)
-                    .contact
-                    .read(cx)
-                    .is_focused(window)
-            }),
-            "the contact kept the caret"
-        );
-        assert!(
-            !driven.cx.update(|window, cx| {
-                let root = driven.root.read(cx);
-                window.focused(cx).is_some_and(|held| held == root.focus)
-            }),
-            "the window took the caret back from the next stop"
-        );
 
         showing_settings(&mut driven, SettingsCategory::Recognition);
 

@@ -38,7 +38,6 @@ pub(crate) struct Standing {
     pub(crate) switches: Switches,
     pub(crate) flac_renderers_named: bool,
     pub(crate) formats_learnt: bool,
-    pub(crate) contact_given: bool,
     pub(crate) offer_name_given: bool,
     pub(crate) measurer_given: bool,
     pub(crate) key_given: bool,
@@ -82,7 +81,6 @@ impl Standing {
             switches: Switches::UNSAID,
             flac_renderers_named: false,
             formats_learnt: false,
-            contact_given: false,
             offer_name_given: false,
             measurer_given: false,
             key_given: false,
@@ -187,7 +185,6 @@ fn differs_but_for_its_switches(group: Group, standing: &Standing) -> bool {
             let (worn, built) = (&standing.synchronised, &AS_BUILT.synchronised);
             worn.control != built.control || worn.takes_deletions != built.takes_deletions
         }
-        Group::Contact => standing.contact_given,
         Group::SharedCatalog => standing.offer_name_given,
         Group::Measurers => standing.measurer_given,
         Group::Recognition => standing.key_given || standing.token_given,
@@ -447,13 +444,6 @@ mod tests {
                     text_size: TextSize::Large,
                     ..Appearance::DEFAULT
                 },
-                ..built.clone()
-            }
-        ));
-        assert!(differs(
-            Group::Contact,
-            &Standing {
-                contact_given: true,
                 ..built.clone()
             }
         ));

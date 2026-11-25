@@ -14,8 +14,8 @@ use resonate_library::{
 use resonate_listen::{Clip, Recogniser};
 use resonate_lyrics::{Detail, LyricProvider, Timing, Voice, Wanted};
 use resonate_online::{
-    AutoEq, Client, Identity, ListenBrainz, Online, OnlineLyrics, Shazam, SpotifyAccount,
-    SpotifyGrant, SpotifyGrants,
+    AutoEq, Client, ListenBrainz, Online, OnlineLyrics, Shazam, SpotifyAccount, SpotifyGrant,
+    SpotifyGrants,
 };
 
 const GATE: &str = "RESONATE_ONLINE_TESTS";
@@ -35,11 +35,7 @@ fn reached() -> Option<Arc<Client>> {
         return None;
     }
 
-    Some(
-        CLIENT
-            .get_or_init(|| Arc::new(Client::new(Identity::of_this_build())))
-            .clone(),
-    )
+    Some(CLIENT.get_or_init(|| Arc::new(Client::default())).clone())
 }
 
 fn mbid(text: &str) -> Mbid {

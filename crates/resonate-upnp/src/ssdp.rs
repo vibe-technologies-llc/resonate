@@ -178,7 +178,7 @@ fn asking(to: SocketAddr, within: Duration, sought: Sought) -> String {
     let wait = within.as_secs().clamp(1, LONGEST_WAIT_ASKED_SECONDS);
     format!(
         "M-SEARCH * HTTP/1.1\r\nHOST: {to}\r\nMAN: \"ssdp:discover\"\r\nMX: {wait}\r\nST: \
-         {}\r\nUSER-AGENT: {USER_AGENT} UPnP/1.1\r\n\r\n",
+         {}\r\nUSER-AGENT: {USER_AGENT}\r\n\r\n",
         sought.search_target()
     )
 }
@@ -298,6 +298,7 @@ mod tests {
         assert!(asked.starts_with("M-SEARCH * HTTP/1.1\r\nHOST: 239.255.255.250:1900\r\n"));
         assert!(asked.contains("ST: urn:schemas-upnp-org:device:MediaRenderer:1\r\n"));
         assert!(asked.contains("MX: 2\r\n"));
+        assert!(asked.contains("USER-AGENT: resonate\r\n"));
         assert!(asked.ends_with("\r\n\r\n"));
     }
 

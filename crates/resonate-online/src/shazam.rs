@@ -326,7 +326,7 @@ mod tests {
 
     #[test]
     fn a_steady_tone_is_never_sent_to_be_matched() {
-        let client = Arc::new(Client::new(crate::Identity::of_this_build()));
+        let client = Arc::new(Client::default());
 
         client.reach(false);
 
@@ -348,7 +348,7 @@ mod tests {
 
     #[test]
     fn a_clip_at_a_rate_far_above_sixteen_kilohertz_is_still_signed_and_asked() {
-        let client = Arc::new(Client::new(crate::Identity::of_this_build()));
+        let client = Arc::new(Client::default());
 
         client.reach(false);
 

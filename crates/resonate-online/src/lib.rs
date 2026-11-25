@@ -49,7 +49,7 @@ pub use crate::{
     audd::Audd,
     autoeq::AutoEq,
     by_ear::ByEar,
-    client::{Client, Identity, Introduction},
+    client::Client,
     error::{Error, Host, Result},
     history::{LastfmHistory, ListenBrainzHistory},
     lastfm::{Application, LastFm, LastfmApproving, Session, approval_asked},

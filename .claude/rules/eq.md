@@ -1323,7 +1323,7 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   `FOUND_AT_MOST`) as `<label> (<measurer>[ on <rig>])`, so the same headphones from several
   measurers can be set against each other in the ABX. It conflicts with every other action. A
   loopback server proves the one index request, the two measurers listed beside each other, the
-  fetched and the missing device told apart, and a User-Agent of `resonate/<version>` alone
+  fetched and the missing device told apart, and a User-Agent of `resonate` alone
   (`the_whole_index_is_asked_for_once_and_lists_every_measurer_of_a_model_beside_the_others`).
 - **AutoEq stays the one online source, by decision.** The only keyless public source of
   measurements found with a regular shape is squig.link: `/data/phone_book.json` (brands, phones,

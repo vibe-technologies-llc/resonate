@@ -215,8 +215,8 @@ engine is a dev-dependency, for the end-to-end test.
 
 A renderer speaks plain HTTP/1.1 on the local network, so no TLS and no `ureq`: the binary's
 `refuse_headless` line keeps `ureq` out of a build without `online`, and renderers are wanted there
-too. `http::exchange` sends `Connection: close` and `User-Agent: resonate/<version>` (nothing else
-identifies the listener), reads a declared, chunked or close-delimited body, and gives up after
+too. `http::exchange` sends `Connection: close` and `User-Agent: resonate`, also the agent
+for range reads and SSDP searches. It reads a declared, chunked or close-delimited body, and gives up after
 `ANSWERED_WITHIN` (3 s) **for the whole exchange**: one deadline set when it begins, each connect, write and read given only what is left (`exchange_before`), so an answer dripping a byte at a time cannot hold a round
 (`an_answer_dripping_a_byte_at_a_time_is_given_up_on_at_the_deadline_not_per_read`). SOAP
 (`soap::call`) posts an envelope to the control address with

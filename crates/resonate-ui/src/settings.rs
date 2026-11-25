@@ -202,7 +202,6 @@ pub enum Setting {
     FollowDesktopScheme(bool),
     FollowDesktopTextSize(bool),
     MusicbrainzReplicationToken(String),
-    Contact(String),
     AcoustidKey(String),
     AuddToken(String),
     ListenbrainzToken(String),
@@ -331,7 +330,6 @@ impl Setting {
             Self::FollowDesktopScheme(_) => ConfigKey::FollowDesktopScheme,
             Self::FollowDesktopTextSize(_) => ConfigKey::FollowDesktopTextSize,
             Self::MusicbrainzReplicationToken(_) => ConfigKey::MusicbrainzReplicationToken,
-            Self::Contact(_) => ConfigKey::Contact,
             Self::AcoustidKey(_) => ConfigKey::AcoustidKey,
             Self::AuddToken(_) => ConfigKey::AuddToken,
             Self::ListenbrainzToken(_) => ConfigKey::ListenbrainzToken,
@@ -428,7 +426,6 @@ pub struct Online {
     pub download_on_metered: bool,
     pub studies: bool,
     pub lyrics: bool,
-    pub contact: String,
     pub acoustid_key: String,
     pub audd_token: String,
     pub listenbrainz_token: String,
@@ -532,7 +529,6 @@ impl fmt::Debug for Online {
             download_on_metered,
             studies,
             lyrics,
-            contact,
             acoustid_key,
             audd_token,
             listenbrainz_token,
@@ -577,7 +573,6 @@ impl fmt::Debug for Online {
             .field("download_on_metered", download_on_metered)
             .field("studies", studies)
             .field("lyrics", lyrics)
-            .field("contact", &withheld(contact))
             .field("acoustid_key", &withheld(acoustid_key))
             .field("audd_token", &withheld(audd_token))
             .field("listenbrainz_token", &withheld(listenbrainz_token))
@@ -1489,9 +1484,8 @@ mod tests {
     }
 
     #[test]
-    fn the_online_settings_print_no_secret_and_no_contact() {
+    fn the_online_settings_print_no_secret() {
         let online = Online {
-            contact: "someone at an address".to_owned(),
             subsonic_user: "listener".to_owned(),
             subsonic_password: "subsonic-sesame".to_owned(),
             jellyfin_password: "jellyfin-sesame".to_owned(),
@@ -1514,7 +1508,6 @@ mod tests {
         assert!(printed.contains("listener"));
         assert!(printed.contains("<withheld>"));
         for secret in [
-            "someone at an address",
             "subsonic-sesame",
             "jellyfin-sesame",
             "tidal-hush",

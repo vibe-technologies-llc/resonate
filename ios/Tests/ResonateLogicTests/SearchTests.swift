@@ -28,6 +28,20 @@ actor Asked {
     func note(_ text: String) { texts.append(text) }
 }
 
+actor HeldSearch {
+    private var waiting: CheckedContinuation<Void, Never>?
+    var isWaiting: Bool { waiting != nil }
+
+    func wait() async {
+        await withCheckedContinuation { waiting = $0 }
+    }
+
+    func release() {
+        waiting?.resume()
+        waiting = nil
+    }
+}
+
 final class Reported: @unchecked Sendable {
     private let lock = NSLock()
     private var all: [String] = []
@@ -53,6 +67,7 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
 
     func model(
         remembering: Bool = true,
+        ignoringLinks: Bool = false,
         answering: (@Sendable (String) async throws -> LibrarySearch)? = nil
     ) -> SearchModel {
         let asked = asked
@@ -63,6 +78,7 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
             },
             reporting: { [reported] failure in reported.note(failure) },
             remembering: remembering,
+            ignoringLinks: ignoringLinks,
             historySuite: history.name,
             settle: .milliseconds(20)
         )
@@ -99,6 +115,47 @@ func eventually(_ condition: @MainActor () async -> Bool) async {
         await eventually { search.hasAnswer }
 
         #expect(await asked.texts == ["flo"])
+    }
+
+    @Test func onlyTheLatestQueryRunsAfterAnUncancellableLookup() async {
+        let held = HeldSearch()
+        let asked = asked
+        let search = model { query in
+            await asked.note(query)
+            if query == "f" { await held.wait() }
+            return found(title: query)
+        }
+
+        search.text = "f"
+        await eventually { await held.isWaiting }
+        search.text = "fl"
+        search.refresh()
+        await Task.yield()
+        search.text = "flo"
+        try? await Task.sleep(for: .milliseconds(80))
+        #expect(await asked.texts == ["f"])
+
+        await held.release()
+        await eventually { search.answered == "flo" }
+
+        #expect(await asked.texts == ["f", "flo"])
+        #expect(search.found.tracks.first?.title == "flo")
+    }
+
+    @Test func hiddenLibraryResultsAndLinksAskNothing() async {
+        let search = model(ignoringLinks: true)
+        search.text = "https://example.test/album"
+        #expect(!search.asking)
+        search.includesLibrary = false
+        search.text = "floyd"
+        #expect(!search.asking)
+        #expect(await asked.texts.isEmpty)
+
+        search.includesLibrary = true
+        await eventually { search.answered == "floyd" }
+        search.text = "  floyd "
+        #expect(!search.asking)
+        #expect(await asked.texts == ["floyd"])
     }
 
     @Test func aRefreshThatOnlyReranksTheSameSongsKeepsTheOrderShown() async {

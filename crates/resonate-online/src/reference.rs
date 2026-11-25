@@ -11,8 +11,8 @@ use resonate_library::{
 };
 
 use crate::{
-    Client, Error, Host, Identity, Result, apple, client::passed_over_when_refused, commons,
-    coverart, deezer, linked, listenbrainz, lyrics, musicbrainz, soundcloud, spotify,
+    Client, Error, Host, Result, apple, client::passed_over_when_refused, commons, coverart,
+    deezer, linked, listenbrainz, lyrics, musicbrainz, soundcloud, spotify,
     spotify_account::SpotifyAccount, tidal, wikidata, wikipedia, youtube,
 };
 
@@ -25,10 +25,6 @@ pub struct Online {
 }
 
 impl Online {
-    pub fn new(identity: Identity) -> Self {
-        Self::with_client(Arc::new(Client::new(identity)))
-    }
-
     pub fn with_client(client: Arc<Client>) -> Self {
         Self {
             client,
@@ -384,14 +380,10 @@ mod tests {
 
     #[test]
     fn the_reference_is_named_musicbrainz_and_shares_one_client() {
-        let client = Arc::new(Client::new(Identity::of_this_build()));
+        let client = Arc::new(Client::default());
         let online = Online::with_client(client.clone());
 
         assert_eq!(online.source().as_str(), MUSICBRAINZ);
         assert!(Arc::ptr_eq(online.client(), &client));
-        assert_eq!(
-            Online::new(Identity::of_this_build()).source().as_str(),
-            MUSICBRAINZ
-        );
     }
 }

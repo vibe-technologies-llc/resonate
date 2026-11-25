@@ -125,7 +125,6 @@ keys! {
     FetchLyrics = "fetch-lyrics", on;
     LyricsLanguageFromLocale = "lyrics-language-from-locale", off;
     IdentifyBySound = "identify-by-sound", off;
-    Contact = "contact";
     Equaliser = "equaliser", off;
     EqualiserFor = "equaliser-for";
     EqualiserMeasurer = "equaliser-measurer";

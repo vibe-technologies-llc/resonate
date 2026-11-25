@@ -11,7 +11,6 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Entered {
-    Contact,
     AcoustidKey,
     ReplicationToken,
     AuddToken,
@@ -38,7 +37,6 @@ pub(crate) enum Entered {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Left {
-    Contact,
     AcoustidKey,
     ReplicationToken,
     AuddToken,
@@ -49,7 +47,6 @@ pub(crate) enum Left {
 }
 
 pub(crate) struct SettingsFields {
-    pub(crate) contact: Entity<Field>,
     pub(crate) acoustid: Entity<Field>,
     pub(crate) replication: Entity<Field>,
     pub(crate) audd: Entity<Field>,
@@ -132,12 +129,6 @@ impl SettingsFields {
             .to_string();
 
         let fields = Self {
-            contact: holding(
-                words::root::contact_placeholder,
-                online.contact.clone(),
-                window,
-                cx,
-            ),
             acoustid: holding_a_secret(
                 words::root::acoustid_placeholder,
                 online.acoustid_key.clone(),
@@ -224,7 +215,6 @@ impl SettingsFields {
         };
 
         for (field, entered) in [
-            (&fields.contact, Entered::Contact),
             (&fields.acoustid, Entered::AcoustidKey),
             (&fields.replication, Entered::ReplicationToken),
             (&fields.audd, Entered::AuddToken),
@@ -246,7 +236,6 @@ impl SettingsFields {
             Self::says_when_entered(field, entered, cx);
         }
         for (field, left) in [
-            (&fields.contact, Left::Contact),
             (&fields.acoustid, Left::AcoustidKey),
             (&fields.replication, Left::ReplicationToken),
             (&fields.audd, Left::AuddToken),
@@ -273,7 +262,6 @@ impl SettingsFields {
 
     pub(crate) fn each(&self) -> impl Iterator<Item = &Entity<Field>> {
         [
-            &self.contact,
             &self.acoustid,
             &self.replication,
             &self.audd,

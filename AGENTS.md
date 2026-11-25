@@ -31,8 +31,7 @@ there, and "simplifying" one away reintroduces the bug it was there for.
   installed, say so rather than reaching for `cargo fmt`.
 - **Never put the maintainer's name, e-mail address or repository details anywhere**: not a request
   header or User-Agent, payload, URL, fixture, default value or generated code. Software identifies
-  itself by name and version only (`resonate/<version>`); a contact is sent only where the listener
-  typed one into the `contact` setting, empty by default.
+  itself with the User-Agent `resonate`.
 - **Errors are typed.** One `thiserror` `Error` per crate; no `String`/`anyhow`/`Box<dyn Error>` as
   a description; opaque foreign errors paired with an operation enum; no `#[non_exhaustive]`; no
   variant nothing constructs; `size_of::<Error>() <= 128`. `errors.md` has the whole of it.

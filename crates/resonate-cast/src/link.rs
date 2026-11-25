@@ -27,7 +27,7 @@ pub(crate) const RECEIVER: &str = "receiver-0";
 
 const SENDER: &str = "sender-0";
 
-pub(crate) const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
+pub(crate) const USER_AGENT: &str = "resonate";
 
 const CONNECTED_WITHIN: Duration = Duration::from_secs(3);
 

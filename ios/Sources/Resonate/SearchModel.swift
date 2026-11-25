@@ -55,14 +55,16 @@ private func lighted(_ text: String, by query: String, in column: SearchColumn) 
 }
 
 extension SearchModel {
-    convenience init(library: Library, remembering: Bool) {
+    convenience init(library: Library, remembering: Bool, ignoringLinks: Bool = false) {
         self.init(
             answering: { [unowned library] query in
                 let native = try await library.player()
-                return try await Work.aside { try native.searchLibrary(text: query, limit: SearchModel.mostSongs) }
+                try Task.checkCancellation()
+                return try await Work.onScreen { try native.searchLibrary(text: query, limit: SearchModel.mostSongs) }
             },
             reporting: { [unowned library] error in library.report(error) },
-            remembering: remembering
+            remembering: remembering,
+            ignoringLinks: ignoringLinks
         )
     }
 }

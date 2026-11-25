@@ -401,3 +401,17 @@ fn writing_or_forgetting_the_download_switch_takes_the_stall_spelling_out_of_the
     assert_eq!(after.switches.said(Switch::DownloadOnMetered), None);
     assert!(after.is_on(Switch::DownloadOnMetered));
 }
+
+#[test]
+fn a_removed_contact_is_ignored_when_read_and_dropped_on_the_next_edit() {
+    let scratch = Scratch::new().seed("contact = 7\nonline = false\n");
+
+    let config = read(&scratch.text()).expect("an obsolete setting reads without a value error");
+
+    assert!(!config.is_on(Switch::Online));
+    assert!(ConfigKey::parse("contact").is_none());
+
+    store(&scratch.path, ConfigKey::EnrichOnMetered, true).expect("written");
+
+    assert_eq!(scratch.text(), "online = false\nenrich-on-metered = true\n");
+}

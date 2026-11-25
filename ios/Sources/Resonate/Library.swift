@@ -356,7 +356,7 @@ final class Library {
     @ObservationIgnored lazy var features = Features(library: self)
     @ObservationIgnored lazy var nowPlaying = NowPlaying(library: self)
     @ObservationIgnored lazy var librarySearch = SearchModel(library: self, remembering: true)
-    @ObservationIgnored lazy var tabSearch = SearchModel(library: self, remembering: true)
+    @ObservationIgnored lazy var tabSearch = SearchModel(library: self, remembering: true, ignoringLinks: true)
 
     init() {
         support = Self.supportFolder

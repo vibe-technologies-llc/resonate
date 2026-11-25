@@ -99,7 +99,7 @@ your comments and key order. `man 5 resonate-config.toml` documents every key.
 
 ## Privacy
 
-Requests identify as `resonate/<version>` and nothing else. `online = false` stops every network
+Requests use the User-Agent `resonate`. `online = false` stops every network
 request. With it on, a scan looks tracks up on MusicBrainz and its neighbours (Cover Art Archive,
 Wikidata, Wikimedia Commons, LRCLIB, Better Lyrics, Deezer, Apple Music, Spotify, SoundCloud).
 Song recognition sends Shazam a signature, not the audio. Wanted tracks are asked of the hosted

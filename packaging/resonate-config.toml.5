@@ -27,9 +27,10 @@ is the home folder.
 A key marked
 .B secret
 is never printed in a log or by the debug output.
-Every request resonate makes says only
-.IR resonate/<version> ,
-and a contact, a key or a token is sent only where it is typed into this file.
+Requests use
+.B resonate
+as the User-Agent.
+Resonate sends a key or token only if you provide it.
 .SH AUDIO OUTPUT
 .TP
 .B sink
@@ -277,9 +278,6 @@ Boolean. Choose among lyric sheets named by language by the locale. Default: fal
 .TP
 .B identify-by-sound
 Boolean. Let a lookup recognise a track by its sound when its tags name nothing. Default: false.
-.TP
-.B contact
-String, secret. A contact address sent with requests to services that ask for one. Default: none.
 .TP
 .B explore
 Boolean. Show the Explore shelf and mix tabs. Searching requires online. Default: true.

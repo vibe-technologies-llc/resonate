@@ -242,10 +242,7 @@ mod tests {
     use resonate_eq::{Corrected, search, suggest};
 
     use super::*;
-    use crate::{
-        Identity,
-        client::{Carried, Introduction, WallClock},
-    };
+    use crate::client::{Carried, WallClock};
 
     const INDEX: &str = include_str!("../tests/fixtures/autoeq_index.md");
     const PARAMETRIC_TEXT: &str = include_str!("../tests/fixtures/autoeq_parametric.txt");
@@ -441,11 +438,7 @@ mod tests {
     }
 
     fn over_loopback(base: String) -> AutoEq {
-        let client = Client::on_clock(
-            Introduction::as_(&Identity::of_this_build()),
-            Arc::new(WallClock),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(Arc::new(WallClock), Carried::Plain);
         AutoEq::answering_at(Arc::new(client), base)
     }
 
@@ -494,7 +487,7 @@ mod tests {
         assert!(matches!(&fetched[0].profile, Ok(Some(profile)) if profile.bands().len() == 10));
         assert!(matches!(fetched[1].profile, Ok(None)));
 
-        let named = format!("resonate/{}", env!("CARGO_PKG_VERSION"));
+        let named = "resonate";
 
         assert!(
             asked.iter().all(|asked| asked.user_agent == named),

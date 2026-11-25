@@ -13,11 +13,13 @@ use resonate_library::HistoryKept;
 use resonate_ui::{Setting, SettingChange, Settings};
 use toml_edit::{Array, Value};
 
+#[cfg(feature = "online")]
+use crate::online;
 use crate::{
     ConfigKey,
     cli::{DitherArg, FilterPhaseArg, NoiseShapingArg, QualityArg},
     config::{self, Config, Editing},
-    metered, online,
+    metered,
     vocabulary::Meaning,
 };
 
@@ -145,10 +147,6 @@ impl Settings for File {
 
         for change in changes {
             match change {
-                SettingChange::Store(Setting::Contact(contact)) => {
-                    online::introduce(Some(contact.trim()).filter(|contact| !contact.is_empty()));
-                }
-                SettingChange::Forget(ConfigKey::Contact) => online::introduce(None),
                 #[cfg(feature = "online")]
                 SettingChange::Store(Setting::Switched(Switch::Online, on)) => {
                     online::reach(&self.reread(), *on);
@@ -256,10 +254,6 @@ fn stored(editing: &mut Editing<'_>, setting: &Setting) -> resonate_ui::Result<(
         Setting::ShuffleSpreadsArtists(spreads) => Some((*spreads).into()),
         Setting::ShuffleSpreadsAlbums(spreads) => Some((*spreads).into()),
         Setting::ShuffleFreshFirst(fresh) => Some((*fresh).into()),
-        Setting::Contact(contact) => {
-            let contact = contact.trim();
-            (!contact.is_empty()).then(|| contact.into())
-        }
         Setting::AcoustidKey(key) => {
             let key = key.trim();
             (!key.is_empty()).then(|| key.into())

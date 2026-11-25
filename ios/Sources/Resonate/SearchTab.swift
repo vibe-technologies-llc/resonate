@@ -18,21 +18,44 @@ private enum SearchArea: CaseIterable {
 
 struct SearchTab: View {
     @Environment(Library.self) private var library
+
+    var body: some View {
+        @Bindable var search = library.tabSearch
+        SearchTabContent(search: search)
+            .searchable(text: $search.text, prompt: "search.prompt")
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .onSubmit(of: .search) {
+                if !OnlineAsked.isLink(search.query) { search.remember() }
+            }
+            .navigationTitle("search.title")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    DownloadsButton()
+                }
+            }
+    }
+}
+
+private struct SearchTabContent: View {
+    @Environment(Library.self) private var library
     @State private var seeAll: SearchScope?
     @State private var actions = OnlineSongActions()
     @State private var savingSearch = false
     @State private var area = SearchArea.all
+    let search: SearchModel
 
     var body: some View {
-        let search = library.tabSearch
+        let query = search.query
+        let link = OnlineAsked.isLink(query)
         let online = library.features.online
+        let onlineQuery = link || area != .library ? query : ""
 
         List {
             Group {
-                if search.query.isEmpty {
-                    SearchStart(search: search, choose: enter)
+                if query.isEmpty {
+                    SearchStart(search: search, choose: { search.text = $0 })
                 } else {
-                    let link = OnlineAsked.isLink(search.query)
                     if !link, area != .online {
                         SearchHeading(title: said("search.heading.library"))
                         LibraryFindings(search: search, seeAll: $seeAll, compact: area == .all, chosen: stowKeyboard)
@@ -59,35 +82,29 @@ struct SearchTab: View {
         }
         .listStyle(.plain)
         .safeAreaBar(edge: .top, spacing: 0) {
-            if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
-                SearchAreaChooser(area: $area)
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-            }
-        }
-        .scrollDismissesKeyboard(.immediately)
-        .searchable(text: Binding(get: { search.text }, set: enter), prompt: "search.prompt")
-        .textInputAutocapitalization(.never)
-        .autocorrectionDisabled()
-        .onSubmit(of: .search) { remember(search) }
-        .navigationTitle("search.title")
-        .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                DownloadsButton()
-            }
-            if !search.query.isEmpty, !OnlineAsked.isLink(search.query) {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Button { savingSearch = true } label: { Label("search.save-as-playlist", systemImage: "bookmark") }
+            if !query.isEmpty, !link {
+                HStack(spacing: 8) {
+                    SearchAreaChooser(area: $area)
+                    Button { savingSearch = true } label: {
+                        Label("search.save-as-playlist", systemImage: "bookmark")
+                            .labelStyle(.iconOnly)
+                            .touchTarget()
+                    }
+                    .buttonStyle(.plain)
+                    .glassEffect(.regular.interactive(), in: .circle)
                 }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 8)
             }
         }
+        .scrollDismissesKeyboard(.interactively)
+        .navigationDestination(item: $seeAll) { LibrarySearchPage(scope: $0) }
         .sheet(isPresented: $savingSearch) {
             SavedSearchSheet(
                 title: said("search.save-as-playlist.title"),
-                draft: .starting(name: search.query, text: search.query)
+                draft: .starting(name: query, text: query)
             ) { name, saved in
-                remember(search)
+                search.remember()
                 library.features.saveSearch(name, search: saved) { problem in
                     if let problem {
                         library.fail(problem)
@@ -98,25 +115,13 @@ struct SearchTab: View {
             }
         }
         .onlineSongActions($actions)
-        .onAppear {
-            search.recallRecents()
-            library.features.onlineQuery = search.text
-        }
-        .onChange(of: search.text) { _, text in library.features.onlineQuery = text }
+        .onAppear { search.recallRecents() }
+        .onChange(of: area, initial: true) { _, area in search.includesLibrary = area != .online }
+        .onChange(of: onlineQuery, initial: true) { _, query in library.features.onlineQuery = query }
     }
 
     private func stowKeyboard() {
         Keyboard.stow()
-    }
-
-    private func enter(_ text: String) {
-        library.tabSearch.text = text
-        library.features.onlineQuery = text
-    }
-
-    private func remember(_ search: SearchModel) {
-        guard !OnlineAsked.isLink(search.query) else { return }
-        search.remember()
     }
 }
 

@@ -655,7 +655,6 @@ impl RootView {
             Group::Metered => self.metered_group(cx),
             Group::Studies => self.studies_group(cx),
             Group::Lyrics => self.lyrics_group(cx),
-            Group::Contact => self.contact_group(cx),
             Group::Recognition => self.recognition_group(cx),
             Group::Listening => self.listening_group(cx),
             Group::Submitting => self.submitting_group(cx),
@@ -796,7 +795,6 @@ impl RootView {
                 );
             }
             Group::DiscordShows => self.put_discord_shows_back(cx),
-            Group::Contact => self.clear_contact(cx),
             Group::SharedCatalog => self.name_the_offer(String::new(), cx),
             Group::Measurers => self.wear_the_measurers(Measurers::default(), cx),
             Group::Recognition => {
@@ -868,14 +866,6 @@ impl RootView {
             .catalog_shared
             .as_ref()
             .is_some_and(|shared| !shared.name().is_empty());
-        let contact_given = !self
-            .settings_fields
-            .read(cx)
-            .contact
-            .read(cx)
-            .text()
-            .trim()
-            .is_empty();
         let key_given = !self
             .settings_fields
             .read(cx)
@@ -989,7 +979,6 @@ impl RootView {
             switches: self.switches_worn(cx),
             flac_renderers_named,
             formats_learnt,
-            contact_given,
             offer_name_given,
             measurer_given,
             key_given,

@@ -15,7 +15,7 @@ Binary only (`discord` feature); `cargo tree -p resonate-discord` stays free of 
 ## Off means nothing runs
 
 - **No application id in the build**: `discord` false, `discord-app` empty; `Presence::active` (on
-  *and* an application named) is the one gate. The id is the listener's own, like `contact`.
+  *and* an application named) is the one gate. The id is the listener's own.
 - **Inactive: no thread, socket or probe. Active but idle: no socket.** `Discord::follow` spawns
   the `resonate-discord` thread on activation, stops it (clearing the activity) on deactivation;
   it connects only once there is something to show.

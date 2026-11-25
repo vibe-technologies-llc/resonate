@@ -14,7 +14,7 @@ pub(crate) const HEAD_BYTES_AT_MOST: usize = 16 << 10;
 
 pub(crate) const HEADERS_AT_MOST: usize = 64;
 
-pub(crate) const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
+pub(crate) const USER_AGENT: &str = "resonate";
 
 pub(crate) const SERVED_AS: &str = concat!(
     "resonate/",

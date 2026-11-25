@@ -1,4 +1,4 @@
-lookups-note = MusicBrainz pour ce qu’est une sortie et un artiste, la Cover Art Archive pour une couverture, Wikimedia Commons pour un portrait, LRCLIB et Better Lyrics pour des paroles. Rien ne vous identifie à moins qu’un contact ne soit donné ci-dessous.
+lookups-note = MusicBrainz pour ce qu’est une sortie et un artiste, la Cover Art Archive pour une couverture, Wikimedia Commons pour un portrait, LRCLIB et Better Lyrics pour des paroles.
 mirror-note = MusicBrainz propre exportation, un téléchargement de 7,5 Go lu dans une copie d’environ 10 Go conservée ici, compressée et indexée; la construction veut environ 50 Go de salle pendant environ une heure. Une recherche est répondue à partir de celle-ci en millisecondes, avant le réseau, et un appareil synchronisé sans copie demande celui-ci.
 mirror-absent = Il n’y a pas encore de copie. La construction de l’un d’eux récupère l’exportation et la lit, ce qui prend un certain temps; les recherches se poursuivent comme avant.
 metered-note = Une connexion que le système signale comme mesurée, le point d’accès d’un téléphone ou un plan plafonné, est celle dont il s’agit ces commutateurs; on ne peut pas dire qu’il n’est pas pris comme mesuré.
@@ -20,7 +20,6 @@ quickest-to-answer-enough-for-a = Plus rapide à répondre; assez pour un enregi
 enough-for-most-songs-even-over = Assez pour la plupart des chansons, même un peu de bruit.
 the-best-chance-with-a-noisy = La meilleure chance avec une pièce bruyante, un passage calme ou une chanson plus rare.
 a-length-of-your-own-set = Une longueur de votre propre, défini dans le fichier de paramètres.
-contact-note = Envoyé dans l’Utilisateur-Agent à MusicBrainz, la Cover Art Archive, ListenBrainz et Wikimedia, qui demandent qui demande, à partir de la demande suivante sur. Laissez vide pour n’envoyer rien.
 reach-the-network = Atteindre le réseau
 off-the-library-is-what-the = Off, la bibliothèque est ce que les fichiers disent
 keep-a-copy-of-musicbrainz-here = Conservez une copie de MusicBrainz ici

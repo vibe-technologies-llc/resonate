@@ -4,48 +4,6 @@ use super::{RootView, token_notice};
 use crate::{Notice, ResonateApp, Setting, words};
 
 impl RootView {
-    pub(super) fn contact_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.take_the_contact(cx);
-        window.focus(&self.focus, cx);
-        cx.notify();
-    }
-
-    pub(super) fn contact_left(&mut self, cx: &mut Context<Self>) {
-        if self.settings_fields.read(cx).contact.read(cx).text().trim()
-            != cx.global::<ResonateApp>().online.contact
-        {
-            self.take_the_contact(cx);
-            cx.notify();
-        }
-    }
-
-    pub(super) fn take_the_contact(&mut self, cx: &mut Context<Self>) {
-        let given = self
-            .settings_fields
-            .read(cx)
-            .contact
-            .read(cx)
-            .text()
-            .trim()
-            .to_owned();
-
-        self.settings_fields
-            .read(cx)
-            .contact
-            .clone()
-            .update(cx, |contact, cx| contact.hold(given.clone(), cx));
-        cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = given.clone());
-
-        let said = if given.is_empty() {
-            words::root::contact_cleared()
-        } else {
-            words::root::contact_taken()
-        };
-
-        self.store(&Setting::Contact(given), cx);
-        self.report(Notice::Done(said.to_owned()), cx);
-    }
-
     pub(super) fn acoustid_key_given(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.take_the_acoustid_key(cx);
         window.focus(&self.focus, cx);
@@ -462,37 +420,6 @@ impl RootView {
         cx.update_global::<ResonateApp, _>(|global, _| global.online.acoustid_key = String::new());
     }
 
-    pub(crate) fn leave_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if !self
-            .settings_fields
-            .read(cx)
-            .contact
-            .read(cx)
-            .is_focused(window)
-        {
-            return;
-        }
-        if self.settings_fields.read(cx).contact.read(cx).text().trim()
-            != cx.global::<ResonateApp>().online.contact
-        {
-            self.contact_given(window, cx);
-            return;
-        }
-        window.focus(&self.focus, cx);
-        cx.notify();
-    }
-
-    pub(crate) fn put_back_contact(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let stored = cx.global::<ResonateApp>().online.contact.to_owned();
-
-        self.settings_fields
-            .read(cx)
-            .contact
-            .clone()
-            .update(cx, |field, cx| field.hold(stored, cx));
-        self.leave_contact(window, cx);
-    }
-
     pub(crate) fn leave_typed_root(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if !self
             .settings_fields
@@ -542,14 +469,5 @@ impl RootView {
             .clone()
             .update(cx, |field, cx| field.hold(stored, cx));
         self.leave_organising(window, cx);
-    }
-
-    pub(crate) fn clear_contact(&self, cx: &mut Context<Self>) {
-        self.settings_fields
-            .read(cx)
-            .contact
-            .clone()
-            .update(cx, |contact, cx| contact.hold(String::new(), cx));
-        cx.update_global::<ResonateApp, _>(|global, _| global.online.contact = String::new());
     }
 }

@@ -262,10 +262,7 @@ mod tests {
     };
 
     use super::*;
-    use crate::{
-        Identity,
-        client::{Carried, Introduction, WallClock},
-    };
+    use crate::client::{Carried, WallClock};
 
     const LATEST: &str = include_str!("../tests/fixtures/github_latest_release.json");
 
@@ -417,11 +414,7 @@ mod tests {
     }
 
     pub(super) fn over_loopback(base: String) -> Releases {
-        let client = Client::on_clock(
-            Introduction::as_(&Identity::of_this_build()),
-            Arc::new(WallClock),
-            Carried::Plain,
-        );
+        let client = Client::on_clock(Arc::new(WallClock), Carried::Plain);
         Releases::answering_at(
             Arc::new(client),
             Repository::named("someone/resonate").expect("a repository"),
@@ -454,10 +447,7 @@ mod tests {
             })
             .expect("a user agent");
 
-        assert_eq!(
-            user_agent,
-            format!("resonate/{}", env!("CARGO_PKG_VERSION"))
-        );
+        assert_eq!(user_agent, "resonate");
     }
 
     #[test]

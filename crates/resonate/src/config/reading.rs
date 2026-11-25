@@ -92,15 +92,6 @@ pub fn load(explicit: Option<&Path>) -> Result<Config> {
 }
 
 #[cfg(feature = "online")]
-pub fn contact_in(path: &Path) -> Result<Option<String>> {
-    let key = ConfigKey::Contact;
-    match item_in(path, key)? {
-        Some(value) => Ok(given(At { path, key }.string(&value)?)),
-        None => Ok(None),
-    }
-}
-
-#[cfg(feature = "online")]
 pub fn spotify_in(path: &Path) -> Result<Option<(String, String)>> {
     let read = |key: ConfigKey| -> Result<Option<String>> {
         match item_in(path, key)? {
@@ -178,6 +169,8 @@ pub(super) struct Retired {
     reads_as: fn(bool) -> bool,
 }
 
+pub(super) const REMOVED_CONTACT: &str = "contact";
+
 const RETIRED: [Retired; 1] = [Retired {
     spelt: "stall-downloads-on-metered",
     became: Switch::DownloadOnMetered,
@@ -218,6 +211,10 @@ pub(super) fn parse(path: &Path, text: &str, mut refused: impl FnMut(Error)) -> 
     let mut retired = Vec::new();
 
     for (name, value) in document.iter() {
+        if name == REMOVED_CONTACT {
+            continue;
+        }
+
         let Some(key) = ConfigKey::parse(name) else {
             match Retired::spelt(name) {
                 Some(spelling) => retired.push((spelling, value)),
@@ -328,7 +325,6 @@ impl Config {
             Valued::PreviousRestarts => {
                 config.previous_restarts = Some(at.boolean(value)?);
             }
-            Valued::Contact => config.contact = given(at.string(value)?),
             Valued::AcoustidKey => config.acoustid_key = given(at.string(value)?),
             Valued::AuddToken => config.audd_token = given(at.string(value)?),
             Valued::ListenbrainzToken => config.listenbrainz_token = given(at.string(value)?),

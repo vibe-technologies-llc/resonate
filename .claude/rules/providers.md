@@ -1076,7 +1076,7 @@ the listener's, by `Tool`; searching does not. It works with no cookies at the f
   lives, and an opening waits `A_TURN_IS_WAITED_ON_FOR` (45 s) for it, then answers `Busy`, the want's.
 - **A search is signed out**: InnerTube's `search` with `WEB_REMIX` and the Songs filter, `ASKED_APART`
   paced, no cookies, so it never touches the account. The client version is read from `/sw.js_data`,
-  not pinned: under `resonate/<version>` the home page redirects to a consent page and then a *browser
+  not pinned: under the Resonate User-Agent the home page redirects to a consent page and then a *browser
   out of date* page with no version in it. A want follows a `Service::YoutubeMusic` link before
   `may_be_listed`, since a keep may have no length or artist; otherwise it is the named-alike rule, as
   YouTube gives no code. `Listed::stated` is `MUSIC_EXPLICIT_BADGE`.

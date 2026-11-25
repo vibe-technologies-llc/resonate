@@ -691,12 +691,12 @@ fn previous_restarts_by_default_and_is_turned_off_by_its_key() {
 
 #[test]
 fn a_loaded_file_says_where_it_was_read_from() {
-    let scratch = Scratch::new().seed("contact = \"a contact\"\n");
+    let scratch = Scratch::new().seed("online = false\n");
 
     let loaded = load(Some(&scratch.path)).expect("it loads");
 
     assert_eq!(loaded.read_from.as_deref(), Some(scratch.path.as_path()));
-    assert_eq!(loaded.contact.as_deref(), Some("a contact"));
+    assert!(!loaded.is_on(Switch::Online));
 }
 
 #[test]

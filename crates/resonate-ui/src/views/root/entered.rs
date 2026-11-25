@@ -11,7 +11,6 @@ impl RootView {
         cx: &mut Context<Self>,
     ) {
         match entered {
-            Entered::Contact => self.contact_given(window, cx),
             Entered::AcoustidKey => self.acoustid_key_given(window, cx),
             Entered::ReplicationToken => self.replication_token_given(window, cx),
             Entered::AuddToken => self.audd_token_given(window, cx),
@@ -41,7 +40,6 @@ impl RootView {
 
     pub(super) fn left(&mut self, left: Left, window: &mut Window, cx: &mut Context<Self>) {
         match left {
-            Left::Contact => self.contact_left(cx),
             Left::AcoustidKey => self.acoustid_key_left(cx),
             Left::ReplicationToken => self.replication_token_left(cx),
             Left::AuddToken => self.audd_token_left(cx),

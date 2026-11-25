@@ -95,7 +95,7 @@ def repository_url():
 
 def previous_source(website):
     url = f"{website}/releases/latest/download/{altstore.SOURCE_ASSET}"
-    request = urllib.request.Request(url, headers={"User-Agent": f"resonate/{declared_version()}"})
+    request = urllib.request.Request(url, headers={"User-Agent": "resonate"})
     try:
         with urllib.request.urlopen(request, timeout=30) as answer:
             return json.load(answer)

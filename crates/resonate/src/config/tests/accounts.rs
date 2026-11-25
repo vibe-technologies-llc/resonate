@@ -14,7 +14,7 @@ fn a_cookie_setting_is_withheld_from_the_configs_debug() {
 }
 
 #[test]
-fn no_key_holding_a_secret_or_the_contact_is_printed_by_debug() {
+fn no_key_holding_a_secret_is_printed_by_debug() {
     let config = read(
         "subsonic = \"https://music.home.arpa\"\nsubsonic-user = \"listener\"\n\
          subsonic-password = \"subsonic-sesame\"\njellyfin = \"https://jelly.home.arpa\"\n\
@@ -22,7 +22,7 @@ fn no_key_holding_a_secret_or_the_contact_is_printed_by_debug() {
          tidal-client-secret = \"tidal-hush\"\ntidal-refresh-token = \"tidal-sesame\"\n\
          spotify-refresh-token = \"spotify-sesame\"\n\
          audd-token = \"audd-sesame\"\nlistenbrainz-token = \"listenbrainz-sesame\"\n\
-         acoustid-key = \"acoustid-sesame\"\ncontact = \"someone at an address\"\n\
+         acoustid-key = \"acoustid-sesame\"\n\
          sync-key = \"sync-sesame\"\nmusicbrainz-replication-token = \"metabrainz-sesame\"\n",
     )
     .expect("a well formed document");
@@ -43,7 +43,6 @@ fn no_key_holding_a_secret_or_the_contact_is_printed_by_debug() {
         "listenbrainz-sesame",
         "acoustid-sesame",
         "metabrainz-sesame",
-        "someone at an address",
         "sync-sesame",
     ] {
         assert!(!printed.contains(secret), "{secret} was printed");
@@ -132,52 +131,22 @@ fn a_spotify_account_is_read_out_of_the_file_only_where_both_keys_are_given() {
     let _ = fs::remove_file(&scratch.path);
 }
 
-#[cfg(feature = "online")]
 #[test]
-fn the_contact_alone_is_read_back_out_of_a_file_edited_by_hand() {
-    let scratch = Scratch::new().seed("volume = \"loud\"\ncontact = \"  a contact  \"\n");
-
-    assert_eq!(
-        contact_in(&scratch.path).expect("the contact reads whatever else is wrong"),
-        Some("a contact".to_owned())
-    );
-
-    let scratch = scratch.seed("contact = \" \"\n");
-
-    assert_eq!(contact_in(&scratch.path).expect("it reads"), None);
-
-    let scratch = scratch.seed("contact = 7\n");
-
-    assert!(contact_in(&scratch.path).is_err());
-
-    let _ = fs::remove_file(&scratch.path);
-
-    assert_eq!(
-        contact_in(&scratch.path).expect("no file is no contact"),
-        None
-    );
-}
-
-#[test]
-fn online_and_contact_are_read_and_an_empty_contact_is_none() {
-    let config = read("online = false\ncontact = \"a contact the user typed\"")
-        .expect("a well formed document");
+fn online_and_metered_switches_are_read() {
+    let config = read("online = false").expect("a well formed document");
 
     assert_eq!(config.switches.said(Switch::Online), Some(false));
     assert!(!config.is_on(Switch::Online));
-    assert_eq!(config.contact.as_deref(), Some("a contact the user typed"));
 
-    let config = read("online = true\ncontact = \"  \"").expect("a well formed document");
+    let config = read("online = true").expect("a well formed document");
 
     assert_eq!(config.switches.said(Switch::Online), Some(true));
     assert!(config.is_on(Switch::Online));
-    assert_eq!(config.contact, None);
 
     let config = read("").expect("empty is valid");
 
     assert!(config.is_on(Switch::Online));
     assert!(config.is_on(Switch::EnrichAfterScan));
-    assert_eq!(config.contact, None);
 
     let config = read("enrich-after-scan = false").expect("a well formed document");
 

@@ -38,9 +38,9 @@ pub use places::private_store;
 pub use places::{config_path, equaliser_dir, library_path, private_data_dir, vault_dir};
 #[cfg(feature = "online")]
 pub use reading::a_path;
-#[cfg(feature = "online")]
-pub use reading::{contact_in, spotify_in, submitting_in, tidal_refresh_token_in};
 pub use reading::{load, spoken_before_the_grammar};
+#[cfg(feature = "online")]
+pub use reading::{spotify_in, submitting_in, tidal_refresh_token_in};
 #[cfg(feature = "ui")]
 pub use writing::Editing;
 #[cfg(any(feature = "online", feature = "ui"))]
@@ -90,7 +90,6 @@ pub struct Config {
     pub shuffle_spreads_artists: Option<bool>,
     pub shuffle_spreads_albums: Option<bool>,
     pub shuffle_fresh_first: Option<bool>,
-    pub contact: Option<String>,
     pub read_from: Option<PathBuf>,
     pub acoustid_key: Option<String>,
     pub audd_token: Option<String>,
@@ -224,7 +223,6 @@ impl fmt::Debug for Config {
             shuffle_spreads_artists,
             shuffle_spreads_albums,
             shuffle_fresh_first,
-            contact,
             read_from,
             acoustid_key,
             audd_token,
@@ -347,7 +345,6 @@ impl fmt::Debug for Config {
             .field("shuffle_spreads_artists", shuffle_spreads_artists)
             .field("shuffle_spreads_albums", shuffle_spreads_albums)
             .field("shuffle_fresh_first", shuffle_fresh_first)
-            .field("contact", &withheld(contact.as_ref()))
             .field("read_from", read_from)
             .field("acoustid_key", &withheld(acoustid_key.as_ref()))
             .field("audd_token", &withheld(audd_token.as_ref()))

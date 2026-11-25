@@ -1015,11 +1015,7 @@ mod tests {
     }
 
     fn plain_client() -> Arc<Client> {
-        Arc::new(Client::on_clock(
-            crate::Introduction::as_(&crate::Identity::of_this_build()),
-            Arc::new(NoWaiting),
-            Carried::Plain,
-        ))
+        Arc::new(Client::on_clock(Arc::new(NoWaiting), Carried::Plain))
     }
 
     struct Given {
@@ -1683,12 +1679,8 @@ mod tests {
         metering.report(Meter::Metered);
 
         let gated = Arc::new(
-            Client::on_clock(
-                crate::Introduction::as_(&crate::Identity::of_this_build()),
-                Arc::new(NoWaiting),
-                Carried::Plain,
-            )
-            .gated_by(Gate::new(metering, true)),
+            Client::on_clock(Arc::new(NoWaiting), Carried::Plain)
+                .gated_by(Gate::new(metering, true)),
         );
         let online = online_on(&fake, Given::signed_in(), gated);
 
@@ -1705,11 +1697,11 @@ mod tests {
             .playlist_linked(&PlaylistLink::SpotifyLiked)
             .expect("an answer");
 
-        let said = format!("user-agent: resonate/{}", env!("CARGO_PKG_VERSION"));
+        let said = "user-agent: resonate\r\n";
 
         for asked in fake.asked() {
             assert!(
-                asked.head.to_ascii_lowercase().contains(&said),
+                asked.head.to_ascii_lowercase().contains(said),
                 "{}",
                 asked.head
             );

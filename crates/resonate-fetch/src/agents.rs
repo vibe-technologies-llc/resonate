@@ -20,7 +20,7 @@ use ureq::{
 
 use crate::{ranged::UNCODED, stall::BrokenOffAfter, trust};
 
-pub const USER_AGENT: &str = concat!("resonate/", env!("CARGO_PKG_VERSION"));
+pub const USER_AGENT: &str = "resonate";
 pub const CONNECTED_WITHIN: Duration = Duration::from_secs(10);
 const RESOLVED_WITHIN: Duration = Duration::from_secs(10);
 const ANSWERED_WITHIN: Duration = Duration::from_secs(20);

@@ -431,8 +431,8 @@ subject.
   pane renamed under `last-tab`, or another build's `window-size`, fails no command); a non-TOML
   file still does.
 - **`Config`'s `Debug` prints no secret:** hand-written over an exhaustive destructuring (a key added
-  and left out fails to compile), `<withheld>` for every token, password, key and `contact`
-  (`no_key_holding_a_secret_or_the_contact_is_printed_by_debug`).
+  and left out fails to compile), `<withheld>` for every token, password, key
+  (`no_key_holding_a_secret_is_printed_by_debug`).
 - **A hand-editor reads `resonate-config.toml(5)`** (`packaging/resonate-config.toml.5`, installed by
   every package): one `.TP` entry per key with its type, accepted spellings and default. A key added
   to `ConfigKey` without an entry, or an entry for a key that is gone, fails
@@ -673,7 +673,9 @@ subject.
   nothing behind
   (`a_file_holding_the_stall_switch_reads_it_as_downloads_allowed_the_other_way_round`,
   `writing_or_forgetting_the_download_switch_takes_the_stall_spelling_out_of_the_file`). A key
-  renamed later adds a row to `RETIRED`. The group says while `PollProgress::is_waiting_on_the_meter` holds that
+  renamed later adds a row to `RETIRED`. The removed `contact` setting is passed
+  over when read and removed on the next edit of the file, whatever value it held
+  (`a_removed_contact_is_ignored_when_read_and_dropped_on_the_next_edit`). The group says while `PollProgress::is_waiting_on_the_meter` holds that
   downloads wait. Neither key has a flag. `online = false` outranks both, and a build
   without `online` has no lookups to gate (`providers.md`, `online.md`).
 - **`musicbrainz-mirror` (off) keeps a copy of MusicBrainz on this device** (`musicbrainz.rs`,
@@ -775,8 +777,7 @@ process's own name; creates the staged file `0600` and narrows the standing file
 before writing (it holds secrets); `sync_all`s file and folder; renames over the target, the
 stage, sync and rename being core's `file_facts::write_atomically` (below). **On Unix the data folder is `0700` and `shared.sqlite` and `sync.sqlite` (and their `-wal` and `-shm`) are `0600`** (`config::private_data_dir`, `private_store`: the folder narrowed whenever it is made or opened for the library, the sync lock or a store, a store made `0600` before SQLite opens it so its side files take that mode, and a standing one narrowed): they hold shared-playlist edit codes and the member's private key. A value
 with a flag is spelled as the flag spells it (`ValueEnum`s from the grammar). `Setting::Theme`,
-`Accent`, `Online`, `Contact` never reach the engine; a cleared contact is `config::clear` on the
-key, not an empty string (`Config::contact` stays `None`, the User-Agent bare).
+`Accent` and `Online` never reach the engine.
 
 The desktop starts its Game Mode watcher at entry: Linux through MPRIS's session bus worker, Windows through the Win32 effective power mode watch. `core::gaming` holds background enrichment and studies while active and releases them automatically afterward; playback and foreground analysis continue. The phones use the study duty limit without this desktop gate.
 
