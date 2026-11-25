@@ -192,7 +192,7 @@ pub use crate::{
         RetagHandle, ScanHandle, TakeInHandle, VaultWeighingHandle,
     },
     played_in_place::PlayedInPlace,
-    playlist::{Filled, Mirrored, cuts_listed_in},
+    playlist::{Filled, MOST_PLAYLIST_NAME_CHARS, Mirrored, cuts_listed_in},
     query::{
         AlbumOrder, AlbumQuery, ArtistOrder, ArtistQuery, Direction, Kept, PlaylistOrder, RowOrder,
         SavedQuery, SearchResults, SortOrder, TrackQuery,

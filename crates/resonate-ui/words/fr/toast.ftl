@@ -14,6 +14,7 @@ no-vault = Il n’y a pas encore de chambre forte.
 no-music-folder = le dossier de musique n’est pas là
 duplicate-playlist = une playlist a déjà ce nom
 unnamed-playlist = il a besoin d’un nom
+playlist-name-too-long = ce nom est trop long pour une playlist
 playlist-moved-since-drawn = la liste de lecture a d’abord changé, donc rien n’a été déplacé ou retiré
 not-a-folder = Ce n’est pas un dossier
 root-inside-root = que le dossier est déjà dans la bibliothèque

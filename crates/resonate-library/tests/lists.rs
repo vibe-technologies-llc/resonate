@@ -2,8 +2,8 @@ use std::{fs, slice, thread, time::Duration};
 
 use resonate_core::{AlbumId, MediaLocation, PlaylistId, QueueStamp, SourceId, Span};
 use resonate_library::{
-    AlbumQuery, Cut, Direction, Edit, Error, Kept, Library, Playing, PlaylistOrder, Result,
-    RowOrder, SavedQuery, SortOrder,
+    AlbumQuery, Cut, Direction, Edit, Error, Kept, Library, MOST_PLAYLIST_NAME_CHARS, Playing,
+    PlaylistOrder, Result, RowOrder, SavedQuery, SortOrder,
 };
 
 use crate::support::{
@@ -285,6 +285,39 @@ fn two_playlists_cannot_share_a_name_however_it_is_cased() -> Result<()> {
     assert_eq!(
         library.playlist_named("MORNING")?.map(|found| found.id),
         Some(id)
+    );
+    Ok(())
+}
+
+#[test]
+fn a_playlist_name_past_its_limit_is_refused_wherever_it_is_given() -> Result<()> {
+    let library = Library::open_in_memory()?;
+    let limit = MOST_PLAYLIST_NAME_CHARS;
+    let megabytes = "x".repeat(4 * 1024 * 1024);
+    let just_past = "é".repeat(limit + 1);
+    let at_the_limit = "é".repeat(limit);
+
+    let id = library.create_playlist("Evening")?;
+
+    assert!(matches!(
+        library.create_playlist(&megabytes),
+        Err(Error::PlaylistNameTooLong { limit: refused }) if refused == limit
+    ));
+    assert!(matches!(
+        library.create_playlist(&just_past),
+        Err(Error::PlaylistNameTooLong { .. })
+    ));
+    assert!(matches!(
+        library.rename_playlist(id, &megabytes),
+        Err(Error::PlaylistNameTooLong { .. })
+    ));
+    assert_eq!(named_as(&library, None)?, vec!["Evening".to_owned()]);
+
+    library.rename_playlist(id, &at_the_limit)?;
+
+    assert_eq!(
+        library.playlist(id)?.map(|playlist| playlist.name),
+        Some(at_the_limit)
     );
     Ok(())
 }

@@ -2,7 +2,9 @@ use std::{fmt, num::NonZeroU64, path::PathBuf, time::Duration};
 
 use resonate_core::{AlbumId, ArtistId, ReleaseTrackId, Span, TrackId, Volume, ZoneId};
 use resonate_engine::Until;
-use resonate_library::{Favoured, Library, PlaylistLink, ProfileLink, Upkeep, Window};
+use resonate_library::{
+    Favoured, Library, MOST_PLAYLIST_NAME_CHARS, PlaylistLink, ProfileLink, Upkeep, Window,
+};
 use resonate_mpris::{Seeking, ZoneAsked};
 use serde::{Deserialize, de::DeserializeOwned};
 use serde_json::{Value, json};
@@ -20,6 +22,20 @@ use crate::{
 };
 
 const MOST_ROWS: usize = 1_000;
+pub(crate) const MOST_QUERY_CHARS: usize = 4_096;
+const NAME_FIELDS: [Field; 5] = [
+    Field("name"),
+    Field("named"),
+    Field("playlist"),
+    Field("to"),
+    Field("zone"),
+];
+const QUERY_FIELDS: [Field; 4] = [
+    Field("query"),
+    Field("fills_from"),
+    Field("matching"),
+    Field("link"),
+];
 const SEARCHED_BY_DEFAULT: usize = 25;
 pub(crate) const LISTED_BY_DEFAULT: usize = 200;
 pub(crate) const QUEUED_BY_DEFAULT: usize = 100;
@@ -723,7 +739,7 @@ impl Tool {
 
         json!({
             "type": "object",
-            "properties": properties,
+            "properties": with_lengths_capped(properties),
             "required": self.requires(),
         })
     }
@@ -791,6 +807,7 @@ impl Tool {
         players: &dyn Reach,
         passes: &Passes,
     ) -> std::result::Result<Result<Value>, Refusal> {
+        self.within_limits(&arguments)?;
         Ok(match self {
             Self::Search => {
                 let asked: Searching = self.taken(arguments)?;
@@ -1034,6 +1051,30 @@ impl Tool {
                 Ok(passes.stop(asked.pass))
             }
         })
+    }
+
+    fn within_limits(self, arguments: &Value) -> std::result::Result<(), Refusal> {
+        let Some(fields) = arguments.as_object() else {
+            return Ok(());
+        };
+
+        for (key, value) in fields {
+            let Some(text) = value.as_str() else {
+                continue;
+            };
+            let Some((field, most)) = limit_of(key) else {
+                continue;
+            };
+
+            if text.chars().nth(most).is_some() {
+                return Err(Refusal::TooLongField {
+                    tool: self,
+                    field,
+                    most,
+                });
+            }
+        }
+        Ok(())
     }
 
     fn taken<Asked: DeserializeOwned>(
@@ -1339,6 +1380,30 @@ struct Zoned {
 struct Moving {
     zone: Option<ZoneArg>,
     to: ZoneArg,
+}
+
+fn limit_of(key: &str) -> Option<(Field, usize)> {
+    let named = NAME_FIELDS.into_iter().find(|field| field.0 == key);
+    let queried = QUERY_FIELDS.into_iter().find(|field| field.0 == key);
+
+    named
+        .map(|field| (field, MOST_PLAYLIST_NAME_CHARS))
+        .or_else(|| queried.map(|field| (field, MOST_QUERY_CHARS)))
+}
+
+fn with_lengths_capped(mut properties: Value) -> Value {
+    if let Some(fields) = properties.as_object_mut() {
+        for (key, schema) in fields {
+            let is_text = schema["type"] == "string";
+
+            if let (true, Some((_, most)), Some(schema)) =
+                (is_text, limit_of(key), schema.as_object_mut())
+            {
+                schema.insert("maxLength".to_owned(), json!(most));
+            }
+        }
+    }
+    properties
 }
 
 #[derive(Deserialize)]

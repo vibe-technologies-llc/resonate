@@ -2784,7 +2784,11 @@ scan. `Error::DestinationNotADirectory` is the one refusal before the thread sta
   all alphabets unlike SQLite `NOCASE`; then NFC, not NFKC) with the `UNIQUE`: two spellings cannot
   coexist; one function for stored and asked names (`Library::playlist_named`, `HOLDS_THE_WORD`,
   `PlaylistOrder::Name`). `Library::rename_playlist` refuses a spelling another playlist holds via
-  `refuse_duplicate`, which excludes the renamed one.
+  `refuse_duplicate`, which excludes the renamed one. **A name has a length**: `wanted_name`, which
+  every create, rename and fill passes, refuses a trimmed name past `MOST_PLAYLIST_NAME_CHARS` (256
+  characters, counted without walking past the limit) as `Error::PlaylistNameTooLong`, so a name
+  of megabytes never reaches the catalog, a sync or every `resources/list`; a name already stored
+  longer stays (`a_playlist_name_past_its_limit_is_refused_wherever_it_is_given`).
 - **Every row edit refuses inside its transaction.** `only_a_list` checks existence and not-a-query
   against the transaction (`Error::UnknownPlaylist`, `Error::NotAList` never stale). Dropping
   passes: `Going` = the question (`Gone`, `Doubled`, `Unwanted`, `Matching`); `asked_of` asks it of

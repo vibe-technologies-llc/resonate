@@ -282,6 +282,9 @@ pub enum Error {
     #[error("a playlist needs a name")]
     UnnamedPlaylist,
 
+    #[error("a playlist's name is no longer than {limit} characters")]
+    PlaylistNameTooLong { limit: usize },
+
     #[error("playlist {playlist} fills itself from a query, and its rows are not a list to edit")]
     NotAList { playlist: PlaylistId },
 

@@ -37,6 +37,8 @@ const COUNTED: &str = "FROM playlists p
 
 const PER_PLAYLIST: &str = "GROUP BY p.id";
 
+pub const MOST_PLAYLIST_NAME_CHARS: usize = 256;
+
 const BENEATH_EVERY_POSITION: i64 = -1;
 
 const UNSCANNED_LAST: &str = "tracks.id IS NULL";
@@ -2255,6 +2257,11 @@ fn wanted_name(name: &str) -> Result<PlaylistName> {
 
     if trimmed.is_empty() {
         return Err(Error::UnnamedPlaylist);
+    }
+    if trimmed.chars().nth(MOST_PLAYLIST_NAME_CHARS).is_some() {
+        return Err(Error::PlaylistNameTooLong {
+            limit: MOST_PLAYLIST_NAME_CHARS,
+        });
     }
     Ok(PlaylistName::new(trimmed))
 }

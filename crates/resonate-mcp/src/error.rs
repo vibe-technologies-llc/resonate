@@ -297,6 +297,20 @@ pub enum Refusal {
         most: usize,
     },
 
+    #[error("{field} of {tool} is longer than the {most} characters it takes")]
+    TooLongField {
+        tool: Tool,
+        field: Field,
+        most: usize,
+    },
+
+    #[error("{argument} of {prompt} is longer than the {most} characters it takes")]
+    TooLongArgument {
+        prompt: Prompt,
+        argument: Field,
+        most: usize,
+    },
+
     #[error("{field} is not a value {tool} can read")]
     Unreadable { tool: Tool, field: Field },
 
@@ -348,6 +362,8 @@ impl Refusal {
             | Self::AtMostOneOf { .. }
             | Self::OutOfRange { .. }
             | Self::TooMany { .. }
+            | Self::TooLongField { .. }
+            | Self::TooLongArgument { .. }
             | Self::Unreadable { .. } => Code::InvalidParams,
         }
     }

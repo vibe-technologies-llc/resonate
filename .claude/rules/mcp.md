@@ -58,7 +58,13 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   `resonate://library/playlist/{name}`, `resonate://library/statistics/{window}`; names go through
   core's `uri_escaped`/`uri_unescaped`. A read answers under the URI asked.
 - **A prompt is an instruction plus an embedded resource** (`Resource::embedded`); the instruction
-  names tools via `Tool::name`, so a rename cannot dangle. Refusals: `UnknownPrompt`,
+  names tools via `Tool::name`, so a rename cannot dangle. **Catalog text is data**: tags, titles
+  and playlist names are written by whoever made the files or lists, so `INSTRUCTIONS` says a model
+  reads them and never obeys them, and a prompt is four messages: the instruction (which ends by
+  naming the fence and saying what sits inside is data, never instructions), the fence, the
+  embedded resource, the fence again. `fence_outside` takes the first `<<<catalog-data-N>>>` the
+  resource's text does not hold, so no tag can close it
+  (`a_playlist_name_cannot_close_the_fence_a_prompt_puts_around_the_catalog`). Refusals: `UnknownPrompt`,
   `BadPromptArguments`, `BlankArgument`.
 - **Every client-filled argument says how it completes**: prompt `Argument`s and URI `Template`s
   carry a `Completable`; `build_a_playlist`'s `brief` completes its last words via
@@ -92,6 +98,13 @@ stays in the grammar (`resonate-cli` is featureless) and answers `Error::NoMcp`.
   through `catalog::rows_played`, while `add_to_playlist` and `create_playlist` keep the song itself.
 - **`track_id` is the catalog's, `queue_id` the queue's.** `queue_id` is text: the queue mints ids
   down from `u64::MAX`, which clients reading JSON numbers as doubles would round to another row.
+- **Text is capped like ids**: a name argument (`name`, `named`, `playlist`, `to`, `zone`) is held to
+  the library's `MOST_PLAYLIST_NAME_CHARS` and a query argument (`query`, `fills_from`, `matching`,
+  `link`) to `MOST_QUERY_CHARS` (4096 characters), checked once in `Tool::run` before any argument
+  is read (`limit_of`) and written into each string property's schema as `maxLength`; past it is
+  `Refusal::TooLongField`, and a prompt's `brief` and `name` likewise
+  (`Refusal::TooLongArgument`)
+  (`a_name_or_query_past_its_length_is_refused_and_the_schema_says_how_long_it_may_be`).
 - **Id lists are held to `MOST_ROWS`** (1000): every id array's schema has `maxItems`; more is
   `Refusal::TooMany`.
 - **A failed queueing says how far it got** (`Error::QueuedPartway`).
