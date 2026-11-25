@@ -45,13 +45,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Playback and output
-- [S · 0.18.1] Drop a node's listener before the node when it leaves the graph. **High, builder.**
-  `watch_the_registry`'s global-remove handler drops a `(Node, NodeListener)` pair whose first
-  element goes first (`crates/resonate-pipewire/src/client.rs`, `nodes.borrow_mut().remove(&id)`), so
-  the proxy is destroyed before its listener and removing the listener writes into freed memory;
-  `devices` and `metadatas` are held the same way. AddressSanitizer reports it in
-  `formats::a_sink_leaving_under_an_open_stream_is_announced_and_the_stream_still_closes`. Drop the
-  listener first, as `Opened` does. Done when that test runs clean under AddressSanitizer.
 - [S · 0.18.1] Bound a profile the phones import by its whole peak. **Low, builder.** The desktop's
   `Store::read_in` now refuses a profile whose preamp and stacked bands pass `BOOST_AT_MOST_DB`
   (`Error::PeakTooHigh`), but the phones' `parse_eq_profile` (`crates/resonate-mobile/src/equaliser.rs`)
