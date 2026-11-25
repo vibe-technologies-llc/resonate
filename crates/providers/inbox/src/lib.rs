@@ -141,7 +141,13 @@ impl Inbox {
         let mut files = Vec::new();
 
         for entry in fs::read_dir(&self.folder).map_err(|source| self.refused(source))? {
-            let path = entry.map_err(|source| self.refused(source))?.path();
+            let entry = entry.map_err(|source| self.refused(source))?;
+            let kind = entry.file_type().map_err(|source| self.refused(source))?;
+            let path = entry.path();
+
+            if kind.is_symlink() {
+                continue;
+            }
             if let Some(stem) = names_audio(&path).then(|| stem_of(&path)).flatten() {
                 files.push(Listed { path, stem });
             }
@@ -184,7 +190,7 @@ impl Inbox {
     }
 
     fn settled(&self, file: PathBuf) -> Result<Option<PathBuf>> {
-        let metadata = match fs::metadata(&file) {
+        let metadata = match fs::symlink_metadata(&file) {
             Ok(metadata) => metadata,
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 self.sighted.lock().remove(&file);
@@ -679,6 +685,51 @@ mod tests {
             )
             .is_none()
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_link_named_for_a_recording_is_never_delivered_whatever_it_points_at() {
+        use std::os::unix::fs::symlink;
+
+        let folder = Folder::new().holding(&[&format!("{ECHOES}.mp3")]);
+        let elsewhere = Folder::new().holding(&["secret.flac"]);
+
+        symlink(
+            elsewhere.0.join("secret.flac"),
+            folder.0.join(format!("{ECHOES}.flac")),
+        )
+        .expect("a link");
+
+        let found = delivered(
+            settled_at(&folder)
+                .find(&echoes())
+                .expect("a readable inbox"),
+        );
+
+        assert_eq!(found, Some(folder.0.join(format!("{ECHOES}.mp3"))));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_file_swapped_for_a_link_after_the_listing_was_read_is_not_delivered() {
+        use std::os::unix::fs::symlink;
+
+        let folder = Folder::new().holding(&[&format!("{ECHOES}.flac")]);
+        let elsewhere = Folder::new().holding(&["secret.flac"]);
+        let inbox = Inbox {
+            listing_trusted_for: AN_HOUR,
+            ..settled_at(&folder)
+        };
+
+        assert!(delivered(inbox.find(&echoes()).expect("a readable inbox")).is_some());
+
+        let named = folder.0.join(format!("{ECHOES}.flac"));
+
+        fs::remove_file(&named).expect("the file gone");
+        symlink(elsewhere.0.join("secret.flac"), &named).expect("a link");
+
+        assert!(delivered(inbox.find(&echoes()).expect("a readable inbox")).is_none());
     }
 
     #[test]
