@@ -11,6 +11,13 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   within the origin asked. Find where MetaBrainz's servers redirect (the export mirror may hand off
   to another host), follow through `followed` or an allowlist of those hosts, and drop the setting.
   Done when a fake server's `302` to another loopback port is not followed, in a test.
+- [S · 0.18.1] Keep a phone's Jellyfin device id once minted. **Low, builder.** A password sign-in now
+  reuses the install's `jellyfin-device` on the desktop (`Jellyfin::keeping_device`), but the phones
+  store no id the boundary mints (`crates/resonate-mobile/src/downloads.rs` passes the account's
+  stored `device`, and Kotlin and Swift have no hook to save a new one, as `refreshedTidalToken` has
+  for TIDAL), so each phone client signs in under a fresh id and leaves a live token behind. Hand the
+  minted id back across the boundary and store it on both platforms. Done when a phone signing in
+  twice sends one device id, in a boundary test and each platform's unit test.
 - [M · 0.18.1] Harden the Windows Discord pipe. **Low, architect.** The pipe is opened with no
   security quality of service (`crates/resonate-discord/src/pipe.rs:44-51` through interprocess's
   `CreateFileW(..., FILE_FLAG_OVERLAPPED, ...)`), so a squatting server holding
@@ -22,26 +29,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   QoS, bound the write and flush as the reader is bounded, bound the channel and cancel the read on
   drop. Done when tests on Windows show a pipe that never reads ends the session within
   `ANSWERS_WITHIN` and leaves no thread behind.
-- [S · 0.18.1] Keep Jellyfin's token out of the query where a header serves. **Low, builder.**
-  `Session::url` puts `api_key` on every request (`crates/providers/jellyfin/src/lib.rs:111-118`),
-  though only `streamed` reopens by URL, so proxy and request logs gather a full-access token;
-  nothing logs a session out, and each password sign-in makes a fresh `DeviceId` (`lib.rs:165-167`),
-  so every launch leaves a live token on the server. Send the token as a header except on the stream
-  URL, reuse the device id and log out on forget. Done when the fake server takes the token from the
-  header and sees `api_key` only on stream requests, in place of the tests that pin it on every
-  query (`crates/providers/jellyfin/tests/server.rs:302`, `:386-399`, `:579-590`), and no error's
-  text carries the token.
-- [S · 0.18.1] Refuse a symlink in the inbox. **Low, builder.** `read` filters by extension and
-  `settled` uses `fs::metadata`, which follows links (`crates/providers/inbox/src/lib.rs:143-148`,
-  `:187-198`), so a link named `<mbid>.flac` delivers a file from elsewhere, retargetable between
-  looks. Use `symlink_metadata` and pass links over. Done when a test's linked `<mbid>.flac` is not
-  delivered.
-- [S · 0.18.1] Open TIDAL's sign-in page only over https. **Low, builder.** `with_scheme` keeps
-  whatever scheme `verification_uri_complete` names (`crates/providers/tidal/src/sign_in.rs:73-80`,
-  `:255-260`), and the window and the terminal open it. Accept `https` on TIDAL's hosts alone and
-  refuse the sign-in otherwise. Done when the fake's device code, today always `link.tidal.com`
-  (`crates/providers/tidal/tests/server.rs:1100-1139`), names `file:///etc/passwd` or `http://` and
-  is refused as unreadable.
 - [S · 0.18.1] Serve a cue sheet's cut only from a regular file. **Low, builder.** The media server's
   `bytes_of` now opens only a regular file without following a link
   (`crates/resonate/src/offering.rs`, `regular_file`), but a cut of a cue sheet opens its file through
