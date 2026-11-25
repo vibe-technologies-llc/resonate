@@ -100,11 +100,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.18.1] Keep UPnP renderers when Cast fails to start. **Low, builder.** `Kinds::resting`
   drops the UPnP kind it built when Cast fails (`crates/resonate/src/rendering.rs:29-60`). Keep each
   kind that started. Done when a test with Cast refused still lists UPnP renderers.
-- [S · 0.18.1] Release an idle inhibit whose request timed out. **Low, builder.** `hold` keeps the
-  request only on success (`crates/resonate-mpris/src/idle.rs:76-112`), so an `Inhibit` the portal
-  granted after the two-second deadline is never closed and the session cannot idle until the
-  process exits. Retry with a longer deadline or reconcile on release. Done when a stand-in portal
-  answering after three seconds holds no inhibition after `release`.
 - [S · 0.18.1] Correct the equaliser's rule about bands past Nyquist. **Low, builder.** `angle_at`'s
   clamp to π never fires, since `design` passes a band over below `applies_at`
   (`crates/resonate-core/src/eq.rs:61-63`, `:543-558`), and `.claude/rules/eq.md:74-75` says every
@@ -123,9 +118,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `--keep-measurement` writes in place (`:384-395`). Refuse a taken name unless asked to replace it,
   and stage the measurement. Done when importing over a kept name is refused without `--replace` and
   a failed measurement write leaves the old file.
-- [S · 0.18.1] Warn once while the machine may not be kept awake. **Low, builder.** `awake.rs:43-65`
-  retries every second and warns each time while refused. Warn once and retry quietly. Done when a
-  refusing stand-in logs one warning over ten seconds.
 - [M · 0.18.1] Reconnect the MPRIS connection the session bus closed. **Low, architect.** The desk
   thread now notices a closed connection and opens notifications and the idle inhibit again
   (`crates/resonate-mpris/src/desk_bus.rs`), but the player's own connection is only logged once and
