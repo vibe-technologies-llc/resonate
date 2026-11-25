@@ -18,6 +18,7 @@ mod desk_notice;
 mod desk_toast;
 mod desktop;
 mod error;
+mod fitted;
 #[cfg(fuzzing)]
 mod fuzzing;
 #[cfg(target_os = "linux")]

@@ -13,6 +13,7 @@ use zbus::Variant;
 use crate::{
     BusOp, Error, Host, Result,
     blocking::{Connection, Proxy},
+    fitted::field,
     interfaces::Shared,
     notify::{Shown, actions, pressed},
 };
@@ -92,11 +93,9 @@ impl Notifier {
     }
 
     fn notify(&self, shown: &Shown, slot: &AtomicU32, actions: &[&str], transient: bool) {
-        let body = if self.markup {
-            escaped(&shown.body)
-        } else {
-            shown.body.clone()
-        };
+        let summary = field(&shown.summary);
+        let body = field(&shown.body);
+        let body = if self.markup { escaped(&body) } else { body };
         let mut hints: HashMap<&str, Variant<'_>> = HashMap::new();
 
         hints.insert("urgency", Variant::U8(LOW_URGENCY));
@@ -114,7 +113,7 @@ impl Notifier {
                 self.application.as_str(),
                 slot.load(Ordering::Acquire),
                 self.entry.as_deref().unwrap_or(NO_ICON),
-                shown.summary.as_str(),
+                summary.as_str(),
                 body.as_str(),
                 actions,
                 hints,

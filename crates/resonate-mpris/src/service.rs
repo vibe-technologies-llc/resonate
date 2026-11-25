@@ -688,33 +688,36 @@ fn announce(
     let mut told = None;
 
     let mut watched = snapshot(shared, playlists, None);
+    let mut serving = Serving::Open;
 
     while !stop.load(Ordering::Acquire) {
         thread::sleep(POLL);
 
         let next = snapshot(shared, playlists, Some(&watched));
+        let seeked = next
+            .playhead
+            .filter(|_| watched.seeks != next.seeks)
+            .map(|playhead| micros(playhead.position, playhead.rate));
 
-        publish(&player, &watched, &next);
+        if serving.still(connection) {
+            publish(&player, &watched, &next);
+            publish_root(&root, &watched, &next);
+            publish_ours(&ours, &watched, &next);
+            publish_tracks(&tracks, shared, &watched, &next);
+            if let Some(collected) = collected.as_ref() {
+                publish_playlists(collected, &watched.playlists, &next.playlists);
+            }
+            if let Some(position) = seeked {
+                emit_seeked(&player, position);
+            }
+        }
         if let Some(headsets) = headsets.as_ref() {
             publish(headsets.player(), &watched, &next);
-        }
-        publish_root(&root, &watched, &next);
-        publish_ours(&ours, &watched, &next);
-        publish_tracks(&tracks, shared, &watched, &next);
-        if let Some(collected) = collected.as_ref() {
-            publish_playlists(collected, &watched.playlists, &next.playlists);
-        }
-        told = tell_the_desktop(shared, errands.as_ref(), &next, told, heard_from);
-        if watched.seeks != next.seeks
-            && let Some(playhead) = next.playhead
-        {
-            let position = micros(playhead.position, playhead.rate);
-
-            emit_seeked(&player, position);
-            if let Some(headsets) = headsets.as_ref() {
+            if let Some(position) = seeked {
                 emit_seeked(headsets.player(), position);
             }
         }
+        told = tell_the_desktop(shared, errands.as_ref(), &next, told, heard_from);
         watched = next;
     }
 
@@ -723,6 +726,24 @@ fn announce(
     }
     if let Some(headsets) = headsets {
         headsets.rest();
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Serving {
+    Open,
+    Closed,
+}
+
+impl Serving {
+    fn still(&mut self, connection: &Connection) -> bool {
+        if *self == Self::Open && connection.is_closed() {
+            tracing::warn!(
+                "the session bus closed the player's connection; MPRIS is gone until the player starts again"
+            );
+            *self = Self::Closed;
+        }
+        *self == Self::Open
     }
 }
 

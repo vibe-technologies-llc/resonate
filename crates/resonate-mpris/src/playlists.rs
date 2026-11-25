@@ -6,6 +6,7 @@ use zbus::{ObjectPath, OwnedObjectPath, fdo, interface, object_server::SignalEmi
 
 use crate::{
     Opened, PlaylistInfo, PlaylistOrder,
+    fitted::field,
     host::Playlists,
     track::{no_playlist, playlist_of, playlist_path},
 };
@@ -83,7 +84,11 @@ impl PlaylistsInterface {
 }
 
 pub(crate) fn listed(playlist: PlaylistInfo) -> Listed {
-    (playlist_path(playlist.id), playlist.name, String::new())
+    (
+        playlist_path(playlist.id),
+        field(&playlist.name),
+        String::new(),
+    )
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]

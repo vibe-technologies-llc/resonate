@@ -115,6 +115,20 @@ demand and never announced. Ids:
   leading year, no field). Artist, album artist, genre, composer and lyricist are lists split on
   `LISTED_APART_BY`. `xesam:userRating` is 1 for a catalog favourite, 0 for another catalog row
   (`Heard::favourite`), absent with no row; `xesam:asText` the tag's words.
+- **Text reaches the bus fitted** (`fitted.rs`): every string a tag, a file's name, a playlist's
+  name or a recognised song gives the bus (the metadata map, `GetPlaylists`, a notification's
+  summary and body) passes `fitted`, which leaves out NUL and every other character XML refuses
+  (`is_shown_character`, the set a toast drops, which `toast.rs` shares: C0 controls but tab, line
+  feed and carriage return, U+FFFE and U+FFFF) and cuts on a letter at `FIELD_BYTES_AT_MOST`
+  (4 KiB), `xesam:asText` at `LYRICS_BYTES_AT_MOST` (32 KiB), a list before it is split. zvariant
+  writes an interior NUL unchecked and the daemon drops a connection sending one, taking MPRIS,
+  media keys, notifications and the idle inhibit with it; a megabyte tag would ride every property
+  change (`a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up`, a FLAC
+  under `dbus-run-session`). **`TagSet` keeps what was read**: the tag writer writes it back and
+  ID3v2.4 parts values with NUL, so a strip where tags enter would merge or lose what the listener
+  wrote. The host's own names (`Identity`, `Zone`, `Device`, `DesktopEntry`) are not passed:
+  `ZoneName::given` already leaves out controls and caps a name, and a sink's description is a C
+  string.
 - **Covers.** `mpris:artUrl` wants a URI: `art::Pictures` lays the playing cover under
   `resonate-art-<pid>-<n>/` in `$XDG_RUNTIME_DIR` (temp dir if unset/relative), named by a digest of
   its bytes. Folder 0700 via a `create` refusing an existing one (a predictable name in a shared
@@ -185,7 +199,14 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   poll thread one unanswered call held every property change 25 s). Inhibit is a *level*:
   `Errands::follow` writes whether the session should be awake into an `AtomicBool` and nudges the
   thread, whose `Gripping` weighs it after every errand (a Windows `Desk` ignores it; `awake.rs`
-  of the binary holds the machine awake there). The poll's telling is one function,
+  of the binary holds the machine awake there). **A connection the bus closed is noticed**: the
+  thread waits on its errands at most `WATCHED_EVERY` (5 s) and asks `is_closed` after each wait; a
+  closed one is warned of and dropped with its notifier, `Awake` and `Gripping` (the portal lets an
+  inhibit go with the connection that asked), and another is opened at once, then at most every
+  `REOPENED_AT_MOST_EVERY` (10 s) (`Reopening`), its fresh `Gripping` taking the inhibit again
+  where sound is wanted. The poll's own connection is only noticed (`Serving`): warned of once,
+  publishing to it stops while headsets and the desktop's errands go on; claiming the name again
+  on a new connection is not built. The poll's telling is one function,
   `tell_the_desktop`, for the bus loop and for Windows's pipe service, which has no bus to publish
   on and runs only that (`toast_what_plays`). A failed `Inhibit` still counts as taken.
   Either service missing = debug records, never a refusal to start. `trash.rs` is the same kind

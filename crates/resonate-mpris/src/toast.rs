@@ -1,6 +1,9 @@
 use std::fmt::Write as _;
 
-use crate::notify::{Shown, actions};
+use crate::{
+    fitted::is_shown_character,
+    notify::{Shown, actions},
+};
 
 const LINES_UNDER_THE_TITLE_AT_MOST: usize = 2;
 
@@ -57,7 +60,7 @@ fn escaped(text: &str) -> String {
 
     for character in text
         .chars()
-        .filter(|character| is_xml_character(*character))
+        .filter(|character| is_shown_character(*character))
     {
         match character {
             '&' => held.push_str("&amp;"),
@@ -69,13 +72,6 @@ fn escaped(text: &str) -> String {
         }
     }
     held
-}
-
-const fn is_xml_character(character: char) -> bool {
-    matches!(
-        character,
-        '\t' | '\n' | '\r' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..='\u{10FFFF}'
-    )
 }
 
 #[cfg(test)]

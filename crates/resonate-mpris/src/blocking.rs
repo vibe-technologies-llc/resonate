@@ -136,6 +136,10 @@ impl Connection {
         block_on(self.0.clone().close())
     }
 
+    pub(crate) fn is_closed(&self) -> bool {
+        self.0.is_closed()
+    }
+
     pub(crate) fn unique_name(&self) -> Option<&zbus::names::OwnedUniqueName> {
         self.0.unique_name()
     }

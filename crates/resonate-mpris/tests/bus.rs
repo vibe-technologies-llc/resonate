@@ -137,6 +137,13 @@ impl Tree {
         fs::write(&path, [id3(&png()), wav()].concat()).expect("a writable temporary file");
         path
     }
+
+    fn flac(&self, name: &str, comments: &[(&str, &str)]) -> PathBuf {
+        let path = self.root.join(name);
+
+        fs::write(&path, flac(comments)).expect("a writable temporary file");
+        path
+    }
 }
 
 impl Drop for Tree {
@@ -190,6 +197,109 @@ fn wav_naming(names: &[(&[u8; 4], &str)]) -> Vec<u8> {
     file.extend_from_slice(&(body.len() as u32).to_le_bytes());
     file.extend_from_slice(&body);
     file
+}
+
+const FLAC_BLOCK: u32 = 4_096;
+const FLAC_BLOCK_OF_4096: u8 = 0b1100;
+const FLAC_RATE_OF_44100: u8 = 0b1001;
+const FLAC_TWO_CHANNELS_APART: u8 = 0b0001;
+const FLAC_SIXTEEN_BITS: u8 = 0b100;
+const FLAC_CONSTANT_SUBFRAME: u8 = 0;
+const FLAC_STREAMINFO: u8 = 0;
+const FLAC_VORBIS_COMMENT: u8 = 4;
+const FLAC_LAST_BLOCK: u8 = 0x80;
+const FLAC_LEVEL: i16 = 1_000;
+
+fn flac(comments: &[(&str, &str)]) -> Vec<u8> {
+    let blocks = (RATE as usize * SECONDS).div_ceil(FLAC_BLOCK as usize);
+    let samples = blocks as u64 * u64::from(FLAC_BLOCK);
+
+    let mut info = Vec::new();
+
+    info.extend_from_slice(&(FLAC_BLOCK as u16).to_be_bytes());
+    info.extend_from_slice(&(FLAC_BLOCK as u16).to_be_bytes());
+    info.extend_from_slice(&[0; 6]);
+    info.extend_from_slice(
+        &((u64::from(RATE) << 44) | (u64::from(CHANNELS - 1) << 41) | (15 << 36) | samples)
+            .to_be_bytes(),
+    );
+    info.extend_from_slice(&[0; 16]);
+
+    let mut said = Vec::new();
+    let vendor = b"resonate";
+
+    said.extend_from_slice(&(vendor.len() as u32).to_le_bytes());
+    said.extend_from_slice(vendor);
+    said.extend_from_slice(&(comments.len() as u32).to_le_bytes());
+    for (field, value) in comments {
+        let comment = format!("{field}={value}");
+
+        said.extend_from_slice(&(comment.len() as u32).to_le_bytes());
+        said.extend_from_slice(comment.as_bytes());
+    }
+
+    let mut file = b"fLaC".to_vec();
+
+    flac_block(&mut file, FLAC_STREAMINFO, &info);
+    flac_block(&mut file, FLAC_LAST_BLOCK | FLAC_VORBIS_COMMENT, &said);
+    for number in 0..blocks {
+        file.extend_from_slice(&flac_frame(number as u32));
+    }
+    file
+}
+
+fn flac_block(into: &mut Vec<u8>, kind: u8, payload: &[u8]) {
+    into.push(kind);
+    into.extend_from_slice(&(payload.len() as u32).to_be_bytes()[1..]);
+    into.extend_from_slice(payload);
+}
+
+fn flac_frame(number: u32) -> Vec<u8> {
+    let mut frame = vec![
+        0xFF,
+        0xF8,
+        (FLAC_BLOCK_OF_4096 << 4) | FLAC_RATE_OF_44100,
+        (FLAC_TWO_CHANNELS_APART << 4) | (FLAC_SIXTEEN_BITS << 1),
+    ];
+    let mut coded = [0; 4];
+
+    frame.extend_from_slice(
+        char::from_u32(number)
+            .expect("a frame number short of the surrogates")
+            .encode_utf8(&mut coded)
+            .as_bytes(),
+    );
+    frame.push(crc8(&frame));
+    for _ in 0..CHANNELS {
+        frame.push(FLAC_CONSTANT_SUBFRAME);
+        frame.extend_from_slice(&FLAC_LEVEL.to_be_bytes());
+    }
+    frame.extend_from_slice(&crc16(&frame).to_be_bytes());
+    frame
+}
+
+fn crc8(bytes: &[u8]) -> u8 {
+    bytes.iter().fold(0, |crc, byte| {
+        (0..8).fold(crc ^ byte, |crc, _| {
+            if crc & 0x80 == 0 {
+                crc << 1
+            } else {
+                (crc << 1) ^ 0x07
+            }
+        })
+    })
+}
+
+fn crc16(bytes: &[u8]) -> u16 {
+    bytes.iter().fold(0, |crc, byte| {
+        (0..8).fold(crc ^ (u16::from(*byte) << 8), |crc, _| {
+            if crc & 0x8000 == 0 {
+                crc << 1
+            } else {
+                (crc << 1) ^ 0x8005
+            }
+        })
+    })
 }
 
 fn png() -> Vec<u8> {
@@ -3602,8 +3712,13 @@ fn a_row_moved_is_announced_as_that_row_removed_and_added_again() {
     );
 }
 
+struct Raised {
+    summary: String,
+    actions: Vec<String>,
+}
+
 struct NotificationServer {
-    raised: Sender<Vec<String>>,
+    raised: Sender<Raised>,
 }
 
 #[interface(name = "org.freedesktop.Notifications")]
@@ -3621,13 +3736,13 @@ impl NotificationServer {
         _application: String,
         _replaces: u32,
         _icon: String,
-        _summary: String,
+        summary: String,
         _body: String,
         actions: Vec<String>,
         _hints: HashMap<String, OwnedVariant>,
         _timeout: i32,
     ) -> u32 {
-        let _ = self.raised.send(actions);
+        let _ = self.raised.send(Raised { summary, actions });
         RAISED
     }
 
@@ -3746,7 +3861,8 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
 
     let offered = notifications
         .recv_timeout(PATIENCE)
-        .expect("the track playing was told to the desktop");
+        .expect("the track playing was told to the desktop")
+        .actions;
 
     assert_eq!(
         offered,
@@ -3789,6 +3905,87 @@ fn a_press_on_a_notification_button_reaches_the_transport() {
         |harness| harness.player.state().playback == PlaybackState::Paused,
         "a press on Play/Pause to pause",
     );
+}
+
+#[test]
+fn a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up() {
+    if !on_a_bus_of_its_own(
+        "a_title_holding_a_nul_is_published_and_told_without_it_and_the_bus_stays_up",
+    ) {
+        return;
+    }
+
+    let (raised, notifications) = unbounded();
+    let _server = connection::Builder::session()
+        .and_then(|builder| builder.name(NOTIFICATIONS))
+        .and_then(|builder| builder.serve_at(NOTIFICATIONS_PATH, NotificationServer { raised }))
+        .and_then(connection::Builder::build)
+        .expect("a stand-in notification server on the private bus");
+    let Some(harness) = Harness::start() else {
+        return;
+    };
+    let tree = Tree::new();
+    let sprawling = "la ".repeat(100_000);
+
+    harness.load_all(&[
+        tree.flac(
+            "nul.flac",
+            &[
+                ("TITLE", "a\0b"),
+                ("ARTIST", "Pink\u{1}Floyd"),
+                ("COMMENT", sprawling.as_str()),
+                ("LYRICS", sprawling.as_str()),
+            ],
+        ),
+        tree.flac("after.flac", &[("TITLE", "After")]),
+    ]);
+
+    let told = notifications
+        .recv_timeout(PATIENCE)
+        .expect("the track holding a NUL was told to the desktop");
+
+    harness.wait_for(
+        |harness| text(&harness.metadata(), "xesam:title").as_deref() == Some("ab"),
+        "the title to reach the bus without its NUL",
+    );
+
+    let fields = harness.metadata();
+    let comment = strings(&fields, "xesam:comment").expect("the comment reached the bus");
+    let lyrics = text(&fields, "xesam:asText").expect("the lyrics reached the bus");
+
+    assert_eq!(told.summary, "ab");
+    assert_eq!(
+        strings(&fields, "xesam:artist").as_deref(),
+        Some(["PinkFloyd".to_owned()].as_slice())
+    );
+    assert!(
+        comment.iter().map(String::len).sum::<usize>() <= 4 * 1024,
+        "a comment of {} bytes reached the bus",
+        comment.iter().map(String::len).sum::<usize>()
+    );
+    assert!(sprawling.starts_with(comment[0].as_str()));
+    assert!(
+        lyrics.len() <= 32 * 1024 && lyrics.len() > 4 * 1024,
+        "lyrics of {} bytes reached the bus",
+        lyrics.len()
+    );
+
+    harness
+        .player
+        .send(Command::Next)
+        .expect("the engine takes a skip");
+
+    let after = notifications
+        .recv_timeout(PATIENCE)
+        .expect("the desktop is still told what plays");
+
+    harness.wait_for(
+        |harness| text(&harness.metadata(), "xesam:title").as_deref() == Some("After"),
+        "the next track to reach the bus",
+    );
+
+    assert_eq!(after.summary, "After");
+    assert_eq!(harness.names(), [BUS_NAME]);
 }
 
 #[test]

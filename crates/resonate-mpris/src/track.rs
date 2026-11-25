@@ -13,7 +13,10 @@ use resonate_engine::{
 };
 use zbus::{ObjectPath, OwnedObjectPath, OwnedVariant, Variant};
 
-use crate::host::Heard;
+use crate::{
+    fitted::{LYRICS_BYTES_AT_MOST, field, fitted},
+    host::Heard,
+};
 
 pub(crate) const NO_TRACK: &str = "/org/mpris/MediaPlayer2/TrackList/NoTrack";
 const NO_PLAYLIST: &str = "/org/resonate/playlist/none";
@@ -265,7 +268,7 @@ pub(crate) fn metadata(
 
 fn title_by_file(fields: &mut HashMap<String, OwnedVariant>, location: &MediaLocation) {
     if let Some(stem) = location.stem() {
-        insert(fields, "xesam:title", stem.into_owned());
+        insert(fields, "xesam:title", field(&stem));
     }
 }
 
@@ -353,7 +356,7 @@ const LEAST_DAY: u32 = 1;
 const MOST_DAY: u32 = 31;
 
 fn listed(names: &str) -> Vec<String> {
-    names
+    field(names)
         .split(LISTED_APART_BY)
         .map(str::trim)
         .filter(|name| !name.is_empty())
@@ -411,14 +414,14 @@ pub fn utc_stamp(at: SystemTime) -> String {
 }
 
 fn absorb_tags(fields: &mut HashMap<String, OwnedVariant>, tags: &TagSet) {
-    if let Some(title) = tags.title.as_ref() {
-        insert(fields, "xesam:title", title.clone());
+    if let Some(title) = tags.title.as_deref() {
+        insert(fields, "xesam:title", field(title));
     }
     if let Some(artist) = tags.artist.as_deref() {
         insert(fields, "xesam:artist", listed(artist));
     }
-    if let Some(album) = tags.album.as_ref() {
-        insert(fields, "xesam:album", album.clone());
+    if let Some(album) = tags.album.as_deref() {
+        insert(fields, "xesam:album", field(album));
     }
     if let Some(album_artist) = tags.album_artist.as_deref() {
         insert(fields, "xesam:albumArtist", listed(album_artist));
@@ -429,8 +432,12 @@ fn absorb_tags(fields: &mut HashMap<String, OwnedVariant>, tags: &TagSet) {
     if let Some(created) = tags.date.as_deref().and_then(iso_8601) {
         insert(fields, "xesam:contentCreated", created);
     }
-    if let Some(lyrics) = tags.lyrics.as_ref() {
-        insert(fields, "xesam:asText", lyrics.clone());
+    if let Some(lyrics) = tags.lyrics.as_deref() {
+        insert(
+            fields,
+            "xesam:asText",
+            fitted(lyrics, LYRICS_BYTES_AT_MOST).into_owned(),
+        );
     }
     if let Some(track) = tags
         .track_number
@@ -447,8 +454,8 @@ fn absorb_tags(fields: &mut HashMap<String, OwnedVariant>, tags: &TagSet) {
     if let Some(lyricist) = tags.credits.lyricist.as_deref() {
         insert(fields, "xesam:lyricist", listed(lyricist));
     }
-    if let Some(comment) = tags.comment.as_ref() {
-        insert(fields, "xesam:comment", vec![comment.clone()]);
+    if let Some(comment) = tags.comment.as_deref() {
+        insert(fields, "xesam:comment", vec![field(comment)]);
     }
     if let Some(beats) = tags
         .beats_per_minute
