@@ -1465,13 +1465,13 @@ impl Polyphase {
     }
 
     fn compact(&mut self) {
-        let drop_from = self.whole.saturating_sub(self.reach.behind);
+        let filled = self.filled;
+        let drop_from = self.whole.saturating_sub(self.reach.behind).min(filled);
 
         if drop_from == 0 {
             return;
         }
 
-        let filled = self.filled;
         let kept = filled - drop_from;
         let stride = self.history.stride;
 
@@ -1914,6 +1914,38 @@ mod tests {
 
         let mut tail = vec![0.0; resampler.max_flush_frames() * channels];
         frames + resampler.flush(&mut tail)
+    }
+
+    #[test]
+    fn a_staged_resampler_stepping_past_what_it_holds_runs_to_the_end() {
+        let from = SampleRate::new(744_000).expect("a rate in range");
+        let to = SampleRate::new(24_000).expect("a rate in range");
+
+        let config = config(from, to, Quality::Balanced);
+
+        for extra in 0..64 {
+            let input = tone(from, 1_000.0, BLOCK * 8 + extra);
+            let produced = resampled_and_flushed_once(config, &input);
+
+            let expected = input.len() * 24_000 / 744_000;
+
+            assert!(
+                produced.abs_diff(expected) <= BLOCK,
+                "produced {produced}, expected about {expected}"
+            );
+        }
+
+        let input = tone(from, 1_000.0, BLOCK * 8 + 17);
+        let whole = resampled_in_blocks_of(config, &input, BLOCK);
+        let pieces = resampled_in_blocks_of(config, &input, 37);
+
+        assert_eq!(whole.len(), pieces.len());
+        for (at, (whole, pieces)) in whole.iter().zip(&pieces).enumerate() {
+            assert!(
+                (whole - pieces).abs() < 1e-9,
+                "frame {at}: {whole} against {pieces}"
+            );
+        }
     }
 
     #[test]
