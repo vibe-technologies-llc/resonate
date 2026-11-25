@@ -1,14 +1,14 @@
 use std::borrow::Cow;
 
-use crate::media::uri_escaped;
+use crate::{
+    media::uri_escaped,
+    share_hosts::{NETWORK, NOT_A_SHARE, ShareHosts, VERBATIM_UNC, host_of_uri_rest},
+};
 
 const BACKSLASH: u8 = b'\\';
 const SLASH: u8 = b'/';
 const DRIVE_MARK: u8 = b':';
-const VERBATIM_UNC: &[u8] = br"\\?\UNC\";
 const VERBATIM: &[u8] = br"\\?\";
-const NETWORK: &[u8] = br"\\";
-const NOT_A_SHARE: &[u8] = b"?.";
 const DOT_SEGMENTS: [&[u8]; 2] = [b".", b".."];
 
 pub fn uri_rest_of(path: &[u8]) -> String {
@@ -29,7 +29,7 @@ pub fn uri_rest_of(path: &[u8]) -> String {
     }
 }
 
-pub fn path_of_uri_rest(decoded: &[u8]) -> Option<Vec<u8>> {
+pub fn path_of_uri_rest(decoded: &[u8], hosts: &ShareHosts) -> Option<Vec<u8>> {
     if decoded
         .split(|byte| *byte == SLASH || *byte == BACKSLASH)
         .any(|segment| DOT_SEGMENTS.contains(&segment))
@@ -40,6 +40,10 @@ pub fn path_of_uri_rest(decoded: &[u8]) -> Option<Vec<u8>> {
     let (&first, rooted) = decoded.split_first()?;
 
     if first != SLASH {
+        if !hosts.admits(host_of_uri_rest(decoded)) {
+            return None;
+        }
+
         let mut network = NETWORK.to_vec();
 
         network.extend(backwards(decoded));
@@ -121,6 +125,8 @@ fn backwards(path: &[u8]) -> Vec<u8> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::Path;
+
     use super::*;
 
     #[test]
@@ -130,7 +136,7 @@ mod tests {
             "/C:/Music/Meddle%20%231.flac"
         );
         assert_eq!(
-            path_of_uri_rest(b"/C:/Music/Meddle #1.flac"),
+            path_of_uri_rest(b"/C:/Music/Meddle #1.flac", &ShareHosts::anyone()),
             Some(br"C:\Music\Meddle #1.flac".to_vec())
         );
     }
@@ -138,10 +144,13 @@ mod tests {
     #[test]
     fn a_drive_spelt_in_lower_case_is_read_back_in_the_case_canonicalising_writes() {
         assert_eq!(
-            path_of_uri_rest(b"/c:/Music/a.flac"),
+            path_of_uri_rest(b"/c:/Music/a.flac", &ShareHosts::anyone()),
             Some(br"C:\Music\a.flac".to_vec())
         );
-        assert_eq!(path_of_uri_rest(b"/d:"), Some(b"D:".to_vec()));
+        assert_eq!(
+            path_of_uri_rest(b"/d:", &ShareHosts::anyone()),
+            Some(b"D:".to_vec())
+        );
         assert_eq!(
             verbatim(br"c:\Music\a.flac".to_vec()),
             br"\\?\C:\Music\a.flac"
@@ -157,7 +166,7 @@ mod tests {
     fn a_share_is_the_authority_of_the_uri() {
         assert_eq!(uri_rest_of(br"\\nas\music\a.flac"), "nas/music/a.flac");
         assert_eq!(
-            path_of_uri_rest(b"nas/music/a.flac"),
+            path_of_uri_rest(b"nas/music/a.flac", &ShareHosts::anyone()),
             Some(br"\\nas\music\a.flac".to_vec())
         );
     }
@@ -175,7 +184,7 @@ mod tests {
     fn a_rooted_path_with_no_drive_stays_rooted() {
         assert_eq!(uri_rest_of(br"\music\a.flac"), "/music/a.flac");
         assert_eq!(
-            path_of_uri_rest(b"/music/a.flac"),
+            path_of_uri_rest(b"/music/a.flac", &ShareHosts::anyone()),
             Some(br"\music\a.flac".to_vec())
         );
     }
@@ -259,14 +268,49 @@ mod tests {
 
     #[test]
     fn nothing_is_no_path() {
-        assert_eq!(path_of_uri_rest(b""), None);
+        assert_eq!(path_of_uri_rest(b"", &ShareHosts::anyone()), None);
     }
 
     #[test]
     fn a_dot_segment_names_no_path() {
-        assert_eq!(path_of_uri_rest(b"relative/../a.mp3"), None);
-        assert_eq!(path_of_uri_rest(b"/C:/Music/./a.flac"), None);
-        assert_eq!(path_of_uri_rest(b"/C:/Music/..\\a.flac"), None);
-        assert!(path_of_uri_rest(b"/C:/Music/a..flac").is_some());
+        assert_eq!(
+            path_of_uri_rest(b"relative/../a.mp3", &ShareHosts::anyone()),
+            None
+        );
+        assert_eq!(
+            path_of_uri_rest(b"/C:/Music/./a.flac", &ShareHosts::anyone()),
+            None
+        );
+        assert_eq!(
+            path_of_uri_rest(b"/C:/Music/..\\a.flac", &ShareHosts::anyone()),
+            None
+        );
+        assert!(path_of_uri_rest(b"/C:/Music/a..flac", &ShareHosts::anyone()).is_some());
+    }
+
+    #[test]
+    fn a_share_on_a_host_nothing_admits_is_no_path() {
+        let hosts = ShareHosts::rooting([Path::new(r"\\nas\music")]);
+
+        assert_eq!(path_of_uri_rest(b"elsewhere/share/a.flac", &hosts), None);
+        assert_eq!(
+            path_of_uri_rest(b"elsewhere/share/a.flac", &ShareHosts::none()),
+            None
+        );
+        assert_eq!(path_of_uri_rest(b"?/C:/a.flac", &hosts), None);
+    }
+
+    #[test]
+    fn a_share_on_a_host_that_roots_a_folder_is_still_a_path() {
+        let hosts = ShareHosts::rooting([Path::new(r"\\NAS\music")]);
+
+        assert_eq!(
+            path_of_uri_rest(b"nas/music/a.flac", &hosts),
+            Some(br"\\nas\music\a.flac".to_vec())
+        );
+        assert_eq!(
+            path_of_uri_rest(b"/C:/Music/a.flac", &ShareHosts::none()),
+            Some(br"C:\Music\a.flac".to_vec())
+        );
     }
 }

@@ -54,13 +54,14 @@ impl Library {
                 .and_then(Iterator::collect::<rusqlite::Result<Vec<_>>>)
                 .map_err(|source| Error::store(StoreOp::Query, source))?;
 
+            let hosts = store::hosts_of_roots(&connection)?;
             let mut held = connection
                 .prepare("SELECT id FROM tracks WHERE path = ?1 AND span_start = ?2")
                 .map_err(|source| Error::store(StoreOp::Prepare, source))?;
             let mut rows = Vec::with_capacity(kept.len());
 
             for (uri, span) in kept {
-                let Some(location) = MediaLocation::from_uri(&uri) else {
+                let Some(location) = MediaLocation::from_uri_among(&uri, &hosts) else {
                     tracing::warn!(
                         uri,
                         "a kept queue row names nothing openable; the rest are resumed"

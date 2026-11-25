@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use resonate_core::{Locator, MediaLocation, folded_letters, text};
+use resonate_core::{Locator, MediaLocation, ShareHosts, folded_letters, text};
 use resonate_library::{Described, PlaylistFormat, SheetRow, read_sheet, written_sheet};
 use rusqlite::{Connection, params};
 
@@ -66,7 +66,7 @@ impl MobilePlayer {
         }
 
         let (text, _) = text::decoded(&bytes);
-        let (sheet, _) = read_sheet(&text, Path::new(FOLDER_ROOT));
+        let (sheet, _) = read_sheet(&text, Path::new(FOLDER_ROOT), &ShareHosts::none());
         let listed = sheet.locations.len() + sheet.elsewhere;
 
         if listed == 0 {

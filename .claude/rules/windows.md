@@ -256,6 +256,15 @@ no workspace crate, and hands out a safe API over the `windows` crate:
   catalog row again; the binary's `from_here` writes a path that does not exist yet the same way.
   A playlist sheet's `file://` row is read through the same `from_uri` (`sheet::local_file`), so an M3U
   or XSPF naming `file:///C:/…` finds its file.
+  **A share is a host, and a host is admitted, never assumed**: `from_uri` and `from_uri_within` read a
+  `file://host/…` URI as no location at all, before any stat or probe, since the first touch of a UNC
+  path opens an SMB connection that hands the account's NTLM response to whoever named the host. A URI
+  is read among `ShareHosts` through `from_uri_among`: `ShareHosts::rooting` the library's folders
+  (`store::hosts_of_roots`, used by the resumed queue, a delivery's offer and a playlist import, so a
+  sheet row or an `xml:base` on a host that roots a folder is still read), `ShareHosts::anyone` where the
+  listener typed the URI (the binary's file arguments), `ShareHosts::none` for everything else (the bus,
+  MCP, a sheet read with no library, the phones). A `..` or `.` segment is refused on every host
+  (`windows_uri::path_of_uri_rest` on Windows, `names_a_dot_segment` on Unix).
   An exported sheet names a file beneath its folder relatively, with `\`, whichever of the two
   carries a `\\?\` prefix (`path_text::beneath`), and any other as such a URI (`library.md`'s *Sheets*).
   `path_text::verbatim` and `path_text::plain` are the two directions (identity off Windows),

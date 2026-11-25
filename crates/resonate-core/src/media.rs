@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, OnceLock},
 };
 
-use crate::{Error, FrameSpan, Frames, Result, os_bytes};
+use crate::{Error, FrameSpan, Frames, Result, ShareHosts, os_bytes};
 
 const LOCAL: &str = "local";
 const SOURCE_NAME_LIMIT: usize = 32;
@@ -20,6 +20,8 @@ const NO_PATH_HOLDS: u8 = 0;
 const PATH_ENDS: [char; 2] = ['?', '#'];
 const SPAN_FRAGMENT: &str = "#frames=";
 const SPAN_TO: char = '-';
+#[cfg(unix)]
+const DOT_SEGMENTS: [&[u8]; 2] = [b".", b".."];
 
 pub const AUDIO_EXTENSIONS: &[&str] = &[
     "aac", "aif", "aiff", "ape", "caf", "dff", "dsf", "flac", "m4a", "m4b", "mka", "mp3", "mp4",
@@ -201,8 +203,15 @@ impl MediaLocation {
     }
 
     pub fn from_uri_within(uri: &str) -> Option<(Self, Option<FrameSpan>)> {
+        Self::from_uri_within_among(uri, &ShareHosts::none())
+    }
+
+    pub fn from_uri_within_among(
+        uri: &str,
+        hosts: &ShareHosts,
+    ) -> Option<(Self, Option<FrameSpan>)> {
         let Some((whole, fragment)) = uri.split_once(SPAN_FRAGMENT) else {
-            return Some((Self::from_uri(uri)?, None));
+            return Some((Self::from_uri_among(uri, hosts)?, None));
         };
         let (start, end) = fragment.split_once(SPAN_TO)?;
         let start = Frames(start.parse().ok()?);
@@ -216,10 +225,14 @@ impl MediaLocation {
             }
             FrameSpan::between(start, end)
         };
-        Some((Self::from_uri(whole)?, Some(span)))
+        Some((Self::from_uri_among(whole, hosts)?, Some(span)))
     }
 
     pub fn from_uri(uri: &str) -> Option<Self> {
+        Self::from_uri_among(uri, &ShareHosts::none())
+    }
+
+    pub fn from_uri_among(uri: &str, hosts: &ShareHosts) -> Option<Self> {
         let local = without_prefix_in_any_case(uri, FILE_SCHEME).or_else(|| {
             without_prefix_in_any_case(uri, FILE_SCHEME_WITHOUT_AUTHORITY)
                 .filter(|rest| rest.starts_with(KEY_SEPARATOR))
@@ -230,7 +243,7 @@ impl MediaLocation {
                 .split_once(PATH_ENDS)
                 .map_or(encoded, |(path, _)| path);
             let encoded = without_prefix_in_any_case(encoded, FILE_LOCALHOST).unwrap_or(encoded);
-            let path = local_path_of(uri_unescaped(encoded)?)?;
+            let path = local_path_of(uri_unescaped(encoded)?, hosts)?;
 
             if path.contains(&NO_PATH_HOLDS) {
                 return None;
@@ -273,16 +286,24 @@ pub fn uri_rest_of_path(path: &Path) -> String {
 }
 
 #[cfg(unix)]
-fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
-    decoded
+fn local_path_of(decoded: Vec<u8>, _hosts: &ShareHosts) -> Option<Vec<u8>> {
+    let rooted = decoded
         .first()
-        .is_some_and(|first| char::from(*first) == KEY_SEPARATOR)
-        .then_some(decoded)
+        .is_some_and(|first| char::from(*first) == KEY_SEPARATOR);
+
+    (rooted && !names_a_dot_segment(&decoded)).then_some(decoded)
 }
 
 #[cfg(windows)]
-fn local_path_of(decoded: Vec<u8>) -> Option<Vec<u8>> {
-    crate::windows_uri::path_of_uri_rest(&decoded).map(crate::windows_uri::verbatim)
+fn local_path_of(decoded: Vec<u8>, hosts: &ShareHosts) -> Option<Vec<u8>> {
+    crate::windows_uri::path_of_uri_rest(&decoded, hosts).map(crate::windows_uri::verbatim)
+}
+
+#[cfg(unix)]
+fn names_a_dot_segment(decoded: &[u8]) -> bool {
+    decoded
+        .split(|byte| char::from(*byte) == KEY_SEPARATOR)
+        .any(|segment| DOT_SEGMENTS.contains(&segment))
 }
 
 pub fn uri_escaped(text: &[u8]) -> String {
@@ -511,6 +532,33 @@ mod tests {
             MediaLocation::from_uri("file://localhost/music/a.mp3"),
             Some(MediaLocation::local("/music/a.mp3"))
         );
+    }
+
+    #[test]
+    fn a_dot_segment_in_a_file_uri_is_refused_whatever_the_host() {
+        for uri in [
+            "file:///music/../etc/a.flac",
+            "file:///music/./a.flac",
+            "file:///music/%2e%2e/etc/a.flac",
+            "file:/music/../etc/a.flac",
+            "file://localhost/music/../a.flac",
+            "file:///..",
+        ] {
+            assert_eq!(MediaLocation::from_uri(uri), None, "{uri}");
+            assert_eq!(MediaLocation::from_uri_within(uri), None, "{uri}");
+        }
+
+        assert!(MediaLocation::from_uri("file:///music/a..flac").is_some());
+        assert!(MediaLocation::from_uri("file:///music/.hidden/a.flac").is_some());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_dot_segment_is_a_whole_segment_between_slashes() {
+        assert!(names_a_dot_segment(b"/music/../a"));
+        assert!(names_a_dot_segment(b"/music/."));
+        assert!(!names_a_dot_segment(b"/music/a..b/.c/..d"));
+        assert!(!names_a_dot_segment(b"/music\\..\\a"));
     }
 
     #[test]

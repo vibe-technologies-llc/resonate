@@ -7,7 +7,7 @@ use std::{
 };
 
 use ahash::{AHashMap, AHashSet};
-use resonate_core::{AlbumId, MediaLocation, PlaylistId, SampleRate, Span};
+use resonate_core::{AlbumId, MediaLocation, PlaylistId, SampleRate, ShareHosts, Span};
 use rusqlite::{
     Connection, OptionalExtension as _, Row as SqlRow, Transaction, params, params_from_iter,
     types::Value,
@@ -1421,9 +1421,9 @@ fn dropped_where(
     Ok(dropped)
 }
 
-pub fn cuts_listed_in(path: &Path) -> Result<Vec<Cut>> {
+pub fn cuts_listed_in(path: &Path, hosts: &ShareHosts) -> Result<Vec<Cut>> {
     let mut rates = HashMap::new();
-    Ok(sheet::read(path)?
+    Ok(sheet::read(path, hosts)?
         .sheet
         .locations
         .into_iter()
@@ -1443,7 +1443,8 @@ pub fn cuts_listed_in(path: &Path) -> Result<Vec<Cut>> {
 }
 
 pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported> {
-    let reading = sheet::read(path)?;
+    let hosts = inner.read(store::hosts_of_roots)?;
+    let reading = sheet::read(path, &hosts)?;
     let short = reading.sheet.short();
     let wanted = name
         .map(str::to_owned)
@@ -1503,7 +1504,7 @@ pub fn import(inner: &Inner, path: &Path, name: Option<&str>) -> Result<Imported
 
 fn cuts_of(inner: &Inner, listed: Vec<Listed>) -> Result<Vec<Cut>> {
     let mut settling = Settling {
-        roots: inner.read(root_paths)?,
+        roots: inner.read(store::root_paths)?,
         folders: HashMap::new(),
     };
 
@@ -1967,7 +1968,7 @@ fn gone_from(inner: &Inner, id: PlaylistId) -> Result<AHashSet<String>> {
         Ok((
             distinct_paths(connection, id)?,
             volumes::held(connection)?,
-            root_paths(connection)?,
+            store::root_paths(connection)?,
         ))
     })?;
 
@@ -1986,19 +1987,6 @@ fn distinct_paths(connection: &Connection, id: PlaylistId) -> Result<Vec<String>
 
     statement
         .query_map(params![id.get() as i64], |row| row.get::<_, String>(0))
-        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
-        .map_err(|source| Error::store(StoreOp::Query, source))
-}
-
-fn root_paths(connection: &Connection) -> Result<Vec<PathBuf>> {
-    let mut statement = connection
-        .prepare("SELECT path FROM roots")
-        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
-
-    statement
-        .query_map([], |row| {
-            row.get::<_, String>(0).map(|path| store::path_of(&path))
-        })
         .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
         .map_err(|source| Error::store(StoreOp::Query, source))
 }

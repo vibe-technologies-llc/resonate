@@ -6,7 +6,7 @@ use std::{
 };
 
 use resonate_codec::{Sources, probe, read_cue_media, the_file_a_cue_names};
-use resonate_core::{FrameSpan, MediaLocation, names_audio};
+use resonate_core::{FrameSpan, MediaLocation, ShareHosts, names_audio};
 use resonate_engine::{QueueItem, Unclaimed};
 use resonate_library::{PlaylistFormat, cuts_listed_in};
 
@@ -22,7 +22,7 @@ const FOLDERS_DEEP: usize = 32;
 pub(crate) fn local_path(argument: &Path) -> PathBuf {
     argument
         .to_str()
-        .and_then(MediaLocation::from_uri)
+        .and_then(typed)
         .and_then(|named| named.as_path().map(Path::to_path_buf))
         .unwrap_or_else(|| argument.to_path_buf())
 }
@@ -30,7 +30,7 @@ pub(crate) fn local_path(argument: &Path) -> PathBuf {
 pub(crate) fn location_of_argument(argument: &OsStr, sources: &Sources) -> MediaLocation {
     argument
         .to_str()
-        .and_then(MediaLocation::from_uri)
+        .and_then(typed)
         .filter(|named| held_by(named, sources))
         .map(settled_here)
         .unwrap_or_else(|| MediaLocation::local(from_here(Path::new(argument))))
@@ -45,18 +45,22 @@ pub(crate) fn cut_of_argument(
         .filter(|uri| MediaLocation::claims_a_span(uri))
     {
         if let Some((location, span)) =
-            MediaLocation::from_uri_within(uri).filter(|(named, _)| held_by(named, sources))
+            MediaLocation::from_uri_within_among(uri, &ShareHosts::anyone())
+                .filter(|(named, _)| held_by(named, sources))
         {
             return Ok((settled_here(location), span));
         }
-        if let Some(location) = MediaLocation::from_uri(uri).filter(|named| held_by(named, sources))
-        {
+        if let Some(location) = typed(uri).filter(|named| held_by(named, sources)) {
             return Err(Error::UnreadableSpan {
                 location: settled_here(location),
             });
         }
     }
     Ok((location_of_argument(argument, sources), None))
+}
+
+fn typed(uri: &str) -> Option<MediaLocation> {
+    MediaLocation::from_uri_among(uri, &ShareHosts::anyone())
 }
 
 fn held_by(named: &MediaLocation, sources: &Sources) -> bool {
@@ -135,7 +139,7 @@ fn items_of(sources: &Sources, location: MediaLocation, minting: &mut Unclaimed)
 }
 
 fn listed_items(path: &Path, minting: &mut Unclaimed) -> Vec<QueueItem> {
-    match cuts_listed_in(path) {
+    match cuts_listed_in(path, &ShareHosts::none()) {
         Ok(cuts) => cuts
             .into_iter()
             .map(|cut| QueueItem {
@@ -574,7 +578,7 @@ mod tests {
 
         symlink(&real, &linked).expect("a link to the folder");
 
-        let through_the_link = linked.join("../linked/a.flac");
+        let through_the_link = linked.join("a.flac");
         let uri = MediaLocation::local(&through_the_link).to_uri();
 
         assert_eq!(

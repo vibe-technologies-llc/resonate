@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, ShareHosts};
 
 use crate::{
     Result,
@@ -101,7 +101,7 @@ enum Base {
 }
 
 impl Base {
-    fn under(&self, declared: &str) -> Self {
+    fn under(&self, declared: &str, hosts: &ShareHosts) -> Self {
         let Self::Beside(beside) = self else {
             return Self::Elsewhere;
         };
@@ -109,7 +109,7 @@ impl Base {
         let folder = folder_of(&declared);
 
         match sheet::scheme_of(folder) {
-            Some(_) => match sheet::local_file(folder) {
+            Some(_) => match sheet::local_file(folder, hosts) {
                 Some(named) => Self::Beside(named),
                 None => Self::Elsewhere,
             },
@@ -155,7 +155,7 @@ impl Offered {
     }
 }
 
-pub fn read(text: &str, beside: &Path) -> Sheet {
+pub fn read(text: &str, beside: &Path, hosts: &ShareHosts) -> Sheet {
     let mut sheet = Sheet::default();
     let mut depth = Depth::Playlist;
     let mut bases = vec![Base::Beside(beside.to_path_buf())];
@@ -167,7 +167,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
             Token::Opens(tag) => {
                 written.clear();
 
-                let inner = inherited(&bases, tag);
+                let inner = inherited(&bases, tag, hosts);
 
                 bases.push(inner);
 
@@ -191,7 +191,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
                     depth = Depth::TrackList;
                     mem::take(&mut offered).count(&mut sheet);
                 } else if element.eq_ignore_ascii_case(LOCATION) && depth == Depth::Track {
-                    offered.offer(referenced(&plain_text(&written), &base));
+                    offered.offer(referenced(&plain_text(&written), &base, hosts));
                 } else if element.eq_ignore_ascii_case(OPTION) && depth == Depth::Track {
                     offered.timed.read(&plain_text(&written));
                 } else if element.eq_ignore_ascii_case(TITLE) && depth == Depth::Playlist {
@@ -365,11 +365,11 @@ fn attribute<'a>(tag: &'a str, named: &str) -> Option<&'a str> {
         .map(|(_, value)| value)
 }
 
-fn inherited(bases: &[Base], tag: &str) -> Base {
+fn inherited(bases: &[Base], tag: &str, hosts: &ShareHosts) -> Base {
     let outer = current(bases);
 
     match attribute(tag, XML_BASE) {
-        Some(declared) => outer.under(&plain_text(declared)),
+        Some(declared) => outer.under(&plain_text(declared), hosts),
         None => outer,
     }
 }
@@ -401,14 +401,14 @@ fn past<'a>(text: &'a str, closing: &str) -> &'a str {
     }
 }
 
-fn referenced(reference: &str, base: &Base) -> Option<MediaLocation> {
+fn referenced(reference: &str, base: &Base, hosts: &ShareHosts) -> Option<MediaLocation> {
     let reference = reference.trim();
 
     if reference.is_empty() {
         return None;
     }
     if sheet::scheme_of(reference).is_some() {
-        return sheet::from_uri(reference);
+        return sheet::from_uri(reference, hosts);
     }
 
     Some(sheet::resolved(
@@ -541,7 +541,7 @@ mod tests {
         let text = format!(
             "<playlist><trackList><track><location>{location}</location></track></trackList></playlist>"
         );
-        read(&text, Path::new("/music"))
+        read(&text, Path::new("/music"), &ShareHosts::none())
             .locations
             .iter()
             .filter_map(|held| held.location.as_path().map(Path::to_path_buf))

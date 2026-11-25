@@ -1113,20 +1113,23 @@ impl Library {
     }
 
     pub(crate) fn pair_what_landed(&self) -> Result<u64> {
-        let offered = self.inner.read(|connection| {
-            rows(
+        let (offered, hosts) = self.inner.read(|connection| {
+            let offered = rows(
                 connection,
                 "SELECT release_tracks.id, wants.offered
                    FROM wants JOIN release_tracks ON release_tracks.id = wants.release_track_id
                   WHERE release_tracks.track_id IS NULL AND wants.offered IS NOT NULL",
                 Vec::new(),
                 |row| Ok(Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))),
-            )
+            )?;
+
+            Ok((offered, store::hosts_of_roots(connection)?))
         })?;
+
         let landed: Vec<(i64, String)> = offered
             .into_iter()
             .filter_map(|(release_track, uri)| {
-                let location = MediaLocation::from_uri(&uri)?;
+                let location = MediaLocation::from_uri_among(&uri, &hosts)?;
                 let path = location.as_path()?.to_str()?.to_owned();
                 Some((release_track, path))
             })

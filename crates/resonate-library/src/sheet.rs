@@ -11,8 +11,8 @@ use std::{
 
 use resonate_codec::carries_what_the_file_did;
 use resonate_core::{
-    FrameSpan, Frames, MediaLocation, SampleRate, TextEncoding, file_facts, naming, os_bytes,
-    path_text, text, uri_rest_of_path, writer::Held,
+    FrameSpan, Frames, MediaLocation, SampleRate, ShareHosts, TextEncoding, file_facts, naming,
+    os_bytes, path_text, text, uri_rest_of_path, writer::Held,
 };
 
 use crate::{
@@ -167,11 +167,11 @@ pub struct Described {
     pub title: String,
 }
 
-pub fn read(path: &Path) -> Result<Reading> {
+pub fn read(path: &Path, hosts: &ShareHosts) -> Result<Reading> {
     let (text, encoding) = decoded(path)?;
     let beside = path.parent().unwrap_or_else(|| Path::new("."));
 
-    let (sheet, format) = parse(&text, beside);
+    let (sheet, format) = parse(&text, beside, hosts);
 
     Ok(Reading {
         sheet,
@@ -180,12 +180,12 @@ pub fn read(path: &Path) -> Result<Reading> {
     })
 }
 
-pub fn parse(text: &str, beside: &Path) -> (Sheet, PlaylistFormat) {
+pub fn parse(text: &str, beside: &Path, hosts: &ShareHosts) -> (Sheet, PlaylistFormat) {
     let format = sniffed(text);
     let sheet = match format {
-        PlaylistFormat::M3u => m3u::read(text, beside),
-        PlaylistFormat::Pls => pls::read(text, beside),
-        PlaylistFormat::Xspf => xspf::read(text, beside),
+        PlaylistFormat::M3u => m3u::read(text, beside, hosts),
+        PlaylistFormat::Pls => pls::read(text, beside, hosts),
+        PlaylistFormat::Xspf => xspf::read(text, beside, hosts),
     };
 
     (sheet, format)
@@ -292,7 +292,7 @@ pub fn describe(entry: &PlaylistEntry) -> Described {
     }
 }
 
-pub fn located(named: &str, beside: &Path) -> Option<MediaLocation> {
+pub fn located(named: &str, beside: &Path, hosts: &ShareHosts) -> Option<MediaLocation> {
     if named.is_empty() {
         return None;
     }
@@ -301,7 +301,7 @@ pub fn located(named: &str, beside: &Path) -> Option<MediaLocation> {
             PathBuf::from(forward_separated(named).as_ref()),
             beside,
         )),
-        Some(_) => from_uri(named),
+        Some(_) => from_uri(named, hosts),
     }
 }
 
@@ -312,8 +312,8 @@ fn forward_separated(named: &str) -> Cow<'_, str> {
     Cow::Borrowed(named)
 }
 
-pub fn from_uri(named: &str) -> Option<MediaLocation> {
-    let file = local_file(named)?;
+pub fn from_uri(named: &str, hosts: &ShareHosts) -> Option<MediaLocation> {
+    let file = local_file(named, hosts)?;
     Some(MediaLocation::local(settled(&file)))
 }
 
@@ -359,7 +359,7 @@ pub fn scheme_of(line: &str) -> Option<&str> {
     named.then_some(scheme)
 }
 
-pub fn local_file(line: &str) -> Option<PathBuf> {
+pub fn local_file(line: &str, hosts: &ShareHosts) -> Option<PathBuf> {
     let (scheme, rest) = line.split_once(':')?;
 
     if !scheme.eq_ignore_ascii_case(FILE_SCHEME_NAME) {
@@ -372,7 +372,7 @@ pub fn local_file(line: &str) -> Option<PathBuf> {
             let (authority, path) = named.split_at(named.find('/')?);
 
             if !authority.is_empty() && !authority.eq_ignore_ascii_case(LOCAL_AUTHORITY) {
-                return path_on_a_share(&forward_escaped(named));
+                return path_on_a_share(&forward_escaped(named), hosts);
             }
             path
         }
@@ -383,29 +383,29 @@ pub fn local_file(line: &str) -> Option<PathBuf> {
     if !encoded.starts_with('/') {
         return None;
     }
-    path_of_the_uri(&encoded)
+    path_of_the_uri(&encoded, hosts)
 }
 
 #[cfg(unix)]
-fn path_of_the_uri(encoded: &str) -> Option<PathBuf> {
+fn path_of_the_uri(encoded: &str, _hosts: &ShareHosts) -> Option<PathBuf> {
     unescaped(encoded)
 }
 
 #[cfg(windows)]
-fn path_of_the_uri(encoded: &str) -> Option<PathBuf> {
-    MediaLocation::from_uri(&format!("{FILE_SCHEME_NAME}://{encoded}"))?
+fn path_of_the_uri(encoded: &str, hosts: &ShareHosts) -> Option<PathBuf> {
+    MediaLocation::from_uri_among(&format!("{FILE_SCHEME_NAME}://{encoded}"), hosts)?
         .as_path()
         .map(Path::to_path_buf)
 }
 
 #[cfg(unix)]
-const fn path_on_a_share(_: &str) -> Option<PathBuf> {
+const fn path_on_a_share(_: &str, _: &ShareHosts) -> Option<PathBuf> {
     None
 }
 
 #[cfg(windows)]
-fn path_on_a_share(shared: &str) -> Option<PathBuf> {
-    path_of_the_uri(shared)
+fn path_on_a_share(shared: &str, hosts: &ShareHosts) -> Option<PathBuf> {
+    path_of_the_uri(shared, hosts)
 }
 
 pub fn path_of_reference(reference: &str) -> &str {
@@ -702,7 +702,7 @@ mod tests {
             .join(ending);
 
             for (text, format) in [(m3u, PlaylistFormat::M3u), (pls, PlaylistFormat::Pls)] {
-                let (sheet, read_as) = parse(&text, beside);
+                let (sheet, read_as) = parse(&text, beside, &ShareHosts::none());
 
                 assert_eq!(read_as, format, "{ending:?}");
                 assert_eq!(sheet.locations.len(), 2, "{format:?} ended by {ending:?}");
@@ -772,7 +772,8 @@ mod tests {
             "{row} reads back as a Windows path"
         );
         assert_eq!(
-            located(&row, beside).and_then(|held| held.as_path().map(Path::to_path_buf)),
+            located(&row, beside, &ShareHosts::none())
+                .and_then(|held| held.as_path().map(Path::to_path_buf)),
             Some(file.to_path_buf())
         );
     }
@@ -787,14 +788,16 @@ mod tests {
 
         assert_eq!(row, "file:///music/caf%E9.wav");
         assert_eq!(
-            located(&row, beside).and_then(|held| held.as_path().map(Path::to_path_buf)),
+            located(&row, beside, &ShareHosts::none())
+                .and_then(|held| held.as_path().map(Path::to_path_buf)),
             Some(file.to_path_buf())
         );
     }
 
     #[cfg(unix)]
     fn read_at(row: &str) -> Option<PathBuf> {
-        located(row, Path::new("/music")).and_then(|held| held.as_path().map(Path::to_path_buf))
+        located(row, Path::new("/music"), &ShareHosts::none())
+            .and_then(|held| held.as_path().map(Path::to_path_buf))
     }
 
     #[test]
@@ -859,8 +862,30 @@ mod tests {
     }
 
     #[cfg(windows)]
+    fn nas() -> ShareHosts {
+        ShareHosts::rooting([Path::new(r"\\?\UNC\nas\music")])
+    }
+
+    #[cfg(windows)]
     fn read_back(row: &str, beside: &Path) -> Option<PathBuf> {
-        located(row, beside).and_then(|held| held.as_path().map(Path::to_path_buf))
+        located(row, beside, &nas()).and_then(|held| held.as_path().map(Path::to_path_buf))
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn a_row_naming_a_share_no_root_is_on_is_read_as_no_location() {
+        let beside = Path::new(r"C:\Music");
+
+        assert_eq!(
+            located("file://elsewhere/share/a.flac", beside, &nas()),
+            None
+        );
+        assert_eq!(
+            located("file://elsewhere/share/a.flac", beside, &ShareHosts::none()),
+            None
+        );
+        assert!(located("file://NAS/music/a.flac", beside, &nas()).is_some());
+        assert!(located("file://nas/music/a.flac", beside, &ShareHosts::none()).is_none());
     }
 
     #[test]
@@ -941,7 +966,7 @@ mod tests {
             PlaylistFormat::Xspf,
         ] {
             let text = text_of(format, "Evening", &rows, beside).expect("a sheet");
-            let (sheet, read_as) = parse(&text, beside);
+            let (sheet, read_as) = parse(&text, beside, &nas());
 
             assert_eq!(read_as, format);
             assert!(
@@ -990,7 +1015,7 @@ mod tests {
         let beside = Path::new("/music");
 
         assert_eq!(
-            located("Pink Floyd\\Echoes.flac", beside)
+            located("Pink Floyd\\Echoes.flac", beside, &ShareHosts::none())
                 .and_then(|held| held.as_path().map(Path::to_path_buf)),
             Some(PathBuf::from("/music/Pink Floyd/Echoes.flac"))
         );

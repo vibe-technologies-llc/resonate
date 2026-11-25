@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use resonate_core::MediaLocation;
+use resonate_core::{MediaLocation, ShareHosts};
 
 use crate::{
     Result,
@@ -25,7 +25,7 @@ const PLS_VERSION: u32 = 2;
 
 const UNKNOWN_LENGTH: &str = "-1";
 
-pub fn read(text: &str, beside: &Path) -> Sheet {
+pub fn read(text: &str, beside: &Path, hosts: &ShareHosts) -> Sheet {
     let mut sheet = Sheet::default();
     let mut numbered: Vec<(u32, MediaLocation)> = Vec::new();
 
@@ -50,7 +50,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
         let Some(at) = numbering(key, FILE_KEY) else {
             continue;
         };
-        match sheet::located(value, beside) {
+        match sheet::located(value, beside, hosts) {
             Some(location) => numbered.push((at, location)),
             None => sheet.elsewhere += 1,
         }

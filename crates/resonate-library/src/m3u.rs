@@ -1,5 +1,7 @@
 use std::path::Path;
 
+use resonate_core::ShareHosts;
+
 use crate::{
     Result,
     sheet::{self, Described, Listed, Sheet, SheetRow, Timed},
@@ -17,7 +19,7 @@ const UNKNOWN_LENGTH: &str = "-1";
 
 const VLC_OPTION_TAG: &str = "#EXTVLCOPT:";
 
-pub fn read(text: &str, beside: &Path) -> Sheet {
+pub fn read(text: &str, beside: &Path, hosts: &ShareHosts) -> Sheet {
     let mut sheet = Sheet::default();
     let mut timed = Timed::default();
 
@@ -37,7 +39,7 @@ pub fn read(text: &str, beside: &Path) -> Sheet {
         if line.starts_with(COMMENT) {
             continue;
         }
-        match sheet::located(line, beside) {
+        match sheet::located(line, beside, hosts) {
             Some(location) => sheet.locations.push(Listed {
                 location,
                 timed: std::mem::take(&mut timed),

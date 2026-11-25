@@ -110,7 +110,11 @@ pub use resonate_vault::{
 
 #[cfg(fuzzing)]
 pub fn read_a_playlist_sheet(text: &str) {
-    let _ = crate::sheet::parse(text, std::path::Path::new("/music"));
+    let _ = crate::sheet::parse(
+        text,
+        std::path::Path::new("/music"),
+        &resonate_core::ShareHosts::none(),
+    );
 }
 
 pub use explore::{

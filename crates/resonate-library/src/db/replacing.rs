@@ -9,7 +9,7 @@ use std::{
 use ahash::{AHashMap, AHashSet};
 use parking_lot::Mutex;
 use resonate_core::{
-    Locator, MediaLocation, PlaylistId, ReleaseTrackId, SourceId, TrackId, WantId,
+    Locator, MediaLocation, PlaylistId, ReleaseTrackId, ShareHosts, SourceId, TrackId, WantId,
 };
 use resonate_providers::{
     Asking, Away, Delivered, Identity, Providers, TURNED_TO_APART, WAITED_ON_AFTER_AN_OFFER,
@@ -779,7 +779,8 @@ fn what_a_look_found(
         .map_err(|source| Error::store(StoreOp::Query, source))?;
     Ok(match found {
         Some((Some(by), Some(at))) => {
-            let Some(at) = MediaLocation::from_uri(&at) else {
+            let hosts = store::hosts_of_roots(connection)?;
+            let Some(at) = MediaLocation::from_uri_among(&at, &hosts) else {
                 return Ok(None);
             };
             Some(Looked::Offered {
@@ -1070,9 +1071,11 @@ fn awaiting(connection: &Connection) -> Result<Vec<Awaiting>> {
     })?;
     let mut found = Vec::with_capacity(waiting.len());
 
+    let hosts = store::hosts_of_roots(connection)?;
+
     for (taken, offered) in waiting {
         let taken = TrackId::new(taken.cast_unsigned())?;
-        let delivered = delivered_for(connection, taken, offered.as_deref())?
+        let delivered = delivered_for(connection, &hosts, taken, offered.as_deref())?
             .map(|id| TrackId::new(id.cast_unsigned()))
             .transpose()?;
         let kept = rows(
@@ -1192,11 +1195,12 @@ fn wanted_again_unless_it_delivered(
 
 fn delivered_for(
     connection: &Connection,
+    hosts: &ShareHosts,
     taken: TrackId,
     offered: Option<&str>,
 ) -> Result<Option<i64>> {
     let Some(path) = offered
-        .and_then(MediaLocation::from_uri)
+        .and_then(|offered| MediaLocation::from_uri_among(offered, hosts))
         .and_then(|location| {
             location
                 .as_path()

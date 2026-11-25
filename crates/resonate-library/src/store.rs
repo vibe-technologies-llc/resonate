@@ -14,7 +14,7 @@ use resonate_codec::{
 };
 use resonate_core::{
     AlbumId, ArtistId, Decibels, FrameSpan, Frames, MediaLocation, PlaylistId, SampleFormat,
-    StreamSpec, TrackId, naming, path_text, title_words,
+    ShareHosts, StreamSpec, TrackId, naming, path_text, title_words,
     titles::{Rating, bare, rating_in_the_title},
     words_of_a_name,
 };
@@ -1196,6 +1196,21 @@ pub(crate) fn register_root_beside_a_walk(tx: &Transaction<'_>, canonical: &Path
         return Ok(());
     }
     register_root(tx, canonical).map(drop)
+}
+
+pub(crate) fn root_paths(connection: &Connection) -> Result<Vec<PathBuf>> {
+    let mut statement = connection
+        .prepare("SELECT path FROM roots")
+        .map_err(|source| Error::store(StoreOp::Prepare, source))?;
+
+    statement
+        .query_map([], |row| row.get::<_, String>(0).map(|path| path_of(&path)))
+        .and_then(|rows| rows.collect::<rusqlite::Result<Vec<_>>>())
+        .map_err(|source| Error::store(StoreOp::Query, source))
+}
+
+pub(crate) fn hosts_of_roots(connection: &Connection) -> Result<ShareHosts> {
+    root_paths(connection).map(ShareHosts::rooting)
 }
 
 fn roots_held(tx: &Transaction<'_>) -> Result<Vec<(i64, PathBuf)>> {

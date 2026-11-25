@@ -33,6 +33,7 @@ mod quantise;
 mod recorded;
 mod resume;
 mod rt;
+mod share_hosts;
 mod span;
 mod stamp;
 mod synced;
@@ -89,6 +90,7 @@ pub use crate::{
     recorded::{Recording, RecordingKey, title_words},
     resume::{Reordered, Resumable, Resumption, plays_in},
     rt::{RtFault, Silence},
+    share_hosts::ShareHosts,
     span::Span,
     stamp::{QueueStamp, RowStamp},
     synced::SyncedSongs,
