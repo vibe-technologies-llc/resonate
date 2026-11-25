@@ -10,11 +10,11 @@ use tao::{
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
     window::WindowBuilder,
 };
-use wry::{PageLoadEvent, WebContext, WebView, WebViewBuilder};
+use wry::{NewWindowResponse, PageLoadEvent, WebContext, WebView, WebViewBuilder};
 
 use crate::{
     CLOSED, Cookie, EngineOp, Error, FAILED, Result, SIGN_IN_PAGE, SIGNED_IN, domain_cookie_of,
-    is_youtube_music, kept, signed_in, words, written,
+    is_youtube_music, kept, may_lead_to, signed_in, words, written,
 };
 
 const LOOKED_AT_EVERY: Duration = Duration::from_secs(1);
@@ -51,6 +51,9 @@ pub fn sign_in(jar: PathBuf, profile: PathBuf) -> Result<Infallible> {
     let builder = WebViewBuilder::new_with_web_context(&mut context)
         .with_incognito(THE_ENGINE_KEEPS_NO_PROFILE_OF_OURS)
         .with_url(SIGN_IN_PAGE)
+        .with_navigation_handler(|address| may_lead_to(&address))
+        .with_new_window_req_handler(|_, _| NewWindowResponse::Deny)
+        .with_download_started_handler(|_, _| false)
         .with_on_page_load_handler(told_when_loaded(event_loop.create_proxy()));
     let webview = built(builder, &window)?;
 

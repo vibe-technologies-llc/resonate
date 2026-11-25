@@ -1157,6 +1157,15 @@ dependency; the layering job refuses `wry`, `tao`, `webkit2gtk` and `webview2-co
   `youtube.com` (`signed_in`; Google's cookies alone are no YouTube sign-in), writes the jar and
   exits `SIGNED_IN` (0). Closing the window first exits `CLOSED` (3); anything else `FAILED` (1).
   `Outcome::of` reads the status back.
+- **The window leads nowhere else**: `may_lead_to` is the one allow-list, wired as the web view's
+  navigation handler, and says yes to `https` (port 443 or none, no user-info, a host of letters,
+  digits, `-` and `.` alone, so a `@`, a `\\`, a `%` or a stray port never hides another host) at
+  `google.com`, `youtube.com` or a subdomain of either: `accounts.google.com`,
+  `consent.google.com`, `consent.youtube.com`, `music.youtube.com`. Google's country domains
+  (`google.<cc>`) are left out, since sign-in and consent run on those hosts and a pattern for
+  every country would take in a name Google may not own. A new window is denied and a download
+  refused (`a_navigation_may_lead_to_https_google_and_youtube_hosts_alone`,
+  `only_a_page_of_youtube_music_itself_is_youtube_music`).
 - **A domain cookie keeps its dot.** `cookie::Cookie::domain()` strips the leading dot wry's engines
   hand over, which would write `youtube.com FALSE` (host-only) and make `yt-dlp` keep a rotated
   `.youtube.com` value beside the stale one; `domain_cookie_of` dots the bare `youtube.com` and
