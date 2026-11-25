@@ -638,18 +638,24 @@ core and `resonate-audio`.
   (`Sought::Renderers`, `Sought::Servers`), so an `M-SEARCH` for `MediaServer:1` (`SERVER_TYPE`)
   takes only answers whose `ST` names a MediaServer, under the same `Heard` bounds, each an
   `ssdp::Answered` (the `LOCATION`, the sender, the UDN its `USN` names).
-- **A server may name another of its own addresses, never this machine** (`Sought::admits`): a
-  renderer's `LOCATION` must be the sender's IP (`Located::is_at`), a server's may be any literal IP
-  that could be another address of the sender (`Located::could_be_another_address_beside`: not
-  unspecified, multicast or broadcast, and loopback only where the sender is), as a NAS on two
-  networks or a server in Docker (its container's address named, the host's answering) gives.
+- **A server may name another of its own addresses, never this machine and never past the
+  network** (`Sought::admits`): a renderer's `LOCATION` must be the sender's IP (`Located::is_at`),
+  a server's is the sender's or any literal IP that could be another address of the sender
+  (`Located::could_be_another_address_beside`: not unspecified, multicast or broadcast, loopback
+  only where the sender is, and a neighbour, `neighbours::is_a_neighbour`, as the event callback
+  asks of a subscriber), as a NAS on two networks or a server in Docker (its container's private
+  address named, the host's answering) gives. A public, shared-address-space or documentation
+  address is dropped from the answer, so one spoofed answer cannot make a search send requests to
+  a port and path of its choosing off the network (`Addresses::admit` asks the same of every
+  address a listing names, before any request to describe itself).
   `ServerFound::reached` describes such a server first at the sender, with the `LOCATION`'s port
   and path (`Located::at_ip`), and takes that where its UDN is the one the `USN` named; else at the
   `LOCATION`, taken only where the answer named a UDN (`Error::LocationUnvouched`) and the
   description names the same (`Error::DescribedAsAnother`), so nothing is posted to an address that
   does not describe itself as the device that answered
   (`a_location_that_cannot_be_reached_is_asked_for_on_the_address_that_answered_the_search`,
-  `a_server_whose_location_names_another_of_its_addresses_is_described_there_once_its_udn_agrees`).
+  `a_server_whose_location_names_another_neighbour_address_is_described_there_once_its_udn_agrees`,
+  `a_location_naming_an_address_that_is_not_a_neighbour_is_dropped_and_a_private_one_is_kept`).
 - `MediaServers::found` is one round, run only when asked (no thread, nothing
   multicast unasked): each location not yet held is described (`description::read_server`: the
   device whose `deviceType` names a MediaServer and holds ContentDirectory, else the first holding

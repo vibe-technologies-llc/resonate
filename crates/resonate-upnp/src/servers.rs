@@ -473,6 +473,29 @@ mod tests {
     use super::*;
 
     #[test]
+    fn an_address_that_is_not_a_neighbour_is_refused_without_a_request_to_describe_itself() {
+        let described_at = Located::parse("http://192.168.1.5:8200/d.xml").expect("reads");
+        let addresses = Addresses {
+            udn: Udn::new("uuid:a"),
+            described_at,
+            own: Vec::new(),
+            tried: Mutex::new(BTreeMap::new()),
+        };
+
+        for far in [
+            "http://8.8.8.8:8200/song",
+            "http://[2001:db8::1]:8200/song",
+            "http://100.64.0.1:8200/song",
+        ] {
+            let at = Located::parse(far).expect("reads");
+
+            assert!(!addresses.admit(&at), "{far}");
+        }
+
+        assert!(addresses.tried.lock().is_empty());
+    }
+
+    #[test]
     fn words_searched_for_are_quoted_as_the_criteria_grammar_asks() {
         let criteria = criteria_for(" say \"hi\" \\ there\n");
 

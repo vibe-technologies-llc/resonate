@@ -19,7 +19,7 @@ use crate::{
     fetched, http,
     http::HEADERS_AT_MOST,
     listing::{self, ENTRIES_A_LISTING_AT_MOST, TEXT_CHARS_AT_MOST},
-    naming,
+    naming, neighbours,
     offered::{self, Wanted},
     serve, soap, ssdp,
     watched::Watched,
@@ -202,6 +202,13 @@ pub fn read_what_a_network_says(bytes: &[u8]) {
         if let Some(answered) = ssdp::location_answered(bytes, SENDER, sought) {
             assert!(answered.location.ip().is_some());
             assert!(!answered.location.ip().is_some_and(|ip| ip.is_loopback()));
+            assert!(
+                answered.location.is_at(SENDER)
+                    || answered
+                        .location
+                        .ip()
+                        .is_some_and(neighbours::is_a_neighbour)
+            );
             assert!(sought == ssdp::Sought::Servers || answered.location.is_at(SENDER));
         }
     }

@@ -3,7 +3,7 @@ use std::{
     net::{IpAddr, SocketAddr, ToSocketAddrs},
 };
 
-use crate::{Error, Result};
+use crate::{Error, Result, neighbours};
 
 const SCHEME: &str = "http://";
 
@@ -114,7 +114,7 @@ impl Located {
             || ip.is_multicast()
             || matches!(ip, IpAddr::V4(four) if four.is_broadcast());
         let reaches_into_this_machine = ip.is_loopback() && !known.to_canonical().is_loopback();
-        !addresses_no_one_host && !reaches_into_this_machine
+        !addresses_no_one_host && !reaches_into_this_machine && neighbours::is_a_neighbour(ip)
     }
 
     pub(crate) fn at_ip(&self, ip: IpAddr) -> Self {
@@ -255,7 +255,7 @@ mod tests {
     }
 
     #[test]
-    fn another_address_of_a_device_is_one_it_could_hold_and_never_this_machine_unless_it_is_this_machine()
+    fn another_address_of_a_device_is_a_neighbour_it_could_hold_and_never_this_machine_unless_it_is_this_machine()
      {
         let lan: IpAddr = "192.168.1.20".parse().expect("an ip");
         let loopback: IpAddr = "127.0.0.1".parse().expect("an ip");
@@ -267,7 +267,13 @@ mod tests {
 
         assert!(beside("http://172.17.0.2:8200/d.xml", lan));
         assert!(beside("http://[fe80::2]:8200/d.xml", lan));
+        assert!(beside("http://[fd12::7]:8200/d.xml", lan));
+        assert!(beside("http://169.254.3.3:8200/d.xml", lan));
         assert!(beside("http://[::1]:8200/d.xml", loopback));
+        assert!(!beside("http://8.8.8.8:8200/d.xml", lan));
+        assert!(!beside("http://[2001:db8::1]:8200/d.xml", lan));
+        assert!(!beside("http://100.64.0.1:8200/d.xml", lan));
+        assert!(!beside("http://[::ffff:8.8.8.8]:8200/d.xml", lan));
         assert!(!beside("http://127.0.0.1:631/", lan));
         assert!(!beside("http://[::1]:631/", lan));
         assert!(!beside("http://[::ffff:127.0.0.1]:631/", lan));

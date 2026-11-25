@@ -11,6 +11,12 @@ const FOUR: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 
 const SIX: IpAddr = IpAddr::V6(Ipv6Addr::LOCALHOST);
 
+const PRIVATE: IpAddr = IpAddr::V4(Ipv4Addr::new(10, 255, 255, 1));
+
+const PUBLIC: IpAddr = IpAddr::V4(Ipv4Addr::new(192, 0, 2, 1));
+
+const PUBLIC_V6: IpAddr = IpAddr::V6(Ipv6Addr::new(0x2001, 0xdb8, 0, 0, 0, 0, 0, 1));
+
 const SHELF: &str = "uuid:5e1f0000-0000-4000-8000-0000000000aa";
 
 const ANOTHER: &str = "uuid:5e1f0000-0000-4000-8000-0000000000bb";
@@ -233,7 +239,8 @@ fn the_song_of(server: &ServerFound) -> Option<Vec<u8>> {
 }
 
 #[test]
-fn a_server_whose_location_names_another_of_its_addresses_is_described_there_once_its_udn_agrees() {
+fn a_server_whose_location_names_another_neighbour_address_is_described_there_once_its_udn_agrees()
+{
     let elsewhere = Fake::started(Shape {
         described: vec![(SIX, SHELF)],
         located_on: SIX,
@@ -278,6 +285,42 @@ fn a_location_that_cannot_be_reached_is_asked_for_on_the_address_that_answered_t
     assert_eq!(found[0].udn(), &Udn::new(SHELF));
     assert_eq!(found[0].located().host(), "127.0.0.1");
     assert_eq!(the_song_of(&found[0]), Some(song()));
+}
+
+#[test]
+fn a_location_naming_an_address_that_is_not_a_neighbour_is_dropped_and_a_private_one_is_kept() {
+    let neighbour = Fake::started(Shape {
+        located_on: PRIVATE,
+        ..Shape::plain()
+    });
+    let public = Fake::started(Shape {
+        located_on: PUBLIC,
+        ..Shape::plain()
+    });
+    let public_v6 = Fake::started(Shape {
+        located_on: PUBLIC_V6,
+        ..Shape::plain()
+    });
+
+    let kept = neighbour.found();
+
+    assert_eq!(kept.len(), 1);
+    assert_eq!(kept[0].located().host(), "127.0.0.1");
+    assert!(public.found().is_empty());
+    assert!(public_v6.found().is_empty());
+}
+
+#[test]
+fn a_song_on_an_address_that_is_not_a_neighbour_is_passed_over_without_asking_it_to_describe_itself()
+ {
+    let public = Fake::started(Shape {
+        song_on: PUBLIC,
+        ..Shape::plain()
+    });
+
+    let passed_over = the_song_of(&public.found()[0]);
+
+    assert_eq!(passed_over, None);
 }
 
 #[test]

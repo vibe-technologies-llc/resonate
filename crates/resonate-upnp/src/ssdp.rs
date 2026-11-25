@@ -259,6 +259,39 @@ mod tests {
     }
 
     #[test]
+    fn a_server_naming_an_address_it_does_not_hold_is_heard_only_where_that_is_a_neighbour() {
+        let answer = |location: &str| {
+            format!(
+                "HTTP/1.1 200 OK\r\nLOCATION: http://{location}/d.xml\r\nST: \
+                 urn:schemas-upnp-org:device:MediaServer:1\r\n\r\n"
+            )
+        };
+        let sender: IpAddr = "192.168.1.5".parse().expect("an ip");
+
+        let heard = |location: &str| {
+            location_answered(answer(location).as_bytes(), sender, Sought::Servers)
+                .map(|answered| answered.location.to_string())
+        };
+
+        assert_eq!(
+            heard("192.168.1.5:8200"),
+            Some("http://192.168.1.5:8200/d.xml".to_owned())
+        );
+        assert_eq!(
+            heard("172.17.0.2:8200"),
+            Some("http://172.17.0.2:8200/d.xml".to_owned())
+        );
+        assert_eq!(
+            heard("[fe80::2]:8200"),
+            Some("http://[fe80::2]:8200/d.xml".to_owned())
+        );
+        assert_eq!(heard("8.8.8.8:8200"), None);
+        assert_eq!(heard("[2001:db8::1]:8200"), None);
+        assert_eq!(heard("100.64.0.1:8200"), None);
+        assert_eq!(heard("127.0.0.1:8200"), None);
+    }
+
+    #[test]
     fn a_sender_naming_many_locations_is_kept_to_a_few_and_the_whole_to_a_cap() {
         let at = |host: u8, port: u16| {
             Located::parse(&format!("http://10.0.{host}.9:{port}/d.xml")).expect("a location")
