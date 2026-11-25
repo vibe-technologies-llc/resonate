@@ -58,16 +58,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 
 
 ## Playback and output
-- [S · 0.18.1] Keep Fit the preamp from panicking on a quiet chain. **High, builder.** `levels_of`
-  calls `quietest.clamp(QUIETEST_LEVEL, loudest)` with `QUIETEST_LEVEL` 0.25
-  (`crates/resonate-analysis/src/bands.rs:381-403`), which panics when the loudest gain is below
-  0.25, about −12 dB; `BandGains::of` (`bands.rs:234`) reaches it from the window's Fit the preamp
-  (`crates/resonate-ui/src/views/settings/equaliser.rs:2777`, no unwinding guard, and release
-  aborts) and the phones (`crates/resonate-mobile/src/equaliser.rs:462`), so a quiet room-correction
-  impulse closes the player. Clamp to `QUIETEST_LEVEL.min(loudest)`. Done when a test of
-  `corrected_by(&flat, vec![0.1])` answers its levels and the bound sweep in
-  `crates/resonate-analysis/tests/analysis.rs` (`:949-1066`), whose every curve keeps a 0 dB pass
-  and `Preamp::NONE`, carries a net-cut chain.
 - [M · 0.18.1] Disconnect a PipeWire stream before its listener is dropped. **Medium, architect.**
   `Opened::drop` drops the listener, and with it the callback data the realtime thread reads,
   without `stream.disconnect()` (`crates/resonate-pipewire/src/client.rs:224-228`), and `Shutdown`
@@ -76,13 +66,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   `StopCapture` (`:1025-1029`) disconnect first; a data thread inside `process` then reads freed
   memory. Disconnect inside `Opened::drop` ahead of the listener. Done when the hosted-daemon tests
   drop a streaming client during shutdown and graph loss under a sanitiser build without a fault.
-- [M · 0.18.1] Bound an imported equaliser profile's peak. **Medium, builder.** The APO reader
-  clamps each band and the preamp to ±40 dB (`crates/resonate-eq/src/apo.rs:143-182`, `:543-557`,
-  `crates/resonate-core/src/eq.rs:83`) and takes 32 bands with no bound on their sum, and import
-  checks only `is_transparent` (`crates/resonate-eq/src/store.rs:403-427`), so a file of stacked +40
-  dB bells over a +40 dB preamp reaches the output with no warning; the phones hold 24 dB
-  (`crates/resonate-mobile/src/equaliser.rs:19`). Refuse or limit a profile whose peak passes the
-  phones' bound. Done when importing such a file is refused or cut to the bound, in a store test.
+- [S · 0.18.1] Bound a profile the phones import by its whole peak. **Low, builder.** The desktop's
+  `Store::read_in` now refuses a profile whose preamp and stacked bands pass `BOOST_AT_MOST_DB`
+  (`Error::PeakTooHigh`), but the phones' `parse_eq_profile` (`crates/resonate-mobile/src/equaliser.rs`)
+  clamps each value to 24 dB alone, so stacked bells still sum past it. Weigh the whole peak there
+  too and refuse through the mobile catalog. Done when a phone import of stacked +24 dB bells is
+  refused, in a test.
 - [S · 0.18.1] Keep a sink's bound profile, even when it cannot be read, from falling to the
   fallback curve. **Medium, builder.** `equaliser::resolved` leaves out a sink whose bound profile
   is missing or unreadable (`crates/resonate/src/equaliser.rs:938-968`), and
@@ -120,19 +109,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`crates/resonate-pipewire/src/format.rs:173-177`) and panics inside an `extern "C"` callback in a
   checked build. Use checked or widened arithmetic. Done when a unit test with `i32::MIN` bounds
   answers.
-- [S · 0.18.1] Keep the staged resampler's compaction from underflowing. **Low, builder.** `Whole`'s
-  compaction subtracts `drop_from` from `filled` unchecked
-  (`crates/resonate-dsp/src/resample.rs:1467-1486`), which underflows when `whole_step` reaches
-  `behind + ahead + 1`, as on the Balanced staged route at non-7-smooth ratios from 1/29 to 1/32
-  (744 000 Hz to 24 000 Hz), and `copy_within` then aborts the player; no test covers `up == 1`.
-  Bound the drop by what is filled. Done when a test resampling 744 000 Hz to 24 000 Hz at Balanced
-  runs to the end.
-- [S · 0.18.1] Read the convolver's loudest gain off-grid. **Low, builder.** `with_headroom` and
-  `loudest_gain` sample the response on a grid of four points a tap
-  (`crates/resonate-dsp/src/convolve.rs:35-49`, `:165-218`) and under-read an off-grid resonance by
-  about 0.2 dB, so the chain can clip though `eq.md` says it never does. Refine around the grid's
-  peak or add the bound's margin. Done when a test impulse with a resonance between grid points is
-  held under full scale.
 - [S · 0.18.1] Report the frames `Restore` holds. **Low, builder.** `Restore` claims `size - hop`
   frames of latency (`crates/resonate-dsp/src/restore.rs:1428`) but holds up to a hop more and
   implements neither `frames_held` nor `frames_short_of_its_latency`, which only `TruePeak` does
@@ -173,21 +149,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`:1234-1286`), so a deep null in a measured target silently loses its band while its neighbours
   are fitted around it. Clamp in the bank and the update. Done when fitting alternating ±40 dB
   targets keeps every band at its bound.
-- [S · 0.18.1] Count an equaliser value that does not parse. **Low, builder.** An unparseable Gain,
-  Q or S such as `-6dB` becomes the default and is not counted
-  (`crates/resonate-eq/src/apo.rs:244-289`, `:335-347`), and `If:`, `ElseIf:`, `Else:`, `EndIf:` and
-  `Include:` are passed over while every branch's filters apply (`:532-536`). Count both as passed
-  over and leave a conditional's filters out. Done when a profile with `-6dB` and an `If:` block
-  reports both and applies neither.
-- [S · 0.18.1] Read a future AutoEq cache stamp as stale. **Low, builder.** `still_fresh` is true
-  for a stamp ahead of now (`crates/resonate-eq/src/autoeq.rs:20-25`), so a clock set back never
-  asks again, against the rule. Treat a future stamp as stale. Done when a test stamp a day ahead
-  asks again.
-- [S · 0.18.1] Weigh an equaliser profile's size on its bytes alone. **Low, builder.**
-  `Store::bytes_of` caps 64 KiB of bytes and `apo::walk` caps the decoded text again
-  (`crates/resonate-eq/src/store.rs:228-240`, `apo.rs:9`, `:421-426`), so a 40 KiB profile in a
-  Cyrillic or CJK code page grows past the cap and is refused. Let the byte cap decide. Done when a
-  40 KiB windows-1251 profile imports.
 - [S · 0.18.1] Say why `eq` replaced a kept profile, after it did. **Low, builder.** `eq --import`,
   `--fetch` and `--fit-measurement` replace a kept profile of the same name before reporting it
   (`crates/resonate/src/equaliser.rs:222-226`, `:265-266`, `:331-334`, `:888-894`), and
