@@ -2,7 +2,7 @@ use std::{
     fmt::Write as _,
     hash::{BuildHasher, RandomState},
     io::{self, Read, Seek, SeekFrom, Write},
-    net::{IpAddr, Ipv4Addr, SocketAddr, SocketAddrV4, TcpStream},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, SocketAddrV4, TcpStream},
     sync::{
         Arc, Weak,
         atomic::{AtomicBool, Ordering},
@@ -18,11 +18,11 @@ use resonate_core::{AlbumId, TrackId};
 use crate::{
     Error, Result, ServeOp, Udn,
     announce::{Announcer, Announcing},
-    catalog::{Catalog, Object, Shelf},
+    catalog::{Catalog, Object, Opened, Shelf},
     didl::{COVERS_UNDER, SONGS_UNDER, features_of},
     directory::{self, Answered, Asking, Service},
     door::{BUSY, Door, Doorway, Judged, Limits},
-    events::{self, Kept, Subscribers, Subscribing},
+    events::{self, Kept, Subscribers, Subscribing, Telling},
     http::{self, HEADERS_AT_MOST, SERVED_AS},
     naming, neighbours, presented,
     serve::NOT_HERE,
@@ -41,6 +41,8 @@ const ANSWERS_AT_MOST: usize = 16;
 const ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST: usize = ANSWERS_AT_MOST / 2;
 
 const HEADS_AT_MOST: usize = 32;
+
+const HEADS_A_NEIGHBOUR_HOLDS_AT_MOST: usize = HEADS_AT_MOST / 4;
 
 const HEAD_ENDS_WITHIN: Duration = Duration::from_secs(5);
 
@@ -64,6 +66,9 @@ const NOT_ALLOWED: &[u8] = b"HTTP/1.1 405 Method Not Allowed\r\nAllow: GET, HEAD
 const MALFORMED: &[u8] =
     b"HTTP/1.1 400 Bad Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
+const MISDIRECTED: &[u8] =
+    b"HTTP/1.1 421 Misdirected Request\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+
 const UNMET: &[u8] =
     b"HTTP/1.1 412 Precondition Failed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
 
@@ -84,11 +89,29 @@ const FAILED: &[u8] =
 
 const XML: &str = "text/xml; charset=\"utf-8\"";
 
-const SHIPPED: Limits = Limits {
-    answers_at_most: ANSWERS_AT_MOST,
-    answers_a_peer_holds_at_most: ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST,
-    heads_at_most: HEADS_AT_MOST,
-    head_ends_within: HEAD_ENDS_WITHIN,
+const TOLD_ON: &str = "resonate-upnp-tell";
+
+const HTTP_1_0: u8 = 0;
+
+#[derive(Clone, Copy)]
+pub(crate) struct Bounds {
+    pub limits: Limits,
+    pub written_within: Duration,
+    pub a_listener_waits_at_most: Duration,
+    pub told_within: Duration,
+}
+
+const SHIPPED: Bounds = Bounds {
+    limits: Limits {
+        answers_at_most: ANSWERS_AT_MOST,
+        answers_a_peer_holds_at_most: ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST,
+        heads_at_most: HEADS_AT_MOST,
+        heads_a_peer_holds_at_most: HEADS_A_NEIGHBOUR_HOLDS_AT_MOST,
+        head_ends_within: HEAD_ENDS_WITHIN,
+    },
+    written_within: WRITTEN_WITHIN,
+    a_listener_waits_at_most: A_LISTENER_WAITS_AT_MOST,
+    told_within: events::TOLD_WITHIN,
 };
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -181,12 +204,22 @@ pub struct MediaServer<C: Catalog> {
 
 impl<C: Catalog> MediaServer<C> {
     pub fn start(catalog: Arc<C>, udn: Udn, offering: Offering) -> Result<Self> {
+        Self::start_bounded(catalog, udn, offering, SHIPPED)
+    }
+
+    pub(crate) fn start_bounded(
+        catalog: Arc<C>,
+        udn: Udn,
+        offering: Offering,
+        bounds: Bounds,
+    ) -> Result<Self> {
         let (doorway, opened) = Doorway::bind(offering.serving_on)?;
         let (told, heard) = crossbeam_channel::bounded(1);
         let shared = Arc::new(Shared {
             catalog,
             udn: udn.clone(),
             name: offering.name,
+            bounds,
             stopped: AtomicBool::new(false),
             subscribers: Subscribers::default(),
             watched: Watched::default(),
@@ -207,7 +240,7 @@ impl<C: Catalog> MediaServer<C> {
             waker: opened.waker,
         });
 
-        doorway.open(Arc::downgrade(&hall), SHIPPED, "resonate-upnp-offer")?;
+        doorway.open(Arc::downgrade(&hall), bounds.limits, "resonate-upnp-offer")?;
 
         let announcer = Announcer::start(Announcing {
             heard_on: offering.heard_on,
@@ -247,6 +280,7 @@ struct Shared<C> {
     catalog: Arc<C>,
     udn: Udn,
     name: Option<ServerName>,
+    bounds: Bounds,
     stopped: AtomicBool,
     subscribers: Subscribers,
     watched: Watched,
@@ -259,6 +293,47 @@ impl<C> Shared<C> {
             Some(typed) => typed.as_str(),
             None => naming::server_name(),
         }
+    }
+
+    fn answering<'a>(&self, stream: &'a TcpStream) -> Before<'a> {
+        Before::from_now(stream, self.bounds.written_within)
+    }
+}
+
+struct Before<'a> {
+    stream: &'a TcpStream,
+    deadline: Instant,
+}
+
+impl<'a> Before<'a> {
+    fn from_now(stream: &'a TcpStream, within: Duration) -> Self {
+        Self {
+            stream,
+            deadline: Instant::now() + within,
+        }
+    }
+}
+
+impl Write for Before<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let left = self.deadline.saturating_duration_since(Instant::now());
+
+        if left.is_zero() {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        self.stream.set_write_timeout(Some(left))?;
+
+        let mut stream = self.stream;
+
+        stream.write(bytes).map_err(|error| match error.kind() {
+            io::ErrorKind::WouldBlock => io::ErrorKind::TimedOut.into(),
+            _ => error,
+        })
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        let mut stream = self.stream;
+        stream.flush()
     }
 }
 
@@ -291,11 +366,38 @@ fn tell_each_change<C: Catalog>(shared: &Weak<Shared<C>>, heard: &Receiver<()>) 
             shared.subscribers.note(&changed);
         }
         for telling in shared.subscribers.due(revision) {
-            if shared.stopped.load(Ordering::Acquire) {
-                return;
-            }
-            shared.subscribers.settle(&telling, events::tell(&telling));
+            told_apart(&shared, telling);
         }
+    }
+}
+
+fn told_apart<C: Catalog>(shared: &Arc<Shared<C>>, telling: Telling) {
+    let held = Arc::downgrade(shared);
+    let within = shared.bounds.told_within;
+    let kept = telling.clone();
+
+    let spawned = thread::Builder::new()
+        .name(TOLD_ON.to_owned())
+        .spawn(move || settled(&held, &telling, within));
+
+    if let Err(error) = spawned {
+        tracing::debug!(%error, "a subscriber is told on the events thread, since no thread of its own started");
+        settled(&Arc::downgrade(shared), &kept, within);
+    }
+}
+
+fn settled<C>(shared: &Weak<Shared<C>>, telling: &Telling, within: Duration) {
+    if shared
+        .upgrade()
+        .is_none_or(|shared| shared.stopped.load(Ordering::Acquire))
+    {
+        return;
+    }
+
+    let told = events::tell(telling, within);
+
+    if let Some(shared) = shared.upgrade() {
+        shared.subscribers.settle(telling, told);
     }
 }
 
@@ -374,6 +476,81 @@ pub(crate) fn routed(held: &[u8]) -> Routed {
     Routed::To(route, method)
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Addressed {
+    Here,
+    Elsewhere,
+    Unnamed,
+}
+
+pub(crate) fn addressed(held: &[u8], arrived_at: SocketAddr) -> Addressed {
+    let mut headers = [httparse::EMPTY_HEADER; HEADERS_AT_MOST];
+
+    let mut request = httparse::Request::new(&mut headers);
+
+    match request.parse(held) {
+        Ok(httparse::Status::Complete(_)) => {}
+        Ok(httparse::Status::Partial) | Err(_) => return Addressed::Unnamed,
+    }
+
+    let mut hosts = request
+        .headers
+        .iter()
+        .filter(|header| header.name.eq_ignore_ascii_case("Host"));
+
+    match (hosts.next(), hosts.next()) {
+        (None, _) if request.version == Some(HTTP_1_0) => Addressed::Here,
+        (Some(host), None) => std::str::from_utf8(host.value).map_or(Addressed::Unnamed, |host| {
+            host_named(host.trim(), arrived_at)
+        }),
+        _ => Addressed::Unnamed,
+    }
+}
+
+fn host_named(host: &str, arrived_at: SocketAddr) -> Addressed {
+    let (address, port) = match host.strip_prefix('[') {
+        Some(bracketed) => match bracketed.split_once(']') {
+            Some((inside, "")) => (inside, None),
+            Some((inside, after)) => match after.strip_prefix(':') {
+                Some(port) => (inside, Some(port)),
+                None => return Addressed::Unnamed,
+            },
+            None => return Addressed::Unnamed,
+        },
+        None => host
+            .split_once(':')
+            .map_or((host, None), |(address, port)| (address, Some(port))),
+    };
+    let port = match port.filter(|port| !port.is_empty()) {
+        None => None,
+        Some(port) => match port.parse::<u16>() {
+            Ok(number) if port.bytes().all(|byte| byte.is_ascii_digit()) => Some(number),
+            _ => return Addressed::Unnamed,
+        },
+    };
+
+    if address.is_empty() {
+        return Addressed::Unnamed;
+    }
+
+    let named = if host.starts_with('[') {
+        let unzoned = address
+            .split_once('%')
+            .map_or(address, |(address, _)| address);
+        unzoned.parse::<Ipv6Addr>().map(IpAddr::V6).ok()
+    } else {
+        address.parse::<Ipv4Addr>().map(IpAddr::V4).ok()
+    };
+    let here = named.is_some_and(|named| named.to_canonical() == arrived_at.ip().to_canonical())
+        && port.is_none_or(|port| port == arrived_at.port());
+
+    if here {
+        Addressed::Here
+    } else {
+        Addressed::Elsewhere
+    }
+}
+
 pub(crate) fn route_of(path: &str) -> Option<Route> {
     let path = path.split(['?', '#']).next()?;
 
@@ -422,8 +599,17 @@ impl<C: Catalog> Door for Hall<C> {
         neighbours::is_a_neighbour(peer)
     }
 
-    fn judged(&self, held: &[u8]) -> Judged<Task<C>> {
-        match routed(held) {
+    fn judged(&self, held: &[u8], arrived_at: SocketAddr) -> Judged<Task<C>> {
+        let routed = routed(held);
+
+        if !matches!(routed, Routed::Unreadable) {
+            match addressed(held, arrived_at) {
+                Addressed::Here => {}
+                Addressed::Elsewhere => return Judged::Refused(MISDIRECTED),
+                Addressed::Unnamed => return Judged::Refused(MALFORMED),
+            }
+        }
+        match routed {
             Routed::Unreadable => Judged::Unreadable,
             Routed::NotAllowed => Judged::Refused(NOT_ALLOWED),
             Routed::NotHere => Judged::Refused(NOT_HERE),
@@ -435,53 +621,56 @@ impl<C: Catalog> Door for Hall<C> {
         }
     }
 
-    fn answer(task: Task<C>, mut stream: TcpStream, held: Vec<u8>) -> io::Result<()> {
+    fn answer(task: Task<C>, stream: TcpStream, held: Vec<u8>) -> io::Result<()> {
         let head_only = task.method == Method::Head;
         let shared = &task.shared;
 
-        stream.set_write_timeout(Some(WRITTEN_WITHIN))?;
         match task.route {
             Route::Description => {
                 let described = presented::device(&shared.udn, shared.shown_as());
-                said(&mut stream, "200 OK", XML, described.as_bytes(), head_only)
+                said(
+                    &mut shared.answering(&stream),
+                    "200 OK",
+                    XML,
+                    described.as_bytes(),
+                    head_only,
+                )
             }
             Route::Scpd(service) => {
                 let described = presented::service(service);
-                said(&mut stream, "200 OK", XML, described.as_bytes(), head_only)
+                said(
+                    &mut shared.answering(&stream),
+                    "200 OK",
+                    XML,
+                    described.as_bytes(),
+                    head_only,
+                )
             }
-            Route::Control(service) => controlled(shared, service, stream, held),
-            Route::Event(service) => subscribed(shared, service, task.method, stream, &held),
+            Route::Control(service) => controlled(shared, service, &stream, &held),
+            Route::Event(service) => subscribed(shared, service, task.method, &stream, &held),
             Route::Song(id) => match shared.catalog.bytes_of(id) {
                 Ok(Some(opened)) => {
                     let range = header_in(&held, "Range");
-                    poured(
-                        stream,
-                        opened.bytes,
-                        opened.kind.mime(),
-                        features_of(opened.content),
-                        range.as_deref(),
-                        head_only,
-                        &shared.stopped,
-                    )
+                    poured(shared, &stream, opened, range.as_deref(), head_only)
                 }
-                Ok(None) => stream.write_all(NOT_HERE),
+                Ok(None) => shared.answering(&stream).write_all(NOT_HERE),
                 Err(error) => {
                     tracing::warn!(%error, song = id.get(), "a song asked for could not be opened");
-                    stream.write_all(FAILED)
+                    shared.answering(&stream).write_all(FAILED)
                 }
             },
             Route::Cover(album) => match shared.catalog.cover(album) {
                 Ok(Some(picture)) => said(
-                    &mut stream,
+                    &mut shared.answering(&stream),
                     "200 OK",
                     picture.mime,
                     &picture.bytes,
                     head_only,
                 ),
-                Ok(None) => stream.write_all(NOT_HERE),
+                Ok(None) => shared.answering(&stream).write_all(NOT_HERE),
                 Err(error) => {
                     tracing::warn!(%error, album = album.get(), "a cover asked for could not be read");
-                    stream.write_all(FAILED)
+                    shared.answering(&stream).write_all(FAILED)
                 }
             },
         }
@@ -503,7 +692,7 @@ fn header_in(held: &[u8], name: &str) -> Option<String> {
 }
 
 fn said(
-    stream: &mut TcpStream,
+    stream: &mut impl Write,
     status: &str,
     kind: &str,
     body: &[u8],
@@ -526,7 +715,7 @@ fn subscribed<C: Catalog>(
     shared: &Shared<C>,
     service: Service,
     method: Method,
-    mut stream: TcpStream,
+    stream: &TcpStream,
     held: &[u8],
 ) -> io::Result<()> {
     let method = match method {
@@ -535,29 +724,30 @@ fn subscribed<C: Catalog>(
     };
     let peer = stream.peer_addr()?.ip();
     let subscribers = &shared.subscribers;
+    let mut answering = shared.answering(stream);
 
     let (sid, kept) = match events::subscribing(held, method, peer) {
-        Subscribing::Malformed => return stream.write_all(MALFORMED),
-        Subscribing::Unmet => return stream.write_all(UNMET),
+        Subscribing::Malformed => return answering.write_all(MALFORMED),
+        Subscribing::Unmet => return answering.write_all(UNMET),
         Subscribing::Ended { sid } => {
             if !subscribers.end(service, &sid) {
-                return stream.write_all(UNMET);
+                return answering.write_all(UNMET);
             }
-            return stream.write_all(ENDED);
+            return answering.write_all(ENDED);
         }
         Subscribing::Renewed { sid, kept } => match subscribers.renew(service, &sid, kept) {
             Kept::Granted(kept) => (sid, kept),
-            Kept::Unknown => return stream.write_all(UNMET),
+            Kept::Unknown => return answering.write_all(UNMET),
         },
         Subscribing::New { callback, kept } => {
-            match subscribers.subscribe(service, callback, kept) {
+            match subscribers.subscribe(service, peer, callback, kept) {
                 Some(sid) => (sid, kept),
-                None => return stream.write_all(BUSY),
+                None => return answering.write_all(BUSY),
             }
         }
     };
 
-    let answered = write_subscribed(&mut stream, &sid, kept);
+    let answered = write_subscribed(&mut answering, &sid, kept);
 
     subscribers.answered(&sid);
 
@@ -565,7 +755,7 @@ fn subscribed<C: Catalog>(
     answered
 }
 
-fn write_subscribed(stream: &mut TcpStream, sid: &str, kept: Duration) -> io::Result<()> {
+fn write_subscribed(stream: &mut impl Write, sid: &str, kept: Duration) -> io::Result<()> {
     let head = format!(
         "HTTP/1.1 200 OK\r\nSID: {sid}\r\nTIMEOUT: Second-{}\r\nServer: {SERVED_AS}\r\n\
          Content-Length: 0\r\nConnection: close\r\n\r\n",
@@ -579,22 +769,23 @@ fn write_subscribed(stream: &mut TcpStream, sid: &str, kept: Duration) -> io::Re
 fn controlled<C: Catalog>(
     shared: &Shared<C>,
     service: Service,
-    mut stream: TcpStream,
-    held: Vec<u8>,
+    stream: &TcpStream,
+    held: &[u8],
 ) -> io::Result<()> {
-    let Some(length) = header_in(&held, "Content-Length").and_then(|length| length.parse().ok())
+    let Some(length) = header_in(held, "Content-Length").and_then(|length| length.parse().ok())
     else {
-        return stream.write_all(LENGTH_WANTED);
+        return shared.answering(stream).write_all(LENGTH_WANTED);
     };
 
     if length > BODY_BYTES_AT_MOST {
-        return stream.write_all(TOO_LARGE);
+        return shared.answering(stream).write_all(TOO_LARGE);
     }
 
-    let Some(head_ends) = http::head_end(&held) else {
-        return stream.write_all(FAILED);
+    let Some(head_ends) = http::head_end(held) else {
+        return shared.answering(stream).write_all(FAILED);
     };
     let mut body = held.get(head_ends..).unwrap_or_default().to_vec();
+    let mut reading = stream;
     let deadline = Instant::now() + BODY_READ_WITHIN;
 
     while body.len() < length {
@@ -604,7 +795,7 @@ fn controlled<C: Catalog>(
             return Err(io::ErrorKind::TimedOut.into());
         }
         stream.set_read_timeout(Some(left))?;
-        if http::read_more(&mut stream, &mut body)? == 0 {
+        if http::read_more(&mut reading, &mut body)? == 0 {
             return Err(io::ErrorKind::UnexpectedEof.into());
         }
     }
@@ -627,12 +818,14 @@ fn controlled<C: Catalog>(
             Answered::Faulted(directory::Fault::InvalidAction),
             |called| asking.answer(service, &called),
         );
+    let mut answering = shared.answering(stream);
+
     match answered {
-        Answered::Said(envelope) => said(&mut stream, "200 OK", XML, envelope.as_bytes(), false),
+        Answered::Said(envelope) => said(&mut answering, "200 OK", XML, envelope.as_bytes(), false),
         Answered::Faulted(fault) => {
             let envelope = directory::fault_envelope(fault);
             said(
-                &mut stream,
+                &mut answering,
                 "500 Internal Server Error",
                 XML,
                 envelope.as_bytes(),
@@ -695,16 +888,21 @@ pub(crate) fn wanted(range: Option<&str>, length: u64) -> Wanted {
     }
 }
 
-fn poured(
-    mut stream: TcpStream,
-    mut bytes: Box<dyn crate::catalog::Bytes>,
-    kind: &str,
-    features: &str,
+fn poured<C>(
+    shared: &Shared<C>,
+    stream: &TcpStream,
+    opened: Opened,
     range: Option<&str>,
     head_only: bool,
-    stopped: &AtomicBool,
 ) -> io::Result<()> {
+    let Opened {
+        mut bytes,
+        kind,
+        content,
+    } = opened;
     let length = bytes.seek(SeekFrom::End(0))?;
+    let mut answering = shared.answering(stream);
+
     let (status, from, to) = match wanted(range, length) {
         Wanted::Whole => ("200 OK", 0, length.checked_sub(1)),
         Wanted::Part { from, to } => ("206 Partial Content", from, Some(to)),
@@ -714,34 +912,35 @@ fn poured(
                  Content-Length: 0\r\nConnection: close\r\n\r\n"
             );
 
-            return stream.write_all(refusal.as_bytes());
+            return answering.write_all(refusal.as_bytes());
         }
     };
     let carried = to.map_or(0, |to| to - from + 1);
 
     let mut head = format!(
-        "HTTP/1.1 {status}\r\nContent-Type: {kind}\r\nContent-Length: {carried}\r\n\
-         Accept-Ranges: bytes\r\ncontentFeatures.dlna.org: {features}\r\n\
-         transferMode.dlna.org: Streaming\r\nServer: {SERVED_AS}\r\nConnection: close\r\n"
+        "HTTP/1.1 {status}\r\nContent-Type: {}\r\nContent-Length: {carried}\r\n\
+         Accept-Ranges: bytes\r\ncontentFeatures.dlna.org: {}\r\n\
+         transferMode.dlna.org: Streaming\r\nServer: {SERVED_AS}\r\nConnection: close\r\n",
+        kind.mime(),
+        features_of(content),
     );
 
     if let (Wanted::Part { .. }, Some(to)) = (wanted(range, length), to) {
         let _ = write!(head, "Content-Range: bytes {from}-{to}/{length}\r\n");
     }
     head.push_str("\r\n");
-    stream.write_all(head.as_bytes())?;
+    answering.write_all(head.as_bytes())?;
     if head_only || carried == 0 {
         return Ok(());
     }
 
-    stream.set_write_timeout(Some(A_LISTENER_WAITS_AT_MOST))?;
     bytes.seek(SeekFrom::Start(from))?;
 
     let mut left = carried;
     let mut buffer = vec![0; COPIED_IN];
 
     while left > 0 {
-        if stopped.load(Ordering::Acquire) {
+        if shared.stopped.load(Ordering::Acquire) {
             return Err(io::ErrorKind::ConnectionAborted.into());
         }
 
@@ -751,11 +950,16 @@ fn poured(
         if read == 0 {
             return Err(io::ErrorKind::UnexpectedEof.into());
         }
-        stream.write_all(&buffer[..read])?;
+        Before::from_now(stream, shared.bounds.a_listener_waits_at_most)
+            .write_all(&buffer[..read])?;
         left -= read as u64;
     }
-    stream.flush()
+    Ok(())
 }
+
+#[cfg(test)]
+#[path = "offered_shares_tests.rs"]
+mod shares;
 
 #[cfg(test)]
 mod tests {
@@ -844,6 +1048,64 @@ mod tests {
         assert_eq!(wanted(Some("bytes=9-0"), 100), Wanted::Whole);
         assert_eq!(wanted(Some("bytes=+1-2"), 100), Wanted::Whole);
         assert_eq!(wanted(Some("items=0-1"), 100), Wanted::Whole);
+    }
+
+    #[test]
+    fn only_a_host_naming_the_address_a_request_arrived_at_is_answered() {
+        let four: SocketAddr = "192.168.1.5:8200".parse().expect("an address");
+        let six: SocketAddr = "[fe80::5]:8200".parse().expect("an address");
+        let mapped: SocketAddr = "[::ffff:192.168.1.5]:8200".parse().expect("an address");
+        let host = |host: &str, at: SocketAddr| {
+            addressed(
+                format!("GET / HTTP/1.1\r\nHost: {host}\r\n\r\n").as_bytes(),
+                at,
+            )
+        };
+
+        for (named, at) in [
+            ("192.168.1.5:8200", four),
+            ("192.168.1.5", four),
+            ("192.168.1.5:", four),
+            ("[fe80::5]:8200", six),
+            ("[fe80::5]", six),
+            ("[fe80::5%25eth0]:8200", six),
+            ("192.168.1.5:8200", mapped),
+            ("[::ffff:192.168.1.5]:8200", four),
+        ] {
+            assert_eq!(host(named, at), Addressed::Here, "{named}");
+        }
+        for (named, at) in [
+            ("evil.example", four),
+            ("evil.example:8200", four),
+            ("localhost:8200", four),
+            ("192.168.1.6:8200", four),
+            ("192.168.1.5:8201", four),
+            ("[fe80::6]:8200", six),
+            ("[fe80::5]:8200", four),
+        ] {
+            assert_eq!(host(named, at), Addressed::Elsewhere, "{named}");
+        }
+        for (named, at) in [
+            ("", four),
+            (":8200", four),
+            ("192.168.1.5:+80", four),
+            ("192.168.1.5:99999", four),
+            ("192.168.1.5:80:80", four),
+            ("fe80::5", six),
+            ("[fe80::5", six),
+            ("[fe80::5]8200", six),
+        ] {
+            assert_eq!(host(named, at), Addressed::Unnamed, "{named}");
+        }
+
+        let twice = b"GET / HTTP/1.1\r\nHost: 192.168.1.5\r\nHost: 192.168.1.5\r\n\r\n";
+
+        assert_eq!(addressed(twice, four), Addressed::Unnamed);
+        assert_eq!(
+            addressed(b"GET / HTTP/1.1\r\n\r\n", four),
+            Addressed::Unnamed
+        );
+        assert_eq!(addressed(b"GET / HTTP/1.0\r\n\r\n", four), Addressed::Here);
     }
 
     #[test]

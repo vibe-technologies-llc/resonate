@@ -18,6 +18,8 @@ use crate::{
 
 pub(crate) const SUBSCRIBERS_AT_MOST: usize = 32;
 
+pub(crate) const SUBSCRIBERS_A_NEIGHBOUR_HOLDS_AT_MOST: usize = SUBSCRIBERS_AT_MOST / 4;
+
 pub(crate) const KEPT_AT_MOST: Duration = Duration::from_secs(1800);
 
 pub(crate) const KEPT_AT_LEAST: Duration = Duration::from_secs(60);
@@ -139,10 +141,12 @@ pub(crate) fn subscribing(held: &[u8], method: Method, peer: IpAddr) -> Subscrib
 
 struct Subscription {
     service: Service,
+    from: IpAddr,
     callback: Located,
     until: Instant,
     seq: u32,
     answered: bool,
+    telling: bool,
     told: Option<u32>,
     told_at: Instant,
     containers: Vec<(Object, u32)>,
@@ -150,6 +154,9 @@ struct Subscription {
 
 impl Subscription {
     fn awaits(&self, revision: u32) -> bool {
+        if self.telling {
+            return false;
+        }
         match self.told {
             None => self.answered,
             Some(told) => {
@@ -161,11 +168,13 @@ impl Subscription {
     }
 }
 
+#[derive(Clone)]
 pub(crate) struct Telling {
     sid: String,
     callback: Located,
     seq: u32,
     revision: u32,
+    containers: Vec<(Object, u32)>,
     body: String,
 }
 
@@ -191,14 +200,24 @@ impl Subscribers {
     pub(crate) fn subscribe(
         &self,
         service: Service,
+        from: IpAddr,
         callback: Located,
         kept: Duration,
     ) -> Option<String> {
         let now = Instant::now();
+        let from = from.to_canonical();
         let mut held = self.held.lock();
 
         held.retain(|_, subscription| subscription.until > now);
-        if held.len() >= SUBSCRIBERS_AT_MOST {
+
+        let neighbour_holds = held
+            .values()
+            .filter(|subscription| subscription.from == from)
+            .count();
+
+        if held.len() >= SUBSCRIBERS_AT_MOST
+            || neighbour_holds >= SUBSCRIBERS_A_NEIGHBOUR_HOLDS_AT_MOST
+        {
             return None;
         }
 
@@ -208,10 +227,12 @@ impl Subscribers {
             sid.clone(),
             Subscription {
                 service,
+                from,
                 callback,
                 until: now + kept,
                 seq: 0,
                 answered: false,
+                telling: false,
                 told: None,
                 told_at: now,
                 containers: Vec::new(),
@@ -297,19 +318,23 @@ impl Subscribers {
         let mut held = self.held.lock();
 
         held.retain(|_, subscription| subscription.until > now);
-        held.iter()
+        held.iter_mut()
             .filter(|(_, subscription)| subscription.awaits(revision))
-            .map(|(sid, subscription)| Telling {
-                sid: sid.clone(),
-                callback: subscription.callback.clone(),
-                seq: subscription.seq,
-                revision,
-                body: property_set(
-                    subscription.service,
+            .map(|(sid, subscription)| {
+                subscription.telling = true;
+                Telling {
+                    sid: sid.clone(),
+                    callback: subscription.callback.clone(),
+                    seq: subscription.seq,
                     revision,
-                    &subscription.containers,
-                    subscription.told.is_none(),
-                ),
+                    containers: subscription.containers.clone(),
+                    body: property_set(
+                        subscription.service,
+                        revision,
+                        &subscription.containers,
+                        subscription.told.is_none(),
+                    ),
+                }
             })
             .collect()
     }
@@ -323,9 +348,12 @@ impl Subscribers {
         }
         if let Some(subscription) = held.get_mut(&telling.sid) {
             subscription.seq = next_seq(telling.seq);
+            subscription.telling = false;
             subscription.told = Some(telling.revision);
             subscription.told_at = Instant::now();
-            subscription.containers.clear();
+            subscription
+                .containers
+                .retain(|pending| !telling.containers.contains(pending));
         }
     }
 }
@@ -375,7 +403,7 @@ fn container_update_ids(containers: &[(Object, u32)]) -> String {
         .join(",")
 }
 
-pub(crate) fn tell(telling: &Telling) -> bool {
+pub(crate) fn tell(telling: &Telling, within: Duration) -> bool {
     let seq = telling.seq.to_string();
     let told = http::exchange_before(
         &http::Asking {
@@ -391,7 +419,7 @@ pub(crate) fn tell(telling: &Telling) -> bool {
             body: telling.body.as_bytes(),
         },
         Asked::Event,
-        Instant::now() + TOLD_WITHIN,
+        Instant::now() + within,
     );
     match told {
         Ok(answer) if (200..300).contains(&answer.status) => true,
@@ -504,17 +532,26 @@ mod tests {
         assert_eq!(kept_for(None), KEPT_AT_MOST);
     }
 
+    fn neighbour(last: u8) -> (IpAddr, Located) {
+        let from = IpAddr::V4(Ipv4Addr::new(192, 168, 1, last));
+        let callback = Located::parse(&format!("http://{from}/x")).expect("an address");
+        (from, callback)
+    }
+
     #[test]
     fn subscribers_are_held_to_a_number_told_once_a_change_and_dropped_when_they_do_not_answer() {
         let subscribers = Subscribers::default();
-        let callback = Located::parse("http://192.168.1.20/x").expect("an address");
 
         let sids: Vec<String> = (0..SUBSCRIBERS_AT_MOST)
-            .filter_map(|_| {
-                subscribers.subscribe(Service::ContentDirectory, callback.clone(), KEPT_AT_LEAST)
+            .filter_map(|at| {
+                let (from, callback) = neighbour(u8::try_from(at).expect("a byte") + 1);
+                subscribers.subscribe(Service::ContentDirectory, from, callback, KEPT_AT_LEAST)
             })
             .collect();
-        let refused = subscribers.subscribe(Service::ContentDirectory, callback, KEPT_AT_LEAST);
+        let (from, callback) = neighbour(200);
+
+        let refused =
+            subscribers.subscribe(Service::ContentDirectory, from, callback, KEPT_AT_LEAST);
         let unanswered = subscribers.due(3);
 
         for sid in &sids {
@@ -553,6 +590,95 @@ mod tests {
         assert!(subscribers.end(Service::ContentDirectory, &sids[1]));
         assert!(!subscribers.end(Service::ContentDirectory, &sids[1]));
         assert_eq!(next_seq(u32::MAX), 1);
+    }
+
+    #[test]
+    fn one_neighbour_holds_no_more_than_its_share_of_the_subscriptions() {
+        let subscribers = Subscribers::default();
+        let (from, callback) = neighbour(20);
+        let mapped = IpAddr::V6(Ipv4Addr::new(192, 168, 1, 20).to_ipv6_mapped());
+
+        let held: Vec<Option<String>> = (0..SUBSCRIBERS_A_NEIGHBOUR_HOLDS_AT_MOST)
+            .map(|_| {
+                subscribers.subscribe(
+                    Service::ContentDirectory,
+                    from,
+                    callback.clone(),
+                    KEPT_AT_LEAST,
+                )
+            })
+            .collect();
+        let past_its_share = subscribers.subscribe(
+            Service::ConnectionManager,
+            from,
+            callback.clone(),
+            KEPT_AT_LEAST,
+        );
+        let mapped_past_its_share =
+            subscribers.subscribe(Service::ContentDirectory, mapped, callback, KEPT_AT_LEAST);
+        let (another, elsewhere) = neighbour(21);
+
+        let beside =
+            subscribers.subscribe(Service::ContentDirectory, another, elsewhere, KEPT_AT_LEAST);
+
+        assert!(held.iter().all(Option::is_some));
+        assert_eq!(past_its_share, None);
+        assert_eq!(mapped_past_its_share, None);
+        assert!(beside.is_some());
+
+        let first = held[0].as_deref().expect("a subscription");
+
+        assert!(subscribers.end(Service::ContentDirectory, first));
+
+        let (from, callback) = neighbour(20);
+
+        assert!(
+            subscribers
+                .subscribe(Service::ContentDirectory, from, callback, KEPT_AT_LEAST)
+                .is_some()
+        );
+    }
+
+    #[test]
+    fn a_subscriber_being_told_is_not_told_again_and_keeps_what_changed_meanwhile() {
+        let subscribers = Subscribers::default();
+        let (from, callback) = neighbour(20);
+
+        let sid = subscribers
+            .subscribe(Service::ContentDirectory, from, callback, KEPT_AT_LEAST)
+            .expect("a subscription");
+        let playlist = Object::Shelf(Shelf::Playlist(PlaylistId::new(3).expect("an id")));
+
+        subscribers.answered(&sid);
+
+        let initial = subscribers.due(3);
+
+        subscribers.settle(&initial[0], true);
+        subscribers.note(&[(Object::Root, 4)]);
+
+        if let Some(subscription) = subscribers.held.lock().get_mut(&sid) {
+            subscription.told_at -= TOLD_AT_MOST_EVERY;
+        }
+
+        let changed = subscribers.due(4);
+        let while_telling = subscribers.due(4);
+
+        subscribers.note(&[(playlist, 4)]);
+        subscribers.settle(&changed[0], true);
+
+        let containers = subscribers
+            .held
+            .lock()
+            .get(&sid)
+            .expect("held")
+            .containers
+            .clone();
+
+        assert_eq!(initial.len(), 1);
+        assert_eq!(changed.len(), 1);
+        assert_eq!(changed[0].containers, vec![(Object::Root, 4)]);
+        assert!(while_telling.is_empty());
+        assert_eq!(containers, vec![(playlist, 4)]);
     }
 
     #[test]

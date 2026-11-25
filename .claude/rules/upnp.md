@@ -234,7 +234,7 @@ for range reads and SSDP searches. It reads a declared, chunked or close-delimit
   each waiting head and a `Waker` the `Server`'s drop rings so the thread ends with it; the wait is
   bounded only by the nearest head's deadline, so an idle server never wakes
   (`a_server_waiting_on_a_slow_head_wakes_for_nothing_until_it_moves_or_its_deadline_comes`); at most
-  `HEADS_AT_MOST`, 32, waiting, the rest closed at once; a head
+  `HEADS_AT_MOST`, 32, waiting, at most `HEADS_A_PEER_HOLDS_AT_MOST` (8) of them from one address, the rest closed at once; a head
   not whole in `HEAD_ENDS_WITHIN`, 5 s over all, is dropped), answers a path that is no
   16-hex-digit token and an extension (or names no stream offered) with `404` and a method but
   `GET` and `HEAD` with `405` itself, and spawns a `resonate-upnp-feed` thread only for a head naming
@@ -443,8 +443,15 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   or an unreadable one is the whole, past the end 416) as a `206` with `Content-Range`, and
   `contentFeatures.dlna.org` (the same flags, from `Opened`'s `Content`) and
   `transferMode.dlna.org: Streaming`, which some renderers will not
-  play without. A write may wait `A_LISTENER_WAITS_AT_MOST` (120 s), since a paused renderer stops
-  reading. The description (`/description.xml`) and both services' descriptions are
+  play without. **An answer is written within a whole deadline, never one a call** (`Before`: one
+  deadline, each write given only what is left): every answer, and a song's head, within
+  `WRITTEN_WITHIN` (5 s), so a reader taking a byte every few seconds cannot hold an answer's slot;
+  a song's body is the renderer's to pace, so each piece of `COPIED_IN` (64 KiB) is given
+  `A_LISTENER_WAITS_AT_MOST` (120 s) whole, since a paused renderer stops reading, and a reader
+  slower than a piece in that time is cut
+  (`a_reader_trickling_an_answer_is_cut_at_the_whole_deadline_and_its_slot_is_freed`,
+  `a_reader_trickling_a_song_slower_than_a_piece_within_the_wait_is_cut`). The stream server's live
+  stream is no answer: a `Feed` is paced by its renderer (*The stream*). The description (`/description.xml`) and both services' descriptions are
   `presented.rs`'s. The device's `friendlyName` is the name the listener typed (`Offering::name`, a
   `ServerName`, the `offer-name` key of *binary.md*) and else the catalog word `server-name`,
   *Resonate*: a computer that offers its catalog is told apart from another only by what its
@@ -496,14 +503,22 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   four in the header: a name, another neighbour or anything off the network is 412, so the server
   sends nothing a request could aim elsewhere. `TIMEOUT: Second-N` is held between `KEPT_AT_LEAST`
   (60 s) and `KEPT_AT_MOST` (1 800 s, also for `infinite` or none) and answered as granted; at most
-  `SUBSCRIBERS_AT_MOST` (32) are held, the rest 503. One `resonate-upnp-events` thread per server
+  `SUBSCRIBERS_AT_MOST` (32) are held, at most `SUBSCRIBERS_A_NEIGHBOUR_HOLDS_AT_MOST` (8) of them
+  from one address (a mapped IPv4 one as itself), the rest 503
+  (`one_neighbour_holds_no_more_than_its_share_of_the_subscriptions`). One `resonate-upnp-events` thread per server
   (`tell_each_change`, holding the server weakly, so it ends with it) reads the catalog's
   `revision` every `REVISION_READ_EVERY` (1 s) and tells each subscriber once its answer is written:
   the initial event (`SEQ` 0) of every evented variable (`property_set`: ContentDirectory's
   `SystemUpdateID`, ConnectionManager's protocol info and connection ids, which never change), then
   ContentDirectory's `SystemUpdateID` each time the revision moved, at most every
   `TOLD_AT_MOST_EVERY` (2 s, the spec's moderated rate) a subscriber, `SEQ` counting on and wrapping
-  to 1. A `NOTIFY` not answered 2xx within `TOLD_WITHIN` (2 s) drops the subscriber.
+  to 1. A `NOTIFY` not answered 2xx within `TOLD_WITHIN` (2 s) drops the subscriber. **Each
+  telling goes out on a thread of its own** (`told_apart`, `resonate-upnp-tell`, holding the server
+  weakly), so a hung subscriber holds its own telling for `TOLD_WITHIN` and never the events thread
+  or another subscriber's (`a_hung_subscriber_does_not_hold_back_another_subscribers_telling`); a
+  subscription being told is not due again until its telling is settled, and container names noted
+  meanwhile wait for the next one rather than being cleared with those told
+  (`a_subscriber_being_told_is_not_told_again_and_keeps_what_changed_meanwhile`).
   `SystemUpdateID` moves because the binary's `revision` is `Library::catalog_revision`, which
   every catalog write moves.
 - **`ContainerUpdateIDs` is evented for the containers a control point holds** (`watched.rs`),
@@ -532,11 +547,33 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   peer holds no more than its share of the answers** (`Limits::answers_a_peer_holds_at_most`, counted
   by the peer's address, a mapped IPv4 one as itself): the media server's is
   `ANSWERS_A_NEIGHBOUR_HOLDS_AT_MOST`, half of its 16, since a song's answer may wait
-  `A_LISTENER_WAITS_AT_MOST` a write and a control point that asked for 16 songs and read none would
+  `A_LISTENER_WAITS_AT_MOST` a piece and a control point that asked for 16 songs and read none would
   otherwise leave every other one `503`; the stream server's is all of `FETCHES_AT_MOST`, since only a
   renderer handed a token reaches a fetch
-  (`one_peer_holds_no_more_than_its_share_of_the_answers_and_the_rest_stay_for_others`). Its door
-  admits only a neighbour (`neighbours::is_a_neighbour`: a private, link-local or loopback IPv4
+  (`one_peer_holds_no_more_than_its_share_of_the_answers_and_the_rest_stay_for_others`). **Nor does
+  one peer wait on more than its share of the heads** (`Limits::heads_a_peer_holds_at_most`, counted
+  the same way, the connections past it closed at once): a quarter of the 32,
+  `HEADS_A_NEIGHBOUR_HOLDS_AT_MOST` on the media server and `HEADS_A_PEER_HOLDS_AT_MOST` on the
+  stream server, so one host holding idle connections open and renewing them as they expire leaves
+  the rest of the heads to every other control point and to a renderer's own fetch
+  (`one_peer_waits_on_no_more_than_its_share_of_the_heads_and_the_rest_stay_for_others`,
+  `thirty_two_idle_connections_from_one_address_leave_another_address_answered`,
+  `a_peer_holding_its_share_of_the_heads_leaves_another_address_read`). The share is an address's,
+  since nothing on a LAN names a host better, so a host taking several addresses takes several
+  shares. The stream server admits any address, since a renderer may sit on one
+  `neighbours::is_a_neighbour` does not name (a global IPv6 one). The tests holding a second
+  address connect from `127.0.0.2` (`ANOTHER_LOOPBACK`) and skip where the machine does not hold it
+  (a Mac, by default). **The media server answers only a `Host` naming the address the request
+  arrived at** (`addressed`, the connection's local address handed to `Door::judged`): an IP
+  literal, IPv4 or bracketed IPv6 (a zone passed over, a mapped IPv4 one as itself), with that port
+  or none. A name (`evil.example`, `localhost`) or another address is `421 Misdirected Request`, so
+  a page in a browser that rebinds a name to the listener's address reads nothing; a `Host` missing
+  from HTTP/1.1, given twice or unreadable is 400, and HTTP/1.0 with none is answered. A control
+  point names the address the `LOCATION` gave it, which is always a literal
+  (`only_a_host_naming_the_address_a_request_arrived_at_is_answered`,
+  `a_request_naming_another_host_is_refused_and_one_naming_the_servers_address_is_answered`). The
+  stream server reads no `Host`: what it serves is named by a token no page can guess. The media
+  server's door admits only a neighbour (`neighbours::is_a_neighbour`: a private, link-local or loopback IPv4
   address, a unique-local, link-local or loopback IPv6 one, or a mapped IPv4 one of those), reads
   a SOAP body only under a `Content-Length` of at most `BODY_BYTES_AT_MOST` (64 KiB, else 413; none
   is 411) within `BODY_READ_WITHIN`, and answers `GET` and `HEAD` but on a control or event
@@ -552,7 +589,11 @@ cut from a cue sheet is the one exception (*A cut served as WAVE*).
   (`if-addrs`). A neighbour's `M-SEARCH` with `MAN: "ssdp:discover"` (`searched_for`) is answered
   unicast for `ssdp:all` (all five), `upnp:rootdevice`, the UDN, `MediaServer:1` and either
   service type (`answers_to`), its `LOCATION` the address routed toward the searcher
-  (`host_toward`), at most `ANSWERS_A_SECOND_AT_MOST` (100) datagrams a second. `ssdp:alive` goes out
+  (`host_toward`), at most `ANSWERS_A_SECOND_AT_MOST` (100) datagrams a second, of which one
+  sender's address is given at most `ANSWERS_A_SENDER_HAS_A_SECOND_AT_MOST` (25, five whole
+  `ssdp:all` searches), so one sender's flood leaves the rest of the second's answers to another's
+  search (`one_senders_flood_leaves_the_rest_of_the_answers_for_another`,
+  `one_senders_search_flood_leaves_another_senders_search_answered`). `ssdp:alive` goes out
   twice for each of the five on start and every `Offering::every` (600 s) inside `CACHE-CONTROL:
   max-age=1800`, from each interface with that interface's address as `LOCATION`; `ssdp:byebye`
   goes out as the `MediaServer` drops, which joins the thread (`STOP_HEARD_WITHIN`, 250 ms). **A

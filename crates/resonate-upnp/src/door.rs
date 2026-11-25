@@ -38,6 +38,7 @@ pub(crate) struct Limits {
     pub answers_at_most: usize,
     pub answers_a_peer_holds_at_most: usize,
     pub heads_at_most: usize,
+    pub heads_a_peer_holds_at_most: usize,
     pub head_ends_within: Duration,
 }
 
@@ -54,7 +55,7 @@ pub(crate) trait Door: Send + Sync + 'static {
 
     fn admits(&self, peer: IpAddr) -> bool;
 
-    fn judged(&self, held: &[u8]) -> Judged<Self::Task>;
+    fn judged(&self, held: &[u8], arrived_at: SocketAddr) -> Judged<Self::Task>;
 
     fn answer(task: Self::Task, stream: net::TcpStream, held: Vec<u8>) -> io::Result<()>;
 
@@ -152,6 +153,7 @@ impl Drop for Answering {
 struct Pending {
     stream: TcpStream,
     peer: IpAddr,
+    arrived_at: SocketAddr,
     held: Vec<u8>,
     since: Instant,
 }
@@ -164,10 +166,11 @@ enum Next<Task> {
 }
 
 impl Pending {
-    fn new(stream: TcpStream, peer: IpAddr) -> Self {
+    fn new(stream: TcpStream, peer: IpAddr, arrived_at: SocketAddr) -> Self {
         Self {
             stream,
-            peer,
+            peer: peer.to_canonical(),
+            arrived_at,
             held: Vec::new(),
             since: Instant::now(),
         }
@@ -180,7 +183,7 @@ impl Pending {
     fn advance<D: Door>(&mut self, door: &D, head_ends_within: Duration) -> Next<D::Task> {
         loop {
             if http::head_end(&self.held).is_some() {
-                return match door.judged(&self.held) {
+                return match door.judged(&self.held, self.arrived_at) {
                     Judged::Unreadable => Next::Dropped,
                     Judged::Refused(refusal) => Next::Refused(refusal),
                     Judged::Taken(task) => Next::Taken(task),
@@ -228,6 +231,17 @@ impl Heads {
         }
     }
 
+    fn has_room_for(&self, peer: IpAddr, limits: &Limits) -> bool {
+        let peer = peer.to_canonical();
+        let peer_holds = self
+            .waiting
+            .values()
+            .filter(|asking| asking.peer == peer)
+            .count();
+
+        self.waiting.len() < limits.heads_at_most && peer_holds < limits.heads_a_peer_holds_at_most
+    }
+
     fn admit(
         &mut self,
         registry: &Registry,
@@ -236,12 +250,21 @@ impl Heads {
     ) -> Option<Source> {
         let source = Source(self.next);
 
+        let arrived_at = match stream.local_addr() {
+            Ok(arrived_at) => arrived_at,
+            Err(error) => {
+                tracing::debug!(%error, "a connection named no address it arrived at");
+                return None;
+            }
+        };
+
         if let Err(error) = registry.register(&mut stream, source, Interest::READABLE) {
             tracing::debug!(%error, "a connection could not be read");
             return None;
         }
         self.next = self.next.wrapping_add(1).max(FIRST_HEAD);
-        self.waiting.insert(source, Pending::new(stream, peer));
+        self.waiting
+            .insert(source, Pending::new(stream, peer, arrived_at));
         Some(source)
     }
 
@@ -290,12 +313,14 @@ fn admitted<D: Door>(
     registry: &Registry,
     heads: &mut Heads,
     door: &D,
-    heads_at_most: usize,
+    limits: &Limits,
 ) -> Admission {
     let mut sources = Vec::new();
     loop {
         match listener.accept() {
-            Ok((stream, peer)) if heads.waiting.len() < heads_at_most && door.admits(peer.ip()) => {
+            Ok((stream, peer))
+                if heads.has_room_for(peer.ip(), limits) && door.admits(peer.ip()) =>
+            {
                 sources.extend(heads.admit(registry, stream, peer.ip()));
             }
             Ok(_) => {}
@@ -367,7 +392,7 @@ fn accept<D: Door>(mut poll: Poll, listener: &TcpListener, held: &Weak<D>, limit
                 poll.registry(),
                 &mut heads,
                 door.as_ref(),
-                limits.heads_at_most,
+                &limits,
             );
 
             retry_at = admission
@@ -455,6 +480,7 @@ mod tests {
         answers_at_most: 4,
         answers_a_peer_holds_at_most: 2,
         heads_at_most: 8,
+        heads_a_peer_holds_at_most: 2,
         head_ends_within: Duration::from_secs(5),
     };
 
@@ -542,5 +568,40 @@ mod tests {
 
         assert!(slots.lock().by_peer.is_empty());
         assert_eq!(slots.lock().taken, 0);
+    }
+
+    fn waiting_from(heads: &mut Heads, listener: &net::TcpListener, from: IpAddr) {
+        let stream =
+            net::TcpStream::connect(listener.local_addr().expect("an address")).expect("connects");
+        let arrived_at = stream.local_addr().expect("an address");
+
+        stream.set_nonblocking(true).expect("a stream");
+        heads.waiting.insert(
+            Source(heads.next),
+            Pending::new(TcpStream::from_std(stream), from, arrived_at),
+        );
+        heads.next += 1;
+    }
+
+    #[test]
+    fn one_peer_waits_on_no_more_than_its_share_of_the_heads_and_the_rest_stay_for_others() {
+        let listener = net::TcpListener::bind((Ipv4Addr::LOCALHOST, 0)).expect("a listener");
+        let mut heads = Heads::new();
+
+        waiting_from(&mut heads, &listener, peer(1));
+        waiting_from(&mut heads, &listener, peer(1));
+
+        let mapped = IpAddr::V6(Ipv4Addr::new(192, 168, 1, 1).to_ipv6_mapped());
+
+        assert!(!heads.has_room_for(peer(1), &SHARED));
+        assert!(!heads.has_room_for(mapped, &SHARED));
+        assert!(heads.has_room_for(peer(2), &SHARED));
+
+        for last in [2, 2, 3, 3, 4, 4] {
+            waiting_from(&mut heads, &listener, peer(last));
+        }
+
+        assert_eq!(heads.waiting.len(), SHARED.heads_at_most);
+        assert!(!heads.has_room_for(peer(5), &SHARED));
     }
 }

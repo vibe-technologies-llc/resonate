@@ -869,6 +869,59 @@ fn an_object_or_a_path_the_server_never_minted_is_refused() {
     assert_eq!(fetched(at, "/control/ContentDirectory", None).status, 405);
 }
 
+#[test]
+fn a_request_naming_another_host_is_refused_and_one_naming_the_servers_address_is_answered() {
+    let Started {
+        server,
+        told: _told,
+        ..
+    } = started();
+    let at = discovered(&server);
+    let hosted = |path: &str, host: &str| {
+        asked(
+            at,
+            &format!("GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"),
+            &[],
+        )
+        .status
+    };
+
+    for path in [
+        "/description.xml",
+        "/resonate/song-1.flac",
+        "/cover/album-1",
+    ] {
+        assert_eq!(hosted(path, "evil.example"), 421, "{path}");
+        assert_eq!(
+            hosted(path, &format!("evil.example:{}", at.port())),
+            421,
+            "{path}"
+        );
+        assert_eq!(
+            hosted(path, &format!("127.0.0.2:{}", at.port())),
+            421,
+            "{path}"
+        );
+        assert_eq!(hosted(path, &at.to_string()), 200, "{path}");
+        assert_eq!(hosted(path, &at.ip().to_string()), 200, "{path}");
+    }
+
+    let browse = asked(
+        at,
+        "POST /control/ContentDirectory HTTP/1.1\r\nHost: evil.example\r\nContent-Length: \
+         0\r\n\r\n",
+        &[],
+    );
+    let nameless = asked(
+        at,
+        "GET /description.xml HTTP/1.1\r\nConnection: close\r\n\r\n",
+        &[],
+    );
+
+    assert_eq!(browse.status, 421);
+    assert_eq!(nameless.status, 400);
+}
+
 fn xml_escaped(text: &str) -> String {
     text.replace('&', "&amp;")
         .replace('<', "&lt;")

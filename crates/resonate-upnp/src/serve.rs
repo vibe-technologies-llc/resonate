@@ -30,6 +30,8 @@ const FETCHES_AT_MOST: usize = 16;
 
 const HEADS_AT_MOST: usize = 32;
 
+const HEADS_A_PEER_HOLDS_AT_MOST: usize = HEADS_AT_MOST / 4;
+
 const TOKEN_DIGITS: usize = 16;
 
 pub(crate) const NOT_HERE: &[u8] =
@@ -42,6 +44,7 @@ const SHIPPED: Limits = Limits {
     answers_at_most: FETCHES_AT_MOST,
     answers_a_peer_holds_at_most: FETCHES_AT_MOST,
     heads_at_most: HEADS_AT_MOST,
+    heads_a_peer_holds_at_most: HEADS_A_PEER_HOLDS_AT_MOST,
     head_ends_within: HEAD_ENDS_WITHIN,
 };
 
@@ -153,7 +156,7 @@ impl Door for Server {
         true
     }
 
-    fn judged(&self, held: &[u8]) -> Judged<Fetch> {
+    fn judged(&self, held: &[u8], _: SocketAddr) -> Judged<Fetch> {
         match asked_in(held) {
             Asked::Unreadable => Judged::Unreadable,
             Asked::NotAllowed => Judged::Refused(NOT_ALLOWED),
@@ -281,12 +284,22 @@ mod tests {
     }
 
     fn limited(answers_at_most: usize, heads_at_most: usize, within: Duration) -> Arc<Server> {
+        shared_out(answers_at_most, heads_at_most, heads_at_most, within)
+    }
+
+    fn shared_out(
+        answers_at_most: usize,
+        heads_at_most: usize,
+        heads_a_peer_holds_at_most: usize,
+        within: Duration,
+    ) -> Arc<Server> {
         Server::start_limited(
             LOOPBACK,
             Limits {
                 answers_at_most,
                 answers_a_peer_holds_at_most: answers_at_most,
                 heads_at_most,
+                heads_a_peer_holds_at_most,
                 head_ends_within: within,
             },
         )
@@ -325,6 +338,31 @@ mod tests {
         let mut third = connected(&server);
 
         assert!(is_closed(&mut third));
+    }
+
+    #[test]
+    fn a_peer_holding_its_share_of_the_heads_leaves_another_address_read() {
+        let server = shared_out(4, 8, 2, Duration::from_secs(30));
+        let _first = connected(&server);
+        let _second = connected(&server);
+        let mut past_its_share = connected(&server);
+
+        assert!(is_closed(&mut past_its_share));
+
+        let Some(mut elsewhere) =
+            crate::testing::connected_from_another_address(SocketAddr::new(LOOPBACK, server.port))
+        else {
+            return;
+        };
+
+        elsewhere
+            .set_read_timeout(Some(HEARD_WITHIN))
+            .expect("a read timeout");
+        elsewhere
+            .write_all(b"GET /resonate/0000000000000001.wav HTTP/1.1\r\nHost: x\r\n\r\n")
+            .expect("asks");
+
+        assert!(status_of(&mut elsewhere).contains("404"));
     }
 
     #[test]

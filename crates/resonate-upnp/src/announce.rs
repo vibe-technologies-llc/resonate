@@ -1,4 +1,5 @@
 use std::{
+    collections::BTreeMap,
     io,
     net::{IpAddr, Ipv4Addr, SocketAddr, UdpSocket},
     sync::{
@@ -34,6 +35,10 @@ const STOP_HEARD_WITHIN: Duration = Duration::from_millis(250);
 const HEARING_RETRIED_AFTER: Duration = Duration::from_millis(250);
 
 const ANSWERS_A_SECOND_AT_MOST: u32 = 100;
+
+const ANSWERS_A_SENDER_HAS_A_SECOND_AT_MOST: u32 = ANSWERS_A_SECOND_AT_MOST / 4;
+
+const A_SECOND: Duration = Duration::from_secs(1);
 
 const ROOT_DEVICE: &str = "upnp:rootdevice";
 
@@ -172,18 +177,35 @@ fn interfaces() -> Vec<Ipv4Addr> {
 struct Answering {
     began: Instant,
     sent: u32,
+    sent_to: BTreeMap<IpAddr, u32>,
 }
 
 impl Answering {
-    fn room_for(&mut self, answers: u32) -> bool {
-        if self.began.elapsed() >= Duration::from_secs(1) {
+    fn new() -> Self {
+        Self {
+            began: Instant::now(),
+            sent: 0,
+            sent_to: BTreeMap::new(),
+        }
+    }
+
+    fn room_for(&mut self, sender: IpAddr, answers: u32) -> bool {
+        if self.began.elapsed() >= A_SECOND {
             self.began = Instant::now();
             self.sent = 0;
+            self.sent_to.clear();
         }
-        if self.sent.saturating_add(answers) > ANSWERS_A_SECOND_AT_MOST {
+
+        let sender = sender.to_canonical();
+        let sender_was_sent = self.sent_to.get(&sender).copied().unwrap_or(0);
+
+        if self.sent.saturating_add(answers) > ANSWERS_A_SECOND_AT_MOST
+            || sender_was_sent.saturating_add(answers) > ANSWERS_A_SENDER_HAS_A_SECOND_AT_MOST
+        {
             return false;
         }
         self.sent += answers;
+        self.sent_to.insert(sender, sender_was_sent + answers);
         true
     }
 }
@@ -209,10 +231,7 @@ fn heard_after(error: &io::Error) -> Heard {
 
 fn announce(socket: &UdpSocket, announcing: &Announcing, stop: &AtomicBool) {
     let mut buffer = vec![0; SEARCH_BYTES_AT_MOST];
-    let mut answering = Answering {
-        began: Instant::now(),
-        sent: 0,
-    };
+    let mut answering = Answering::new();
 
     tell(socket, announcing, Nts::Alive);
 
@@ -256,7 +275,7 @@ fn announce(socket: &UdpSocket, announcing: &Announcing, stop: &AtomicBool) {
         };
         let answers = answers_to(&asked, &announcing.udn);
 
-        if answers.is_empty() || !answering.room_for(answers.len() as u32) {
+        if answers.is_empty() || !answering.room_for(sender.ip(), answers.len() as u32) {
             continue;
         }
 
@@ -430,18 +449,41 @@ mod tests {
         assert_eq!(searched_for(undiscovering), None);
     }
 
+    fn sender(last: u8) -> IpAddr {
+        IpAddr::V4(Ipv4Addr::new(192, 168, 1, last))
+    }
+
     #[test]
     fn answers_past_the_most_a_second_are_held_back() {
-        let mut answering = Answering {
-            began: Instant::now(),
-            sent: 0,
-        };
+        let mut answering = Answering::new();
 
-        let room: Vec<bool> = (0..30).map(|_| answering.room_for(5)).collect();
+        let room: Vec<bool> = (0..30)
+            .map(|at| answering.room_for(sender(at % 10), 5))
+            .collect();
 
         assert_eq!(
             room.iter().filter(|room| **room).count() as u32,
             ANSWERS_A_SECOND_AT_MOST / 5
         );
+    }
+
+    #[test]
+    fn one_senders_flood_leaves_the_rest_of_the_answers_for_another() {
+        let mut answering = Answering::new();
+        let mapped = IpAddr::V6(Ipv4Addr::new(192, 168, 1, 1).to_ipv6_mapped());
+
+        let flooded: Vec<bool> = (0..100).map(|_| answering.room_for(sender(1), 5)).collect();
+        let mapped_room = answering.room_for(mapped, 1);
+
+        assert_eq!(
+            flooded.iter().filter(|room| **room).count() as u32,
+            ANSWERS_A_SENDER_HAS_A_SECOND_AT_MOST / 5
+        );
+        assert!(!mapped_room, "a mapped address escaped its share");
+        assert!(answering.room_for(sender(2), 5));
+
+        answering.began -= A_SECOND;
+
+        assert!(answering.room_for(sender(1), 5));
     }
 }
