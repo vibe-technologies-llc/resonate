@@ -1510,10 +1510,10 @@ A card on a shelf is a cover cell as an album's is (the mosaic at the shelves' 1
   so an overlay on it belonged to the list shown and was built anew when the first character typed
   or the last deleted swapped the shelf for its results, and the field came back unfocused with the
   keyboard down. The Songs shelf likewise holds one toolbar over both lists (`SongsToolbar`),
-  *Select* disabled rather than taken away while a search is asked. The first song under a results
-  heading hides its top separator (`listRowSeparator` on the top edge), which a plain list draws
-  under a section heading at the row's text inset, so it stood alone and indented above the first
-  song; the browsed shelf's lead row hides the same line. The Search tab dismisses the keyboard interactively on a drag and the Library tab
+  *Select* disabled rather than taken away while a search is asked. The Songs results' count is a
+  `ShelfHeader` row with its separators hidden, as the browsed shelf's is, and *Showing the best N*
+  a row beneath them, never a `Section` header and footer: the plain list drew that header centred
+  under an indented line of its own. The Search tab dismisses the keyboard interactively on a drag and the Library tab
   dismisses it immediately. Choosing a result (a song played, an album or artist opened) drops the field's focus first
   (`Keyboard.stow`, `SearchResults.chosen`), resigning the first responder rather than binding `searchFocused`, whose focus binding fought the system field as it moved above the keyboard. A library search shows no spinner: the last answer
   stays until the next lands, a few hundred milliseconds after the last keystroke. A toolbar

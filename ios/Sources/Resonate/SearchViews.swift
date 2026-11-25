@@ -70,7 +70,6 @@ struct SearchResults: View, Equatable {
         Section {
             ForEach(found.tracks.prefix(songsAtTop), id: \.id) { track in
                 songRow(track, among: found.tracks, query)
-                    .listRowSeparator(track.id == found.tracks.first?.id ? .hidden : .automatic, edges: .top)
             }
         } header: {
             SeeAllHeader(title: SearchScope.songs.label, more: found.trackCount > songsAtTop) { scope = .songs }
@@ -93,17 +92,17 @@ struct SearchResults: View, Equatable {
 
     @ViewBuilder
     private func songs(_ found: LibrarySearch, _ query: String) -> some View {
-        Section {
-            ForEach(found.tracks, id: \.id) { track in
-                songRow(track, among: found.tracks, query)
-                    .listRowSeparator(track.id == found.tracks.first?.id ? .hidden : .automatic, edges: .top)
-            }
-        } header: {
-            Text(said("counted.songs", Int(found.trackCount)))
-        } footer: {
-            if found.trackCount > found.tracks.count {
-                Text(said("search.showing-best", found.tracks.count))
-            }
+        ShelfHeader(title: said("counted.songs", Int(found.trackCount))) {}
+            .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+            .listRowSeparator(.hidden)
+        ForEach(found.tracks, id: \.id) { track in
+            songRow(track, among: found.tracks, query)
+        }
+        if found.trackCount > found.tracks.count {
+            Text(said("search.showing-best", found.tracks.count))
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .listRowSeparator(.hidden)
         }
     }
 
