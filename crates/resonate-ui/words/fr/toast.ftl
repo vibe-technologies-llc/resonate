@@ -25,6 +25,7 @@ autoeq-refused = AutoEq a refusé la demande
 autoeq-unreadable = La réponse de AutoEq ne pouvait pas être lue
 profile-store = le fichier de profil ne pouvait pas être lu ou écrit
 not-a-profile = ce fichier n’est pas un profil égalisateur
+peak-too-high = ce profil relève trop le son
 no-such-profile = ce profil n’est plus gardé
 name-not-usable = ce nom ne peut pas être utilisé pour un profil
 too-large = le fichier est trop grand

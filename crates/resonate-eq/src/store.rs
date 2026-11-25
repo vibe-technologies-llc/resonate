@@ -10,7 +10,7 @@ use std::{
 };
 
 use resonate_core::{
-    eq::Profile,
+    eq::{BOOST_AT_MOST_DB, FITTED_AT, Profile},
     file_facts,
     naming::{self, NAME_BYTES_AT_MOST},
     text::{self, TextEncoding, UTF8_BOM},
@@ -119,6 +119,8 @@ pub struct Kept {
     pub profile: Profile,
     pub converted: bool,
     pub passed_over: usize,
+    pub unread_values: usize,
+    pub conditionals: usize,
     pub approximated: usize,
     pub clamped: usize,
     pub bytes: Vec<u8>,
@@ -416,10 +418,22 @@ impl Store {
                 path: from.to_path_buf(),
             });
         }
+
+        let peak_db = loudest_lift_db(&reading.profile);
+
+        if peak_db > f64::from(BOOST_AT_MOST_DB) {
+            return Err(Error::PeakTooHigh {
+                path: from.to_path_buf(),
+                peak_db,
+                limit_db: f64::from(BOOST_AT_MOST_DB),
+            });
+        }
         Ok(Kept {
             converted: reading.profile.target().is_some(),
             profile: reading.profile,
             passed_over: reading.passed_over,
+            unread_values: reading.unread_values,
+            conditionals: reading.conditionals,
             approximated: reading.approximated,
             clamped: reading.clamped,
             bytes,
@@ -494,6 +508,10 @@ impl Store {
         let staged = staging_name_for(to);
         Self::written_and_synced(&staged, to, &rendered).map_err(Self::failed(to, StoreOp::Write))
     }
+}
+
+fn loudest_lift_db(profile: &Profile) -> f64 {
+    profile.preamp().decibels() + profile.peak_db(FITTED_AT)
 }
 
 fn staging_name_for(path: &Path) -> PathBuf {
@@ -639,7 +657,10 @@ mod tests {
         sync::atomic::{AtomicU64, Ordering},
     };
 
-    use resonate_core::eq::{Band, BandGain, BandKind, Frequency, Preamp, Q};
+    use resonate_core::{
+        eq::{Band, BandGain, BandKind, Frequency, MAX_BANDS, Preamp, Q},
+        text::LegacyEncoding,
+    };
 
     use super::*;
 
@@ -914,6 +935,86 @@ mod tests {
         fs::write(&from, bytes).expect("a writable file");
 
         assert!(matches!(Store::read_in(&from), Err(Error::TooLarge { .. })));
+    }
+
+    #[test]
+    fn a_file_of_stacked_boosts_is_refused_rather_than_imported_past_the_bound() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+
+        fs::create_dir_all(&folder).expect("a writable folder");
+
+        let source = folder.join("source");
+
+        fs::create_dir_all(&source).expect("a writable folder");
+
+        let from = source.join("stacked.txt");
+        let bells = (1..=MAX_BANDS)
+            .map(|at| format!("Filter {at}: ON PK Fc 1000 Hz Gain 40 dB Q 1\n"))
+            .collect::<String>();
+
+        fs::write(&from, format!("Preamp: 40 dB\n{bells}")).expect("a writable file");
+
+        let Err(Error::PeakTooHigh {
+            peak_db, limit_db, ..
+        }) = scratch.store.import(&from, None)
+        else {
+            panic!("a peak past the bound is refused");
+        };
+
+        assert!(peak_db > limit_db);
+        assert_eq!(limit_db, f64::from(BOOST_AT_MOST_DB));
+        assert!(scratch.store.names().expect("it walks").is_empty());
+    }
+
+    #[test]
+    fn a_boost_the_preamp_takes_back_is_imported() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+
+        fs::create_dir_all(&folder).expect("a writable folder");
+
+        let from = folder.join("held.txt");
+
+        fs::write(
+            &from,
+            "Preamp: -40 dB\nFilter 1: ON PK Fc 1000 Hz Gain 40 dB Q 1\n\
+             Filter 2: ON PK Fc 1000 Hz Gain 24 dB Q 1\n",
+        )
+        .expect("a writable file");
+
+        let (_, kept) = scratch.store.import(&from, None).expect("it imports");
+
+        assert_eq!(kept.profile.bands().len(), 2);
+    }
+
+    #[test]
+    fn a_forty_kibibyte_file_in_a_cyrillic_code_page_imports() {
+        let scratch = Scratch::new();
+        let folder = scratch.store.folder().to_path_buf();
+
+        fs::create_dir_all(&folder).expect("a writable folder");
+
+        let from = folder.join("cyrillic.txt");
+        let comment = "# Профиль для наушников, подобранный на слух по измерениям комнаты\n";
+        let repeats = 40 * 1024 / comment.chars().count() + 1;
+
+        let body = format!(
+            "Preamp: -3 dB\nFilter 1: ON PK Fc 1000 Hz Gain 3 dB Q 1\n{}",
+            comment.repeat(repeats)
+        );
+        let bytes = text::encoded(&body, TextEncoding::Legacy(LegacyEncoding::WINDOWS_1251))
+            .expect("every letter fits");
+
+        assert!(bytes.len() > 40 * 1024);
+        assert!(bytes.len() < apo::LARGEST_PROFILE);
+        assert!(body.len() > apo::LARGEST_PROFILE);
+
+        fs::write(&from, &bytes).expect("a writable file");
+
+        let (_, kept) = scratch.store.import(&from, None).expect("it imports");
+
+        assert_eq!(kept.profile.bands().len(), 1);
     }
 
     #[test]

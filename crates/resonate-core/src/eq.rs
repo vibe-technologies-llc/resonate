@@ -8,6 +8,7 @@ use std::{
 use crate::{ChannelLayout, ChannelPosition, Error, Result, SampleRate, words};
 
 pub const MAX_BANDS: usize = 32;
+pub const BOOST_AT_MOST_DB: f32 = 24.0;
 
 const CENTIHERTZ_PER_HERTZ: f64 = 100.0;
 const MILLI_DECIBELS_PER_DECIBEL: f64 = 1_000.0;

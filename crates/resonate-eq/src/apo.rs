@@ -8,12 +8,19 @@ use crate::{EqOp, Error, Result, graphic};
 
 pub const LARGEST_PROFILE: usize = 64 * 1024;
 
+const UTF8_BYTES_A_BYTE_BECOMES_AT_MOST: usize = 3;
+const LARGEST_TEXT: usize = LARGEST_PROFILE * UTF8_BYTES_A_BYTE_BECOMES_AT_MOST;
 const LINES_AT_MOST: usize = 4_096;
 const PREAMP: &str = "preamp:";
 const FILTER: &str = "filter";
 const COMMENT: char = '#';
 const CHANNEL: &str = "channel:";
 const DEVICE: &str = "device:";
+const IF: &str = "if:";
+const ELSE_IF: &str = "elseif:";
+const ELSE: &str = "else:";
+const END_IF: &str = "endif:";
+const INCLUDE: &str = "include:";
 const EVERY_CHANNEL: &str = "all";
 const EVERY_DEVICE: &str = "all";
 const CHANNEL_NAMES: [&str; ChannelSet::NAMED_AT_MOST] =
@@ -66,8 +73,34 @@ fn spelled_channels(channels: ChannelSet) -> String {
 pub struct Reading {
     pub profile: Profile,
     pub passed_over: usize,
+    pub unread_values: usize,
+    pub conditionals: usize,
     pub approximated: usize,
     pub clamped: usize,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Conditional {
+    Opens,
+    Turns,
+    Closes,
+    Includes,
+}
+
+impl Conditional {
+    fn of(folded: &str) -> Option<Self> {
+        if folded.starts_with(IF) {
+            Some(Self::Opens)
+        } else if folded.starts_with(ELSE_IF) || folded.starts_with(ELSE) {
+            Some(Self::Turns)
+        } else if folded.starts_with(END_IF) {
+            Some(Self::Closes)
+        } else if folded.starts_with(INCLUDE) {
+            Some(Self::Includes)
+        } else {
+            None
+        }
+    }
 }
 
 pub fn read_number(text: &str) -> Option<f64> {
@@ -232,6 +265,7 @@ impl Bandwidth {
 
 #[derive(Default)]
 struct Written {
+    unread: usize,
     hertz: Option<f64>,
     decibels: Option<f64>,
     q: Option<f64>,
@@ -247,8 +281,13 @@ impl Written {
             let name = words.get(at).copied().unwrap_or_default();
             let value = words.get(at + 1).copied().and_then(read_number);
             let mut taken = 2;
+            let name = name.to_ascii_uppercase();
 
-            match name.to_ascii_uppercase().as_str() {
+            if matches!(name.as_str(), "FC" | "FREQ" | "GAIN" | "Q" | "S") && value.is_none() {
+                self.unread += 1;
+            }
+
+            match name.as_str() {
                 "FC" | "FREQ" => {
                     let named_in_kilohertz = words
                         .get(at + 2)
@@ -312,6 +351,7 @@ fn rolloff_in(word: &str) -> Option<u32> {
 
 struct Taken {
     band: Band,
+    unread: usize,
     approximated: bool,
     clamped: bool,
 }
@@ -351,6 +391,7 @@ fn band_of(line: &str) -> Option<Taken> {
         .is_some_and(|rolloff| rolloff != SECOND_ORDER_DB_AN_OCTAVE);
 
     Some(Taken {
+        unread: written.unread,
         band: Band {
             on,
             ..Band::new(kind, frequency.value, gain.value, q.value)
@@ -418,10 +459,10 @@ pub fn read(text: &str) -> Result<Reading> {
 }
 
 fn walk(text: &str) -> Result<Walked> {
-    if text.len() > LARGEST_PROFILE {
+    if text.len() > LARGEST_TEXT {
         return Err(Error::TooLarge {
             op: EqOp::Parse,
-            limit: LARGEST_PROFILE,
+            limit: LARGEST_TEXT,
         });
     }
 
@@ -429,6 +470,9 @@ fn walk(text: &str) -> Result<Walked> {
     let mut target = None;
     let mut bands = Vec::new();
     let mut passed_over = 0;
+    let mut unread_values = 0;
+    let mut conditionals = 0;
+    let mut open_conditionals = 0_usize;
     let mut approximated = 0;
     let mut clamped = 0;
     let mut lines = 0;
@@ -454,6 +498,20 @@ fn walk(text: &str) -> Result<Walked> {
         }
 
         let folded = line.to_ascii_lowercase();
+
+        let conditional = Conditional::of(&folded);
+
+        match conditional {
+            Some(Conditional::Opens) => open_conditionals += 1,
+            Some(Conditional::Closes) => open_conditionals = open_conditionals.saturating_sub(1),
+            Some(Conditional::Turns | Conditional::Includes) | None => {}
+        }
+        if conditional.is_some() || open_conditionals > 0 {
+            tracing::debug!(line, "a conditional or include this build does not follow");
+            conditionals += 1;
+            passed_over += 1;
+            continue;
+        }
 
         if folded.starts_with(DEVICE) {
             another_device = match device_scope(line, &mut first_device) {
@@ -549,6 +607,11 @@ fn walk(text: &str) -> Result<Walked> {
                     tracing::debug!(line, "a filter past what this build holds, held to it");
                     clamped += 1;
                 }
+                if taken.unread > 0 {
+                    tracing::debug!(line, "a value of a filter this build could not read");
+                    unread_values += taken.unread;
+                    passed_over += taken.unread;
+                }
                 marked(&mut roles, Role::Band(bands.len()));
                 bands.push(Band {
                     channels: reaching,
@@ -592,6 +655,8 @@ fn walk(text: &str) -> Result<Walked> {
         reading: Reading {
             profile,
             passed_over,
+            unread_values,
+            conditionals,
             approximated,
             clamped,
         },
@@ -1185,12 +1250,77 @@ mod tests {
     }
 
     #[test]
+    fn a_value_that_does_not_read_is_counted_beside_the_default_it_becomes() {
+        let reading = read(
+            "Filter 1: ON PK Fc 1000 Hz Gain -6dB Q 1\n\
+             Filter 2: ON PK Fc 2000 Hz Gain 3 dB Q 1.x\n\
+             Filter 3: ON PK Fc 3000 Hz Gain 3 dB Q 1\n",
+        )
+        .expect("it reads");
+
+        assert_eq!(reading.unread_values, 2);
+        assert_eq!(reading.passed_over, 2);
+        assert_eq!(reading.conditionals, 0);
+        assert_eq!(reading.profile.bands().len(), 3);
+        assert_eq!(
+            reading.profile.bands().first().map(|band| band.gain),
+            Some(BandGain::FLAT)
+        );
+    }
+
+    #[test]
+    fn a_conditional_and_an_include_are_counted_and_the_filters_inside_are_left_out() {
+        let reading = read(
+            "Filter 1: ON PK Fc 1000 Hz Gain -6dB Q 1\n\
+             If: $device == speakers\n\
+             Filter 2: ON PK Fc 2000 Hz Gain 3 dB Q 1\n\
+             Preamp: -9 dB\n\
+             ElseIf: $device == phones\n\
+             Filter 3: ON PK Fc 3000 Hz Gain 3 dB Q 1\n\
+             Else:\n\
+             Filter 4: ON PK Fc 4000 Hz Gain 3 dB Q 1\n\
+             EndIf:\n\
+             Include: more.txt\n\
+             Filter 5: ON PK Fc 5000 Hz Gain 2 dB Q 1\n",
+        )
+        .expect("it reads");
+        let centres: Vec<f64> = reading
+            .profile
+            .bands()
+            .iter()
+            .map(|band| band.frequency.hertz())
+            .collect();
+
+        assert_eq!(centres, [1_000.0, 5_000.0]);
+        assert_eq!(reading.profile.preamp(), Preamp::NONE);
+        assert_eq!(reading.unread_values, 1);
+        assert_eq!(reading.conditionals, 9);
+        assert_eq!(reading.passed_over, 10);
+    }
+
+    #[test]
+    fn a_conditional_nested_in_another_holds_back_until_the_outer_one_closes() {
+        let reading = read(
+            "If: a\n\
+             If: b\n\
+             EndIf:\n\
+             Filter 1: ON PK Fc 1000 Hz Gain 3 dB Q 1\n\
+             EndIf:\n\
+             Filter 2: ON PK Fc 2000 Hz Gain 3 dB Q 1\n",
+        )
+        .expect("it reads");
+
+        assert_eq!(reading.profile.bands().len(), 1);
+        assert_eq!(reading.conditionals, 5);
+    }
+
+    #[test]
     fn a_profile_past_the_ceilings_is_refused_rather_than_truncated() {
         let long = "x\n".repeat(LINES_AT_MOST + 1);
 
         assert!(matches!(read(&long), Err(Error::TooManyLines { .. })));
 
-        let wide = "x".repeat(LARGEST_PROFILE + 1);
+        let wide = "x".repeat(LARGEST_TEXT + 1);
 
         assert!(matches!(read(&wide), Err(Error::TooLarge { .. })));
     }
@@ -1263,12 +1393,13 @@ mod tests {
 
     const ANNOTATED: &str = "# measured on a rig\n\
                              Include: shared.txt\n\
+                             If: 1 > 0\n\
+                             EndIf:\n\
                              Device: Mine\n\
                              Preamp: -3 dB\n\
                              Preamp: -1 dB\n\
                              # the low end\n\
                              Filter 1: ON LSC Fc 105 Hz Gain 6.4 dB Q 0.70\n\
-                             If: 1 > 0\n\
                              # the presence\n\
                              Filter 2: ON PK Fc 2000 Hz Gain -2 dB Q 1.4\n\
                              Device: Another Headphone\n\
@@ -1302,7 +1433,7 @@ mod tests {
         let mut wanted = lines_of(ANNOTATED);
         let replaced = "Filter 2: ON PK Fc 2000 Hz Gain -4.500 dB Q 1.400";
 
-        wanted[9] = replaced;
+        wanted[10] = replaced;
 
         assert_eq!(lines_of(&text), wanted);
         assert_eq!(read_profile(&text).ok(), Some(moved));
@@ -1353,7 +1484,7 @@ mod tests {
             "Filter 3: ON PK Fc 8000 Hz Gain 3.000 dB Q 2.000"
         );
         assert_eq!(
-            lines_of(&grown)[10],
+            lines_of(&grown)[11],
             filters[2],
             "it did not follow the last filter"
         );

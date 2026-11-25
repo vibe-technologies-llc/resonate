@@ -4,7 +4,8 @@ use resonate_analysis::{Applied, BandGains, Watch};
 use resonate_core::{
     SampleRate,
     eq::{
-        Band, BandGain, BandKind, ChannelSet, FITTED_AT, Frequency, MAX_BANDS, Preamp, Profile, Q,
+        BOOST_AT_MOST_DB, Band, BandGain, BandKind, ChannelSet, FITTED_AT, Frequency, MAX_BANDS,
+        Preamp, Profile, Q,
     },
 };
 
@@ -16,8 +17,8 @@ pub const EQUALISER_CENTRES: [f64; 10] = [
 
 pub const LOWEST_HZ: f32 = 20.0;
 pub const HIGHEST_HZ: f32 = 20_000.0;
-pub const GAIN_AT_MOST_DB: f32 = 24.0;
-pub const PREAMP_AT_MOST_DB: f32 = 24.0;
+pub const GAIN_AT_MOST_DB: f32 = BOOST_AT_MOST_DB;
+pub const PREAMP_AT_MOST_DB: f32 = BOOST_AT_MOST_DB;
 pub const Q_AT_LEAST: f32 = 0.1;
 pub const Q_AT_MOST: f32 = 40.0;
 

@@ -25,6 +25,7 @@ autoeq-refused = AutoEq turned the request down
 autoeq-unreadable = AutoEq's answer couldn't be read
 profile-store = the profile file couldn't be read or written
 not-a-profile = that file isn't an equaliser profile
+peak-too-high = that profile lifts the sound too far
 no-such-profile = that profile isn't kept any more
 name-not-usable = that name can't be used for a profile
 too-large = the file is too large

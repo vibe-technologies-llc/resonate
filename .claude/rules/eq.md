@@ -1078,12 +1078,25 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   parameters by name; `BW` and `S` convert to Q (`BW` in the unit it names: `Oct`, or `Hz` as centre
   over width; unnamed, octaves), comma decimals read, `#` lines are comments. Only `LARGEST_PROFILE`
   (64 KiB of the file's own bytes, weighed before decoding: `Error::TooLarge`) and `LINES_AT_MOST`
-  (4096, `Error::TooManyLines`) refuse; a filter past `MAX_BANDS` is passed over and counted. **A
+  (4096, `Error::TooManyLines`) refuse; a filter past `MAX_BANDS` is passed over and counted. **The
+  bytes decide the size**: `walk`'s own bound on decoded text (`LARGEST_TEXT`, three times the bytes,
+  the most a byte of any code page becomes in UTF-8) is only the backstop for a caller handing it text,
+  so a 40 KiB windows-1251 file imports
+  (`a_forty_kibibyte_file_in_a_cyrillic_code_page_imports`). **A value that does not read** (`Gain -6dB`,
+  a key with no number) takes its default and is counted in `unread_values` and `passed_over`; **`If:`,
+  `ElseIf:`, `Else:`, `EndIf:` and `Include:` are followed by nothing**: each is counted in
+  `conditionals` and `passed_over`, and every line between an `If:` and its `EndIf:` is left out and
+  counted the same way, since the reader cannot know which branch is in force
+  (`a_conditional_and_an_include_are_counted_and_the_filters_inside_are_left_out`). **A profile is
+  imported only if what it lifts stays within `BOOST_AT_MOST_DB`** (24 dB, core's, the bound the
+  phones hold a band and the preamp to): `Store::read_in` weighs the preamp and `peak_db` and refuses
+  with `Error::PeakTooHigh` rather than cut, since a cut preamp could not reach below the deepest for
+  stacked boosts (`a_file_of_stacked_boosts_is_refused_rather_than_imported_past_the_bound`). **A
   file correcting several devices is read as the first it names** (`Device: all` or none reaches;
   lines under another device are never summed in:
   `a_file_correcting_two_devices_is_read_as_the_first_of_them`). `read_number` is exported so the
   pane's cells agree. **What a read gave up is said, CLI and window alike**: `Reading`/`Kept` carry
-  `passed_over`, `approximated` (a non-second-order rolloff word) and `clamped` (a value held to what
+  `passed_over` (the total, `unread_values` and `conditionals` among it), `approximated` (a non-second-order rolloff word) and `clamped` (a value held to what
   this build holds).
 - **An AutoEq GraphicEQ line is a conversion, and the importer says so.** Its 127 points are fitted
   onto the 31 ISO third-octave centres at `Q::THIRD_OCTAVE`, iterating the bank's response against
@@ -1337,7 +1350,8 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
 - **Cached in catalog and process**: `corrections_index`, `corrections_kept` are tables of `V1` (first
   `CHECK (id = 1)`; `library.md`). Ages are `resonate-online`
   constants (index 30 days, device 90); a device with nothing is kept as a miss. `Remembered` is
-  `Fresh` or `Stale`, stale read where asking fails, so a no-network session still searches. No
+  `Fresh` or `Stale`, stale read where asking fails, so a no-network session still searches. A stamp
+  ahead of now is stale, so a clock set back asks again (`a_stamp_ahead_of_now_is_stale_so_a_clock_set_back_asks_again`). No
   catalog: the parsed index is held for the run.
 - **A URL is escaped once, in `query.rs`**: `escape_path` = `escape_query` per segment.
 

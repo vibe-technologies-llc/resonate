@@ -51,6 +51,13 @@ pub enum Error {
     #[error("{} holds neither a parametric nor a graphic equaliser", path.display())]
     NotAProfile { path: PathBuf },
 
+    #[error("{} lifts the sound by {peak_db:.1} dB, past the {limit_db:.0} dB a profile may reach", path.display())]
+    PeakTooHigh {
+        path: PathBuf,
+        peak_db: f64,
+        limit_db: f64,
+    },
+
     #[error("no profile is kept under that name")]
     NoSuchProfile,
 

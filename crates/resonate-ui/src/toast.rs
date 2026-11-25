@@ -394,6 +394,7 @@ pub(crate) fn eq_could_not(doing: &str, error: &resonate_eq::Error) -> Notice {
         Eq::Unreadable { .. } => Some(words::toast::autoeq_unreadable()),
         Eq::Store { .. } => Some(words::toast::profile_store()),
         Eq::NotAProfile { .. } => Some(words::toast::not_a_profile()),
+        Eq::PeakTooHigh { .. } => Some(words::toast::peak_too_high()),
         Eq::NoSuchProfile => Some(words::toast::no_such_profile()),
         Eq::NameNotUsable => Some(words::toast::name_not_usable()),
         Eq::TooLarge { .. } => Some(words::toast::too_large()),
