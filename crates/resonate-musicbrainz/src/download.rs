@@ -6,7 +6,7 @@ use std::{
 };
 
 use resonate_core::{Gate, writer::Held};
-use resonate_fetch::{Ranged, Trusted, Unfetched, configured, downloading_agent};
+use resonate_fetch::{Ranged, Trusted, Unfetched, configured, downloading_agent, followed};
 use sha2::{Digest, Sha256};
 use ureq::Agent;
 
@@ -25,7 +25,6 @@ const VERIFIED: &str = "verified";
 const ANSWERED_WITHIN: Duration = Duration::from_secs(30);
 const BROKEN_OFF_AFTER: Duration = Duration::from_secs(60);
 const RESUMED_AFTER: Duration = Duration::from_secs(2);
-const REDIRECTS_UREQ_FOLLOWS: u32 = 10;
 const LONGEST_LISTING: u64 = 64 * 1024;
 const COPIED_AT_ONCE: usize = 1024 * 1024;
 const RANGE_PAST_THE_END: u16 = 416;
@@ -47,13 +46,12 @@ pub fn agent() -> Agent {
 
 fn agent_carrying(carried: Carried) -> Agent {
     let config = configured(ANSWERED_WITHIN, Trusted::BuiltInRoots)
-        .max_redirects(REDIRECTS_UREQ_FOLLOWS)
         .https_only(carried == Carried::Encrypted);
     downloading_agent(config, BROKEN_OFF_AFTER)
 }
 
 fn listed(agent: &Agent, url: &str) -> Result<String> {
-    let response = agent.get(url).call().map_err(|error| Error::Fetch {
+    let response = followed(url, |url| agent.get(url).call()).map_err(|error| Error::Fetch {
         url: url.to_owned(),
         source: resonate_fetch::as_io(error),
     })?;
@@ -201,17 +199,19 @@ fn packet_from(
     largest: u64,
 ) -> Result<Option<Packet>> {
     let too_large = Error::PacketTooLarge { sequence, largest };
-    let response = agent
-        .get(url)
-        .query("token", token)
-        .config()
-        .http_status_as_error(false)
-        .build()
-        .call()
-        .map_err(|error| Error::Fetch {
-            url: url.to_owned(),
-            source: resonate_fetch::as_io(error),
-        })?;
+    let response = followed(url, |url| {
+        agent
+            .get(url)
+            .query("token", token)
+            .config()
+            .http_status_as_error(false)
+            .build()
+            .call()
+    })
+    .map_err(|error| Error::Fetch {
+        url: url.to_owned(),
+        source: resonate_fetch::as_io(error),
+    })?;
     let status = response.status().as_u16();
 
     if status == NOT_YET_PUBLISHED {
@@ -824,6 +824,80 @@ mod tests {
                     .find_map(|line| line.strip_prefix("range: ").map(str::to_owned))
             })
             .collect()
+    }
+
+    fn redirecting_to(location: String) -> Answer {
+        Box::new(move |_| {
+            format!(
+                "HTTP/1.1 302 Found\r\nLocation: {location}\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+            )
+            .into_bytes()
+        })
+    }
+
+    fn refused_as_redirected<T>(fetched: &Result<T>) -> bool {
+        matches!(
+            fetched,
+            Err(Error::Fetch { source, .. }) if source.kind() == io::ErrorKind::PermissionDenied
+        )
+    }
+
+    #[test]
+    fn a_redirect_off_the_origin_is_never_followed_for_a_listing_a_packet_or_an_archive() {
+        let elsewhere = std::net::TcpListener::bind("127.0.0.1:0").expect("a port");
+        let location = format!("http://{}/moved", elsewhere.local_addr().expect("bound"));
+        let (url, serving) = served_in_turn(vec![
+            redirecting_to(location.clone()),
+            redirecting_to(location.clone()),
+            redirecting_to(location),
+        ]);
+        let into = a_folder("redirected");
+        let partial = named(&into.join(CORE_ARCHIVE), PARTIAL);
+
+        let listing = listed(&plain_agent(), &url);
+        let packet = packet_from(&plain_agent(), &url, "a-token", 8, LARGEST_PACKET);
+        let archive = copied(
+            &plain_agent(),
+            &url,
+            &partial,
+            0,
+            &Gate::open(),
+            &Building::default(),
+        );
+        let asked = serving.join().expect("served");
+
+        elsewhere
+            .set_nonblocking(true)
+            .expect("a listener that need not wait");
+
+        let reached = elsewhere.accept();
+
+        let _ = fs::remove_dir_all(&into);
+
+        assert!(refused_as_redirected(&listing), "{listing:?}");
+        assert!(refused_as_redirected(&packet), "{:?}", packet.err());
+        assert!(refused_as_redirected(&archive), "{archive:?}");
+        assert_eq!(asked.len(), 3);
+        assert!(
+            reached
+                .as_ref()
+                .is_err_and(|error| error.kind() == io::ErrorKind::WouldBlock),
+            "the other port was asked: {reached:?}"
+        );
+    }
+
+    #[test]
+    fn a_redirect_within_the_origin_is_followed() {
+        let (url, serving) = served_in_turn(vec![
+            redirecting_to("/moved/LATEST".to_owned()),
+            whole(b"20261104-002222\n"),
+        ]);
+
+        let listing = listed(&plain_agent(), &url);
+        let asked = serving.join().expect("served");
+
+        assert_eq!(listing.expect("the listing"), "20261104-002222\n");
+        assert!(asked[1].starts_with("get /moved/latest "), "{}", asked[1]);
     }
 
     #[test]

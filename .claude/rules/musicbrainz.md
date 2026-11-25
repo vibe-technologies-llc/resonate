@@ -325,9 +325,14 @@ the export it came from is the source.
 **The download (`download.rs`, feature `download`).** `download::agent` is `https_only`, since
 `SHA256SUMS` comes over the same agent as the archives and a redirect to plain HTTP would let the
 network replace both, and a packet's query carries the token; only the tests' loopback servers are
-asked over plain HTTP (`Carried::Plain`, `the_export_is_never_asked_for_over_plain_http`). It puts back
-ureq's own following of up to `REDIRECTS_UREQ_FOLLOWS` (10) redirects over `resonate_fetch::configured`'s
-none (`providers.md`), to any host but never down to plain HTTP.
+asked over plain HTTP (`Carried::Plain`, `the_export_is_never_asked_for_over_plain_http`). It
+follows no redirect itself (`resonate_fetch::configured`'s none); `LATEST`, `SHA256SUMS` and a
+packet are asked through `followed` and each archive through `Ranged`, which follows the same way,
+so a redirect is taken only within the origin asked (`providers.md`). MetaBrainz needs no more:
+`data.metabrainz.org` serves the export's files itself, and the replication API serves a packet
+from its own host through nginx's internal redirect, never a `Location` elsewhere
+(`a_redirect_off_the_origin_is_never_followed_for_a_listing_a_packet_or_an_archive`,
+`a_redirect_within_the_origin_is_followed`).
 
 1. `latest` reads `LATEST` under `DUMP_SERVER` (a name of digits and dashes alone).
 2. `fetched` reads `SHA256SUMS`, then downloads both archives into `downloads/<dump>/`.
