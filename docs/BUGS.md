@@ -48,24 +48,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   GETs inside its network. Set `max_redirects(0)` in `configured()` and follow by hand only to the
   same host and never from https to http. Done when each provider's fake server answering `302` to a
   second loopback port sees no request arrive on that port.
-- [M · 0.18.1] Cap a row and the decompressed bytes in the MusicBrainz import and replication
-  readers. **Medium, builder.** `loaded` reads a COPY row with `read_until` and checks it ended only
-  afterwards (`crates/resonate-musicbrainz/src/mirror/import.rs:496-505`), `pending_in` splits
-  `pending_data` the same way (`mirror/replicated.rs:292`, `:350-379`), `packet_read` decodes with
-  no cap on its output (`LARGEST_PACKET` bounds the compressed bytes; `read_whole` is test-only),
-  and `download.rs:17`, `:235-249` reads a packet whole into up to 1 GiB before parsing it. A
-  `--from` export or a packet whose table is a long run with no newline fills memory, and a huge
-  ignored tar entry decodes for hours without seeing a cancel. Refuse a row past a few MiB as a
-  typed error, bound the decoder with `take`, stream the packet into `packet_read` and lower
-  `LARGEST_PACKET` to a measured bound. Done when a 100 KB packet expanding to a gigabyte with no
-  newline is refused within a bounded allocation, in a test.
-- [S · 0.18.1] Bound the replication JSON parser's depth. **Medium, builder.** `Parser::value` and
-  `skipped` recurse for every `[` or `{`
-  (`crates/resonate-musicbrainz/src/mirror/replicated.rs:148-206`), so a `pending_data` column of
-  tens of thousands of `[` overflows the follower thread's stack (spawned at
-  `crates/resonate/src/musicbrainz.rs:390`) and aborts the player, again every hour as the packet is
-  fetched anew; the fuzz target's 4 KiB inputs never reach that depth. Carry a depth and answer
-  `None` past a small limit. Done when a unit test with 100 000 `[` in a column refuses the row.
 - [S · 0.18.1] Fetch a media server's description only from a neighbour. **Medium, builder.**
   `could_be_another_address_beside` admits public, link-local and this machine's own addresses
   (`crates/resonate-upnp/src/located.rs:109-117`), so one spoofed answer to a server search makes
