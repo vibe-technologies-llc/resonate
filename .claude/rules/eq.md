@@ -816,7 +816,7 @@ The stereo image, apart from the transducer: both are stereo-only, off by defaul
   `Channel`s (input *k / 2* to output *k % 2*) only when the impulse is crossed **and** the stream is
   stereo; on any other layout the four channels are taken one a stream channel as before. Each
   output sums two channels' ready samples, so the cost is that of four mono convolutions. **Headroom
-  is the larger of each ear's summed magnitudes** (`crossed_gain`: `|LL| + |RL|`, `|LR| + |RR|` at
+  is the larger of each ear's summed magnitudes** (`crossed_gains`: `|LL| + |RL|`, `|LR| + |RR|` at
   each bin), so `with_headroom` holds coherent input at both ears under unity. `Impulse::at`
   resamples each of the four alike. The preamp fit's `Applied` still reads a correction channel by
   channel (the loudest pair), so the model understates a crossed response's sum; the decode
