@@ -209,6 +209,14 @@ and its zone's id and sends every command through `Zones::send` (`audio.md`).
   on a new connection is not built. The poll's telling is one function,
   `tell_the_desktop`, for the bus loop and for Windows's pipe service, which has no bus to publish
   on and runs only that (`toast_what_plays`). A failed `Inhibit` still counts as taken.
+  **An `Inhibit` that timed out may still be granted**: `hold` names its request with a
+  `handle_token` (`handle_of`, the portal's `request/SENDER/TOKEN` path) and, on a `TimedOut`
+  reply, keeps that predicted path as the request, so `release` closes a late grant too. A `Close`
+  that fails (the request not there yet) goes to `Awake`'s `closing` list for `SETTLED_WITHIN`
+  (60 s); `reconcile`, run after every errand, retries it and the thread waits `SETTLING_EVERY`
+  (1 s) instead of `WATCHED_EVERY` while any is left
+  (`an_inhibit_granted_after_its_deadline_is_closed_once_the_session_is_let_go`, a stand-in portal
+  answering after the connection's deadline; it skips without a session bus or where a real portal owns the name).
   Either service missing = debug records, never a refusal to start. `trash.rs` is the same kind
   of errand for the catalog's deletes under Flatpak: `trash_through_the_portal` opens the file and
   passes the descriptor to `org.freedesktop.portal.Trash.TrashFile` on a connection of its own

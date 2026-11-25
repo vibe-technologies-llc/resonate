@@ -542,6 +542,7 @@ through a weak handle) and holds a `keepawake::KeepAwake` (display and idle, as 
 `IDLE`/`SUSPEND` do on Linux; on a Mac idle alone, `HOLDS_THE_DISPLAY_TOO`, so the screen may still
 sleep) while any is `Playing` or `Buffering`. `SetThreadExecutionState` belongs to the thread that
 set it, so the hold is made and dropped on that thread alone; dropping `Awake` stops and joins it.
+A refused hold is retried every second but warned of once (`Keeping`: warned again after the machine was kept or no longer wanted), the retries going to `debug`.
 
 ## Capture
 

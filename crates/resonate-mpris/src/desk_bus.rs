@@ -18,6 +18,7 @@ use crate::{
 };
 
 const DEADLINE: Duration = Duration::from_secs(2);
+const SETTLING_EVERY: Duration = Duration::from_secs(1);
 const WATCHED_EVERY: Duration = Duration::from_secs(5);
 const REOPENED_AT_MOST_EVERY: Duration = Duration::from_secs(10);
 
@@ -41,7 +42,8 @@ impl Desk {
         let mut reopening = Reopening::default();
 
         loop {
-            let errand = match errands.recv_timeout(WATCHED_EVERY) {
+            let waiting = reached.as_ref().map_or(WATCHED_EVERY, Reached::looks_every);
+            let errand = match errands.recv_timeout(waiting) {
                 Ok(errand) => Some(errand),
                 Err(RecvTimeoutError::Timeout) => None,
                 Err(RecvTimeoutError::Disconnected) => break,
@@ -100,6 +102,14 @@ impl Reached {
         self.connection.is_closed()
     }
 
+    fn looks_every(&self) -> Duration {
+        if self.awake.as_ref().is_some_and(Awake::is_settling) {
+            SETTLING_EVERY
+        } else {
+            WATCHED_EVERY
+        }
+    }
+
     fn attend(&mut self, errand: Option<Errand>, wanted: bool) {
         match (errand, self.notifier.as_ref()) {
             (Some(Errand::Show(shown)), Some(notifier)) => notifier.show(&shown),
@@ -110,6 +120,9 @@ impl Reached {
             (Some(Grip::Take), Some(awake)) => awake.hold(),
             (Some(Grip::LetGo), Some(awake)) => awake.release(),
             _ => {}
+        }
+        if let Some(awake) = self.awake.as_mut() {
+            awake.reconcile();
         }
     }
 
