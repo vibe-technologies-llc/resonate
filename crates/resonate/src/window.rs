@@ -91,7 +91,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
 
     let keeps = resuming(&config, Some(&library));
     #[cfg(feature = "sync")]
-    let files = crate::together::invitations_taken_out(&cli.files);
+    let (files, arrivals) = crate::together::invitations_among(&cli.files);
     #[cfg(not(feature = "sync"))]
     let files = cli.files.clone();
 
@@ -164,10 +164,7 @@ pub(crate) fn launch(cli: Cli, config: Config, library: Arc<Library>) -> Result<
     crate::musicbrainz::keep_fresh(&config);
 
     #[cfg(feature = "sync")]
-    let together = crate::together::start(&config, &library).unwrap_or_else(|error| {
-        tracing::warn!(%error, "shared playlists could not start");
-        None
-    });
+    let together = crate::together::started_in_the_window(&config, &library, arrivals);
 
     #[cfg(feature = "sync")]
     crate::party_room::in_the_window(crate::party_room::Seats {

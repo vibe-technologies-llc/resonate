@@ -1,7 +1,7 @@
 use std::{sync::Arc, thread, time::Duration};
 
 use crossbeam_channel::bounded;
-use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Recording, Resumable, Span};
+use resonate_core::{FrameSpan, MediaLocation, QueueStamp, Recording, Resumable, Span, TrackId};
 use resonate_engine::{Command, Moment, Player, Seat, SeatHeard as ZoneHeard, Sounding, TakenUp};
 use resonate_library::Library;
 use resonate_providers::{PlaysInPlace, found_exactly};
@@ -91,6 +91,15 @@ const fn as_the_party_reads(taken: TakenUp) -> SeatTakenUp {
     }
 }
 
+fn remove_by_identity(player: &Player, id: TrackId) -> resonate_engine::Result<()> {
+    let row = player.queued().rows.iter().position(|item| item.id == id);
+
+    match row {
+        Some(row) => player.send(Command::Remove(Span::one(row))),
+        None => Ok(()),
+    }
+}
+
 impl PartySeat for ZoneSeat {
     type Row = Resumable;
 
@@ -142,18 +151,21 @@ impl PartySeat for ZoneSeat {
         let library = self.library.as_deref();
         let mut added = Vec::new();
 
-        for (row, item) in queued.rows.iter().enumerate().rev() {
+        for item in queued.rows.iter().rev() {
             let stamp = QueueStamp::of([(&item.location, item.span)]).value();
 
             if known.contains(&stamp) {
                 continue;
             }
-            if let Some(song) = song_of(player, library, &item.location, item.span) {
-                added.push(song);
-            }
-            if let Err(error) = player.send(Command::Remove(Span::one(row))) {
+
+            let Some(song) = song_of(player, library, &item.location, item.span) else {
+                continue;
+            };
+
+            if let Err(error) = remove_by_identity(player, item.id) {
                 tracing::warn!(%error, "a song added during a party was left in the queue");
             }
+            added.push(song);
         }
 
         added
@@ -362,11 +374,28 @@ fn line_said(line: &PartyLine, mine: bool) -> String {
     }
 }
 
+fn settings_wanted(config: &Config, wanted: &PartyWanted) -> Result<PartySettings> {
+    let server = match wanted {
+        PartyWanted::Start { .. } => server_of(config).address(),
+        PartyWanted::Join { link } => invitation_in(link)
+            .and_then(|invitation| invitation.server)
+            .or_else(|| server_of(config).address()),
+    };
+
+    settings_for(
+        server,
+        config.sync_server_certificate.clone(),
+        config.shared_name.clone().unwrap_or_default(),
+        config.party_time_server(),
+    )
+}
+
 pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) -> Result<()> {
     if !config.syncs() {
         return Err(Error::SyncOff);
     }
 
+    let settings = settings_wanted(config, wanted)?;
     let library = crate::catalog(cli, config);
     let served = crate::Served::of(config, crate::settings_path(cli).ok());
 
@@ -383,9 +412,6 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
 
     crate::sinks::confirm_sink(&player, sink.as_ref());
 
-    let name = config.shared_name.clone().unwrap_or_default();
-    let trusted = config.sync_server_certificate.clone();
-
     let party = match wanted {
         PartyWanted::Start { files } => {
             let items = crate::arguments::queue_items_served(files, &served);
@@ -399,29 +425,15 @@ pub(crate) fn run(cli: &crate::cli::Cli, config: &Config, wanted: &PartyWanted) 
                 autoplay: true,
             })?;
 
-            Party::host(settings_for(
-                server_of(config).address(),
-                trusted,
-                name,
-                config.party_time_server(),
-            )?)
-            .map_err(Error::Party)?
+            Party::host(settings).map_err(Error::Party)?
         }
         PartyWanted::Join { link } => {
             let invitation = invitation_in(link);
             let code = invitation
                 .as_ref()
                 .map_or(link.as_str(), |one| one.code.as_str());
-            let server = invitation
-                .as_ref()
-                .and_then(|one| one.server.clone())
-                .or_else(|| server_of(config).address());
 
-            Party::join(
-                settings_for(server, trusted, name, config.party_time_server())?,
-                code,
-            )
-            .map_err(Error::Party)?
+            Party::join(settings, code).map_err(Error::Party)?
         }
     };
     let finder = Arc::new(Finder {
@@ -525,10 +537,10 @@ mod tests {
     use std::path::PathBuf;
 
     use crossbeam_channel::{Receiver, unbounded};
-    use resonate_core::Gain;
+    use resonate_core::{Gain, Switch};
     use resonate_engine::{
-        AudioSource, Backend, EngineConfig, Opener, RepeatMode, SinkChange, SinkError, SinkId,
-        SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
+        AudioSource, Backend, EngineConfig, Opener, Placement, QueueItem, RepeatMode, SinkChange,
+        SinkError, SinkId, SinkInfo, SinkResult, SinkStream, StreamRequest, Surveyor,
     };
 
     use super::*;
@@ -646,5 +658,95 @@ mod tests {
         assert_eq!(moved, vec![(known[1], known_now[1])]);
         assert!(asked.is_empty());
         assert_eq!(queued, [rows[0].location.clone(), moved_to.location]);
+    }
+
+    #[test]
+    fn a_song_added_in_a_party_that_cannot_be_told_stays_in_the_queue() {
+        let player = a_zone();
+        let seat = ZoneSeat {
+            seat: Seat::on(Arc::clone(&player)),
+            library: None,
+        };
+        let row = a_row("untold.flac");
+        let id = resonate_engine::unclaimed_id(std::iter::empty());
+
+        player
+            .request(Command::Insert {
+                items: vec![QueueItem::whole(id, row.location.clone())],
+                at: Placement::Next,
+                play: false,
+            })
+            .expect("the song sent")
+            .wait()
+            .expect("the song queued");
+
+        let asked = seat.added_here(&[]);
+
+        player
+            .request(Command::SetRepeat(RepeatMode::Off))
+            .expect("a command after any removal")
+            .wait()
+            .expect("every command before it settled");
+
+        let queued: Vec<TrackId> = player.queued().rows.iter().map(|item| item.id).collect();
+
+        assert!(asked.is_empty());
+        assert_eq!(queued, [id]);
+    }
+
+    #[test]
+    fn a_song_is_removed_by_the_identity_it_was_queued_under_and_never_by_a_row_that_moved() {
+        let player = a_zone();
+        let first = resonate_engine::unclaimed_id(std::iter::empty());
+        let second = TrackId::new(first.get() - 1).expect("another identity");
+
+        player
+            .request(Command::Insert {
+                items: vec![
+                    QueueItem::whole(first, a_row("one.flac").location),
+                    QueueItem::whole(second, a_row("two.flac").location),
+                ],
+                at: Placement::Queued,
+                play: false,
+            })
+            .expect("the songs sent")
+            .wait()
+            .expect("the songs queued");
+
+        remove_by_identity(&player, first).expect("the first removed");
+
+        player
+            .request(Command::SetRepeat(RepeatMode::Off))
+            .expect("a command after any removal")
+            .wait()
+            .expect("every command before it settled");
+
+        remove_by_identity(&player, first).expect("a song already gone is no failure");
+
+        player
+            .request(Command::SetRepeat(RepeatMode::Off))
+            .expect("a command after any removal")
+            .wait()
+            .expect("every command before it settled");
+
+        let queued: Vec<TrackId> = player.queued().rows.iter().map(|item| item.id).collect();
+
+        assert_eq!(queued, [second]);
+    }
+
+    #[test]
+    fn a_party_started_with_no_server_asks_for_none_of_the_player_and_plays_nothing() {
+        let mut config = Config::default();
+
+        config.switches.say(Switch::SyncNearbyOnly, true);
+
+        let cli = crate::fixtures::parsed(&["resonate", "party", "start", "a.flac"]);
+        let wanted = PartyWanted::Start {
+            files: vec!["a.flac".into()],
+        };
+
+        let outcome = run(&cli, &config, &wanted);
+
+        assert!(matches!(outcome, Err(Error::PartyNeedsAServer)));
     }
 }

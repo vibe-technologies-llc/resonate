@@ -189,9 +189,16 @@ paths:
   `person_named`:
   `removing_a_name_two_people_share_is_refused_and_names_both_so_either_may_be_picked_by_id`),
   `--reset PLAYLIST`; `--name NAME` writes `shared-name` and is the name the run itself starts with (`named_for_the_run`), so a `--join` carries it, and it tells the service (`Shared::named`) so every list already joined is renamed; a list whose person already carries the name is not written again (`SharedList::is_named`). It
-  waits up to 20 s for what it did to reach the server. A window holding `shared.lock` makes it
+  waits up to 20 s for what it did to reach the server and **fails
+  (`Error::SharedNotSettled { standing }`) rather than print a link or a success the server has not
+  taken**: `--share` and `--join` tell the list only once it stands `Reached` with nothing owed
+  (`settled_at`, `settled_in`), `--leave` once `Shared::leaving` no longer holds the list
+  (`settled_leaving`), and a standing the server gave for good (`ServerTooOld`, `TurnedAway`,
+  `NoServer`) ends the wait early (`not_to_be_waited_out`)
+  (`a_playlist_shared_toward_a_stopped_server_is_never_settled_so_no_link_is_told`,
+  `a_list_left_toward_a_stopped_server_is_not_settled_while_the_leaving_is_owed`). A window holding `shared.lock` makes it
   `Error::SharedBusy`. **A `resonate://shared/` or `resonate://party/` argument or `OpenUri` is an
-  invitation, not a song** (`together::accepted`, `Host::invited`), though `resonate` is a played-in-place
+  invitation, not a song** (`together::accepted`, `Host::invited`; a launch's arguments are taken out by `invitations_among` and judged by `started_in_the_window` only once `together::start` has set the server in use, so a link naming the device's own server joins at once, `a_launchs_links_are_judged_against_the_server_the_launch_runs_on`), though `resonate` is a played-in-place
   scheme (a shared playlist joins at once; a party's link is offered to the window first, `party.md`), and one given while a window is open reaches it as it was given (`Running::invite`, `mpris.md`); the desktop entry declares `x-scheme-handler/resonate`, the one claim not on the bus's list; the Windows installer registers the scheme in the user's registry (`windows.md`).
 
 - **`party start FILES` and `party join LINK` run until interrupted or the room ends** (`party.rs`), printing

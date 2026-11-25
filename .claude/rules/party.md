@@ -282,13 +282,21 @@ read `ListeningParty.chat` (`PartyChatLine`, `PartySaying`) and say through `par
 (`what_anyone_says_reaches_everyone_through_the_host_and_a_late_guest_hears_what_came_before`,
 `a_guest_saying_more_than_its_share_is_heard_only_as_far_as_its_share`).
 
+## The guest's queue and the terminal's start
+
+**A song a guest adds during a party is removed from the queue by the identity it was queued under** (`remove_by_identity`, a `TrackId`, never the row it stood at when the queue was read) **and only once it can be told to the host**: one `song_of` cannot name stays queued (`a_song_added_in_a_party_that_cannot_be_told_stays_in_the_queue`, `a_song_is_removed_by_the_identity_it_was_queued_under_and_never_by_a_row_that_moved`). `party start` reads its settings (`settings_wanted`) before it builds a player, so a device with no server plays nothing (`a_party_started_with_no_server_asks_for_none_of_the_player_and_plays_nothing`).
+
 ## The lock
 
 **The room's lock is never held across a search, a thread join or a command**: a front end reads the
 party from its drawing thread (`Together::party`, `following`, `party_shown`), and a search takes seconds.
-Playing a request next clones what it needs out of the lock, and leaving takes the room out and drops it
+Playing a request next clones what it needs out of the lock, takes the request only once the insert went (`taken_once`, so one that could not be queued stays waiting), and leaving takes the room out and drops it
 outside it, since dropping joins the seat's thread. Beginning or joining leaves any party first, so the
-old seat puts its queue back before the new one remembers it. **Taking away the zone a party is
+old seat puts its queue back before the new one remembers it, and **one change at a time**: `replaced`
+holds `CHANGING` from the new party's making to its seating (leaving takes it too), so two begins or
+joins never leave two rooms alive together
+(`beginning_and_joining_at_once_leave_one_room_and_never_two_at_a_time`,
+`a_room_that_cannot_be_made_leaves_the_one_there_is`). **Taking away the zone a party is
 seated on leaves the party first** (the window's `leave_a_party_seated_on`, the phones'
 `party_left_on`), as removing any zone is the listener's own choice; a party left on it would go on
 driving a player no zone lists, and the next zone added, given the same id, would read as following

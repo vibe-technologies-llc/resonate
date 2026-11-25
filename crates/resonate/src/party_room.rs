@@ -7,6 +7,7 @@ use std::{
 
 use crossbeam_channel::Sender;
 use parking_lot::Mutex;
+use resonate_core::Resumable;
 use resonate_engine::{Command, Placement, Player, QueueItem, Seat, ZoneId, Zones};
 use resonate_library::Library;
 use resonate_sync::{
@@ -76,6 +77,8 @@ static SEATS: LazyLock<Mutex<Option<Seats>>> = LazyLock::new(|| Mutex::new(None)
 
 static ROOM: LazyLock<Mutex<Option<Room>>> = LazyLock::new(|| Mutex::new(None));
 
+static CHANGING: Mutex<()> = Mutex::new(());
+
 static OFFERING: Mutex<Offering> = Mutex::new(Offering::Waiting(Vec::new()));
 
 fn tell_of(link: String, told: &Sender<Followed>) {
@@ -111,6 +114,14 @@ pub(crate) fn out_of_the_window() {
     leave();
     *SEATS.lock() = None;
     OFFERING.lock().closed();
+}
+
+#[cfg(test)]
+pub(crate) fn offers_waiting() -> Vec<String> {
+    match &*OFFERING.lock() {
+        Offering::Waiting(links) => links.clone(),
+        Offering::Told(_) => Vec::new(),
+    }
 }
 
 pub(crate) fn offer(text: &str) -> bool {
@@ -151,52 +162,76 @@ fn opened(party: Party, player: Arc<Player>, zone: ZoneId, seats: &Seats) -> Res
     })
 }
 
-pub(crate) fn begin(zone: ZoneId) -> Result<()> {
-    let seats = SEATS.lock().clone().ok_or(Error::PartyNeedsAServer)?;
-    let player = seats
-        .zones
-        .zone(zone)
-        .map(|zone| zone.player)
-        .ok_or(Error::PartyNeedsAServer)?;
-    let settings = settings_for(
-        seats.server.clone().address(),
-        seats.trusted.clone(),
-        seats.name.clone(),
-        seats.time_server.clone(),
-    )?;
-    let party = Party::host(settings).map_err(Error::Party)?;
+fn replaced<Held, Prepared>(
+    slot: &Mutex<Option<Held>>,
+    changing: &Mutex<()>,
+    prepare: impl FnOnce() -> Result<Prepared>,
+    open: impl FnOnce(Prepared) -> Result<Held>,
+) -> Result<()> {
+    let _changing = changing.lock();
+    let prepared = prepare()?;
 
-    leave();
+    let left = slot.lock().take();
 
-    let room = opened(party, player, zone, &seats)?;
+    drop(left);
 
-    *ROOM.lock() = Some(room);
+    let held = open(prepared)?;
+    let replaced = slot.lock().replace(held);
+
+    drop(replaced);
 
     Ok(())
 }
 
-pub(crate) fn join(code: &str, server: Option<String>, zone: ZoneId) -> Result<()> {
+fn seated_on(zone: ZoneId) -> Result<(Seats, Arc<Player>)> {
     let seats = SEATS.lock().clone().ok_or(Error::PartyNeedsAServer)?;
     let player = seats
         .zones
         .zone(zone)
         .map(|zone| zone.player)
         .ok_or(Error::PartyNeedsAServer)?;
-    let settings = settings_for(
-        server.or_else(|| seats.server.clone().address()),
-        seats.trusted.clone(),
-        seats.name.clone(),
-        seats.time_server.clone(),
-    )?;
-    let party = Party::join(settings, code).map_err(Error::Party)?;
 
-    leave();
+    Ok((seats, player))
+}
 
-    let room = opened(party, player, zone, &seats)?;
+pub(crate) fn begin(zone: ZoneId) -> Result<()> {
+    replaced(
+        &ROOM,
+        &CHANGING,
+        || {
+            let (seats, player) = seated_on(zone)?;
+            let settings = settings_for(
+                seats.server.clone().address(),
+                seats.trusted.clone(),
+                seats.name.clone(),
+                seats.time_server.clone(),
+            )?;
+            let party = Party::host(settings).map_err(Error::Party)?;
 
-    *ROOM.lock() = Some(room);
+            Ok((party, player, seats))
+        },
+        |(party, player, seats)| opened(party, player, zone, &seats),
+    )
+}
 
-    Ok(())
+pub(crate) fn join(code: &str, server: Option<String>, zone: ZoneId) -> Result<()> {
+    replaced(
+        &ROOM,
+        &CHANGING,
+        || {
+            let (seats, player) = seated_on(zone)?;
+            let settings = settings_for(
+                server.or_else(|| seats.server.clone().address()),
+                seats.trusted.clone(),
+                seats.name.clone(),
+                seats.time_server.clone(),
+            )?;
+            let party = Party::join(settings, code).map_err(Error::Party)?;
+
+            Ok((party, player, seats))
+        },
+        |(party, player, seats)| opened(party, player, zone, &seats),
+    )
 }
 
 pub(crate) fn accept(text: &str) -> bool {
@@ -245,6 +280,7 @@ pub(crate) fn shown() -> Option<(PartyShown, PartyFollowed, ZoneId)> {
 }
 
 pub(crate) fn leave() {
+    let _changing = CHANGING.lock();
     let left = ROOM.lock().take();
 
     drop(left);
@@ -308,22 +344,34 @@ pub(crate) fn play_a_request_next(request: PartyRequestId) -> bool {
     let Some(row) = finder.found(&wanted.song) else {
         return false;
     };
+    let queued = queued_next(&player, row);
+
+    taken_once(queued, || party.take_a_request(wanted))
+}
+
+fn queued_next(player: &Player, row: Resumable) -> bool {
     let queued = player.queued();
     let id = resonate_engine::unclaimed_id(queued.rows.iter().map(AsRef::as_ref));
 
-    let placed = player.send(Command::Insert {
-        items: vec![QueueItem {
-            id,
-            location: row.location,
-            span: row.span,
-        }],
-        at: Placement::Next,
-        play: false,
-    });
+    player
+        .send(Command::Insert {
+            items: vec![QueueItem {
+                id,
+                location: row.location,
+                span: row.span,
+            }],
+            at: Placement::Next,
+            play: false,
+        })
+        .is_ok()
+}
 
-    party.take_a_request(wanted);
+fn taken_once(queued: bool, take: impl FnOnce()) -> bool {
+    if queued {
+        take();
+    }
 
-    placed.is_ok()
+    queued
 }
 
 pub(crate) fn following(zone: ZoneId) -> bool {
@@ -334,6 +382,8 @@ pub(crate) fn following(zone: ZoneId) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
     use crossbeam_channel::{Receiver, unbounded};
     use resonate_core::Recording;
     use resonate_sync::party::PartySong;
@@ -524,5 +574,77 @@ mod tests {
         let shown = vec![asked_by(1, "Echoes")];
 
         assert_eq!(request_named(&shown, PartyRequestId([0; 32])), None);
+    }
+
+    #[test]
+    fn beginning_and_joining_at_once_leave_one_room_and_never_two_at_a_time() {
+        static LIVE: AtomicUsize = AtomicUsize::new(0);
+        static MOST: AtomicUsize = AtomicUsize::new(0);
+
+        struct Held;
+
+        impl Held {
+            fn made() -> Self {
+                let now = LIVE.fetch_add(1, Ordering::SeqCst) + 1;
+
+                MOST.fetch_max(now, Ordering::SeqCst);
+                thread::sleep(Duration::from_millis(3));
+
+                Self
+            }
+        }
+
+        impl Drop for Held {
+            fn drop(&mut self) {
+                LIVE.fetch_sub(1, Ordering::SeqCst);
+            }
+        }
+
+        let slot = Mutex::new(None);
+        let changing = Mutex::new(());
+
+        thread::scope(|scope| {
+            for _ in 0..8 {
+                scope.spawn(|| {
+                    replaced(&slot, &changing, || Ok(()), |()| Ok(Held::made()))
+                        .expect("the room changed");
+                });
+            }
+        });
+
+        assert_eq!(MOST.load(Ordering::SeqCst), 1);
+        assert_eq!(LIVE.load(Ordering::SeqCst), 1);
+        assert!(slot.lock().is_some());
+    }
+
+    #[test]
+    fn a_room_that_cannot_be_made_leaves_the_one_there_is() {
+        let slot = Mutex::new(Some(7_u8));
+        let changing = Mutex::new(());
+
+        let prepared = replaced(
+            &slot,
+            &changing,
+            || Err::<(), _>(Error::PartyNeedsAServer),
+            |()| Ok(8_u8),
+        );
+
+        assert!(matches!(prepared, Err(Error::PartyNeedsAServer)));
+        assert_eq!(*slot.lock(), Some(7));
+    }
+
+    #[test]
+    fn a_request_is_taken_only_once_it_was_queued() {
+        let taken = std::cell::Cell::new(0);
+
+        let failed = taken_once(false, || taken.set(taken.get() + 1));
+
+        assert!(!failed);
+        assert_eq!(taken.get(), 0, "a request that could not be queued waits");
+
+        let queued = taken_once(true, || taken.set(taken.get() + 1));
+
+        assert!(queued);
+        assert_eq!(taken.get(), 1);
     }
 }

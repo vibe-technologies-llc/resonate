@@ -266,4 +266,7 @@ server before any answer to `Heads`; one close, as a tunnel or a draining server
 and tried again (`one_clean_close_is_a_server_lost_and_not_a_server_too_old`,
 `a_server_that_closes_every_connection_reads_as_too_old`); a close while a reset waits for its answer
 is `Error::ServerSilent`. `shared.lock` keeps one process per catalog, since two would mint two entries for
-one edit (`SharedBusy`). `resonate shared` is the terminal's way in (`binary.md`).
+one edit (`SharedBusy`); a window that cannot take it for any reason but another holding it logs the
+reason (`alone_in`, `started`: `a_state_folder_that_cannot_be_read_says_why_together_did_not_start`).
+`Shared::leaving` answers the lists being left whose `Left` is still owed, with their standing, since
+`shown` never holds one. `resonate shared` is the terminal's way in (`binary.md`).

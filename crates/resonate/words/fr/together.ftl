@@ -9,7 +9,6 @@ to-follow = À suivre
 seen-as = D’autres vous verront comme { $name }
 may-edit = Vous pouvez maintenant modifier { $name }
 follows = Vous suivez maintenant { $name }
-joined = La liste arrive une fois le serveur atteint
 left = Vous avez quitté { $name } ; les chansons restent ici comme votre propre playlist
 removed = { $person } n’a plus atteint { $name } ; tout le monde continue
 reset = Les anciens liens vers { $name } n’atteignent plus rien maintenant

@@ -1,7 +1,8 @@
 #[cfg(feature = "ui")]
 use std::ffi::OsString;
 use std::{
-    fs::File,
+    fs::{self, File},
+    path::Path,
     sync::Arc,
     thread,
     time::{Duration, Instant},
@@ -23,7 +24,7 @@ use resonate_sync::party::{
 #[cfg(any(feature = "ui", test))]
 use resonate_sync::shared::MemberId;
 use resonate_sync::{
-    HeldShare, LocalPlaylistId, Refused,
+    HeldShare, LocalPlaylistId, Refused, SpaceId,
     shared::{
         Invitation, Invited, LocalShared, PersonShown, Shared, SharedCatalog, SharedSettings,
         SharedShown, SharedStanding, invitation_in,
@@ -170,21 +171,32 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
         return Ok(None);
     }
 
-    let folder = config::private_data_dir()?;
-    let alone = folder.join(SHARED_ALONE);
+    start_in(&config::private_data_dir()?, config, library)
+}
+
+fn alone_in(folder: &Path) -> Result<Option<File>> {
+    let path = folder.join(SHARED_ALONE);
     let file = File::options()
         .create(true)
         .truncate(false)
         .write(true)
-        .open(&alone)
+        .open(&path)
         .map_err(|source| Error::SyncLock {
-            path: alone.clone(),
+            path: path.clone(),
             source,
         })?;
 
-    if file.try_lock().is_err() {
-        return Ok(None);
+    match file.try_lock() {
+        Ok(()) => Ok(Some(file)),
+        Err(fs::TryLockError::WouldBlock) => Ok(None),
+        Err(fs::TryLockError::Error(source)) => Err(Error::SyncLock { path, source }),
     }
+}
+
+fn start_in(folder: &Path, config: &Config, library: &Arc<Library>) -> Result<Option<Together>> {
+    let Some(file) = alone_in(folder)? else {
+        return Ok(None);
+    };
 
     let store = folder.join(SHARED_STORE);
 
@@ -209,6 +221,27 @@ pub(crate) fn start(config: &Config, library: &Arc<Library>) -> Result<Option<To
         shared,
         _alone: file,
     }))
+}
+
+#[cfg(feature = "ui")]
+pub(crate) fn started_in_the_window(
+    config: &Config,
+    library: &Arc<Library>,
+    arrivals: Arrivals,
+) -> Option<Together> {
+    started(start(config, library), arrivals)
+}
+
+#[cfg(feature = "ui")]
+fn started(outcome: Result<Option<Together>>, arrivals: Arrivals) -> Option<Together> {
+    let together = outcome.unwrap_or_else(|error| {
+        tracing::warn!(%error, "shared playlists could not start");
+        None
+    });
+
+    arrivals.judged();
+
+    together
 }
 
 #[cfg(feature = "ui")]
@@ -505,20 +538,32 @@ const fn reaction_said(reaction: resonate_ui::PartyReaction) -> PartyReaction {
 }
 
 #[cfg(feature = "ui")]
-pub(crate) fn invitations_taken_out(arguments: &[OsString]) -> Vec<OsString> {
-    arguments
-        .iter()
-        .filter(|argument| {
-            let text = argument.to_string_lossy();
+pub(crate) struct Arrivals(Vec<String>);
 
-            if invitation_in(&text).is_none() {
-                return true;
-            }
+#[cfg(feature = "ui")]
+impl Arrivals {
+    fn judged(self) {
+        for text in self.0 {
             accepted(&text, Arrival::FromOutside);
-            false
-        })
-        .cloned()
-        .collect()
+        }
+    }
+}
+
+#[cfg(feature = "ui")]
+pub(crate) fn invitations_among(arguments: &[OsString]) -> (Vec<OsString>, Arrivals) {
+    let (invitations, files): (Vec<&OsString>, Vec<&OsString>) = arguments
+        .iter()
+        .partition(|argument| invitation_in(&argument.to_string_lossy()).is_some());
+
+    (
+        files.into_iter().cloned().collect(),
+        Arrivals(
+            invitations
+                .into_iter()
+                .map(|argument| argument.to_string_lossy().into_owned())
+                .collect(),
+        ),
+    )
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -606,14 +651,79 @@ pub(crate) fn names_the_server_in_use(invitation: &Invitation) -> bool {
         .is_none()
 }
 
-fn settled(shared: &Shared) {
+enum Looked<T> {
+    Settled(T),
+    Standing(SharedStanding),
+}
+
+const fn not_to_be_waited_out(standing: SharedStanding) -> bool {
+    matches!(
+        standing,
+        SharedStanding::ServerTooOld | SharedStanding::TurnedAway(_) | SharedStanding::NoServer
+    )
+}
+
+fn waited_for<T>(
+    shared: &Shared,
+    within: Duration,
+    look: impl Fn(&Shared) -> Looked<T>,
+) -> Result<T> {
+    let deadline = Instant::now() + within;
+
+    shared.force();
+    loop {
+        let standing = match look(shared) {
+            Looked::Settled(settled) => return Ok(settled),
+            Looked::Standing(standing) => standing,
+        };
+
+        if Instant::now() >= deadline || not_to_be_waited_out(standing) {
+            return Err(Error::SharedNotSettled { standing });
+        }
+        thread::sleep(SETTLED_LOOKED_AT_EVERY);
+    }
+}
+
+fn looked_at(list: Option<SharedShown>) -> Looked<SharedShown> {
+    match list {
+        Some(list) if list.standing != SharedStanding::Reached => Looked::Standing(list.standing),
+        Some(list) if list.owed > 0 => Looked::Standing(SharedStanding::Waiting),
+        Some(list) => Looked::Settled(list),
+        None => Looked::Standing(SharedStanding::Waiting),
+    }
+}
+
+fn settled_at(shared: &Shared, within: Duration, at: LocalPlaylistId) -> Result<SharedShown> {
+    waited_for(shared, within, |shared| {
+        looked_at(shared.shown().into_iter().find(|list| list.at == Some(at)))
+    })
+}
+
+fn settled_in(shared: &Shared, within: Duration, space: SpaceId) -> Result<SharedShown> {
+    waited_for(shared, within, |shared| {
+        looked_at(shared.shown().into_iter().find(|list| list.space == space))
+    })
+}
+
+fn settled_leaving(shared: &Shared, within: Duration, space: SpaceId) -> Result<()> {
+    waited_for(shared, within, |shared| {
+        shared
+            .leaving()
+            .into_iter()
+            .find(|(leaving, _)| *leaving == space)
+            .map_or(Looked::Settled(()), |(_, standing)| {
+                Looked::Standing(standing)
+            })
+    })
+}
+
+fn given_time_to_settle(shared: &Shared) {
     let deadline = Instant::now() + SETTLES_WITHIN;
 
     shared.force();
     while Instant::now() < deadline {
-        let lists = shared.shown();
-
-        if lists
+        if shared
+            .shown()
             .iter()
             .all(|list| list.owed == 0 && !matches!(list.standing, SharedStanding::Waiting))
         {
@@ -710,8 +820,8 @@ pub(crate) fn run(
         };
 
         shared.share(at).map_err(Error::Sync)?;
-        settled(shared);
-        told_invites(&listed_as(&library, shared, name)?);
+
+        told_invites(&settled_at(shared, SETTLES_WITHIN, at)?);
     } else if let Some(link) = &args.join {
         let invitation = invitation_in(link);
         let (code, server) = invitation
@@ -721,20 +831,18 @@ pub(crate) fn run(
             });
 
         let space = shared.join(code, server).map_err(Error::Sync)?;
+        let list = settled_in(shared, SETTLES_WITHIN, space)?;
 
-        settled(shared);
-
-        let list = shared.shown().into_iter().find(|list| list.space == space);
-        match list {
-            Some(list) if list.may_edit => said!("{}", words::together::may_edit(&list.name)),
-            Some(list) => said!("{}", words::together::follows(&list.name)),
-            None => said!("{}", words::together::joined()),
+        if list.may_edit {
+            said!("{}", words::together::may_edit(&list.name));
+        } else {
+            said!("{}", words::together::follows(&list.name));
         }
     } else if let Some(name) = &args.leave {
         let list = listed_as(&library, shared, name)?;
 
         shared.leave(list.space).map_err(Error::Sync)?;
-        settled(shared);
+        settled_leaving(shared, SETTLES_WITHIN, list.space)?;
         said!("{}", words::together::left(&list.name));
     } else if let Some(person) = &args.remove_person {
         let name = args.from.as_deref().ok_or(Error::SharedNeedsAList)?;
@@ -744,7 +852,7 @@ pub(crate) fn run(
         shared
             .reset(list.space, Some(removing.member))
             .map_err(Error::Sync)?;
-        settled(shared);
+        given_time_to_settle(shared);
 
         let called = if removing.name.is_empty() {
             person.as_str()
@@ -758,11 +866,11 @@ pub(crate) fn run(
         let list = listed_as(&library, shared, name)?;
 
         shared.reset(list.space, None).map_err(Error::Sync)?;
-        settled(shared);
+        given_time_to_settle(shared);
         said!("{}", words::together::reset(name));
         told_invites(&listed_as(&library, shared, name)?);
     } else {
-        settled(shared);
+        given_time_to_settle(shared);
         print_every_list(&shared.shown());
     }
 
@@ -849,9 +957,10 @@ mod tests {
             OsString::from("subsonic:track/12"),
         ];
 
-        let kept = invitations_taken_out(&arguments);
+        let (kept, arrivals) = invitations_among(&arguments);
 
         assert_eq!(kept.len(), 2, "a party's link is no song either");
+        assert_eq!(arrivals.0, ["resonate://party/ABCDE"]);
     }
 
     #[test]
@@ -953,6 +1062,224 @@ mod tests {
         assert_eq!(taken.map(|held| held.member).ok(), Some(MemberId([2; 16])));
         assert!(matches!(nobody, Err(Error::NoSuchPersonOnTheList(_))));
         assert!(matches!(not_me, Err(Error::NoSuchPersonOnTheList(_))));
+    }
+
+    fn a_shared_catalog_holding(name: &str) -> (Arc<Library>, LocalPlaylistId) {
+        let library = Arc::new(Library::open_in_memory().expect("a catalog"));
+        let playlist = library.create_playlist(name).expect("a playlist");
+
+        let at = LocalPlaylistId {
+            id: playlist.get().cast_signed(),
+            created: library.playlist_stamp(playlist).expect("a stamp"),
+        };
+
+        (library, at)
+    }
+
+    fn running_toward(server: &str, library: &Arc<Library>) -> (Together, std::path::PathBuf) {
+        let folder = crate::fixtures::scratch("together");
+        let config = Config {
+            sync_server: Some(server.to_owned()),
+            ..Config::default()
+        };
+
+        let together = start_in(&folder, &config, library)
+            .expect("the shared playlists start")
+            .expect("nothing else holds them");
+
+        (together, folder)
+    }
+
+    const NO_SERVER_HERE: &str = "ws://127.0.0.1:9/";
+
+    const A_LOOK_AT_A_STOPPED_SERVER: Duration = Duration::from_millis(800);
+
+    #[test]
+    fn a_playlist_shared_toward_a_stopped_server_is_never_settled_so_no_link_is_told() {
+        let (library, at) = a_shared_catalog_holding("Mix");
+        let (together, folder) = running_toward(NO_SERVER_HERE, &library);
+
+        together.shared.share(at).expect("shared offline");
+
+        let settled = settled_at(&together.shared, A_LOOK_AT_A_STOPPED_SERVER, at);
+
+        drop(together);
+        fs::remove_dir_all(folder).ok();
+
+        assert!(matches!(
+            settled,
+            Err(Error::SharedNotSettled {
+                standing: SharedStanding::Unreached
+            })
+        ));
+    }
+
+    #[test]
+    fn a_list_left_toward_a_stopped_server_is_not_settled_while_the_leaving_is_owed() {
+        let (library, at) = a_shared_catalog_holding("Mix");
+        let (together, folder) = running_toward(NO_SERVER_HERE, &library);
+
+        together.shared.share(at).expect("shared offline");
+
+        let space = together.shared.shown()[0].space;
+
+        together.shared.leave(space).expect("left offline");
+
+        let settled = settled_leaving(&together.shared, A_LOOK_AT_A_STOPPED_SERVER, space);
+
+        drop(together);
+        fs::remove_dir_all(folder).ok();
+
+        assert!(matches!(
+            settled,
+            Err(Error::SharedNotSettled {
+                standing: SharedStanding::Unreached
+            })
+        ));
+    }
+
+    #[test]
+    fn a_list_is_settled_only_once_the_server_has_been_reached_and_nothing_is_owed() {
+        let mut list = a_list_with(&[(1, "Ada", true)]);
+
+        assert!(matches!(looked_at(Some(list.clone())), Looked::Settled(_)));
+
+        list.owed = 2;
+
+        assert!(matches!(
+            looked_at(Some(list.clone())),
+            Looked::Standing(SharedStanding::Waiting)
+        ));
+
+        list.standing = SharedStanding::Unreached;
+
+        assert!(matches!(
+            looked_at(Some(list)),
+            Looked::Standing(SharedStanding::Unreached)
+        ));
+        assert!(matches!(
+            looked_at(None),
+            Looked::Standing(SharedStanding::Waiting)
+        ));
+    }
+
+    #[test]
+    fn a_standing_the_server_gave_for_good_is_not_waited_out() {
+        assert!(not_to_be_waited_out(SharedStanding::ServerTooOld));
+        assert!(not_to_be_waited_out(SharedStanding::NoServer));
+        assert!(not_to_be_waited_out(SharedStanding::TurnedAway(
+            resonate_sync::wire::Refusal::Token
+        )));
+        assert!(!not_to_be_waited_out(SharedStanding::Unreached));
+        assert!(!not_to_be_waited_out(SharedStanding::Waiting));
+    }
+
+    #[test]
+    fn a_lock_another_resonate_holds_is_told_from_a_folder_that_cannot_be_read() {
+        let folder = crate::fixtures::scratch("together-lock");
+        let missing = folder.join("not-here");
+
+        let first = alone_in(&folder).expect("the lock is free");
+        let second = alone_in(&folder).expect("a held lock is no failure");
+        let unreadable = alone_in(&missing);
+
+        fs::remove_dir_all(&folder).ok();
+
+        assert!(first.is_some());
+        assert!(second.is_none());
+        assert!(matches!(unreadable, Err(Error::SyncLock { .. })));
+    }
+
+    #[cfg(feature = "ui")]
+    #[derive(Clone, Default)]
+    struct Captured(Arc<Mutex<Vec<u8>>>);
+
+    #[cfg(feature = "ui")]
+    impl std::io::Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().extend_from_slice(bytes);
+
+            Ok(bytes.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_state_folder_that_cannot_be_read_says_why_together_did_not_start() {
+        let folder = crate::fixtures::scratch("together-unreadable");
+        let missing = folder.join("not-here");
+        let library = Arc::new(Library::open_in_memory().expect("a catalog"));
+
+        let captured = Captured::default();
+        let writer = captured.clone();
+        let subscriber = tracing_subscriber::fmt()
+            .with_ansi(false)
+            .with_writer(move || writer.clone())
+            .finish();
+        let _listening = tracing::subscriber::set_default(subscriber);
+
+        let together = started(
+            start_in(&missing, &Config::default(), &library),
+            invitations_among(&[]).1,
+        );
+        let said = String::from_utf8_lossy(&captured.0.lock()).into_owned();
+
+        fs::remove_dir_all(&folder).ok();
+
+        assert!(together.is_none());
+        assert!(said.contains("shared playlists could not start"), "{said}");
+        assert!(said.contains("could not be locked for syncing"), "{said}");
+        assert!(said.contains("not-here"), "{said}");
+        assert!(said.contains("No such file or directory"), "{said}");
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_launchs_links_are_judged_against_the_server_the_launch_runs_on() {
+        let (library, _) = a_shared_catalog_holding("Mix");
+        let folder = crate::fixtures::scratch("together-launch");
+        let home = "wss://home.example";
+        let config = Config {
+            sync_server: Some(home.to_owned()),
+            ..Config::default()
+        };
+        let own = format!(
+            "resonate://shared/E-ABCDE?server={}",
+            "wss%3A%2F%2Fhome.example"
+        );
+        let hosted = "https://resonate.tecnio.dev/s/#E-FGHIJ";
+
+        let (_, arrivals) = invitations_among(&[own.clone().into(), hosted.into()]);
+
+        let together = started(start_in(&folder, &config, &library), arrivals);
+
+        drop(together);
+        fs::remove_dir_all(&folder).ok();
+
+        assert_eq!(crate::party_room::offers_waiting(), [hosted]);
+    }
+
+    #[cfg(feature = "ui")]
+    #[test]
+    fn a_launchs_links_are_still_judged_when_together_could_not_start() {
+        let (library, _) = a_shared_catalog_holding("Mix");
+        let folder = crate::fixtures::scratch("together-launch-failed");
+        let party = "resonate://party/ABCDE";
+        let (_, arrivals) = invitations_among(&[party.into()]);
+
+        let together = started(
+            start_in(&folder.join("not-here"), &Config::default(), &library),
+            arrivals,
+        );
+
+        fs::remove_dir_all(&folder).ok();
+
+        assert!(together.is_none());
+        assert_eq!(crate::party_room::offers_waiting(), [party]);
     }
 
     #[test]

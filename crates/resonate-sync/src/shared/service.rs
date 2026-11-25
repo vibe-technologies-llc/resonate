@@ -150,6 +150,7 @@ pub struct Shared {
     work: mpsc::UnboundedSender<Work>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
     held: Arc<RwLock<Vec<HeldShare>>>,
+    leaving: Arc<RwLock<Vec<(SpaceId, SharedStanding)>>>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -163,6 +164,7 @@ impl Shared {
         let lists = store.lists()?;
         let shown = Arc::new(RwLock::new(Vec::new()));
         let held = Arc::new(RwLock::new(held_of(&lists)));
+        let leaving = Arc::new(RwLock::new(Vec::new()));
         let (work, asked) = mpsc::unbounded_channel();
 
         let running = Running {
@@ -183,6 +185,7 @@ impl Shared {
             oversized: BTreeMap::new(),
             shown: Arc::clone(&shown),
             held: Arc::clone(&held),
+            leaving: Arc::clone(&leaving),
             poll_due: Instant::now(),
             retry_after: FIRST_RETRY,
         };
@@ -204,6 +207,7 @@ impl Shared {
             work,
             shown,
             held,
+            leaving,
             thread: Some(thread),
         })
     }
@@ -262,6 +266,10 @@ impl Shared {
         self.shown.read().clone()
     }
 
+    pub fn leaving(&self) -> Vec<(SpaceId, SharedStanding)> {
+        self.leaving.read().clone()
+    }
+
     fn asked<T>(&self, work: impl FnOnce(blocking::Sender<Result<T>>) -> Work) -> Result<T> {
         let (answer, answered) = blocking::channel();
 
@@ -300,6 +308,7 @@ struct Running {
     oversized: BTreeMap<SpaceId, Oversized>,
     shown: Arc<RwLock<Vec<SharedShown>>>,
     held: Arc<RwLock<Vec<HeldShare>>>,
+    leaving: Arc<RwLock<Vec<(SpaceId, SharedStanding)>>>,
     poll_due: Instant,
     retry_after: Duration,
 }
@@ -1705,6 +1714,20 @@ impl Running {
 
         *self.shown.write() = shown;
         *self.held.write() = held_of(&self.lists);
+        *self.leaving.write() = self
+            .lists
+            .iter()
+            .filter(|kept| kept.leaving)
+            .map(|kept| {
+                let standing = self
+                    .standings
+                    .get(&kept.space)
+                    .copied()
+                    .unwrap_or(SharedStanding::Waiting);
+
+                (kept.space, standing)
+            })
+            .collect();
     }
 }
 

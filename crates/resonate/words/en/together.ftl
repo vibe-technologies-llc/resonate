@@ -9,7 +9,6 @@ to-follow = To follow
 seen-as = Others will see you as { $name }
 may-edit = You can now edit { $name }
 follows = You now follow { $name }
-joined = Joined; the list arrives once the server is reached
 left = You left { $name }; the songs stay here as your own playlist
 removed = { $person } no longer reaches { $name }; everyone else carries on
 reset = The old links to { $name } reach nothing now

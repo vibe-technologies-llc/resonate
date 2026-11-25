@@ -222,6 +222,12 @@ pub enum Error {
     SharedBusy,
 
     #[cfg(feature = "sync")]
+    #[error("the server has not taken the shared playlist: {}", spelled_standing(.standing))]
+    SharedNotSettled {
+        standing: resonate_sync::shared::SharedStanding,
+    },
+
+    #[cfg(feature = "sync")]
     #[error("a party needs a server, and this device is set to use none")]
     PartyNeedsAServer,
 
@@ -698,7 +704,7 @@ pub enum Error {
     SyncUnreachable,
 
     #[cfg(feature = "sync")]
-    #[error("{} could not be locked for syncing", path.display())]
+    #[error("{} could not be locked for syncing: {source}", path.display())]
     SyncLock {
         path: PathBuf,
         #[source]
@@ -757,6 +763,20 @@ fn listed(devices: &[resonate_sync::DeviceId]) -> String {
         .map(ToString::to_string)
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+#[cfg(feature = "sync")]
+const fn spelled_standing(standing: &resonate_sync::shared::SharedStanding) -> &'static str {
+    use resonate_sync::shared::SharedStanding;
+
+    match standing {
+        SharedStanding::Waiting => "still waiting for it",
+        SharedStanding::Reached => "it still owes the server what it holds",
+        SharedStanding::Unreached => "the server could not be reached",
+        SharedStanding::ServerTooOld => "the server is too old for shared playlists",
+        SharedStanding::TurnedAway(_) => "the server turned it away",
+        SharedStanding::NoServer => "no server is set",
+    }
 }
 
 #[cfg(feature = "sync")]
