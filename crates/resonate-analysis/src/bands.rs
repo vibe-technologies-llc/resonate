@@ -389,7 +389,7 @@ fn levels_of(heard: &[Vec<Heard>]) -> Vec<f64> {
     let mut levels = vec![0.0, 1.0];
 
     if loudest.is_finite() && loudest > 0.0 {
-        let from = quietest.clamp(QUIETEST_LEVEL, loudest);
+        let from = quietest.clamp(QUIETEST_LEVEL.min(loudest), loudest);
         let ratio = loudest / from;
 
         levels.extend(
@@ -1102,6 +1102,17 @@ mod tests {
             SampleRate::HZ_44100,
         )
         .expect("gains under a profile and a correction")
+    }
+
+    #[test]
+    fn a_correction_quieter_than_the_floor_of_the_levels_still_answers_its_levels() {
+        let flat = Arc::new(Profile::flat());
+        let peaks = tone_of(1_000.0, 0.5);
+
+        let quiet = corrected_by(&flat, vec![0.1]);
+
+        assert!(quiet.bound(&peaks) <= 0.5 * 0.1 * 1.02);
+        assert!(quiet.bound(&peaks) > 0.0);
     }
 
     #[test]

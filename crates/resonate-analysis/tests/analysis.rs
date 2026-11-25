@@ -1092,6 +1092,11 @@ fn corrections() -> Vec<(&'static str, Arc<Impulse>)> {
     vec![
         ("a pair of taps boosting the bass", impulse(vec![1.0, 1.0])),
         ("a pair of taps cutting the treble", impulse(vec![0.5, 0.5])),
+        ("a net cut of twenty decibels", impulse(vec![0.1])),
+        (
+            "a net cut with a ripple",
+            impulse(vec![0.1, 0.05, -0.04, 0.03]),
+        ),
         ("an echo", impulse(echoing)),
         ("a dispersive burst", impulse(dispersive)),
         ("a response held back past a moment", impulse(held_back)),
