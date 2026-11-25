@@ -4,13 +4,6 @@ Defects: shipped behaviour that is wrong, lossy, unsafe or slower than it claims
 ordering are in [ROADMAP.md](ROADMAP.md).
 
 ## Security
-- [S · 0.18.1] Hold the MusicBrainz download agent to its origin's redirects. **Low, builder.**
-  `crates/resonate-musicbrainz/src/download.rs` builds on `configured()` and puts ureq's ten
-  redirects back (`REDIRECTS_UREQ_FOLLOWS`), so the export and replication fetches still follow a
-  redirect to any https host, while every provider now follows through `resonate_fetch::followed`
-  within the origin asked. Find where MetaBrainz's servers redirect (the export mirror may hand off
-  to another host), follow through `followed` or an allowlist of those hosts, and drop the setting.
-  Done when a fake server's `302` to another loopback port is not followed, in a test.
 - [S · 0.18.1] Keep a phone's Jellyfin device id once minted. **Low, builder.** A password sign-in now
   reuses the install's `jellyfin-device` on the desktop (`Jellyfin::keeping_device`), but the phones
   store no id the boundary mints (`crates/resonate-mobile/src/downloads.rs` passes the account's
@@ -108,25 +101,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   kHz, at 44.1, 48 and 96 kHz, are judged as intended in
   `crates/resonate-analysis/tests/analysis.rs`, whose fixtures today sit only at 16 kHz and 21.7
   kHz.
-- [M · 0.18.1] Check the MusicBrainz export's schema before reading its columns. **Medium,
-  builder.** `imported` parses `SCHEMA_SEQUENCE` but never compares it with 31, the schema the
-  column positions follow (`crates/resonate-musicbrainz/src/mirror/import.rs:432-433`, `:460-465`,
-  `:509-519`, positions in `copy.rs:45-361`), and drops the derived archive's sequences (`:239`);
-  only a short row refuses, so a schema that inserts or moves a column is read into the wrong fields
-  and served, though `.claude/rules/musicbrainz.md:120-122` says a schema change refuses the build.
-  Pin the schema read and refuse another, and compare the two archives' sequences. Done when a test
-  export stamped 32 is refused with a typed error.
-- [M · 0.18.1] Sync a finished MusicBrainz build before it replaces the copy. **Medium, architect.**
-  The build writes with `journal_mode = OFF` and `synchronous = OFF`
-  (`crates/resonate-musicbrainz/src/mirror/import.rs:341-352`, `:1055-1056`) and nothing under
-  `mirror/` calls `sync_all`, then `settled` removes the amendments and renames the tables and the
-  copy as three steps with no marker (`import.rs:304-318`), and `received_copy` removes the
-  amendments before a rename that may fail (`mirror/offered.rs:242-248`). A power loss after the
-  rename leaves a torn copy trusted once its `made` row reads, with the export already forgotten,
-  and a failed step leaves amendments gone beside a copy that needs them. Sync the files and the
-  folder before and after the renames, rename the copy first and remove the old amendments last.
-  Done when a test failing each step in turn leaves either the old copy with its amendments or the
-  new one whole.
 - [S · 0.18.1] Count the rows a media server's page returns. **Medium, builder.** `songs_of` and the
   album shelf drop rows with `filter_map(song_of)`, a song with no local file, an unknown extension
   or a cut with no duration (`crates/resonate/src/offering.rs:142-158`, `:491-524`, `:633-638`),
@@ -239,23 +213,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   (`:217-223`, `:459-467`), so a sub-44.1 kHz file's anti-alias wall reads as a lossy encode beside
   Genuine. Gate padding with the rest and word the wall by the rate. Done when a short clip is not
   judged and a 32 kHz file's wall is worded as its rate's.
-- [S · 0.18.1] Walk the MusicBrainz documents by id, not by id span. **Low, builder.** The chunk
-  count comes from `max(id) - min(id)` unchecked
-  (`crates/resonate-musicbrainz/src/mirror/import.rs:1174-1189`), and `placed` sizes a `Vec` by an
-  id (`mirror/looked_up.rs:109-124`), so one stray id near 2^62 asks 10^15 empty chunks or aborts
-  the build on a terabyte allocation. Walk by the last id seen and refuse an id past `u32::MAX`.
-  Done when a test export with one huge id is refused quickly.
-- [S · 0.18.1] Accept a MusicBrainz table only as one regular entry. **Low, builder.** Tar entries
-  are matched by name alone (`crates/resonate-musicbrainz/src/mirror/import.rs:420-454`), so a link
-  named `mbdump/artist` counts as a present, empty table and a repeated entry loads twice. Require a
-  file entry and refuse a repeat. Done when an archive with a linked table is refused.
-- [S · 0.18.1] Lay the amendments file in one transaction and check it against the tables. **Low,
-  builder.** `made_at` lays the schema and inserts `amended_from` as two statements and never
-  compares an existing row with the tables' dump and sequence
-  (`crates/resonate-musicbrainz/src/mirror/amended.rs:68-94`), and `sequenced_at` ignores the rows
-  it changed (`:261-272`), so an interrupted creation hides every amendment while replication
-  reports success. Lay it in one transaction, compare, and check the rows changed. Done when a test
-  amendments file with only the schema is laid again.
 - [S · 0.18.1] Let a staged write's own failures decide its outcome. **Low, builder.**
   `write_atomically` answers `Unwritten { Place }` when the folder sync after a rename fails, though
   the target was replaced (`crates/resonate-core/src/file_facts.rs:171-174`, `:224-241`), as the
