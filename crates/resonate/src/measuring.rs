@@ -168,6 +168,22 @@ mod tests {
         }
     }
 
+    struct OnlyTheRoom;
+
+    impl Rig for OnlyTheRoom {
+        fn sound(&self, _sweep: &Sweep, heard_for: Duration, _hearing: &Hearing) -> Sounded {
+            let total = (heard_for.as_secs_f64() * f64::from(MEASURED_AT.hz())) as usize;
+            let mut state = 0x2545_f491_u32;
+
+            Ok((0..total)
+                .map(|_| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    (f64::from(state >> 8) / f64::from(1_u32 << 24) - 0.5) as f32 * 0.2
+                })
+                .collect())
+        }
+    }
+
     fn lowpass_db(hertz: f64) -> f64 {
         let turn = 2.0 * PI * hertz / f64::from(MEASURED_AT.hz());
         let real = 1.0 - (1.0 - SMOOTHING) * turn.cos();
@@ -246,5 +262,19 @@ mod tests {
             measured_by(&Silent, &Hearing::new()),
             Err(Unheard::Deconvolved(resonate_dsp::Error::NothingHeard))
         ));
+    }
+
+    #[test]
+    fn a_microphone_that_heard_only_the_rooms_noise_is_refused_not_fitted() {
+        let told = measured_by(&OnlyTheRoom, &Hearing::new()).expect_err("noise alone is refused");
+
+        assert!(matches!(
+            told,
+            Unheard::Deconvolved(resonate_dsp::Error::SweepLostInNoise { .. })
+        ));
+        assert!(
+            told.to_string().contains("over the noise"),
+            "the command said {told}"
+        );
     }
 }

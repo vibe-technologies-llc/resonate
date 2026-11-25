@@ -1215,7 +1215,21 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   **Deconvolution is regularised spectral division** (`Sweep::heard_as`): the recording's mono mix
   over the sweep's, `Y * conj(X) / (|X|^2 + 1e-6 * max |X|^2)` on a transform at least recorded
   plus sweep long (a recording over 2^24 frames is `HeardTooLong`, shorter than the sweep
-  `HeardTooShort`, silent `NothingHeard`). The impulse's peak is found wherever it lies, so the
+  `HeardTooShort`, silent `NothingHeard`). **A recording that heard no sweep is refused, not
+  fitted**: the largest tap must stand `PEAK_OVER_NOISE_AT_LEAST_DB` (20 dB) over the noise floor
+  or the answer is `SweepLostInNoise` with the figure it reached. The floor is the 90th percentile
+  of the impulse's magnitude outside the gate (`noise_floor_of`), not the median: what the
+  recording's noise becomes through the inverse sweep fills only the stretch of the circular
+  transform it reaches (from a quarter to a half of it, since the recording is at least the sweep
+  long and the transform under twice both), the rest lying near nothing, so a median falls among
+  the near-nothing and white noise alone stood 35 to 40 dB over it. Above that the 90th percentile
+  always lies inside the noise: noise alone tops it by about 12 dB at either rate (a Gaussian floor
+  would need a tap over eight times its deviation to reach 20), while a sweep played 10 dB under
+  white noise at its peak still stands 31 dB and is read within half a decibel
+  (`a_recording_of_noise_alone_is_refused_as_no_sweep_heard_over_it`,
+  `a_sweep_recorded_under_louder_noise_is_still_heard_where_it_was_played`,
+  `a_microphone_that_heard_only_the_rooms_noise_is_refused_not_fitted`). The window tells it as a
+  sweep it could not hear (`missed_the_room`). The impulse's peak is found wherever it lies, so the
   latency of output and microphone and their clocks' offset change nothing but `delay_frames`; the
   impulse is gated from 5 ms before the peak to 400 ms after, the last quarter Hann-tapered, which
   cuts the sweep's distortion products (they precede the impulse) and leaves a room's tail past
@@ -1287,12 +1301,13 @@ to a target. `resonate-eq` only, no network, on the desktop, the CLI and both ph
   the phone loads as an import. The sweep never passes the engine, so the equaliser, convolver and
   crossfeed in force do not colour it: Android plays it through a short-lived `AudioTrack` and iOS
   through an `AVAudioPlayerNode` on the engine that also taps the input, each with the player paused
-  (`android.md`, `ios.md`). A recording that is silent, shorter than the sweep or at a rate under
-  40 kHz is `Error::Sweep`, worded by `failure::of_a_sweep`
+  (`android.md`, `ios.md`). A recording that is silent, of noise with no sweep standing over it,
+  shorter than the sweep or at a rate under 40 kHz is `Error::Sweep`, worded by `failure::of_a_sweep`
   (`a_sweep_through_a_known_filter_is_fitted_as_the_desktops_measurement_is`: a delayed one-pole
   low-pass read within 0.5 dB at 44.1 and 48 kHz, the fit equal to the desktop's of the same levels;
   `a_microphone_calibration_is_taken_off_what_it_heard`,
-  `a_recording_that_heard_nothing_or_too_little_or_a_rate_too_slow_is_told_in_words`).
+  `a_recording_that_heard_nothing_or_too_little_or_a_rate_too_slow_is_told_in_words`,
+  `a_recording_of_noise_with_no_sweep_in_it_is_refused_in_words_not_fitted`).
 
 ## AutoEq
 

@@ -13,6 +13,7 @@ pub const MEASURED_FROM_HZ: u32 = 20;
 pub const MEASURED_TO_HZ: u32 = 20_000;
 pub const MEASURED_FOR: Duration = Duration::from_secs(8);
 pub const HEARD_AFTER_THE_SWEEP: Duration = Duration::from_secs(2);
+pub const PEAK_OVER_NOISE_AT_LEAST_DB: f64 = 20.0;
 
 const LEVEL: f64 = 0.1;
 const FADED_OVER: Duration = Duration::from_millis(20);
@@ -23,6 +24,7 @@ const REGULARISED_BELOW: f64 = 1e-6;
 const SILENT_BELOW: f64 = 1e-12;
 const SPECTRUM_BINS_AT_LEAST: usize = 1 << 17;
 const FLOOR_DB: f64 = -400.0;
+const NOISE_FLOOR_SHARE: f64 = 0.9;
 
 fn frames_of(span: Duration, rate: SampleRate) -> usize {
     (span.as_secs_f64() * f64::from(rate.hz())).round() as usize
@@ -190,11 +192,12 @@ impl Sweep {
         let after = frames_of(GATE_AFTER, self.rate);
 
         let taper_from = before + ((after as f64) * (1.0 - TAPERED_SHARE)) as usize;
-        let length = before + after;
+        let length = (before + after).min(size);
+        let gated_from = (peak_at + size - before) % size;
 
         let taps = (0..length)
             .map(|at| {
-                let source = (peak_at + size + at - before) % size;
+                let source = (gated_from + at) % size;
                 let tap = impulse.get(source).copied().unwrap_or(0.0) * scale;
                 let gate = if at < taper_from {
                     1.0
@@ -206,6 +209,17 @@ impl Sweep {
             })
             .collect();
 
+        impulse.rotate_left(gated_from);
+
+        let floor = noise_floor_of(impulse.get_mut(length..).unwrap_or_default()) * scale;
+        let peak_over_noise_db = 20.0 * (peak / floor).log10();
+
+        if peak_over_noise_db < PEAK_OVER_NOISE_AT_LEAST_DB {
+            return Err(Error::SweepLostInNoise {
+                peak_over_noise_db: peak_over_noise_db.max(0.0) as u32,
+            });
+        }
+
         Ok(Heard {
             rate: self.rate,
             from_hz: self.from_hz,
@@ -214,6 +228,19 @@ impl Sweep {
             delay: peak_at,
         })
     }
+}
+
+fn noise_floor_of(taps: &mut [f64]) -> f64 {
+    if taps.is_empty() {
+        return 0.0;
+    }
+    for tap in taps.iter_mut() {
+        *tap = tap.abs();
+    }
+
+    let at = ((taps.len() as f64 * NOISE_FLOOR_SHARE) as usize).min(taps.len() - 1);
+
+    *taps.select_nth_unstable_by(at, f64::total_cmp).1
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -318,6 +345,23 @@ mod tests {
             .filter(|level| level.hertz >= low && level.hertz <= high)
             .map(|level| (level.decibels - known_db(level.hertz)).abs())
             .fold(0.0, f64::max)
+    }
+
+    fn noise(frames: usize, rms: f64, seed: u64) -> Vec<f32> {
+        let mut state = seed | 1;
+
+        let mut uniform = move || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            (state >> 11) as f64 / (1_u64 << 53) as f64
+        };
+        (0..frames)
+            .map(|_| {
+                let radius = (-2.0 * uniform().max(1e-300).ln()).sqrt();
+                (rms * radius * (2.0 * PI * uniform()).cos()) as f32
+            })
+            .collect()
     }
 
     #[test]
@@ -428,6 +472,61 @@ mod tests {
             Sweep::new(RATE, 20, 20_000, LONGEST_SWEEP + Duration::from_secs(1)),
             Err(Error::SweepLength { .. })
         ));
+    }
+
+    fn recorded_frames(sweep: &Sweep) -> usize {
+        frames_of(sweep.heard_for(), sweep.rate())
+    }
+
+    #[test]
+    fn a_recording_of_noise_alone_is_refused_as_no_sweep_heard_over_it() {
+        for rate in [SampleRate::HZ_44100, SampleRate::HZ_48000] {
+            let sweep = Sweep::for_measuring(rate).expect("a sweep that fits the rate");
+
+            for seed in [1, 7_919, 104_729, 0x5EED] {
+                let told = sweep.heard_as(&noise(recorded_frames(&sweep), 0.1, seed));
+
+                assert!(
+                    matches!(
+                        told,
+                        Err(Error::SweepLostInNoise { peak_over_noise_db }) if peak_over_noise_db < 16
+                    ),
+                    "noise alone at {rate} was {told:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_sweep_recorded_under_louder_noise_is_still_heard_where_it_was_played() {
+        const QUIETER_THAN_THE_NOISE: f64 = 0.316;
+        const PLAYED_AT: usize = 300;
+
+        for rate in [SampleRate::HZ_44100, SampleRate::HZ_48000] {
+            let sweep = Sweep::for_measuring(rate).expect("a sweep that fits the rate");
+
+            let mut recorded = noise(recorded_frames(&sweep), 0.1, 99);
+
+            for (heard, played) in recorded[PLAYED_AT..].iter_mut().zip(sweep.samples()) {
+                *heard += (f64::from(*played) * QUIETER_THAN_THE_NOISE) as f32;
+            }
+
+            let heard = sweep.heard_as(&recorded).expect("the sweep is heard");
+            let levels = heard.response().expect("a response");
+            let wanted = 20.0 * QUIETER_THAN_THE_NOISE.log10();
+            let mid_band: Vec<f64> = levels
+                .iter()
+                .filter(|level| level.hertz > 200.0 && level.hertz < 5_000.0)
+                .map(|level| level.decibels)
+                .collect();
+            let mean = mid_band.iter().sum::<f64>() / mid_band.len() as f64;
+
+            assert_eq!(heard.delay_frames(), PLAYED_AT);
+            assert!(
+                (mean - wanted).abs() < 0.5,
+                "the mid band read {mean:.2} dB where {wanted:.2} was played"
+            );
+        }
     }
 
     #[test]

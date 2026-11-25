@@ -180,6 +180,7 @@ pub(crate) fn of_a_sweep(source: &Dsp) -> String {
         Dsp::HeardTooShort { heard, played } => said::sweep_heard_too_short(*heard, *played),
         Dsp::HeardTooLong { .. } => said::sweep_heard_too_long().to_owned(),
         Dsp::NothingHeard => said::sweep_nothing_heard().to_owned(),
+        Dsp::SweepLostInNoise { .. } => said::sweep_lost_in_noise().to_owned(),
         _ => said::sweep_unmeasured().to_owned(),
     }
 }

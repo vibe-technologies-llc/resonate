@@ -43,6 +43,7 @@ sweep-heard-too-short = L’enregistrement tenu { $heard ->
 } et le balayage seul était { $played }, et il a été coupé court
 sweep-heard-too-long = L’enregistrement du balayage était trop long pour mesurer
 sweep-nothing-heard = Rien du balayage n’a été entendu : augmenter le volume ou rapprocher le microphone
+sweep-lost-in-noise = Le balayage n’a pas pu être distingué du bruit ambiant : faire le silence dans la pièce, augmenter le volume ou rapprocher le microphone
 sweep-unmeasured = Le balayage n’a pas pu être mesuré
 no-device = Aucun haut-parleurs ou casque à jouer
 device-gone = L’appareil audio a été débranché ou éteint

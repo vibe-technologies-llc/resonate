@@ -590,4 +590,25 @@ mod tests {
         ));
         assert!(measurement_sweep(32_000).is_err());
     }
+
+    #[test]
+    fn a_recording_of_noise_with_no_sweep_in_it_is_refused_in_words_not_fitted() {
+        let mut state = 0x2545_f491_u32;
+
+        let noise: Vec<f32> = (0..480_000)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (f64::from(state >> 8) / f64::from(1_u32 << 24) - 0.5) as f32 * 0.2
+            })
+            .collect();
+
+        let told = fit_recorded_sweep(noise, 48_000, None, built_in("flat"), String::new())
+            .expect_err("noise alone is refused")
+            .to_string();
+
+        assert_eq!(
+            told,
+            "The sweep could not be told from the noise around it: quiet the room, raise the volume or bring the microphone nearer"
+        );
+    }
 }

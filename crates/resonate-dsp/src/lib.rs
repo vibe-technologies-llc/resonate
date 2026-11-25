@@ -33,7 +33,8 @@ pub use crate::{
     restore::{Restoration, Restore, RestoreConfig, Tuning},
     sweep::{
         FRAMES_HEARD_AT_MOST, HEARD_AFTER_THE_SWEEP, Heard, LONGEST_SWEEP, Level, MEASURED_FOR,
-        MEASURED_FROM_HZ, MEASURED_TO_HZ, POINTS_PER_OCTAVE, SHORTEST_SWEEP, Sweep,
+        MEASURED_FROM_HZ, MEASURED_TO_HZ, PEAK_OVER_NOISE_AT_LEAST_DB, POINTS_PER_OCTAVE,
+        SHORTEST_SWEEP, Sweep,
     },
 };
 

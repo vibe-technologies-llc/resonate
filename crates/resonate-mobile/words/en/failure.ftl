@@ -43,6 +43,7 @@ sweep-heard-too-short = The recording held { $heard ->
 } and the sweep alone was { $played }, so it was cut short
 sweep-heard-too-long = The recording of the sweep was too long to measure
 sweep-nothing-heard = Nothing of the sweep was heard: raise the volume or bring the microphone nearer
+sweep-lost-in-noise = The sweep could not be told from the noise around it: quiet the room, raise the volume or bring the microphone nearer
 sweep-unmeasured = The sweep could not be measured
 no-device = No speakers or headphones to play through
 device-gone = The audio device was unplugged or switched off

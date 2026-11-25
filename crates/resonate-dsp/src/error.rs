@@ -79,6 +79,12 @@ pub enum Error {
     #[error("nothing of the sweep was heard")]
     NothingHeard,
 
+    #[error(
+        "the sweep's peak stood {peak_over_noise_db} dB over the noise, under the {least} dB a measurement needs",
+        least = crate::PEAK_OVER_NOISE_AT_LEAST_DB
+    )]
+    SweepLostInNoise { peak_over_noise_db: u32 },
+
     #[error("the transform of {size} points failed")]
     SweepTransform { size: usize },
 }
