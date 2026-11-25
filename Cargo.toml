@@ -61,7 +61,7 @@ unexpected_cfgs = { level = "warn", check-cfg = ['cfg(fuzzing)'] }
 result_large_err = "deny"
 
 [workspace.dependencies]
-uniffi = { version = "0.32.2", default-features = false }
+uniffi = { version = "0.33.0", default-features = false }
 oboe = { version = "0.6.1", default-features = false, features = ["shared-stdcxx"] }
 objc2-audio-toolbox = {
     version = "0.3.2",
@@ -131,7 +131,7 @@ image = {
 
 png = { version = "0.18.1", default-features = false }
 x25519-dalek = { version = "3.0.0", default-features = false }
-resvg = { version = "0.46.0", default-features = false, features = ["text", "system-fonts"] }
+resvg = { version = "0.49.0", default-features = false, features = ["text", "system-fonts"] }
 
 realfft = { version = "3.5.1", default-features = false, features = ["avx", "sse", "neon"] }
 rustfft = { version = "6.4.1", default-features = false, features = ["avx", "sse", "neon"] }
@@ -240,12 +240,12 @@ zbus = {
 
 gpui = {
     git = "https://github.com/zed-industries/zed",
-    rev = "83df5df635ed97ca6425d16659ad0307865ed93b",
+    rev = "6ba65ce3be7fc08eec910088ea1472174aa4a002",
     default-features = false
 }
 gpui_platform = {
     git = "https://github.com/zed-industries/zed",
-    rev = "83df5df635ed97ca6425d16659ad0307865ed93b",
+    rev = "6ba65ce3be7fc08eec910088ea1472174aa4a002",
     default-features = false,
     features = ["wayland"]
 }
@@ -256,8 +256,8 @@ wayland-protocols = {
     features = ["client", "staging"]
 }
 
-tao = { version = "0.37.3", default-features = false, features = ["rwh_06"] }
-wry = { version = "0.57.4", default-features = false, features = ["os-webview"] }
+tao = { version = "0.38.0", default-features = false, features = ["rwh_06"] }
+wry = { version = "0.58.1", default-features = false, features = ["os-webview"] }
 tracing = { version = "0.1.44", default-features = false, features = ["std"] }
 tracing-subscriber = {
     version = "0.3.23",

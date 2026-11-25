@@ -334,7 +334,7 @@ here, add it there.
   generated device id, `resonate-online`'s and Subsonic's token salt. `md-5`: Subsonic's token (and Last.fm signing in
   online). TIDAL: `base64` (`alloc`), `roxmltree` (`std`; DASH MPD), at 0.21 against gpui's 0.20:
   a second copy of a small crate, not a held-back pin.
-- **`resvg`** (`text`, `system-fonts`): `resonate-ui`'s, for the Wrapped card (`wrapped_card.rs`), at gpui's 0.46 so one SVG stack (`usvg`, `fontdb`, `tiny-skia`, `rustybuzz`) is built and one system font database loaded; a newer `resvg` would build a second stack beside gpui's (`cargo tree -d -p resonate-ui` names none). Bump it with gpui.
+- **`resvg`** (`text`, `system-fonts`): `resonate-ui`'s, for the Wrapped card (`wrapped_card.rs`), at gpui's 0.49 so one SVG stack (`usvg`, `fontdb`, `tiny-skia`, `rustybuzz`) is built and one system font database loaded; a newer `resvg` would build a second stack beside gpui's (`cargo tree -d -p resonate-ui` names none). Bump it with gpui.
 - **`futures-channel`**: `resonate-ui`'s; the oneshot `Drawer::draw` returns a cover by.
 - **`hdf5-reader`** (no default features, so no `rayon` and no `lz4`): `resonate-codec`'s SOFA reader alone (`eq.md`). Pure Rust, read only; its `memmap2` and `libc` are not used for a set (`from_vec`). **`hdf5-writer`**: dev-dependency of `resonate-codec`, `-engine` and `-mobile`, building the tests' sets. Both are versions of one family (`hdf5-core`), moved together.
 - **`rustfft`**: `resonate-dsp`'s, `-analysis`', `-codec`'s (`sofa.rs`), library dev; at symphonia's `opt-simd` version.
@@ -377,7 +377,7 @@ here, add it there.
   `config.toml`, and `resonate-server` reads its gateway's, since a value model loses comments, key
   order and spacing.
 
-- **`uniffi`** 0.32.2: the mobile boundary's scaffolding (Kotlin and Swift), with `cli` only in
+- **`uniffi`** 0.33.0: the mobile boundary's scaffolding (Kotlin and Swift), `macro-scaffolding` in `resonate-mobile` (the feature the export macros generate the boundary's functions under; without it every export is dead code), with `cli` only in
   `resonate-bindgen`.
   **`oboe`** 0.6.1 (`shared-stdcxx`): Android-target-only; NDK libc++ ships in the APK.
   **`objc2-audio-toolbox`** 0.3.2: `resonate-apple`'s on Apple targets alone, pure-Rust framework
