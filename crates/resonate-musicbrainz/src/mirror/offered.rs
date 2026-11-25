@@ -14,6 +14,7 @@ use super::{
     amended::{Amended, WAITED_FOR_A_WRITER, amended_to_in},
     import::removed,
     mirror_in,
+    replacing::Replacing,
 };
 use crate::{CopyOp, Error, Result, Store, StoreOp};
 
@@ -243,8 +244,13 @@ pub fn received_copy(folder: &Path, staged: &Path) -> Result<()> {
     let landed = Mirror::open(staged)?;
 
     drop(landed);
-    removed(&folder.join(AMENDED_FILE))?;
-    fs::rename(staged, mirror_in(folder)).map_err(copy_failed(staged, CopyOp::Land))
+
+    let mut replacing = Replacing::within(folder, || Ok(()));
+
+    replacing.synced(staged)?;
+    replacing.folder_synced()?;
+    replacing.placed(staged, &mirror_in(folder))?;
+    replacing.removed(&folder.join(AMENDED_FILE))
 }
 
 pub fn received_amendments(folder: &Path, staged: &Path) -> Result<()> {
@@ -260,10 +266,11 @@ pub fn received_amendments(folder: &Path, staged: &Path) -> Result<()> {
     drop(held);
     drop(copy);
 
-    let amended = folder.join(AMENDED_FILE);
+    let mut replacing = Replacing::within(folder, || Ok(()));
 
-    removed(&amended)?;
-    fs::rename(staged, &amended).map_err(copy_failed(staged, CopyOp::Land))
+    replacing.synced(staged)?;
+    replacing.folder_synced()?;
+    replacing.placed(staged, &folder.join(AMENDED_FILE))
 }
 
 #[cfg(test)]

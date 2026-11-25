@@ -4,6 +4,7 @@ mod documents;
 mod import;
 mod looked_up;
 mod offered;
+mod replacing;
 pub(crate) mod replicated;
 mod search;
 mod tables;

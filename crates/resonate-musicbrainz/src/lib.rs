@@ -13,7 +13,7 @@ pub mod wire;
 pub use crate::{
     asked::{Answer, Asked, Entity},
     consulted::{Ask, Asking, CONSULTED_AGAIN_AFTER, Consultation, Consulted, Consulting, Heard},
-    error::{ArchiveOp, CopyOp, Error, Malformed, PackOp, Result, Store, StoreOp},
+    error::{ArchiveOp, CopyOp, Error, LandStep, Malformed, PackOp, Result, Store, StoreOp},
     kept::{Dated, KEPT_ANSWERS_TOLD_AT_ONCE, KEPT_FRESH_FOR, Kept, KeptAnswer},
     layered::{Layer, Layered, MUSICBRAINZ, Mirrored, Peers},
     mirror::{

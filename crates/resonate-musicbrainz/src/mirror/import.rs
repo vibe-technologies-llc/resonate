@@ -25,6 +25,7 @@ use super::{
     },
     documents::{Builders, CODES_JOINED_BY, Document, rows_of, table_of, words_of},
     looked_up::{LookedUp, Shared, read_as_an_id, store_read},
+    replacing::{Replacing, files_removed},
     tables::{Sequenced, TABLES_FILE, kept_beside_the_build},
     weighed::placed_by_weight,
 };
@@ -313,18 +314,29 @@ pub fn built_from(
 }
 
 pub fn settled(built: &Built, folder: &Path) -> Result<PathBuf> {
+    settled_stepping(built, folder, || Ok(()))
+}
+
+fn settled_stepping(
+    built: &Built,
+    folder: &Path,
+    before: impl FnMut() -> io::Result<()>,
+) -> Result<PathBuf> {
     let settled = folder.join(MIRROR_FILE);
     let tables = folder.join(TABLES_FILE);
+    let mut replacing = Replacing::within(folder, before);
 
-    removed(&folder.join(AMENDED_FILE))?;
-    match &built.tables {
-        Some(kept) => {
-            fs::rename(kept, &tables).map_err(Error::archive(kept, ArchiveOp::Rename))?;
-        }
-        None => removed(&tables)?,
+    replacing.synced(&built.mirror)?;
+    if let Some(kept) = &built.tables {
+        replacing.synced(kept)?;
     }
-    fs::rename(&built.mirror, &settled)
-        .map_err(Error::archive(&built.mirror, ArchiveOp::Rename))?;
+    replacing.folder_synced()?;
+    replacing.placed(&built.mirror, &settled)?;
+    match &built.tables {
+        Some(kept) => replacing.placed(kept, &tables)?,
+        None => replacing.removed(&tables)?,
+    }
+    replacing.removed(&folder.join(AMENDED_FILE))?;
     Ok(settled)
 }
 
@@ -336,17 +348,7 @@ pub fn removed_beside_the_mirror(folder: &Path) -> Result<()> {
 }
 
 pub(crate) fn removed(path: &Path) -> Result<()> {
-    for suffix in ["", "-journal", "-wal", "-shm"] {
-        let mut named = path.as_os_str().to_owned();
-
-        named.push(suffix);
-        match fs::remove_file(PathBuf::from(named)) {
-            Ok(()) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {}
-            Err(error) => return Err(Error::archive(path, ArchiveOp::Remove)(error)),
-        }
-    }
-    Ok(())
+    files_removed(path).map_err(Error::archive(path, ArchiveOp::Remove))
 }
 
 fn scratch(path: &Path, store: Store) -> Result<Connection> {
@@ -1447,9 +1449,172 @@ fn built_by_a_builder(
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
+    use std::{env, io::Cursor, process};
 
     use super::*;
+    use crate::mirror::{FORMAT, Mirror, amended::made_at, tables::opened};
+
+    const OLD_EXPORT: &str = "20261104-002222";
+    const NEW_EXPORT: &str = "20261111-002335";
+    const OLD_SEQUENCE: u32 = 7;
+
+    fn a_copy_of(path: &Path, dump: &str) {
+        let copy = Connection::open(path).expect("a copy");
+
+        copy.execute_batch(SCHEMA).expect("the copy laid out");
+        copy.execute(
+            "INSERT INTO made (format, dump, built) VALUES (?1, ?2, 0)",
+            params![FORMAT, dump],
+        )
+        .expect("the copy made");
+    }
+
+    fn tables_of(path: &Path, dump: &str) {
+        let tables = Connection::open(path).expect("the tables");
+
+        tables
+            .execute_batch(
+                "CREATE TABLE kept (format INTEGER NOT NULL, dump TEXT NOT NULL, \
+                 sequence INTEGER NOT NULL, schema INTEGER NOT NULL);",
+            )
+            .expect("the tables laid out");
+        tables
+            .execute(
+                "INSERT INTO kept (format, dump, sequence, schema) VALUES (?1, ?2, ?3, ?4)",
+                params![
+                    super::super::tables::TABLES_FORMAT,
+                    dump,
+                    OLD_SEQUENCE,
+                    SCHEMA_THE_COLUMNS_FOLLOW
+                ],
+            )
+            .expect("the tables kept");
+    }
+
+    fn a_folder_holding_an_amended_copy_and_a_new_build(
+        named: &str,
+        keeping: Keeping,
+    ) -> (PathBuf, Built) {
+        let folder = env::temp_dir().join(format!(
+            "resonate-musicbrainz-settling-{named}-{}",
+            process::id()
+        ));
+        let _ = fs::remove_dir_all(&folder);
+
+        fs::create_dir_all(&folder).expect("a scratch folder");
+        a_copy_of(&folder.join(MIRROR_FILE), OLD_EXPORT);
+        tables_of(&folder.join(TABLES_FILE), OLD_EXPORT);
+        made_at(
+            &folder.join(AMENDED_FILE),
+            OLD_EXPORT,
+            u64::from(OLD_SEQUENCE),
+            1,
+        )
+        .expect("the amendments laid out");
+
+        let built = Built {
+            mirror: folder.join(BUILDING_FILE),
+            tables: (keeping == Keeping::TheMirrorAndItsTables)
+                .then(|| folder.join(TABLES_BUILDING_FILE)),
+        };
+
+        a_copy_of(&built.mirror, NEW_EXPORT);
+        if let Some(tables) = &built.tables {
+            tables_of(tables, NEW_EXPORT);
+        }
+        (folder, built)
+    }
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum Held {
+        TheOldCopyWithItsAmendments,
+        TheNewCopyWhole { tables: Option<String> },
+    }
+
+    fn held_in(folder: &Path) -> Held {
+        let copy = Mirror::open(&folder.join(MIRROR_FILE)).expect("a copy opens");
+        let tables = opened(&folder.join(TABLES_FILE))
+            .ok()
+            .map(|(_, kept)| kept.dump);
+
+        if copy.made().dump == OLD_EXPORT {
+            assert_eq!(
+                copy.amended_to().map(|to| to.sequence),
+                Some(u64::from(OLD_SEQUENCE)),
+                "the old copy lost its amendments"
+            );
+            assert_eq!(tables.as_deref(), Some(OLD_EXPORT));
+
+            return Held::TheOldCopyWithItsAmendments;
+        }
+
+        assert_eq!(copy.made().dump, NEW_EXPORT);
+        assert_eq!(copy.amended_to(), None);
+        Held::TheNewCopyWhole { tables }
+    }
+
+    #[test]
+    fn a_settling_failing_at_each_step_leaves_the_old_copy_with_its_amendments_or_the_new_whole() {
+        for keeping in [Keeping::TheMirrorAndItsTables, Keeping::TheMirror] {
+            let (folder, built) =
+                a_folder_holding_an_amended_copy_and_a_new_build("count", keeping);
+            let mut steps = 0;
+
+            settled_stepping(&built, &folder, || {
+                steps += 1;
+                Ok(())
+            })
+            .expect("settled");
+
+            let landed = held_in(&folder);
+            let amended_left = folder.join(AMENDED_FILE).exists();
+
+            let _ = fs::remove_dir_all(&folder);
+
+            let mut seen = Vec::new();
+
+            for failing_at in 0..steps {
+                let (folder, built) =
+                    a_folder_holding_an_amended_copy_and_a_new_build("failing", keeping);
+                let mut step = 0;
+
+                let failed = settled_stepping(&built, &folder, || {
+                    step += 1;
+                    if step > failing_at {
+                        Err(io::Error::from(io::ErrorKind::StorageFull))
+                    } else {
+                        Ok(())
+                    }
+                });
+                let held = held_in(&folder);
+
+                let _ = fs::remove_dir_all(&folder);
+
+                assert!(
+                    matches!(failed, Err(Error::Landing { .. })),
+                    "{keeping:?} at {failing_at}: {failed:?}"
+                );
+
+                seen.push(held);
+            }
+
+            let new_tables =
+                (keeping == Keeping::TheMirrorAndItsTables).then(|| NEW_EXPORT.to_owned());
+
+            assert_eq!(
+                landed,
+                Held::TheNewCopyWhole {
+                    tables: new_tables.clone()
+                }
+            );
+            assert!(!amended_left);
+            assert_eq!(seen.first(), Some(&Held::TheOldCopyWithItsAmendments));
+            assert_eq!(
+                seen.last(),
+                Some(&Held::TheNewCopyWhole { tables: new_tables })
+            );
+        }
+    }
 
     fn area() -> &'static Table {
         table_named("mbdump/area").expect("the area table")

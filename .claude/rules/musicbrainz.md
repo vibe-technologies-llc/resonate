@@ -264,8 +264,19 @@ changes*).
 - **The hold.** `held_for_building` holds `musicbrainz.building` (`writer::Held::taken_over`); a
   second build is `AlreadyBuilding`.
 - **Before.** Leftover staging and a `.building` file, from a run that died, are removed first.
-- **After.** The new store is `musicbrainz.sqlite.building` until `settled` renames it over the old
-  one. The staging and placement files are removed whatever happened.
+- **After.** The new store is `musicbrainz.sqlite.building` until `settled` puts it in place. The
+  staging and placement files are removed whatever happened.
+- **Put in place in an order no failure tears.** The build writes with no journal and no sync, so
+  `settled` first syncs the new copy and tables (`sync_file`) and the folder, then renames the copy,
+  then the tables (or removes the old ones where none were kept), and removes the old amendments
+  last, syncing the folder after each step (`Replacing`). A failure or a power loss at any step
+  leaves the old copy with its amendments or the new one whole: amendments of another export beside
+  a copy are passed over as it opens, and old tables beside it are `TablesOfAnotherExport`
+  (`a_settling_failing_at_each_step_leaves_the_old_copy_with_its_amendments_or_the_new_whole`,
+  each step failed in turn through `settled_stepping`). A file put in place over another has the
+  other's `-journal`, `-wal` and `-shm` removed first, so a hot journal of the old file is never
+  played back into the new, and a file removed loses them before itself. A leftover `.building`
+  file is removed by the next build.
 - **Cancelling.** `Building` carries the phase, the bytes and rows read, the documents written, and
   a cancel. `gaming::wait` holds it between batches.
 - **Every step is measured.** `Building::bytes` is the step's progress and its whole: the bytes of
@@ -483,9 +494,9 @@ percent-escaped), and the amended file it is taken from waits for a writer as `A
 macOS a `flock` and SQLite's own `fcntl` locks are one lock, so the hold made its own snapshot busy
 (`a_held_snapshot_is_taken_in_a_folder_whose_name_a_uri_would_misread`). `Consultation::offered` serves it
 to sync's `Consultable::export`. The receiver lands them with `received_copy` (opened as a `Mirror`
-first, then the amendments of the dump before removed and the file renamed over `MIRROR_FILE`) and
-`received_amendments` (opened as amendments of the copy's dump, else
-`AmendmentsOfAnotherExport`, then renamed over `AMENDED_FILE`); `removed_copy` takes the copy and
+first, then synced and renamed over `MIRROR_FILE`, the amendments of the dump before removed last,
+as `settled` does) and `received_amendments` (opened as amendments of the copy's dump, else
+`AmendmentsOfAnotherExport`, then synced and renamed over `AMENDED_FILE`); `removed_copy` takes the copy and
 everything beside it away. Which of two exports is the later is `exported_after`, reading each dump's
 name as its figures (`an_export_is_after_another_only_where_both_are_dumps_and_it_was_made_later`), so
 a receiver replaces its copy only with a later one

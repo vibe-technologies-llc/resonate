@@ -42,7 +42,15 @@ pub enum CopyOp {
     Hold,
     Open,
     Measure,
-    Land,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum LandStep {
+    SyncFile,
+    SyncFolder,
+    ClearSidecars,
+    Rename,
+    Remove,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -77,6 +85,14 @@ pub enum Error {
     CopyFile {
         path: PathBuf,
         op: CopyOp,
+        #[source]
+        source: io::Error,
+    },
+
+    #[error("a copy of MusicBrainz being put in place could not {step:?} {path}")]
+    Landing {
+        path: PathBuf,
+        step: LandStep,
         #[source]
         source: io::Error,
     },
