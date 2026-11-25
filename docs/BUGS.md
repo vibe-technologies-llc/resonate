@@ -12,18 +12,6 @@ ordering are in [ROADMAP.md](ROADMAP.md).
   that track. Walk the tree iteratively or refuse past a small depth as an unreadable sheet. Done
   when a test feeding 100 000 nested `<span>` elements gets an unreadable sheet back instead of an
   abort.
-- [M · 0.18.1] Keep NUL and oversized tag text off the session bus. **Medium, architect.** Tag
-  values are only trimmed (`crates/resonate-codec/src/tags.rs:770`), then copied verbatim into MPRIS
-  metadata (`crates/resonate-mpris/src/track.rs:413-473`, published at `service.rs:966-1000` and
-  `tracklist.rs:164-202`) and into `Notify` (`notify.rs:33-52`, `notifier.rs:94-123`); zvariant 5's
-  `serialize_str` writes an interior NUL unchecked, so a title, comment or lyrics tag holding U+0000
-  makes the daemon drop the connection, and MPRIS, media keys, notifications and the idle inhibit
-  (`desk_bus.rs` shares the one connection, and `Gripping` still says held) stop for the session
-  with only debug logs, since nothing reconnects. Toasts already filter such characters
-  (`toast.rs:55-79`). Replace U+0000 where tag text enters `TagSet` or in one helper every bus
-  string passes, cap each value's length, and notice a connection the bus has closed. Done when a
-  FLAC titled `a\0b` played under `dbus-run-session` still answers `Metadata` and is notified, in a
-  bus test.
 - [S · 0.18.1] Refuse a `file://` URI naming another host on Windows unless the listener chose it.
   **Medium, builder.** `path_of_uri_rest` turns any authority into a UNC path
   (`crates/resonate-core/src/windows_uri.rs:32-52`, written verbatim at `:64-70`, reached from
@@ -325,6 +313,12 @@ ordering are in [ROADMAP.md](ROADMAP.md).
 - [S · 0.18.1] Warn once while the machine may not be kept awake. **Low, builder.** `awake.rs:43-65`
   retries every second and warns each time while refused. Warn once and retry quietly. Done when a
   refusing stand-in logs one warning over ten seconds.
+- [M · 0.18.1] Reconnect the MPRIS connection the session bus closed. **Low, architect.** The desk
+  thread now notices a closed connection and opens notifications and the idle inhibit again
+  (`crates/resonate-mpris/src/desk_bus.rs`), but the player's own connection is only logged once and
+  left (`service.rs`), so media keys and `Metadata` stay gone for the session. Claim the name again
+  and rebuild the object server, the name watch and the shared connection fields. Done when a bus
+  test that closes the player's connection finds it answering `Metadata` again.
 
 ## Device sync
 - [S · 0.18.1] Report a shared playlist as shared only once the server has it. **Medium, builder.**
